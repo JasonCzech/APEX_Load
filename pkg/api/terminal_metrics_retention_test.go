@@ -92,3 +92,64 @@ func TestCompactTerminalManagedTestCompactsLiveMetricsWithoutHistory(t *testing.
 		t.Fatalf("compacted LiveMetrics lost its scalars: %#v", testRun.LiveMetrics)
 	}
 }
+
+// TestCompactTerminalManagedTestRetainsCISLAServerTelemetryPeaks pins the
+// evidence terminal CI SLA evaluation still needs after the per-transaction map
+// is released. max_avg_server_processing_ms / max_avg_transfer_ms are evaluated
+// against the worst transaction and have no other terminal source, so dropping
+// Transactions without this bounded rollup makes every terminal GitHub Check
+// report them as "Not available".
+func TestCompactTerminalManagedTestRetainsCISLAServerTelemetryPeaks(t *testing.T) {
+	live := unboundedTerminalLiveMetrics()
+	live.Transactions = map[string]*TxMetrics{
+		"browse": {Count: 5, ServerTelemetry: &ServerTelemetrySummary{
+			Samples: 6, AvgServerProcessingMs: 120, AvgTransferMs: 95,
+		}},
+		"checkout": {Count: 3, ServerTelemetry: &ServerTelemetrySummary{
+			Samples: 4, AvgServerProcessingMs: 310, AvgTransferMs: 12,
+			RequestPayloadHistogram: map[string]int64{"1k": 4},
+		}},
+		"unsampled": {Count: 1, ServerTelemetry: &ServerTelemetrySummary{
+			Samples: 0, AvgServerProcessingMs: 900, AvgTransferMs: 900,
+		}},
+	}
+	testRun := &ManagedTest{Status: "COMPLETE", History: []*LiveMetrics{live}, LiveMetrics: live}
+
+	compactTerminalManagedTestLocked(testRun)
+
+	tail := testRun.LiveMetrics
+	if tail.Transactions != nil {
+		t.Fatalf("compaction stopped releasing the per-transaction map: %#v", tail.Transactions)
+	}
+	processing, ok := ciGitHubCheckMaxServerTelemetry(tail, slaTelemetryMetricAvgServerProcessingMs)
+	if !ok || processing != 310 {
+		t.Fatalf("terminal avg server processing = %v (available %t), want the worst transaction's 310", processing, ok)
+	}
+	transfer, ok := ciGitHubCheckMaxServerTelemetry(tail, slaTelemetryMetricAvgTransferMs)
+	if !ok || transfer != 95 {
+		t.Fatalf("terminal avg transfer = %v (available %t), want the worst transaction's 95", transfer, ok)
+	}
+	// The rollup is bounded by the metric set, not by transaction cardinality,
+	// and it must not pin the histograms the retained transaction carried.
+	if len(tail.slaTelemetryPeaks) != 2 {
+		t.Fatalf("retained SLA telemetry peaks = %#v, want one entry per evaluated metric", tail.slaTelemetryPeaks)
+	}
+	peak := tail.slaTelemetryPeaks[slaTelemetryMetricAvgServerProcessingMs]
+	if peak == nil || peak.RequestPayloadHistogram != nil {
+		t.Fatalf("retained peak pinned unbounded payload histograms: %#v", peak)
+	}
+	// Metrics that compaction does not retain must degrade honestly rather than
+	// report a max taken over the retained subset.
+	if value, available := ciGitHubCheckMaxServerTelemetry(tail, "avg_consumer_lag_ms"); available {
+		t.Fatalf("unretained metric reported %v as available terminal evidence", value)
+	}
+	// Compaction stays idempotent: a second pass must not lose the peaks.
+	compactTerminalManagedTestLocked(testRun)
+	if _, ok := ciGitHubCheckMaxServerTelemetry(testRun.LiveMetrics, slaTelemetryMetricAvgServerProcessingMs); !ok {
+		t.Fatal("re-compacting an already-compacted terminal run dropped the retained SLA telemetry peaks")
+	}
+	// Compaction copies: the pre-compaction snapshots still see the live map.
+	if live.Transactions == nil {
+		t.Fatal("SLA peak retention mutated the live metrics point in place")
+	}
+}

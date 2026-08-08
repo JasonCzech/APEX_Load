@@ -558,7 +558,17 @@ func corsMiddleware(allowedOrigins []string, authSettings ...func() AuthSettings
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			origin := strings.TrimSpace(r.Header.Get("Origin"))
 			var auth *AuthSettings
-			if len(authSettings) > 0 && authSettings[0] != nil {
+			// The auth settings are only consulted for the trusted-proxy scheme
+			// override inside evaluateOriginPolicyWithAuth, which returns before
+			// reading them when the request carries no Origin; every decision below
+			// is likewise gated on origin != "". Resolving them regardless is not
+			// just waste: the accessor takes the runner lock, and the runner holds
+			// that lock across durable writes that stall for minutes during a
+			// managed-database failover. That made the Kubernetes liveness probe -
+			// an httpGet, which sends no Origin - queue behind the stall and get the
+			// replica killed ~43s in, long before the run-driver panic backstop's
+			// durable-write extension could ride the failover out.
+			if origin != "" && len(authSettings) > 0 && authSettings[0] != nil {
 				settings := authSettings[0]()
 				auth = &settings
 			}

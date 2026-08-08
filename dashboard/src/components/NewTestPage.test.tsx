@@ -1739,6 +1739,193 @@ describe('NewTestPage', () => {
     }))
   })
 
+  it('clears a pinned group error handling section back to the script default', async () => {
+    apiMock.listScenarios.mockResolvedValue({
+      scenarios: [
+        {
+          id: 'scenario-1',
+          name: 'Checkout Smoke',
+          duration: '10m',
+          scenario_mode: 'vuser_driven',
+          scripts: [
+            {
+              order: 1,
+              name: 'Checkout',
+              script_id: 'script-1',
+              script_name: 'Checkout Script',
+              protocol: 'http',
+              vusers: 10,
+              runtime_settings: { error_handling: { continue_on_error: true, snapshot_on_error: true } },
+            },
+          ],
+          script_count: 1,
+          created_at: '2026-05-12T20:00:00Z',
+          updated_at: '2026-05-12T20:00:00Z',
+          associated_releases: [],
+        },
+      ],
+    })
+
+    await act(async () => {
+      root.render(
+        <NewTestPage
+          activeApplication={{ id: 'app-1', name: 'ACC', created_at: '', updated_at: '' }}
+          activeRelease={{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }}
+          releases={[{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }]}
+          onSelectTest={vi.fn()}
+          onCreateRelease={vi.fn().mockResolvedValue(null)}
+        />,
+      )
+    })
+
+    await flushPromises()
+
+    const scenarioRow = container.querySelector('.new-test-scenario-table-row') as HTMLTableRowElement | null
+    await act(async () => {
+      scenarioRow?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    const openGroupDialog = async () => {
+      const row = Array.from(container.querySelectorAll('.new-test-script-row')).find(element => element.textContent?.includes('Checkout')) as HTMLTableRowElement | undefined
+      await act(async () => {
+        row?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      })
+      return document.querySelector('.run-group-modal') as HTMLElement | null
+    }
+
+    const modal = await openGroupDialog()
+    expect(modal).toBeTruthy()
+    if (!modal) return
+    const continueSelect = findControlByLabel<HTMLSelectElement>(modal, 'Continue on error', 'select')
+    const snapshotSelect = findControlByLabel<HTMLSelectElement>(modal, 'Snapshot on error', 'select')
+    expect(continueSelect).toBeTruthy()
+    expect(snapshotSelect).toBeTruthy()
+    if (!continueSelect || !snapshotSelect) return
+    expect(continueSelect.value).toBe('true')
+    expect(snapshotSelect.value).toBe('true')
+    // Nothing above the group pins a section, so clearing the group's really does hand the run
+    // back to the script's own config.error_handling.
+    expect(Array.from(continueSelect.options).find(option => option.value === '')?.textContent).toBe('Script default')
+
+    await act(async () => {
+      setSelectValue(continueSelect, '')
+      setSelectValue(snapshotSelect, '')
+    })
+    const saveButton = Array.from(modal.querySelectorAll('button')).find(button => button.textContent === 'Save For This Run') as HTMLButtonElement | undefined
+    expect(saveButton?.disabled).toBe(false)
+    await act(async () => {
+      saveButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(container.textContent).toContain('Saved script settings for this run only.')
+
+    // Re-opening has to show the clear the operator just saved, not the stale stored section.
+    const reopened = await openGroupDialog()
+    expect(reopened).toBeTruthy()
+    if (!reopened) return
+    expect(findControlByLabel<HTMLSelectElement>(reopened, 'Continue on error', 'select')?.value).toBe('')
+    expect(findControlByLabel<HTMLSelectElement>(reopened, 'Snapshot on error', 'select')?.value).toBe('')
+    const closeButton = Array.from(reopened.querySelectorAll('button')).find(button => button.textContent === 'Cancel')
+    await act(async () => {
+      closeButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    await flushDebouncedPreflight()
+    const createQueuedButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Hold for Manual Start')
+    await act(async () => {
+      createQueuedButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    // The group override is overlaid back onto the group's stored runtime_settings to build the
+    // payload, so an absent key would silently re-apply the section the operator just cleared.
+    expect(apiMock.createTest).toHaveBeenCalled()
+    const payload = apiMock.createTest.mock.calls[0][0] as { groups?: Array<Record<string, unknown>> }
+    expect(payload.groups).toHaveLength(1)
+    expect(payload.groups?.[0]).toEqual(expect.objectContaining({ script_id: 'script-1' }))
+    expect(payload.groups?.[0].runtime_settings).toBeUndefined()
+  })
+
+  it('clears a stored group pacing section back to script timing', async () => {
+    // Same overlay limitation as the error handling clear: the pacing select's inherit option
+    // ("Script timing") has to remove the group's stored section, not leave it standing.
+    apiMock.listScenarios.mockResolvedValue({
+      scenarios: [
+        {
+          id: 'scenario-1',
+          name: 'Checkout Smoke',
+          duration: '10m',
+          scenario_mode: 'vuser_driven',
+          scripts: [
+            {
+              order: 1,
+              name: 'Checkout',
+              script_id: 'script-1',
+              script_name: 'Checkout Script',
+              protocol: 'http',
+              vusers: 10,
+              runtime_settings: { pacing: { type: 'fixed_delay', delay_ms: 500 }, log_level: 'debug' },
+            },
+          ],
+          script_count: 1,
+          created_at: '2026-05-12T20:00:00Z',
+          updated_at: '2026-05-12T20:00:00Z',
+          associated_releases: [],
+        },
+      ],
+    })
+
+    await act(async () => {
+      root.render(
+        <NewTestPage
+          activeApplication={{ id: 'app-1', name: 'ACC', created_at: '', updated_at: '' }}
+          activeRelease={{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }}
+          releases={[{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }]}
+          onSelectTest={vi.fn()}
+          onCreateRelease={vi.fn().mockResolvedValue(null)}
+        />,
+      )
+    })
+    await flushPromises()
+
+    const scenarioRow = container.querySelector('.new-test-scenario-table-row') as HTMLTableRowElement | null
+    await act(async () => {
+      scenarioRow?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    const groupRow = Array.from(container.querySelectorAll('.new-test-script-row')).find(row => row.textContent?.includes('Checkout')) as HTMLTableRowElement | undefined
+    await act(async () => {
+      groupRow?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const modal = document.querySelector('.run-group-modal') as HTMLElement | null
+    expect(modal).toBeTruthy()
+    if (!modal) return
+    const pacingSelect = findControlByLabel<HTMLSelectElement>(modal, 'Pacing', 'select')
+    expect(pacingSelect?.value).toBe('fixed_delay')
+    if (!pacingSelect) return
+
+    await act(async () => {
+      setSelectValue(pacingSelect, '')
+    })
+    const saveButton = Array.from(modal.querySelectorAll('button')).find(button => button.textContent === 'Save For This Run') as HTMLButtonElement | undefined
+    expect(saveButton?.disabled).toBe(false)
+    await act(async () => {
+      saveButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    await flushDebouncedPreflight()
+    const createQueuedButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Hold for Manual Start')
+    await act(async () => {
+      createQueuedButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    expect(apiMock.createTest).toHaveBeenCalledWith(expect.objectContaining({
+      groups: [expect.objectContaining({
+        script_id: 'script-1',
+        runtime_settings: { log_level: 'debug' },
+      })],
+    }))
+  })
+
   it('edits and round-trips random interval bounds in the per-script run editor', async () => {
     apiMock.listScenarios.mockResolvedValue({
       scenarios: [{

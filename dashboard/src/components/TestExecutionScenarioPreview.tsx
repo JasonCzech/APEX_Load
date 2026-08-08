@@ -6,6 +6,7 @@ import {
 import { CapacityAdvisory, RuntimeSettingsOverride, ScriptShakeoutReport, TestSummary } from '../types'
 import { formatBrowserRuntimeSummary } from './browserRuntimeSummary'
 import { chartTooltipContentStyle, chartTooltipLabelStyle, preserveChartItemOrder } from './chartTooltipTheme'
+import { errorHandlingSectionIsPinned } from './newTestRunModel'
 import { QueuedScenarioPreview, QueuedScenarioRow, ScenarioScriptDetail } from './testExecutionScenarioModel'
 import type { ScenarioSnapshotSource } from './useExecutionScenarioPreviewModel'
 import { formatTimeCompact } from '../utils/timeUtils'
@@ -144,10 +145,36 @@ function formatEffectiveThinkTime(group: TestSummary['groups'][number], scriptDe
   return formatThinkTimeLabel(scriptDetail)
 }
 
+// error_handling is transmitted and applied as a whole SECTION, never field by field:
+// mergeRuntimeSettings (pkg/api/runtime_overrides.go) swaps the run-level section for the
+// group's outright whenever the group carries one, and applyRuntimeOverrides then assigns
+// script.Config.ErrorHandling = *overrides.ErrorHandling. dsl.ErrorHandlingConfig stores plain
+// bools with omitempty, so a field the winning section omits is absent on the wire AND executes
+// as false — the level underneath never supplies it. Resolving the chain field-wise would report
+// a half the run discards, so mirror newTestRunModel.resolveGroupErrorHandling here.
+type ResolvedErrorHandlingSection = {
+  section: NonNullable<RuntimeSettingsOverride['error_handling']>
+  origin: string
+}
+
+function resolveErrorHandlingSection(group: TestSummary['groups'][number] | undefined, test: TestSummary): ResolvedErrorHandlingSection | null {
+  const groupSection = group?.runtime_settings?.error_handling
+  if (errorHandlingSectionIsPinned(groupSection)) return { section: groupSection!, origin: ' (group override)' }
+  const testSection = test.runtime_settings?.error_handling
+  if (errorHandlingSectionIsPinned(testSection)) return { section: testSection!, origin: ' (scenario override)' }
+  return null
+}
+
 function formatContinueOnError(test: TestSummary): string {
-  const override = test.runtime_settings?.error_handling?.continue_on_error
-  if (override === undefined) return 'Script-level value not exposed'
-  return override ? 'Enabled' : 'Disabled'
+  const resolved = resolveErrorHandlingSection(undefined, test)
+  if (!resolved) return 'Script-level value not exposed'
+  return resolved.section.continue_on_error ? 'Enabled' : 'Disabled'
+}
+
+function formatRunSnapshotOnError(test: TestSummary): string {
+  const resolved = resolveErrorHandlingSection(undefined, test)
+  if (!resolved) return 'Script-level value not exposed'
+  return resolved.section.snapshot_on_error ? 'Enabled' : 'Disabled'
 }
 
 function formatEffectiveIterations(group: TestSummary['groups'][number], scriptDetail: ScenarioScriptDetail | undefined, test: TestSummary): string {
@@ -180,10 +207,8 @@ function formatEffectiveLogLevel(group: TestSummary['groups'][number], scriptDet
 }
 
 function formatSnapshotOnError(group: TestSummary['groups'][number], scriptDetail: ScenarioScriptDetail | undefined, test: TestSummary): string {
-  const groupOverride = group.runtime_settings?.error_handling?.snapshot_on_error
-  if (groupOverride !== undefined) return groupOverride ? 'Enabled (group override)' : 'Disabled (group override)'
-  const override = test.runtime_settings?.error_handling?.snapshot_on_error
-  if (override !== undefined) return override ? 'Enabled (scenario override)' : 'Disabled (scenario override)'
+  const resolved = resolveErrorHandlingSection(group, test)
+  if (resolved) return `${resolved.section.snapshot_on_error ? 'Enabled' : 'Disabled'}${resolved.origin}`
   if (!scriptDetail) return 'Not exposed by run snapshot'
   return scriptDetail.script?.config?.error_handling?.snapshot_on_error ? 'Enabled' : 'Disabled'
 }
@@ -529,7 +554,7 @@ export default function TestExecutionScenarioPreview({
             </div>
             <div className="scenario-setting-card">
               <span className="scenario-setting-label">Snapshot On Error</span>
-              <span className="scenario-setting-value">{test.runtime_settings?.error_handling?.snapshot_on_error === undefined ? 'Script-level value not exposed' : test.runtime_settings.error_handling.snapshot_on_error ? 'Enabled' : 'Disabled'}</span>
+              <span className="scenario-setting-value">{formatRunSnapshotOnError(test)}</span>
             </div>
             <div className="scenario-setting-card">
               <span className="scenario-setting-label">Script Shakeout</span>

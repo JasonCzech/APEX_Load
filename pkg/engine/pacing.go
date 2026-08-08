@@ -250,10 +250,14 @@ func NewTokenBucket(tps float64) *TokenBucket {
 	if tps <= 0 || math.IsNaN(tps) || math.IsInf(tps, 0) {
 		return nil
 	}
-	// For very large tps the fill interval truncates to 0, which makes
-	// time.NewTicker panic ("non-positive interval for NewTicker") inside the
-	// recover-less fill goroutine, crashing the worker. Clamp to 1ns, mirroring
-	// runArrivalScheduler.
+	// For very large tps the fill interval truncates to 0. The clamp is load
+	// bearing: tokenBucketTokensForElapsed returns 0 for every elapsed value once
+	// interval <= 0, so an unclamped bucket would never issue a single credit and
+	// every VUser gated on WaitContext (vuser.go, the "tps" pacing branch) would
+	// block forever instead of the run failing loudly. fill() drives a
+	// time.Timer, which tolerates a non-positive duration by firing immediately
+	// — only time.NewTicker panics on one — so the hazard here is silent token
+	// starvation, not a crashed fill goroutine.
 	interval := time.Duration(float64(time.Second) / tps)
 	if interval <= 0 {
 		interval = time.Nanosecond
@@ -337,10 +341,20 @@ func (tb *TokenBucket) signalTimerReset() {
 }
 
 func (tb *TokenBucket) fill() {
+	last := time.Now()
 	timer := time.NewTimer(tb.interval)
 	defer timer.Stop()
 	timerC := timer.C
-	last := time.Now()
+	// nextFire is the absolute deadline the timer is currently armed for. Every
+	// re-arm is measured from this deadline, never from the instant the goroutine
+	// happened to wake, so the fill cadence stays exactly one interval wide.
+	// Re-arming with a fresh tb.interval instead makes each cycle
+	// interval+wake_latency long while the credit accounting below floors
+	// elapsed/interval, discarding the sub-interval remainder every cycle. That
+	// shortfall is one-directional and grows with tps (deficit ≈
+	// latency/(interval+latency)), so a bucket configured for 1000 tps delivered
+	// closer to 790.
+	nextFire := last.Add(tb.interval)
 	// pausedProgress carries the portion of the in-flight fill interval that had
 	// already elapsed when a pause began. Paused wall time still earns nothing,
 	// but resuming charges only the remainder instead of restarting the interval
@@ -396,31 +410,62 @@ func (tb *TokenBucket) fill() {
 			// addTokensForElapsed still sees exactly one whole interval elapse.
 			last = now.Add(-pausedProgress)
 			pausedProgress = 0
+			nextFire = now.Add(remaining)
 			timer.Reset(remaining)
 			timerC = timer.C
 		case now := <-timerC:
-			elapsed := now.Sub(last)
-			last = now
-			tb.addTokensForElapsed(elapsed)
-			timer.Reset(tb.interval)
+			// Advance last by the whole intervals actually credited rather than to
+			// the wake time. Anything short of a whole interval stays on the clock
+			// and is paid out by a later cycle, so wake latency can never be
+			// silently rounded away.
+			if issued := tb.addTokensForElapsed(now.Sub(last)); issued > 0 {
+				last = last.Add(time.Duration(issued) * tb.interval)
+			}
+			nextFire = nextFire.Add(tb.interval)
+			wait := nextFire.Sub(now)
+			if wait <= 0 {
+				// A stall swallowed one or more deadlines. Skip forward to the next
+				// future deadline — keeping the original phase — instead of arming a
+				// run of non-positive timers that would spin the loop. Credit is not
+				// lost by the skip: last still trails, so the missed intervals are
+				// issued by the accounting above. NewTokenBucket clamps interval
+				// positive; the guard keeps a zero interval a (creditless) spin
+				// rather than a divide-by-zero panic in this recover-less goroutine.
+				if tb.interval > 0 {
+					missed := int64(now.Sub(nextFire)/tb.interval) + 1
+					nextFire = nextFire.Add(time.Duration(missed) * tb.interval)
+				} else {
+					nextFire = now
+				}
+				wait = nextFire.Sub(now)
+			}
+			timer.Reset(wait)
 		}
 	}
 }
 
-func (tb *TokenBucket) addTokensForElapsed(elapsed time.Duration) {
+// addTokensForElapsed issues one credit per whole fill interval contained in
+// elapsed and returns how many intervals it credited, so fill() can advance its
+// accounting clock by exactly that much. Credits that do not fit in the
+// buffered channel still count toward the return value: the channel capacity is
+// the deliberate burst bound, and holding unbuffered credit on the clock would
+// turn a momentarily full buffer into an unbounded backlog that discharges as a
+// spike once consumers catch up.
+func (tb *TokenBucket) addTokensForElapsed(elapsed time.Duration) int {
 	tb.mu.Lock()
 	defer tb.mu.Unlock()
 	if tb.paused {
-		return
+		return 0
 	}
 	due := tokenBucketTokensForElapsed(elapsed, tb.interval)
 	for i := 0; i < due; i++ {
 		select {
 		case tb.tokens <- struct{}{}:
 		default:
-			return
+			return due
 		}
 	}
+	return due
 }
 
 func tokenBucketTokensForElapsed(elapsed time.Duration, interval time.Duration) int {

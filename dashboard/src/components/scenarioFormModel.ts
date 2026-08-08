@@ -186,8 +186,8 @@ export function runtimeSettingsFromForm(
   return {
     ...preserved,
     iterations: hasCanonicalRunLogic ? undefined : form.runtime_iterations,
-    pacing: pacingFromForm(form),
-    think_time: thinkTimeFromForm(form),
+    pacing: pacingFromForm(form) ?? undefined,
+    think_time: thinkTimeFromForm(form) ?? undefined,
     browser: includeBrowser ? (hasCanonicalBrowser ? undefined : browserRuntimeFromForm(form)) : preserved?.browser,
     browser_config: browserConfig,
     log_level: hasCanonicalLog ? '' : form.runtime_log_level,

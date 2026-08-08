@@ -83,15 +83,16 @@ export function buildRuntimeSettingsDraft(settings?: RuntimeSettingsOverride): S
   const errorHandling = settings?.error_handling
   return hydrateCanonicalRuntimeControls({
     iterations: settings?.iterations,
-    pacing: cloneValue(settings?.pacing),
-    think_time: cloneValue(settings?.think_time),
+    pacing: cloneValue(settings?.pacing) ?? undefined,
+    think_time: cloneValue(settings?.think_time) ?? undefined,
     browser: cloneValue(settings?.browser),
     log_level: settings?.log_level ?? '',
     auto_transactions: settings?.auto_transactions ?? '',
     // The section's presence is meaningful: an explicit false overrides a
-    // script-level true, while an absent section inherits the script/default.
-    continue_on_error: errorHandling === undefined ? undefined : (errorHandling.continue_on_error ?? false),
-    snapshot_on_error: errorHandling === undefined ? undefined : (errorHandling.snapshot_on_error ?? false),
+    // script-level true, while an absent section inherits the script/default. A null section is
+    // the run-only clear tombstone, which is an absent section by definition.
+    continue_on_error: errorHandling == null ? undefined : (errorHandling.continue_on_error ?? false),
+    snapshot_on_error: errorHandling == null ? undefined : (errorHandling.snapshot_on_error ?? false),
     max_retries: errorHandling?.max_retries,
     retry_delay_ms: errorHandling?.retry_delay_ms,
     retry_backoff: errorHandling?.retry_backoff,

@@ -868,13 +868,9 @@ func ciGitHubCheckSLARows(test *ManagedTest, response ciRunResponse) []ciGitHubC
 		appendFloat("P95 latency", config.P95LatencyMs, " ms", 0, false)
 		appendFloat("Error rate", config.MaxErrorPct, "%", 0, false)
 	}
-	serverProcessing, hasServerProcessing := ciGitHubCheckMaxServerTelemetry(live, func(summary *ServerTelemetrySummary) float64 {
-		return summary.AvgServerProcessingMs
-	})
+	serverProcessing, hasServerProcessing := ciGitHubCheckMaxServerTelemetry(live, slaTelemetryMetricAvgServerProcessingMs)
 	appendFloat("Average server processing", config.MaxAvgServerProcessingMs, " ms", serverProcessing, hasServerProcessing)
-	transfer, hasTransfer := ciGitHubCheckMaxServerTelemetry(live, func(summary *ServerTelemetrySummary) float64 {
-		return summary.AvgTransferMs
-	})
+	transfer, hasTransfer := ciGitHubCheckMaxServerTelemetry(live, slaTelemetryMetricAvgTransferMs)
 	appendFloat("Average transfer", config.MaxAvgTransferMs, " ms", transfer, hasTransfer)
 	if config.MaxErrorCount != nil {
 		actual, result := "Not available", ciGitHubCheckSLANoActualResult(terminal)
@@ -911,13 +907,52 @@ func ciGitHubCheckSLANoActualResult(terminal bool) string {
 	return "PENDING"
 }
 
-func ciGitHubCheckMaxServerTelemetry(live *LiveMetrics, value func(*ServerTelemetrySummary) float64) (float64, bool) {
+// SLA metrics that are evaluated against per-transaction server telemetry. The
+// same keys name the read path (ciGitHubCheckMaxServerTelemetry) and the write
+// path (retainedSLATelemetryPeaks, applied by terminal compaction), so the two
+// cannot drift apart.
+const (
+	slaTelemetryMetricAvgServerProcessingMs = "avg_server_processing_ms"
+	slaTelemetryMetricAvgTransferMs         = "avg_transfer_ms"
+)
+
+// slaTelemetryMetricValues resolves each retained metric to its accessor. A
+// metric that is not listed here is not retained through terminal compaction,
+// so it must not be looked up in LiveMetrics.slaTelemetryPeaks.
+var slaTelemetryMetricValues = map[string]func(*ServerTelemetrySummary) float64{
+	slaTelemetryMetricAvgServerProcessingMs: func(summary *ServerTelemetrySummary) float64 { return summary.AvgServerProcessingMs },
+	slaTelemetryMetricAvgTransferMs:         func(summary *ServerTelemetrySummary) float64 { return summary.AvgTransferMs },
+}
+
+// ciGitHubCheckMaxServerTelemetry returns the worst transaction's value for one
+// SLA metric, matching the goal controller's any-transaction breach semantics.
+//
+// A terminal run's resident point no longer carries Transactions (see
+// compactTerminalLiveMetricsTail), so it falls back to the bounded per-metric
+// peak rollup that compaction retains for exactly these metrics. Without that
+// fallback every terminal CI Check would report the server-timing SLAs as
+// "Not available" even though the run collected the telemetry.
+func ciGitHubCheckMaxServerTelemetry(live *LiveMetrics, metric string) (float64, bool) {
 	if live == nil {
 		return 0, false
 	}
+	value, known := slaTelemetryMetricValues[metric]
+	if !known {
+		return 0, false
+	}
+	if maximum, found := maxTransactionServerTelemetry(live.Transactions, value); found {
+		return maximum, true
+	}
+	if peak := live.slaTelemetryPeaks[metric]; peak != nil && peak.Samples > 0 {
+		return value(peak), true
+	}
+	return 0, false
+}
+
+func maxTransactionServerTelemetry(transactions map[string]*TxMetrics, value func(*ServerTelemetrySummary) float64) (float64, bool) {
 	var maximum float64
 	found := false
-	for _, transaction := range live.Transactions {
+	for _, transaction := range transactions {
 		if transaction == nil || transaction.ServerTelemetry == nil || transaction.ServerTelemetry.Samples <= 0 {
 			continue
 		}
@@ -928,4 +963,69 @@ func ciGitHubCheckMaxServerTelemetry(live *LiveMetrics, value func(*ServerTeleme
 		}
 	}
 	return maximum, found
+}
+
+// retainedSLATelemetryPeaks distils a point's per-transaction server telemetry
+// into one summary per SLA metric: the worst transaction observed for that
+// metric. The result is bounded by the fixed metric set instead of by the
+// workload's transaction cardinality, so terminal compaction can drop
+// Transactions without destroying the evidence the CI SLA rows and
+// ciSLAEvidenceComplete need. Ties resolve on transaction name so repeated
+// compaction and controller reconciliation retain the same summary.
+//
+// The retained summaries are self-contained copies without their unbounded
+// histogram maps: nothing may alias the dropped live transaction state.
+func retainedSLATelemetryPeaks(transactions map[string]*TxMetrics) map[string]*ServerTelemetrySummary {
+	if len(transactions) == 0 {
+		return nil
+	}
+	peaks := make(map[string]*ServerTelemetrySummary, len(slaTelemetryMetricValues))
+	for metric, value := range slaTelemetryMetricValues {
+		bestName := ""
+		var best *ServerTelemetrySummary
+		for name, transaction := range transactions {
+			if transaction == nil || transaction.ServerTelemetry == nil || transaction.ServerTelemetry.Samples <= 0 {
+				continue
+			}
+			candidate := value(transaction.ServerTelemetry)
+			if best == nil || candidate > value(best) || (candidate == value(best) && name < bestName) {
+				best, bestName = transaction.ServerTelemetry, name
+			}
+		}
+		if best != nil {
+			peaks[metric] = boundedServerTelemetrySummary(best)
+		}
+	}
+	if len(peaks) == 0 {
+		return nil
+	}
+	return peaks
+}
+
+// boundedServerTelemetrySummary copies a summary's scalars and releases the
+// cardinality-carrying histograms a retained peak never reads.
+func boundedServerTelemetrySummary(summary *ServerTelemetrySummary) *ServerTelemetrySummary {
+	if summary == nil {
+		return nil
+	}
+	retained := *summary
+	retained.RequestPayloadHistogram = nil
+	retained.ResponsePayloadHistogram = nil
+	retained.RequestSizeClasses = nil
+	retained.ResponseSizeClasses = nil
+	retained.PartitionEvents = nil
+	return &retained
+}
+
+// cloneSLATelemetryPeaks copies the retained peak map. Its values are immutable
+// once retained, so only the map itself needs to be detached from the snapshot.
+func cloneSLATelemetryPeaks(peaks map[string]*ServerTelemetrySummary) map[string]*ServerTelemetrySummary {
+	if len(peaks) == 0 {
+		return nil
+	}
+	cloned := make(map[string]*ServerTelemetrySummary, len(peaks))
+	for metric, summary := range peaks {
+		cloned[metric] = summary
+	}
+	return cloned
 }

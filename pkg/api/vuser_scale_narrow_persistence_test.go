@@ -105,6 +105,110 @@ func TestVUserScaleRampUsesNarrowWorkloadWrite(t *testing.T) {
 	}
 }
 
+// terminalScaleCompatibilityStore applies the narrow VUser-scale update to the
+// stored row exactly as UPDATE tests SET total_vusers=?, groups_json=? does:
+// the groups column is replaced wholesale, with no status guard.
+type terminalScaleCompatibilityStore struct {
+	*terminalRuntimeCompatibilityStore
+
+	narrowWrites int
+}
+
+func (s *terminalScaleCompatibilityStore) UpdateTestVUserScale(update storage.TestVUserScaleUpdate) (bool, error) {
+	s.narrowWrites++
+	if s.record == nil || s.record.ID != update.ID {
+		return false, nil
+	}
+	s.record.TotalVUsers = update.TotalVUsers
+	s.record.Groups = update.Groups
+	return true, nil
+}
+
+// TestNarrowVUserScaleWritePreservesDurableTerminalRuntime proves the narrow
+// workload write honours the terminal-compaction guard the full-row save has.
+//
+// Terminal compaction nils each group's compiled script, base script, shared
+// data sources and redaction rules in memory and records that it did
+// (terminalGroupRuntimeTrimmed). buildManagedTestRecordForSave substitutes the
+// durable groups snapshot for exactly that reason. The narrow write marshals
+// the live groups instead, so a scale write that lands after terminalization -
+// rollbackVUserScaleReservation has no terminal-status guard, unlike
+// failClosedUncertainVUserScale - overwrote groups_json with a runtime-less
+// projection and permanently destroyed the run's durable workload.
+func TestNarrowVUserScaleWritePreservesDurableTerminalRuntime(t *testing.T) {
+	createdAt := time.Date(2026, time.August, 7, 12, 0, 0, 0, time.UTC)
+	endedAt := createdAt.Add(time.Minute)
+	group := func(name string) TestGroup {
+		return TestGroup{
+			Name:              name,
+			VUsers:            3,
+			ScriptID:          "runtime-script-" + name,
+			script:            &dsl.Script{ID: "runtime-script-" + name, Name: "runtime " + name},
+			baseScript:        &dsl.Script{ID: "base-script-" + name, Name: "base " + name},
+			sharedDataSources: []dsl.DataSource{{Name: "accounts", Type: "csv", InlineData: "id\n1", Strategy: "sequential"}},
+			redactionRules:    []engine.RedactionRule{{Name: "secret", Pattern: `secret-[0-9]+`}},
+		}
+	}
+	seed := &ManagedTest{
+		ID:          "terminal-narrow-scale",
+		Name:        "terminal narrow scale",
+		Status:      "COMPLETE",
+		ProjectID:   storage.DefaultProjectID,
+		CreatedAt:   createdAt,
+		EndedAt:     &endedAt,
+		TotalVUsers: 6,
+		Groups:      []TestGroup{group("buyers"), group("browsers")},
+	}
+	record := buildManagedTestRecord(seed)
+	store := &terminalScaleCompatibilityStore{
+		terminalRuntimeCompatibilityStore: &terminalRuntimeCompatibilityStore{
+			metricsStoreSpy: &metricsStoreSpy{listedTests: []*storage.TestRecord{record}},
+			record:          record,
+		},
+	}
+	runner := NewTestRunner(2, NewHub(), store)
+
+	canonical := runner.tests[seed.ID]
+	if canonical == nil || !canonical.terminalGroupRuntimeTrimmed {
+		t.Fatalf("terminal canonical state was not compacted: %#v", canonical)
+	}
+
+	// A VUser-scale write reaching a run that terminalized underneath it: the
+	// rollback of a reservation whose backend call failed.
+	runner.mu.Lock()
+	canonical.TotalVUsers = 4
+	err := runner.persistManagedTestVUserScale(canonical)
+	runner.mu.Unlock()
+	if err != nil {
+		t.Fatalf("persistManagedTestVUserScale: %v", err)
+	}
+
+	if store.record.TotalVUsers != 4 {
+		t.Fatalf("durable total_vusers = %d, want the scale write to still land (4)", store.record.TotalVUsers)
+	}
+	groups := decodeStoredGroups(store.record.Groups)
+	if len(groups) != 2 {
+		t.Fatalf("durable groups = %#v, want both groups", groups)
+	}
+	for _, stored := range groups {
+		if stored.script == nil || stored.script.ID != "runtime-script-"+stored.Name {
+			t.Fatalf("durable runtime script for group %q = %#v, want the preserved snapshot", stored.Name, stored.script)
+		}
+		if stored.baseScript == nil || stored.baseScript.ID != "base-script-"+stored.Name {
+			t.Fatalf("durable base script for group %q = %#v, want the preserved snapshot", stored.Name, stored.baseScript)
+		}
+		if len(stored.sharedDataSources) != 1 || stored.sharedDataSources[0].Name != "accounts" {
+			t.Fatalf("durable shared data sources for group %q = %#v, want the preserved projection", stored.Name, stored.sharedDataSources)
+		}
+		if len(stored.redactionRules) != 1 || stored.redactionRules[0].Pattern != `secret-[0-9]+` {
+			t.Fatalf("durable redaction rules for group %q = %#v, want the preserved policy", stored.Name, stored.redactionRules)
+		}
+	}
+	if store.narrowWrites != 0 {
+		t.Fatalf("narrow workload writes for a compacted terminal run = %d, want the full-row fallback that restores the durable groups", store.narrowWrites)
+	}
+}
+
 // TestStoredGroupsForLockedMarshalMatchesEncodeStoredGroups pins the narrow
 // write's group payload to the full-row encoder byte for byte. The narrow path
 // skips the defensive deep copy (it marshals while tr.mu is still held), and

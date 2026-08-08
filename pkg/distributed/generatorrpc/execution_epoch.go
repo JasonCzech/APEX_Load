@@ -39,6 +39,17 @@ const (
 // tell them apart from the gRPC code alone.
 const ExecutionGenerationSessionExpiredMessage = "execution generation session has expired"
 
+// ExecutionGenerationExpiredMessage is the rejection detail a generator returns
+// from a *process-scoped* epoch claim whose generation is already current but
+// whose session has lapsed: a lapsed generation is never revived in place, only
+// superseded by a higher one. Unlike a fenced mutation this arrives as an
+// accepted-false acknowledgement rather than a gRPC status, so the claim path
+// and the assignment path report the very same generator state with two
+// different shapes. Controllers that re-claim the process epoch before renewing
+// an assignment lease therefore see this message, never
+// ExecutionGenerationSessionExpiredMessage, when nobody renewed the epoch.
+const ExecutionGenerationExpiredMessage = "execution generation has expired; a higher generation is required"
+
 // testExecutionLease is a volatile, assignment-scoped safety fence. The
 // durable process epoch remains the controller-term high-water; this narrower
 // lease lets one lost test expire without stopping unrelated assignments that

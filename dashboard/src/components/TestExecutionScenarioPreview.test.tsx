@@ -218,6 +218,94 @@ describe('TestExecutionScenarioPreview', () => {
     expect(onExpandedScenarioScriptChange).toHaveBeenCalledTimes(1)
   })
 
+  it('resolves error handling section-wise, never inheriting the half the winning section omits', async () => {
+    // The controller applies error_handling as a whole SECTION: mergeRuntimeSettings swaps the
+    // run-level section for the group's outright, and applyRuntimeOverrides then assigns
+    // script.Config.ErrorHandling = *overrides.ErrorHandling. dsl.ErrorHandlingConfig holds plain
+    // bools, so this group executes continue_on_error=true / snapshot_on_error=FALSE — the run
+    // level's snapshot_on_error:true is discarded, not merged in.
+    await act(async () => {
+      root.render(
+        <TestExecutionScenarioPreview
+          test={{
+            id: 'test-eh',
+            name: 'Section Wise',
+            status: 'QUEUED',
+            total_vusers: 10,
+            duration: '5m',
+            created_at: '2026-05-12T20:00:00Z',
+            runtime_settings: { error_handling: { snapshot_on_error: true } },
+            groups: [{
+              name: 'Checkout',
+              script_id: 'script-1',
+              script_name: 'Checkout Script',
+              protocol: 'http',
+              vusers: 10,
+              runtime_settings: { error_handling: { continue_on_error: true } },
+            }],
+          } as never}
+          startCapacityConflict={null}
+          startShakeoutConflict={null}
+          startFeedback=""
+          onDismissStartConflict={vi.fn()}
+          onConfirmStartAnyway={vi.fn()}
+          onContinueAfterShakeoutFailure={vi.fn()}
+          onCancelShakeoutRun={vi.fn()}
+          queuedScenarioPreview={{
+            points: [{ second: 0, group0: 10, total: 10 }],
+            totalVUsers: 10,
+            totalSeconds: 300,
+            steadySeconds: 300,
+            startDelaySeconds: 0,
+            preBaselineSeconds: 0,
+            postBaselineSeconds: 0,
+          }}
+          queuedScenarioRows={[{
+            group: {
+              name: 'Checkout',
+              script_id: 'script-1',
+              script_name: 'Checkout Script',
+              protocol: 'http',
+              vusers: 10,
+              runtime_settings: { error_handling: { continue_on_error: true } },
+            },
+            detail: {
+              id: 'script-1',
+              name: 'Checkout Script',
+              protocol: 'http',
+              script: { config: { error_handling: { snapshot_on_error: true } }, actions: [] },
+            },
+            actionCount: 0,
+            initCount: 0,
+            teardownCount: 0,
+            dataSourceCount: 0,
+          }] as never}
+          snapshotSource="immutable_manifest"
+          snapshotLoading={false}
+          snapshotError=""
+          expandedScenarioScript="Checkout"
+          onExpandedScenarioScriptChange={vi.fn()}
+          onEditScript={vi.fn()}
+          groupColors={['#0a84ff']}
+        />,
+      )
+    })
+
+    const cardValue = (selector: string, label: string) => Array.from(container.querySelectorAll(selector))
+      .find(card => card.querySelector('.scenario-setting-label, .scenario-script-detail-label')?.textContent === label)
+      ?.querySelector('.scenario-setting-value, .scenario-script-detail-value')
+      ?.textContent
+
+    // The group's section wins whole, so the omitted snapshot half executes false. Reporting the
+    // run-level 'Enabled (scenario override)' here would claim snapshots the run never takes.
+    expect(cardValue('.scenario-script-detail-card', 'Snapshot On Error')).toBe('Disabled (group override)')
+
+    // Same rule one level up: the run-level section is pinned but omits continue_on_error, so the
+    // script's own value is discarded and continue executes false — not 'not exposed'.
+    expect(cardValue('.scenario-setting-card', 'Continue On Error')).toBe('Disabled')
+    expect(cardValue('.scenario-setting-card', 'Snapshot On Error')).toBe('Enabled')
+  })
+
   it('discloses when the manifest preview was synthesized from retained run state', async () => {
     await act(async () => {
       root.render(

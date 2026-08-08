@@ -2065,17 +2065,13 @@ func ciSLAEvidenceComplete(config *GoalConfig, live *LiveMetrics) bool {
 	}
 	if config.MaxAvgServerProcessingMs != nil {
 		configured = true
-		if _, ok := ciGitHubCheckMaxServerTelemetry(live, func(summary *ServerTelemetrySummary) float64 {
-			return summary.AvgServerProcessingMs
-		}); !ok {
+		if _, ok := ciGitHubCheckMaxServerTelemetry(live, slaTelemetryMetricAvgServerProcessingMs); !ok {
 			return false
 		}
 	}
 	if config.MaxAvgTransferMs != nil {
 		configured = true
-		if _, ok := ciGitHubCheckMaxServerTelemetry(live, func(summary *ServerTelemetrySummary) float64 {
-			return summary.AvgTransferMs
-		}); !ok {
+		if _, ok := ciGitHubCheckMaxServerTelemetry(live, slaTelemetryMetricAvgTransferMs); !ok {
 			return false
 		}
 	}

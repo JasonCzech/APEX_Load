@@ -494,6 +494,7 @@ sourceFenced:
 	if requireTestExecutionLease {
 		currentGeneration, currentOwnerID, currentDeadline, leaseErr := tr.generatorExecutionClaim()
 		if leaseErr != nil || currentGeneration != executionGeneration || currentOwnerID != executionLeaseOwnerID {
+			closeUntouchedDialedClients(touchedTargets)
 			return impacts, b.failClosedUncertainEvacuationWithTopologyRelease(tr, test, &distributedEvacuationUncertainError{
 				testID:             testID,
 				participantClients: evacuationParticipantClients(runClientsByTarget, dialedClients, touchedTargets),
@@ -505,27 +506,39 @@ sourceFenced:
 		// Re-assert the process-scoped epoch before the assignment lease. The lost-
 		// source fence above waits past the deadline these replacements were dialled
 		// under, so this is the point where a missing epoch renewal becomes visible.
-		// Naming it here keeps the failure diagnosable instead of surfacing as a
-		// FailedPrecondition from the assignment claim, which validates against the
-		// same epoch.
+		// A generator never revives a lapsed session at its current generation, so
+		// that fault is rejected HERE, by the claim, and can never reach the
+		// assignment renewal below.
 		if epochErr := b.claimGeneratorProcessExecutionEpochClients(executionCtx, replacementClients, executionGeneration, executionLeaseOwnerID, currentDeadline); epochErr != nil {
+			reclaimErr := fmt.Errorf("re-establish replacement process execution epoch after the source fence: %w", epochErr)
+			if generatorProcessExecutionEpochExpired(epochErr) {
+				// The generator still holds this generation but let its session lapse,
+				// so it force-stopped and deleted the staged assignment during the
+				// fence. Nothing renewed the replacement's process epoch while it was
+				// staged: a keeper fault, not a lease race.
+				reclaimErr = fmt.Errorf("re-establish replacement process execution epoch after the source fence: staged replacement lost its execution generation session during the source fence; its process-scoped epoch was not renewed while staged: %w", epochErr)
+			}
+			closeUntouchedDialedClients(touchedTargets)
 			return impacts, b.failClosedUncertainEvacuationWithTopologyRelease(tr, test, &distributedEvacuationUncertainError{
 				testID:             testID,
 				participantClients: evacuationParticipantClients(runClientsByTarget, dialedClients, touchedTargets),
 				touchedTargets:     orderedTargetList(touchedTargets, b.configuredTargets()),
 				unreachableTargets: unreachableTargets,
-				err:                fmt.Errorf("re-establish replacement process execution epoch after the source fence: %w", epochErr),
+				err:                reclaimErr,
 			}, streamsByTarget, openedStreams, releaseTopology)
 		}
 		if leaseErr := b.renewGeneratorTestExecutionClients(executionCtx, testID, replacementClients, executionGeneration, executionLeaseOwnerID, currentDeadline); leaseErr != nil {
 			renewErr := fmt.Errorf("renew replacement assignment leases: %w", leaseErr)
 			if generatorExecutionEpochSessionExpired(leaseErr) {
-				// The epoch re-claim above succeeded, so the generator already expired
-				// this generation and force-stopped the staged assignment during the
-				// fence. That means nothing renewed the replacement's process epoch
-				// while it was staged, which is a keeper fault, not a lease race.
-				renewErr = fmt.Errorf("renew replacement assignment leases: staged replacement lost its execution generation session during the source fence; its process-scoped epoch was not renewed while staged: %w", leaseErr)
+				// The re-claim above just succeeded, so the epoch lapsed between the
+				// two round trips rather than while the replacement was staged:
+				// claimGeneratorExecutionEpoch pins the generator's expiry one transit
+				// budget inside the controller's own lease deadline, so only a nearly
+				// exhausted controller lease (or a stall between the calls) leaves too
+				// little room for this claim. Do not blame the staged lease keeper.
+				renewErr = fmt.Errorf("renew replacement assignment leases: the replacement's execution generation session lapsed between the post-fence epoch re-claim and this assignment claim; the controller execution lease was too close to expiry to cover both round trips: %w", leaseErr)
 			}
+			closeUntouchedDialedClients(touchedTargets)
 			return impacts, b.failClosedUncertainEvacuationWithTopologyRelease(tr, test, &distributedEvacuationUncertainError{
 				testID:             testID,
 				participantClients: evacuationParticipantClients(runClientsByTarget, dialedClients, touchedTargets),

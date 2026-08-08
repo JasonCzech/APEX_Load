@@ -59,7 +59,7 @@ import {
   groupPlacementSummary,
   hasGroupOverrideValues,
   hasOwnKey,
-  hasRuntimeSettingsValues,
+  hasRuntimeSettingsInstructions,
   mergeRuntimeSettingsForRun,
   setRuntimeAutoTransactions,
   setRuntimeBrowser,
@@ -983,6 +983,15 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
     () => buildGroupEditChanges(groupEditDraft, groupEditBaseline),
     [groupEditBaseline, groupEditDraft],
   )
+  // Clearing a GROUP's error_handling stops the group pinning a section; it does not reach the
+  // script's own config while the run level still pins one, because mergeRuntimeSettings then
+  // hands the run-level section down instead. Name the level the run would actually inherit from
+  // rather than promising a script default the group cannot reach.
+  const groupErrorHandlingInheritLabel = useMemo(() => {
+    if (!scenario) return 'Script default'
+    const rootRuntime = buildRuntimeSettingsForRun(scenario, runDefaultOverrides) || scenario.runtime_settings
+    return errorHandlingSectionIsPinned(rootRuntime?.error_handling) ? 'Scenario default' : 'Script default'
+  }, [runDefaultOverrides, scenario])
   const hasGroupEditChanges = useMemo(
     () => Object.values(groupEditChanges).some(Boolean),
     [groupEditChanges],
@@ -2040,6 +2049,18 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
       else delete runtimeSettings.error_handling
       runtimeChanged = true
     }
+    // buildGroupsForRunPayload overlays this override back onto the group's STORED
+    // runtime_settings, and an overlay can only assign — an absent key means "unedited", so it
+    // can never remove the stored section. Every section this dialog can clear (each of these
+    // three offers an inherit option) therefore has to be written as an explicit null tombstone
+    // that mergeRuntimeSettingsForRun deletes on. Re-stating it here also keeps it across a
+    // second save: the merge above already applied the earlier tombstone, so the key is missing
+    // again and would otherwise be silently forgotten, restoring the stored section.
+    for (const section of ['pacing', 'think_time', 'error_handling'] as const) {
+      if (!runtimeSettings[section] && hasOwnKey(editingGroup.runtime_settings || {}, section)) {
+        runtimeSettings[section] = null
+      }
+    }
     if (groupEditChanges.browser) {
       if (!runtimeSettings.browser_config && effectiveRootRuntime.browser_config) {
         runtimeSettings.browser_config = cloneRuntimeSettingsForRun({ browser_config: effectiveRootRuntime.browser_config })?.browser_config
@@ -2052,7 +2073,7 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
       })
       runtimeChanged = true
     }
-    if ((runtimeChanged || existingOverride?.runtime_settings) && hasRuntimeSettingsValues(runtimeSettings)) {
+    if ((runtimeChanged || existingOverride?.runtime_settings) && hasRuntimeSettingsInstructions(runtimeSettings)) {
       nextOverride.runtime_settings = runtimeSettings
     } else if (runtimeChanged) {
       delete nextOverride.runtime_settings
@@ -3585,7 +3606,7 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
                     <label className={changedFieldClass(groupEditChanges.continue_on_error)}>
                       <span>Continue on error <ChangedBadge changed={groupEditChanges.continue_on_error} /></span>
                       <select className="settings-input" value={groupEditDraft.continue_on_error} onChange={event => setGroupEditDraft(prev => ({ ...prev, continue_on_error: event.target.value }))}>
-                        <option value="">Script default</option>
+                        <option value="">{groupErrorHandlingInheritLabel}</option>
                         <option value="true">Enabled</option>
                         <option value="false">Disabled</option>
                       </select>
@@ -3593,7 +3614,7 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
                     <label className={changedFieldClass(groupEditChanges.snapshot_on_error)}>
                       <span>Snapshot on error <ChangedBadge changed={groupEditChanges.snapshot_on_error} /></span>
                       <select className="settings-input" value={groupEditDraft.snapshot_on_error} onChange={event => setGroupEditDraft(prev => ({ ...prev, snapshot_on_error: event.target.value }))}>
-                        <option value="">Script default</option>
+                        <option value="">{groupErrorHandlingInheritLabel}</option>
                         <option value="true">Enabled</option>
                         <option value="false">Disabled</option>
                       </select>

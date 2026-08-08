@@ -1201,6 +1201,82 @@ func TestCIGitHubCheckConclusionMapping(t *testing.T) {
 	}
 }
 
+// TestTerminalCIGitHubCheckSummaryKeepsServerTimingSLAEvidence drives the real
+// terminal transition and then reads the run back through the exact hop the
+// controller-owned Check publish uses (handleCIRunTerminal -> runner.GetTest ->
+// ciGitHubCheckSummary). Terminal compaction releases LiveMetrics.Transactions
+// under the same lock that commits the terminal status, so no publisher can
+// ever observe the per-transaction telemetry the server-timing SLA rows are
+// derived from; the bounded peak rollup is the only remaining source.
+func TestTerminalCIGitHubCheckSummaryKeepsServerTimingSLAEvidence(t *testing.T) {
+	runner := NewTestRunner(1, NewHub(), nil)
+	live := &LiveMetrics{
+		Timestamp: time.Unix(300, 0).UTC(), TotalTx: 120, TotalErrors: 2, P95Ms: 180, ErrorPct: 1.64,
+		Transactions: map[string]*TxMetrics{
+			"browse": {Count: 60, ServerTelemetry: &ServerTelemetrySummary{
+				Samples: 60, AvgServerProcessingMs: 90, AvgTransferMs: 18,
+			}},
+			"checkout": {Count: 60, ServerTelemetry: &ServerTelemetrySummary{
+				Samples: 60, AvgServerProcessingMs: 310, AvgTransferMs: 41,
+			}},
+		},
+	}
+	testRun := &ManagedTest{
+		ID: "ci-terminal-telemetry", Name: "CI terminal telemetry", ProjectID: storage.DefaultProjectID,
+		Status: "RUNNING", TotalVUsers: 2, Duration: time.Minute,
+		Groups: []TestGroup{{Name: "buyers", Protocol: "http", VUsers: 2}},
+		GoalConfig: &GoalConfig{
+			P95LatencyMs: ptr(250.0), MaxAvgServerProcessingMs: ptr(250.0), MaxAvgTransferMs: ptr(50.0),
+		},
+		LiveMetrics: live, History: []*LiveMetrics{live},
+	}
+	runner.mu.Lock()
+	runner.tests[testRun.ID] = testRun
+	runner.mu.Unlock()
+
+	metadata := ciRunMetadata{Source: ciRunSource{
+		Repository: "octo/apex", SHA: "abc",
+		WorkflowRef: "octo/apex/.github/workflows/ci.yml@refs/heads/main", RunID: "1", RunAttempt: "2",
+	}}
+	response := ciRunResponse{
+		Status: "COMPLETE", Outcome: "sla_breached", Transactions: 120, Errors: 2,
+		SLAEvaluated: true, SLABreached: true, ResultsPresent: true,
+	}
+	wantRows := []string{
+		"| P95 latency | ≤ 250.00 ms | 180.00 ms | `PASS` |",
+		"| Average server processing | ≤ 250.00 ms | 310.00 ms | `FAIL` |",
+		"| Average transfer | ≤ 50.00 ms | 41.00 ms | `PASS` |",
+	}
+	for _, row := range wantRows {
+		if summary := ciGitHubCheckSummary(testRun, response, metadata); !strings.Contains(summary, row) {
+			t.Fatalf("pre-terminal Check summary missing SLA row %q:\n%s", row, summary)
+		}
+	}
+
+	if err := runner.completeTestRun(testRun, "COMPLETE", time.Now().UTC(), "", nil); err != nil {
+		t.Fatalf("completeTestRun: %v", err)
+	}
+	published, ok := runner.GetTest(testRun.ID)
+	if !ok || published.Status != "COMPLETE" {
+		t.Fatalf("terminal run read back = %#v (found %t)", published, ok)
+	}
+	if published.LiveMetrics == nil || published.LiveMetrics.Transactions != nil {
+		t.Fatalf("terminal publish snapshot = %#v, want the compacted resident point", published.LiveMetrics)
+	}
+	summary := ciGitHubCheckSummary(published, response, metadata)
+	for _, row := range wantRows {
+		if !strings.Contains(summary, row) {
+			t.Fatalf("terminal Check summary missing SLA row %q:\n%s", row, summary)
+		}
+	}
+	if strings.Contains(summary, "Not available") || strings.Contains(summary, "NOT EVALUATED") {
+		t.Fatalf("terminal Check summary degraded a configured SLA to unavailable:\n%s", summary)
+	}
+	if !ciSLAEvidenceComplete(published.GoalConfig, published.LiveMetrics) {
+		t.Fatal("terminal snapshot no longer satisfies configured CI SLA evidence")
+	}
+}
+
 func TestCIGitHubCheckSummaryRendersConfiguredSLAResultsDeterministically(t *testing.T) {
 	testRun := &ManagedTest{
 		Status: "COMPLETE",

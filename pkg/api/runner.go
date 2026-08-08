@@ -344,14 +344,22 @@ type TestRunner struct {
 	capacityAdvisoryHits    uint64
 	capacityAdvisoryMisses  uint64
 
-	// durableStatusWritesInFlight counts persistStoredTestStatus calls that are
+	// durableWritesInFlight counts the runner's durable test writes that are
 	// currently inside the storage driver. The run-driver panic backstop reads it
-	// to tell a terminal transition blocked on slow durable I/O (which waiting
-	// does recover from) from one blocked on an orphaned lock (which it never
-	// does). It is a process-wide gauge, not a per-run one, so it can only delay
-	// the backstop's re-panic, never suppress it: under a healthy store an
-	// unrelated status write clears in milliseconds.
-	durableStatusWritesInFlight atomic.Int64
+	// to tell a transition blocked on slow durable I/O (which waiting does
+	// recover from) from one blocked on an orphaned lock (which it never does).
+	//
+	// Every durable write the runner issues while holding tr.mu is counted, not
+	// only the status write: stopTest, failClosedUncertainVUserScale and every
+	// VUser-scale reservation hold tr.mu across a store call too (see
+	// trackDurableWrite), and a gauge blind to those would classify a
+	// healthy-but-stalled mutex as orphaned and re-panic the controller into
+	// exactly the crash-loop the backstop's extension exists to prevent.
+	//
+	// It is a process-wide gauge, not a per-run one, so it can only delay the
+	// backstop's re-panic, never suppress it: under a healthy store a write
+	// clears in milliseconds, and the extension count is capped regardless.
+	durableWritesInFlight atomic.Int64
 
 	liveInventoryMu sync.RWMutex
 	liveInventory   []GeneratorInventoryEntry
@@ -478,18 +486,27 @@ type ManagedTest struct {
 	// preserve the immutable durable group snapshot instead of writing the
 	// compacted in-memory projection back over it.
 	terminalGroupRuntimeTrimmed bool
-	goalControl                 *goalControllerState
-	executionBackend            testExecutionBackend
-	lastNetworkLatency          *NetworkLatency
-	latencyProbeInFlight        bool
-	latencyEndpointsCache       latencyEndpointCache
-	latencyProbeSamples         map[string][]latencyProbeSample
-	remoteTarget                string
-	remoteClient                generatorClient
-	remoteMetricsStream         *generatorrpc.MetricsStream
-	remoteGroupTargets          map[string]string
-	remoteGroupShards           map[string][]GeneratorShardSummary
-	remoteClientsByTarget       map[string]generatorClient
+	// comparisonBreakdown retains the transaction and dependency-health
+	// breakdown of the run's last metric point across terminal compaction, which
+	// releases those cardinality-unbounded maps from the resident tail. The
+	// run-comparison baseline is built exclusively from in-memory candidates
+	// (buildRunComparisonBaselineLocked), so without this a run that terminalized
+	// in this process would stop serving as a baseline the instant it finished.
+	// It is bounded by maxComparisonBaselineBreakdownEntries per map, so it
+	// cannot reintroduce the unbounded residency compaction exists to prevent.
+	comparisonBreakdown   *runComparisonBreakdown
+	goalControl           *goalControllerState
+	executionBackend      testExecutionBackend
+	lastNetworkLatency    *NetworkLatency
+	latencyProbeInFlight  bool
+	latencyEndpointsCache latencyEndpointCache
+	latencyProbeSamples   map[string][]latencyProbeSample
+	remoteTarget          string
+	remoteClient          generatorClient
+	remoteMetricsStream   *generatorrpc.MetricsStream
+	remoteGroupTargets    map[string]string
+	remoteGroupShards     map[string][]GeneratorShardSummary
+	remoteClientsByTarget map[string]generatorClient
 	// remoteArchiveClientsByTarget retains positively stopped evacuation
 	// sources for the final archive merge. They are deliberately excluded from
 	// active topology and every mutable-control fan-out.
@@ -694,6 +711,15 @@ type LiveMetrics struct {
 	GeneratorResources     map[string]*GeneratorResourceSnapshot `json:"generator_resources,omitempty"`
 	Latency                *NetworkLatency                       `json:"latency,omitempty"`
 	ErrorEvidence          []LiveErrorEvidence                   `json:"-"`
+	// slaTelemetryPeaks retains, per SLA metric evaluated against
+	// per-transaction server telemetry, the worst transaction's summary. It is
+	// written only by terminal compaction (compactTerminalLiveMetricsTail), which
+	// drops Transactions from the resident terminal point, and read only through
+	// ciGitHubCheckMaxServerTelemetry. Keys are the slaTelemetryMetric*
+	// constants; values are immutable once retained. It is bounded by the fixed
+	// metric set and is process-local: a point rehydrated from storage carries
+	// none, exactly as it carries no Transactions.
+	slaTelemetryPeaks map[string]*ServerTelemetrySummary
 }
 
 type GeneratorResourceSnapshot struct {

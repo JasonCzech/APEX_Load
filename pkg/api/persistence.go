@@ -1185,6 +1185,11 @@ func trimTerminalManagedTestRuntime(test *ManagedTest) {
 
 func compactTerminalManagedTestLocked(test *ManagedTest) {
 	trimTerminalManagedTestRuntime(test)
+	// The run-comparison baseline is selected from in-memory candidates only, and
+	// it reads exactly the two breakdown maps the tail compaction below releases.
+	// Retain a bounded copy first, or every run terminalized in this process
+	// would stop being a usable baseline the moment it finished.
+	captureComparisonBaselineBreakdown(test)
 	if len(test.History) > 1 || len(test.Sparkline) == 0 {
 		test.Sparkline = buildManagedTestSparkline(test.History, test.LiveMetrics, defaultManagedTestSparklinePoints)
 	}
@@ -1230,6 +1235,12 @@ func compactTerminalManagedTestLocked(test *ManagedTest) {
 // run match that post-restart shape instead of pinning the full live maps until
 // the controller is restarted.
 //
+// The CI SLA limits that are evaluated against per-transaction server telemetry
+// have no other terminal source, so the worst transaction per such metric is
+// distilled into the bounded slaTelemetryPeaks rollup before Transactions is
+// dropped. Terminal GitHub Check summaries would otherwise report every
+// configured server-timing SLA as "Not available".
+//
 // Points that already carry none of them are returned unchanged so repeated
 // compaction of the same terminal run does not allocate.
 func compactTerminalLiveMetricsTail(point *LiveMetrics) *LiveMetrics {
@@ -1242,6 +1253,11 @@ func compactTerminalLiveMetricsTail(point *LiveMetrics) *LiveMetrics {
 		return point
 	}
 	compacted := *point
+	// Compaction is idempotent: a point whose transactions were already distilled
+	// keeps the peaks it carries instead of losing them to a second pass.
+	if peaks := retainedSLATelemetryPeaks(point.Transactions); len(peaks) > 0 {
+		compacted.slaTelemetryPeaks = peaks
+	}
 	compacted.ErrorBreakdown = nil
 	compacted.Transactions = nil
 	compacted.DependencyHealth = nil
@@ -1654,17 +1670,48 @@ func buildManagedTestRecord(test *ManagedTest) *storage.TestRecord {
 	}
 }
 
+// trackDurableWrite publishes that a durable test write is inside the storage
+// driver for the duration of write, so the run-driver panic backstop can tell a
+// stalled-but-progressing store from a lock nothing will release.
+//
+// Every durable write the runner issues while tr.mu is held must go through
+// this. Counting only the terminal status write was not enough: stopTest's
+// pre-start abort, failClosedUncertainVUserScale's retried record write and
+// every VUser-scale reservation issued by a gradual ramp all pin tr.mu across a
+// store call too, and while any of them stalled the backstop saw a zero gauge,
+// classified a perfectly healthy mutex as orphaned, and re-panicked the
+// controller into the crash-loop the extension exists to prevent.
+//
+// The gauge is process-wide, so a write that is not blocking the backstop can
+// still buy it one interval; that only ever delays a re-panic, and the
+// extension cap bounds the delay (runTestPanicRecoveryDurableWriteExtensions).
+func (tr *TestRunner) trackDurableWrite(write func() error) error {
+	if tr == nil {
+		return write()
+	}
+	tr.durableWritesInFlight.Add(1)
+	defer tr.durableWritesInFlight.Add(-1)
+	return write()
+}
+
+// saveManagedTestRecord persists the full row. Most callers hold tr.mu across
+// it, so the whole projection-and-write is published to the panic backstop's
+// in-flight gauge - the terminal-runtime re-read inside
+// buildManagedTestRecordForSave is a store round trip that can stall for just
+// as long as the write itself.
 func (tr *TestRunner) saveManagedTestRecord(test *ManagedTest) error {
 	if tr.testStore != nil {
-		record, err := tr.buildManagedTestRecordForSave(test)
-		if err != nil {
-			return err
-		}
-		executionFence := ""
-		if test != nil {
-			executionFence = test.executionFence
-		}
-		return tr.saveManagedTestRecordSnapshot(record, executionFence)
+		return tr.trackDurableWrite(func() error {
+			record, err := tr.buildManagedTestRecordForSave(test)
+			if err != nil {
+				return err
+			}
+			executionFence := ""
+			if test != nil {
+				executionFence = test.executionFence
+			}
+			return tr.saveManagedTestRecordSnapshot(record, executionFence)
+		})
 	}
 	return nil
 }
@@ -1682,10 +1729,17 @@ func (tr *TestRunner) saveManagedTestRecord(test *ManagedTest) error {
 //
 // Any store that does not implement the narrow capability, and any write that
 // matches no row, falls back to the full-row save so the durable outcome is
-// exactly what it was before.
+// exactly what it was before. So does a run whose terminal compaction has
+// already discarded the process-private group material: this payload is built
+// from the live groups, and writing that projection into groups_json would
+// erase the durable runtime snapshot the compacted copy can no longer
+// reconstruct (see buildManagedTestRecordForSave, which restores it).
 func (tr *TestRunner) persistManagedTestVUserScale(test *ManagedTest) error {
 	if tr == nil || tr.testStore == nil || test == nil {
 		return nil
+	}
+	if test.terminalGroupRuntimeTrimmed {
+		return tr.saveManagedTestRecord(test)
 	}
 	update := storage.TestVUserScaleUpdate{
 		ID:          test.ID,
@@ -1701,8 +1755,12 @@ func (tr *TestRunner) persistManagedTestVUserScale(test *ManagedTest) error {
 		if fence == "" {
 			return fmt.Errorf("%w: test %s has no claimed execution epoch", errNotExecutionLeader, test.ID)
 		}
-		updated, err := store.UpdateTestVUserScaleIfLeaseHeld(update, executionLeaseName, fence)
-		if err != nil {
+		var updated bool
+		if err := tr.trackDurableWrite(func() error {
+			var err error
+			updated, err = store.UpdateTestVUserScaleIfLeaseHeld(update, executionLeaseName, fence)
+			return err
+		}); err != nil {
 			return err
 		}
 		if updated {
@@ -1716,8 +1774,12 @@ func (tr *TestRunner) persistManagedTestVUserScale(test *ManagedTest) error {
 	if !ok {
 		return tr.saveManagedTestRecord(test)
 	}
-	updated, err := store.UpdateTestVUserScale(update)
-	if err != nil {
+	var updated bool
+	if err := tr.trackDurableWrite(func() error {
+		var err error
+		updated, err = store.UpdateTestVUserScale(update)
+		return err
+	}); err != nil {
 		return err
 	}
 	if updated {
@@ -2090,8 +2152,8 @@ func (tr *TestRunner) persistStoredTestStatus(testID string, executionFence stri
 	// run-driver panic backstop uses this to distinguish a terminal transition
 	// that is merely waiting on a stalled database from one wedged behind a lock
 	// nothing will release; see awaitPanicRecoveryStage.
-	tr.durableStatusWritesInFlight.Add(1)
-	defer tr.durableStatusWritesInFlight.Add(-1)
+	tr.durableWritesInFlight.Add(1)
+	defer tr.durableWritesInFlight.Add(-1)
 	if tr.durableExecutionFence {
 		if strings.TrimSpace(executionFence) == "" {
 			return errNotExecutionLeader

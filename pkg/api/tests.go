@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"sort"
 	"strings"
 	"time"
 
@@ -228,8 +229,8 @@ func (tr *TestRunner) buildRunComparisonBaselineLocked(test *ManagedTest) *RunCo
 	if selected == nil {
 		return nil
 	}
-	metrics := latestMetricsWithComparableBreakdown(selected)
-	if metrics == nil {
+	transactions, dependencyHealth, ok := comparableBaselineBreakdown(selected)
+	if !ok {
 		return nil
 	}
 	return &RunComparisonBaseline{
@@ -237,8 +238,8 @@ func (tr *TestRunner) buildRunComparisonBaselineLocked(test *ManagedTest) *RunCo
 		SourceTestName:   selected.Name,
 		Policy:           policy,
 		CompletedAt:      selectedCompletedAt,
-		Transactions:     cloneTxMetricsMap(metrics.Transactions),
-		DependencyHealth: cloneTxMetricsMap(metrics.DependencyHealth),
+		Transactions:     transactions,
+		DependencyHealth: dependencyHealth,
 	}
 }
 
@@ -440,6 +441,108 @@ func baselineCandidateCompletedAt(candidate *ManagedTest) (time.Time, bool) {
 		}
 	}
 	return time.Time{}, false
+}
+
+// runComparisonBreakdown is the per-run projection a later run compares itself
+// against. It carries only the two maps RunComparisonBaseline publishes, so
+// retaining it never pins the rest of a terminal run's live metric collections.
+type runComparisonBreakdown struct {
+	Transactions     map[string]*TxMetrics
+	DependencyHealth map[string]*TxMetrics
+}
+
+// maxComparisonBaselineBreakdownEntries bounds each retained breakdown map. A
+// workload with dynamically named transactions has unbounded cardinality, and a
+// terminal run stays resident for the lifetime of the process; the busiest
+// entries are the ones a comparison panel shows, so an over-sized breakdown is
+// truncated to the highest-volume entries rather than dropped.
+const maxComparisonBaselineBreakdownEntries = 500
+
+// comparableBaselineBreakdown resolves the breakdown a baseline is built from.
+// A live or not-yet-compacted run still carries it on the resident metric
+// point; a run terminalized in this process has had those maps released by
+// compactTerminalManagedTestLocked and serves the bounded copy captured just
+// before that (captureComparisonBaselineBreakdown). A run re-hydrated after a
+// restart has neither - its stored history is typed interval summaries, which
+// carry no per-transaction breakdown - and reports no baseline, exactly as
+// before.
+func comparableBaselineBreakdown(test *ManagedTest) (map[string]*TxMetrics, map[string]*TxMetrics, bool) {
+	if metrics := latestMetricsWithComparableBreakdown(test); metrics != nil {
+		return cloneTxMetricsMap(metrics.Transactions), cloneTxMetricsMap(metrics.DependencyHealth), true
+	}
+	if test == nil || test.comparisonBreakdown == nil {
+		return nil, nil, false
+	}
+	captured := test.comparisonBreakdown
+	if len(captured.Transactions) == 0 && len(captured.DependencyHealth) == 0 {
+		return nil, nil, false
+	}
+	return cloneTxMetricsMap(captured.Transactions), cloneTxMetricsMap(captured.DependencyHealth), true
+}
+
+// captureComparisonBaselineBreakdown copies the comparison-relevant breakdown
+// off the resident metric point before terminal compaction releases it. It is
+// only ever a promotion: a later compaction (a re-hydrated terminal run whose
+// stored history carries no breakdown, or a repeat compaction of the same run)
+// must not erase what an earlier one captured.
+//
+// The caller must hold tr.mu, like every other reader/writer of the run handle.
+func captureComparisonBaselineBreakdown(test *ManagedTest) {
+	if test == nil {
+		return
+	}
+	metrics := latestMetricsWithComparableBreakdown(test)
+	if metrics == nil {
+		return
+	}
+	test.comparisonBreakdown = &runComparisonBreakdown{
+		Transactions:     boundedTxMetricsMap(metrics.Transactions, maxComparisonBaselineBreakdownEntries),
+		DependencyHealth: boundedTxMetricsMap(metrics.DependencyHealth, maxComparisonBaselineBreakdownEntries),
+	}
+}
+
+// boundedTxMetricsMap clones at most limit entries, keeping the highest-volume
+// ones (ties broken by name so the retained set is deterministic).
+func boundedTxMetricsMap(in map[string]*TxMetrics, limit int) map[string]*TxMetrics {
+	if len(in) == 0 {
+		return nil
+	}
+	if limit <= 0 {
+		return nil
+	}
+	if len(in) <= limit {
+		return cloneTxMetricsMap(in)
+	}
+	keys := make([]string, 0, len(in))
+	for key := range in {
+		keys = append(keys, key)
+	}
+	sort.Slice(keys, func(left, right int) bool {
+		leftCount, rightCount := int64(0), int64(0)
+		if tx := in[keys[left]]; tx != nil {
+			leftCount = tx.Count
+		}
+		if tx := in[keys[right]]; tx != nil {
+			rightCount = tx.Count
+		}
+		if leftCount != rightCount {
+			return leftCount > rightCount
+		}
+		return keys[left] < keys[right]
+	})
+	out := make(map[string]*TxMetrics, limit)
+	for _, key := range keys[:limit] {
+		tx := in[key]
+		if tx == nil {
+			continue
+		}
+		clone := *tx
+		out[key] = &clone
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 func latestMetricsWithComparableBreakdown(test *ManagedTest) *LiveMetrics {
@@ -934,6 +1037,7 @@ func cloneLiveMetrics(metrics *LiveMetrics) *LiveMetrics {
 	cloned.GeneratorResources = cloneGeneratorResourceSnapshots(metrics.GeneratorResources)
 	cloned.Latency = cloneNetworkLatency(metrics.Latency)
 	cloned.ErrorEvidence = cloneLiveErrorEvidence(metrics.ErrorEvidence)
+	cloned.slaTelemetryPeaks = cloneSLATelemetryPeaks(metrics.slaTelemetryPeaks)
 	return &cloned
 }
 

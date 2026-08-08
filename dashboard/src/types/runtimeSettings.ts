@@ -33,14 +33,23 @@ export type RuntimeJavaVuserSettings = Pick<
   | 'skip_parameter_evaluation'
 >
 
+/**
+ * `null` on a runtime section is a run-only TOMBSTONE, never a wire value. A per-group run
+ * override is overlaid back onto the group's stored runtime_settings when the create payload is
+ * built (mergeRuntimeSettingsForRun), so an absent key can only mean "unchanged" — it can never
+ * mean "cleared". An explicit null tells that overlay to REMOVE the stored section, which is how
+ * the group dialog's inherit options ("Script timing", "Script think time", "Script default")
+ * stop the group pinning a section at all. The overlay strips the tombstone, so no null ever
+ * reaches the API.
+ */
 export interface RuntimeSettingsOverride {
   iterations?: number
-  pacing?: PacingConfig
-  think_time?: ThinkTimeConfig
+  pacing?: PacingConfig | null
+  think_time?: ThinkTimeConfig | null
   browser?: RuntimeBrowserSettings
   log_level?: string
   auto_transactions?: string
-  error_handling?: ErrorHandlingConfig
+  error_handling?: ErrorHandlingConfig | null
   log?: LogConfig
   run_logic?: RunLogicConfig
   http?: HTTPConfig

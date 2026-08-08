@@ -234,8 +234,10 @@ export function runtimeDraftFromOverride(override?: RuntimeSettingsOverride): Sc
   if (!override) return undefined
   return {
     iterations: override.iterations,
-    pacing: override.pacing,
-    think_time: override.think_time,
+    // A null section is the run-only clear tombstone; an authoring draft has no such concept,
+    // so it reads as the section simply being absent.
+    pacing: override.pacing ?? undefined,
+    think_time: override.think_time ?? undefined,
     browser: override.browser,
     log_level: override.log_level || '',
     auto_transactions: override.auto_transactions || '',

@@ -120,6 +120,25 @@ export function hasRuntimeSettingsValues(settings?: RuntimeSettingsOverride) {
   return Object.values(settings).some(value => value !== undefined && value !== null && value !== '')
 }
 
+/**
+ * True when a run-only patch carries a null TOMBSTONE for `key`, i.e. it removes the stored
+ * section rather than leaving it untouched. See RuntimeSettingsOverride.error_handling.
+ */
+export function runtimeSettingsSectionCleared(settings: RuntimeSettingsOverride | undefined, key: keyof RuntimeSettingsOverride) {
+  if (!settings) return false
+  return hasOwnKey(settings, key) && (settings as Record<string, unknown>)[key] === null
+}
+
+/**
+ * True when a run-only patch says anything at all: it either sets a value or clears one with a
+ * null tombstone. A tombstone-only patch carries no *values*, so hasRuntimeSettingsValues rejects
+ * it, but discarding it would throw the clear away and silently re-apply the stored section.
+ */
+export function hasRuntimeSettingsInstructions(settings?: RuntimeSettingsOverride) {
+  if (!settings) return false
+  return hasRuntimeSettingsValues(settings) || Object.values(settings).some(value => value === null)
+}
+
 export function hasGroupAssignmentValues(assignment?: GeneratorAssignmentSettings) {
   if (!assignment) return false
   if (assignment.mode === 'specific_hosts') return Boolean(assignment.selected_targets?.length)
@@ -134,7 +153,7 @@ export function hasGroupOverrideValues(override?: GroupRunOverride) {
     || hasOwnKey(override, 'ramp_up')
     || hasOwnKey(override, 'ramp_down')
     || hasOwnKey(override, 'initialization')
-    || hasRuntimeSettingsValues(override.runtime_settings)
+    || hasRuntimeSettingsInstructions(override.runtime_settings)
     || hasGroupAssignmentValues(override.assignment)
 }
 
@@ -268,7 +287,12 @@ function resolveGroupErrorHandling(
   groupRuntime: RuntimeSettingsOverride | undefined,
   runDefaults: ResolvedErrorHandling,
 ): ResolvedErrorHandling {
-  const section = [overrideRuntime?.error_handling, groupRuntime?.error_handling].find(errorHandlingSectionIsPinned)
+  // A null tombstone in the run override removes the group's stored section, so the group
+  // transmits no section at all and the run falls through to the run-level/scenario section.
+  const chain = runtimeSettingsSectionCleared(overrideRuntime, 'error_handling')
+    ? []
+    : [overrideRuntime?.error_handling, groupRuntime?.error_handling]
+  const section = chain.find(errorHandlingSectionIsPinned)
   if (!section) {
     return {
       continue_on_error: runDefaults.continue_on_error,
@@ -303,14 +327,23 @@ export function cloneRuntimeSettingsForRun(settings?: RuntimeSettingsOverride): 
   return settings ? JSON.parse(JSON.stringify(settings)) as RuntimeSettingsOverride : undefined
 }
 
-/** Overlay a run-only patch without discarding unedited advanced runtime sections. */
+/**
+ * Overlay a run-only patch without discarding unedited advanced runtime sections.
+ *
+ * A `null` in the patch is a TOMBSTONE and REMOVES the key: assignment alone cannot express a
+ * clear, because an absent key has to keep meaning "unedited" for every section the dialog did
+ * not touch. cloneRuntimeSettingsForRun is a JSON round-trip, so `undefined` cannot serve as the
+ * tombstone — it does not survive the clone. The tombstone is stripped here and never reaches
+ * the API payload.
+ */
 export function mergeRuntimeSettingsForRun(base?: RuntimeSettingsOverride, overlay?: RuntimeSettingsOverride): RuntimeSettingsOverride | undefined {
   if (!base && !overlay) return undefined
   const merged = cloneRuntimeSettingsForRun(base) || {}
   const patch = cloneRuntimeSettingsForRun(overlay)
   if (patch) {
     for (const [key, value] of Object.entries(patch)) {
-      if (value !== undefined) (merged as Record<string, unknown>)[key] = value
+      if (value === null) delete (merged as Record<string, unknown>)[key]
+      else if (value !== undefined) (merged as Record<string, unknown>)[key] = value
     }
   }
   return hasRuntimeSettingsValues(merged) ? merged : undefined
@@ -451,8 +484,15 @@ export function effectiveGroupRuntimeSettings(group: ScenarioScriptGroup, scenar
   const overrideRuntime = groupOverride?.runtime_settings
   return {
     iterations: effectiveGroupIterations(group, scenario, runDefaultOverrides, groupOverride),
-    pacing: overrideRuntime?.pacing ?? groupRuntime?.pacing ?? runDefaults.pacing,
-    think_time: overrideRuntime?.think_time ?? groupRuntime?.think_time ?? runDefaults.think_time,
+    // A null tombstone in the run override removes the group's stored section, so the group's own
+    // value must NOT be read back — the run falls through to the run-level default. Resolving
+    // these with `??` alone would show the value the run is about to discard.
+    pacing: runtimeSettingsSectionCleared(overrideRuntime, 'pacing')
+      ? runDefaults.pacing
+      : overrideRuntime?.pacing ?? groupRuntime?.pacing ?? runDefaults.pacing,
+    think_time: runtimeSettingsSectionCleared(overrideRuntime, 'think_time')
+      ? runDefaults.think_time
+      : overrideRuntime?.think_time ?? groupRuntime?.think_time ?? runDefaults.think_time,
     browser: runtimeBrowser(overrideRuntime) ?? runtimeBrowser(groupRuntime) ?? runDefaults.browser,
     log_level: runtimeLogLevel(overrideRuntime) ?? runtimeLogLevel(groupRuntime) ?? runDefaults.log_level,
     auto_transactions: runtimeAutoTransactions(overrideRuntime) ?? runtimeAutoTransactions(groupRuntime) ?? runDefaults.auto_transactions,

@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"fmt"
 	"math"
 	"testing"
 	"time"
@@ -236,11 +237,30 @@ func TestTokenBucketAddsNoTokensWhilePaused(t *testing.T) {
 }
 
 func TestTokenBucketDoesNotAccumulatePausedCredits(t *testing.T) {
-	tb := NewTokenBucket(20) // one token every 50ms
+	const interval = 100 * time.Millisecond
+	tb := NewTokenBucket(10) // one token every 100ms
 	defer tb.Stop()
-	time.Sleep(70 * time.Millisecond)
+
+	// Phase-lock onto the fill cadence rather than racing a fixed sleep against
+	// it. Resuming charges only the unspent remainder of the in-flight fill
+	// interval, so the delay before the first post-resume credit is
+	// interval-minus-progress. With a fixed pre-pause sleep the immediate budget
+	// below therefore has a margin that depends on where that sleep happened to
+	// land inside the fill cadence — a sleep returning late on a loaded runner
+	// pushes the first credit inside the budget and reports a bogus
+	// "released an accumulated credit" failure. Waiting for the first credit to
+	// be issued *without consuming it* pins the pause to just after a fill tick,
+	// and leaves SetPaused a buffered credit to drain, which is what the length
+	// assertion below exists to pin.
+	pollDeadline := time.Now().Add(10 * interval)
+	for len(tb.tokens) == 0 {
+		if time.Now().After(pollDeadline) {
+			t.Fatal("token bucket issued no credit within ten fill intervals")
+		}
+		time.Sleep(time.Millisecond)
+	}
 	tb.SetPaused(true)
-	time.Sleep(120 * time.Millisecond)
+	time.Sleep(2*interval + 20*time.Millisecond)
 	// This reads 0 for any bucket whose SetPaused still discards buffered
 	// credits: fill() stops ticking once the pause is applied, so nothing can be
 	// added back afterwards. What it pins is therefore the drain in SetPaused,
@@ -251,15 +271,82 @@ func TestTokenBucketDoesNotAccumulatePausedCredits(t *testing.T) {
 	}
 	tb.SetPaused(false)
 
-	immediateCtx, immediateCancel := context.WithTimeout(context.Background(), 15*time.Millisecond)
+	// Essentially the whole fill interval was still unspent when the pause began,
+	// so any credit arriving this soon after resume is one accumulated during the
+	// paused window.
+	immediateCtx, immediateCancel := context.WithTimeout(context.Background(), interval/4)
 	defer immediateCancel()
 	if tb.WaitContext(immediateCtx) {
 		t.Fatal("token bucket released an accumulated credit immediately after resume")
 	}
-	eventualCtx, eventualCancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	eventualCtx, eventualCancel := context.WithTimeout(context.Background(), 3*interval)
 	defer eventualCancel()
 	if !tb.WaitContext(eventualCtx) {
 		t.Fatal("token bucket did not issue a newly earned credit after resume")
+	}
+}
+
+// tokenBucketRateTolerance bounds how far the delivered credit count may sit
+// from the configured rate over the measurement window in
+// TestTokenBucketDeliversConfiguredRate. It has to be tight enough to catch the
+// cadence regression this test exists for — re-arming the fill timer from the
+// wake instant instead of the deadline truncated ~16-21% of the configured rate
+// away at these rates — and loose enough that a busy runner does not flake.
+// Carrying the sub-interval remainder makes a late wake self-correcting rather
+// than lossy, so the residual error is a fraction of one interval per window;
+// 10% leaves a wide margin above that while still failing every rate the
+// regression produced (79-85% delivered).
+const tokenBucketRateTolerance = 0.10
+
+// TestTokenBucketDeliversConfiguredRate is the end-to-end rate assertion the
+// package was missing: the other bucket tests only pin single-credit timing, so
+// a bucket that delivered a fifth fewer credits than configured passed all of
+// them. The bucket is the sole producer of iteration credit for "tps" pacing
+// (vuser.go gates every iteration on WaitContext), so a shortfall here is a
+// silent, unreported shortfall in offered load for the whole run.
+func TestTokenBucketDeliversConfiguredRate(t *testing.T) {
+	const window = time.Second
+	for _, tps := range []float64{100, 500, 1000} {
+		t.Run(fmt.Sprintf("tps_%g", tps), func(t *testing.T) {
+			tb := NewTokenBucket(tps)
+			if tb == nil {
+				t.Fatalf("tps=%g: NewTokenBucket returned nil", tps)
+			}
+			defer tb.Stop()
+			start := time.Now()
+
+			// Drain continuously so the consumer is never the bottleneck. A
+			// consumer that lets the buffered channel fill would measure the
+			// channel capacity instead of the producer's rate.
+			delivered := 0
+			stop := make(chan struct{})
+			consumed := make(chan struct{})
+			go func() {
+				defer close(consumed)
+				for {
+					select {
+					case <-stop:
+						return
+					case <-tb.tokens:
+						delivered++
+					}
+				}
+			}()
+
+			time.Sleep(window)
+			elapsed := time.Since(start)
+			close(stop)
+			<-consumed
+
+			expected := tps * elapsed.Seconds()
+			ratio := float64(delivered) / expected
+			t.Logf("tps=%g window=%s delivered=%d expected=%.1f (%.1f%% of configured)",
+				tps, elapsed.Round(time.Millisecond), delivered, expected, ratio*100)
+			if ratio < 1-tokenBucketRateTolerance || ratio > 1+tokenBucketRateTolerance {
+				t.Fatalf("tps=%g: delivered %d credits in %s, want %.1f ±%.0f%% (got %.1f%% of the configured rate)",
+					tps, delivered, elapsed.Round(time.Millisecond), expected, tokenBucketRateTolerance*100, ratio*100)
+			}
+		})
 	}
 }
 
@@ -326,7 +413,11 @@ func TestTokenBucketIgnoresResetWithoutAPauseTransition(t *testing.T) {
 }
 
 // TestNewTokenBucket_LargeTPS ensures a very large pacing.tps (which truncates
-// the fill interval to 0) does not panic the fill goroutine via NewTicker(0).
+// the fill interval to 0) still leaves a positive fill interval. fill() is
+// timer-driven and would not crash on a zero interval, but
+// tokenBucketTokensForElapsed returns 0 for every elapsed value once the
+// interval is non-positive, so an unclamped bucket issues no credit at all and
+// every WaitContext caller blocks forever.
 func TestNewTokenBucket_LargeTPS(t *testing.T) {
 	for _, tps := range []float64{1e9, 2e9, 1e10, 1e15} {
 		tb := NewTokenBucket(tps)
@@ -339,7 +430,8 @@ func TestNewTokenBucket_LargeTPS(t *testing.T) {
 		if tb.interval <= 0 {
 			t.Errorf("tps=%g: interval %v not clamped to a positive value", tps, tb.interval)
 		}
-		// Give fill() a moment to start; it must not panic on NewTicker(0).
+		// Give fill() a moment to start; with the interval clamped it must issue
+		// credit rather than starve.
 		done := make(chan struct{})
 		go func() {
 			tb.Wait()

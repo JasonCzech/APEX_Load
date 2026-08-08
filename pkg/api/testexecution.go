@@ -4634,22 +4634,30 @@ func (tr *TestRunner) runTest(test *ManagedTest) {
 // stall one for far longer than this timeout. Restarting for that case would be
 // wrong - the store is still unreachable after the restart, so the process would
 // only crash-loop. Both stages therefore run through awaitPanicRecoveryStage,
-// which extends the deadline while a durable status write is genuinely in
-// flight and re-panics when the wait expires with nothing progressing. The
-// acquirability stage needs that just as much as the terminal one: every
-// terminal transition here holds tr.mu across its durable write, so a stalled
-// store leaves the mutex held by a healthy run rather than orphaned by a panic.
+// which extends the deadline while a durable write is genuinely in flight and
+// re-panics when the wait expires with nothing progressing. The acquirability
+// stage needs that just as much as the terminal one: the lifecycle paths here
+// hold tr.mu across their durable writes, so a stalled store leaves the mutex
+// held by a healthy run rather than orphaned by a panic.
 var runTestPanicRecoveryLockTimeout = 30 * time.Second
 
 // runTestPanicRecoveryDurableWriteExtensions caps how many times a durable
-// status write in flight may extend a backstop wait, so the fail-fast bound
-// survives the extension: each stage waits at most
+// write in flight may extend a backstop wait, so the fail-fast bound survives
+// the extension: each stage waits at most
 // (1+runTestPanicRecoveryDurableWriteExtensions) * runTestPanicRecoveryLockTimeout.
 // The cap matters because the in-flight gauge is process-wide - on a busy
 // controller some unrelated write can be in flight at almost every expiry, and
 // without a cap that could postpone an orphaned gate's re-panic indefinitely.
 // The default spans several minutes, which covers a managed-database failover
 // while still guaranteeing the run is never stranded forever.
+//
+// A budget this long is only real if the process survives it. Kubernetes
+// liveness probes hit /api/v1/system/health every 20s and kill the container
+// after three failures, so a health handler that queued behind the very mutex
+// this wait is tolerating would have the pod restarted at ~43s no matter how
+// long the extension ran. handleHealthCheck therefore answers from a cached
+// snapshot while a durable write is in flight instead of blocking on tr.mu;
+// keep the two in step if either side changes.
 var runTestPanicRecoveryDurableWriteExtensions = 8
 
 // recoverRunTestPanic terminalizes the run whose driver goroutine panicked.
@@ -4720,12 +4728,17 @@ func (tr *TestRunner) recoverRunTestPanic(test *ManagedTest, recovered any, stac
 		tr.terminalizePanickedRun(test, message)
 	}()
 	// Waiting for tr.mu is bounded for the orphaned-mutex case, but the wait must
-	// not mistake a held mutex for an orphaned one. Every terminal transition in
-	// this package calls persistStoredTestStatus with tr.mu write-locked, so
-	// during a store failover an unrelated run finishing normally pins the mutex
-	// for the whole stall. Re-panicking there would kill the replica - and every
-	// other run on it - only to restart into the same unreachable store, so this
-	// stage honours the in-flight gauge exactly as the terminal stage does.
+	// not mistake a held mutex for an orphaned one. The lifecycle paths in this
+	// package issue their durable writes with tr.mu write-locked - terminal
+	// transitions through persistStoredTestStatus, a pre-start abort and a
+	// fail-closed VUser adjustment through saveManagedTestRecord, and every ramp
+	// step through persistManagedTestVUserScale - so during a store failover an
+	// unrelated healthy run pins the mutex for the whole stall. Re-panicking
+	// there would kill the replica - and every other run on it - only to restart
+	// into the same unreachable store, so this stage honours the in-flight gauge
+	// exactly as the terminal stage does. Every one of those writes is counted
+	// (trackDurableWrite); a gauge that saw only the status write classified the
+	// others as orphaned mutexes.
 	if !tr.awaitPanicRecoveryStage(testID, "runner lock acquisition", acquirable) {
 		slog.Error("runner lock was not acquirable after a run-driver panic; re-panicking so the controller restarts",
 			"test_id", testID)
@@ -4760,16 +4773,16 @@ func (tr *TestRunner) recoverRunTestPanic(test *ManagedTest, recovered any, stac
 // the acquirability stage, and while the backstop's own transition runs, which
 // stalls the terminalization stage. Re-panicking for either would restart the
 // replica into the same unreachable store and crash-loop. So the deadline is
-// extended when it expires while a durable status write is still inside the
-// storage driver - blocked I/O that can still complete - and a wait that expires
-// with nothing in flight is treated as an unrecoverable lock or gate.
+// extended when it expires while a durable write is still inside the storage
+// driver - blocked I/O that can still complete - and a wait that expires with
+// nothing in flight is treated as an unrecoverable lock or gate.
 //
 // The extension is capped (see runTestPanicRecoveryDurableWriteExtensions), so
 // this is a longer bound, not an unbounded wait: a store that never returns
 // still ends in a re-panic rather than a stranded run. The in-flight gauge is
-// also process-wide rather than scoped to this run, so an unrelated status write
-// racing the deadline can buy an extra interval; under a healthy store it clears
-// in milliseconds and the next expiry re-panics.
+// also process-wide rather than scoped to this run, so an unrelated write racing
+// the deadline can buy an extra interval; under a healthy store it clears in
+// milliseconds and the next expiry re-panics.
 func (tr *TestRunner) awaitPanicRecoveryStage(testID string, stage string, done <-chan struct{}) bool {
 	deadline := time.After(runTestPanicRecoveryLockTimeout)
 	for extensions := 0; ; extensions++ {
@@ -4777,10 +4790,10 @@ func (tr *TestRunner) awaitPanicRecoveryStage(testID string, stage string, done 
 		case <-done:
 			return true
 		case <-deadline:
-			if tr.durableStatusWritesInFlight.Load() <= 0 || extensions >= runTestPanicRecoveryDurableWriteExtensions {
+			if tr.durableWritesInFlight.Load() <= 0 || extensions >= runTestPanicRecoveryDurableWriteExtensions {
 				return false
 			}
-			slog.Warn("recovering a panicked run is still waiting on a durable status write; extending the wait instead of restarting the controller",
+			slog.Warn("recovering a panicked run is still waiting on a durable write; extending the wait instead of restarting the controller",
 				"test_id", testID, "stage", stage)
 			deadline = time.After(runTestPanicRecoveryLockTimeout)
 		}

@@ -123,9 +123,28 @@ func claimGeneratorExecutionEpoch(ctx context.Context, client generatorClient, g
 		return fmt.Errorf("execution lease expired while claiming generator")
 	}
 	if !result.Accepted || result.CurrentGeneration != generation {
-		return fmt.Errorf("generator rejected execution generation %d (current %d): %s", generation, result.CurrentGeneration, result.ErrorMessage)
+		return &generatorExecutionEpochRejection{
+			generation:        generation,
+			currentGeneration: result.CurrentGeneration,
+			message:           result.ErrorMessage,
+		}
 	}
 	return nil
+}
+
+// generatorExecutionEpochRejection is a generator's negative acknowledgement of
+// a process-scoped epoch claim. Generators answer these with an accepted-false
+// ack rather than a gRPC status, so the reason survives only as free text.
+// Keeping it structured lets call sites classify the cause without re-parsing a
+// formatted error string; the rendered text is unchanged.
+type generatorExecutionEpochRejection struct {
+	generation        uint64
+	currentGeneration uint64
+	message           string
+}
+
+func (e *generatorExecutionEpochRejection) Error() string {
+	return fmt.Sprintf("generator rejected execution generation %d (current %d): %s", e.generation, e.currentGeneration, e.message)
 }
 
 func claimGeneratorTestExecutionLease(ctx context.Context, client generatorClient, testID string, generation uint64, leaseOwnerID string, leaseDeadline time.Time, maxTransit time.Duration) error {
@@ -643,11 +662,36 @@ func (b *distributedExecutionBackend) claimGeneratorProcessExecutionEpochClients
 	return errors.Join(failures...)
 }
 
+// generatorProcessExecutionEpochExpired reports whether any error in the tree is
+// a process-scoped epoch claim the generator rejected because its session for
+// that same generation had already lapsed. planClaimLocked never revives a
+// lapsed generation in place, so this is the shape a "nobody renewed this
+// generator's process epoch" fault takes on the claim path — the assignment path
+// reports the identical generator state as generatorExecutionEpochSessionExpired
+// instead. errors.As walks both %w wrapping and errors.Join trees, so this
+// survives the per-target fan-out wrappers in
+// claimGeneratorProcessExecutionEpochClients.
+func generatorProcessExecutionEpochExpired(err error) bool {
+	if err == nil {
+		return false
+	}
+	var rejection *generatorExecutionEpochRejection
+	if !errors.As(err, &rejection) {
+		return false
+	}
+	return rejection.message == generatorrpc.ExecutionGenerationExpiredMessage
+}
+
 // generatorExecutionEpochSessionExpired reports whether any error in the tree is
 // a generator rejection caused by a lapsed process-scoped execution epoch, as
 // opposed to a generation mismatch or a fenced assignment. errors.As walks both
 // %w wrapping and errors.Join trees, so this survives the per-target fan-out
 // wrappers in renewGeneratorTestExecutionClients.
+//
+// This is the *mutation* shape of a lapsed epoch. A caller that re-claims the
+// process epoch first will see generatorProcessExecutionEpochExpired for the
+// same underlying state, because a claim is rejected before any mutation is
+// attempted.
 func generatorExecutionEpochSessionExpired(err error) bool {
 	if err == nil {
 		return false

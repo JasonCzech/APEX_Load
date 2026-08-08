@@ -1169,9 +1169,58 @@ func (s *Server) handleSystemVersion(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, s.versionResponse())
 }
 
+// healthCheckSnapshot is the runner-derived part of the health payload. It is
+// republished on every probe that reads live state, so the copy served during a
+// durable-write stall is at most one probe interval old.
+type healthCheckSnapshot struct {
+	availability CapacityAvailabilitySnapshot
+	testCount    int
+}
+
+// healthCheckSnapshotWithoutRunnerLock returns the last published snapshot when
+// reading live runner state would block behind a durable write.
+//
+// /api/v1/system/health is the Kubernetes liveness probe in every shipped
+// deployment (periodSeconds 20, timeoutSeconds 3, default failureThreshold 3),
+// so the kubelet kills the container roughly 43s after this handler starts
+// blocking. Both runner reads in the payload take tr.mu, and the runner
+// deliberately holds tr.mu across its durable writes, which take no context and
+// can stall for minutes during a managed-database failover. Blocking here would
+// therefore restart the pod into the same unreachable store long before the
+// run-driver panic backstop's (1+8)*30s extension could ride that failover out -
+// the exact crash-loop the extension exists to prevent, and the reason its
+// budget is written in minutes.
+//
+// The bypass is deliberately narrow. With no durable write in flight the
+// handler still reads live state, so a mutex a panic genuinely orphaned still
+// hangs the probe and still gets the replica restarted. Until the first probe
+// has published a snapshot there is nothing to serve and the handler blocks as
+// before; a controller reaches that point long before it can stall a write.
+func (s *Server) healthCheckSnapshotWithoutRunnerLock() (healthCheckSnapshot, bool) {
+	if s == nil || s.runner == nil {
+		return healthCheckSnapshot{}, false
+	}
+	if s.runner.durableWritesInFlight.Load() <= 0 {
+		return healthCheckSnapshot{}, false
+	}
+	cached := s.healthSnapshot.Load()
+	if cached == nil {
+		return healthCheckSnapshot{}, false
+	}
+	return *cached, true
+}
+
 func (s *Server) handleHealthCheck(w http.ResponseWriter, r *http.Request) {
-	settings := s.runner.GetSystemSettings()
-	availability := resolveCapacityAvailabilityWithLiveAt(settings, s.runner.liveAvailableGeneratorCount(r.Context()), time.Now())
+	snapshot, cached := s.healthCheckSnapshotWithoutRunnerLock()
+	if !cached {
+		settings := s.runner.GetSystemSettings()
+		snapshot = healthCheckSnapshot{
+			availability: resolveCapacityAvailabilityWithLiveAt(settings, s.runner.liveAvailableGeneratorCount(r.Context()), time.Now()),
+			testCount:    s.runner.TestCount(),
+		}
+		s.healthSnapshot.Store(&snapshot)
+	}
+	availability := snapshot.availability
 	build := buildinfo.Get()
 	writeJSON(w, http.StatusOK, map[string]any{
 		"status":          "healthy",
@@ -1182,7 +1231,7 @@ func (s *Server) handleHealthCheck(w http.ResponseWriter, r *http.Request) {
 		"environment":     build.Environment,
 		"build_time":      build.BuildTime,
 		"ws_clients":      s.hub.ClientCount(),
-		"test_count":      s.runner.TestCount(),
+		"test_count":      snapshot.testCount,
 		"capacity_availability": map[string]any{
 			"source":                          availability.Source,
 			"configured_available_generators": availability.ConfiguredAvailableGenerators,

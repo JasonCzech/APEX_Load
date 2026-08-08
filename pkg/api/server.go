@@ -16,6 +16,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/config"
@@ -129,7 +130,12 @@ type Server struct {
 	// replay and script debug managers fire completion hooks into the shared
 	// persistSelfHealToRepository, whose read-modify-write of the whole objects
 	// blob would otherwise lose a concurrently appended candidate.
-	selfHealMu                        sync.Mutex
+	selfHealMu sync.Mutex
+	// healthSnapshot is the last health payload built from live runner state. The
+	// liveness probe answers from it while a durable write is in flight rather
+	// than queueing behind the runner lock that write holds; see
+	// healthCheckSnapshotWithoutRunnerLock.
+	healthSnapshot                    atomic.Pointer[healthCheckSnapshot]
 	collectorMetrics                  *collectorMetricStore
 	fleetScaler                       fleetPoolScaler
 	clusterStore                      storage.ClusterConnectionStore

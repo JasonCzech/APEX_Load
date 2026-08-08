@@ -13,6 +13,7 @@ import {
   generatorCanRunGroup,
   generatorDisabledReason,
   getEffectiveRuntimeDefaults,
+  groupOverrideCount,
   groupOverrideKey,
   groupPlacementSummary,
   selectedGeneratorCapacity,
@@ -271,6 +272,68 @@ describe('newTestRunModel', () => {
     expect(buildGroupRuntimeTableValues(snapshotOnlyGroup, scenario, runDefaults, {
       runtime_settings: { error_handling: { continue_on_error: true } },
     }).errorHandling).toBe('Continue / No snapshot')
+  })
+
+  it('clears a stored group error_handling section through a null tombstone', () => {
+    // The group run override is overlaid back onto the group's STORED runtime_settings when the
+    // create payload is built, and an overlay can only assign, so simply omitting the key can
+    // never remove the stored section. The clear is written as an explicit null tombstone.
+    const scenario = scenarioFixture()
+    delete scenario.runtime_settings?.error_handling
+    const group = scenario.scripts[0]
+    group.runtime_settings = { error_handling: { continue_on_error: true, snapshot_on_error: true } }
+    const runDefaults = { runtime_settings: {} }
+    const key = groupOverrideKey(group)
+
+    // Sanity: without the tombstone the stored section is what the run executes.
+    expect(buildGroupsForRunPayload(scenario, { [key]: { vusers: 4 } })?.[0].runtime_settings)
+      .toEqual({ error_handling: { continue_on_error: true, snapshot_on_error: true } })
+
+    const cleared: GroupRunOverride = { runtime_settings: { error_handling: null } }
+    // The tombstone is an instruction even though it carries no value, so the override survives
+    // the hasGroupOverrideValues filter that decides whether groups are sent at all.
+    expect(groupOverrideCount({ [key]: cleared })).toBe(1)
+    // ...and it removes the section instead of re-applying it. No null reaches the API.
+    expect(buildGroupsForRunPayload(scenario, { [key]: cleared })?.[0].runtime_settings).toBeUndefined()
+    // The stored scenario group is untouched by the run-only clear.
+    expect(group.runtime_settings).toEqual({ error_handling: { continue_on_error: true, snapshot_on_error: true } })
+
+    // Re-opening the dialog has to show the clear, not the stale stored section.
+    expect(buildGroupRuntimeTableValues(group, scenario, runDefaults, cleared).errorHandling).toBe('Script default')
+    expect(buildGroupEditDraft(group, scenario, runDefaults, cleared).continue_on_error).toBe('')
+    expect(buildGroupEditDraft(group, scenario, runDefaults, cleared).snapshot_on_error).toBe('')
+
+    // A cleared group falls through to the run-level section when one exists, exactly as
+    // mergeRuntimeSettings does — it does NOT reach the script's own config.
+    const pinnedRoot = { ...scenario, runtime_settings: { error_handling: { continue_on_error: true } } }
+    expect(buildGroupRuntimeTableValues(group, pinnedRoot, runDefaults, cleared).errorHandling).toBe('Continue / No snapshot')
+
+    // Other sections in the same override are still overlaid normally alongside the tombstone.
+    const mixed: GroupRunOverride = { runtime_settings: { error_handling: null, log_level: 'debug' } }
+    expect(buildGroupsForRunPayload(scenario, { [key]: mixed })?.[0].runtime_settings).toEqual({ log_level: 'debug' })
+
+    // The dialog's other two inherit options ('Script timing', 'Script think time') clear their
+    // sections through the same tombstone, and clearing one must not disturb the others.
+    group.runtime_settings = {
+      pacing: { type: 'fixed_delay', delay_ms: 500 },
+      think_time: { type: 'fixed', mean_ms: 900 },
+      log_level: 'debug',
+    }
+    expect(buildGroupsForRunPayload(scenario, { [key]: { runtime_settings: { pacing: null } } })?.[0].runtime_settings)
+      .toEqual({ think_time: { type: 'fixed', mean_ms: 900 }, log_level: 'debug' })
+    expect(buildGroupsForRunPayload(scenario, { [key]: { runtime_settings: { think_time: null } } })?.[0].runtime_settings)
+      .toEqual({ pacing: { type: 'fixed_delay', delay_ms: 500 }, log_level: 'debug' })
+
+    // Read path has to agree with the write path: a cleared section reports the run-level value
+    // the run will actually use, not the stored group value the tombstone just removed.
+    const pacingRunDefaults = { runtime_settings: { pacing: { type: 'fixed_interval', interval_ms: 2000 } } }
+    const clearedPacing: GroupRunOverride = { runtime_settings: { pacing: null } }
+    expect(buildGroupRuntimeTableValues(group, scenario, pacingRunDefaults, clearedPacing).pacing)
+      .toBe('Fixed interval · 2 seconds')
+    expect(buildGroupEditDraft(group, scenario, pacingRunDefaults, clearedPacing).pacingType).toBe('fixed_interval')
+    const clearedThinkTime: GroupRunOverride = { runtime_settings: { think_time: null } }
+    expect(buildGroupRuntimeTableValues(group, scenario, { runtime_settings: {} }, clearedThinkTime).thinkTime)
+      .toBe('Script think time')
   })
 
   it('reports a retry-only run-default section as the booleans the run will execute', () => {

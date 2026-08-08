@@ -123,7 +123,7 @@ func (manager *executionEpochManager) planClaimLocked(service *Service, generati
 			kind:              executionEpochClaimReject,
 			currentGeneration: current,
 			expiresAt:         manager.executionExpiresAt,
-			errorMessage:      "execution generation has expired; a higher generation is required",
+			errorMessage:      ExecutionGenerationExpiredMessage,
 		}
 	}
 
