@@ -27,6 +27,44 @@ func (tr *TestRunner) GetTestSummary(id string) (*ManagedTest, bool) {
 	return tr.getTestSnapshot(id, false)
 }
 
+// GetTestMetricsWindow returns the normal serialization-safe test summary plus
+// only the requested metrics window. Live history is selected before cloning,
+// so a small dashboard window does not copy the controller's complete retained
+// history while holding tr.mu.
+func (tr *TestRunner) GetTestMetricsWindow(id string, since *time.Time, limit int) (*ManagedTest, bool) {
+	test, ok := tr.getTestSnapshot(id, false)
+	if !ok {
+		return nil, false
+	}
+
+	tr.mu.RLock()
+	canonical := tr.tests[test.ID]
+	if canonical != nil {
+		selected := selectLiveMetricsHistory(canonical.History, since, limit)
+		test.History = cloneLiveMetricsHistory(selected)
+		test.LiveMetrics = cloneLiveMetrics(canonical.LiveMetrics)
+	}
+	tr.mu.RUnlock()
+
+	// Terminal canonical records retain only their compact tail. When a bounded
+	// history window is requested, ask persistence for at most that many points
+	// instead of hydrating the runner-wide maximum and trimming it afterward.
+	if isTerminalTestStatus(test.Status) && limit > 0 && tr.historyStore != nil {
+		loaded := &ManagedTest{ID: test.ID}
+		if err := tr.loadStoredTestHistoryLimit(loaded, limit); err == nil {
+			merged := mergeStoredHistoryWithCanonicalTail(loaded.History, test.LiveMetrics)
+			test.History = cloneLiveMetricsHistory(selectLiveMetricsHistory(merged, since, limit))
+		}
+	} else if isTerminalTestStatus(test.Status) && tr.historyStore != nil {
+		// An unbounded request keeps the endpoint's historical contract. Loading the
+		// full terminal series is intentional here; unlike bounded dashboard polls,
+		// the caller explicitly omitted a limit.
+		tr.attachStoredTerminalHistory(test)
+		test.History = selectLiveMetricsHistory(test.History, since, 0)
+	}
+	return test, true
+}
+
 func (tr *TestRunner) getTestSnapshot(id string, includeHistory bool) (*ManagedTest, bool) {
 	tr.refreshTestsForHARead()
 	tr.refreshReadMetadataForTest(id)

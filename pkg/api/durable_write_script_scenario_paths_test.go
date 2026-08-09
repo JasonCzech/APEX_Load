@@ -3,23 +3,23 @@ package api
 import (
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/storage"
 )
 
 // refSequenceGaugeSettings observes the panic backstop's in-flight gauge from
 // inside the reference-key sequence allocation, and records whether tr.mu was
 // write-held at that moment.
 //
-// This is the durable write every script and scenario create performs:
-// storeScriptDurable takes tr.mu.Lock, then reaches
-// nextScriptSeqLocked -> allocateRefSequenceLocked -> NextSettingSequence, a
-// durable INSERT ... ON CONFLICT DO UPDATE ... RETURNING against the same
-// database instance that backs the test store.
+// Every script and scenario create performs this durable allocation. The
+// dedicated allocator must keep its INSERT ... ON CONFLICT DO UPDATE ...
+// RETURNING round trip outside the live runner mutex.
 type refSequenceGaugeSettings struct {
 	runner *TestRunner
 
@@ -55,20 +55,10 @@ func (s *refSequenceGaugeSettings) NextSettingSequence(string) (int, error) {
 	return int(s.sequence.Add(1)), nil
 }
 
-// TestOrdinaryScriptCreateLockHeldWritesArePublishedToTheInFlightGauge closes
-// the third instance of the same defect.
-//
-// The gauge was extended twice - first to the lifecycle writes, then to the
-// operator-triggered test-store writes - but it stayed scoped to tr.testStore,
-// and the runner pins tr.mu across durable writes to its other stores too. The
-// commonest one there is is an ordinary script save: POST /api/v1/scripts ->
-// handleCreateScript -> StoreScriptDurable -> storeScriptDurable, which takes
-// tr.mu.Lock and then allocates the script's reference key through a durable
-// settings write. While that stalled in a managed-database failover the gauge
-// read 0, so the panic backstop classified a perfectly healthy mutex as orphaned
-// and re-panicked the controller, and the liveness probe fell out of its cached
-// answer into a blocking read.
-func TestOrdinaryScriptCreateLockHeldWritesArePublishedToTheInFlightGauge(t *testing.T) {
+// TestOrdinaryScriptCreateReferenceSequenceRunsOutsideRunnerLock prevents the
+// settings-backed reference allocator from reintroducing controller-wide head-
+// of-line blocking on ordinary authoring saves.
+func TestOrdinaryScriptCreateReferenceSequenceRunsOutsideRunnerLock(t *testing.T) {
 	runner := NewTestRunner(1, NewHub(), nil)
 	settings := &refSequenceGaugeSettings{runner: runner}
 	runner.settingsStore = settings
@@ -88,11 +78,11 @@ func TestOrdinaryScriptCreateLockHeldWritesArePublishedToTheInFlightGauge(t *tes
 	if got := settings.calls.Load(); got != 1 {
 		t.Fatalf("reference-sequence allocations during a script create = %d, want 1", got)
 	}
-	if !settings.writeHeld.Load() {
-		t.Fatal("the reference-sequence write did not run with tr.mu write-locked; this test no longer reproduces the shape it guards")
+	if settings.writeHeld.Load() {
+		t.Fatal("the reference-sequence write ran with tr.mu write-locked")
 	}
-	if got := settings.gauge.Load(); got < 1 {
-		t.Errorf("in-flight gauge during an ordinary script create's reference-key write = %d, want at least 1; at 0 the panic backstop re-panics the controller and the liveness probe blocks until the kubelet restarts the replica", got)
+	if got := settings.gauge.Load(); got != 0 {
+		t.Errorf("lock-held durable-write gauge during off-lock reference allocation = %d, want 0", got)
 	}
 
 	// The gauge must be a gauge, not a leak.
@@ -101,28 +91,23 @@ func TestOrdinaryScriptCreateLockHeldWritesArePublishedToTheInFlightGauge(t *tes
 	}
 }
 
-// TestScenarioCreateLockHeldWritesArePublishedToTheInFlightGauge is the same
-// check for the scenario side of the reference-key allocation, which
-// StoreScenario reaches with tr.mu held through nextScenarioSeqLocked.
-func TestScenarioCreateLockHeldWritesArePublishedToTheInFlightGauge(t *testing.T) {
+func TestScenarioCreateReferenceSequenceRunsOutsideRunnerLock(t *testing.T) {
 	runner := NewTestRunner(1, NewHub(), nil)
 	settings := &refSequenceGaugeSettings{runner: runner}
 	runner.settingsStore = settings
 
-	runner.mu.Lock()
-	sequence, err := runner.nextScenarioSeqLocked()
-	runner.mu.Unlock()
+	sequence, err := runner.nextScenarioSeqOutsideRunnerLock()
 	if err != nil {
 		t.Fatalf("nextScenarioSeqLocked: %v", err)
 	}
 	if sequence < 1 {
 		t.Fatalf("allocated scenario reference sequence = %d, want a positive sequence", sequence)
 	}
-	if !settings.writeHeld.Load() {
-		t.Fatal("the scenario reference-sequence write did not run with tr.mu write-locked")
+	if settings.writeHeld.Load() {
+		t.Fatal("the scenario reference-sequence write ran with tr.mu write-locked")
 	}
-	if got := settings.gauge.Load(); got < 1 {
-		t.Errorf("in-flight gauge during a scenario reference-key write = %d, want at least 1", got)
+	if got := settings.gauge.Load(); got != 0 {
+		t.Errorf("lock-held durable-write gauge during off-lock scenario reference allocation = %d, want 0", got)
 	}
 	if got := runner.durableWritesInFlight.Load(); got != 0 {
 		t.Fatalf("in-flight gauge after the scenario reference-key write returned = %d, want 0", got)
@@ -162,17 +147,7 @@ func (s *stallingRefSequenceSettings) NextSettingSequence(string) (int, error) {
 	return int(s.calls.Load()), nil
 }
 
-// TestHealthProbeAnswersWhileAnOrdinaryScriptSaveHoldsTheRunnerLock is the
-// end-to-end liveness half.
-//
-// /api/v1/system/health is the shipped livenessProbe (periodSeconds 20,
-// timeoutSeconds 3, failureThreshold 3), and both runner reads in its payload
-// take tr.mu. A script save that stalls in the storage driver holds tr.mu for
-// the length of a database failover, so a probe that queues behind it has the
-// container killed roughly 43s in - restarting the replica into the same
-// unreachable store, which is the crash-loop the in-flight gauge exists to
-// prevent.
-func TestHealthProbeAnswersWhileAnOrdinaryScriptSaveHoldsTheRunnerLock(t *testing.T) {
+func TestHealthProbeAnswersWhileAnOrdinaryScriptSaveStallsOffLock(t *testing.T) {
 	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080"})
 	settings := newStallingRefSequenceSettings()
 	t.Cleanup(settings.releaseAll)
@@ -200,6 +175,10 @@ func TestHealthProbeAnswersWhileAnOrdinaryScriptSaveHoldsTheRunnerLock(t *testin
 	case <-time.After(10 * time.Second):
 		t.Fatal("the script save never reached the storage driver")
 	}
+	if !server.runner.mu.TryRLock() {
+		t.Fatal("ordinary runner reads are blocked behind the stalled script save")
+	}
+	server.runner.mu.RUnlock()
 
 	probed := make(chan int, 1)
 	go func() {
@@ -211,15 +190,75 @@ func TestHealthProbeAnswersWhileAnOrdinaryScriptSaveHoldsTheRunnerLock(t *testin
 	select {
 	case code := <-probed:
 		if code != http.StatusOK {
-			t.Fatalf("liveness probe status while an ordinary script save held the runner lock = %d, want %d", code, http.StatusOK)
+			t.Fatalf("liveness probe status while an ordinary script save stalled = %d, want %d", code, http.StatusOK)
 		}
 	case <-time.After(3 * time.Second):
-		t.Fatal("liveness probe blocked past its 3s timeout while a healthy-but-stalled script save held the runner lock; kubernetes would restart the replica mid-failover")
+		t.Fatal("liveness probe blocked past its 3s timeout while an authoring save stalled off-lock")
 	}
 
 	settings.releaseAll()
 	if err := <-saved; err != nil {
 		t.Fatalf("the stalled script save failed: %v", err)
+	}
+}
+
+type stallingScenarioSaveStore struct {
+	storage.Store
+	entered chan struct{}
+	release chan struct{}
+}
+
+func (s *stallingScenarioSaveStore) SaveScenarioWithDataPoolBindings(scenario *storage.Scenario, scripts []storage.ScenarioScript, bindings []storage.ScenarioDataPoolBinding) error {
+	select {
+	case s.entered <- struct{}{}:
+	default:
+	}
+	<-s.release
+	return s.Store.(atomicScenarioPersistence).SaveScenarioWithDataPoolBindings(scenario, scripts, bindings)
+}
+
+func TestScenarioPersistenceRunsOutsideRunnerLock(t *testing.T) {
+	base, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "scenario-off-lock.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	t.Cleanup(func() { _ = base.Close() })
+	now := time.Now().UTC()
+	if err := base.SaveProject(&storage.Project{ID: "project-scenario", Name: "Scenario", CreatedAt: now}); err != nil {
+		t.Fatalf("SaveProject: %v", err)
+	}
+	if err := base.SaveScript(&dsl.Script{
+		ID: "scenario-script", ProjectID: "project-scenario", Name: "Script", Protocol: "http", CreatedAt: now,
+		Config:  dsl.ScriptConfig{BaseURL: "https://example.test"},
+		Actions: []dsl.Action{{Name: "health", Type: "request", Target: "/health"}},
+	}); err != nil {
+		t.Fatalf("SaveScript: %v", err)
+	}
+	store := &stallingScenarioSaveStore{Store: base, entered: make(chan struct{}, 1), release: make(chan struct{})}
+	runner := NewTestRunner(1, NewHub(), store)
+
+	stored := make(chan error, 1)
+	go func() {
+		_, storeErr := runner.StoreScenario(CreateScenarioRequest{
+			Name: "Scenario", Duration: "1m",
+			Groups: []CreateGroupEntry{{ScriptID: "scenario-script", VUsers: 1}},
+		})
+		stored <- storeErr
+	}()
+	select {
+	case <-store.entered:
+	case <-time.After(10 * time.Second):
+		close(store.release)
+		t.Fatalf("scenario save did not reach persistence: %v", <-stored)
+	}
+	if !runner.mu.TryRLock() {
+		close(store.release)
+		t.Fatal("ordinary runner reads are blocked behind scenario persistence")
+	}
+	runner.mu.RUnlock()
+	close(store.release)
+	if err := <-stored; err != nil {
+		t.Fatalf("StoreScenario: %v", err)
 	}
 }
 
@@ -233,7 +272,7 @@ func TestHealthProbeAnswersWhileAnOrdinaryScriptSaveHoldsTheRunnerLock(t *testin
 // panics in that window, a backstop that cannot see the write reads a zero gauge
 // at the first expiry, calls the mutex orphaned, and re-panics - killing every
 // other run on the replica and restarting into the same unreachable store.
-func TestRunTestPanicBackstopWaitsOutAnOrdinaryScriptSaveHoldingTheRunnerLock(t *testing.T) {
+func TestRunTestPanicBackstopDoesNotWaitForOffLockScriptSave(t *testing.T) {
 	previousTimeout := runTestPanicRecoveryLockTimeout
 	runTestPanicRecoveryLockTimeout = 50 * time.Millisecond
 	previousExtensions := runTestPanicRecoveryDurableWriteExtensions
@@ -278,23 +317,15 @@ func TestRunTestPanicBackstopWaitsOutAnOrdinaryScriptSaveHoldingTheRunnerLock(t 
 		runner.runTest(test)
 	}()
 
-	// Hold the settings write open across many backstop expiries (50ms each). A
-	// backstop blind to a non-test-store write re-panics at the first one.
-	select {
-	case recovered := <-repanicked:
-		t.Fatalf("backstop re-panicked with %v while tr.mu was merely held by an ordinary script save stalled in the storage driver; the store was progressing, not wedged", recovered)
-	case <-time.After(500 * time.Millisecond):
-	}
-	settings.releaseAll()
-
 	select {
 	case recovered := <-repanicked:
 		if recovered != nil {
-			t.Fatalf("backstop re-panicked with %v after the stalled script save completed", recovered)
+			t.Fatalf("backstop re-panicked with %v while an unrelated script save stalled off-lock", recovered)
 		}
-	case <-time.After(30 * time.Second):
-		t.Fatal("runTest neither returned nor re-panicked after the stalled script save completed")
+	case <-time.After(3 * time.Second):
+		t.Fatal("runTest waited for an unrelated off-lock script save")
 	}
+	settings.releaseAll()
 	if err := <-saved; err != nil {
 		t.Fatalf("the stalled script save failed: %v", err)
 	}

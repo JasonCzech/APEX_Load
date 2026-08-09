@@ -388,32 +388,6 @@ func (tr *TestRunner) buildStoredScenario(scenario *storage.Scenario, scripts []
 	if scenario == nil {
 		return nil
 	}
-	refs := make([]ScenarioScriptRef, 0, len(scripts))
-	projectID, singleProject := tr.scenarioProjectIDFromScriptsLocked(scripts)
-	for _, script := range scripts {
-		ref := ScenarioScriptRef{
-			Order:           script.Order,
-			Name:            script.Name,
-			ScriptID:        script.ScriptID,
-			Role:            script.Role,
-			VUsers:          script.VUsers,
-			RampUp:          script.RampUp,
-			RampDown:        script.RampDown,
-			Stages:          cloneLoadStages(script.Stages),
-			Iterations:      script.Iterations,
-			Initialization:  script.Initialization,
-			RuntimeSettings: decodeStoredRuntimeSettings(script.RuntimeSettings),
-			Assignment:      decodeStoredGeneratorAssignment(script.Assignment),
-		}
-		if stored, ok := tr.scripts[script.ScriptID]; ok {
-			ref.ScriptName = stored.Name
-			ref.Protocol = stored.Protocol
-			if ref.Name == "" {
-				ref.Name = stored.Name
-			}
-		}
-		refs = append(refs, ref)
-	}
 	dataPools := []storage.ScenarioDataPoolBinding{}
 	if tr.scenarioStore != nil {
 		if bindings, err := tr.scenarioStore.ListScenarioDataPoolBindings(scenario.ID); err == nil {
@@ -427,6 +401,33 @@ func (tr *TestRunner) buildStoredScenario(scenario *storage.Scenario, scripts []
 				schedules = append(schedules, cloneScenarioSchedule(schedule))
 			}
 		}
+	}
+	return tr.buildStoredScenarioFromPartsLocked(scenario, scripts, dataPools, schedules)
+}
+
+func (tr *TestRunner) buildStoredScenarioFromPartsLocked(scenario *storage.Scenario, scripts []storage.ScenarioScript, dataPools []storage.ScenarioDataPoolBinding, schedules []*storage.ScenarioSchedule) *StoredScenario {
+	if scenario == nil {
+		return nil
+	}
+	refs := make([]ScenarioScriptRef, 0, len(scripts))
+	projectID, singleProject := tr.scenarioProjectIDFromScriptsLocked(scripts)
+	for _, script := range scripts {
+		ref := ScenarioScriptRef{
+			Order: script.Order, Name: script.Name, ScriptID: script.ScriptID, Role: script.Role,
+			VUsers: script.VUsers, RampUp: script.RampUp, RampDown: script.RampDown,
+			Stages: cloneLoadStages(script.Stages), Iterations: script.Iterations,
+			Initialization:  script.Initialization,
+			RuntimeSettings: decodeStoredRuntimeSettings(script.RuntimeSettings),
+			Assignment:      decodeStoredGeneratorAssignment(script.Assignment),
+		}
+		if stored, ok := tr.scripts[script.ScriptID]; ok {
+			ref.ScriptName = stored.Name
+			ref.Protocol = stored.Protocol
+			if ref.Name == "" {
+				ref.Name = stored.Name
+			}
+		}
+		refs = append(refs, ref)
 	}
 	derivedProjectID := ""
 	if singleProject {
@@ -1713,12 +1714,12 @@ func (tr *TestRunner) trackDurableWrite(write func() error) error {
 // Both readers of the gauge ask the same question, and neither of them is about
 // the test store: is tr.mu held by something that is inside the storage driver
 // and will therefore come back, or by something nothing will ever release? The
-// runner pins tr.mu across durable writes to every one of its stores, so an
-// answer that only counted test-store writes was wrong for the commonest
-// operator action there is. Saving a script, saving a scenario, or allocating
-// the reference-key sequence that every script and scenario create needs all
-// hold tr.mu across a store round trip; while one of those stalled in a
-// managed-database failover the gauge read zero, which is precisely the state
+// some compatibility and lifecycle paths still pin tr.mu across non-test-store
+// writes, so an answer that only counted test-store writes remains incomplete.
+// Ordinary script/scenario authoring and reference allocation run off-lock; the
+// remaining guarded paths include deletes, moves, imports, and archive updates.
+// Before they were counted, a managed-database failover produced a zero gauge,
+// which is precisely the state
 // that makes the panic backstop re-panic a healthy controller
 // (awaitPanicRecoveryStage) and makes the liveness probe fall back to a blocking
 // read until the kubelet restarts the replica
@@ -1726,8 +1727,8 @@ func (tr *TestRunner) trackDurableWrite(write func() error) error {
 //
 // This is a section counter rather than another per-call wrapper on purpose.
 // These paths reach their store through shared helpers -
-// saveStoredScriptWithImportTrust, deleteStoredScript, nextScriptSeqLocked ->
-// allocateRefSequenceLocked, the storeScenarioLockedWithWriter callbacks - so
+// saveStoredScriptWithImportTrust, deleteStoredScript, compatibility sequence
+// allocation, and legacy scenario callbacks - so
 // wrapping only the leaf store calls would leave the helper hops uncovered while
 // looking complete. Bracketing the lock-held section covers every write it
 // reaches, directly or through a helper.

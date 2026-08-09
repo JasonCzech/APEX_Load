@@ -191,6 +191,8 @@ type TestRunner struct {
 	projectDeletionUnlock       map[string]func()
 	shuttingDown                bool
 	mu                          sync.RWMutex
+	scriptMutationMu            sync.Mutex
+	scenarioMutationMu          sync.Mutex
 	compatCreateMu              sync.Mutex
 	reservedLaunchCreateMu      sync.Mutex
 	contentRevision             uint64
@@ -325,11 +327,13 @@ type TestRunner struct {
 	// environment-aware prefix resolved once at startup; the seq counters are
 	// monotonic per (env, artifact type) and backed by persisted settings so
 	// they survive restarts. refKeyIndex maps a reference key to its UUID.
-	envCode            string
-	refScriptSeq       int
-	refScenarioSeq     int
-	runRefSeqAllocator *runReferenceSequenceAllocator
-	refKeyIndex        map[string]string
+	envCode                 string
+	refScriptSeq            int
+	refScenarioSeq          int
+	scriptRefSeqAllocator   *artifactReferenceSequenceAllocator
+	scenarioRefSeqAllocator *artifactReferenceSequenceAllocator
+	runRefSeqAllocator      *runReferenceSequenceAllocator
+	refKeyIndex             map[string]string
 
 	// capacityAdvisoryCache memoizes estimateCapacityAdvisoryForAssignment. Its
 	// inputs are settings (generation-invalidated) and reservation-window time
@@ -364,13 +368,11 @@ type TestRunner struct {
 	//
 	// The gauge is deliberately NOT scoped to the test store, because neither
 	// reader is asking about a table - both are asking whether the goroutine
-	// holding tr.mu is inside the storage driver. The runner pins tr.mu across
-	// durable writes to its other stores just as often, and on far more ordinary
-	// paths: saving or deleting a script, saving or deleting a scenario, moving a
-	// script between folders, committing a GitHub script import, applying scenario
-	// runtime settings to groups, persisting a schedule occurrence, and the
-	// reference-key sequence allocation that EVERY script and scenario create
-	// performs. Those sections are bracketed by beginLockHeldDurableWrite rather
+	// holding tr.mu is inside the storage driver. Ordinary script/scenario saves
+	// and their reference allocation now run outside this mutex, but several
+	// compatibility and lifecycle paths still issue lock-held writes: deletes,
+	// folder moves, GitHub import, runtime-profile application, and some archive
+	// transitions. Those sections are bracketed by beginLockHeldDurableWrite rather
 	// than wrapped call by call, because they reach storage through shared helpers
 	// that a per-call wrapper would silently miss;
 	// TestEveryLockHeldDurableWriteIsCounted enforces that no lock-held write to

@@ -573,7 +573,11 @@ func (s *Server) handleDeleteTest(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleGetMetrics(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	test, ok := s.runner.GetTest(id)
+	historySince, historyLimit, ok := liveMetricsHistoryWindowFromQuery(w, r.URL.Query())
+	if !ok {
+		return
+	}
+	test, ok := s.runner.GetTestMetricsWindow(id, historySince, historyLimit)
 	if !ok {
 		writeError(w, http.StatusNotFound, "test not found")
 		return
@@ -591,10 +595,6 @@ func (s *Server) handleGetMetrics(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, fmt.Sprintf("groups must contain at most %d names of at most %d bytes", maxGroupFilterNames, maxGroupFilterNameBytes))
 		return
 	}
-	historySince, historyLimit, ok := liveMetricsHistoryWindowFromQuery(w, r.URL.Query())
-	if !ok {
-		return
-	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"test_id": id,
 		"status":  test.Status,
@@ -603,7 +603,7 @@ func (s *Server) handleGetMetrics(w http.ResponseWriter, r *http.Request) {
 		// request path value which may be a RefKey alias. DeleteTest cleans up the
 		// cache by canonical id, so an alias-keyed entry would otherwise never be
 		// evicted and leak for the process lifetime.
-		"history": filterLiveMetricsHistoryForGroupsCached(test.ID, selectLiveMetricsHistory(test.History, historySince, historyLimit), groupFilter),
+		"history": filterLiveMetricsHistoryForGroupsCached(test.ID, test.History, groupFilter),
 	})
 }
 
@@ -975,7 +975,7 @@ func (s *Server) handleMoveScript(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleMoveTest(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	test, ok := s.runner.GetTest(id)
+	test, ok := s.runner.GetTestSummary(id)
 	if !ok {
 		writeError(w, http.StatusNotFound, "test not found")
 		return

@@ -23,10 +23,8 @@ import (
 // live runner state would block behind that same holder
 // (healthCheckSnapshotWithoutRunnerLock). A lock-held write to the script,
 // scenario, settings or archive store stalls them exactly as a test-store write
-// does, and until this test existed nothing said so: the gauge covered four
-// call sites and missed twenty-six, including the reference-key sequence
-// allocation that every single script and scenario create performs with tr.mu
-// write-locked.
+// does. This guard originally exposed more than twenty missed call sites and now
+// also ensures future changes do not undo the off-lock authoring refactor.
 //
 // The lock state is derived positionally rather than from an allowlist of
 // function names, so a function that deliberately releases tr.mu around its

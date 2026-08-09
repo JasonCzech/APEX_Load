@@ -9,16 +9,16 @@ const { ESLint } = await import('eslint')
 // debt visible while preventing any rule category from growing. Lower these
 // ceilings as warnings are fixed so the gate ratchets in one direction.
 const legacyWarningBudgets = Object.freeze({
-  'jsx-a11y/click-events-have-key-events': 64,
-  'jsx-a11y/control-has-associated-label': 41,
-  'jsx-a11y/interactive-supports-focus': 0,
-  'jsx-a11y/label-has-associated-control': 69,
-  'jsx-a11y/no-autofocus': 6,
-  'jsx-a11y/no-interactive-element-to-noninteractive-role': 1,
-  'jsx-a11y/no-noninteractive-element-interactions': 36,
-  'jsx-a11y/no-noninteractive-element-to-interactive-role': 2,
-  'jsx-a11y/no-noninteractive-tabindex': 8,
-  'jsx-a11y/no-static-element-interactions': 39,
+	'jsx-a11y/click-events-have-key-events': 0,
+	'jsx-a11y/control-has-associated-label': 0,
+	'jsx-a11y/interactive-supports-focus': 0,
+	'jsx-a11y/label-has-associated-control': 0,
+	'jsx-a11y/no-autofocus': 0,
+	'jsx-a11y/no-interactive-element-to-noninteractive-role': 0,
+	'jsx-a11y/no-noninteractive-element-interactions': 0,
+	'jsx-a11y/no-noninteractive-element-to-interactive-role': 0,
+	'jsx-a11y/no-noninteractive-tabindex': 0,
+	'jsx-a11y/no-static-element-interactions': 0,
 })
 
 const eslint = new ESLint()

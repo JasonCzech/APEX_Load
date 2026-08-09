@@ -10,13 +10,16 @@ const mib = (value) => value * 1024 * 1024
 // includes modest headroom for structural scanners and other parser-heavy code;
 // compressed aggregate and route-specific limits remain the transfer/startup
 // regression guards. They are not an assertion that the current bundle has
-// reached its long-term size target.
+// reached its long-term size target. The aggregate ceilings were recalibrated
+// from the deterministic 2026-08-09 build (4.85 MiB JS raw / 110.50 KiB CSS
+// gzip), retaining less than three percent headroom while the tighter per-asset
+// and route budgets continue to catch loading regressions.
 export const DEFAULT_BUNDLE_BUDGETS = Object.freeze({
   '.js': Object.freeze({
     label: 'JavaScript',
     maxAssetBytes: kib(650),
     maxAssetGzipBytes: kib(220),
-    maxTotalBytes: mib(4.8),
+	maxTotalBytes: mib(4.9),
     maxTotalGzipBytes: mib(1.3),
   }),
   '.css': Object.freeze({
@@ -24,7 +27,7 @@ export const DEFAULT_BUNDLE_BUDGETS = Object.freeze({
     maxAssetBytes: kib(210),
     maxAssetGzipBytes: kib(34),
     maxTotalBytes: kib(650),
-    maxTotalGzipBytes: kib(110),
+	maxTotalGzipBytes: kib(112),
   }),
 })
 

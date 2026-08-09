@@ -1364,7 +1364,7 @@ export default function ApplicationRepositoryPage({
               <tbody>
                 {virtualizeCatalogRows && catalogPaddingTop > 0 && (
                   <tr aria-hidden="true">
-                    <td colSpan={9} style={{ height: catalogPaddingTop, padding: 0, border: 0 }} />
+					<td aria-hidden="true" colSpan={9} style={{ height: catalogPaddingTop, padding: 0, border: 0 }} />
                   </tr>
                 )}
                 {renderedCatalogRows.map(({ row, virtualIndex }) => (
@@ -1428,7 +1428,7 @@ export default function ApplicationRepositoryPage({
                 ))}
                 {virtualizeCatalogRows && catalogPaddingBottom > 0 && (
                   <tr aria-hidden="true">
-                    <td colSpan={9} style={{ height: catalogPaddingBottom, padding: 0, border: 0 }} />
+					<td aria-hidden="true" colSpan={9} style={{ height: catalogPaddingBottom, padding: 0, border: 0 }} />
                   </tr>
                 )}
                 {visibleRows.length === 0 && (

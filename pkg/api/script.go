@@ -281,6 +281,38 @@ func (tr *TestRunner) durableScriptForMutationLocked(id string) (*dsl.Script, er
 	return script, nil
 }
 
+func durableScriptForMutation(store scriptPersistence, id string, fallback *dsl.Script) (*dsl.Script, error) {
+	if store == nil {
+		return cloneScriptDefinition(fallback), nil
+	}
+	reader, ok := store.(interface {
+		GetScript(string) (*dsl.Script, error)
+	})
+	if !ok {
+		return cloneScriptDefinition(fallback), nil
+	}
+	script, err := reader.GetScript(id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return script, nil
+}
+
+func sameStoredScriptMutationVersion(current, snapshot *StoredScript) bool {
+	if current == nil || snapshot == nil {
+		return current == nil && snapshot == nil
+	}
+	if current.Script == nil || snapshot.Script == nil {
+		return current.Script == nil && snapshot.Script == nil && current.ID == snapshot.ID
+	}
+	return current.ID == snapshot.ID && current.RefKey == snapshot.RefKey &&
+		normalizeProjectID(current.ProjectID) == normalizeProjectID(snapshot.ProjectID) &&
+		current.Script.UpdatedAt.Equal(snapshot.Script.UpdatedAt)
+}
+
 func expectedScriptMutationProject(explicit string, cached *StoredScript) string {
 	if strings.TrimSpace(explicit) != "" {
 		return normalizeProjectID(explicit)
@@ -495,20 +527,32 @@ func (tr *TestRunner) storeScriptDurable(script *dsl.Script, restoringExistingJa
 	if err := validatePersistentLibraryScript(script); err != nil {
 		return nil, err
 	}
-	tr.mu.Lock()
-	defer tr.mu.Unlock()
-	tr.beginLockHeldDurableWrite()
-	defer tr.endLockHeldDurableWrite()
+	tr.scriptMutationMu.Lock()
+	defer tr.scriptMutationMu.Unlock()
 
 	scriptID := strings.TrimSpace(script.ID)
 	if scriptID == "" {
 		scriptID = uuid.New().String()
 	}
+	tr.mu.RLock()
 	if err := tr.rejectActivePrivateCISnapshotMutationLocked(scriptID); err != nil {
+		tr.mu.RUnlock()
 		return nil, err
 	}
-	existing := tr.scripts[scriptID]
-	current, err := tr.durableScriptForMutationLocked(scriptID)
+	if err := tr.projectDeletionErrorLocked(normalizeProjectID(script.ProjectID)); err != nil {
+		tr.mu.RUnlock()
+		return nil, err
+	}
+	existing := cloneStoredScriptForReadLocked(tr.scripts[scriptID])
+	scriptStore := tr.scriptStore
+	envCode := tr.envCode
+	tr.mu.RUnlock()
+
+	var cachedScript *dsl.Script
+	if existing != nil {
+		cachedScript = existing.Script
+	}
+	current, err := durableScriptForMutation(scriptStore, scriptID, cachedScript)
 	if err != nil {
 		return nil, err
 	}
@@ -529,9 +573,18 @@ func (tr *TestRunner) storeScriptDurable(script *dsl.Script, restoringExistingJa
 	if existing != nil && normalizeProjectID(existing.ProjectID) != script.ProjectID {
 		return nil, fmt.Errorf("script %s belongs to project %s and cannot be overwritten from project %s", script.ID, normalizeProjectID(existing.ProjectID), script.ProjectID)
 	}
+	releaseProjectMutation := tr.acquireProjectTestMutation(script.ProjectID)
+	defer releaseProjectMutation()
+	tr.mu.RLock()
 	if err := tr.projectDeletionErrorLocked(script.ProjectID); err != nil {
+		tr.mu.RUnlock()
 		return nil, err
 	}
+	if err := tr.rejectActivePrivateCISnapshotMutationLocked(scriptID); err != nil {
+		tr.mu.RUnlock()
+		return nil, err
+	}
+	tr.mu.RUnlock()
 	if strings.TrimSpace(script.Version) == "" {
 		script.Version = "1"
 	}
@@ -539,11 +592,11 @@ func (tr *TestRunner) storeScriptDurable(script *dsl.Script, restoringExistingJa
 		script.RefKey = existing.RefKey
 	}
 	if script.RefKey == "" {
-		sequence, err := tr.nextScriptSeqLocked()
+		sequence, err := tr.nextScriptSeqOutsideRunnerLock()
 		if err != nil {
 			return nil, fmt.Errorf("allocate script reference key: %w", err)
 		}
-		script.RefKey = refkey.Script(tr.envCode, sequence, 1)
+		script.RefKey = refkey.Script(envCode, sequence, 1)
 	}
 
 	createdAt := time.Now()
@@ -553,7 +606,7 @@ func (tr *TestRunner) storeScriptDurable(script *dsl.Script, restoringExistingJa
 	if script.CreatedAt.IsZero() {
 		script.CreatedAt = createdAt
 	}
-	if tr.scriptStore == nil {
+	if scriptStore == nil {
 		now := time.Now().UTC()
 		if existing != nil && existing.Script != nil && !now.After(existing.Script.UpdatedAt) {
 			now = existing.Script.UpdatedAt.Add(time.Nanosecond)
@@ -573,16 +626,16 @@ func (tr *TestRunner) storeScriptDurable(script *dsl.Script, restoringExistingJa
 		Script:          script,
 	}
 
-	if tr.scriptStore != nil {
-		_, supportsCreateOnly := tr.scriptStore.(createOnlyScriptPersistence)
-		_, supportsCAS := tr.scriptStore.(conditionalScriptPersistence)
+	if scriptStore != nil {
+		_, supportsCreateOnly := scriptStore.(createOnlyScriptPersistence)
+		_, supportsCAS := scriptStore.(conditionalScriptPersistence)
 		if !supportsCreateOnly || !supportsCAS {
 			if err := tr.saveStoredScriptWithImportTrust(script, prior, false, ""); err != nil {
 				return nil, err
 			}
 		} else {
 			if current == nil {
-				store, ok := tr.scriptStore.(createOnlyScriptPersistence)
+				store, ok := scriptStore.(createOnlyScriptPersistence)
 				if !ok {
 					return nil, fmt.Errorf("durable script store does not support atomic create-only persistence")
 				}
@@ -606,7 +659,7 @@ func (tr *TestRunner) storeScriptDurable(script *dsl.Script, restoringExistingJa
 				}
 				script = projected
 				script.CreatedAt = current.CreatedAt
-				store, ok := tr.scriptStore.(conditionalScriptPersistence)
+				store, ok := scriptStore.(conditionalScriptPersistence)
 				if !ok {
 					return nil, fmt.Errorf("durable script store does not support conditional updates")
 				}
@@ -622,8 +675,19 @@ func (tr *TestRunner) storeScriptDurable(script *dsl.Script, restoringExistingJa
 	}
 	canonicalScript := cloneScriptDefinition(script)
 
-	if existing != nil {
-		tr.removeRefKeyLocked(existing.RefKey)
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+	if err := tr.projectDeletionErrorLocked(script.ProjectID); err != nil {
+		return nil, err
+	}
+	if err := tr.rejectActivePrivateCISnapshotMutationLocked(scriptID); err != nil {
+		return nil, err
+	}
+	if scriptStore == nil && !sameStoredScriptMutationVersion(tr.scripts[scriptID], existing) {
+		return nil, errScriptConcurrentChange
+	}
+	if previous := tr.scripts[stored.ID]; previous != nil {
+		tr.removeRefKeyLocked(previous.RefKey)
 	}
 	stored.FolderID = cloneStringPtr(stored.FolderID)
 	stored.Script = canonicalScript

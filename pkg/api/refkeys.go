@@ -51,6 +51,12 @@ func (tr *TestRunner) initRefKeys() {
 
 	tr.refScriptSeq = tr.loadRefSeqSettingLocked(refSeqSettingKey(tr.envCode, refkey.TypeScript))
 	tr.refScenarioSeq = tr.loadRefSeqSettingLocked(refSeqSettingKey(tr.envCode, refkey.TypeScenario))
+	tr.scriptRefSeqAllocator = newArtifactReferenceSequenceAllocator(
+		refSeqSettingKey(tr.envCode, refkey.TypeScript), tr.refScriptSeq, tr.settingsStore,
+	)
+	tr.scenarioRefSeqAllocator = newArtifactReferenceSequenceAllocator(
+		refSeqSettingKey(tr.envCode, refkey.TypeScenario), tr.refScenarioSeq, tr.settingsStore,
+	)
 
 	for _, script := range tr.scripts {
 		if script == nil {
@@ -113,6 +119,88 @@ type atomicReferenceSequenceStore interface {
 
 type atomicReferenceSequenceFloorStore interface {
 	EnsureSettingSequenceAtLeast(key string, minimum int) (int, error)
+}
+
+// artifactReferenceSequenceAllocator keeps script/scenario sequence storage I/O
+// independent of TestRunner.mu. Its mutex preserves the old single-controller
+// serialization for compatibility stores that do not implement atomic sequence
+// allocation; production stores still provide cross-replica uniqueness.
+type artifactReferenceSequenceAllocator struct {
+	mu      sync.Mutex
+	key     string
+	store   settingsPersistence
+	current int
+}
+
+func newArtifactReferenceSequenceAllocator(key string, current int, store settingsPersistence) *artifactReferenceSequenceAllocator {
+	return &artifactReferenceSequenceAllocator{key: key, current: current, store: store}
+}
+
+func (allocator *artifactReferenceSequenceAllocator) next() (int, error) {
+	if allocator == nil {
+		return 0, fmt.Errorf("artifact reference sequence allocator is not initialized")
+	}
+	allocator.mu.Lock()
+	defer allocator.mu.Unlock()
+	if store, ok := allocator.store.(atomicReferenceSequenceStore); ok {
+		if allocator.current > 0 {
+			if floorStore, floorOK := allocator.store.(atomicReferenceSequenceFloorStore); floorOK {
+				floor, err := floorStore.EnsureSettingSequenceAtLeast(allocator.key, allocator.current)
+				if err != nil {
+					return 0, err
+				}
+				if floor > allocator.current {
+					allocator.current = floor
+				}
+			}
+		}
+		next, err := store.NextSettingSequence(allocator.key)
+		for err == nil && next <= allocator.current {
+			next, err = store.NextSettingSequence(allocator.key)
+		}
+		if err == nil {
+			allocator.current = next
+		}
+		return next, err
+	}
+	current := allocator.current
+	if allocator.store != nil {
+		raw, err := allocator.store.GetSetting(allocator.key)
+		if err != nil {
+			return 0, err
+		}
+		if persisted, parseErr := strconv.Atoi(strings.TrimSpace(raw)); parseErr == nil && persisted > current {
+			current = persisted
+		}
+	}
+	next := current + 1
+	if allocator.store != nil {
+		if err := allocator.store.SaveSetting(allocator.key, strconv.Itoa(next)); err != nil {
+			return 0, err
+		}
+	}
+	allocator.current = next
+	return next, nil
+}
+
+func (allocator *artifactReferenceSequenceAllocator) observe(sequence int) {
+	if allocator == nil || sequence <= 0 {
+		return
+	}
+	allocator.mu.Lock()
+	if sequence > allocator.current {
+		allocator.current = sequence
+	}
+	allocator.mu.Unlock()
+}
+
+func (allocator *artifactReferenceSequenceAllocator) bindStore(store settingsPersistence) {
+	if allocator == nil {
+		return
+	}
+	allocator.mu.Lock()
+	allocator.store = store
+	allocator.mu.Unlock()
 }
 
 // runReferenceSequenceAllocator is shared by the live runner and every
@@ -196,9 +284,9 @@ func (allocator *runReferenceSequenceAllocator) observe(day string, sequence int
 	allocator.byDay[day] = sequence
 }
 
-// allocateRefSequenceLocked runs with tr.mu held and issues a durable settings
-// write on every script and scenario create, so it opens an in-flight section
-// for the backstop and the liveness probe; see beginLockHeldDurableWrite.
+// allocateRefSequenceLocked is the compatibility/bootstrap fallback for callers
+// without a dedicated artifact allocator. New authoring paths use the allocator
+// directly outside tr.mu; this fallback remains counted because it runs locked.
 func (tr *TestRunner) allocateRefSequenceLocked(key string, current int) (int, error) {
 	tr.beginLockHeldDurableWrite()
 	defer tr.endLockHeldDurableWrite()
@@ -219,7 +307,14 @@ func (tr *TestRunner) allocateRefSequenceLocked(key string, current int) (int, e
 }
 
 func (tr *TestRunner) nextScriptSeqLocked() (int, error) {
-	next, err := tr.allocateRefSequenceLocked(refSeqSettingKey(tr.envCode, refkey.TypeScript), tr.refScriptSeq)
+	var next int
+	var err error
+	if tr.scriptRefSeqAllocator != nil {
+		tr.scriptRefSeqAllocator.bindStore(tr.settingsStore)
+		next, err = tr.scriptRefSeqAllocator.next()
+	} else {
+		next, err = tr.allocateRefSequenceLocked(refSeqSettingKey(tr.envCode, refkey.TypeScript), tr.refScriptSeq)
+	}
 	if err == nil {
 		tr.refScriptSeq = next
 	}
@@ -227,11 +322,46 @@ func (tr *TestRunner) nextScriptSeqLocked() (int, error) {
 }
 
 func (tr *TestRunner) nextScenarioSeqLocked() (int, error) {
-	next, err := tr.allocateRefSequenceLocked(refSeqSettingKey(tr.envCode, refkey.TypeScenario), tr.refScenarioSeq)
+	var next int
+	var err error
+	if tr.scenarioRefSeqAllocator != nil {
+		tr.scenarioRefSeqAllocator.bindStore(tr.settingsStore)
+		next, err = tr.scenarioRefSeqAllocator.next()
+	} else {
+		next, err = tr.allocateRefSequenceLocked(refSeqSettingKey(tr.envCode, refkey.TypeScenario), tr.refScenarioSeq)
+	}
 	if err == nil {
 		tr.refScenarioSeq = next
 	}
 	return next, err
+}
+
+func (tr *TestRunner) nextScriptSeqOutsideRunnerLock() (int, error) {
+	tr.scriptRefSeqAllocator.bindStore(tr.settingsStore)
+	next, err := tr.scriptRefSeqAllocator.next()
+	if err != nil {
+		return 0, err
+	}
+	tr.mu.Lock()
+	if next > tr.refScriptSeq {
+		tr.refScriptSeq = next
+	}
+	tr.mu.Unlock()
+	return next, nil
+}
+
+func (tr *TestRunner) nextScenarioSeqOutsideRunnerLock() (int, error) {
+	tr.scenarioRefSeqAllocator.bindStore(tr.settingsStore)
+	next, err := tr.scenarioRefSeqAllocator.next()
+	if err != nil {
+		return 0, err
+	}
+	tr.mu.Lock()
+	if next > tr.refScenarioSeq {
+		tr.refScenarioSeq = next
+	}
+	tr.mu.Unlock()
+	return next, nil
 }
 
 func (tr *TestRunner) nextRunSeqLocked(now time.Time) (int, error) {

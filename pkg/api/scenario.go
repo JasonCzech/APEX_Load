@@ -32,6 +32,28 @@ type conditionalScenarioDeletePersistence interface {
 	DeleteScenarioIfUnchanged(string, time.Time) (bool, error)
 }
 
+func updateScenarioAggregateIfUnchanged(store conditionalScenarioPersistence, scenario *storage.Scenario, scripts []storage.ScenarioScript, bindings []storage.ScenarioDataPoolBinding, expected time.Time) error {
+	updated, err := store.UpdateScenarioWithDataPoolBindingsIfUnchanged(scenario, scripts, bindings, expected)
+	if err != nil {
+		return err
+	}
+	if !updated {
+		return errScenarioConcurrentChange
+	}
+	return nil
+}
+
+func createScenarioAggregateIfAbsent(store conditionalScenarioPersistence, scenario *storage.Scenario, scripts []storage.ScenarioScript, bindings []storage.ScenarioDataPoolBinding) error {
+	created, err := store.CreateScenarioWithDataPoolBindingsIfAbsent(scenario, scripts, bindings)
+	if err != nil {
+		return err
+	}
+	if !created {
+		return errScenarioConcurrentChange
+	}
+	return nil
+}
+
 var errScenarioConcurrentChange = fmt.Errorf("scenario changed concurrently after conflict preflight")
 var errScheduleConcurrentChange = errors.New("schedule changed concurrently")
 var errScheduleHasActiveOccurrence = errors.New("schedule has an active materializing occurrence")
@@ -82,6 +104,8 @@ type leaseTermFencedScenarioScheduleOccurrenceClaimPersistence interface {
 }
 
 func (tr *TestRunner) StoreScenario(req CreateScenarioRequest) (*StoredScenario, error) {
+	tr.scenarioMutationMu.Lock()
+	defer tr.scenarioMutationMu.Unlock()
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
 	stored, err := tr.storeScenarioLocked(uuid.New().String(), req)
@@ -89,6 +113,8 @@ func (tr *TestRunner) StoreScenario(req CreateScenarioRequest) (*StoredScenario,
 }
 
 func (tr *TestRunner) StoreScenarioWithID(id string, req CreateScenarioRequest) (*StoredScenario, error) {
+	tr.scenarioMutationMu.Lock()
+	defer tr.scenarioMutationMu.Unlock()
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
 	id = strings.TrimSpace(id)
@@ -100,10 +126,10 @@ func (tr *TestRunner) StoreScenarioWithID(id string, req CreateScenarioRequest) 
 }
 
 func (tr *TestRunner) UpdateScenario(id string, req CreateScenarioRequest) (*StoredScenario, bool, error) {
+	tr.scenarioMutationMu.Lock()
+	defer tr.scenarioMutationMu.Unlock()
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
-	tr.beginLockHeldDurableWrite()
-	defer tr.endLockHeldDurableWrite()
 	id = tr.resolveRefKeyLocked(id)
 	current, ok := tr.scenarios[id]
 	if !ok {
@@ -114,14 +140,7 @@ func (tr *TestRunner) UpdateScenario(id string, req CreateScenarioRequest) (*Sto
 	if store, supported := tr.scenarioStore.(conditionalScenarioPersistence); supported {
 		expectedUpdatedAt := current.UpdatedAt
 		scenario, err = tr.storeScenarioLockedWithWriter(id, req, func(scenario *storage.Scenario, scripts []storage.ScenarioScript, bindings []storage.ScenarioDataPoolBinding) error {
-			updated, updateErr := store.UpdateScenarioWithDataPoolBindingsIfUnchanged(scenario, scripts, bindings, expectedUpdatedAt)
-			if updateErr != nil {
-				return updateErr
-			}
-			if !updated {
-				return errScenarioConcurrentChange
-			}
-			return nil
+			return updateScenarioAggregateIfUnchanged(store, scenario, scripts, bindings, expectedUpdatedAt)
 		})
 	} else {
 		// Lightweight adapters retain the legacy writer contract. Production
@@ -138,24 +157,17 @@ func (tr *TestRunner) storeScenarioLocked(id string, req CreateScenarioRequest) 
 // StoreScenarioWithIDCreateOnly materializes a deterministic imported scenario
 // without permitting a concurrent replica or client to be overwritten.
 func (tr *TestRunner) StoreScenarioWithIDCreateOnly(id string, req CreateScenarioRequest) (*StoredScenario, error) {
+	tr.scenarioMutationMu.Lock()
+	defer tr.scenarioMutationMu.Unlock()
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
-	tr.beginLockHeldDurableWrite()
-	defer tr.endLockHeldDurableWrite()
 	id = strings.TrimSpace(id)
 	if id == "" {
 		return nil, fmt.Errorf("scenario id is required")
 	}
 	return tr.storeScenarioLockedWithWriter(id, req, func(scenario *storage.Scenario, scripts []storage.ScenarioScript, bindings []storage.ScenarioDataPoolBinding) error {
 		if store, ok := tr.scenarioStore.(conditionalScenarioPersistence); ok {
-			created, err := store.CreateScenarioWithDataPoolBindingsIfAbsent(scenario, scripts, bindings)
-			if err != nil {
-				return err
-			}
-			if !created {
-				return errScenarioConcurrentChange
-			}
-			return nil
+			return createScenarioAggregateIfAbsent(store, scenario, scripts, bindings)
 		}
 		if tr.scenarioStore != nil {
 			return fmt.Errorf("durable scenario store does not support atomic create-only persistence")
@@ -170,24 +182,17 @@ func (tr *TestRunner) StoreScenarioWithIDCreateOnly(id string, req CreateScenari
 // UpdateScenarioIfUnchanged applies a library synchronization update only when
 // the durable scenario version observed during conflict detection is current.
 func (tr *TestRunner) UpdateScenarioIfUnchanged(id string, req CreateScenarioRequest, expectedUpdatedAt time.Time) (*StoredScenario, error) {
+	tr.scenarioMutationMu.Lock()
+	defer tr.scenarioMutationMu.Unlock()
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
-	tr.beginLockHeldDurableWrite()
-	defer tr.endLockHeldDurableWrite()
 	id = strings.TrimSpace(id)
 	if id == "" || expectedUpdatedAt.IsZero() {
 		return nil, fmt.Errorf("scenario id and expected updated_at are required")
 	}
 	return tr.storeScenarioLockedWithWriter(id, req, func(scenario *storage.Scenario, scripts []storage.ScenarioScript, bindings []storage.ScenarioDataPoolBinding) error {
 		if store, ok := tr.scenarioStore.(conditionalScenarioPersistence); ok {
-			updated, err := store.UpdateScenarioWithDataPoolBindingsIfUnchanged(scenario, scripts, bindings, expectedUpdatedAt)
-			if err != nil {
-				return err
-			}
-			if !updated {
-				return errScenarioConcurrentChange
-			}
-			return nil
+			return updateScenarioAggregateIfUnchanged(store, scenario, scripts, bindings, expectedUpdatedAt)
 		}
 		if tr.scenarioStore != nil {
 			return fmt.Errorf("durable scenario store does not support conditional updates")
@@ -303,9 +308,25 @@ func (tr *TestRunner) storeScenarioLockedWithWriter(id string, req CreateScenari
 	for index := range groups {
 		groups[index].runtimeSecretScope = id
 	}
-	testGroups, engineGroups, _, err := tr.compileManagedTestGroupsForModeWithDataSourcesLocked(groups, req.RuntimeSettings, nil, normalizeScenarioMode(req.ScenarioMode))
+	buildRequest := CreateTestRequest{
+		Groups:          groups,
+		RuntimeSettings: req.RuntimeSettings,
+		ScenarioMode:    normalizeScenarioMode(req.ScenarioMode),
+	}
+	buildSnapshot, preparedBuildRequest, buildFence := tr.managedTestBuildSnapshotLocked(buildRequest)
+	tr.mu.Unlock()
+	testGroups, engineGroups, _, err := buildSnapshot.compileManagedTestGroupsForModeWithDataSourcesLocked(
+		preparedBuildRequest.Groups,
+		preparedBuildRequest.RuntimeSettings,
+		nil,
+		preparedBuildRequest.ScenarioMode,
+	)
+	tr.mu.Lock()
 	if err != nil {
 		return nil, err
+	}
+	if tr.contentRevision != buildFence.contentRevision {
+		return nil, errScenarioConcurrentChange
 	}
 	if runtimeSettingsReview := buildRuntimeSettingsScenarioReview(testGroups, engineGroups); runtimeSettingsReview != nil && runtimeSettingsReview.Status == "blocked" {
 		return nil, fmt.Errorf("runtime settings blocked: %s", runtimeSettingsReview.Summary)
@@ -320,7 +341,9 @@ func (tr *TestRunner) storeScenarioLockedWithWriter(id string, req CreateScenari
 		refKey = existing.RefKey
 	}
 	if refKey == "" {
-		sequence, err := tr.nextScenarioSeqLocked()
+		tr.mu.Unlock()
+		sequence, err := tr.nextScenarioSeqOutsideRunnerLock()
+		tr.mu.Lock()
 		if err != nil {
 			return nil, fmt.Errorf("allocate scenario reference key: %w", err)
 		}
@@ -372,10 +395,25 @@ func (tr *TestRunner) storeScenarioLockedWithWriter(id string, req CreateScenari
 	if err != nil {
 		return nil, err
 	}
-	if err := tr.validateDataPoolProjectsLocked(projectID, dataPools); err != nil {
+	poolStore := tr.dataPoolStore
+	tr.mu.Unlock()
+	poolProjectErr := validateDataPoolProjects(poolStore, projectID, dataPools)
+	poolArchiveErr := validateDataPoolsNotArchived(poolStore, dataPools)
+	tr.mu.Lock()
+	if poolProjectErr != nil {
+		return nil, poolProjectErr
+	}
+	if poolArchiveErr != nil {
+		return nil, poolArchiveErr
+	}
+	if err := tr.projectDeletionErrorLocked(projectID); err != nil {
 		return nil, err
 	}
-	if err := tr.validateDataPoolsNotArchivedLocked(dataPools); err != nil {
+	tr.mu.Unlock()
+	releaseProjectMutation := tr.acquireProjectTestMutation(projectID)
+	tr.mu.Lock()
+	defer releaseProjectMutation()
+	if err := tr.projectDeletionErrorLocked(projectID); err != nil {
 		return nil, err
 	}
 	actor := req.creationActor
@@ -387,48 +425,54 @@ func (tr *TestRunner) storeScenarioLockedWithWriter(id string, req CreateScenari
 		credentialGroups = []TestGroup{{runtimeSecretValues: runtimeSecretValues}}
 	}
 	commitFingerprint := scenarioRuntimeCommitFingerprint(scenario, scripts)
-	runtimeSecretAttempt, err := tr.persistRuntimeOverrideSecretValuesForResource(
+	scenarioStore := tr.scenarioStore
+	tr.mu.Unlock()
+	runtimeSecretAttempt, persistErr := tr.persistRuntimeOverrideSecretValuesForResource(
 		projectID, id, commitFingerprint, refKey, credentialGroups, actor,
-		runtimeSecretProvisioningOptions{
-			ResourceType:      "scenario",
-			CommitFingerprint: commitFingerprint,
-		},
+		runtimeSecretProvisioningOptions{ResourceType: "scenario", CommitFingerprint: commitFingerprint},
 	)
-	if err != nil {
-		return nil, err
-	}
-	rollbackProvisioning := func(persistErr error) error {
-		rollbackErr := tr.rollbackRuntimeOverrideSecretAttempt(projectID, id, runtimeSecretAttempt, "scenario_persistence_failed")
-		return errors.Join(persistErr, rollbackErr)
-	}
-	if writer != nil {
-		if err := writer(scenario, scripts, dataPools); err != nil {
-			return nil, rollbackProvisioning(err)
+	if persistErr == nil {
+		rollbackProvisioning := func(commitErr error) error {
+			rollbackErr := tr.rollbackRuntimeOverrideSecretAttempt(projectID, id, runtimeSecretAttempt, "scenario_persistence_failed")
+			return errors.Join(commitErr, rollbackErr)
 		}
-	} else if tr.scenarioStore != nil {
-		if atomicStore, ok := tr.scenarioStore.(atomicScenarioPersistence); ok {
-			if err := atomicStore.SaveScenarioWithDataPoolBindings(scenario, scripts, dataPools); err != nil {
-				return nil, rollbackProvisioning(err)
+		if writer != nil {
+			if commitErr := writer(scenario, scripts, dataPools); commitErr != nil {
+				persistErr = rollbackProvisioning(commitErr)
 			}
-		} else {
-			// Non-SQL test/adaptor stores retain the legacy two-call contract.
-			// Production SQLite/PostgreSQL stores implement the atomic interface.
-			if err := tr.scenarioStore.SaveScenario(scenario, scripts); err != nil {
-				return nil, rollbackProvisioning(err)
-			}
-			if err := tr.scenarioStore.SaveScenarioDataPoolBindings(id, dataPools); err != nil {
-				return nil, rollbackProvisioning(err)
+		} else if scenarioStore != nil {
+			if atomicStore, ok := scenarioStore.(atomicScenarioPersistence); ok {
+				if commitErr := atomicStore.SaveScenarioWithDataPoolBindings(scenario, scripts, dataPools); commitErr != nil {
+					persistErr = rollbackProvisioning(commitErr)
+				}
+			} else if commitErr := scenarioStore.SaveScenario(scenario, scripts); commitErr != nil {
+				persistErr = rollbackProvisioning(commitErr)
+			} else if commitErr := scenarioStore.SaveScenarioDataPoolBindings(id, dataPools); commitErr != nil {
+				persistErr = rollbackProvisioning(commitErr)
 			}
 		}
 	}
-	if err := tr.completeRuntimeOverrideSecretAttempt(runtimeSecretAttempt); err != nil {
+	cleanupErr := error(nil)
+	if persistErr == nil {
+		cleanupErr = tr.completeRuntimeOverrideSecretAttempt(runtimeSecretAttempt)
+	}
+	tr.mu.Lock()
+	if persistErr != nil {
+		return nil, persistErr
+	}
+	if cleanupErr != nil {
 		// The scenario fingerprint is durable commit evidence. Recovery retains
 		// the governed values and removes only the value-free journal.
-		slog.Warn("scenario runtime credential provisioning journal cleanup deferred", "scenario_id", id, "error", err)
+		slog.Warn("scenario runtime credential provisioning journal cleanup deferred", "scenario_id", id, "error", cleanupErr)
 		tr.scheduleRuntimeOverrideSecretAttempt(runtimeSecretAttempt.ID, runtimeSecretAttempt.LeaseExpiresAt)
 	}
-	stored := tr.buildStoredScenario(scenario, scripts)
-	stored.DataPools = dataPools
+	schedules := []*storage.ScenarioSchedule(nil)
+	if current := tr.scenarios[id]; current != nil {
+		for _, schedule := range current.Schedules {
+			schedules = append(schedules, cloneScenarioSchedule(schedule))
+		}
+	}
+	stored := tr.buildStoredScenarioFromPartsLocked(scenario, scripts, dataPools, schedules)
 	tr.scenarios[id] = stored
 	tr.contentRevision++
 	tr.indexRefKeyLocked(stored.RefKey, stored.ID)

@@ -547,42 +547,44 @@ func (tr *TestRunner) managedTestBuildFenceCurrent(fence managedTestBuildFence) 
 // (read or write).
 func (tr *TestRunner) managedTestBuildSnapshotLocked(req CreateTestRequest) (*TestRunner, CreateTestRequest, managedTestBuildFence) {
 	snapshot := &TestRunner{
-		tests:                 make(map[string]*ManagedTest),
-		scripts:               make(map[string]*StoredScript),
-		scenarios:             make(map[string]*StoredScenario, 1),
-		archives:              make(map[string]*storage.RunArchiveRecord),
-		deletingProjects:      make(map[string]struct{}, len(tr.deletingProjects)),
-		hub:                   nil,
-		maxTests:              tr.maxTests,
-		settings:              cloneSystemSettings(tr.settings),
-		scriptStore:           tr.scriptStore,
-		dataPoolStore:         tr.dataPoolStore,
-		projectStore:          tr.projectStore,
-		releaseStore:          tr.releaseStore,
-		settingsStore:         tr.settingsStore,
-		projectSecretStore:    tr.projectSecretStore,
-		objectRepoStore:       tr.objectRepoStore,
-		fleetStore:            tr.fleetStore,
-		leadership:            tr.leadership,
-		durableExecutionFence: tr.durableExecutionFence,
-		liveState:             tr.liveState,
-		execution:             tr.execution,
-		notifier:              nil,
-		routeCache:            make(map[string]latencyRouteCacheEntry),
-		envCode:               tr.envCode,
-		runRefSeqAllocator:    tr.runRefSeqAllocator,
-		refKeyIndex:           make(map[string]string),
-		capacityAdvisoryCache: make(map[string]cachedCapacityAdvisory),
-		capacityAdvisoryGen:   tr.capacityAdvisoryGen,
-		remoteControlGates:    make(map[string]*distributedControlGate),
-		seqPlanRuns:           make(map[string]*seqPlanRunState),
-		seqPlanByTest:         make(map[string]string),
-		seqPlanRetrying:       make(map[string]struct{}),
-		terminalRetrying:      make(map[string]struct{}),
-		archiveCommitGates:    make(map[string]*archiveCommitGate),
-		stopTeardownRetries:   make(map[string]stopTeardownRetryIntent),
-		privateCISnapshots:    make(map[string]int),
-		snapshotWrites:        make(map[string]*runSnapshotWriteState),
+		tests:                   make(map[string]*ManagedTest),
+		scripts:                 make(map[string]*StoredScript),
+		scenarios:               make(map[string]*StoredScenario, 1),
+		archives:                make(map[string]*storage.RunArchiveRecord),
+		deletingProjects:        make(map[string]struct{}, len(tr.deletingProjects)),
+		hub:                     nil,
+		maxTests:                tr.maxTests,
+		settings:                cloneSystemSettings(tr.settings),
+		scriptStore:             tr.scriptStore,
+		dataPoolStore:           tr.dataPoolStore,
+		projectStore:            tr.projectStore,
+		releaseStore:            tr.releaseStore,
+		settingsStore:           tr.settingsStore,
+		projectSecretStore:      tr.projectSecretStore,
+		objectRepoStore:         tr.objectRepoStore,
+		fleetStore:              tr.fleetStore,
+		leadership:              tr.leadership,
+		durableExecutionFence:   tr.durableExecutionFence,
+		liveState:               tr.liveState,
+		execution:               tr.execution,
+		notifier:                nil,
+		routeCache:              make(map[string]latencyRouteCacheEntry),
+		envCode:                 tr.envCode,
+		scriptRefSeqAllocator:   tr.scriptRefSeqAllocator,
+		scenarioRefSeqAllocator: tr.scenarioRefSeqAllocator,
+		runRefSeqAllocator:      tr.runRefSeqAllocator,
+		refKeyIndex:             make(map[string]string),
+		capacityAdvisoryCache:   make(map[string]cachedCapacityAdvisory),
+		capacityAdvisoryGen:     tr.capacityAdvisoryGen,
+		remoteControlGates:      make(map[string]*distributedControlGate),
+		seqPlanRuns:             make(map[string]*seqPlanRunState),
+		seqPlanByTest:           make(map[string]string),
+		seqPlanRetrying:         make(map[string]struct{}),
+		terminalRetrying:        make(map[string]struct{}),
+		archiveCommitGates:      make(map[string]*archiveCommitGate),
+		stopTeardownRetries:     make(map[string]stopTeardownRetryIntent),
+		privateCISnapshots:      make(map[string]int),
+		snapshotWrites:          make(map[string]*runSnapshotWriteState),
 	}
 	for id, test := range tr.tests {
 		if managedTestBuildAdmissionRelevant(test) {
@@ -2734,14 +2736,18 @@ func validateDataPoolProjects(poolStore dataPoolPersistence, projectID string, b
 // ValidateScenarioLoadModel needs project isolation but must report archived
 // pools as a blocked item in the report, not fail the whole validation call.
 func (tr *TestRunner) validateDataPoolsNotArchivedLocked(bindings []storage.ScenarioDataPoolBinding) error {
+	return validateDataPoolsNotArchived(tr.dataPoolStore, bindings)
+}
+
+func validateDataPoolsNotArchived(poolStore dataPoolPersistence, bindings []storage.ScenarioDataPoolBinding) error {
 	if len(bindings) == 0 {
 		return nil
 	}
-	if tr.dataPoolStore == nil {
+	if poolStore == nil {
 		return fmt.Errorf("data pool storage is not configured")
 	}
 	for _, binding := range bindings {
-		pool, err := tr.dataPoolStore.GetDataPool(strings.TrimSpace(binding.PoolID))
+		pool, err := poolStore.GetDataPool(strings.TrimSpace(binding.PoolID))
 		if err != nil || pool == nil {
 			// Existence and ownership are the project validator's concern.
 			continue

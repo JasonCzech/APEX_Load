@@ -302,14 +302,14 @@ export default function PoolAllocationCard({ canManage = false }: Props) {
                       }}
                     />
                     <datalist id="cluster-agentpools">
-                      {nodePoolOptions.map(name => <option key={name} value={name} />)}
+					  {nodePoolOptions.map(name => <option key={name} value={name}>{name}</option>)}
                     </datalist>
                   </label>
                   <label className="pp-field">
                     <span>Zone</span>
                     <input list="cluster-zones" value={draft.zone} onChange={e => updateDraft({ zone: e.target.value })} />
                     <datalist id="cluster-zones">
-                      {zoneOptions.map(zone => <option key={zone} value={zone} />)}
+					  {zoneOptions.map(zone => <option key={zone} value={zone}>{zone}</option>)}
                     </datalist>
                   </label>
                 </div>
