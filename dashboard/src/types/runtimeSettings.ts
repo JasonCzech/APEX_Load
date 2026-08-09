@@ -50,6 +50,12 @@ export type RuntimeJavaVuserSettings = Pick<
  * and would each need null handling for a value only the run-editor patch can hold. The model
  * writes those two through stampClearedRuntimeSections and reads them back through
  * mergeRuntimeSettingsForRun, which are the only places that see the null.
+ *
+ * stampClearedRuntimeSections keys off the section being ABSENT from the patch, so that only
+ * holds because setRuntimeBrowser removes an emptied section in BOTH shapes. It deliberately
+ * does not treat a present-but-empty section as a clear: an empty `browser_config` is a
+ * whole-section replace, which is the only way a group can override an ancestor's pinned
+ * browser section.
  */
 export interface RuntimeSettingsOverride {
   iterations?: number

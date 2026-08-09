@@ -5,6 +5,7 @@ import { createRoot, Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import NewTestPage from './NewTestPage'
+import { CLEARABLE_RUNTIME_SECTIONS, type ClearableRuntimeSection } from './newTestRunModel'
 import { pacingFromEdit } from './pacingEditModel'
 import { persistNewTestQueueAttempt } from './newTestQueueAttempt'
 import { NavigationGuardProvider } from '../hooks/NavigationGuardRoot'
@@ -2011,6 +2012,109 @@ describe('NewTestPage', () => {
     expect(payload.groups?.[0].runtime_settings).toEqual({ log_level: 'debug' })
   })
 
+  it('clears a whole-section browser_config for this run instead of pinning an empty one', async () => {
+    // Same operator action and same promise as the flat-shape test above, in the OTHER wire
+    // shape the scenario editor writes (RuntimeSettingsGroupEditor's patchBrowserConfig always
+    // emits browser_config). Leaving the section behind as `{}` is not a clear: the API applies
+    // it as `script.Config.Browser = *cloneViaJSON(BrowserConfig)`, so the script's own engine,
+    // viewport and timeouts are replaced with the zero value while the dialog says "Standard".
+    apiMock.listScenarios.mockResolvedValue({
+      scenarios: [
+        {
+          id: 'scenario-1',
+          name: 'Checkout Smoke',
+          duration: '10m',
+          scenario_mode: 'vuser_driven',
+          scripts: [
+            {
+              order: 1,
+              name: 'Checkout',
+              script_id: 'script-1',
+              script_name: 'Checkout Script',
+              protocol: 'browser',
+              vusers: 10,
+              runtime_settings: { browser_config: { device_profile: 'iPhone 14 Pro', headless: true }, log_level: 'debug' },
+            },
+          ],
+          script_count: 1,
+          created_at: '2026-05-12T20:00:00Z',
+          updated_at: '2026-05-12T20:00:00Z',
+          associated_releases: [],
+        },
+      ],
+    })
+
+    await act(async () => {
+      root.render(
+        <NewTestPage
+          activeApplication={{ id: 'app-1', name: 'ACC', created_at: '', updated_at: '' }}
+          activeRelease={{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }}
+          releases={[{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }]}
+          onSelectTest={vi.fn()}
+          onCreateRelease={vi.fn().mockResolvedValue(null)}
+        />,
+      )
+    })
+    await flushPromises()
+
+    const scenarioRow = container.querySelector('.new-test-scenario-table-row') as HTMLTableRowElement | null
+    await act(async () => {
+      scenarioRow?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    const openGroupDialog = async () => {
+      const row = Array.from(container.querySelectorAll('.new-test-script-row')).find(element => element.textContent?.includes('Checkout')) as HTMLTableRowElement | undefined
+      await act(async () => {
+        row?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      })
+      return document.querySelector('.run-group-modal') as HTMLElement | null
+    }
+
+    const modal = await openGroupDialog()
+    expect(modal).toBeTruthy()
+    if (!modal) return
+    const deviceProfile = findControlByLabel<HTMLInputElement>(modal, 'Device profile', 'input')
+    const headless = findControlByLabel<HTMLSelectElement>(modal, 'Headless', 'select')
+    expect(deviceProfile?.value).toBe('iPhone 14 Pro')
+    expect(headless?.value).toBe('true')
+    if (!deviceProfile || !headless) return
+
+    await act(async () => {
+      setInputValue(deviceProfile, '')
+    })
+    await act(async () => {
+      setSelectValue(headless, '')
+    })
+    const saveButton = Array.from(modal.querySelectorAll('button')).find(button => button.textContent === 'Save For This Run') as HTMLButtonElement | undefined
+    expect(saveButton?.disabled).toBe(false)
+    await act(async () => {
+      saveButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(container.textContent).toContain('Saved script settings for this run only.')
+
+    const reopened = await openGroupDialog()
+    expect(reopened).toBeTruthy()
+    if (!reopened) return
+    expect(findControlByLabel<HTMLInputElement>(reopened, 'Device profile', 'input')?.value).toBe('')
+    expect(findControlByLabel<HTMLSelectElement>(reopened, 'Headless', 'select')?.value).toBe('')
+    const closeButton = Array.from(reopened.querySelectorAll('button')).find(button => button.textContent === 'Cancel')
+    await act(async () => {
+      closeButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    await flushDebouncedPreflight()
+    const createQueuedButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Hold for Manual Start')
+    await act(async () => {
+      createQueuedButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    expect(apiMock.createTest).toHaveBeenCalled()
+    const payload = apiMock.createTest.mock.calls[0][0] as { groups?: Array<Record<string, unknown>> }
+    expect(payload.groups).toHaveLength(1)
+    // Identical to the flat shape: the section is released, not replaced with an empty pin.
+    expect(payload.groups?.[0].runtime_settings).toEqual({ log_level: 'debug' })
+  })
+
   it('refuses to offer an error handling inherit option a group retry policy would keep pinned', async () => {
     // The dialog edits only the two booleans, so a stored section carrying retry fields can
     // never be emptied — the section stays pinned and (being applied whole) keeps executing both
@@ -2167,6 +2271,185 @@ describe('NewTestPage', () => {
     expect(payload.groups?.[0]?.runtime_settings).toBeUndefined()
   })
 
+  it('releases the whole error handling section when the inherit option is picked on one half', async () => {
+    // The inherit option is a SECTION-level statement: error_handling is applied whole, so a
+    // group cannot stop pinning ONE half. Picking it on Continue on error alone used to leave
+    // the other half behind as a brand new group section ({snapshot_on_error:true}), which
+    // executes continue_on_error as false — the exact opposite of the "Scenario default" the
+    // option names, on a group that pinned nothing before the edit.
+    apiMock.listScenarios.mockResolvedValue({
+      scenarios: [
+        {
+          id: 'scenario-1',
+          name: 'Checkout Smoke',
+          duration: '10m',
+          scenario_mode: 'vuser_driven',
+          runtime_settings: { error_handling: { continue_on_error: true, snapshot_on_error: true } },
+          scripts: [
+            {
+              order: 1,
+              name: 'Checkout',
+              script_id: 'script-1',
+              script_name: 'Checkout Script',
+              protocol: 'http',
+              vusers: 10,
+            },
+          ],
+          script_count: 1,
+          created_at: '2026-05-12T20:00:00Z',
+          updated_at: '2026-05-12T20:00:00Z',
+          associated_releases: [],
+        },
+      ],
+    })
+
+    await act(async () => {
+      root.render(
+        <NewTestPage
+          activeApplication={{ id: 'app-1', name: 'ACC', created_at: '', updated_at: '' }}
+          activeRelease={{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }}
+          releases={[{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }]}
+          onSelectTest={vi.fn()}
+          onCreateRelease={vi.fn().mockResolvedValue(null)}
+        />,
+      )
+    })
+    await flushPromises()
+
+    const scenarioRow = container.querySelector('.new-test-scenario-table-row') as HTMLTableRowElement | null
+    await act(async () => {
+      scenarioRow?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    const scriptGroupRow = Array.from(container.querySelectorAll('.new-test-script-row')).find(row => row.textContent?.includes('Checkout')) as HTMLTableRowElement | undefined
+    await act(async () => {
+      scriptGroupRow?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    const modal = document.querySelector('.run-group-modal') as HTMLElement | null
+    expect(modal).toBeTruthy()
+    if (!modal) return
+    const continueSelect = findControlByLabel<HTMLSelectElement>(modal, 'Continue on error', 'select')
+    const snapshotSelect = findControlByLabel<HTMLSelectElement>(modal, 'Snapshot on error', 'select')
+    expect(continueSelect?.value).toBe('true')
+    expect(snapshotSelect?.value).toBe('true')
+    if (!continueSelect || !snapshotSelect) return
+    const inheritOption = Array.from(continueSelect.options).find(option => option.value === '')
+    expect(inheritOption?.disabled).toBe(false)
+    expect(inheritOption?.textContent).toBe('Scenario default')
+
+    await act(async () => {
+      setSelectValue(continueSelect, '')
+    })
+    // Releasing is the only thing the option can mean, so the dialog shows it on both halves.
+    expect(continueSelect.value).toBe('')
+    expect(snapshotSelect.value).toBe('')
+
+    const saveButton = Array.from(modal.querySelectorAll('button')).find(button => button.textContent === 'Save For This Run') as HTMLButtonElement | undefined
+    expect(saveButton?.disabled).toBe(false)
+    await act(async () => {
+      saveButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    await flushDebouncedPreflight()
+    const createQueuedButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Hold for Manual Start')
+    await act(async () => {
+      createQueuedButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    expect(apiMock.createTest).toHaveBeenCalled()
+    const payload = apiMock.createTest.mock.calls[0][0] as { groups?: Array<Record<string, unknown>> }
+    // No group section at all: the scenario's continue_on_error:true is what the run executes.
+    expect(payload.groups?.[0]?.runtime_settings).toBeUndefined()
+  })
+
+  it('carries the scenario value into a half left on inherit when the other half re-pins the section', async () => {
+    // Once the operator pins a half again the section is back on the wire, and it is applied
+    // whole — so the half still showing "Scenario default" has to be written with the scenario's
+    // value. Omitting it would execute false while the select names the scenario default.
+    apiMock.listScenarios.mockResolvedValue({
+      scenarios: [
+        {
+          id: 'scenario-1',
+          name: 'Checkout Smoke',
+          duration: '10m',
+          scenario_mode: 'vuser_driven',
+          runtime_settings: { error_handling: { continue_on_error: true, snapshot_on_error: true } },
+          scripts: [
+            {
+              order: 1,
+              name: 'Checkout',
+              script_id: 'script-1',
+              script_name: 'Checkout Script',
+              protocol: 'http',
+              vusers: 10,
+            },
+          ],
+          script_count: 1,
+          created_at: '2026-05-12T20:00:00Z',
+          updated_at: '2026-05-12T20:00:00Z',
+          associated_releases: [],
+        },
+      ],
+    })
+
+    await act(async () => {
+      root.render(
+        <NewTestPage
+          activeApplication={{ id: 'app-1', name: 'ACC', created_at: '', updated_at: '' }}
+          activeRelease={{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }}
+          releases={[{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }]}
+          onSelectTest={vi.fn()}
+          onCreateRelease={vi.fn().mockResolvedValue(null)}
+        />,
+      )
+    })
+    await flushPromises()
+
+    const scenarioRow = container.querySelector('.new-test-scenario-table-row') as HTMLTableRowElement | null
+    await act(async () => {
+      scenarioRow?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    const scriptGroupRow = Array.from(container.querySelectorAll('.new-test-script-row')).find(row => row.textContent?.includes('Checkout')) as HTMLTableRowElement | undefined
+    await act(async () => {
+      scriptGroupRow?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    const modal = document.querySelector('.run-group-modal') as HTMLElement | null
+    expect(modal).toBeTruthy()
+    if (!modal) return
+    const continueSelect = findControlByLabel<HTMLSelectElement>(modal, 'Continue on error', 'select')
+    const snapshotSelect = findControlByLabel<HTMLSelectElement>(modal, 'Snapshot on error', 'select')
+    if (!continueSelect || !snapshotSelect) return
+
+    await act(async () => {
+      setSelectValue(continueSelect, '')
+    })
+    await act(async () => {
+      setSelectValue(snapshotSelect, 'false')
+    })
+    expect(continueSelect.value).toBe('')
+    expect(snapshotSelect.value).toBe('false')
+
+    const saveButton = Array.from(modal.querySelectorAll('button')).find(button => button.textContent === 'Save For This Run') as HTMLButtonElement | undefined
+    expect(saveButton?.disabled).toBe(false)
+    await act(async () => {
+      saveButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    await flushDebouncedPreflight()
+    const createQueuedButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Hold for Manual Start')
+    await act(async () => {
+      createQueuedButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    expect(apiMock.createTest).toHaveBeenCalledWith(expect.objectContaining({
+      groups: [expect.objectContaining({
+        script_id: 'script-1',
+        runtime_settings: { error_handling: { continue_on_error: true, snapshot_on_error: false } },
+      })],
+    }))
+  })
+
   it('clears think time back to the script default instead of pinning the leftover mean', async () => {
     // "Script think time" clears the section, but the mean stayed in the draft, and
     // thinkTimeFromEdit only bails out on an EMPTY mean — so the inherit selection used to be
@@ -2262,10 +2545,29 @@ describe('NewTestPage', () => {
   })
 
   it('tombstones every runtime section the group dialog offers an inherit option for', async () => {
-    // Construction guard for CLEARABLE_RUNTIME_SECTIONS. It discovers the inherit affordances
-    // from the rendered dialog instead of restating a list, so a NEW clearable section that the
-    // tombstone pass does not cover fails here rather than silently re-applying the stored
-    // section at run time (which is how the browser section was missed twice).
+    // Construction guard for CLEARABLE_RUNTIME_SECTIONS, driven from BOTH ends so neither half
+    // can go vacuous:
+    //   * the stored group section is built FROM the constant, so a listed section cannot quietly
+    //     drop out of the fixture and leave the terminal assertion with nothing to catch;
+    //   * the inherit affordances are discovered from the rendered dialog and their count is
+    //     pinned EXACTLY, so a newly clearable control fails here instead of silently re-applying
+    //     the stored section at run time (which is how the browser section was missed twice).
+    const storedSections: Record<ClearableRuntimeSection, Record<string, unknown>> = {
+      pacing: { type: 'fixed_delay', delay_ms: 1000 },
+      think_time: { type: 'gaussian', mean_ms: 900, std_ms: 100 },
+      error_handling: { continue_on_error: true, snapshot_on_error: true },
+      // The two browser wire shapes are one logical section: the dialog's four controls write
+      // whichever one the level carries, and both have to end up tombstoned.
+      browser: { device_profile: 'iPhone 14 Pro', headless: true, touch_mode: true, orientation: 'portrait' },
+      browser_config: { device_profile: 'pixel_8', headless: false, touch_mode: false, orientation: 'landscape' },
+    }
+    const groupRuntimeSettings = Object.fromEntries(
+      CLEARABLE_RUNTIME_SECTIONS.map(section => {
+        expect(storedSections[section]).toBeTruthy()
+        return [section, storedSections[section]]
+      }),
+    )
+    expect(Object.keys(groupRuntimeSettings)).toHaveLength(CLEARABLE_RUNTIME_SECTIONS.length)
     apiMock.listScenarios.mockResolvedValue({
       scenarios: [
         {
@@ -2281,12 +2583,7 @@ describe('NewTestPage', () => {
               script_name: 'Checkout Script',
               protocol: 'browser',
               vusers: 10,
-              runtime_settings: {
-                pacing: { type: 'fixed_delay', delay_ms: 1000 },
-                think_time: { type: 'gaussian', mean_ms: 900, std_ms: 100 },
-                error_handling: { continue_on_error: true, snapshot_on_error: true },
-                browser: { device_profile: 'iPhone 14 Pro', headless: true, touch_mode: true, orientation: 'portrait' },
-              },
+              runtime_settings: groupRuntimeSettings,
             },
           ],
           script_count: 1,
@@ -2340,9 +2637,11 @@ describe('NewTestPage', () => {
     }
 
     // Pacing, think time mode + mean, continue/snapshot on error, device profile, orientation,
-    // headless, touch mode. A lower count means the discovery selector stopped matching and the
-    // guard would pass vacuously.
-    expect(inheritControls().length).toBeGreaterThanOrEqual(9)
+    // headless, touch mode. Pinned EXACTLY: a lower count means the discovery selector stopped
+    // matching and the guard would pass vacuously, and a higher one means a clearable control was
+    // added to the dialog — which has to fail here until its section is carried through
+    // CLEARABLE_RUNTIME_SECTIONS, the stored fixture above and the tombstone pass.
+    expect(inheritControls().length).toBe(9)
 
     for (let pass = 0; pass < 20; pass += 1) {
       const pending = inheritControls().find(control => control.value !== '')

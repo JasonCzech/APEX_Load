@@ -97,6 +97,10 @@ func (tr *TestRunner) saveRefSeqSettingLocked(key string, value int) error {
 	if tr.settingsStore == nil {
 		return nil
 	}
+	// Runs with tr.mu held, so the settings write is published to the panic
+	// backstop's in-flight gauge; see beginLockHeldDurableWrite.
+	tr.beginLockHeldDurableWrite()
+	defer tr.endLockHeldDurableWrite()
 	if err := tr.settingsStore.SaveSetting(key, strconv.Itoa(value)); err != nil {
 		return err
 	}
@@ -192,7 +196,12 @@ func (allocator *runReferenceSequenceAllocator) observe(day string, sequence int
 	allocator.byDay[day] = sequence
 }
 
+// allocateRefSequenceLocked runs with tr.mu held and issues a durable settings
+// write on every script and scenario create, so it opens an in-flight section
+// for the backstop and the liveness probe; see beginLockHeldDurableWrite.
 func (tr *TestRunner) allocateRefSequenceLocked(key string, current int) (int, error) {
+	tr.beginLockHeldDurableWrite()
+	defer tr.endLockHeldDurableWrite()
 	if store, ok := tr.settingsStore.(atomicReferenceSequenceStore); ok {
 		return store.NextSettingSequence(key)
 	}
@@ -322,6 +331,8 @@ func (tr *TestRunner) resolveRefKeyLocked(id string) string {
 }
 
 func (tr *TestRunner) backfillScriptRefKeysLocked() {
+	tr.beginLockHeldDurableWrite()
+	defer tr.endLockHeldDurableWrite()
 	scripts := make([]*StoredScript, 0, len(tr.scripts))
 	for _, script := range tr.scripts {
 		if script != nil && strings.TrimSpace(script.RefKey) == "" {
@@ -395,6 +406,8 @@ func storedScriptBackfillBefore(left *StoredScript, right *StoredScript) bool {
 }
 
 func (tr *TestRunner) backfillScenarioRefKeysLocked() {
+	tr.beginLockHeldDurableWrite()
+	defer tr.endLockHeldDurableWrite()
 	scenarios := make([]*StoredScenario, 0, len(tr.scenarios))
 	for _, scenario := range tr.scenarios {
 		if scenario != nil && strings.TrimSpace(scenario.RefKey) == "" {
@@ -493,6 +506,8 @@ func (tr *TestRunner) backfillTestRefKeysLocked() {
 }
 
 func (tr *TestRunner) backfillArchiveRefKeysLocked() {
+	tr.beginLockHeldDurableWrite()
+	defer tr.endLockHeldDurableWrite()
 	for testID, archive := range tr.archives {
 		if archive == nil || strings.TrimSpace(archive.RefKey) != "" {
 			continue

@@ -1690,6 +1690,10 @@ func buildManagedTestRecord(test *ManagedTest) *storage.TestRecord {
 // this prose: a new tr.testStore write call site must be wrapped here or listed
 // there with the reason it cannot be holding tr.mu.
 //
+// This wrapper covers test-store writes. Lock-held writes to the other stores
+// are published by beginLockHeldDurableWrite below, which brackets the whole
+// critical section; the gauge itself is shared and store-agnostic.
+//
 // The gauge is process-wide, so a write that is not blocking the backstop can
 // still buy it one interval; that only ever delays a re-panic, and the
 // extension cap bounds the delay (runTestPanicRecoveryDurableWriteExtensions).
@@ -1700,6 +1704,62 @@ func (tr *TestRunner) trackDurableWrite(write func() error) error {
 	tr.durableWritesInFlight.Add(1)
 	defer tr.durableWritesInFlight.Add(-1)
 	return write()
+}
+
+// beginLockHeldDurableWrite / endLockHeldDurableWrite bracket a critical section
+// that issues durable I/O to a store other than the test store while tr.mu is
+// held - scripts, scenarios, settings and archives.
+//
+// Both readers of the gauge ask the same question, and neither of them is about
+// the test store: is tr.mu held by something that is inside the storage driver
+// and will therefore come back, or by something nothing will ever release? The
+// runner pins tr.mu across durable writes to every one of its stores, so an
+// answer that only counted test-store writes was wrong for the commonest
+// operator action there is. Saving a script, saving a scenario, or allocating
+// the reference-key sequence that every script and scenario create needs all
+// hold tr.mu across a store round trip; while one of those stalled in a
+// managed-database failover the gauge read zero, which is precisely the state
+// that makes the panic backstop re-panic a healthy controller
+// (awaitPanicRecoveryStage) and makes the liveness probe fall back to a blocking
+// read until the kubelet restarts the replica
+// (healthCheckSnapshotWithoutRunnerLock).
+//
+// This is a section counter rather than another per-call wrapper on purpose.
+// These paths reach their store through shared helpers -
+// saveStoredScriptWithImportTrust, deleteStoredScript, nextScriptSeqLocked ->
+// allocateRefSequenceLocked, the storeScenarioLockedWithWriter callbacks - so
+// wrapping only the leaf store calls would leave the helper hops uncovered while
+// looking complete. Bracketing the lock-held section covers every write it
+// reaches, directly or through a helper.
+//
+// It therefore over-counts: the gauge is also non-zero for the in-memory work
+// inside the section. That is deliberate. Under a healthy store a section closes
+// in well under a millisecond, and both readers are bounded regardless
+// (runTestPanicRecoveryDurableWriteExtensions and
+// healthCheckDurableWriteBypassBudget), so the only effect is that a stalled
+// store buys a bounded delay instead of an immediate restart - which is the
+// whole point of the gauge.
+//
+// Open the section after tr.mu has been acquired, not before: a goroutine that
+// is still parked waiting for the lock is not evidence that the current holder
+// is healthy, and counting it would let a genuinely orphaned mutex hold the
+// gauge above zero for the full extension budget.
+//
+// The counter nests, so annotating both an entry point and a helper it calls is
+// safe. TestEveryLockHeldDurableWriteIsCounted enforces the invariant instead of
+// this comment.
+func (tr *TestRunner) beginLockHeldDurableWrite() {
+	if tr == nil {
+		return
+	}
+	tr.durableWritesInFlight.Add(1)
+}
+
+func (tr *TestRunner) endLockHeldDurableWrite() {
+	if tr == nil {
+		return
+	}
+	tr.durableWritesInFlight.Add(-1)
 }
 
 // saveManagedTestRecord persists the full row. Most callers hold tr.mu across

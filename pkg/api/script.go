@@ -398,6 +398,8 @@ func (tr *TestRunner) StoreGitHubScriptImportDurable(
 	}
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
+	tr.beginLockHeldDurableWrite()
+	defer tr.endLockHeldDurableWrite()
 	projected, current, err := tr.prepareGitHubScriptImportLocked(script)
 	if err != nil {
 		return nil, storage.GitHubScriptImportConflict, err
@@ -495,6 +497,8 @@ func (tr *TestRunner) storeScriptDurable(script *dsl.Script, restoringExistingJa
 	}
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
+	tr.beginLockHeldDurableWrite()
+	defer tr.endLockHeldDurableWrite()
 
 	scriptID := strings.TrimSpace(script.ID)
 	if scriptID == "" {
@@ -701,6 +705,8 @@ func (tr *TestRunner) createScriptDurable(
 	}
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
+	tr.beginLockHeldDurableWrite()
+	defer tr.endLockHeldDurableWrite()
 	scriptID := strings.TrimSpace(script.ID)
 	if scriptID == "" {
 		scriptID = uuid.New().String()
@@ -822,6 +828,8 @@ func (tr *TestRunner) UpdateScriptDurableIfUnchanged(script, expected *dsl.Scrip
 	}
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
+	tr.beginLockHeldDurableWrite()
+	defer tr.endLockHeldDurableWrite()
 	if strings.TrimSpace(script.ID) == "" || script.ID != expected.ID {
 		return nil, false, fmt.Errorf("conditional script update requires a matching id")
 	}
@@ -904,6 +912,8 @@ func (tr *TestRunner) UpdateScriptDurableIfUnchanged(script, expected *dsl.Scrip
 func (tr *TestRunner) DeleteScriptDurableIfUnchanged(id string, expectedUpdatedAt time.Time) (bool, error) {
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
+	tr.beginLockHeldDurableWrite()
+	defer tr.endLockHeldDurableWrite()
 	id = strings.TrimSpace(id)
 	if id == "" || expectedUpdatedAt.IsZero() {
 		return false, fmt.Errorf("script id and expected updated_at are required")
@@ -1141,6 +1151,8 @@ func (tr *TestRunner) MoveScriptDurable(id string, folderID *string) (bool, erro
 func (tr *TestRunner) MoveScriptDurableInProject(id string, folderID *string, expectedProjectID string) (bool, error) {
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
+	tr.beginLockHeldDurableWrite()
+	defer tr.endLockHeldDurableWrite()
 	id = tr.resolveRefKeyLocked(id)
 	if err := tr.rejectActivePrivateCISnapshotMutationLocked(id); err != nil {
 		return false, err
@@ -1321,6 +1333,8 @@ func (tr *TestRunner) updateScriptDurableInProject(
 	}
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
+	tr.beginLockHeldDurableWrite()
+	defer tr.endLockHeldDurableWrite()
 	id = tr.resolveRefKeyLocked(id)
 	if err := tr.rejectActivePrivateCISnapshotMutationLocked(id); err != nil {
 		return nil, false, err
@@ -1483,6 +1497,8 @@ func (tr *TestRunner) DeleteScriptDurable(id string) (bool, error) {
 func (tr *TestRunner) DeleteScriptDurableInProject(id string, expectedProjectID string) (bool, error) {
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
+	tr.beginLockHeldDurableWrite()
+	defer tr.endLockHeldDurableWrite()
 	id = tr.resolveRefKeyLocked(id)
 	if err := tr.rejectActivePrivateCISnapshotMutationLocked(id); err != nil {
 		return false, err

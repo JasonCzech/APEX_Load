@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  applyGroupErrorHandlingDraftEdit,
   buildEffectiveScenarioGroups,
+  buildGroupErrorHandlingSectionForRun,
   buildGroupsForRunPayload,
   buildGroupEditDraft,
   buildGroupRuntimeTableValues,
@@ -10,6 +12,7 @@ import {
   buildRunLoadProfilePreview,
   buildRuntimeSettingsForRun,
   CLEARABLE_RUNTIME_SECTIONS,
+  cloneRuntimeSettingsForRun,
   errorHandlingSectionIsPinned,
   errorHandlingSurvivesBooleanClear,
   formatGroupPlacement,
@@ -19,7 +22,9 @@ import {
   groupOverrideCount,
   groupOverrideKey,
   groupPlacementSummary,
+  hasOwnKey,
   selectedGeneratorCapacity,
+  setRuntimeBrowser,
   stagedGroupPeakVUsers,
   stampClearedRuntimeSections,
   type ClearableRuntimeSection,
@@ -390,11 +395,23 @@ describe('newTestRunModel', () => {
       browser: ['browser', 'Standard'],
       browser_config: ['browser', 'Standard'],
     }
+    // How the group dialog's save path empties each section. The browser cases go through the
+    // REAL writer rather than a hand-built patch: setRuntimeBrowser is the only helper that knows
+    // both browser wire shapes, and driving the guard past it is what stops the browser_config
+    // case passing vacuously while the writer leaves an un-tombstoneable `{}` behind.
+    const clearSection: Record<ClearableRuntimeSection, (patch: RuntimeSettingsOverride) => void> = {
+      pacing: patch => { delete patch.pacing },
+      think_time: patch => { delete patch.think_time },
+      error_handling: patch => { delete patch.error_handling },
+      browser: patch => setRuntimeBrowser(patch, {}),
+      browser_config: patch => setRuntimeBrowser(patch, {}),
+    }
 
     for (const section of CLEARABLE_RUNTIME_SECTIONS) {
       // Fails when a new clearable section is declared without being exercised below.
       expect(sectionFixtures[section]).toBeTruthy()
       expect(clearedTableValue[section]).toBeTruthy()
+      expect(clearSection[section]).toBeTruthy()
 
       const scenario = scenarioFixture()
       delete scenario.runtime_settings?.error_handling
@@ -411,9 +428,13 @@ describe('newTestRunModel', () => {
       expect(buildGroupsForRunPayload(scenario, { [key]: { vusers: 4 } })?.[0].runtime_settings)
         .toEqual({ [section]: sectionFixtures[section], log_level: 'debug' })
 
-      // WRITE: the dialog's edit removed the section from the patch, so the shared writer has to
-      // turn that absence into an explicit tombstone.
-      const patch = stampClearedRuntimeSections({ log_level: 'debug' }, group.runtime_settings)
+      // WRITE: the save path starts from the group's stored settings, applies the dialog's edit
+      // and then stamps. A section the edit emptied has to leave the patch entirely, so the
+      // stamp can turn that absence into an explicit tombstone.
+      const edited = cloneRuntimeSettingsForRun(group.runtime_settings) as RuntimeSettingsOverride
+      clearSection[section](edited)
+      expect(hasOwnKey(edited, section)).toBe(false)
+      const patch = stampClearedRuntimeSections(edited, group.runtime_settings)
       expect((patch as Record<string, unknown>)[section]).toBeNull()
       // ...which the payload overlay honours by removing the stored section, not re-applying it.
       const cleared: GroupRunOverride = { runtime_settings: patch }
@@ -445,6 +466,166 @@ describe('newTestRunModel', () => {
     expect(errorHandlingSurvivesBooleanClear({ max_retries: 3 })).toBe(true)
     expect(errorHandlingSurvivesBooleanClear({ continue_on_error: true, retry_delay_ms: 1000 })).toBe(true)
     expect(errorHandlingSurvivesBooleanClear({ retry_backoff: 'fixed' })).toBe(true)
+  })
+
+  it('builds the group error handling section for every cell of the two-boolean truth table', () => {
+    // error_handling is applied as a whole SECTION, so the four combinations of the dialog's two
+    // halves have to be crossed with "the group carries retry fields the dialog cannot edit" and
+    // "an ancestor pins a section". Every cell states the section the group transmits, and the
+    // loop underneath re-derives what each half the operator set to inherit actually EXECUTES,
+    // so a cell can never quietly stop matching the option's promise.
+    const ancestor: RuntimeSettingsOverride['error_handling'] = { continue_on_error: true, snapshot_on_error: true }
+    const groupSections = {
+      none: undefined,
+      booleans: { continue_on_error: true, snapshot_on_error: true },
+      // The retry policy is the residual the dialog cannot reach; it keeps the section alive.
+      withRetries: { continue_on_error: true, snapshot_on_error: true, max_retries: 3 },
+    } as const
+    const cases: Array<{
+      draft: [string, string]
+      group: keyof typeof groupSections
+      ancestorPinned: boolean
+      expected: RuntimeSettingsOverride['error_handling'] | undefined
+    }> = [
+      // NEITHER half on inherit: both booleans are pinned exactly as drafted and only the group's
+      // own retry policy rides along.
+      { draft: ['false', 'true'], group: 'none', ancestorPinned: false, expected: { continue_on_error: false, snapshot_on_error: true } },
+      { draft: ['false', 'true'], group: 'none', ancestorPinned: true, expected: { continue_on_error: false, snapshot_on_error: true } },
+      { draft: ['false', 'true'], group: 'booleans', ancestorPinned: false, expected: { continue_on_error: false, snapshot_on_error: true } },
+      { draft: ['false', 'true'], group: 'booleans', ancestorPinned: true, expected: { continue_on_error: false, snapshot_on_error: true } },
+      { draft: ['false', 'true'], group: 'withRetries', ancestorPinned: false, expected: { continue_on_error: false, snapshot_on_error: true, max_retries: 3 } },
+      { draft: ['false', 'true'], group: 'withRetries', ancestorPinned: true, expected: { continue_on_error: false, snapshot_on_error: true, max_retries: 3 } },
+
+      // ONLY continue on inherit. The section is still transmitted because the other half pins
+      // it, so continue_on_error has to carry the ancestor's value — dropping it would execute
+      // false, which is the discard the round-6 fix closed only for the both-halves case.
+      { draft: ['', 'true'], group: 'none', ancestorPinned: true, expected: { continue_on_error: true, snapshot_on_error: true } },
+      { draft: ['', 'true'], group: 'booleans', ancestorPinned: true, expected: { continue_on_error: true, snapshot_on_error: true } },
+      { draft: ['', 'true'], group: 'withRetries', ancestorPinned: true, expected: { continue_on_error: true, snapshot_on_error: true, max_retries: 3 } },
+      // ...and with nothing above the group there is no value to carry: this page never loads the
+      // script's own config.error_handling, so the half is left out and executes false. See the
+      // half-by-half check below.
+      { draft: ['', 'true'], group: 'none', ancestorPinned: false, expected: { snapshot_on_error: true } },
+      { draft: ['', 'true'], group: 'booleans', ancestorPinned: false, expected: { snapshot_on_error: true } },
+      { draft: ['', 'true'], group: 'withRetries', ancestorPinned: false, expected: { snapshot_on_error: true, max_retries: 3 } },
+
+      // ONLY snapshot on inherit — the mirror image.
+      { draft: ['false', ''], group: 'none', ancestorPinned: true, expected: { continue_on_error: false, snapshot_on_error: true } },
+      { draft: ['false', ''], group: 'booleans', ancestorPinned: true, expected: { continue_on_error: false, snapshot_on_error: true } },
+      { draft: ['false', ''], group: 'withRetries', ancestorPinned: true, expected: { continue_on_error: false, snapshot_on_error: true, max_retries: 3 } },
+      { draft: ['false', ''], group: 'none', ancestorPinned: false, expected: { continue_on_error: false } },
+      { draft: ['false', ''], group: 'booleans', ancestorPinned: false, expected: { continue_on_error: false } },
+      { draft: ['false', ''], group: 'withRetries', ancestorPinned: false, expected: { continue_on_error: false, max_retries: 3 } },
+
+      // BOTH halves on inherit: the group transmits nothing, so whatever level is above it wins
+      // intact. Only a retry policy the dialog cannot edit keeps the section alive — and the
+      // dialog disables the inherit option there (errorHandlingSurvivesBooleanClear), so those
+      // two cells are unreachable from the UI.
+      { draft: ['', ''], group: 'none', ancestorPinned: false, expected: undefined },
+      { draft: ['', ''], group: 'none', ancestorPinned: true, expected: undefined },
+      { draft: ['', ''], group: 'booleans', ancestorPinned: false, expected: undefined },
+      { draft: ['', ''], group: 'booleans', ancestorPinned: true, expected: undefined },
+      { draft: ['', ''], group: 'withRetries', ancestorPinned: false, expected: { max_retries: 3 } },
+      { draft: ['', ''], group: 'withRetries', ancestorPinned: true, expected: { continue_on_error: true, snapshot_on_error: true, max_retries: 3 } },
+    ]
+    expect(cases).toHaveLength(4 * 3 * 2)
+
+    for (const testCase of cases) {
+      const cell = `draft=${JSON.stringify(testCase.draft)} group=${testCase.group} ancestorPinned=${testCase.ancestorPinned}`
+      const section = buildGroupErrorHandlingSectionForRun({
+        groupSection: groupSections[testCase.group],
+        inheritedSection: testCase.ancestorPinned ? ancestor : undefined,
+        draft: { continue_on_error: testCase.draft[0], snapshot_on_error: testCase.draft[1] },
+        changed: { continue_on_error: true, snapshot_on_error: true },
+      })
+      expect({ cell, section }).toEqual({ cell, section: testCase.expected })
+
+      const halves = ['continue_on_error', 'snapshot_on_error'] as const
+      halves.forEach((half, index) => {
+        const drafted = testCase.draft[index]
+        if (drafted !== '') {
+          expect({ cell, half, runs: Boolean(section?.[half]) }).toEqual({ cell, half, runs: drafted === 'true' })
+          return
+        }
+        if (!section) return // Released: the level above the group is applied whole, untouched.
+        if (testCase.ancestorPinned) {
+          // "Scenario default" with a section still on the wire: the ancestor's value has to be
+          // materialised, because the winning section is applied whole.
+          expect({ cell, half, runs: Boolean(section[half]) }).toEqual({ cell, half, runs: Boolean(ancestor?.[half]) })
+          return
+        }
+        // "Script default" is not reachable while a section is transmitted: the script's own
+        // config.error_handling never reaches this page, so the half is omitted and executes
+        // false. NewTestPage.test.tsx "keeps inherited error handling selectable as Script
+        // default and overrides only the edited half" pins that minimal-payload behaviour.
+        expect({ cell, half, omitted: section[half] === undefined }).toEqual({ cell, half, omitted: true })
+      })
+    }
+  })
+
+  it('treats the error handling inherit option as a section-level clear in the dialog draft', () => {
+    // Selecting the inherit option on ONE select cannot release the section on its own — the
+    // other half keeps it on the wire and the released half then executes false. The draft edit
+    // therefore moves BOTH halves to inherit, which is what makes buildGroupErrorHandlingSection
+    // ForRun's release cell the one the UI actually reaches.
+    const drafts = ['', 'true', 'false']
+    for (const continueDraft of drafts) {
+      for (const snapshotDraft of drafts) {
+        const draft = { continue_on_error: continueDraft, snapshot_on_error: snapshotDraft }
+        expect(applyGroupErrorHandlingDraftEdit(draft, 'continue_on_error', ''))
+          .toEqual({ continue_on_error: '', snapshot_on_error: '' })
+        expect(applyGroupErrorHandlingDraftEdit(draft, 'snapshot_on_error', ''))
+          .toEqual({ continue_on_error: '', snapshot_on_error: '' })
+        // An explicit value pins only the half it was set on; a section that omits the other
+        // executes it as false, exactly as the dialog already displays it.
+        for (const value of ['true', 'false']) {
+          expect(applyGroupErrorHandlingDraftEdit(draft, 'continue_on_error', value))
+            .toEqual({ continue_on_error: value, snapshot_on_error: snapshotDraft })
+          expect(applyGroupErrorHandlingDraftEdit(draft, 'snapshot_on_error', value))
+            .toEqual({ continue_on_error: continueDraft, snapshot_on_error: value })
+        }
+      }
+    }
+  })
+
+  it('releases both browser wire shapes when the four browser fields are cleared', () => {
+    // `browser` and `browser_config` are two wire shapes of ONE logical section and the dialog's
+    // four controls write whichever one the level carries. Only the flat shape used to be
+    // released on a clear; the whole-section shape was left behind as `{}`, which the API applies
+    // as `script.Config.Browser = *cloneViaJSON(BrowserConfig)` and so wipes the script's own
+    // engine/viewport/timeouts instead of leaving them alone.
+    const flat: RuntimeSettingsOverride = { browser: { device_profile: 'iPhone 14 Pro', headless: true }, log_level: 'debug' }
+    setRuntimeBrowser(flat, {})
+    expect(flat).toEqual({ log_level: 'debug' })
+
+    const wholeSection: RuntimeSettingsOverride = { browser_config: { device_profile: 'pixel_8', headless: false }, log_level: 'debug' }
+    setRuntimeBrowser(wholeSection, {})
+    expect(wholeSection).toEqual({ log_level: 'debug' })
+
+    // A section that also carries fields the dialog cannot edit is NOT released — those fields
+    // are the group's own pin and clearing a device profile must not discard them. (The cleared
+    // keys are left holding `undefined`, which the JSON clone in mergeRuntimeSettingsForRun
+    // drops before the payload is built.)
+    const withEngine: RuntimeSettingsOverride = { browser_config: { engine: 'chromium', user_agent: 'APEX', device_profile: 'pixel_8' } }
+    setRuntimeBrowser(withEngine, {})
+    expect(withEngine).toEqual({ browser_config: { engine: 'chromium', user_agent: 'APEX' } })
+
+    // ...and neither is a section the run level pins: releasing the group's would simply hand the
+    // ancestor's section down, so the empty whole-section pin is the only way to say "Standard".
+    const overridingAncestor: RuntimeSettingsOverride = { browser_config: { device_profile: 'pixel_8' } }
+    setRuntimeBrowser(overridingAncestor, {}, { ancestorPinsBrowserConfig: true })
+    expect(hasOwnKey(overridingAncestor, 'browser_config')).toBe(true)
+    expect(overridingAncestor.browser_config).toEqual({})
+
+    // Values still write through both shapes, and the legacy flat key is dropped once the level
+    // carries the whole-section shape.
+    const flatWrite: RuntimeSettingsOverride = {}
+    setRuntimeBrowser(flatWrite, { device_profile: 'pixel_8' })
+    expect(flatWrite).toEqual({ browser: { device_profile: 'pixel_8' } })
+    const sectionWrite: RuntimeSettingsOverride = { browser: { headless: true }, browser_config: { engine: 'chromium' } }
+    setRuntimeBrowser(sectionWrite, { headless: false })
+    expect(sectionWrite).toEqual({ browser_config: { engine: 'chromium', headless: false } })
+    expect(hasOwnKey(sectionWrite, 'browser')).toBe(false)
   })
 
   it('reports a retry-only run-default section as the booleans the run will execute', () => {

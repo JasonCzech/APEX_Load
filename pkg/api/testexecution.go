@@ -4742,6 +4742,13 @@ func (tr *TestRunner) recoverRunTestPanic(test *ManagedTest, recovered any, stac
 	// exactly as the terminal stage does. Every one of those writes is counted
 	// (trackDurableWrite); a gauge that saw only the status write classified the
 	// others as orphaned mutexes.
+	//
+	// The holder does not have to be a run at all. An operator saving a script or
+	// a scenario holds tr.mu across a durable write to a different store, and the
+	// reference-key sequence allocation every script and scenario create performs
+	// is itself a settings write issued under the lock. Those are counted too
+	// (beginLockHeldDurableWrite) - while they were not, a routine save during a
+	// failover was enough to make this stage re-panic a healthy controller.
 	if !tr.awaitPanicRecoveryStage(testID, "runner lock acquisition", acquirable) {
 		slog.Error("runner lock was not acquirable after a run-driver panic; re-panicking so the controller restarts",
 			"test_id", testID)

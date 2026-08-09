@@ -97,6 +97,8 @@ func (s *Server) handleApplyScenarioRuntimeToGroups(w http.ResponseWriter, r *ht
 func (tr *TestRunner) ApplyScenarioRuntimeToGroups(id string, req ApplyRuntimeToGroupsRequest) (*ApplyRuntimeToGroupsResponse, bool, error) {
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
+	tr.beginLockHeldDurableWrite()
+	defer tr.endLockHeldDurableWrite()
 	id = tr.resolveRefKeyLocked(id)
 	stored, ok := tr.scenarios[id]
 	if !ok {

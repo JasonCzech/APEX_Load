@@ -124,7 +124,10 @@ export function hasOwnKey(object: object, key: PropertyKey): boolean {
  *   * the READ path (effectiveGroupRuntimeSettings) refuses to read a tombstoned section back
  *     off the stored group, so the dialog and the table show what the run will execute.
  * `browser` and `browser_config` are the two wire shapes of ONE logical section; the dialog's
- * four browser fields write whichever shape the level already carries.
+ * four browser fields write whichever shape the level already carries, and setRuntimeBrowser
+ * REMOVES either shape once the clear empties it — that removal is what makes the tombstone below
+ * reachable for both. A section left standing as `{}` is not a clear: for browser_config it is a
+ * whole-section replace, which is the only way to override an ancestor's pinned section.
  */
 export const CLEARABLE_RUNTIME_SECTIONS = ['pacing', 'think_time', 'error_handling', 'browser', 'browser_config'] as const
 
@@ -154,9 +157,18 @@ export function groupOverrideKey(group: ScenarioScriptGroup) {
   return `${group.order}:${group.script_id}`
 }
 
+/**
+ * True when a runtime SECTION (or the settings envelope itself) still carries something the run
+ * would apply. `false` and `0` are values; `undefined`, `null` and `''` are not — so a section
+ * left holding nothing but cleared fields is value-less and must not be transmitted.
+ */
+function runtimeSectionHasValues(section?: Record<string, unknown> | null) {
+  if (!section) return false
+  return Object.values(section).some(value => value !== undefined && value !== null && value !== '')
+}
+
 export function hasRuntimeSettingsValues(settings?: RuntimeSettingsOverride) {
-  if (!settings) return false
-  return Object.values(settings).some(value => value !== undefined && value !== null && value !== '')
+  return runtimeSectionHasValues(settings as Record<string, unknown> | undefined)
 }
 
 /**
@@ -294,11 +306,90 @@ export function errorHandlingSectionHasValues(errorHandling?: RuntimeSettingsOve
  * option that promises a script/scenario default this leaves unreachable.
  */
 export function errorHandlingSurvivesBooleanClear(errorHandling?: RuntimeSettingsOverride['error_handling']) {
-  if (!errorHandlingSectionIsPinned(errorHandling)) return false
+  return errorHandlingSectionHasValues(errorHandlingResidual(errorHandling))
+}
+
+/** The part of a group's error_handling section the dialog cannot edit — the retry policy. */
+function errorHandlingResidual(errorHandling?: RuntimeSettingsOverride['error_handling']) {
+  if (!errorHandlingSectionIsPinned(errorHandling)) return {}
   const residual = { ...errorHandling }
   delete residual.continue_on_error
   delete residual.snapshot_on_error
-  return errorHandlingSectionHasValues(residual)
+  return residual
+}
+
+export type GroupErrorHandlingDraftHalves = { continue_on_error: string; snapshot_on_error: string }
+
+export type ErrorHandlingHalf = keyof GroupErrorHandlingDraftHalves
+
+/**
+ * Apply one edit to the group dialog's two error-handling selects.
+ *
+ * The inherit option ('') is a SECTION-level statement, not a per-field one: error_handling is
+ * applied whole (mergeRuntimeSettings swaps the section outright, then
+ * `script.Config.ErrorHandling = *overrides.ErrorHandling`), so a group can only stop pinning ONE
+ * half by transmitting no section at all. Selecting it on either select therefore moves BOTH to
+ * inherit — otherwise the surviving half keeps the section alive and the half just released
+ * executes as false, which is the opposite of the "Scenario default"/"Script default" the option
+ * names. Picking an explicit value leaves the sibling alone: a section that omits a half executes
+ * it as false, exactly as the dialog already displays it.
+ */
+export function applyGroupErrorHandlingDraftEdit(
+  draft: GroupErrorHandlingDraftHalves,
+  half: ErrorHandlingHalf,
+  value: string,
+): GroupErrorHandlingDraftHalves {
+  if (value === '') return { continue_on_error: '', snapshot_on_error: '' }
+  return { ...draft, [half]: value }
+}
+
+/**
+ * Build the error_handling section a group transmits for this run from the dialog's two halves.
+ *
+ * One function owns the whole-section rule, because every cell of the truth table turns on it:
+ *   * BOTH halves on inherit and no retry policy left -> the group transmits NOTHING (undefined),
+ *     so the level above it wins intact. Seeding the run level's section back in would pin it and
+ *     drive the halves the winner omits to false. A retry policy the dialog cannot edit keeps the
+ *     section on the wire, so there the halves are resolved rather than dropped.
+ *   * a half on inherit while the OTHER half still pins the section -> the section is transmitted
+ *     regardless, so an omitted half would execute false rather than inherit. Materialise the
+ *     value the option names when an ancestor pins a section; when nothing above the group pins
+ *     one there is no value to materialise (this page never loads the script's own
+ *     config.error_handling) and the half is left out, executing false exactly as before. That
+ *     cell is unreachable from the dialog because applyGroupErrorHandlingDraftEdit turns the
+ *     inherit option into a section-level clear.
+ *   * an untouched half keeps whatever the winning section already says, so the value saved stays
+ *     the value the dialog displayed.
+ */
+export function buildGroupErrorHandlingSectionForRun(input: {
+  groupSection?: RuntimeSettingsOverride['error_handling']
+  inheritedSection?: RuntimeSettingsOverride['error_handling']
+  draft: GroupErrorHandlingDraftHalves
+  changed: { continue_on_error: boolean; snapshot_on_error: boolean }
+}): RuntimeSettingsOverride['error_handling'] | undefined {
+  const { groupSection, inheritedSection, draft, changed } = input
+  const residual = errorHandlingResidual(groupSection)
+  const releasing = draft.continue_on_error === '' && draft.snapshot_on_error === ''
+  // The only shape a release can take: no section at all. A retry policy the dialog cannot edit
+  // keeps the section on the wire, so the halves below still have to be resolved rather than
+  // dropped (the dialog disables the inherit option there, so that cell is UI-unreachable).
+  if (releasing && !errorHandlingSectionHasValues(residual)) return undefined
+  const section: RuntimeSettingsOverride['error_handling'] = releasing
+    ? { ...residual }
+    : errorHandlingSectionIsPinned(groupSection)
+      ? { ...groupSection }
+      : { ...(inheritedSection || {}) }
+  for (const half of ['continue_on_error', 'snapshot_on_error'] as const) {
+    if (!releasing && !changed[half]) continue
+    if (draft[half] !== '') {
+      section[half] = draft[half] === 'true'
+    } else if (errorHandlingSectionIsPinned(inheritedSection)) {
+      section[half] = Boolean(inheritedSection?.[half])
+    } else {
+      delete section[half]
+    }
+  }
+  return Object.keys(section).length > 0 ? section : undefined
 }
 
 type ResolvedErrorHandling = {
@@ -475,17 +566,49 @@ export function setRuntimeAutoTransactions(settings: RuntimeSettingsOverride, va
   }
 }
 
-export function setRuntimeBrowser(settings: RuntimeSettingsOverride, browser: RuntimeSettingsOverride['browser']) {
+export type RuntimeBrowserWriteOptions = {
+  /**
+   * True when the level ABOVE the group pins a whole `browser_config` section. Clearing every
+   * browser field cannot then be expressed by releasing the group's section — the ancestor's
+   * would simply be handed down — so the group keeps an EMPTY browser_config, which is the only
+   * shape that overrides an ancestor section: pkg/api/runtime_overrides.go mergeRuntimeSettings
+   * copies a non-nil group BrowserConfig outright, whereas a flat `browser` merges field-wise and
+   * skips empty fields.
+   */
+  ancestorPinsBrowserConfig?: boolean
+}
+
+/**
+ * Write the four browser fields the run editors expose into whichever wire shape the level
+ * already carries. The two shapes are NOT interchangeable on the wire and cannot be normalised
+ * into one: the backend merges a flat `browser` field-wise onto the script's own config, while
+ * `browser_config` replaces that config whole (pkg/api/runtime_overrides.go:379-395). This is the
+ * one place that knows the difference — every other helper works on the flat four-field view
+ * runtimeBrowser() returns.
+ *
+ * Both shapes release the section the same way, which is the half that used to be missing: when
+ * nothing is left to pin the key is REMOVED so stampClearedRuntimeSections can tombstone it.
+ * Leaving an empty `browser_config` behind would transmit a whole-section replace and wipe the
+ * script's own engine, viewport and timeouts — the opposite of the "Standard" the cleared
+ * controls promise.
+ */
+export function setRuntimeBrowser(
+  settings: RuntimeSettingsOverride,
+  browser: RuntimeSettingsOverride['browser'],
+  options: RuntimeBrowserWriteOptions = {},
+) {
+  const fields = {
+    headless: browser?.headless,
+    device_profile: browser?.device_profile,
+    touch_mode: browser?.touch_mode,
+    orientation: browser?.orientation,
+  }
   if (settings.browser_config) {
-    settings.browser_config = {
-      ...settings.browser_config,
-      headless: browser?.headless,
-      device_profile: browser?.device_profile,
-      touch_mode: browser?.touch_mode,
-      orientation: browser?.orientation,
-    }
+    const next = { ...settings.browser_config, ...fields }
     delete settings.browser
-  } else if (browser && Object.values(browser).some(value => value !== undefined && value !== '')) {
+    if (runtimeSectionHasValues(next) || options.ancestorPinsBrowserConfig) settings.browser_config = next
+    else delete settings.browser_config
+  } else if (runtimeSectionHasValues(fields)) {
     settings.browser = { ...browser }
   } else {
     delete settings.browser

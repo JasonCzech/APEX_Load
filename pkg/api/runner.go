@@ -344,10 +344,12 @@ type TestRunner struct {
 	capacityAdvisoryHits    uint64
 	capacityAdvisoryMisses  uint64
 
-	// durableWritesInFlight counts the runner's durable test writes that are
-	// currently inside the storage driver. The run-driver panic backstop reads it
-	// to tell a transition blocked on slow durable I/O (which waiting does
-	// recover from) from one blocked on an orphaned lock (which it never does).
+	// durableWritesInFlight counts the runner's durable writes that are currently
+	// inside the storage driver. The run-driver panic backstop reads it to tell a
+	// transition blocked on slow durable I/O (which waiting does recover from)
+	// from one blocked on an orphaned lock (which it never does); the liveness
+	// probe reads it to tell a runner read that would block behind such a write
+	// from one that would not.
 	//
 	// Every durable test-store write the runner issues while holding tr.mu is
 	// counted, not only the status write: stopTest, failClosedUncertainVUserScale
@@ -360,10 +362,19 @@ type TestRunner struct {
 	// every tr.testStore write call site must go through trackDurableWrite or be
 	// listed there with the reason it runs off-lock.
 	//
-	// The gauge covers the test store only. A durable write to another store
-	// (archives, scripts, scenarios, settings) issued while tr.mu is held is not
-	// counted and would still be misclassified; the startup reference-key backfill
-	// is the known example, and it runs before any run driver exists.
+	// The gauge is deliberately NOT scoped to the test store, because neither
+	// reader is asking about a table - both are asking whether the goroutine
+	// holding tr.mu is inside the storage driver. The runner pins tr.mu across
+	// durable writes to its other stores just as often, and on far more ordinary
+	// paths: saving or deleting a script, saving or deleting a scenario, moving a
+	// script between folders, committing a GitHub script import, applying scenario
+	// runtime settings to groups, persisting a schedule occurrence, and the
+	// reference-key sequence allocation that EVERY script and scenario create
+	// performs. Those sections are bracketed by beginLockHeldDurableWrite rather
+	// than wrapped call by call, because they reach storage through shared helpers
+	// that a per-call wrapper would silently miss;
+	// TestEveryLockHeldDurableWriteIsCounted enforces that no lock-held write to
+	// any store escapes the gauge.
 	//
 	// It is a process-wide gauge, not a per-run one, so it can only delay the
 	// backstop's re-panic, never suppress it: under a healthy store a write

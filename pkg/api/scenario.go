@@ -102,6 +102,8 @@ func (tr *TestRunner) StoreScenarioWithID(id string, req CreateScenarioRequest) 
 func (tr *TestRunner) UpdateScenario(id string, req CreateScenarioRequest) (*StoredScenario, bool, error) {
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
+	tr.beginLockHeldDurableWrite()
+	defer tr.endLockHeldDurableWrite()
 	id = tr.resolveRefKeyLocked(id)
 	current, ok := tr.scenarios[id]
 	if !ok {
@@ -138,6 +140,8 @@ func (tr *TestRunner) storeScenarioLocked(id string, req CreateScenarioRequest) 
 func (tr *TestRunner) StoreScenarioWithIDCreateOnly(id string, req CreateScenarioRequest) (*StoredScenario, error) {
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
+	tr.beginLockHeldDurableWrite()
+	defer tr.endLockHeldDurableWrite()
 	id = strings.TrimSpace(id)
 	if id == "" {
 		return nil, fmt.Errorf("scenario id is required")
@@ -168,6 +172,8 @@ func (tr *TestRunner) StoreScenarioWithIDCreateOnly(id string, req CreateScenari
 func (tr *TestRunner) UpdateScenarioIfUnchanged(id string, req CreateScenarioRequest, expectedUpdatedAt time.Time) (*StoredScenario, error) {
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
+	tr.beginLockHeldDurableWrite()
+	defer tr.endLockHeldDurableWrite()
 	id = strings.TrimSpace(id)
 	if id == "" || expectedUpdatedAt.IsZero() {
 		return nil, fmt.Errorf("scenario id and expected updated_at are required")
@@ -197,6 +203,8 @@ func (tr *TestRunner) UpdateScenarioIfUnchanged(id string, req CreateScenarioReq
 func (tr *TestRunner) DeleteScenarioIfUnchanged(id string, expectedUpdatedAt time.Time) (bool, error) {
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
+	tr.beginLockHeldDurableWrite()
+	defer tr.endLockHeldDurableWrite()
 	id = strings.TrimSpace(id)
 	if id == "" || expectedUpdatedAt.IsZero() {
 		return false, fmt.Errorf("scenario id and expected updated_at are required")
@@ -650,6 +658,8 @@ func (tr *TestRunner) DeleteScenario(id string) bool {
 func (tr *TestRunner) DeleteScenarioDurable(id string) (bool, error) {
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
+	tr.beginLockHeldDurableWrite()
+	defer tr.endLockHeldDurableWrite()
 	id = tr.resolveRefKeyLocked(id)
 	scenario, ok := tr.scenarios[id]
 	if !ok {
@@ -765,6 +775,8 @@ func (tr *TestRunner) saveScenarioScheduleOccurrenceLocked(occurrence *storage.S
 	if occurrence == nil {
 		return fmt.Errorf("schedule occurrence is required")
 	}
+	tr.beginLockHeldDurableWrite()
+	defer tr.endLockHeldDurableWrite()
 	if tr.scenarioStore != nil {
 		if existing, err := tr.scenarioStore.GetScenarioScheduleOccurrenceByScheduleAndPlannedAt(occurrence.ScheduleID, occurrence.PlannedAt); err != nil {
 			return err
@@ -789,6 +801,12 @@ func (tr *TestRunner) recordScenarioScheduleOccurrenceAuditLocked(occurrence *st
 	if !ok {
 		return
 	}
+	// saveScenarioScheduleOccurrenceLocked reaches this with tr.mu held; the
+	// scheduler sweep reaches it with tr.mu released. Counting both is correct -
+	// the gauge answers "is a durable write inside the driver", and the
+	// lock-held caller is the one the backstop must not misread.
+	tr.beginLockHeldDurableWrite()
+	defer tr.endLockHeldDurableWrite()
 	details := map[string]any{
 		"schedule_id":       occurrence.ScheduleID,
 		"scenario_id":       occurrence.ScenarioID,

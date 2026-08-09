@@ -37,9 +37,11 @@ import GroupPlacementEditor from './GroupPlacementEditor'
 import { CronBuilder } from './ScheduleCronBuilder'
 import { normalizeRequiredLabels } from './assignmentLabels'
 import {
+  applyGroupErrorHandlingDraftEdit,
   buildEffectiveScenarioGroups,
   buildEmptyRunDefaultOverrides,
   buildGroupEditDraft,
+  buildGroupErrorHandlingSectionForRun,
   buildGroupsForRunPayload,
   buildGroupRuntimeTableValues,
   buildRunDefaultCards,
@@ -2053,35 +2055,22 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
       // The API applies error_handling as a whole SECTION (mergeRuntimeSettings copies the
       // group's section over the run's, applyRuntimeOverrides then assigns it whole), so the
       // winning section contributes every field and the levels underneath contribute nothing —
-      // not even a half the winner omits. Seed the untouched halves the same section-wise way
-      // the dialog resolved them for display (resolveGroupErrorHandling), otherwise the value
-      // saved is not the value shown: a group section that omits continue_on_error renders
-      // Disabled but would be written back as the root's Enabled.
-      const groupErrorHandling = runtimeSettings.error_handling
-      // Both halves on the inherit option means "this group transmits no section". Re-seeding it
-      // from the run level would pin a section the user just asked to release and — because the
-      // winning section is applied whole — drive the run level's own halves to false, which is
-      // the discard this dialog is meant to avoid. Only the group's OWN residual fields (the
-      // retry policy, which this dialog cannot edit) survive; when nothing survives the section
-      // is dropped and tombstoned below.
-      const clearingErrorHandling = groupEditDraft.continue_on_error === '' && groupEditDraft.snapshot_on_error === ''
-      const errorHandling = clearingErrorHandling || errorHandlingSectionIsPinned(groupErrorHandling)
-        ? { ...groupErrorHandling }
-        : { ...(effectiveRootRuntime.error_handling || {}) }
-      if (clearingErrorHandling) {
-        delete errorHandling.continue_on_error
-        delete errorHandling.snapshot_on_error
-      } else {
-        if (groupEditChanges.continue_on_error) {
-          if (groupEditDraft.continue_on_error === '') delete errorHandling.continue_on_error
-          else errorHandling.continue_on_error = groupEditDraft.continue_on_error === 'true'
-        }
-        if (groupEditChanges.snapshot_on_error) {
-          if (groupEditDraft.snapshot_on_error === '') delete errorHandling.snapshot_on_error
-          else errorHandling.snapshot_on_error = groupEditDraft.snapshot_on_error === 'true'
-        }
-      }
-      if (Object.keys(errorHandling).length > 0) runtimeSettings.error_handling = errorHandling
+      // not even a half the winner omits. buildGroupErrorHandlingSectionForRun owns that rule for
+      // every combination of the two halves; the section it declines to build is dropped here and
+      // tombstoned below, which is how the group stops pinning error handling at all.
+      const errorHandling = buildGroupErrorHandlingSectionForRun({
+        groupSection: runtimeSettings.error_handling,
+        inheritedSection: effectiveRootRuntime.error_handling,
+        draft: {
+          continue_on_error: groupEditDraft.continue_on_error,
+          snapshot_on_error: groupEditDraft.snapshot_on_error,
+        },
+        changed: {
+          continue_on_error: groupEditChanges.continue_on_error,
+          snapshot_on_error: groupEditChanges.snapshot_on_error,
+        },
+      })
+      if (errorHandling) runtimeSettings.error_handling = errorHandling
       else delete runtimeSettings.error_handling
       runtimeChanged = true
     }
@@ -2094,7 +2083,7 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
         headless: groupEditDraft.browser_headless ? groupEditDraft.browser_headless === 'true' : undefined,
         touch_mode: groupEditDraft.browser_touch_mode ? groupEditDraft.browser_touch_mode === 'true' : undefined,
         orientation: groupEditDraft.browser_orientation || undefined,
-      })
+      }, { ancestorPinsBrowserConfig: Boolean(effectiveRootRuntime.browser_config) })
       runtimeChanged = true
     }
     // buildGroupsForRunPayload overlays this override back onto the group's STORED
@@ -3647,7 +3636,7 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
                     </label>
                     <label className={changedFieldClass(groupEditChanges.continue_on_error)}>
                       <span>Continue on error <ChangedBadge changed={groupEditChanges.continue_on_error} /></span>
-                      <select className="settings-input" value={groupEditDraft.continue_on_error} onChange={event => setGroupEditDraft(prev => ({ ...prev, continue_on_error: event.target.value }))}>
+                      <select className="settings-input" value={groupEditDraft.continue_on_error} onChange={event => setGroupEditDraft(prev => ({ ...prev, ...applyGroupErrorHandlingDraftEdit(prev, 'continue_on_error', event.target.value) }))}>
                         <option value="" disabled={groupErrorHandlingInherit.disabled}>{groupErrorHandlingInherit.label}</option>
                         <option value="true">Enabled</option>
                         <option value="false">Disabled</option>
@@ -3655,7 +3644,7 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
                     </label>
                     <label className={changedFieldClass(groupEditChanges.snapshot_on_error)}>
                       <span>Snapshot on error <ChangedBadge changed={groupEditChanges.snapshot_on_error} /></span>
-                      <select className="settings-input" value={groupEditDraft.snapshot_on_error} onChange={event => setGroupEditDraft(prev => ({ ...prev, snapshot_on_error: event.target.value }))}>
+                      <select className="settings-input" value={groupEditDraft.snapshot_on_error} onChange={event => setGroupEditDraft(prev => ({ ...prev, ...applyGroupErrorHandlingDraftEdit(prev, 'snapshot_on_error', event.target.value) }))}>
                         <option value="" disabled={groupErrorHandlingInherit.disabled}>{groupErrorHandlingInherit.label}</option>
                         <option value="true">Enabled</option>
                         <option value="false">Disabled</option>
