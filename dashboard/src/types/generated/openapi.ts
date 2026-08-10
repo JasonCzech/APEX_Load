@@ -731,6 +731,7 @@ export interface operations {
                   "extended_options"?: Array<string>;
                   "level"?: string;
                   "on_error_only"?: boolean;
+                  "redact_run_evidence"?: (boolean) | null;
                 };
                 "network"?: {
                   "address"?: string;
@@ -1920,6 +1921,7 @@ export interface operations {
               "extended_options"?: Array<string>;
               "level"?: string;
               "on_error_only"?: boolean;
+              "redact_run_evidence"?: (boolean) | null;
             }) | null;
             "log_level"?: string;
             "pacing"?: ({
@@ -2177,6 +2179,7 @@ export interface operations {
                 "extended_options"?: Array<string>;
                 "level"?: string;
                 "on_error_only"?: boolean;
+                "redact_run_evidence"?: (boolean) | null;
               }) | null;
               "log_level"?: string;
               "pacing"?: ({
@@ -2503,6 +2506,7 @@ export interface operations {
                 "extended_options"?: Array<string>;
                 "level"?: string;
                 "on_error_only"?: boolean;
+                "redact_run_evidence"?: (boolean) | null;
               };
               "network"?: {
                 "address"?: string;
@@ -3200,6 +3204,7 @@ export interface operations {
                 "extended_options"?: Array<string>;
                 "level"?: string;
                 "on_error_only"?: boolean;
+                "redact_run_evidence"?: (boolean) | null;
               };
               "network"?: {
                 "address"?: string;
@@ -3799,6 +3804,7 @@ export interface operations {
                   "extended_options"?: Array<string>;
                   "level"?: string;
                   "on_error_only"?: boolean;
+                  "redact_run_evidence"?: (boolean) | null;
                 };
                 "network"?: {
                   "address"?: string;
@@ -5036,6 +5042,7 @@ export interface operations {
                 "extended_options"?: Array<string>;
                 "level"?: string;
                 "on_error_only"?: boolean;
+                "redact_run_evidence"?: (boolean) | null;
               };
               "network"?: {
                 "address"?: string;
@@ -5557,6 +5564,7 @@ export interface operations {
                   "extended_options"?: Array<string>;
                   "level"?: string;
                   "on_error_only"?: boolean;
+                  "redact_run_evidence"?: (boolean) | null;
                 }) | null;
                 "log_level"?: string;
                 "pacing"?: ({
@@ -6028,6 +6036,7 @@ export interface operations {
                 "extended_options"?: Array<string>;
                 "level"?: string;
                 "on_error_only"?: boolean;
+                "redact_run_evidence"?: (boolean) | null;
               };
               "network"?: {
                 "address"?: string;
@@ -7267,6 +7276,7 @@ export interface operations {
                 "extended_options"?: Array<string>;
                 "level"?: string;
                 "on_error_only"?: boolean;
+                "redact_run_evidence"?: (boolean) | null;
               };
               "network"?: {
                 "address"?: string;
@@ -9116,6 +9126,7 @@ export interface operations {
                 "extended_options"?: Array<string>;
                 "level"?: string;
                 "on_error_only"?: boolean;
+                "redact_run_evidence"?: (boolean) | null;
               };
               "network"?: {
                 "address"?: string;
@@ -9771,6 +9782,7 @@ export interface operations {
                   "extended_options"?: Array<string>;
                   "level"?: string;
                   "on_error_only"?: boolean;
+                  "redact_run_evidence"?: (boolean) | null;
                 };
                 "network"?: {
                   "address"?: string;
@@ -10359,6 +10371,7 @@ export interface operations {
                   "extended_options"?: Array<string>;
                   "level"?: string;
                   "on_error_only"?: boolean;
+                  "redact_run_evidence"?: (boolean) | null;
                 };
                 "network"?: {
                   "address"?: string;
@@ -12449,6 +12462,7 @@ export interface operations {
               "extended_options"?: Array<string>;
               "level"?: string;
               "on_error_only"?: boolean;
+              "redact_run_evidence"?: (boolean) | null;
             }) | null;
             "log_level"?: string;
             "pacing"?: ({
@@ -12699,6 +12713,7 @@ export interface operations {
                 "extended_options"?: Array<string>;
                 "level"?: string;
                 "on_error_only"?: boolean;
+                "redact_run_evidence"?: (boolean) | null;
               }) | null;
               "log_level"?: string;
               "pacing"?: ({
@@ -13658,6 +13673,7 @@ export interface operations {
                   "extended_options"?: Array<string>;
                   "level"?: string;
                   "on_error_only"?: boolean;
+                  "redact_run_evidence"?: (boolean) | null;
                 }) | null;
                 "log_level"?: string;
                 "pacing"?: ({
@@ -14371,6 +14387,7 @@ export interface operations {
                 "extended_options"?: Array<string>;
                 "level"?: string;
                 "on_error_only"?: boolean;
+                "redact_run_evidence"?: (boolean) | null;
               }) | null;
               "log_level"?: string;
               "pacing"?: ({
@@ -14573,6 +14590,7 @@ export interface operations {
               "extended_options"?: Array<string>;
               "level"?: string;
               "on_error_only"?: boolean;
+              "redact_run_evidence"?: (boolean) | null;
             }) | null;
             "log_level"?: string;
             "pacing"?: ({
@@ -14861,6 +14879,7 @@ export interface operations {
                 "extended_options"?: Array<string>;
                 "level"?: string;
                 "on_error_only"?: boolean;
+                "redact_run_evidence"?: (boolean) | null;
               }) | null;
               "log_level"?: string;
               "pacing"?: ({
@@ -15135,6 +15154,7 @@ export interface operations {
                   "extended_options"?: Array<string>;
                   "level"?: string;
                   "on_error_only"?: boolean;
+                  "redact_run_evidence"?: (boolean) | null;
                 }) | null;
                 "log_level"?: string;
                 "pacing"?: ({
@@ -15735,6 +15755,7 @@ export interface operations {
                 "extended_options"?: Array<string>;
                 "level"?: string;
                 "on_error_only"?: boolean;
+                "redact_run_evidence"?: (boolean) | null;
               };
               "network"?: {
                 "address"?: string;
@@ -16401,6 +16422,7 @@ export interface operations {
                   "extended_options"?: Array<string>;
                   "level"?: string;
                   "on_error_only"?: boolean;
+                  "redact_run_evidence"?: (boolean) | null;
                 };
                 "network"?: {
                   "address"?: string;
@@ -16987,6 +17009,7 @@ export interface operations {
                 "extended_options"?: Array<string>;
                 "level"?: string;
                 "on_error_only"?: boolean;
+                "redact_run_evidence"?: (boolean) | null;
               }) | null;
               "log_level"?: string;
               "pacing"?: ({
@@ -17195,6 +17218,7 @@ export interface operations {
               "extended_options"?: Array<string>;
               "level"?: string;
               "on_error_only"?: boolean;
+              "redact_run_evidence"?: (boolean) | null;
             }) | null;
             "log_level"?: string;
             "pacing"?: ({
@@ -17705,6 +17729,7 @@ export interface operations {
                   "extended_options"?: Array<string>;
                   "level"?: string;
                   "on_error_only"?: boolean;
+                  "redact_run_evidence"?: (boolean) | null;
                 }) | null;
                 "log_level"?: string;
                 "pacing"?: ({
@@ -18799,6 +18824,7 @@ export interface operations {
                 "extended_options"?: Array<string>;
                 "level"?: string;
                 "on_error_only"?: boolean;
+                "redact_run_evidence"?: (boolean) | null;
               }) | null;
               "log_level"?: string;
               "pacing"?: ({
@@ -21867,6 +21893,7 @@ export interface operations {
                 "extended_options"?: Array<string>;
                 "level"?: string;
                 "on_error_only"?: boolean;
+                "redact_run_evidence"?: (boolean) | null;
               }) | null;
               "log_level"?: string;
               "pacing"?: ({
@@ -22075,6 +22102,7 @@ export interface operations {
               "extended_options"?: Array<string>;
               "level"?: string;
               "on_error_only"?: boolean;
+              "redact_run_evidence"?: (boolean) | null;
             }) | null;
             "log_level"?: string;
             "pacing"?: ({
@@ -22376,6 +22404,7 @@ export interface operations {
                   "extended_options"?: Array<string>;
                   "level"?: string;
                   "on_error_only"?: boolean;
+                  "redact_run_evidence"?: (boolean) | null;
                 }) | null;
                 "log_level"?: string;
                 "pacing"?: ({
@@ -23114,6 +23143,7 @@ export interface operations {
                 "extended_options"?: Array<string>;
                 "level"?: string;
                 "on_error_only"?: boolean;
+                "redact_run_evidence"?: (boolean) | null;
               };
               "network"?: {
                 "address"?: string;
@@ -24656,6 +24686,7 @@ export interface operations {
                   "extended_options"?: Array<string>;
                   "level"?: string;
                   "on_error_only"?: boolean;
+                  "redact_run_evidence"?: (boolean) | null;
                 };
                 "network"?: {
                   "address"?: string;
@@ -28260,6 +28291,7 @@ export interface operations {
                   "extended_options"?: Array<string>;
                   "level"?: string;
                   "on_error_only"?: boolean;
+                  "redact_run_evidence"?: (boolean) | null;
                 }) | null;
                 "log_level"?: string;
                 "pacing"?: ({
@@ -29084,6 +29116,7 @@ export interface operations {
                   "extended_options"?: Array<string>;
                   "level"?: string;
                   "on_error_only"?: boolean;
+                  "redact_run_evidence"?: (boolean) | null;
                 }) | null;
                 "log_level"?: string;
                 "pacing"?: ({
@@ -29500,6 +29533,7 @@ export interface operations {
                   "extended_options"?: Array<string>;
                   "level"?: string;
                   "on_error_only"?: boolean;
+                  "redact_run_evidence"?: (boolean) | null;
                 }) | null;
                 "log_level"?: string;
                 "pacing"?: ({
@@ -31177,6 +31211,7 @@ export interface operations {
                 "extended_options"?: Array<string>;
                 "level"?: string;
                 "on_error_only"?: boolean;
+                "redact_run_evidence"?: (boolean) | null;
               }) | null;
               "log_level"?: string;
               "pacing"?: ({
@@ -31451,6 +31486,7 @@ export interface operations {
                   "extended_options"?: Array<string>;
                   "level"?: string;
                   "on_error_only"?: boolean;
+                  "redact_run_evidence"?: (boolean) | null;
                 }) | null;
                 "log_level"?: string;
                 "pacing"?: ({
@@ -31896,6 +31932,7 @@ export interface operations {
                   "extended_options"?: Array<string>;
                   "level"?: string;
                   "on_error_only"?: boolean;
+                  "redact_run_evidence"?: (boolean) | null;
                 };
                 "network"?: {
                   "address"?: string;
@@ -33803,6 +33840,7 @@ export interface operations {
                   "extended_options"?: Array<string>;
                   "level"?: string;
                   "on_error_only"?: boolean;
+                  "redact_run_evidence"?: (boolean) | null;
                 }) | null;
                 "log_level"?: string;
                 "pacing"?: ({
@@ -34897,6 +34935,7 @@ export interface operations {
                 "extended_options"?: Array<string>;
                 "level"?: string;
                 "on_error_only"?: boolean;
+                "redact_run_evidence"?: (boolean) | null;
               }) | null;
               "log_level"?: string;
               "pacing"?: ({
@@ -35337,6 +35376,7 @@ export interface operations {
                 "extended_options"?: Array<string>;
                 "level"?: string;
                 "on_error_only"?: boolean;
+                "redact_run_evidence"?: (boolean) | null;
               }) | null;
               "log_level"?: string;
               "pacing"?: ({
@@ -35572,6 +35612,7 @@ export interface operations {
                 "extended_options"?: Array<string>;
                 "level"?: string;
                 "on_error_only"?: boolean;
+                "redact_run_evidence"?: (boolean) | null;
               }) | null;
               "log_level"?: string;
               "pacing"?: ({
@@ -35794,6 +35835,7 @@ export interface operations {
                 "extended_options"?: Array<string>;
                 "level"?: string;
                 "on_error_only"?: boolean;
+                "redact_run_evidence"?: (boolean) | null;
               }) | null;
               "log_level"?: string;
               "pacing"?: ({
@@ -36016,6 +36058,7 @@ export interface operations {
                 "extended_options"?: Array<string>;
                 "level"?: string;
                 "on_error_only"?: boolean;
+                "redact_run_evidence"?: (boolean) | null;
               }) | null;
               "log_level"?: string;
               "pacing"?: ({
@@ -36379,6 +36422,7 @@ export interface operations {
                   "extended_options"?: Array<string>;
                   "level"?: string;
                   "on_error_only"?: boolean;
+                  "redact_run_evidence"?: (boolean) | null;
                 }) | null;
                 "log_level"?: string;
                 "pacing"?: ({
@@ -36686,6 +36730,7 @@ export interface operations {
                   "extended_options"?: Array<string>;
                   "level"?: string;
                   "on_error_only"?: boolean;
+                  "redact_run_evidence"?: (boolean) | null;
                 }) | null;
                 "log_level"?: string;
                 "pacing"?: ({
@@ -37030,6 +37075,7 @@ export interface operations {
                   "extended_options"?: Array<string>;
                   "level"?: string;
                   "on_error_only"?: boolean;
+                  "redact_run_evidence"?: (boolean) | null;
                 }) | null;
                 "log_level"?: string;
                 "pacing"?: ({
@@ -45141,6 +45187,7 @@ export interface operations {
                   "extended_options"?: Array<string>;
                   "level"?: string;
                   "on_error_only"?: boolean;
+                  "redact_run_evidence"?: (boolean) | null;
                 }) | null;
                 "log_level"?: string;
                 "pacing"?: ({
@@ -46235,6 +46282,7 @@ export interface operations {
                 "extended_options"?: Array<string>;
                 "level"?: string;
                 "on_error_only"?: boolean;
+                "redact_run_evidence"?: (boolean) | null;
               }) | null;
               "log_level"?: string;
               "pacing"?: ({
@@ -46725,6 +46773,7 @@ export interface operations {
               "extended_options"?: Array<string>;
               "level"?: string;
               "on_error_only"?: boolean;
+              "redact_run_evidence"?: (boolean) | null;
             }) | null;
             "log_level"?: string;
             "pacing"?: ({
@@ -47247,6 +47296,7 @@ export interface operations {
                   "extended_options"?: Array<string>;
                   "level"?: string;
                   "on_error_only"?: boolean;
+                  "redact_run_evidence"?: (boolean) | null;
                 };
                 "network"?: {
                   "address"?: string;
@@ -47978,6 +48028,7 @@ export interface operations {
                 "extended_options"?: Array<string>;
                 "level"?: string;
                 "on_error_only"?: boolean;
+                "redact_run_evidence"?: (boolean) | null;
               };
               "network"?: {
                 "address"?: string;
@@ -48567,6 +48618,7 @@ export interface operations {
                   "extended_options"?: Array<string>;
                   "level"?: string;
                   "on_error_only"?: boolean;
+                  "redact_run_evidence"?: (boolean) | null;
                 };
                 "network"?: {
                   "address"?: string;
@@ -49225,6 +49277,7 @@ export interface operations {
                   "extended_options"?: Array<string>;
                   "level"?: string;
                   "on_error_only"?: boolean;
+                  "redact_run_evidence"?: (boolean) | null;
                 };
                 "network"?: {
                   "address"?: string;
@@ -51398,6 +51451,7 @@ export interface operations {
                   "extended_options"?: Array<string>;
                   "level"?: string;
                   "on_error_only"?: boolean;
+                  "redact_run_evidence"?: (boolean) | null;
                 }) | null;
                 "log_level"?: string;
                 "pacing"?: ({
@@ -52495,6 +52549,7 @@ export interface operations {
                   "extended_options"?: Array<string>;
                   "level"?: string;
                   "on_error_only"?: boolean;
+                  "redact_run_evidence"?: (boolean) | null;
                 }) | null;
                 "log_level"?: string;
                 "pacing"?: ({
@@ -53592,6 +53647,7 @@ export interface operations {
                   "extended_options"?: Array<string>;
                   "level"?: string;
                   "on_error_only"?: boolean;
+                  "redact_run_evidence"?: (boolean) | null;
                 }) | null;
                 "log_level"?: string;
                 "pacing"?: ({
@@ -54689,6 +54745,7 @@ export interface operations {
                   "extended_options"?: Array<string>;
                   "level"?: string;
                   "on_error_only"?: boolean;
+                  "redact_run_evidence"?: (boolean) | null;
                 }) | null;
                 "log_level"?: string;
                 "pacing"?: ({
@@ -55786,6 +55843,7 @@ export interface operations {
                   "extended_options"?: Array<string>;
                   "level"?: string;
                   "on_error_only"?: boolean;
+                  "redact_run_evidence"?: (boolean) | null;
                 }) | null;
                 "log_level"?: string;
                 "pacing"?: ({
@@ -56333,6 +56391,7 @@ export interface operations {
                 "extended_options"?: Array<string>;
                 "level"?: string;
                 "on_error_only"?: boolean;
+                "redact_run_evidence"?: (boolean) | null;
               };
               "network"?: {
                 "address"?: string;
@@ -57007,6 +57066,7 @@ export interface operations {
                 "extended_options"?: Array<string>;
                 "level"?: string;
                 "on_error_only"?: boolean;
+                "redact_run_evidence"?: (boolean) | null;
               };
               "network"?: {
                 "address"?: string;
@@ -58961,6 +59021,7 @@ export interface operations {
                 "extended_options"?: Array<string>;
                 "level"?: string;
                 "on_error_only"?: boolean;
+                "redact_run_evidence"?: (boolean) | null;
               };
               "network"?: {
                 "address"?: string;
@@ -59869,6 +59930,7 @@ export interface operations {
                   "extended_options"?: Array<string>;
                   "level"?: string;
                   "on_error_only"?: boolean;
+                  "redact_run_evidence"?: (boolean) | null;
                 }) | null;
                 "log_level"?: string;
                 "pacing"?: ({
@@ -60248,6 +60310,7 @@ export interface operations {
                 "extended_options"?: Array<string>;
                 "level"?: string;
                 "on_error_only"?: boolean;
+                "redact_run_evidence"?: (boolean) | null;
               };
               "network"?: {
                 "address"?: string;
@@ -61729,6 +61792,7 @@ export interface operations {
                   "extended_options"?: Array<string>;
                   "level"?: string;
                   "on_error_only"?: boolean;
+                  "redact_run_evidence"?: (boolean) | null;
                 }) | null;
                 "log_level"?: string;
                 "pacing"?: ({
@@ -62288,6 +62352,7 @@ export interface operations {
                 "extended_options"?: Array<string>;
                 "level"?: string;
                 "on_error_only"?: boolean;
+                "redact_run_evidence"?: (boolean) | null;
               };
               "network"?: {
                 "address"?: string;
@@ -63279,6 +63344,7 @@ export interface operations {
                 "extended_options"?: Array<string>;
                 "level"?: string;
                 "on_error_only"?: boolean;
+                "redact_run_evidence"?: (boolean) | null;
               };
               "network"?: {
                 "address"?: string;
@@ -64343,6 +64409,7 @@ export interface operations {
                 "extended_options"?: Array<string>;
                 "level"?: string;
                 "on_error_only"?: boolean;
+                "redact_run_evidence"?: (boolean) | null;
               };
               "network"?: {
                 "address"?: string;
@@ -65402,6 +65469,7 @@ export interface operations {
                 "extended_options"?: Array<string>;
                 "level"?: string;
                 "on_error_only"?: boolean;
+                "redact_run_evidence"?: (boolean) | null;
               };
               "network"?: {
                 "address"?: string;
@@ -66462,6 +66530,7 @@ export interface operations {
                 "extended_options"?: Array<string>;
                 "level"?: string;
                 "on_error_only"?: boolean;
+                "redact_run_evidence"?: (boolean) | null;
               };
               "network"?: {
                 "address"?: string;
@@ -67521,6 +67590,7 @@ export interface operations {
                 "extended_options"?: Array<string>;
                 "level"?: string;
                 "on_error_only"?: boolean;
+                "redact_run_evidence"?: (boolean) | null;
               };
               "network"?: {
                 "address"?: string;
@@ -70972,6 +71042,7 @@ export interface operations {
                   "extended_options"?: Array<string>;
                   "level"?: string;
                   "on_error_only"?: boolean;
+                  "redact_run_evidence"?: (boolean) | null;
                 }) | null;
                 "log_level"?: string;
                 "pacing"?: ({
@@ -72066,6 +72137,7 @@ export interface operations {
                 "extended_options"?: Array<string>;
                 "level"?: string;
                 "on_error_only"?: boolean;
+                "redact_run_evidence"?: (boolean) | null;
               }) | null;
               "log_level"?: string;
               "pacing"?: ({
@@ -72679,6 +72751,7 @@ export interface operations {
                 "extended_options"?: Array<string>;
                 "level"?: string;
                 "on_error_only"?: boolean;
+                "redact_run_evidence"?: (boolean) | null;
               };
               "network"?: {
                 "address"?: string;
@@ -73266,6 +73339,7 @@ export interface operations {
                   "extended_options"?: Array<string>;
                   "level"?: string;
                   "on_error_only"?: boolean;
+                  "redact_run_evidence"?: (boolean) | null;
                 };
                 "network"?: {
                   "address"?: string;
@@ -75428,6 +75502,7 @@ export interface operations {
                 "extended_options"?: Array<string>;
                 "level"?: string;
                 "on_error_only"?: boolean;
+                "redact_run_evidence"?: (boolean) | null;
               }) | null;
               "log_level"?: string;
               "pacing"?: ({
@@ -75630,6 +75705,7 @@ export interface operations {
               "extended_options"?: Array<string>;
               "level"?: string;
               "on_error_only"?: boolean;
+              "redact_run_evidence"?: (boolean) | null;
             }) | null;
             "log_level"?: string;
             "pacing"?: ({
@@ -75918,6 +75994,7 @@ export interface operations {
                 "extended_options"?: Array<string>;
                 "level"?: string;
                 "on_error_only"?: boolean;
+                "redact_run_evidence"?: (boolean) | null;
               }) | null;
               "log_level"?: string;
               "pacing"?: ({
@@ -76192,6 +76269,7 @@ export interface operations {
                   "extended_options"?: Array<string>;
                   "level"?: string;
                   "on_error_only"?: boolean;
+                  "redact_run_evidence"?: (boolean) | null;
                 }) | null;
                 "log_level"?: string;
                 "pacing"?: ({
@@ -76892,6 +76970,7 @@ export interface operations {
                 "extended_options"?: Array<string>;
                 "level"?: string;
                 "on_error_only"?: boolean;
+                "redact_run_evidence"?: (boolean) | null;
               };
               "network"?: {
                 "address"?: string;
@@ -77557,6 +77636,7 @@ export interface operations {
                   "extended_options"?: Array<string>;
                   "level"?: string;
                   "on_error_only"?: boolean;
+                  "redact_run_evidence"?: (boolean) | null;
                 };
                 "network"?: {
                   "address"?: string;
@@ -80106,6 +80186,7 @@ export interface operations {
               "extended_options"?: Array<string>;
               "level"?: string;
               "on_error_only"?: boolean;
+              "redact_run_evidence"?: (boolean) | null;
             }) | null;
             "log_level"?: string;
             "pacing"?: ({
@@ -80334,6 +80415,7 @@ export interface operations {
                 "extended_options"?: Array<string>;
                 "level"?: string;
                 "on_error_only"?: boolean;
+                "redact_run_evidence"?: (boolean) | null;
               }) | null;
               "log_level"?: string;
               "pacing"?: ({
@@ -81107,6 +81189,7 @@ export interface operations {
                 "extended_options"?: Array<string>;
                 "level"?: string;
                 "on_error_only"?: boolean;
+                "redact_run_evidence"?: (boolean) | null;
               };
               "network"?: {
                 "address"?: string;
@@ -81915,6 +81998,7 @@ export interface operations {
                 "extended_options"?: Array<string>;
                 "level"?: string;
                 "on_error_only"?: boolean;
+                "redact_run_evidence"?: (boolean) | null;
               }) | null;
               "log_level"?: string;
               "pacing"?: ({
@@ -82117,6 +82201,7 @@ export interface operations {
               "extended_options"?: Array<string>;
               "level"?: string;
               "on_error_only"?: boolean;
+              "redact_run_evidence"?: (boolean) | null;
             }) | null;
             "log_level"?: string;
             "pacing"?: ({

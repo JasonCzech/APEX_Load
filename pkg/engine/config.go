@@ -1,7 +1,6 @@
 package engine
 
 import (
-	"encoding/base64"
 	"fmt"
 	"strings"
 
@@ -34,55 +33,58 @@ func buildGroupProtoConfig(group GroupConfig, runMode string) map[string]any {
 	return cfg
 }
 
-// runtimeProtocolAuthCompositeValues returns protocol-generated credential
-// spellings that do not contain the raw password. Exact redaction of the
-// password alone cannot match a user:password pair or Basic-auth base64 payload
-// echoed by a server; the bare username is intentionally not a secret.
+// containsPlatformSecretReference reports whether an authored protocol-config
+// field defers to the project secret store rather than carrying a literal the
+// operator can already read in the script.
+//
+// It must recognize exactly what interpolateSecretReferences resolves, including
+// the whitespace-tolerant "{{ secret.NAME }}" spelling. A stricter test here
+// would silently declassify a genuine project secret.
+func containsPlatformSecretReference(raw string) bool {
+	if raw == "" {
+		return false
+	}
+	for _, token := range templatePattern.FindAllString(raw, -1) {
+		if strings.HasPrefix(strings.TrimSpace(token[2:len(token)-2]), "secret.") {
+			return true
+		}
+	}
+	return false
+}
+
+// runtimeProtocolAuthCompositeValues returns the composite credential spellings
+// carried by SCRIPT-CONFIG fields — the surfaces whose resolved values already
+// exist when an engine, replay, shakeout or group is constructed.
+//
+// It is one of the two enumeration sites listed in
+// platform_managed_credential_composites.go; that file holds the surface list,
+// the origin test, and the derivation. Everything this function does is decide
+// which config fields are in play and where their resolved halves live.
 func runtimeProtocolAuthCompositeValues(script *dsl.Script, resolver SecretResolver) []string {
 	if script == nil {
 		return nil
 	}
 	config := buildProtoConfigWithSecretResolver(script, resolver)
-	values := make([]string, 0, 8)
-	addBasic := func(usernameKey, passwordKey string, enabled bool) {
-		if !enabled {
-			return
-		}
-		username := protocol.ConfigString(config, usernameKey)
-		password := protocol.ConfigString(config, passwordKey)
-		if username == "" && password == "" {
-			return
-		}
-		pair := username + ":" + password
-		payload := base64.StdEncoding.EncodeToString([]byte(pair))
-		values = append(values, password, pair, payload, "Basic "+payload)
-	}
-	addBasic("auth_username", "auth_password", strings.EqualFold(strings.TrimSpace(protocol.ConfigString(config, "auth_type")), "basic"))
-	addBasic("proxy_username", "proxy_password", protocol.ConfigString(config, "proxy_username") != "" || protocol.ConfigString(config, "proxy_password") != "")
-	addBasic("browser_http_credentials_username", "browser_http_credentials_password",
-		protocol.ConfigString(config, "browser_http_credentials_username") != "" || protocol.ConfigString(config, "browser_http_credentials_password") != "")
-	addBasic("browser_proxy_username", "browser_proxy_password",
-		protocol.ConfigString(config, "browser_proxy_username") != "" || protocol.ConfigString(config, "browser_proxy_password") != "")
-	databaseSource := strings.TrimSpace(script.Config.Database.DSN)
-	if databaseSource == "" {
-		databaseSource = strings.TrimSpace(script.Config.Database.DSNSecret)
-	}
-	if databaseSource != "" &&
-		(scriptPreservesImportedCredentialValues(script) ||
-			script.Config.Database.DSNSecret != "" ||
-			strings.Contains(databaseSource, "{{secret.")) {
-		resolvedDSN := strings.TrimSpace(protocol.ConfigString(config, "database_dsn"))
-		if resolvedDSN == "" {
-			resolvedDSN = strings.TrimSpace(protocol.ConfigString(config, "database_dsn_secret"))
-		}
-		collector := importedCredentialCollector{
-			resolved: true,
-			seen:     make(map[string]struct{}),
-		}
-		collector.collectDSN(resolvedDSN)
-		values = append(values, collector.values...)
-	}
-	return values
+	return appendPlatformManagedCompositeValues(
+		make([]string, 0, 8),
+		scriptCredentialCompositeSurfaces(script, config)...,
+	)
+}
+
+// runtimeActionCompositeValues returns the composite credential spellings
+// carried by a single action — the surfaces whose resolved values do not exist
+// until resolveAction has interpolated them. It is the second of the two
+// enumeration sites; it shares the origin test and the derivation with the
+// config-level one above.
+//
+// authored is the script's own action, which is the only place the origin of a
+// credential can still be read; resolved is what resolveAction produced from it,
+// which is the only place a registrable value exists.
+func runtimeActionCompositeValues(authored *dsl.Action, resolved *protocol.Action) []string {
+	return appendPlatformManagedCompositeValues(
+		make([]string, 0, 8),
+		actionCredentialCompositeSurfaces(authored, resolved)...,
+	)
 }
 
 // normalizeSourceIPs trims, drops blanks, and de-duplicates a source-IP pool.

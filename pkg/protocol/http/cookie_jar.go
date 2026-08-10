@@ -5,7 +5,6 @@ import (
 	"net/http/cookiejar"
 	"net/url"
 	"path"
-	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -24,13 +23,18 @@ var processHTTPCookieBudget = responseCaptureBudget{limit: maxHTTPProcessCookieB
 // accounting. Accounting is intentionally conservative: replacements and
 // deletions never reduce a key's high-water reservation until ClearCookies or
 // teardown, so a jar can overcount but can never retain more than its bounds.
+//
+// It deliberately keeps no side table of cookie values for the engine's
+// redaction matcher. Cookie values are harvested from the system under test, so
+// treating them as secrets substring-scrubbed ordinary application state
+// ("locale=en") out of the operator's own run evidence and out of metric
+// dimension keys. Cookies live here only to be replayed on the wire.
 type boundedCookieJar struct {
-	mu            sync.Mutex
-	jar           http.CookieJar
-	entries       map[string]int64
-	currentValues map[string]string
-	bytes         int64
-	memory        *responseCaptureLease
+	mu      sync.Mutex
+	jar     http.CookieJar
+	entries map[string]int64
+	bytes   int64
+	memory  *responseCaptureLease
 }
 
 func newBoundedCookieJar() (*boundedCookieJar, error) {
@@ -43,10 +47,9 @@ func newBoundedCookieJarWithBudget(budget *responseCaptureBudget) (*boundedCooki
 		return nil, err
 	}
 	return &boundedCookieJar{
-		jar:           jar,
-		entries:       make(map[string]int64),
-		currentValues: make(map[string]string),
-		memory:        budget.lease(),
+		jar:     jar,
+		entries: make(map[string]int64),
+		memory:  budget.lease(),
 	}, nil
 }
 
@@ -107,40 +110,11 @@ func (j *boundedCookieJar) SetCookies(target *url.URL, cookies []*http.Cookie) {
 		} else if !exists {
 			j.entries[key] = size
 		}
-		if cookie.Value == "" {
-			delete(j.currentValues, key)
-		} else {
-			j.currentValues[key] = cookie.Value
-		}
 		accepted = append(accepted, cookie)
 	}
 	if len(accepted) > 0 {
 		j.jar.SetCookies(target, accepted)
 	}
-}
-
-// runtimeCredentialValuesSnapshot returns the complete bounded set of
-// protocol-managed values that may be sent by this jar. It does not accumulate
-// every historical rotation; the engine overlaps consecutive snapshots while
-// scrubbing the rotating response and retains only a bounded retirement window.
-func (j *boundedCookieJar) runtimeCredentialValuesSnapshot() []string {
-	if j == nil {
-		return nil
-	}
-	j.mu.Lock()
-	unique := make(map[string]struct{}, len(j.currentValues))
-	for _, value := range j.currentValues {
-		if value != "" {
-			unique[value] = struct{}{}
-		}
-	}
-	values := make([]string, 0, len(unique))
-	for value := range unique {
-		values = append(values, value)
-	}
-	j.mu.Unlock()
-	sort.Strings(values)
-	return values
 }
 
 func (j *boundedCookieJar) clear() error {
@@ -155,7 +129,6 @@ func (j *boundedCookieJar) clear() error {
 	released := j.bytes
 	j.jar = jar
 	j.entries = make(map[string]int64)
-	j.currentValues = make(map[string]string)
 	j.bytes = 0
 	j.memory.releaseBytes(released)
 	j.mu.Unlock()

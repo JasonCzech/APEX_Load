@@ -279,9 +279,12 @@ func (s *Server) handleExportScript(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Wrap in the standard script envelope
+	// Wrap in the standard script envelope. An export is the runnable artifact:
+	// re-importing this file must reproduce a script that executes, so the
+	// executable definition is written verbatim. Only the filename stays a
+	// disclosure-safe label.
 	envelope := map[string]any{
-		"script": maskScriptSecrets(stored.Script),
+		"script": stored.Script,
 	}
 
 	data, err := json.MarshalIndent(envelope, "", "  ")
@@ -339,8 +342,11 @@ func (s *Server) handleDownloadScript(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// A download is an export over HTTP and carries the same contract: the file
+	// must be re-importable and runnable, so it holds the executable definition.
+	// The attachment filename remains a disclosure-safe label.
 	envelope := map[string]any{
-		"script": maskScriptSecrets(stored.Script),
+		"script": stored.Script,
 	}
 
 	data, err := json.MarshalIndent(envelope, "", "  ")
@@ -415,9 +421,9 @@ func (s *Server) handleUpdateScript(w http.ResponseWriter, r *http.Request) {
 			writeSecretBindingsRequired(w, unresolved)
 			return
 		}
-		// Persist the projection so non-executable import/review metadata is scrubbed
-		// too; requirements deliberately cover only executable locations.
-		script = projected
+		// Keep the caller's executable object. Non-executable import/review
+		// metadata is scrubbed by sanitizePersistentImportReviewSurfaces inside
+		// the durable write, so an update never has to trade runnability for it.
 		if err := reconcileMaskedScriptSecrets(script, stored.Script); err != nil {
 			writeError(w, http.StatusBadRequest, err.Error())
 			return

@@ -123,45 +123,32 @@ func rewriteNativeXMLCredentials(
 	}
 
 	trustedTemplates := map[string]struct{}{credential.Redacted: {}}
-	occurrences := make(map[string]int)
-	requirements := make([]SecretRequirement, 0, len(spans))
-	var rewritten strings.Builder
-	rewritten.Grow(len(body) + len(spans)*24)
+	var requirements []SecretRequirement
 	cursor := 0
 	for _, span := range spans {
 		if span.start < cursor || span.end < span.start || span.end > len(body) {
 			return "", nil, false, errorsNativeXMLOverlappingSpans()
 		}
-		identityKey := span.kind + "\x00" + strings.ToLower(span.name)
-		occurrences[identityKey]++
-		value := body[span.start:span.end]
-		// Template-bearing credential values must be resolved by the native
-		// projection before migration. Treating a composed value such as
-		// prefix-{{password}} as a literal would migrate unresolved source text.
-		if strings.TrimSpace(value) == "" || brunoTemplatePattern.MatchString(value) {
-			if trimmed := strings.TrimSpace(value); trimmed != "" {
-				trustedTemplates[trimmed] = struct{}{}
-			}
-			continue
-		}
-		requirement := nativeXMLSecretRequirement(
-			sourcePath,
-			bodyPointer,
-			span.kind,
-			span.name,
-			occurrences[identityKey],
-			value,
-		)
-		rewritten.WriteString(body[cursor:span.start])
-		rewritten.WriteString(nativeCredentialProjectionReplacement(requirement))
 		cursor = span.end
-		requirements = append(requirements, requirement)
+		// Every credential-bearing scalar in an authored XML body is retained
+		// exactly as written.
+		//
+		// Literals used to be rewritten to {{secret.NAME}} on import. Nothing an
+		// imported script already contains is a project secret — the operator has
+		// the source — and that rewrite made the stored bundle and the exported
+		// script unrunnable until they bound a value they never chose to
+		// externalize. Externalization stays available as an explicit operator
+		// action; it is no longer the import default.
+		//
+		// Recording each scalar as a trusted whole value also keeps the shared
+		// fail-closed pass below from swapping the surrounding body for a
+		// placeholder: that fallback exists for credential material with no safe
+		// scalar offset, not for values this scanner already located.
+		if trimmed := strings.TrimSpace(body[span.start:span.end]); trimmed != "" {
+			trustedTemplates[trimmed] = struct{}{}
+		}
 	}
 	projectedBody := body
-	if len(requirements) > 0 {
-		rewritten.WriteString(body[cursor:])
-		projectedBody = rewritten.String()
-	}
 
 	// The Bruno-specific scanner owns stable requirement identities for ordinary
 	// XML scalars. Run the shared projector as a second, fail-closed pass for
@@ -269,6 +256,14 @@ func rewriteNativeXMLCredentialValue(
 ) string {
 	if secretReference, ok := exactNativeSecretReference(value); ok {
 		return secretReference
+	}
+	if !brunoTemplatePattern.MatchString(value) {
+		// A literal credential the operator authored into the XML body is not a
+		// project secret. Rewriting it to {{secret.NAME}} on import produced a
+		// stored bundle and an exported script that could not replay until the
+		// operator bound a value they never asked to externalize. Preserve the
+		// exact scalar; externalizing it stays an explicit operator action.
+		return value
 	}
 	beforeMissing := make(map[string]struct{}, len(state.missing))
 	for missing := range state.missing {

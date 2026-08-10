@@ -61,6 +61,19 @@ type RedactionConfig struct {
 	runtimeSecretRawBytes  int
 	runtimePatternBytes    int
 	runtimeMatcherComplete bool
+	// runtimeScriptSourcedValues is the subset of runtimeSecretValues on THIS
+	// layer whose origin is the script itself — literals an import retained,
+	// credentials the operator authored, and values a script-sourced template
+	// namespace resolved to. It is always a subset of runtimeSecretValues.
+	//
+	// Membership is identical for text scrubbing: script-sourced values are
+	// replaced in evidence exactly like platform-managed ones. The subset exists
+	// only for the PRESENCE tests that suppress binary evidence — screenshots and
+	// browser HAR/trace capture — which cannot be scrubbed and therefore fail
+	// closed. Suppressing them for a value the operator already reads in their own
+	// script would silently disable evidence capture that works today, so those
+	// tests consult platform-managed membership only.
+	runtimeScriptSourcedValues map[string]struct{}
 	// runtimeParent is an immutable exact-value matcher shared by every VUser.
 	// Per-VUser session/dynamic overlays point at that base instead of copying a
 	// potentially large imported matcher after every cookie or extraction update.
@@ -165,11 +178,21 @@ func (c *RedactionConfig) ScrubText(value string) string {
 }
 
 // HasRuntimeSecretMaterial reports whether the config contains exact,
-// memory-only runtime values. Protocols use this signal to suppress binary
-// evidence (notably screenshots), which cannot be safely text-redacted.
+// memory-only PLATFORM-MANAGED runtime values. Protocols use this signal to
+// suppress binary evidence (notably screenshots and browser HAR/trace capture),
+// which cannot be safely text-redacted.
+//
+// Script-sourced values are deliberately excluded. They are scrubbed from text
+// evidence like any other runtime value, but they are readable by the operator
+// in the script they are running, so letting them reach this presence test would
+// silently turn screenshot and HAR capture OFF for scripts where it works today
+// — a capability loss, not a protection.
+//
+// runtimeScriptSourcedValues is a subset of runtimeSecretValues on each layer, so
+// the comparison stays O(1) per layer.
 func (c *RedactionConfig) HasRuntimeSecretMaterial() bool {
 	for depth := 0; c != nil && depth < maxRuntimeSecretRedactionLayers; depth++ {
-		if len(c.runtimeSecretValues) > 0 {
+		if len(c.runtimeSecretValues) > len(c.runtimeScriptSourcedValues) {
 			return true
 		}
 		c = c.runtimeParent
@@ -186,6 +209,18 @@ func WithSecretValueRedaction(config *RedactionConfig, values []string) *Redacti
 	return detached
 }
 
+// WithScriptSourcedSecretValueRedaction adds values whose origin is the script
+// itself. They join the same exact-value text matcher, but they never satisfy
+// HasRuntimeSecretMaterial, so enabling script-sourced run-evidence redaction
+// cannot disable screenshot or HAR capture. Platform-managed registration of the
+// same literal always wins.
+func WithScriptSourcedSecretValueRedaction(
+	config *RedactionConfig,
+	values []string,
+) (*RedactionConfig, error) {
+	return withSecretValueRedactionOrigin(config, values, true)
+}
+
 // WithSecretValueRedactionChecked constructs a complete raw exact-value matcher
 // and a bounded set of common reversible spellings. Runtime entry points use
 // this form before executing untrusted protocol code. Optional encoded variants
@@ -195,7 +230,20 @@ func WithSecretValueRedactionChecked(config *RedactionConfig, values []string) (
 }
 
 func withSecretValueRedaction(config *RedactionConfig, values []string) (*RedactionConfig, error) {
+	return withSecretValueRedactionOrigin(config, values, false)
+}
+
+// withSecretValueRedactionOrigin is the single matcher builder. scriptSourced
+// marks only the values passed in THIS call; membership already carried by
+// config is preserved, and a value registered as platform-managed anywhere is
+// never demoted to script-sourced.
+func withSecretValueRedactionOrigin(
+	config *RedactionConfig,
+	values []string,
+	scriptSourced bool,
+) (*RedactionConfig, error) {
 	existingValues := allRuntimeSecretValues(config)
+	existingScriptSourced := allRuntimeScriptSourcedValues(config)
 	rawBytes := runtimeSecretRawValueBytes(existingValues)
 	if len(existingValues) > maxRuntimeSecretRedactionValues {
 		return nil, fmt.Errorf(
@@ -231,7 +279,19 @@ func withSecretValueRedaction(config *RedactionConfig, values []string) (*Redact
 	}
 	matcherReady := config != nil &&
 		(len(existingValues) == 0 || hasRuntimeSecretReplacers(config))
-	if len(newValues) == 0 &&
+	// A platform-managed registration of a literal already carried as
+	// script-sourced must still promote it, or a project secret that happens to
+	// equal a retained import literal would keep binary-evidence capture enabled.
+	promotesOrigin := false
+	if !scriptSourced && len(existingScriptSourced) > 0 {
+		for _, value := range values {
+			if _, demoted := existingScriptSourced[value]; demoted {
+				promotesOrigin = true
+				break
+			}
+		}
+	}
+	if len(newValues) == 0 && !promotesOrigin &&
 		(config == nil || matcherReady) {
 		return config, nil
 	}
@@ -266,6 +326,38 @@ func withSecretValueRedaction(config *RedactionConfig, values []string) (*Redact
 	detached.runtimePatternBytes = patternBytes
 	detached.runtimeMatcherComplete = complete
 	detached.secretReplacers = []*strings.Replacer{replacer}
+	// This layer now carries the flattened value set, so it must also carry the
+	// flattened origin set. Values added by this call take THIS call's origin;
+	// everything else keeps the origin it already had.
+	marked := make(map[string]struct{}, len(existingScriptSourced))
+	for value := range existingScriptSourced {
+		if _, present := unique[value]; present {
+			marked[value] = struct{}{}
+		}
+	}
+	for _, value := range values {
+		if value == "" {
+			continue
+		}
+		if _, present := unique[value]; !present {
+			continue
+		}
+		if !scriptSourced {
+			delete(marked, value)
+			continue
+		}
+		// Only a value this call INTRODUCED takes this call's script-sourced
+		// origin. A value the config already carried keeps whatever the seed loop
+		// above copied for it, so re-listing a literal that is already registered
+		// platform-managed can never demote it — the ordering production actually
+		// uses is platform-managed first, script-sourced second.
+		if _, isNew := newValues[value]; isNew {
+			marked[value] = struct{}{}
+		}
+	}
+	if len(marked) > 0 {
+		detached.runtimeScriptSourcedValues = marked
+	}
 	return detached, nil
 }
 
@@ -356,12 +448,17 @@ func cloneRedactionPolicy(config *RedactionConfig) *RedactionConfig {
 // it never copies the source-import matcher or its raw values.
 func withRuntimeSecretValueOverlay(
 	base *RedactionConfig,
-	values []string,
+	platformManaged []string,
+	scriptSourced []string,
 ) (*RedactionConfig, error) {
-	if len(values) == 0 {
+	if len(platformManaged) == 0 && len(scriptSourced) == 0 {
 		return base, nil
 	}
-	runtime, err := withSecretValueRedaction(nil, values)
+	runtime, err := withSecretValueRedactionOrigin(nil, platformManaged, false)
+	if err != nil {
+		return nil, err
+	}
+	runtime, err = withSecretValueRedactionOrigin(runtime, scriptSourced, true)
 	if err != nil {
 		return nil, err
 	}
@@ -378,6 +475,7 @@ func withRuntimeSecretValueOverlay(
 	detached.runtimeSecretRawBytes = runtime.runtimeSecretRawBytes
 	detached.runtimePatternBytes = runtime.runtimePatternBytes
 	detached.runtimeMatcherComplete = runtime.runtimeMatcherComplete
+	detached.runtimeScriptSourcedValues = runtime.runtimeScriptSourcedValues
 	detached.runtimeParent = base
 	return detached, nil
 }
@@ -393,6 +491,35 @@ func allRuntimeSecretValues(config *RedactionConfig) map[string]struct{} {
 		config = config.runtimeParent
 	}
 	return values
+}
+
+// allRuntimeScriptSourcedValues flattens script-sourced membership across the
+// layer chain. A value counts as script-sourced only when EVERY layer that
+// carries it marks it script-sourced: platform-managed membership on any layer
+// wins, so flattening can never downgrade a project secret.
+func allRuntimeScriptSourcedValues(config *RedactionConfig) map[string]struct{} {
+	scriptSourced := make(map[string]struct{})
+	var platformManaged map[string]struct{}
+	for depth := 0; config != nil && depth < maxRuntimeSecretRedactionLayers; depth++ {
+		for value := range config.runtimeSecretValues {
+			if value == "" {
+				continue
+			}
+			if _, marked := config.runtimeScriptSourcedValues[value]; marked {
+				scriptSourced[value] = struct{}{}
+				continue
+			}
+			if platformManaged == nil {
+				platformManaged = make(map[string]struct{})
+			}
+			platformManaged[value] = struct{}{}
+		}
+		config = config.runtimeParent
+	}
+	for value := range platformManaged {
+		delete(scriptSourced, value)
+	}
+	return scriptSourced
 }
 
 func runtimeSecretRawValueBytes(values map[string]struct{}) int {
@@ -420,33 +547,76 @@ func runtimeSecretPlaceholder(value string) string {
 	return strings.Repeat("\x00", len(value))
 }
 
-func mergedRuntimeSecretValues(config *RedactionConfig, values []string) []string {
-	unique := make(map[string]struct{}, len(values))
+// mergedRuntimeSecretValuesByOrigin folds an inbound config's runtime values
+// together with the values a caller derived for the same group, WITHOUT losing
+// origin.
+//
+// The inbound config is the only place the origin of its own values still exists,
+// so it is read rather than flattened: a value it carries as script-sourced stays
+// script-sourced, and everything else is platform-managed. Platform-managed always
+// wins the collision, in either direction, so a project secret can never be
+// downgraded by a retained import literal that happens to equal it.
+func mergedRuntimeSecretValuesByOrigin(
+	config *RedactionConfig,
+	platformManaged []string,
+	scriptSourced []string,
+) ([]string, []string) {
+	inboundScriptSourced := allRuntimeScriptSourcedValues(config)
+	platformSet := make(map[string]struct{}, len(platformManaged))
 	for value := range allRuntimeSecretValues(config) {
+		if value == "" {
+			continue
+		}
+		if _, marked := inboundScriptSourced[value]; marked {
+			continue
+		}
+		platformSet[value] = struct{}{}
+	}
+	for _, value := range platformManaged {
 		if value != "" {
-			unique[value] = struct{}{}
+			platformSet[value] = struct{}{}
 		}
 	}
-	for _, value := range values {
+	scriptSet := make(map[string]struct{}, len(inboundScriptSourced)+len(scriptSourced))
+	for value := range inboundScriptSourced {
+		scriptSet[value] = struct{}{}
+	}
+	for _, value := range scriptSourced {
 		if value != "" {
-			unique[value] = struct{}{}
+			scriptSet[value] = struct{}{}
 		}
 	}
-	ordered := make([]string, 0, len(unique))
-	for value := range unique {
+	for value := range platformSet {
+		delete(scriptSet, value)
+	}
+	return sortedRuntimeSecretValueList(platformSet), sortedRuntimeSecretValueList(scriptSet)
+}
+
+func sortedRuntimeSecretValueList(values map[string]struct{}) []string {
+	ordered := make([]string, 0, len(values))
+	for value := range values {
 		ordered = append(ordered, value)
 	}
 	sort.Strings(ordered)
 	return ordered
 }
 
-func runtimeSecretValueSetKey(values []string) [sha256.Size]byte {
+// runtimeSecretValueSetKey identifies one shared matcher. Origin is part of that
+// identity: two groups whose platform-managed sets match but whose script-sourced
+// sets differ must not share a compiled matcher, so each set is hashed with its
+// own length-prefixed separator.
+func runtimeSecretValueSetKey(sets ...[]string) [sha256.Size]byte {
 	hash := sha256.New()
 	var length [8]byte
-	for _, value := range values {
-		binary.BigEndian.PutUint64(length[:], uint64(len(value)))
+	for index, values := range sets {
+		binary.BigEndian.PutUint64(length[:], uint64(index))
+		_, _ = hash.Write([]byte{0})
 		_, _ = hash.Write(length[:])
-		_, _ = hash.Write([]byte(value))
+		for _, value := range values {
+			binary.BigEndian.PutUint64(length[:], uint64(len(value)))
+			_, _ = hash.Write(length[:])
+			_, _ = hash.Write([]byte(value))
+		}
 	}
 	var key [sha256.Size]byte
 	copy(key[:], hash.Sum(nil))
@@ -463,15 +633,16 @@ func attachRuntimeSecretRedaction(config, runtime *RedactionConfig) *RedactionCo
 		return runtime
 	}
 	detached := &RedactionConfig{
-		Rules:                  append([]RedactionRule(nil), config.Rules...),
-		compiled:               append([]payloadReplacement(nil), config.compiled...),
-		secretReplacers:        runtime.secretReplacers,
-		runtimeSecretValues:    runtime.runtimeSecretValues,
-		runtimeSecretVariants:  runtime.runtimeSecretVariants,
-		runtimeSecretRawBytes:  runtime.runtimeSecretRawBytes,
-		runtimePatternBytes:    runtime.runtimePatternBytes,
-		runtimeMatcherComplete: runtime.runtimeMatcherComplete,
-		runtimeParent:          runtime.runtimeParent,
+		Rules:                      append([]RedactionRule(nil), config.Rules...),
+		compiled:                   append([]payloadReplacement(nil), config.compiled...),
+		secretReplacers:            runtime.secretReplacers,
+		runtimeSecretValues:        runtime.runtimeSecretValues,
+		runtimeSecretVariants:      runtime.runtimeSecretVariants,
+		runtimeSecretRawBytes:      runtime.runtimeSecretRawBytes,
+		runtimePatternBytes:        runtime.runtimePatternBytes,
+		runtimeMatcherComplete:     runtime.runtimeMatcherComplete,
+		runtimeScriptSourcedValues: runtime.runtimeScriptSourcedValues,
+		runtimeParent:              runtime.runtimeParent,
 	}
 	return detached
 }
@@ -636,20 +807,11 @@ func scrubSensitiveResult(result *protocol.Result, config *RedactionConfig) {
 }
 
 func scrubSensitiveResultWithOptions(result *protocol.Result, config *RedactionConfig, retainResponseBody bool) {
-	scrubSensitiveResultWithDimensionConfig(result, config, config, retainResponseBody)
-}
-
-func scrubSensitiveResultWithDimensionConfig(
-	result *protocol.Result,
-	config *RedactionConfig,
-	dimensionConfig *RedactionConfig,
-	retainResponseBody bool,
-) {
 	if result == nil {
 		return
 	}
 
-	scrubSensitiveResultMetadata(result, dimensionConfig, config)
+	scrubSensitiveResultMetadata(result, config)
 	result.ErrorMessage = scrubSensitiveTextWithConfig(result.ErrorMessage, config)
 	if retainResponseBody {
 		result.ResponseBody = scrubSensitiveTextWithConfig(result.ResponseBody, config)
@@ -695,42 +857,45 @@ func scrubSensitiveResultWithDimensionConfig(
 // evidence handling, so leaving them untouched would let a resolved secret in
 // a correlation header, dependency label, adapter label, or imported source
 // identifier survive an otherwise valid custom redaction policy.
-func scrubSensitiveResultMetadata(result *protocol.Result, dimensionConfig, evidenceConfig *RedactionConfig) {
-	result.ActionName = scrubSensitiveTextWithConfig(result.ActionName, dimensionConfig)
-	result.SampleKind = scrubSensitiveTextWithConfig(result.SampleKind, dimensionConfig)
-	result.ParentActionName = scrubSensitiveTextWithConfig(result.ParentActionName, dimensionConfig)
-	result.Group = scrubSensitiveTextWithConfig(result.Group, dimensionConfig)
-	result.Region = scrubSensitiveTextWithConfig(result.Region, dimensionConfig)
-	// Correlation IDs are response evidence rather than an authored metric
-	// dimension. Keep the full protocol-session matcher here even though stable
-	// labels deliberately exclude cookie snapshots.
-	result.CorrelationID = scrubSensitiveTextWithConfig(result.CorrelationID, evidenceConfig)
-	result.NetworkProfile = scrubSensitiveTextWithConfig(result.NetworkProfile, dimensionConfig)
-	result.DependencyType = scrubSensitiveTextWithConfig(result.DependencyType, dimensionConfig)
-	result.DependencyTarget = scrubSensitiveTextWithConfig(result.DependencyTarget, dimensionConfig)
-	result.SourceStepID = scrubSensitiveTextWithConfig(result.SourceStepID, dimensionConfig)
-	result.SourceAction = scrubSensitiveTextWithConfig(result.SourceAction, dimensionConfig)
-	result.SourceActionName = scrubSensitiveTextWithConfig(result.SourceActionName, dimensionConfig)
-	result.SourceTransaction = scrubSensitiveTextWithConfig(result.SourceTransaction, dimensionConfig)
-	result.SourceProfile = scrubSensitiveTextWithConfig(result.SourceProfile, dimensionConfig)
-	result.SourcePath = scrubSensitiveTextWithConfig(result.SourcePath, dimensionConfig)
-	result.SourceUID = scrubSensitiveTextWithConfig(result.SourceUID, dimensionConfig)
-	result.RequestType = scrubSensitiveTextWithConfig(result.RequestType, dimensionConfig)
-	result.OperationKind = scrubSensitiveTextWithConfig(result.OperationKind, dimensionConfig)
+//
+// One matcher governs both dimensions and evidence. The earlier two-config form
+// existed to keep HTTP cookie-jar snapshots out of stable metric labels; nothing
+// harvested from the system under test enters the matcher any more, so the
+// remaining material (platform secrets and sensitively NAMED extractions) is
+// suppressed uniformly.
+func scrubSensitiveResultMetadata(result *protocol.Result, config *RedactionConfig) {
+	result.ActionName = scrubSensitiveTextWithConfig(result.ActionName, config)
+	result.SampleKind = scrubSensitiveTextWithConfig(result.SampleKind, config)
+	result.ParentActionName = scrubSensitiveTextWithConfig(result.ParentActionName, config)
+	result.Group = scrubSensitiveTextWithConfig(result.Group, config)
+	result.Region = scrubSensitiveTextWithConfig(result.Region, config)
+	result.CorrelationID = scrubSensitiveTextWithConfig(result.CorrelationID, config)
+	result.NetworkProfile = scrubSensitiveTextWithConfig(result.NetworkProfile, config)
+	result.DependencyType = scrubSensitiveTextWithConfig(result.DependencyType, config)
+	result.DependencyTarget = scrubSensitiveTextWithConfig(result.DependencyTarget, config)
+	result.SourceStepID = scrubSensitiveTextWithConfig(result.SourceStepID, config)
+	result.SourceAction = scrubSensitiveTextWithConfig(result.SourceAction, config)
+	result.SourceActionName = scrubSensitiveTextWithConfig(result.SourceActionName, config)
+	result.SourceTransaction = scrubSensitiveTextWithConfig(result.SourceTransaction, config)
+	result.SourceProfile = scrubSensitiveTextWithConfig(result.SourceProfile, config)
+	result.SourcePath = scrubSensitiveTextWithConfig(result.SourcePath, config)
+	result.SourceUID = scrubSensitiveTextWithConfig(result.SourceUID, config)
+	result.RequestType = scrubSensitiveTextWithConfig(result.RequestType, config)
+	result.OperationKind = scrubSensitiveTextWithConfig(result.OperationKind, config)
 
 	if result.ClientMetrics != nil {
-		result.ClientMetrics.DeviceProfile = scrubSensitiveTextWithConfig(result.ClientMetrics.DeviceProfile, dimensionConfig)
-		result.ClientMetrics.DevicePlatform = scrubSensitiveTextWithConfig(result.ClientMetrics.DevicePlatform, dimensionConfig)
-		result.ClientMetrics.DeviceTier = scrubSensitiveTextWithConfig(result.ClientMetrics.DeviceTier, dimensionConfig)
-		result.ClientMetrics.BrowserEngine = scrubSensitiveTextWithConfig(result.ClientMetrics.BrowserEngine, dimensionConfig)
+		result.ClientMetrics.DeviceProfile = scrubSensitiveTextWithConfig(result.ClientMetrics.DeviceProfile, config)
+		result.ClientMetrics.DevicePlatform = scrubSensitiveTextWithConfig(result.ClientMetrics.DevicePlatform, config)
+		result.ClientMetrics.DeviceTier = scrubSensitiveTextWithConfig(result.ClientMetrics.DeviceTier, config)
+		result.ClientMetrics.BrowserEngine = scrubSensitiveTextWithConfig(result.ClientMetrics.BrowserEngine, config)
 	}
 	if result.ServerTelemetry != nil {
-		result.ServerTelemetry.RequestSizeClass = scrubSensitiveTextWithConfig(result.ServerTelemetry.RequestSizeClass, dimensionConfig)
-		result.ServerTelemetry.ResponseSizeClass = scrubSensitiveTextWithConfig(result.ServerTelemetry.ResponseSizeClass, dimensionConfig)
-		result.ServerTelemetry.SOAPFaultCode = scrubSensitiveTextWithConfig(result.ServerTelemetry.SOAPFaultCode, dimensionConfig)
-		result.ServerTelemetry.SOAPFaultCategory = scrubSensitiveTextWithConfig(result.ServerTelemetry.SOAPFaultCategory, dimensionConfig)
-		result.ServerTelemetry.SOAPNamespaceConflict = scrubSensitiveTextWithConfig(result.ServerTelemetry.SOAPNamespaceConflict, dimensionConfig)
-		result.ServerTelemetry.PartitionID = scrubSensitiveTextWithConfig(result.ServerTelemetry.PartitionID, dimensionConfig)
+		result.ServerTelemetry.RequestSizeClass = scrubSensitiveTextWithConfig(result.ServerTelemetry.RequestSizeClass, config)
+		result.ServerTelemetry.ResponseSizeClass = scrubSensitiveTextWithConfig(result.ServerTelemetry.ResponseSizeClass, config)
+		result.ServerTelemetry.SOAPFaultCode = scrubSensitiveTextWithConfig(result.ServerTelemetry.SOAPFaultCode, config)
+		result.ServerTelemetry.SOAPFaultCategory = scrubSensitiveTextWithConfig(result.ServerTelemetry.SOAPFaultCategory, config)
+		result.ServerTelemetry.SOAPNamespaceConflict = scrubSensitiveTextWithConfig(result.ServerTelemetry.SOAPNamespaceConflict, config)
+		result.ServerTelemetry.PartitionID = scrubSensitiveTextWithConfig(result.ServerTelemetry.PartitionID, config)
 	}
 }
 

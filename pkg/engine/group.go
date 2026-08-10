@@ -40,9 +40,10 @@ type GroupConfig struct {
 	rendezvous      *RendezvousCoordinator
 	executionGoals  *ExecutionGoalLimiter
 	dataProvider    *DataProvider
-	// credentialTemplates is computed once during NewMultiGroup and shared
-	// read-only by the group's VUsers.
-	credentialTemplates *importedCredentialTemplatePlan
+	// importedCredentials is this group's single retained-credential locator
+	// walk, produced by NewMultiGroup and handed to every VUser the group
+	// creates. Callers do not supply it; see runtimeSecretValuesForScript.
+	importedCredentials *importedCredentialInspection
 }
 
 type ResultSink interface {
@@ -270,23 +271,41 @@ func NewMultiGroup(cfg MultiGroupConfig) (*MultiGroupEngine, error) {
 			return nil, fmt.Errorf("group[%d] %q: inspect secret references: %s", i, cfg.Groups[i].Name, scrubSensitiveText(err.Error()))
 		}
 		cfg.Groups[i].SecretResolver = resolver
-		values = append(values, runtimeProtocolAuthCompositeValues(cfg.Groups[i].Script, resolver)...)
-		importedValues, credentialTemplates, err := inspectImportedCredentials(cfg.Groups[i].Script)
+		// One shared chokepoint with engine.New, ReplayScript, and shakeout; see
+		// script_sourced_run_evidence.go.
+		values, scriptSourcedValues, importedCredentials, err := runtimeSecretValuesForScript(cfg.Groups[i].Script, resolver, values)
 		if err != nil {
 			return nil, fmt.Errorf("group[%d] %q: inspect retained import credentials: %s", i, cfg.Groups[i].Name, scrubSensitiveText(err.Error()))
 		}
-		cfg.Groups[i].credentialTemplates = credentialTemplates
-		values = append(values, importedValues...)
-		mergedValues := mergedRuntimeSecretValues(cfg.Groups[i].RedactionConfig, values)
-		key := runtimeSecretValueSetKey(mergedValues)
+		cfg.Groups[i].importedCredentials = importedCredentials
+		// An inbound group RedactionConfig may carry values of EITHER origin, so it
+		// is merged origin-aware rather than flattened into the platform-managed
+		// half. pkg/api installs only project-secret-store values here, but the
+		// generator RPC staging boundary
+		// (pkg/distributed/generatorrpc/execution_staging.go) registers the
+		// script-sourced half itself before handing the config over — and this is
+		// the last place that origin still exists. Flattening it re-registered
+		// every script-sourced value as platform-managed, which turned screenshot
+		// and browser HAR/trace capture off on distributed runs only.
+		mergedValues, scriptSourcedValues := mergedRuntimeSecretValuesByOrigin(
+			cfg.Groups[i].RedactionConfig,
+			values,
+			scriptSourcedValues,
+		)
+		key := runtimeSecretValueSetKey(mergedValues, scriptSourcedValues)
 		runtimeConfig := runtimeRedactionSets[key]
 		if runtimeConfig == nil {
-			runtimeConfig, err = WithSecretValueRedactionChecked(nil, mergedValues)
+			var scriptSourcedDropped bool
+			runtimeConfig, scriptSourcedDropped, err = buildBoundedRuntimeSecretRedaction(
+				mergedValues,
+				scriptSourcedValues,
+				maxMultiGroupRuntimeSecretRedactionBytes-runtimeRedactionBytes,
+			)
 			if err != nil {
 				return nil, fmt.Errorf("group[%d] %q: prepare runtime secret redaction: %s", i, cfg.Groups[i].Name, scrubSensitiveText(err.Error()))
 			}
-			if runtimeConfig != nil && runtimeConfig.runtimePatternBytes > maxMultiGroupRuntimeSecretRedactionBytes-runtimeRedactionBytes {
-				return nil, fmt.Errorf("multi-group runtime secret redaction exceeds the aggregate matcher limit")
+			if scriptSourcedDropped {
+				warnScriptSourcedRedactionDropped("group", cfg.Groups[i].Name)
 			}
 			if runtimeConfig != nil {
 				runtimeRedactionBytes += runtimeConfig.runtimePatternBytes
@@ -1140,8 +1159,7 @@ func (mge *MultiGroupEngine) runGroupLifecycleBlock(actionCtx, boundaryCtx conte
 		Metrics:                      mge.metrics,
 		ResultSink:                   group.ResultSink,
 		RedactionConfig:              group.RedactionConfig,
-		credentialTemplates:          group.credentialTemplates,
-		credentialTemplatesInspected: true,
+		importedCredentialInspection: group.importedCredentials,
 		SecretResolver:               group.SecretResolver,
 		Rendezvous:                   group.rendezvous,
 		ExecutionGoals:               group.executionGoals,
@@ -1305,8 +1323,7 @@ func (mge *MultiGroupEngine) spawnVUser(vuserID int, group GroupConfig, protoCon
 			Metrics:                      mge.metrics,
 			ResultSink:                   group.ResultSink,
 			RedactionConfig:              group.RedactionConfig,
-			credentialTemplates:          group.credentialTemplates,
-			credentialTemplatesInspected: true,
+			importedCredentialInspection: group.importedCredentials,
 			SecretResolver:               group.SecretResolver,
 			PauseControl:                 mge,
 			IterationRateLimiter:         group.rateLimiter,
@@ -1555,8 +1572,7 @@ func (mge *MultiGroupEngine) spawnOpenWorker(vuserID int, group GroupConfig, pro
 			Metrics:                      mge.metrics,
 			ResultSink:                   group.ResultSink,
 			RedactionConfig:              group.RedactionConfig,
-			credentialTemplates:          group.credentialTemplates,
-			credentialTemplatesInspected: true,
+			importedCredentialInspection: group.importedCredentials,
 			SecretResolver:               group.SecretResolver,
 			PauseControl:                 mge,
 			ExecutionGoals:               group.executionGoals,

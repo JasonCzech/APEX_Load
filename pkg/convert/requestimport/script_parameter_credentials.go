@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/jasonczech/apexload/pkg/convert/credentialpolicy"
@@ -150,9 +151,196 @@ func ReconcileProtectedScriptCredentialSources(
 		}
 		candidateRequirements = append(candidateRequirements, *requirement)
 	}
+	// Locators published for an EARLIER candidate address the two slices the next
+	// two calls compact. Capture the layout they were published against before
+	// anything moves, so realignment can follow each element to its new position.
+	layout := captureScriptCredentialLocatorLayout(script)
 	removeConsumedLiteralScriptParameters(script, candidateRequirements)
-	redactCredentialSourceVariables(script, candidateRequirements)
+	realignPreservedScriptCredentialLocators(script, layout)
+	// Runs last, so this candidate's own locators are published against the
+	// already-compacted slices and need no realignment.
+	preserveCredentialSourceVariables(script, candidateRequirements)
 	return reconciled
+}
+
+// The positional retained-credential locator vocabulary. The producer formats
+// these and pkg/engine parses them (importedParameterValuesTargetPrefix and
+// friends); TestPublishedCredentialLocatorFieldsAreRuntimeResolvable pins the
+// two halves together. Formatting and parsing both go through these constants so
+// the publisher and the realignment pass below cannot drift apart.
+const (
+	scriptParameterValuesLocatorPrefix = "parameters["
+	scriptParameterValuesLocatorSuffix = "].values"
+	scriptDataSourceLocatorPrefix      = "data_sources["
+	scriptDataSourceLocatorSuffix      = "].inline_data"
+)
+
+// scriptCredentialLocatorLayout is the identity of every element a positional
+// locator can address, in the order the locators index them.
+type scriptCredentialLocatorLayout struct {
+	parameters  []string
+	dataSources []string
+}
+
+func captureScriptCredentialLocatorLayout(script *dsl.Script) scriptCredentialLocatorLayout {
+	if script == nil {
+		return scriptCredentialLocatorLayout{}
+	}
+	layout := scriptCredentialLocatorLayout{
+		parameters:  make([]string, 0, len(script.Parameters)),
+		dataSources: make([]string, 0, len(script.DataSources)),
+	}
+	for _, parameter := range script.Parameters {
+		layout.parameters = append(layout.parameters, scriptCredentialLocatorIdentity(parameter.Name))
+	}
+	for _, source := range script.DataSources {
+		layout.dataSources = append(layout.dataSources, scriptCredentialLocatorIdentity(source.Name))
+	}
+	return layout
+}
+
+// scriptCredentialLocatorIdentity keys an element the way the runtime addresses
+// it: by name, case-insensitively, exactly as {{param.*}} and a parameter's
+// DataSource binding resolve.
+func scriptCredentialLocatorIdentity(name string) string {
+	return strings.ToLower(strings.TrimSpace(name))
+}
+
+// realignPreservedScriptCredentialLocators moves the already-attached positional
+// locators onto the positions their elements now occupy.
+//
+// A locator whose element this pass DELETED is dropped rather than left dangling.
+// Deletion here always takes the addressed executable value with it — a consumed
+// parameter has its value list blanked before it is dropped, and a data source is
+// only dropped once its credential column has been filtered out or the whole
+// source removed — so there is nothing left at that address for run-evidence
+// redaction to mask. Keeping the stale index instead would either refuse the run
+// (fail-closed, index past the end) or register an unrelated element's values.
+//
+// Anything this pass cannot account for is left verbatim: a locator that was
+// already stale before this call, or one in a vocabulary this package does not
+// publish, keeps whatever meaning it had. Realignment repairs the drift this
+// producer causes; it never invents an address.
+func realignPreservedScriptCredentialLocators(
+	script *dsl.Script,
+	before scriptCredentialLocatorLayout,
+) {
+	if script == nil || script.Metadata == nil || script.Metadata.Import == nil ||
+		script.Metadata.Import.Preserved == nil {
+		return
+	}
+	preserved := script.Metadata.Import.Preserved
+	attached := preservedCredentialTargetsFromMetadata(preserved)
+	if len(attached) == 0 {
+		return
+	}
+	after := captureScriptCredentialLocatorLayout(script)
+	moves := map[string]map[int]int{
+		scriptParameterValuesLocatorPrefix: compactedIndexMapping(before.parameters, after.parameters),
+		scriptDataSourceLocatorPrefix:      compactedIndexMapping(before.dataSources, after.dataSources),
+	}
+	sizes := map[string]int{
+		scriptParameterValuesLocatorPrefix: len(before.parameters),
+		scriptDataSourceLocatorPrefix:      len(before.dataSources),
+	}
+	realigned := make([]credentialpolicy.TargetRef, 0, len(attached))
+	changed := false
+	for _, target := range attached {
+		prefix, suffix, positional := scriptCredentialLocatorFamily(target.Field)
+		if !positional {
+			realigned = append(realigned, target)
+			continue
+		}
+		index, ok := scriptPositionalLocatorIndex(target.Field, prefix, suffix)
+		if !ok || index >= sizes[prefix] {
+			realigned = append(realigned, target)
+			continue
+		}
+		moved, survived := moves[prefix][index]
+		if !survived {
+			changed = true
+			continue
+		}
+		if moved == index {
+			realigned = append(realigned, target)
+			continue
+		}
+		if target.Index == index {
+			// Index mirrors the address encoded in Field for these families. Only
+			// rewrite it when it actually agrees, so a hand-authored locator that
+			// uses Index for something else keeps its own meaning.
+			target.Index = moved
+		}
+		target.Field = fmt.Sprintf(prefix+"%d"+suffix, moved)
+		realigned = append(realigned, target)
+		changed = true
+	}
+	if !changed {
+		return
+	}
+	if len(realigned) == 0 {
+		delete(preserved, dsl.ImportPreservedCredentialTargetsMetadataKey)
+		return
+	}
+	// Realignment can collapse two locators onto one address; reuse the shared
+	// merge so normalization and exact-duplicate removal stay in one place.
+	normalized := MergePreservedCredentialTargetsMetadata(nil, realigned)
+	value, ok := normalized[dsl.ImportPreservedCredentialTargetsMetadataKey]
+	if !ok {
+		delete(preserved, dsl.ImportPreservedCredentialTargetsMetadataKey)
+		return
+	}
+	preserved[dsl.ImportPreservedCredentialTargetsMetadataKey] = value
+}
+
+func scriptCredentialLocatorFamily(field string) (prefix, suffix string, positional bool) {
+	field = strings.ToLower(strings.TrimSpace(field))
+	switch {
+	case strings.HasPrefix(field, scriptParameterValuesLocatorPrefix) &&
+		strings.HasSuffix(field, scriptParameterValuesLocatorSuffix):
+		return scriptParameterValuesLocatorPrefix, scriptParameterValuesLocatorSuffix, true
+	case strings.HasPrefix(field, scriptDataSourceLocatorPrefix) &&
+		strings.HasSuffix(field, scriptDataSourceLocatorSuffix):
+		return scriptDataSourceLocatorPrefix, scriptDataSourceLocatorSuffix, true
+	default:
+		return "", "", false
+	}
+}
+
+func scriptPositionalLocatorIndex(field, prefix, suffix string) (int, bool) {
+	field = strings.ToLower(strings.TrimSpace(field))
+	if len(field) < len(prefix)+len(suffix) {
+		return 0, false
+	}
+	index, err := strconv.Atoi(field[len(prefix) : len(field)-len(suffix)])
+	if err != nil || index < 0 {
+		return 0, false
+	}
+	return index, true
+}
+
+// compactedIndexMapping maps each pre-compaction position to the position the
+// same element occupies afterwards. Compaction only deletes elements and never
+// reorders or inserts them, so the post-compaction identities are a subsequence
+// of the pre-compaction ones and a single in-order walk recovers the mapping
+// exactly. A position with no entry names an element this pass deleted.
+func compactedIndexMapping(before, after []string) map[int]int {
+	if len(before) == 0 || len(after) == 0 {
+		return nil
+	}
+	mapping := make(map[int]int, len(after))
+	next := 0
+	for index, identity := range before {
+		if next >= len(after) {
+			break
+		}
+		if after[next] != identity {
+			continue
+		}
+		mapping[index] = next
+		next++
+	}
+	return mapping
 }
 
 func credentialRequirementTargetsCandidate(

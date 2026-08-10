@@ -175,6 +175,12 @@ func preparePersistentLibraryScriptWithImportTrust(
 		}
 		return preserved, nil
 	}
+	// The disclosure projection is a read/response and export concern. It is
+	// computed here only to run the logical-secret binding gate below; it is
+	// never what gets stored. Persisting it silently replaced operator-supplied
+	// values with [REDACTED]/{{secret.*}} stubs, so the durable row could be a
+	// script that can never run. Durable storage always keeps the executable
+	// script.
 	projected := maskScriptSecrets(script)
 	if projected == nil {
 		return nil, fmt.Errorf("failed to project script for durable secret binding")
@@ -182,13 +188,18 @@ func preparePersistentLibraryScriptWithImportTrust(
 	if unresolved := discoverSecretBindingRequirements(projected, 0); len(unresolved) > 0 {
 		return nil, errScriptCredentialBindingsRequired
 	}
-	if err := reconcileMaskedScriptSecrets(projected, prior); err != nil {
+	// A source commit fence is server-owned protected-import retry state that an
+	// ordinary write can neither establish nor carry forward. maskScriptSecrets
+	// dropped it on the way to storage; keep that boundary now that the
+	// executable script is what gets persisted.
+	stripProtectedImportSourceCommitFence(script)
+	if err := reconcileMaskedScriptSecrets(script, prior); err != nil {
 		return nil, err
 	}
-	if err := sanitizePersistentImportReviewSurfaces(projected); err != nil {
+	if err := sanitizePersistentImportReviewSurfaces(script); err != nil {
 		return nil, err
 	}
-	return projected, nil
+	return script, nil
 }
 
 func ensureCredentialPreservingImportMetadata(script *dsl.Script, sourceProfile string) {

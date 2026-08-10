@@ -8,6 +8,7 @@ import {
   formatHTTP,
   formatHTTPVersion,
   formatJavaVuserSummary,
+  formatLog,
   formatPacing,
   formatThinkTime,
   isRuntimeFieldApplicable,
@@ -261,6 +262,38 @@ describe('runtimeSettingsModel', () => {
     // log/run_logic survive a UI round-trip even though there is no editor for them yet.
     expect(back!.log).toEqual(override.log)
     expect(back!.run_logic).toEqual(override.run_logic)
+  })
+
+  it('formats redact_run_evidence as a tri-state so an explicit false is never an empty layer', () => {
+    // Absent means "engine default (on)" — nothing was overridden, so nothing is summarized.
+    expect(formatLog({ level: 'extended' })).toBe('extended')
+    expect(formatLog({})).toBeNull()
+    // Explicit true AND explicit false both format. A truthiness guard would make a
+    // log layer whose only content is `redact_run_evidence: false` format to null.
+    expect(formatLog({ redact_run_evidence: true })).toBe('redact run evidence')
+    expect(formatLog({ redact_run_evidence: false })).toBe('no run-evidence redaction')
+    expect(formatLog({ level: 'extended', redact_run_evidence: false })).toBe('extended · no run-evidence redaction')
+  })
+
+  it('attributes an explicit redact_run_evidence=false to the layer that set it', () => {
+    // The group turned run-evidence redaction OFF; the script only pins a log level.
+    // If formatLog dropped the false, the group layer would read as empty and the
+    // effective value would be mis-attributed to the script.
+    expect(formatEffectiveRuntimeField(
+      'log',
+      { log: { redact_run_evidence: false } },
+      undefined,
+      { log: { level: 'extended' } },
+    )).toEqual({ value: 'no run-evidence redaction', source: 'group' })
+  })
+
+  it('round-trips an explicit redact_run_evidence=false through the draft model', () => {
+    const override = { log: { level: 'standard', redact_run_evidence: false } }
+    const draft = runtimeDraftFromOverride(override)
+    expect(draft!.log).toEqual({ level: 'standard', redact_run_evidence: false })
+    // The explicit false must survive as false — not be dropped back to undefined,
+    // which would silently re-enable redaction on save.
+    expect(overrideFromRuntimeDraft(draft)!.log).toEqual({ level: 'standard', redact_run_evidence: false })
   })
 
   it('distinguishes inherited error handling from explicit false overrides', () => {

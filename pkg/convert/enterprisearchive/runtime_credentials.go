@@ -344,10 +344,16 @@ func applyEnterpriseRuntimeBindings(
 			result.RecordedResourceURLs = projected.AdditionalURLs
 		}
 		if projectionErr != nil {
-			result.RecordedResourceURLs = nil
+			if len(projected.AdditionalURLs) != len(result.RecordedResourceURLs) {
+				// Only the bounded-traversal fallback replaces the request tree.
+				// The allowlist it described no longer refers to anything
+				// executable, so it is dropped; every other review failure keeps
+				// the imported script and must keep its recorded resource URLs.
+				result.RecordedResourceURLs = nil
+			}
 			result.Warnings = append(
 				result.Warnings,
-				"HTTP credential review could not safely traverse the generated request tree; an inert source snapshot was retained in the blocked draft for operator repair.",
+				"HTTP credential review could not complete for the generated request tree; the imported requests were retained in a blocked draft for operator repair.",
 			)
 		}
 	}
@@ -558,19 +564,14 @@ func clearEnterpriseRuntimeSourceValues(config *RuntimeConfig) {
 	config.proxyReviewUser = ""
 	config.proxyReviewPass = ""
 	config.AuthPass = ""
-	for name := range config.AdditionalAttributes {
-		if credential.SensitiveName(name) {
-			config.AdditionalAttributes[name] = credential.Redacted
-		}
-	}
-	// Defense in depth for callers that construct RuntimeConfig directly rather
-	// than through ParseRuntimeCfg. Never retain a sensitive -D assignment in
-	// executable argv or any preserved raw JVM row.
-	config.JavaVMAdditionalParameters = executableJavaVMParameters(config.JavaVMAdditionalParameters)
-	config.JavaVMParametersRaw = disclosureSafeJavaVMParameterRow(config.JavaVMParametersRaw)
-	for index := range config.JavaVMParameterRows {
-		config.JavaVMParameterRows[index] = disclosureSafeJavaVMParameterRow(config.JavaVMParameterRows[index])
-	}
+	// The web-runtime additional attributes and the Java VM argv/rows are
+	// executable configuration, not project secrets: they were projected into
+	// the destination script with Preserve, and the preserved java_vm_settings
+	// block is the dashboard's VM-parameter picker source. Overwriting them with
+	// the redaction sentinel here removed a value the operator already owned and
+	// handed the picker a command line that cannot run. Only the credential
+	// fields above, which were migrated into protected requirements, are cleared.
+	// Run-output redaction masks whatever remains sensitive at replay time.
 	config.javaVMParameterSourceRows = nil
 }
 

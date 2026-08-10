@@ -574,6 +574,13 @@ func cloneLogConfig(c *dsl.LogConfig) *dsl.LogConfig {
 	if len(c.ExtendedOptions) > 0 {
 		clone.ExtendedOptions = append([]string(nil), c.ExtendedOptions...)
 	}
+	// `clone := *c` copies the pointer, not the bool, so every clone would alias
+	// one *bool and a later edit at any layer would leak across all of them.
+	// Re-point it, the same way the group merge does for Browser.Headless.
+	if c.RedactRunEvidence != nil {
+		redact := *c.RedactRunEvidence
+		clone.RedactRunEvidence = &redact
+	}
 	return &clone
 }
 

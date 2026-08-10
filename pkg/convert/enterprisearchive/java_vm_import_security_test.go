@@ -316,14 +316,28 @@ Java_VM_Params=-Dlabel=` + credential.Redacted,
 			if err != nil {
 				t.Fatalf("marshal runtime issues: %v", err)
 			}
-			if test.canary != "" &&
-				(strings.Contains(string(serialized), test.canary) ||
-					strings.Contains(rc.JavaVMParametersRaw, test.canary)) {
-				t.Fatalf("runtime diagnostics/raw retained canary %q: %s / %q", test.canary, serialized, rc.JavaVMParametersRaw)
+			// Public diagnostics stay value-free: they name the source key and
+			// token index only.
+			if test.canary != "" && strings.Contains(string(serialized), test.canary) {
+				t.Fatalf("runtime diagnostics retained canary %q: %s", test.canary, serialized)
+			}
+			// The raw row and the ordered rows are the round-trip record of the
+			// operator's own command line and the source of the dashboard VM
+			// parameter picker. Masking them handed the operator back a command
+			// line they could not run, so they must retain the source bytes; the
+			// executable argv is what drops structurally unsafe tokens.
+			if test.canary != "" && !strings.Contains(rc.JavaVMParametersRaw, test.canary) &&
+				!strings.Contains(strings.Join(rc.JavaVMParameterRows, "\n"), test.canary) {
+				t.Fatalf(
+					"preserved JVM rows lost the imported value %q: %q / %#v",
+					test.canary,
+					rc.JavaVMParametersRaw,
+					rc.JavaVMParameterRows,
+				)
 			}
 			for _, row := range rc.JavaVMParameterRows {
-				if test.canary != "" && strings.Contains(row, test.canary) {
-					t.Fatalf("preserved row retained canary %q: %q", test.canary, row)
+				if strings.Contains(row, credential.Redacted) && test.canary != "" {
+					t.Fatalf("preserved row replaced the imported value with a sentinel: %q", row)
 				}
 			}
 		})

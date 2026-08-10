@@ -24,7 +24,6 @@ func (vu *VUser) recordResult(result *protocol.Result, errCfg dsl.ErrorHandlingC
 	if result == nil {
 		return
 	}
-	vu.consumeRuntimeCredentialResultValues(result)
 	// CorrelationEvidence is a replay-only, pre-scrub side channel. No metrics or
 	// ResultSink implementation may retain it, even accidentally in-process.
 	result.CorrelationEvidence = nil
@@ -46,12 +45,7 @@ func (vu *VUser) recordResult(result *protocol.Result, errCfg dsl.ErrorHandlingC
 	}
 	retainResponseBody := shouldRetainResultResponseBody(result, logCfg)
 	scrubSensitiveStructuredResult(result, vu.RedactionConfig)
-	scrubSensitiveResultWithDimensionConfig(
-		result,
-		vu.RedactionConfig,
-		vu.stableDimensionRedactionConfig(),
-		retainResponseBody,
-	)
+	scrubSensitiveResultWithOptions(result, vu.RedactionConfig, retainResponseBody)
 	boundResultEvidence(result)
 	if result.BusinessTransaction {
 		// Streamed adapters (notably java_vuser) emit completed business
@@ -67,26 +61,6 @@ func (vu *VUser) recordResult(result *protocol.Result, errCfg dsl.ErrorHandlingC
 	vu.handleSnapshot(result, errCfg)
 	if vu.ResultSink != nil {
 		_ = vu.ResultSink.RecordResult(result)
-	}
-}
-
-// consumeRuntimeCredentialResultValues moves protocol-only credential evidence
-// into the runtime matcher before a result is retained or an unsuccessful retry
-// result is discarded. Consuming every attempt means a cookie rotated during a
-// retry is protected on the next attempt without growing an append-only global
-// matcher.
-func (vu *VUser) consumeRuntimeCredentialResultValues(result *protocol.Result) {
-	if vu == nil || result == nil {
-		return
-	}
-	runtimeCredentialValues := result.RuntimeCredentialValues
-	runtimeCredentialValuesSnapshot := result.RuntimeCredentialValuesSnapshot
-	result.RuntimeCredentialValues = nil
-	result.RuntimeCredentialValuesSnapshot = false
-	if runtimeCredentialValuesSnapshot {
-		_ = vu.stageRuntimeCredentialSessionSnapshot(runtimeCredentialValues)
-	} else {
-		_ = vu.registerRuntimeCredentialValues(runtimeCredentialValues...)
 	}
 }
 
@@ -193,12 +167,7 @@ func (vu *VUser) recordTransaction(name string, duration time.Duration, success 
 	// redaction, and evidence bounds before either metrics or archive sinks can
 	// retain adapter-controlled metadata or error text.
 	scrubSensitiveStructuredResult(tx, vu.RedactionConfig)
-	scrubSensitiveResultWithDimensionConfig(
-		tx,
-		vu.RedactionConfig,
-		vu.stableDimensionRedactionConfig(),
-		false,
-	)
+	scrubSensitiveResultWithOptions(tx, vu.RedactionConfig, false)
 	boundResultEvidence(tx)
 	if vu.Metrics != nil {
 		vu.Metrics.RecordTransactionResult(tx)
@@ -773,7 +742,6 @@ func (vu *VUser) executeWithRetryStream(
 			}
 		}
 		result, err := vu.safeProtoExecuteStream(ctx, action, childEmitter)
-		vu.consumeRuntimeCredentialResultValues(result)
 		if err != nil {
 			// Adapters are permitted to return diagnostic Result data alongside an
 			// error. The caller intentionally discards that result, so detach and zero

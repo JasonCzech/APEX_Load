@@ -398,6 +398,11 @@ func sanitizePersistentImportReviewSurfaces(script *dsl.Script) error {
 				// maskScriptSecrets projects them independently on every read,
 				// export, receipt, and review surface.
 				continue
+			case isImportPreservedJavaVMSettingsKey(key):
+				// The imported [JavaVM:Options] command line is executable
+				// configuration, not review prose. Project the rest of the
+				// object exactly as before while retaining those rows verbatim.
+				script.Metadata.Import.Preserved[key] = projectPreservedJavaVMSettings(key, value)
 			case isReviewEvidenceSubtreeKey(key):
 				script.Metadata.Import.Preserved[key] = sanitizeImportReviewEvidence(value)
 			default:
@@ -465,6 +470,109 @@ func sanitizePersistentImportReviewSurfaces(script *dsl.Script) error {
 
 func isExecutableImportPreservedPayloadKey(key string) bool {
 	return normalizeScriptFieldName(key) == "recordedresourceurls"
+}
+
+const (
+	// A [JavaVM:Options] row is one command line, not a document. These bounds
+	// keep the verbatim retention below from turning a known key name into an
+	// unbounded durable raw-source channel for caller-supplied metadata.
+	maxImportedJavaVMParameterRowBytes = 16 << 10
+	maxImportedJavaVMParameterRows     = 256
+)
+
+func isImportPreservedJavaVMSettingsKey(key string) bool {
+	return normalizeScriptFieldName(key) == "javavmsettings"
+}
+
+// isExecutableJavaVMParameterMember reports whether a java_vm_settings member
+// carries the imported JVM command line that the enterprise-archive converter
+// deliberately keeps exact (executableJavaVMParameterRow /
+// executableJavaVMParameters). Every other member — classpath provenance, JDK
+// selection, raw enums — stays on the ordinary provenance projection.
+func isExecutableJavaVMParameterMember(key string) bool {
+	switch normalizeScriptFieldName(key) {
+	case "additionalvmparameters", "additionalvmparametersraw", "additionalvmparameterrows":
+		return true
+	default:
+		return false
+	}
+}
+
+// projectPreservedJavaVMSettings applies the ordinary provenance projection to
+// preserved["java_vm_settings"] while retaining the imported JVM command line
+// exactly.
+//
+// Those rows are the operator's own command line, the round-trip record of the
+// archive, and the source of the dashboard VM-parameter picker. The converter
+// keeps them verbatim, but this durable-write boundary previously ran them
+// through the credential projection, so an archive configuring
+// "-Dservice.password=..." reached storage as "-Dservice.password=[REDACTED]" —
+// and, because export, download, GitHub push, and library bundling ship the
+// stored script, that unrunnable command line was what the operator got back.
+// Nothing an imported script already contains is a project secret; only a
+// platform-managed secret-store value is, and none ever lands here.
+func projectPreservedJavaVMSettings(key string, value any) any {
+	retained := make(map[string]any, 3)
+	if settings, isObject := value.(map[string]any); isObject {
+		for member, child := range settings {
+			if !isExecutableJavaVMParameterMember(member) {
+				continue
+			}
+			if rows, ok := retainableJavaVMParameterMember(child); ok {
+				retained[member] = rows
+			}
+		}
+	}
+	projected := projectScriptNode(
+		value,
+		scriptProjectionContext{
+			key:       key,
+			opaqueMap: true,
+			metadata:  true,
+		},
+	)
+	projectedSettings, ok := projected.(map[string]any)
+	if !ok {
+		return projected
+	}
+	for member, rows := range retained {
+		projectedSettings[member] = rows
+	}
+	return projectedSettings
+}
+
+// retainableJavaVMParameterMember returns the member unchanged when it has the
+// bounded shape the converter writes: one command-line row, or an ordered list
+// of them. Any other shape stays on the ordinary projection so this key cannot
+// be used to smuggle arbitrary durable content past the sanitizer.
+func retainableJavaVMParameterMember(value any) (any, bool) {
+	switch typed := value.(type) {
+	case string:
+		return typed, len(typed) <= maxImportedJavaVMParameterRowBytes
+	case []string:
+		if len(typed) > maxImportedJavaVMParameterRows {
+			return nil, false
+		}
+		for _, row := range typed {
+			if len(row) > maxImportedJavaVMParameterRowBytes {
+				return nil, false
+			}
+		}
+		return typed, true
+	case []any:
+		if len(typed) > maxImportedJavaVMParameterRows {
+			return nil, false
+		}
+		for _, row := range typed {
+			text, isText := row.(string)
+			if !isText || len(text) > maxImportedJavaVMParameterRowBytes {
+				return nil, false
+			}
+		}
+		return typed, true
+	default:
+		return nil, false
+	}
 }
 
 func projectScriptDataSourceTable(

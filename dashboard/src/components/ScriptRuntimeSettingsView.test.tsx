@@ -508,6 +508,88 @@ describe('ScriptRuntimeSettingsView Java Vuser settings', () => {
   })
 })
 
+describe('ScriptRuntimeSettingsView run-evidence redaction', () => {
+  let container: HTMLDivElement
+  let root: Root
+
+  beforeEach(() => {
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+  })
+
+  afterEach(() => {
+    act(() => root.unmount())
+    container.remove()
+  })
+
+  function renderLogSection(log: ScriptDefinition['config']['log'], onUpdateField = vi.fn()) {
+    const script: ScriptDefinition = {
+      name: 'Imported web script',
+      version: '1.0.0',
+      protocol: 'http',
+      config: { base_url: '', log },
+      actions: [],
+    }
+    act(() => {
+      root.render(
+        <ScriptRuntimeSettingsView
+          activeHTTPTransportTab="timeouts"
+          activeSection="log"
+          canEditProtocol={false}
+          onSave={vi.fn()}
+          onSelectHTTPTransportTab={vi.fn()}
+          onSelectSection={vi.fn()}
+          onUpdateField={onUpdateField}
+          onUpdateProtocol={vi.fn()}
+          saveDisabled={false}
+          saving={false}
+          script={script}
+        />,
+      )
+    })
+    return onUpdateField
+  }
+
+  function redactionCheckbox(): HTMLInputElement {
+    const checkbox = Array.from(container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]'))
+      .find(input => input.closest('label')?.textContent?.includes('Redact credentials in run evidence'))
+    if (!checkbox) throw new Error('run-evidence redaction checkbox not rendered')
+    return checkbox
+  }
+
+  it('renders checked by default when the script carries no explicit value', () => {
+    renderLogSection({ level: 'standard' })
+    // Default-true semantics: an absent value must read as ON. `|| false` here would
+    // show redaction as disabled on every script that never set the field.
+    expect(redactionCheckbox().checked).toBe(true)
+    expect(container.textContent).toContain('run logs, snapshots, reports, archives and debugger evidence')
+    expect(container.textContent).toContain('Does not change the script itself')
+  })
+
+  it('emits an explicit false when unchecked, keeping the rest of the log block', () => {
+    const onUpdateField = renderLogSection({ level: 'extended', on_error_only: true, extended_options: ['advanced_trace'] })
+    act(() => redactionCheckbox().click())
+    expect(onUpdateField).toHaveBeenCalledWith('config.log', {
+      level: 'extended',
+      on_error_only: true,
+      extended_options: ['advanced_trace'],
+      redact_run_evidence: false,
+    })
+    // Explicitly false, never undefined — undefined would fall back to the default ON.
+    const written = onUpdateField.mock.calls[onUpdateField.mock.calls.length - 1][1]
+    expect(Object.prototype.hasOwnProperty.call(written, 'redact_run_evidence')).toBe(true)
+    expect(written.redact_run_evidence).toBe(false)
+  })
+
+  it('renders unchecked for an explicit false and re-enables redaction on click', () => {
+    const onUpdateField = renderLogSection({ level: 'standard', redact_run_evidence: false })
+    expect(redactionCheckbox().checked).toBe(false)
+    act(() => redactionCheckbox().click())
+    expect(onUpdateField).toHaveBeenCalledWith('config.log', { level: 'standard', redact_run_evidence: true })
+  })
+})
+
 describe('ScriptRuntimeSettingsView JMS TLS settings', () => {
   let container: HTMLDivElement
   let root: Root

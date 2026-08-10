@@ -892,13 +892,32 @@ func (service *Service) prepareAssignmentStage(ctx context.Context, plan *assign
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "prepare runtime secret redaction: %v", err)
 	}
-	importedCredentialValues, err := engine.ImportedCredentialValues(&script)
+	// Retained import credentials are always inspected so malformed locator
+	// metadata is rejected at the staging boundary. Whether their values also join
+	// the run-output matcher is the operator's call, carried by the script's own
+	// Config.Log.RedactRunEvidence — so it travels with scriptContent and changes
+	// the assignment fingerprint for free, with no proto field of its own.
+	//
+	// The platform-managed secret bundle above is registered first and is never
+	// gated. A script-sourced overflow drops the script-sourced contribution
+	// rather than rejecting the assignment.
+	importedCredentials, err := engine.ImportedCredentialValues(&script)
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, "inspect retained import credentials")
 	}
-	redactionConfig, err = engine.WithSecretValueRedactionChecked(redactionConfig, importedCredentialValues)
-	if err != nil {
-		return nil, status.Errorf(codes.InvalidArgument, "prepare retained import credential redaction: %v", err)
+	if engine.ScriptRedactsRunEvidence(&script) && len(importedCredentials) > 0 {
+		scriptSourcedRedaction, scriptSourcedErr := engine.WithScriptSourcedSecretValueRedaction(
+			redactionConfig,
+			importedCredentials,
+		)
+		if scriptSourcedErr != nil {
+			slog.Warn("script-sourced run-evidence redaction was dropped",
+				"test_id", request.GetTestId(),
+				"script", script.Name,
+			)
+		} else {
+			redactionConfig = scriptSourcedRedaction
+		}
 	}
 	runtimeSecrets := secretBundleResolver(request.GetSecretBundle())
 	preflight, preflightErr := engine.PreflightScriptRuntime(ctx, &script, runtimeSecrets)

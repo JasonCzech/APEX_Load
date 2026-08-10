@@ -305,12 +305,15 @@ func ReplayScript(ctx context.Context, script *dsl.Script, opts ReplayOptions) (
 	if err != nil {
 		return nil, fmt.Errorf("inspect script secret references: %s", scrubSensitiveText(err.Error()))
 	}
-	secretValues = append(secretValues, runtimeProtocolAuthCompositeValues(script, secretResolver)...)
-	importedValues, credentialTemplates, err := inspectImportedCredentials(script)
+	// One shared chokepoint with engine.New, NewMultiGroup, and shakeout; see
+	// script_sourced_run_evidence.go.
+	secretValues, scriptSourcedValues, importedCredentials, err := runtimeSecretValuesForScript(script, secretResolver, secretValues)
 	if err != nil {
 		return nil, fmt.Errorf("inspect retained import credentials: %s", scrubSensitiveText(err.Error()))
 	}
-	secretValues = append(secretValues, importedValues...)
+	// seedSecretValues is origin-independent: an operator-supplied replay variable
+	// is governed by its NAME, not by the script. It stays platform-managed and is
+	// never gated by the setting.
 	seedSecretValues := make([]string, 0)
 	for key, value := range opts.Variables {
 		if value != "" && (scrub.SensitiveName(key) || scrub.Value(value, scrub.Policy{}) != value) {
@@ -318,9 +321,12 @@ func ReplayScript(ctx context.Context, script *dsl.Script, opts ReplayOptions) (
 		}
 	}
 	secretValues = append(secretValues, seedSecretValues...)
-	redactionConfig, err = WithSecretValueRedactionChecked(redactionConfig, secretValues)
+	redactionConfig, scriptSourcedDropped, err := buildRuntimeSecretRedaction(redactionConfig, secretValues, scriptSourcedValues)
 	if err != nil {
 		return nil, fmt.Errorf("prepare runtime secret redaction: %s", scrubSensitiveText(err.Error()))
+	}
+	if scriptSourcedDropped {
+		warnScriptSourcedRedactionDropped("group", groupName, "script", script.Name)
 	}
 
 	proto, err := protocol.Get(script.Protocol)
@@ -380,8 +386,7 @@ func ReplayScript(ctx context.Context, script *dsl.Script, opts ReplayOptions) (
 		DataProvider:                 dataProvider,
 		SecretResolver:               secretResolver,
 		RedactionConfig:              redactionConfig,
-		credentialTemplates:          credentialTemplates,
-		credentialTemplatesInspected: true,
+		importedCredentialInspection: importedCredentials,
 		SnapshotStore:                NewSnapshotStore(128),
 	}
 	// Deterministic replay: seed random data selection and random template builtins
@@ -432,11 +437,7 @@ func ReplayScript(ctx context.Context, script *dsl.Script, opts ReplayOptions) (
 			report.Error = "runtime credential redaction failed"
 		}
 	}
-	report.FinalVariables = scrubReplayFinalVariables(
-		vu.Variables,
-		vu.RedactionConfig,
-		vu.credentialTemplates,
-	)
+	report.FinalVariables = scrubReplayFinalVariables(vu.Variables, vu.RedactionConfig)
 	setReplayReportSnapshots(report)
 	report.RepairSuggestions = collectReplayRepairSuggestions(report.Events)
 	if report.ArtifactManifest != nil {
@@ -1383,21 +1384,22 @@ func replayThinkTimeCancellationError(ctx context.Context) string {
 	return "replay canceled during think time"
 }
 
+// scrubReplayFinalVariables blanks variables whose NAME is generically sensitive
+// (password, token, ...), which is longstanding behavior independent of where a
+// script came from. It deliberately no longer blanks a variable merely because an
+// import placed it in a credential-governed field: that value is script-sourced
+// and the operator replaying the script already has it, so hiding it only makes
+// the replay report less useful.
 func scrubReplayFinalVariables(
 	values map[string]string,
 	config *RedactionConfig,
-	credentialTemplates *importedCredentialTemplatePlan,
 ) map[string]string {
 	if len(values) == 0 {
 		return nil
 	}
 	scrubbed := make(map[string]string, len(values))
 	for key, value := range values {
-		importedCredential := false
-		if credentialTemplates != nil {
-			_, importedCredential = credentialTemplates.variables[key]
-		}
-		if scrub.SensitiveName(key) || importedCredential {
+		if scrub.SensitiveName(key) {
 			scrubbed[key] = redactedPayloadValue
 			continue
 		}

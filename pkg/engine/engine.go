@@ -69,10 +69,10 @@ type Engine struct {
 	softStop  context.CancelFunc
 	secrets   SecretResolver
 	redaction *RedactionConfig
-	// credentialTemplates is a value-free, immutable plan shared by every
-	// VUser. Runtime values remain per-VUser and are added only to that VUser's
-	// detached redaction matcher.
-	credentialTemplates *importedCredentialTemplatePlan
+	// importedCredentials is the run's single retained-credential locator walk.
+	// Every VUser this engine creates is handed it; see
+	// runtimeSecretValuesForScript.
+	importedCredentials *importedCredentialInspection
 	// javaVuserCapacityLimit is populated by the governed runtime validation
 	// immediately before Run acquires its process-wide persistent-session lease.
 	javaVuserCapacityLimit int64
@@ -137,15 +137,19 @@ func New(cfg Config) (*Engine, error) {
 	if err != nil {
 		return nil, fmt.Errorf("inspect script secret references: %s", scrubSensitiveText(err.Error()))
 	}
-	secretValues = append(secretValues, runtimeProtocolAuthCompositeValues(cfg.Script, secretResolver)...)
-	importedValues, credentialTemplates, err := inspectImportedCredentials(cfg.Script)
+	// Values retained from an import join the matcher only when the operator has
+	// left script.Config.Log.RedactRunEvidence on; see script_sourced_run_evidence.go.
+	// The locator walk inside the helper always runs as a fail-closed corruption gate.
+	secretValues, scriptSourcedValues, importedCredentials, err := runtimeSecretValuesForScript(cfg.Script, secretResolver, secretValues)
 	if err != nil {
 		return nil, fmt.Errorf("inspect retained import credentials: %s", scrubSensitiveText(err.Error()))
 	}
-	secretValues = append(secretValues, importedValues...)
-	redactionConfig, err := WithSecretValueRedactionChecked(nil, secretValues)
+	redactionConfig, scriptSourcedDropped, err := buildRuntimeSecretRedaction(nil, secretValues, scriptSourcedValues)
 	if err != nil {
 		return nil, fmt.Errorf("prepare runtime secret redaction: %s", scrubSensitiveText(err.Error()))
+	}
+	if scriptSourcedDropped {
+		warnScriptSourcedRedactionDropped("script", cfg.Script.Name)
 	}
 	return &Engine{
 		script:              cfg.Script,
@@ -156,7 +160,7 @@ func New(cfg Config) (*Engine, error) {
 		data:                dataProvider,
 		secrets:             secretResolver,
 		redaction:           redactionConfig,
-		credentialTemplates: credentialTemplates,
+		importedCredentials: importedCredentials,
 	}, nil
 }
 
@@ -364,8 +368,7 @@ func (e *Engine) Run(ctx context.Context) (*RunResult, error) {
 				Metrics:                      e.metrics,
 				SecretResolver:               e.secrets,
 				RedactionConfig:              e.redaction,
-				credentialTemplates:          e.credentialTemplates,
-				credentialTemplatesInspected: true,
+				importedCredentialInspection: e.importedCredentials,
 				IterationRateLimiter:         iterationRateLimiter,
 				Rendezvous:                   rendezvous,
 				ExecutionGoals:               executionGoals,
@@ -603,8 +606,7 @@ func (e *Engine) runOpenWorkload(
 				Metrics:                      e.metrics,
 				SecretResolver:               e.secrets,
 				RedactionConfig:              e.redaction,
-				credentialTemplates:          e.credentialTemplates,
-				credentialTemplatesInspected: true,
+				importedCredentialInspection: e.importedCredentials,
 				ExecutionGoals:               executionGoals,
 				HardStopCtx:                  hardStopCtx,
 				ActionBoundaryCtx:            actionBoundaryCtx,

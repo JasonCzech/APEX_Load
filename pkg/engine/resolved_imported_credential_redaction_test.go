@@ -14,11 +14,29 @@ import (
 	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
+// resolvedCredentialProbeProtocol inspects the runtime matcher at the exact
+// moment an adapter would see a resolved action — the last point before
+// transport.
+//
+// scriptSourced values are read out of the imported script (retained literals,
+// Basic-auth material, values interpolated into a credential-governed field).
+// The operator running the test can already read every one of them in the
+// script, so whether they are registered — and therefore scrubbed out of the
+// operator's own retained evidence — follows the operator setting
+// script.Config.Log.RedactRunEvidence. scriptSourcedRedacted states which side of
+// that setting the fixture is running under.
+//
+// platformManaged values are resolved from the project secret store through a
+// {{secret.NAME}} reference. The operator does not hold those, so they must be
+// registered and scrubbed on BOTH sides. Asserting both in one probe keeps the
+// two halves of the rule from drifting apart.
 type resolvedCredentialProbeProtocol struct {
-	vu       *VUser
-	expected []string
-	inspect  func(*protocol.Action) error
-	probeErr error
+	vu                    *VUser
+	scriptSourced         []string
+	scriptSourcedRedacted bool
+	platformManaged       []string
+	inspect               func(*protocol.Action) error
+	probeErr              error
 }
 
 func (*resolvedCredentialProbeProtocol) Name() string { return "credential-probe" }
@@ -29,21 +47,50 @@ func (probe *resolvedCredentialProbeProtocol) Execute(
 	_ context.Context,
 	action *protocol.Action,
 ) (*protocol.Result, error) {
-	for _, expected := range probe.expected {
+	for _, value := range probe.scriptSourced {
+		if probe.vu == nil {
+			probe.probeErr = errorsJoin(probe.probeErr, fmt.Errorf("probe VUser is not configured"))
+			continue
+		}
+		_, registered := allRuntimeSecretValues(probe.vu.RedactionConfig)[value]
+		if registered != probe.scriptSourcedRedacted {
+			probe.probeErr = errorsJoin(
+				probe.probeErr,
+				fmt.Errorf("script-sourced value %q registered = %v, want %v",
+					value, registered, probe.scriptSourcedRedacted),
+			)
+		}
+		scrubbed := scrubSensitiveTextWithConfig("evidence:"+value, probe.vu.RedactionConfig)
+		if strings.Contains(scrubbed, value) == probe.scriptSourcedRedacted {
+			probe.probeErr = errorsJoin(
+				probe.probeErr,
+				fmt.Errorf("script-sourced value %q in evidence %q contradicts redaction=%v",
+					value, scrubbed, probe.scriptSourcedRedacted),
+			)
+		}
+		// Registering a script-sourced value must never suppress binary evidence.
+		if probe.vu.RedactionConfig.HasRuntimeSecretMaterial() && len(probe.platformManaged) == 0 {
+			probe.probeErr = errorsJoin(
+				probe.probeErr,
+				fmt.Errorf("script-sourced value %q reported platform-managed runtime material", value),
+			)
+		}
+	}
+	for _, value := range probe.platformManaged {
 		if probe.vu == nil || probe.vu.RedactionConfig == nil {
 			probe.probeErr = errorsJoin(probe.probeErr, fmt.Errorf("runtime redaction is not configured"))
 			continue
 		}
-		if _, exists := probe.vu.RedactionConfig.runtimeSecretValues[expected]; !exists {
+		if _, exists := allRuntimeSecretValues(probe.vu.RedactionConfig)[value]; !exists {
 			probe.probeErr = errorsJoin(
 				probe.probeErr,
-				fmt.Errorf("resolved credential %q was not registered before transport", expected),
+				fmt.Errorf("platform-managed secret %q was not registered before transport", value),
 			)
 		}
-		if scrubbed := scrubSensitiveTextWithConfig("evidence:"+expected, probe.vu.RedactionConfig); strings.Contains(scrubbed, expected) {
+		if scrubbed := scrubSensitiveTextWithConfig("evidence:"+value, probe.vu.RedactionConfig); strings.Contains(scrubbed, value) {
 			probe.probeErr = errorsJoin(
 				probe.probeErr,
-				fmt.Errorf("resolved credential %q remained in retained evidence", expected),
+				fmt.Errorf("platform-managed secret %q remained in retained evidence", value),
 			)
 		}
 	}
@@ -55,172 +102,216 @@ func (probe *resolvedCredentialProbeProtocol) Execute(
 func (*resolvedCredentialProbeProtocol) Teardown(context.Context) error    { return nil }
 func (*resolvedCredentialProbeProtocol) HealthCheck(context.Context) error { return nil }
 
-func TestResolvedImportedCredentialsRegisterDynamicHeaderAndBodyValuesBeforeTransport(t *testing.T) {
+// Values interpolated into a credential-governed field of an imported script
+// come from {{env.*}}, {{data.*}} and {{var.*}} — none of which is resolved
+// through the secret resolver. They are script-sourced, so whether they are
+// scrubbed out of run output follows the operator setting. A {{secret.*}} value
+// installed in the base matcher by engine construction keeps its protection
+// across the same action boundary in BOTH modes.
+//
+// The wire values and the durable script are identical in both modes: the
+// setting never touches what executes or what is stored.
+func TestResolvedImportedDynamicHeaderAndBodyValuesFollowRunEvidenceSetting(t *testing.T) {
 	const (
-		envKey        = "APEXLOAD_IMPORTED_RUNTIME_HEADER"
-		envCredential = "env-runtime-credential-7841"
-		dataValue     = "data-runtime-credential-9253"
-		varValue      = "variable{{literal}}credential-4186"
+		envKey         = "APEXLOAD_IMPORTED_RUNTIME_HEADER"
+		envCredential  = "env-runtime-credential-7841"
+		dataValue      = "data-runtime-credential-9253"
+		varValue       = "variable{{literal}}credential-4186"
+		platformSecret = "platform-store-secret-3092"
 	)
-	t.Setenv(EnvScriptEnvAllowlist, envKey)
-	t.Setenv(envKey, envCredential)
+	for _, mode := range runEvidenceRedactionModes {
+		t.Run(mode.name, func(t *testing.T) {
+			t.Setenv(EnvScriptEnvAllowlist, envKey)
+			t.Setenv(envKey, envCredential)
 
-	action := dsl.Action{
-		Name:   "dynamic credentials",
-		Type:   "POST",
-		Method: "POST",
-		Target: "https://api.example.test/login",
-		HeaderList: dsl.HeaderList{
-			{Name: "Content-Type", Value: "application/json"},
-			{Name: "X-Imported-Value", Value: "env={{env." + envKey + "}}"},
-			{Name: "X-Second-Imported-Value", Value: "{{var.runtime_header}}"},
-		},
-		Body: `{"credential":"data={{data.users.credential}}"}`,
-		Metadata: map[string]any{
-			dsl.ImportPreservedCredentialTargetsMetadataKey: []any{
-				map[string]any{"field": "headers", "index": 1},
-				map[string]any{"field": "headers", "index": 2},
-				map[string]any{"field": "body", "pointer": "/credential"},
-			},
-		},
-	}
-	script := credentialPreservingRuntimeScript(action)
-	expected := []string{
-		"env=" + envCredential,
-		varValue,
-		"data=" + dataValue,
-	}
-	probe := &resolvedCredentialProbeProtocol{expected: expected}
-	vu := &VUser{
-		Script:    script,
-		Proto:     probe,
-		Variables: map[string]string{"runtime_header": varValue, "users.credential": dataValue},
-	}
-	probe.vu = vu
-	probe.inspect = func(resolved *protocol.Action) error {
-		if got, want := resolved.HeaderList[1].Value, "env="+envCredential; got != want {
-			return fmt.Errorf("wire header = %q, want %q", got, want)
-		}
-		if got := resolved.HeaderList[2].Value; got != varValue {
-			return fmt.Errorf("second wire header = %q, want %q", got, varValue)
-		}
-		if got, want := string(resolved.Body), `{"credential":"data=`+dataValue+`"}`; got != want {
-			return fmt.Errorf("wire body = %q, want %q", got, want)
-		}
-		return nil
-	}
+			action := dsl.Action{
+				Name:   "dynamic credentials",
+				Type:   "POST",
+				Method: "POST",
+				Target: "https://api.example.test/login",
+				HeaderList: dsl.HeaderList{
+					{Name: "Content-Type", Value: "application/json"},
+					{Name: "X-Imported-Value", Value: "env={{env." + envKey + "}}"},
+					{Name: "X-Second-Imported-Value", Value: "{{var.runtime_header}}"},
+				},
+				Body: `{"credential":"data={{data.users.credential}}"}`,
+				Metadata: map[string]any{
+					dsl.ImportPreservedCredentialTargetsMetadataKey: []any{
+						map[string]any{"field": "headers", "index": 1},
+						map[string]any{"field": "headers", "index": 2},
+						map[string]any{"field": "body", "pointer": "/credential"},
+					},
+				},
+			}
+			script := setRunEvidenceRedaction(credentialPreservingRuntimeScript(action), mode.redact)
+			probe := &resolvedCredentialProbeProtocol{
+				scriptSourced: []string{
+					"env=" + envCredential,
+					varValue,
+					"data=" + dataValue,
+				},
+				scriptSourcedRedacted: mode.redact,
+				platformManaged:       []string{platformSecret},
+			}
+			vu := &VUser{
+				Script:    script,
+				Proto:     probe,
+				Variables: map[string]string{"runtime_header": varValue, "users.credential": dataValue},
+				// Stands in for the base matcher engine.New installs from
+				// snapshotReferencedSecrets.
+				RedactionConfig: WithSecretValueRedaction(nil, []string{platformSecret}),
+			}
+			probe.vu = vu
+			probe.inspect = func(resolved *protocol.Action) error {
+				if got, want := resolved.HeaderList[1].Value, "env="+envCredential; got != want {
+					return fmt.Errorf("wire header = %q, want %q", got, want)
+				}
+				if got := resolved.HeaderList[2].Value; got != varValue {
+					return fmt.Errorf("second wire header = %q, want %q", got, varValue)
+				}
+				if got, want := string(resolved.Body), `{"credential":"data=`+dataValue+`"}`; got != want {
+					return fmt.Errorf("wire body = %q, want %q", got, want)
+				}
+				return nil
+			}
 
-	resolved := vu.resolveAction(action)
-	if _, err := vu.executeWithRetry(context.Background(), resolved, dsl.ErrorHandlingConfig{}); err != nil {
-		t.Fatalf("executeWithRetry: %v", err)
-	}
-	if probe.probeErr != nil {
-		t.Fatal(probe.probeErr)
-	}
-	if got := script.Actions[0].HeaderList[1].Value; got != "env={{env."+envKey+"}}" {
-		t.Fatalf("durable header was changed to %q", got)
-	}
-	if got := script.Actions[0].Body; got != action.Body {
-		t.Fatalf("durable body was changed to %q", got)
+			resolved := vu.resolveAction(action)
+			if _, err := vu.executeWithRetry(context.Background(), resolved, dsl.ErrorHandlingConfig{}); err != nil {
+				t.Fatalf("executeWithRetry: %v", err)
+			}
+			if probe.probeErr != nil {
+				t.Fatal(probe.probeErr)
+			}
+			if got := script.Actions[0].HeaderList[1].Value; got != "env={{env."+envKey+"}}" {
+				t.Fatalf("durable header was changed to %q", got)
+			}
+			if got := script.Actions[0].Body; got != action.Body {
+				t.Fatalf("durable body was changed to %q", got)
+			}
+		})
 	}
 }
 
-func TestResolvedImportedCredentialRegistersComposedBearerComponentBeforeTransport(t *testing.T) {
+// A bearer token composed from an {{env.*}} component inside an imported script
+// is script-sourced: the operator can read both the template and the environment
+// it runs under. Whether the component and the composed header are scrubbed out
+// of run output follows the operator setting; the wire header never changes.
+func TestResolvedImportedComposedBearerComponentFollowsRunEvidenceSetting(t *testing.T) {
 	const (
 		envKey = "APEXLOAD_IMPORTED_RUNTIME_BEARER"
-		token  = "bearer-runtime-token-6418"
+		// Deliberately short: a longer opaque token is removed by the generic
+		// high-entropy scrubber, which is an origin-independent layer and would
+		// mask what this test is actually measuring.
+		token = "bearer-tok-6418"
 	)
-	t.Setenv(EnvScriptEnvAllowlist, envKey)
-	t.Setenv(envKey, token)
+	for _, mode := range runEvidenceRedactionModes {
+		t.Run(mode.name, func(t *testing.T) {
+			t.Setenv(EnvScriptEnvAllowlist, envKey)
+			t.Setenv(envKey, token)
 
-	action := dsl.Action{
-		Name:   "bearer",
-		Type:   "GET",
-		Method: "GET",
-		Target: "https://api.example.test/orders",
-		HeaderList: dsl.HeaderList{{
-			Name:  "Authorization",
-			Value: "Bearer prefix-{{env." + envKey + "}}-suffix",
-		}},
-	}
-	script := credentialPreservingRuntimeScript(action)
-	bearerComponent := "prefix-" + token + "-suffix"
-	probe := &resolvedCredentialProbeProtocol{expected: []string{
-		bearerComponent,
-		"Bearer " + bearerComponent,
-	}}
-	vu := &VUser{Script: script, Proto: probe, Variables: map[string]string{}}
-	probe.vu = vu
-	probe.inspect = func(resolved *protocol.Action) error {
-		if got, want := resolved.HeaderList[0].Value, "Bearer "+bearerComponent; got != want {
-			return fmt.Errorf("wire Authorization = %q, want %q", got, want)
-		}
-		return nil
-	}
+			action := dsl.Action{
+				Name:   "bearer",
+				Type:   "GET",
+				Method: "GET",
+				Target: "https://api.example.test/orders",
+				HeaderList: dsl.HeaderList{{
+					Name:  "Authorization",
+					Value: "Bearer prefix-{{env." + envKey + "}}-suffix",
+				}},
+			}
+			script := setRunEvidenceRedaction(credentialPreservingRuntimeScript(action), mode.redact)
+			bearerComponent := "prefix-" + token + "-suffix"
+			probe := &resolvedCredentialProbeProtocol{
+				scriptSourced: []string{
+					bearerComponent,
+					"Bearer " + bearerComponent,
+				},
+				scriptSourcedRedacted: mode.redact,
+			}
+			vu := &VUser{Script: script, Proto: probe, Variables: map[string]string{}}
+			probe.vu = vu
+			probe.inspect = func(resolved *protocol.Action) error {
+				if got, want := resolved.HeaderList[0].Value, "Bearer "+bearerComponent; got != want {
+					return fmt.Errorf("wire Authorization = %q, want %q", got, want)
+				}
+				return nil
+			}
 
-	if _, err := vu.executeWithRetry(
-		context.Background(),
-		vu.resolveAction(action),
-		dsl.ErrorHandlingConfig{},
-	); err != nil {
-		t.Fatalf("executeWithRetry: %v", err)
-	}
-	if probe.probeErr != nil {
-		t.Fatal(probe.probeErr)
-	}
-	if got := script.Actions[0].HeaderList[0].Value; got != action.HeaderList[0].Value {
-		t.Fatalf("durable Authorization was changed to %q", got)
+			if _, err := vu.executeWithRetry(
+				context.Background(),
+				vu.resolveAction(action),
+				dsl.ErrorHandlingConfig{},
+			); err != nil {
+				t.Fatalf("executeWithRetry: %v", err)
+			}
+			if probe.probeErr != nil {
+				t.Fatal(probe.probeErr)
+			}
+			if got := script.Actions[0].HeaderList[0].Value; got != action.HeaderList[0].Value {
+				t.Fatalf("durable Authorization was changed to %q", got)
+			}
+		})
 	}
 }
 
-func TestResolvedImportedCredentialRegistersURLPasswordAndCompositeBeforeTransport(t *testing.T) {
+// A user:password pair interpolated into an imported URL is script-sourced. The
+// password and the composite follow the setting; the bare username was never a
+// secret to begin with and is registered in NEITHER mode.
+func TestResolvedImportedURLPasswordAndCompositeFollowRunEvidenceSetting(t *testing.T) {
 	const (
 		username = "runtime-user-3571"
 		password = "runtime-password-8642"
 	)
-	action := dsl.Action{
-		Name:   "userinfo",
-		Type:   "GET",
-		Method: "GET",
-		Target: "https://{{var.runtime_username}}:{{var.runtime_password}}@api.example.test/orders",
-	}
-	script := credentialPreservingRuntimeScript(action)
-	probe := &resolvedCredentialProbeProtocol{expected: []string{
-		password,
-		username + ":" + password,
-	}}
-	vu := &VUser{
-		Script: script,
-		Proto:  probe,
-		Variables: map[string]string{
-			"runtime_username": username,
-			"runtime_password": password,
-		},
-	}
-	probe.vu = vu
-	probe.inspect = func(resolved *protocol.Action) error {
-		want := "https://" + username + ":" + password + "@api.example.test/orders"
-		if resolved.Target != want {
-			return fmt.Errorf("wire target = %q, want %q", resolved.Target, want)
-		}
-		return nil
-	}
+	for _, mode := range runEvidenceRedactionModes {
+		t.Run(mode.name, func(t *testing.T) {
+			action := dsl.Action{
+				Name:   "userinfo",
+				Type:   "GET",
+				Method: "GET",
+				Target: "https://{{var.runtime_username}}:{{var.runtime_password}}@api.example.test/orders",
+			}
+			script := setRunEvidenceRedaction(credentialPreservingRuntimeScript(action), mode.redact)
+			probe := &resolvedCredentialProbeProtocol{
+				scriptSourced: []string{
+					password,
+					username + ":" + password,
+				},
+				scriptSourcedRedacted: mode.redact,
+			}
+			vu := &VUser{
+				Script: script,
+				Proto:  probe,
+				Variables: map[string]string{
+					"runtime_username": username,
+					"runtime_password": password,
+				},
+			}
+			probe.vu = vu
+			probe.inspect = func(resolved *protocol.Action) error {
+				want := "https://" + username + ":" + password + "@api.example.test/orders"
+				if resolved.Target != want {
+					return fmt.Errorf("wire target = %q, want %q", resolved.Target, want)
+				}
+				return nil
+			}
 
-	if _, err := vu.executeWithRetry(
-		context.Background(),
-		vu.resolveAction(action),
-		dsl.ErrorHandlingConfig{},
-	); err != nil {
-		t.Fatalf("executeWithRetry: %v", err)
-	}
-	if probe.probeErr != nil {
-		t.Fatal(probe.probeErr)
-	}
-	if got, want := vu.RedactionConfig.ScrubText("account "+username), "account "+username; got != want {
-		t.Fatalf("bare username was treated as a runtime secret: got %q, want %q", got, want)
-	}
-	if got := script.Actions[0].Target; got != action.Target {
-		t.Fatalf("durable target was changed to %q", got)
+			if _, err := vu.executeWithRetry(
+				context.Background(),
+				vu.resolveAction(action),
+				dsl.ErrorHandlingConfig{},
+			); err != nil {
+				t.Fatalf("executeWithRetry: %v", err)
+			}
+			if probe.probeErr != nil {
+				t.Fatal(probe.probeErr)
+			}
+			if got, want := vu.RedactionConfig.ScrubText("account "+username), "account "+username; got != want {
+				t.Fatalf("bare username was treated as a runtime secret: got %q, want %q", got, want)
+			}
+			if got := script.Actions[0].Target; got != action.Target {
+				t.Fatalf("durable target was changed to %q", got)
+			}
+		})
 	}
 }
 
@@ -520,10 +611,13 @@ func (probe *redactedProjectionEchoProtocol) Execute(
 				fmt.Errorf("wire projection did not retain canary %q", canary),
 			)
 		}
-		if strings.Contains(redactedProjection, canary) {
+		// The adapter-facing "redacted" projection must now agree with the wire
+		// request for script-sourced values. Blanking them here used to make the
+		// projection lie about the request the operator's own script sent.
+		if !strings.Contains(redactedProjection, canary) {
 			probe.probeErr = errorsJoin(
 				probe.probeErr,
-				fmt.Errorf("redacted projection retained canary %q", canary),
+				fmt.Errorf("redacted projection dropped script-sourced canary %q", canary),
 			)
 		}
 	}
@@ -541,7 +635,10 @@ func (probe *redactedProjectionEchoProtocol) Execute(
 func (*redactedProjectionEchoProtocol) Teardown(context.Context) error    { return nil }
 func (*redactedProjectionEchoProtocol) HealthCheck(context.Context) error { return nil }
 
-func TestResolvedImportedCredentialRedactsAdapterProjectionWithoutChangingWireRequest(t *testing.T) {
+// The adapter-facing redacted projection carries script-sourced credentials
+// through unchanged, exactly like the wire request. The durable script keeps its
+// templates: nothing here rewrites what is stored.
+func TestResolvedImportedCredentialProjectionRetainsScriptSourcedValues(t *testing.T) {
 	const (
 		username       = "projection-user-7316"
 		password       = "projection-password-2849"
@@ -606,8 +703,8 @@ func TestResolvedImportedCredentialRedactsAdapterProjectionWithoutChangingWireRe
 		evidence += "\n" + name + ": " + value
 	}
 	for _, canary := range canaries {
-		if strings.Contains(evidence, canary) {
-			t.Fatalf("adapter evidence retained canary %q: %q", canary, evidence)
+		if !strings.Contains(evidence, canary) {
+			t.Fatalf("adapter evidence dropped script-sourced canary %q: %q", canary, evidence)
 		}
 	}
 	for _, template := range []string{
@@ -623,8 +720,17 @@ func TestResolvedImportedCredentialRedactsAdapterProjectionWithoutChangingWireRe
 	}
 }
 
-func TestImportedCredentialNeutralExtractionIsRedactedBeforeSkippedConsumerAndFinalReport(t *testing.T) {
-	const canary = "neutral-runtime-credential-early-4197"
+// A response value extracted into a neutrally named variable used to be
+// registered as a runtime secret purely because an IMPORT referenced that
+// variable from a credential-governed header. Import provenance is not a reason
+// to hide a value from the operator who owns the import, so the extraction now
+// survives the replay report. The origin-independent layer is unchanged: the
+// same response's sensitively NAMED extraction is still redacted everywhere.
+func TestImportedCredentialNeutralExtractionSurvivesWhileNamedSecretIsRedacted(t *testing.T) {
+	const (
+		canary     = "neutral-runtime-credential-early-4197"
+		namedToken = "named-runtime-credential-early-8825"
+	)
 	protocolName := registerReplayProtocol(t, func(action *protocol.Action) (*protocol.Result, error) {
 		if action.Name != "issue credential" {
 			return nil, fmt.Errorf("skipped credential consumer unexpectedly executed: %s", action.Name)
@@ -634,6 +740,7 @@ func TestImportedCredentialNeutralExtractionIsRedactedBeforeSkippedConsumerAndFi
 			Success:    true,
 			Extractions: map[string]string{
 				"opaque_handle": canary,
+				"session_token": namedToken,
 			},
 			ProtocolEvidence: map[string]any{
 				"ordinary_echo": canary,
@@ -686,11 +793,20 @@ func TestImportedCredentialNeutralExtractionIsRedactedBeforeSkippedConsumerAndFi
 	if len(report.Events) != 1 {
 		t.Fatalf("replay events = %d, want only the issuing request", len(report.Events))
 	}
-	if got := report.Events[0].Extractions["opaque_handle"]; got != redactedPayloadValue {
-		t.Fatalf("early extraction = %q, want redacted", got)
+	// Previously asserted these two were redactedPayloadValue. That was the
+	// rejected decision: the only thing making this neutral value a "credential"
+	// was the import the operator supplied.
+	if got := report.Events[0].Extractions["opaque_handle"]; got != canary {
+		t.Fatalf("early extraction = %q, want the value the system under test returned", got)
 	}
-	if got := report.FinalVariables["opaque_handle"]; got != redactedPayloadValue {
-		t.Fatalf("final neutral credential = %q, want redacted", got)
+	if got := report.FinalVariables["opaque_handle"]; got != canary {
+		t.Fatalf("final neutral extraction = %q, want the value the system under test returned", got)
+	}
+	if got := report.Events[0].Extractions["session_token"]; got != redactedPayloadValue {
+		t.Fatalf("sensitively named extraction = %q, want redacted", got)
+	}
+	if got := report.FinalVariables["session_token"]; got != redactedPayloadValue {
+		t.Fatalf("final sensitively named extraction = %q, want redacted", got)
 	}
 	encodedReport, err := json.Marshal(report)
 	if err != nil {
@@ -700,18 +816,29 @@ func TestImportedCredentialNeutralExtractionIsRedactedBeforeSkippedConsumerAndFi
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(encodedReport), canary) {
-		t.Fatalf("replay report retained early neutral credential: %s", encodedReport)
+	if !strings.Contains(string(encodedReport), canary) {
+		t.Fatalf("replay report dropped the neutral extraction: %s", encodedReport)
 	}
-	if strings.Contains(string(encodedProgress), canary) {
-		t.Fatalf("replay progress retained early neutral credential: %s", encodedProgress)
+	if strings.Contains(string(encodedReport), namedToken) {
+		t.Fatalf("replay report retained a sensitively named extraction: %s", encodedReport)
+	}
+	if strings.Contains(string(encodedProgress), namedToken) {
+		t.Fatalf("replay progress retained a sensitively named extraction: %s", encodedProgress)
+	}
+	if !strings.Contains(string(encodedProgress), canary) {
+		t.Fatalf("replay progress dropped the neutral extraction: %s", encodedProgress)
 	}
 	if got := script.Actions[1].Control.Steps[0].HeaderList[0].Value; got != skippedConsumer.HeaderList[0].Value {
 		t.Fatalf("durable skipped consumer was changed to %q", got)
 	}
 }
 
-func TestResolvedImportedCookieRegistersGeneratedTemplateComponentBeforeTransport(t *testing.T) {
+// A value generated by the script itself ({{fn.random_string}}) inside a
+// credential-governed field of an imported script used to be registered as a
+// runtime secret purely because the field came from an import. It is not a
+// secret-store value, so it is script-sourced and stays visible in the replay
+// report the operator reads.
+func TestResolvedImportedCookieGeneratedTemplateComponentIsNotRedacted(t *testing.T) {
 	const expression = "{{fn.random_string(20)}}"
 	var (
 		wireCookie string
@@ -776,11 +903,11 @@ func TestResolvedImportedCookieRegistersGeneratedTemplateComponentBeforeTranspor
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(encoded), component) {
-		t.Fatalf("component-only echo remained in replay disclosure surfaces: %s", encoded)
+	if !strings.Contains(string(encoded), component) {
+		t.Fatalf("script-generated component was scrubbed from replay disclosure surfaces: %s", encoded)
 	}
-	if got := report.FinalVariables["ordinary_value"]; got != redactedPayloadValue {
-		t.Fatalf("component extraction final value = %q, want redacted", got)
+	if got := report.FinalVariables["ordinary_value"]; got != component {
+		t.Fatalf("component extraction final value = %q, want %q", got, component)
 	}
 }
 

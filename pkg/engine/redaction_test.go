@@ -2,9 +2,12 @@ package engine
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	stdhttp "net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -418,43 +421,66 @@ func TestVUserRecordResultScrubsLongRuntimeSecretsBeforeEvidenceBounds(t *testin
 	}
 }
 
-func TestVUserRecordResultRegistersProtocolManagedCredentialsBeforePublishing(t *testing.T) {
-	const cookieValue = "xy7"
+// Values a protocol adapter harvested from the system under test (HTTP cookie
+// jar contents) are no longer registered for redaction: the operator is running
+// the test against that system and needs the evidence. The two origin-
+// independent layers still apply — a project-secret value stays redacted and a
+// sensitively NAMED extraction is still suppressed.
+func TestVUserRecordResultKeepsHarvestedEvidenceAndStillRedactsPlatformSecret(t *testing.T) {
+	const (
+		cookieValue    = "xy7"
+		platformSecret = "vault-issued-bravo-5512"
+		namedToken     = "extracted-charlie-9931"
+	)
 	sink := &captureResultSink{}
 	vu := &VUser{
-		Metrics:    NewMetricsCollector(4),
-		ResultSink: sink,
-		Variables:  map[string]string{},
+		Metrics:         NewMetricsCollector(4),
+		ResultSink:      sink,
+		Variables:       map[string]string{},
+		RedactionConfig: WithSecretValueRedaction(nil, []string{platformSecret}),
 	}
+	// Phrased so the origin-independent generic scrubbers (name= patterns, JWT and
+	// high-entropy detection) do not fire: this test measures the exact-value
+	// matcher only.
+	evidence := "upstream echoed " + cookieValue +
+		" and " + platformSecret + " and " + namedToken
 	first := &protocol.Result{
-		Success:                 false,
-		ErrorMessage:            "upstream echoed " + cookieValue,
-		ResponseBody:            "neutral=" + cookieValue,
-		RuntimeCredentialValues: []string{cookieValue},
-		Extractions:             map[string]string{"ordinary": cookieValue},
-		ProtocolEvidence:        map[string]any{"ordinary": cookieValue},
-		Snapshot:                &protocol.ErrorSnapshot{ResponseBody: cookieValue},
+		Success:      false,
+		ErrorMessage: evidence,
+		ResponseBody: evidence,
+		Extractions: map[string]string{
+			"ordinary":      cookieValue,
+			"session_token": namedToken,
+		},
+		ProtocolEvidence: map[string]any{"ordinary": cookieValue},
+		Snapshot:         &protocol.ErrorSnapshot{ResponseBody: evidence},
 	}
 
 	vu.recordResult(first, dsl.ErrorHandlingConfig{SnapshotOnError: true}, dsl.LogConfig{})
 
 	if got := vu.Variables["ordinary"]; got != cookieValue {
-		t.Fatalf("raw extraction = %q, want protocol-managed credential for later replay", got)
-	}
-	if first.RuntimeCredentialValues != nil {
-		t.Fatalf("memory-only runtime credentials reached retained result: %#v", first.RuntimeCredentialValues)
+		t.Fatalf("raw extraction = %q, want the harvested value for later replay", got)
 	}
 	encoded, err := json.Marshal(sink.result)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if bytes.Contains(encoded, []byte(cookieValue)) {
-		t.Fatalf("same-response protocol-managed credential leaked: %s", encoded)
+	// Previously asserted the exact opposite: the harvested cookie value had to be
+	// absent from every retained field. That is the behaviour the product owner
+	// rejected — it blanked ordinary application state out of the operator's run.
+	if !bytes.Contains(encoded, []byte(cookieValue)) {
+		t.Fatalf("harvested cookie value was scrubbed out of the operator's evidence: %s", encoded)
+	}
+	if bytes.Contains(encoded, []byte(platformSecret)) {
+		t.Fatalf("platform-managed secret leaked: %s", encoded)
+	}
+	if bytes.Contains(encoded, []byte(namedToken)) {
+		t.Fatalf("sensitively named extraction leaked: %s", encoded)
 	}
 
 	later := &protocol.Result{
 		Success:      false,
-		ErrorMessage: "later echo " + cookieValue,
+		ErrorMessage: "later echo " + cookieValue + " and " + platformSecret,
 		ResponseBody: cookieValue,
 		Extractions:  map[string]string{"ordinary_later": cookieValue},
 	}
@@ -463,31 +489,40 @@ func TestVUserRecordResultRegistersProtocolManagedCredentialsBeforePublishing(t 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if bytes.Contains(encoded, []byte(cookieValue)) {
-		t.Fatalf("later protocol-managed credential echo leaked: %s", encoded)
+	if !bytes.Contains(encoded, []byte(cookieValue)) {
+		t.Fatalf("later harvested-value echo was scrubbed: %s", encoded)
+	}
+	if bytes.Contains(encoded, []byte(platformSecret)) {
+		t.Fatalf("later platform-managed secret echo leaked: %s", encoded)
 	}
 }
 
-func TestProtocolSessionCookieDoesNotRewriteStableMetricDimensions(t *testing.T) {
-	const cookieValue = "Login"
+// The stable metric dimensions used to be shielded from cookie snapshots by a
+// second, session-excluding matcher. Nothing harvested reaches the matcher any
+// more, so a cookie-shaped substring survives in BOTH the dimensions and the
+// evidence, while a platform-managed secret is removed from both.
+func TestHarvestedCookieSubstringLeavesDimensionsAndEvidenceIntact(t *testing.T) {
+	const (
+		cookieValue    = "Login"
+		platformSecret = "vault-issued-bravo-7734"
+	)
 	sink := &captureResultSink{}
 	vu := &VUser{
-		Group:      "Login group",
-		Metrics:    NewMetricsCollector(4),
-		ResultSink: sink,
-		Variables:  map[string]string{},
+		Group:           "Login group",
+		Metrics:         NewMetricsCollector(4),
+		ResultSink:      sink,
+		Variables:       map[string]string{},
+		RedactionConfig: WithSecretValueRedaction(nil, []string{platformSecret}),
 	}
 	result := &protocol.Result{
-		ActionName:                      "Login action",
-		DependencyTarget:                "https://example.test/Login",
-		CorrelationID:                   cookieValue,
-		Success:                         false,
-		ErrorMessage:                    "cookie=" + cookieValue,
-		ResponseBody:                    "payload=" + cookieValue,
-		Extractions:                     map[string]string{"echo": cookieValue},
-		ProtocolEvidence:                map[string]any{"echo": cookieValue},
-		RuntimeCredentialValues:         []string{cookieValue},
-		RuntimeCredentialValuesSnapshot: true,
+		ActionName:       "Login action",
+		DependencyTarget: "https://example.test/Login",
+		CorrelationID:    cookieValue,
+		Success:          false,
+		ErrorMessage:     "payload includes " + cookieValue + " and " + platformSecret,
+		ResponseBody:     "payload includes " + cookieValue,
+		Extractions:      map[string]string{"echo": cookieValue},
+		ProtocolEvidence: map[string]any{"echo": cookieValue},
 	}
 
 	vu.recordResult(result, dsl.ErrorHandlingConfig{}, dsl.LogConfig{})
@@ -496,34 +531,42 @@ func TestProtocolSessionCookieDoesNotRewriteStableMetricDimensions(t *testing.T)
 	}
 	if sink.result.ActionName != "Login action" || sink.result.Group != "Login group" ||
 		sink.result.DependencyTarget != "https://example.test/Login" {
-		t.Fatalf("session cookie rewrote stable dimensions: action=%q group=%q target=%q",
+		t.Fatalf("harvested cookie value rewrote stable dimensions: action=%q group=%q target=%q",
 			sink.result.ActionName, sink.result.Group, sink.result.DependencyTarget)
 	}
-	if strings.Contains(sink.result.ErrorMessage, cookieValue) ||
-		strings.Contains(sink.result.ResponseBody, cookieValue) ||
-		strings.Contains(sink.result.Extractions["echo"], cookieValue) {
-		t.Fatalf("session cookie survived retained payload evidence: %#v", sink.result)
+	// Previously asserted the cookie value had been removed from every one of
+	// these fields.
+	if !strings.Contains(sink.result.ErrorMessage, cookieValue) ||
+		!strings.Contains(sink.result.ResponseBody, cookieValue) ||
+		!strings.Contains(sink.result.Extractions["echo"], cookieValue) {
+		t.Fatalf("harvested cookie value was scrubbed from retained payload evidence: %#v", sink.result)
 	}
-	if evidence, _ := sink.result.ProtocolEvidence["echo"].(string); strings.Contains(evidence, cookieValue) {
-		t.Fatalf("session cookie survived protocol evidence: %#v", sink.result.ProtocolEvidence)
+	if evidence, _ := sink.result.ProtocolEvidence["echo"].(string); !strings.Contains(evidence, cookieValue) {
+		t.Fatalf("harvested cookie value was scrubbed from protocol evidence: %#v", sink.result.ProtocolEvidence)
 	}
-	if strings.Contains(sink.result.CorrelationID, cookieValue) {
-		t.Fatalf("session cookie survived correlation evidence: %q", sink.result.CorrelationID)
+	if !strings.Contains(sink.result.CorrelationID, cookieValue) {
+		t.Fatalf("harvested cookie value was scrubbed from correlation evidence: %q", sink.result.CorrelationID)
+	}
+	if strings.Contains(sink.result.ErrorMessage, platformSecret) {
+		t.Fatalf("platform-managed secret survived evidence: %q", sink.result.ErrorMessage)
 	}
 }
 
-func TestNonSessionRuntimeCredentialStillRedactsStableDimensions(t *testing.T) {
+// The safety half of the same change: a value the platform itself issued
+// ({{secret.NAME}} resolved from the project secret store) must still be removed
+// from the stable metric dimensions, which bypass response/snapshot handling.
+func TestPlatformManagedSecretStillRedactsStableDimensions(t *testing.T) {
 	const credential = "resolved-secret-4821"
 	vu := &VUser{
-		Group:     "group-" + credential,
-		Metrics:   NewMetricsCollector(1),
-		Variables: map[string]string{},
+		Group:           "group-" + credential,
+		Metrics:         NewMetricsCollector(1),
+		Variables:       map[string]string{},
+		RedactionConfig: WithSecretValueRedaction(nil, []string{credential}),
 	}
 	result := &protocol.Result{
-		ActionName:              "action-" + credential,
-		DependencyTarget:        "https://example.test/" + credential,
-		Success:                 true,
-		RuntimeCredentialValues: []string{credential},
+		ActionName:       "action-" + credential,
+		DependencyTarget: "https://example.test/" + credential,
+		Success:          true,
 	}
 
 	vu.recordResult(result, dsl.ErrorHandlingConfig{}, dsl.LogConfig{})
@@ -533,8 +576,39 @@ func TestNonSessionRuntimeCredentialStillRedactsStableDimensions(t *testing.T) {
 		"target": result.DependencyTarget,
 	} {
 		if strings.Contains(value, credential) {
-			t.Fatalf("%s dimension retained non-session runtime credential: %q", name, value)
+			t.Fatalf("%s dimension retained a platform-managed secret: %q", name, value)
 		}
+	}
+}
+
+// A sensitively NAMED extraction is suppressed regardless of where the value came
+// from, and that suppression reaches the stable dimensions too.
+func TestSensitivelyNamedExtractionStillRedactsStableDimensions(t *testing.T) {
+	const extracted = "harvested-bearer-3390"
+	vu := &VUser{
+		Group:     "group-" + extracted,
+		Metrics:   NewMetricsCollector(1),
+		Variables: map[string]string{},
+	}
+	result := &protocol.Result{
+		ActionName:       "action-" + extracted,
+		DependencyTarget: "https://example.test/" + extracted,
+		Success:          true,
+		Extractions:      map[string]string{"session_token": extracted},
+	}
+
+	vu.recordResult(result, dsl.ErrorHandlingConfig{}, dsl.LogConfig{})
+	for name, value := range map[string]string{
+		"action": result.ActionName,
+		"group":  result.Group,
+		"target": result.DependencyTarget,
+	} {
+		if strings.Contains(value, extracted) {
+			t.Fatalf("%s dimension retained a sensitively named extraction: %q", name, value)
+		}
+	}
+	if got := vu.Variables["session_token"]; got != extracted {
+		t.Fatalf("raw sensitive extraction = %q, want the value usable by later actions", got)
 	}
 }
 
@@ -563,18 +637,25 @@ func TestRuntimeSecretRedactionRunsBeforeGenericCredentialPatterns(t *testing.T)
 	}
 }
 
+// The amplification bound is a property of the matcher itself and still matters
+// for PLATFORM-MANAGED secrets, which are the only values that reach it now.
+// A one-byte project-secret value must be fully redacted without letting
+// attacker-controlled evidence grow the retained output.
 func TestRuntimeSecretRedactionDoesNotAmplifyShortMatches(t *testing.T) {
-	config, err := WithSecretValueRedactionChecked(nil, []string{"a"})
+	// Stands in for a one-byte {{secret.NAME}} value resolved from the project
+	// secret store. Script-sourced values never reach this matcher.
+	const platformManagedSecret = "a"
+	config, err := WithSecretValueRedactionChecked(nil, []string{platformManagedSecret})
 	if err != nil {
 		t.Fatal(err)
 	}
-	input := strings.Repeat("a", 1<<20)
+	input := strings.Repeat(platformManagedSecret, 1<<20)
 	got := config.ScrubText(input)
 	if len(got) > len(input) {
 		t.Fatalf("one-byte secret expanded evidence from %d to %d bytes", len(input), len(got))
 	}
-	if strings.Contains(got, "a") {
-		t.Fatal("one-byte runtime secret survived exact redaction")
+	if strings.Contains(got, platformManagedSecret) {
+		t.Fatal("one-byte platform-managed secret survived exact redaction")
 	}
 }
 
@@ -657,7 +738,7 @@ func TestRuntimeSecretRedactionOverlayUnionsOverlappingMatchSpans(t *testing.T) 
 			if err != nil {
 				t.Fatal(err)
 			}
-			config, err := withRuntimeSecretValueOverlay(base, []string{test.overlay})
+			config, err := withRuntimeSecretValueOverlay(base, []string{test.overlay}, nil)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -669,56 +750,87 @@ func TestRuntimeSecretRedactionOverlayUnionsOverlappingMatchSpans(t *testing.T) 
 	}
 }
 
-func TestVUserCookieRotationBeyondLegacyLimitRemainsBoundedAndScrubbed(t *testing.T) {
-	vu := &VUser{
-		Metrics:    NewMetricsCollector(1),
-		Variables:  map[string]string{},
-		ResultSink: &captureResultSink{},
+// Cookie rotation used to grow the per-VUser matcher (bounded by a retirement
+// FIFO) and scrub every rotated value out of the run's evidence. The real HTTP
+// adapter drives this test so the whole harvest path is exercised: 640 rotations
+// must leave the matcher byte-for-byte the platform-secret matcher it started
+// with, and every rotated value must remain readable in the run evidence.
+func TestVUserCookieRotationLeavesTheRuntimeMatcherUntouched(t *testing.T) {
+	const (
+		rotations      = 640
+		platformSecret = "vault-issued-bravo-2277"
+	)
+	rotation := 0
+	server := httptest.NewServer(stdhttp.HandlerFunc(func(w stdhttp.ResponseWriter, r *stdhttp.Request) {
+		stdhttp.SetCookie(w, &stdhttp.Cookie{
+			Name:  "session",
+			Value: fmt.Sprintf("rotation-delta-%04d", rotation),
+			Path:  "/",
+		})
+		rotation++
+		w.WriteHeader(stdhttp.StatusOK)
+	}))
+	defer server.Close()
+
+	ctx := context.Background()
+	proto, err := protocol.Get("http")
+	if err != nil {
+		t.Fatalf("protocol.Get(http): %v", err)
 	}
-	const rotations = 640
+	if err := proto.Init(ctx, map[string]any{"base_url": server.URL}); err != nil {
+		t.Fatalf("http init: %v", err)
+	}
+	defer proto.Teardown(ctx)
+
+	baseConfig := WithSecretValueRedaction(nil, []string{platformSecret})
+	vu := &VUser{
+		Metrics:         NewMetricsCollector(1),
+		Variables:       map[string]string{},
+		ResultSink:      &captureResultSink{},
+		RedactionConfig: baseConfig,
+	}
 	previous := ""
 	for index := 0; index < rotations; index++ {
-		if err := vu.commitRuntimeCredentialSessionSnapshot(); err != nil {
-			t.Fatalf("commit rotation %d: %v", index, err)
+		result, err := proto.Execute(ctx, &protocol.Action{
+			Name: "rotate", Method: stdhttp.MethodGet, Target: "/rotate",
+		})
+		if err != nil {
+			t.Fatalf("rotation %d execute: %v", index, err)
 		}
-		current := fmt.Sprintf("cookie-rotation-%04d-opaque", index)
-		evidence := "new=" + current
+		current := fmt.Sprintf("rotation-delta-%04d", index)
+		evidence := "upstream returned " + current + " alongside " + platformSecret
 		if previous != "" {
-			evidence += ";old=" + previous
+			evidence += " previously " + previous
 		}
-		result := &protocol.Result{
-			Success:                         false,
-			ErrorMessage:                    evidence,
-			ResponseBody:                    evidence,
-			RuntimeCredentialValues:         []string{current},
-			RuntimeCredentialValuesSnapshot: true,
-		}
+		result.Success = false
+		result.ErrorMessage = evidence
+		result.ResponseBody = evidence
 		vu.recordResult(result, dsl.ErrorHandlingConfig{}, dsl.LogConfig{})
 		if vu.runtimeCredentialRedactionErr != nil {
 			t.Fatalf("rotation %d failed redaction capacity: %v", index, vu.runtimeCredentialRedactionErr)
 		}
+		// Previously asserted that current and previous had both been scrubbed out
+		// of the retained evidence.
 		for _, value := range []string{current, previous} {
-			if value != "" && (strings.Contains(result.ErrorMessage, value) ||
-				strings.Contains(result.ResponseBody, value)) {
-				t.Fatalf("rotation %d retained credential %q in %#v", index, value, result)
+			if value != "" && (!strings.Contains(result.ErrorMessage, value) ||
+				!strings.Contains(result.ResponseBody, value)) {
+				t.Fatalf("rotation %d scrubbed harvested cookie %q out of %#v", index, value, result)
 			}
 		}
-		if result.RuntimeCredentialValues != nil || result.RuntimeCredentialValuesSnapshot {
-			t.Fatalf("rotation %d retained protocol-only credential side channel", index)
+		if strings.Contains(result.ErrorMessage, platformSecret) ||
+			strings.Contains(result.ResponseBody, platformSecret) {
+			t.Fatalf("rotation %d leaked the platform-managed secret: %#v", index, result)
 		}
 		previous = current
 	}
-	if err := vu.commitRuntimeCredentialSessionSnapshot(); err != nil {
-		t.Fatal(err)
+	// The bounded retirement FIFO existed only to keep the harvest path from
+	// growing the matcher forever. Nothing is harvested, so the matcher is never
+	// rebuilt at all.
+	if vu.RedactionConfig != baseConfig {
+		t.Fatal("cookie rotation rebuilt the per-VUser redaction matcher")
 	}
-	if got := len(vu.runtimeCredentialSessionHistory); got > maxRuntimeCredentialSessionHistoryValues {
-		t.Fatalf("retired session values = %d, limit %d", got, maxRuntimeCredentialSessionHistoryValues)
-	}
-	if got := vu.runtimeCredentialSessionHistoryBytes; got > maxRuntimeCredentialSessionHistoryBytes {
-		t.Fatalf("retired session bytes = %d, limit %d", got, maxRuntimeCredentialSessionHistoryBytes)
-	}
-	if got := len(vu.RedactionConfig.runtimeSecretValues); got > maxRuntimeCredentialSessionHistoryValues+1 {
-		t.Fatalf("session matcher values = %d, want bounded history plus live value", got)
+	if got := len(allRuntimeSecretValues(vu.RedactionConfig)); got != 1 {
+		t.Fatalf("matcher values after %d rotations = %d, want only the platform-managed secret", rotations, got)
 	}
 }
 

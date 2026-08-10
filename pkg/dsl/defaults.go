@@ -52,7 +52,7 @@ func DefaultScriptConfig() ScriptConfig {
 			RetryDelayMs:    1000,
 			RetryBackoff:    "fixed",
 		},
-		Log: LogConfig{Level: "standard"},
+		Log: LogConfig{Level: "standard", RedactRunEvidence: defaultBoolPtr(true)},
 	}
 }
 

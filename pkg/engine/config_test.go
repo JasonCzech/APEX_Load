@@ -241,7 +241,10 @@ func TestRuntimeProtocolCompositeValuesIncludeResolvedImportedDSN(t *testing.T) 
 	}
 }
 
-func TestRuntimeProtocolBasicCompositeValuesExcludeBareUsername(t *testing.T) {
+// A Basic-auth password written as a literal in the script is script-sourced.
+// The operator running the test reads it in the script, so neither it nor any
+// composite spelling built from it is registered for redaction.
+func TestRuntimeProtocolBasicCompositeValuesSkipScriptLiteralCredentials(t *testing.T) {
 	const (
 		username = "admin"
 		password = "basic-password-4182"
@@ -253,6 +256,35 @@ func TestRuntimeProtocolBasicCompositeValuesExcludeBareUsername(t *testing.T) {
 	payload := base64.StdEncoding.EncodeToString([]byte(pair))
 	values := runtimeProtocolAuthCompositeValues(script, nil)
 
+	for _, unwanted := range []string{username, password, pair, payload, "Basic " + payload} {
+		if containsExactString(values, unwanted) {
+			t.Fatalf("runtime protocol credential values = %#v, registered script literal %q", values, unwanted)
+		}
+	}
+}
+
+// The other half of the same line: when the password defers to the project
+// secret store the operator does NOT have it, so the resolved value and every
+// composite spelling built from it stay protected. The bare username remains a
+// non-secret.
+func TestRuntimeProtocolBasicCompositeValuesProtectSecretStorePassword(t *testing.T) {
+	const (
+		username = "admin"
+		password = "platform-basic-password-5507"
+	)
+	script := &dsl.Script{Config: dsl.ScriptConfig{HTTP: dsl.HTTPConfig{Auth: dsl.AuthConfig{
+		Type: "basic", Username: username, Password: "{{secret.HTTP_BASIC_PASSWORD}}",
+	}}}}
+	resolver := SecretResolverFunc(func(name string) (string, bool) {
+		if name == "HTTP_BASIC_PASSWORD" {
+			return password, true
+		}
+		return "", false
+	})
+	pair := username + ":" + password
+	payload := base64.StdEncoding.EncodeToString([]byte(pair))
+	values := runtimeProtocolAuthCompositeValues(script, resolver)
+
 	if containsExactString(values, username) {
 		t.Fatalf("runtime protocol credential values = %#v, included bare username", values)
 	}
@@ -260,6 +292,27 @@ func TestRuntimeProtocolBasicCompositeValuesExcludeBareUsername(t *testing.T) {
 		if !containsExactString(values, expected) {
 			t.Fatalf("runtime protocol credential values = %#v, want %q", values, expected)
 		}
+	}
+}
+
+// The whitespace-tolerant spelling resolves through the secret resolver exactly
+// like the compact one, so it must be classified as platform-managed too.
+// Getting this wrong would silently declassify a real project secret.
+func TestRuntimeProtocolBasicCompositeValuesAcceptSpacedSecretReference(t *testing.T) {
+	const password = "spaced-platform-password-6714"
+	script := &dsl.Script{Config: dsl.ScriptConfig{HTTP: dsl.HTTPConfig{Auth: dsl.AuthConfig{
+		Type: "basic", Username: "admin", Password: "{{ secret.HTTP_BASIC_PASSWORD }}",
+	}}}}
+	resolver := SecretResolverFunc(func(name string) (string, bool) {
+		if name == "HTTP_BASIC_PASSWORD" {
+			return password, true
+		}
+		return "", false
+	})
+
+	values := runtimeProtocolAuthCompositeValues(script, resolver)
+	if !containsExactString(values, password) {
+		t.Fatalf("runtime protocol credential values = %#v, want spaced-reference secret %q", values, password)
 	}
 }
 

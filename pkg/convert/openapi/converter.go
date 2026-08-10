@@ -2807,7 +2807,16 @@ func renderGovernedExample(value any, contentType string) (string, []string) {
 		// JSON numbers, booleans, objects, or arrays into lossy placeholders.
 		encoded, err := json.MarshalIndent(value, "", "  ")
 		if err != nil {
-			return scrub.Value(renderExample(value, contentType), scrub.Policy{}), []string{"malformed_authored_example"}
+			// The authored example cannot be marshalled, so the rendered text is
+			// only a best-effort representation of it — which is exactly why
+			// malformed_authored_example keeps shared credential projection
+			// disabled for this action. It is not a licence to rewrite the
+			// operator's own imported value: scrubbing here replaced authored
+			// credential material with [REDACTED] inside an executable body and
+			// produced a draft that cannot replay as authored. Retain the exact
+			// render and let the review gate (and run-output redaction) do the
+			// work.
+			return renderExample(value, contentType), []string{"malformed_authored_example"}
 		}
 		return string(encoded), nil
 	}

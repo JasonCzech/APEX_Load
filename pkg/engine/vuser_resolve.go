@@ -190,13 +190,7 @@ func bindProtocolRuntimeRedaction(proto protocol.Protocol, provider func() *Reda
 }
 
 func (vu *VUser) resolveAction(action dsl.Action) *protocol.Action {
-	vu.ensureImportedCredentialTemplatePlan()
-	vu.beginRuntimeCredentialActionResolution()
-	defer vu.endRuntimeCredentialActionResolution()
-	// A protocol result may have staged a complete credential-session snapshot.
-	// Advance it only when the next action begins so the rotating response was
-	// scrubbed with both the request's old value and the response's new value.
-	_ = vu.commitRuntimeCredentialSessionSnapshot()
+	vu.ensureImportedCredentialInspection()
 	vu.unresolvedSecretRefs = nil
 	vu.unresolvedFileRefs = nil
 	vu.unresolvedParameterRefs = nil
@@ -227,7 +221,7 @@ func (vu *VUser) resolveAction(action dsl.Action) *protocol.Action {
 	if vu.Script != nil {
 		discardSuccessfulResponseBody = !logConfigRetainsSuccessfulResponseBody(vu.Script.Config.Log)
 	}
-	return &protocol.Action{
+	resolved := &protocol.Action{
 		Name:                         action.Name,
 		Type:                         action.Type,
 		Method:                       action.Method,
@@ -263,6 +257,16 @@ func (vu *VUser) resolveAction(action dsl.Action) *protocol.Action {
 		RedactedSOAP:                 redactedSOAPAction,
 		DiscardResponseBodyOnSuccess: discardSuccessfulResponseBody,
 	}
+	// The authored action is the only place the origin of these credentials can
+	// be read; by the time the execution path sees the resolved action,
+	// {{secret.NAME}} has already been replaced by its value. Both per-action
+	// surfaces — the auth block and the target's URL userinfo — are enumerated
+	// by actionCredentialCompositeSurfaces.
+	vu.actionCredentialComposites = resolvedActionCredentialComposites{
+		action: resolved,
+		values: runtimeActionCompositeValues(&action, resolved),
+	}
+	return resolved
 }
 
 func actionBodyTemplateValueEncoding(metadata map[string]any) string {
@@ -591,7 +595,6 @@ func (vu *VUser) interpolateWithSecretsTransform(s string, transform func(string
 			}
 		}
 		if resolvedOK {
-			vu.recordRuntimeCredentialActionTemplate(expr, resolvedValue)
 			if transform != nil {
 				resolvedValue = transform(resolvedValue)
 				redactedValue = transform(redactedValue)
@@ -785,9 +788,15 @@ func (vu *VUser) mergeExtractions(r *protocol.Result) error {
 	// extraction. If its reversible spellings exceed the bounded matcher
 	// budget, fail this extraction atomically instead of keeping a value that
 	// later evidence could expose.
+	// Only the NAME of the receiving variable decides this. An extraction used to
+	// also be registered when an import happened to reference that variable from
+	// a credential-governed field, but import provenance says nothing about the
+	// value the system under test just returned — and the operator reads the
+	// import. scrub.SensitiveName is origin-independent and stays: a token landing
+	// in `session_token` is still suppressed.
 	sensitiveScopes := make(map[string][]string)
 	for key, value := range r.Extractions {
-		if scrub.SensitiveName(key) || vu.importedCredentialVariableName(key) {
+		if scrub.SensitiveName(key) {
 			sensitiveScopes["extraction:"+strings.ToLower(strings.TrimSpace(key))] = []string{value}
 		}
 	}

@@ -1201,7 +1201,13 @@ http:
 	})
 }
 
-func TestInspectNativeScrubsLiteralXMLCredentialsWithoutReformattingBody(t *testing.T) {
+// Literal XML credentials are preserved byte-for-byte. They used to be replaced
+// by {{secret.NAME}} at import, which handed the operator a stored bundle and an
+// exported script that could not replay until they bound values they never asked
+// to externalize. The body must therefore round trip exactly — credential spans
+// included — while remaining recognized (so ordinary parameterization does not
+// claim them).
+func TestInspectNativePreservesLiteralXMLCredentialsWithoutReformattingBody(t *testing.T) {
 	const body = `<soap:Envelope xmlns:soap="urn:soap" xmlns:auth="urn:auth" keep="unchanged">
   <soap:Body>
     <login apiKey='attribute-api-key' mode="unchanged">
@@ -1236,63 +1242,35 @@ http:
 
 	first := inspect(t)
 	candidate := first.Scripts[0]
-	if len(candidate.SecretRequirements) != 5 {
-		t.Fatalf("XML secret requirements = %#v", candidate.SecretRequirements)
+	if len(candidate.SecretRequirements) != 0 {
+		t.Fatalf("XML secret requirements = %#v, want no re-entry bindings for preserved literals",
+			candidate.SecretRequirements)
 	}
 	expectedBody := body + "\n"
-	identity := make(map[string]string)
-	for _, requirement := range candidate.SecretRequirements {
-		if !strings.HasPrefix(requirement.Key, nativeXMLRequirementKeyPrefix) ||
-			requirement.Value == "" ||
-			!strings.Contains(requirement.Context, "Bruno XML body") {
-			t.Fatalf("XML secret requirement = %#v", requirement)
-		}
-		expectedBody = strings.Replace(expectedBody, requirement.Value, requirement.Replacement, 1)
-		identity[requirement.ID] = requirement.Replacement
-	}
 	actionBody := candidate.Script.Actions[0].Body
 	if actionBody != expectedBody {
-		t.Fatalf("XML body changed outside credential spans:\n got: %q\nwant: %q", actionBody, expectedBody)
+		t.Fatalf("XML body changed:\n got: %q\nwant: %q", actionBody, expectedBody)
 	}
-	for _, preserved := range []string{
-		`xmlns:auth="urn:auth"`,
-		`keep="unchanged"`,
-		`mode="unchanged"`,
-		`<username>alice</username>`,
-		`<note>non-sensitive-text</note>`,
-	} {
-		if !strings.Contains(actionBody, preserved) {
-			t.Fatalf("non-sensitive XML fragment %q was changed:\n%s", preserved, actionBody)
-		}
+	if strings.Contains(actionBody, "{{secret.") {
+		t.Fatalf("XML body carries an import-time secret reference:\n%s", actionBody)
 	}
 	sanitized := tarFile(t, first.SanitizedArchive, "request.yml")
-	for _, credential := range []string{
+	for _, authored := range []string{
 		"attribute-api-key",
 		"p&amp;w",
 		"element-token",
 		"element-secret",
 		"literal-auth",
+		"non-sensitive-text",
 	} {
-		if bytes.Contains(sanitized, []byte(credential)) {
-			t.Fatalf("sanitized XML retained %q:\n%s", credential, sanitized)
+		if !bytes.Contains(sanitized, []byte(authored)) {
+			t.Fatalf("sanitized XML lost authored content %q:\n%s", authored, sanitized)
 		}
-	}
-	if !bytes.Contains(sanitized, []byte("non-sensitive-text")) {
-		t.Fatalf("sanitized XML lost non-sensitive content:\n%s", sanitized)
 	}
 
 	second := inspect(t)
-	secondIdentity := make(map[string]string)
-	for _, requirement := range second.Scripts[0].SecretRequirements {
-		secondIdentity[requirement.ID] = requirement.Replacement
-	}
-	if len(identity) != len(secondIdentity) {
-		t.Fatalf("XML requirement identity count changed: first=%#v second=%#v", identity, secondIdentity)
-	}
-	for id, replacement := range identity {
-		if secondIdentity[id] != replacement {
-			t.Fatalf("XML requirement identity is not deterministic: first=%#v second=%#v", identity, secondIdentity)
-		}
+	if got := second.Scripts[0].Script.Actions[0].Body; got != actionBody {
+		t.Fatalf("XML projection is not deterministic: first=%q second=%q", actionBody, got)
 	}
 }
 

@@ -774,10 +774,11 @@ func (s *Server) handleCreateScript(w http.ResponseWriter, r *http.Request) {
 			writeSecretBindingsRequired(w, unresolved)
 			return
 		}
-		// Persist the projection, not the caller's raw object. The binding scanner
-		// intentionally ignores non-executable source-review evidence, but durable
-		// storage must still never retain credentials embedded in that metadata.
-		script = projected
+		// Save the caller's executable object, not the disclosure projection: a
+		// stored script must always be runnable. Non-executable source-review
+		// evidence is still scrubbed before the durable write by
+		// sanitizePersistentImportReviewSurfaces, which every persistence path
+		// applies independently of masking.
 		if err := reconcileMaskedScriptSecrets(script, nil); err != nil {
 			writeError(w, http.StatusBadRequest, err.Error())
 			return

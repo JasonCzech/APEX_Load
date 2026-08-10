@@ -1959,7 +1959,7 @@ func preservedJavaVMSettings(runtimeCfg *RuntimeConfig) map[string]any {
 		}
 	}
 	if runtimeCfg.JavaVMParametersRaw != "" {
-		settings["additional_vm_parameters_raw"] = disclosureSafeJavaVMParameterRow(runtimeCfg.JavaVMParametersRaw)
+		settings["additional_vm_parameters_raw"] = executableJavaVMParameterRow(runtimeCfg.JavaVMParametersRaw)
 	}
 	// LoadRunner spills a long parameter line across numbered companion keys, so
 	// the single raw value above cannot round-trip the source. Preserve every
@@ -1967,7 +1967,7 @@ func preservedJavaVMSettings(runtimeCfg *RuntimeConfig) map[string]any {
 	if len(runtimeCfg.JavaVMParameterRows) > 1 {
 		rows := make([]string, len(runtimeCfg.JavaVMParameterRows))
 		for index, row := range runtimeCfg.JavaVMParameterRows {
-			rows[index] = disclosureSafeJavaVMParameterRow(row)
+			rows[index] = executableJavaVMParameterRow(row)
 		}
 		settings["additional_vm_parameter_rows"] = rows
 	}

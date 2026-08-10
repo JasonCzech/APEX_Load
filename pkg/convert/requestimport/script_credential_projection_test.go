@@ -233,7 +233,12 @@ func TestProjectScriptCredentialsProjectsHTTPSequenceChildren(t *testing.T) {
 	assertCredentialPreservationFindingsNoGate(t, result.Findings)
 }
 
-func TestProjectScriptCredentialsRemovesMalformedSequenceBodyShape(t *testing.T) {
+// A malformed (non-string) sequence body cannot be inspected by any projector.
+// It must still be retained byte-for-byte: overwriting it with the redaction
+// sentinel destroyed an imported payload the operator already owned and did not
+// make the shape any more valid. The gate, not a rewrite, is what keeps the
+// draft from executing.
+func TestProjectScriptCredentialsPreservesMalformedSequenceBodyShape(t *testing.T) {
 	t.Parallel()
 	const canary = "malformed-sequence-body-canary"
 	script := validBaseScript()
@@ -266,16 +271,27 @@ func TestProjectScriptCredentialsRemovesMalformedSequenceBodyShape(t *testing.T)
 	if marshalErr != nil {
 		t.Fatalf("json.Marshal: %v", marshalErr)
 	}
-	if strings.Contains(string(payload), canary) {
-		t.Fatalf("malformed sequence body retained credential material: %s", payload)
+	if !strings.Contains(string(payload), canary) {
+		t.Fatalf("malformed sequence body destroyed imported credential material: %s", payload)
+	}
+	if strings.Contains(string(payload), `"body":"[REDACTED]"`) {
+		t.Fatalf("malformed sequence body was replaced by a redaction sentinel: %s", payload)
 	}
 	requests, _ := script.Actions[0].Params["requests"].([]map[string]any)
-	if len(requests) != 1 || requests[0]["body"] != "[REDACTED]" {
-		t.Fatalf("sequence request = %#v, want disclosure-safe body sentinel", requests)
+	if len(requests) != 1 {
+		t.Fatalf("sequence requests = %#v, want the authored request retained", requests)
+	}
+	if body, _ := requests[0]["body"].(string); body != `{"password":"`+canary+`"}` {
+		t.Fatalf("sequence request body = %#v, want the exact imported payload in a representable form", requests[0]["body"])
 	}
 	metadata, _ := requests[0]["metadata"].(map[string]any)
-	if metadata["execution_blocker"] == nil {
+	if metadata["execution_blocker"] != "credential_request_body_shape_invalid" {
 		t.Fatalf("metadata = %#v, malformed body shape must block execution", metadata)
+	}
+	targets, _ := metadata[dsl.ImportPreservedCredentialTargetsMetadataKey].([]credentialpolicy.TargetRef)
+	if len(targets) != 1 ||
+		targets[0].Field != "actions[0].params.requests[0].body.opaque" {
+		t.Fatalf("preserved credential targets = %#v, want one opaque body locator", metadata[dsl.ImportPreservedCredentialTargetsMetadataKey])
 	}
 	if issues := dsl.ValidateScriptIssues(script); len(issues) != 0 {
 		t.Fatalf("DSL validation issues = %#v", issues)
@@ -1393,6 +1409,13 @@ func TestProjectScriptCredentialsRetainsProtectedSnapshotOnTraversalFailure(t *t
 	if len(script.Actions) != 1 || script.Actions[0].Type != "source_review" ||
 		script.Actions[0].Metadata["execution_blocker"] != "credential_request_traversal_failed" {
 		t.Fatalf("fallback actions = %#v, want one blocked review placeholder", script.Actions)
+	}
+	// The request tree exceeds dsl.MaxScriptActionDefinitions and can never be
+	// stored as a valid script, which is why this one fallback still replaces
+	// the actions. The base URL is not part of that limit, so it must survive:
+	// substituting an .invalid host destroyed an executable value for no reason.
+	if script.Config.BaseURL != "https://example.test" {
+		t.Fatalf("fallback base URL = %q, want the authored base URL retained", script.Config.BaseURL)
 	}
 	encoded, _ := script.Metadata.Import.Preserved["credential_traversal_source_snapshot_base64"].(string)
 	snapshot, decodeErr := base64.StdEncoding.DecodeString(encoded)

@@ -113,29 +113,24 @@ func (vu *VUser) evalConditionEvidence(cond *dsl.Condition) (bool, ConditionEvid
 }
 
 // conditionEvidenceOperand keeps debugger predicates useful without returning
-// resolved credential material. Direct project-secret references (and
+// platform-managed credential material. Direct project-secret references (and
 // sensitive variable/data/parameter references such as {{var.access_token}})
 // remain as their author-facing template text. Other operands retain their
 // evaluated value, with the run's exact-value redaction applied as a final
 // boundary in case secret material arrived through an indirect variable.
+//
+// An expression is no longer suppressed merely because an import placed it in a
+// credential-governed field. That is script-sourced provenance, and blanking the
+// evaluated operand made the debugger unable to explain why a predicate failed
+// for a value the operator can read in the script anyway.
 func (vu *VUser) conditionEvidenceOperand(raw, resolved string) string {
 	if vu.runtimeCredentialRedactionError() != nil {
 		return redactedPayloadValue
 	}
-	if conditionOperandContainsSensitiveReference(raw) ||
-		vu.conditionOperandContainsImportedCredentialReference(raw) {
+	if conditionOperandContainsSensitiveReference(raw) {
 		return scrubSensitiveTextWithConfig(raw, vu.RedactionConfig)
 	}
 	return scrubSensitiveTextWithConfig(resolved, vu.RedactionConfig)
-}
-
-func (vu *VUser) conditionOperandContainsImportedCredentialReference(value string) bool {
-	for _, match := range scriptTemplateReferencePattern.FindAllStringSubmatch(value, -1) {
-		if len(match) >= 2 && vu.importedCredentialTemplateExpression(match[1]) {
-			return true
-		}
-	}
-	return false
 }
 
 func conditionOperandContainsSensitiveReference(value string) bool {

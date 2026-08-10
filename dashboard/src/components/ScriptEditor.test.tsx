@@ -6889,7 +6889,9 @@ describe('ScriptEditor', () => {
     expect(activeRuntimeBodyText()).not.toContain('Block Scheduling')
     expect(container.querySelector('.logging-settings-layout')).toBeTruthy()
     expect(container.querySelector('.logging-checkbox-group.runtime-checkbox-list')).toBeTruthy()
-    expect(container.querySelectorAll('.logging-checkbox-group .checkbox-label')).toHaveLength(4)
+    // on_error_only + run-evidence redaction + the three extended_options toggles.
+    expect(activeRuntimeBodyText()).toContain('Redact credentials in run evidence')
+    expect(container.querySelectorAll('.logging-checkbox-group .checkbox-label')).toHaveLength(5)
 
     await clickRuntimeCategory('Web HTTP/HTML Compatibility')
 

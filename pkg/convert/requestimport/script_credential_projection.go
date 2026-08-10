@@ -427,15 +427,29 @@ func ProjectScriptCredentials(
 		return result, fmt.Errorf("HTTP credential review exceeded the bounded action traversal limit")
 	}
 	if requirementConflict {
-		replaceScriptWithCredentialTraversalReviewDraft(script, options.SourceProfile, fallbackSnapshot)
-		result.AdditionalURLs = nil
+		// The request tree itself is intact and valid here; only the credential
+		// bookkeeping is ambiguous. Keep every authored action, base URL, and
+		// imported value and gate execution instead of swapping in a review stub
+		// that throws the operator's script away.
+		gateScriptWithCredentialReviewFailure(
+			script,
+			options.SourceProfile,
+			fallbackSnapshot,
+			"credential_request_review_conflict",
+			"conflicting credential requirement provenance prevented a complete HTTP credential review",
+		)
 		result.FallbackDraft = true
 		return result, fmt.Errorf("HTTP credential review found conflicting requirement provenance")
 	}
 	synchronizeEnterpriseSequenceProvenance(script)
 	if err := importreview.ApplyToScript(script, findings); err != nil {
-		replaceScriptWithCredentialTraversalReviewDraft(script, options.SourceProfile, fallbackSnapshot)
-		result.AdditionalURLs = nil
+		gateScriptWithCredentialReviewFailure(
+			script,
+			options.SourceProfile,
+			fallbackSnapshot,
+			"credential_request_review_unattachable",
+			"the HTTP credential review could not be attached to every imported request",
+		)
 		result.FallbackDraft = true
 		return result, fmt.Errorf("attach durable HTTP credential review: %w", err)
 	}
@@ -487,7 +501,23 @@ func mergeSourceVariableNames(left, right []string) []string {
 	return out
 }
 
-func redactCredentialSourceVariables(
+// preserveCredentialSourceVariables records runtime-redaction locators for the
+// script parameters and data sources that supplied a credential value.
+//
+// It used to overwrite parameter.Values and DataSource.InlineData with the
+// redaction sentinel. That destroyed executable runtime data the operator had
+// already imported: a parameter list rewritten to "[REDACTED]" sends that
+// literal on the wire, and a blanked inline data source strands every other
+// column in the same CSV. Nothing from an imported script is a project secret,
+// so the value stays and only its locator is published; run-output redaction
+// consumes those locators to mask logs, snapshots, and reports.
+//
+// Every field name published here must be one pkg/engine can resolve
+// (collectScriptConfigTarget). engine.ImportedCredentialValues is fail-closed:
+// a locator it does not understand refuses the run instead of redacting
+// anything, so an unresolvable locator is worse than no locator at all. The
+// cross-package guard is TestPublishedCredentialLocatorFieldsAreRuntimeResolvable.
+func preserveCredentialSourceVariables(
 	script *dsl.Script,
 	requirements []credentialpolicy.Requirement,
 ) {
@@ -498,7 +528,7 @@ func redactCredentialSourceVariables(
 	for _, requirement := range requirements {
 		// Unproven {{var.*}} syntax is governed as a complete credential value
 		// even when an adapter did not provide a SourceVariables materialization
-		// map. The original parameter value must still leave the public draft.
+		// map, so its backing parameter still needs a redaction locator.
 		collectVariableReferences(requirement.Value, names)
 		collectParameterReferences(requirement.Value, names)
 		for _, name := range requirement.SourceVariableNames {
@@ -511,36 +541,69 @@ func redactCredentialSourceVariables(
 	if len(names) == 0 {
 		return
 	}
-	remainingReferences, referenceScanComplete := scanRemainingScriptReferences(script)
-	dataSources := make(map[string]struct{})
+	var targets []credentialpolicy.TargetRef
+	dataSourceColumns := make(map[string]map[string]struct{})
 	for index := range script.Parameters {
 		parameter := &script.Parameters[index]
 		if !stringSetContainsFold(names, parameter.Name) {
 			continue
 		}
-		// A source that still supplies an authored non-credential surface is not
-		// exclusively credential material. Redacting it would preserve the
-		// template syntactically while changing the request's runtime value.
-		if !referenceScanComplete || stringSetContainsFold(remainingReferences.parameters, parameter.Name) {
+		if parameterHasRuntimeValue(*parameter) {
+			targets = append(targets, credentialpolicy.TargetRef{
+				Field: fmt.Sprintf(
+					scriptParameterValuesLocatorPrefix+"%d"+scriptParameterValuesLocatorSuffix,
+					index,
+				),
+				Index: index,
+			})
+		}
+		source := strings.TrimSpace(parameter.DataSource)
+		column := strings.TrimSpace(parameter.Column)
+		if source == "" || column == "" {
+			// The runtime resolves a data-source-backed parameter only when it
+			// has BOTH a source and a column, so a binding without a column
+			// supplies no runtime value for redaction to mask.
 			continue
 		}
-		if len(parameter.Values) > 0 {
-			parameter.Values = []string{credential.Redacted}
+		if dataSourceColumns[source] == nil {
+			dataSourceColumns[source] = make(map[string]struct{})
 		}
-		if source := strings.TrimSpace(parameter.DataSource); source != "" {
-			dataSources[source] = struct{}{}
-		}
+		dataSourceColumns[source][column] = struct{}{}
 	}
 	for index := range script.DataSources {
 		source := &script.DataSources[index]
-		if _, protected := dataSources[strings.TrimSpace(source.Name)]; !protected {
+		columns := dataSourceColumns[strings.TrimSpace(source.Name)]
+		if len(columns) == 0 || source.InlineData == "" {
 			continue
 		}
-		if source.InlineData != "" {
-			source.InlineData = credential.Redacted
-			source.Encoding = ""
+		// The credential column travels in the locator. A whole-sheet locator
+		// would make the runtime register every cell of the source, redacting
+		// unrelated columns out of the operator's own run evidence.
+		for _, column := range sortedStringSet(columns) {
+			targets = append(targets, credentialpolicy.TargetRef{
+				Field: fmt.Sprintf(
+					scriptDataSourceLocatorPrefix+"%d"+scriptDataSourceLocatorSuffix,
+					index,
+				),
+				Index:   index,
+				Pointer: column,
+			})
 		}
 	}
+	attachScriptPreservedCredentialTargets(script, targets)
+}
+
+// parameterHasRuntimeValue reports whether an inline value list still carries
+// something a run could emit. An earlier conversion pass can blank the entries
+// of a list it consumed, and a locator pointing at an all-empty list would name
+// no executable value.
+func parameterHasRuntimeValue(parameter dsl.Parameter) bool {
+	for _, value := range parameter.Values {
+		if strings.TrimSpace(value) != "" && value != credential.Redacted {
+			return true
+		}
+	}
+	return false
 }
 
 func projectBaseURLCredentials(
@@ -575,10 +638,18 @@ func projectBaseURLCredentials(
 		},
 	)
 	if err != nil || projection.Disposition == credentialpolicy.Rejected {
-		script.Config.BaseURL = "https://set-base-url.invalid"
-		if err != nil {
-			projection = rejectedScriptCredentialProjection(source, "credential_base_url_projection_failed")
-		}
+		// A projection failure is a review gate, not permission to discard the
+		// operator's own base URL. Retain the authored bytes and record the
+		// locator so runtime redaction can still mask them in run output.
+		script.Config.BaseURL = rawBaseURL
+		projection.Merge(blockedPreservedScriptCredentialProjection(
+			source,
+			"credential_base_url_projection_failed",
+			credentialpolicy.TargetRef{
+				RequestKey: options.CandidateKey + ":base_url",
+				Field:      "config.base_url",
+			},
+		))
 	} else {
 		script.Config.BaseURL = projected
 	}
@@ -632,10 +703,14 @@ func projectAdditionalURLCredentials(
 			},
 		)
 		if err != nil || projection.Disposition == credentialpolicy.Rejected {
-			projectedURLs[index] = credential.Redacted
-			if err != nil {
-				projection = rejectedScriptCredentialProjection(source, "credential_additional_url_projection_failed")
-			}
+			// Retain the exact imported URL. Replacing it with a redaction
+			// sentinel destroys a value the operator already owns and leaves an
+			// allowlist/recorded-resource entry that can never match again.
+			projectedURLs[index] = item.Value
+			projection.Merge(blockedScriptCredentialProjection(
+				source,
+				"credential_additional_url_projection_failed",
+			))
 		} else {
 			projectedURLs[index] = projected
 		}
@@ -680,13 +755,18 @@ func projectOAuthTokenURLCredentials(
 		)
 		aggregate.Merge(projection)
 		if err != nil || projection.Disposition == credentialpolicy.Rejected {
-			surface.set("https://set-token-url.invalid")
-			if err != nil {
-				aggregate.Merge(rejectedScriptCredentialProjection(
-					surfaceSource,
-					"credential_oauth_token_url_projection_failed",
-				))
-			}
+			// Keep the authored token endpoint. Substituting an .invalid host
+			// guarantees the OAuth exchange fails at replay; the review gate
+			// below already prevents execution until an operator looks at it.
+			surface.set(surface.raw)
+			aggregate.Merge(blockedPreservedScriptCredentialProjection(
+				surfaceSource,
+				"credential_oauth_token_url_projection_failed",
+				credentialpolicy.TargetRef{
+					RequestKey: scriptOptions.CandidateKey + ":" + ref.Path + surface.requestKeySuffix,
+					Field:      surface.targetField,
+				},
+			))
 			continue
 		}
 		surface.set(projected)
@@ -735,11 +815,13 @@ func projectEnterpriseRequestSurface(
 		projected, projection, err := credentialpolicy.ProjectRawURL(originalURL, urlOptions)
 		if err != nil || projection.Disposition == credentialpolicy.Rejected {
 			aggregate.Merge(projection)
-			targetInput = "/"
-			metadata["original_url"] = credential.Redacted
-			if err != nil {
-				aggregate.Merge(rejectedScriptCredentialProjection(source, "credential_request_url_projection_failed"))
-			}
+			// original_url is provenance metadata. Failing to project it is not
+			// a reason to overwrite the executable target with "/" nor to erase
+			// the recorded URL; keep both and gate the action for review.
+			aggregate.Merge(blockedScriptCredentialProjection(
+				source,
+				"credential_request_url_projection_failed",
+			))
 		} else {
 			metadata["original_url"] = projected
 			// original_url is provenance only. Its disclosure-safe review
@@ -758,10 +840,18 @@ func projectEnterpriseRequestSurface(
 	projectedTarget, targetProjection, targetErr := credentialpolicy.ProjectRawURL(targetInput, targetOptions)
 	aggregate.Merge(targetProjection)
 	if targetErr != nil || targetProjection.Disposition == credentialpolicy.Rejected {
-		enterpriseSetSurfaceTarget(ref, "/")
-		if targetErr != nil {
-			aggregate.Merge(rejectedScriptCredentialProjection(source, "credential_request_url_projection_failed"))
-		}
+		// Retain the authored request target byte-for-byte. Rewriting it to "/"
+		// silently repoints the request at the base URL root, which is both a
+		// destroyed credential value and a request the operator never wrote.
+		enterpriseSetSurfaceTarget(ref, targetInput)
+		aggregate.Merge(blockedPreservedScriptCredentialProjection(
+			source,
+			"credential_request_url_projection_failed",
+			credentialpolicy.TargetRef{
+				RequestKey: requestKey,
+				Field:      ref.Path + ".target",
+			},
+		))
 	} else {
 		enterpriseSetSurfaceTarget(ref, projectedTarget)
 	}
@@ -780,12 +870,23 @@ func projectEnterpriseRequestSurface(
 	projectedHeaders, headerProjection, headerErr := credentialpolicy.ProjectHeaders(headerInput, headerOptions)
 	aggregate.Merge(headerProjection)
 	if headerErr != nil || headerProjection.Disposition == credentialpolicy.Rejected {
+		// One unprojectable header must not blank every header on the request.
+		// Retain the authored occurrences exactly and record their locators so
+		// runtime redaction can mask them without an operator re-entering them.
+		preservedHeaderTargets := make([]credentialpolicy.TargetRef, 0, len(headers))
 		for index := range headers {
-			headers[index].Value = credential.Redacted
+			preservedHeaderTargets = append(preservedHeaderTargets, credentialpolicy.TargetRef{
+				RequestKey: requestKey,
+				Field:      ref.Path + ".header_list",
+				Index:      index,
+				Occurrence: index,
+			})
 		}
-		if headerErr != nil {
-			aggregate.Merge(rejectedScriptCredentialProjection(source, "credential_request_header_projection_failed"))
-		}
+		aggregate.Merge(blockedPreservedScriptCredentialProjection(
+			source,
+			"credential_request_header_projection_failed",
+			preservedHeaderTargets...,
+		))
 	} else {
 		for index := range projectedHeaders {
 			headers[index].Name = projectedHeaders[index].Name
@@ -796,9 +897,22 @@ func projectEnterpriseRequestSurface(
 
 	body, encoding, bodyPresent, bodyShapeValid := enterpriseSurfaceBody(ref)
 	if bodyPresent && !bodyShapeValid {
-		enterpriseSetSurfaceBody(ref, credential.Redacted)
+		// The adapter stored a non-string body (or encoding), which no projector
+		// can inspect and the DSL cannot hold. Overwriting it with a redaction
+		// sentinel destroyed an imported payload the operator already owned.
+		// Store the exact imported value using the DSL's valid representation —
+		// the same contract the malformed-base64 branch below uses — and gate
+		// execution; never replace credential material with a sentinel.
+		enterpriseSetSurfaceBody(ref, representableEnterpriseSurfaceBody(ref.Request["body"]))
 		enterpriseSetSurfaceBodyEncoding(ref, "")
-		aggregate.Merge(rejectedScriptCredentialProjection(source, "credential_request_body_shape_invalid"))
+		aggregate.Merge(blockedPreservedScriptCredentialProjection(
+			source,
+			"credential_request_body_shape_invalid",
+			credentialpolicy.TargetRef{
+				RequestKey: requestKey,
+				Field:      ref.Path + ".body.opaque",
+			},
+		))
 	} else if body != "" {
 		payload := []byte(body)
 		base64Encoded := strings.EqualFold(strings.TrimSpace(encoding), "base64")
@@ -943,13 +1057,18 @@ func enterpriseSurfaceCredentialSource(ref dslwalk.SurfaceRef, sourceProfile str
 	}
 }
 
-func rejectedScriptCredentialProjection(source credentialpolicy.SourceRef, code string) credentialpolicy.Result {
+// blockedScriptCredentialProjection gates a surface whose projection failed
+// without claiming an executable preserved locator. It is used where the
+// affected value is provenance metadata rather than a wire field, so the
+// imported bytes stay exactly as authored but the draft cannot execute until
+// an operator reviews it.
+func blockedScriptCredentialProjection(source credentialpolicy.SourceRef, code string) credentialpolicy.Result {
 	return credentialpolicy.Result{
-		Disposition: credentialpolicy.Rejected,
+		Disposition: credentialpolicy.BlockedDraft,
 		Findings: []credentialpolicy.Finding{{
 			Code:        code,
 			Source:      source,
-			Disposition: credentialpolicy.Rejected,
+			Disposition: credentialpolicy.BlockedDraft,
 		}},
 	}
 }
@@ -1198,6 +1317,24 @@ func enterpriseSurfaceBody(ref dslwalk.SurfaceRef) (body, encoding string, prese
 	return body, encoding, true, true
 }
 
+// representableEnterpriseSurfaceBody renders a non-string imported body into
+// the string the DSL can hold without discarding what the source contained.
+// JSON is preferred because it round trips objects, arrays, numbers, and
+// booleans exactly; the Go rendering is only a last resort for values JSON
+// cannot encode, and the surface is execution-gated either way.
+func representableEnterpriseSurfaceBody(body any) string {
+	if body == nil {
+		return ""
+	}
+	if text, ok := body.(string); ok {
+		return text
+	}
+	if encoded, err := json.Marshal(body); err == nil {
+		return string(encoded)
+	}
+	return fmt.Sprint(body)
+}
+
 func enterpriseSetSurfaceBody(ref dslwalk.SurfaceRef, body string) {
 	if ref.Action != nil {
 		ref.Action.Body = body
@@ -1246,13 +1383,6 @@ func provenVariableReferencesForSurface(
 		return nil
 	}
 	return referenced
-}
-
-func enterpriseRedactedBody(encoding string) string {
-	if strings.EqualFold(strings.TrimSpace(encoding), "base64") {
-		return base64.StdEncoding.EncodeToString([]byte(credential.Redacted))
-	}
-	return credential.Redacted
 }
 
 func enterpriseSurfaceAuth(ref dslwalk.SurfaceRef) (dsl.AuthConfig, bool) {
@@ -1384,6 +1514,67 @@ func credentialTraversalSnapshot(script *dsl.Script) string {
 	return base64.StdEncoding.EncodeToString(payload)
 }
 
+// gateScriptWithCredentialReviewFailure blocks execution of an imported script
+// whose credential review could not be completed, without altering a single
+// executable byte of it.
+//
+// The credential review failing is not evidence that the imported requests are
+// wrong: the base URL, actions, bodies, headers, and imported credential values
+// are exactly what the operator's source contained, and they must survive into
+// the stored draft so the operator can repair the gate instead of re-authoring
+// the script. Gates are written directly onto the top-level actions because the
+// bounded walker is exactly what may have failed.
+func gateScriptWithCredentialReviewFailure(
+	script *dsl.Script,
+	sourceProfile string,
+	snapshot string,
+	code string,
+	detail string,
+) {
+	if script == nil {
+		return
+	}
+	sourceProfile = firstNonEmpty(strings.TrimSpace(sourceProfile), "import")
+	retainCredentialTraversalSnapshot(script, snapshot)
+	finding := importreview.Finding{
+		Code:       code,
+		Severity:   diag.Blocker,
+		Element:    "imported HTTP requests",
+		Detail:     detail,
+		Source:     sourceProfile,
+		ReasonCode: code,
+		Resolution: "resolve_the_credential_review_and_remove_gate",
+		Gate:       importreview.GateExecution,
+	}
+	for _, actions := range [][]dsl.Action{script.Init, script.Actions, script.Teardown} {
+		for index := range actions {
+			importreview.ApplyToAction(&actions[index], []importreview.Finding{finding})
+		}
+	}
+}
+
+func retainCredentialTraversalSnapshot(script *dsl.Script, snapshot string) {
+	if script == nil || snapshot == "" {
+		return
+	}
+	if script.Metadata == nil {
+		script.Metadata = &dsl.ScriptMetadata{}
+	}
+	if script.Metadata.Import == nil {
+		script.Metadata.Import = &dsl.ImportMetadata{}
+	}
+	if script.Metadata.Import.Preserved == nil {
+		script.Metadata.Import.Preserved = map[string]any{}
+	}
+	script.Metadata.Import.Preserved["credential_traversal_source_snapshot_base64"] = snapshot
+}
+
+// replaceScriptWithCredentialTraversalReviewDraft is the last-resort fallback
+// for a request tree the bounded walker cannot traverse. Such a tree exceeds
+// dsl.MaxScriptActionDefinitions, so it can never be stored as a valid script;
+// the exact source is retained verbatim in the preserved snapshot instead. The
+// authored base URL is deliberately kept: it is an executable value in its own
+// right and nothing about the traversal failure makes it unusable.
 func replaceScriptWithCredentialTraversalReviewDraft(script *dsl.Script, sourceProfile, snapshot string) {
 	if script == nil {
 		return
@@ -1409,19 +1600,7 @@ func replaceScriptWithCredentialTraversalReviewDraft(script *dsl.Script, sourceP
 		Resolution: "reduce_or_replace_the_request_tree_and_remove_gate",
 		Gate:       importreview.GateExecution,
 	}})
-	if script.Metadata == nil {
-		script.Metadata = &dsl.ScriptMetadata{}
-	}
-	if script.Metadata.Import == nil {
-		script.Metadata.Import = &dsl.ImportMetadata{}
-	}
-	if script.Metadata.Import.Preserved == nil {
-		script.Metadata.Import.Preserved = map[string]any{}
-	}
-	if snapshot != "" {
-		script.Metadata.Import.Preserved["credential_traversal_source_snapshot_base64"] = snapshot
-	}
-	script.Config.BaseURL = "https://set-base-url.invalid"
+	retainCredentialTraversalSnapshot(script, snapshot)
 	script.Init = nil
 	script.Actions = []dsl.Action{action}
 	script.Teardown = nil

@@ -582,7 +582,7 @@ func ParseRuntimeCfg(content string) *RuntimeConfig {
 		// The base row remains JavaVMParametersRaw so the review-artifact
 		// evidence still names one correctable source line; every row is kept
 		// in order on JavaVMParameterRows.
-		rc.JavaVMParametersRaw = disclosureSafeJavaVMParameterRow(rows[0].value)
+		rc.JavaVMParametersRaw = executableJavaVMParameterRow(rows[0].value)
 		// Provenance is recorded for EVERY row before any parsing, because a
 		// malformed row must not erase the evidence of the rows after it: the
 		// argv list is discarded on a parse error, so these strings are the only
@@ -594,7 +594,7 @@ func ParseRuntimeCfg(content string) *RuntimeConfig {
 			)
 			rc.JavaVMParameterRows = append(
 				rc.JavaVMParameterRows,
-				disclosureSafeJavaVMParameterRow(row.value),
+				executableJavaVMParameterRow(row.value),
 			)
 		}
 		parameters := make([]string, 0, len(rows))
@@ -2950,11 +2950,24 @@ func validateImportedJavaVMParameterStructure(parameters []string) []javarunner.
 	)
 }
 
+// executableJavaVMParameters returns the argv the runner can actually accept.
+//
+// It used to return nil whenever any entry tripped validateImportedJavaVMParameters,
+// which includes the import-time *sensitivity* recognizer. One credential-looking
+// -Dname= assignment therefore deleted the operator's entire JVM command line and
+// the script stopped running as authored. Sensitivity is a review finding — the
+// operator already has the value — so only tokens the runner structurally rejects
+// are omitted here, exactly as the per-script pass in applyJavaVMParameterRejectionReview
+// already does. Every rejection is still reported and the draft stays execution-gated.
 func executableJavaVMParameters(parameters []string) []string {
-	if len(parameters) == 0 || len(validateImportedJavaVMParameters(parameters)) > 0 {
+	if len(parameters) == 0 {
 		return nil
 	}
-	return append([]string(nil), parameters...)
+	structuralIssues := validateImportedJavaVMParameterStructure(parameters)
+	if len(structuralIssues) == 0 {
+		return append([]string(nil), parameters...)
+	}
+	return javaVMParametersWithoutStructuralIssues(parameters, structuralIssues)
 }
 
 func javaVMParametersWithoutStructuralIssues(
@@ -2989,6 +3002,11 @@ func javaVMParametersWithoutStructuralIssues(
 	return out
 }
 
+// disclosureSafeJavaVMParameterRow masks a JVM parameter row for the
+// source-review disclosure surfaces only (preserved["runtime_files"] and the
+// rendered source cfg content). The executable argv and the preserved
+// java_vm_settings picker rows use executableJavaVMParameterRow instead, because
+// masking those would hand the operator back a command line they cannot run.
 func disclosureSafeJavaVMParameterRow(value string) string {
 	if strings.TrimSpace(value) == "" {
 		return value
@@ -2997,6 +3015,18 @@ func disclosureSafeJavaVMParameterRow(value string) string {
 	if err != nil || len(validateImportedJavaVMParameters(parameters)) > 0 {
 		return credential.Redacted
 	}
+	return value
+}
+
+// executableJavaVMParameterRow retains an imported JVM parameter row exactly.
+//
+// These rows are the round-trip record of the operator's own command line and
+// the source of the dashboard's VM-parameter picker. Replacing a row containing
+// a credential-looking -D assignment with the redaction sentinel meant an
+// operator who opened that picker and saved would write "[REDACTED]" into an
+// executable configuration. Nothing an imported script already contains is a
+// project secret; run-output redaction, not import, masks it.
+func executableJavaVMParameterRow(value string) string {
 	return value
 }
 

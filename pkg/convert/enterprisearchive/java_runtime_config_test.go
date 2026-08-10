@@ -7,7 +7,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/jasonczech/apexload/pkg/credential"
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
@@ -250,9 +249,12 @@ Java_VM_Params_extra_arg_3=-Dlast=true
 	if !strings.Contains(runtimeCfg.JavaVMParametersParseError, "Java_VM_Params_extra_arg_2") {
 		t.Fatalf("parse error = %q, want the offending row named", runtimeCfg.JavaVMParametersParseError)
 	}
-	wantRows := []string{"-Dbase=true", "-Xmx512m", credential.Redacted, "-Dlast=true"}
+	// The malformed row is retained verbatim rather than replaced by the
+	// redaction sentinel: it is the only remaining record of what the archive
+	// configured, and the reviewer has to see the broken quoting to fix it.
+	wantRows := []string{"-Dbase=true", "-Xmx512m", `"-Dbroken`, "-Dlast=true"}
 	if !reflect.DeepEqual(runtimeCfg.JavaVMParameterRows, wantRows) {
-		t.Fatalf("VM parameter rows = %#v, want every row position preserved disclosure-safely %#v", runtimeCfg.JavaVMParameterRows, wantRows)
+		t.Fatalf("VM parameter rows = %#v, want every row position preserved exactly %#v", runtimeCfg.JavaVMParameterRows, wantRows)
 	}
 }
 
@@ -426,8 +428,12 @@ Java_VM_Params=-Xmx512m "-Dlabel=unterminated
 	if len(result.Script.Config.JavaVuser.AdditionalVMParameters) != 0 {
 		t.Fatalf("partially imported VM parameters = %#v", result.Script.Config.JavaVuser.AdditionalVMParameters)
 	}
-	if result.ReviewArtifact == nil || result.ReviewArtifact.Metadata["java_vm_parameters_raw"] != credential.Redacted {
-		t.Fatalf("review artifact = %#v, want disclosure-safe malformed value", result.ReviewArtifact)
+	// The malformed source row is retained exactly so the reviewer can correct
+	// the quoting. Replacing it with the redaction sentinel destroyed the only
+	// record of what the operator's archive configured.
+	if result.ReviewArtifact == nil ||
+		result.ReviewArtifact.Metadata["java_vm_parameters_raw"] != `-Xmx512m "-Dlabel=unterminated` {
+		t.Fatalf("review artifact = %#v, want the exact malformed source row retained", result.ReviewArtifact)
 	}
 	blockers := javaReviewArtifactBlockers(result, javaSourceIntegrityKey)
 	if !stringSliceContains(blockers, javaVMParametersReviewBlocker) {

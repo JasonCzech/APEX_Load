@@ -647,6 +647,21 @@ type LogConfig struct {
 	Level           string   `json:"level,omitempty"`            // "disabled", "standard" (default), "extended"
 	OnErrorOnly     bool     `json:"on_error_only,omitempty"`    // if true, use extended logging only when errors occur
 	ExtendedOptions []string `json:"extended_options,omitempty"` // "parameter_substitution", "data_returned", "advanced_trace"
+	// RedactRunEvidence controls whether credential values that came from the
+	// script itself are redacted out of RUN OUTPUT — logs, snapshots, reports,
+	// archives and debugger evidence. Default true.
+	//
+	// It governs output only. The script is never altered: an imported script
+	// keeps its literal credentials so it stays runnable, which is why turning
+	// this off is a legitimate operator choice rather than a footgun — the
+	// operator can already read every one of those values in the script.
+	//
+	// It does NOT govern platform-managed secrets. Values resolved from the
+	// project secret store through {{secret.NAME}} are redacted regardless,
+	// because the operator does not hold those. Name-based suppression
+	// (scrub.SensitiveName) and the generic JWT/high-entropy scrubbers are
+	// likewise unaffected.
+	RedactRunEvidence *bool `json:"redact_run_evidence,omitempty"` // default: true
 }
 
 // HTTPConfig holds all HTTP protocol runtime settings, modeled after

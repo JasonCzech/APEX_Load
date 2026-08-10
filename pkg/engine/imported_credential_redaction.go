@@ -52,11 +52,6 @@ type importedCredentialTarget struct {
 	Occurrence int    `json:"occurrence,omitempty"`
 }
 
-type importedCredentialTemplateReference struct {
-	namespace string
-	name      string
-}
-
 const importedOpenAPIPathCredentialPointerPrefix = "openapi-path-v1:"
 
 type importedOpenAPIPathSpan struct {
@@ -74,18 +69,40 @@ type importedOpenAPIPathCredentialPointer struct {
 
 // importedCredentialTemplatePlan contains no credential values. It records only
 // authored runtime-template identities that occur in credential-governed
-// executable fields. A plan can therefore be shared by every VUser running the
-// same immutable script without exposing or retaining per-VUser material.
+// executable fields.
+//
+// It no longer carries a `variables` index: that index existed so a response
+// extraction landing in a variable an import referenced from a credential field
+// could be registered as a runtime secret. Import provenance is not a reason to
+// hide a value from the operator who owns the import, so nothing consults it.
 type importedCredentialTemplatePlan struct {
 	expressions map[string]struct{}
-	variables   map[string]struct{}
-	references  []importedCredentialTemplateReference
 }
 
 // ImportedCredentialValues returns literal credentials intentionally retained
-// in a server-produced import. The values are read from executable fields only
-// and are used exclusively to build the runtime redaction matcher; the durable
-// script remains byte-exact and runnable without an operator re-entering them.
+// in a server-produced import, read from executable fields only. Nothing here
+// rewrites anything: the durable script remains byte-exact and runnable without
+// an operator re-entering them, and these values are never removed from it.
+//
+// The values ARE the script-sourced half of the run-OUTPUT matcher. Two things
+// consume them:
+//
+//   - Run-evidence redaction, gated by the operator's
+//     script.Config.Log.RedactRunEvidence, which defaults to redacting (a nil
+//     pointer reads as on). The generator RPC staging boundary calls this
+//     function directly (pkg/distributed/generatorrpc/execution_staging.go);
+//     engine.New, NewMultiGroup, ReplayScript and the shakeout reach the same
+//     walk through runtimeSecretValuesForScript, which also needs the template
+//     plan inspectImportedCredentials produces. With the setting off, none of
+//     these values is registered and the operator reads their own credentials in
+//     their own run output; see script_sourced_run_evidence.go.
+//   - The explicit operator-facing disclosure surface
+//     (ImportedCredentialValuesForDisclosure, feeding pkg/scriptdisclosure).
+//
+// The locator walk itself is a fail-closed corruption gate and is NOT part of
+// the redaction feature: a locator that no longer matches its executable field
+// returns an error, and every caller above refuses the run or the disclosure,
+// whatever the setting says.
 func ImportedCredentialValues(script *dsl.Script) ([]string, error) {
 	values, _, err := inspectImportedCredentials(script)
 	return values, err
@@ -138,7 +155,6 @@ func inspectImportedCredentials(
 	}
 	plan := &importedCredentialTemplatePlan{
 		expressions: make(map[string]struct{}),
-		variables:   make(map[string]struct{}),
 	}
 	collector := importedCredentialCollector{
 		script:       script,
@@ -417,27 +433,7 @@ func (collector *importedCredentialCollector) collectTemplateReferences(value st
 		if expression == "" {
 			continue
 		}
-		if _, exists := collector.templatePlan.expressions[expression]; exists {
-			continue
-		}
 		collector.templatePlan.expressions[expression] = struct{}{}
-		namespace, name, ok := strings.Cut(expression, ".")
-		if !ok {
-			continue
-		}
-		switch namespace {
-		case "var", "param", "data", "env":
-			name = strings.TrimSpace(name)
-			if name != "" {
-				if namespace == "var" || namespace == "data" {
-					collector.templatePlan.variables[name] = struct{}{}
-				}
-				collector.templatePlan.references = append(
-					collector.templatePlan.references,
-					importedCredentialTemplateReference{namespace: namespace, name: name},
-				)
-			}
-		}
 	}
 }
 
@@ -535,6 +531,12 @@ func (collector *importedCredentialCollector) collectScriptConfigTarget(
 			collector.collectURL(value, nil)
 		}
 		return nil
+	case strings.HasPrefix(field, importedParameterValuesTargetPrefix) &&
+		strings.HasSuffix(field, importedParameterValuesTargetSuffix):
+		return collector.collectScriptParameterValuesTarget(field)
+	case strings.HasPrefix(field, importedDataSourceTargetPrefix) &&
+		strings.HasSuffix(field, importedDataSourceTargetSuffix):
+		return collector.collectScriptDataSourceTarget(field, target.Pointer)
 	case strings.Contains(field, "metadata.import.preserved.recorded_resource_urls["):
 		index, ok := importedCredentialBracketIndex(
 			field,

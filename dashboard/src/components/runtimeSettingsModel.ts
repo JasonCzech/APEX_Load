@@ -308,6 +308,13 @@ export function formatLog(log?: RuntimeSettingsOverride['log']): string | null {
   if (log.level) parts.push(log.level)
   if (log.on_error_only) parts.push('on-error only')
   if (log.extended_options?.length) parts.push(`${log.extended_options.length} option${log.extended_options.length === 1 ? '' : 's'}`)
+  // Tri-state: render whenever explicitly set (including false), so a log layer
+  // whose only content is `redact_run_evidence: false` still formats to a non-null
+  // string. A truthiness guard would make that layer look empty and
+  // formatEffectiveRuntimeField would mis-attribute the effective value upward.
+  if (log.redact_run_evidence !== undefined) {
+    parts.push(log.redact_run_evidence ? 'redact run evidence' : 'no run-evidence redaction')
+  }
   return parts.length > 0 ? parts.join(' · ') : null
 }
 

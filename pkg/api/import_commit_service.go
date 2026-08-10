@@ -194,6 +194,12 @@ func finalizeImportCommitScript(
 	}
 	script = finalized.Script
 	if !preserveImportedCredentials {
+		// This drops only the trust attestation, which decides whether preserved
+		// JVM argv and trusted reconciliation are allowed. It must never decide
+		// whether the stored row keeps working credential values: the ordinary
+		// durable path in preparePersistentLibraryScriptWithImportTrust persists
+		// the executable script too, so an import that loses this marker still
+		// commits a runnable script instead of a silently masked one.
 		stripCredentialPreservingImportPolicy(script)
 	}
 	preflight := buildReplayPreflight(script, nil, nil, validationWarnings(script))

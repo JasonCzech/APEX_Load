@@ -536,11 +536,20 @@ func TestHTTPDigestRetryDeduplicatesJarCookiesAndRetainsChallengeCookie(t *testi
 	if attempts != 2 || !result.Success {
 		t.Fatalf("attempts = %d, result = %#v; want successful authenticated retry", attempts, result)
 	}
-	if !result.RuntimeCredentialValuesSnapshot {
-		t.Fatal("digest cookie values were not marked as a complete snapshot")
+	// Formerly asserted that the retry reported its jar values to the engine as
+	// redaction material (RuntimeCredentialValuesSnapshot=true and
+	// []string{"nonce-bound", "three"}). Cookies harvested from the system under
+	// test are no longer secrets; what must hold is that the nonce-bound cookie
+	// set by the challenge and the pre-seeded jar cookie are both retained for
+	// transport — which the per-attempt Cookie header assertions above prove on
+	// the wire, and the jar state confirms afterwards.
+	retained := make(map[string]string)
+	for _, cookie := range jar.Cookies(target) {
+		retained[cookie.Name] = cookie.Value
 	}
-	if got, want := result.RuntimeCredentialValues, []string{"nonce-bound", "three"}; !reflect.DeepEqual(got, want) {
-		t.Fatalf("digest runtime credential values = %#v, want %#v", got, want)
+	want := map[string]string{"jar_session": "three", "digest_session": "nonce-bound"}
+	if !reflect.DeepEqual(retained, want) {
+		t.Fatalf("cookies retained after digest retry = %#v, want %#v", retained, want)
 	}
 }
 

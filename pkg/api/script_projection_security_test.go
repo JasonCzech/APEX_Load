@@ -807,7 +807,11 @@ func TestReconcileMaskedScriptSecretsFailsClosedWhenCredentialActionsReorder(t *
 	})
 }
 
-func TestStoredScriptViewerDownloadAndPrivateExportUseProjection(t *testing.T) {
+// Viewer READS are a disclosure projection and still mask. A download or a
+// private export is the runnable artifact — it has to be re-importable into a
+// script that executes — so those carry the executable definition and only the
+// filename stays a disclosure-safe label.
+func TestStoredScriptViewerReadsMaskWhileDownloadAndExportStayRunnable(t *testing.T) {
 	exportDir := t.TempDir()
 	t.Setenv("APEXLOAD_EXPORT_DIR", exportDir)
 	server := NewServer(ServerConfig{})
@@ -820,6 +824,25 @@ func TestStoredScriptViewerDownloadAndPrivateExportUseProjection(t *testing.T) {
 		}
 		if strings.Contains(response.Body.String(), "global-password") || strings.Contains(response.Body.String(), "action-api-key") {
 			t.Fatalf("%s leaked script secrets: %s", label, response.Body.String())
+		}
+	}
+	assertRunnable := func(label string, data []byte) {
+		t.Helper()
+		if !strings.Contains(string(data), "global-password") ||
+			!strings.Contains(string(data), "action-api-key") {
+			t.Fatalf("%s dropped executable credentials and cannot be re-imported: %s", label, data)
+		}
+		var envelope struct {
+			Script *dsl.Script `json:"script"`
+		}
+		if err := json.Unmarshal(data, &envelope); err != nil {
+			t.Fatalf("%s is not a script envelope: %v", label, err)
+		}
+		if envelope.Script == nil {
+			t.Fatalf("%s omitted the script: %s", label, data)
+		}
+		if got := envelope.Script.Config.HTTP.Auth.Password; got != "global-password" {
+			t.Fatalf("%s auth password = %q, want the executable value", label, got)
 		}
 	}
 
@@ -835,12 +858,19 @@ func TestStoredScriptViewerDownloadAndPrivateExportUseProjection(t *testing.T) {
 	downloadReq.SetPathValue("id", stored.ID)
 	download := httptest.NewRecorder()
 	server.handleDownloadScript(download, downloadReq)
-	assertMasked("download", download)
+	if download.Code != http.StatusOK {
+		t.Fatalf("download status = %d body=%s", download.Code, download.Body.String())
+	}
+	assertRunnable("download", download.Body.Bytes())
+	if got := download.Header().Get("Content-Disposition"); strings.Contains(got, "global-password") {
+		t.Fatalf("download filename leaked a credential: %q", got)
+	}
 
 	exportReq := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/"+stored.ID+"/export", strings.NewReader(`{"filename":"private.json"}`))
 	exportReq.SetPathValue("id", stored.ID)
 	exported := httptest.NewRecorder()
 	server.handleExportScript(exported, exportReq)
+	// The export RESPONSE reports only a path and size, so it stays masked.
 	assertMasked("export response", exported)
 	path := filepath.Join(exportDir, "private.json")
 	info, err := os.Stat(path)
@@ -854,9 +884,7 @@ func TestStoredScriptViewerDownloadAndPrivateExportUseProjection(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(data), "global-password") || !strings.Contains(string(data), maskedScriptSecret) {
-		t.Fatalf("private export was not projected: %s", data)
-	}
+	assertRunnable("private export", data)
 
 	exportBadReq := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/"+stored.ID+"/export", strings.NewReader(`{`))
 	exportBadReq.SetPathValue("id", stored.ID)
@@ -1045,7 +1073,7 @@ func TestMaskScriptSecretsProjectsDecodedBase64HTTPSequenceRequest(t *testing.T)
 	}
 }
 
-func TestPortableHashesBundlesAndGitHubPayloadNeverContainSecrets(t *testing.T) {
+func TestPortableHashesStayStableWhileLibraryAndGitHubPayloadsStayRunnable(t *testing.T) {
 	server := NewServer(ServerConfig{})
 	first := seedLegacySecretScript(server, secretBearingScript("portable", "project-a"))
 	second := secretBearingScript("portable-2", "project-a")
@@ -1057,20 +1085,32 @@ func TestPortableHashesBundlesAndGitHubPayloadNeverContainSecrets(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
+	// A library bundle crosses an instance boundary and the receiver imports it,
+	// so like a download/export it must carry the runnable script. Masking here
+	// meant an instance-to-instance transfer silently produced a script that
+	// could not execute.
 	itemJSON, _ := json.Marshal(item)
-	if strings.Contains(string(itemJSON), "global-password") {
-		t.Fatalf("library item leaked secret: %s", itemJSON)
+	if !strings.Contains(string(itemJSON), "global-password") {
+		t.Fatalf("library item dropped executable credentials: %s", itemJSON)
 	}
+	// The hash is still the masked, portable one (hashLibraryScript masks
+	// internally), so shipping the executable body does not change link identity.
+	if item.ContentHash != hashLibraryScript(second) {
+		t.Fatalf("library item hash = %q, want the portable masked hash %q", item.ContentHash, hashLibraryScript(second))
+	}
+	// The GitHub envelope is the same artifact as a download/export: it must be
+	// importable back into a runnable script, and drift detection hashes these
+	// exact bytes against the remote copy.
 	githubPayload, _, err := githubScriptEnvelope(first.Script)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(githubPayload), "global-password") || !strings.Contains(string(githubPayload), maskedScriptSecret) {
-		t.Fatalf("github envelope leaked secret: %s", githubPayload)
+	if !strings.Contains(string(githubPayload), "global-password") {
+		t.Fatalf("github envelope dropped executable credentials: %s", githubPayload)
 	}
 }
 
-func TestGitHubPushSendsProjectedPayload(t *testing.T) {
+func TestGitHubPushSendsExecutablePayload(t *testing.T) {
 	stub := newGitHubWriteStub(t)
 	server := newGitHubTestServer(t, stub.server.URL)
 	seedGitHubConnection(t, server)
@@ -1094,8 +1134,17 @@ func TestGitHubPushSendsProjectedPayload(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(payload), "global-password") || !strings.Contains(string(payload), maskedScriptSecret) {
-		t.Fatalf("github PUT leaked secret: %s", payload)
+	if !strings.Contains(string(payload), "global-password") {
+		t.Fatalf("github PUT dropped executable credentials and is not re-importable: %s", payload)
+	}
+	var envelope struct {
+		Script *dsl.Script `json:"script"`
+	}
+	if err := json.Unmarshal(payload, &envelope); err != nil {
+		t.Fatalf("github PUT body is not a script envelope: %v", err)
+	}
+	if envelope.Script == nil || envelope.Script.Config.HTTP.Auth.Password != "global-password" {
+		t.Fatalf("github PUT body is not the executable script: %s", payload)
 	}
 }
 

@@ -7721,6 +7721,9 @@
         },
         "on_error_only": {
           "type": "boolean"
+        },
+        "redact_run_evidence": {
+          "type": "boolean"
         }
       },
       "type": "object"

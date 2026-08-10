@@ -223,6 +223,14 @@ export interface LogConfig {
   level?: string
   on_error_only?: boolean
   extended_options?: string[]
+  /**
+   * redact_run_evidence governs RUN OUTPUT only — logs, snapshots, reports,
+   * archives and debugger evidence. Default true (read an absent value as ON).
+   * It never alters the script: an imported script keeps its literal credential
+   * values so it stays runnable. Platform-managed secrets ({{secret.NAME}}) are
+   * redacted regardless of this flag.
+   */
+  redact_run_evidence?: boolean
 }
 
 export interface HTTPConfig {

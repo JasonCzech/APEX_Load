@@ -33,30 +33,29 @@ type VUser struct {
 	// callbacks, which may run on a driver/event goroutine while the VUser adds
 	// newly extracted credentials on its execution goroutine.
 	runtimeRedaction atomic.Pointer[RedactionConfig]
-	// credentialTemplates contains only source-authored template identities, not
-	// their values. Standard execution paths share an immutable precomputed plan;
-	// direct test/library VUsers initialize it lazily once.
-	credentialTemplates                  *importedCredentialTemplatePlan
-	credentialTemplatesInspected         bool
-	runtimeCredentialRedactionErr        error
-	runtimeCredentialStateReady          bool
-	runtimeCredentialBase                *RedactionConfig
-	runtimeDimensionRedaction            *RedactionConfig
-	runtimeDimensionCredentialValues     []string
-	runtimeCredentialValues              map[string]struct{}
-	runtimeCredentialScopes              map[string][]string
-	runtimeCredentialResolvingAction     bool
-	runtimeCredentialActionTemplates     []string
-	runtimeCredentialSessionLive         []string
-	runtimeCredentialSessionNext         []string
-	runtimeCredentialSessionStaged       bool
-	runtimeCredentialSessionHistory      []string
-	runtimeCredentialSessionHistoryBytes int
-	SnapshotStore                        *SnapshotStore
-	PauseControl                         PauseController
-	IterationRateLimiter                 *TokenBucket
-	Rendezvous                           *RendezvousCoordinator
-	ExecutionGoals                       *ExecutionGoalLimiter
+	// importedCredentialInspection is the result of the retained-credential
+	// locator walk for this VUser's script, and the marker that the walk already
+	// ran. Standard execution paths run the walk once for the whole run
+	// (runtimeSecretValuesForScript) and assign the result here; a direct
+	// test/library VUser leaves it nil and gets the same walk lazily, once.
+	//
+	// It is ONE field because a marker without a result is exactly the state that
+	// silently disabled every dynamic script-sourced registration in production;
+	// see importedCredentialInspection.
+	importedCredentialInspection  *importedCredentialInspection
+	runtimeCredentialRedactionErr error
+	runtimeCredentialStateReady   bool
+	runtimeCredentialBase         *RedactionConfig
+	runtimeCredentialScopes       map[string][]string
+	// scriptSourcedRedactionDropped records that a matcher bound forced the
+	// best-effort script-sourced contribution to be abandoned for this VUser, so
+	// the warning is surfaced once instead of on every rebuild.
+	scriptSourcedRedactionDropped bool
+	SnapshotStore                 *SnapshotStore
+	PauseControl                  PauseController
+	IterationRateLimiter          *TokenBucket
+	Rendezvous                    *RendezvousCoordinator
+	ExecutionGoals                *ExecutionGoalLimiter
 	// HardStopCtx, when set, is cancelled only on hard stops (duration
 	// timeout, explicit stop/abort) — not when ExecutionGoals exhausts a
 	// shared goal. An iteration that already claimed a goal reservation runs
@@ -86,6 +85,18 @@ type VUser struct {
 	// unresolvedParameterRefs prevents malformed or legacy parameter bindings
 	// from reaching a target as literal {{param.*}} placeholders.
 	unresolvedParameterRefs []string
+	// actionCredentialComposites carries the platform-managed credential
+	// spellings for the protocol action produced by the most recent
+	// resolveAction, for the execution path to register before that action runs.
+	// Its contents are whatever appendPlatformManagedCompositeValues derived from
+	// that action's surfaces: the "user:password" pair, its base64 and the
+	// "Basic " header spelling — which the exact-value matcher cannot derive from
+	// the password alone — and, when the password half resolves from the secret
+	// store, the resolved bare password as well. The bare value is usually a
+	// duplicate of what snapshotReferencedSecrets registered, and
+	// filterRuntimeCredentialBaseValues drops it in that case. Per-VUser (single
+	// goroutine), like unresolvedSecretRefs.
+	actionCredentialComposites resolvedActionCredentialComposites
 	// extractedVariables accounts only for values persisted from protocol
 	// responses. It prevents data-driven extractor names from growing the VUser
 	// variable map for the lifetime of a long run.
@@ -96,6 +107,15 @@ type VUser struct {
 	sourceTransactions map[string]*sourceTransactionRuntimeState
 	iterationThinkTime time.Duration
 	userWorkStarted    bool
+}
+
+// resolvedActionCredentialComposites pins credential spellings to the exact
+// resolved action they were derived from. The action pointer is kept so an
+// action can only ever be given its OWN composites; a mismatch registers nothing
+// rather than carrying another action's credential into this action's scope.
+type resolvedActionCredentialComposites struct {
+	action *protocol.Action
+	values []string
 }
 
 type PauseController interface {
@@ -1003,7 +1023,7 @@ func (vu *VUser) RunLifecycleBlockWithContexts(actionCtx, boundaryCtx context.Co
 }
 
 func (vu *VUser) prepareRuntimeState() {
-	vu.ensureImportedCredentialTemplatePlan()
+	vu.ensureImportedCredentialInspection()
 	vu.bindRuntimeTextRedactor()
 	if vu.Variables == nil {
 		vu.Variables = make(map[string]string)

@@ -13,30 +13,74 @@ import (
 	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
-// extendRuntimeRedactionForResolvedAction installs retained import credentials
-// after template interpolation but before protocol execution.
-// The protocol.Action remains untouched: these values are memory-only matcher
-// inputs, not substitutions in the runnable request.
+// extendRuntimeRedactionForResolvedAction validates the retained credential
+// locators of a resolved action after template interpolation but before protocol
+// execution, and installs that action's two credential scopes.
+//
+// runtimeCredentialActionScope (platform-managed, never gated) carries the
+// composite spellings of a per-action credential surface whose AUTHORED field
+// defers to the project secret store. Those surfaces are enumerated by
+// actionCredentialCompositeSurfaces (pkg/engine/platform_managed_credential_composites.go)
+// — the auth block and the target's URL userinfo — and they share their origin
+// test and derivation with the script-config surfaces. Their composites embed a
+// value the operator does not otherwise hold, and the exact-value matcher cannot
+// derive base64("user:password") from the bare password registered by
+// snapshotReferencedSecrets.
+//
+// runtimeCredentialScriptActionScope (script-sourced, gated) carries what
+// resolvedActionCredentialValues walked out of the resolved action. Those returns
+// are a MIXTURE of origins: values retained from an import and credentials
+// written into the script alongside anything a {{secret.NAME}} reference resolved
+// to. The mixture is safe to file as script-sourced because the funnel drops any
+// value the base matcher already covers, and the platform-managed part is exactly
+// what the base matcher holds — bare values from snapshotReferencedSecrets,
+// composites from the surface registration above. Whatever survives that filter
+// is script-sourced material the operator reads in their own script.
+//
+// Both scopes are replaced wholesale, so nothing a previous action installed can
+// leak into this one.
+//
+// The locator walk runs regardless of the setting because a stale locator still
+// signals that an imported request no longer matches its recorded shape, which is
+// a correctness failure independent of redaction.
 func (vu *VUser) extendRuntimeRedactionForResolvedAction(action *protocol.Action) error {
-	values, err := resolvedActionCredentialValues(vu.Script, action)
+	scriptSourced, err := resolvedActionCredentialValues(vu.Script, action)
 	if err != nil {
-		vu.takeRuntimeCredentialActionTemplates()
 		return fmt.Errorf("prepare action credential redaction: %s", scrubSensitiveText(err.Error()))
 	}
-	values = append(values, vu.takeRuntimeCredentialActionTemplates()...)
-	// The resolved action is a replaceable scope. Keeping every prior action's
-	// credential forever makes a long test eventually fail closed solely due to
-	// matcher capacity, even though those values can no longer reach transport.
-	if err := vu.replaceRuntimeCredentialScope(runtimeCredentialActionScope, values); err != nil {
+	if err := vu.replaceRuntimeCredentialScopes(map[string][]string{
+		runtimeCredentialActionScope:       vu.platformManagedActionCredentialValues(action),
+		runtimeCredentialScriptActionScope: scriptSourced,
+	}); err != nil {
 		return fmt.Errorf("prepare action credential redaction: %s", err)
 	}
-	if len(values) == 0 {
-		return nil
-	}
-	scrubResolvedActionRedactedProjection(action, vu.RedactionConfig)
 	return nil
 }
 
+// platformManagedActionCredentialValues returns the composite spellings
+// resolveAction recorded for this action. It answers nil for any action that is
+// not the one the most recent resolveAction produced, so a stale registration
+// can never be applied to a different action.
+func (vu *VUser) platformManagedActionCredentialValues(action *protocol.Action) []string {
+	if vu == nil || action == nil || vu.actionCredentialComposites.action != action {
+		return nil
+	}
+	return vu.actionCredentialComposites.values
+}
+
+// resolvedActionCredentialValues walks the credential surface of a resolved
+// action and reports any locator that no longer matches the executable request.
+//
+// It runs AFTER interpolation, so the values it returns carry no single origin:
+// most are script-sourced, but any field that referenced {{secret.NAME}} yields
+// the project-secret value it resolved to, and collectResolvedURL /
+// collectResolvedAuth additionally derive "user:password" composites from it.
+// extendRuntimeRedactionForResolvedAction therefore files them under the
+// SCRIPT-SOURCED scope only: the platform-managed ones are already covered by the
+// base matcher and by their own surface registration, and the funnel drops
+// anything the base matcher covers before the script-sourced half is built.
+// Callers that need the values for an explicit disclosure surface obtain them
+// through ImportedCredentialValuesForDisclosure.
 func resolvedActionCredentialValues(script *dsl.Script, action *protocol.Action) ([]string, error) {
 	if action == nil {
 		return nil, nil
@@ -48,12 +92,19 @@ func resolvedActionCredentialValues(script *dsl.Script, action *protocol.Action)
 	}
 
 	if !scriptPreservesImportedCredentialValues(script) {
-		// Basic credentials have always been registered immediately before
-		// transport, including for hand-authored scripts. Preserve that contract
-		// independently of import provenance.
+		// Basic-auth user/password embedded in a script is script-sourced whether
+		// the script was imported or hand-authored. It is collected for symmetry
+		// with the imported path and then discarded by the caller.
 		if action.Auth != nil && strings.EqualFold(strings.TrimSpace(action.Auth.Type), "basic") {
 			collector.collectResolvedAuth(action.Auth)
 		}
+		// URL userinfo is the same Basic surface with no auth block: net/http
+		// synthesises "Basic base64(user:password)" from https://user:pass@host
+		// inside Client.send. Collecting only the auth block here left the two
+		// spellings of one credential obeying different rules — an action-auth
+		// literal was scrubbed from run output while an otherwise identical
+		// URL-embedded literal was disclosed, at the DEFAULT setting.
+		collector.collectResolvedURLUserinfo(action.Target)
 		return collector.values, nil
 	}
 
@@ -339,173 +390,4 @@ func (collector *importedCredentialCollector) collectResolvedURLUserinfo(raw str
 		return
 	}
 	collector.collectURLUserinfo(parsed.User)
-}
-
-func scrubResolvedActionRedactedProjection(action *protocol.Action, config *RedactionConfig) {
-	if action == nil || config == nil {
-		return
-	}
-	action.RedactedTarget = scrubResolvedProjectionString(action.RedactedTarget, action.Target, config)
-	action.RedactedValue = scrubResolvedProjectionString(action.RedactedValue, action.Value, config)
-	action.RedactedHeaders = scrubResolvedProjectionStringMap(action.RedactedHeaders, action.Headers, config)
-	action.RedactedHeaderList = scrubResolvedProjectionHeaderList(
-		action.RedactedHeaderList,
-		action.HeaderList,
-		config,
-	)
-	action.RedactedBody = scrubResolvedProjectionBody(action, config)
-	action.RedactedParams = scrubResolvedProjectionAnyMap(action.RedactedParams, action.Params, config)
-	action.RedactedAuth = scrubResolvedProjectionAuth(action.RedactedAuth, action.Auth, config)
-	action.RedactedSOAP = scrubResolvedProjectionSOAP(action.RedactedSOAP, action.SOAP, config)
-}
-
-func scrubResolvedProjectionString(redacted, raw string, config *RedactionConfig) string {
-	if redacted == "" && raw != "" {
-		redacted = raw
-	}
-	return scrubSensitiveTextWithConfig(redacted, config)
-}
-
-func scrubResolvedProjectionStringMap(
-	redacted map[string]string,
-	raw map[string]string,
-	config *RedactionConfig,
-) map[string]string {
-	source := redacted
-	if source == nil {
-		source = raw
-	}
-	if source == nil {
-		return nil
-	}
-	out := make(map[string]string, len(source))
-	for name, value := range source {
-		out[scrubSensitiveTextWithConfig(name, config)] = scrubSensitiveTextWithConfig(value, config)
-	}
-	return out
-}
-
-func scrubResolvedProjectionHeaderList(
-	redacted protocol.HeaderList,
-	raw protocol.HeaderList,
-	config *RedactionConfig,
-) protocol.HeaderList {
-	source := redacted
-	if source == nil {
-		source = raw
-	}
-	if source == nil {
-		return nil
-	}
-	out := make(protocol.HeaderList, len(source))
-	for index, header := range source {
-		out[index] = protocol.HeaderEntry{
-			Name:    scrubSensitiveTextWithConfig(header.Name, config),
-			Value:   scrubSensitiveTextWithConfig(header.Value, config),
-			Enabled: header.Enabled,
-		}
-	}
-	return out
-}
-
-func scrubResolvedProjectionBody(action *protocol.Action, config *RedactionConfig) []byte {
-	source := action.RedactedBody
-	if source == nil {
-		source = action.Body
-	}
-	if source == nil {
-		return nil
-	}
-	if strings.EqualFold(strings.TrimSpace(action.BodyEncoding), "base64") {
-		decoded, err := base64.StdEncoding.DecodeString(string(source))
-		if err == nil {
-			scrubbed := scrubSensitiveTextWithConfig(string(decoded), config)
-			return []byte(base64.StdEncoding.EncodeToString([]byte(scrubbed)))
-		}
-	}
-	return []byte(scrubSensitiveTextWithConfig(string(source), config))
-}
-
-func scrubResolvedProjectionAnyMap(
-	redacted map[string]any,
-	raw map[string]any,
-	config *RedactionConfig,
-) map[string]any {
-	source := redacted
-	if source == nil {
-		source = raw
-	}
-	if source == nil {
-		return nil
-	}
-	out := make(map[string]any, len(source))
-	for name, value := range source {
-		out[scrubSensitiveTextWithConfig(name, config)] = scrubResolvedProjectionAny(value, config)
-	}
-	return out
-}
-
-func scrubResolvedProjectionAny(value any, config *RedactionConfig) any {
-	switch typed := value.(type) {
-	case string:
-		return scrubSensitiveTextWithConfig(typed, config)
-	case []string:
-		out := make([]string, len(typed))
-		for index, item := range typed {
-			out[index] = scrubSensitiveTextWithConfig(item, config)
-		}
-		return out
-	case []any:
-		out := make([]any, len(typed))
-		for index, item := range typed {
-			out[index] = scrubResolvedProjectionAny(item, config)
-		}
-		return out
-	case map[string]string:
-		return scrubResolvedProjectionStringMap(typed, nil, config)
-	case map[string]any:
-		return scrubResolvedProjectionAnyMap(typed, nil, config)
-	default:
-		return typed
-	}
-}
-
-func scrubResolvedProjectionAuth(
-	redacted *protocol.AuthConfig,
-	raw *protocol.AuthConfig,
-	config *RedactionConfig,
-) *protocol.AuthConfig {
-	source := redacted
-	if source == nil {
-		source = raw
-	}
-	if source == nil {
-		return nil
-	}
-	return &protocol.AuthConfig{
-		Type:     source.Type,
-		Username: scrubSensitiveTextWithConfig(source.Username, config),
-		Password: scrubSensitiveTextWithConfig(source.Password, config),
-		Token:    scrubSensitiveTextWithConfig(source.Token, config),
-		Domain:   scrubSensitiveTextWithConfig(source.Domain, config),
-	}
-}
-
-func scrubResolvedProjectionSOAP(
-	redacted *protocol.SOAPActionConfig,
-	raw *protocol.SOAPActionConfig,
-	config *RedactionConfig,
-) *protocol.SOAPActionConfig {
-	source := redacted
-	if source == nil {
-		source = raw
-	}
-	if source == nil {
-		return nil
-	}
-	return &protocol.SOAPActionConfig{
-		Action:    scrubSensitiveTextWithConfig(source.Action, config),
-		Operation: scrubSensitiveTextWithConfig(source.Operation, config),
-		BodyMode:  scrubSensitiveTextWithConfig(source.BodyMode, config),
-	}
 }

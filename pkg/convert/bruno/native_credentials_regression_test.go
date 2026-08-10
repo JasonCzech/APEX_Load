@@ -843,9 +843,16 @@ http:
 	if err != nil {
 		t.Fatal(err)
 	}
+	// A literal the operator authored into the XML body is preserved. It used to
+	// be rewritten to {{secret.NAME}}, which left a stored bundle and an exported
+	// script that could not replay until the operator bound a value they never
+	// asked to externalize.
 	body := result.Scripts[0].Script.Actions[0].Body
-	if strings.Contains(body, "container-secret") || strings.Count(body, "{{secret.") != 1 {
-		t.Fatalf("credential container body = %q", body)
+	if body != `<Envelope><auth><password>container-secret</password></auth></Envelope>` {
+		t.Fatalf("credential container body = %q, want the exact authored XML", body)
+	}
+	if strings.Contains(body, "{{secret.") {
+		t.Fatalf("credential container body = %q, want no import-time secret reference", body)
 	}
 }
 
@@ -867,12 +874,16 @@ http:
 		t.Fatal(err)
 	}
 	candidate := result.Scripts[0]
-	if strings.Contains(candidate.Script.Actions[0].Body, sourceCredential) ||
-		strings.Count(candidate.Script.Actions[0].Body, "{{secret.") != 1 {
-		t.Fatalf("credential container body = %q", candidate.Script.Actions[0].Body)
+	// The descendant of a credential container is still recognized, but a
+	// literal one is now preserved rather than externalized: the operator has
+	// the source, and an unbound {{secret.NAME}} would make the draft unrunnable.
+	if !strings.Contains(candidate.Script.Actions[0].Body, sourceCredential) ||
+		strings.Contains(candidate.Script.Actions[0].Body, "{{secret.") {
+		t.Fatalf("credential container body = %q, want the exact authored value",
+			candidate.Script.Actions[0].Body)
 	}
-	if bytes.Contains(tarFile(t, result.SanitizedArchive, "request.yml"), []byte(sourceCredential)) {
-		t.Fatal("sanitized XML retained a credential-container descendant")
+	if !bytes.Contains(tarFile(t, result.SanitizedArchive, "request.yml"), []byte(sourceCredential)) {
+		t.Fatal("sanitized XML lost the authored credential-container descendant")
 	}
 }
 
@@ -892,8 +903,16 @@ http:
 	if err != nil {
 		t.Fatal(err)
 	}
-	if body := result.Scripts[0].Script.Actions[0].Body; strings.Contains(body, "literal-user-password") {
-		t.Fatalf("credential-suffixed XML was not governed: %q", body)
+	// The credential-suffixed element name is still recognized by the scanner —
+	// which is what keeps its value out of ordinary parameterization — but the
+	// literal itself is preserved so the imported request stays runnable.
+	if body := result.Scripts[0].Script.Actions[0].Body; !strings.Contains(body, "literal-user-password") ||
+		strings.Contains(body, "{{secret.") {
+		t.Fatalf("credential-suffixed XML lost its authored value: %q", body)
+	}
+	if len(result.Scripts[0].SecretRequirements) != 0 {
+		t.Fatalf("secret requirements = %#v, want no re-entry binding for a preserved literal",
+			result.Scripts[0].SecretRequirements)
 	}
 }
 
@@ -2034,6 +2053,12 @@ func TestInspectNativeScrubsSpecializedAndCompositeYAMLAliasPeers(t *testing.T) 
 		name      string
 		source    string
 		forbidden []string
+		// preserved lists values the import must retain verbatim in both the
+		// sanitized alias peers and the candidate script. Literal XML scalars
+		// belong here: nothing an imported script already contains is a project
+		// secret, so externalizing one is an explicit operator action rather
+		// than the import default.
+		preserved []string
 	}{
 		{
 			name: "literal raw JSON scalar alias",
@@ -2075,7 +2100,7 @@ http:
     type: xml
     data: *payload
 `,
-			forbidden: []string{"literal-xml-alias-secret"},
+			preserved: []string{"literal-xml-alias-secret"},
 		},
 		{
 			name: "templated XML scalar alias",
@@ -2156,7 +2181,7 @@ http:
 				t.Fatal(err)
 			}
 			if len(result.Scripts) != 1 ||
-				len(result.Scripts[0].SecretRequirements) == 0 {
+				(len(test.preserved) == 0 && len(result.Scripts[0].SecretRequirements) == 0) {
 				t.Fatalf("alias-backed result = %#v", result.Scripts)
 			}
 			sanitized := tarFile(t, result.SanitizedArchive, "request.yml")
@@ -2170,6 +2195,14 @@ http:
 				}
 				if bytes.Contains(candidateJSON, []byte(forbidden)) {
 					t.Fatalf("candidate retained alias credential %q:\n%s", forbidden, candidateJSON)
+				}
+			}
+			for _, preserved := range test.preserved {
+				if !bytes.Contains(sanitized, []byte(preserved)) {
+					t.Fatalf("sanitized alias peers lost preserved value %q:\n%s", preserved, sanitized)
+				}
+				if !bytes.Contains(candidateJSON, []byte(preserved)) {
+					t.Fatalf("candidate lost preserved value %q:\n%s", preserved, candidateJSON)
 				}
 			}
 		})

@@ -298,8 +298,14 @@ func (s *Server) githubScriptLinkStore() (storage.GitHubScriptLinkStore, bool) {
 // githubScriptEnvelope serializes a stored script in the canonical
 // {"script": …} envelope (matching the download/export handlers) and returns the
 // bytes plus a stable content hash for drift detection.
+//
+// The envelope holds the executable definition. A pushed file that had its
+// credentials replaced by [REDACTED] could not be imported back into a runnable
+// script, and the same bytes are what drift detection compares against the
+// remote copy, so masking here also made every credential-bearing script report
+// permanent drift.
 func githubScriptEnvelope(script *dsl.Script) ([]byte, string, error) {
-	data, err := json.MarshalIndent(map[string]any{"script": maskScriptSecrets(script)}, "", "  ")
+	data, err := json.MarshalIndent(map[string]any{"script": script}, "", "  ")
 	if err != nil {
 		return nil, "", err
 	}

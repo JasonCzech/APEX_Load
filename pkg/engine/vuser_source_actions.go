@@ -78,12 +78,7 @@ func (vu *VUser) clearProtocolCookies(ctx context.Context) error {
 	if !ok {
 		return nil
 	}
-	if err := controller.ClearCookies(ctx); err != nil {
-		return err
-	}
-	// Retain the former live values through this action's evidence, then retire
-	// them under the bounded session history at the next action boundary.
-	return vu.stageRuntimeCredentialSessionSnapshot(nil)
+	return controller.ClearCookies(ctx)
 }
 
 // browserEmulationNewUserEachIteration reports whether browser emulation's
@@ -151,6 +146,30 @@ func (vu *VUser) handleHTTPOAuth2TokenAction(ctx context.Context, action dsl.Act
 	}
 	if err := protocol.ValidateTargetURL(tokenReq.TokenURL, allowedTargetHosts); err != nil {
 		return fmt.Errorf("http_oauth2_token %q: %w", action.Name, err)
+	}
+	// The third per-action credential surface. This handler interpolates its own
+	// params and never produces a protocol.Action, so
+	// extendRuntimeRedactionForResolvedAction never sees it — but net/http
+	// synthesises the same "Basic base64(user:password)" from token_url's
+	// userinfo that it does for any other target. Origin is read on the authored
+	// param, exactly as actionCredentialCompositeSurfaces reads it on
+	// action.Target.
+	//
+	// Registered before the fetch so an error echoing the request cannot carry
+	// the composite out, and replaced wholesale — a token_url without userinfo
+	// clears whatever an earlier http_oauth2_token action installed.
+	var tokenURLComposites []string
+	authoredTokenURL, _ := actionParamString(action.Params, "token_url")
+	if surface, ok := urlUserinfoCredentialSurface(
+		"action.params.token_url", authoredTokenURL, tokenReq.TokenURL,
+	); ok {
+		tokenURLComposites = appendPlatformManagedCompositeValues(nil, surface)
+	}
+	if err := vu.replaceRuntimeCredentialScope(
+		runtimeCredentialOAuthURLScope, tokenURLComposites,
+	); err != nil {
+		return fmt.Errorf("http_oauth2_token %q: prepare token URL redaction: %s",
+			action.Name, scrubSensitiveText(err.Error()))
 	}
 	if httpProto, ok := vu.Proto.(*protocolhttp.HTTP); ok {
 		tokenReq.HTTPClient = httpProto.OAuthHTTPClient()
@@ -1141,13 +1160,56 @@ func (vu *VUser) setSourceVariable(name string, value string) {
 	resolved := vu.interpolate(value)
 	vu.Variables[name] = resolved
 	vu.Variables[strings.ToLower(name)] = resolved
-	if vu.importedCredentialVariableName(name) ||
-		vu.importedCredentialVariableName(strings.ToLower(name)) {
-		_ = vu.replaceRuntimeCredentialScope(
-			"source_variable:"+strings.ToLower(name),
-			[]string{resolved},
-		)
+	vu.registerSourceVariableRunEvidenceValue(name, resolved)
+}
+
+// registerSourceVariableRunEvidenceValue registers a source-action assignment
+// whose receiving variable an import reads from a credential-governed field.
+//
+// The value is SCRIPT-SOURCED: the assignment interpolates an authored literal
+// out of the operator's own script, so it is filed under a script-sourced scope
+// and the operator's script.Config.Log.RedactRunEvidence setting governs it.
+//
+// Origin is re-established from the namespace, not inherited from the template
+// plan: the plan records "secret.NAME" too, and only {{var.*}}/{{param.*}} name a
+// script-sourced variable that a source action can assign. A {{secret.*}}
+// reference interpolated into the value is already covered by the base matcher
+// installed from snapshotReferencedSecrets, and the funnel drops anything the
+// base matcher already covers, so nothing platform-managed can be demoted here.
+//
+// Errors are not propagated. Callers of setSourceVariable have no error channel,
+// and a script-sourced registration must never fail a run (the funnel drops the
+// script-sourced half on overflow). A platform-managed failure is recorded on the
+// VUser by the funnel and is checked at the next action boundary.
+func (vu *VUser) registerSourceVariableRunEvidenceValue(name, resolved string) {
+	if vu == nil || resolved == "" || !scriptRedactsRunEvidence(vu.Script) {
+		return
 	}
+	vu.ensureImportedCredentialInspection()
+	plan := vu.importedCredentialInspection.templatePlan()
+	if plan == nil {
+		return
+	}
+	key := strings.ToLower(strings.TrimSpace(name))
+	referenced := false
+	for _, expression := range scriptSourcedTemplateExpressions(plan) {
+		namespace, reference, found := strings.Cut(expression, ".")
+		if !found || (namespace != "var" && namespace != "param") {
+			continue
+		}
+		// Runtime variable lookup is case-insensitive; match it.
+		if strings.ToLower(strings.TrimSpace(reference)) == key {
+			referenced = true
+			break
+		}
+	}
+	if !referenced {
+		return
+	}
+	_ = vu.replaceRuntimeCredentialScope(
+		runtimeCredentialSourceVariablePrefix+key,
+		[]string{resolved},
+	)
 }
 
 func sourceActionFunction(action dsl.Action) string {

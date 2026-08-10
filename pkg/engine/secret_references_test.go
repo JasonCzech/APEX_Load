@@ -804,6 +804,279 @@ func TestReplayRedactsResolverBackedBasicAuthCompositeEcho(t *testing.T) {
 	}
 }
 
+// TestReplayRedactsResolverBackedActionAuthCompositeEcho is the action-level
+// twin of TestReplayRedactsResolverBackedBasicAuthCompositeEcho. A per-action
+// auth block (dsl.Action.Auth, "override global auth") is a second, independent
+// surface — the OpenAPI importer emits credentials there, not on the script
+// config — and the two must not drift apart.
+//
+// Both directions of the origin rule are asserted against the same echoed
+// payload: a composite built from the project secret store is not the operator's
+// to read and stays scrubbed even where the operator turned
+// script.Config.Log.RedactRunEvidence OFF, while one built from script literals
+// is already in front of them and is disclosed exactly there. The credentials are
+// one character each so the outcome measures the exact-value matcher rather than
+// the generic high-entropy scrubber.
+//
+// The setting is a TRI-STATE and the script-literal rows walk all three, because
+// unset and explicitly-on are two different readings of the same field and only
+// the unset row can catch a regression in that reading. The store-managed rows
+// deliberately stop at unset and off: with the setting on, the script-sourced
+// half registers this same composite too, so a store-managed "explicitly on" row
+// is a duplicate of the unset row that no mutation can distinguish. What origin
+// buys under redaction-on is HasRuntimeSecretMaterial (screenshot and HAR
+// suppression), which a replay report cannot observe — that half of the contract
+// is pinned in script_sourced_redaction_contract_test.go.
+func TestReplayRedactsResolverBackedActionAuthCompositeEcho(t *testing.T) {
+	const encodedCredentials = "YTpi"
+	newScript := func(baseURL string, auth *dsl.AuthConfig, redactRunEvidence *bool) *dsl.Script {
+		logConfig := dsl.LogConfig{}
+		if redactRunEvidence != nil {
+			redact := *redactRunEvidence
+			logConfig.RedactRunEvidence = &redact
+		}
+		return &dsl.Script{
+			Name: "action auth composite", Protocol: "http",
+			Config: dsl.ScriptConfig{
+				BaseURL: baseURL,
+				Log:     logConfig,
+			},
+			Actions: []dsl.Action{{
+				Name: "request", Type: "request", Method: http.MethodGet, Target: "/",
+				Auth: auth,
+			}},
+		}
+	}
+	resolver := SecretResolverFunc(func(name string) (string, bool) {
+		switch name {
+		case "BASIC_USER":
+			return "a", true
+		case "BASIC_PASSWORD":
+			return "b", true
+		default:
+			return "", false
+		}
+	})
+	redactOn, redactOff := true, false
+
+	for _, testCase := range []struct {
+		name string
+		auth *dsl.AuthConfig
+		// redactRunEvidence is nil for "the operator never touched the setting",
+		// which is the DEFAULT and reads as redacting. The three states are
+		// distinct on purpose: with a plain bool an omitted field silently meant
+		// "explicitly off", so "every configuration" was only ever one of them.
+		// The sibling URL-userinfo test uses the same tri-state.
+		redactRunEvidence *bool
+		disclose          bool
+	}{{
+		// The shape pkg/convert/openapi emits for an HTTP `basic` scheme: a
+		// non-secret username beside a store-managed password. The spaced
+		// spelling is what interpolateSecretReferences resolves, so the origin
+		// test has to recognize it too. Setting unset = the default.
+		name: "secret store password with run evidence redaction unset",
+		auth: &dsl.AuthConfig{Type: "basic", Username: "a", Password: "{{ secret.BASIC_PASSWORD }}"},
+	}, {
+		// Either half being store-managed is enough: the composite embeds it.
+		name: "secret store username",
+		auth: &dsl.AuthConfig{Type: "basic", Username: "{{secret.BASIC_USER}}", Password: "b"},
+	}, {
+		// A store-managed composite stays scrubbed even when the operator has
+		// turned script-sourced run-evidence redaction OFF. The setting reaches
+		// script-sourced material only.
+		name:              "secret store password with run evidence redaction off",
+		auth:              &dsl.AuthConfig{Type: "basic", Username: "a", Password: "{{ secret.BASIC_PASSWORD }}"},
+		redactRunEvidence: &redactOff,
+	}, {
+		// Script literals with the setting explicitly on: the operator asked for
+		// tidy run output, so their own credential is scrubbed from it. Nothing
+		// is removed from the script itself.
+		name:              "script literal with run evidence redaction on",
+		auth:              &dsl.AuthConfig{Type: "basic", Username: "a", Password: "b"},
+		redactRunEvidence: &redactOn,
+	}, {
+		// The same literals with the setting unset take the default, which also
+		// redacts.
+		name: "script literal with run evidence redaction unset",
+		auth: &dsl.AuthConfig{Type: "basic", Username: "a", Password: "b"},
+	}, {
+		name:              "script literal with run evidence redaction off",
+		auth:              &dsl.AuthConfig{Type: "basic", Username: "a", Password: "b"},
+		redactRunEvidence: &redactOff,
+		disclose:          true,
+	}} {
+		t.Run(testCase.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if got := strings.TrimPrefix(r.Header.Get("Authorization"), "Basic "); got != encodedCredentials {
+					t.Errorf("Authorization payload = %q, want %q", got, encodedCredentials)
+				}
+				w.WriteHeader(http.StatusUnauthorized)
+				_, _ = w.Write([]byte("neutral echo " + encodedCredentials))
+			}))
+			defer server.Close()
+
+			script := newScript(server.URL, testCase.auth, testCase.redactRunEvidence)
+			report, err := ReplayScript(context.Background(), script, ReplayOptions{
+				SecretResolver:  resolver,
+				IgnoreThinkTime: true,
+			})
+			if err != nil {
+				t.Fatalf("ReplayScript: %v", err)
+			}
+			encoded, err := json.Marshal(report)
+			if err != nil {
+				t.Fatal(err)
+			}
+			switch {
+			case testCase.disclose && !bytes.Contains(encoded, []byte(encodedCredentials)):
+				t.Fatalf("script-authored Basic credentials were scrubbed from the operator's own evidence: %s", encoded)
+			case !testCase.disclose && bytes.Contains(encoded, []byte(encodedCredentials)):
+				t.Fatalf("neutral response disclosed resolver-backed per-action Basic credentials: %s", encoded)
+			}
+			// The executable auth block is untouched in every configuration.
+			if got := script.Actions[0].Auth; got.Username != testCase.auth.Username ||
+				got.Password != testCase.auth.Password {
+				t.Fatalf("replay rewrote the executable auth block: %#v", got)
+			}
+		})
+	}
+}
+
+// TestReplayRedactsResolverBackedURLUserinfoCompositeEcho is the third sibling
+// of the two tests above and the one that keeps them from drifting.
+//
+// Nothing in the engine writes an Authorization header for a target such as
+// https://user:password@host/path — net/http synthesises "Basic
+// base64(user:password)" from the URL's userinfo inside Client.send. That makes
+// URL userinfo an auth surface with no auth block, and the exact-value matcher
+// cannot derive base64 of the PAIR from the bare password, so it needs the same
+// composite registration dsl.Action.Auth gets.
+//
+// Both directions of the origin rule are asserted, as in the action-auth twin:
+// a composite built from the project secret store is not the operator's to read
+// and must be scrubbed in EVERY configuration, while one built from script
+// literals is scrubbed only while the operator leaves
+// script.Config.Log.RedactRunEvidence on — which is where an unset field leaves
+// it. One-character credentials keep the outcome a measurement of the exact-value
+// matcher rather than the entropy scrubber.
+func TestReplayRedactsResolverBackedURLUserinfoCompositeEcho(t *testing.T) {
+	const encodedCredentials = "dXNyOmI=" // base64("usr:b")
+	resolver := SecretResolverFunc(func(name string) (string, bool) {
+		switch name {
+		case "URL_USER":
+			return "usr", true
+		case "BASIC_PASSWORD":
+			return "b", true
+		default:
+			return "", false
+		}
+	})
+	redactOn, redactOff := true, false
+
+	for _, testCase := range []struct {
+		name string
+		// redactRunEvidence is nil for "the operator never touched the setting",
+		// which is the DEFAULT and reads as redacting.
+		redactRunEvidence *bool
+		userinfo          string
+		disclose          bool
+	}{{
+		// The shape the finding reproduced: a literal username beside a
+		// store-managed password. The spaced spelling is what
+		// interpolateSecretReferences resolves, so the origin test — which runs
+		// on the authored URL, the only place origin survives — has to read the
+		// userinfo out of a URL net/url itself refuses to parse.
+		name:     "secret store password",
+		userinfo: "usr:{{ secret.BASIC_PASSWORD }}",
+	}, {
+		// Either half being store-managed is enough: the composite embeds it.
+		name:     "secret store username",
+		userinfo: "{{secret.URL_USER}}:b",
+	}, {
+		name:     "both halves from the secret store",
+		userinfo: "{{secret.URL_USER}}:{{secret.BASIC_PASSWORD}}",
+	}, {
+		// A store-managed composite stays scrubbed even with script-sourced run
+		// evidence redaction turned OFF. The setting reaches script-sourced
+		// material only.
+		name:              "secret store password with run evidence redaction off",
+		redactRunEvidence: &redactOff,
+		userinfo:          "usr:{{ secret.BASIC_PASSWORD }}",
+	}, {
+		// The default, and the state of an unset field: the operator asked for
+		// nothing, so their own credential is still scrubbed out of run output.
+		// URL userinfo is an auth surface with no auth block, so it has to obey
+		// the setting exactly as dsl.Action.Auth does.
+		name:     "script literal with run evidence redaction unset",
+		userinfo: "usr:b",
+	}, {
+		name:              "script literal with run evidence redaction on",
+		redactRunEvidence: &redactOn,
+		userinfo:          "usr:b",
+	}, {
+		name:              "script literal with run evidence redaction off",
+		redactRunEvidence: &redactOff,
+		userinfo:          "usr:b",
+		disclose:          true,
+	}} {
+		t.Run(testCase.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if got := strings.TrimPrefix(r.Header.Get("Authorization"), "Basic "); got != encodedCredentials {
+					t.Errorf("Authorization payload = %q, want %q", got, encodedCredentials)
+				}
+				w.WriteHeader(http.StatusUnauthorized)
+				_, _ = w.Write([]byte("neutral echo " + encodedCredentials))
+			}))
+			defer server.Close()
+
+			target := strings.Replace(server.URL, "http://", "http://"+testCase.userinfo+"@", 1) + "/"
+			logConfig := dsl.LogConfig{}
+			if testCase.redactRunEvidence != nil {
+				redact := *testCase.redactRunEvidence
+				logConfig.RedactRunEvidence = &redact
+			}
+			script := &dsl.Script{
+				Name: "url userinfo composite", Protocol: "http",
+				Config: dsl.ScriptConfig{Log: logConfig},
+				Actions: []dsl.Action{{
+					Name: "request", Type: "request", Method: http.MethodGet, Target: target,
+				}},
+			}
+			report, err := ReplayScript(context.Background(), script, ReplayOptions{
+				SecretResolver:  resolver,
+				IgnoreThinkTime: true,
+			})
+			if err != nil {
+				t.Fatalf("ReplayScript: %v", err)
+			}
+			if len(report.Snapshots) != 1 {
+				t.Fatalf("report.Snapshots = %d entries, want 1", len(report.Snapshots))
+			}
+			// Assert the whole echoed payload, not just its absence. base64 of
+			// a bare half can be a PREFIX of base64 of the pair ("dXNy" for
+			// "usr" inside "dXNyOmI="), so a containment check alone passes on
+			// a partial mask that still discloses the rest of the composite.
+			want := "neutral echo [REDACTED]"
+			if testCase.disclose {
+				want = "neutral echo " + encodedCredentials
+			}
+			if got := report.Snapshots[0].ResponseBody; got != want {
+				t.Fatalf("snapshot response body = %q, want %q", got, want)
+			}
+			encoded, err := json.Marshal(report)
+			if err != nil {
+				t.Fatal(err)
+			}
+			switch {
+			case testCase.disclose && !bytes.Contains(encoded, []byte(encodedCredentials)):
+				t.Fatalf("script-authored URL userinfo was scrubbed from the operator's own evidence: %s", encoded)
+			case !testCase.disclose && bytes.Contains(encoded, []byte(encodedCredentials)):
+				t.Fatalf("neutral response disclosed resolver-backed URL userinfo credentials: %s", encoded)
+			}
+		})
+	}
+}
+
 // Only import provenance keys (original_*, source_*) are exempt. Other action
 // metadata IS sent on the wire — kafka.buildRecord and jms.buildMessage copy
 // metadata into headers/properties — so those secret names must stay in

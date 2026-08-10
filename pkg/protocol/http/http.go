@@ -216,15 +216,6 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 		DependencyType: "http",
 		NetworkProfile: h.networkProfile,
 	}
-	defer func() {
-		if h == nil || h.client == nil {
-			return
-		}
-		if jar, ok := h.client.Jar.(*boundedCookieJar); ok {
-			result.RuntimeCredentialValues = jar.runtimeCredentialValuesSnapshot()
-			result.RuntimeCredentialValuesSnapshot = true
-		}
-	}()
 	if action == nil {
 		result.StatusCode = http.StatusBadRequest
 		result.ErrorMessage = "http action is required"

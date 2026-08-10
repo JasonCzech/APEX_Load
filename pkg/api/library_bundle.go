@@ -373,7 +373,19 @@ func (s *Server) libraryScriptBundleItem(id string) (LibraryBundleItem, error) {
 	if normalizeProjectID(stored.ProjectID) != normalizeProjectID(stored.Script.ProjectID) {
 		return LibraryBundleItem{}, fmt.Errorf("script has inconsistent project ownership")
 	}
-	script := maskScriptSecrets(stored.Script)
+	// A library bundle is the runnable artifact: the receiving instance imports
+	// this and must end up with a script that executes, so the executable
+	// definition travels verbatim. Masking here produced the same round-trip
+	// break as a masked export — the transferred script could not run. Only the
+	// Name below stays a disclosure-safe label.
+	//
+	// ContentHash is deliberately NOT a hash of these bytes: hashLibraryScript
+	// masks internally, so the hash stays stable when only an inline credential
+	// differs. That portability is the point — two instances holding the same
+	// script with different credential values must still recognise it as the
+	// same script, and both ends compute the hash the same way, so shipping the
+	// executable body does not disturb link identity or drift detection.
+	script := stored.Script
 	return LibraryBundleItem{
 		Kind:             "script",
 		SourceInstanceID: s.controllerID,

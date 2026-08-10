@@ -240,11 +240,17 @@ func ClassifyWholeTemplate(value string, provenVars map[string]struct{}) (WholeT
 
 func normalizeOptions(options Options) (Options, error) {
 	if options.Mode == "" {
-		// Keep the historical library default for callers outside the import
-		// adapters. Importers that retain executable source values opt in to
-		// Preserve explicitly; an omitted policy must not silently weaken an
-		// existing projection boundary.
-		options.Mode = SecretReference
+		// Fail toward runnability. An omitted policy used to become
+		// SecretReference, so any adapter that forgot to set Mode silently
+		// rewrote executable credential values into {{secret.NAME}} references
+		// the operator had never bound — an import that produces a script which
+		// cannot replay. Import conversion always preserves what the source
+		// already contained; every non-preserving consumer (API/script
+		// disclosure projections use Redact, storage migration uses Audit,
+		// explicit externalization uses SecretReference) states its mode
+		// explicitly, and a disclosure caller that forgets to do so still fails
+		// loudly through the KnownCredentialMatcher check below.
+		options.Mode = Preserve
 	}
 	if !options.Mode.Valid() {
 		return options, fmt.Errorf("unsupported credential projection mode %q", options.Mode)

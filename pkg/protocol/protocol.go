@@ -585,6 +585,17 @@ type ThinkTimeConfig struct {
 }
 
 // Result contains the outcome of a single action execution.
+//
+// Values a protocol adapter HARVESTS FROM THE SYSTEM UNDER TEST — HTTP
+// cookie-jar contents in particular — are deliberately not carried to the engine
+// as redaction material, and this struct has no field for them. They are not
+// platform-managed secrets: the operator is running the test against that
+// system, and substring-replacing an ordinary "Set-Cookie: locale=en" out of the
+// run destroyed the evidence (and the metric dimensions) they need. Platform
+// secrets reach the matcher through {{secret.NAME}} resolution instead.
+//
+// This says nothing about Extractions below, which IS carried to the engine and
+// whose sensitively-named entries are still registered for redaction.
 type Result struct {
 	ActionName          string        // Name of the executed action
 	BusinessTransaction bool          // True when this sample represents a completed business transaction
@@ -615,38 +626,33 @@ type Result struct {
 	// pre-scrub correlation observer. Public replay events, reports, snapshots,
 	// exports, and WebSocket messages must never retain it.
 	CorrelationEvidence *CorrelationEvidence `json:"-"`
-	// RuntimeCredentialValues carries protocol-managed session credentials (for
-	// example HTTP cookie-jar values) to the owning engine. The engine consumes
-	// and clears this memory-only field before extraction, metrics, snapshots,
-	// archives, or any ResultSink can observe the result.
-	RuntimeCredentialValues []string `json:"-"`
-	// RuntimeCredentialValuesSnapshot declares that RuntimeCredentialValues is a
-	// complete live snapshot, not an append-only set of newly observed values.
-	// Snapshot producers let the engine retire rotations under a bounded
-	// lifecycle instead of retaining every historical value forever.
-	RuntimeCredentialValuesSnapshot bool `json:"-"`
-	Extractions                     map[string]string
-	PageURL                         string
-	PageTitle                       string
-	HTML                            string
-	ScreenshotBase64                string
-	ConsoleEntries                  []ConsoleEntry
-	NetworkEntries                  []NetworkEntry
-	DOMSummary                      *DOMSummary
-	ClientMetrics                   *ClientMetrics
-	ServerTelemetry                 *ServerTelemetry
-	ProtocolEvidence                map[string]any
-	Snapshot                        *ErrorSnapshot // populated when snapshot_on_error is enabled
-	SourceStepID                    string
-	SourceStepIndex                 int
-	SourceAction                    string
-	SourceActionName                string
-	SourceTransaction               string
-	SourceProfile                   string
-	SourcePath                      string
-	SourceUID                       string
-	RequestType                     string
-	OperationKind                   string
+	// Extractions carries the values an action's extractors pulled out of the
+	// response, keyed by the variable they are saved to. An entry whose KEY is
+	// sensitive (scrub.SensitiveName — "session_token" and the like) IS
+	// registered for redaction by the engine, so do not place a value here
+	// expecting it to pass through run evidence untouched.
+	Extractions       map[string]string
+	PageURL           string
+	PageTitle         string
+	HTML              string
+	ScreenshotBase64  string
+	ConsoleEntries    []ConsoleEntry
+	NetworkEntries    []NetworkEntry
+	DOMSummary        *DOMSummary
+	ClientMetrics     *ClientMetrics
+	ServerTelemetry   *ServerTelemetry
+	ProtocolEvidence  map[string]any
+	Snapshot          *ErrorSnapshot // populated when snapshot_on_error is enabled
+	SourceStepID      string
+	SourceStepIndex   int
+	SourceAction      string
+	SourceActionName  string
+	SourceTransaction string
+	SourceProfile     string
+	SourcePath        string
+	SourceUID         string
+	RequestType       string
+	OperationKind     string
 }
 
 const (

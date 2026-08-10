@@ -1075,6 +1075,69 @@ describe('RuntimeSettingsGroupEditor', () => {
     })
   })
 
+  it('shows run-evidence redaction as on by default and writes an explicit false when unchecked', () => {
+    const onChange = vi.fn()
+    const groups: RuntimeEditorGroup[] = [{
+      name: 'Checkout',
+      scriptId: 's1',
+      protocol: 'http',
+      scriptConfig: { base_url: '', log: { level: 'extended' } },
+    }]
+    act(() => {
+      root.render(
+        <RuntimeSettingsGroupEditor
+          groups={groups}
+          focusedIndex={0}
+          onFocusChange={() => {}}
+          scenarioDefault={{ log: { on_error_only: true } }}
+          overrides={[undefined]}
+          onChange={onChange}
+          onApplyToGroups={() => {}}
+        />,
+      )
+    })
+    clickTab('Error Handling')
+    const redact = Array.from(container.querySelectorAll('label')).find(label =>
+      (label.textContent || '').includes('Redact credentials in run evidence'),
+    ) as HTMLLabelElement
+    const checkbox = redact.querySelector('input[type="checkbox"]') as HTMLInputElement
+    // No layer sets the field, so it reads as the default ON (`?? true`).
+    expect(checkbox.checked).toBe(true)
+    expect(redact.className).toContain('selected')
+
+    act(() => checkbox.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    const last = onChange.mock.calls[onChange.mock.calls.length - 1]?.[1]
+    // Explicit false, materialized alongside the inherited siblings — not undefined,
+    // which would silently inherit the default ON again.
+    expect(last.log).toEqual({ on_error_only: true, redact_run_evidence: false })
+  })
+
+  it('renders an inherited redact_run_evidence=false unchecked and can turn it back on', () => {
+    const onChange = vi.fn()
+    act(() => {
+      root.render(
+        <RuntimeSettingsGroupEditor
+          groups={GROUPS}
+          focusedIndex={0}
+          onFocusChange={() => {}}
+          scenarioDefault={{ log: { level: 'standard', redact_run_evidence: false } }}
+          overrides={[undefined, undefined]}
+          onChange={onChange}
+          onApplyToGroups={() => {}}
+        />,
+      )
+    })
+    clickTab('Error Handling')
+    const checkbox = Array.from(container.querySelectorAll('label')).find(label =>
+      (label.textContent || '').includes('Redact credentials in run evidence'),
+    )?.querySelector('input[type="checkbox"]') as HTMLInputElement
+    expect(checkbox.checked).toBe(false)
+
+    act(() => checkbox.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    const last = onChange.mock.calls[onChange.mock.calls.length - 1]?.[1]
+    expect(last.log).toEqual({ level: 'standard', redact_run_evidence: true })
+  })
+
   it('materializes the highest-precedence run_logic replacement before editing one limit', () => {
     const onChange = vi.fn()
     const groups: RuntimeEditorGroup[] = [{

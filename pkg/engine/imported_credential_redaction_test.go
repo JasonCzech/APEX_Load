@@ -11,12 +11,44 @@ import (
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
-func TestRetainedSchemaCredentialRedactsEveryRuntimeBoundary(t *testing.T) {
-	const pin = "7312049876"
+// TestRetainedSchemaCredentialRunEvidenceFollowsOperatorSetting pins the origin
+// rule at all four runtime entry points at once — engine.New, NewMultiGroup,
+// ReplayScript, and shakeout — which is precisely where the four byte-identical
+// copies of the credential chokepoint used to live.
+//
+// A pin retained from an import is script-sourced. It is never removed from the
+// script, and whether it is scrubbed out of the run's OUTPUT is the operator's
+// call through script.Config.Log.RedactRunEvidence (default: redact).
+//
+// A value the script merely REFERENCES through {{secret.NAME}} lives in the
+// project secret store. The operator does not have it, so it is redacted in BOTH
+// modes. Both halves are asserted against the same error string, in both modes,
+// so a change that collapses the distinction in either direction fails here.
+func TestRetainedSchemaCredentialRunEvidenceFollowsOperatorSetting(t *testing.T) {
+	const (
+		pin            = "7312049876"
+		platformSecret = "vault-issued-bravo-8842"
+	)
+	// The canary must survive the origin-independent scrubbers, or every
+	// assertion below is satisfied by the generic high-entropy matcher and the
+	// test cannot detect the loss of platform-managed registration it exists to
+	// guard. A 24+ character [A-Za-z0-9+/=_-] run trips scrub's bare-token rule.
+	if scrubSensitiveTextWithConfig(platformSecret, nil) != platformSecret {
+		t.Fatalf(
+			"canary %q is removed by an origin-independent scrubber; this test cannot measure platform-managed registration",
+			platformSecret,
+		)
+	}
 	protocolName := registerReplayProtocolWithInitError(
 		t,
-		errors.New("remote rejected imported pin "+pin),
+		errors.New("remote rejected imported pin "+pin+" using store credential "+platformSecret),
 	)
+	resolver := SecretResolverFunc(func(name string) (string, bool) {
+		if name == "PLATFORM_TOKEN" {
+			return platformSecret, true
+		}
+		return "", false
+	})
 	script := &dsl.Script{
 		Name:     "retained-schema-credential",
 		Protocol: protocolName,
@@ -34,6 +66,9 @@ func TestRetainedSchemaCredentialRedactsEveryRuntimeBoundary(t *testing.T) {
 			HeaderList: dsl.HeaderList{{
 				Name:  "Content-Type",
 				Value: "application/json",
+			}, {
+				Name:  "X-Platform",
+				Value: "{{secret.PLATFORM_TOKEN}}",
 			}},
 			Body: `{"account":"42","pin":` + pin + `}`,
 			Metadata: map[string]any{
@@ -50,6 +85,9 @@ func TestRetainedSchemaCredentialRedactsEveryRuntimeBoundary(t *testing.T) {
 		}},
 	}
 
+	// The disclosure surface reports the retained pin in BOTH modes: it exists
+	// precisely so an operator can see what an import kept, and the setting
+	// governs run output, never the script or its disclosure.
 	values, err := ImportedCredentialValues(script)
 	if err != nil {
 		t.Fatalf("ImportedCredentialValues: %v", err)
@@ -58,45 +96,59 @@ func TestRetainedSchemaCredentialRedactsEveryRuntimeBoundary(t *testing.T) {
 		t.Fatalf("retained runtime values = %#v, want schema-annotated pin", values)
 	}
 
-	assertRedacted := func(label string, err error) {
-		t.Helper()
-		if err == nil {
-			t.Fatalf("%s returned nil error", label)
-		}
-		if strings.Contains(err.Error(), pin) || !strings.Contains(err.Error(), redactedPayloadValue) {
-			t.Fatalf("%s error = %q, want retained pin redacted", label, err)
-		}
-	}
+	for _, mode := range runEvidenceRedactionModes {
+		t.Run(mode.name, func(t *testing.T) {
+			script := setRunEvidenceRedaction(script, mode.redact)
+			assertOriginRule := func(label string, err error) {
+				t.Helper()
+				if err == nil {
+					t.Fatalf("%s returned nil error", label)
+				}
+				assertScriptSourcedRunEvidence(t, label, err.Error(), pin, mode.redact)
+				if strings.Contains(err.Error(), platformSecret) {
+					t.Fatalf("%s error = %q, leaked platform-managed secret %q", label, err, platformSecret)
+				}
+				if !strings.Contains(err.Error(), redactedPayloadValue) {
+					t.Fatalf("%s error = %q, want platform-managed secret replaced by %s", label, err, redactedPayloadValue)
+				}
+				// The durable script is never rewritten, whatever the setting says.
+				if got := script.Actions[0].Body; got != `{"account":"42","pin":`+pin+`}` {
+					t.Fatalf("%s rewrote the executable body to %q", label, got)
+				}
+			}
 
-	_, err = ReplayScript(context.Background(), script, ReplayOptions{})
-	assertRedacted("replay", err)
-	assertRedacted(
-		"shakeout",
-		RunScriptShakeoutWithSecretResolver(context.Background(), "shakeout", script, nil),
-	)
+			_, err := ReplayScript(context.Background(), script, ReplayOptions{SecretResolver: resolver})
+			assertOriginRule("replay", err)
+			assertOriginRule(
+				"shakeout",
+				RunScriptShakeoutWithSecretResolver(context.Background(), "shakeout", script, resolver),
+			)
 
-	load, err := New(Config{Script: script, VUsers: 1, Duration: time.Second})
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
-	_, err = load.Run(context.Background())
-	assertRedacted("load", err)
+			load, err := New(Config{Script: script, VUsers: 1, Duration: time.Second, SecretResolver: resolver})
+			if err != nil {
+				t.Fatalf("New: %v", err)
+			}
+			_, err = load.Run(context.Background())
+			assertOriginRule("load", err)
 
-	multi, err := NewMultiGroup(MultiGroupConfig{
-		Duration: time.Second,
-		Groups: []GroupConfig{{
-			Name:     "group",
-			Script:   script,
-			VUsers:   1,
-			RampUp:   0,
-			RampDown: 0,
-		}},
-	})
-	if err != nil {
-		t.Fatalf("NewMultiGroup: %v", err)
+			multi, err := NewMultiGroup(MultiGroupConfig{
+				Duration: time.Second,
+				Groups: []GroupConfig{{
+					Name:           "group",
+					Script:         script,
+					VUsers:         1,
+					RampUp:         0,
+					RampDown:       0,
+					SecretResolver: resolver,
+				}},
+			})
+			if err != nil {
+				t.Fatalf("NewMultiGroup: %v", err)
+			}
+			_, err = multi.Run(context.Background())
+			assertOriginRule("multi-group load", err)
+		})
 	}
-	_, err = multi.Run(context.Background())
-	assertRedacted("multi-group load", err)
 }
 
 func TestImportedCredentialValuesForDisclosureFailsClosedBesideStaleLocator(t *testing.T) {
@@ -564,17 +616,24 @@ func TestImportedCredentialValuesIncludesMarkedBrowserActionValues(t *testing.T)
 		t.Fatalf("credential collection mutated durable browser actions: %#v", script.Actions)
 	}
 
-	_, err = ReplayScript(context.Background(), script, ReplayOptions{})
-	if err == nil {
-		t.Fatal("ReplayScript returned nil error")
-	}
-	for _, secret := range []string{fillSecret, selectSecret, secondSecret} {
-		if strings.Contains(err.Error(), secret) {
-			t.Fatalf("ReplayScript error leaked retained browser credential %q: %q", secret, err)
-		}
-	}
-	if !strings.Contains(err.Error(), redactedPayloadValue) {
-		t.Fatalf("ReplayScript error = %q, want runtime redaction marker", err)
+	// Values a recorder marked as secret while capturing a browser flow are still
+	// values written into the script the operator imported. They are enumerated by
+	// the disclosure surface above in either mode; only whether they are scrubbed
+	// back out of that same operator's run OUTPUT follows the setting.
+	for _, mode := range runEvidenceRedactionModes {
+		t.Run(mode.name, func(t *testing.T) {
+			setRunEvidenceRedaction(script, mode.redact)
+			_, err := ReplayScript(context.Background(), script, ReplayOptions{})
+			if err == nil {
+				t.Fatal("ReplayScript returned nil error")
+			}
+			for _, value := range []string{fillSecret, selectSecret, secondSecret} {
+				assertScriptSourcedRunEvidence(t, "browser replay", err.Error(), value, mode.redact)
+			}
+			if script.Actions[0].Value != fillSecret || script.Actions[1].Value != selectSecret {
+				t.Fatalf("replay rewrote durable browser actions: %#v", script.Actions)
+			}
+		})
 	}
 }
 

@@ -34,15 +34,18 @@ func RunScriptShakeoutWithSecretResolver(ctx context.Context, groupName string, 
 	if err != nil {
 		return fmt.Errorf("inspect script secret references: %s", scrubSensitiveText(err.Error()))
 	}
-	secretValues = append(secretValues, runtimeProtocolAuthCompositeValues(script, secretResolver)...)
-	importedValues, credentialTemplates, err := inspectImportedCredentials(script)
+	// One shared chokepoint with engine.New, NewMultiGroup, and ReplayScript; see
+	// script_sourced_run_evidence.go.
+	secretValues, scriptSourcedValues, importedCredentials, err := runtimeSecretValuesForScript(script, secretResolver, secretValues)
 	if err != nil {
 		return fmt.Errorf("inspect retained import credentials: %s", scrubSensitiveText(err.Error()))
 	}
-	secretValues = append(secretValues, importedValues...)
-	redactionConfig, err := WithSecretValueRedactionChecked(nil, secretValues)
+	redactionConfig, scriptSourcedDropped, err := buildRuntimeSecretRedaction(nil, secretValues, scriptSourcedValues)
 	if err != nil {
 		return fmt.Errorf("prepare runtime secret redaction: %s", scrubSensitiveText(err.Error()))
+	}
+	if scriptSourcedDropped {
+		warnScriptSourcedRedactionDropped("group", groupName, "script", script.Name)
 	}
 
 	proto, err := protocol.Get(script.Protocol)
@@ -66,8 +69,7 @@ func RunScriptShakeoutWithSecretResolver(ctx context.Context, groupName string, 
 		Variables:                    make(map[string]string),
 		SecretResolver:               secretResolver,
 		RedactionConfig:              redactionConfig,
-		credentialTemplates:          credentialTemplates,
-		credentialTemplatesInspected: true,
+		importedCredentialInspection: importedCredentials,
 	}
 	vu.bindRuntimeTextRedactor()
 	// Register DSL cleanup as soon as the protocol-backed VUser exists. It runs

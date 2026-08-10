@@ -138,7 +138,10 @@ api_key=` + apiKey + `
 	}
 }
 
-func TestEnterpriseArchiveUnsupportedProxyCredentialsPersistInertAndProjectMasked(t *testing.T) {
+// The imported proxy credentials stay inert (proxy_mode "none") but durable and
+// exact, ordinary READS mask them, and the export is the runnable artifact so it
+// keeps them: an exported script has to import back into a script that runs.
+func TestEnterpriseArchiveUnsupportedProxyCredentialsPersistInertAndMaskOnlyReads(t *testing.T) {
 	const (
 		proxyUser = "unsupported-enterprise-proxy-user-canary-47ad"
 		proxyPass = "unsupported-enterprise-proxy-pass-canary-93e1"
@@ -290,10 +293,22 @@ ProxyPassword=` + proxyPass + `
 	if err != nil {
 		t.Fatal(err)
 	}
-	if bytes.Contains(exported, []byte(proxyUser)) ||
-		bytes.Contains(exported, []byte(proxyPass)) ||
-		!bytes.Contains(exported, []byte(maskedScriptSecret)) {
-		t.Fatalf("script export did not mask disabled proxy credentials: %s", exported)
+	if !bytes.Contains(exported, []byte(proxyUser)) ||
+		!bytes.Contains(exported, []byte(proxyPass)) {
+		t.Fatalf("script export dropped the imported proxy credentials: %s", exported)
+	}
+	var exportedEnvelope struct {
+		Script *dsl.Script `json:"script"`
+	}
+	if err := json.Unmarshal(exported, &exportedEnvelope); err != nil {
+		t.Fatalf("script export is not a script envelope: %v", err)
+	}
+	if exportedEnvelope.Script == nil ||
+		exportedEnvelope.Script.Config.HTTP.ProxyMode != "none" ||
+		exportedEnvelope.Script.Config.HTTP.Proxy.URL != "" ||
+		exportedEnvelope.Script.Config.HTTP.Proxy.Username != proxyUser ||
+		exportedEnvelope.Script.Config.HTTP.Proxy.Password != proxyPass {
+		t.Fatalf("script export is not the durable inert proxy record: %s", exported)
 	}
 }
 
