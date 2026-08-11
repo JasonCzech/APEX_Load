@@ -13,6 +13,7 @@ import {
   isCurrentRepositoryRequest,
   isProjectScopedMessageCurrent,
   projectForActiveDomain,
+  resolveApplicationCreateTarget,
   telemetryDiagnosticsForProject,
 } from './appProjectScope'
 import type { Domain, Project, TelemetryDiagnosticEntry } from './types'
@@ -113,6 +114,41 @@ describe('App project-scoped state', () => {
 
     await act(async () => root.unmount())
     container.remove()
+  })
+
+  it('files a new application under the workspace project by default', () => {
+    const target = resolveApplicationCreateTarget([projectA], [projectA], projectA)
+
+    expect(target).toEqual({ project: projectA, inDomain: true })
+  })
+
+  it('files a new application under an explicitly requested sibling project', () => {
+    const sibling: Project = { ...projectA, id: 'project-sibling', name: 'Sibling' }
+    const target = resolveApplicationCreateTarget(
+      [projectA, sibling],
+      [projectA, sibling],
+      projectA,
+      sibling.id,
+    )
+
+    expect(target).toEqual({ project: sibling, inDomain: true })
+  })
+
+  it('commits a guarded draft to its originating project outside the active domain', () => {
+    const retailProject: Project = { ...projectA, id: 'project-retail', domain_id: 'domain-retail' }
+    const target = resolveApplicationCreateTarget(
+      [projectA, retailProject],
+      [retailProject],
+      retailProject,
+      projectA.id,
+    )
+
+    expect(target).toEqual({ project: projectA, inDomain: false })
+  })
+
+  it('has no application target when the active domain has no project', () => {
+    expect(resolveApplicationCreateTarget([projectA], [], null)).toBeNull()
+    expect(resolveApplicationCreateTarget([projectA], [], null, 'project-missing')).toBeNull()
   })
 
   it('rejects repository responses from older generations and previous domains', () => {

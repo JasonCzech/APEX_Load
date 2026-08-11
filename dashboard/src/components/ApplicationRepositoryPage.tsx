@@ -18,6 +18,7 @@ import { useProjectApi, type DeleteEntityResponse } from '../hooks/api/useProjec
 import { useScriptApi } from '../hooks/api/useScriptApi'
 import { useTestApi } from '../hooks/api/useTestApi'
 import { useNavigationGuard, type NavigationGuard } from '../hooks/NavigationGuardProvider'
+import { readStoredString, writeStoredString } from '../utils/browserStorage'
 import StatusBadge from './StatusBadge'
 import { SortHeader } from './SortHeader'
 import {
@@ -43,6 +44,7 @@ interface Props {
   domains: Domain[]
   activeDomain: Domain | null
   activeApplication: Application | null
+  activeProject?: Project | null
   applicationRepository: ApplicationRepository | null
   categories: RepositoryCategory[]
   projects: Project[]
@@ -50,6 +52,7 @@ interface Props {
   canManageProjects: boolean
   canManageReleases: boolean
   onDomainChange: (domain: Domain) => void
+  onProjectSelect?: (project: Project) => void
   onRepositoryRefresh: () => Promise<void>
   onRepositoryCategoryCreate?: (
     domainId: string,
@@ -110,6 +113,15 @@ const CATALOG_TABS: Array<{ id: RepositoryCatalogTab; label: string; kind?: Repo
   { id: 'data_pool', label: 'Data Pools', kind: 'data_pool' },
   { id: 'structure', label: 'Structure' },
 ]
+
+// The page subtree remounts whenever the workspace scope in the route hash
+// changes (LazyLoadBoundary is keyed on it), and Structure's "Set as active"
+// changes that scope — without persistence the click would also bounce the
+// operator back to the All tab.
+function readStoredCatalogTab(): RepositoryCatalogTab {
+  const stored = readStoredString('apexload.repository.tab')
+  return CATALOG_TABS.some(tab => tab.id === stored) ? stored as RepositoryCatalogTab : 'all'
+}
 
 const DEFAULT_FILTERS: RepositoryCatalogFilters = {
   query: '',
@@ -228,6 +240,7 @@ export default function ApplicationRepositoryPage({
   domains,
   activeDomain,
   activeApplication,
+  activeProject,
   applicationRepository,
   categories,
   projects,
@@ -235,6 +248,7 @@ export default function ApplicationRepositoryPage({
   canManageProjects,
   canManageReleases,
   onDomainChange,
+  onProjectSelect,
   onRepositoryRefresh,
   onRepositoryCategoryCreate,
   onProjectsRefresh,
@@ -257,7 +271,7 @@ export default function ApplicationRepositoryPage({
   const [scenariosByProject, setScenariosByProject] = useState<Record<string, StoredScenario[]>>({})
   const [testsByProject, setTestsByProject] = useState<Record<string, TestSummary[]>>({})
   const [dataPoolsByProject, setDataPoolsByProject] = useState<Record<string, SharedDataPool[]>>({})
-  const [activeTab, setActiveTab] = useState<RepositoryCatalogTab>('all')
+  const [activeTab, setActiveTab] = useState<RepositoryCatalogTab>(readStoredCatalogTab)
   const [filters, setFilters] = useState<RepositoryCatalogFilters>(DEFAULT_FILTERS)
   const [sort, setSort] = useState<RepositoryCatalogSort>(DEFAULT_SORT)
   const [catalogLoading, setCatalogLoading] = useState(false)
@@ -516,6 +530,9 @@ export default function ApplicationRepositoryPage({
     if (catalogTableScrollRef.current) catalogTableScrollRef.current.scrollTop = 0
     if (virtualizeCatalogRows) catalogRowVirtualizer.scrollToOffset(0)
   }, [activeTab, catalogRowVirtualizer, filters, sort, virtualizeCatalogRows])
+  useEffect(() => {
+    writeStoredString('apexload.repository.tab', activeTab)
+  }, [activeTab])
   const selectableVisibleRows = useMemo(
     () => activeTab === 'structure' ? [] : visibleRows,
     [activeTab, visibleRows],
@@ -609,9 +626,18 @@ export default function ApplicationRepositoryPage({
   const commitReleaseDraft = useCallback(async (key: string, draft: ReleaseCreationDraft) => {
     const name = draft.name.trim()
     if (!name) return false
+    // Bind the release to the application that is active AT COMMIT TIME when
+    // it belongs to the draft's project. The id frozen at the first keystroke
+    // can go stale: application switches no longer remount this page, so a
+    // draft typed under application A and submitted after switching to B
+    // would otherwise silently bind to A while every visible cue says B.
+    // (Guard-saves run before scope switches, so their binding is unchanged.)
+    const applicationId = activeApplication?.project_id === draft.projectId
+      ? activeApplication.id
+      : draft.applicationId
     const release = await repositoryApi.createProjectRelease(draft.projectId, {
       name,
-      application_id: draft.applicationId,
+      application_id: applicationId,
     })
     setReleasesByProject(previous => ({
       ...previous,
@@ -624,7 +650,7 @@ export default function ApplicationRepositoryPage({
       setReleaseCreationDrafts(next)
     }
     return true
-  }, [repositoryApi])
+  }, [activeApplication, repositoryApi])
 
   const saveAllCreationDrafts = useCallback(async () => {
     setError('')
@@ -1285,7 +1311,22 @@ export default function ApplicationRepositoryPage({
                             <h3>{project.name}</h3>
                             <p>{project.id}</p>
                           </div>
-                          <span>{(releasesByProject[project.id] || []).length} releases</span>
+                          <div className="repository-project-actions">
+                            <span>{(releasesByProject[project.id] || []).length} releases</span>
+                            {onProjectSelect && (
+                              activeProject?.id === project.id ? (
+                                <span className="repository-project-active">Active project</span>
+                              ) : (
+                                <button
+                                  type="button"
+                                  className="btn btn-secondary btn-sm"
+                                  onClick={() => onProjectSelect(project)}
+                                >
+                                  Set as active
+                                </button>
+                              )
+                            )}
+                          </div>
                         </div>
                         {canManageReleases && (
                           <form className="repository-compact-form" onSubmit={event => submitRelease(event, project)}>

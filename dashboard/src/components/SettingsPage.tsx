@@ -19,6 +19,7 @@ import {
   isGovernanceSettingsSubsectionId,
   isIntegrationSettingsSubsectionId,
   isProjectSettingsSubsectionId,
+  isSettingsSectionId,
   mergeSettingsOrder,
   PROJECT_SETTINGS_SUBSECTIONS,
   readSettingsSectionArray,
@@ -31,6 +32,7 @@ import {
   type ProjectSettingsSubsectionId,
   type SettingsSectionId,
 } from './settingsSectionLayout'
+import { clearSettingsBreadcrumb, readSettingsBreadcrumb, writeSettingsBreadcrumb } from './settingsBreadcrumbs'
 import DomainDeploymentTargetCard from './DomainDeploymentTargetCard'
 import EntitlementsPanel from './EntitlementsPanel'
 import EntitlementHeadroom from './EntitlementHeadroom'
@@ -355,6 +357,7 @@ export default function SettingsPage({
     projects: scopedProjects,
     projectsError,
     activeProject,
+    setActiveProject,
     createAndSelectProject,
     updateProject: updateProjectInContext,
   } = useProject()
@@ -378,7 +381,11 @@ export default function SettingsPage({
   const [settingsMutationBusy, setSettingsMutationBusy] = useState(false)
   const [saveMessage, setSaveMessage] = useState('')
   const [requestError, setRequestError] = useState('')
-  const [activeSection, setActiveSection] = useState<SettingsSectionId>('general')
+  // Persisted like the subsections below: the whole page subtree is remounted
+  // whenever the route hash changes (LazyLoadBoundary is keyed on it), and a
+  // domain or project switch rewrites the hash — without persistence every
+  // scope switch would bounce the operator back to the General tab.
+  const [activeSection, setActiveSection] = useState<SettingsSectionId>(() => readSettingsSubsectionId('apexload.settings.section', 'general', isSettingsSectionId))
   const [activeGeneralSubsection, setActiveGeneralSubsection] = useState<GeneralSettingsSubsectionId>(() => readSettingsSubsectionId('apexload.settings.generalSubsection'))
   const [activeGovernanceSubsection, setActiveGovernanceSubsection] = useState<GovernanceSettingsSubsectionId>(() => readSettingsSubsectionId('apexload.settings.governanceSubsection', 'schedule-defaults', isGovernanceSettingsSubsectionId))
   const [activeCapacitySubsection, setActiveCapacitySubsection] = useState<CapacitySettingsSubsectionId>(() => readSettingsSubsectionId('apexload.settings.capacitySubsection', 'availability', isCapacitySettingsSubsectionId))
@@ -399,17 +406,27 @@ export default function SettingsPage({
   const [domainDraftName, setDomainDraftName] = useState('')
   const [domainDraftDescription, setDomainDraftDescription] = useState('')
   const [domainActionError, setDomainActionError] = useState('')
-  const [domainActionMessage, setDomainActionMessage] = useState('')
+  // Creating or deleting a domain switches the workspace scope, which remounts
+  // this page; the outcome message and any "the mutation succeeded, do not
+  // retry" warning are re-read from breadcrumbs so they survive the remount.
+  const [domainActionMessage, setDomainActionMessage] = useState(() =>
+    readSettingsBreadcrumb<string>('apexload.settings.domainMessage') || '')
   const [domainReconciliationWarning, setDomainReconciliationWarning] = useState<{
     message: string
     preferredId?: string
     preserveDomain?: Domain
     removeDomainId?: string
-  } | null>(null)
+  } | null>(() => readSettingsBreadcrumb<{
+    message: string
+    preferredId?: string
+    preserveDomain?: Domain
+    removeDomainId?: string
+  }>('apexload.settings.domainWarning'))
   const [confirmDeleteDomain, setConfirmDeleteDomain] = useState<Domain | null>(null)
   const [managedReleases, setManagedReleases] = useState(releases)
   const [newApplicationName, setNewApplicationName] = useState('')
   const [newApplicationProjectId, setNewApplicationProjectId] = useState('')
+  const [applicationCreateBusy, setApplicationCreateBusy] = useState(false)
   const [applicationActionError, setApplicationActionError] = useState('')
   const [applicationReconciliationWarning, setApplicationReconciliationWarning] = useState<{
     message: string
@@ -501,6 +518,11 @@ export default function SettingsPage({
   const settingsMutationBusyRef = useRef(false)
   const dataPoolCatalogMutationBusyRef = useRef(false)
   const dataPoolRowDeleteBusyRef = useRef(false)
+  const applicationCreateBusyRef = useRef(false)
+  // True while the application-create project pin was chosen in the select
+  // rather than auto-seeded from the workspace: an explicit choice survives
+  // clearing the name field, an auto-seed does not.
+  const applicationProjectPinExplicitRef = useRef(false)
   const dataPoolLoadGenerationRef = useRef(0)
   const dataPoolRowsLoadGenerationRef = useRef(0)
   const activeDataPoolProjectIdRef = useRef(activeProject?.id)
@@ -509,6 +531,10 @@ export default function SettingsPage({
   const committedManagedReleasesRef = useRef(new Map<string, Release>())
   const managedReleaseTombstonesRef = useRef(new Set<string>())
   const committedProjectsRef = useRef(new Map<string, Project>())
+  // Mirrors the catalog cursor so reconciliation can keep a still-valid manual
+  // pick instead of snapping back to the first project. A ref, not a dependency:
+  // the effect must not re-run on every selection.
+  const selectedProjectIdRef = useRef('')
   const [poolQuotaDraftDirty, setPoolQuotaDraftDirty] = useState(false)
   activeDataPoolProjectIdRef.current = activeProject?.id
   activeApplicationIdRef.current = activeApplication?.id
@@ -933,6 +959,26 @@ export default function SettingsPage({
     () => projects.find(project => project.id === selectedProjectId) || null,
     [projects, selectedProjectId],
   )
+  selectedProjectIdRef.current = selectedProjectId
+  // Where a create row would file its new record: the project pinned when the
+  // draft started, otherwise the workspace project. The id can outlive the
+  // catalog entry when a draft is guarded across a domain switch, so both rows
+  // fall back to the raw id rather than claiming there is no target.
+  const applicationCreateProjectId = newApplicationProjectId || activeProject?.id || ''
+  const dataPoolCreateProjectId = dataPoolProjectId || activeProject?.id || ''
+  // The settings catalog can retain committed projects from other domains (a
+  // deliberate reconciliation bridge). Creating an application must only offer
+  // this domain's projects, or an "empty" domain would present a create row
+  // that silently files the application into another domain.
+  const applicationCreateProjects = useMemo(() => {
+    const domainId = activeDomain?.id || 'default'
+    return projects.filter(project => (project.domain_id || 'default') === domainId)
+  }, [activeDomain?.id, projects])
+  const dataPoolCreateProject = useMemo(() => {
+    if (!dataPoolCreateProjectId) return null
+    return projects.find(candidate => candidate.id === dataPoolCreateProjectId)
+      || (activeProject?.id === dataPoolCreateProjectId ? activeProject : null)
+  }, [activeProject, dataPoolCreateProjectId, projects])
   const projectDraftValidationError = useMemo(
     () => {
       if (!selectedProject) return ''
@@ -1121,6 +1167,7 @@ export default function SettingsPage({
       ? null
       : requestedProject
         || nextProjects.find(project => project.id === activeProject?.id)
+        || nextProjects.find(project => project.id === selectedProjectIdRef.current)
         || nextProjects[0]
         || null
     setProjects(nextProjects)
@@ -1169,6 +1216,10 @@ export default function SettingsPage({
   useEffect(() => {
     writeStoredJSON('apexload.settings.sectionOrder', sectionOrder)
   }, [sectionOrder])
+
+  useEffect(() => {
+    writeStoredJSON('apexload.settings.section', activeSection)
+  }, [activeSection])
 
   useEffect(() => {
     writeStoredJSON('apexload.settings.generalSubsection', activeGeneralSubsection)
@@ -1234,7 +1285,12 @@ export default function SettingsPage({
     setDataPoolRowsNextCursor(null)
     setDataPoolRowsHasMore(false)
     setDataPoolRowsLoadBusy(false)
-    setDataPoolActionNotice('')
+    // A create committed just before a scope switch leaves its confirmation as
+    // a breadcrumb, because the switch remounts this page (the route boundary
+    // is keyed on the hash) and destroys the live notice. Surface it once;
+    // otherwise start the newly scoped list with a clean slate.
+    const breadcrumb = readSettingsBreadcrumb<string>('apexload.settings.dataPoolNotice')
+    setDataPoolActionNotice(breadcrumb || '')
     void loadDataPools()
     return () => {
       dataPoolLoadGenerationRef.current += 1
@@ -1790,16 +1846,29 @@ export default function SettingsPage({
   const createApplication = async (): Promise<boolean> => {
     const name = newApplicationName.trim()
     if (!name) return true
+    // A double-click must not commit the same application twice.
+    if (applicationCreateBusyRef.current) {
+      // Reached by a guard-save racing an in-flight click; name the real
+      // cause so the guard modal's generic failure text isn't misleading.
+      setApplicationActionError('An application create is already in progress. Wait for it to finish, then try again.')
+      return false
+    }
+    applicationCreateBusyRef.current = true
+    setApplicationCreateBusy(true)
     const projectId = newApplicationProjectId || activeProject?.id
     try {
       await createAndSelectApplication(name, projectId)
       setNewApplicationName('')
       setNewApplicationProjectId('')
+      applicationProjectPinExplicitRef.current = false
       setApplicationActionError('')
       return true
     } catch (error: unknown) {
       setApplicationActionError(getErrorMessage(error, 'Unable to create application'))
       return false
+    } finally {
+      applicationCreateBusyRef.current = false
+      setApplicationCreateBusy(false)
     }
   }
 
@@ -1809,6 +1878,10 @@ export default function SettingsPage({
     setDomainDraftDescription(domain.description || '')
     setDomainActionError('')
     setDomainActionMessage('')
+    // The selection explicitly retires the outcome message; without clearing
+    // the crumb, the switch-driven remount would re-read it and resurrect a
+    // message this action just dismissed.
+    clearSettingsBreadcrumb('apexload.settings.domainMessage')
     onDomainChange?.(domain)
   }
 
@@ -1839,22 +1912,37 @@ export default function SettingsPage({
 
     setNewDomainName('')
     setNewDomainDescription('')
-    setSelectedDomainId(created.domain.id)
-    setDomainDraftName(created.domain.name)
-    setDomainDraftDescription(created.domain.description || '')
-    onDomainChange?.(created.domain)
-    setDomainActionMessage(`Domain "${created.domain.name}" created.`)
-    setDomainActionError('')
+    const createdMessage = `Domain "${created.domain.name}" created.`
+    // Reconcile the domain list BEFORE switching scope: the switch remounts
+    // this page, and a warning discovered after the remount would be set on a
+    // dead instance and written as a breadcrumb nothing re-reads. With the
+    // refresh settled first, every outcome is known while this instance is
+    // still alive, and both crumbs are on disk before the remount.
     try {
       await onDomainsRefresh?.(created.domain.id, { preserveDomain: created.domain })
       setDomainReconciliationWarning(null)
+      clearSettingsBreadcrumb('apexload.settings.domainWarning')
     } catch {
-      setDomainReconciliationWarning({
+      const warning = {
         message: `Domain "${created.domain.name}" was created, but the domain list could not be refreshed. The create succeeded—do not create it again. Retry synchronization below.`,
         preferredId: created.domain.id,
         preserveDomain: created.domain,
-      })
+      }
+      writeSettingsBreadcrumb('apexload.settings.domainWarning', warning)
+      setDomainReconciliationWarning(warning)
     }
+    // The domain cursor moves only after the refresh settles: pointing the
+    // draft at a domain the catalog does not list yet reads as an unsaved
+    // rename during the refresh's network flight, and that poisons the
+    // navigation guard's dirty snapshot — the switch below would then pop a
+    // spurious unsaved-changes prompt on every successful create.
+    setSelectedDomainId(created.domain.id)
+    setDomainDraftName(created.domain.name)
+    setDomainDraftDescription(created.domain.description || '')
+    writeSettingsBreadcrumb('apexload.settings.domainMessage', createdMessage)
+    setDomainActionMessage(createdMessage)
+    setDomainActionError('')
+    onDomainChange?.(created.domain)
   }
 
   const saveDomain = async (): Promise<boolean> => {
@@ -1890,6 +1978,10 @@ export default function SettingsPage({
     try {
       await onDomainsRefresh?.(updated.id, { preserveDomain: updated })
       setDomainReconciliationWarning(null)
+      // A successful reconciliation retires any earlier warning crumb, or a
+      // remount inside its freshness window would resurrect a stale
+      // "do not retry" warning about a list that is now current.
+      clearSettingsBreadcrumb('apexload.settings.domainWarning')
     } catch {
       setDomainReconciliationWarning({
         message: `Domain "${updated.name}" was saved, but the domain list could not be refreshed. The save succeeded—do not save it again. Retry synchronization below.`,
@@ -1930,25 +2022,33 @@ export default function SettingsPage({
     }
 
     const fallbackDomain = domains.find(candidate => candidate.id !== domain.id) || null
+    const deletedMessage = `Domain "${domain.name}" deleted.`
+    setConfirmDeleteDomain(null)
+    // Reconcile BEFORE the fallback switch, for the same reason as createDomain:
+    // the switch remounts this page, and the warning must be known and written
+    // while this instance is still alive.
+    try {
+      await onDomainsRefresh?.(fallbackDomain?.id, { removeDomainId: domain.id })
+      setDomainReconciliationWarning(null)
+      clearSettingsBreadcrumb('apexload.settings.domainWarning')
+    } catch {
+      const warning = {
+        message: `Domain "${domain.name}" was deleted, but the domain list could not be refreshed. The delete succeeded—do not delete it again. Retry synchronization below.`,
+        preferredId: fallbackDomain?.id,
+        removeDomainId: domain.id,
+      }
+      writeSettingsBreadcrumb('apexload.settings.domainWarning', warning)
+      setDomainReconciliationWarning(warning)
+    }
     if (fallbackDomain) {
       setSelectedDomainId(fallbackDomain.id)
+      writeSettingsBreadcrumb('apexload.settings.domainMessage', deletedMessage)
       onDomainChange?.(fallbackDomain)
     } else {
       setSelectedDomainId('')
     }
-    setDomainActionMessage(`Domain "${domain.name}" deleted.`)
+    setDomainActionMessage(deletedMessage)
     setDomainActionError('')
-    setConfirmDeleteDomain(null)
-    try {
-      await onDomainsRefresh?.(fallbackDomain?.id, { removeDomainId: domain.id })
-      setDomainReconciliationWarning(null)
-    } catch {
-      setDomainReconciliationWarning({
-        message: `Domain "${domain.name}" was deleted, but the domain list could not be refreshed. The delete succeeded—do not delete it again. Retry synchronization below.`,
-        preferredId: fallbackDomain?.id,
-        removeDomainId: domain.id,
-      })
-    }
   }
 
   const retryDomainReconciliation = async () => {
@@ -1959,6 +2059,9 @@ export default function SettingsPage({
         removeDomainId: domainReconciliationWarning.removeDomainId,
       })
       setDomainReconciliationWarning(null)
+      // Also retire the breadcrumb, or a remount within its freshness window
+      // would resurrect a warning the retry just resolved.
+      clearSettingsBreadcrumb('apexload.settings.domainWarning')
     } catch {
       // Keep the warning visible: this retry reconciles the catalog and must
       // never replay the already-committed mutation.
@@ -1981,8 +2084,16 @@ export default function SettingsPage({
   }
 
   const selectProject = (project: Project | null) => {
-    if (selectedProject?.id === project?.id) return
-    runGuarded(() => applyProjectSelection(project))
+    // Re-clicking the highlighted card is still meaningful when the workspace
+    // project has drifted away from it, so only skip when both agree.
+    if (selectedProject?.id === project?.id && activeProject?.id === project?.id) return
+    runGuarded(() => {
+      applyProjectSelection(project)
+      // The catalog cursor and the workspace project are the same choice from
+      // the operator's point of view: picking a project here is what every
+      // other surface (sidebar, Apps & Releases, data pools) reads.
+      if (project) setActiveProject(project)
+    })
   }
 
   const createProject = async (): Promise<boolean> => {
@@ -2102,7 +2213,7 @@ export default function SettingsPage({
     && (!applicationRenameDraftDirty || Boolean(renamingApplicationName?.trim()))
     && (!releaseRenameDraftDirty || Boolean(renamingReleaseName.trim()))
     && (!projectCreateDraftDirty || canManageProjects)
-    && (!dataPoolCreateDraftDirty || Boolean(dataPoolName.trim()))
+    && (!dataPoolCreateDraftDirty || (Boolean(dataPoolName.trim()) && Boolean(dataPoolCreateProjectId)))
     && (!poolQuotaDraftDirty || canManageProjects)
   const saveAllSettingsChanges = async (): Promise<boolean> => {
     if (hasUnsavedChanges && !(await saveSettings())) return false
@@ -2130,6 +2241,7 @@ export default function SettingsPage({
     poolQuotaDraftRef.current?.discard()
     setNewApplicationName('')
     setNewApplicationProjectId('')
+    applicationProjectPinExplicitRef.current = false
     setRenamingApplicationId(null)
     setRenamingApplicationName(null)
     setRenamingApplicationOriginalName(null)
@@ -2377,10 +2489,17 @@ export default function SettingsPage({
   const createDataPool = async (): Promise<boolean> => {
     const name = dataPoolName.trim()
     if (!name) return false
+    const projectId = dataPoolProjectId || activeProject?.id
+    // Without a project the server would file the pool under the installation's
+    // default project, which is not where the operator is looking.
+    if (!projectId) {
+      setDataPoolActionError('Select a project before creating a data pool.')
+      setDataPoolActionNotice('')
+      return false
+    }
     if (dataPoolCatalogMutationBusyRef.current) return false
     dataPoolCatalogMutationBusyRef.current = true
     setDataPoolCatalogMutationBusy(true)
-    const projectId = dataPoolProjectId || activeProject?.id
     setDataPoolActionNotice('')
     try {
       const pool = await api.createDataPool({ name, description: dataPoolDescription.trim(), project_id: projectId })
@@ -2394,12 +2513,23 @@ export default function SettingsPage({
         selectedDataPoolIdRef.current = pool.id
         setSelectedDataPoolId(pool.id)
       }
+      const targetName = projects.find(candidate => candidate.id === projectId)?.name
+        || (activeProject?.id === projectId ? activeProject.name : projectId)
       const reloaded = await loadDataPools(pool.id)
-      if (activeDataPoolProjectIdRef.current !== projectId) return true
+      const crossProject = activeDataPoolProjectIdRef.current !== projectId
+      // Name the project in every outcome: a guard-save commits here first and
+      // the workspace switch that follows remounts this page, so the message
+      // is also written as a breadcrumb for the next mount to surface — the
+      // pool list only shows the active project, and without this the pool
+      // would vanish silently.
+      const notice = crossProject
+        ? `Created data pool "${pool.name}" in project "${targetName}". Switch to that project to manage it.`
+        : reloaded
+          ? `Created data pool "${pool.name}" in project "${targetName}".`
+          : `Data pool "${pool.name}" was created in project "${targetName}", but the list could not be reloaded. The create succeeded—do not retry. Refresh the list to verify it.`
+      writeSettingsBreadcrumb('apexload.settings.dataPoolNotice', notice)
       setDataPoolActionError('')
-      setDataPoolActionNotice(reloaded
-        ? `Created data pool "${pool.name}".`
-        : `Data pool "${pool.name}" was created, but the list could not be reloaded. The create succeeded—do not retry. Refresh the list to verify it.`)
+      setDataPoolActionNotice(notice)
       return true
     } catch (error: unknown) {
       if (activeDataPoolProjectIdRef.current === projectId) {
@@ -2419,6 +2549,9 @@ export default function SettingsPage({
     const projectId = activeProject?.id
     setConfirmDeletePool(null)
     setDataPoolActionNotice('')
+    // A delete supersedes any created-pool breadcrumb; without this a remount
+    // within the freshness window would announce a pool that no longer exists.
+    clearSettingsBreadcrumb('apexload.settings.dataPoolNotice')
     try {
       await api.deleteDataPool(pool.id)
       const reloaded = await loadDataPools('')
@@ -4754,7 +4887,15 @@ export default function SettingsPage({
                   placeholder="Optional description"
                   disabled={!canManageDomains}
                 />
-                <button className="btn btn-secondary" type="button" onClick={createDomain} disabled={!newDomainName.trim() || !canManageDomains}>
+                <button
+                  className="btn btn-secondary"
+                  type="button"
+                  // Resolve unsaved edits first: createDomain moves the domain
+                  // cursor to the created domain, which would clobber a dirty
+                  // rename draft and make the guard's later Save a no-op.
+                  onClick={() => runGuarded(() => { void createDomain() })}
+                  disabled={!newDomainName.trim() || !canManageDomains}
+                >
                   Add Domain
                 </button>
               </div>
@@ -4891,22 +5032,67 @@ export default function SettingsPage({
                   <button className="btn btn-secondary btn-sm" type="button" onClick={() => void retryApplicationReconciliation()}>Retry</button>
                 </div>
               )}
-              <div className="inline-create-row">
-                <input
-                  className="settings-input"
-                  value={newApplicationName}
-                  onChange={event => {
-                    const next = event.target.value
-                    if (!newApplicationName.trim() && next.trim()) setNewApplicationProjectId(activeProject?.id || '')
-                    if (!next.trim()) setNewApplicationProjectId('')
-                    setNewApplicationName(next)
-                  }}
-                  placeholder="Create application, e.g. ACC"
-                />
-                <button className="btn btn-secondary" type="button" onClick={createApplication} disabled={!newApplicationName.trim()}>
-                  Add Application
-                </button>
-              </div>
+              {applicationCreateProjects.length > 0 ? (
+                <div className="inline-create-row">
+                  <input
+                    className="settings-input"
+                    value={newApplicationName}
+                    onChange={event => {
+                      const next = event.target.value
+                      // Pin the draft to the workspace project on the first
+                      // keystroke — unless the operator already chose a target
+                      // in the select, which always wins and also survives
+                      // clearing the name to retype it.
+                      if (!newApplicationName.trim() && next.trim() && !newApplicationProjectId) setNewApplicationProjectId(activeProject?.id || '')
+                      if (!next.trim() && !applicationProjectPinExplicitRef.current) setNewApplicationProjectId('')
+                      setNewApplicationName(next)
+                    }}
+                    placeholder="Create application, e.g. ACC"
+                  />
+                  <select
+                    className="settings-input"
+                    aria-label="Project for the new application"
+                    value={applicationCreateProjectId}
+                    onChange={event => {
+                      applicationProjectPinExplicitRef.current = true
+                      setNewApplicationProjectId(event.target.value)
+                    }}
+                  >
+                    {/* A draft pinned before a domain switch names a project the
+                        catalog no longer lists; show it rather than letting the
+                        select silently display an unrelated option. */}
+                    {!applicationCreateProjects.some(project => project.id === applicationCreateProjectId) && (
+                      <option value={applicationCreateProjectId}>
+                        {projects.find(project => project.id === applicationCreateProjectId)?.name || applicationCreateProjectId}
+                      </option>
+                    )}
+                    {applicationCreateProjects.map(project => (
+                      <option key={project.id} value={project.id}>{project.name}</option>
+                    ))}
+                  </select>
+                  <button className="btn btn-secondary" type="button" onClick={createApplication} disabled={!newApplicationName.trim() || applicationCreateBusy}>
+                    Add Application
+                  </button>
+                </div>
+              ) : (
+                <div className="settings-inline-actions">
+                  <span className="new-test-inline-note">
+                    {`No projects in ${selectedDomain?.name || 'this domain'} yet. Applications belong to a project.`}
+                  </span>
+                  {canManageProjects && (
+                    <button
+                      className="btn btn-secondary btn-sm"
+                      type="button"
+                      onClick={() => {
+                        setActiveProjectSubsection('catalog')
+                        setActiveSection('projects')
+                      }}
+                    >
+                      Create a project
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
 
             <div className="setting-row">
@@ -5548,10 +5734,36 @@ export default function SettingsPage({
                   }}
                   placeholder="Optional description"
                 />
-                <button className="btn btn-secondary btn-sm" type="button" onClick={createDataPool} disabled={!dataPoolName.trim() || dataPoolCatalogMutationBusy}>
+                <button className="btn btn-secondary btn-sm" type="button" onClick={createDataPool} disabled={!dataPoolName.trim() || dataPoolCatalogMutationBusy || !dataPoolCreateProjectId}>
                   Add Pool
                 </button>
               </div>
+              {dataPoolCreateProjectId ? (
+                <p className="new-test-inline-note">{`Creates in project "${dataPoolCreateProject?.name || dataPoolCreateProjectId}".`}</p>
+              ) : applicationCreateProjects.length === 0 ? (
+                <div className="settings-inline-actions">
+                  <span className="new-test-inline-note">
+                    {`No projects in ${selectedDomain?.name || 'this domain'} yet. Data pools belong to a project.`}
+                  </span>
+                  {canManageProjects && (
+                    <button
+                      className="btn btn-secondary btn-sm"
+                      type="button"
+                      onClick={() => {
+                        setActiveProjectSubsection('catalog')
+                        setActiveSection('projects')
+                      }}
+                    >
+                      Create a project
+                    </button>
+                  )}
+                </div>
+              ) : (
+                // Projects exist but none is active yet (catalog still
+                // loading after a scope change): don't offer to create a
+                // duplicate project.
+                <p className="new-test-inline-note">Select a project to create data pools.</p>
+              )}
             </div>
 
             <div className="settings-subsection">
@@ -5577,6 +5789,7 @@ export default function SettingsPage({
                         className="settings-release-main"
                         onClick={() => {
                           setDataPoolActionNotice('')
+                          clearSettingsBreadcrumb('apexload.settings.dataPoolNotice')
                           selectedDataPoolIdRef.current = pool.id
                           setSelectedDataPoolId(pool.id)
                         }}

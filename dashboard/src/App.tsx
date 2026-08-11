@@ -138,6 +138,7 @@ import {
   isCurrentRepositoryRequest,
   isProjectScopedMessageCurrent,
   projectForActiveDomain,
+  resolveApplicationCreateTarget,
   telemetryDiagnosticsForProject,
 } from "./appProjectScope";
 import {
@@ -934,25 +935,68 @@ function AppShell({
     ApplicationContextValue["createAndSelectApplication"]
   >(
     async (name, projectID) => {
-      if (!activeProject)
-        throw new Error("Select a project before creating an application.");
-      if (projectID && projectID !== activeProject.id)
+      const target = resolveApplicationCreateTarget(
+        projects,
+        domainProjects,
+        activeProject,
+        projectID,
+      );
+      if (!target)
         throw new Error(
-          "The application draft belongs to a different project. Return to that project before saving it.",
+          projectID
+            ? "The project selected for this application is no longer available. Choose another project."
+            : "Select a project before creating an application.",
         );
+      // Defensive: an explicitly pinned project outside the active domain.
+      // Today every scope switch remounts the page and clears drafts before
+      // this can be reached, but if a draft ever survives one, commit it to
+      // its pinned project without pulling the workspace to a hidden scope.
+      if (!target.inDomain)
+        return outerApplicationContext.createAndSelectApplication(
+          name,
+          target.project.id,
+        );
+      // Create before touching workspace scope: a failed create must leave the
+      // workspace where it was, and flipping the project first would put the
+      // view and the active project out of step for a commit, unmounting the
+      // page that initiated the create.
       const created = await outerApplicationContext.createAndSelectApplication(
         name,
-        projectID || activeProject.id,
+        target.project.id,
       );
+      if (target.project.id !== selectedProject?.id) {
+        // The provider refused to select the created application because the
+        // workspace still pointed at the previous project. Flip the scope in
+        // the same commit as the view, and hand the provider the created row:
+        // its storage cursor makes the post-flip refresh select it. Do not
+        // park the applicationId in the route — it is not active until that
+        // refresh lands, and a pending route scope blocks rendering.
+        setOuterActiveProject(target.project);
+        outerApplicationContext.setActiveApplication(created);
+        setView((current) =>
+          scopeAppViewToWorkspace(
+            resetProjectScopedAssetView(current, target.project.id),
+            { projectId: target.project.id },
+          ),
+        );
+        return created;
+      }
       setView((current) =>
         scopeAppViewToWorkspace(
-          resetProjectScopedAssetView(current, activeProject.id),
-          { projectId: activeProject.id, applicationId: created.id },
+          resetProjectScopedAssetView(current, target.project.id),
+          { projectId: target.project.id, applicationId: created.id },
         ),
       );
       return created;
     },
-    [activeProject, outerApplicationContext],
+    [
+      activeProject,
+      domainProjects,
+      outerApplicationContext,
+      projects,
+      selectedProject?.id,
+      setOuterActiveProject,
+    ],
   );
   const createAndSelectRelease = useCallback<
     ApplicationContextValue["createAndSelectRelease"]
@@ -1336,12 +1380,32 @@ function AppShell({
     setActiveRelease,
   ]);
 
+  // Route canonicalization writes ids that are already active, so a scope the
+  // workspace already satisfies has nothing to reconcile. Without this
+  // shortcut, the commits between the key changing and the reconciliation
+  // effect resolving block the route and unmount the current page — losing
+  // per-page state (for example the open Settings section) on every
+  // canonicalized scope write.
+  const genericRouteWorkspaceSettled = Boolean(
+    requestedRouteProjectID &&
+      activeProject?.id === requestedRouteProjectID &&
+      (!requestedRouteApplicationID ||
+        activeApplication?.id === requestedRouteApplicationID) &&
+      (!requestedRouteReleaseID ||
+        activeRelease?.id === requestedRouteReleaseID),
+  );
   const genericRouteWorkspacePending = Boolean(
     genericRouteWorkspaceKey &&
+      !genericRouteWorkspaceSettled &&
       (genericRouteWorkspaceResolution?.key !== genericRouteWorkspaceKey ||
         genericRouteWorkspaceResolution.status === "reconciling"),
   );
+  // An error verdict is stale once the workspace already satisfies the route
+  // (for example a failed list refresh after a create whose application is
+  // nonetheless active): blocking the page then would report "unavailable"
+  // about a coherent workspace with no retry affordance.
   const genericRouteWorkspaceError =
+    !genericRouteWorkspaceSettled &&
     genericRouteWorkspaceResolution?.key === genericRouteWorkspaceKey &&
     genericRouteWorkspaceResolution.status === "error"
       ? genericRouteWorkspaceResolution.message || "Workspace scope is unavailable."
@@ -1857,11 +1921,26 @@ function AppShell({
 
   const handleSidebarDomainChange = useCallback(
     (domain: import("./types").Domain) => {
+      // Settings also routes domain mutations (rename/save) through this
+      // handler. A same-id call is a metadata refresh, not a switch: take the
+      // new object without guards, project moves, or a view rewrite — the
+      // full switch path would pop a spurious unsaved-changes prompt (the
+      // dirty ref has not flushed yet) and remount the page, losing the
+      // save/create outcome messages.
+      if (domain.id === activeDomain?.id) {
+        setActiveDomain(domain);
+        return;
+      }
       runGuarded(() => {
         const targetProject = projects.find(
           (project) => (project.domain_id || "default") === domain.id,
         );
         setActiveDomain(domain);
+        // Move the workspace project in the same commit as the domain and the
+        // view. Leaving it to the auto-select effect puts view.projectId ahead
+        // of the active project for one commit, which blocks the route scope
+        // and unmounts the current page mid-switch.
+        if (targetProject) setOuterActiveProject(targetProject);
         setView((current) =>
           scopeAppViewToWorkspace(
             resetProjectScopedAssetView(current, targetProject?.id),
@@ -1870,7 +1949,7 @@ function AppShell({
         );
       });
     },
-    [projects, runGuarded, setActiveDomain],
+    [activeDomain?.id, projects, runGuarded, setActiveDomain, setOuterActiveProject],
   );
   const handleSidebarProjectChange = useCallback(
     (project: import("./types").Project) => {
@@ -2876,7 +2955,25 @@ function AppShell({
   const effectiveTopbarTitle = topbarPageTitle;
   const showTopbarClientDownloads = shouldShowTopbarClientDownloads(view);
   const mainContentClassName = `main-content topbar-title-mode page-${view.page}`;
-  const activeRouteHash = viewToLocationHash(view);
+  // Application/release ids are appended to the route by canonicalization
+  // after their catalogs load — up to two extra hash writes per scope switch.
+  // Remounting the page subtree (and stealing focus) for those appends would
+  // wipe state the operator is already typing into, so the boundary identity
+  // excludes them: page changes, project switches, and asset navigation still
+  // remount; child-scope appends do not.
+  const routeBoundaryKey = viewToLocationHash({
+    ...view,
+    applicationId: undefined,
+    releaseId: undefined,
+  });
+  // A crashed page no longer heals on application/release switches (they do
+  // not re-key the boundary), so its Retry must be able to rebuild the
+  // subtree itself instead of falling back to a full page reload.
+  const [routeBoundaryRetryNonce, setRouteBoundaryRetryNonce] = useState(0);
+  const retryRouteBoundary = useCallback(
+    () => setRouteBoundaryRetryNonce((nonce) => nonce + 1),
+    [],
+  );
 
   useEffect(() => {
     if (typeof document === "undefined") return;
@@ -2885,7 +2982,7 @@ function AppShell({
 
   useEffect(() => {
     mainContentRef.current?.focus({ preventScroll: true });
-  }, [activeRouteHash]);
+  }, [routeBoundaryKey]);
 
   const topbarActionShortcuts = useMemo(
     () =>
@@ -2954,6 +3051,7 @@ function AppShell({
           onApplicationChange={handleSidebarApplicationChange}
           onReleaseChange={handleSidebarReleaseChange}
           onCreateApplication={createAndSelectApplication}
+          canCreateProjects={canManageRepositoryProjects}
           showAccess={canUseAccessWorkspace}
         />
         <main
@@ -3132,8 +3230,9 @@ function AppShell({
             </div>
           )}
           <LazyLoadBoundary
-            key={activeRouteHash}
+            key={`${routeBoundaryKey}#${routeBoundaryRetryNonce}`}
             title="This dashboard page could not be loaded."
+            onRetry={retryRouteBoundary}
           >
             <Suspense fallback={<div className="page">Loading page...</div>}>
               {routeAssetScopeBlocked && (
@@ -3349,6 +3448,7 @@ function AppShell({
                   domains={domains}
                   activeDomain={activeDomain}
                   activeApplication={activeApplication}
+                  activeProject={activeProject}
                   applicationRepository={applicationRepository}
                   categories={repositoryCategories}
                   projects={projects}
@@ -3356,6 +3456,7 @@ function AppShell({
                   canManageProjects={canManageRepositoryProjects}
                   canManageReleases={canManageRepositoryReleases}
                   onDomainChange={handleSidebarDomainChange}
+                  onProjectSelect={handleSidebarProjectChange}
                   onRepositoryRefresh={refreshRepository}
                   onRepositoryCategoryCreate={createRepositoryCategory}
                   onProjectsRefresh={refreshProjects}
@@ -3392,7 +3493,7 @@ function AppShell({
                   domains={domains}
                   activeDomain={activeDomain}
                   applicationRepository={applicationRepository}
-                  onDomainChange={setActiveDomain}
+                  onDomainChange={handleSidebarDomainChange}
                   onDomainsRefresh={refreshDomains}
                   onProjectUpdate={updateOuterProject}
                 />

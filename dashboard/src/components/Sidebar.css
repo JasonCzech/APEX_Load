@@ -120,6 +120,13 @@
   padding: 4px;
 }
 
+.project-menu-empty {
+  margin: 0;
+  padding: 8px 10px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
 .project-menu-item,
 .project-menu-action {
   width: 100%;

@@ -8927,6 +8927,20 @@ col.results-actions-col {
   white-space: nowrap;
 }
 
+.repository-project-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+/* Must out-rank `.repository-project-title span`, which paints every span in
+   the title row muted. */
+.repository-project-title .repository-project-actions .repository-project-active {
+  color: var(--accent);
+  font-weight: 600;
+}
+
 .repository-compact-form {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;

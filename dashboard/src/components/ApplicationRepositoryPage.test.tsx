@@ -170,6 +170,7 @@ describe('ApplicationRepositoryPage', () => {
     container = document.createElement('div')
     document.body.appendChild(container)
     root = createRoot(container)
+    window.localStorage.removeItem('apexload.repository.tab')
     repositoryApiMock.listProjectReleases.mockResolvedValue({ releases: [{ id: 'release-1', application_id: 'app-1', project_id: project.id, name: '2026.05', created_at: '2026-05-01T00:00:00Z', updated_at: '2026-05-02T00:00:00Z' }], count: 1 })
     repositoryApiMock.createRepositoryCategory.mockResolvedValue({ id: 'category-2', domain_id: domain.id, repository_id: repository.id, name: 'Search', created_at: '', updated_at: '' })
     repositoryApiMock.createProjectRelease.mockResolvedValue({ id: 'release-2', application_id: 'app-1', project_id: project.id, name: '2026.06', created_at: '', updated_at: '' })
@@ -265,6 +266,7 @@ describe('ApplicationRepositoryPage', () => {
     vi.clearAllMocks()
     act(() => root.unmount())
     container.remove()
+    window.localStorage.removeItem('apexload.repository.tab')
   })
 
   it('renders catalog rows, filters by tab and search, and creates releases from Structure', async () => {
@@ -1402,5 +1404,119 @@ describe('ApplicationRepositoryPage', () => {
 
     expect(container.textContent).toContain('Payments Current')
     expect(container.textContent).not.toContain('Retail Stale')
+  })
+
+  it('binds a release draft to the application active at submit time, not at first keystroke', async () => {
+    const applicationB = { id: 'app-2', project_id: project.id, name: 'BCC', created_at: '', updated_at: '' }
+    const renderPage = (activeApplication: typeof application) => root.render(
+      <ApplicationRepositoryPage
+        domains={[domain]}
+        activeDomain={domain}
+        activeApplication={activeApplication}
+        applicationRepository={repository}
+        categories={[category]}
+        projects={[project]}
+        canManageRepository
+        canManageProjects
+        canManageReleases
+        onDomainChange={vi.fn()}
+        onRepositoryRefresh={vi.fn()}
+        onProjectsRefresh={vi.fn()}
+        onProjectCreated={vi.fn()}
+      />,
+    )
+    await act(async () => renderPage(application))
+    await flushPromises()
+    await act(async () => findButton(container, 'Structure', false)?.click())
+    const releaseInput = container.querySelector<HTMLInputElement>('input[placeholder="New release name"]')
+    expect(releaseInput).toBeTruthy()
+    if (!releaseInput) return
+    await act(async () => setInputValue(releaseInput, '2026.09'))
+
+    // Application switches no longer remount the page, so the draft survives
+    // an app-only switch; the binding must follow the visible active app.
+    await act(async () => renderPage(applicationB))
+    await flushPromises()
+    await act(async () => findButton(container, 'Add Release', false)?.click())
+    await flushPromises()
+
+    expect(repositoryApiMock.createProjectRelease).toHaveBeenCalledWith(
+      project.id,
+      expect.objectContaining({ name: '2026.09', application_id: applicationB.id }),
+    )
+  })
+
+  it('restores the active catalog tab across the remount a scope change causes', async () => {
+    const renderPage = () => root.render(
+      <ApplicationRepositoryPage
+        domains={[domain]}
+        activeDomain={domain}
+        activeApplication={application}
+        applicationRepository={repository}
+        categories={[category]}
+        projects={[project]}
+        canManageRepository
+        canManageProjects
+        canManageReleases
+        onDomainChange={vi.fn()}
+        onRepositoryRefresh={vi.fn()}
+        onProjectsRefresh={vi.fn()}
+        onProjectCreated={vi.fn()}
+      />,
+    )
+    await act(async () => renderPage())
+    await flushPromises()
+    await act(async () => findButton(container, 'Structure', false)?.click())
+    expect(container.querySelector('input[placeholder="New project name"]')).not.toBeNull()
+
+    // "Set as active" rewrites the workspace scope in the route, which
+    // remounts the page; the tab must not reset to All.
+    await act(async () => root.unmount())
+    root = createRoot(container)
+    await act(async () => renderPage())
+    await flushPromises()
+
+    expect(container.querySelector('input[placeholder="New project name"]')).not.toBeNull()
+  })
+
+  it('makes Structure projects selectable so Open Repository leads somewhere', async () => {
+    const onProjectSelect = vi.fn()
+    const otherProject = { ...project, id: 'project-other', name: 'Orders API' }
+    const renderPage = (activeProject: typeof project | null) => root.render(
+      <ApplicationRepositoryPage
+        domains={[domain]}
+        activeDomain={domain}
+        activeApplication={application}
+        activeProject={activeProject}
+        applicationRepository={repository}
+        categories={[category]}
+        projects={[project, otherProject]}
+        canManageRepository
+        canManageProjects
+        canManageReleases
+        onDomainChange={vi.fn()}
+        onProjectSelect={onProjectSelect}
+        onRepositoryRefresh={vi.fn()}
+        onProjectsRefresh={vi.fn()}
+        onProjectCreated={vi.fn()}
+      />,
+    )
+
+    await act(async () => renderPage(project))
+    await flushPromises()
+    await act(async () => findButton(container, 'Structure', false)?.click())
+
+    const cards = Array.from(container.querySelectorAll('.repository-project'))
+    const activeCard = cards.find(card => card.textContent?.includes('Checkout API'))
+    const otherCard = cards.find(card => card.textContent?.includes('Orders API'))
+    expect(activeCard?.textContent).toContain('Active project')
+    expect(Array.from(activeCard?.querySelectorAll('button') || []).some(button => button.textContent === 'Set as active')).toBe(false)
+
+    const setActive = Array.from(otherCard?.querySelectorAll('button') || [])
+      .find(button => button.textContent === 'Set as active') as HTMLButtonElement | undefined
+    expect(setActive).toBeDefined()
+    await act(async () => setActive?.click())
+
+    expect(onProjectSelect).toHaveBeenCalledWith(expect.objectContaining({ id: 'project-other' }))
   })
 })

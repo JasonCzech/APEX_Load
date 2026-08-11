@@ -7,10 +7,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import SettingsPage from './SettingsPage'
 import { reconcileSettingsProjectSnapshots } from './settingsProjectCatalog'
 import type { WailsDesktopBridge } from '../desktop/desktopBridge'
-import type { DashboardAuthEffectiveAccessResource, Domain, GitHubActionsPolicy, GitHubProjectPolicy, Project, ProjectSettings } from '../types'
+import type { Application, DashboardAuthEffectiveAccessResource, Domain, GitHubActionsPolicy, GitHubProjectPolicy, Project, ProjectSettings } from '../types'
 import { useActiveTopbarContribution } from '../hooks/TopbarContributionProvider'
 import { TopbarContributionProvider } from '../hooks/TopbarContributionRoot'
-import { NavigationGuardRegisterContext, type NavigationGuard } from '../hooks/NavigationGuardProvider'
+import { NavigationGuardRegisterContext, useNavigationGuardRunner, type NavigationGuard } from '../hooks/NavigationGuardProvider'
 import { NavigationGuardProvider } from '../hooks/NavigationGuardRoot'
 import { ApiError } from '../hooks/apiClient'
 
@@ -109,7 +109,7 @@ const applicationContextMock = {
 const projectContextMock = {
   projects: [{ id: 'project-1', name: 'Checkout', created_at: '', updated_at: '' }] as Project[],
   projectsError: '',
-  activeProject: { id: 'project-1', name: 'Checkout', created_at: '', updated_at: '' },
+  activeProject: { id: 'project-1', name: 'Checkout', created_at: '', updated_at: '' } as Project | null,
   setActiveProject: vi.fn(),
   createAndSelectProject: vi.fn(),
   updateProject: vi.fn(),
@@ -258,6 +258,8 @@ describe('SettingsPage', () => {
     container = document.createElement('div')
     document.body.appendChild(container)
     root = createRoot(container)
+    window.sessionStorage.clear()
+    window.localStorage.removeItem('apexload.settings.section')
     window.localStorage.removeItem('apexload.settings.generalSubsection')
     window.localStorage.removeItem('apexload.settings.governanceSubsection')
     window.localStorage.removeItem('apexload.settings.capacitySubsection')
@@ -765,7 +767,9 @@ describe('SettingsPage', () => {
     container.remove()
     vi.clearAllMocks()
     downloadBlobMock.mockReset()
+    window.sessionStorage.clear()
     window.localStorage.removeItem('apexload.settings.focusSection')
+    window.localStorage.removeItem('apexload.settings.section')
     window.localStorage.removeItem('apexload.settings.generalSubsection')
     window.localStorage.removeItem('apexload.settings.governanceSubsection')
     window.localStorage.removeItem('apexload.settings.capacitySubsection')
@@ -4156,6 +4160,453 @@ describe('SettingsPage', () => {
     expect(projectApiMock.updateProject).toHaveBeenCalledWith('project-1', expect.objectContaining({ name: 'Customer Portal Renamed' }))
     expect(document.querySelector('.unsaved-changes-modal')).toBeFalsy()
     expect(projectSection.querySelector('.settings-app-card.active')?.textContent).toContain('Payments')
+    // The catalog cursor and the workspace project are one selection: every
+    // other surface reads the context, not this tab's local highlight.
+    expect(projectContextMock.setActiveProject).toHaveBeenCalledWith(expect.objectContaining({ id: 'project-2' }))
+  })
+
+  it('promotes a project card click to the workspace project scope', async () => {
+    seedProjectCatalog([
+      { id: 'project-1', name: 'Customer Portal', created_at: '', updated_at: '' },
+      { id: 'project-2', name: 'Payments', created_at: '', updated_at: '' },
+    ])
+
+    await act(async () => {
+      root.render(
+        <NavigationGuardProvider>
+          <TopbarContributionProvider>
+            <SettingsTopbarHarness />
+            <SettingsPage theme="dark" onThemeChange={vi.fn()} />
+          </TopbarContributionProvider>
+        </NavigationGuardProvider>,
+      )
+    })
+    await flushPromises()
+    await selectTopLevelSettingsTab('Projects & Compliance')
+    const projectSection = container.querySelector('#settings-section-projects')
+    if (!projectSection) return
+
+    const payments = Array.from(projectSection.querySelectorAll('.settings-app-card'))
+      .find(button => button.textContent?.includes('Payments')) as HTMLButtonElement | undefined
+    await act(async () => payments?.click())
+
+    expect(projectContextMock.setActiveProject).toHaveBeenCalledWith(expect.objectContaining({ id: 'project-2' }))
+  })
+
+  it('keeps a manual project selection when the catalog refreshes without a workspace project', async () => {
+    const seed = () => [
+      { id: 'project-1', name: 'Customer Portal', created_at: '', updated_at: '' },
+      { id: 'project-2', name: 'Payments', created_at: '', updated_at: '' },
+    ]
+    seedProjectCatalog(seed())
+    projectContextMock.activeProject = null
+
+    const renderPage = () => root.render(
+      <NavigationGuardProvider>
+        <TopbarContributionProvider>
+          <SettingsTopbarHarness />
+          <SettingsPage theme="dark" onThemeChange={vi.fn()} />
+        </TopbarContributionProvider>
+      </NavigationGuardProvider>,
+    )
+    await act(async () => renderPage())
+    await flushPromises()
+    await selectTopLevelSettingsTab('Projects & Compliance')
+    const projectSection = container.querySelector('#settings-section-projects')
+    if (!projectSection) return
+
+    const payments = Array.from(projectSection.querySelectorAll('.settings-app-card'))
+      .find(button => button.textContent?.includes('Payments')) as HTMLButtonElement | undefined
+    await act(async () => payments?.click())
+    expect(projectSection.querySelector('.settings-app-card.active')?.textContent).toContain('Payments')
+
+    // A background catalog refresh delivers a new array identity. Without the
+    // manual-pick fallback the cursor snaps back to the first project.
+    seedProjectCatalog(seed())
+    await act(async () => renderPage())
+    await flushPromises()
+
+    expect(projectSection.querySelector('.settings-app-card.active')?.textContent).toContain('Payments')
+  })
+
+  it('creates an application in the project chosen on the create row', async () => {
+    seedProjectCatalog([
+      { id: 'project-1', name: 'Customer Portal', created_at: '', updated_at: '' },
+      { id: 'project-2', name: 'Payments', created_at: '', updated_at: '' },
+    ])
+    applicationContextMock.createAndSelectApplication.mockResolvedValue({
+      id: 'app-new', project_id: 'project-2', name: 'Wallet', created_at: '', updated_at: '',
+    })
+
+    await act(async () => {
+      root.render(
+        <NavigationGuardProvider>
+          <TopbarContributionProvider>
+            <SettingsTopbarHarness />
+            <SettingsPage theme="dark" onThemeChange={vi.fn()} />
+          </TopbarContributionProvider>
+        </NavigationGuardProvider>,
+      )
+    })
+    await flushPromises()
+    await selectTopLevelSettingsTab('Applications & Releases')
+    const applicationSection = container.querySelector('#settings-section-applications')
+    if (!applicationSection) return
+
+    const nameInput = applicationSection.querySelector<HTMLInputElement>('input[placeholder="Create application, e.g. ACC"]')
+    const projectSelect = applicationSection.querySelector<HTMLSelectElement>('select[aria-label="Project for the new application"]')
+    expect(nameInput && projectSelect).toBeTruthy()
+    if (!nameInput || !projectSelect) return
+    expect(projectSelect.value).toBe('project-1')
+    expect(Array.from(projectSelect.options).map(option => option.textContent)).toEqual(['Customer Portal', 'Payments'])
+
+    await setFieldValue(nameInput, 'Wallet')
+    await setFieldValue(projectSelect, 'project-2')
+    const addButton = Array.from(applicationSection.querySelectorAll('button'))
+      .find(button => button.textContent === 'Add Application') as HTMLButtonElement | undefined
+    await act(async () => addButton?.click())
+    await flushPromises()
+
+    expect(applicationContextMock.createAndSelectApplication).toHaveBeenCalledWith('Wallet', 'project-2')
+  })
+
+  it('routes to project creation instead of offering an application in an empty domain', async () => {
+    seedProjectCatalog([])
+    projectContextMock.activeProject = null
+
+    await act(async () => {
+      root.render(
+        <NavigationGuardProvider>
+          <TopbarContributionProvider>
+            <SettingsTopbarHarness />
+            <SettingsPage
+              theme="dark"
+              onThemeChange={vi.fn()}
+              domains={[retailDomain]}
+              activeDomain={retailDomain}
+            />
+          </TopbarContributionProvider>
+        </NavigationGuardProvider>,
+      )
+    })
+    await flushPromises()
+    await selectTopLevelSettingsTab('Applications & Releases')
+    const applicationSection = container.querySelector('#settings-section-applications')
+    if (!applicationSection) return
+
+    expect(applicationSection.querySelector('input[placeholder="Create application, e.g. ACC"]')).toBeNull()
+    expect(applicationSection.textContent).toContain('No projects in Retail yet')
+    const cta = Array.from(applicationSection.querySelectorAll('button'))
+      .find(button => button.textContent === 'Create a project') as HTMLButtonElement | undefined
+    expect(cta).toBeDefined()
+    await act(async () => cta?.click())
+
+    expect(container.querySelector('#settings-section-projects')?.hasAttribute('hidden')).toBe(false)
+  })
+
+  it('creates a domain without a spurious unsaved-changes prompt when the refresh takes real time', async () => {
+    repositoryApiMock.createDomain.mockResolvedValue({
+      domain: retailDomain,
+      application_repository: { id: 'repo-r', domain_id: retailDomain.id, name: 'Application Repository', created_at: '', updated_at: '' },
+      default_category: { id: 'cat-r', domain_id: retailDomain.id, repository_id: 'repo-r', name: 'Uncategorized', created_at: '', updated_at: '' },
+    })
+    // Stale warning from an earlier failed refresh: a successful refresh must
+    // retire the crumb too, or a remount would resurrect it.
+    window.sessionStorage.setItem('apexload.settings.domainWarning', JSON.stringify({
+      at: Date.now(),
+      value: { message: 'stale warning' },
+    }))
+
+    // The created domain joins the catalog only when the refresh resolves —
+    // one macrotask later, so React renders during the flight exactly as it
+    // does against a real network.
+    function DeferredRefreshHarness() {
+      const [domains, setDomains] = useState<Domain[]>([defaultDomain])
+      const [active, setActive] = useState<Domain>(defaultDomain)
+      const { runGuarded } = useNavigationGuardRunner()
+      return (
+        <SettingsPage
+          theme="dark"
+          onThemeChange={vi.fn()}
+          domains={domains}
+          activeDomain={active}
+          onDomainChange={domain => {
+            if (domain.id === active.id) {
+              setActive(domain)
+              return
+            }
+            runGuarded(() => setActive(domain))
+          }}
+          onDomainsRefresh={async () => {
+            await new Promise(resolve => setTimeout(resolve, 0))
+            setDomains([defaultDomain, retailDomain])
+            return [defaultDomain, retailDomain]
+          }}
+        />
+      )
+    }
+
+    await act(async () => {
+      root.render(
+        <NavigationGuardProvider>
+          <TopbarContributionProvider>
+            <SettingsTopbarHarness />
+            <DeferredRefreshHarness />
+          </TopbarContributionProvider>
+        </NavigationGuardProvider>,
+      )
+    })
+    await flushPromises()
+    await selectTopLevelSettingsTab('Domains')
+    const domainSection = container.querySelector('#settings-section-domains')
+    const nameInput = domainSection?.querySelector<HTMLInputElement>('input[placeholder="Create domain, e.g. Retail"]')
+    expect(nameInput).toBeTruthy()
+    if (!nameInput || !domainSection) return
+    await setFieldValue(nameInput, 'Retail')
+    const addButton = Array.from(domainSection.querySelectorAll('button'))
+      .find(button => button.textContent === 'Add Domain') as HTMLButtonElement | undefined
+    await act(async () => addButton?.click())
+    await act(async () => {
+      await new Promise(resolve => setTimeout(resolve, 0))
+    })
+    await flushPromises()
+
+    expect(document.querySelector('.unsaved-changes-modal')).toBeNull()
+    expect(domainSection.querySelector('.settings-app-card.active')?.textContent).toContain('Retail')
+    expect(window.sessionStorage.getItem('apexload.settings.domainWarning')).toBeNull()
+  })
+
+  it('writes the do-not-retry warning breadcrumb before the switch that remounts the page', async () => {
+    repositoryApiMock.createDomain.mockResolvedValue({
+      domain: retailDomain,
+      application_repository: { id: 'repo-r', domain_id: retailDomain.id, name: 'Application Repository', created_at: '', updated_at: '' },
+      default_category: { id: 'cat-r', domain_id: retailDomain.id, repository_id: 'repo-r', name: 'Uncategorized', created_at: '', updated_at: '' },
+    })
+    const onDomainsRefresh = vi.fn().mockRejectedValue(new Error('list unavailable'))
+    // Captures what a remounting instance would see at switch time.
+    const crumbsAtSwitch: Record<string, string | null> = {}
+    const onDomainChange = vi.fn().mockImplementation(() => {
+      crumbsAtSwitch.warning = window.sessionStorage.getItem('apexload.settings.domainWarning')
+      crumbsAtSwitch.message = window.sessionStorage.getItem('apexload.settings.domainMessage')
+    })
+
+    await act(async () => {
+      root.render(
+        <NavigationGuardProvider>
+          <TopbarContributionProvider>
+            <SettingsTopbarHarness />
+            <SettingsPage
+              theme="dark"
+              onThemeChange={vi.fn()}
+              domains={[defaultDomain]}
+              activeDomain={defaultDomain}
+              onDomainChange={onDomainChange}
+              onDomainsRefresh={onDomainsRefresh}
+            />
+          </TopbarContributionProvider>
+        </NavigationGuardProvider>,
+      )
+    })
+    await flushPromises()
+    await selectTopLevelSettingsTab('Domains')
+    const domainSection = container.querySelector('#settings-section-domains')
+    const nameInput = domainSection?.querySelector<HTMLInputElement>('input[placeholder="Create domain, e.g. Retail"]')
+    expect(nameInput).toBeTruthy()
+    if (!nameInput || !domainSection) return
+    await setFieldValue(nameInput, 'Retail')
+    const addButton = Array.from(domainSection.querySelectorAll('button'))
+      .find(button => button.textContent === 'Add Domain') as HTMLButtonElement | undefined
+    await act(async () => addButton?.click())
+    await flushPromises()
+
+    expect(onDomainChange).toHaveBeenCalledWith(retailDomain)
+    // The reconciliation ran and failed BEFORE the switch, so the remounting
+    // instance can read both outcomes.
+    expect(crumbsAtSwitch.warning).toBeTruthy()
+    expect(crumbsAtSwitch.message).toBeTruthy()
+    expect(onDomainsRefresh).toHaveBeenCalled()
+  })
+
+  it('retiring the reconciliation warning by retry also clears its breadcrumb', async () => {
+    window.sessionStorage.setItem('apexload.settings.domainWarning', JSON.stringify({
+      at: Date.now(),
+      value: { message: 'Domain "Retail" was created, but the domain list could not be refreshed. The create succeeded—do not create it again. Retry synchronization below.', preferredId: retailDomain.id },
+    }))
+    const onDomainsRefresh = vi.fn().mockResolvedValue([defaultDomain, retailDomain])
+
+    await act(async () => {
+      root.render(
+        <NavigationGuardProvider>
+          <TopbarContributionProvider>
+            <SettingsTopbarHarness />
+            <SettingsPage
+              theme="dark"
+              onThemeChange={vi.fn()}
+              domains={[defaultDomain, retailDomain]}
+              activeDomain={retailDomain}
+              onDomainsRefresh={onDomainsRefresh}
+            />
+          </TopbarContributionProvider>
+        </NavigationGuardProvider>,
+      )
+    })
+    await flushPromises()
+    await selectTopLevelSettingsTab('Domains')
+    const domainSection = container.querySelector('#settings-section-domains')
+    expect(domainSection?.textContent).toContain('The create succeeded—do not create it again.')
+
+    const retry = Array.from(domainSection?.querySelectorAll('button') || [])
+      .find(button => button.textContent === 'Retry') as HTMLButtonElement | undefined
+    expect(retry).toBeDefined()
+    await act(async () => retry?.click())
+    await flushPromises()
+
+    expect(domainSection?.textContent).not.toContain('The create succeeded—do not create it again.')
+    expect(window.sessionStorage.getItem('apexload.settings.domainWarning')).toBeNull()
+  })
+
+  it('surfaces a data-pool breadcrumb left by a create that preceded a remount', async () => {
+    seedProjectCatalog([{ id: 'project-2', name: 'Payments', created_at: '', updated_at: '' }])
+    projectContextMock.activeProject = { id: 'project-2', name: 'Payments', created_at: '', updated_at: '' }
+    window.sessionStorage.setItem('apexload.settings.dataPoolNotice', JSON.stringify({
+      at: Date.now(),
+      value: 'Created data pool "Orders" in project "Customer Portal". Switch to that project to manage it.',
+    }))
+
+    await act(async () => {
+      root.render(
+        <NavigationGuardProvider>
+          <TopbarContributionProvider>
+            <SettingsTopbarHarness />
+            <SettingsPage theme="dark" onThemeChange={vi.fn()} />
+          </TopbarContributionProvider>
+        </NavigationGuardProvider>,
+      )
+    })
+    await flushPromises()
+    await selectTopLevelSettingsTab('Data Pools')
+
+    expect(container.querySelector('#settings-section-data-pools')?.textContent)
+      .toContain('Created data pool "Orders" in project "Customer Portal". Switch to that project to manage it.')
+    // The crumb is peeked, not consumed: the remount chain a scope switch
+    // causes must be able to re-read it until the freshness bound retires it.
+    expect(window.sessionStorage.getItem('apexload.settings.dataPoolNotice')).not.toBeNull()
+  })
+
+  it('surfaces a domain outcome breadcrumb after the switch-driven remount', async () => {
+    window.sessionStorage.setItem('apexload.settings.domainMessage', JSON.stringify({
+      at: Date.now(),
+      value: 'Domain "Retail" created.',
+    }))
+    window.sessionStorage.setItem('apexload.settings.domainWarning', JSON.stringify({
+      at: Date.now(),
+      value: { message: 'Domain "Retail" was created, but the domain list could not be refreshed. The create succeeded—do not create it again. Retry synchronization below.' },
+    }))
+
+    await act(async () => {
+      root.render(
+        <NavigationGuardProvider>
+          <TopbarContributionProvider>
+            <SettingsTopbarHarness />
+            <SettingsPage
+              theme="dark"
+              onThemeChange={vi.fn()}
+              domains={[defaultDomain, retailDomain]}
+              activeDomain={retailDomain}
+            />
+          </TopbarContributionProvider>
+        </NavigationGuardProvider>,
+      )
+    })
+    await flushPromises()
+    await selectTopLevelSettingsTab('Domains')
+
+    // The outcome message surfaces through the section-message aggregation,
+    // the do-not-retry warning renders inline in the domain section.
+    expect(container.textContent).toContain('Domain "Retail" created.')
+    expect(container.querySelector('#settings-section-domains')?.textContent)
+      .toContain('The create succeeded—do not create it again.')
+  })
+
+  it('ignores a double-click on Add Application while the create is in flight', async () => {
+    seedProjectCatalog([{ id: 'project-1', name: 'Customer Portal', created_at: '', updated_at: '' }])
+    let resolveCreate: (value: Application) => void = () => {}
+    applicationContextMock.createAndSelectApplication.mockImplementation(
+      () => new Promise<Application>(resolve => { resolveCreate = resolve }),
+    )
+
+    await act(async () => {
+      root.render(
+        <NavigationGuardProvider>
+          <TopbarContributionProvider>
+            <SettingsTopbarHarness />
+            <SettingsPage theme="dark" onThemeChange={vi.fn()} />
+          </TopbarContributionProvider>
+        </NavigationGuardProvider>,
+      )
+    })
+    await flushPromises()
+    await selectTopLevelSettingsTab('Applications & Releases')
+    const applicationSection = container.querySelector('#settings-section-applications')
+    const nameInput = applicationSection?.querySelector<HTMLInputElement>('input[placeholder="Create application, e.g. ACC"]')
+    if (!applicationSection || !nameInput) return
+    await setFieldValue(nameInput, 'Wallet')
+
+    const addButton = Array.from(applicationSection.querySelectorAll('button'))
+      .find(button => button.textContent === 'Add Application') as HTMLButtonElement | undefined
+    await act(async () => addButton?.click())
+    await act(async () => addButton?.click())
+    expect(applicationContextMock.createAndSelectApplication).toHaveBeenCalledTimes(1)
+    expect(addButton?.disabled).toBe(true)
+
+    await act(async () => {
+      resolveCreate({ id: 'app-new', project_id: 'project-1', name: 'Wallet', created_at: '', updated_at: '' })
+    })
+    await flushPromises()
+    expect(applicationContextMock.createAndSelectApplication).toHaveBeenCalledTimes(1)
+  })
+
+  it('asks for a project instead of offering to create one when the domain has projects but none is active', async () => {
+    seedProjectCatalog([{ id: 'project-1', name: 'Customer Portal', created_at: '', updated_at: '' }])
+    projectContextMock.activeProject = null
+
+    await act(async () => {
+      root.render(
+        <NavigationGuardProvider>
+          <TopbarContributionProvider>
+            <SettingsTopbarHarness />
+            <SettingsPage theme="dark" onThemeChange={vi.fn()} />
+          </TopbarContributionProvider>
+        </NavigationGuardProvider>,
+      )
+    })
+    await flushPromises()
+    await selectTopLevelSettingsTab('Data Pools')
+    const poolSection = container.querySelector('#settings-section-data-pools')
+
+    expect(poolSection?.textContent).toContain('Select a project to create data pools.')
+    expect(poolSection?.textContent).not.toContain('No projects in')
+  })
+
+  it('names the project a new data pool lands in', async () => {
+    seedProjectCatalog([{ id: 'project-1', name: 'Customer Portal', created_at: '', updated_at: '' }])
+    projectContextMock.activeProject = { id: 'project-1', name: 'Customer Portal', created_at: '', updated_at: '' }
+
+    await act(async () => {
+      root.render(
+        <NavigationGuardProvider>
+          <TopbarContributionProvider>
+            <SettingsTopbarHarness />
+            <SettingsPage theme="dark" onThemeChange={vi.fn()} />
+          </TopbarContributionProvider>
+        </NavigationGuardProvider>,
+      )
+    })
+    await flushPromises()
+    await selectTopLevelSettingsTab('Data Pools')
+    const poolSection = container.querySelector('#settings-section-data-pools')
+
+    expect(poolSection?.textContent).toContain('Creates in project "Customer Portal".')
   })
 
   it('guards an edited pool quota before switching the selected project', async () => {
@@ -4202,6 +4653,7 @@ describe('SettingsPage', () => {
     expect(document.querySelector('.unsaved-changes-modal')).toBeFalsy()
     expect(projectSection.querySelector('.settings-app-card.active')?.textContent).toContain('Payments')
     expect(projectApiMock.updateProject).not.toHaveBeenCalled()
+    expect(projectContextMock.setActiveProject).toHaveBeenCalledWith(expect.objectContaining({ id: 'project-2' }))
   })
 
   it('saves a release rename in its originating application before completing a guarded application switch', async () => {

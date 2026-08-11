@@ -559,4 +559,189 @@ describe('Sidebar', () => {
     expect(navItems.find(item => item.getAttribute('aria-label') === 'New Test')?.getAttribute('aria-current')).toBe('page')
     expect(container.querySelector<HTMLButtonElement>('.sidebar-brand')?.getAttribute('aria-label')).toBe('APEX Load dashboard')
   })
+
+  const mobilityDomain = { id: 'mobility', name: 'Mobility', created_at: '', updated_at: '' }
+  const mobilityProject = { id: 'project-1', domain_id: 'mobility', name: 'Mobility Web', created_at: '', updated_at: '' }
+
+  const openMenu = async (selector: string) => {
+    const selectorButton = container.querySelector<HTMLButtonElement>(selector)
+    expect(selectorButton).not.toBeNull()
+    await act(async () => {
+      selectorButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+  }
+
+  const menuButton = (menuId: string, label: string) => Array.from(
+    container.querySelectorAll<HTMLButtonElement>(`#${menuId} button`),
+  ).find(button => button.textContent === label)
+
+  it('explains an empty domain instead of offering only Open Repository', async () => {
+    await act(async () => {
+      root.render(
+        <Sidebar
+          active="dashboard"
+          onNavigate={vi.fn()}
+          connectionState="connected"
+          domains={[mobilityDomain]}
+          activeDomain={mobilityDomain}
+          projects={[]}
+          activeProject={null}
+          onCreateProject={vi.fn()}
+          canCreateProjects
+        />,
+      )
+    })
+
+    await openMenu('[aria-controls="sidebar-project-options"]')
+    expect(container.querySelector('#sidebar-project-options')?.textContent).toContain('No projects in Mobility')
+    expect(menuButton('sidebar-project-options', 'New Project')).toBeDefined()
+
+    await openMenu('[aria-controls="sidebar-application-options"]')
+    expect(container.querySelector('#sidebar-application-options')?.textContent).toContain('Select a project first')
+    expect(menuButton('sidebar-application-options', 'New Application')).toBeUndefined()
+  })
+
+  it('creates a project from the sidebar menu', async () => {
+    const onCreateProject = vi.fn().mockResolvedValue(mobilityProject)
+    await act(async () => {
+      root.render(
+        <Sidebar
+          active="dashboard"
+          onNavigate={vi.fn()}
+          connectionState="connected"
+          domains={[mobilityDomain]}
+          activeDomain={mobilityDomain}
+          projects={[]}
+          onCreateProject={onCreateProject}
+          canCreateProjects
+        />,
+      )
+    })
+
+    await openMenu('[aria-controls="sidebar-project-options"]')
+    await act(async () => {
+      menuButton('sidebar-project-options', 'New Project')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const nameInput = container.querySelector<HTMLInputElement>('.project-modal-field input')
+    expect(nameInput).not.toBeNull()
+    if (!nameInput) return
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+      setter?.call(nameInput, 'Mobility Web')
+      nameInput.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    await act(async () => {
+      container.querySelector<HTMLFormElement>('form.project-modal')?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    })
+
+    expect(onCreateProject).toHaveBeenCalledWith('Mobility Web')
+  })
+
+  it('hides project creation when the session cannot manage projects', async () => {
+    await act(async () => {
+      root.render(
+        <Sidebar
+          active="dashboard"
+          onNavigate={vi.fn()}
+          connectionState="connected"
+          domains={[mobilityDomain]}
+          activeDomain={mobilityDomain}
+          projects={[]}
+          onCreateProject={vi.fn()}
+        />,
+      )
+    })
+
+    await openMenu('[aria-controls="sidebar-project-options"]')
+    expect(menuButton('sidebar-project-options', 'New Project')).toBeUndefined()
+    expect(menuButton('sidebar-project-options', 'Open Repository')).toBeDefined()
+  })
+
+  it('offers application creation once a project is active, without the project-management permission', async () => {
+    await act(async () => {
+      root.render(
+        <Sidebar
+          active="dashboard"
+          onNavigate={vi.fn()}
+          connectionState="connected"
+          domains={[mobilityDomain]}
+          activeDomain={mobilityDomain}
+          projects={[mobilityProject]}
+          activeProject={mobilityProject}
+          applications={[]}
+          onCreateApplication={vi.fn()}
+        />,
+      )
+    })
+
+    await openMenu('[aria-controls="sidebar-application-options"]')
+    expect(container.querySelector('#sidebar-application-options')?.textContent).toContain('No applications in Mobility Web')
+    // Application creation is a wider server-side permission than project
+    // management, so it is not gated on canCreateProjects.
+    expect(menuButton('sidebar-application-options', 'New Application')).toBeDefined()
+  })
+
+  it('expands the rail when a scope selector is clicked while collapsed', async () => {
+    await act(async () => {
+      root.render(
+        <Sidebar
+          active="dashboard"
+          onNavigate={vi.fn()}
+          connectionState="connected"
+          domains={[mobilityDomain]}
+          activeDomain={mobilityDomain}
+          projects={[mobilityProject]}
+          activeProject={mobilityProject}
+        />,
+      )
+    })
+
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('.collapse-btn')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(container.querySelector('.sidebar.collapsed')).not.toBeNull()
+
+    await openMenu('[aria-controls="sidebar-project-options"]')
+    expect(container.querySelector('.sidebar.collapsed')).toBeNull()
+    expect(container.querySelector('#sidebar-project-options')).not.toBeNull()
+  })
+
+  it('hides Open Repository in every scope menu during dev user preview', async () => {
+    await act(async () => {
+      root.render(
+        <DevViewProvider>
+          <Sidebar
+            active="dashboard"
+            onNavigate={vi.fn()}
+            connectionState="connected"
+            authStatus={{ enabled: false, mode: 'dev', authenticated: false }}
+            domains={[mobilityDomain]}
+            activeDomain={mobilityDomain}
+            projects={[mobilityProject]}
+            activeProject={mobilityProject}
+            onCreateProject={vi.fn()}
+            canCreateProjects
+          />
+        </DevViewProvider>,
+      )
+    })
+
+    await act(async () => {
+      Array.from(container.querySelectorAll('button'))
+        .find(button => button.textContent === 'User')
+        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    await openMenu('[aria-controls="sidebar-domain-options"]')
+    expect(menuButton('sidebar-domain-options', 'Open Repository')).toBeUndefined()
+
+    await openMenu('[aria-controls="sidebar-project-options"]')
+    expect(menuButton('sidebar-project-options', 'Open Repository')).toBeUndefined()
+    expect(menuButton('sidebar-project-options', 'New Project')).toBeUndefined()
+
+    await openMenu('[aria-controls="sidebar-application-options"]')
+    expect(menuButton('sidebar-application-options', 'Open Repository')).toBeUndefined()
+    expect(menuButton('sidebar-application-options', 'New Application')).toBeUndefined()
+  })
 })

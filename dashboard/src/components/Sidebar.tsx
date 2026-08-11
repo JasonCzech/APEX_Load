@@ -3,6 +3,7 @@ import { type WebSocketConnectionState } from '../hooks/useWebSocket'
 import { useAuthApi } from '../hooks/api/useAuthApi'
 import { resolveApiResourceUrl } from '../hooks/apiClient'
 import { useDevView } from '../hooks/useDevView'
+import { useNavigationGuardRunner } from '../hooks/NavigationGuardProvider'
 import { Application, DashboardAuthStatus, Domain, Project, Release } from '../types'
 import BuildBadge from './BuildBadge'
 import Logo from './Logo'
@@ -30,6 +31,7 @@ interface Props {
   onApplicationChange?: (application: Application) => void
   onReleaseChange?: (release: Release) => void
   onCreateApplication?: (name: string) => Promise<Application>
+  canCreateProjects?: boolean
   showAccess?: boolean
 }
 
@@ -178,6 +180,7 @@ export default function Sidebar({
   onApplicationChange,
   onReleaseChange,
   onCreateApplication,
+  canCreateProjects = false,
   showAccess = false,
 }: Props) {
   const [collapsed, setCollapsed] = useState(false)
@@ -192,6 +195,7 @@ export default function Sidebar({
   const [logoutPending, setLogoutPending] = useState(false)
   const [logoutError, setLogoutError] = useState('')
   const { logout } = useAuthApi()
+  const { runGuarded } = useNavigationGuardRunner()
   const { mode: devViewMode, setMode: setDevViewMode } = useDevView()
   const isDevDashboard = authStatus?.mode === 'dev'
   const isDevUserPreview = isDevDashboard && devViewMode === 'user'
@@ -253,22 +257,27 @@ export default function Sidebar({
     }
   }, [applicationOpen, closeWorkspaceMenus, domainOpen, projectOpen])
 
+  // The menus only render expanded, so a click while collapsed has to open the
+  // rail as well or it silently does nothing.
   const toggleDomainMenu = () => {
-    setDomainOpen(open => !open)
+    setDomainOpen(open => (collapsed ? true : !open))
     setProjectOpen(false)
     setApplicationOpen(false)
+    setCollapsed(false)
   }
 
   const toggleProjectMenu = () => {
     setDomainOpen(false)
-    setProjectOpen(open => !open)
+    setProjectOpen(open => (collapsed ? true : !open))
     setApplicationOpen(false)
+    setCollapsed(false)
   }
 
   const toggleApplicationMenu = () => {
     setDomainOpen(false)
     setProjectOpen(false)
-    setApplicationOpen(open => !open)
+    setApplicationOpen(open => (collapsed ? true : !open))
+    setCollapsed(false)
   }
 
   const handleNewProject = async (name: string) => {
@@ -340,15 +349,17 @@ export default function Sidebar({
                 </button>
               ))}
             </div>
-            <button
-              className="project-menu-action muted"
-              onClick={() => {
-                setDomainOpen(false)
-                onNavigate('repository')
-              }}
-            >
-              Open Repository
-            </button>
+            {!isDevUserPreview && (
+              <button
+                className="project-menu-action muted"
+                onClick={() => {
+                  setDomainOpen(false)
+                  onNavigate('repository')
+                }}
+              >
+                Open Repository
+              </button>
+            )}
           </div>
         )}
       </div>
@@ -373,7 +384,11 @@ export default function Sidebar({
         {projectOpen && !collapsed && (
           <div className="project-menu" id="sidebar-project-options" aria-label="Project options">
             <div className="project-menu-list">
-              {projects.map(project => (
+              {projects.length === 0 ? (
+                <p className="project-menu-empty">
+                  {`No projects in ${activeDomain?.name || 'this domain'}`}
+                </p>
+              ) : projects.map(project => (
                 <button
                   key={project.id}
                   className={`project-menu-item ${activeProject?.id === project.id ? 'active' : ''}`}
@@ -386,6 +401,19 @@ export default function Sidebar({
                 </button>
               ))}
             </div>
+            {canCreateProjects && !isDevUserPreview && onCreateProject && (
+              <button
+                className="project-menu-action"
+                onClick={() => {
+                  setProjectOpen(false)
+                  // Creating a project switches the workspace scope on save, so
+                  // resolve unsaved-changes guards before opening the form.
+                  runGuarded(() => setShowProjectModal(true))
+                }}
+              >
+                New Project
+              </button>
+            )}
             {!isDevUserPreview && (
               <button
                 className="project-menu-action muted"
@@ -421,7 +449,13 @@ export default function Sidebar({
         {applicationOpen && !collapsed && (
           <div className="project-menu" id="sidebar-application-options" aria-label="Application and release options">
             <div className="project-menu-list">
-              {applications.map(application => (
+              {applications.length === 0 ? (
+                <p className="project-menu-empty">
+                  {activeProject
+                    ? `No applications in ${activeProject.name}`
+                    : 'Select a project first'}
+                </p>
+              ) : applications.map(application => (
                 <button
                   key={application.id}
                   className={`project-menu-item ${activeApplication?.id === application.id ? 'active' : ''}`}
@@ -449,6 +483,21 @@ export default function Sidebar({
                   </button>
                 ))}
               </div>
+            )}
+            {/* Not gated on canCreateProjects: application creation is a wider
+                permission than project management on the server (global
+                editors qualify), and the Settings create row matches. A
+                denied create surfaces its error in the dialog. */}
+            {activeProject && !isDevUserPreview && onCreateApplication && (
+              <button
+                className="project-menu-action"
+                onClick={() => {
+                  setApplicationOpen(false)
+                  runGuarded(() => setShowApplicationModal(true))
+                }}
+              >
+                New Application
+              </button>
             )}
             {!isDevUserPreview && (
               <button
