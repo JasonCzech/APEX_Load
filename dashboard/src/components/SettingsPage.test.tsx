@@ -4722,7 +4722,7 @@ describe('SettingsPage', () => {
     await flushPromises()
     await flushPromises()
 
-    expect(applicationApiMock.updateRelease).toHaveBeenCalledWith(releaseA.id, { name: renamedReleaseA.name })
+    expect(applicationApiMock.updateRelease).toHaveBeenCalledWith(releaseA.id, { name: renamedReleaseA.name, updated_at: releaseA.updated_at })
     expect(applicationContextMock.refreshReleases).toHaveBeenCalledWith(applicationA.id, { preserveRelease: renamedReleaseA })
     expect(applicationApiMock.listReleases).toHaveBeenCalledWith(applicationA.id, true)
     expect(applicationContextMock.setActiveApplication).toHaveBeenCalledWith(applicationB)
@@ -4817,7 +4817,7 @@ describe('SettingsPage', () => {
     await act(async () => save?.click())
     await flushPromises()
 
-    expect(applicationApiMock.updateApplication).toHaveBeenCalledWith('app-a', { name: 'Checkout Renamed' })
+    expect(applicationApiMock.updateApplication).toHaveBeenCalledWith('app-a', { name: 'Checkout Renamed', updated_at: applicationA.updated_at })
     expect(applicationContextMock.setActiveApplication).toHaveBeenCalledWith(renamedA)
   })
 
@@ -5116,7 +5116,7 @@ describe('SettingsPage', () => {
     })
     await flushPromises()
 
-    expect(applicationApiMock.updateApplication).toHaveBeenCalledWith(original.id, { name: updated.name })
+    expect(applicationApiMock.updateApplication).toHaveBeenCalledWith(original.id, { name: updated.name, updated_at: original.updated_at })
     expect(applicationContextMock.setActiveApplication).toHaveBeenCalledWith(updated)
     expect(currentRow?.querySelector('input')).toBeNull()
     expect(latest?.guard.isDirty()).toBe(false)

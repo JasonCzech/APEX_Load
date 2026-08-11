@@ -29,7 +29,7 @@ export function useApplicationApi() {
   )
 
   const updateApplication = useCallback(
-    (id: string, data: { name: string }, options?: ApiCallOptions) => request<Application>(`/applications/${id}`, withCallOptions({ method: 'PUT', body: JSON.stringify(data) }, options)),
+    (id: string, data: { name: string; updated_at: string }, options?: ApiCallOptions) => request<Application>(`/applications/${id}`, withCallOptions({ method: 'PUT', body: JSON.stringify(data) }, options)),
     [],
   )
 
@@ -48,7 +48,7 @@ export function useApplicationApi() {
   )
 
   const updateRelease = useCallback(
-    (id: string, data: { name: string }, options?: ApiCallOptions) => request<Release>(`/releases/${id}`, withCallOptions({ method: 'PUT', body: JSON.stringify(data) }, options)),
+    (id: string, data: { name: string; updated_at: string }, options?: ApiCallOptions) => request<Release>(`/releases/${id}`, withCallOptions({ method: 'PUT', body: JSON.stringify(data) }, options)),
     [],
   )
 

@@ -3844,6 +3844,26 @@ describe('NewTestPage', () => {
     expect(apiMock.createScenarioSchedule).not.toHaveBeenCalled()
   })
 
+  it('does not show an RBAC denial while project access is still loading', async () => {
+    apiMock.getAuthEffectiveAccess.mockImplementation(() => new Promise(() => {}))
+
+    await act(async () => {
+      root.render(
+        <NewTestPage
+          activeApplication={{ id: 'app-1', name: 'ACC', created_at: '', updated_at: '' }}
+          activeRelease={{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }}
+          releases={[{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }]}
+          onSelectTest={vi.fn()}
+          onCreateRelease={vi.fn().mockResolvedValue(null)}
+        />,
+      )
+      await Promise.resolve()
+    })
+
+    expect(apiMock.getAuthEffectiveAccess).toHaveBeenCalled()
+    expect(container.textContent).not.toContain('Current session can view scenarios but cannot create runs or schedules for this project.')
+  })
+
   it('waits for a project scope and ignores scenarios returned from the previous project', async () => {
     let resolveProjectOne: ((value: { scenarios: Array<Record<string, unknown>> }) => void) | undefined
     apiMock.listScenarios
@@ -3925,6 +3945,7 @@ describe('NewTestPage', () => {
     expect(apiMock.listScenarios).not.toHaveBeenCalled()
     expect(apiMock.listTimeslots).not.toHaveBeenCalled()
     expect(apiMock.getAuthEffectiveAccess).not.toHaveBeenCalled()
+    expect(container.textContent).not.toContain('Current session can view scenarios but cannot create runs or schedules for this project.')
   })
 
   it('traps focus in the run-default dialog, closes on Escape, and restores its opener', async () => {

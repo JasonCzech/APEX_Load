@@ -602,6 +602,7 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
   const [scheduledPreflightLoading, setScheduledPreflightLoading] = useState(false)
   const [scheduledStartLocal, setScheduledStartLocal] = useState(initialPrefillStartLocal || '')
   const [effectiveAuthAccessResources, setEffectiveAuthAccessResources] = useState<DashboardAuthEffectiveAccessResource[]>([])
+  const [effectiveAccessLoaded, setEffectiveAccessLoaded] = useState(false)
   const [generatorInventory, setGeneratorInventory] = useState<SystemInventoryGenerator[]>([])
   const [generatorInventoryLoading, setGeneratorInventoryLoading] = useState(false)
   const [generatorInventoryError, setGeneratorInventoryError] = useState('')
@@ -660,6 +661,7 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
     setScenarioId('')
     setSelectedTimeslotId('')
     setEffectiveAuthAccessResources([])
+    setEffectiveAccessLoaded(false)
     setError('')
     scheduleRequestGenerationRef.current += 1
     scheduleOccurrenceRequestGenerationRef.current += 1
@@ -814,9 +816,10 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
   useEffect(() => { setReleaseId(defaultReleaseId) }, [defaultReleaseId])
   useEffect(() => {
     let cancelled = false
+    setEffectiveAuthAccessResources([])
+    setEffectiveAccessLoaded(false)
     const loadEffectiveAccess = async () => {
       if (!activeProject?.id) {
-        setEffectiveAuthAccessResources([])
         return
       }
       try {
@@ -830,6 +833,10 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
       } catch {
         if (!cancelled) {
           setEffectiveAuthAccessResources([])
+        }
+      } finally {
+        if (!cancelled) {
+          setEffectiveAccessLoaded(true)
         }
       }
     }
@@ -2406,7 +2413,7 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
       </div>
 
       {error && <ErrorDiagnostic error={error} fallback="Unable to create or load test setup" compact className="new-test-error-diagnostic" />}
-      {!canManageTests && <div className="settings-error-inline page-error-banner" role="alert">Current session can view scenarios but cannot create runs or schedules for this project.</div>}
+      {effectiveAccessLoaded && !canManageTests && <div className="settings-error-inline page-error-banner" role="alert">Current session can view scenarios but cannot create runs or schedules for this project.</div>}
       {queueRecovery && (
         <div className="new-test-launch-feedback warning" role="status">
           {queueRecovery.status === 'checking' ? (

@@ -436,10 +436,12 @@ export default function SettingsPage({
   const [renamingApplicationId, setRenamingApplicationId] = useState<string | null>(null)
   const [renamingApplicationName, setRenamingApplicationName] = useState<string | null>(null)
   const [renamingApplicationOriginalName, setRenamingApplicationOriginalName] = useState<string | null>(null)
+  const [renamingApplicationUpdatedAt, setRenamingApplicationUpdatedAt] = useState('')
   const [renamingReleaseId, setRenamingReleaseId] = useState<string | null>(null)
   const [renamingReleaseName, setRenamingReleaseName] = useState('')
   const [renamingReleaseOriginalName, setRenamingReleaseOriginalName] = useState<string | null>(null)
   const [renamingReleaseApplicationId, setRenamingReleaseApplicationId] = useState<string | null>(null)
+  const [renamingReleaseUpdatedAt, setRenamingReleaseUpdatedAt] = useState('')
   const [confirmDeleteApp, setConfirmDeleteApp] = useState(false)
   const [confirmDeleteRelease, setConfirmDeleteRelease] = useState<{ id: string; name: string } | null>(null)
   const [confirmArchiveRelease, setConfirmArchiveRelease] = useState<{ id: string; name: string } | null>(null)
@@ -2245,10 +2247,12 @@ export default function SettingsPage({
     setRenamingApplicationId(null)
     setRenamingApplicationName(null)
     setRenamingApplicationOriginalName(null)
+    setRenamingApplicationUpdatedAt('')
     setRenamingReleaseId(null)
     setRenamingReleaseName('')
     setRenamingReleaseOriginalName(null)
     setRenamingReleaseApplicationId(null)
+    setRenamingReleaseUpdatedAt('')
     setNewProjectName('')
     setNewProjectDomainId('')
     setDataPoolName('')
@@ -2285,6 +2289,7 @@ export default function SettingsPage({
     setRenamingApplicationId(activeApplication.id)
     setRenamingApplicationName(activeApplication.name)
     setRenamingApplicationOriginalName(activeApplication.name)
+    setRenamingApplicationUpdatedAt(activeApplication.updated_at)
   }
 
   async function confirmRenameApplication(): Promise<boolean> {
@@ -2293,7 +2298,7 @@ export default function SettingsPage({
     if (!name) return false
     let updated: Application
     try {
-      updated = await applicationApi.updateApplication(renamingApplicationId, { name })
+      updated = await applicationApi.updateApplication(renamingApplicationId, { name, updated_at: renamingApplicationUpdatedAt })
     } catch (error: unknown) {
       setApplicationActionError(getErrorMessage(error, 'Unable to rename application'))
       return false
@@ -2307,6 +2312,7 @@ export default function SettingsPage({
     setRenamingApplicationId(null)
     setRenamingApplicationName(null)
     setRenamingApplicationOriginalName(null)
+    setRenamingApplicationUpdatedAt('')
     try {
       await refreshApplications({ preserveApplication: updated })
       setApplicationReconciliationWarning(null)
@@ -2369,11 +2375,12 @@ export default function SettingsPage({
     }
   }
 
-  const startRenamingRelease = (releaseId: string, currentName: string, applicationId: string) => {
-    setRenamingReleaseId(releaseId)
-    setRenamingReleaseName(currentName)
-    setRenamingReleaseOriginalName(currentName)
-    setRenamingReleaseApplicationId(applicationId)
+  const startRenamingRelease = (release: Release) => {
+    setRenamingReleaseId(release.id)
+    setRenamingReleaseName(release.name)
+    setRenamingReleaseOriginalName(release.name)
+    setRenamingReleaseApplicationId(release.application_id)
+    setRenamingReleaseUpdatedAt(release.updated_at)
   }
 
   async function confirmRenameRelease(): Promise<boolean> {
@@ -2383,7 +2390,7 @@ export default function SettingsPage({
     const applicationId = renamingReleaseApplicationId
     let updated: Release
     try {
-      updated = await applicationApi.updateRelease(renamingReleaseId, { name })
+      updated = await applicationApi.updateRelease(renamingReleaseId, { name, updated_at: renamingReleaseUpdatedAt })
     } catch (error: unknown) {
       setApplicationActionError(getErrorMessage(error, 'Unable to rename release'))
       return false
@@ -2401,6 +2408,7 @@ export default function SettingsPage({
     setRenamingReleaseName('')
     setRenamingReleaseOriginalName(null)
     setRenamingReleaseApplicationId(null)
+    setRenamingReleaseUpdatedAt('')
     try {
       await reconcileManagedReleaseCatalog(releaseApplicationId, updated)
       setApplicationReconciliationWarning(null)
@@ -5114,11 +5122,12 @@ export default function SettingsPage({
                           setRenamingApplicationId(null)
                           setRenamingApplicationName(null)
                           setRenamingApplicationOriginalName(null)
+                          setRenamingApplicationUpdatedAt('')
                         }
                       }}
                     />
                     <button className="btn btn-primary" type="button" onClick={confirmRenameApplication}>Save</button>
-                    <button className="btn btn-secondary" type="button" onClick={() => { setRenamingApplicationId(null); setRenamingApplicationName(null); setRenamingApplicationOriginalName(null) }}>Cancel</button>
+                    <button className="btn btn-secondary" type="button" onClick={() => { setRenamingApplicationId(null); setRenamingApplicationName(null); setRenamingApplicationOriginalName(null); setRenamingApplicationUpdatedAt('') }}>Cancel</button>
                   </>
                 ) : (
                   <>
@@ -5169,14 +5178,14 @@ export default function SettingsPage({
                               className="input"
                               value={renamingReleaseName}
                               onChange={e => setRenamingReleaseName(e.target.value)}
-                              onKeyDown={e => { if (e.key === 'Enter') confirmRenameRelease(); if (e.key === 'Escape') { setRenamingReleaseId(null); setRenamingReleaseName(''); setRenamingReleaseOriginalName(null); setRenamingReleaseApplicationId(null); } }}
+                              onKeyDown={e => { if (e.key === 'Enter') confirmRenameRelease(); if (e.key === 'Escape') { setRenamingReleaseId(null); setRenamingReleaseName(''); setRenamingReleaseOriginalName(null); setRenamingReleaseApplicationId(null); setRenamingReleaseUpdatedAt(''); } }}
                             />
                             <button className="btn btn-primary" type="button" onClick={confirmRenameRelease}>Save</button>
-                            <button className="btn btn-secondary" type="button" onClick={() => { setRenamingReleaseId(null); setRenamingReleaseName(''); setRenamingReleaseOriginalName(null); setRenamingReleaseApplicationId(null); }}>Cancel</button>
+                            <button className="btn btn-secondary" type="button" onClick={() => { setRenamingReleaseId(null); setRenamingReleaseName(''); setRenamingReleaseOriginalName(null); setRenamingReleaseApplicationId(null); setRenamingReleaseUpdatedAt(''); }}>Cancel</button>
                           </>
                         ) : (
                           <>
-                            <button className="btn btn-secondary" type="button" onClick={() => runGuarded(() => startRenamingRelease(release.id, release.name, release.application_id))}>
+                            <button className="btn btn-secondary" type="button" onClick={() => runGuarded(() => startRenamingRelease(release))}>
                               Rename
                             </button>
                             {!release.archived_at && (
