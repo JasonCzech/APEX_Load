@@ -57,7 +57,45 @@ import type {
   VersionResponse,
 } from '../../types/system'
 import type { DashboardSystemSettings, PowerBIDatasetRecreateResponse, PowerBITestConnectionResponse } from '../../types/settings'
-import { apiFetch, request } from '../apiClient'
+import { apiFetch, ApiError, request } from '../apiClient'
+
+// The controller completes its readiness probe in 2.5 seconds and Monitoring
+// polls every five seconds. Keep the browser request inside that polling window
+// so a stalled proxy or connection cannot pin the shared dashboard refresh.
+export const SYSTEM_READINESS_REQUEST_TIMEOUT_MS = 4_000
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function isSystemReadinessResponse(value: unknown): value is SystemReadinessResponse {
+  if (!isRecord(value) || value.status !== 'not_ready' || typeof value.generated_at !== 'string' || !Array.isArray(value.checks)) {
+    return false
+  }
+  return value.checks.every(check => (
+    isRecord(check)
+    && typeof check.name === 'string'
+    && typeof check.status === 'string'
+    && typeof check.message === 'string'
+    && (check.details === undefined || isRecord(check.details))
+  ))
+}
+
+async function fetchSystemReadiness(): Promise<SystemReadinessResponse> {
+  try {
+    return await request<SystemReadinessResponse>('/system/readiness', {
+      timeoutMs: SYSTEM_READINESS_REQUEST_TIMEOUT_MS,
+    })
+  } catch (error) {
+    // Readiness deliberately uses HTTP 503 for a valid not_ready document so
+    // Kubernetes can consume the same route. Treat only that validated payload
+    // as data; malformed or unrelated 503 responses remain transport failures.
+    if (error instanceof ApiError && error.status === 503 && isSystemReadinessResponse(error.payload)) {
+      return error.payload
+    }
+    throw error
+  }
+}
 
 function buildQuery(params: Record<string, string | number | undefined>) {
   const query = new URLSearchParams()
@@ -161,7 +199,7 @@ export function useSystemApi() {
     (payload: SystemRestartRequest) => request<SystemRestartResult>('/system/restarts', { method: 'POST', body: JSON.stringify(payload) }),
     [],
   )
-  const getSystemReadiness = useCallback(() => request<SystemReadinessResponse>('/system/readiness'), [])
+  const getSystemReadiness = useCallback(() => fetchSystemReadiness(), [])
   const getSystemServices = useCallback(() => request<SystemServicesResponse>('/system/services'), [])
   const getParityStatus = useCallback(() => request<ParityStatusResponse>('/system/parity-status'), [])
   const getBrowserBenchmarks = useCallback(() => request<BrowserBenchmarkEvidenceResponse>('/system/browser-benchmarks'), [])

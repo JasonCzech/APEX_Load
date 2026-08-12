@@ -2007,6 +2007,11 @@ func (mge *MultiGroupEngine) GracefulStop() {
 		close(mge.gracefulStopCh)
 	}
 	mge.gracefulStopRequested = true
+	// Close scale admission at the same linearization point as the graceful
+	// fence. Relying on holdScaleGuard to observe loopCtx asynchronously leaves
+	// a window where a control plan admitted before the fence can spawn VUsers
+	// after the fence has returned.
+	mge.scalingOpen = false
 	cancel := mge.softStop
 	mge.mu.Unlock()
 	if cancel != nil {

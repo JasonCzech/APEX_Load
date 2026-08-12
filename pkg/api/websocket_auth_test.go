@@ -67,6 +67,46 @@ func TestWebSocketAuthorizerRechecksRoleAndSessionEpoch(t *testing.T) {
 	}
 }
 
+func TestWebSocketAuthorizerRechecksExactLocalSessionAfterLogout(t *testing.T) {
+	server, store := newLocalAuthTestServer(t, false)
+	firstLogin, firstCookie := localLogin(t, server, "dev", "dev")
+	secondLogin, secondCookie := localLogin(t, server, "dev", "dev")
+	if firstLogin.Code != http.StatusOK || firstCookie == nil || secondLogin.Code != http.StatusOK || secondCookie == nil {
+		t.Fatalf("logins = (%d, %v), (%d, %v)", firstLogin.Code, firstCookie, secondLogin.Code, secondCookie)
+	}
+
+	authorizerFor := func(cookie *http.Cookie) func() bool {
+		request := httptest.NewRequest(http.MethodGet, "/api/v1/ws?project_id="+storage.DefaultProjectID, nil)
+		request.AddCookie(cookie)
+		resolution := resolveLocalSession(request, store)
+		if resolution.User == nil || resolution.Status != "active" {
+			t.Fatalf("local session resolution = %#v", resolution)
+		}
+		request = withAuthenticatedContext(request, authResolution{User: resolution.User})
+		return server.websocketAuthorizer(request, storage.DefaultProjectID)
+	}
+	firstAuthorized := authorizerFor(firstCookie)
+	secondAuthorized := authorizerFor(secondCookie)
+	if !firstAuthorized() || !secondAuthorized() {
+		t.Fatal("fresh local sessions should authorize their websocket snapshots")
+	}
+
+	logout := httptest.NewRequest(http.MethodPost, "/api/v1/auth/logout", nil)
+	logout.AddCookie(firstCookie)
+	logout.Header.Set("X-APEXLoad-CSRF-Token", localLogoutCSRFToken(firstCookie.Value))
+	logoutResponse := httptest.NewRecorder()
+	server.mux.ServeHTTP(logoutResponse, logout)
+	if logoutResponse.Code != http.StatusOK {
+		t.Fatalf("logout = %d body=%s", logoutResponse.Code, logoutResponse.Body.String())
+	}
+	if firstAuthorized() {
+		t.Fatal("deleted local session continued to authorize an existing websocket")
+	}
+	if !secondAuthorized() {
+		t.Fatal("logging out one local session revoked a separate session")
+	}
+}
+
 func TestWebSocketAuthorizerRejectsRotatedServiceAccountKey(t *testing.T) {
 	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
 	if err != nil {

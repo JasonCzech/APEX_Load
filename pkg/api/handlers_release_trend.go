@@ -10,13 +10,18 @@ import (
 
 func (s *Server) handleGetReleaseTrendExport(w http.ResponseWriter, r *http.Request) {
 	releaseID := r.PathValue("id")
-	runs, err := s.collectReleaseTrendRuns(releaseID, true)
+	family, err := s.resolveReleaseFamily(releaseID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	runs, err := s.collectReleaseTrendRunsForFamily(family, true)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
-	w.Header().Set("Content-Disposition", "attachment; filename=\"apexload-release-trend-"+releaseID+".csv\"")
+	w.Header().Set("Content-Disposition", "attachment; filename=\"apexload-release-trend-"+family.CanonicalID+".csv\"")
 	if err := writeReleaseTrendCSV(w, runs); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to write release trend csv: "+err.Error())
 	}
@@ -27,18 +32,31 @@ func (s *Server) handleGetReleaseTrendExport(w http.ResponseWriter, r *http.Requ
 // flags, and a first→last trajectory summary.
 func (s *Server) handleGetReleaseTrend(w http.ResponseWriter, r *http.Request) {
 	releaseID := r.PathValue("id")
-	runs, err := s.collectReleaseTrendRuns(releaseID, false)
+	family, err := s.resolveReleaseFamily(releaseID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, buildReleaseTrend(releaseID, runs))
+	runs, err := s.collectReleaseTrendRunsForFamily(family, false)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, buildReleaseTrend(family.CanonicalID, runs))
 }
 
 // collectReleaseTrendRuns gathers archived runs for a release and builds their
 // reports — shared by the CSV export and the JSON trend analysis.
 func (s *Server) collectReleaseTrendRuns(releaseID string, requireReport bool) ([]releaseTrendRun, error) {
-	tests := s.runner.ListTestSummariesByContext("", releaseID, "")
+	family, err := s.resolveReleaseFamily(releaseID)
+	if err != nil {
+		return nil, err
+	}
+	return s.collectReleaseTrendRunsForFamily(family, requireReport)
+}
+
+func (s *Server) collectReleaseTrendRunsForFamily(family resolvedReleaseFamily, requireReport bool) ([]releaseTrendRun, error) {
+	tests := s.listReleaseFamilyTests(family)
 	runs := make([]releaseTrendRun, 0, len(tests))
 	for _, test := range tests {
 		record, ok := s.runner.GetRunArchive(test.ID)
@@ -96,13 +114,19 @@ func (s *Server) attachReleaseTrend(report *RunArchiveReport) {
 	if releaseID == "" {
 		return
 	}
-	runs, err := s.collectReleaseTrendRuns(releaseID, false)
+	family, err := s.resolveReleaseFamily(releaseID)
 	if err != nil {
 		slog.Warn("archive report: release trend unavailable",
 			"release", releaseID, "test", report.Manifest.TestID, "err", err)
 		return
 	}
-	report.ReleaseTrend = buildRunArchiveReleaseTrendSummary(buildReleaseTrend(releaseID, runs), report.Manifest.TestID)
+	runs, err := s.collectReleaseTrendRunsForFamily(family, false)
+	if err != nil {
+		slog.Warn("archive report: release trend unavailable",
+			"release", releaseID, "test", report.Manifest.TestID, "err", err)
+		return
+	}
+	report.ReleaseTrend = buildRunArchiveReleaseTrendSummary(buildReleaseTrend(family.CanonicalID, runs), report.Manifest.TestID)
 }
 
 // attachReleaseTrendForProfile attaches the release-trend summary only when the

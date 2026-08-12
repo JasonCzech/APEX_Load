@@ -39,11 +39,25 @@ spec:
           env:
             - name: APEXLOAD_GENERATOR_MAX_VUSERS
               value: "1000"
+            - name: APEXLOAD_GENERATOR_RUN_SUPERVISION_TTL
+              value: "60s"
+            - name: APEXLOAD_GENERATOR_ABANDON_DRAIN
+              value: "5s"
+            # emptyDir survives a generator container restart within this local
+            # pod, preserving the execution high-water and safety-exit evidence.
+            # Production overlays use a per-ordinal PVC so this also survives pod
+            # replacement.
+            - name: APEXLOAD_GENERATOR_STATE_DIR
+              value: /var/lib/apexload-generator
+            - name: APEXLOAD_ARCHIVE_DIR
+              value: /var/lib/apexload-generator/archives
             - name: APEXLOAD_JAVA_VUSER_RUNNER_ENABLED
               value: "false"
           volumeMounts:
             - name: tmp
               mountPath: /tmp
+            - name: generator-state
+              mountPath: /var/lib/apexload-generator
           ports:
             - name: grpc
               containerPort: 9090
@@ -68,4 +82,6 @@ spec:
               memory: 2Gi
       volumes:
         - name: tmp
+          emptyDir: {}
+        - name: generator-state
           emptyDir: {}

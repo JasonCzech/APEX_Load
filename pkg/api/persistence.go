@@ -249,6 +249,7 @@ func (tr *TestRunner) reloadStoredScenariosApplied() (bool, error) {
 		loaded[part.full.ID] = stored
 	}
 	tr.mu.RUnlock()
+	readinessProjection := schedulerReadinessProjectionForScenarios(loaded, time.Now().UTC())
 	tr.mu.Lock()
 	if tr.contentRevision != revision {
 		tr.mu.Unlock()
@@ -260,9 +261,11 @@ func (tr *TestRunner) reloadStoredScenariosApplied() (bool, error) {
 		}
 	}
 	tr.scenarios = loaded
+	tr.readinessScheduler = readinessProjection
 	for _, scenario := range loaded {
 		tr.observeAndIndexRefKeyLocked(scenario.RefKey, scenario.ID)
 	}
+	tr.publishRuntimeReadinessLocked(time.Now().UTC())
 	tr.mu.Unlock()
 	return true, nil
 }
@@ -1558,12 +1561,14 @@ func (tr *TestRunner) forgetProject(projectID string) {
 	for id, scenario := range tr.scenarios {
 		if scenario != nil && normalizeProjectID(scenario.ProjectID) == projectID {
 			tr.removeRefKeyLocked(scenario.RefKey)
+			tr.removeScenarioReadinessCountersLocked(scenario)
 			delete(tr.scenarios, id)
 			contentDeleted = true
 		}
 	}
 	if contentDeleted {
 		tr.contentRevision++
+		tr.publishRuntimeReadinessLocked(time.Now().UTC())
 	}
 	for id, test := range tr.tests {
 		if test != nil && normalizeProjectID(test.ProjectID) == projectID {

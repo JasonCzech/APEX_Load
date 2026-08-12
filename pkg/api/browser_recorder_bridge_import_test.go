@@ -178,3 +178,41 @@ func TestBridgedBrowserImportUsesResolverProjectWhenWrapperOmitsProject(t *testi
 		t.Fatalf("resolver-scoped handoff status = %d body=%s", response.Code, response.Body.String())
 	}
 }
+
+func TestBridgedBrowserImportDefaultsOmittedProjectForGlobalCaller(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	body, err := json.Marshal(map[string]any{
+		"scripts": []dsl.Script{{
+			Name:     "Default-project bridged HAR",
+			Version:  "1",
+			Protocol: "http",
+			Config:   dsl.ScriptConfig{BaseURL: "https://example.test"},
+			Actions: []dsl.Action{{
+				Name: "request", Type: "request", Method: http.MethodGet, Target: "/",
+			}},
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	response := httptest.NewRecorder()
+	request := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/scripts/import/browser-recorder/attest",
+		bytes.NewReader(body),
+	)
+	request.Header.Set("Content-Type", "application/json")
+	server.mux.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("default-project handoff status = %d body=%s", response.Code, response.Body.String())
+	}
+	var payload struct {
+		Scripts []dsl.Script `json:"scripts"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if len(payload.Scripts) != 1 || payload.Scripts[0].ProjectID != storage.DefaultProjectID {
+		t.Fatalf("default-project scripts = %#v, want project_id %q", payload.Scripts, storage.DefaultProjectID)
+	}
+}

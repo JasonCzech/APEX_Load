@@ -355,6 +355,26 @@ export interface components {
       "code"?: string;
       "error": string;
     };
+    "ProjectReleaseCreateRequest": {
+      "application_id"?: string;
+      "name": string;
+    };
+    "ReleaseFamily": {
+      "application_id"?: string;
+      "application_release_id"?: string;
+      "archived_at"?: (string) | null;
+      "created_at": string;
+      "group_id": string;
+      "id": string;
+      "member_ids": Record<string, string>;
+      "name": string;
+      "project_id": string;
+      "updated_at": string;
+    };
+    "ReleaseFamilyListResponse": {
+      "count": number;
+      "releases": Array<components["schemas"]["ReleaseFamily"]>;
+    };
     "ScriptDebugBreakpoint": {
       "action_index": number;
       "phase": "init" | "action" | "teardown";
@@ -369,6 +389,47 @@ export interface components {
     };
     "ScriptDebugStepRequest": {
       "mode"?: "into" | "over" | "loop_end";
+    };
+    "SystemReadinessCheck": {
+      "details"?: components["schemas"]["SystemReadinessDetails"];
+      "message": string;
+      "name": "kubernetes_api" | "metadata_store" | "archive_writer" | "cache_backend" | "generator_rpc" | "telemetry_fanout" | "auth_mode" | "platform_integrations" | "github_enterprise" | "scheduler_state";
+      "status": "ready" | "degraded" | "not_ready";
+    };
+    "SystemReadinessDetails": {
+      "available"?: number;
+      "cache_backend"?: "memory" | "redis" | "valkey" | "unknown";
+      "config_error"?: string;
+      "configured"?: boolean;
+      "due_schedules"?: number;
+      "enabled"?: boolean;
+      "enabled_schedules"?: number;
+      "endpoint"?: string;
+      "errored_schedules"?: number;
+      "execution_mode"?: "local" | "distributed";
+      "generators"?: number;
+      "grpc_transport"?: string;
+      "lease_capability"?: boolean;
+      "metrics_interval_seconds"?: number;
+      "namespace"?: string;
+      "pod_count"?: number;
+      "probe_latency_ms"?: number;
+      "ready_pods"?: number;
+      "reason"?: string;
+      "redis_url_configured"?: boolean;
+      "store_type"?: "sqlite" | "postgres" | "unknown";
+      "terminating_pods"?: number;
+      "timeout"?: string;
+      "timescaledb_enabled"?: boolean;
+      "tls_enabled"?: boolean;
+      "unreachable"?: number;
+      "ws_clients"?: number;
+      [key: string]: unknown;
+    };
+    "SystemReadinessResponse": {
+      "checks": Array<components["schemas"]["SystemReadinessCheck"]>;
+      "generated_at": string;
+      "status": "ready" | "degraded" | "not_ready";
     };
   };
 }
@@ -7607,6 +7668,51 @@ export interface operations {
       };
     };
   };
+  "handleAuthLogout": {
+    parameters: {
+      "header"?: {
+        "X-APEXLoad-CSRF-Token"?: string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": {
+            "redirect_url": string;
+          };
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
   "handleAuthoringCapabilities": {
     parameters: {
       "query"?: {
@@ -11964,16 +12070,13 @@ export interface operations {
     };
     requestBody: {
       content: {
-        "application/json": {
-          "application_id"?: string;
-          "name"?: string;
-        };
+        "application/json": components["schemas"]["ProjectReleaseCreateRequest"];
       };
     };
     responses: {
       "201": {
         content: {
-          "application/json": unknown;
+          "application/json": components["schemas"]["ReleaseFamily"];
         };
       };
       "400": {
@@ -11997,6 +12100,11 @@ export interface operations {
         };
       };
       "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "501": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -12186,6 +12294,11 @@ export interface operations {
         };
       };
       "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "501": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -26332,6 +26445,7 @@ export interface operations {
   "handleGetFleetLoadZones": {
     parameters: {
       "query"?: {
+        "project_id"?: string;
         "protocol"?: string;
       };
     };
@@ -28877,6 +28991,14 @@ export interface operations {
                 "heap_alloc_mb"?: number;
                 "heap_in_use_mb"?: number;
                 "labels"?: Record<string, string>;
+                "last_safety_exit"?: ({
+                  "execution_generation": number;
+                  "lifecycle_state": string;
+                  "outstanding_executions": number;
+                  "reason": string;
+                  "requested_at": string;
+                  "test_id": string;
+                }) | null;
                 "max_vusers": number;
                 "memory_bytes": number;
                 "memory_limit_bytes": number;
@@ -28890,6 +29012,8 @@ export interface operations {
                 "region"?: string;
                 "restart_blocked_reason"?: string;
                 "restartable"?: boolean;
+                "run_supervision_escalations_total": number;
+                "run_supervision_expirations_total": number;
                 "runtime_capacities"?: Array<{
                   "available": boolean;
                   "available_vusers": number;
@@ -28898,6 +29022,7 @@ export interface operations {
                   "occupancy_mode"?: "idle" | "persistent" | "legacy";
                   "protocol": string;
                 }>;
+                "safety_exits"?: Array<Record<string, unknown>>;
                 "status": string;
                 "supported_protocols"?: Array<string>;
                 "target": string;
@@ -29294,6 +29419,14 @@ export interface operations {
                 "heap_alloc_mb"?: number;
                 "heap_in_use_mb"?: number;
                 "labels"?: Record<string, string>;
+                "last_safety_exit"?: ({
+                  "execution_generation": number;
+                  "lifecycle_state": string;
+                  "outstanding_executions": number;
+                  "reason": string;
+                  "requested_at": string;
+                  "test_id": string;
+                }) | null;
                 "max_vusers": number;
                 "memory_bytes": number;
                 "memory_limit_bytes": number;
@@ -29307,6 +29440,8 @@ export interface operations {
                 "region"?: string;
                 "restart_blocked_reason"?: string;
                 "restartable"?: boolean;
+                "run_supervision_escalations_total": number;
+                "run_supervision_expirations_total": number;
                 "runtime_capacities"?: Array<{
                   "available": boolean;
                   "available_vusers": number;
@@ -29315,6 +29450,7 @@ export interface operations {
                   "occupancy_mode"?: "idle" | "persistent" | "legacy";
                   "protocol": string;
                 }>;
+                "safety_exits"?: Array<Record<string, unknown>>;
                 "status": string;
                 "supported_protocols"?: Array<string>;
                 "target": string;
@@ -29975,6 +30111,7 @@ export interface operations {
                   "heap_alloc_mb"?: number;
                   "heap_in_use_mb"?: number;
                   "labels"?: Record<string, string>;
+                  "last_safety_exit"?: (Record<string, unknown>) | null;
                   "max_vusers": number;
                   "memory_bytes": number;
                   "memory_limit_bytes": number;
@@ -29988,6 +30125,8 @@ export interface operations {
                   "region"?: string;
                   "restart_blocked_reason"?: string;
                   "restartable"?: boolean;
+                  "run_supervision_escalations_total": number;
+                  "run_supervision_expirations_total": number;
                   "runtime_capacities"?: Array<{
                     "available": boolean;
                     "available_vusers": number;
@@ -29996,6 +30135,7 @@ export interface operations {
                     "occupancy_mode"?: "idle" | "persistent" | "legacy";
                     "protocol": string;
                   }>;
+                  "safety_exits"?: Array<Record<string, unknown>>;
                   "status": string;
                   "supported_protocols"?: Array<string>;
                   "target": string;
@@ -30161,6 +30301,7 @@ export interface operations {
                   "heap_alloc_mb"?: number;
                   "heap_in_use_mb"?: number;
                   "labels"?: Record<string, string>;
+                  "last_safety_exit"?: (Record<string, unknown>) | null;
                   "max_vusers": number;
                   "memory_bytes": number;
                   "memory_limit_bytes": number;
@@ -30174,6 +30315,8 @@ export interface operations {
                   "region"?: string;
                   "restart_blocked_reason"?: string;
                   "restartable"?: boolean;
+                  "run_supervision_escalations_total": number;
+                  "run_supervision_expirations_total": number;
                   "runtime_capacities"?: Array<{
                     "available": boolean;
                     "available_vusers": number;
@@ -30182,6 +30325,7 @@ export interface operations {
                     "occupancy_mode"?: "idle" | "persistent" | "legacy";
                     "protocol": string;
                   }>;
+                  "safety_exits"?: Array<Record<string, unknown>>;
                   "status": string;
                   "supported_protocols"?: Array<string>;
                   "target": string;
@@ -33098,6 +33242,14 @@ export interface operations {
               "heap_alloc_mb"?: number;
               "heap_in_use_mb"?: number;
               "labels"?: Record<string, string>;
+              "last_safety_exit"?: ({
+                "execution_generation": number;
+                "lifecycle_state": string;
+                "outstanding_executions": number;
+                "reason": string;
+                "requested_at": string;
+                "test_id": string;
+              }) | null;
               "max_vusers": number;
               "memory_bytes": number;
               "memory_limit_bytes": number;
@@ -33111,6 +33263,8 @@ export interface operations {
               "region"?: string;
               "restart_blocked_reason"?: string;
               "restartable"?: boolean;
+              "run_supervision_escalations_total": number;
+              "run_supervision_expirations_total": number;
               "runtime_capacities"?: Array<{
                 "available": boolean;
                 "available_vusers": number;
@@ -33118,6 +33272,14 @@ export interface operations {
                 "max_vusers": number;
                 "occupancy_mode"?: "idle" | "persistent" | "legacy";
                 "protocol": string;
+              }>;
+              "safety_exits"?: Array<{
+                "execution_generation": number;
+                "lifecycle_state": string;
+                "outstanding_executions": number;
+                "reason": string;
+                "requested_at": string;
+                "test_id": string;
               }>;
               "status": string;
               "supported_protocols"?: Array<string>;
@@ -36906,6 +37068,14 @@ export interface operations {
                 "heap_alloc_mb"?: number;
                 "heap_in_use_mb"?: number;
                 "labels"?: Record<string, string>;
+                "last_safety_exit"?: ({
+                  "execution_generation": number;
+                  "lifecycle_state": string;
+                  "outstanding_executions": number;
+                  "reason": string;
+                  "requested_at": string;
+                  "test_id": string;
+                }) | null;
                 "max_vusers": number;
                 "memory_bytes": number;
                 "memory_limit_bytes": number;
@@ -36919,6 +37089,8 @@ export interface operations {
                 "region"?: string;
                 "restart_blocked_reason"?: string;
                 "restartable"?: boolean;
+                "run_supervision_escalations_total": number;
+                "run_supervision_expirations_total": number;
                 "runtime_capacities"?: Array<{
                   "available": boolean;
                   "available_vusers": number;
@@ -36927,6 +37099,7 @@ export interface operations {
                   "occupancy_mode"?: "idle" | "persistent" | "legacy";
                   "protocol": string;
                 }>;
+                "safety_exits"?: Array<Record<string, unknown>>;
                 "status": string;
                 "supported_protocols"?: Array<string>;
                 "target": string;
@@ -41759,7 +41932,7 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": components["schemas"]["ReleaseFamilyListResponse"];
         };
       };
       "401": {
@@ -42577,6 +42750,64 @@ export interface operations {
       };
     };
   };
+  "handleLocalLogin": {
+    parameters?: never;
+    requestBody: {
+      content: {
+        "application/json": {
+          "password": string;
+          "username": string;
+        };
+      };
+    };
+    responses: {
+      "200": {
+        content: {
+          "application/json": {
+            "authenticated": boolean;
+          };
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "429": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
   "handleMaterializeAndRunExecutionPlan": {
     parameters: {
       "path": {
@@ -42990,37 +43221,6 @@ export interface operations {
         };
       };
       "503": {
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      "default": {
-        content?: never;
-      };
-    };
-  };
-  "handleOIDCLogout": {
-    parameters?: never;
-    requestBody?: never;
-    responses: {
-      "200": {
-        content: {
-          "application/json": {
-            "redirect_url": string;
-          };
-        };
-      };
-      "401": {
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      "403": {
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      "404": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -50289,7 +50489,11 @@ export interface operations {
     };
   };
   "handleRecorderStatus": {
-    parameters?: never;
+    parameters: {
+      "query"?: {
+        "project_id"?: string;
+      };
+    };
     requestBody?: never;
     responses: {
       "200": {
@@ -70359,13 +70563,15 @@ export interface operations {
     parameters?: never;
     requestBody?: never;
     responses: {
-      "2XX": {
+      "200": {
         content: {
-          "application/json": unknown;
+          "application/json": components["schemas"]["SystemReadinessResponse"];
         };
       };
-      "default": {
-        content?: never;
+      "503": {
+        content: {
+          "application/json": components["schemas"]["SystemReadinessResponse"];
+        };
       };
     };
   };
@@ -83062,9 +83268,10 @@ export interface paths {
   };
   "/api/v1/auth/login": {
     "get": operations["handleOIDCLogin"];
+    "post": operations["handleLocalLogin"];
   };
   "/api/v1/auth/logout": {
-    "post": operations["handleOIDCLogout"];
+    "post": operations["handleAuthLogout"];
   };
   "/api/v1/auth/me": {
     "get": operations["handleGetAuthStatus"];

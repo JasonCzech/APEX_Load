@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
@@ -56,6 +57,9 @@ type ServerOptions struct {
 	supportsStrongProcessContainment func() bool
 	startStrongProcessTree           func(*exec.Cmd) error
 	resolveJDK                       func(context.Context, javarunner.ResolveOptions) (javarunner.ResolvedJDK, error)
+	runtimeLeaseTTL                  time.Duration
+	runtimeLeaseCleanupDeadline      time.Duration
+	randomBytes                      func([]byte) (int, error)
 }
 
 // Server owns the operator configuration and the process-wide concurrency
@@ -71,6 +75,7 @@ type Server struct {
 	supportsStrongProcessContainment func() bool
 	startStrongProcessTree           func(*exec.Cmd) error
 	resolveJDK                       func(context.Context, javarunner.ResolveOptions) (javarunner.ResolvedJDK, error)
+	randomBytes                      func([]byte) (int, error)
 
 	runningMu sync.Mutex
 	running   map[string]runningExecution
@@ -90,9 +95,18 @@ type Server struct {
 
 	failedStartReaps sync.WaitGroup
 
-	claimMu sync.Mutex
-	ownerMu sync.Mutex
-	owner   *ownerGeneration
+	claimMu              sync.Mutex
+	ownerMu              sync.Mutex
+	owner                *ownerGeneration
+	ownerLeaseExpired    chan struct{}
+	ownerLeaseExpireOnce sync.Once
+
+	runtimeLeaseMu              sync.Mutex
+	runtimeLeases               map[string]*runtimeLease
+	runtimeLeaseTombstones      map[string]runtimeLeaseTombstone
+	runtimeLeaseTombstoneOrder  []string
+	runtimeLeaseTTL             time.Duration
+	runtimeLeaseCleanupDeadline time.Duration
 
 	sessionsMu      sync.Mutex
 	sessions        map[string]*persistentSession
@@ -140,6 +154,18 @@ func NewServer(options ServerOptions) *Server {
 	if resolveJDK == nil {
 		resolveJDK = javarunner.ResolveJDK
 	}
+	randomBytes := options.randomBytes
+	if randomBytes == nil {
+		randomBytes = rand.Read
+	}
+	runtimeLeaseTTL := options.runtimeLeaseTTL
+	if runtimeLeaseTTL <= 0 {
+		runtimeLeaseTTL = RuntimeLeaseTTL
+	}
+	runtimeLeaseCleanupDeadline := options.runtimeLeaseCleanupDeadline
+	if runtimeLeaseCleanupDeadline <= 0 {
+		runtimeLeaseCleanupDeadline = RuntimeLeaseCleanupDeadline
+	}
 	return &Server{
 		operator:                         options.Operator,
 		authToken:                        strings.TrimSpace(options.Operator.AuthToken),
@@ -150,6 +176,7 @@ func NewServer(options ServerOptions) *Server {
 		supportsStrongProcessContainment: supportsStrongProcessContainment,
 		startStrongProcessTree:           startStrongProcessTree,
 		resolveJDK:                       resolveJDK,
+		randomBytes:                      randomBytes,
 		running:                          make(map[string]runningExecution),
 		operationCancels:                 make(map[uint64]context.CancelFunc),
 		sessions:                         make(map[string]*persistentSession),
@@ -159,6 +186,11 @@ func NewServer(options ServerOptions) *Server {
 		harnessHealthy:                   make(map[string]time.Time),
 		shutdownDone:                     make(chan struct{}),
 		containmentFailedDone:            make(chan struct{}),
+		ownerLeaseExpired:                make(chan struct{}, 1),
+		runtimeLeases:                    make(map[string]*runtimeLease),
+		runtimeLeaseTombstones:           make(map[string]runtimeLeaseTombstone),
+		runtimeLeaseTTL:                  runtimeLeaseTTL,
+		runtimeLeaseCleanupDeadline:      runtimeLeaseCleanupDeadline,
 	}
 }
 
@@ -170,9 +202,12 @@ type readinessCacheEntry struct {
 }
 
 type ownerGeneration struct {
-	ownerID string
-	epoch   string
-	ready   bool
+	ownerID       string
+	epoch         string
+	ready         bool
+	leaseDeadline time.Time
+	leaseTimer    *time.Timer
+	leaseToken    uint64
 
 	// Add is performed only while Server.ownerMu proves this generation is
 	// current. A takeover swaps the generation under that same lock before
@@ -180,14 +215,142 @@ type ownerGeneration struct {
 	operations sync.WaitGroup
 }
 
+type runtimeLease struct {
+	id       string
+	token    string
+	owner    *ownerGeneration
+	state    string
+	deadline time.Time
+	timer    *time.Timer
+	timerSeq uint64
+
+	// Add occurs only while runtimeLeaseMu proves this lease is active. Revoke
+	// flips state under the same lock before waiting, so Wait cannot race Add.
+	operations  sync.WaitGroup
+	cleanupOnce sync.Once
+	cleanupDone chan struct{}
+	cleanupErr  error
+}
+
+type runtimeLeaseTombstone struct {
+	tokenHash [sha256.Size]byte
+	owner     *ownerGeneration
+	expiresAt time.Time
+}
+
+const (
+	runtimeLeaseActive        = "active"
+	runtimeLeaseDraining      = "draining"
+	runtimeLeaseRevoked       = "revoked"
+	runtimeLeaseTombstoneTTL  = 15 * time.Minute
+	maxRuntimeLeaseTombstones = 65536
+)
+
+func (s *Server) OwnerLeaseExpired() <-chan struct{} { return s.ownerLeaseExpired }
+
+// ContainmentFailed closes when the sidecar can no longer prove that every
+// external JVM is contained. The standalone runner must terminate immediately
+// on this signal; continuing to serve would recycle capacity around an orphan.
+func (s *Server) ContainmentFailed() <-chan struct{} { return s.containmentFailedDone }
+
+func (s *Server) resetOwnerLeaseLocked(generation *ownerGeneration, now time.Time) {
+	generation.leaseDeadline = now.Add(RunnerOwnerLeaseTTL)
+	s.armOwnerLeaseTimerLocked(generation)
+}
+
+func (s *Server) armOwnerLeaseTimerLocked(generation *ownerGeneration) {
+	if generation.leaseTimer != nil {
+		generation.leaseTimer.Stop()
+	}
+	generation.leaseToken++
+	token := generation.leaseToken
+	delay := time.Until(generation.leaseDeadline)
+	if delay <= 0 {
+		delay = time.Nanosecond
+	}
+	generation.leaseTimer = time.AfterFunc(delay, func() {
+		s.expireOwnerLease(generation, token)
+	})
+}
+
+func (s *Server) expireOwnerLease(generation *ownerGeneration, token uint64) {
+	s.ownerMu.Lock()
+	if s.owner != generation || generation.leaseToken != token || !generation.ready {
+		s.ownerMu.Unlock()
+		return
+	}
+	if now := time.Now(); now.Before(generation.leaseDeadline) {
+		s.armOwnerLeaseTimerLocked(generation)
+		s.ownerMu.Unlock()
+		return
+	}
+	terminal := s.expireOwnerGenerationLocked(generation)
+	s.ownerMu.Unlock()
+	if terminal {
+		s.ownerLeaseExpireOnce.Do(func() { s.ownerLeaseExpired <- struct{}{} })
+	}
+}
+
+// expireOwnerIfPastDeadline enforces the semantic deadline independently of
+// timer scheduling. If the runtime delays an AfterFunc callback, the first
+// subsequent request still fences the generation before it can renew or admit
+// more execution.
+func (s *Server) expireOwnerIfPastDeadline(now time.Time) bool {
+	s.ownerMu.Lock()
+	generation := s.owner
+	if generation == nil || !generation.ready || now.Before(generation.leaseDeadline) {
+		s.ownerMu.Unlock()
+		return false
+	}
+	terminal := s.expireOwnerGenerationLocked(generation)
+	s.ownerMu.Unlock()
+	if terminal {
+		s.ownerLeaseExpireOnce.Do(func() { s.ownerLeaseExpired <- struct{}{} })
+	}
+	return true
+}
+
+func (s *Server) expireOwnerGenerationLocked(generation *ownerGeneration) bool {
+	generation.ready = false
+	if generation.leaseTimer != nil {
+		generation.leaseTimer.Stop()
+		generation.leaseTimer = nil
+	}
+	generation.leaseToken++
+	// An idle sidecar has nothing to contain. Relinquish the stale identity so a
+	// healthy generator can reclaim it later without forcing permanent runner
+	// restart churn after the last VUser teardown.
+	s.runtimeLeaseMu.Lock()
+	hasLiveRuntime := false
+	for _, lease := range s.runtimeLeases {
+		if lease.owner == generation {
+			hasLiveRuntime = true
+			break
+		}
+	}
+	s.runtimeLeaseMu.Unlock()
+	if !hasLiveRuntime {
+		if s.owner == generation {
+			s.owner = nil
+		}
+		return false
+	}
+	// startShutdown establishes the operation admission gate synchronously;
+	// its potentially long cleanup runs in a separate goroutine.
+	s.startShutdown()
+	return true
+}
+
 type runningExecution struct {
 	cancel     context.CancelFunc
 	generation *ownerGeneration
+	lease      *runtimeLease
 }
 
 type unusableSession struct {
-	generation *ownerGeneration
-	poisonedAt time.Time
+	generation   *ownerGeneration
+	runtimeLease *runtimeLease
+	poisonedAt   time.Time
 }
 
 // Shutdown cancels active executions and closes every persistent JVM. Session
@@ -301,15 +464,17 @@ func (s *Server) closeTrackedSessions(ctx context.Context) error {
 }
 
 type pendingPersistentSession struct {
-	configKey  string
-	generation *ownerGeneration
-	ready      chan struct{}
-	session    *persistentSession
-	failure    *safeFailure
+	configKey    string
+	generation   *ownerGeneration
+	runtimeLease *runtimeLease
+	ready        chan struct{}
+	session      *persistentSession
+	failure      *safeFailure
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
+	s.expireOwnerIfPastDeadline(time.Now())
 	if r.URL.Path == "/livez" {
 		if r.Method != http.MethodGet {
 			methodNotAllowed(w, http.MethodGet)
@@ -369,6 +534,24 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.handleClaimOwner(w, r)
+	case r.URL.Path == "/v1/runtime-leases/claim":
+		if r.Method != http.MethodPost {
+			methodNotAllowed(w, http.MethodPost)
+			return
+		}
+		s.handleClaimRuntimeLease(w, r)
+	case strings.HasPrefix(r.URL.Path, "/v1/runtime-leases/") && strings.HasSuffix(r.URL.Path, "/renew"):
+		if r.Method != http.MethodPost {
+			methodNotAllowed(w, http.MethodPost)
+			return
+		}
+		s.handleRenewRuntimeLease(w, r)
+	case strings.HasPrefix(r.URL.Path, "/v1/runtime-leases/") && strings.HasSuffix(r.URL.Path, "/revoke"):
+		if r.Method != http.MethodPost {
+			methodNotAllowed(w, http.MethodPost)
+			return
+		}
+		s.handleRevokeRuntimeLease(w, r)
 	case r.URL.Path == "/v1/executions":
 		if r.Method != http.MethodPost {
 			methodNotAllowed(w, http.MethodPost)
@@ -453,6 +636,9 @@ func (s *Server) handleCapabilities(w http.ResponseWriter, r *http.Request) {
 
 func capabilityFeatures(strongProcessContainment bool) []string {
 	features := []string{
+		FeatureExternalRuntimeV1,
+		FeatureRunnerOwnerLeaseV1,
+		FeatureRuntimeLeaseV1,
 		FeatureExactVMParameters,
 		FeatureJDKSelectionV1,
 		FeatureDedicatedClassloader,
@@ -567,21 +753,23 @@ func (s *Server) handleExecution(w http.ResponseWriter, r *http.Request) {
 	defer finishOperation()
 	runCtx, cancel := context.WithTimeout(operationCtx, timeout)
 	defer cancel()
-	generation, registrationError := s.registerExecution(
+	generation, runtimeLease, registrationError := s.registerExecution(
 		request.ExecutionID,
 		operationCancel,
 		request.OwnerID,
 		request.OwnerEpoch,
+		request.RuntimeLeaseID,
+		request.RuntimeLeaseToken,
 	)
 	if registrationError != "" {
 		writeError(w, ownerErrorStatus(registrationError), registrationError)
 		return
 	}
 	defer func() {
-		s.unregisterExecution(request.ExecutionID, generation)
+		s.unregisterExecution(request.ExecutionID, generation, runtimeLease)
 	}()
 	if request.SessionID != "" {
-		s.handlePersistentExecution(w, runCtx, request, generation)
+		s.handlePersistentExecution(w, runCtx, request, generation, runtimeLease)
 		return
 	}
 	prepared, failure := s.prepareRuntime(runCtx, request.Runtime)
@@ -634,6 +822,13 @@ func (s *Server) handleClaimOwner(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "owner_id_invalid")
 		return
 	}
+	if request.LeaseTTLMS == 0 {
+		request.LeaseTTLMS = RunnerOwnerLeaseTTL.Milliseconds()
+	}
+	if request.LeaseTTLMS != RunnerOwnerLeaseTTL.Milliseconds() {
+		writeError(w, http.StatusBadRequest, "owner_lease_ttl_invalid")
+		return
+	}
 	if s.draining.Load() {
 		writeError(w, http.StatusServiceUnavailable, "server_draining")
 		return
@@ -655,18 +850,33 @@ func (s *Server) handleClaimOwner(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.ownerMu.Lock()
+	if current := s.owner; current != nil && current.ready && !time.Now().Before(current.leaseDeadline) {
+		if s.expireOwnerGenerationLocked(current) {
+			s.ownerMu.Unlock()
+			s.ownerLeaseExpireOnce.Do(func() { s.ownerLeaseExpired <- struct{}{} })
+			writeError(w, http.StatusServiceUnavailable, "server_draining")
+			return
+		}
+	}
 	if current := s.owner; current != nil && current.ready && current.ownerID == request.OwnerID {
 		epoch := current.epoch
+		s.resetOwnerLeaseLocked(current, time.Now())
 		s.ownerMu.Unlock()
 		writeJSON(w, http.StatusOK, ClaimOwnerResponse{
-			Contract: ContractVersion, OwnerID: request.OwnerID, Epoch: epoch, Claimed: true,
+			Contract: ContractVersion, OwnerID: request.OwnerID, Epoch: epoch, Claimed: true, LeaseTTLMS: RunnerOwnerLeaseTTL.Milliseconds(),
 		})
 		return
 	}
 	previous := s.owner
+	epoch, epochErr := newOpaqueToken(s.randomBytes)
+	if epochErr != nil {
+		s.ownerMu.Unlock()
+		writeError(w, http.StatusServiceUnavailable, "owner_identity_unavailable")
+		return
+	}
 	next := &ownerGeneration{
 		ownerID: request.OwnerID,
-		epoch:   newOwnerEpoch(),
+		epoch:   epoch,
 	}
 	s.owner = next
 	s.ownerMu.Unlock()
@@ -684,10 +894,350 @@ func (s *Server) handleClaimOwner(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	next.ready = true
+	s.resetOwnerLeaseLocked(next, time.Now())
 	s.ownerMu.Unlock()
 	writeJSON(w, http.StatusOK, ClaimOwnerResponse{
-		Contract: ContractVersion, OwnerID: request.OwnerID, Epoch: next.epoch, Claimed: true,
+		Contract: ContractVersion, OwnerID: request.OwnerID, Epoch: next.epoch, Claimed: true, LeaseTTLMS: RunnerOwnerLeaseTTL.Milliseconds(),
 	})
+}
+
+func (s *Server) handleClaimRuntimeLease(w http.ResponseWriter, r *http.Request) {
+	var request ClaimRuntimeLeaseRequest
+	if !decodeRequest(w, r, &request) {
+		return
+	}
+	if request.Contract != ContractVersion {
+		writeError(w, http.StatusPreconditionFailed, "contract_version_mismatch")
+		return
+	}
+	if request.LeaseTTLMS == 0 {
+		request.LeaseTTLMS = s.runtimeLeaseTTL.Milliseconds()
+	}
+	if request.LeaseTTLMS != s.runtimeLeaseTTL.Milliseconds() {
+		writeError(w, http.StatusBadRequest, "runtime_lease_ttl_invalid")
+		return
+	}
+	generation, ownerError := s.beginOwnerOperation(request.OwnerID, request.OwnerEpoch)
+	if ownerError != "" {
+		writeError(w, ownerErrorStatus(ownerError), ownerError)
+		return
+	}
+	defer generation.operations.Done()
+	leaseID, leaseIDErr := newOpaqueToken(s.randomBytes)
+	leaseToken, leaseTokenErr := newOpaqueToken(s.randomBytes)
+	if leaseIDErr != nil || leaseTokenErr != nil {
+		writeError(w, http.StatusServiceUnavailable, "runtime_lease_identity_unavailable")
+		return
+	}
+	lease := &runtimeLease{
+		id: "runtime-" + leaseID, token: leaseToken, owner: generation,
+		state: runtimeLeaseActive, cleanupDone: make(chan struct{}),
+	}
+	s.runtimeLeaseMu.Lock()
+	lease.deadline = time.Now().Add(s.runtimeLeaseTTL)
+	s.runtimeLeases[lease.id] = lease
+	s.armRuntimeLeaseLocked(lease)
+	s.runtimeLeaseMu.Unlock()
+	writeJSON(w, http.StatusOK, ClaimRuntimeLeaseResponse{
+		Contract: ContractVersion, LeaseID: lease.id, LeaseToken: lease.token,
+		Claimed: true, LeaseTTLMS: s.runtimeLeaseTTL.Milliseconds(),
+	})
+}
+
+func (s *Server) handleRenewRuntimeLease(w http.ResponseWriter, r *http.Request) {
+	var request RenewRuntimeLeaseRequest
+	if !decodeRequest(w, r, &request) {
+		return
+	}
+	if request.Contract != ContractVersion {
+		writeError(w, http.StatusPreconditionFailed, "contract_version_mismatch")
+		return
+	}
+	id := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/v1/runtime-leases/"), "/renew")
+	if !executionIDPattern.MatchString(id) {
+		writeError(w, http.StatusBadRequest, "runtime_lease_id_invalid")
+		return
+	}
+	generation, ownerError := s.beginOwnerOperation(request.OwnerID, request.OwnerEpoch)
+	if ownerError != "" {
+		writeError(w, ownerErrorStatus(ownerError), ownerError)
+		return
+	}
+	defer generation.operations.Done()
+	lease, expired, leaseError := s.renewRuntimeLease(id, request.LeaseToken, generation, time.Now())
+	if expired {
+		s.startRuntimeLeaseCleanup(lease)
+	}
+	if leaseError != "" {
+		writeError(w, http.StatusConflict, leaseError)
+		return
+	}
+	writeJSON(w, http.StatusOK, RenewRuntimeLeaseResponse{
+		Contract: ContractVersion, LeaseID: id, Renewed: true,
+		LeaseTTLMS: s.runtimeLeaseTTL.Milliseconds(),
+	})
+}
+
+func (s *Server) handleRevokeRuntimeLease(w http.ResponseWriter, r *http.Request) {
+	var request RevokeRuntimeLeaseRequest
+	if !decodeRequest(w, r, &request) {
+		return
+	}
+	if request.Contract != ContractVersion {
+		writeError(w, http.StatusPreconditionFailed, "contract_version_mismatch")
+		return
+	}
+	id := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/v1/runtime-leases/"), "/revoke")
+	if !executionIDPattern.MatchString(id) {
+		writeError(w, http.StatusBadRequest, "runtime_lease_id_invalid")
+		return
+	}
+	generation, ownerError := s.beginOwnerOperation(request.OwnerID, request.OwnerEpoch)
+	if ownerError != "" {
+		writeError(w, ownerErrorStatus(ownerError), ownerError)
+		return
+	}
+	defer generation.operations.Done()
+	lease, alreadyReaped, leaseError := s.revokeRuntimeLease(id, request.LeaseToken, generation)
+	if leaseError != "" {
+		writeError(w, http.StatusConflict, leaseError)
+		return
+	}
+	if alreadyReaped {
+		writeJSON(w, http.StatusOK, RevokeRuntimeLeaseResponse{
+			Contract: ContractVersion, LeaseID: id, Revoked: true, Reaped: true,
+		})
+		return
+	}
+	s.startRuntimeLeaseCleanup(lease)
+	// Do not use the request context for this barrier. A disconnected cleanup
+	// request must not detach an untracked reap while its caller declares the
+	// run quiescent; the lease object owns cleanup through positive completion.
+	<-lease.cleanupDone
+	if lease.cleanupErr != nil {
+		writeError(w, http.StatusServiceUnavailable, "runtime_cleanup_failed")
+		return
+	}
+	writeJSON(w, http.StatusOK, RevokeRuntimeLeaseResponse{
+		Contract: ContractVersion, LeaseID: id, Revoked: true, Reaped: true,
+	})
+}
+
+func (s *Server) armRuntimeLeaseLocked(lease *runtimeLease) {
+	if lease.timer != nil {
+		lease.timer.Stop()
+	}
+	lease.timerSeq++
+	sequence := lease.timerSeq
+	delay := time.Until(lease.deadline)
+	if delay <= 0 {
+		delay = time.Nanosecond
+	}
+	lease.timer = time.AfterFunc(delay, func() { s.expireRuntimeLease(lease, sequence) })
+}
+
+func (s *Server) expireRuntimeLease(lease *runtimeLease, sequence uint64) {
+	s.runtimeLeaseMu.Lock()
+	if s.runtimeLeases[lease.id] != lease || lease.state != runtimeLeaseActive || lease.timerSeq != sequence {
+		s.runtimeLeaseMu.Unlock()
+		return
+	}
+	if time.Now().Before(lease.deadline) {
+		s.armRuntimeLeaseLocked(lease)
+		s.runtimeLeaseMu.Unlock()
+		return
+	}
+	s.markRuntimeLeaseDrainingLocked(lease)
+	s.runtimeLeaseMu.Unlock()
+	s.startRuntimeLeaseCleanup(lease)
+}
+
+func (s *Server) renewRuntimeLease(id, token string, generation *ownerGeneration, now time.Time) (*runtimeLease, bool, string) {
+	s.runtimeLeaseMu.Lock()
+	defer s.runtimeLeaseMu.Unlock()
+	lease := s.runtimeLeases[id]
+	if lease == nil {
+		return nil, false, "runtime_lease_not_found"
+	}
+	if lease.owner != generation || !runtimeLeaseTokenMatches(lease.token, token) {
+		return lease, false, "runtime_lease_fenced"
+	}
+	if lease.state != runtimeLeaseActive {
+		return lease, false, "runtime_lease_revoked"
+	}
+	if !now.Before(lease.deadline) {
+		s.markRuntimeLeaseDrainingLocked(lease)
+		return lease, true, "runtime_lease_expired"
+	}
+	lease.deadline = now.Add(s.runtimeLeaseTTL)
+	s.armRuntimeLeaseLocked(lease)
+	return lease, false, ""
+}
+
+func (s *Server) revokeRuntimeLease(id, token string, generation *ownerGeneration) (*runtimeLease, bool, string) {
+	s.runtimeLeaseMu.Lock()
+	defer s.runtimeLeaseMu.Unlock()
+	s.pruneRuntimeLeaseTombstonesLocked(time.Now())
+	lease := s.runtimeLeases[id]
+	if lease == nil {
+		if tombstone, ok := s.runtimeLeaseTombstones[id]; ok {
+			actualHash := sha256.Sum256([]byte(strings.TrimSpace(token)))
+			if tombstone.owner == generation && subtle.ConstantTimeCompare(tombstone.tokenHash[:], actualHash[:]) == 1 {
+				return nil, true, ""
+			}
+			return nil, false, "runtime_lease_fenced"
+		}
+		return nil, false, "runtime_lease_not_found"
+	}
+	if lease.owner != generation || !runtimeLeaseTokenMatches(lease.token, token) {
+		return nil, false, "runtime_lease_fenced"
+	}
+	if lease.state == runtimeLeaseActive {
+		s.markRuntimeLeaseDrainingLocked(lease)
+	}
+	return lease, false, ""
+}
+
+func (s *Server) markRuntimeLeaseDrainingLocked(lease *runtimeLease) {
+	if lease.state != runtimeLeaseActive {
+		return
+	}
+	lease.state = runtimeLeaseDraining
+	if lease.timer != nil {
+		lease.timer.Stop()
+		lease.timer = nil
+	}
+	lease.timerSeq++
+}
+
+func (s *Server) startRuntimeLeaseCleanup(lease *runtimeLease) {
+	if lease == nil {
+		return
+	}
+	lease.cleanupOnce.Do(func() {
+		watchdog := time.AfterFunc(s.runtimeLeaseCleanupDeadline, func() {
+			s.finishProcessCapacity(nil, errors.New("Java Vuser runtime lease cleanup deadline exceeded"))
+			s.startShutdown()
+		})
+		go func() {
+			lease.cleanupErr = s.reapRuntimeLease(lease)
+			if lease.cleanupErr == nil {
+				watchdog.Stop()
+			}
+			s.runtimeLeaseMu.Lock()
+			if s.runtimeLeases[lease.id] == lease {
+				lease.state = runtimeLeaseRevoked
+				if lease.cleanupErr == nil {
+					delete(s.runtimeLeases, lease.id)
+					s.addRuntimeLeaseTombstoneLocked(lease, time.Now())
+				}
+			}
+			s.runtimeLeaseMu.Unlock()
+			close(lease.cleanupDone)
+		}()
+	})
+}
+
+func (s *Server) addRuntimeLeaseTombstoneLocked(lease *runtimeLease, now time.Time) {
+	if lease == nil || lease.id == "" || lease.token == "" {
+		return
+	}
+	s.pruneRuntimeLeaseTombstonesLocked(now)
+	s.runtimeLeaseTombstones[lease.id] = runtimeLeaseTombstone{
+		tokenHash: sha256.Sum256([]byte(lease.token)), owner: lease.owner,
+		expiresAt: now.Add(runtimeLeaseTombstoneTTL),
+	}
+	s.runtimeLeaseTombstoneOrder = append(s.runtimeLeaseTombstoneOrder, lease.id)
+	lease.token = ""
+	for len(s.runtimeLeaseTombstones) > maxRuntimeLeaseTombstones && len(s.runtimeLeaseTombstoneOrder) > 0 {
+		oldest := s.runtimeLeaseTombstoneOrder[0]
+		s.runtimeLeaseTombstoneOrder = s.runtimeLeaseTombstoneOrder[1:]
+		delete(s.runtimeLeaseTombstones, oldest)
+	}
+}
+
+func (s *Server) pruneRuntimeLeaseTombstonesLocked(now time.Time) {
+	for len(s.runtimeLeaseTombstoneOrder) > 0 {
+		id := s.runtimeLeaseTombstoneOrder[0]
+		tombstone, exists := s.runtimeLeaseTombstones[id]
+		if exists && now.Before(tombstone.expiresAt) {
+			break
+		}
+		s.runtimeLeaseTombstoneOrder = s.runtimeLeaseTombstoneOrder[1:]
+		delete(s.runtimeLeaseTombstones, id)
+	}
+}
+
+func (s *Server) reapRuntimeLease(lease *runtimeLease) error {
+	s.runningMu.Lock()
+	cancels := make([]context.CancelFunc, 0)
+	for _, execution := range s.running {
+		if execution.lease == lease {
+			cancels = append(cancels, execution.cancel)
+		}
+	}
+	s.runningMu.Unlock()
+	for _, cancel := range cancels {
+		cancel()
+	}
+	lease.operations.Wait()
+
+	s.sessionsMu.Lock()
+	sessions := make([]*persistentSession, 0)
+	for session := range s.allSessions {
+		if session.runtimeLease == lease {
+			sessions = append(sessions, session)
+		}
+	}
+	s.sessionsMu.Unlock()
+	for _, session := range sessions {
+		_ = session.close(context.Background())
+		select {
+		case <-session.waitDone:
+			session.cleanup()
+			s.evictSessionObject(session)
+		case <-s.containmentFailedDone:
+			return fmt.Errorf("Java Vuser process containment is unavailable")
+		}
+		if session.killErr != nil {
+			return fmt.Errorf("Java Vuser process containment is unavailable")
+		}
+	}
+	s.sessionsMu.Lock()
+	for id, session := range s.sessions {
+		if session.runtimeLease == lease {
+			delete(s.sessions, id)
+		}
+	}
+	for id, pending := range s.pendingSessions {
+		if pending.runtimeLease == lease {
+			delete(s.pendingSessions, id)
+		}
+	}
+	for id, unusable := range s.unusableSessions {
+		if unusable.runtimeLease == lease {
+			delete(s.unusableSessions, id)
+		}
+	}
+	s.sessionsMu.Unlock()
+	return nil
+}
+
+func runtimeLeaseTokenMatches(expected, actual string) bool {
+	return len(expected) == len(actual) && expected != "" && subtle.ConstantTimeCompare([]byte(expected), []byte(actual)) == 1
+}
+
+func newOpaqueToken(randomBytes func([]byte) (int, error)) (string, error) {
+	var value [32]byte
+	if randomBytes == nil {
+		return "", fmt.Errorf("secure random source is unavailable")
+	}
+	if n, err := randomBytes(value[:]); err != nil {
+		return "", err
+	} else if n != len(value) {
+		return "", io.ErrUnexpectedEOF
+	}
+	return hex.EncodeToString(value[:]), nil
 }
 
 func (s *Server) reapGeneration(generation *ownerGeneration) error {
@@ -696,6 +1246,30 @@ func (s *Server) reapGeneration(generation *ownerGeneration) error {
 	}
 	if s.containmentUnavailable() {
 		return fmt.Errorf("Java Vuser process containment is unavailable")
+	}
+	s.runtimeLeaseMu.Lock()
+	ownedLeases := make([]*runtimeLease, 0)
+	for _, lease := range s.runtimeLeases {
+		if lease.owner == generation {
+			if lease.state == runtimeLeaseActive {
+				s.markRuntimeLeaseDrainingLocked(lease)
+			}
+			ownedLeases = append(ownedLeases, lease)
+		}
+	}
+	s.runtimeLeaseMu.Unlock()
+	for _, lease := range ownedLeases {
+		s.startRuntimeLeaseCleanup(lease)
+	}
+	for _, lease := range ownedLeases {
+		select {
+		case <-lease.cleanupDone:
+			if lease.cleanupErr != nil {
+				return lease.cleanupErr
+			}
+		case <-s.containmentFailedDone:
+			return fmt.Errorf("Java Vuser process containment is unavailable")
+		}
 	}
 	s.runningMu.Lock()
 	cancels := make([]context.CancelFunc, 0, len(s.running))
@@ -755,29 +1329,22 @@ func (s *Server) reapGeneration(generation *ownerGeneration) error {
 	return nil
 }
 
-func newOwnerEpoch() string {
-	var value [16]byte
-	if _, err := rand.Read(value[:]); err == nil {
-		return hex.EncodeToString(value[:])
-	}
-	return fmt.Sprintf("epoch-%d", time.Now().UnixNano())
-}
-
 func (s *Server) handlePersistentExecution(
 	w http.ResponseWriter,
 	ctx context.Context,
 	request ExecutionRequest,
 	generation *ownerGeneration,
+	runtimeLease *runtimeLease,
 ) {
 	started := time.Now()
-	if s.sessionUnusable(request.SessionID, generation) {
+	if s.sessionUnusable(request.SessionID, generation, runtimeLease) {
 		writeJSON(w, http.StatusOK, ExecutionResponse{
 			Contract: ContractVersion, ExecutionID: request.ExecutionID,
 			ErrorCode: "session_unusable", DurationMS: time.Since(started).Milliseconds(),
 		})
 		return
 	}
-	session, existing := s.session(request.SessionID, generation)
+	session, existing := s.session(request.SessionID, generation, runtimeLease)
 	if existing {
 		if session.configKey != persistentSessionConfigKey(request.Runtime, request.Command) {
 			writeError(w, http.StatusConflict, "session_configuration_mismatch")
@@ -804,7 +1371,7 @@ func (s *Server) handlePersistentExecution(
 			writeError(w, http.StatusUnprocessableEntity, failure.code)
 			return
 		}
-		session, failure = s.createPersistentSession(ctx, request.SessionID, prepared, request, generation)
+		session, failure = s.createPersistentSession(ctx, request.SessionID, prepared, request, generation, runtimeLease)
 		if failure != nil {
 			writeJSON(w, http.StatusOK, ExecutionResponse{
 				Contract: ContractVersion, ExecutionID: request.ExecutionID, ErrorCode: failure.code,
@@ -897,8 +1464,9 @@ func (s *Server) poisonSession(id string, session *persistentSession) {
 		delete(s.unusableSessions, oldestID)
 	}
 	s.unusableSessions[id] = unusableSession{
-		generation: session.generation,
-		poisonedAt: now,
+		generation:   session.generation,
+		runtimeLease: session.runtimeLease,
+		poisonedAt:   now,
 	}
 	s.sessionsMu.Unlock()
 	if reaped {
@@ -912,13 +1480,16 @@ func (s *Server) poisonSession(id string, session *persistentSession) {
 	}()
 }
 
-func (s *Server) sessionUnusable(id string, generation *ownerGeneration) bool {
+func (s *Server) sessionUnusable(id string, generation *ownerGeneration, leases ...*runtimeLease) bool {
 	now := time.Now()
 	s.sessionsMu.Lock()
 	defer s.sessionsMu.Unlock()
 	s.pruneUnusableSessionsLocked(now)
 	unusable, exists := s.unusableSessions[id]
-	return exists && unusable.generation == generation
+	if !exists || unusable.generation != generation {
+		return false
+	}
+	return len(leases) == 0 || unusable.runtimeLease == leases[0]
 }
 
 func (s *Server) pruneUnusableSessionsLocked(now time.Time) {
@@ -929,11 +1500,14 @@ func (s *Server) pruneUnusableSessionsLocked(now time.Time) {
 	}
 }
 
-func (s *Server) session(id string, generation *ownerGeneration) (*persistentSession, bool) {
+func (s *Server) session(id string, generation *ownerGeneration, leases ...*runtimeLease) (*persistentSession, bool) {
 	s.sessionsMu.Lock()
 	defer s.sessionsMu.Unlock()
 	session, ok := s.sessions[id]
-	return session, ok && session.generation == generation
+	if !ok || session.generation != generation {
+		return session, false
+	}
+	return session, len(leases) == 0 || session.runtimeLease == leases[0]
 }
 
 func (s *Server) createPersistentSession(
@@ -942,7 +1516,12 @@ func (s *Server) createPersistentSession(
 	prepared preparedRuntime,
 	request ExecutionRequest,
 	generation *ownerGeneration,
+	leases ...*runtimeLease,
 ) (*persistentSession, *safeFailure) {
+	var runtimeLease *runtimeLease
+	if len(leases) > 0 {
+		runtimeLease = leases[0]
+	}
 	configKey := persistentSessionConfigKey(request.Runtime, request.Command)
 	for {
 		s.ownerMu.Lock()
@@ -951,7 +1530,8 @@ func (s *Server) createPersistentSession(
 			return nil, &safeFailure{code: "owner_fenced"}
 		}
 		s.sessionsMu.Lock()
-		if unusable, exists := s.unusableSessions[id]; exists && unusable.generation == generation {
+		if unusable, exists := s.unusableSessions[id]; exists && unusable.generation == generation &&
+			(runtimeLease == nil || unusable.runtimeLease == runtimeLease) {
 			s.sessionsMu.Unlock()
 			s.ownerMu.Unlock()
 			return nil, &safeFailure{code: "session_unusable"}
@@ -961,6 +1541,9 @@ func (s *Server) createPersistentSession(
 			s.ownerMu.Unlock()
 			if existing.generation != generation {
 				return nil, &safeFailure{code: "owner_fenced"}
+			}
+			if runtimeLease != nil && existing.runtimeLease != runtimeLease {
+				return nil, &safeFailure{code: "runtime_lease_fenced"}
 			}
 			if existing.configKey != configKey {
 				return nil, &safeFailure{code: "session_configuration_mismatch"}
@@ -972,6 +1555,11 @@ func (s *Server) createPersistentSession(
 				s.sessionsMu.Unlock()
 				s.ownerMu.Unlock()
 				return nil, &safeFailure{code: "owner_fenced"}
+			}
+			if runtimeLease != nil && pending.runtimeLease != runtimeLease {
+				s.sessionsMu.Unlock()
+				s.ownerMu.Unlock()
+				return nil, &safeFailure{code: "runtime_lease_fenced"}
 			}
 			if pending.configKey != configKey {
 				s.sessionsMu.Unlock()
@@ -995,13 +1583,13 @@ func (s *Server) createPersistentSession(
 			}
 		}
 		pending := &pendingPersistentSession{
-			configKey: configKey, generation: generation, ready: make(chan struct{}),
+			configKey: configKey, generation: generation, runtimeLease: runtimeLease, ready: make(chan struct{}),
 		}
 		s.pendingSessions[id] = pending
 		s.sessionsMu.Unlock()
 		s.ownerMu.Unlock()
 
-		session, failure := s.startPersistentSession(ctx, prepared, request, generation)
+		session, failure := s.startPersistentSession(ctx, prepared, request, generation, runtimeLease)
 		s.ownerMu.Lock()
 		stillCurrent := !s.draining.Load() && s.owner == generation && generation.ready
 		if failure == nil && session != nil && !stillCurrent {
@@ -1036,12 +1624,17 @@ func (s *Server) handleCloseSession(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusPreconditionFailed, "contract_version_mismatch")
 		return
 	}
-	generation, ownerError := s.beginOwnerOperation(request.OwnerID, request.OwnerEpoch)
+	generation, runtimeLease, ownerError := s.beginRuntimeLeaseOperation(
+		request.OwnerID, request.OwnerEpoch, request.RuntimeLeaseID, request.RuntimeLeaseToken,
+	)
 	if ownerError != "" {
 		writeError(w, ownerErrorStatus(ownerError), ownerError)
 		return
 	}
-	defer generation.operations.Done()
+	defer func() {
+		runtimeLease.operations.Done()
+		generation.operations.Done()
+	}()
 	id := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/v1/sessions/"), "/close")
 	if !executionIDPattern.MatchString(id) {
 		writeError(w, http.StatusBadRequest, "session_id_invalid")
@@ -1053,13 +1646,13 @@ func (s *Server) handleCloseSession(w http.ResponseWriter, r *http.Request) {
 	for {
 		s.sessionsMu.Lock()
 		session, exists = s.sessions[id]
-		if exists && session.generation != generation {
+		if exists && (session.generation != generation || session.runtimeLease != runtimeLease) {
 			exists, session = false, nil
 		}
 		unusableEntry, hasUnusable := s.unusableSessions[id]
-		unusable = hasUnusable && unusableEntry.generation == generation
+		unusable = hasUnusable && unusableEntry.generation == generation && unusableEntry.runtimeLease == runtimeLease
 		pending := s.pendingSessions[id]
-		if pending != nil && pending.generation != generation {
+		if pending != nil && (pending.generation != generation || pending.runtimeLease != runtimeLease) {
 			pending = nil
 		}
 		s.sessionsMu.Unlock()
@@ -1097,7 +1690,7 @@ func (s *Server) handleCloseSession(w http.ResponseWriter, r *http.Request) {
 		s.evictSessionObject(session)
 	}
 	s.sessionsMu.Lock()
-	if unusableEntry, ok := s.unusableSessions[id]; ok && unusableEntry.generation == generation {
+	if unusableEntry, ok := s.unusableSessions[id]; ok && unusableEntry.generation == generation && unusableEntry.runtimeLease == runtimeLease {
 		delete(s.unusableSessions, id)
 	}
 	s.sessionsMu.Unlock()
@@ -1122,7 +1715,9 @@ func (s *Server) handleCancel(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "execution_id_invalid")
 		return
 	}
-	canceled, ownerError := s.cancelExecution(id, request.OwnerID, request.OwnerEpoch)
+	canceled, ownerError := s.cancelExecution(
+		id, request.OwnerID, request.OwnerEpoch, request.RuntimeLeaseID, request.RuntimeLeaseToken,
+	)
 	if ownerError != "" {
 		writeError(w, ownerErrorStatus(ownerError), ownerError)
 		return
@@ -1175,55 +1770,137 @@ func (s *Server) registerExecution(
 	cancel context.CancelFunc,
 	ownerID string,
 	ownerEpoch string,
-) (*ownerGeneration, string) {
+	runtimeLeaseID string,
+	runtimeLeaseToken string,
+) (*ownerGeneration, *runtimeLease, string) {
 	s.ownerMu.Lock()
 	defer s.ownerMu.Unlock()
 	generation, ownerError := s.currentOwnerLocked(ownerID, ownerEpoch)
 	if ownerError != "" {
-		return nil, ownerError
+		return nil, nil, ownerError
+	}
+	s.runtimeLeaseMu.Lock()
+	lease := s.runtimeLeases[strings.TrimSpace(runtimeLeaseID)]
+	if lease == nil {
+		s.runtimeLeaseMu.Unlock()
+		return nil, nil, "runtime_lease_not_found"
+	}
+	if lease.owner != generation || !runtimeLeaseTokenMatches(lease.token, strings.TrimSpace(runtimeLeaseToken)) {
+		s.runtimeLeaseMu.Unlock()
+		return nil, nil, "runtime_lease_fenced"
+	}
+	if lease.state != runtimeLeaseActive || !time.Now().Before(lease.deadline) {
+		if lease.state == runtimeLeaseActive {
+			s.markRuntimeLeaseDrainingLocked(lease)
+		}
+		s.runtimeLeaseMu.Unlock()
+		s.startRuntimeLeaseCleanup(lease)
+		return nil, nil, "runtime_lease_expired"
 	}
 	s.runningMu.Lock()
-	defer s.runningMu.Unlock()
+	defer func() {
+		s.runningMu.Unlock()
+		s.runtimeLeaseMu.Unlock()
+	}()
 	if s.draining.Load() {
-		return nil, "server_draining"
+		return nil, nil, "server_draining"
 	}
 	if _, exists := s.running[id]; exists {
-		return nil, "execution_id_conflict"
+		return nil, nil, "execution_id_conflict"
 	}
 	generation.operations.Add(1)
+	lease.operations.Add(1)
 	s.runningWG.Add(1)
-	s.running[id] = runningExecution{cancel: cancel, generation: generation}
-	return generation, ""
+	s.running[id] = runningExecution{cancel: cancel, generation: generation, lease: lease}
+	return generation, lease, ""
 }
 
-func (s *Server) unregisterExecution(id string, generation *ownerGeneration) {
+func (s *Server) unregisterExecution(id string, generation *ownerGeneration, lease *runtimeLease) {
 	s.runningMu.Lock()
 	execution, exists := s.running[id]
-	if exists && execution.generation == generation {
+	if exists && execution.generation == generation && execution.lease == lease {
 		delete(s.running, id)
 	}
 	s.runningMu.Unlock()
-	if exists && execution.generation == generation {
+	if exists && execution.generation == generation && execution.lease == lease {
+		lease.operations.Done()
 		generation.operations.Done()
 		s.runningWG.Done()
 	}
 }
 
-func (s *Server) cancelExecution(id, ownerID, ownerEpoch string) (bool, string) {
+func (s *Server) cancelExecution(id, ownerID, ownerEpoch, runtimeLeaseID, runtimeLeaseToken string) (bool, string) {
 	s.ownerMu.Lock()
 	defer s.ownerMu.Unlock()
 	generation, ownerError := s.currentOwnerLocked(ownerID, ownerEpoch)
 	if ownerError != "" {
 		return false, ownerError
 	}
+	s.runtimeLeaseMu.Lock()
+	lease := s.runtimeLeases[strings.TrimSpace(runtimeLeaseID)]
+	if lease == nil {
+		s.runtimeLeaseMu.Unlock()
+		return false, "runtime_lease_not_found"
+	}
+	if lease.owner != generation || lease.state != runtimeLeaseActive ||
+		!runtimeLeaseTokenMatches(lease.token, strings.TrimSpace(runtimeLeaseToken)) ||
+		!time.Now().Before(lease.deadline) {
+		expired := lease.state == runtimeLeaseActive && !time.Now().Before(lease.deadline)
+		if expired {
+			s.markRuntimeLeaseDrainingLocked(lease)
+		}
+		s.runtimeLeaseMu.Unlock()
+		if expired {
+			s.startRuntimeLeaseCleanup(lease)
+		}
+		return false, "runtime_lease_fenced"
+	}
 	s.runningMu.Lock()
 	execution, exists := s.running[id]
 	s.runningMu.Unlock()
-	if exists && execution.generation == generation {
+	s.runtimeLeaseMu.Unlock()
+	if exists && execution.generation == generation && execution.lease == lease {
 		execution.cancel()
 		return true, ""
 	}
 	return false, ""
+}
+
+func (s *Server) beginRuntimeLeaseOperation(ownerID, ownerEpoch, leaseID, leaseToken string) (*ownerGeneration, *runtimeLease, string) {
+	s.ownerMu.Lock()
+	defer s.ownerMu.Unlock()
+	generation, ownerError := s.currentOwnerLocked(ownerID, ownerEpoch)
+	if ownerError != "" {
+		return nil, nil, ownerError
+	}
+	if s.draining.Load() {
+		return nil, nil, "server_draining"
+	}
+	s.runtimeLeaseMu.Lock()
+	lease := s.runtimeLeases[strings.TrimSpace(leaseID)]
+	if lease == nil {
+		s.runtimeLeaseMu.Unlock()
+		return nil, nil, "runtime_lease_not_found"
+	}
+	if lease.owner != generation || !runtimeLeaseTokenMatches(lease.token, strings.TrimSpace(leaseToken)) {
+		s.runtimeLeaseMu.Unlock()
+		return nil, nil, "runtime_lease_fenced"
+	}
+	if lease.state != runtimeLeaseActive || !time.Now().Before(lease.deadline) {
+		expired := lease.state == runtimeLeaseActive
+		if expired {
+			s.markRuntimeLeaseDrainingLocked(lease)
+		}
+		s.runtimeLeaseMu.Unlock()
+		if expired {
+			s.startRuntimeLeaseCleanup(lease)
+		}
+		return nil, nil, "runtime_lease_expired"
+	}
+	generation.operations.Add(1)
+	lease.operations.Add(1)
+	s.runtimeLeaseMu.Unlock()
+	return generation, lease, ""
 }
 
 func (s *Server) beginOwnerOperation(ownerID, ownerEpoch string) (*ownerGeneration, string) {
@@ -1247,6 +1924,13 @@ func (s *Server) currentOwnerLocked(ownerID, ownerEpoch string) (*ownerGeneratio
 	}
 	if !generation.ready {
 		return nil, "owner_claim_in_progress"
+	}
+	if !time.Now().Before(generation.leaseDeadline) {
+		if s.expireOwnerGenerationLocked(generation) {
+			s.ownerLeaseExpireOnce.Do(func() { s.ownerLeaseExpired <- struct{}{} })
+			return nil, "server_draining"
+		}
+		return nil, "owner_not_claimed"
 	}
 	if strings.TrimSpace(ownerID) != generation.ownerID ||
 		strings.TrimSpace(ownerEpoch) != generation.epoch {

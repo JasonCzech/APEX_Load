@@ -240,6 +240,53 @@ func TestGracefulStopBeforeRunIsLatched(t *testing.T) {
 	}
 }
 
+func TestGracefulStopSynchronouslyClosesScaleAdmission(t *testing.T) {
+	baseCtx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	var wg sync.WaitGroup
+	mge := &MultiGroupEngine{
+		groups: []GroupConfig{{
+			Name: "group",
+			Script: &dsl.Script{
+				Name:     "scale-fence",
+				Protocol: "stub",
+				Actions:  []dsl.Action{{Name: "request", Type: "request", Target: "/"}},
+			},
+			AllowZeroVUsers: true,
+		}},
+		baseCtx:       baseCtx,
+		loopCtx:       baseCtx,
+		wg:            &wg,
+		controlsReady: true,
+		scalingOpen:   true,
+		softStop:      func() {},
+	}
+
+	mge.GracefulStop()
+	mge.mu.Lock()
+	scalingOpen := mge.scalingOpen
+	mge.mu.Unlock()
+	if scalingOpen {
+		t.Fatal("GracefulStop returned with scale admission still open")
+	}
+
+	const callers = 16
+	errs := make(chan error, callers)
+	for i := 0; i < callers; i++ {
+		go func() {
+			errs <- mge.ScaleVUsers("group", 1)
+		}()
+	}
+	for i := 0; i < callers; i++ {
+		if err := <-errs; err == nil || !strings.Contains(err.Error(), "not running") {
+			t.Fatalf("ScaleVUsers after GracefulStop error = %v, want engine not running", err)
+		}
+	}
+	if got := mge.GetGroupVUsers()["group"]; got != 0 {
+		t.Fatalf("post-fence scale changed target to %d, want 0", got)
+	}
+}
+
 func TestGracefulStopInterruptsPreBaselinePromptly(t *testing.T) {
 	mge, err := NewMultiGroup(MultiGroupConfig{
 		Groups: []GroupConfig{{

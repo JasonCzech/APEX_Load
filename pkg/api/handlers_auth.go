@@ -306,7 +306,7 @@ var authAccessMatrix = []AuthAccessResource{
 			{ID: "view_application_repository", Label: "View application repository categories, projects, and releases", GlobalRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}, DomainRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin}, RepositoryRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin}},
 			{ID: "manage_application_repository", Label: "Update repository metadata and categories", GlobalRoles: []string{RoleProjectAdmin, RoleSystemAdmin}, DomainRoles: []string{RoleProjectAdmin}, RepositoryRoles: []string{RoleProjectAdmin}},
 			{ID: "manage_repository_projects", Label: "Create and organize projects in the repository", GlobalRoles: []string{RoleProjectAdmin, RoleSystemAdmin}, DomainRoles: []string{RoleEditor, RoleProjectAdmin}, RepositoryRoles: []string{RoleEditor, RoleProjectAdmin}},
-			{ID: "manage_repository_releases", Label: "Create and organize releases under repository projects", GlobalRoles: []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin}, DomainRoles: []string{RoleEditor, RoleProjectAdmin}, RepositoryRoles: []string{RoleEditor, RoleProjectAdmin}},
+			{ID: "manage_repository_releases", Label: "Create and organize releases under repository projects", GlobalRoles: []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin}, DomainRoles: []string{RoleEditor, RoleProjectAdmin}, RepositoryRoles: []string{RoleEditor, RoleProjectAdmin}, ProjectRoles: []string{RoleEditor, RoleProjectAdmin}},
 		},
 	},
 	{
@@ -379,7 +379,8 @@ var authAccessMatrix = []AuthAccessResource{
 }
 
 func (s *Server) handleGetAuthStatus(w http.ResponseWriter, r *http.Request) {
-	settings := normalizeAuthSettings(s.runner.GetSystemSettings().Auth)
+	w.Header().Set("Cache-Control", "no-store")
+	settings := s.authSettingsForRequest()
 	loginURL, logoutURL := authStatusURLs(settings)
 	response := AuthStatusResponse{
 		Enabled:      !isAuthBypassMode(settings.Mode),
@@ -397,6 +398,29 @@ func (s *Server) handleGetAuthStatus(w http.ResponseWriter, r *http.Request) {
 				response.Authenticated = true
 				response.User = authUserSummary(user)
 			}
+		}
+		writeJSON(w, http.StatusOK, response)
+		return
+	}
+
+	if settings.Mode == authModeLocal {
+		sessionResolution := resolveLocalSession(r, s.store)
+		response.SessionStatus = sessionResolution.Status
+		if sessionResolution.Session != nil && !sessionResolution.Session.ExpiresAt.IsZero() {
+			response.SessionExpiresAt = sessionResolution.Session.ExpiresAt.UTC().Format(time.RFC3339)
+			if ttl := int64(time.Until(sessionResolution.Session.ExpiresAt).Seconds()); ttl > 0 {
+				response.SessionTTLSeconds = ttl
+			}
+		}
+		// A stale cookie still needs a CSRF-bound way to clear itself. Logout is
+		// idempotent by token hash, so this is safe even when expiry cleanup has
+		// already removed the persisted session row.
+		if sessionResolution.Token != "" {
+			response.LogoutCSRF = localLogoutCSRFToken(sessionResolution.Token)
+		}
+		if sessionResolution.User != nil {
+			response.Authenticated = true
+			response.User = authUserSummary(sessionResolution.User)
 		}
 		writeJSON(w, http.StatusOK, response)
 		return
@@ -462,7 +486,7 @@ func oidcLocalAuthStatus(err error) string {
 }
 
 func (s *Server) handleGetAuthDiagnostics(w http.ResponseWriter, r *http.Request) {
-	settings := normalizeAuthSettings(s.runner.GetSystemSettings().Auth)
+	settings := s.authSettingsForRequest()
 	// Require a system admin in every non-bypass mode (OIDC and trusted-headers).
 	// Previously only trusted-headers was gated, so OIDC/dev callers could read
 	// the diagnostics (issuer/redirect URLs, scopes, secret env-var names) and
@@ -485,10 +509,7 @@ func (s *Server) handleGetAuthDiagnostics(w http.ResponseWriter, r *http.Request
 }
 
 func (s *Server) handleGetAuthRoleCatalog(w http.ResponseWriter, _ *http.Request) {
-	providerModel := "upstream_gateway"
-	if normalizeAuthSettings(s.runner.GetSystemSettings().Auth).Mode == authModeOIDC {
-		providerModel = "native_oidc"
-	}
+	providerModel := authProviderModel(s.authSettingsForRequest())
 	writeJSON(w, http.StatusOK, AuthRoleCatalogResponse{
 		ProviderModel: providerModel,
 		Roles:         authRoleCatalog,
@@ -505,6 +526,20 @@ func buildAuthDiagnosticsResponse(r *http.Request, settings AuthSettings, store 
 	}
 
 	switch settings.Mode {
+	case authModeLocal:
+		resolution := resolveLocalSession(r, store)
+		status := "warn"
+		summary := "No active local test session is present."
+		detail := "Use one of the four seeded test accounts on the sign-in page."
+		if resolution.User != nil {
+			status = "pass"
+			summary = "The current local test session is active."
+			detail = resolution.User.Subject
+		}
+		response.Checks = append(response.Checks,
+			AuthDiagnosticsCheck{ID: "local_test_mode", Label: "Local Test Login", Status: "info", Summary: "Fixed non-production test credentials are enabled.", Detail: "This mode is rejected by the production authentication posture."},
+			AuthDiagnosticsCheck{ID: "current_session", Label: "Current Session", Status: status, Summary: summary, Detail: detail},
+		)
 	case authModeTrustedHeaders:
 		response.Checks = append(response.Checks,
 			buildTrustedHeaderConfiguredCheck("subject_header", "Subject Header", settings.UserHeader != "", settings.UserHeader, "APEX Load needs a subject header to resolve the authenticated user."),
@@ -593,7 +628,8 @@ func buildAuthDiagnosticsResponse(r *http.Request, settings AuthSettings, store 
 
 func (s *Server) handleGetAuthAccessMatrix(w http.ResponseWriter, _ *http.Request) {
 	version := "trusted_headers_v1"
-	if normalizeAuthSettings(s.runner.GetSystemSettings().Auth).Mode == authModeOIDC {
+	mode := s.authSettingsForRequest().Mode
+	if mode == authModeOIDC || mode == authModeLocal {
 		version = "rbac_v1"
 	}
 	writeJSON(w, http.StatusOK, AuthAccessMatrixResponse{
@@ -613,10 +649,10 @@ type AuthPolicyResponse struct {
 }
 
 func (s *Server) handleGetAuthPolicy(w http.ResponseWriter, _ *http.Request) {
-	providerModel := "upstream_gateway"
+	settings := s.authSettingsForRequest()
+	providerModel := authProviderModel(settings)
 	version := "trusted_headers_v1"
-	if normalizeAuthSettings(s.runner.GetSystemSettings().Auth).Mode == authModeOIDC {
-		providerModel = "native_oidc"
+	if settings.Mode == authModeOIDC || settings.Mode == authModeLocal {
 		version = "rbac_v1"
 	}
 	writeJSON(w, http.StatusOK, AuthPolicyResponse{
@@ -628,7 +664,7 @@ func (s *Server) handleGetAuthPolicy(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (s *Server) handleGetAuthEffectiveAccess(w http.ResponseWriter, r *http.Request) {
-	settings := normalizeAuthSettings(s.runner.GetSystemSettings().Auth)
+	settings := s.authSettingsForRequest()
 	projectID := normalizeProjectID(strings.TrimSpace(r.URL.Query().Get("project_id")))
 	domainID := normalizeDomainID(strings.TrimSpace(r.URL.Query().Get("domain_id")))
 	repositoryID := strings.TrimSpace(r.URL.Query().Get("application_repository_id"))
@@ -645,7 +681,7 @@ func (s *Server) handleGetAuthEffectiveAccess(w http.ResponseWriter, r *http.Req
 			response.Simulated = true
 			if user := devPreviewUserForRequest(r, mode); user != nil {
 				response.Authenticated = true
-				response.Resources = buildUserEffectiveAccess(authAccessMatrix, user, projectID, domainID, repositoryID)
+				response.Resources = buildUserEffectiveAccess(s.store, authAccessMatrix, user, projectID, domainID, repositoryID)
 				writeJSON(w, http.StatusOK, response)
 				return
 			}
@@ -663,7 +699,7 @@ func (s *Server) handleGetAuthEffectiveAccess(w http.ResponseWriter, r *http.Req
 	}
 
 	response.Authenticated = true
-	response.Resources = buildUserEffectiveAccess(authAccessMatrix, resolution.User, projectID, domainID, repositoryID)
+	response.Resources = buildUserEffectiveAccess(s.store, authAccessMatrix, resolution.User, projectID, domainID, repositoryID)
 	writeJSON(w, http.StatusOK, response)
 }
 
@@ -712,6 +748,7 @@ func (s *Server) handleGetAuthEffectiveAccessForPrincipal(w http.ResponseWriter,
 			return
 		}
 		principal = authenticatedUserFromStoredUser(user)
+		principal.LocalScopeBoundViewer = strings.HasPrefix(strings.ToLower(strings.TrimSpace(user.Subject)), reservedLocalAuthSubjectPrefix)
 		response.PrincipalName = firstNonEmpty(user.DisplayName, user.Subject)
 	case "service_account":
 		account, err := s.store.GetServiceAccount(principalID)
@@ -727,7 +764,7 @@ func (s *Server) handleGetAuthEffectiveAccessForPrincipal(w http.ResponseWriter,
 		return
 	}
 
-	response.Resources = buildUserEffectiveAccess(authAccessMatrix, principal, projectID, domainID, repositoryID)
+	response.Resources = buildUserEffectiveAccess(s.store, authAccessMatrix, principal, projectID, domainID, repositoryID)
 	writeJSON(w, http.StatusOK, response)
 }
 
@@ -1500,28 +1537,28 @@ func applicationRepositoryScopeExists(store storage.Store, repositoryID string) 
 }
 
 func (s *Server) currentRequestCanManageUserLifecycle(r *http.Request) bool {
-	if isAuthBypassMode(normalizeAuthSettings(s.runner.GetSystemSettings().Auth).Mode) {
+	if isAuthBypassMode(s.authSettingsForRequest().Mode) {
 		return true
 	}
 	return currentUserCanManageUserLifecycle(r)
 }
 
 func (s *Server) currentRequestCanReadUsers(r *http.Request) bool {
-	if isAuthBypassMode(normalizeAuthSettings(s.runner.GetSystemSettings().Auth).Mode) {
+	if isAuthBypassMode(s.authSettingsForRequest().Mode) {
 		return true
 	}
 	return currentUserCanManageUserLifecycle(r) || currentUserCanManageUserBindings(r, s.store)
 }
 
 func (s *Server) currentRequestCanViewUserActivity(r *http.Request) bool {
-	if isAuthBypassMode(normalizeAuthSettings(s.runner.GetSystemSettings().Auth).Mode) {
+	if isAuthBypassMode(s.authSettingsForRequest().Mode) {
 		return true
 	}
 	return currentUserCanViewUserActivity(r, s.store)
 }
 
 func (s *Server) canManageUserBinding(r *http.Request, binding *storage.UserRoleBinding) bool {
-	if isAuthBypassMode(normalizeAuthSettings(s.runner.GetSystemSettings().Auth).Mode) {
+	if isAuthBypassMode(s.authSettingsForRequest().Mode) {
 		return true
 	}
 	return canManageBinding(r, s.store, binding)
@@ -1611,7 +1648,7 @@ func repositoryIDForProject(store storage.Store, project *storage.Project) strin
 // This is the load-bearing guard against a single-scope admin reading the whole tenant's
 // audit trail and usage through /auth/user-activity.
 func (s *Server) administeredProjectScope(r *http.Request) (map[string]struct{}, bool) {
-	if isAuthBypassMode(normalizeAuthSettings(s.runner.GetSystemSettings().Auth).Mode) {
+	if isAuthBypassMode(s.authSettingsForRequest().Mode) {
 		return nil, true
 	}
 	user, ok := AuthenticatedUserFromContext(r.Context())
@@ -1726,7 +1763,7 @@ func (s *Server) newUserVisibilityResolver(r *http.Request) *userVisibilityResol
 
 func (v *userVisibilityResolver) authBypass() bool {
 	if !v.bypassKnown {
-		v.bypass = isAuthBypassMode(normalizeAuthSettings(v.server.runner.GetSystemSettings().Auth).Mode)
+		v.bypass = isAuthBypassMode(v.server.authSettingsForRequest().Mode)
 		v.bypassKnown = true
 	}
 	return v.bypass
@@ -2672,7 +2709,7 @@ func buildDeniedEffectiveAccess(resources []AuthAccessResource) []AuthEffectiveA
 	return out
 }
 
-func buildUserEffectiveAccess(resources []AuthAccessResource, user *AuthenticatedUser, projectID string, domainID string, repositoryID string) []AuthEffectiveAccessResource {
+func buildUserEffectiveAccess(store storage.Store, resources []AuthAccessResource, user *AuthenticatedUser, projectID string, domainID string, repositoryID string) []AuthEffectiveAccessResource {
 	out := make([]AuthEffectiveAccessResource, 0, len(resources))
 	for _, resource := range resources {
 		entry := AuthEffectiveAccessResource{
@@ -2684,12 +2721,15 @@ func buildUserEffectiveAccess(resources []AuthAccessResource, user *Authenticate
 		for _, operation := range resource.Operations {
 			allowed := false
 			grantSource := ""
-			if len(operation.GlobalRoles) > 0 && user.hasGlobalRole(operation.GlobalRoles...) {
+			scopedLocalViewer := user.LocalScopeBoundViewer && ((projectID != "" && len(operation.ProjectRoles) > 0) ||
+				(domainID != "" && len(operation.DomainRoles) > 0) ||
+				(repositoryID != "" && len(operation.RepositoryRoles) > 0))
+			if len(operation.GlobalRoles) > 0 && userHasEffectiveGlobalRole(user, operation.GlobalRoles, scopedLocalViewer) {
 				allowed = true
 				grantSource = "global"
-			} else if projectID != "" && len(operation.ProjectRoles) > 0 && user.hasProjectRole(projectID, operation.ProjectRoles...) {
+			} else if projectGrantSource, ok := userProjectRoleGrantSource(store, user, projectID, operation.ProjectRoles...); projectID != "" && len(operation.ProjectRoles) > 0 && ok {
 				allowed = true
-				grantSource = "project"
+				grantSource = projectGrantSource
 			} else if domainID != "" && len(operation.DomainRoles) > 0 && user.hasDomainRole(domainID, operation.DomainRoles...) {
 				allowed = true
 				grantSource = "domain"
@@ -2707,6 +2747,27 @@ func buildUserEffectiveAccess(resources []AuthAccessResource, user *Authenticate
 		out = append(out, entry)
 	}
 	return out
+}
+
+// userHasEffectiveGlobalRole mirrors request authorization's treatment of the
+// Local Test Login baseline viewer. Once effective access is being evaluated
+// for a concrete scope, that viewer binding must not hide the domain,
+// repository, or project binding that actually grants access. Stronger global
+// roles and every established provider retain their existing behavior.
+func userHasEffectiveGlobalRole(user *AuthenticatedUser, roles []string, scopedLocalViewer bool) bool {
+	if user == nil {
+		return false
+	}
+	for _, role := range roles {
+		role = strings.ToLower(strings.TrimSpace(role))
+		if scopedLocalViewer && role == RoleViewer {
+			continue
+		}
+		if user.hasGlobalRole(role) {
+			return true
+		}
+	}
+	return false
 }
 
 func authUserSummary(user *AuthenticatedUser) *AuthUserSummary {
@@ -2752,6 +2813,9 @@ func sortedRoles(roles map[string]struct{}) []string {
 }
 
 func authProviderModel(settings AuthSettings) string {
+	if settings.Mode == authModeLocal {
+		return "local_test_accounts"
+	}
 	switch settings.Mode {
 	case authModeOIDC:
 		return "native_oidc"

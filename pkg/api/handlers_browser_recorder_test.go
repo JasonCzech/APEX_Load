@@ -1680,6 +1680,6 @@ func TestRecorderStatusIncludesBrowserAvailability(t *testing.T) {
 		t.Errorf("availability = %+v, want available", payload.Browser.Availability)
 	}
 	if payload.Browser.Active == nil || payload.Browser.Active.Name != "Checkout" {
-		t.Errorf("active = %+v, want the live recording summary", payload.Browser.Active)
+		t.Errorf("active = %+v, want the live recording summary; body=%s", payload.Browser.Active, resp.Body.String())
 	}
 }

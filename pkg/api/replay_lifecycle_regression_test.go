@@ -56,6 +56,11 @@ func newAdmittedHAReplayServer(t *testing.T) *Server {
 	if err != nil {
 		t.Fatalf("open replay entry-point store: %v", err)
 	}
+	return newAdmittedHAReplayServerWithStore(t, store)
+}
+
+func newAdmittedHAReplayServerWithStore(t *testing.T, store storage.Store) *Server {
+	t.Helper()
 	t.Cleanup(func() { _ = store.Close() })
 	server := NewServer(ServerConfig{Store: store, HAExecutionLeadership: true})
 	t.Cleanup(func() {

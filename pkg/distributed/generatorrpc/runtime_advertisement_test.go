@@ -116,6 +116,46 @@ func TestRuntimeAdvertisementFailsClosedOnCapabilityPanic(t *testing.T) {
 	}
 }
 
+func TestJavaVuserRuntimeContainmentContract(t *testing.T) {
+	tests := []struct {
+		name     string
+		features []string
+		want     bool
+	}{
+		{name: "contained local process", features: []string{"java_vuser_local_process_containment_v1"}, want: true},
+		{name: "leased owned external runtime", features: []string{"java_vuser_external_runtime_v1", "runner_owner_lease_v1", "java_vuser_runtime_lease_v1"}, want: true},
+		{name: "external runtime missing runtime lease", features: []string{"java_vuser_external_runtime_v1", "runner_owner_lease_v1"}},
+		{name: "generic owner lease alone", features: []string{"runner_owner_lease_v1"}},
+		{name: "external runtime without owner lease", features: []string{"java_vuser_external_runtime_v1"}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := javaVuserRuntimeContained(test.features); got != test.want {
+				t.Fatalf("javaVuserRuntimeContained(%v) = %v, want %v", test.features, got, test.want)
+			}
+		})
+	}
+}
+
+func TestBrunoRuntimeContainmentContract(t *testing.T) {
+	tests := []struct {
+		name     string
+		features []string
+		want     bool
+	}{
+		{name: "owner and session leases", features: []string{"runner_owner_lease_v1", "bruno_session_lease_v1"}, want: true},
+		{name: "owner lease only", features: []string{"runner_owner_lease_v1"}},
+		{name: "session lease only", features: []string{"bruno_session_lease_v1"}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := brunoRuntimeContained(test.features); got != test.want {
+				t.Fatalf("brunoRuntimeContained(%v) = %v, want %v", test.features, got, test.want)
+			}
+		})
+	}
+}
+
 func TestProtocolRuntimeCapacitiesFromProtoClonesFeatures(t *testing.T) {
 	featureValues := []string{"persistent"}
 	values := []*pb.ProtocolRuntimeCapacity{{

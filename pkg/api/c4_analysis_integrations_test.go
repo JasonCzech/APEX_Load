@@ -219,6 +219,85 @@ func TestReleaseSLAGovernancePersistsWaiversAndAuditEvents(t *testing.T) {
 	}
 }
 
+func TestReleaseFamilyTrendAndGovernanceAggregateApplicationMembers(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer store.Close()
+	now := time.Now().UTC()
+	project := &storage.Project{ID: "family-governance-project", Name: "Family governance", CreatedAt: now, UpdatedAt: now}
+	if err := store.SaveProject(project); err != nil {
+		t.Fatalf("SaveProject: %v", err)
+	}
+	applications := []*storage.Application{
+		{ID: "family-governance-a", ProjectID: project.ID, Name: "A", CreatedAt: now, UpdatedAt: now},
+		{ID: "family-governance-b", ProjectID: project.ID, Name: "B", CreatedAt: now, UpdatedAt: now},
+	}
+	for _, application := range applications {
+		if err := store.SaveApplication(application); err != nil {
+			t.Fatalf("SaveApplication(%s): %v", application.ID, err)
+		}
+	}
+	created, err := store.CreateProjectReleaseFamily(project.ID, "2608", applications[0].ID, now)
+	if err != nil {
+		t.Fatalf("CreateProjectReleaseFamily: %v", err)
+	}
+	members, err := store.ListReleaseFamilyMembers(created.GroupID)
+	if err != nil || len(members) != 2 {
+		t.Fatalf("ListReleaseFamilyMembers = %#v, err=%v", members, err)
+	}
+	server := NewServer(ServerConfig{Store: store})
+	for index, member := range members {
+		started := now.Add(time.Duration(index) * time.Hour)
+		completed := started.Add(5 * time.Minute)
+		runID := "family-governance-run-" + member.ApplicationID
+		archive := writeReleaseTrendArchiveFixture(t, member.ID, runID, runID, started, completed, index == 1)
+		server.runner.mu.Lock()
+		server.runner.tests[runID] = &ManagedTest{
+			ID: runID, Name: runID, Status: "COMPLETE", ReleaseID: member.ID,
+			ApplicationID: member.ApplicationID, ProjectID: project.ID,
+			CreatedAt: started, StartedAt: ptrTime(started), EndedAt: ptrTime(completed), Archive: archive,
+		}
+		server.runner.archives[runID] = archive
+		server.runner.mu.Unlock()
+	}
+
+	trendRuns, err := server.collectReleaseTrendRuns(created.GroupID, false)
+	if err != nil || len(trendRuns) != 2 {
+		t.Fatalf("family trend runs = %#v, err=%v", trendRuns, err)
+	}
+	physicalTrendRequest := httptest.NewRequest(http.MethodGet, "/api/v1/releases/"+members[1].ID+"/trend", nil)
+	physicalTrendRequest.SetPathValue("id", members[1].ID)
+	physicalTrendResponse := httptest.NewRecorder()
+	server.handleGetReleaseTrend(physicalTrendResponse, physicalTrendRequest)
+	if physicalTrendResponse.Code != http.StatusOK {
+		t.Fatalf("physical member trend status = %d body=%s", physicalTrendResponse.Code, physicalTrendResponse.Body.String())
+	}
+	var trend ReleaseTrend
+	if err := json.Unmarshal(physicalTrendResponse.Body.Bytes(), &trend); err != nil {
+		t.Fatalf("decode physical member trend: %v", err)
+	}
+	if trend.ReleaseID != created.GroupID || trend.RunCount != 2 {
+		t.Fatalf("physical member trend = %#v, want canonical family identity and both runs", trend)
+	}
+	waiver := &storage.ReleaseSLAWaiver{
+		ID: "family-waiver", ReleaseID: members[1].ID, ProjectID: project.ID,
+		Scope: "release", Reason: "Accepted family risk", ApprovedBy: "Reviewer", Status: "active",
+		CreatedAt: now.Add(2 * time.Hour), UpdatedAt: now.Add(2 * time.Hour),
+	}
+	if err := store.SaveReleaseSLAWaiver(waiver); err != nil {
+		t.Fatalf("SaveReleaseSLAWaiver: %v", err)
+	}
+	governance, err := server.buildReleaseSLAGovernance(created.GroupID)
+	if err != nil {
+		t.Fatalf("buildReleaseSLAGovernance: %v", err)
+	}
+	if governance.ReleaseID != created.GroupID || governance.Summary.TotalRuns != 2 || governance.Summary.WaivedBreaches != 1 || len(governance.Waivers) != 1 || governance.Waivers[0].ReleaseID != created.GroupID {
+		t.Fatalf("family governance = %#v", governance)
+	}
+}
+
 func TestExternalResultImportPersistsK6Summary(t *testing.T) {
 	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
 	if err != nil {

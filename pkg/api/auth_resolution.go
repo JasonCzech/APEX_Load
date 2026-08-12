@@ -25,6 +25,8 @@ import (
 
 const userIdentitySeenWriteInterval = time.Minute
 
+const reservedLocalAuthSubjectPrefix = "local:"
+
 var userIdentitySeenThrottle = struct {
 	sync.Mutex
 	lastWriteByUserID map[string]time.Time
@@ -69,6 +71,13 @@ func resolveRequestAuth(r *http.Request, settings AuthSettings, store storage.St
 			return authResolution{}, err
 		}
 		return authResolution{User: localUser}, nil
+	}
+	if settings.Mode == authModeLocal {
+		user, _, err := authenticatedUserFromLocalSession(r, store)
+		if err != nil {
+			return authResolution{}, err
+		}
+		return authResolution{User: user}, nil
 	}
 	// Trusted-headers mode: enforce the trusted-proxy gate before honoring any
 	// identity headers, so a client that reaches the controller directly cannot forge
@@ -187,6 +196,9 @@ func applyLocalUserBindings(upstream *AuthenticatedUser, store storage.Store) (*
 	if upstream == nil {
 		return nil, fmt.Errorf("authentication required")
 	}
+	if err := validateExternalAuthSubject(upstream.Subject); err != nil {
+		return nil, err
+	}
 	if store == nil {
 		return upstream, nil
 	}
@@ -233,6 +245,17 @@ func applyLocalUserBindings(upstream *AuthenticatedUser, store storage.Store) (*
 	resolved.SessionEpoch = upstream.SessionEpoch
 	resolved.SessionExpiresAt = upstream.SessionExpiresAt
 	return resolved, nil
+}
+
+// validateExternalAuthSubject prevents OIDC and trusted-header principals from
+// resolving to the database-backed Local Test Login fixtures. The local: subject
+// namespace is reserved even when the controller is currently using another
+// provider, because the fixture rows persist across auth-mode restarts.
+func validateExternalAuthSubject(subject string) error {
+	if strings.HasPrefix(strings.ToLower(strings.TrimSpace(subject)), reservedLocalAuthSubjectPrefix) {
+		return fmt.Errorf("external identity subject uses the reserved local login namespace")
+	}
+	return nil
 }
 
 func shouldUpdateUserIdentitySeen(userID string, previousDisplayName string, previousEmail string, nextDisplayName string, nextEmail string, now time.Time) bool {

@@ -1077,6 +1077,68 @@ components:
           description: Human-readable error message.
       required:
         - error
+    ProjectReleaseCreateRequest:
+      type: object
+      description: Creates one logical release family joined to every application in the project.
+      properties:
+        application_id:
+          type: string
+          description: Preferred application member returned for immediate selection.
+        name:
+          type: string
+      required:
+        - name
+    ReleaseFamily:
+      type: object
+      description: Canonical project release family. id and group_id are the stable family id; member_ids maps application ids to physical release ids used for run placement.
+      properties:
+        application_id:
+          type: string
+        application_release_id:
+          type: string
+        archived_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        group_id:
+          type: string
+        id:
+          type: string
+        member_ids:
+          type: object
+          description: Application id to physical release id.
+          additionalProperties:
+            type: string
+        name:
+          type: string
+        project_id:
+          type: string
+        updated_at:
+          type: string
+          format: date-time
+      required:
+        - id
+        - group_id
+        - project_id
+        - name
+        - created_at
+        - updated_at
+        - member_ids
+    ReleaseFamilyListResponse:
+      type: object
+      properties:
+        count:
+          type: integer
+        releases:
+          type: array
+          items:
+            $ref: '#/components/schemas/ReleaseFamily'
+      required:
+        - releases
+        - count
     ScriptDebugBreakpoint:
       type: object
       properties:
@@ -1122,6 +1184,130 @@ components:
             - into
             - over
             - loop_end
+    SystemReadinessCheck:
+      type: object
+      properties:
+        details:
+          $ref: '#/components/schemas/SystemReadinessDetails'
+        message:
+          type: string
+        name:
+          type: string
+          enum:
+            - kubernetes_api
+            - metadata_store
+            - archive_writer
+            - cache_backend
+            - generator_rpc
+            - telemetry_fanout
+            - auth_mode
+            - platform_integrations
+            - github_enterprise
+            - scheduler_state
+        status:
+          type: string
+          enum:
+            - ready
+            - degraded
+            - not_ready
+      required:
+        - name
+        - status
+        - message
+    SystemReadinessDetails:
+      type: object
+      description: Sanitized operational metadata whose fields vary by check. Secret-bearing configuration values are never returned.
+      properties:
+        available:
+          type: integer
+        cache_backend:
+          type: string
+          enum:
+            - memory
+            - redis
+            - valkey
+            - unknown
+        config_error:
+          type: string
+          description: Sanitized cache configuration category.
+        configured:
+          type: boolean
+        due_schedules:
+          type: integer
+        enabled:
+          type: boolean
+        enabled_schedules:
+          type: integer
+        endpoint:
+          type: string
+          description: Credential-free Redis/Valkey scheme and authority when safely parseable.
+        errored_schedules:
+          type: integer
+        execution_mode:
+          type: string
+          enum:
+            - local
+            - distributed
+        generators:
+          type: integer
+        grpc_transport:
+          type: string
+        lease_capability:
+          type: boolean
+        metrics_interval_seconds:
+          type: integer
+        namespace:
+          type: string
+        pod_count:
+          type: integer
+        probe_latency_ms:
+          type: number
+          format: double
+        ready_pods:
+          type: integer
+        reason:
+          type: string
+        redis_url_configured:
+          type: boolean
+        store_type:
+          type: string
+          enum:
+            - sqlite
+            - postgres
+            - unknown
+        terminating_pods:
+          type: integer
+        timeout:
+          type: string
+        timescaledb_enabled:
+          type: boolean
+        tls_enabled:
+          type: boolean
+        unreachable:
+          type: integer
+        ws_clients:
+          type: integer
+      additionalProperties: true
+    SystemReadinessResponse:
+      type: object
+      properties:
+        checks:
+          type: array
+          items:
+            $ref: '#/components/schemas/SystemReadinessCheck'
+        generated_at:
+          type: string
+          format: date-time
+        status:
+          type: string
+          enum:
+            - ready
+            - degraded
+            - not_ready
+      required:
+        - status
+        - generated_at
+        - checks
 security:
   - bearerAuth: []
   - apiKeyAuth: []
@@ -11944,6 +12130,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        "501":
+          description: Not Implemented
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         "503":
           description: Service Unavailable
           content:
@@ -13377,11 +13569,90 @@ paths:
       tags:
         - Auth
       x-handler: handleOIDCLogin
+    post:
+      summary: Local Login
+      description: '**Access Control:** Public (no authentication required)'
+      operationId: handleLocalLogin
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                password:
+                  type: string
+                username:
+                  type: string
+              required:
+                - password
+                - username
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  authenticated:
+                    type: boolean
+                required:
+                  - authenticated
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "404":
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "429":
+          description: Too Many Requests
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "500":
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "503":
+          description: Service Unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: Public (no authentication required)
+      security: []
+      tags:
+        - Auth
+      x-handler: handleLocalLogin
   /api/v1/auth/logout:
     post:
-      summary: OIDC Logout
+      summary: Auth Logout
       description: '**Access Control:** Public (no authentication required)'
-      operationId: handleOIDCLogout
+      operationId: handleAuthLogout
       responses:
         "200":
           description: OK
@@ -13412,13 +13683,32 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        "500":
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "503":
+          description: Service Unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         default:
           description: Additional handler-defined response.
       x-roles: Public (no authentication required)
       security: []
+      parameters:
+        - name: X-APEXLoad-CSRF-Token
+          in: header
+          description: Handler-read request header; whether it is required can depend on authentication mode or operation state.
+          required: false
+          schema:
+            type: string
       tags:
         - Auth
-      x-handler: handleOIDCLogout
+      x-handler: handleAuthLogout
   /api/v1/auth/me:
     get:
       summary: Get Auth Status
@@ -29744,6 +30034,12 @@ paths:
           description: Additional handler-defined response.
       x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; service-account scope: read'
       parameters:
+        - name: project_id
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
         - name: protocol
           in: query
           description: Handler-defined query parameter.
@@ -38456,8 +38752,7 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                additionalProperties: {}
+                $ref: '#/components/schemas/ReleaseFamilyListResponse'
         "401":
           description: Authentication required or invalid.
           content:
@@ -38503,19 +38798,14 @@ paths:
         content:
           application/json:
             schema:
-              type: object
-              properties:
-                application_id:
-                  type: string
-                name:
-                  type: string
+              $ref: '#/components/schemas/ProjectReleaseCreateRequest'
       responses:
         "201":
           description: Created
           content:
             application/json:
               schema:
-                description: Operation-specific JSON response.
+                $ref: '#/components/schemas/ReleaseFamily'
         "400":
           description: Bad Request
           content:
@@ -38542,6 +38832,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "413":
           description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "501":
+          description: Not Implemented
           content:
             application/json:
               schema:
@@ -40838,6 +41134,13 @@ paths:
         default:
           description: Additional handler-defined response.
       x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; when project_id is supplied, project roles: Viewer, Editor, ProjectAdmin'
+      parameters:
+        - name: project_id
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
       tags:
         - Recorder
       x-handler: handleRecorderStatus
@@ -73259,7 +73562,7 @@ paths:
   /api/v1/results/imports:
     get:
       summary: List External Result Imports
-      description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; service-account scope: results:read'
+      description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; service-account scope: results:read; when project_id is supplied, project roles: Viewer, Editor, ProjectAdmin'
       operationId: handleListExternalResultImports
       responses:
         "200":
@@ -73289,7 +73592,7 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         default:
           description: Additional handler-defined response.
-      x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; service-account scope: results:read'
+      x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; service-account scope: results:read; when project_id is supplied, project roles: Viewer, Editor, ProjectAdmin'
       parameters:
         - name: application_id
           in: query
@@ -158288,6 +158591,32 @@ paths:
                           type: object
                           additionalProperties:
                             type: string
+                        last_safety_exit:
+                          type: object
+                          properties:
+                            execution_generation:
+                              type: integer
+                              format: int64
+                            lifecycle_state:
+                              type: string
+                            outstanding_executions:
+                              type: integer
+                              format: int64
+                            reason:
+                              type: string
+                            requested_at:
+                              type: string
+                              format: date-time
+                            test_id:
+                              type: string
+                          required:
+                            - execution_generation
+                            - lifecycle_state
+                            - outstanding_executions
+                            - reason
+                            - requested_at
+                            - test_id
+                          nullable: true
                         max_vusers:
                           type: integer
                           format: int64
@@ -158322,6 +158651,12 @@ paths:
                           type: string
                         restartable:
                           type: boolean
+                        run_supervision_escalations_total:
+                          type: integer
+                          format: int64
+                        run_supervision_expirations_total:
+                          type: integer
+                          format: int64
                         runtime_capacities:
                           type: array
                           items:
@@ -158353,6 +158688,33 @@ paths:
                               - available
                               - max_vusers
                               - available_vusers
+                        safety_exits:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              execution_generation:
+                                type: integer
+                                format: int64
+                              lifecycle_state:
+                                type: string
+                              outstanding_executions:
+                                type: integer
+                                format: int64
+                              reason:
+                                type: string
+                              requested_at:
+                                type: string
+                                format: date-time
+                              test_id:
+                                type: string
+                            required:
+                              - execution_generation
+                              - lifecycle_state
+                              - outstanding_executions
+                              - reason
+                              - requested_at
+                              - test_id
                         status:
                           type: string
                         supported_protocols:
@@ -158388,6 +158750,8 @@ paths:
                         - max_vusers
                         - memory_bytes
                         - memory_limit_bytes
+                        - run_supervision_escalations_total
+                        - run_supervision_expirations_total
                         - status
                         - target
                 required:
@@ -158655,14 +159019,18 @@ paths:
       description: '**Access Control:** Public (no authentication required)'
       operationId: handleSystemReadiness
       responses:
-        2XX:
-          description: Successful response; exact status is selected by the handler.
+        "200":
+          description: The controller is ready or operational with advisory degradation.
           content:
             application/json:
               schema:
-                description: Operation-specific JSON response.
-        default:
-          description: Additional handler-defined response.
+                $ref: '#/components/schemas/SystemReadinessResponse'
+        "503":
+          description: At least one required dependency is not ready.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SystemReadinessResponse'
       x-roles: Public (no authentication required)
       security: []
       tags:
@@ -173635,6 +174003,32 @@ paths:
                               type: object
                               additionalProperties:
                                 type: string
+                            last_safety_exit:
+                              type: object
+                              properties:
+                                execution_generation:
+                                  type: integer
+                                  format: int64
+                                lifecycle_state:
+                                  type: string
+                                outstanding_executions:
+                                  type: integer
+                                  format: int64
+                                reason:
+                                  type: string
+                                requested_at:
+                                  type: string
+                                  format: date-time
+                                test_id:
+                                  type: string
+                              required:
+                                - execution_generation
+                                - lifecycle_state
+                                - outstanding_executions
+                                - reason
+                                - requested_at
+                                - test_id
+                              nullable: true
                             max_vusers:
                               type: integer
                               format: int64
@@ -173669,6 +174063,12 @@ paths:
                               type: string
                             restartable:
                               type: boolean
+                            run_supervision_escalations_total:
+                              type: integer
+                              format: int64
+                            run_supervision_expirations_total:
+                              type: integer
+                              format: int64
                             runtime_capacities:
                               type: array
                               items:
@@ -173700,6 +174100,11 @@ paths:
                                   - available
                                   - max_vusers
                                   - available_vusers
+                            safety_exits:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
                             status:
                               type: string
                             supported_protocols:
@@ -173735,6 +174140,8 @@ paths:
                             - max_vusers
                             - memory_bytes
                             - memory_limit_bytes
+                            - run_supervision_escalations_total
+                            - run_supervision_expirations_total
                             - status
                             - target
                       generator_shards:
@@ -174859,6 +175266,32 @@ paths:
                               type: object
                               additionalProperties:
                                 type: string
+                            last_safety_exit:
+                              type: object
+                              properties:
+                                execution_generation:
+                                  type: integer
+                                  format: int64
+                                lifecycle_state:
+                                  type: string
+                                outstanding_executions:
+                                  type: integer
+                                  format: int64
+                                reason:
+                                  type: string
+                                requested_at:
+                                  type: string
+                                  format: date-time
+                                test_id:
+                                  type: string
+                              required:
+                                - execution_generation
+                                - lifecycle_state
+                                - outstanding_executions
+                                - reason
+                                - requested_at
+                                - test_id
+                              nullable: true
                             max_vusers:
                               type: integer
                               format: int64
@@ -174893,6 +175326,12 @@ paths:
                               type: string
                             restartable:
                               type: boolean
+                            run_supervision_escalations_total:
+                              type: integer
+                              format: int64
+                            run_supervision_expirations_total:
+                              type: integer
+                              format: int64
                             runtime_capacities:
                               type: array
                               items:
@@ -174924,6 +175363,11 @@ paths:
                                   - available
                                   - max_vusers
                                   - available_vusers
+                            safety_exits:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
                             status:
                               type: string
                             supported_protocols:
@@ -174959,6 +175403,8 @@ paths:
                             - max_vusers
                             - memory_bytes
                             - memory_limit_bytes
+                            - run_supervision_escalations_total
+                            - run_supervision_expirations_total
                             - status
                             - target
                       generator_shards:
@@ -176803,6 +177249,11 @@ paths:
                                   type: object
                                   additionalProperties:
                                     type: string
+                                last_safety_exit:
+                                  type: object
+                                  description: 'Go type: GeneratorSafetyExitEvidence'
+                                  additionalProperties: true
+                                  nullable: true
                                 max_vusers:
                                   type: integer
                                   format: int64
@@ -176837,6 +177288,12 @@ paths:
                                   type: string
                                 restartable:
                                   type: boolean
+                                run_supervision_escalations_total:
+                                  type: integer
+                                  format: int64
+                                run_supervision_expirations_total:
+                                  type: integer
+                                  format: int64
                                 runtime_capacities:
                                   type: array
                                   items:
@@ -176868,6 +177325,12 @@ paths:
                                       - available
                                       - max_vusers
                                       - available_vusers
+                                safety_exits:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: GeneratorSafetyExitEvidence'
+                                    additionalProperties: true
                                 status:
                                   type: string
                                 supported_protocols:
@@ -176903,6 +177366,8 @@ paths:
                                 - max_vusers
                                 - memory_bytes
                                 - memory_limit_bytes
+                                - run_supervision_escalations_total
+                                - run_supervision_expirations_total
                                 - status
                                 - target
                           generator_shards:
@@ -177392,6 +177857,11 @@ paths:
                                   type: object
                                   additionalProperties:
                                     type: string
+                                last_safety_exit:
+                                  type: object
+                                  description: 'Go type: GeneratorSafetyExitEvidence'
+                                  additionalProperties: true
+                                  nullable: true
                                 max_vusers:
                                   type: integer
                                   format: int64
@@ -177426,6 +177896,12 @@ paths:
                                   type: string
                                 restartable:
                                   type: boolean
+                                run_supervision_escalations_total:
+                                  type: integer
+                                  format: int64
+                                run_supervision_expirations_total:
+                                  type: integer
+                                  format: int64
                                 runtime_capacities:
                                   type: array
                                   items:
@@ -177457,6 +177933,12 @@ paths:
                                       - available
                                       - max_vusers
                                       - available_vusers
+                                safety_exits:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: GeneratorSafetyExitEvidence'
+                                    additionalProperties: true
                                 status:
                                   type: string
                                 supported_protocols:
@@ -177492,6 +177974,8 @@ paths:
                                 - max_vusers
                                 - memory_bytes
                                 - memory_limit_bytes
+                                - run_supervision_escalations_total
+                                - run_supervision_expirations_total
                                 - status
                                 - target
                           generator_shards:
@@ -195907,6 +196391,32 @@ paths:
                               type: object
                               additionalProperties:
                                 type: string
+                            last_safety_exit:
+                              type: object
+                              properties:
+                                execution_generation:
+                                  type: integer
+                                  format: int64
+                                lifecycle_state:
+                                  type: string
+                                outstanding_executions:
+                                  type: integer
+                                  format: int64
+                                reason:
+                                  type: string
+                                requested_at:
+                                  type: string
+                                  format: date-time
+                                test_id:
+                                  type: string
+                              required:
+                                - execution_generation
+                                - lifecycle_state
+                                - outstanding_executions
+                                - reason
+                                - requested_at
+                                - test_id
+                              nullable: true
                             max_vusers:
                               type: integer
                               format: int64
@@ -195941,6 +196451,12 @@ paths:
                               type: string
                             restartable:
                               type: boolean
+                            run_supervision_escalations_total:
+                              type: integer
+                              format: int64
+                            run_supervision_expirations_total:
+                              type: integer
+                              format: int64
                             runtime_capacities:
                               type: array
                               items:
@@ -195972,6 +196488,11 @@ paths:
                                   - available
                                   - max_vusers
                                   - available_vusers
+                            safety_exits:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
                             status:
                               type: string
                             supported_protocols:
@@ -196007,6 +196528,8 @@ paths:
                             - max_vusers
                             - memory_bytes
                             - memory_limit_bytes
+                            - run_supervision_escalations_total
+                            - run_supervision_expirations_total
                             - status
                             - target
                       generator_shards:

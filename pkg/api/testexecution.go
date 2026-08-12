@@ -269,6 +269,12 @@ func (tr *TestRunner) prepareTestForExecutionWithOptionsAndExpectedTerm(id strin
 		tr.mu.Unlock()
 		return nil, err
 	}
+	if test := tr.tests[id]; test != nil {
+		if err := tr.validateGeneratorLossTolerance(test.Assignment); err != nil {
+			tr.mu.Unlock()
+			return nil, err
+		}
+	}
 	tr.mu.Unlock()
 	// A completed shakeout may still be waiting for its durable outcome write
 	// after a transient storage interruption. Finish that transition before any

@@ -56,6 +56,7 @@ type Assignment struct {
 	RedactionRules            []engine.RedactionRule
 	SecretBundle              map[string]string
 	SecretBundleID            string
+	RunSupervisionToken       []byte
 }
 
 type AssignmentResult struct {
@@ -65,8 +66,28 @@ type AssignmentResult struct {
 }
 
 type WorkCommitResult struct {
-	Accepted     bool
-	ErrorMessage string
+	Accepted            bool
+	ErrorMessage        string
+	RunSupervisionArmed bool
+	RunSupervisionTTL   time.Duration
+}
+
+type RunSupervisionClaim struct {
+	TestID                string
+	ExecutionGeneration   uint64
+	Token                 []byte
+	RequestedTTL          time.Duration
+	ExecutionLeaseOwnerID string
+}
+
+type RunSupervisionResult struct {
+	Accepted          bool
+	ContractVersion   uint32
+	CurrentGeneration uint64
+	GrantedTTL        time.Duration
+	ExpiresAt         time.Time
+	State             pb.RunSupervisionState
+	ErrorMessage      string
 }
 
 type VUserAdjustment struct {
@@ -76,6 +97,7 @@ type VUserAdjustment struct {
 	TargetVUsers        int32
 	RampDuration        time.Duration
 	RampSeconds         int32
+	RunSupervisionToken []byte
 }
 
 type AdjustmentResult struct {
@@ -88,6 +110,7 @@ type DurationAdjustment struct {
 	ExecutionGeneration   uint64
 	TargetDuration        time.Duration
 	TargetDurationSeconds int64
+	RunSupervisionToken   []byte
 }
 
 type DurationResult struct {
@@ -102,6 +125,7 @@ type PauseControl struct {
 	Pause               bool
 	OperationID         string
 	OperationSequence   uint64
+	RunSupervisionToken []byte
 }
 
 type PauseResult struct {
@@ -262,6 +286,12 @@ type StopResult struct {
 	PendingVUsers int32
 }
 
+const (
+	FeatureRunSupervisionV1  = "run_supervision_v1"
+	RunSupervisionContractV1 = uint32(1)
+	RunSupervisionTokenSize  = 32
+)
+
 type ArchiveArtifactRequest struct {
 	TestID string
 	Name   string
@@ -313,19 +343,34 @@ type ProtocolRuntimeCapacity struct {
 }
 
 type HeartbeatResponse struct {
-	GeneratorID        string
-	TimestampUnixMs    int64
-	TimestampUnixNano  int64
-	ActiveTestIDs      []string
-	Stats              GeneratorStats
-	AvailableCapacity  int32
-	CPULimitCores      float64
-	MemoryLimitBytes   int64
-	MaxVUsers          int32
-	Version            string
-	SupportedProtocols []string
-	CompatibleFeatures []string
-	RuntimeCapacities  []ProtocolRuntimeCapacity
+	GeneratorID                    string
+	TimestampUnixMs                int64
+	TimestampUnixNano              int64
+	ActiveTestIDs                  []string
+	Stats                          GeneratorStats
+	AvailableCapacity              int32
+	CPULimitCores                  float64
+	MemoryLimitBytes               int64
+	MaxVUsers                      int32
+	Version                        string
+	SupportedProtocols             []string
+	CompatibleFeatures             []string
+	RuntimeCapacities              []ProtocolRuntimeCapacity
+	RunSupervisionExpirationsTotal uint64
+	RunSupervisionEscalationsTotal uint64
+	LastSafetyExit                 *GeneratorSafetyExitEvidence
+	SafetyExits                    []GeneratorSafetyExitEvidence
+}
+
+// GeneratorSafetyExitEvidence is the durable, token-free terminal explanation
+// advertised by a generator after its process safety backstop was required.
+type GeneratorSafetyExitEvidence struct {
+	TestID                string    `json:"test_id"`
+	ExecutionGeneration   uint64    `json:"execution_generation"`
+	LifecycleState        string    `json:"lifecycle_state"`
+	Reason                string    `json:"reason"`
+	RequestedAt           time.Time `json:"requested_at"`
+	OutstandingExecutions int32     `json:"outstanding_executions"`
 }
 
 // FeatureEvacuationAssignmentStateV1 means AssignWork understands the
@@ -486,6 +531,37 @@ func (c *Client) ClaimTestExecutionEpoch(ctx context.Context, testID string, gen
 	return c.claimExecutionEpoch(ctx, generation, leaseOwnerID, ttl, testID)
 }
 
+func (c *Client) ClaimRunSupervision(ctx context.Context, claim RunSupervisionClaim) (RunSupervisionResult, error) {
+	if strings.TrimSpace(claim.TestID) == "" {
+		return RunSupervisionResult{}, fmt.Errorf("test id is required")
+	}
+	if len(claim.Token) != RunSupervisionTokenSize {
+		return RunSupervisionResult{}, fmt.Errorf("run supervision token must be %d bytes", RunSupervisionTokenSize)
+	}
+	if claim.RequestedTTL <= 0 || claim.RequestedTTL.Milliseconds() <= 0 {
+		return RunSupervisionResult{}, fmt.Errorf("run supervision ttl must be positive")
+	}
+	ack, err := c.rpc.ClaimRunSupervision(ctx, &pb.RunSupervisionClaim{
+		TestId:                   strings.TrimSpace(claim.TestID),
+		ExecutionGeneration:      claim.ExecutionGeneration,
+		RunSupervisionToken:      append([]byte(nil), claim.Token...),
+		RequestedTtlMilliseconds: claim.RequestedTTL.Milliseconds(),
+		ExecutionLeaseOwnerId:    strings.TrimSpace(claim.ExecutionLeaseOwnerID),
+	})
+	if err != nil {
+		return RunSupervisionResult{}, err
+	}
+	return RunSupervisionResult{
+		Accepted:          ack.GetAccepted(),
+		ContractVersion:   ack.GetContractVersion(),
+		CurrentGeneration: ack.GetCurrentGeneration(),
+		GrantedTTL:        time.Duration(ack.GetGrantedTtlMilliseconds()) * time.Millisecond,
+		ExpiresAt:         time.UnixMilli(ack.GetExpiresAtUnixMs()),
+		State:             ack.GetState(),
+		ErrorMessage:      ack.GetErrorMessage(),
+	}, nil
+}
+
 func (c *Client) claimExecutionEpoch(ctx context.Context, generation uint64, leaseOwnerID string, ttl time.Duration, testID string) (ExecutionEpochResult, error) {
 	if ttl <= 0 {
 		return ExecutionEpochResult{}, fmt.Errorf("execution epoch ttl must be positive")
@@ -535,7 +611,19 @@ func (c *Client) CommitWork(ctx context.Context, testID string, generation uint6
 }
 
 func (c *Client) CommitWorkAt(ctx context.Context, testID string, generation uint64, startAt time.Time) (WorkCommitResult, error) {
+	return c.commitWorkAt(ctx, testID, generation, startAt, nil)
+}
+
+func (c *Client) CommitWorkSupervisedAt(ctx context.Context, testID string, generation uint64, startAt time.Time, token []byte) (WorkCommitResult, error) {
+	if len(token) != RunSupervisionTokenSize {
+		return WorkCommitResult{}, fmt.Errorf("run supervision token must be %d bytes", RunSupervisionTokenSize)
+	}
+	return c.commitWorkAt(ctx, testID, generation, startAt, token)
+}
+
+func (c *Client) commitWorkAt(ctx context.Context, testID string, generation uint64, startAt time.Time, token []byte) (WorkCommitResult, error) {
 	request := &pb.WorkCommitRequest{TestId: testID, ExecutionGeneration: generation}
+	request.RunSupervisionToken = append([]byte(nil), token...)
 	if !startAt.IsZero() {
 		clockEstimate, err := c.ensureCoordinatedStartClockEstimate(ctx)
 		if err != nil {
@@ -556,7 +644,12 @@ func (c *Client) CommitWorkAt(ctx context.Context, testID string, generation uin
 	if err != nil {
 		return WorkCommitResult{}, err
 	}
-	return WorkCommitResult{Accepted: ack.GetAccepted(), ErrorMessage: ack.GetErrorMessage()}, nil
+	return WorkCommitResult{
+		Accepted:            ack.GetAccepted(),
+		ErrorMessage:        ack.GetErrorMessage(),
+		RunSupervisionArmed: ack.GetRunSupervisionArmed(),
+		RunSupervisionTTL:   time.Duration(ack.GetRunSupervisionTtlMilliseconds()) * time.Millisecond,
+	}, nil
 }
 
 func (c *Client) observeGeneratorClock(controllerSentAt, controllerReceivedAt, generatorAt time.Time) {
@@ -641,6 +734,7 @@ func (c *Client) AdjustVUsers(ctx context.Context, adjustment VUserAdjustment) (
 		TargetVusers:        adjustment.TargetVUsers,
 		RampSeconds:         adjustment.RampSeconds,
 		RampDuration:        preciseDurationProto(adjustment.RampDuration, int64(adjustment.RampSeconds)),
+		RunSupervisionToken: append([]byte(nil), adjustment.RunSupervisionToken...),
 	})
 	if err != nil {
 		return AdjustmentResult{}, err
@@ -659,6 +753,7 @@ func (c *Client) AdjustDuration(ctx context.Context, adjustment DurationAdjustme
 		ExecutionGeneration:   adjustment.ExecutionGeneration,
 		TargetDurationSeconds: compatibilityDurationSeconds(targetDuration),
 		TargetDuration:        preciseDurationProto(targetDuration, 0),
+		RunSupervisionToken:   append([]byte(nil), adjustment.RunSupervisionToken...),
 	})
 	if err != nil {
 		return DurationResult{}, err
@@ -681,6 +776,7 @@ func (c *Client) SetPaused(ctx context.Context, control PauseControl) (PauseResu
 		Pause:               control.Pause,
 		OperationId:         control.OperationID,
 		OperationSequence:   control.OperationSequence,
+		RunSupervisionToken: append([]byte(nil), control.RunSupervisionToken...),
 	})
 	if err != nil {
 		return PauseResult{}, err
@@ -788,7 +884,14 @@ func (c *Client) StopTest(ctx context.Context, testID string, graceful bool) (St
 }
 
 func (c *Client) StopTestAtGeneration(ctx context.Context, testID string, graceful bool, generation uint64) (StopResult, error) {
-	ack, err := c.rpc.StopTest(ctx, &pb.StopRequest{TestId: testID, Graceful: graceful, ExecutionGeneration: generation})
+	return c.StopTestAtGenerationWithToken(ctx, testID, graceful, generation, nil)
+}
+
+func (c *Client) StopTestAtGenerationWithToken(ctx context.Context, testID string, graceful bool, generation uint64, token []byte) (StopResult, error) {
+	ack, err := c.rpc.StopTest(ctx, &pb.StopRequest{
+		TestId: testID, Graceful: graceful, ExecutionGeneration: generation,
+		RunSupervisionToken: append([]byte(nil), token...),
+	})
 	if err != nil {
 		return StopResult{}, err
 	}
@@ -941,21 +1044,72 @@ func (s *HeartbeatStream) Receive() (HeartbeatResponse, error) {
 	}
 	stats := generatorStatsFromProto(pong.GetStats())
 
+	lastSafetyExit := generatorSafetyExitEvidenceFromProto(pong.GetLastSafetyExit())
+	safetyExits := generatorSafetyExitEvidenceListFromProto(pong.GetSafetyExits())
+	if len(safetyExits) == 0 && lastSafetyExit != nil {
+		safetyExits = []GeneratorSafetyExitEvidence{*lastSafetyExit}
+	}
+	if lastSafetyExit == nil && len(safetyExits) > 0 {
+		copy := safetyExits[len(safetyExits)-1]
+		lastSafetyExit = &copy
+	}
+
 	return HeartbeatResponse{
-		GeneratorID:        pong.GetGeneratorId(),
-		TimestampUnixMs:    pong.GetTimestampUnixMs(),
-		TimestampUnixNano:  pong.GetTimestampUnixNano(),
-		ActiveTestIDs:      pong.GetActiveTestIds(),
-		Stats:              stats,
-		AvailableCapacity:  pong.GetAvailableCapacity(),
-		CPULimitCores:      pong.GetCpuLimitCores(),
-		MemoryLimitBytes:   pong.GetMemoryLimitBytes(),
-		MaxVUsers:          pong.GetMaxVusers(),
-		Version:            pong.GetVersion(),
-		SupportedProtocols: append([]string(nil), pong.GetSupportedProtocols()...),
-		CompatibleFeatures: append([]string(nil), pong.GetCompatibleFeatures()...),
-		RuntimeCapacities:  protocolRuntimeCapacitiesFromProto(pong.GetRuntimeCapacities()),
+		GeneratorID:                    pong.GetGeneratorId(),
+		TimestampUnixMs:                pong.GetTimestampUnixMs(),
+		TimestampUnixNano:              pong.GetTimestampUnixNano(),
+		ActiveTestIDs:                  pong.GetActiveTestIds(),
+		Stats:                          stats,
+		AvailableCapacity:              pong.GetAvailableCapacity(),
+		CPULimitCores:                  pong.GetCpuLimitCores(),
+		MemoryLimitBytes:               pong.GetMemoryLimitBytes(),
+		MaxVUsers:                      pong.GetMaxVusers(),
+		Version:                        pong.GetVersion(),
+		SupportedProtocols:             append([]string(nil), pong.GetSupportedProtocols()...),
+		CompatibleFeatures:             append([]string(nil), pong.GetCompatibleFeatures()...),
+		RuntimeCapacities:              protocolRuntimeCapacitiesFromProto(pong.GetRuntimeCapacities()),
+		RunSupervisionExpirationsTotal: pong.GetRunSupervisionExpirationsTotal(),
+		RunSupervisionEscalationsTotal: pong.GetRunSupervisionEscalationsTotal(),
+		LastSafetyExit:                 lastSafetyExit,
+		SafetyExits:                    safetyExits,
 	}, nil
+}
+
+func generatorSafetyExitEvidenceFromProto(value *pb.GeneratorSafetyExitEvidence) *GeneratorSafetyExitEvidence {
+	if value == nil {
+		return nil
+	}
+	requestedAt := time.Time{}
+	if raw := strings.TrimSpace(value.GetRequestedAtRfc3339Nano()); raw != "" {
+		if parsed, err := time.Parse(time.RFC3339Nano, raw); err == nil {
+			requestedAt = parsed.UTC()
+		}
+	}
+	if requestedAt.IsZero() && value.GetRequestedAtUnixMs() > 0 {
+		requestedAt = time.UnixMilli(value.GetRequestedAtUnixMs()).UTC()
+	}
+	return &GeneratorSafetyExitEvidence{
+		TestID:                value.GetTestId(),
+		ExecutionGeneration:   value.GetExecutionGeneration(),
+		LifecycleState:        value.GetLifecycleState(),
+		Reason:                value.GetReason(),
+		RequestedAt:           requestedAt,
+		OutstandingExecutions: value.GetOutstandingExecutions(),
+	}
+}
+
+func generatorSafetyExitEvidenceListFromProto(values []*pb.GeneratorSafetyExitEvidence) []GeneratorSafetyExitEvidence {
+	if len(values) == 0 {
+		return nil
+	}
+	out := make([]GeneratorSafetyExitEvidence, 0, len(values))
+	for _, value := range values {
+		converted := generatorSafetyExitEvidenceFromProto(value)
+		if converted != nil {
+			out = append(out, *converted)
+		}
+	}
+	return out
 }
 
 func protocolRuntimeCapacitiesFromProto(values []*pb.ProtocolRuntimeCapacity) []ProtocolRuntimeCapacity {
@@ -995,6 +1149,7 @@ func (s *MetricsStream) SendPause(control PauseControl) error {
 				Pause:               control.Pause,
 				OperationId:         control.OperationID,
 				OperationSequence:   control.OperationSequence,
+				RunSupervisionToken: append([]byte(nil), control.RunSupervisionToken...),
 			},
 		},
 	})
@@ -1175,6 +1330,7 @@ func toProtoAssignment(assignment Assignment) *pb.WorkAssignment {
 		RedactionRules:            redactionRulesToProto(assignment.RedactionRules),
 		SecretBundle:              cloneSecretBundle(assignment.SecretBundle),
 		SecretBundleId:            assignment.SecretBundleID,
+		RunSupervisionToken:       append([]byte(nil), assignment.RunSupervisionToken...),
 	}
 }
 

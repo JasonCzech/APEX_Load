@@ -46,6 +46,9 @@ func TestPrometheusGraphsRouteUsesViewerAccess(t *testing.T) {
 	if len(requirement.GlobalRoles) != 4 || requirement.GlobalRoles[0] != RoleViewer {
 		t.Fatalf("GlobalRoles = %#v, want viewer/editor/project/system roles", requirement.GlobalRoles)
 	}
+	if !requirement.RequireUnrestrictedViewer {
+		t.Fatal("unfiltered Prometheus graphs must reject a Local Login baseline viewer")
+	}
 }
 
 func TestRoutePathTemplateMatches(t *testing.T) {

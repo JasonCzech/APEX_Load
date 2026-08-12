@@ -66,7 +66,7 @@ only does the first:
 1. The access entry it creates maps the controller role into the cluster as a
    member of the `apexload-controllers` group.
 2. That group still has no permissions until a RoleBinding grants them. Apply
-   `deployments/k8s/eks/restart-controls.example.yaml` **and**
+   `deployments/k8s/eks/restart-controls.yaml` **and**
    `cluster-access.example.yaml` to bind the least-privilege Role to the group.
 
 No AWS-managed access policy is attached deliberately: `AmazonEKSAdminPolicy`

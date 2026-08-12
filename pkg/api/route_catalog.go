@@ -149,7 +149,7 @@ var legacyRouteCatalogAuthRules = []apiRouteAuthRule{
 	routeAuth(http.MethodGet, "/api/v1/integrations/github/connection", accessRequirement{AuthenticatedOnly: true}),
 	routeAuth(http.MethodDelete, "/api/v1/integrations/github/connection", accessRequirement{AuthenticatedOnly: true}),
 	routeAuth(http.MethodGet, "/api/v1/monitoring/packs", viewerGlobalAccess()),
-	routeAuth(http.MethodGet, "/api/v1/monitoring/prometheus/graphs", viewerGlobalAccess()),
+	routeAuth(http.MethodGet, "/api/v1/monitoring/prometheus/graphs", unrestrictedViewerGlobalAccess()),
 	// Imported Grafana dashboards.
 	routeAuth(http.MethodGet, "/api/v1/monitoring/dashboards/import/grafana/support-matrix", viewerGlobalAccess()),
 	routeAuth(http.MethodPost, "/api/v1/monitoring/dashboards/import/grafana", editorImportAccess(resolveImportProjectIDFromJSONOrForm, grafanaDashboardImportMaxBodyBytes)),
@@ -164,7 +164,7 @@ var legacyRouteCatalogAuthRules = []apiRouteAuthRule{
 	routeAuth(http.MethodDelete, "/api/v1/monitoring/dashboards/{id}", editorProjectAccess(resolveGrafanaDashboardProjectID)),
 	routeAuth(http.MethodGet, "/api/v1/monitoring/dashboards/{id}/panels", viewerProjectAccess(resolveGrafanaDashboardProjectID)),
 	routeAuth(http.MethodGet, "/api/v1/reports/profiles", viewerGlobalAccess()),
-	routeAuth(http.MethodGet, "/api/v1/results/imports", viewerGlobalAccess()),
+	routeAuth(http.MethodGet, "/api/v1/results/imports", unrestrictedViewerGlobalAccess()),
 	routeAuth(http.MethodGet, "/api/v1/library/capabilities", viewerGlobalAccess()),
 	routeAuth(http.MethodGet, "/api/v1/ai/authoring/contract", viewerGlobalAccess()),
 
@@ -390,6 +390,16 @@ func withRouteServiceAccountScope(method string, path string, requirement access
 
 func viewerGlobalAccess() accessRequirement {
 	return accessRequirement{GlobalRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}}
+}
+
+// unrestrictedViewerGlobalAccess marks a read surface that returns data across
+// projects when no concrete scope is selected. Local Test Login personas whose
+// global viewer role is only a UI baseline must select one of their bound
+// projects; established auth providers retain their global-viewer behavior.
+func unrestrictedViewerGlobalAccess() accessRequirement {
+	requirement := viewerGlobalAccess()
+	requirement.RequireUnrestrictedViewer = true
+	return requirement
 }
 
 func systemAdminAccess() accessRequirement {

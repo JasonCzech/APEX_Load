@@ -1,6 +1,7 @@
 apiVersion: v1
 kind: Service
 {{- $controllerAddr := trim (default ":8080" .Values.controller.addr) }}
+{{- $restartControls := include "apexload.restartControls" . | fromJson }}
 {{- $controllerHTTPPort := regexFind "[0-9]+$" $controllerAddr }}
 {{- if not $controllerHTTPPort }}
 {{- fail "controller.addr must include a numeric port, for example :8080 or 127.0.0.1:8080" }}
@@ -142,10 +143,12 @@ spec:
 {{- if .Values.workloadIdentity.enabled }}
         azure.workload.identity/use: "true"
 {{- end }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
     spec:
       serviceAccountName: {{ .Values.controller.serviceAccountName }}
       terminationGracePeriodSeconds: 45
-      automountServiceAccountToken: false
+      automountServiceAccountToken: {{ $restartControls.enabled }}
       securityContext:
         runAsNonRoot: true
         runAsUser: 65532
@@ -178,6 +181,22 @@ spec:
             - name: metrics
               containerPort: 9091
           env:
+            - name: APEXLOAD_K8S_RESTART_ENABLED
+              value: {{ $restartControls.enabled | quote }}
+{{- if $restartControls.enabled }}
+            - name: APEXLOAD_K8S_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: APEXLOAD_K8S_CONTROLLER_DEPLOYMENT
+              value: {{ $restartControls.controllerDeployment | quote }}
+            - name: APEXLOAD_K8S_GENERATOR_STATEFULSET
+              value: {{ $restartControls.generatorStatefulSet | quote }}
+            - name: APEXLOAD_K8S_GENERATOR_SELECTOR
+              value: {{ $restartControls.generatorSelector | quote }}
+            - name: APEXLOAD_K8S_RESTART_ALLOW_FORCE
+              value: {{ $restartControls.allowForce | quote }}
+{{- end }}
             - name: APEXLOAD_ENV
               value: production
             - name: APEXLOAD_ADDR

@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"sync"
 	"testing"
 	"time"
 
@@ -11,8 +12,9 @@ import (
 )
 
 type blockingObjectRepositoryContextCASStore struct {
-	storage.Store
+	*storage.SQLiteStore
 	started chan struct{}
+	once    sync.Once
 }
 
 type objectRepositoryContextCASOnlyStore struct {
@@ -24,9 +26,26 @@ func (s *objectRepositoryContextCASOnlyStore) UpdateObjectRepositoryIfUnchangedC
 }
 
 func (s *blockingObjectRepositoryContextCASStore) UpdateObjectRepositoryIfUnchangedContext(ctx context.Context, _ *storage.ObjectRepository, _ time.Time) (bool, error) {
-	close(s.started)
+	s.signalStarted()
 	<-ctx.Done()
 	return false, ctx.Err()
+}
+
+func (s *blockingObjectRepositoryContextCASStore) UpdateObjectRepositoryIfUnchangedContextAndLeaseTermHeld(
+	ctx context.Context,
+	_ *storage.ObjectRepository,
+	_ time.Time,
+	_ string,
+	_ string,
+	_ uint64,
+) (bool, error) {
+	s.signalStarted()
+	<-ctx.Done()
+	return false, ctx.Err()
+}
+
+func (s *blockingObjectRepositoryContextCASStore) signalStarted() {
+	s.once.Do(func() { close(s.started) })
 }
 
 func healEvent(actionName, healed, kind string, confidence int) engine.ReplayActionEvent {
@@ -695,8 +714,8 @@ func TestPersistSelfHealToRepositoryCancelsInFlightCASWhenExecutionEpochEnds(t *
 		t.Fatalf("save repo: %v", err)
 	}
 	blockingStore := &blockingObjectRepositoryContextCASStore{
-		Store:   server.store,
-		started: make(chan struct{}),
+		SQLiteStore: server.store.(*storage.SQLiteStore),
+		started:     make(chan struct{}),
 	}
 	server.store = blockingStore
 	script := &dsl.Script{ProjectID: "unassigned", Protocol: "browser", Actions: []dsl.Action{{

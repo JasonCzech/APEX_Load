@@ -215,16 +215,47 @@ func (s *Server) handleGetFleetProvisioner(w http.ResponseWriter, r *http.Reques
 
 func (s *Server) handleGetFleetCapacity(w http.ResponseWriter, r *http.Request) {
 	projectID := strings.TrimSpace(r.URL.Query().Get("project_id"))
+	projectID = authorizedProjectOr(r, projectID)
 	region := strings.TrimSpace(r.URL.Query().Get("region"))
 	protocolName := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("protocol")))
 	capacity := buildFleetCapacity(s.systemInventory(r.Context()), s.runner.GetSystemSettings(), s.runner.listOperationalTestSnapshots(), projectID, region, protocolName)
+	if authorizedProjectID, scoped := authorizedProjectFromRequest(r); scoped {
+		capacity.ProjectSlots = fleetProjectSlotsForProject(capacity.ProjectSlots, authorizedProjectID)
+	}
 	writeJSON(w, http.StatusOK, capacity)
 }
 
+func fleetProjectSlotsForProject(slots []FleetProjectSlotAccounting, projectID string) []FleetProjectSlotAccounting {
+	projectID = normalizeProjectID(projectID)
+	filtered := make([]FleetProjectSlotAccounting, 0, 1)
+	for _, slot := range slots {
+		if normalizeProjectID(slot.ProjectID) == projectID {
+			filtered = append(filtered, slot)
+		}
+	}
+	return filtered
+}
+
 func (s *Server) handleGetFleetLoadZones(w http.ResponseWriter, r *http.Request) {
+	projectID := authorizedProjectOr(r, strings.TrimSpace(r.URL.Query().Get("project_id")))
 	protocolName := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("protocol")))
-	zones := buildFleetLoadZones(s.systemInventory(r.Context()), s.runner.listOperationalTestSnapshots(), protocolName)
+	tests := s.runner.listOperationalTestSnapshots()
+	if projectID != "" {
+		tests = fleetTestsForProject(tests, projectID)
+	}
+	zones := buildFleetLoadZones(s.systemInventory(r.Context()), tests, protocolName)
 	writeJSON(w, http.StatusOK, FleetLoadZonesResponse{LoadZones: zones, Count: len(zones)})
+}
+
+func fleetTestsForProject(tests []*ManagedTest, projectID string) []*ManagedTest {
+	projectID = normalizeProjectID(projectID)
+	filtered := make([]*ManagedTest, 0, len(tests))
+	for _, test := range tests {
+		if test != nil && normalizeProjectID(test.ProjectID) == projectID {
+			filtered = append(filtered, test)
+		}
+	}
+	return filtered
 }
 
 func (s *Server) handleSetGeneratorDrainState(w http.ResponseWriter, r *http.Request) {

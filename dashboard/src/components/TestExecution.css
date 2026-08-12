@@ -2179,7 +2179,7 @@
   padding: 8px;
   border: 1px solid var(--border);
   border-radius: 8px;
-  background: color-mix(in srgb, var(--bg-card) 96%, transparent);
+  background: var(--dropdown-menu-bg);
   box-shadow: var(--shadow-md);
   backdrop-filter: blur(12px);
 }

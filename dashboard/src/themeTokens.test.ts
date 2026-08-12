@@ -4,10 +4,13 @@ import { loadCssSources } from '../scripts/load-css-sources.mjs'
 
 const cssFiles = await loadCssSources(new URL('.', import.meta.url))
 const indexCss = cssFiles['index.css']
+const pagesCss = cssFiles['components/Pages.css']
 
-if (!indexCss) {
-  throw new Error('Missing index.css in dashboard CSS modules')
+if (!indexCss || !pagesCss) {
+  throw new Error('Missing dashboard theme CSS modules')
 }
+
+type RGB = [number, number, number]
 
 function themeBlock(selector: string): string {
   const start = indexCss.indexOf(`${selector} {`)
@@ -32,6 +35,38 @@ function relativeLuminance(hex: string): number {
 function contrast(left: string, right: string): number {
   const leftLuminance = relativeLuminance(left)
   const rightLuminance = relativeLuminance(right)
+  return (Math.max(leftLuminance, rightLuminance) + 0.05) / (Math.min(leftLuminance, rightLuminance) + 0.05)
+}
+
+function rgb(hex: string): RGB {
+  const channels = hex.slice(1).match(/.{2}/g)?.map(value => Number.parseInt(value, 16)) || []
+  if (channels.length !== 3) throw new Error(`Invalid hexadecimal color ${hex}`)
+  return channels as RGB
+}
+
+function rgbaToken(block: string, name: string): { color: RGB; alpha: number } {
+  const match = block.match(new RegExp(`--${name}:\\s*rgba\\(\\s*(\\d+)\\s*,\\s*(\\d+)\\s*,\\s*(\\d+)\\s*,\\s*([\\d.]+)\\s*\\)`))
+  if (!match) throw new Error(`Missing rgba --${name} token`)
+  return {
+    color: [Number(match[1]), Number(match[2]), Number(match[3])],
+    alpha: Number(match[4]),
+  }
+}
+
+function composite(foreground: RGB, background: RGB, alpha: number): RGB {
+  return foreground.map((channel, index) => channel * alpha + background[index] * (1 - alpha)) as RGB
+}
+
+function rgbLuminance(color: RGB): number {
+  const [red, green, blue] = color
+    .map(channel => channel / 255)
+    .map(channel => channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4)
+  return 0.2126 * red + 0.7152 * green + 0.0722 * blue
+}
+
+function rgbContrast(left: RGB, right: RGB): number {
+  const leftLuminance = rgbLuminance(left)
+  const rightLuminance = rgbLuminance(right)
   return (Math.max(leftLuminance, rightLuminance) + 0.05) / (Math.min(leftLuminance, rightLuminance) + 0.05)
 }
 
@@ -106,5 +141,28 @@ describe('dashboard theme tokens', () => {
     expect(contrast(muted, secondaryBackground)).toBeGreaterThanOrEqual(4.5)
     expect(contrast(accent, secondaryBackground)).toBeGreaterThanOrEqual(4.5)
     expect(contrast(accentContrast, accent)).toBeGreaterThanOrEqual(4.5)
+  })
+
+  it('uses the accessible secondary text token for infrastructure readiness summaries', () => {
+    const rule = pagesCss.match(/\.monitor-infrastructure-summary\s*\{([\s\S]*?)\}/)?.[1] || ''
+    expect(rule).toContain('color: var(--text-secondary)')
+  })
+
+  it.each([
+    [':root'],
+    [":root[data-theme='light']"],
+    [":root[data-theme='solarized-dark']"],
+    [":root[data-theme='solarized-light']"],
+    [":root[data-theme='monokai-dimmed']"],
+  ])('%s keeps infrastructure summaries legible over their composited row background', (selector) => {
+    const block = themeBlock(selector)
+    const primaryBackground = rgb(token(block, 'bg-primary'))
+    const card = rgbaToken(block, 'bg-card')
+    const row = rgbaToken(block, 'subtle-fill')
+    const cardBackground = composite(card.color, primaryBackground, card.alpha)
+    const rowBackground = composite(row.color, cardBackground, row.alpha)
+    const summaryText = rgb(token(block, 'text-secondary'))
+
+    expect(rgbContrast(summaryText, rowBackground)).toBeGreaterThanOrEqual(4.5)
   })
 })

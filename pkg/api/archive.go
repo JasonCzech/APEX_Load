@@ -779,8 +779,18 @@ func cloneGeneratorInventoryEntries(entries []GeneratorInventoryEntry) []Generat
 		cloned[index].CompatibleFeatures = append([]string(nil), entries[index].CompatibleFeatures...)
 		cloned[index].RuntimeCapacities = cloneProtocolRuntimeCapacities(entries[index].RuntimeCapacities)
 		cloned[index].CompatibilityIssues = append([]string(nil), entries[index].CompatibilityIssues...)
+		cloned[index].LastSafetyExit = cloneGeneratorSafetyExitEvidence(entries[index].LastSafetyExit)
+		cloned[index].SafetyExits = append([]GeneratorSafetyExitEvidence(nil), entries[index].SafetyExits...)
 	}
 	return cloned
+}
+
+func cloneGeneratorSafetyExitEvidence(value *GeneratorSafetyExitEvidence) *GeneratorSafetyExitEvidence {
+	if value == nil {
+		return nil
+	}
+	copy := *value
+	return &copy
 }
 
 type archiveActionSummaryBucket struct {

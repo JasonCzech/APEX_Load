@@ -25,7 +25,7 @@ type DesktopStatusResponse struct {
 	RemoteLibraries map[string]any   `json:"remote_libraries"`
 }
 
-func (s *Server) handleDesktopStatus(w http.ResponseWriter, _ *http.Request) {
+func (s *Server) handleDesktopStatus(w http.ResponseWriter, r *http.Request) {
 	statusCounts := map[string]int{}
 	remoteCount := 0
 	s.libraryMu.Lock()
@@ -56,7 +56,7 @@ func (s *Server) handleDesktopStatus(w http.ResponseWriter, _ *http.Request) {
 	recorderStatus := map[string]any{
 		"proxy_addr": s.recorder.ProxyAddr(),
 	}
-	if active := s.recorder.ActiveSessionSummary(); active != nil {
+	if active := s.visibleRecorderSessionForRequest(r, s.recorder.ActiveSessionSummary(), ""); active != nil {
 		recorderStatus["active_session_id"] = active.ID
 		recorderStatus["active_session_name"] = active.Name
 		recorderStatus["active_session_status"] = active.Status

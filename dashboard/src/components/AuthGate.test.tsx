@@ -15,6 +15,11 @@ type ReadyAuthState = Extract<AuthStatusState, { status: "ready" }>["auth"];
 type BridgeWindow = typeof window & {
   go?: { main?: { App?: WailsDesktopBridge } };
 };
+
+function setInputValue(input: HTMLInputElement, value: string) {
+  Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")?.set?.call(input, value);
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+}
 (
   globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }
 ).IS_REACT_ACT_ENVIRONMENT = true;
@@ -106,6 +111,157 @@ describe("AuthGate", () => {
 
     expect(container.textContent).toContain("Protected content");
     expect(container.textContent).not.toContain("Checking access");
+  });
+
+  it("signs in with a visible local test persona form", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ authenticated: true }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    const changed = vi.fn();
+    await act(async () => {
+      root.render(
+        <AuthGate
+          state={readyState({ enabled: true, mode: "local", authenticated: false, login_url: "/api/v1/auth/login" })}
+          onAuthenticationChanged={changed}
+        >
+          <div>Protected content</div>
+        </AuthGate>,
+      );
+    });
+
+    expect(container.textContent).toContain("admin/admin");
+    expect(container.textContent).toContain("domainadmin/domainadmin");
+    expect(container.textContent).toContain("Read-only default workspace");
+    const inputs = container.querySelectorAll<HTMLInputElement>("input");
+    await act(async () => {
+      setInputValue(inputs[0], "dev");
+      setInputValue(inputs[1], "dev");
+    });
+    await act(async () => {
+      container.querySelector("form")?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      `${API_ORIGIN}/api/v1/auth/login`,
+      expect.objectContaining({ method: "POST", body: JSON.stringify({ username: "dev", password: "dev" }) }),
+    );
+    expect(changed).toHaveBeenCalledOnce();
+  });
+
+  it("keeps the local login form available and reports generic failures", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ error: "invalid username or password" }), {
+        status: 401,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    await act(async () => {
+      root.render(
+        <AuthGate state={readyState({ enabled: true, mode: "local", authenticated: false })}>
+          <div>Protected content</div>
+        </AuthGate>,
+      );
+    });
+    const inputs = container.querySelectorAll<HTMLInputElement>("input");
+    await act(async () => {
+      setInputValue(inputs[0], "unknown");
+      setInputValue(inputs[1], "wrong");
+    });
+    await act(async () => {
+      container.querySelector("form")?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    });
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain("invalid username or password");
+    expect(container.querySelector("form")).not.toBeNull();
+  });
+
+  it("keeps a blocked local session visible when clearing it fails", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ error: "session store is unavailable" }), {
+        status: 503,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    const changed = vi.fn();
+    await act(async () => {
+      root.render(
+        <AuthGate
+          state={readyState({
+            enabled: true,
+            mode: "local",
+            authenticated: false,
+            session_status: "disabled",
+            logout_url: "/api/v1/auth/logout",
+            logout_csrf_token: "local-csrf-token",
+          })}
+          onAuthenticationChanged={changed}
+        >
+          <div>Protected content</div>
+        </AuthGate>,
+      );
+    });
+
+    const clearSession = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent === "Clear current local session",
+    );
+    await act(async () => {
+      clearSession?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      resolveApiResourceUrl("/api/v1/auth/logout", API_ORIGIN),
+      expect.objectContaining({
+        method: "POST",
+        credentials: "include",
+        headers: expect.any(Headers),
+      }),
+    );
+    expect(changed).not.toHaveBeenCalled();
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+      "Unable to clear the current session: session store is unavailable",
+    );
+    expect(clearSession?.hasAttribute("disabled")).toBe(false);
+  });
+
+  it("reloads authentication providers after clearing a blocked local session", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ redirect_url: "/" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    const changed = vi.fn();
+    await act(async () => {
+      root.render(
+        <AuthGate
+          state={readyState({
+            enabled: true,
+            mode: "local",
+            authenticated: false,
+            session_status: "revoked",
+            logout_url: "/api/v1/auth/logout",
+            logout_csrf_token: "local-csrf-token",
+          })}
+          onAuthenticationChanged={changed}
+        >
+          <div>Protected content</div>
+        </AuthGate>,
+      );
+    });
+
+    const clearSession = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent === "Clear current local session",
+    );
+    await act(async () => {
+      clearSession?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    expect(changed).toHaveBeenCalledOnce();
+    expect(container.querySelector('[role="alert"]')).toBeNull();
   });
 
   it("blocks the dashboard with OIDC-specific copy when native OIDC is enabled without a session", async () => {
@@ -234,6 +390,40 @@ describe("AuthGate", () => {
 
     expect(container.querySelector('[role="alert"]')?.textContent).toContain(
       "needs the embedded workspace",
+    );
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+      "Local Test Login",
+    );
+  });
+
+  it("directs blocked native actions back to the embedded local login", async () => {
+    let desktopHandlers: DesktopShellEventHandlers | null = null;
+    (window as BridgeWindow).go = { main: { App: {} } };
+    await act(async () => {
+      root.render(
+        <AuthGate
+          state={readyState({
+            enabled: true,
+            mode: "local",
+            authenticated: false,
+          })}
+          onDesktopHandlersChange={(handlers) => {
+            desktopHandlers = handlers;
+          }}
+        >
+          <div>Protected content</div>
+        </AuthGate>,
+      );
+    });
+
+    const registeredHandlers = desktopHandlers as DesktopShellEventHandlers | null;
+    expect(registeredHandlers?.onMenuAction).toBeTypeOf("function");
+    await act(async () => {
+      await registeredHandlers?.onMenuAction?.("new-test");
+    });
+
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+      "Sign in with Local Test Login here",
     );
   });
 

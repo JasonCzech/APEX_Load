@@ -9,6 +9,8 @@ import {
 } from './App'
 import {
   appendProjectTelemetryDiagnostic,
+  dashboardSnapshotAudience,
+  isCurrentApplicationCreateScope,
   isCurrentCatalogRequest,
   isCurrentRepositoryRequest,
   isProjectScopedMessageCurrent,
@@ -16,7 +18,7 @@ import {
   resolveApplicationCreateTarget,
   telemetryDiagnosticsForProject,
 } from './appProjectScope'
-import type { Domain, Project, TelemetryDiagnosticEntry } from './types'
+import type { DashboardAuthStatus, Domain, Project, TelemetryDiagnosticEntry } from './types'
 import type { ProjectContextValue } from './hooks/projectContext'
 import type { ApplicationContextValue } from './hooks/applicationContext'
 import { useProject } from './hooks/useProject'
@@ -51,6 +53,26 @@ function diagnostic(testID: string, summary: string): TelemetryDiagnosticEntry {
 }
 
 describe('App project-scoped state', () => {
+  it('uses active domain, repository, and project administrator roles for the dashboard audience', () => {
+    const authStatus: DashboardAuthStatus = {
+      enabled: true,
+      mode: 'local',
+      authenticated: true,
+      user: {
+        subject: 'local:domainadmin',
+        global_roles: ['viewer'],
+        domain_roles: { 'domain-a': ['project_admin'] },
+        application_repository_roles: { 'repository-b': ['project_admin'] },
+        project_roles: { 'project-c': ['project_admin'] },
+      },
+    }
+
+    expect(dashboardSnapshotAudience(authStatus, 'admin', undefined, 'domain-a')).toBe('admin')
+    expect(dashboardSnapshotAudience(authStatus, 'admin', undefined, 'domain-b', 'repository-b')).toBe('admin')
+    expect(dashboardSnapshotAudience(authStatus, 'admin', 'project-c', 'domain-b')).toBe('admin')
+    expect(dashboardSnapshotAudience(authStatus, 'admin', 'project-b', 'domain-b', 'repository-a')).toBe('user')
+  })
+
   it('does not retain a project from the previous domain when the active domain has no projects', () => {
     const emptyDomain = { ...domainA, id: 'domain-empty', name: 'Empty Domain' }
 
@@ -160,6 +182,17 @@ describe('App project-scoped state', () => {
   it('rejects out-of-order global catalog responses', () => {
     expect(isCurrentCatalogRequest(3, 3)).toBe(true)
     expect(isCurrentCatalogRequest(2, 3)).toBe(false)
+  })
+
+  it('rejects an application create completion after the workspace project changes', () => {
+    expect(isCurrentApplicationCreateScope(
+      { projectId: 'project-a', generation: 4 },
+      { projectId: 'project-a', generation: 4 },
+    )).toBe(true)
+    expect(isCurrentApplicationCreateScope(
+      { projectId: 'project-a', generation: 4 },
+      { projectId: 'project-b', generation: 5 },
+    )).toBe(false)
   })
 
   it('partitions telemetry diagnostics by project', () => {

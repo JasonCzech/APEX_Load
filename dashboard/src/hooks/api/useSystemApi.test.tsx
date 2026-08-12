@@ -4,14 +4,19 @@ import { act } from 'react'
 import { createRoot, Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest'
 
-vi.mock('../apiClient', () => ({
-  apiFetch: vi.fn(),
-  request: vi.fn(),
-}))
+vi.mock('../apiClient', async () => {
+  const actual = await vi.importActual<typeof import('../apiClient')>('../apiClient')
+  return {
+    ...actual,
+    apiFetch: vi.fn(),
+    request: vi.fn(),
+  }
+})
 
 import { DEFAULT_SETTINGS } from '../../components/settingsPageModel'
-import { request } from '../apiClient'
-import { useSystemApi } from './useSystemApi'
+import type { SystemReadinessResponse } from '../../types/system'
+import { ApiError, request } from '../apiClient'
+import { SYSTEM_READINESS_REQUEST_TIMEOUT_MS, useSystemApi } from './useSystemApi'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -21,7 +26,7 @@ function Capture() {
   return null
 }
 
-describe('useSystemApi settings concurrency', () => {
+describe('useSystemApi', () => {
   let container: HTMLDivElement
   let root: Root
 
@@ -53,5 +58,52 @@ describe('useSystemApi settings concurrency', () => {
     expect(options.method).toBe('PUT')
     expect(options.headers).toEqual({ 'If-Match': JSON.stringify(revision) })
     expect(JSON.parse(options.body)).toEqual(DEFAULT_SETTINGS)
+  })
+
+  it('accepts a validated not_ready document carried by ApiError 503', async () => {
+    const readiness: SystemReadinessResponse = {
+      status: 'not_ready',
+      generated_at: '2026-08-11T18:30:00Z',
+      checks: [
+        {
+          name: 'metadata_store',
+          status: 'not_ready',
+          message: 'metadata store probe failed',
+          details: { store_type: 'postgres', reason: 'probe_failed' },
+        },
+      ],
+    }
+    ;(request as Mock).mockRejectedValueOnce(new ApiError('Service Unavailable', 503, readiness))
+
+    await expect(api.getSystemReadiness()).resolves.toEqual(readiness)
+    expect(request).toHaveBeenCalledWith('/system/readiness', {
+      timeoutMs: SYSTEM_READINESS_REQUEST_TIMEOUT_MS,
+    })
+  })
+
+  it('rejects a malformed readiness body carried by ApiError 503', async () => {
+    const error = new ApiError('Service Unavailable', 503, {
+      status: 'not_ready',
+      generated_at: '2026-08-11T18:30:00Z',
+      checks: [{ name: 'metadata_store', status: 'not_ready' }],
+    })
+    ;(request as Mock).mockRejectedValueOnce(error)
+
+    await expect(api.getSystemReadiness()).rejects.toBe(error)
+  })
+
+  it('bounds readiness requests below the monitoring poll interval', async () => {
+    const readiness: SystemReadinessResponse = {
+      status: 'ready',
+      generated_at: '2026-08-11T18:30:00Z',
+      checks: [],
+    }
+    ;(request as Mock).mockResolvedValueOnce(readiness)
+
+    await expect(api.getSystemReadiness()).resolves.toEqual(readiness)
+    expect(SYSTEM_READINESS_REQUEST_TIMEOUT_MS).toBeLessThan(5_000)
+    expect(request).toHaveBeenCalledWith('/system/readiness', {
+      timeoutMs: SYSTEM_READINESS_REQUEST_TIMEOUT_MS,
+    })
   })
 })

@@ -452,15 +452,15 @@ describe('AppShell hook-order stability across navigation', () => {
     await discard()
     expect(selector('Select project')?.getAttribute('aria-label')).toContain('Project B')
 
-    await choose('Select application and release', 'Release B')
-    expect(selector('Select application and release')?.getAttribute('aria-label')).toContain('Release A')
+    await choose('Select release', 'Release B')
+    expect(selector('Select release')?.getAttribute('aria-label')).toContain('Release A')
     await discard()
-    expect(selector('Select application and release')?.getAttribute('aria-label')).toContain('Release B')
+    expect(selector('Select release')?.getAttribute('aria-label')).toContain('Release B')
 
-    await choose('Select application and release', 'Application B')
-    expect(selector('Select application and release')?.getAttribute('aria-label')).toContain('Application A')
+    await choose('Select application', 'Application B')
+    expect(selector('Select application')?.getAttribute('aria-label')).toContain('Application A')
     await discard()
-    expect(selector('Select application and release')?.getAttribute('aria-label')).toContain('Application B')
+    expect(selector('Select application')?.getAttribute('aria-label')).toContain('Application B')
 
     await choose('Select domain', 'Domain B')
     expect(selector('Select domain')?.getAttribute('aria-label')).toContain('Domain A')
@@ -537,15 +537,16 @@ describe('AppShell hook-order stability across navigation', () => {
     await flush()
 
     const projectSelector = container.querySelector<HTMLButtonElement>('button[aria-label^="Select project"]')
-    const applicationSelector = container.querySelector<HTMLButtonElement>('button[aria-label^="Select application and release"]')
+    const applicationSelector = container.querySelector<HTMLButtonElement>('button[aria-label^="Select application"]')
+    const releaseSelector = container.querySelector<HTMLButtonElement>('button[aria-label^="Select release"]')
     expect(projectSelector?.getAttribute('aria-label')).toContain('Project B')
     expect(applicationSelector?.getAttribute('aria-label')).toContain('Application B')
-    expect(applicationSelector?.getAttribute('aria-label')).toContain('Release B')
+    expect(releaseSelector?.getAttribute('aria-label')).toContain('Release B')
     await clickNav('Results')
 
     expect(currentPage()).toBe('page-results')
     expect(applicationSelector?.getAttribute('aria-label')).toContain('Application B')
-    expect(applicationSelector?.getAttribute('aria-label')).toContain('Release B')
+    expect(releaseSelector?.getAttribute('aria-label')).toContain('Release B')
   })
 
   it('restores every workspace level from a fully scoped generic deep link before mounting the page', async () => {
@@ -561,10 +562,11 @@ describe('AppShell hook-order stability across navigation', () => {
     await flush()
 
     const projectSelector = container.querySelector<HTMLButtonElement>('button[aria-label^="Select project"]')
-    const applicationSelector = container.querySelector<HTMLButtonElement>('button[aria-label^="Select application and release"]')
+    const applicationSelector = container.querySelector<HTMLButtonElement>('button[aria-label^="Select application"]')
+    const releaseSelector = container.querySelector<HTMLButtonElement>('button[aria-label^="Select release"]')
     expect(projectSelector?.getAttribute('aria-label')).toContain('Project B')
     expect(applicationSelector?.getAttribute('aria-label')).toContain('Application B')
-    expect(applicationSelector?.getAttribute('aria-label')).toContain('Release B')
+    expect(releaseSelector?.getAttribute('aria-label')).toContain('Release B')
     expect(window.location.hash).toBe(`#/results?${projectBWorkspaceQuery}`)
   })
 
@@ -590,10 +592,11 @@ describe('AppShell hook-order stability across navigation', () => {
     await flush()
 
     const projectSelector = () => container.querySelector<HTMLButtonElement>('button[aria-label^="Select project"]')
-    const applicationSelector = () => container.querySelector<HTMLButtonElement>('button[aria-label^="Select application and release"]')
+    const applicationSelector = () => container.querySelector<HTMLButtonElement>('button[aria-label^="Select application"]')
+    const releaseSelector = () => container.querySelector<HTMLButtonElement>('button[aria-label^="Select release"]')
     expect(projectSelector()?.getAttribute('aria-label')).toContain('Project B')
     expect(applicationSelector()?.getAttribute('aria-label')).toContain('Application B')
-    expect(applicationSelector()?.getAttribute('aria-label')).toContain('Release B')
+    expect(releaseSelector()?.getAttribute('aria-label')).toContain('Release B')
 
     await act(async () => {
       window.history.back()
@@ -605,7 +608,7 @@ describe('AppShell hook-order stability across navigation', () => {
     expect(readAppHistoryIndex(window.history.state)).toBe(0)
     expect(projectSelector()?.getAttribute('aria-label')).toContain('Project A')
     expect(applicationSelector()?.getAttribute('aria-label')).toContain('Application A')
-    expect(applicationSelector()?.getAttribute('aria-label')).toContain('Release A')
+    expect(releaseSelector()?.getAttribute('aria-label')).toContain('Release A')
   })
 
   it('preserves a legacy unscoped generic link while using the stored workspace', async () => {
@@ -621,10 +624,11 @@ describe('AppShell hook-order stability across navigation', () => {
     await flush()
 
     const projectSelector = container.querySelector<HTMLButtonElement>('button[aria-label^="Select project"]')
-    const applicationSelector = container.querySelector<HTMLButtonElement>('button[aria-label^="Select application and release"]')
+    const applicationSelector = container.querySelector<HTMLButtonElement>('button[aria-label^="Select application"]')
+    const releaseSelector = container.querySelector<HTMLButtonElement>('button[aria-label^="Select release"]')
     expect(projectSelector?.getAttribute('aria-label')).toContain('Project B')
     expect(applicationSelector?.getAttribute('aria-label')).toContain('Application B')
-    expect(applicationSelector?.getAttribute('aria-label')).toContain('Release B')
+    expect(releaseSelector?.getAttribute('aria-label')).toContain('Release B')
     expect(window.location.hash).toBe('#/results')
   })
 
@@ -685,9 +689,10 @@ describe('AppShell hook-order stability across navigation', () => {
     expect(window.location.hash).toContain('projectId=project-b')
     expect(container.textContent).not.toContain('does not include project scope')
     if (hash.includes('run-b')) {
-      const applicationSelector = container.querySelector<HTMLButtonElement>('button[aria-label^="Select application and release"]')
+      const applicationSelector = container.querySelector<HTMLButtonElement>('button[aria-label^="Select application"]')
+      const releaseSelector = container.querySelector<HTMLButtonElement>('button[aria-label^="Select release"]')
       expect(applicationSelector?.getAttribute('aria-label')).toContain('Application B')
-      expect(applicationSelector?.getAttribute('aria-label')).toContain('Release B')
+      expect(releaseSelector?.getAttribute('aria-label')).toContain('Release B')
     }
   })
 

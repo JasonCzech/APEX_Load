@@ -341,6 +341,31 @@ type UserRoleBinding struct {
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
+// LocalAuthCredential and LocalAuthSession are internal non-production login
+// records. Password hashes and bearer-session hashes are never serialized by
+// the public user APIs.
+type LocalAuthCredential struct {
+	Username     string    `json:"username"`
+	UserID       string    `json:"user_id"`
+	PasswordHash string    `json:"-"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
+}
+
+type LocalAuthSession struct {
+	TokenHash    string    `json:"-"`
+	UserID       string    `json:"user_id"`
+	SessionEpoch int       `json:"session_epoch"`
+	CreatedAt    time.Time `json:"created_at"`
+	ExpiresAt    time.Time `json:"expires_at"`
+}
+
+type LocalAuthFixture struct {
+	Credential LocalAuthCredential
+	User       User
+	Bindings   []*UserRoleBinding
+}
+
 type ServiceAccount struct {
 	ID                   string              `json:"id"`
 	Name                 string              `json:"name"`
@@ -782,13 +807,16 @@ type Application struct {
 }
 
 type Release struct {
-	ID            string     `json:"id"`
-	ApplicationID string     `json:"application_id"`
-	ProjectID     string     `json:"project_id,omitempty"`
-	Name          string     `json:"name"`
-	CreatedAt     time.Time  `json:"created_at"`
-	UpdatedAt     time.Time  `json:"updated_at"`
-	ArchivedAt    *time.Time `json:"archived_at,omitempty"`
+	ID                   string            `json:"id"`
+	GroupID              string            `json:"group_id,omitempty"`
+	ApplicationID        string            `json:"application_id"`
+	ApplicationReleaseID string            `json:"application_release_id,omitempty"`
+	MemberIDs            map[string]string `json:"member_ids,omitempty"`
+	ProjectID            string            `json:"project_id,omitempty"`
+	Name                 string            `json:"name"`
+	CreatedAt            time.Time         `json:"created_at"`
+	UpdatedAt            time.Time         `json:"updated_at"`
+	ArchivedAt           *time.Time        `json:"archived_at,omitempty"`
 }
 
 type Scenario struct {

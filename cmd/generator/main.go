@@ -18,8 +18,10 @@ import (
 	"github.com/jasonczech/apexload/pkg/config"
 	"github.com/jasonczech/apexload/pkg/debugserver"
 	"github.com/jasonczech/apexload/pkg/distributed/generatorrpc"
+	"github.com/jasonczech/apexload/pkg/engine"
 	"github.com/jasonczech/apexload/pkg/importartifact"
 	_ "github.com/jasonczech/apexload/pkg/protocol/builtin"
+	"github.com/jasonczech/apexload/pkg/protocol/java_vuser"
 	"github.com/jasonczech/apexload/pkg/runtimetuning"
 	"github.com/jasonczech/apexload/pkg/telemetry"
 	"google.golang.org/grpc"
@@ -151,11 +153,22 @@ func main() {
 	defer healthListener.Close()
 	healthGRPCServer := grpc.NewServer()
 	healthpb.RegisterHealthServer(healthGRPCServer, healthServer)
-	controlService := generatorrpc.NewService(generatorID, cfg.MaxVUsers, generatorrpc.WithExecution())
+	supervisionConfig, err := generatorrpc.RunSupervisionConfigFromEnv(os.Getenv)
+	if err != nil {
+		slog.Error("invalid generator run supervision configuration", "err", err)
+		os.Exit(1)
+	}
+	engine.EnableStrictProtocolTeardown()
+	controlService := generatorrpc.NewService(generatorID, cfg.MaxVUsers,
+		generatorrpc.WithExecution(),
+		generatorrpc.WithRunSupervisionRequired(supervisionConfig.TTL, supervisionConfig.Drain),
+		generatorrpc.WithRuntimeContainmentFailureSignal(java_vuser.LocalProcessContainmentFailure()),
+	)
 	if err := controlService.ReadinessError(); err != nil {
 		slog.Error("refusing to start without durable generator execution fencing", "generator_id", generatorID, "err", err)
 		os.Exit(1)
 	}
+	safetyTriggered := startGeneratorSafetyWatchdog(controlService.SelfTerminationRequested(), 2*time.Second, os.Exit)
 	pb.RegisterGeneratorControlServer(grpcServer, controlService)
 	publishGeneratorHealth(controlService, healthServer)
 	go monitorGeneratorHealth(ctx, controlService, healthServer)
@@ -172,6 +185,7 @@ func main() {
 
 	waitForNaturalDrain := false
 	serverFailed := false
+	safetyExit := false
 	select {
 	case <-ctx.Done():
 		slog.Info("generator shutting down")
@@ -179,6 +193,8 @@ func main() {
 	case err := <-errCh:
 		slog.Error("generator server error", "err", err)
 		serverFailed = true
+	case <-safetyTriggered:
+		safetyExit = true
 	}
 
 	// A fatal Serve error must take the same archive-safe shutdown path as a
@@ -186,9 +202,31 @@ func main() {
 	// durable terminal evidence needed by the replacement controller. Do not
 	// wait for a natural drain when one listener is already unavailable.
 	shutdownGeneratorRuntime(controlService, healthServer, grpcServer, healthGRPCServer, waitForNaturalDrain)
-	if serverFailed {
+	select {
+	case <-safetyTriggered:
+		safetyExit = true
+	default:
+	}
+	if serverFailed || safetyExit {
 		os.Exit(1)
 	}
+}
+
+func startGeneratorSafetyWatchdog(requests <-chan generatorrpc.SelfTerminationRequest, delay time.Duration, exit func(int)) <-chan struct{} {
+	triggered := make(chan struct{})
+	go func() {
+		request, ok := <-requests
+		if !ok {
+			return
+		}
+		slog.Error("generator safety self-termination requested", "test_id", request.TestID, "execution_generation", request.ExecutionGeneration, "reason", request.Reason, "outstanding", request.Outstanding)
+		close(triggered)
+		timer := time.NewTimer(delay)
+		defer timer.Stop()
+		<-timer.C
+		exit(1)
+	}()
+	return triggered
 }
 
 func configureBrunoResolver() (func(), error) {
@@ -229,21 +267,7 @@ func shutdownGeneratorRuntime(service generatorShutdownService, health healthSta
 	if health != nil {
 		health.SetServingStatus("", healthpb.HealthCheckResponse_NOT_SERVING)
 	}
-	if waitForNaturalDrain {
-		deadline := time.NewTimer(activeVUserDrainTimeout)
-		ticker := time.NewTicker(500 * time.Millisecond)
-		for service.ActiveVUsers() > 0 {
-			select {
-			case <-deadline.C:
-				slog.Warn("generator drain deadline reached", "active_vusers", service.ActiveVUsers())
-				goto drained
-			case <-ticker.C:
-			}
-		}
-	drained:
-		ticker.Stop()
-		deadline.Stop()
-	}
+	_ = waitForNaturalDrain // Shutdown owns the bounded soft/hard drain sequence.
 
 	drainCtx, drainCancel := context.WithTimeout(context.Background(), serviceShutdownTimeout)
 	if err := service.Shutdown(drainCtx); err != nil {

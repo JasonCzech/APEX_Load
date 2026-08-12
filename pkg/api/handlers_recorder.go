@@ -164,7 +164,7 @@ func (s *Server) handleGetRecording(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleListRecordings(w http.ResponseWriter, r *http.Request) {
-	projectID := r.URL.Query().Get("project_id")
+	projectID := authorizedProjectOr(r, r.URL.Query().Get("project_id"))
 	includeRequests := queryIncludes(r.URL.Query(), "requests") || strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("include_requests")), "true")
 	raw := rawRecordingExportRequested(r)
 	if raw && !s.canExportRawRecording(r, projectID) {
@@ -185,7 +185,7 @@ func (s *Server) handleListRecordings(w http.ResponseWriter, r *http.Request) {
 		}
 		sessions = filtered
 	}
-	active := s.recorder.ActiveSessionSummary()
+	active := s.visibleRecorderSessionForRequest(r, s.recorder.ActiveSessionSummary(), projectID)
 	if raw {
 		w.Header().Set("X-APEXLoad-Sensitivity", scrub.SensitivityRaw)
 	} else {
@@ -500,9 +500,9 @@ func rawRecordingExportRequested(r *http.Request) bool {
 func (s *Server) canExportRawRecording(r *http.Request, projectID string) bool {
 	if user, ok := AuthenticatedUserFromContext(r.Context()); ok && user != nil {
 		return user.hasGlobalRole(RoleEditor, RoleProjectAdmin, RoleSystemAdmin) ||
-			user.hasProjectRole(projectID, RoleEditor, RoleProjectAdmin)
+			userHasProjectOrParentRole(s.store, user, projectID, RoleEditor, RoleProjectAdmin)
 	}
-	settings := normalizeAuthSettings(s.runner.GetSystemSettings().Auth)
+	settings := s.authSettingsForRequest()
 	return isAuthBypassMode(settings.Mode)
 }
 
@@ -532,7 +532,8 @@ func sanitizeDownloadName(name string) string {
 }
 
 func (s *Server) handleRecorderStatus(w http.ResponseWriter, r *http.Request) {
-	active := s.recorder.ActiveSessionSummary()
+	projectID := authorizedProjectOr(r, strings.TrimSpace(r.URL.Query().Get("project_id")))
+	active := s.visibleRecorderSessionForRequest(r, s.recorder.ActiveSessionSummary(), projectID)
 	var activeInfo any
 	if active != nil {
 		activeInfo = map[string]any{
@@ -543,13 +544,17 @@ func (s *Server) handleRecorderStatus(w http.ResponseWriter, r *http.Request) {
 			"started_at":    active.StartedAt,
 		}
 	}
+	browserActive := s.browserRecording.Active()
+	if browserActive != nil && projectID != "" && normalizeProjectID(browserActive.ProjectID) != normalizeProjectID(projectID) {
+		browserActive = nil
+	}
 	resp := map[string]any{
 		"proxy_addr":   s.recorder.ProxyAddr(),
 		"ca_cert_path": s.recorder.CACertPath(),
 		"active":       activeInfo,
 		"browser": map[string]any{
 			"availability": s.browserRecordingAvailability(),
-			"active":       s.browserRecording.Active(),
+			"active":       browserActive,
 			"install":      s.browserInstall.snapshot(),
 		},
 	}

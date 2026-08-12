@@ -122,6 +122,12 @@ func (service *Service) AssignWork(ctx context.Context, assignment *pb.WorkAssig
 	if err != nil {
 		return nil, err
 	}
+	if service.runSupervisionRequired && !validRunSupervisionToken(assignment.GetRunSupervisionToken()) {
+		return nil, status.Errorf(codes.FailedPrecondition, "run_supervision_token must contain exactly %d non-zero bytes", RunSupervisionTokenSize)
+	}
+	if len(assignment.GetRunSupervisionToken()) > 0 && !validRunSupervisionToken(assignment.GetRunSupervisionToken()) {
+		return nil, status.Errorf(codes.InvalidArgument, "run_supervision_token must contain exactly %d non-zero bytes", RunSupervisionTokenSize)
+	}
 	if ctx != nil {
 		if err := ctx.Err(); err != nil {
 			return nil, status.FromContextError(err).Err()
@@ -277,6 +283,9 @@ func (coordinator *assignmentLifecycleCoordinator) reserveStageLocked(service *S
 	if err := service.validateMutationGenerationLocked(request.GetExecutionGeneration()); err != nil {
 		return assignmentStageDecision{err: err, availableCapacity: available}
 	}
+	if request.GetExecutionGeneration() == 0 && service.executionEpochManager.runSupervisionRestartFenceInherited {
+		return assignmentStageDecision{err: status.Error(codes.FailedPrecondition, runSupervisionRestartFenceMessage), availableCapacity: available}
+	}
 	if request.GetExecutionGeneration() > 0 && strings.TrimSpace(request.GetExpectedScriptHash()) == "" {
 		return assignmentStageDecision{err: status.Error(codes.InvalidArgument, "expected_script_hash is required for fenced assignments"), availableCapacity: available}
 	}
@@ -307,10 +316,13 @@ func (coordinator *assignmentLifecycleCoordinator) reserveStageLocked(service *S
 		if current.requireTestExecutionLease != request.GetRequireTestExecutionLease() {
 			return assignmentStageDecision{err: status.Error(codes.FailedPrecondition, "all groups in a test must use the same assignment lease policy"), availableCapacity: available}
 		}
+		if !sameRunSupervisionTokenHash(current.runSupervisionTokenHash, runSupervisionTokenHash(request.GetRunSupervisionToken())) {
+			return assignmentStageDecision{err: status.Error(codes.FailedPrecondition, "all groups in a test must use the same run supervision token"), availableCapacity: available}
+		}
 		if existing, groupExists := current.groups[request.GetGroupName()]; groupExists {
 			existingFingerprint, fingerprintExists := current.groupAssignments[request.GetGroupName()]
 			existingSecretBundleID := current.groupSecretBundleIDs[request.GetGroupName()]
-			if existing == request.GetVuserCount() && fingerprintExists && existingFingerprint == validated.fingerprint && existingSecretBundleID == request.GetSecretBundleId() {
+			if existing == request.GetVuserCount() && fingerprintExists && sameSHA256Digest(existingFingerprint, validated.fingerprint) && existingSecretBundleID == request.GetSecretBundleId() {
 				return assignmentStageDecision{kind: assignmentStageAccepted, availableCapacity: available}
 			}
 			return rejectedAssignmentStage("group is already assigned; use AdjustVUsers to resize it", available)
@@ -535,7 +547,7 @@ func (coordinator *assignmentLifecycleCoordinator) commitStageLocked(service *Se
 		return nil, service.availableCapacityLocked(), status.Error(codes.Unavailable, "generator is draining")
 	}
 	current, currentExists := service.assignments[request.GetTestId()]
-	if currentExists != plan.hadCurrent || assignmentControlFingerprint(current, currentExists) != plan.currentGuard {
+	if currentExists != plan.hadCurrent || !sameSHA256Digest(assignmentControlFingerprint(current, currentExists), plan.currentGuard) {
 		return nil, service.availableCapacityLocked(), status.Error(codes.Aborted, "test assignment changed while execution was prepared")
 	}
 	if service.activeVUsers64Locked()+coordinator.pendingVUsersLocked() > int64(service.maxVUsers) {
@@ -588,6 +600,9 @@ func (coordinator *assignmentLifecycleCoordinator) commitStageLocked(service *Se
 	next.lifecycle = plan.nextLifecycle
 	next.executionGeneration = request.GetExecutionGeneration()
 	next.requireTestExecutionLease = request.GetRequireTestExecutionLease()
+	if len(request.GetRunSupervisionToken()) > 0 {
+		next.runSupervisionTokenHash = runSupervisionTokenHash(request.GetRunSupervisionToken())
+	}
 	next.committed = plan.nextCommitted
 	next.paused = plan.startPaused
 	next.duration = plan.nextDuration
@@ -746,6 +761,7 @@ func assignmentControlFingerprint(assignment assignedTest, exists bool) [sha256.
 	fingerprintWriteUint64(h, uint64(assignment.lifecycle))
 	fingerprintWriteUint64(h, assignment.executionGeneration)
 	fingerprintWriteBool(h, assignment.requireTestExecutionLease)
+	fingerprintWriteBytes(h, assignment.runSupervisionTokenHash[:])
 	fingerprintWriteUint64(h, uint64(uint32(assignment.vuserCount)))
 	fingerprintWriteBool(h, assignment.paused)
 	fingerprintWriteBool(h, assignment.committed)
@@ -815,19 +831,40 @@ func (service *Service) prepareAssignmentStage(ctx context.Context, plan *assign
 		return nil, status.Errorf(codes.InvalidArgument, "decode script: %v", err)
 	}
 	if instance, getErr := protocol.Get(strings.ToLower(strings.TrimSpace(script.Protocol))); getErr == nil {
-		if strings.EqualFold(script.Protocol, "java_vuser") && requiredRuntimeFeature(&script) == "" {
-			legacyAvailable, supported := legacyRuntimeAvailable(instance)
-			if !supported || !legacyAvailable {
-				return nil, status.Errorf(codes.FailedPrecondition, "%s legacy one-shot runtime is unavailable on this generator", script.Protocol)
+		if strings.EqualFold(script.Protocol, "java_vuser") {
+			observation := prepared.javaCapacity
+			if !observation.probed {
+				capabilities, supported, capabilityErr := protocol.ReadRuntimeCapabilities(instance)
+				observation = javaVuserCapacityObservation{
+					probed:       true,
+					capabilities: capabilities,
+					supported:    supported,
+					err:          capabilityErr,
+				}
 			}
-		} else if strings.EqualFold(script.Protocol, "java_vuser") && requiredRuntimeFeature(&script) != "" {
-			if runtimeErr := prepared.javaCapacity.persistentRuntimeError(); runtimeErr != nil {
+			if observation.err != nil {
+				return nil, status.Error(codes.FailedPrecondition, observation.err.Error())
+			}
+			if admissionErr := javaVuserDistributedContainmentError(observation.capabilities, observation.supported); admissionErr != nil {
+				return nil, status.Error(codes.FailedPrecondition, admissionErr.Error())
+			}
+			prepared.javaCapacity = observation
+			if requiredRuntimeFeature(&script) == "" {
+				legacyAvailable, supported := legacyRuntimeAvailable(instance)
+				if !supported || !legacyAvailable {
+					return nil, status.Errorf(codes.FailedPrecondition, "%s legacy one-shot runtime is unavailable on this generator", script.Protocol)
+				}
+			} else if runtimeErr := prepared.javaCapacity.persistentRuntimeError(); runtimeErr != nil {
 				return nil, status.Error(codes.FailedPrecondition, runtimeErr.Error())
 			}
 		} else {
 			capabilities, hasCapabilities, capabilityErr := protocol.ReadRuntimeCapabilities(instance)
 			if capabilityErr != nil {
 				return nil, status.Error(codes.FailedPrecondition, capabilityErr.Error())
+			}
+			if strings.EqualFold(script.Protocol, "bruno") &&
+				(!hasCapabilities || !brunoRuntimeContained(capabilities.Features)) {
+				return nil, status.Error(codes.FailedPrecondition, "bruno runtime does not advertise required runner owner and session lease capabilities")
 			}
 			if hasCapabilities {
 				if !capabilities.Available {
@@ -992,6 +1029,19 @@ func (service *Service) prepareAssignmentStage(ctx context.Context, plan *assign
 		done:                make(chan struct{}),
 	}
 	return prepared, nil
+}
+
+func javaVuserDistributedContainmentError(capabilities protocol.RuntimeCapabilities, supported bool) error {
+	if !supported {
+		return fmt.Errorf("java_vuser runtime does not advertise governed capabilities")
+	}
+	if !javaVuserRuntimeContained(capabilities.Features) {
+		return fmt.Errorf("java_vuser runtime does not advertise required process containment capabilities")
+	}
+	if !capabilities.Available {
+		return fmt.Errorf("java_vuser runtime is unavailable on this generator")
+	}
+	return nil
 }
 
 func requiredRuntimeFeature(script *dsl.Script) string {

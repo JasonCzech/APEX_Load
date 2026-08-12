@@ -403,7 +403,10 @@ export interface Application {
 
 export interface Release {
   id: string
+  group_id?: string
   application_id: string
+  application_release_id?: string
+  member_ids?: Record<string, string>
   project_id?: string
   name: string
   created_at: string

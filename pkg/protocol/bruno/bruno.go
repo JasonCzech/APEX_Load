@@ -27,11 +27,17 @@ import (
 )
 
 const (
-	CompatibilityVersion  = "3.5.2"
-	defaultRunnerURL      = "http://127.0.0.1:8097"
-	defaultOutputLimit    = 4 << 20
-	maxOutputLimit        = 1 << 30
-	defaultCleanupTimeout = 10 * time.Second
+	CompatibilityVersion      = "3.5.2"
+	defaultRunnerURL          = "http://127.0.0.1:8097"
+	defaultOutputLimit        = 4 << 20
+	maxOutputLimit            = 1 << 30
+	defaultCleanupTimeout     = 10 * time.Second
+	runnerOwnerLeaseTTL       = 5 * time.Second
+	runnerOwnerLeaseRenew     = time.Second
+	runnerOwnerLeaseFeature   = "runner_owner_lease_v1"
+	runnerSessionLeaseFeature = "bruno_session_lease_v1"
+	runnerSessionLeaseTTL     = 5 * time.Second
+	runnerSessionLeaseRenew   = time.Second
 )
 
 type Protocol struct {
@@ -55,6 +61,167 @@ type Protocol struct {
 	dependencySnapshot string
 	closed             bool
 	teardownInFlight   chan struct{}
+	runnerOwnerID      string
+	runnerOwnerEpoch   string
+	runnerOwnerMu      sync.RWMutex
+	sessionLeaseToken  string
+	sessionLeaseCancel context.CancelFunc
+	sessionLeaseDone   chan struct{}
+	// containmentUnproven is terminal for this protocol instance. It covers a
+	// client-known session whose create response was ambiguous and whose cleanup
+	// could not be acknowledged, even though sessionID was never published to the
+	// ordinary teardown path.
+	containmentUnproven bool
+}
+
+var brunoRunnerProcessOwner struct {
+	sync.Once
+	id string
+}
+
+func brunoRunnerOwnerID() string {
+	brunoRunnerProcessOwner.Do(func() {
+		var value [32]byte
+		if _, err := rand.Read(value[:]); err != nil {
+			panic("generate Bruno runner owner identity: " + err.Error())
+		}
+		brunoRunnerProcessOwner.id = "generator-" + hex.EncodeToString(value[:])
+	})
+	return brunoRunnerProcessOwner.id
+}
+
+func (p *Protocol) claimRunnerOwner(ctx context.Context) error {
+	payload, err := json.Marshal(map[string]any{"owner_id": brunoRunnerOwnerID(), "lease_ttl_ms": runnerOwnerLeaseTTL.Milliseconds()})
+	if err != nil {
+		return err
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, p.runnerURL+"/v1/owner/claim", bytes.NewReader(payload))
+	if err != nil {
+		return err
+	}
+	request.Header.Set("Content-Type", "application/json")
+	response, err := p.client.Do(request)
+	if err != nil {
+		return fmt.Errorf("claim Bruno runner owner lease: %w", err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		return runnerHTTPError(response, 64<<10)
+	}
+	var claim struct {
+		OwnerID    string `json:"owner_id"`
+		OwnerEpoch string `json:"owner_epoch"`
+		LeaseTTLMS int64  `json:"lease_ttl_ms"`
+		Accepted   bool   `json:"accepted"`
+	}
+	if err := json.NewDecoder(io.LimitReader(response.Body, 64<<10)).Decode(&claim); err != nil {
+		return err
+	}
+	if !claim.Accepted || claim.OwnerID != brunoRunnerOwnerID() || len(claim.OwnerEpoch) != 64 || claim.LeaseTTLMS != runnerOwnerLeaseTTL.Milliseconds() {
+		return fmt.Errorf("Bruno runner returned an invalid owner lease")
+	}
+	p.runnerOwnerMu.Lock()
+	p.runnerOwnerID, p.runnerOwnerEpoch = claim.OwnerID, claim.OwnerEpoch
+	p.runnerOwnerMu.Unlock()
+	return nil
+}
+
+func (p *Protocol) renewRunnerOwner(ctx context.Context) {
+	ticker := time.NewTicker(runnerOwnerLeaseRenew)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			renewCtx, cancel := context.WithTimeout(ctx, runnerOwnerLeaseRenew)
+			_ = p.claimRunnerOwner(renewCtx)
+			cancel()
+		}
+	}
+}
+
+func (p *Protocol) setRunnerOwnerHeaders(request *http.Request) {
+	p.runnerOwnerMu.RLock()
+	ownerID, ownerEpoch := p.runnerOwnerID, p.runnerOwnerEpoch
+	p.runnerOwnerMu.RUnlock()
+	if ownerID != "" && ownerEpoch != "" {
+		request.Header.Set("X-Apexload-Runner-Owner-ID", ownerID)
+		request.Header.Set("X-Apexload-Runner-Owner-Epoch", ownerEpoch)
+	}
+}
+
+func (p *Protocol) setSessionLeaseHeader(request *http.Request) {
+	p.mu.Lock()
+	token := p.sessionLeaseToken
+	p.mu.Unlock()
+	if token != "" {
+		request.Header.Set("X-Apexload-Session-Lease-Token", token)
+	}
+}
+
+func (p *Protocol) startSessionLeaseKeeperLocked(parent context.Context) {
+	if p.sessionLeaseToken == "" || p.sessionID == "" {
+		return
+	}
+	if parent == nil {
+		parent = context.Background()
+	}
+	keeperCtx, cancel := context.WithCancel(parent)
+	done := make(chan struct{})
+	p.sessionLeaseCancel, p.sessionLeaseDone = cancel, done
+	go p.renewSessionLease(keeperCtx, done)
+}
+
+func (p *Protocol) stopSessionLeaseKeeper() {
+	p.mu.Lock()
+	cancel, done := p.sessionLeaseCancel, p.sessionLeaseDone
+	p.sessionLeaseCancel, p.sessionLeaseDone = nil, nil
+	p.mu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
+	if done != nil {
+		<-done
+	}
+}
+
+func (p *Protocol) renewSessionLease(ctx context.Context, done chan<- struct{}) {
+	defer close(done)
+	ticker := time.NewTicker(runnerSessionLeaseRenew)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			p.mu.Lock()
+			runnerURL, sessionID, token, client := p.runnerURL, p.sessionID, p.sessionLeaseToken, p.client
+			p.mu.Unlock()
+			if runnerURL == "" || sessionID == "" || token == "" || client == nil {
+				continue
+			}
+			p.renewKnownSessionLease(ctx, runnerURL, sessionID, token, client)
+		}
+	}
+}
+
+func (p *Protocol) renewKnownSessionLease(ctx context.Context, runnerURL, sessionID, token string, client *http.Client) {
+	renewCtx, cancel := context.WithTimeout(ctx, runnerSessionLeaseRenew)
+	defer cancel()
+	request, err := http.NewRequestWithContext(renewCtx, http.MethodPost,
+		runnerURL+"/v1/sessions/"+url.PathEscape(sessionID)+"/lease/renew", nil)
+	if err != nil {
+		return
+	}
+	p.setRunnerOwnerHeaders(request)
+	request.Header.Set("X-Apexload-Session-Lease-Token", token)
+	response, err := client.Do(request)
+	if err != nil {
+		return
+	}
+	_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 64<<10))
+	response.Body.Close()
 }
 
 type sharedBundle struct {
@@ -88,10 +255,13 @@ type createSessionRequest struct {
 	Limits                map[string]int64  `json:"limits,omitempty"`
 	Secrets               map[string]string `json:"secrets,omitempty"`
 	AllowedTargetHosts    []string          `json:"allowed_target_hosts,omitempty"`
+	SessionLeaseToken     string            `json:"session_lease_token,omitempty"`
 }
 
 type createSessionResponse struct {
-	SessionID string `json:"session_id"`
+	SessionID         string `json:"session_id"`
+	SessionLeaseToken string `json:"session_lease_token"`
+	LeaseTTLMS        int64  `json:"lease_ttl_ms"`
 }
 
 type executeRequest struct {
@@ -139,10 +309,14 @@ func (*Protocol) Name() string { return "bruno" }
 
 func (*Protocol) RuntimeCapabilities() protocol.RuntimeCapabilities {
 	features := []string{"bruno_runner_" + CompatibilityVersion, "bruno_safe_sandbox", "bruno_governed_egress", "bruno_shared_encrypted_artifacts_v1"}
+	available := distributedExecutionAvailable(context.Background())
+	if available {
+		features = append(features, runnerOwnerLeaseFeature, runnerSessionLeaseFeature)
+	}
 	if strings.EqualFold(strings.TrimSpace(os.Getenv("APEXLOAD_BRUNO_DEVELOPER_EXECUTION_ENABLED")), "true") {
 		features = append(features, "bruno_developer_sandbox")
 	}
-	return protocol.RuntimeCapabilities{Available: DistributedExecutionAvailable(), Features: features, MaxVUsers: configuredSessionCapacity()}
+	return protocol.RuntimeCapabilities{Available: available, Features: features, MaxVUsers: configuredSessionCapacity()}
 }
 
 func (*Protocol) RuntimeHealthy(ctx context.Context) bool { return RunnerHealthy(ctx) }
@@ -158,11 +332,33 @@ func configuredSessionCapacity() int64 {
 // DistributedExecutionAvailable is deliberately stricter than protocol
 // registration. A generator may advertise Bruno only when the operator has
 // enabled distributed execution and this process has an immutable artifact
-// delivery resolver installed.
+// delivery resolver installed. The runner must also positively advertise and
+// require both owner and per-session leases; an enabled generator flag alone
+// is not evidence that an external worker will fence itself.
 func DistributedExecutionAvailable() bool {
+	return distributedExecutionAvailable(context.Background())
+}
+
+func distributedExecutionConfigured() bool {
 	return featureEnabled("APEXLOAD_BRUNO_DISTRIBUTED_EXECUTION_ENABLED", false) &&
 		importartifact.ResolverAvailable() &&
 		GovernedEgressConfigured()
+}
+
+func distributedExecutionAvailable(ctx context.Context) bool {
+	if !distributedExecutionConfigured() || !featureEnabled("APEXLOAD_BRUNO_RUNNER_OWNER_LEASE_V1", false) {
+		return false
+	}
+	healthy, features := probeRunner(ctx)
+	if !healthy || !runnerLeaseContractSatisfied(features) {
+		return false
+	}
+	return true
+}
+
+func runnerLeaseContractSatisfied(features []string) bool {
+	return protocol.RuntimeFeaturesSatisfy(features, runnerOwnerLeaseFeature) &&
+		protocol.RuntimeFeaturesSatisfy(features, runnerSessionLeaseFeature)
 }
 
 // GovernedEgressConfigured reports whether this process has an explicit path
@@ -189,44 +385,84 @@ func GovernedEgressConfigured() bool {
 // Heartbeats use this before advertising Bruno so a missing or stale runner is
 // not selected for new work.
 func RunnerHealthy(ctx context.Context) (healthy bool) {
+	healthy, _ = probeRunner(ctx)
+	return healthy
+}
+
+func probeRunner(ctx context.Context) (healthy bool, features []string) {
 	runnerURL := strings.TrimRight(strings.TrimSpace(os.Getenv("APEXLOAD_BRUNO_RUNNER_URL")), "/")
 	if runnerURL == "" {
 		runnerURL = defaultRunnerURL
 	}
+	return probeRunnerAt(ctx, runnerURL, true)
+}
+
+func probeRunnerAt(ctx context.Context, runnerURL string, allowCached bool) (healthy bool, features []string) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	runnerURL = strings.TrimRight(strings.TrimSpace(runnerURL), "/")
 	if _, err := validatedRunnerOrigin(runnerURL); err != nil {
-		return false
+		return false, nil
 	}
 	runnerHealthCache.Lock()
-	if runnerHealthCache.url == runnerURL && time.Since(runnerHealthCache.checkedAt) < 2*time.Second {
+	if allowCached && runnerHealthCache.url == runnerURL && time.Since(runnerHealthCache.checkedAt) < 2*time.Second {
 		healthy := runnerHealthCache.healthy
+		features := append([]string(nil), runnerHealthCache.features...)
 		runnerHealthCache.Unlock()
-		return healthy
+		return healthy, features
 	}
 	runnerHealthCache.Unlock()
 	defer func() {
 		runnerHealthCache.Lock()
 		runnerHealthCache.url, runnerHealthCache.checkedAt, runnerHealthCache.healthy = runnerURL, time.Now(), healthy
+		runnerHealthCache.features = append(runnerHealthCache.features[:0], features...)
 		runnerHealthCache.Unlock()
 	}()
 	checkCtx, cancel := context.WithTimeout(ctx, 750*time.Millisecond)
 	defer cancel()
 	request, err := http.NewRequestWithContext(checkCtx, http.MethodGet, runnerURL+"/v1/health", nil)
 	if err != nil {
-		return false
+		return false, nil
 	}
 	response, err := newRunnerHTTPClient(0).Do(request)
 	if err != nil {
-		return false
+		return false, nil
 	}
-	defer response.Body.Close()
 	if response.StatusCode != http.StatusOK {
-		return false
+		response.Body.Close()
+		return false, nil
 	}
 	var health struct {
 		CompatibilityVersion string `json:"compatibility_version"`
 	}
 	healthy = json.NewDecoder(io.LimitReader(response.Body, 64<<10)).Decode(&health) == nil && health.CompatibilityVersion == CompatibilityVersion
-	return healthy
+	response.Body.Close()
+	if !healthy {
+		return false, nil
+	}
+	request, err = http.NewRequestWithContext(checkCtx, http.MethodGet, runnerURL+"/v1/capabilities", nil)
+	if err != nil {
+		return false, nil
+	}
+	response, err = newRunnerHTTPClient(0).Do(request)
+	if err != nil {
+		return false, nil
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		return false, nil
+	}
+	var capabilities struct {
+		CompatibilityVersion string   `json:"compatibility_version"`
+		Features             []string `json:"features"`
+		CleanupFailed        bool     `json:"cleanup_failed"`
+	}
+	if json.NewDecoder(io.LimitReader(response.Body, 64<<10)).Decode(&capabilities) != nil ||
+		capabilities.CompatibilityVersion != CompatibilityVersion || capabilities.CleanupFailed {
+		return false, nil
+	}
+	return true, append([]string(nil), capabilities.Features...)
 }
 
 var runnerHealthCache struct {
@@ -234,6 +470,7 @@ var runnerHealthCache struct {
 	url       string
 	checkedAt time.Time
 	healthy   bool
+	features  []string
 }
 
 func (p *Protocol) Init(ctx context.Context, config map[string]any) error {
@@ -306,12 +543,27 @@ func (p *Protocol) Init(ctx context.Context, config map[string]any) error {
 		return fmt.Errorf("unresolved Bruno secret binding(s) %s: refusing to create a runner session with placeholder values", strings.Join(unresolved, ", "))
 	}
 	p.client = newRunnerHTTPClient(0)
+	if featureEnabled("APEXLOAD_BRUNO_DISTRIBUTED_EXECUTION_ENABLED", false) {
+		if !featureEnabled("APEXLOAD_BRUNO_RUNNER_OWNER_LEASE_V1", false) {
+			return fmt.Errorf("distributed Bruno execution requires %s and %s; runner owner leases are disabled", runnerOwnerLeaseFeature, runnerSessionLeaseFeature)
+		}
+		healthy, runnerFeatures := probeRunnerAt(ctx, p.runnerURL, false)
+		if !healthy || !runnerLeaseContractSatisfied(runnerFeatures) {
+			return fmt.Errorf("distributed Bruno execution requires the runner to advertise %s and %s", runnerOwnerLeaseFeature, runnerSessionLeaseFeature)
+		}
+	}
+	if featureEnabled("APEXLOAD_BRUNO_RUNNER_OWNER_LEASE_V1", false) {
+		if err := p.claimRunnerOwner(ctx); err != nil {
+			return err
+		}
+		go p.renewRunnerOwner(ctx)
+	}
 	expectedDigest := strings.ToLower(strings.TrimSpace(stringValue(config, "bruno_bundle_sha256")))
 	if id, key, hit, cacheErr := p.retainCachedBundle(ctx, expectedDigest); cacheErr != nil {
 		return cacheErr
 	} else if hit {
 		p.assignBundleLocked(id, key)
-		sessionID, createErr := p.createSession(ctx, config)
+		sessionID, leaseToken, createErr := p.createSession(ctx, config)
 		if createErr != nil {
 			if runnerResourceUnavailable(createErr) {
 				// Runner bundle lifetime is independently bounded. Evict only the
@@ -326,7 +578,8 @@ func (p *Protocol) Init(ctx context.Context, config map[string]any) error {
 				return errors.Join(createErr, cleanupErr)
 			}
 		} else {
-			p.sessionID, p.closed = sessionID, false
+			p.sessionID, p.sessionLeaseToken, p.closed = sessionID, leaseToken, false
+			p.startSessionLeaseKeeperLocked(ctx)
 			return nil
 		}
 	}
@@ -361,7 +614,7 @@ func (p *Protocol) Init(ctx context.Context, config map[string]any) error {
 		return err
 	}
 	p.assignBundleLocked(bundleID, bundleCacheKey)
-	sessionID, err := p.createSession(ctx, config)
+	sessionID, leaseToken, err := p.createSession(ctx, config)
 	if err != nil {
 		cleanupCtx, cleanupCancel := freshCleanupContext()
 		cleanupErr := p.releaseBundleLocked(cleanupCtx)
@@ -369,7 +622,9 @@ func (p *Protocol) Init(ctx context.Context, config map[string]any) error {
 		return errors.Join(err, cleanupErr)
 	}
 	p.sessionID = sessionID
+	p.sessionLeaseToken = leaseToken
 	p.closed = false
+	p.startSessionLeaseKeeperLocked(ctx)
 	return nil
 }
 
@@ -448,6 +703,8 @@ func (p *Protocol) ExecuteStream(ctx context.Context, action *protocol.Action, e
 	}
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set("Accept", "application/x-ndjson")
+	p.setRunnerOwnerHeaders(request)
+	p.setSessionLeaseHeader(request)
 	response, err := client.Do(request)
 	if err != nil {
 		return nil, fmt.Errorf("execute Bruno selection: %w", err)
@@ -499,22 +756,33 @@ func (p *Protocol) ExecuteStream(ctx context.Context, action *protocol.Action, e
 }
 
 func (p *Protocol) Teardown(ctx context.Context) error {
-	cleanupCtx, cleanupCancel := boundedCleanupContext(ctx)
-	defer cleanupCancel()
+	p.stopSessionLeaseKeeper()
+	cleanupCtx := ctx
+	if cleanupCtx == nil {
+		cleanupCtx = context.Background()
+	}
 	for {
 		p.mu.Lock()
 		if inFlight := p.teardownInFlight; inFlight != nil {
+			unproven := p.containmentUnproven
 			p.mu.Unlock()
 			select {
 			case <-inFlight:
 				continue
 			case <-cleanupCtx.Done():
+				if unproven {
+					return errors.Join(protocol.ErrContainmentUnproven, cleanupCtx.Err())
+				}
 				return cleanupCtx.Err()
 			}
 		}
 		p.closed = true
+		unproven := p.containmentUnproven
 		if p.sessionID == "" && p.bundleID == "" {
 			p.mu.Unlock()
+			if unproven {
+				return protocol.ErrContainmentUnproven
+			}
 			return nil
 		}
 		inFlight := make(chan struct{})
@@ -532,6 +800,9 @@ func (p *Protocol) Teardown(ctx context.Context) error {
 			}()
 			return p.teardownAttempt(cleanupCtx)
 		}()
+		if err == nil && unproven {
+			return protocol.ErrContainmentUnproven
+		}
 		return err
 	}
 }
@@ -541,12 +812,27 @@ func (p *Protocol) teardownAttempt(ctx context.Context) error {
 	sessionID := p.sessionID
 	p.mu.Unlock()
 	if sessionID != "" {
-		if err := p.delete(ctx, "/v1/sessions/"+url.PathEscape(sessionID)); err != nil {
-			return err
+		p.mu.Lock()
+		leaseToken := p.sessionLeaseToken
+		p.mu.Unlock()
+		for {
+			err := p.deleteSession(ctx, sessionID, leaseToken)
+			if err == nil {
+				break
+			}
+			select {
+			case <-ctx.Done():
+				return errors.Join(
+					protocol.ErrContainmentUnproven,
+					fmt.Errorf("Bruno session reap remained unproven: %w", ctx.Err()),
+				)
+			case <-time.After(100 * time.Millisecond):
+			}
 		}
 		p.mu.Lock()
 		if p.sessionID == sessionID {
 			p.sessionID = ""
+			p.sessionLeaseToken = ""
 		}
 		p.mu.Unlock()
 	}
@@ -798,10 +1084,14 @@ func invalidateSharedBundle(key, bundleID string) {
 	}
 }
 
-func (p *Protocol) createSession(ctx context.Context, config map[string]any) (string, error) {
+func (p *Protocol) createSession(ctx context.Context, config map[string]any) (string, string, error) {
 	sessionID, err := newClientSessionID()
 	if err != nil {
-		return "", err
+		return "", "", err
+	}
+	leaseToken, err := newSessionLeaseToken()
+	if err != nil {
+		return "", "", err
 	}
 	payload := createSessionRequest{
 		SessionID:             sessionID,
@@ -824,18 +1114,43 @@ func (p *Protocol) createSession(ctx context.Context, config map[string]any) (st
 		},
 		Secrets:            stringMapValue(config["bruno_secret_bindings"]),
 		AllowedTargetHosts: protocol.TargetPolicyHosts(config),
+		SessionLeaseToken:  leaseToken,
 	}
 	body, err := json.Marshal(payload)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
+	// The runner reserves the client-generated session before awaiting a
+	// potentially slow developer-worker factory. Keep that reserved generation
+	// alive while the create response is pending; the ordinary session keeper
+	// cannot start until Init receives and validates that response.
+	provisionalCtx, stopProvisional := context.WithCancel(ctx)
+	provisionalDone := make(chan struct{})
+	go func() {
+		defer close(provisionalDone)
+		ticker := time.NewTicker(runnerSessionLeaseRenew)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-provisionalCtx.Done():
+				return
+			case <-ticker.C:
+				p.renewKnownSessionLease(provisionalCtx, p.runnerURL, sessionID, leaseToken, p.client)
+			}
+		}
+	}()
+	defer func() {
+		stopProvisional()
+		<-provisionalDone
+	}()
 	var uncertainErr error
 	for attempt := 0; attempt < 2; attempt++ {
 		request, requestErr := http.NewRequestWithContext(ctx, http.MethodPost, p.runnerURL+"/v1/sessions", bytes.NewReader(body))
 		if requestErr != nil {
-			return "", requestErr
+			return "", "", requestErr
 		}
 		request.Header.Set("Content-Type", "application/json")
+		p.setRunnerOwnerHeaders(request)
 		response, requestErr := p.client.Do(request)
 		if requestErr != nil {
 			uncertainErr = fmt.Errorf("create Bruno runner session: %w", requestErr)
@@ -847,7 +1162,7 @@ func (p *Protocol) createSession(ctx context.Context, config map[string]any) (st
 		if response.StatusCode != http.StatusCreated {
 			httpErr := runnerHTTPError(response, 1<<20)
 			response.Body.Close()
-			return "", httpErr
+			return "", "", httpErr
 		}
 		var decoded createSessionResponse
 		decodeErr := json.NewDecoder(io.LimitReader(response.Body, 1<<20)).Decode(&decoded)
@@ -856,19 +1171,24 @@ func (p *Protocol) createSession(ctx context.Context, config map[string]any) (st
 			uncertainErr = fmt.Errorf("decode Bruno runner session: %w", decodeErr)
 			continue
 		}
-		if strings.TrimSpace(decoded.SessionID) != sessionID {
+		if strings.TrimSpace(decoded.SessionID) != sessionID || decoded.SessionLeaseToken != leaseToken ||
+			decoded.LeaseTTLMS != runnerSessionLeaseTTL.Milliseconds() {
 			uncertainErr = fmt.Errorf("Bruno runner did not acknowledge the requested session id")
 			continue
 		}
-		return sessionID, nil
+		return sessionID, leaseToken, nil
 	}
 	// The server reserves the client ID before provisioning a worker. Even if
 	// both create responses were lost, this exact ID can cancel an in-progress
 	// placeholder or delete the committed secret-bearing session.
 	cleanupCtx, cleanupCancel := freshCleanupContext()
-	cleanupErr := p.delete(cleanupCtx, "/v1/sessions/"+url.PathEscape(sessionID))
+	cleanupErr := p.deleteSession(cleanupCtx, sessionID, leaseToken)
 	cleanupCancel()
-	return "", errors.Join(uncertainErr, cleanupErr)
+	if cleanupErr != nil {
+		p.containmentUnproven = true
+		cleanupErr = errors.Join(protocol.ErrContainmentUnproven, cleanupErr)
+	}
+	return "", "", errors.Join(uncertainErr, cleanupErr)
 }
 
 func newClientSessionID() (string, error) {
@@ -877,6 +1197,18 @@ func newClientSessionID() (string, error) {
 		return "", fmt.Errorf("generate Bruno session identifier: %w", err)
 	}
 	return "session-" + hex.EncodeToString(material[:]), nil
+}
+
+func newSessionLeaseToken() (string, error) {
+	var material [32]byte
+	n, err := rand.Read(material[:])
+	if err != nil {
+		return "", fmt.Errorf("generate Bruno session lease token: %w", err)
+	}
+	if n != len(material) {
+		return "", fmt.Errorf("generate Bruno session lease token: %w", io.ErrUnexpectedEOF)
+	}
+	return hex.EncodeToString(material[:]), nil
 }
 
 func (p *Protocol) cancel(ctx context.Context) error {
@@ -890,6 +1222,8 @@ func (p *Protocol) cancel(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	p.setRunnerOwnerHeaders(request)
+	p.setSessionLeaseHeader(request)
 	response, err := p.client.Do(request)
 	if err != nil {
 		return err
@@ -905,6 +1239,28 @@ func (p *Protocol) delete(ctx context.Context, path string) error {
 	request, err := http.NewRequestWithContext(ctx, http.MethodDelete, p.runnerURL+path, nil)
 	if err != nil {
 		return err
+	}
+	p.setRunnerOwnerHeaders(request)
+	response, err := p.client.Do(request)
+	if err != nil {
+		return err
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusNoContent && response.StatusCode != http.StatusNotFound {
+		return runnerHTTPError(response, 64<<10)
+	}
+	return nil
+}
+
+func (p *Protocol) deleteSession(ctx context.Context, sessionID, leaseToken string) error {
+	request, err := http.NewRequestWithContext(ctx, http.MethodDelete,
+		p.runnerURL+"/v1/sessions/"+url.PathEscape(sessionID), nil)
+	if err != nil {
+		return err
+	}
+	p.setRunnerOwnerHeaders(request)
+	if leaseToken != "" {
+		request.Header.Set("X-Apexload-Session-Lease-Token", leaseToken)
 	}
 	response, err := p.client.Do(request)
 	if err != nil {

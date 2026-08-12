@@ -1,5 +1,32 @@
 import { appendTelemetryDiagnostic } from './components/monitoringTelemetryDiagnostics'
-import type { Domain, Project, TelemetryDiagnosticEntry } from './types'
+import type { DashboardAuthStatus, Domain, Project, TelemetryDiagnosticEntry } from './types'
+
+export function dashboardSnapshotAudience(
+  authStatus: DashboardAuthStatus | undefined,
+  devViewMode: string,
+  activeProjectId?: string,
+  activeDomainId?: string,
+  activeApplicationRepositoryId?: string,
+): 'admin' | 'user' {
+  if (authStatus?.mode === 'dev') {
+    return devViewMode === 'user' ? 'user' : 'admin'
+  }
+  if (!authStatus || !authStatus.enabled) {
+    return 'admin'
+  }
+
+  const relevantRoles = [
+    ...(authStatus.user?.global_roles || []),
+    ...(activeDomainId ? authStatus.user?.domain_roles?.[activeDomainId] || [] : []),
+    ...(activeApplicationRepositoryId
+      ? authStatus.user?.application_repository_roles?.[activeApplicationRepositoryId] || []
+      : []),
+    ...(activeProjectId ? authStatus.user?.project_roles?.[activeProjectId] || [] : []),
+  ]
+  return relevantRoles.some(role => role === 'system_admin' || role === 'project_admin')
+    ? 'admin'
+    : 'user'
+}
 
 export function projectForActiveDomain(activeDomain: Domain | null, selectedProject: Project | null): Project | null {
   if (!activeDomain || !selectedProject) return null
@@ -49,6 +76,13 @@ export function isCurrentCatalogRequest(
   currentGeneration: number,
 ): boolean {
   return requestGeneration === currentGeneration
+}
+
+export function isCurrentApplicationCreateScope(
+  invocation: { projectId?: string; generation: number },
+  current: { projectId?: string; generation: number },
+): boolean {
+  return invocation.generation === current.generation && invocation.projectId === current.projectId
 }
 
 export function isProjectScopedMessageCurrent(messageProjectID?: string, currentProjectID?: string): boolean {

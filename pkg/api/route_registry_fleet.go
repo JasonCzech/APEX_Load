@@ -11,10 +11,10 @@ var fleetObservabilityAPIRouteCatalog = apiRouteCatalog{
 		newAuthenticatedAPIRoute(http.MethodPatch, "/api/v1/fleet/alerts/{id}/ack", "handleAckFleetAlert", accessRequirement{GlobalRoles: []string{RoleSystemAdmin}, MaxBodyBytes: 65536}, func(s *Server) http.Handler {
 			return http.HandlerFunc(s.handleAckFleetAlert)
 		}),
-		newAuthenticatedAPIRoute(http.MethodGet, "/api/v1/fleet/capacity", "handleGetFleetCapacity", viewerGlobalAccess(), func(s *Server) http.Handler {
+		newAuthenticatedAPIRoute(http.MethodGet, "/api/v1/fleet/capacity", "handleGetFleetCapacity", unrestrictedViewerGlobalAccess(), func(s *Server) http.Handler {
 			return http.HandlerFunc(s.handleGetFleetCapacity)
 		}),
-		newAuthenticatedAPIRoute(http.MethodGet, "/api/v1/fleet/load-zones", "handleGetFleetLoadZones", viewerGlobalAccess(), func(s *Server) http.Handler {
+		newAuthenticatedAPIRoute(http.MethodGet, "/api/v1/fleet/load-zones", "handleGetFleetLoadZones", unrestrictedViewerGlobalAccess(), func(s *Server) http.Handler {
 			return http.HandlerFunc(s.handleGetFleetLoadZones)
 		}),
 		newAuthenticatedAPIRoute(http.MethodGet, "/api/v1/fleet/provisioner", "handleGetFleetProvisioner", viewerGlobalAccess(), func(s *Server) http.Handler {

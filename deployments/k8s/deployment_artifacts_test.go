@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"gopkg.in/yaml.v3"
 )
 
 var placeholderPattern = regexp.MustCompile(`\$\{([A-Z0-9_]+)\}`)
@@ -212,6 +214,82 @@ func TestProductionGeneratorManifestsPersistExecutionFenceState(t *testing.T) {
 	}
 }
 
+func TestLocalGeneratorManifestPersistsExecutionFenceStateAcrossContainerRestart(t *testing.T) {
+	content := readTextFile(t, "local/generator-statefulset.yaml")
+	for _, required := range []string{
+		"APEXLOAD_GENERATOR_STATE_DIR",
+		"value: /var/lib/apexload-generator",
+		"APEXLOAD_ARCHIVE_DIR",
+		"value: /var/lib/apexload-generator/archives",
+		"- name: generator-state\n              mountPath: /var/lib/apexload-generator",
+		"- name: generator-state\n          emptyDir: {}",
+	} {
+		if !strings.Contains(content, required) {
+			t.Fatalf("local generator manifest missing container-restart-persistent fencing state setting %q", required)
+		}
+	}
+}
+
+func TestGeneratorRunSupervisionDeploymentContract(t *testing.T) {
+	for _, path := range []string{
+		"local/generator-statefulset.yaml",
+		"onprem/generator-statefulset.yaml",
+		"aks/generator-statefulset.yaml",
+		"eks/generator-statefulset.yaml",
+		"../helm/apexload/templates/generator.yaml",
+	} {
+		content := readTextFile(t, path)
+		for _, required := range []string{"APEXLOAD_GENERATOR_RUN_SUPERVISION_TTL", "APEXLOAD_GENERATOR_ABANDON_DRAIN"} {
+			if !strings.Contains(content, required) {
+				t.Fatalf("%s missing generator run-supervision setting %q", path, required)
+			}
+		}
+	}
+	for _, path := range []string{
+		"local/controller-deployment.yaml",
+		"onprem/configmap.yaml",
+		"aks/configmap.yaml",
+		"eks/configmap.yaml",
+		"../helm/apexload/templates/configmap.yaml",
+	} {
+		content := readTextFile(t, path)
+		for _, required := range []string{"APEXLOAD_GENERATOR_RUN_SUPERVISION_TTL", "APEXLOAD_GENERATOR_RUN_SUPERVISION_RENEW_INTERVAL"} {
+			if !strings.Contains(content, required) {
+				t.Fatalf("%s missing controller run-supervision setting %q", path, required)
+			}
+		}
+	}
+
+	values := readTextFile(t, "../helm/apexload/values.yaml")
+	for _, required := range []string{"ttl: 60s", "abandonDrain: 5s", "renewInterval: 10s"} {
+		if !strings.Contains(values, required) {
+			t.Fatalf("Helm values missing fail-closed supervision default %q", required)
+		}
+	}
+	schema := readTextFile(t, "../helm/apexload/values.schema.json")
+	if !strings.Contains(schema, `"renewInterval": { "type": "string", "pattern": "^(?:[1-9]|10)s$" }`) {
+		t.Fatal("Helm schema must cap renewInterval at 10s so every allowed 30s-60s TTL retains three renewal opportunities")
+	}
+	controllerTemplate := readTextFile(t, "../helm/apexload/templates/controller.yaml")
+	if !strings.Contains(controllerTemplate, "checksum/config:") {
+		t.Fatal("Helm controller pod template must roll when run-supervision ConfigMap values change")
+	}
+
+	compose := readTextFile(t, "../../compose.yaml")
+	for _, required := range []string{
+		`APEXLOAD_GENERATOR_RUN_SUPERVISION_TTL: "60s"`,
+		`APEXLOAD_GENERATOR_RUN_SUPERVISION_RENEW_INTERVAL: "10s"`,
+		`APEXLOAD_GENERATOR_ABANDON_DRAIN: "5s"`,
+		"APEXLOAD_GENERATOR_STATE_DIR: /data/state",
+		"generator-data:/data",
+		"generator-data:",
+	} {
+		if !strings.Contains(compose, required) {
+			t.Fatalf("compose.yaml missing persistent supervision contract %q", required)
+		}
+	}
+}
+
 func TestHAOverlaysSetReplicasAndFlagTogether(t *testing.T) {
 	for _, path := range []string{"onprem-ha/kustomization.yaml", "aks-ha/kustomization.yaml", "eks-ha/kustomization.yaml"} {
 		t.Run(path, func(t *testing.T) {
@@ -256,6 +334,126 @@ func TestDockerComposeIncludesGeneratorFleet(t *testing.T) {
 		if !strings.Contains(compose, check) {
 			t.Fatalf("compose.yaml missing generator fleet check %q", check)
 		}
+	}
+}
+
+func TestDockerDataPlatformOverride(t *testing.T) {
+	override := readTextFile(t, "../docker/compose.data-platform.yaml")
+	type composeService struct {
+		Image       string            `yaml:"image"`
+		Environment map[string]string `yaml:"environment"`
+		DependsOn   map[string]struct {
+			Condition string `yaml:"condition"`
+		} `yaml:"depends_on"`
+		Networks    map[string]any `yaml:"networks"`
+		Ports       []any          `yaml:"ports"`
+		Volumes     []string       `yaml:"volumes"`
+		Command     []string       `yaml:"command"`
+		Healthcheck struct {
+			Test []string `yaml:"test"`
+		} `yaml:"healthcheck"`
+	}
+	var model struct {
+		Services map[string]composeService `yaml:"services"`
+		Volumes  map[string]any            `yaml:"volumes"`
+		Networks map[string]struct {
+			Internal bool `yaml:"internal"`
+		} `yaml:"networks"`
+	}
+	if err := yaml.Unmarshal([]byte(override), &model); err != nil {
+		t.Fatalf("parse data-platform Compose override: %v", err)
+	}
+	requireService := func(name string) composeService {
+		t.Helper()
+		service, ok := model.Services[name]
+		if !ok {
+			t.Fatalf("data-platform Compose override missing %s service", name)
+		}
+		return service
+	}
+	assertNetworks := func(name string, service composeService, want ...string) {
+		t.Helper()
+		if len(service.Networks) != len(want) {
+			t.Fatalf("%s networks = %v, want only %v", name, service.Networks, want)
+		}
+		for _, network := range want {
+			if _, ok := service.Networks[network]; !ok {
+				t.Fatalf("%s must join %q; networks = %v", name, network, service.Networks)
+			}
+		}
+	}
+	contains := func(values []string, want string) bool {
+		for _, value := range values {
+			if value == want {
+				return true
+			}
+		}
+		return false
+	}
+
+	controller := requireService("controller")
+	postgres := requireService("postgres")
+	redis := requireService("redis")
+	if controller.Environment["APEXLOAD_STORE"] != "postgres" || controller.Environment["APEXLOAD_CACHE_BACKEND"] != "redis" {
+		t.Fatalf("controller must select PostgreSQL and Redis: environment = %v", controller.Environment)
+	}
+	if !strings.Contains(controller.Environment["APEXLOAD_DATABASE_URL"], "${APEXLOAD_LOCAL_POSTGRES_PASSWORD:-apexload-local-postgres}") ||
+		!strings.Contains(controller.Environment["APEXLOAD_REDIS_URL"], "${APEXLOAD_LOCAL_REDIS_PASSWORD:-apexload-local-redis}") {
+		t.Fatal("controller backend URLs must use the overridable local-development credentials")
+	}
+	for _, dependency := range []string{"postgres", "redis"} {
+		if controller.DependsOn[dependency].Condition != "service_healthy" {
+			t.Fatalf("controller dependency %s must be health-gated", dependency)
+		}
+	}
+	if _, enabled := controller.Environment["APEXLOAD_CONTROLLER_HA"]; enabled {
+		t.Fatal("single-controller local data-platform override must not enable controller HA")
+	}
+	assertNetworks("controller", controller, "default", "data-platform")
+
+	if postgres.Image != "postgres:16-alpine" || redis.Image != "redis:7-alpine" {
+		t.Fatalf("data-platform images are not pinned to the supported majors: postgres=%q redis=%q", postgres.Image, redis.Image)
+	}
+	if !contains(postgres.Volumes, "postgres-data:/var/lib/postgresql/data") || !contains(redis.Volumes, "redis-data:/data") {
+		t.Fatalf("data-platform persistence is incomplete: postgres=%v redis=%v", postgres.Volumes, redis.Volumes)
+	}
+	if _, ok := model.Volumes["postgres-data"]; !ok {
+		t.Fatal("data-platform Compose override must declare postgres-data")
+	}
+	if _, ok := model.Volumes["redis-data"]; !ok {
+		t.Fatal("data-platform Compose override must declare redis-data")
+	}
+	if len(postgres.Ports) != 0 || len(redis.Ports) != 0 {
+		t.Fatalf("data services must not publish host ports: postgres=%v redis=%v", postgres.Ports, redis.Ports)
+	}
+	assertNetworks("postgres", postgres, "data-platform")
+	assertNetworks("redis", redis, "data-platform")
+	backendNetwork, ok := model.Networks["data-platform"]
+	if !ok || !backendNetwork.Internal {
+		t.Fatal("data-platform network must be declared internal")
+	}
+
+	postgresHealth := strings.Join(postgres.Healthcheck.Test, " ")
+	for _, required := range []string{
+		"PGPASSWORD=\"$$POSTGRES_PASSWORD\"",
+		"psql -h postgres",
+		"-U \"$$POSTGRES_USER\"",
+		"-d \"$$POSTGRES_DB\"",
+		"SELECT 1",
+	} {
+		if !strings.Contains(postgresHealth, required) {
+			t.Fatalf("PostgreSQL health check must authenticate over TCP; missing %q in %q", required, postgresHealth)
+		}
+	}
+	if strings.Contains(postgresHealth, "pg_isready") {
+		t.Fatal("PostgreSQL health check must verify authentication, not only server readiness")
+	}
+	redisHealth := strings.Join(redis.Healthcheck.Test, " ")
+	if !strings.Contains(redisHealth, `redis-cli -h redis --no-auth-warning -a "$$REDIS_PASSWORD"`) {
+		t.Fatalf("Redis health check must authenticate: %q", redisHealth)
+	}
+	if !strings.Contains(strings.Join(redis.Command, " "), `--requirepass "$$REDIS_PASSWORD"`) {
+		t.Fatal("Redis service must require the configured password")
 	}
 }
 

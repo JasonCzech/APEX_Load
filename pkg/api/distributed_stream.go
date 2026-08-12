@@ -39,6 +39,20 @@ func (b *distributedExecutionBackend) prepareDistributedTestRun(tr *TestRunner, 
 		now = scheduledStart[0]
 	}
 	lifecycleCtx, lifecycleCancel := tr.executionOperationContext(context.Background())
+	return b.prepareDistributedTestRunWithLifecycle(tr, test, groupShards, clientsByTarget, streamsByTarget, lifecycleCtx, lifecycleCancel, now)
+}
+
+// prepareDistributedTestRunWithLifecycle installs the same lifecycle context
+// that owns the metrics streams. The run execution context is canceled as soon
+// as a graceful stop is accepted, while this context intentionally remains live
+// until terminal metrics are consumed (or leadership/shutdown fences it).
+func (b *distributedExecutionBackend) prepareDistributedTestRunWithLifecycle(tr *TestRunner, test *ManagedTest, groupShards map[string][]GeneratorShardSummary, clientsByTarget map[string]generatorClient, streamsByTarget map[string]*generatorrpc.MetricsStream, lifecycleCtx context.Context, lifecycleCancel context.CancelFunc, now time.Time) (bool, func(), error) {
+	if lifecycleCtx == nil {
+		lifecycleCtx = context.Background()
+	}
+	if lifecycleCancel == nil {
+		lifecycleCtx, lifecycleCancel = context.WithCancel(lifecycleCtx)
+	}
 	orderedTargets := orderedGeneratorTargets(clientsByTarget, b.configuredTargets())
 	firstTarget := ""
 	if len(orderedTargets) > 0 {
@@ -47,7 +61,7 @@ func (b *distributedExecutionBackend) prepareDistributedTestRun(tr *TestRunner, 
 
 	tr.mu.Lock()
 	ctx := test.executionCtx
-	if tr.shuttingDown || tr.tests[test.ID] != test || test.Status != "INITIALIZING" || ctx == nil || ctx.Err() != nil || !tr.isExecutionLeader() {
+	if tr.shuttingDown || tr.tests[test.ID] != test || test.Status != "INITIALIZING" || ctx == nil || ctx.Err() != nil || lifecycleCtx.Err() != nil || !tr.isExecutionLeader() {
 		tr.mu.Unlock()
 		lifecycleCancel()
 		return false, nil, nil
@@ -350,7 +364,7 @@ func (b *distributedExecutionBackend) snapshotMetricsStreams(tr *TestRunner, tes
 	return map[string]*generatorrpc.MetricsStream{test.remoteTarget: test.remoteMetricsStream}
 }
 
-func (b *distributedExecutionBackend) rollbackShardVUsers(_ context.Context, testID string, executionGeneration uint64, groupName string, clients map[string]generatorClient, attempted []GeneratorShardSummary, previousByTarget map[string]int) error {
+func (b *distributedExecutionBackend) rollbackShardVUsers(_ context.Context, testID string, executionGeneration uint64, groupName string, clients map[string]generatorClient, attempted []GeneratorShardSummary, previousByTarget map[string]int, runSupervisionToken []byte) error {
 	rollbackErrs := make([]error, 0)
 	for _, shard := range attempted {
 		client := clients[shard.Target]
@@ -358,7 +372,7 @@ func (b *distributedExecutionBackend) rollbackShardVUsers(_ context.Context, tes
 			rollbackErrs = append(rollbackErrs, fmt.Errorf("selected generator %q is not connected", shard.Target))
 			continue
 		}
-		if err := b.rollbackSingleShardVUsers(testID, executionGeneration, groupName, client, previousByTarget[shard.Target]); err != nil {
+		if err := b.rollbackSingleShardVUsers(testID, executionGeneration, groupName, client, previousByTarget[shard.Target], runSupervisionToken); err != nil {
 			rollbackErrs = append(rollbackErrs, fmt.Errorf("adjust rollback on %s: %w", shard.Target, err))
 		}
 	}
@@ -368,7 +382,7 @@ func (b *distributedExecutionBackend) rollbackShardVUsers(_ context.Context, tes
 // rollbackSingleShardVUsers retries an idempotent absolute-target adjustment.
 // It deliberately uses fresh bounded contexts: the forward request's context
 // may have expired after the generator applied it but before returning its ACK.
-func (b *distributedExecutionBackend) rollbackSingleShardVUsers(testID string, executionGeneration uint64, groupName string, client generatorClient, previousVUsers int) error {
+func (b *distributedExecutionBackend) rollbackSingleShardVUsers(testID string, executionGeneration uint64, groupName string, client generatorClient, previousVUsers int, runSupervisionToken []byte) error {
 	if previousVUsers < 0 || previousVUsers > maxManagedTestVUsers {
 		return fmt.Errorf("rollback VUser count must be between 0 and %d", maxManagedTestVUsers)
 	}
@@ -380,6 +394,7 @@ func (b *distributedExecutionBackend) rollbackSingleShardVUsers(testID string, e
 			ExecutionGeneration: executionGeneration,
 			GroupName:           groupName,
 			TargetVUsers:        int32(previousVUsers),
+			RunSupervisionToken: runSupervisionToken,
 		})
 		cancel()
 		if err == nil && adjustment.Accepted && int(adjustment.CurrentVUsers) == previousVUsers {
@@ -416,6 +431,7 @@ func (b *distributedExecutionBackend) closeRemoteResources(tr *TestRunner, test 
 	archiveClientsByTarget := test.remoteArchiveClientsByTarget
 	singleClient := test.remoteClient
 	lifecycleCancel := test.remoteLifecycleCancel
+	runSupervisionKeeper := detachRunSupervisionKeeperLocked(test)
 	test.remoteMetricsStream = nil
 	test.remoteMetricsStreamsByTarget = nil
 	test.remoteClient = nil
@@ -431,6 +447,8 @@ func (b *distributedExecutionBackend) closeRemoteResources(tr *TestRunner, test 
 	test.remoteGoalUpdateRevision = 0
 	test.remoteLifecycleCtx = nil
 	test.remoteLifecycleCancel = nil
+	test.remoteRunSupervisionFencedTargets = nil
+	clear(test.remoteRunSupervisionToken[:])
 	test.remoteStopFinalizerRunning = false
 	test.remoteActivated = false
 	test.remoteActivationPending = false
@@ -441,6 +459,11 @@ func (b *distributedExecutionBackend) closeRemoteResources(tr *TestRunner, test 
 	if lifecycleCancel != nil {
 		lifecycleCancel()
 	}
+	runSupervisionJoinCtx, runSupervisionJoinCancel := context.WithTimeout(context.Background(), b.runSupervisionKeeperJoinTimeout())
+	if err := stopAndWaitRunSupervisionKeeper(runSupervisionJoinCtx, runSupervisionKeeper); err != nil {
+		slog.Warn("timed out joining generator run supervision during remote cleanup", "test_id", test.ID, "error", err)
+	}
+	runSupervisionJoinCancel()
 
 	if len(streamsByTarget) > 0 {
 		for _, stream := range streamsByTarget {
@@ -514,7 +537,7 @@ func (b *distributedExecutionBackend) startDistributedStopFinalizer(tr *TestRunn
 
 			clients, err := b.resolveClientsLocked(tr, test)
 			if err == nil {
-				err = b.forceStopDistributedTargets(lifecycleCtx, test.ID, executionGeneration, clients)
+				err = b.forceStopDistributedTargets(lifecycleCtx, test.ID, executionGeneration, clients, runSupervisionTokenForTest(tr, test))
 			}
 			if err == nil {
 				tr.mu.Lock()
@@ -558,7 +581,7 @@ func (b *distributedExecutionBackend) finalizeAcknowledgedForcedStop(tr *TestRun
 	go b.completeDistributedTestRun(tr, test, "ABORTED", "")
 }
 
-func (b *distributedExecutionBackend) forceStopDistributedTargets(parent context.Context, testID string, executionGeneration uint64, clients map[string]generatorClient) error {
+func (b *distributedExecutionBackend) forceStopDistributedTargets(parent context.Context, testID string, executionGeneration uint64, clients map[string]generatorClient, runSupervisionToken []byte) error {
 	targets := orderedGeneratorTargets(clients, b.configuredTargets())
 	if len(targets) == 0 {
 		return fmt.Errorf("distributed generator targets are unavailable")
@@ -577,7 +600,7 @@ func (b *distributedExecutionBackend) forceStopDistributedTargets(parent context
 				return
 			}
 			ctx, cancel := context.WithTimeout(parent, b.timeout)
-			ack, err := stopGeneratorTest(ctx, client, testID, false, executionGeneration)
+			ack, err := stopGeneratorTestWithToken(ctx, client, testID, false, executionGeneration, runSupervisionToken)
 			cancel()
 			if err == nil && !ack.Acknowledged {
 				err = fmt.Errorf("generator did not acknowledge forced stop")
@@ -1642,6 +1665,7 @@ func (b *distributedExecutionBackend) stopRemainingRemoteTargets(tr *TestRunner,
 	tr.mu.RLock()
 	clientsByTarget, single, remoteTarget := cloneClientMap(test.remoteClientsByTarget), test.remoteClient, test.remoteTarget
 	executionGeneration := test.executionGeneration
+	runSupervisionToken := cloneRunSupervisionToken(test.remoteRunSupervisionToken)
 	states := make(map[string]string, len(test.remoteTargetStates))
 	for k, v := range test.remoteTargetStates {
 		states[k] = v
@@ -1665,7 +1689,7 @@ func (b *distributedExecutionBackend) stopRemainingRemoteTargets(tr *TestRunner,
 		pending++
 		target := target
 		go func() {
-			_, stopErr := stopGeneratorTest(cleanupCtx, clients[target], test.ID, graceful, executionGeneration)
+			_, stopErr := stopGeneratorTestWithToken(cleanupCtx, clients[target], test.ID, graceful, executionGeneration, runSupervisionToken)
 			results <- stopResult{target: target, err: stopErr}
 		}()
 	}
@@ -1725,6 +1749,10 @@ func (b *distributedExecutionBackend) probeGeneratorLoad(ctx context.Context, ta
 	snapshot.SupportedProtocols = normalizedProtocolList(response.SupportedProtocols)
 	snapshot.CompatibleFeatures = normalizedProtocolList(response.CompatibleFeatures)
 	snapshot.RuntimeCapacities = cloneProtocolRuntimeCapacities(response.RuntimeCapacities)
+	snapshot.RunSupervisionExpirationsTotal = response.RunSupervisionExpirationsTotal
+	snapshot.RunSupervisionEscalationsTotal = response.RunSupervisionEscalationsTotal
+	snapshot.LastSafetyExit = cloneRemoteGeneratorSafetyExitEvidence(response.LastSafetyExit)
+	snapshot.SafetyExits = cloneRemoteGeneratorSafetyExitEvidenceList(response.SafetyExits)
 	snapshot.HeartbeatOK = true
 	return snapshot
 }

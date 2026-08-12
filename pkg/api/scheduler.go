@@ -257,12 +257,22 @@ func (s *scenarioScheduler) RunDueSchedules() (runErr error) {
 	if s == nil || s.runner == nil {
 		return nil
 	}
+	sweepAt := s.now().UTC()
 	// Followers are healthy standbys, but they did not perform a sweep. Do not
-	// overwrite the last leader sweep with a misleading successful timestamp.
+	// overwrite the last leader sweep with a misleading successful timestamp;
+	// only advance the fixed-size readiness due-time index.
 	if !s.runner.isExecutionLeader() {
+		if s.runner.leadership != nil {
+			if err := s.runner.refreshSchedulerContentForHASweep(); err != nil {
+				return fmt.Errorf("refresh standby scheduler content for readiness: %w", err)
+			}
+		}
+		s.runner.mu.Lock()
+		s.runner.advanceSchedulerReadinessLocked(sweepAt)
+		s.runner.publishRuntimeReadinessLocked(time.Now().UTC())
+		s.runner.mu.Unlock()
 		return nil
 	}
-	sweepAt := s.now().UTC()
 	type domainSweepState struct {
 		attempted bool
 		completed bool
@@ -333,14 +343,17 @@ func (s *scenarioScheduler) RunDueSchedules() (runErr error) {
 	toStart := make([]*ManagedTest, 0)
 	scenarioSweep.attempted = true
 	s.runner.mu.Lock()
+	s.runner.advanceSchedulerReadinessLocked(now)
 	processedOccurrences := 0
 	scheduleSweepExhausted := false
-	for _, schedule := range s.runner.listAllScenarioSchedulesLocked() {
+	schedules := s.runner.listAllScenarioSchedulesLocked()
+	for _, currentSchedule := range schedules {
 		if !s.runner.executionLeaseTermCurrent(leaseTerm) {
 			scenarioSweep.err = errors.Join(scenarioSweep.err, errNotExecutionLeader)
 			scheduleSweepExhausted = true
 			break
 		}
+		schedule := cloneScenarioSchedule(currentSchedule)
 		if schedule == nil || !schedule.Enabled || schedule.NextRunAt == nil || schedule.NextRunAt.After(now) {
 			continue
 		}
@@ -416,6 +429,10 @@ func (s *scenarioScheduler) RunDueSchedules() (runErr error) {
 		}
 	}
 	dueOneTimeScheduled := s.dueOneTimeScheduledTestIDsLocked(now, maxOneTimeScheduledStartsPerSweep)
+	// Schedule updates above operate on clones, so every successful fenced
+	// installer applied its old->new counter/heap delta. Publish the combined
+	// result once instead of rescanning the full catalog or allocating per row.
+	s.runner.publishRuntimeReadinessLocked(time.Now().UTC())
 	s.runner.mu.Unlock()
 	if !s.runner.executionLeaseTermCurrent(leaseTerm) {
 		return errNotExecutionLeader
@@ -1645,12 +1662,15 @@ func (tr *TestRunner) saveScenarioScheduleForSweepLocked(schedule *storage.Scena
 	if existingIndex >= 0 && currentIndex < 0 {
 		return fmt.Errorf("scenario schedule %q was deleted while persistence was in flight", schedule.ID)
 	}
+	var previous *storage.ScenarioSchedule
 	if currentIndex >= 0 {
+		previous = scenario.Schedules[currentIndex]
 		scenario.Schedules[currentIndex] = cloneScenarioSchedule(schedule)
 	} else {
 		scenario.Schedules = append(scenario.Schedules, cloneScenarioSchedule(schedule))
 	}
 	tr.contentRevision++
+	tr.adjustSchedulerReadinessCountersLocked(previous, schedule)
 	return nil
 }
 
@@ -3082,8 +3102,10 @@ func (tr *TestRunner) syncScenarioScheduleLifecycleForTest(testID string) error 
 			return nil
 		}
 		schedule.LastOccurrence = cloneScenarioScheduleOccurrence(snapshot.occurrence)
+		previous := scenario.Schedules[index]
 		scenario.Schedules[index] = cloneScenarioSchedule(schedule)
 		tr.contentRevision++
+		tr.adjustSchedulerReadinessLocked(previous, schedule)
 		return nil
 	}
 	return nil
@@ -3421,19 +3443,20 @@ func (tr *TestRunner) DeleteScenarioSchedule(scenarioID string, scheduleID strin
 		return true, nil
 	}
 	filtered := make([]*storage.ScenarioSchedule, 0, len(scenario.Schedules))
-	removed := false
+	var removed *storage.ScenarioSchedule
 	for _, schedule := range scenario.Schedules {
 		if schedule != nil && schedule.ID == scheduleID {
-			removed = true
+			removed = schedule
 			continue
 		}
 		filtered = append(filtered, schedule)
 	}
-	if !removed {
+	if removed == nil {
 		return true, nil
 	}
 	scenario.Schedules = append([]*storage.ScenarioSchedule(nil), filtered...)
 	tr.contentRevision++
+	tr.adjustSchedulerReadinessLocked(removed, nil)
 	return true, nil
 }
 
@@ -3633,6 +3656,7 @@ func (tr *TestRunner) compensateScenarioScheduleCreateLocked(scenarioID, schedul
 		}
 		scenario.Schedules = append(scenario.Schedules[:index], scenario.Schedules[index+1:]...)
 		tr.contentRevision++
+		tr.adjustSchedulerReadinessLocked(candidate, nil)
 		break
 	}
 	return nil

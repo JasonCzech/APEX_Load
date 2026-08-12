@@ -69,6 +69,9 @@ type Client struct {
 	ownerMu    sync.RWMutex
 	ownerID    string
 	ownerEpoch string
+	leaseMu    sync.RWMutex
+	leaseID    string
+	leaseToken string
 }
 
 // NewClient creates a loopback-only, redirect-refusing sidecar client. The
@@ -141,13 +144,14 @@ func (c *Client) ClaimOwner(ctx context.Context, ownerID string) (ClaimOwnerResp
 	}
 	var response ClaimOwnerResponse
 	err := c.do(ctx, http.MethodPost, "/v1/owner/claim", ClaimOwnerRequest{
-		Contract: ContractVersion,
-		OwnerID:  ownerID,
+		Contract:   ContractVersion,
+		OwnerID:    ownerID,
+		LeaseTTLMS: RunnerOwnerLeaseTTL.Milliseconds(),
 	}, &response)
 	if err != nil {
 		return ClaimOwnerResponse{}, err
 	}
-	if response.OwnerID != ownerID || !executionIDPattern.MatchString(response.Epoch) || !response.Claimed {
+	if response.OwnerID != ownerID || !executionIDPattern.MatchString(response.Epoch) || !response.Claimed || response.LeaseTTLMS != RunnerOwnerLeaseTTL.Milliseconds() {
 		return ClaimOwnerResponse{}, requestFailure("Java runner sidecar returned an invalid owner claim", true)
 	}
 	c.ownerMu.Lock()
@@ -157,12 +161,88 @@ func (c *Client) ClaimOwner(ctx context.Context, ownerID string) (ClaimOwnerResp
 	return response, nil
 }
 
+func (c *Client) ClaimRuntimeLease(ctx context.Context) (ClaimRuntimeLeaseResponse, error) {
+	c.ownerMu.RLock()
+	ownerID, ownerEpoch := c.ownerID, c.ownerEpoch
+	c.ownerMu.RUnlock()
+	if ownerID == "" || ownerEpoch == "" {
+		return ClaimRuntimeLeaseResponse{}, fmt.Errorf("Java runner sidecar owner is not claimed")
+	}
+	var response ClaimRuntimeLeaseResponse
+	err := c.do(ctx, http.MethodPost, "/v1/runtime-leases/claim", ClaimRuntimeLeaseRequest{
+		Contract: ContractVersion, OwnerID: ownerID, OwnerEpoch: ownerEpoch,
+		LeaseTTLMS: RuntimeLeaseTTL.Milliseconds(),
+	}, &response)
+	if err != nil {
+		return ClaimRuntimeLeaseResponse{}, err
+	}
+	if !response.Claimed || !executionIDPattern.MatchString(response.LeaseID) ||
+		len(response.LeaseToken) != 64 || response.LeaseTTLMS != RuntimeLeaseTTL.Milliseconds() {
+		return ClaimRuntimeLeaseResponse{}, requestFailure("Java runner sidecar returned an invalid runtime lease", true)
+	}
+	c.leaseMu.Lock()
+	c.leaseID, c.leaseToken = response.LeaseID, response.LeaseToken
+	c.leaseMu.Unlock()
+	return response, nil
+}
+
+func (c *Client) RenewRuntimeLease(ctx context.Context) (RenewRuntimeLeaseResponse, error) {
+	ownerID, ownerEpoch, leaseID, leaseToken := c.ownerAndRuntimeLease()
+	if leaseID == "" || leaseToken == "" {
+		return RenewRuntimeLeaseResponse{}, fmt.Errorf("Java runner sidecar runtime lease is not claimed")
+	}
+	var response RenewRuntimeLeaseResponse
+	err := c.do(ctx, http.MethodPost, "/v1/runtime-leases/"+url.PathEscape(leaseID)+"/renew", RenewRuntimeLeaseRequest{
+		Contract: ContractVersion, OwnerID: ownerID, OwnerEpoch: ownerEpoch, LeaseToken: leaseToken,
+	}, &response)
+	if err != nil {
+		return RenewRuntimeLeaseResponse{}, err
+	}
+	if !response.Renewed || response.LeaseID != leaseID || response.LeaseTTLMS != RuntimeLeaseTTL.Milliseconds() {
+		return RenewRuntimeLeaseResponse{}, requestFailure("Java runner sidecar returned an invalid runtime lease renewal", true)
+	}
+	return response, nil
+}
+
+// RevokeRuntimeLease returns only after the sidecar has positively reaped all
+// work bound to this lease. The credentials are retained on every failure so a
+// caller can keep retrying an ambiguous response without creating a new lease.
+func (c *Client) RevokeRuntimeLease(ctx context.Context) (RevokeRuntimeLeaseResponse, error) {
+	ownerID, ownerEpoch, leaseID, leaseToken := c.ownerAndRuntimeLease()
+	if leaseID == "" || leaseToken == "" {
+		return RevokeRuntimeLeaseResponse{}, fmt.Errorf("Java runner sidecar runtime lease is not claimed")
+	}
+	var response RevokeRuntimeLeaseResponse
+	err := c.do(ctx, http.MethodPost, "/v1/runtime-leases/"+url.PathEscape(leaseID)+"/revoke", RevokeRuntimeLeaseRequest{
+		Contract: ContractVersion, OwnerID: ownerID, OwnerEpoch: ownerEpoch, LeaseToken: leaseToken,
+	}, &response)
+	if err != nil {
+		return RevokeRuntimeLeaseResponse{}, err
+	}
+	if !response.Revoked || !response.Reaped || response.LeaseID != leaseID {
+		return RevokeRuntimeLeaseResponse{}, requestFailure("Java runner sidecar did not prove runtime cleanup", true)
+	}
+	c.leaseMu.Lock()
+	if c.leaseID == leaseID && c.leaseToken == leaseToken {
+		c.leaseID, c.leaseToken = "", ""
+	}
+	c.leaseMu.Unlock()
+	return response, nil
+}
+
+func (c *Client) ownerAndRuntimeLease() (string, string, string, string) {
+	c.ownerMu.RLock()
+	ownerID, ownerEpoch := c.ownerID, c.ownerEpoch
+	c.ownerMu.RUnlock()
+	c.leaseMu.RLock()
+	leaseID, leaseToken := c.leaseID, c.leaseToken
+	c.leaseMu.RUnlock()
+	return ownerID, ownerEpoch, leaseID, leaseToken
+}
+
 func (c *Client) Execute(ctx context.Context, request ExecutionRequest) (ExecutionResponse, error) {
 	request.Contract = ContractVersion
-	c.ownerMu.RLock()
-	request.OwnerID = c.ownerID
-	request.OwnerEpoch = c.ownerEpoch
-	c.ownerMu.RUnlock()
+	request.OwnerID, request.OwnerEpoch, request.RuntimeLeaseID, request.RuntimeLeaseToken = c.ownerAndRuntimeLease()
 	var response ExecutionResponse
 	err := c.do(ctx, http.MethodPost, "/v1/executions", request, &response)
 	return response, err
@@ -173,11 +253,10 @@ func (c *Client) Cancel(ctx context.Context, executionID string) (CancelResponse
 		return CancelResponse{}, fmt.Errorf("Java runner sidecar execution ID is invalid")
 	}
 	var response CancelResponse
-	c.ownerMu.RLock()
-	ownerID, ownerEpoch := c.ownerID, c.ownerEpoch
-	c.ownerMu.RUnlock()
+	ownerID, ownerEpoch, leaseID, leaseToken := c.ownerAndRuntimeLease()
 	err := c.do(ctx, http.MethodPost, "/v1/executions/"+url.PathEscape(executionID)+"/cancel", CancelRequest{
 		Contract: ContractVersion, OwnerID: ownerID, OwnerEpoch: ownerEpoch,
+		RuntimeLeaseID: leaseID, RuntimeLeaseToken: leaseToken,
 	}, &response)
 	return response, err
 }
@@ -186,14 +265,14 @@ func (c *Client) CloseSession(ctx context.Context, sessionID string) (CloseSessi
 	if !executionIDPattern.MatchString(sessionID) {
 		return CloseSessionResponse{}, fmt.Errorf("Java runner sidecar session ID is invalid")
 	}
-	c.ownerMu.RLock()
-	ownerID, ownerEpoch := c.ownerID, c.ownerEpoch
-	c.ownerMu.RUnlock()
+	ownerID, ownerEpoch, leaseID, leaseToken := c.ownerAndRuntimeLease()
 	var response CloseSessionResponse
 	err := c.do(ctx, http.MethodPost, "/v1/sessions/"+url.PathEscape(sessionID)+"/close", CloseSessionRequest{
-		Contract:   ContractVersion,
-		OwnerID:    ownerID,
-		OwnerEpoch: ownerEpoch,
+		Contract:          ContractVersion,
+		OwnerID:           ownerID,
+		OwnerEpoch:        ownerEpoch,
+		RuntimeLeaseID:    leaseID,
+		RuntimeLeaseToken: leaseToken,
 	}, &response)
 	return response, err
 }
@@ -261,6 +340,12 @@ func responseContract(response any) (string, error) {
 	case *ValidateResponse:
 		return value.Contract, nil
 	case *ClaimOwnerResponse:
+		return value.Contract, nil
+	case *ClaimRuntimeLeaseResponse:
+		return value.Contract, nil
+	case *RenewRuntimeLeaseResponse:
+		return value.Contract, nil
+	case *RevokeRuntimeLeaseResponse:
 		return value.Contract, nil
 	case *ExecutionResponse:
 		return value.Contract, nil

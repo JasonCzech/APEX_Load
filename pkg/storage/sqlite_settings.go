@@ -3,6 +3,7 @@ package storage
 // SQLite store — settings. Split from sqlite.go (same package, behavior-preserving).
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"strconv"
@@ -28,8 +29,14 @@ func (s *SQLiteStore) SaveSetting(key string, value string) error {
 }
 
 func (s *SQLiteStore) GetSetting(key string) (string, error) {
+	return s.GetSettingContext(context.Background(), key)
+}
+
+// GetSettingContext is the cancellable settings read used by bounded health
+// probes. GetSetting remains available for compatibility with existing callers.
+func (s *SQLiteStore) GetSettingContext(ctx context.Context, key string) (string, error) {
 	var value string
-	err := s.db.QueryRow(`SELECT value FROM app_settings WHERE key = ?`, key).Scan(&value)
+	err := s.db.QueryRowContext(ctx, `SELECT value FROM app_settings WHERE key = ?`, key).Scan(&value)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return "", nil

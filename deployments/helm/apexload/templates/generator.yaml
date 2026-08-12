@@ -95,6 +95,10 @@ spec:
               value: production
             - name: APEXLOAD_GENERATOR_MAX_VUSERS
               value: {{ .Values.generator.maxVUsers | quote }}
+            - name: APEXLOAD_GENERATOR_RUN_SUPERVISION_TTL
+              value: {{ .Values.generator.runSupervision.ttl | quote }}
+            - name: APEXLOAD_GENERATOR_ABANDON_DRAIN
+              value: {{ .Values.generator.runSupervision.abandonDrain | quote }}
             - name: APEXLOAD_JAVA_VUSER_RUNNER_ENABLED
               value: {{ .Values.javaVuser.enabled | quote }}
 {{- if .Values.javaVuser.enabled }}
@@ -114,6 +118,8 @@ spec:
               value: {{ .Values.bruno.artifactRoot | quote }}
             - name: APEXLOAD_BRUNO_RUNNER_URL
               value: http://127.0.0.1:8097
+            - name: APEXLOAD_BRUNO_RUNNER_OWNER_LEASE_V1
+              value: "true"
             - name: APEXLOAD_BRUNO_SAFE_EXECUTION_ENABLED
               value: "true"
             - name: APEXLOAD_BRUNO_DEVELOPER_EXECUTION_ENABLED
@@ -280,6 +286,8 @@ spec:
               value: {{ .Values.bruno.maxSessions | quote }}
             - name: APEXLOAD_BRUNO_MAX_PENDING_EVENTS
               value: {{ .Values.bruno.maxPendingEvents | quote }}
+            - name: APEXLOAD_BRUNO_RUNNER_OWNER_LEASE_V1
+              value: "true"
             - name: APEXLOAD_BRUNO_MAX_BUNDLE_BYTES
               value: {{ .Values.bruno.maxBundleBytes | quote }}
             - name: APEXLOAD_BRUNO_SESSION_TTL_MS

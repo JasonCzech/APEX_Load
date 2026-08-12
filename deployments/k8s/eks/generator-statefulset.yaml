@@ -65,6 +65,10 @@ spec:
               value: production
             - name: APEXLOAD_GENERATOR_MAX_VUSERS
               value: "10000"
+            - name: APEXLOAD_GENERATOR_RUN_SUPERVISION_TTL
+              value: "60s"
+            - name: APEXLOAD_GENERATOR_ABANDON_DRAIN
+              value: "5s"
             - name: APEXLOAD_JAVA_VUSER_RUNNER_ENABLED
               value: "false"
             # The durable generation high-water prevents a replaced pod from

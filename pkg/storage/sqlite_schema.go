@@ -57,6 +57,7 @@ func schemaCreateTableStatements() []string {
 		)`,
 		`CREATE TABLE IF NOT EXISTS releases (
 			id TEXT PRIMARY KEY,
+			group_id TEXT,
 			application_id TEXT NOT NULL,
 			project_id TEXT REFERENCES projects(id),
 			name TEXT NOT NULL,
@@ -171,7 +172,7 @@ func schemaCreateTableStatements() []string {
 		`CREATE TABLE IF NOT EXISTS scheduler_leases (
 			name TEXT PRIMARY KEY,
 			owner_id TEXT NOT NULL,
-			generation INTEGER NOT NULL DEFAULT 1 CHECK (generation > 0),
+			generation BIGINT NOT NULL DEFAULT 1 CHECK (generation > 0),
 			acquired_at DATETIME NOT NULL,
 			expires_at DATETIME NOT NULL,
 			updated_at DATETIME NOT NULL
@@ -809,6 +810,22 @@ func schemaCreateTableStatements() []string {
 			UNIQUE(user_id, scope_type, scope_id, role),
 			FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
 		)`,
+		`CREATE TABLE IF NOT EXISTS local_auth_credentials (
+			username TEXT PRIMARY KEY,
+			user_id TEXT NOT NULL UNIQUE,
+			password_hash TEXT NOT NULL,
+			created_at DATETIME NOT NULL,
+			updated_at DATETIME NOT NULL,
+			FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+		)`,
+		`CREATE TABLE IF NOT EXISTS local_auth_sessions (
+			token_hash TEXT PRIMARY KEY,
+			user_id TEXT NOT NULL,
+			session_epoch INTEGER NOT NULL,
+			created_at DATETIME NOT NULL,
+			expires_at DATETIME NOT NULL,
+			FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+		)`,
 		`CREATE TABLE IF NOT EXISTS audit_events (
 			id TEXT PRIMARY KEY,
 			action TEXT NOT NULL,
@@ -1233,7 +1250,7 @@ func schemaColumnMigrations() []optionalSchemaMigration {
 		// order means a database interrupted between the two steps withholds a
 		// download it could have served, rather than serving one it should not.
 		{name: "bruno_source_revisions.sanitized_available", query: `ALTER TABLE bruno_source_revisions ADD COLUMN sanitized_available INTEGER NOT NULL DEFAULT 0`},
-		{name: "scheduler_leases.generation", query: `ALTER TABLE scheduler_leases ADD COLUMN generation INTEGER NOT NULL DEFAULT 1`},
+		{name: "scheduler_leases.generation", query: `ALTER TABLE scheduler_leases ADD COLUMN generation BIGINT NOT NULL DEFAULT 1`},
 		{name: "scenario_schedule_occurrences.revision", query: `ALTER TABLE scenario_schedule_occurrences ADD COLUMN revision INTEGER NOT NULL DEFAULT 1`},
 		{name: "scenario_schedule_occurrences.transition_token", query: `ALTER TABLE scenario_schedule_occurrences ADD COLUMN transition_token TEXT`},
 		{name: "users.session_epoch", query: `ALTER TABLE users ADD COLUMN session_epoch INTEGER NOT NULL DEFAULT 0`},
@@ -1262,6 +1279,7 @@ func schemaColumnMigrations() []optionalSchemaMigration {
 		{name: "projects.category_id", query: `ALTER TABLE projects ADD COLUMN category_id TEXT REFERENCES repository_categories(id)`},
 		{name: "applications.project_id", query: `ALTER TABLE applications ADD COLUMN project_id TEXT REFERENCES projects(id)`},
 		{name: "releases.project_id", query: `ALTER TABLE releases ADD COLUMN project_id TEXT REFERENCES projects(id)`},
+		{name: "releases.group_id", query: `ALTER TABLE releases ADD COLUMN group_id TEXT`},
 		{name: "scripts.project_id", query: `ALTER TABLE scripts ADD COLUMN project_id TEXT REFERENCES projects(id)`},
 		{name: "scripts.folder_id", query: `ALTER TABLE scripts ADD COLUMN folder_id TEXT REFERENCES folders(id)`},
 		{name: "scripts.parameters", query: `ALTER TABLE scripts ADD COLUMN parameters TEXT`},
@@ -1442,6 +1460,10 @@ var dataPoolRowsPageIndex = schemaIndex{
 // migrations. Unique indexes guard against duplicate reference keys; partial
 // indexes skip NULL/empty values so legacy rows awaiting backfill do not collide.
 var schemaIndexes = []schemaIndex{
+	{`CREATE INDEX IF NOT EXISTS idx_local_auth_sessions_user ON local_auth_sessions(user_id)`, "idx_local_auth_sessions_user"},
+	{`CREATE INDEX IF NOT EXISTS idx_local_auth_sessions_expiry ON local_auth_sessions(expires_at)`, "idx_local_auth_sessions_expiry"},
+	{`CREATE UNIQUE INDEX IF NOT EXISTS idx_releases_application_group ON releases(application_id, group_id) WHERE group_id IS NOT NULL AND group_id != ''`, "idx_releases_application_group"},
+	{`CREATE INDEX IF NOT EXISTS idx_releases_project_group_updated ON releases(project_id, group_id, updated_at DESC, id)`, "idx_releases_project_group_updated"},
 	{`CREATE UNIQUE INDEX IF NOT EXISTS idx_scripts_ref_key ON scripts(ref_key) WHERE ref_key IS NOT NULL AND ref_key != ''`, "idx_scripts_ref_key"},
 	{`CREATE UNIQUE INDEX IF NOT EXISTS idx_scenarios_ref_key ON scenarios(ref_key) WHERE ref_key IS NOT NULL AND ref_key != ''`, "idx_scenarios_ref_key"},
 	{`CREATE UNIQUE INDEX IF NOT EXISTS idx_tests_ref_key ON tests(ref_key) WHERE ref_key IS NOT NULL AND ref_key != ''`, "idx_tests_ref_key"},
@@ -1556,6 +1578,12 @@ func (s *SQLiteStore) init() error {
 
 	if err := s.applyOptionalSchemaMigrations(schemaColumnMigrations()); err != nil {
 		return err
+	}
+	if err := s.ensurePostgresSchedulerLeaseGenerationBigint(); err != nil {
+		return err
+	}
+	if _, err := s.db.Exec(`UPDATE releases SET group_id = id WHERE group_id IS NULL OR TRIM(group_id) = ''`); err != nil {
+		return fmt.Errorf("backfill release groups: %w", err)
 	}
 	if err := s.ensureSchedulerContentRevisionTracking(); err != nil {
 		return err
@@ -1745,6 +1773,36 @@ func (s *SQLiteStore) applyOptionalSchemaMigrations(migrations []optionalSchemaM
 		if _, err := s.db.Exec(migration.query); err != nil && !isDuplicateColumnErr(err) {
 			return fmt.Errorf("failed to apply schema migration %s: %w", migration.name, err)
 		}
+	}
+	return nil
+}
+
+// postgresSchedulerLeaseGenerationBigintMigration widens the fencing generation
+// created by releases that declared it as PostgreSQL INTEGER. The conditional
+// avoids taking an ACCESS EXCLUSIVE table lock on every controller restart once
+// the column is already BIGINT. INTEGER -> BIGINT is lossless, so existing lease
+// generations and their CHECK/default constraints remain intact.
+const postgresSchedulerLeaseGenerationBigintMigration = `DO $apexload$
+BEGIN
+	IF EXISTS (
+		SELECT 1
+		FROM pg_attribute
+		WHERE attrelid = 'scheduler_leases'::regclass
+			AND attname = 'generation'
+			AND atttypid <> 'int8'::regtype
+			AND NOT attisdropped
+	) THEN
+		ALTER TABLE scheduler_leases ALTER COLUMN generation TYPE BIGINT;
+	END IF;
+END
+$apexload$;`
+
+func (s *SQLiteStore) ensurePostgresSchedulerLeaseGenerationBigint() error {
+	if s == nil || s.db == nil || s.db.dialect != storeDialectPostgres {
+		return nil
+	}
+	if _, err := s.db.Exec(postgresSchedulerLeaseGenerationBigintMigration); err != nil {
+		return fmt.Errorf("migrate scheduler lease generation to BIGINT: %w", err)
 	}
 	return nil
 }

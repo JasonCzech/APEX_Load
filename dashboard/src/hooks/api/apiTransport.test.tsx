@@ -15,6 +15,7 @@ import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vite
 import { API_ORIGIN, ApiError } from '../apiClient'
 import { useFleetApi } from './useFleetApi'
 import { useProjectApi } from './useProjectApi'
+import { SYSTEM_READINESS_REQUEST_TIMEOUT_MS, useSystemApi } from './useSystemApi'
 import { useTestApi } from './useTestApi'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
@@ -32,6 +33,7 @@ type Api = {
   tests: ReturnType<typeof useTestApi>
   fleet: ReturnType<typeof useFleetApi>
   projects: ReturnType<typeof useProjectApi>
+  system: ReturnType<typeof useSystemApi>
 }
 
 let api: Api
@@ -53,7 +55,7 @@ function headerEntries(headers?: HeadersInit): Record<string, string> {
 }
 
 function Capture() {
-  api = { tests: useTestApi(), fleet: useFleetApi(), projects: useProjectApi() }
+  api = { tests: useTestApi(), fleet: useFleetApi(), projects: useProjectApi(), system: useSystemApi() }
   return null
 }
 
@@ -181,6 +183,33 @@ describe('response handling', () => {
     expect(error.message).toBe('Service Unavailable')
   })
 
+  it('accepts the validated readiness document carried by an HTTP 503 response', async () => {
+    const readiness = {
+      status: 'not_ready',
+      generated_at: '2026-08-11T18:30:00Z',
+      checks: [
+        {
+          name: 'metadata_store',
+          status: 'not_ready',
+          message: 'metadata store probe failed',
+          details: { store_type: 'postgres', reason: 'probe_failed' },
+        },
+      ],
+    }
+    fetchMock.mockResolvedValueOnce(jsonResponse(readiness, 503))
+
+    await expect(api.system.getSystemReadiness()).resolves.toEqual(readiness)
+    expect(lastCall()[0]).toBe(`${BASE}/system/readiness`)
+  })
+
+  it('rejects an unrelated or malformed HTTP 503 readiness response', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ error: 'upstream unavailable' }, 503))
+
+    const error = await api.system.getSystemReadiness().catch((err: unknown) => err)
+    expect(error).toBeInstanceOf(ApiError)
+    expect((error as ApiError).status).toBe(503)
+  })
+
   it('reports dashboard HTML served in place of JSON as a transport error', async () => {
     fetchMock.mockResolvedValueOnce(
       new Response('<!doctype html><html><body>dashboard</body></html>', {
@@ -221,6 +250,55 @@ describe('caller-supplied transport options', () => {
     await expect(api.tests.getTestArchiveReport('t-1', { timeoutMs: 5 })).rejects.toThrow(
       'Request timed out after 5ms',
     )
+  })
+
+  it('bounds readiness requests below the monitoring poll interval', async () => {
+    vi.useFakeTimers()
+    try {
+      fetchMock.mockImplementationOnce((_url: string, init: RequestInit) => new Promise((_resolve, reject) => {
+        init.signal?.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')))
+      }))
+
+      const settled = api.system.getSystemReadiness().catch((error: unknown) => error)
+      expect(SYSTEM_READINESS_REQUEST_TIMEOUT_MS).toBeLessThan(5_000)
+      await vi.advanceTimersByTimeAsync(SYSTEM_READINESS_REQUEST_TIMEOUT_MS)
+
+      await expect(settled).resolves.toMatchObject({
+        message: `Request timed out after ${SYSTEM_READINESS_REQUEST_TIMEOUT_MS}ms`,
+      })
+      expect(lastCall()[1].signal?.aborted).toBe(true)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('times out readiness while a response body remains open after headers arrive', async () => {
+    vi.useFakeTimers()
+    let bodyController: ReadableStreamDefaultController<Uint8Array> | undefined
+    try {
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          bodyController = controller
+          controller.enqueue(new TextEncoder().encode('{"status":"not_ready"'))
+        },
+      })
+      fetchMock.mockResolvedValueOnce(new Response(body, {
+        status: 503,
+        statusText: 'Service Unavailable',
+        headers: { 'content-type': 'application/json' },
+      }))
+
+      const settled = api.system.getSystemReadiness().catch((error: unknown) => error)
+      await vi.advanceTimersByTimeAsync(SYSTEM_READINESS_REQUEST_TIMEOUT_MS)
+
+      await expect(settled).resolves.toMatchObject({
+        message: `Request timed out after ${SYSTEM_READINESS_REQUEST_TIMEOUT_MS}ms`,
+      })
+      expect(lastCall()[1].signal?.aborted).toBe(true)
+    } finally {
+      bodyController?.close()
+      vi.useRealTimers()
+    }
   })
 
   it('keeps the hook body and method when the caller adds headers', async () => {

@@ -39,6 +39,7 @@ describe('Sidebar', () => {
       value: {
         ...originalLocation,
         assign: vi.fn(),
+        reload: vi.fn(),
       },
     })
     systemApiMock.getVersion.mockResolvedValue({
@@ -54,6 +55,7 @@ describe('Sidebar', () => {
     await act(async () => {
       root.unmount()
     })
+    vi.useRealTimers()
     container.remove()
     vi.clearAllMocks()
     window.localStorage.clear()
@@ -86,10 +88,86 @@ describe('Sidebar', () => {
     })
 
     expect(container.textContent).toContain('Alice Admin')
-    expect(container.textContent).toContain('System Admin · Viewer')
+    expect(container.querySelector('.sidebar-identity-meta')?.textContent).toBe('System Admin')
     const logoutLink = container.querySelector('.sidebar-identity-action') as HTMLAnchorElement | null
     expect(logoutLink?.getAttribute('href')).toBe(resolveApiResourceUrl('/logout'))
     expect(logoutLink?.textContent).toBe('Sign out')
+  })
+
+  it('shows the highest role relevant to the active workspace scope', async () => {
+    await act(async () => {
+      root.render(
+        <Sidebar
+          active="dashboard"
+          onNavigate={vi.fn()}
+          connectionState="connected"
+          activeDomain={{ id: 'domain-a', name: 'Domain A', created_at: '', updated_at: '' }}
+          applicationRepository={{ id: 'repository-a', domain_id: 'domain-a', name: 'Repository A', created_at: '', updated_at: '' }}
+          activeProject={{ id: 'project-a', domain_id: 'domain-a', name: 'Project A', created_at: '', updated_at: '' }}
+          authStatus={{
+            enabled: true,
+            mode: 'local',
+            authenticated: true,
+            user: {
+              subject: 'local:domainadmin',
+              display_name: 'Local Domain Administrator',
+              global_roles: ['viewer'],
+              domain_roles: { 'domain-a': ['project_admin'] },
+              application_repository_roles: { 'repository-a': ['editor'] },
+              project_roles: { 'project-a': ['viewer'] },
+            },
+          }}
+        />,
+      )
+    })
+
+    expect(container.querySelector('.sidebar-identity-meta')?.textContent).toBe('Project Admin')
+  })
+
+  it('uses repository and project roles only when their scope is active', async () => {
+    const authStatus = {
+      enabled: true,
+      mode: 'local' as const,
+      authenticated: true,
+      user: {
+        subject: 'local:dev',
+        display_name: 'Local Developer',
+        global_roles: ['viewer'],
+        application_repository_roles: { 'repository-a': ['editor'] },
+        project_roles: { 'project-b': ['project_admin'] },
+      },
+    }
+    const domain = { id: 'domain-a', name: 'Domain A', created_at: '', updated_at: '' }
+
+    await act(async () => {
+      root.render(
+        <Sidebar
+          active="dashboard"
+          onNavigate={vi.fn()}
+          connectionState="connected"
+          activeDomain={domain}
+          applicationRepository={{ id: 'repository-a', domain_id: 'domain-a', name: 'Repository A', created_at: '', updated_at: '' }}
+          activeProject={{ id: 'project-a', domain_id: 'domain-a', name: 'Project A', created_at: '', updated_at: '' }}
+          authStatus={authStatus}
+        />,
+      )
+    })
+    expect(container.querySelector('.sidebar-identity-meta')?.textContent).toBe('Editor')
+
+    await act(async () => {
+      root.render(
+        <Sidebar
+          active="dashboard"
+          onNavigate={vi.fn()}
+          connectionState="connected"
+          activeDomain={domain}
+          applicationRepository={{ id: 'repository-b', domain_id: 'domain-a', name: 'Repository B', created_at: '', updated_at: '' }}
+          activeProject={{ id: 'project-b', domain_id: 'domain-a', name: 'Project B', created_at: '', updated_at: '' }}
+          authStatus={authStatus}
+        />,
+      )
+    })
+    expect(container.querySelector('.sidebar-identity-meta')?.textContent).toBe('Project Admin')
   })
 
   it('posts native oidc logout with the csrf token and redirects to the returned destination', async () => {
@@ -132,6 +210,36 @@ describe('Sidebar', () => {
     expect(window.location.assign).toHaveBeenCalledWith(resolveApiResourceUrl('/'))
   })
 
+  it('posts Local Test Login logout and reloads authorization providers', async () => {
+    authApiMock.logout.mockResolvedValue({ redirect_url: '/' })
+    await act(async () => {
+      root.render(
+        <Sidebar
+          active="dashboard"
+          onNavigate={vi.fn()}
+          connectionState="connected"
+          authStatus={{
+            enabled: true,
+            mode: 'local',
+            logout_url: '/api/v1/auth/logout',
+            logout_csrf_token: 'local-csrf-token',
+            authenticated: true,
+            user: { subject: 'local:dev', display_name: 'Local Developer', global_roles: ['viewer'] },
+          }}
+        />,
+      )
+    })
+    expect(container.textContent).toContain('Local Developer')
+    expect(container.textContent).not.toContain('Dev View')
+    const logoutButton = container.querySelector('.sidebar-identity-action-button') as HTMLButtonElement
+    await act(async () => {
+      logoutButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+    expect(authApiMock.logout).toHaveBeenCalledWith('local-csrf-token')
+    expect(window.location.reload).toHaveBeenCalledOnce()
+  })
+
   it('shows imminent native oidc session expiry without replacing identity metadata', async () => {
     await act(async () => {
       root.render(
@@ -160,6 +268,65 @@ describe('Sidebar', () => {
     expect(container.textContent).toContain('Alice Admin')
     expect(container.textContent).toContain('System Admin')
     expect(container.textContent).toContain('Session expires in 4 min')
+  })
+
+  it('shows imminent Local Test Login session expiry', async () => {
+    await act(async () => {
+      root.render(
+        <Sidebar
+          active="dashboard"
+          onNavigate={vi.fn()}
+          connectionState="connected"
+          authStatus={{
+            enabled: true,
+            mode: 'local',
+            authenticated: true,
+            session_status: 'active',
+            session_ttl_seconds: 89,
+            user: {
+              subject: 'local:user',
+              display_name: 'Local Viewer',
+              global_roles: ['viewer'],
+            },
+          }}
+        />,
+      )
+    })
+
+    expect(container.textContent).toContain('Session expires in 2 min')
+  })
+
+  it('counts down Local Test Login session expiry from its absolute deadline', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-08-11T12:00:00Z'))
+    await act(async () => {
+      root.render(
+        <Sidebar
+          active="dashboard"
+          onNavigate={vi.fn()}
+          connectionState="connected"
+          authStatus={{
+            enabled: true,
+            mode: 'local',
+            authenticated: true,
+            session_status: 'active',
+            session_expires_at: '2026-08-11T12:04:00Z',
+            session_ttl_seconds: 240,
+            user: {
+              subject: 'local:user',
+              display_name: 'Local Viewer',
+              global_roles: ['viewer'],
+            },
+          }}
+        />,
+      )
+    })
+
+    expect(container.textContent).toContain('Session expires in 4 min')
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(60_000)
+    })
+    expect(container.textContent).toContain('Session expires in 3 min')
   })
 
   it('renders the active project and switches projects from the selector', async () => {
@@ -562,6 +729,8 @@ describe('Sidebar', () => {
 
   const mobilityDomain = { id: 'mobility', name: 'Mobility', created_at: '', updated_at: '' }
   const mobilityProject = { id: 'project-1', domain_id: 'mobility', name: 'Mobility Web', created_at: '', updated_at: '' }
+  const mobilityApplication = { id: 'application-1', project_id: 'project-1', name: 'Driver Portal', created_at: '', updated_at: '' }
+  const mobilityRelease = { id: 'release-1', application_id: 'application-1', name: '2608', created_at: '', updated_at: '' }
 
   const openMenu = async (selector: string) => {
     const selectorButton = container.querySelector<HTMLButtonElement>(selector)
@@ -574,6 +743,122 @@ describe('Sidebar', () => {
   const menuButton = (menuId: string, label: string) => Array.from(
     container.querySelectorAll<HTMLButtonElement>(`#${menuId} button`),
   ).find(button => button.textContent === label)
+
+  it('uses an opaque theme surface behind sidebar dropdown items', async () => {
+    // @ts-expect-error node:fs is available in the Vitest runtime.
+    const { readFileSync } = await import('node:fs')
+    const css = readFileSync('src/components/Sidebar.css', 'utf8') as string
+    const menuRule = css.match(/\.project-menu \{([\s\S]*?)\n\}/)?.[1] || ''
+
+    expect(menuRule).toContain('background: var(--dropdown-menu-bg);')
+    expect(menuRule).not.toContain('var(--bg-card)')
+    expect(menuRule).not.toContain('transparent')
+  })
+
+  it('renders Release as a separate dropdown directly below Application', async () => {
+    const onReleaseChange = vi.fn()
+    await act(async () => {
+      root.render(
+        <Sidebar
+          active="dashboard"
+          onNavigate={vi.fn()}
+          connectionState="connected"
+          projects={[mobilityProject]}
+          activeProject={mobilityProject}
+          applications={[mobilityApplication]}
+          activeApplication={mobilityApplication}
+          releases={[mobilityRelease]}
+          activeRelease={mobilityRelease}
+          onReleaseChange={onReleaseChange}
+        />,
+      )
+    })
+
+    const applicationSelector = container.querySelector<HTMLButtonElement>('[aria-controls="sidebar-application-options"]')
+    const releaseSelector = container.querySelector<HTMLButtonElement>('[aria-controls="sidebar-release-options"]')
+    expect(applicationSelector?.textContent).toContain('Driver Portal')
+    expect(applicationSelector?.textContent).not.toContain('2608')
+    expect(releaseSelector?.textContent).toContain('2608')
+    expect(applicationSelector?.closest('.sidebar-project')?.nextElementSibling).toBe(releaseSelector?.closest('.sidebar-project'))
+
+    await openMenu('[aria-controls="sidebar-application-options"]')
+    expect(menuButton('sidebar-application-options', 'Driver Portal')).toBeDefined()
+    expect(menuButton('sidebar-application-options', '2608')).toBeUndefined()
+
+    await openMenu('[aria-controls="sidebar-release-options"]')
+    expect(menuButton('sidebar-release-options', '2608')).toBeDefined()
+    expect(menuButton('sidebar-release-options', 'Driver Portal')).toBeUndefined()
+
+    await act(async () => {
+      menuButton('sidebar-release-options', '2608')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(onReleaseChange).toHaveBeenCalledWith(mobilityRelease)
+  })
+
+  it('creates a release from the Release dropdown', async () => {
+    const onCreateRelease = vi.fn().mockResolvedValue(mobilityRelease)
+    await act(async () => {
+      root.render(
+        <Sidebar
+          active="dashboard"
+          onNavigate={vi.fn()}
+          connectionState="connected"
+          projects={[mobilityProject]}
+          activeProject={mobilityProject}
+          applications={[mobilityApplication]}
+          activeApplication={mobilityApplication}
+          releases={[]}
+          onCreateRelease={onCreateRelease}
+          canCreateReleases
+        />,
+      )
+    })
+
+    await openMenu('[aria-controls="sidebar-release-options"]')
+    await act(async () => {
+      menuButton('sidebar-release-options', 'New Release')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(container.textContent).toContain('New Release')
+
+    const input = container.querySelector<HTMLInputElement>('.project-modal input')
+    expect(input).not.toBeNull()
+    expect(input?.placeholder).toBe('Release name')
+    await act(async () => {
+      if (input) {
+        const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+        setter?.call(input, '2609')
+        input.dispatchEvent(new Event('input', { bubbles: true }))
+      }
+    })
+    const create = Array.from(container.querySelectorAll<HTMLButtonElement>('.project-modal button'))
+      .find(button => button.textContent === 'Save')
+    await act(async () => {
+      create?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(onCreateRelease).toHaveBeenCalledWith('2609')
+  })
+
+  it('hides release creation when the effective capability is denied', async () => {
+    await act(async () => {
+      root.render(
+        <Sidebar
+          active="dashboard"
+          onNavigate={vi.fn()}
+          connectionState="connected"
+          projects={[mobilityProject]}
+          activeProject={mobilityProject}
+          applications={[mobilityApplication]}
+          activeApplication={mobilityApplication}
+          releases={[]}
+          onCreateRelease={vi.fn().mockResolvedValue(mobilityRelease)}
+          canCreateReleases={false}
+        />,
+      )
+    })
+
+    await openMenu('[aria-controls="sidebar-release-options"]')
+    expect(menuButton('sidebar-release-options', 'New Release')).toBeUndefined()
+  })
 
   it('explains an empty domain instead of offering only Open Repository', async () => {
     await act(async () => {
@@ -720,8 +1005,12 @@ describe('Sidebar', () => {
             activeDomain={mobilityDomain}
             projects={[mobilityProject]}
             activeProject={mobilityProject}
+            applications={[mobilityApplication]}
+            activeApplication={mobilityApplication}
             onCreateProject={vi.fn()}
+            onCreateRelease={vi.fn().mockResolvedValue(mobilityRelease)}
             canCreateProjects
+            canCreateReleases
           />
         </DevViewProvider>,
       )
@@ -743,5 +1032,9 @@ describe('Sidebar', () => {
     await openMenu('[aria-controls="sidebar-application-options"]')
     expect(menuButton('sidebar-application-options', 'Open Repository')).toBeUndefined()
     expect(menuButton('sidebar-application-options', 'New Application')).toBeUndefined()
+
+    await openMenu('[aria-controls="sidebar-release-options"]')
+    expect(menuButton('sidebar-release-options', 'Open Repository')).toBeUndefined()
+    expect(menuButton('sidebar-release-options', 'New Release')).toBeDefined()
   })
 })

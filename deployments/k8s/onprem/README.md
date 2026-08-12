@@ -4,15 +4,19 @@ Production-grade manifests for self-managed clusters. This is the hardened
 counterpart to `deployments/k8s/local` (dev) and the on-prem sibling of
 `deployments/k8s/aks`. What it adds over the dev set:
 
+Controller-loss fencing is mandatory. Follow the maintenance-window rollout
+gate and acceptance drill in [Generator run supervision](../../../docs/GENERATOR_RUN_SUPERVISION.md)
+when upgrading from a tokenless release.
+
 | Control | Where |
 |---|---|
 | mTLS + bearer-token auth on controller↔generator gRPC | `APEXLOAD_GRPC_*` in configmap/statefulset; certs via [certificates.example.yaml](certificates.example.yaml) |
 | TLS-terminating ingress (no plaintext dashboard/API) | [controller-ingress.yaml](controller-ingress.yaml) |
 | Metrics on a dedicated port, scoped to the monitoring namespace | `APEXLOAD_METRICS_ADDR`, [network-policy.yaml](network-policy.yaml), optional [servicemonitor.yaml](servicemonitor.yaml) |
 | Pod Security Admission `restricted` enforced on the namespace | [namespace.yaml](namespace.yaml) |
-| Dedicated ServiceAccounts, no API tokens mounted | [serviceaccounts.yaml](serviceaccounts.yaml) |
+| Dedicated ServiceAccounts; controller-only namespaced API token | [serviceaccounts.yaml](serviceaccounts.yaml), [restart-controls.yaml](restart-controls.yaml) |
 | Scoped ingress NetworkPolicies + opt-in egress templates | [network-policy.yaml](network-policy.yaml), [egress-policies.example.yaml](egress-policies.example.yaml) |
-| Opt-in audited pod/workload restart controls | [restart-controls.example.yaml](restart-controls.example.yaml), [Kubernetes restart controls](../../../docs/KUBERNETES_RESTART_CONTROLS.md) |
+| Default audited pod/workload restart controls | [restart-controls.yaml](restart-controls.yaml), [Kubernetes restart controls](../../../docs/KUBERNETES_RESTART_CONTROLS.md) |
 | ephemeral-storage limits + bounded emptyDirs (no DiskPressure evictions) | deployment/statefulset |
 | PDBs for controller and generators | [pdb.yaml](pdb.yaml) |
 | Fail-closed production posture (`APEXLOAD_ENV=production`) | deployment/statefulset env |

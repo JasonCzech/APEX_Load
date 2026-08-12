@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
@@ -475,6 +476,12 @@ func (p *contextIgnoringTeardownProtocol) Teardown(context.Context) error {
 	return nil
 }
 
+type unprovenContainmentTeardownProtocol struct{}
+
+func (*unprovenContainmentTeardownProtocol) Teardown(context.Context) error {
+	return fmt.Errorf("adapter-specific containment detail: %w", protocol.ErrContainmentUnproven)
+}
+
 func TestCallProtocolTeardownBoundsAdapterThatIgnoresContext(t *testing.T) {
 	proto := &contextIgnoringTeardownProtocol{entered: make(chan struct{}), release: make(chan struct{})}
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
@@ -495,6 +502,56 @@ func TestCallProtocolTeardownBoundsAdapterThatIgnoresContext(t *testing.T) {
 	// Let the isolated adapter goroutine exit so the regression test itself does
 	// not retain a goroutine after proving the caller is independently bounded.
 	close(proto.release)
+}
+
+func TestStrictProtocolTeardownRemainsOnExactDonePathAfterDeadline(t *testing.T) {
+	proto := &contextIgnoringTeardownProtocol{entered: make(chan struct{}), release: make(chan struct{})}
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+	done := make(chan error, 1)
+	go func() {
+		done <- callProtocolTeardownWithMode(ctx, proto, nil, make(chan struct{}, 1), true)
+	}()
+	select {
+	case <-proto.entered:
+	case <-time.After(time.Second):
+		t.Fatal("strict teardown did not begin")
+	}
+	<-ctx.Done()
+	select {
+	case err := <-done:
+		t.Fatalf("strict teardown detached at its context deadline: %v", err)
+	case <-time.After(30 * time.Millisecond):
+	}
+	close(proto.release)
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("strict teardown after release: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("strict teardown did not rejoin after adapter returned")
+	}
+}
+
+func TestContainmentUnprovenReturnsToToolingButRetainsStrictGeneratorBarrier(t *testing.T) {
+	proto := &unprovenContainmentTeardownProtocol{}
+	if err := callProtocolTeardownWithMode(context.Background(), proto, nil, make(chan struct{}, 1), false); !errors.Is(err, protocol.ErrContainmentUnproven) {
+		t.Fatalf("tooling teardown error = %v, want ErrContainmentUnproven", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	defer cancel()
+	done := make(chan error, 1)
+	go func() {
+		done <- callProtocolTeardownWithMode(ctx, proto, nil, make(chan struct{}, 1), true)
+	}()
+	<-ctx.Done()
+	select {
+	case err := <-done:
+		t.Fatalf("strict teardown released an unproven containment barrier: %v", err)
+	case <-time.After(30 * time.Millisecond):
+	}
 }
 
 func TestCallProtocolTeardownSaturationHonorsDeadlineWithoutSpawningAdapter(t *testing.T) {

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { act } from 'react'
+import { act, StrictMode } from 'react'
 import { createRoot, Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -116,6 +116,24 @@ describe('ProjectModal', () => {
     expect(onClose).not.toHaveBeenCalled()
 
     await act(async () => resolveSubmit())
+    expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('closes after a successful submit under Strict Mode effect replay', async () => {
+    const onClose = vi.fn()
+    const onSubmit = vi.fn().mockResolvedValue(undefined)
+    await act(async () => {
+      root.render(
+        <StrictMode>
+          <ProjectModal title="New Release" onClose={onClose} onSubmit={onSubmit} />
+        </StrictMode>,
+      )
+    })
+
+    await typeName('2609')
+    await submitForm()
+
+    expect(onSubmit).toHaveBeenCalledWith('2609')
     expect(onClose).toHaveBeenCalledTimes(1)
   })
 })

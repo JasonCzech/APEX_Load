@@ -46,7 +46,11 @@ describe('parseMarkdown', () => {
 
     expect(blocks).toContainEqual({ kind: 'heading', level: 1, text: 'Title', id: 'title' })
     expect(blocks).toContainEqual({ kind: 'heading', level: 2, text: 'Section', id: 'section' })
-    expect(blocks).toContainEqual({ kind: 'list', items: ['first item', 'second item'] })
+    expect(blocks).toContainEqual({
+      kind: 'list',
+      ordered: false,
+      items: [{ text: 'first item' }, { text: 'second item' }],
+    })
     expect(blocks).toContainEqual({ kind: 'code', language: 'bash', code: 'curl http://localhost:8080/api/v1/system/health' })
 
     const table = blocks.find(block => block.kind === 'table')
@@ -70,6 +74,102 @@ describe('parseMarkdown', () => {
   it('treats a pipe-prefixed non-table line as paragraph text', () => {
     const blocks = parseMarkdown(['| this is not a table', 'continued text'].join('\n'))
     expect(blocks).toEqual([{ kind: 'paragraph', text: '| this is not a table continued text' }])
+  })
+
+  // The guides wrap bullets across several source lines. Terminating the list at the
+  // first continuation line split every wrapped bullet into a one-item list plus an
+  // orphan paragraph, which is what made the rendered guides look fragmented.
+  it('keeps wrapped continuation lines inside the list item that owns them', () => {
+    const blocks = parseMarkdown(
+      [
+        '- **Virtual users** simulate concurrent clients. During a run they execute',
+        "  your script's actions repeatedly against the target system.",
+        '- **Scenarios** combine one or more scripts into a runnable load model.',
+      ].join('\n'),
+    )
+
+    expect(blocks).toEqual([
+      {
+        kind: 'list',
+        ordered: false,
+        items: [
+          {
+            text: "**Virtual users** simulate concurrent clients. During a run they execute your script's actions repeatedly against the target system.",
+          },
+          { text: '**Scenarios** combine one or more scripts into a runnable load model.' },
+        ],
+      },
+    ])
+  })
+
+  it('parses ordered lists and preserves a non-default start number', () => {
+    const blocks = parseMarkdown(['1. set your scope', '2. author a script', '3. launch the run'].join('\n'))
+    expect(blocks).toEqual([
+      {
+        kind: 'list',
+        ordered: true,
+        items: [{ text: 'set your scope' }, { text: 'author a script' }, { text: 'launch the run' }],
+      },
+    ])
+
+    const resumed = parseMarkdown(['4) validate the load model', '5) launch'].join('\n'))
+    expect(resumed).toEqual([
+      {
+        kind: 'list',
+        ordered: true,
+        start: 4,
+        items: [{ text: 'validate the load model' }, { text: 'launch' }],
+      },
+    ])
+  })
+
+  it('nests an indented list under the item that introduces it', () => {
+    const blocks = parseMarkdown(
+      [
+        '1. Open the Script Editor.',
+        '   - Pick a protocol.',
+        '   - Set the base URL.',
+        '2. Validate the script.',
+      ].join('\n'),
+    )
+
+    expect(blocks).toEqual([
+      {
+        kind: 'list',
+        ordered: true,
+        items: [
+          {
+            text: 'Open the Script Editor.',
+            children: {
+              kind: 'list',
+              ordered: false,
+              items: [{ text: 'Pick a protocol.' }, { text: 'Set the base URL.' }],
+            },
+          },
+          { text: 'Validate the script.' },
+        ],
+      },
+    ])
+  })
+
+  it('starts a new block when the list marker style changes at the same level', () => {
+    const blocks = parseMarkdown(['- a bullet', '1. a numbered step'].join('\n'))
+    expect(blocks).toEqual([
+      { kind: 'list', ordered: false, items: [{ text: 'a bullet' }] },
+      { kind: 'list', ordered: true, items: [{ text: 'a numbered step' }] },
+    ])
+  })
+
+  it('does not swallow the block that follows a wrapped list item', () => {
+    const blocks = parseMarkdown(
+      ['- a bullet that wraps', '  onto a second line', '', '## Next Section', '', 'Body text.'].join('\n'),
+    )
+
+    expect(blocks).toEqual([
+      { kind: 'list', ordered: false, items: [{ text: 'a bullet that wraps onto a second line' }] },
+      { kind: 'heading', level: 2, text: 'Next Section', id: 'next-section' },
+      { kind: 'paragraph', text: 'Body text.' },
+    ])
   })
 })
 

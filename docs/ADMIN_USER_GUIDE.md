@@ -246,6 +246,20 @@ usage is approaching a configured limit.
 
 ## Operational Runbooks
 
+Monitoring → Overview → Readiness & Services always shows the Kubernetes API,
+configured metadata store (PostgreSQL or SQLite), and configured cache backend
+(Redis, Valkey, or in-memory) with their current probe status and latency.
+Kubernetes API or RBAC loss is reported as degraded without taking the
+controller out of service; a configured PostgreSQL or Redis/Valkey outage
+blocks production readiness.
+
+For Kubernetes installs, restart controls are enabled by default for
+`system_admin` users. Restart the controller from Monitoring → Overview →
+Control Plane. Open Monitoring → Fleet → Generators → View details to restart
+the generator StatefulSet or an individual generator pod. Every action still
+requires an operational reason and exact target confirmation and is audit
+recorded.
+
 For deeper operational procedures beyond the dashboard, consult the in-repository
 runbooks, including the Auth/RBAC operations runbook (user administration, break-glass
 recovery, service accounts, and audit export), the enterprise generator fleet and

@@ -14,7 +14,7 @@
 # `node_capacity: {available: false, unavailable_reason: "rbac_forbidden"}`,
 # and the allocation preflight downgrades pod-fit from a block to a warning.
 # Namespace ResourceQuota enforcement is unaffected — that is namespaced and
-# lives in restart-controls.example.yaml.
+# lives in restart-controls.yaml.
 #
 # This grants the controller read access to node objects across the WHOLE
 # cluster, which is why it is opt-in rather than part of the standard install.
@@ -22,7 +22,7 @@
 # including nodes belonging to other tenants of the cluster.
 #
 # For a registered REMOTE cluster (generic Kubernetes or AKS), apply the
-# equivalent of both this file and restart-controls.example.yaml in that
+# equivalent of both this file and restart-controls.yaml in that
 # cluster, bound to the identity the connection authenticates as — the Azure AD
 # service principal or the ServiceAccount whose token you registered.
 apiVersion: rbac.authorization.k8s.io/v1

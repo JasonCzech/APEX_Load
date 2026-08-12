@@ -55,6 +55,7 @@ These focused references are also current. They are kept separate from the prima
 | [ENTERPRISE_AUTHORING_CONTRACT.md](ENTERPRISE_AUTHORING_CONTRACT.md) | Shared enterprise authoring lifecycle contract |
 | [ENTERPRISE_AUTOSCALING_SIGNALS.md](ENTERPRISE_AUTOSCALING_SIGNALS.md) | HPA/KEDA signal contract for generator scaling |
 | [ENTERPRISE_GENERATOR_FLEET_MODEL.md](ENTERPRISE_GENERATOR_FLEET_MODEL.md) | Generator fleet inventory and allocation contract |
+| [GENERATOR_RUN_SUPERVISION.md](GENERATOR_RUN_SUPERVISION.md) | Fail-closed generator ownership leases, rollout order, observability, and recovery drills |
 | [ENTERPRISE_GOVERNANCE_MODEL.md](ENTERPRISE_GOVERNANCE_MODEL.md) | Project-first ownership and governance model |
 | [ENTERPRISE_LOAD_MODEL_CONTRACT.md](ENTERPRISE_LOAD_MODEL_CONTRACT.md) | Workload-shape support and authoring contract |
 | [ENTERPRISE_PLATFORM_ARCHITECTURE_RUNBOOK.md](ENTERPRISE_PLATFORM_ARCHITECTURE_RUNBOOK.md) | Production platform reference architecture |

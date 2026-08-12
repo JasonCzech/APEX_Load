@@ -4741,7 +4741,7 @@ func (s *Server) allocateScriptRefKey() (string, error) {
 }
 
 func (s *Server) canReadRawBrunoSource(r *http.Request, projectID string) bool {
-	settings := normalizeAuthSettings(s.runner.GetSystemSettings().Auth)
+	settings := s.authSettingsForRequest()
 	if isAuthBypassMode(settings.Mode) {
 		return true
 	}

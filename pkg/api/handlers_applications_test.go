@@ -72,6 +72,110 @@ func TestResolveReleaseApplicationIDConvergesConcurrentImplicitCreates(t *testin
 	}
 }
 
+func TestProjectReleaseCreationJoinsEveryProjectApplication(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer store.Close()
+	project := &storage.Project{ID: "project-release-family", Name: "Release family"}
+	if err := store.SaveProject(project); err != nil {
+		t.Fatalf("SaveProject: %v", err)
+	}
+	first := &storage.Application{ID: "release-family-app-a", ProjectID: project.ID, Name: "App A"}
+	second := &storage.Application{ID: "release-family-app-b", ProjectID: project.ID, Name: "App B"}
+	for _, application := range []*storage.Application{first, second} {
+		if err := store.SaveApplication(application); err != nil {
+			t.Fatalf("SaveApplication(%s): %v", application.ID, err)
+		}
+	}
+	server := NewServer(ServerConfig{Store: store})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/projects/"+project.ID+"/releases", bytes.NewBufferString(`{"name":"2609","application_id":"`+first.ID+`"}`))
+	req.Header.Set("Content-Type", "application/json")
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+	if resp.Code != http.StatusCreated {
+		t.Fatalf("create project release status = %d body=%s", resp.Code, resp.Body.String())
+	}
+	var created storage.Release
+	if err := json.Unmarshal(resp.Body.Bytes(), &created); err != nil {
+		t.Fatalf("unmarshal release: %v", err)
+	}
+	if created.ApplicationID != first.ID || created.GroupID == "" || created.ID != created.GroupID || created.ApplicationReleaseID == "" {
+		t.Fatalf("created release = %#v", created)
+	}
+	if created.MemberIDs[first.ID] == "" || created.MemberIDs[second.ID] == "" {
+		t.Fatalf("created release members = %#v", created.MemberIDs)
+	}
+	for _, application := range []*storage.Application{first, second} {
+		releases, err := store.ListReleases(application.ID, false)
+		if err != nil {
+			t.Fatalf("ListReleases(%s): %v", application.ID, err)
+		}
+		if len(releases) != 1 || releases[0].Name != "2609" || releases[0].GroupID != created.GroupID || releases[0].ApplicationID != application.ID {
+			t.Fatalf("releases for %s = %#v", application.ID, releases)
+		}
+	}
+	projectReleases, err := store.ListReleasesByProject(project.ID, false)
+	if err != nil {
+		t.Fatalf("ListReleasesByProject: %v", err)
+	}
+	if len(projectReleases) != 1 {
+		t.Fatalf("project release rows = %#v, want one family", projectReleases)
+	}
+	if projectReleases[0].ID != created.GroupID || len(projectReleases[0].MemberIDs) != 2 {
+		t.Fatalf("project release family = %#v", projectReleases[0])
+	}
+
+	third := &storage.Application{ID: "release-family-app-c", ProjectID: project.ID, Name: "App C"}
+	if err := store.SaveApplication(third); err != nil {
+		t.Fatalf("SaveApplication(third): %v", err)
+	}
+	thirdReleases, err := store.ListReleases(third.ID, false)
+	if err != nil {
+		t.Fatalf("ListReleases(third): %v", err)
+	}
+	if len(thirdReleases) != 1 || thirdReleases[0].GroupID != created.GroupID || thirdReleases[0].Name != "2609" {
+		t.Fatalf("third application releases = %#v", thirdReleases)
+	}
+
+	applicationCreateReq := httptest.NewRequest(http.MethodPost, "/api/v1/applications/"+second.ID+"/releases", bytes.NewBufferString(`{"name":"2610"}`))
+	applicationCreateReq.Header.Set("Content-Type", "application/json")
+	applicationCreateResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(applicationCreateResp, applicationCreateReq)
+	if applicationCreateResp.Code != http.StatusCreated {
+		t.Fatalf("application release create status = %d body=%s", applicationCreateResp.Code, applicationCreateResp.Body.String())
+	}
+	var applicationCreated storage.Release
+	if err := json.Unmarshal(applicationCreateResp.Body.Bytes(), &applicationCreated); err != nil {
+		t.Fatalf("unmarshal application-created release: %v", err)
+	}
+	for _, application := range []*storage.Application{first, second, third} {
+		releases, err := store.ListReleases(application.ID, false)
+		if err != nil {
+			t.Fatalf("ListReleases(%s) after application endpoint: %v", application.ID, err)
+		}
+		if len(releases) != 2 {
+			t.Fatalf("releases for %s after application endpoint = %#v, want both families", application.ID, releases)
+		}
+	}
+	auditEvents, err := store.ListAuditEvents(storage.AuditEventFilter{Action: "release.create", ProjectID: project.ID, Limit: 10})
+	if err != nil {
+		t.Fatalf("ListAuditEvents: %v", err)
+	}
+	wantCanonicalIDs := map[string]bool{created.GroupID: false, applicationCreated.GroupID: false}
+	for _, event := range auditEvents {
+		if _, expected := wantCanonicalIDs[event.ResourceID]; expected {
+			wantCanonicalIDs[event.ResourceID] = true
+		}
+	}
+	for canonicalID, found := range wantCanonicalIDs {
+		if !found {
+			t.Fatalf("release.create audit events = %#v, missing canonical family id %q", auditEvents, canonicalID)
+		}
+	}
+}
+
 func TestApplicationReleaseAndScenarioHandlers(t *testing.T) {
 	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
 	if err != nil {

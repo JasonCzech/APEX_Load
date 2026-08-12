@@ -48,10 +48,25 @@ func main() {
 		IdleTimeout:       60 * time.Second,
 		MaxHeaderBytes:    64 << 10,
 	}
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	signalCtx, signalStop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer signalStop()
+	ctx, stop := context.WithCancel(signalCtx)
 	defer stop()
 	go func() {
-		<-ctx.Done()
+		select {
+		case <-ctx.Done():
+		case <-runner.ContainmentFailed():
+			// The signal itself is emitted only after an immediate containment
+			// failure or after the run-scoped cleanup watchdog expires. Do not add
+			// another delay: the advertised outer bound is lease TTL + 2 seconds.
+			os.Exit(1)
+		case <-runner.OwnerLeaseExpired():
+			go func() {
+				time.Sleep(2 * time.Second)
+				os.Exit(1)
+			}()
+			stop()
+		}
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		_ = runner.Shutdown(shutdownCtx)

@@ -17,7 +17,7 @@ func (s *Server) websocketAuthorizer(r *http.Request, projectID string) func() b
 	if s == nil || r == nil {
 		return func() bool { return false }
 	}
-	settings := normalizeAuthSettings(s.runner.GetSystemSettings().Auth)
+	settings := s.authSettingsForRequest()
 	if isAuthBypassMode(settings.Mode) {
 		return func() bool { return true }
 	}
@@ -30,12 +30,22 @@ func (s *Server) websocketAuthorizer(r *http.Request, projectID string) func() b
 	projectID = strings.TrimSpace(projectID)
 	snapshot := *user
 	initialKeyHash := ""
+	localSessionHash := ""
 	if account != nil && s.store != nil {
 		stored, err := s.store.GetServiceAccount(account.ID)
 		if err != nil || stored == nil {
 			return func() bool { return false }
 		}
 		initialKeyHash = stored.KeyHash
+	} else if settings.Mode == authModeLocal && snapshot.SessionScoped {
+		cookie, err := r.Cookie(localSessionCookieName)
+		if err != nil || strings.TrimSpace(cookie.Value) == "" {
+			return func() bool { return false }
+		}
+		if _, ok := s.store.(localAuthStore); !ok {
+			return func() bool { return false }
+		}
+		localSessionHash = localSessionTokenHash(cookie.Value)
 	}
 
 	return func() bool {
@@ -72,24 +82,36 @@ func (s *Server) websocketAuthorizer(r *http.Request, projectID string) func() b
 				return false
 			}
 			current = authenticatedUserFromStoredUser(stored)
+			current.LocalScopeBoundViewer = snapshot.LocalScopeBoundViewer
+		}
+		if localSessionHash != "" {
+			localStore := s.store.(localAuthStore)
+			session, err := localStore.GetLocalAuthSessionByTokenHash(localSessionHash)
+			if err != nil || session == nil || !now.Before(session.ExpiresAt.UTC()) {
+				return false
+			}
+			if strings.TrimSpace(session.UserID) != strings.TrimSpace(snapshot.ID) || session.SessionEpoch != snapshot.SessionEpoch {
+				return false
+			}
 		}
 
-		return websocketUserCanViewProject(current, projectID)
+		return s.websocketUserCanViewProject(current, projectID)
 	}
 }
 
-func websocketUserCanViewProject(user *AuthenticatedUser, projectID string) bool {
+func (s *Server) websocketUserCanViewProject(user *AuthenticatedUser, projectID string) bool {
 	if user == nil {
 		return false
 	}
-	roles := []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}
-	if user.hasGlobalRole(roles...) {
+	// Local Test Login's baseline viewer is scope-bound, just as it is for HTTP
+	// resource routes. Established providers retain genuinely global viewers.
+	if user.hasGlobalRole(RoleEditor, RoleProjectAdmin, RoleSystemAdmin) || (user.hasGlobalRole(RoleViewer) && !user.LocalScopeBoundViewer) {
 		return true
 	}
 	if strings.TrimSpace(projectID) == "" {
 		return false
 	}
-	return user.hasProjectRole(projectID, RoleViewer, RoleEditor, RoleProjectAdmin)
+	return userHasProjectOrParentRole(s.store, user, projectID, RoleViewer, RoleEditor, RoleProjectAdmin)
 }
 
 // Compile-time documentation of the store surface used by websocket

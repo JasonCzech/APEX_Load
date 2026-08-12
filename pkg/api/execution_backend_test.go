@@ -603,9 +603,25 @@ func TestDistributedExecutionBackendStopTestClearsRemoteAssignment(t *testing.T)
 		time.Sleep(20 * time.Millisecond)
 	}
 	waitForDistributedLoadMetrics(t, runner, testRun.ID, 5)
+	runner.mu.RLock()
+	runningTest := runner.tests[testRun.ID]
+	if runningTest == nil || runningTest.executionCtx == nil {
+		runner.mu.RUnlock()
+		t.Fatalf("expected distributed execution context for %q", testRun.ID)
+	}
+	executionDone := runningTest.executionCtx.Done()
+	runner.mu.RUnlock()
 
 	if err := runner.StopTest(testRun.ID); err != nil {
 		t.Fatalf("StopTest returned error: %v", err)
+	}
+	select {
+	case <-executionDone:
+		// The terminal metrics stream must remain independently live after this
+		// cancellation so the controller can distinguish ABORTED from generator
+		// loss below.
+	default:
+		t.Fatal("distributed execution context remained live after graceful stop")
 	}
 	deadline = time.Now().Add(2 * time.Second)
 	for {
@@ -617,7 +633,7 @@ func TestDistributedExecutionBackendStopTestClearsRemoteAssignment(t *testing.T)
 			break
 		}
 		if time.Now().After(deadline) {
-			t.Fatalf("expected distributed stop to complete test, got status=%q ended=%v", stopped.Status, stopped.EndedAt)
+			t.Fatalf("expected distributed stop to complete test, got status=%q ended=%v error=%q", stopped.Status, stopped.EndedAt, stopped.Error)
 		}
 		time.Sleep(20 * time.Millisecond)
 	}

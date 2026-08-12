@@ -106,6 +106,15 @@ controller:
     tmpSizeLimit: 2Gi
     dataSizeLimit: 10Gi
 
+restartControls:
+  enabled: true
+  allowForce: true
+  controllerDeployment: apexload-controller
+  generatorStatefulSet: apexload-generator
+  # One Kubernetes label-selector requirement: existence, equality, or a
+  # canonical in/notin set expression. Combined requirements are not accepted.
+  generatorSelector: app.kubernetes.io/name=apexload-generator
+
 importAssets:
   root: /var/lib/apexload-import-assets
   persistence:
@@ -121,6 +130,10 @@ generator:
   serviceAccountName: apexload-generator
   grpcTlsSecretName: apexload-generator-grpc-tls
   maxVUsers: 10000
+  runSupervision:
+    ttl: 60s
+    abandonDrain: 5s
+    renewInterval: 10s
   nodeSelector: {}
   tolerations: []
   resources:

@@ -24,11 +24,11 @@ import {
 describe('settingsSectionLayout', () => {
   it('merges persisted section order with new and missing sections', () => {
     expect(mergeSettingsOrder(['projects', 'general'])).toEqual([
-      'projects',
       'general',
       'thresholds',
       'capacity',
       'domains',
+      'projects',
       'applications',
       'data-pools',
       'integrations',
@@ -41,11 +41,19 @@ describe('settingsSectionLayout', () => {
       'thresholds',
       'capacity',
       'domains',
-      'applications',
       'projects',
+      'applications',
       'data-pools',
       'integrations',
     ])
+  })
+
+  it('keeps Projects immediately before Applications in the canonical and persisted orders', () => {
+    const canonical = SETTINGS_SECTIONS.map(section => section.id)
+    expect(canonical.indexOf('projects')).toBe(canonical.indexOf('applications') - 1)
+
+    const merged = mergeSettingsOrder(['integrations', 'applications', 'general', 'projects'])
+    expect(merged.indexOf('projects')).toBe(merged.indexOf('applications') - 1)
   })
 
   it('moves a dragged section before the target section', () => {

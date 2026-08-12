@@ -57,6 +57,7 @@ type persistentSession struct {
 	eventPath, diagnosticPath string
 	configKey                 string
 	generation                *ownerGeneration
+	runtimeLease              *runtimeLease
 	closeTimeout              time.Duration
 	warningCodes              []string
 	userClasspath             []string
@@ -115,7 +116,12 @@ func (s *Server) startPersistentSession(
 	prepared preparedRuntime,
 	request ExecutionRequest,
 	generation *ownerGeneration,
+	leases ...*runtimeLease,
 ) (*persistentSession, *safeFailure) {
+	var runtimeLease *runtimeLease
+	if len(leases) > 0 {
+		runtimeLease = leases[0]
+	}
 	if !s.supportsStrongProcessContainmentAvailable(ctx) {
 		return nil, &safeFailure{code: "process_containment_unavailable"}
 	}
@@ -160,6 +166,7 @@ func (s *Server) startPersistentSession(
 		eventPath:     eventPath, diagnosticPath: diagnosticPath,
 		configKey:     persistentSessionConfigKey(request.Runtime, request.Command),
 		generation:    generation,
+		runtimeLease:  runtimeLease,
 		warningCodes:  append([]string(nil), prepared.warningCodes...),
 		userClasspath: append([]string(nil), plan.UserClasspath...),
 		stdoutNoise:   &lockedCappedBuffer{buf: cappedBuffer{max: MaxCaptureBytes}},

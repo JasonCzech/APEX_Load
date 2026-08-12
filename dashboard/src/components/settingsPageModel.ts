@@ -651,8 +651,8 @@ export function validateSettingsDetailed(settings: DashboardSystemSettings): Set
   if (blackoutWindowError) push('general', 'governance', 'schedule_defaults.blackout', blackoutWindowError)
   const availabilityWindowError = validateScheduleWindowPair('Availability', settings.schedule_defaults.availability_start_time, settings.schedule_defaults.availability_end_time)
   if (availabilityWindowError) push('general', 'governance', 'schedule_defaults.availability', availabilityWindowError)
-  if (settings.auth.mode !== 'dev' && settings.auth.mode !== 'disabled' && settings.auth.mode !== 'trusted_headers' && settings.auth.mode !== 'oidc') {
-    push('general', 'authentication', 'auth.mode', 'Access control mode must be Dev Bypass, Trusted Headers, or Native OIDC.')
+  if (settings.auth.mode !== 'dev' && settings.auth.mode !== 'disabled' && settings.auth.mode !== 'local' && settings.auth.mode !== 'trusted_headers' && settings.auth.mode !== 'oidc') {
+    push('general', 'authentication', 'auth.mode', 'Access control mode must be Dev Bypass, Local Test Login, Trusted Headers, or Native OIDC.')
   }
   if (settings.auth.mode === 'trusted_headers') {
     if (!settings.auth.user_header.trim()) {

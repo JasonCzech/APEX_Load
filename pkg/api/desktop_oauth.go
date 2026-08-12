@@ -14,6 +14,7 @@ const maxDesktopOAuthStates = 64
 type desktopBrowserCapability struct {
 	issuedAt          time.Time
 	oidcSessionCookie string
+	localSessionToken string
 	oidcFlowState     string
 	devViewMode       string
 	projectID         string
@@ -111,7 +112,7 @@ func (s *Server) storeDesktopGitHubLoginState(capability string, r *http.Request
 		return false, nil
 	}
 	var preview *DesktopDevPreviewContext
-	settings := normalizeAuthSettings(s.runner.GetSystemSettings().Auth)
+	settings := s.authSettingsForRequest()
 	if !productionMode() && settings.Mode == authModeDev {
 		parsed, err := ParseDesktopDevPreviewContext(r.Header.Get(devViewHeader), r.Header.Get(devProjectIDHeader))
 		if err != nil {
@@ -239,6 +240,54 @@ func (s *Server) clearDesktopOIDCSession(capability string) {
 	s.desktopBootstrapMu.Unlock()
 }
 
+func (s *Server) bindDesktopLocalSession(capability, token string) bool {
+	if s == nil || capability == "" || token == "" {
+		return false
+	}
+	s.desktopBootstrapMu.Lock()
+	defer s.desktopBootstrapMu.Unlock()
+	if subtle.ConstantTimeCompare([]byte(capability), []byte(s.desktopCapability)) == 1 {
+		s.desktopLocalSessionToken = token
+		return true
+	}
+	grant, ok := s.desktopBrowserCapabilities[capability]
+	if !ok {
+		return false
+	}
+	grant.localSessionToken = token
+	s.desktopBrowserCapabilities[capability] = grant
+	return true
+}
+
+func (s *Server) desktopLocalSessionForCapability(capability string) (string, bool) {
+	if s == nil || capability == "" {
+		return "", false
+	}
+	s.desktopBootstrapMu.Lock()
+	defer s.desktopBootstrapMu.Unlock()
+	if subtle.ConstantTimeCompare([]byte(capability), []byte(s.desktopCapability)) == 1 {
+		return s.desktopLocalSessionToken, s.desktopLocalSessionToken != ""
+	}
+	grant, ok := s.desktopBrowserCapabilities[capability]
+	return grant.localSessionToken, ok && grant.localSessionToken != ""
+}
+
+func (s *Server) clearDesktopLocalSession(capability string) {
+	if s == nil || capability == "" {
+		return
+	}
+	s.desktopBootstrapMu.Lock()
+	defer s.desktopBootstrapMu.Unlock()
+	if subtle.ConstantTimeCompare([]byte(capability), []byte(s.desktopCapability)) == 1 {
+		s.desktopLocalSessionToken = ""
+		return
+	}
+	if grant, ok := s.desktopBrowserCapabilities[capability]; ok {
+		grant.localSessionToken = ""
+		s.desktopBrowserCapabilities[capability] = grant
+	}
+}
+
 func (s *Server) clearDesktopGitHubState(capability string) {
 	if s == nil || capability == "" {
 		return
@@ -258,6 +307,7 @@ func (s *Server) clearDesktopGitHubState(capability string) {
 // only into the in-process request passed to the normal auth implementation.
 func desktopAuthMaterialMiddleware(
 	resolveSession func(string) (string, bool),
+	resolveLocalSession func(string) (string, bool),
 	resolvePreviews ...func(string) (DesktopDevPreviewContext, bool),
 ) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
@@ -271,7 +321,7 @@ func desktopAuthMaterialMiddleware(
 			r.Header.Del("Cookie")
 			for _, cookie := range cookies {
 				switch cookie.Name {
-				case oidcSessionCookieName, oidcStateCookieName, githubStateCookieName:
+				case oidcSessionCookieName, localSessionCookieName, oidcStateCookieName, githubStateCookieName:
 					continue
 				default:
 					r.AddCookie(cookie)
@@ -280,6 +330,11 @@ func desktopAuthMaterialMiddleware(
 			capability := desktopBrowserCapabilityFromRequest(r)
 			if encodedSession, ok := resolveSession(capability); ok {
 				r.AddCookie(&http.Cookie{Name: oidcSessionCookieName, Value: encodedSession})
+			}
+			if resolveLocalSession != nil {
+				if token, ok := resolveLocalSession(capability); ok {
+					r.AddCookie(&http.Cookie{Name: localSessionCookieName, Value: token})
+				}
 			}
 			// OAuth callback landing pages can attach only their sessionStorage
 			// capability. If no explicit preview header is present, restore the

@@ -39,6 +39,9 @@ func TestRuntimeCapabilitiesHonorsLegacyJavaFloor(t *testing.T) {
 					Features: []string{
 						javasidecar.FeatureValidationOnly,
 						javasidecar.FeatureOwnerFencingV1,
+						javasidecar.FeatureExternalRuntimeV1,
+						javasidecar.FeatureRunnerOwnerLeaseV1,
+						javasidecar.FeatureRuntimeLeaseV1,
 					},
 				},
 			}

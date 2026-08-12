@@ -92,6 +92,46 @@
         }
       }
     },
+    "restartControls": {
+      "type": "object",
+      "additionalProperties": false,
+      "default": {},
+      "properties": {
+        "enabled": { "type": "boolean", "default": true },
+        "allowForce": { "type": "boolean", "default": true },
+        "controllerDeployment": {
+          "type": "string",
+          "default": "apexload-controller",
+          "minLength": 1,
+          "maxLength": 253,
+          "pattern": "^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?(?:\\.[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?)*$"
+        },
+        "generatorStatefulSet": {
+          "type": "string",
+          "default": "apexload-generator",
+          "minLength": 1,
+          "maxLength": 253,
+          "pattern": "^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?(?:\\.[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?)*$"
+        },
+        "generatorSelector": {
+          "type": "string",
+          "default": "app.kubernetes.io/name=apexload-generator",
+          "minLength": 1,
+          "maxLength": 253,
+          "oneOf": [
+            {
+              "pattern": "^!?([a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?(?:\\.[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?)*/)?[A-Za-z0-9](?:[-_.A-Za-z0-9]{0,61}[A-Za-z0-9])?$"
+            },
+            {
+              "pattern": "^([a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?(?:\\.[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?)*/)?[A-Za-z0-9](?:[-_.A-Za-z0-9]{0,61}[A-Za-z0-9])?(?:=|==|!=)(?:[A-Za-z0-9](?:[-_.A-Za-z0-9]{0,61}[A-Za-z0-9])?)?$"
+            },
+            {
+              "pattern": "^([a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?(?:\\.[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?)*/)?[A-Za-z0-9](?:[-_.A-Za-z0-9]{0,61}[A-Za-z0-9])? (?:in|notin) \\([A-Za-z0-9](?:[-_.A-Za-z0-9]{0,61}[A-Za-z0-9])?(?:, ?[A-Za-z0-9](?:[-_.A-Za-z0-9]{0,61}[A-Za-z0-9])?)*\\)$"
+            }
+          ]
+        }
+      }
+    },
     "importAssets": {
       "type": "object",
       "properties": {
@@ -118,6 +158,16 @@
     "generator": {
       "type": "object",
       "properties": {
+        "runSupervision": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "ttl": { "type": "string", "pattern": "^(3[0-9]|[45][0-9]|60)s$" },
+            "abandonDrain": { "type": "string", "pattern": "^(?:[0-9]|10)s$" },
+            "renewInterval": { "type": "string", "pattern": "^(?:[1-9]|10)s$" }
+          },
+          "required": ["ttl", "abandonDrain", "renewInterval"]
+        },
         "statePersistence": {
           "type": "object",
           "properties": {

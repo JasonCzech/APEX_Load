@@ -110,6 +110,47 @@ describe('repositoryCatalogUtils', () => {
     expect(rows.find(row => row.id === 'scenario-1')?.summary).toContain('1 script')
   })
 
+  it('maps canonical release families to every application member id', () => {
+    const rows = buildRepositoryCatalogRows({
+      activeDomain: domain,
+      activeApplication: { id: 'app-2', project_id: project.id, name: 'Billing', created_at: '', updated_at: '' },
+      categories: [category],
+      projects: [project],
+      releasesByProject: {
+        [project.id]: [{
+          id: 'family-2608',
+          group_id: 'family-2608',
+          application_id: 'app-1',
+          application_release_id: 'release-app-1',
+          member_ids: { 'app-1': 'release-app-1', 'app-2': 'release-app-2' },
+          project_id: project.id,
+          name: '2608',
+          created_at: '2026-01-04T00:00:00Z',
+          updated_at: '2026-01-05T00:00:00Z',
+        }],
+      },
+      scriptsByProject: {},
+      scenariosByProject: {},
+      testsByProject: {
+        [project.id]: [{
+          id: 'test-app-2',
+          name: 'Billing Run',
+          status: 'COMPLETE',
+          project_id: project.id,
+          release_id: 'release-app-2',
+          groups: [],
+          total_vusers: 1,
+          duration: '1m',
+          created_at: '2026-01-06T00:00:00Z',
+        }],
+      },
+      dataPoolsByProject: {},
+    })
+
+    expect(rows.find(row => row.kind === 'release')?.id).toBe('family-2608')
+    expect(rows.find(row => row.id === 'test-app-2')?.releaseName).toBe('2608')
+  })
+
   it('scopes application-linked rows to the selected application', () => {
     const rows = buildRepositoryCatalogRows({
       activeDomain: domain,

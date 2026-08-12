@@ -1223,12 +1223,12 @@ func (s *Server) sourceSecretMigrationAuthorized(r *http.Request, projectID stri
 	if _, serviceAccount := AuthenticatedServiceAccountFromContext(r.Context()); serviceAccount {
 		return false
 	}
-	if isAuthBypassMode(normalizeAuthSettings(s.runner.GetSystemSettings().Auth).Mode) {
+	if isAuthBypassMode(s.authSettingsForRequest().Mode) {
 		return true
 	}
 	user, ok := AuthenticatedUserFromContext(r.Context())
 	return ok && user != nil &&
-		(user.hasGlobalRole(RoleProjectAdmin, RoleSystemAdmin) || user.hasProjectRole(projectID, RoleProjectAdmin))
+		(user.hasGlobalRole(RoleProjectAdmin, RoleSystemAdmin) || userHasProjectOrParentRole(s.store, user, projectID, RoleProjectAdmin))
 }
 
 func (s *Server) requireHumanSecretWrite(w http.ResponseWriter, r *http.Request) bool {
@@ -1236,7 +1236,7 @@ func (s *Server) requireHumanSecretWrite(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusForbidden, "service accounts cannot write project secrets")
 		return false
 	}
-	if s.runner != nil && isAuthBypassMode(normalizeAuthSettings(s.runner.GetSystemSettings().Auth).Mode) {
+	if s.runner != nil && isAuthBypassMode(s.authSettingsForRequest().Mode) {
 		return true
 	}
 	if _, ok := AuthenticatedUserFromContext(r.Context()); !ok {

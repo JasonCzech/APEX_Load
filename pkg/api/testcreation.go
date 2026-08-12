@@ -1262,6 +1262,9 @@ func (tr *TestRunner) buildManagedTestLocked(req CreateTestRequest, id string, s
 	if err != nil {
 		return nil, err
 	}
+	if err := tr.validateGeneratorLossTolerance(req.Assignment); err != nil {
+		return nil, err
+	}
 
 	groups, err := normalizeCreateTestGroups(req)
 	if err != nil {

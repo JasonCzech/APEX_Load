@@ -335,7 +335,13 @@ func TestHandleClassicReplayPersistsResolvedObjectRefSelfHeal(t *testing.T) {
 }
 
 func TestHandleClassicReplayFencesSelfHealWhenExecutionEpochEndsDuringPersistence(t *testing.T) {
-	server := newAdmittedHAReplayServer(t)
+	baseStore, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "classic-replay-fenced-heal.db"))
+	if err != nil {
+		t.Fatalf("open classic replay store: %v", err)
+	}
+	startedCAS := make(chan struct{})
+	blockingStore := &blockingObjectRepositoryContextCASStore{SQLiteStore: baseStore, started: startedCAS}
+	server := newAdmittedHAReplayServerWithStore(t, blockingStore)
 	now := time.Now().UTC()
 	if err := server.store.SaveProject(&storage.Project{ID: "p1", Name: "p1", CreatedAt: now, UpdatedAt: now}); err != nil {
 		t.Fatal(err)
@@ -356,13 +362,10 @@ func TestHandleClassicReplayFencesSelfHealWhenExecutionEpochEndsDuringPersistenc
 		t.Fatal(err)
 	}
 
-	// Keep the admitted leadership epoch for the handler, but use the ordinary
-	// context-aware CAS branch so this test can pause exactly inside repository
-	// persistence and then revoke the epoch.
-	startedCAS := make(chan struct{})
-	server.store = &blockingObjectRepositoryContextCASStore{Store: server.store, started: startedCAS}
-	server.haExecution = false
-	server.runner.durableExecutionFence = false
+	// Install the blocking lease-term CAS before constructing the server so the
+	// leadership worker and repository writer share the same immutable HA
+	// configuration. The test can then pause inside the production durable fence
+	// and revoke the epoch without racing a background reconciler.
 
 	protocolName := registerReplayAPIProtocol(t, func(action *protocol.Action) (*protocol.Result, error) {
 		return &protocol.Result{

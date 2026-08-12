@@ -3,6 +3,8 @@ kind: Kustomization
 namespace: apexload-local
 resources:
   - namespace.yaml
+  - serviceaccount.yaml
+  - restart-controls.yaml
   - controller-pvc.yaml
   - controller-service.yaml
   - controller-deployment.yaml

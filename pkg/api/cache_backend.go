@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"io/fs"
 	"log/slog"
+	"net"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -132,6 +134,7 @@ func configuredCacheBackend() CacheBackend {
 	backend, err := NewCacheBackendFromEnv()
 	if err != nil {
 		cfg := cacheRuntimeConfigFromEnv()
+		safeErr := safeCacheConfigurationError(cfg)
 		return &unavailableCacheBackend{
 			info: CacheBackendInfo{
 				Backend:       cfg.Backend,
@@ -139,13 +142,25 @@ func configuredCacheBackend() CacheBackend {
 				RedisURLSet:   strings.TrimSpace(cfg.RedisURL) != "",
 				TLSEnabled:    cfg.TLSEnabled,
 				Timeout:       cfg.Timeout,
-				ConfigError:   err.Error(),
+				ConfigError:   safeErr.Error(),
 				FanoutChannel: cfg.FanoutChannel,
 			},
-			err: err,
+			err: safeErr,
 		}
 	}
 	return backend
+}
+
+func safeCacheConfigurationError(cfg cacheRuntimeConfig) error {
+	switch cfg.Backend {
+	case cacheBackendRedis, cacheBackendValkey:
+		if strings.TrimSpace(cfg.RedisURL) == "" {
+			return errors.New("remote cache URL is not configured")
+		}
+		return errors.New("remote cache configuration is invalid")
+	default:
+		return errors.New("cache backend configuration is invalid")
+	}
 }
 
 func newCacheBackend(cfg cacheRuntimeConfig) (CacheBackend, error) {
@@ -233,28 +248,78 @@ func cleanCacheKeyPart(value string) string {
 
 func cacheReadinessDetails(info CacheBackendInfo) map[string]any {
 	details := map[string]any{
-		"cache_backend": info.Backend,
-	}
-	if info.KeyPrefix != "" {
-		details["key_prefix"] = info.KeyPrefix
-	}
-	if info.FanoutChannel != "" {
-		details["fanout_channel"] = info.FanoutChannel
+		"cache_backend": safeCacheReadinessBackendLabel(info.Backend),
 	}
 	if cacheBackendIsRemote(info.Backend) {
 		details["redis_url_configured"] = info.RedisURLSet
 		details["tls_enabled"] = info.TLSEnabled
-		if info.Endpoint != "" {
-			details["endpoint"] = info.Endpoint
+		if endpoint := safeCacheReadinessEndpoint(info.Endpoint, info.TLSEnabled); endpoint != "" {
+			details["endpoint"] = endpoint
 		}
 		if info.Timeout > 0 {
 			details["timeout"] = info.Timeout.String()
 		}
 	}
 	if info.ConfigError != "" {
-		details["config_error"] = info.ConfigError
+		// ConfigError is an exported field and injected CacheBackend
+		// implementations are not trusted to redact URLs or credentials. Enforce
+		// the public-readiness invariant at the serialization boundary.
+		details["config_error"] = safeCacheReadinessConfigurationError(info)
 	}
 	return details
+}
+
+func safeCacheReadinessBackendLabel(backend string) string {
+	switch strings.ToLower(strings.TrimSpace(backend)) {
+	case cacheBackendMemory:
+		return cacheBackendMemory
+	case cacheBackendRedis:
+		return cacheBackendRedis
+	case cacheBackendValkey:
+		return cacheBackendValkey
+	default:
+		return "unknown"
+	}
+}
+
+// safeCacheReadinessEndpoint accepts only the Redis wire schemes and rebuilds
+// the locator from hostname and port. Userinfo, paths, queries, fragments, and
+// malformed free-form values never cross the anonymous readiness boundary.
+func safeCacheReadinessEndpoint(raw string, tlsEnabled bool) string {
+	parsed, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || parsed == nil {
+		return ""
+	}
+	switch strings.ToLower(parsed.Scheme) {
+	case "redis", "rediss":
+	default:
+		return ""
+	}
+	host := strings.TrimSpace(parsed.Hostname())
+	if host == "" {
+		return ""
+	}
+	authority := host
+	if port := parsed.Port(); port != "" {
+		authority = net.JoinHostPort(host, port)
+	} else if strings.Contains(host, ":") {
+		authority = "[" + host + "]"
+	}
+	scheme := "redis"
+	if tlsEnabled {
+		scheme = "rediss"
+	}
+	return scheme + "://" + authority
+}
+
+func safeCacheReadinessConfigurationError(info CacheBackendInfo) string {
+	if cacheBackendIsRemote(info.Backend) {
+		if !info.RedisURLSet {
+			return "remote cache URL is not configured"
+		}
+		return "remote cache configuration is invalid"
+	}
+	return "cache backend configuration is invalid"
 }
 
 type memoryCacheEntry struct {

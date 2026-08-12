@@ -362,8 +362,8 @@ func TestHandleGetAuthRoleCatalogReturnsBuiltInRoles(t *testing.T) {
 	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
 		t.Fatalf("unmarshal auth role catalog: %v", err)
 	}
-	if payload.ProviderModel != "upstream_gateway" {
-		t.Fatalf("provider model = %q, want upstream_gateway", payload.ProviderModel)
+	if payload.ProviderModel != "development_bypass" {
+		t.Fatalf("provider model = %q, want development_bypass", payload.ProviderModel)
 	}
 	if len(payload.Roles) != 5 {
 		t.Fatalf("role count = %d, want 5", len(payload.Roles))
@@ -534,6 +534,8 @@ func TestHandleGetAuthEffectiveAccessEvaluatesProjectRoles(t *testing.T) {
 	}
 	var manageTests AuthEffectiveAccessOperation
 	var manageSystem AuthEffectiveAccessOperation
+	var manageRepositoryReleases AuthEffectiveAccessOperation
+	var manageApplications AuthEffectiveAccessOperation
 	for _, resource := range payload.Resources {
 		for _, operation := range resource.Operations {
 			switch operation.ID {
@@ -541,6 +543,10 @@ func TestHandleGetAuthEffectiveAccessEvaluatesProjectRoles(t *testing.T) {
 				manageTests = operation
 			case "manage_system":
 				manageSystem = operation
+			case "manage_repository_releases":
+				manageRepositoryReleases = operation
+			case "manage_applications":
+				manageApplications = operation
 			}
 		}
 	}
@@ -549,6 +555,12 @@ func TestHandleGetAuthEffectiveAccessEvaluatesProjectRoles(t *testing.T) {
 	}
 	if manageSystem.Allowed {
 		t.Fatalf("manage system = %#v, want denied for project editor", manageSystem)
+	}
+	if !manageRepositoryReleases.Allowed || manageRepositoryReleases.GrantSource != "project" {
+		t.Fatalf("manage repository releases = %#v, want allowed via project role", manageRepositoryReleases)
+	}
+	if !manageApplications.Allowed || manageApplications.GrantSource != "project" {
+		t.Fatalf("manage applications = %#v, want allowed via project role", manageApplications)
 	}
 }
 

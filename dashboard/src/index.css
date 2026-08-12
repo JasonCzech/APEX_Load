@@ -58,9 +58,10 @@
   --topbar-bg: rgba(5, 5, 8, 0.7);
   --control-bg: rgba(255, 255, 255, 0.03);
   --control-hover: rgba(255, 255, 255, 0.08);
+  --dropdown-menu-bg: var(--bg-secondary);
   --select-bg: var(--bg-secondary);
-  --select-hover-bg: var(--control-hover);
-  --select-menu-bg: var(--bg-elevated);
+  --select-hover-bg: color-mix(in srgb, var(--accent) 8%, var(--bg-secondary));
+  --select-menu-bg: var(--dropdown-menu-bg);
   --select-arrow: var(--text-secondary);
   --theme-toggle-active-bg: #ffffff;
   --theme-toggle-active-text: #0f1117;
@@ -486,8 +487,8 @@ select {
   min-height: 34px;
   border: 1px solid var(--border);
   border-radius: 8px;
-  background-color: var(--select-bg);
-  color: var(--text-primary);
+  background-color: var(--select-bg) !important;
+  color: var(--text-primary) !important;
   padding: 8px 10px;
   accent-color: var(--accent);
 }
@@ -507,7 +508,7 @@ select:not([multiple]):not([class]) {
 }
 
 :where(select:hover:not(:disabled)) {
-  background-color: var(--select-hover-bg);
+  background-color: var(--select-hover-bg) !important;
 }
 
 select:focus-visible {
@@ -517,8 +518,8 @@ select:focus-visible {
 
 select:disabled {
   cursor: not-allowed;
-  color: var(--text-muted);
-  background-color: color-mix(in srgb, var(--select-bg) 76%, var(--bg-primary));
+  color: var(--text-muted) !important;
+  background-color: color-mix(in srgb, var(--select-bg) 76%, var(--bg-primary)) !important;
 }
 
 select option,
@@ -530,6 +531,59 @@ select optgroup {
 select option:checked {
   background-color: color-mix(in srgb, var(--accent) 26%, var(--select-menu-bg));
   color: var(--text-primary);
+}
+
+/* Chromium's customizable select picker lets the option popup use the same
+   opaque theme surface as application-owned menus. Browsers without support
+   keep the solid option/optgroup fallback above. */
+@supports (appearance: base-select) {
+  select:not([multiple]),
+  select:not([multiple])::picker(select) {
+    appearance: base-select !important;
+    -webkit-appearance: base-select !important;
+  }
+
+  select:not([multiple]) {
+    background-image: none !important;
+    padding-right: 10px;
+  }
+
+  select:not([multiple])::picker(select) {
+    margin-block: 4px;
+    padding: 4px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--dropdown-menu-bg);
+    color: var(--text-primary);
+    box-shadow: var(--shadow-md);
+  }
+
+  select:not([multiple]) option {
+    min-height: 34px;
+    padding: 8px 10px;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text-primary);
+  }
+
+  select:not([multiple]) option:hover,
+  select:not([multiple]) option:focus-visible {
+    background: var(--select-hover-bg);
+  }
+
+  select:not([multiple]) option:checked {
+    background: color-mix(in srgb, var(--accent) 18%, var(--dropdown-menu-bg));
+    color: var(--text-primary);
+  }
+
+  select:not([multiple]) option::checkmark,
+  select:not([multiple])::picker-icon {
+    color: var(--select-arrow);
+  }
+
+  select:not([multiple]):open::picker-icon {
+    rotate: 180deg;
+  }
 }
 
 ::-webkit-scrollbar {

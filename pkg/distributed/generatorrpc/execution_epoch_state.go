@@ -12,27 +12,32 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 )
 
 const (
 	executionEpochStateDirEnv   = "APEXLOAD_GENERATOR_STATE_DIR"
-	executionEpochStateVersion  = 2
+	executionEpochStateVersion  = 3
 	maxExecutionEpochStateBytes = 4096
 	maxExecutionLeaseOwnerBytes = 512
 )
 
 type executionEpochStateRecord struct {
-	Version      int    `json:"version"`
-	Generation   uint64 `json:"generation"`
-	LeaseOwnerID string `json:"lease_owner_id,omitempty"`
+	Version                  int    `json:"version"`
+	Generation               uint64 `json:"generation"`
+	LeaseOwnerID             string `json:"lease_owner_id,omitempty"`
+	RunSupervisionFenceArmed bool   `json:"run_supervision_fence_armed,omitempty"`
 }
 
 type executionEpochStateStore struct {
-	root       *os.Root
-	name       string
-	ownsRoot   bool
-	generation uint64
-	leaseOwner string
+	mu                       sync.Mutex
+	root                     *os.Root
+	name                     string
+	ownsRoot                 bool
+	generation               uint64
+	leaseOwner               string
+	runSupervisionFenceArmed bool
+	postRenameForTest        func(executionEpochStateRecord) error
 }
 
 func (s *Service) initializeExecutionEpochState() {
@@ -53,7 +58,10 @@ func (manager *executionEpochManager) initialize(service *Service) {
 	// replacement process, not an ordinarily expired live service. Permit one
 	// exact-owner revalidation; the flag is consumed as soon as a lease session
 	// is installed and is never restored by normal expiry.
-	manager.executionRestartRevalidation = generation > 0
+	manager.runSupervisionRestartFenceArmed = state.runSupervisionFenceArmed
+	manager.runSupervisionRestartFenceInherited = state.runSupervisionFenceArmed
+	manager.runSupervisionGenerationExpired = state.runSupervisionFenceArmed
+	manager.executionRestartRevalidation = generation > 0 && !state.runSupervisionFenceArmed
 }
 
 func openExecutionEpochState(service *Service) (*executionEpochStateStore, uint64, string, error) {
@@ -154,16 +162,17 @@ func loadExecutionEpochState(state *executionEpochStateStore) (*executionEpochSt
 		_ = state.close()
 		return nil, 0, "", fmt.Errorf("decode execution epoch state: %w", err)
 	}
-	if record.Version != 1 && record.Version != executionEpochStateVersion {
+	if record.Version < 1 || record.Version > executionEpochStateVersion {
 		_ = state.close()
 		return nil, 0, "", fmt.Errorf("unsupported execution epoch state version %d", record.Version)
 	}
-	if err := validateExecutionLeaseOwner(record.Generation, record.LeaseOwnerID, record.Version == executionEpochStateVersion); err != nil {
+	if err := validateExecutionLeaseOwner(record.Generation, record.LeaseOwnerID, record.Version >= 2); err != nil {
 		_ = state.close()
 		return nil, 0, "", fmt.Errorf("decode execution epoch state: %w", err)
 	}
 	state.generation = record.Generation
 	state.leaseOwner = strings.TrimSpace(record.LeaseOwnerID)
+	state.runSupervisionFenceArmed = record.RunSupervisionFenceArmed
 	return state, record.Generation, state.leaseOwner, nil
 }
 
@@ -180,6 +189,42 @@ func ensureJSONEOF(decoder *json.Decoder) error {
 }
 
 func (s *executionEpochStateStore) persist(generation uint64, leaseOwner string) (retErr error) {
+	if s == nil {
+		return errors.New("execution epoch state store is unavailable")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	armed := s.runSupervisionFenceArmed
+	if generation > s.generation {
+		// A higher durable execution generation independently fences every run in
+		// the prior generation. It is the only recovery path for an inherited or
+		// expired supervision fence.
+		armed = false
+	}
+	return s.persistLocked(generation, leaseOwner, armed)
+}
+
+func (s *executionEpochStateStore) persistRunSupervisionFence(generation uint64, armed bool) error {
+	if s == nil {
+		return errors.New("execution epoch state store is unavailable")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if generation < s.generation {
+		// A higher generation already provides the stronger durable fence. Never
+		// let a delayed old-generation expiry rewrite its state.
+		return nil
+	}
+	if generation > s.generation {
+		return fmt.Errorf("execution generation %d is not durably current", generation)
+	}
+	if s.runSupervisionFenceArmed == armed {
+		return nil
+	}
+	return s.persistLocked(generation, s.leaseOwner, armed)
+}
+
+func (s *executionEpochStateStore) persistLocked(generation uint64, leaseOwner string, runSupervisionFenceArmed bool) (retErr error) {
 	if s == nil || s.root == nil {
 		return errors.New("execution epoch state store is unavailable")
 	}
@@ -198,7 +243,10 @@ func (s *executionEpochStateStore) persist(generation uint64, leaseOwner string)
 	} else if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return err
 	}
-	raw, err := json.Marshal(executionEpochStateRecord{Version: executionEpochStateVersion, Generation: generation, LeaseOwnerID: leaseOwner})
+	raw, err := json.Marshal(executionEpochStateRecord{
+		Version: executionEpochStateVersion, Generation: generation, LeaseOwnerID: leaseOwner,
+		RunSupervisionFenceArmed: runSupervisionFenceArmed,
+	})
 	if err != nil {
 		return err
 	}
@@ -231,6 +279,20 @@ func (s *executionEpochStateStore) persist(generation uint64, leaseOwner string)
 	if err := s.root.Rename(tempName, s.name); err != nil {
 		return err
 	}
+	// Rename is the visibility boundary. Update the in-memory image immediately
+	// so a directory-sync failure cannot make a compensating opposite write look
+	// like a no-op while the file already contains the new value.
+	s.generation = generation
+	s.leaseOwner = leaseOwner
+	s.runSupervisionFenceArmed = runSupervisionFenceArmed
+	if s.postRenameForTest != nil {
+		if err := s.postRenameForTest(executionEpochStateRecord{
+			Version: executionEpochStateVersion, Generation: generation, LeaseOwnerID: leaseOwner,
+			RunSupervisionFenceArmed: runSupervisionFenceArmed,
+		}); err != nil {
+			return err
+		}
+	}
 	directory, err := s.root.Open(".")
 	if err != nil {
 		return err
@@ -240,8 +302,6 @@ func (s *executionEpochStateStore) persist(generation uint64, leaseOwner string)
 	if syncErr != nil || closeErr != nil {
 		return errors.Join(syncErr, closeErr)
 	}
-	s.generation = generation
-	s.leaseOwner = leaseOwner
 	return nil
 }
 
@@ -282,7 +342,12 @@ func validateExecutionLeaseOwner(generation uint64, leaseOwner string, requireOw
 }
 
 func (s *executionEpochStateStore) close() error {
-	if s == nil || !s.ownsRoot || s.root == nil {
+	if s == nil {
+		return nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !s.ownsRoot || s.root == nil {
 		return nil
 	}
 	err := s.root.Close()

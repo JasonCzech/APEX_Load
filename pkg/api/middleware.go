@@ -101,6 +101,14 @@ func authorizedProjectOr(r *http.Request, fallback string) string {
 	if projectID, scoped := authorizedProjectFromRequest(r); scoped {
 		return projectID
 	}
+	fallback = strings.TrimSpace(fallback)
+	if fallback == "" {
+		// An absent filter means an unrestricted collection for global admins,
+		// Dev Bypass, and established-provider global viewers. Normalizing the
+		// empty value would silently turn it into the default project and hide
+		// every other project's data.
+		return ""
+	}
 	return normalizeProjectID(fallback)
 }
 
@@ -122,6 +130,12 @@ type AuthenticatedUser struct {
 	// SessionExpiresAt is carried from a signed OIDC session into long-lived
 	// transports so they can close when the browser session expires.
 	SessionExpiresAt time.Time
+	// LocalScopeBoundViewer marks identities resolved through Local Test Login.
+	// The seeded global viewer role is a baseline for global UI surfaces, while
+	// concrete workspace resources must still honor the persona's bindings. It
+	// is intentionally internal so OIDC, trusted-header, and service-account
+	// global-viewer semantics remain unchanged.
+	LocalScopeBoundViewer bool
 }
 
 type AuthenticatedServiceAccount struct {
@@ -140,6 +154,10 @@ type accessRequirement struct {
 	DomainLookup      func(*http.Request, storage.Store) (string, int, string)
 	RepositoryRoles   []string
 	RepositoryLookup  func(*http.Request, storage.Store) (string, int, string)
+	// RequireUnrestrictedViewer marks an unfiltered project-data collection or
+	// stream. Local Test Login's baseline viewer must select a bound scope; true
+	// global viewers from the established auth providers remain unrestricted.
+	RequireUnrestrictedViewer bool
 	// ServiceAccountScope is the second-gate token scope required after RBAC grants
 	// the route. Some routes compute this dynamically from the request body.
 	ServiceAccountScope       string
@@ -440,7 +458,7 @@ func authorizeAccessRequirement(w http.ResponseWriter, r *http.Request, store st
 		return false
 	}
 
-	if len(requirement.GlobalRoles) > 0 && user.hasGlobalRole(requirement.GlobalRoles...) {
+	if userHasGlobalGrantForRequirement(user, requirement) {
 		bindMutationRequirementProjectBestEffort(r, store, requirement)
 		return grantIfScopeAllows(w, r, resolution)
 	}
@@ -460,7 +478,7 @@ func authorizeAccessRequirement(w http.ResponseWriter, r *http.Request, store st
 			return false
 		}
 		bindMutationProjectToRequest(r, projectID)
-		if user.hasProjectRole(projectID, requirement.ProjectRoles...) {
+		if userHasProjectOrParentRole(store, user, projectID, requirement.ProjectRoles...) {
 			allowed := grantIfScopeAllows(w, r, resolution)
 			if allowed {
 				bindAuthorizedProjectToRequest(r, projectID)
@@ -495,6 +513,68 @@ func authorizeAccessRequirement(w http.ResponseWriter, r *http.Request, store st
 
 	writeError(w, http.StatusForbidden, "forbidden")
 	return false
+}
+
+// userHasGlobalGrantForRequirement treats Local Test Login's seeded global
+// viewer binding as permission to use global read-only surfaces, not as an
+// escape hatch around a concrete project/domain/repository lookup. Stronger
+// local roles and every established provider's global roles remain genuinely
+// global.
+func userHasGlobalGrantForRequirement(user *AuthenticatedUser, requirement accessRequirement) bool {
+	if user == nil || len(requirement.GlobalRoles) == 0 {
+		return false
+	}
+	scopedLocalViewer := user.LocalScopeBoundViewer && (requirement.ProjectLookup != nil || requirement.DomainLookup != nil || requirement.RepositoryLookup != nil || requirement.RequireUnrestrictedViewer)
+	for _, role := range requirement.GlobalRoles {
+		role = strings.ToLower(strings.TrimSpace(role))
+		if scopedLocalViewer && role == RoleViewer {
+			continue
+		}
+		if user.hasGlobalRole(role) {
+			return true
+		}
+	}
+	return false
+}
+
+// userHasProjectOrParentRole resolves the effective role for a project. Local
+// Test Login domain and application-repository bindings intentionally cover
+// their child projects; without this inheritance the domainadmin persona can
+// see a project's row in a filtered collection but receives a 403 when opening
+// that same project. Established providers retain their prior resolution rules.
+func userHasProjectOrParentRole(store storage.Store, user *AuthenticatedUser, projectID string, roles ...string) bool {
+	_, ok := userProjectRoleGrantSource(store, user, projectID, roles...)
+	return ok
+}
+
+// userProjectRoleGrantSource is the source-reporting form of
+// userHasProjectOrParentRole. Direct project bindings always retain their
+// established meaning. Parent-scope inheritance is deliberately limited to
+// Local Test Login identities so adding the test personas cannot alter OIDC,
+// trusted-header, or service-account authorization semantics.
+func userProjectRoleGrantSource(store storage.Store, user *AuthenticatedUser, projectID string, roles ...string) (string, bool) {
+	if user == nil || len(roles) == 0 {
+		return "", false
+	}
+	projectID = normalizeProjectID(projectID)
+	if user.hasProjectRole(projectID, roles...) {
+		return "project", true
+	}
+	if store == nil || !user.LocalScopeBoundViewer {
+		return "", false
+	}
+	project, err := store.GetProject(projectID)
+	if err != nil || project == nil {
+		return "", false
+	}
+	domainID := normalizeDomainID(project.DomainID)
+	if user.hasDomainRole(domainID, roles...) {
+		return "domain", true
+	}
+	if repositoryID := repositoryIDForProject(store, project); user.hasRepositoryRole(repositoryID, roles...) {
+		return "application_repository", true
+	}
+	return "", false
 }
 
 func resolveRequirementProject(w http.ResponseWriter, r *http.Request, store storage.Store, requirement accessRequirement) (string, bool, bool) {
@@ -579,7 +659,7 @@ func corsMiddleware(allowedOrigins []string, authSettings ...func() AuthSettings
 			// allow-list is configured this permits same-origin requests only —
 			// never an arbitrary reflected origin.
 			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
-			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Request-ID, X-APEXLoad-API-Key, X-APEXLoad-CSRF-Token, X-APEXLoad-Dev-View, X-APEXLoad-Dev-Project-ID, X-APEXLoad-Deployment-Lease-Token, "+desktopCapabilityHeader)
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, If-Match, X-Request-ID, X-APEXLoad-API-Key, X-APEXLoad-CSRF-Token, X-APEXLoad-Dev-View, X-APEXLoad-Dev-Project-ID, X-APEXLoad-Deployment-Lease-Token, "+desktopCapabilityHeader)
 			w.Header().Set("Access-Control-Max-Age", "86400")
 
 			if r.Method == http.MethodOptions {

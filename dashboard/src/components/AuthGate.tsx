@@ -1,5 +1,6 @@
 import {
   ReactNode,
+  FormEvent,
   useCallback,
   useLayoutEffect,
   useMemo,
@@ -15,6 +16,7 @@ import {
 import { AuthStatusState } from "../hooks/useAuthStatus";
 import { getDesktopBridge, isDesktopSurface } from "../desktop/desktopBridge";
 import type { DesktopShellEventHandlers } from "../desktop/useDesktopShellEvents";
+import { useAuthApi } from "../hooks/api/useAuthApi";
 import ErrorDiagnostic from "./ErrorDiagnostic";
 import Logo from "./Logo";
 import "./AuthGate.css";
@@ -50,20 +52,26 @@ export default function AuthGate({
   children,
   state,
   onDesktopHandlersChange,
+  onAuthenticationChanged,
 }: {
   children: ReactNode;
   state: AuthStatusState;
   onDesktopHandlersChange?: (
     handlers: DesktopShellEventHandlers | null,
   ) => void;
+  onAuthenticationChanged?: () => void;
 }) {
   const [logoutPending, setLogoutPending] = useState(false);
   const [loginPending, setLoginPending] = useState(false);
   const [loginError, setLoginError] = useState("");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
   const [desktopOpenPending, setDesktopOpenPending] = useState(false);
   const [desktopOpenError, setDesktopOpenError] = useState("");
   const [desktopIntentError, setDesktopIntentError] = useState("");
   const desktopSurface = isDesktopSurface();
+  const { login } = useAuthApi();
+  const reloadAuthentication = onAuthenticationChanged ?? (() => window.location.reload());
   const providerLabel =
     state.status === "ready" && state.auth.provider_name?.trim()
       ? state.auth.provider_name.trim()
@@ -98,6 +106,7 @@ export default function AuthGate({
     const loginUrl = state.auth.login_url
       ? resolveApiResourceUrl(state.auth.login_url)
       : "/";
+    setLoginError("");
     setLogoutPending(true);
     try {
       const response = await apiFetch(
@@ -110,14 +119,33 @@ export default function AuthGate({
       );
       const payload = (await response.json().catch(() => null)) as {
         redirect_url?: string;
+        error?: string;
       } | null;
-      window.location.assign(
-        payload?.redirect_url
-          ? resolveApiResourceUrl(payload.redirect_url)
-          : loginUrl,
-      );
-    } catch {
-      window.location.assign(loginUrl);
+      if (!response.ok) {
+        const detail = payload?.error?.trim();
+        throw new Error(
+          detail
+            ? `Unable to clear the current session: ${detail}`
+            : `Unable to clear the current session (HTTP ${response.status}).`,
+        );
+      }
+      if (state.auth.mode === "local") reloadAuthentication();
+      else window.location.assign(payload?.redirect_url ? resolveApiResourceUrl(payload.redirect_url) : loginUrl);
+    } catch (cause: unknown) {
+      if (state.auth.mode === "local") {
+        const detail = cause instanceof Error && cause.message
+          ? cause.message
+          : "The controller did not return an error detail.";
+        setLoginError(
+          `${detail} The local session cookie was not cleared; check the controller connection and try again.`,
+        );
+      } else {
+        window.location.assign(loginUrl);
+      }
+    } finally {
+      if (state.status === "ready" && state.auth.mode === "local") {
+        setLogoutPending(false);
+      }
     }
   };
 
@@ -144,7 +172,7 @@ export default function AuthGate({
       const detail =
         cause instanceof Error && cause.message ? ` ${cause.message}` : "";
       setDesktopOpenError(
-        `Could not open the authenticated dashboard.${detail} Open the public controller gateway in your browser, or restart the desktop controller in Dev Bypass mode.`,
+        `Could not open the authenticated dashboard.${detail} Open the public controller gateway in your browser, or configure Dev Bypass or Local Test Login and restart the desktop controller.`,
       );
     } finally {
       setDesktopOpenPending(false);
@@ -156,11 +184,19 @@ export default function AuthGate({
       (state.status === "ready" &&
         state.auth.enabled &&
         !state.auth.authenticated));
+  const desktopLocalLoginBlocked =
+    desktopSurface &&
+    state.status === "ready" &&
+    state.auth.enabled &&
+    state.auth.mode === "local" &&
+    !state.auth.authenticated;
   const reportBlockedDesktopIntent = useCallback(() => {
     setDesktopIntentError(
-      "This native command needs the embedded workspace, which is unavailable with the current desktop authentication. Open the authenticated dashboard in your browser, or restart the desktop controller in Dev Bypass mode.",
+      desktopLocalLoginBlocked
+        ? "This native command needs the embedded workspace. Sign in with Local Test Login here, then try the command again."
+        : "This native command needs the embedded workspace, which is unavailable with the current desktop authentication. Open the authenticated dashboard in your browser, or configure Dev Bypass or Local Test Login and restart the desktop controller.",
     );
-  }, []);
+  }, [desktopLocalLoginBlocked]);
   const gatedDesktopHandlers = useMemo<DesktopShellEventHandlers>(
     () => ({
       onMenuOpenBrowser: openAuthenticatedBrowser,
@@ -202,6 +238,22 @@ export default function AuthGate({
           ? cause.message
           : "Could not start authentication.",
       );
+    } finally {
+      setLoginPending(false);
+    }
+  };
+
+  const submitLocalLogin = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (loginPending) return;
+    setLoginPending(true);
+    setLoginError("");
+    try {
+      const response = await login(username, password);
+      if (!response.authenticated) throw new Error("Authentication did not complete.");
+      reloadAuthentication();
+    } catch (cause: unknown) {
+      setLoginError(cause instanceof Error ? cause.message : "Unable to sign in.");
     } finally {
       setLoginPending(false);
     }
@@ -257,6 +309,50 @@ export default function AuthGate({
   }
 
   if (state.auth.enabled && !state.auth.authenticated) {
+    if (state.auth.mode === "local") {
+      return (
+        <div className="auth-gate-shell">
+          <section className="auth-gate-card auth-gate-card--blocked">
+            <div className="auth-gate-brand">
+              <Logo size={32} title="APEX Load" />
+              <p className="auth-gate-kicker">APEX Load Local Access</p>
+            </div>
+            <h1>Choose a test persona</h1>
+            <p>Local Test Login is for non-production testing. Sign in with one of the seeded database-backed identities.</p>
+            <form className="auth-gate-form" onSubmit={submitLocalLogin}>
+              <label>
+                <span>Username</span>
+                <input autoComplete="username" autoFocus value={username} onChange={(event) => setUsername(event.target.value)} disabled={loginPending} required />
+              </label>
+              <label>
+                <span>Password</span>
+                <input type="password" autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} disabled={loginPending} required />
+              </label>
+              <button className="auth-gate-action" type="submit" disabled={loginPending}>
+                {loginPending ? "Signing in…" : "Sign in"}
+              </button>
+            </form>
+            {loginError && <p className="auth-gate-error" role="alert">{loginError}</p>}
+            {desktopOpenError && <p className="auth-gate-error" role="alert">{desktopOpenError}</p>}
+            {desktopIntentError && <p className="auth-gate-error" role="alert">{desktopIntentError}</p>}
+            {state.auth.logout_url && state.auth.logout_csrf_token && (
+              <button className="auth-gate-session-clear" type="button" onClick={signOutLocalSession} disabled={logoutPending}>
+                {logoutPending ? "Clearing session…" : "Clear current local session"}
+              </button>
+            )}
+            <div className="auth-gate-personas" aria-label="Local test credentials">
+              <strong>Test credentials</strong>
+              <ul>
+                <li><code>admin/admin</code><span>System administrator</span></li>
+                <li><code>domainadmin/domainadmin</code><span>Default Domain administrator</span></li>
+                <li><code>user/user</code><span>Read-only default workspace</span></li>
+                <li><code>dev/dev</code><span>Default workspace editor</span></li>
+              </ul>
+            </div>
+          </section>
+        </div>
+      );
+    }
     if (
       desktopSurface &&
       (state.auth.mode === "oidc" || state.auth.mode === "trusted_headers")
@@ -287,8 +383,8 @@ export default function AuthGate({
               </button>
             </p>
             <p className="auth-gate-note">
-              To use the embedded desktop workspace, configure Dev Bypass and
-              restart the desktop controller.
+              To use the embedded desktop workspace, configure Dev Bypass or
+              Local Test Login and restart the desktop controller.
             </p>
             {desktopOpenError && <p role="alert">{desktopOpenError}</p>}
             {desktopIntentError && <p role="alert">{desktopIntentError}</p>}

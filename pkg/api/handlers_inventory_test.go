@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 )
 
 type stubInventoryBackend struct {
@@ -19,6 +20,7 @@ func (s stubInventoryBackend) SystemInventory(ctx context.Context) []GeneratorIn
 }
 
 func TestHandleGetSystemInventoryReturnsControllerAndGenerators(t *testing.T) {
+	safetyExitAt := time.Date(2026, time.August, 11, 15, 4, 5, 0, time.UTC)
 	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080"})
 	server.runner.setExecutionBackend(stubInventoryBackend{entries: []GeneratorInventoryEntry{{
 		Target:            "apexload-generator-0.apexload-generator:9090",
@@ -33,6 +35,15 @@ func TestHandleGetSystemInventoryReturnsControllerAndGenerators(t *testing.T) {
 		CPULimitCores:     2,
 		MemoryLimitBytes:  2 * 1024 * 1024 * 1024,
 		MaxVUsers:         10000,
+		LastSafetyExit: &GeneratorSafetyExitEvidence{
+			TestID: "generation-zero-run", LifecycleState: "FAILED",
+			Reason: "test_failure_unquiesced", RequestedAt: safetyExitAt, OutstandingExecutions: 2,
+		},
+		SafetyExits: []GeneratorSafetyExitEvidence{
+			{TestID: "lost-run", ExecutionGeneration: 7, LifecycleState: "FAILED", Reason: "controller_supervision_lost", RequestedAt: safetyExitAt.Add(-2 * time.Second), OutstandingExecutions: 2},
+			{TestID: "generation-zero-run", LifecycleState: "FAILED", Reason: "controller_stop_unquiesced", RequestedAt: safetyExitAt.Add(-time.Second), OutstandingExecutions: 1},
+			{TestID: "generation-zero-run", LifecycleState: "FAILED", Reason: "test_failure_unquiesced", RequestedAt: safetyExitAt, OutstandingExecutions: 2},
+		},
 	}}})
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/system/inventory", nil)
@@ -94,6 +105,18 @@ func TestHandleGetSystemInventoryReturnsControllerAndGenerators(t *testing.T) {
 	}
 	if payload.Generators[0].MaxVUsers != 10000 {
 		t.Fatalf("max_vusers = %d, want 10000", payload.Generators[0].MaxVUsers)
+	}
+	evidence := payload.Generators[0].LastSafetyExit
+	if evidence == nil || evidence.TestID != "generation-zero-run" || evidence.ExecutionGeneration != 0 ||
+		evidence.LifecycleState != "FAILED" || evidence.Reason != "test_failure_unquiesced" ||
+		evidence.OutstandingExecutions != 2 || !evidence.RequestedAt.Equal(safetyExitAt) {
+		t.Fatalf("last_safety_exit = %+v, want exact durable failure evidence", evidence)
+	}
+	if history := payload.Generators[0].SafetyExits; len(history) != 3 || history[0].TestID != "lost-run" ||
+		history[0].ExecutionGeneration != 7 || history[0].Reason != "controller_supervision_lost" ||
+		history[1].TestID != history[2].TestID || history[1].ExecutionGeneration != 0 || history[2].ExecutionGeneration != 0 ||
+		history[1].Reason == history[2].Reason || history[1].RequestedAt.Equal(history[2].RequestedAt) {
+		t.Fatalf("safety_exits = %+v, want both same-ID generation-zero incidents", history)
 	}
 }
 

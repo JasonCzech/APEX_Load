@@ -2,6 +2,7 @@ package generatorrpc
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net"
 	"os"
@@ -720,7 +721,11 @@ func TestExecutionEpochCanceledClaimDoesNotAdvanceHighWater(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(raw) != "{\"version\":2,\"generation\":0}\n" {
+	var record executionEpochStateRecord
+	if err := json.Unmarshal(raw, &record); err != nil {
+		t.Fatalf("decode durable high-water: %v", err)
+	}
+	if record.Version != executionEpochStateVersion || record.Generation != 0 || record.LeaseOwnerID != "" || record.RunSupervisionFenceArmed {
 		t.Fatalf("canceled claim changed durable high-water: %s", raw)
 	}
 }

@@ -2,9 +2,11 @@ import { describe, expect, it } from 'vitest'
 import {
   formatBytes,
   formatDurationSeconds,
+  formatAuthMode,
   formatReadinessStatus,
   formatStatusCounts,
   normalizeProjectRedactionRules,
+  normalizeDashboardAuthMode,
   parseAuthScopes,
   parseOptionalWholeNumber,
   sortProjects,
@@ -13,6 +15,11 @@ import {
 import type { Project } from '../types'
 
 describe('settingsPageFormatters', () => {
+  it('formats and preserves Local Test Login mode', () => {
+    expect(normalizeDashboardAuthMode('local')).toBe('local')
+    expect(formatAuthMode('local')).toBe('Local Test Login')
+  })
+
   it('formatBytes scales to the largest unit', () => {
     expect(formatBytes(0)).toBe('0 B')
     expect(formatBytes(512)).toBe('512 B')

@@ -17,7 +17,7 @@
   overflow: hidden;
   border-radius: 12px;
   border: 1px solid var(--border);
-  background: var(--bg-elevated, var(--bg-secondary));
+  background: var(--dropdown-menu-bg, var(--bg-secondary));
   box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
 }
 .command-palette-input {

@@ -2,8 +2,10 @@
 
 `go test ./...` (and `make test`) runs the default suite. A number of suites are
 **excluded from that default** — either by a Go build tag or by an environment
-variable — and therefore run in no automated context unless someone runs them
-deliberately.
+variable — and must be invoked deliberately. Selected suites also have dedicated
+automation: the deployment-artifact CI job provisions PostgreSQL 16 for the
+scheduler-migration test, and the protected protocol-integration workflow runs
+the live broker/cloud suites weekly or by trusted repository dispatch.
 
 This page is the inventory of every such gate, what it covers, and how to run it.
 It is machine-enforced: `TestOptInSuiteInventoryIsDocumented`
@@ -25,7 +27,7 @@ Everything can be run at once with:
 
 ```bash
 ./scripts/run-optin-suites.sh          # everything that needs no external infrastructure
-./scripts/run-optin-suites.sh --all    # also the live-broker suites (needs the env vars below)
+./scripts/run-optin-suites.sh --all    # also suites needing live infrastructure (needs the env vars below)
 ./scripts/run-optin-suites.sh --list   # show the inventory and what would run
 ```
 
@@ -35,14 +37,18 @@ Three different reasons, and they are worth keeping straight:
 
 1. **Needs a large external corpus** — the LR_Scripts smoke test needs a public
    LoadRunner script corpus that is not vendored into this repository.
-2. **Needs a real broker / cloud endpoint** — the `*_integration` suites talk to a
-   live Kafka, Solace or Azure Service Bus.
+2. **Needs real infrastructure** — the `*_integration` suites talk to a live
+   PostgreSQL database, Kafka, Solace or Azure cloud endpoint.
 3. **Needs a real client library compiled in** — the `*_real` build tags swap the
    in-memory mock adapters for the vendored network clients. These compile and run
    locally; they do not need a broker.
 
-Only category 3 is cheap enough to be a candidate for default CI. Categories 1 and
-2 need provisioning, which is why they are gated.
+Only category 3 is cheap enough to be a candidate for the default `go test ./...`
+CI step. Categories 1 and 2 need provisioning, which is why they are gated. CI
+separately provisions PostgreSQL 16 for the scheduler-migration test. The
+protected protocol-integration workflow runs the Kafka, Solace, Service Bus, and
+Event Hubs suites against configured infrastructure; other infrastructure- or
+corpus-backed suites remain manual.
 
 ## Environment-variable gates
 
@@ -54,6 +60,7 @@ Only category 3 is cheap enough to be a candidate for default CI. Categories 1 a
 | `APEXLOAD_BROWSER_BENCHMARKS` | Browser launch / action-latency / Chromium RSS benchmarks (`BenchmarkBrowser*`) — they start real browser processes | `pkg/protocol/browser` | `APEXLOAD_BROWSER_BENCHMARKS=1 go test ./pkg/protocol/browser -run '^$' -bench 'BenchmarkBrowser' -benchmem -count 5`; see `docs/MOBILE_BROWSER_BENCHMARK_RUNBOOK.md` |
 | `APEXLOAD_RUN_HA_FAILOVER_SOAK` | HA execution-leader failover soak | `pkg/api` | `APEXLOAD_RUN_HA_FAILOVER_SOAK=1 go test ./pkg/api -run HAFailoverSoak -count=1` |
 | `APEXLOAD_RUN_PERFORMANCE_SMOKE` | Controlled performance probes that produce the perf-evidence artifacts | `pkg/perfevidence` | `make performance-smoke`, or `APEXLOAD_RUN_PERFORMANCE_SMOKE=1 go test ./pkg/perfevidence -count=1` |
+| `APEXLOAD_TEST_POSTGRES_URL` | Real PostgreSQL scheduler-lease schema migration: creates and drops a uniquely named schema, upgrades a legacy `INTEGER` generation to `BIGINT`, verifies the existing value and `int64` range survive, then reopens the store to prove restart idempotence | `pkg/storage` | Against a dedicated test database whose user may create/drop schemas: `APEXLOAD_TEST_POSTGRES_URL='postgres://...' go test -tags postgres_integration ./pkg/storage -run '^TestPostgresSchedulerLeaseGenerationMigration$' -count=1` |
 | `KAFKA_BROKERS`, `KAFKA_TOPIC` | Live Kafka produce/consume integration | `pkg/protocol/kafka` | `KAFKA_BROKERS=localhost:9092 go test -tags kafka_integration ./pkg/protocol/kafka -count=1` (`KAFKA_TOPIC` optional) |
 | `SOLACE_AMQP_URL`, `SOLACE_QUEUE` | Live Solace AMQP integration | `pkg/protocol/jms` | `SOLACE_AMQP_URL=amqp://... SOLACE_QUEUE=q go test -tags 'jms_solace_real jms_solace_integration' ./pkg/protocol/jms -count=1` |
 | `SERVICEBUS_CONNECTION_STRING` *or* `SERVICEBUS_NAMESPACE`; plus `SERVICEBUS_TOPIC`, `SERVICEBUS_SUBSCRIPTION`, `SERVICEBUS_REPLY_QUEUE` for the topic/reply cases | Live Azure Service Bus integration | `pkg/protocol/jms` | `SERVICEBUS_CONNECTION_STRING=... go test -tags 'jms_servicebus_real jms_servicebus_integration' ./pkg/protocol/jms -count=1` |
@@ -70,6 +77,7 @@ Only category 3 is cheap enough to be a candidate for default CI. Categories 1 a
 | `jms_servicebus_real` | Real Azure Service Bus adapter instead of the mock | `pkg/protocol/jms`, `pkg/dsl` | `go test -tags jms_servicebus_real ./pkg/protocol/jms ./pkg/dsl -count=1` |
 | `jms_servicebus_integration` | Live Service Bus tests (with `jms_servicebus_real`) | `pkg/protocol/jms` | `go test -tags 'jms_servicebus_real jms_servicebus_integration' ./pkg/protocol/jms -count=1` |
 | `eventhubs_real` | Real azeventhubs/AMQP adapter instead of the mock | `pkg/protocol/eventhubs`, `pkg/dsl` | `go test -tags eventhubs_real ./pkg/protocol/eventhubs ./pkg/dsl -count=1` |
+| `postgres_integration` | Real PostgreSQL catalog/DDL migration test (also needs `APEXLOAD_TEST_POSTGRES_URL`) | `pkg/storage` | see the env table above |
 
 Note the paired `!tag` files (`kafka_unavailable_default_test.go`,
 `servicebus_unavailable_test.go`, `eventhubs_unavailable_default_test.go`,

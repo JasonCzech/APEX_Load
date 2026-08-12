@@ -122,7 +122,7 @@ func (s *Server) handleImportExternalResults(w http.ResponseWriter, r *http.Requ
 func (s *Server) handleListExternalResultImports(w http.ResponseWriter, r *http.Request) {
 	limit, offset := parseLimitOffsetQuery(r, 100)
 	filter := storage.ExternalResultImportFilter{
-		ProjectID:     strings.TrimSpace(r.URL.Query().Get("project_id")),
+		ProjectID:     authorizedProjectOr(r, strings.TrimSpace(r.URL.Query().Get("project_id"))),
 		ApplicationID: strings.TrimSpace(r.URL.Query().Get("application_id")),
 		ReleaseID:     strings.TrimSpace(r.URL.Query().Get("release_id")),
 		Provider:      normalizeExternalResultProvider(r.URL.Query().Get("provider")),

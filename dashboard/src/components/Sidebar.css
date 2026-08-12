@@ -106,7 +106,7 @@
   left: 8px;
   right: 8px;
   top: 52px;
-  background: var(--bg-card);
+  background: var(--dropdown-menu-bg);
   border: 1px solid var(--border);
   border-radius: 6px;
   box-shadow: var(--shadow-sm);

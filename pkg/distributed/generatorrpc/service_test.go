@@ -291,6 +291,8 @@ func TestClientRoundTripDistributeAssignAndHeartbeat(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 
+	service.runSupervisionExpirations.Store(2)
+	service.runSupervisionEscalations.Store(1)
 	heartbeat, err := client.OpenHeartbeat(ctx)
 	if err != nil {
 		t.Fatalf("OpenHeartbeat: %v", err)
@@ -313,6 +315,9 @@ func TestClientRoundTripDistributeAssignAndHeartbeat(t *testing.T) {
 	}
 	if want := buildinfo.Get().Version; pong.Version != want {
 		t.Fatalf("heartbeat version = %q, want %q", pong.Version, want)
+	}
+	if pong.RunSupervisionExpirationsTotal != 2 || pong.RunSupervisionEscalationsTotal != 1 {
+		t.Fatalf("heartbeat run-supervision counters = (%d, %d), want (2, 1)", pong.RunSupervisionExpirationsTotal, pong.RunSupervisionEscalationsTotal)
 	}
 	if !hasString(pong.SupportedProtocols, "http") {
 		t.Fatalf("supported protocols = %v, want http", pong.SupportedProtocols)

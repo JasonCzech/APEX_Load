@@ -78,6 +78,7 @@ func workAssignmentFingerprint(assignment *pb.WorkAssignment) [sha256.Size]byte 
 	fingerprintWriteDuration(h, assignment.GetDurationOffset())
 	fingerprintWriteString(h, assignment.GetScenarioId())
 	fingerprintWriteBool(h, assignment.GetRequireTestExecutionLease())
+	fingerprintWriteBytes(h, assignment.GetRunSupervisionToken())
 	return fingerprintDigest(h)
 }
 

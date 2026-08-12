@@ -116,7 +116,7 @@ func (s *Server) resolveAuditActor(r *http.Request) (string, string, string) {
 			}
 		}
 	}
-	if isAuthBypassMode(normalizeAuthSettings(s.runner.GetSystemSettings().Auth).Mode) {
+	if isAuthBypassMode(s.authSettingsForRequest().Mode) {
 		return "dev_mode", "dev-mode", "Development Mode"
 	}
 	return "anonymous", "anonymous", ""

@@ -226,7 +226,7 @@ func TestDesktopGitHubOAuthCallbackRestoresLoginPreviewAfterBootstrapSwitch(t *t
 
 	// Recreate the two desktop wrappers because this test server was initially
 	// built in hosted mode by the shared GitHub fixture.
-	handler := desktopAuthMaterialMiddleware(server.desktopOIDCSessionForCapability, server.desktopDevPreviewForCapability)(server.mux)
+	handler := desktopAuthMaterialMiddleware(server.desktopOIDCSessionForCapability, nil, server.desktopDevPreviewForCapability)(server.mux)
 	handler = desktopCapabilityMiddleware(server.desktopCapability, nil, server.validDesktopBrowserCapability)(handler)
 
 	loginReq := httptest.NewRequest(http.MethodGet, "/api/v1/integrations/github/login?return_to=/#/settings", nil)

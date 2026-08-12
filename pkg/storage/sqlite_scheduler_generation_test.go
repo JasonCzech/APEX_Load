@@ -3,9 +3,59 @@ package storage
 import (
 	"math"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
+
+func TestSchedulerLeaseGenerationSchemaUsesBigint(t *testing.T) {
+	var createStatement string
+	for _, statement := range schemaCreateTableStatements() {
+		if strings.Contains(statement, "CREATE TABLE IF NOT EXISTS scheduler_leases") {
+			createStatement = statement
+			break
+		}
+	}
+	if createStatement == "" {
+		t.Fatal("scheduler_leases CREATE TABLE statement not found")
+	}
+	for name, statement := range map[string]string{
+		"shared schema":      createStatement,
+		"Postgres rewrite":   rewriteSQL(createStatement, storeDialectPostgres),
+		"SQLite passthrough": rewriteSQL(createStatement, storeDialectSQLite),
+	} {
+		if !strings.Contains(statement, "generation BIGINT NOT NULL DEFAULT 1") {
+			t.Errorf("%s does not declare the scheduler lease generation as BIGINT: %s", name, statement)
+		}
+	}
+
+	var additiveMigration string
+	for _, migration := range schemaColumnMigrations() {
+		if migration.name == "scheduler_leases.generation" {
+			additiveMigration = migration.query
+			break
+		}
+	}
+	if additiveMigration != `ALTER TABLE scheduler_leases ADD COLUMN generation BIGINT NOT NULL DEFAULT 1` {
+		t.Fatalf("scheduler lease additive migration = %q, want BIGINT generation", additiveMigration)
+	}
+}
+
+func TestPostgresSchedulerLeaseGenerationMigrationIsGuardedAndIdempotent(t *testing.T) {
+	for _, fragment := range []string{
+		"attrelid = 'scheduler_leases'::regclass",
+		"attname = 'generation'",
+		"atttypid <> 'int8'::regtype",
+		"ALTER TABLE scheduler_leases ALTER COLUMN generation TYPE BIGINT",
+	} {
+		if !strings.Contains(postgresSchedulerLeaseGenerationBigintMigration, fragment) {
+			t.Errorf("Postgres scheduler generation migration missing %q: %s", fragment, postgresSchedulerLeaseGenerationBigintMigration)
+		}
+	}
+	if got := rewriteSQL(postgresSchedulerLeaseGenerationBigintMigration, storeDialectPostgres); got != postgresSchedulerLeaseGenerationBigintMigration {
+		t.Fatalf("dialect rewrite changed native Postgres migration:\ngot:  %s\nwant: %s", got, postgresSchedulerLeaseGenerationBigintMigration)
+	}
+}
 
 func TestSchedulerLeaseGenerationAdvancesOnlyOnTakeover(t *testing.T) {
 	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))

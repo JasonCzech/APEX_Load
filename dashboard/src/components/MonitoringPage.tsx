@@ -21,6 +21,7 @@ import { dialogBackdropProps } from './dialogBackdropProps'
 import { interactiveElementProps } from './interactiveElementProps'
 import { frontendBuildMetadata, type FrontendBuildComponentInfo } from '../buildMetadata'
 import './CreateTestModal.css'
+import './StatusBadge.css'
 
 interface Props {
   connectionState: WebSocketConnectionState
@@ -55,6 +56,7 @@ type RunCalendarFilter = 'all' | 'cron' | 'ad_hoc' | 'execution_plan' | 'current
 type MonitorSeverity = 'healthy' | 'unknown' | 'warning' | 'danger'
 type RefreshWork = () => Promise<void>
 type CardFreshnessResult = { cardId: string; ok: boolean }
+type ReadinessFetchState = 'loading' | 'loaded' | 'stale' | 'error'
 
 const FLEET_AUDIT_ACTION_PREFIXES = ['fleet.', 'generator.', 'provisioning.']
 const FLEET_AUDIT_RESOURCE_TYPES = new Set(['fleet_alert', 'fleet_pool', 'generator', 'provisioning_request'])
@@ -98,7 +100,9 @@ function formatReadinessStatus(status?: string): string {
 
 function formatReadinessCheckName(name: string): string {
   const labels: Record<string, string> = {
+    kubernetes_api: 'Kubernetes API',
     metadata_store: 'Metadata Store',
+    cache_backend: 'Cache Backend',
     archive_writer: 'Archive Writer',
     generator_rpc: 'Generator RPC',
     telemetry_fanout: 'Telemetry Fan-out',
@@ -111,6 +115,106 @@ function formatReadinessCheckName(name: string): string {
     .filter(Boolean)
     .map(part => part.charAt(0).toUpperCase() + part.slice(1))
     .join(' ')
+}
+
+type InfrastructureReadinessState = 'ready' | 'degraded' | 'not_ready' | 'not_configured' | 'not_reported' | 'checking' | 'unknown'
+
+const REQUIRED_INFRASTRUCTURE_READINESS_CHECKS = ['kubernetes_api', 'metadata_store', 'cache_backend'] as const
+const INFRASTRUCTURE_READINESS_CHECK_NAMES = new Set<string>(REQUIRED_INFRASTRUCTURE_READINESS_CHECKS)
+
+function readinessDetailString(check: SystemReadinessResponse['checks'][number] | undefined, key: string): string {
+  const value = check?.details?.[key]
+  return typeof value === 'string' ? value.trim() : ''
+}
+
+function readinessDetailNumber(check: SystemReadinessResponse['checks'][number] | undefined, key: string): number | null {
+  const value = check?.details?.[key]
+  return typeof value === 'number' && Number.isFinite(value) ? value : null
+}
+
+function infrastructureReadinessState(check: SystemReadinessResponse['checks'][number] | undefined, fetchState: ReadinessFetchState): InfrastructureReadinessState {
+  if (!check) {
+    if (fetchState === 'loading') return 'checking'
+    if (fetchState === 'error') return 'unknown'
+    return 'not_reported'
+  }
+  if (check.name === 'kubernetes_api' && check.status === 'ready' && check.details?.enabled === false) return 'not_configured'
+  if (check.status === 'not_configured' || check.status === 'not_reported' || check.status === 'checking') return check.status
+  if (check.status === 'ready' || check.status === 'degraded' || check.status === 'not_ready') return check.status
+  return 'unknown'
+}
+
+function infrastructureReadinessLabel(kind: 'kubernetes' | 'metadata' | 'cache', check: SystemReadinessResponse['checks'][number] | undefined): string {
+  if (kind === 'kubernetes') return 'Kubernetes API'
+  if (kind === 'metadata') {
+    switch (readinessDetailString(check, 'store_type').toLowerCase()) {
+      case 'postgres':
+      case 'postgresql':
+        return 'PostgreSQL Metadata Store'
+      case 'sqlite':
+        return 'SQLite Metadata Store'
+      default:
+        return 'Metadata Store'
+    }
+  }
+  switch (readinessDetailString(check, 'cache_backend').toLowerCase()) {
+    case 'redis':
+      return 'Redis Cache'
+    case 'valkey':
+      return 'Valkey Cache'
+    case 'memory':
+      return 'In-memory Cache'
+    default:
+      return 'Cache Backend'
+  }
+}
+
+function infrastructureReadinessStatusLabel(state: InfrastructureReadinessState): string {
+  switch (state) {
+    case 'ready': return 'Ready'
+    case 'degraded': return 'Degraded'
+    case 'not_ready': return 'Not Ready'
+    case 'not_configured': return 'Not Configured'
+    case 'not_reported': return 'Not Reported'
+    case 'checking': return 'Checking'
+    default: return 'Unknown'
+  }
+}
+
+function infrastructureReadinessStatusClass(state: InfrastructureReadinessState): string {
+  return `monitor-infrastructure-status-${state.replace('_', '-')}`
+}
+
+function infrastructureStateMonitorSeverity(state: InfrastructureReadinessState): MonitorSeverity {
+  switch (state) {
+    case 'not_ready':
+      return 'danger'
+    case 'degraded':
+      return 'warning'
+    case 'ready':
+    case 'not_configured':
+      return 'healthy'
+    default:
+      return 'unknown'
+  }
+}
+
+function infrastructureReadinessSummary(
+  state: InfrastructureReadinessState,
+  check: SystemReadinessResponse['checks'][number] | undefined,
+): string {
+  switch (state) {
+    case 'checking':
+      return 'Waiting for readiness data.'
+    case 'unknown':
+      return check?.message || 'The readiness endpoint is unavailable.'
+    case 'not_reported':
+      return 'Not reported by this controller.'
+    case 'not_configured':
+      return 'Not configured for this runtime.'
+    default:
+      return check?.message || infrastructureReadinessStatusLabel(state)
+  }
 }
 
 function monitorSeverityRank(severity: MonitorSeverity): number {
@@ -315,9 +419,11 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
   const initialRefreshCompleteRef = useRef(false)
   const calendarRefreshRangeRef = useRef('')
   const refreshInFlightRef = useRef<Promise<void> | null>(null)
+  const readinessRefreshInFlightRef = useRef<Promise<boolean> | null>(null)
   const queuedRefreshRef = useRef<RefreshWork | null>(null)
   const fleetEventGenerationRef = useRef(0)
   const renderedProjectScopeRef = useRef(activeProjectId)
+  const renderedCategoryRef = useRef<MonitorCategoryId>(controlledCategoryId ?? initialCategoryId)
   refreshScopeRef.current = activeProjectId
   const [health, setHealth] = useState<HealthResponse | null>(null)
   const [scheduleHealth, setScheduleHealth] = useState<ScenarioScheduleHealth | null>(null)
@@ -328,6 +434,7 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
   const [selectedCalendarEventId, setSelectedCalendarEventId] = useState<string | null>(null)
   const [inventory, setInventory] = useState<SystemInventoryResponse | null>(null)
   const [systemReadiness, setSystemReadiness] = useState<SystemReadinessResponse | null>(null)
+  const [readinessFetchState, setReadinessFetchState] = useState<ReadinessFetchState>('loading')
   const [systemServices, setSystemServices] = useState<SystemServicesResponse | null>(null)
   const [apmProfiles, setApmProfiles] = useState<APMIntegrationProfilesResponse | null>(null)
   const [monitorPacks, setMonitorPacks] = useState<InfrastructureMonitorPacksResponse | null>(null)
@@ -351,6 +458,8 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
   const [cardOrder, setCardOrder] = useState<string[]>(() => readStoredStringArray('apexload.monitoring.cardOrder'))
   const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null)
   const [staleCardIds, setStaleCardIds] = useState<string[]>([])
+  const [readinessLiveAnnouncement, setReadinessLiveAnnouncement] = useState('')
+  const readinessLiveAnnouncementRef = useRef('')
   const telemetryDialogRef = useRef<HTMLDivElement>(null)
   const generatorsDialogRef = useRef<HTMLDivElement>(null)
 
@@ -481,14 +590,64 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
   const readinessReadyCount = systemReadiness?.checks.filter(check => check.status === 'ready').length ?? 0
   const readinessDegradedCount = systemReadiness?.checks.filter(check => check.status === 'degraded').length ?? 0
   const readinessBlockedCount = systemReadiness?.checks.filter(check => check.status === 'not_ready').length ?? 0
-  const readinessHeaderSeverity: MonitorSeverity = systemReadiness?.status === 'not_ready'
+  const readinessChecksByName = useMemo(
+    () => new Map((systemReadiness?.checks ?? []).map(check => [check.name, check])),
+    [systemReadiness],
+  )
+  const requiredInfrastructureStates = REQUIRED_INFRASTRUCTURE_READINESS_CHECKS.map(requiredName => (
+    infrastructureReadinessState(readinessChecksByName.get(requiredName), readinessFetchState)
+  ))
+  const missingRequiredInfrastructureCount = REQUIRED_INFRASTRUCTURE_READINESS_CHECKS.filter(
+    requiredName => !readinessChecksByName.has(requiredName),
+  ).length
+  const unknownReportedInfrastructureCount = REQUIRED_INFRASTRUCTURE_READINESS_CHECKS.filter((requiredName, index) => (
+    readinessChecksByName.has(requiredName)
+    && infrastructureStateMonitorSeverity(requiredInfrastructureStates[index]) === 'unknown'
+  )).length
+  const readinessDisplayedCheckCount = (systemReadiness?.checks.length ?? 0) + missingRequiredInfrastructureCount
+  const hasAllRequiredInfrastructureChecks = systemReadiness !== null && missingRequiredInfrastructureCount === 0
+  const allConfiguredReadinessChecksPassing = (systemReadiness?.checks.length ?? 0) > 0
+    && systemReadiness?.checks.every(check => check.status === 'ready' || check.status === 'not_configured') === true
+  const aggregateReadinessSeverity: MonitorSeverity = systemReadiness?.status === 'not_ready'
     ? 'danger'
     : systemReadiness?.status === 'degraded'
       ? 'warning'
       : systemReadiness?.status === 'ready'
         ? 'healthy'
         : 'unknown'
-  const readinessHeaderLabel = formatReadinessStatus(systemReadiness?.status)
+  const reportedReadinessSeverity = worstMonitorSeverity(
+    aggregateReadinessSeverity,
+    ...requiredInfrastructureStates.map(infrastructureStateMonitorSeverity),
+  )
+  const readinessHeaderSeverity = worstMonitorSeverity(
+    reportedReadinessSeverity,
+    readinessFetchState === 'stale' ? 'warning' : 'healthy',
+  )
+  const readinessPrimaryLabel = readinessFetchState === 'loading' && !systemReadiness
+    ? 'Checking'
+    : readinessFetchState === 'error' && !systemReadiness
+      ? 'Unavailable'
+      : reportedReadinessSeverity === 'danger'
+        ? 'Not Ready'
+        : reportedReadinessSeverity === 'warning'
+          ? 'Degraded'
+          : readinessFetchState === 'stale'
+            ? 'Stale'
+            : reportedReadinessSeverity === 'unknown'
+              ? 'Unknown'
+              : formatReadinessStatus(systemReadiness?.status)
+  const readinessHeaderQualifiers = systemReadiness ? [
+    missingRequiredInfrastructureCount > 0 ? `${missingRequiredInfrastructureCount} unreported` : '',
+    unknownReportedInfrastructureCount > 0 ? `${unknownReportedInfrastructureCount} unknown` : '',
+    readinessFetchState === 'stale' && (reportedReadinessSeverity === 'danger' || reportedReadinessSeverity === 'warning') ? 'stale data' : '',
+  ].filter(Boolean) : []
+  const readinessHeaderLabel = [readinessPrimaryLabel, ...readinessHeaderQualifiers].join(' · ')
+  const readinessFailureChecks = useMemo(() => (
+    (systemReadiness?.checks ?? [])
+      .filter(check => !INFRASTRUCTURE_READINESS_CHECK_NAMES.has(check.name))
+      .filter(check => !['ready', 'not_configured', 'not_reported', 'checking'].includes(check.status))
+      .slice(0, 4)
+  ), [systemReadiness])
   const apmProfileCount = apmProfiles?.profiles.length ?? 0
   const apmConfiguredCount = apmProfiles?.profiles.filter(profile => profile.status === 'configured' || profile.status === 'supported').length ?? 0
   const apmHeaderSeverity: MonitorSeverity = !apmProfiles ? 'unknown' : apmConfiguredCount > 0 ? 'healthy' : 'warning'
@@ -526,6 +685,18 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
     : readinessServicesHeaderSeverity === readinessHeaderSeverity && readinessHeaderSeverity !== 'healthy'
       ? readinessHeaderLabel
       : groupedMonitorHeaderLabel(readinessServicesHeaderSeverity)
+  const readinessLiveSummary = [
+    `Readiness ${readinessHeaderLabel}.`,
+    ...REQUIRED_INFRASTRUCTURE_READINESS_CHECKS.map((name, index) => (
+      `${formatReadinessCheckName(name)} ${infrastructureReadinessStatusLabel(requiredInfrastructureStates[index])}.`
+    )),
+  ].join(' ')
+
+  useEffect(() => {
+    if (readinessLiveAnnouncementRef.current === readinessLiveSummary) return
+    readinessLiveAnnouncementRef.current = readinessLiveSummary
+    setReadinessLiveAnnouncement(readinessLiveSummary)
+  }, [readinessLiveSummary])
   const calendarRange = useMemo(() => getRunCalendarVisibleRange(calendarView, calendarAnchor), [calendarView, calendarAnchor])
   const calendarEvents = useMemo(() => filterRunCalendarEvents(runCalendar?.events ?? [], calendarFilter), [runCalendar, calendarFilter])
   const calendarModel = useMemo(() => buildRunCalendarModel(calendarView, calendarAnchor, calendarEvents), [calendarView, calendarAnchor, calendarEvents])
@@ -540,6 +711,31 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
       ? `${calendarEvents.length.toLocaleString()} shown`
       : `${calendarEvents.length.toLocaleString()} run${calendarEvents.length === 1 ? '' : 's'}`
 
+  const refreshReadiness = useCallback((): Promise<boolean> => {
+    if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return Promise.resolve(false)
+    if (readinessRefreshInFlightRef.current) return readinessRefreshInFlightRef.current
+
+    const generation = refreshGenerationRef.current
+    const projectScope = activeProjectId
+    const request = (async () => {
+      const result = await settleApiCall(() => api.getSystemReadiness())
+      if (generation !== refreshGenerationRef.current || projectScope !== refreshScopeRef.current) return false
+      if (result.ok) {
+        setSystemReadiness(result.value)
+        setReadinessFetchState('loaded')
+        return true
+      }
+      // Preserve a previously loaded response as stale data. If no response
+      // has ever loaded, stop presenting the settled failure as "Checking".
+      setReadinessFetchState(current => current === 'loaded' || current === 'stale' ? 'stale' : 'error')
+      return false
+    })().finally(() => {
+      if (readinessRefreshInFlightRef.current === request) readinessRefreshInFlightRef.current = null
+    })
+    readinessRefreshInFlightRef.current = request
+    return request
+  }, [activeProjectId, api])
+
   const refresh = useCallback((categoryId: MonitorCategoryId = activeCategoryId) => runCoalescedRefresh(async () => {
     if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return
     const generation = refreshGenerationRef.current
@@ -547,24 +743,23 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
     const isCurrent = () => generation === refreshGenerationRef.current && projectScope === refreshScopeRef.current
 
     if (categoryId === 'overview') {
-      const [healthRes, inventoryRes, restartCapsRes, readinessRes, servicesRes] = await Promise.all([
+      const [healthRes, inventoryRes, restartCapsRes, readinessOk, servicesRes] = await Promise.all([
         settleApiCall(() => api.getHealth()),
         settleApiCall(() => api.getSystemInventory()),
         canManageSystem ? settleApiCall(() => api.getRestartCapabilities()) : Promise.resolve({ ok: false } as const),
-        settleApiCall(() => api.getSystemReadiness()),
+        refreshReadiness(),
         settleApiCall(() => api.getSystemServices()),
       ])
       if (!isCurrent()) return
       if (healthRes.ok) setHealth(healthRes.value)
       if (inventoryRes.ok) setInventory(inventoryRes.value)
       if (restartCapsRes.ok) setRestartCapabilities(restartCapsRes.value)
-      if (readinessRes.ok) setSystemReadiness(readinessRes.value)
       if (servicesRes.ok) setSystemServices(servicesRes.value)
       recordCardFreshness([
         { cardId: 'system-health', ok: healthRes.ok && inventoryRes.ok && (!canManageSystem || restartCapsRes.ok) },
-        { cardId: 'production-readiness', ok: readinessRes.ok && servicesRes.ok },
+        { cardId: 'production-readiness', ok: readinessOk && servicesRes.ok },
       ])
-      if ([healthRes, inventoryRes, restartCapsRes, readinessRes, servicesRes].some(result => result.ok)) setLastRefreshed(new Date())
+      if ([healthRes, inventoryRes, restartCapsRes, servicesRes].some(result => result.ok) || readinessOk) setLastRefreshed(new Date())
       return
     }
 
@@ -627,7 +822,7 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
     if (runCalendarRes.ok) setRunCalendar(runCalendarRes.value)
     recordCardFreshness([{ cardId: 'run-calendar', ok: scheduleHealthRes.ok && runCalendarRes.ok }])
     if (scheduleHealthRes.ok || runCalendarRes.ok) setLastRefreshed(new Date())
-  }), [activeCategoryId, activeProjectId, api, calendarRange.from, calendarRange.to, canManageSystem, recordCardFreshness, runCoalescedRefresh])
+  }), [activeCategoryId, activeProjectId, api, calendarRange.from, calendarRange.to, canManageSystem, recordCardFreshness, refreshReadiness, runCoalescedRefresh])
 
   const refreshAllCategories = useCallback(async (): Promise<boolean> => {
     if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return false
@@ -672,6 +867,29 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
     calendarRefreshRangeRef.current = rangeKey
     void refresh('schedules')
   }, [calendarRange.from, calendarRange.to, refresh])
+
+  useEffect(() => {
+    if (renderedCategoryRef.current === activeCategoryId) return
+    renderedCategoryRef.current = activeCategoryId
+    if (activeCategoryId === 'overview') void refresh('overview')
+  }, [activeCategoryId, refresh])
+
+  useEffect(() => {
+    if (activeCategoryId === 'overview') return
+
+    const retryReadiness = () => { void refreshReadiness() }
+    retryReadiness()
+    const interval = setInterval(retryReadiness, 5000)
+    const handleVisibilityChange = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') retryReadiness()
+    }
+    if (typeof document !== 'undefined') document.addEventListener('visibilitychange', handleVisibilityChange)
+
+    return () => {
+      clearInterval(interval)
+      if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', handleVisibilityChange)
+    }
+  }, [activeCategoryId, refreshReadiness])
 
   useEffect(() => {
     const interval = setInterval(refresh, 5000)
@@ -969,7 +1187,7 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
         <div className="monitor-body">
           <div className="monitor-row">
             <span className="monitor-label">Ready Checks</span>
-            <span className="monitor-value">{systemReadiness ? `${readinessReadyCount}/${systemReadiness.checks.length}` : '-'}</span>
+            <span className="monitor-value">{systemReadiness ? `${readinessReadyCount}/${readinessDisplayedCheckCount}` : '-'}</span>
           </div>
           <div className="monitor-row">
             <span className="monitor-label">Degraded</span>
@@ -983,20 +1201,22 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
             <span className="monitor-label">Services</span>
             <span className={`monitor-value ${servicesHeaderSeverity === 'warning' ? 'telemetry-text-warning' : ''}`}>{servicesHeaderLabel}</span>
           </div>
+          <InfrastructureReadinessList readiness={systemReadiness} fetchState={readinessFetchState} />
           {systemReadiness ? (
             <div className="monitor-warning-list">
-              {systemReadiness.checks
-                .filter(check => check.status !== 'ready')
-                .slice(0, 4)
-                .map(check => (
+              {readinessFailureChecks.map(check => (
                   <p key={check.name} className={check.status === 'not_ready' ? 'text-danger' : ''}>
                     {formatReadinessCheckName(check.name)}: {check.message}
                   </p>
-                ))}
-              {systemReadiness.checks.every(check => check.status === 'ready') && <p>All production readiness checks are passing.</p>}
+              ))}
+              {readinessFetchState === 'loaded' && allConfiguredReadinessChecksPassing && hasAllRequiredInfrastructureChecks && <p>All configured production readiness checks are passing.</p>}
             </div>
           ) : (
-            <p className="monitor-hint">Waiting for /api/v1/system/readiness.</p>
+            <p className="monitor-hint">
+              {readinessFetchState === 'error'
+                ? 'Unable to load /api/v1/system/readiness. Retrying automatically.'
+                : 'Waiting for /api/v1/system/readiness.'}
+            </p>
           )}
           <ActiveServicesList
             backendServices={backendServices}
@@ -1521,7 +1741,7 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
       ),
       content: <FleetGeneratorsCard canManage={canManageSystem} />,
     },
-  ], [activeProject?.id, apiHealthSeverity, apmHeaderLabel, apmHeaderSeverity, apmProfiles, backendServices, calendarAnchor, calendarEvents, calendarFilter, calendarHeaderLabel, calendarHeaderSeverity, calendarModel, calendarView, canManageSystem, canRestart, componentBuildRows, controlPlaneHeaderLabel, controlPlaneHeaderSeverity, controllerGeneratorInventoryLabel, fleetAlertActionBusy, fleetAlertActionError, fleetAlertHeaderLabel, fleetAlertHeaderSeverity, fleetAlertList, fleetAlertsUnknown, fleetAuditEvents, fleetAuditHeaderLabel, fleetAuditHeaderSeverity, fleetCapacity, frontendServices, generatorActiveVUsers, generatorAvailableCapacity, generatorConnectedCount, generatorHeaderLabel, generatorHeaderSeverity, generatorIssueCount, generators.length, health, inventory, monitorPackContractCount, monitorPackCount, monitorPackHeaderLabel, monitorPackHeaderSeverity, monitorPackSupportedCount, monitorPacks, onAcknowledgeThresholdAlert, onScheduleForDate, onSelectTest, openControllerRestart, openSelectedTest, provisioner, readinessBlockedCount, readinessDegradedCount, readinessReadyCount, readinessServicesHeaderLabel, readinessServicesHeaderSeverity, restartCapabilities?.supports.controller_workload, runCalendar, selectCalendarEvent, selectedCalendarEvent, servicesHeaderLabel, servicesHeaderSeverity, shiftCalendar, systemReadiness, systemServices, telemetryDangerCount, telemetryHeaderLabel, telemetryHeaderSeverity, telemetryLatestEntry, telemetryDiagnostics, telemetryWarningCount, thresholdAlertHeaderLabel, thresholdAlertHeaderSeverity, thresholdAlerts, toggleFleetAlertAck, websocketLabel, websocketValueClass])
+  ], [activeProject?.id, allConfiguredReadinessChecksPassing, apiHealthSeverity, apmHeaderLabel, apmHeaderSeverity, apmProfiles, backendServices, calendarAnchor, calendarEvents, calendarFilter, calendarHeaderLabel, calendarHeaderSeverity, calendarModel, calendarView, canManageSystem, canRestart, componentBuildRows, controlPlaneHeaderLabel, controlPlaneHeaderSeverity, controllerGeneratorInventoryLabel, fleetAlertActionBusy, fleetAlertActionError, fleetAlertHeaderLabel, fleetAlertHeaderSeverity, fleetAlertList, fleetAlertsUnknown, fleetAuditEvents, fleetAuditHeaderLabel, fleetAuditHeaderSeverity, fleetCapacity, frontendServices, generatorActiveVUsers, generatorAvailableCapacity, generatorConnectedCount, generatorHeaderLabel, generatorHeaderSeverity, generatorIssueCount, generators.length, hasAllRequiredInfrastructureChecks, health, inventory, monitorPackContractCount, monitorPackCount, monitorPackHeaderLabel, monitorPackHeaderSeverity, monitorPackSupportedCount, monitorPacks, onAcknowledgeThresholdAlert, onScheduleForDate, onSelectTest, openControllerRestart, openSelectedTest, provisioner, readinessBlockedCount, readinessDegradedCount, readinessDisplayedCheckCount, readinessFailureChecks, readinessFetchState, readinessReadyCount, readinessServicesHeaderLabel, readinessServicesHeaderSeverity, restartCapabilities?.supports.controller_workload, runCalendar, selectCalendarEvent, selectedCalendarEvent, servicesHeaderLabel, servicesHeaderSeverity, shiftCalendar, systemReadiness, systemServices, telemetryDangerCount, telemetryHeaderLabel, telemetryHeaderSeverity, telemetryLatestEntry, telemetryDiagnostics, telemetryWarningCount, thresholdAlertHeaderLabel, thresholdAlertHeaderSeverity, thresholdAlerts, toggleFleetAlertAck, websocketLabel, websocketValueClass])
 
   useEffect(() => {
     setCardOrder(prev => {
@@ -1579,6 +1799,7 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
       : joinCounts([
           readinessBlockedCount > 0 ? `${readinessBlockedCount} blocked` : '',
           readinessDegradedCount > 0 ? `${readinessDegradedCount} degraded` : '',
+          readinessFetchState === 'stale' ? 'stale data' : '',
         ]) || readinessHeaderLabel
     const telemetryCount = telemetryDangerCount + telemetryWarningCount
     const telemetrySummary = telemetryCount > 0
@@ -1626,14 +1847,15 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
         summary: schedulePresentation.summary,
       },
     ]
-  }, [health, connectionState, readinessHeaderSeverity, systemReadiness, readinessBlockedCount, readinessDegradedCount, readinessHeaderLabel, controllerHeaderSeverity, controllerStatusLabel, generatorHeaderSeverity, generators, generatorIssueCount, telemetryHeaderSeverity, telemetryDangerCount, telemetryWarningCount, thresholdAlertHeaderSeverity, unacknowledgedThresholdAlerts.length, fleetAlertHeaderSeverity, fleetAlertList, fleetAlertsUnknown, scheduleHeaderSeverity, schedulePresentation.summary])
+  }, [health, connectionState, readinessHeaderSeverity, readinessFetchState, systemReadiness, readinessBlockedCount, readinessDegradedCount, readinessHeaderLabel, controllerHeaderSeverity, controllerStatusLabel, generatorHeaderSeverity, generators, generatorIssueCount, telemetryHeaderSeverity, telemetryDangerCount, telemetryWarningCount, thresholdAlertHeaderSeverity, unacknowledgedThresholdAlerts.length, fleetAlertHeaderSeverity, fleetAlertList, fleetAlertsUnknown, scheduleHeaderSeverity, schedulePresentation.summary])
 
   const overallSeverity = useMemo(() => {
     if (severityEntries.some(e => e.severity === 'danger')) return 'danger'
     if (severityEntries.some(e => e.severity === 'warning')) return 'warning'
+    if (readinessHeaderSeverity === 'unknown') return 'unknown'
     if (severityEntries.every(e => e.severity === 'unknown')) return 'unknown'
     return 'healthy'
-  }, [severityEntries])
+  }, [readinessHeaderSeverity, severityEntries])
 
   const issueCount = severityEntries.filter(e => e.severity === 'danger' || e.severity === 'warning').length
   const overallLabel = overallSeverity === 'danger'
@@ -1641,15 +1863,26 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
     : overallSeverity === 'warning'
       ? `${issueCount} advisory warning${issueCount === 1 ? '' : 's'}`
       : overallSeverity === 'unknown'
-        ? 'Waiting for system data...'
+        ? readinessHeaderSeverity === 'unknown'
+          ? readinessFetchState === 'loading' && !systemReadiness
+            ? 'Waiting for system data...'
+            : readinessFetchState === 'error' && !systemReadiness
+              ? 'Readiness unavailable'
+              : 'Readiness data incomplete'
+          : 'Waiting for system data...'
         : 'All systems operational'
   const advisoryEntries = severityEntries.filter(entry => entry.severity === 'danger' || entry.severity === 'warning')
   const advisoryTone: TopbarMetaTone | null = overallSeverity === 'danger'
     ? 'danger'
     : overallSeverity === 'warning'
       ? 'warning'
-      : null
-  const advisorySummary = advisoryEntries
+      : overallSeverity === 'unknown'
+        ? 'default'
+        : null
+  const statusSummaryEntries = overallSeverity === 'unknown'
+    ? severityEntries.filter(entry => entry.severity === 'unknown')
+    : advisoryEntries
+  const advisorySummary = statusSummaryEntries
     .map(entry => `${entry.label}: ${entry.summary || entry.severity}`)
     .join('\n')
   const monitoringTopbarControls = useMemo(() => (
@@ -1674,6 +1907,15 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
 
   return (
     <div className="page">
+      <div
+        className="monitor-readiness-live-summary"
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+        data-readiness-live-summary
+      >
+        {readinessLiveAnnouncement}
+      </div>
       <div className="page-header">
         <div>
           <h2 className="monitor-page-title">
@@ -1986,6 +2228,39 @@ export interface RunCalendarModel {
   label: string
   rangeLabel: string
   days: RunCalendarDay[]
+}
+
+function InfrastructureReadinessList({ readiness, fetchState }: { readiness: SystemReadinessResponse | null; fetchState: ReadinessFetchState }) {
+  const checks = new Map((readiness?.checks ?? []).map(check => [check.name, check]))
+  const rows = [
+    { id: 'kubernetes', kind: 'kubernetes' as const, check: checks.get('kubernetes_api') },
+    { id: 'metadata', kind: 'metadata' as const, check: checks.get('metadata_store') },
+    { id: 'cache', kind: 'cache' as const, check: checks.get('cache_backend') },
+  ]
+
+  return (
+    <ul className="monitor-infrastructure-readiness" aria-label="Infrastructure readiness">
+      {rows.map(row => {
+        const state = infrastructureReadinessState(row.check, fetchState)
+        const latency = readinessDetailNumber(row.check, 'probe_latency_ms')
+        const summary = infrastructureReadinessSummary(state, row.check)
+        return (
+          <li key={row.id} className="monitor-infrastructure-row">
+            <div className="monitor-infrastructure-main">
+              <span className="monitor-infrastructure-name">{infrastructureReadinessLabel(row.kind, row.check)}</span>
+              <span className="monitor-infrastructure-summary">
+                {summary}{latency !== null ? ` · ${latency.toLocaleString(undefined, { maximumFractionDigits: 3 })} ms` : ''}
+                {fetchState === 'stale' ? ' · Stale data; latest readiness refresh failed.' : ''}
+              </span>
+            </div>
+            <span className={`status-badge monitor-infrastructure-status ${infrastructureReadinessStatusClass(state)}`}>
+              {infrastructureReadinessStatusLabel(state)}
+            </span>
+          </li>
+        )
+      })}
+    </ul>
+  )
 }
 
 function ActiveServicesList({

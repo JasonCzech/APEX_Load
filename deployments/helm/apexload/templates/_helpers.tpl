@@ -8,6 +8,29 @@ app.kubernetes.io/managed-by: Helm
 helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
 {{- end -}}
 
+{{- /*
+Normalize restart-control values in the templates rather than relying on
+values.yaml being merged. Helm upgrades performed with --reuse-values can
+carry forward a legacy release that has no restartControls map (or only the
+keys supplied with --set), so every missing key must inherit the current
+chart default while explicit false values remain false.
+*/ -}}
+{{- define "apexload.restartControls" -}}
+{{- $effective := dict
+      "enabled" true
+      "allowForce" true
+      "controllerDeployment" "apexload-controller"
+      "generatorStatefulSet" "apexload-generator"
+      "generatorSelector" "app.kubernetes.io/name=apexload-generator" -}}
+{{- $configured := .Values.restartControls | default dict -}}
+{{- range $key := keys $effective -}}
+{{- if hasKey $configured $key -}}
+{{- $_ := set $effective $key (get $configured $key) -}}
+{{- end -}}
+{{- end -}}
+{{- toJson $effective -}}
+{{- end -}}
+
 {{- define "apexload.requiredCleanValue" -}}
 {{- $name := index . 0 -}}
 {{- $value := toString (index . 1) -}}

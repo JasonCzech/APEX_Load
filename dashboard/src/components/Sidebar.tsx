@@ -1,10 +1,10 @@
-import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react'
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { type WebSocketConnectionState } from '../hooks/useWebSocket'
 import { useAuthApi } from '../hooks/api/useAuthApi'
 import { resolveApiResourceUrl } from '../hooks/apiClient'
 import { useDevView } from '../hooks/useDevView'
 import { useNavigationGuardRunner } from '../hooks/NavigationGuardProvider'
-import { Application, DashboardAuthStatus, Domain, Project, Release } from '../types'
+import { Application, ApplicationRepository, DashboardAuthStatus, Domain, Project, Release } from '../types'
 import BuildBadge from './BuildBadge'
 import Logo from './Logo'
 import ProjectModal from './ProjectModal'
@@ -23,6 +23,7 @@ interface Props {
   onCreateProject?: (name: string) => Promise<Project>
   domains?: Domain[]
   activeDomain?: Domain | null
+  applicationRepository?: ApplicationRepository | null
   onDomainChange?: (domain: Domain) => void
   applications?: Application[]
   releases?: Release[]
@@ -31,7 +32,9 @@ interface Props {
   onApplicationChange?: (application: Application) => void
   onReleaseChange?: (release: Release) => void
   onCreateApplication?: (name: string) => Promise<Application>
+  onCreateRelease?: (name: string) => Promise<Release | null>
   canCreateProjects?: boolean
+  canCreateReleases?: boolean
   showAccess?: boolean
 }
 
@@ -172,6 +175,7 @@ export default function Sidebar({
   onCreateProject,
   domains = [],
   activeDomain,
+  applicationRepository,
   onDomainChange,
   applications = [],
   releases = [],
@@ -180,18 +184,23 @@ export default function Sidebar({
   onApplicationChange,
   onReleaseChange,
   onCreateApplication,
+  onCreateRelease,
   canCreateProjects = false,
+  canCreateReleases = false,
   showAccess = false,
 }: Props) {
   const [collapsed, setCollapsed] = useState(false)
   const [domainOpen, setDomainOpen] = useState(false)
   const [projectOpen, setProjectOpen] = useState(false)
   const [applicationOpen, setApplicationOpen] = useState(false)
+  const [releaseOpen, setReleaseOpen] = useState(false)
   const domainSelectorRef = useRef<HTMLDivElement | null>(null)
   const projectSelectorRef = useRef<HTMLDivElement | null>(null)
   const applicationSelectorRef = useRef<HTMLDivElement | null>(null)
+  const releaseSelectorRef = useRef<HTMLDivElement | null>(null)
   const [showProjectModal, setShowProjectModal] = useState(false)
   const [showApplicationModal, setShowApplicationModal] = useState(false)
+  const [showReleaseModal, setShowReleaseModal] = useState(false)
   const [logoutPending, setLogoutPending] = useState(false)
   const [logoutError, setLogoutError] = useState('')
   const { logout } = useAuthApi()
@@ -212,27 +221,60 @@ export default function Sidebar({
   const connectionLabel = connectionState === 'connected' ? 'Live' : connectionState === 'connecting' ? 'Connecting' : 'Disconnected'
   const identityName = formatIdentityName(authStatus)
   const identityInitials = formatIdentityInitials(identityName)
-  const identityMeta = formatIdentityMeta(authStatus)
+  const identityMeta = formatIdentityMeta(authStatus, {
+    domainId: activeDomain?.id,
+    applicationRepositoryId: applicationRepository?.id,
+    projectId: activeProject?.id,
+  })
   const identityTitle = formatIdentityTitle(authStatus, identityMeta)
   const rawLogoutURL = authStatus?.authenticated ? authStatus.logout_url?.trim() || '' : ''
   const logoutURL = rawLogoutURL ? resolveApiResourceUrl(rawLogoutURL) : ''
-  const canPostLogout = authStatus?.authenticated && authStatus.mode === 'oidc' && Boolean(authStatus.logout_csrf_token?.trim())
-  const sessionExpiryNotice = formatSessionExpiryNotice(authStatus)
+  const canPostLogout = authStatus?.authenticated && (authStatus.mode === 'oidc' || authStatus.mode === 'local') && Boolean(authStatus.logout_csrf_token?.trim())
+  const sessionDeadline = useMemo(
+    () => resolveSessionDeadline(authStatus),
+    [authStatus],
+  )
+  const [sessionClock, setSessionClock] = useState(() => Date.now())
+  useEffect(() => {
+    if (sessionDeadline === undefined) return undefined
+
+    let activationTimer: number | undefined
+    let countdownTimer: number | undefined
+    const updateClock = () => setSessionClock(Date.now())
+    const startCountdown = () => {
+      updateClock()
+      countdownTimer = window.setInterval(updateClock, 30_000)
+    }
+    const untilNoticeWindow = sessionDeadline - Date.now() - 15 * 60 * 1000
+    if (untilNoticeWindow > 0) {
+      activationTimer = window.setTimeout(startCountdown, untilNoticeWindow)
+    } else {
+      startCountdown()
+    }
+
+    return () => {
+      if (activationTimer !== undefined) window.clearTimeout(activationTimer)
+      if (countdownTimer !== undefined) window.clearInterval(countdownTimer)
+    }
+  }, [sessionDeadline])
+  const sessionExpiryNotice = formatSessionExpiryNotice(authStatus, sessionDeadline, sessionClock)
   const closeWorkspaceMenus = useCallback(() => {
     setDomainOpen(false)
     setProjectOpen(false)
     setApplicationOpen(false)
+    setReleaseOpen(false)
   }, [])
 
   useEffect(() => {
-    if (!domainOpen && !projectOpen && !applicationOpen) {
+    if (!domainOpen && !projectOpen && !applicationOpen && !releaseOpen) {
       return undefined
     }
 
     const isInsideOpenMenu = (target: Node) => (
       (domainOpen && Boolean(domainSelectorRef.current?.contains(target))) ||
       (projectOpen && Boolean(projectSelectorRef.current?.contains(target))) ||
-      (applicationOpen && Boolean(applicationSelectorRef.current?.contains(target)))
+      (applicationOpen && Boolean(applicationSelectorRef.current?.contains(target))) ||
+      (releaseOpen && Boolean(releaseSelectorRef.current?.contains(target)))
     )
 
     const handlePointerDown = (event: PointerEvent) => {
@@ -255,7 +297,7 @@ export default function Sidebar({
       document.removeEventListener('pointerdown', handlePointerDown, true)
       document.removeEventListener('keydown', handleKeyDown)
     }
-  }, [applicationOpen, closeWorkspaceMenus, domainOpen, projectOpen])
+  }, [applicationOpen, closeWorkspaceMenus, domainOpen, projectOpen, releaseOpen])
 
   // The menus only render expanded, so a click while collapsed has to open the
   // rail as well or it silently does nothing.
@@ -263,6 +305,7 @@ export default function Sidebar({
     setDomainOpen(open => (collapsed ? true : !open))
     setProjectOpen(false)
     setApplicationOpen(false)
+    setReleaseOpen(false)
     setCollapsed(false)
   }
 
@@ -270,6 +313,7 @@ export default function Sidebar({
     setDomainOpen(false)
     setProjectOpen(open => (collapsed ? true : !open))
     setApplicationOpen(false)
+    setReleaseOpen(false)
     setCollapsed(false)
   }
 
@@ -277,6 +321,15 @@ export default function Sidebar({
     setDomainOpen(false)
     setProjectOpen(false)
     setApplicationOpen(open => (collapsed ? true : !open))
+    setReleaseOpen(false)
+    setCollapsed(false)
+  }
+
+  const toggleReleaseMenu = () => {
+    setDomainOpen(false)
+    setProjectOpen(false)
+    setApplicationOpen(false)
+    setReleaseOpen(open => (collapsed ? true : !open))
     setCollapsed(false)
   }
 
@@ -292,6 +345,12 @@ export default function Sidebar({
     setApplicationOpen(false)
   }
 
+  const handleNewRelease = async (name: string) => {
+    if (!onCreateRelease) return
+    await onCreateRelease(name)
+    setReleaseOpen(false)
+  }
+
   const handleLogout = async () => {
     if (!authStatus?.logout_csrf_token || !logoutURL || logoutPending) {
       return
@@ -301,7 +360,11 @@ export default function Sidebar({
     try {
       const res = await logout(authStatus.logout_csrf_token)
       if (typeof window !== 'undefined') {
-        window.location.assign(res.redirect_url ? resolveApiResourceUrl(res.redirect_url) : logoutURL)
+        if (authStatus.mode === 'local') {
+          window.location.reload()
+        } else {
+          window.location.assign(res.redirect_url ? resolveApiResourceUrl(res.redirect_url) : logoutURL)
+        }
       }
     } catch (error) {
       setLogoutError(error instanceof Error ? error.message : 'Unable to sign out.')
@@ -433,21 +496,21 @@ export default function Sidebar({
         <button
           className="project-selector"
           onClick={toggleApplicationMenu}
-          title={`${activeApplication?.name || 'Application'}${activeRelease ? ` / ${activeRelease.name}` : ''}`}
-          aria-label={`Select application and release. Current application: ${activeApplication?.name || 'none'}${activeRelease ? `. Current release: ${activeRelease.name}` : ''}`}
+          title={activeApplication?.name || 'Application'}
+          aria-label={`Select application. Current application: ${activeApplication?.name || 'none'}`}
           aria-expanded={applicationOpen && !collapsed}
           aria-controls="sidebar-application-options"
         >
           <span className="project-icon">▣</span>
           {!collapsed && (
             <>
-              <span className="project-name">{activeApplication?.name || 'Application'}{activeRelease ? ` / ${activeRelease.name}` : ''}</span>
+              <span className="project-name">{activeApplication?.name || 'Application'}</span>
               <span className="project-chevron">⌄</span>
             </>
           )}
         </button>
         {applicationOpen && !collapsed && (
-          <div className="project-menu" id="sidebar-application-options" aria-label="Application and release options">
+          <div className="project-menu" id="sidebar-application-options" aria-label="Application options">
             <div className="project-menu-list">
               {applications.length === 0 ? (
                 <p className="project-menu-empty">
@@ -468,22 +531,6 @@ export default function Sidebar({
                 </button>
               ))}
             </div>
-            {releases.length > 0 && (
-              <div className="project-menu-list release-list">
-                {releases.map(release => (
-                  <button
-                    key={release.id}
-                    className={`project-menu-item ${activeRelease?.id === release.id ? 'active' : ''}`}
-                    onClick={() => {
-                      onReleaseChange?.(release)
-                      setApplicationOpen(false)
-                    }}
-                  >
-                    ↳ {release.name}
-                  </button>
-                ))}
-              </div>
-            )}
             {/* Not gated on canCreateProjects: application creation is a wider
                 permission than project management on the server (global
                 editors qualify), and the Settings create row matches. A
@@ -504,6 +551,69 @@ export default function Sidebar({
                 className="project-menu-action muted"
                 onClick={() => {
                   setApplicationOpen(false)
+                  onNavigate('repository')
+                }}
+              >
+                Open Repository
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+
+      <div className="sidebar-project" ref={releaseSelectorRef}>
+        <button
+          className="project-selector"
+          onClick={toggleReleaseMenu}
+          title={activeRelease?.name || 'Release'}
+          aria-label={`Select release. Current release: ${activeRelease?.name || 'none'}`}
+          aria-expanded={releaseOpen && !collapsed}
+          aria-controls="sidebar-release-options"
+        >
+          <span className="project-icon">◆</span>
+          {!collapsed && (
+            <>
+              <span className="project-name">{activeRelease?.name || 'Release'}</span>
+              <span className="project-chevron">⌄</span>
+            </>
+          )}
+        </button>
+        {releaseOpen && !collapsed && (
+          <div className="project-menu" id="sidebar-release-options" aria-label="Release options">
+            <div className="project-menu-list">
+              {!activeApplication ? (
+                <p className="project-menu-empty">Select an application first</p>
+              ) : releases.length === 0 ? (
+                <p className="project-menu-empty">No releases in {activeApplication.name}</p>
+              ) : releases.map(release => (
+                <button
+                  key={release.id}
+                  className={`project-menu-item ${activeRelease?.id === release.id ? 'active' : ''}`}
+                  onClick={() => {
+                    onReleaseChange?.(release)
+                    setReleaseOpen(false)
+                  }}
+                >
+                  {release.name}
+                </button>
+              ))}
+            </div>
+            {activeProject && activeApplication && onCreateRelease && canCreateReleases && (
+              <button
+                className="project-menu-action"
+                onClick={() => {
+                  setReleaseOpen(false)
+                  runGuarded(() => setShowReleaseModal(true))
+                }}
+              >
+                New Release
+              </button>
+            )}
+            {!isDevUserPreview && (
+              <button
+                className="project-menu-action muted"
+                onClick={() => {
+                  setReleaseOpen(false)
                   onNavigate('repository')
                 }}
               >
@@ -619,6 +729,14 @@ export default function Sidebar({
           onSubmit={handleNewApplication}
         />
       )}
+      {showReleaseModal && (
+        <ProjectModal
+          title="New Release"
+          namePlaceholder="Release name"
+          onClose={() => setShowReleaseModal(false)}
+          onSubmit={handleNewRelease}
+        />
+      )}
     </aside>
   )
 }
@@ -628,6 +746,19 @@ const ROLE_LABELS: Record<string, string> = {
   project_admin: 'Project Admin',
   editor: 'Editor',
   viewer: 'Viewer',
+}
+
+const ROLE_PRIORITY: Record<string, number> = {
+  system_admin: 4,
+  project_admin: 3,
+  editor: 2,
+  viewer: 1,
+}
+
+interface IdentityScope {
+  domainId?: string
+  applicationRepositoryId?: string
+  projectId?: string
 }
 
 function formatIdentityName(authStatus?: DashboardAuthStatus): string {
@@ -644,21 +775,28 @@ function formatIdentityInitials(identityName: string): string {
     .join('') || 'SR'
 }
 
-function formatIdentityMeta(authStatus?: DashboardAuthStatus): string {
+function formatIdentityMeta(authStatus?: DashboardAuthStatus, scope: IdentityScope = {}): string {
   const user = authStatus?.user
   if (!user) {
     return ''
   }
 
-  if (user.global_roles && user.global_roles.length > 0) {
-    return user.global_roles.slice(0, 2).map((role) => ROLE_LABELS[role] || role).join(' · ')
-  }
-
-  if (user.project_roles) {
-    const projectRoleCount = Object.values(user.project_roles).reduce((count, roles) => count + roles.length, 0)
-    if (projectRoleCount > 0) {
-      return `${projectRoleCount} project role${projectRoleCount === 1 ? '' : 's'}`
+  const relevantRoles = [
+    ...(user.global_roles || []),
+    ...(scope.domainId ? user.domain_roles?.[scope.domainId] || [] : []),
+    ...(scope.applicationRepositoryId
+      ? user.application_repository_roles?.[scope.applicationRepositoryId] || []
+      : []),
+    ...(scope.projectId ? user.project_roles?.[scope.projectId] || [] : []),
+  ]
+  const highestRole = relevantRoles.reduce<string | undefined>((highest, role) => {
+    if (!highest || (ROLE_PRIORITY[role] || 0) > (ROLE_PRIORITY[highest] || 0)) {
+      return role
     }
+    return highest
+  }, undefined)
+  if (highestRole) {
+    return ROLE_LABELS[highestRole] || highestRole
   }
 
   return user.email || user.subject
@@ -680,14 +818,36 @@ function formatIdentityTitle(authStatus?: DashboardAuthStatus, identityMeta?: st
   return parts.join(' • ')
 }
 
-function formatSessionExpiryNotice(authStatus?: DashboardAuthStatus): string {
-  if (!authStatus?.authenticated || authStatus.mode !== 'oidc') {
-    return ''
+function resolveSessionDeadline(authStatus?: DashboardAuthStatus): number | undefined {
+  if (!authStatus?.authenticated || (authStatus.mode !== 'oidc' && authStatus.mode !== 'local')) {
+    return undefined
+  }
+  const expiresAt = Date.parse(authStatus.session_expires_at || '')
+  if (Number.isFinite(expiresAt)) {
+    return expiresAt
   }
   const ttl = authStatus.session_ttl_seconds
-  if (typeof ttl !== 'number' || Number.isNaN(ttl) || ttl <= 0 || ttl > 15 * 60) {
+  if (typeof ttl !== 'number' || !Number.isFinite(ttl) || ttl <= 0) {
+    return undefined
+  }
+  return Date.now() + ttl * 1000
+}
+
+function formatSessionExpiryNotice(
+  authStatus: DashboardAuthStatus | undefined,
+  sessionDeadline: number | undefined,
+  now: number,
+): string {
+  if (
+    !authStatus?.authenticated
+    || (authStatus.mode !== 'oidc' && authStatus.mode !== 'local')
+    || sessionDeadline === undefined
+  ) {
     return ''
   }
-  const minutes = Math.max(1, Math.ceil(ttl / 60))
+  const remainingSeconds = Math.ceil((sessionDeadline - now) / 1000)
+  if (remainingSeconds <= 0) return 'Session expired'
+  if (remainingSeconds > 15 * 60) return ''
+  const minutes = Math.max(1, Math.ceil(remainingSeconds / 60))
   return `Session expires in ${minutes} min`
 }

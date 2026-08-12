@@ -4,6 +4,7 @@ namespace: apexload
 resources:
   - namespace.yaml
   - serviceaccounts.yaml
+  - restart-controls.yaml
   - configmap.yaml
   - controller-service.yaml
   - controller-deployment.yaml

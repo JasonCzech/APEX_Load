@@ -66,6 +66,7 @@ func (s *Server) handleGetUsageAccounting(w http.ResponseWriter, r *http.Request
 	if projectID != "" {
 		projectID = normalizeProjectID(projectID)
 	}
+	projectID = authorizedProjectOr(r, projectID)
 	writeJSON(w, http.StatusOK, s.usageAccounting(projectID))
 }
 
@@ -78,6 +79,7 @@ func (s *Server) handleListUsageAccountingSnapshots(w http.ResponseWriter, r *ht
 	if projectID != "" {
 		projectID = normalizeProjectID(projectID)
 	}
+	projectID = authorizedProjectOr(r, projectID)
 	limit := usageSnapshotQueryInt(r, "limit", 100, 500)
 	offset := usageSnapshotQueryInt(r, "offset", 0, 0)
 	snapshots, err := s.store.ListUsageAccountingSnapshots(projectID, limit, offset)
@@ -143,6 +145,7 @@ func (s *Server) handleExportUsageAccounting(w http.ResponseWriter, r *http.Requ
 	if projectID != "" {
 		projectID = normalizeProjectID(projectID)
 	}
+	projectID = authorizedProjectOr(r, projectID)
 	usage := s.usageAccounting(projectID)
 	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
 	w.Header().Set("Content-Disposition", `attachment; filename="apexload-usage-accounting.csv"`)

@@ -5,6 +5,10 @@ platform: RDS PostgreSQL, ElastiCache Redis, S3 archives, Secrets Manager script
 secrets (IRSA — no static keys), a KEDA-autoscaled generator fleet, and
 DNS-based fleet discovery.
 
+Controller-loss fencing is mandatory. Follow the maintenance-window rollout
+gate and acceptance drill in [Generator run supervision](../../../docs/GENERATOR_RUN_SUPERVISION.md)
+when upgrading from a tokenless release.
+
 The matching infrastructure lives in [`deployments/aws/terraform`](../../aws/terraform/README.md).
 
 ```
@@ -56,11 +60,11 @@ with `401`. Use **Fleet → Clusters → Test**: the `sts_identity` probe report
 caller ARN, and when it passes while `api_server` fails, the message names the
 missing EKS access entry directly.
 
-## Optional add-ons
+## Deployment controls and optional add-ons
 
 | File | Purpose |
 |---|---|
-| `restart-controls.example.yaml` | Namespaced Role for pod restart, workload scaling, and ResourceQuota reads. Opt-in; not in `kustomization.yaml`. |
+| `restart-controls.yaml` | Included by default: namespaced Role for pod restart, workload scaling, and ResourceQuota reads. Generator pods receive no Kubernetes API token or restart RBAC; IRSA may separately inject an AWS STS-audience token. |
 | `node-read.optional.yaml` | Cluster-scoped node read for node-pool discovery and pod-fit checks. Opt-in; the capacity probe degrades gracefully without it. |
 | `../eks-ha` | Multi-replica controller with a single execution owner. Uses `efs-sc` for the ReadWriteMany import-assets volume. |
 | `../eks-prometheus` | kube-prometheus-stack ServiceMonitor wiring. |

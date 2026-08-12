@@ -26,14 +26,22 @@ const (
 	DefaultExecutionTimeout = 30 * time.Second
 	MaximumExecutionTimeout = time.Hour
 
-	FeatureExactVMParameters     = "java_vuser_exact_vm_parameters"
-	FeatureJDKSelectionV1        = "java_vuser_jdk_selection_v1"
-	FeatureDedicatedClassloader  = "java_vuser_dedicated_classloader_v1"
-	FeatureValidationOnly        = "java_vuser_validation_only_v1"
-	FeaturePhaseLifecycleV1      = protocol.FeatureJavaVuserPhaseLifecycleV1
-	FeaturePersistentLifecycleV1 = protocol.FeatureJavaVuserPersistentLifecycleV1
-	FeatureSessionFrameTokenV1   = protocol.FeatureJavaVuserSessionFrameTokenV1
-	FeatureOwnerFencingV1        = "java_vuser_owner_fencing_v1"
+	FeatureExactVMParameters      = "java_vuser_exact_vm_parameters"
+	FeatureJDKSelectionV1         = "java_vuser_jdk_selection_v1"
+	FeatureDedicatedClassloader   = "java_vuser_dedicated_classloader_v1"
+	FeatureValidationOnly         = "java_vuser_validation_only_v1"
+	FeaturePhaseLifecycleV1       = protocol.FeatureJavaVuserPhaseLifecycleV1
+	FeaturePersistentLifecycleV1  = protocol.FeatureJavaVuserPersistentLifecycleV1
+	FeatureSessionFrameTokenV1    = protocol.FeatureJavaVuserSessionFrameTokenV1
+	FeatureOwnerFencingV1         = "java_vuser_owner_fencing_v1"
+	FeatureExternalRuntimeV1      = "java_vuser_external_runtime_v1"
+	FeatureRunnerOwnerLeaseV1     = "runner_owner_lease_v1"
+	FeatureRuntimeLeaseV1         = "java_vuser_runtime_lease_v1"
+	RunnerOwnerLeaseTTL           = 5 * time.Second
+	RunnerOwnerLeaseRenewInterval = time.Second
+	RuntimeLeaseTTL               = 5 * time.Second
+	RuntimeLeaseRenewInterval     = time.Second
+	RuntimeLeaseCleanupDeadline   = 2 * time.Second
 
 	WarningModernXBootClasspathFallback = "java_vuser_xbootclasspath_modern_fallback"
 )
@@ -153,15 +161,64 @@ type ValidateResponse struct {
 }
 
 type ClaimOwnerRequest struct {
-	Contract string `json:"contract"`
-	OwnerID  string `json:"owner_id"`
+	Contract   string `json:"contract"`
+	OwnerID    string `json:"owner_id"`
+	LeaseTTLMS int64  `json:"lease_ttl_ms"`
 }
 
 type ClaimOwnerResponse struct {
+	Contract   string `json:"contract"`
+	OwnerID    string `json:"owner_id"`
+	Epoch      string `json:"epoch"`
+	Claimed    bool   `json:"claimed"`
+	LeaseTTLMS int64  `json:"lease_ttl_ms"`
+}
+
+// ClaimRuntimeLeaseRequest creates one independently expiring containment
+// boundary for a single Java Vuser protocol instance. The process owner is an
+// outer generator fence; this narrower lease prevents another healthy run
+// owned by the same generator from preserving an abandoned JVM.
+type ClaimRuntimeLeaseRequest struct {
+	Contract   string `json:"contract"`
+	OwnerID    string `json:"owner_id"`
+	OwnerEpoch string `json:"owner_epoch"`
+	LeaseTTLMS int64  `json:"lease_ttl_ms"`
+}
+
+type ClaimRuntimeLeaseResponse struct {
+	Contract   string `json:"contract"`
+	LeaseID    string `json:"lease_id"`
+	LeaseToken string `json:"lease_token"`
+	Claimed    bool   `json:"claimed"`
+	LeaseTTLMS int64  `json:"lease_ttl_ms"`
+}
+
+type RenewRuntimeLeaseRequest struct {
+	Contract   string `json:"contract"`
+	OwnerID    string `json:"owner_id"`
+	OwnerEpoch string `json:"owner_epoch"`
+	LeaseToken string `json:"lease_token"`
+}
+
+type RenewRuntimeLeaseResponse struct {
+	Contract   string `json:"contract"`
+	LeaseID    string `json:"lease_id"`
+	Renewed    bool   `json:"renewed"`
+	LeaseTTLMS int64  `json:"lease_ttl_ms"`
+}
+
+type RevokeRuntimeLeaseRequest struct {
+	Contract   string `json:"contract"`
+	OwnerID    string `json:"owner_id"`
+	OwnerEpoch string `json:"owner_epoch"`
+	LeaseToken string `json:"lease_token"`
+}
+
+type RevokeRuntimeLeaseResponse struct {
 	Contract string `json:"contract"`
-	OwnerID  string `json:"owner_id"`
-	Epoch    string `json:"epoch"`
-	Claimed  bool   `json:"claimed"`
+	LeaseID  string `json:"lease_id"`
+	Revoked  bool   `json:"revoked"`
+	Reaped   bool   `json:"reaped"`
 }
 
 type ExecutionRequest struct {
@@ -170,6 +227,8 @@ type ExecutionRequest struct {
 	SessionID              string          `json:"session_id,omitempty"`
 	OwnerID                string          `json:"owner_id"`
 	OwnerEpoch             string          `json:"owner_epoch"`
+	RuntimeLeaseID         string          `json:"runtime_lease_id"`
+	RuntimeLeaseToken      string          `json:"runtime_lease_token"`
 	RequireExistingSession bool            `json:"require_existing_session,omitempty"`
 	Runtime                RuntimeSettings `json:"runtime"`
 	Command                ActionCommand   `json:"command"`
@@ -199,15 +258,19 @@ type CancelResponse struct {
 }
 
 type CancelRequest struct {
-	Contract   string `json:"contract"`
-	OwnerID    string `json:"owner_id"`
-	OwnerEpoch string `json:"owner_epoch"`
+	Contract          string `json:"contract"`
+	OwnerID           string `json:"owner_id"`
+	OwnerEpoch        string `json:"owner_epoch"`
+	RuntimeLeaseID    string `json:"runtime_lease_id"`
+	RuntimeLeaseToken string `json:"runtime_lease_token"`
 }
 
 type CloseSessionRequest struct {
-	Contract   string `json:"contract"`
-	OwnerID    string `json:"owner_id"`
-	OwnerEpoch string `json:"owner_epoch"`
+	Contract          string `json:"contract"`
+	OwnerID           string `json:"owner_id"`
+	OwnerEpoch        string `json:"owner_epoch"`
+	RuntimeLeaseID    string `json:"runtime_lease_id"`
+	RuntimeLeaseToken string `json:"runtime_lease_token"`
 }
 
 type CloseSessionResponse struct {

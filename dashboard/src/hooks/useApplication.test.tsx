@@ -21,12 +21,20 @@ const applicationApiMock = {
   deleteRelease: vi.fn(),
 }
 
+const repositoryApiMock = {
+  createProjectRelease: vi.fn(),
+}
+
 const projectState = {
   activeProject: { id: 'project-1', name: 'Checkout', created_at: '', updated_at: '' },
 }
 
 vi.mock('./api/useApplicationApi', () => ({
   useApplicationApi: () => applicationApiMock,
+}))
+
+vi.mock('./api/useRepositoryApi', () => ({
+  useRepositoryApi: () => repositoryApiMock,
 }))
 
 vi.mock('./useProject', () => ({
@@ -66,6 +74,11 @@ function Probe() {
       {applications.map(application => (
         <button key={application.id} type="button" onClick={() => setActiveApplication(application)}>
           Select {application.name}
+        </button>
+      ))}
+      {releases.map(release => (
+        <button key={release.id} type="button" onClick={() => setActiveRelease(release)}>
+          Select release {release.name}
         </button>
       ))}
       <button type="button" onClick={() => createAndSelectApplication('New App')}>Create</button>
@@ -148,7 +161,7 @@ describe('ApplicationProvider', () => {
       updated_at: '2026-05-15T00:00:00Z',
     })
     applicationApiMock.listReleases.mockResolvedValue({ releases: [], count: 0 })
-    applicationApiMock.createRelease.mockResolvedValue(release('release-new', 'app-1', 'New Release'))
+    repositoryApiMock.createProjectRelease.mockResolvedValue(release('release-new', 'app-1', 'New Release'))
   })
 
   afterEach(async () => {
@@ -468,6 +481,42 @@ describe('ApplicationProvider', () => {
     expect(readTestId('active-release')).toBe('Catalog 1.0')
   })
 
+  it('preserves the selected release family when switching applications', async () => {
+    applicationApiMock.listApplications.mockResolvedValue({
+      applications: [
+        application('app-1', 'project-1', 'Payments'),
+        application('app-2', 'project-1', 'Catalog'),
+      ],
+      count: 2,
+    })
+    const familyAApp1 = { ...release('release-a-1', 'app-1', '2607'), group_id: 'family-a' }
+    const familyBApp1 = { ...release('release-b-1', 'app-1', '2608'), group_id: 'family-b' }
+    const familyAApp2 = { ...release('release-a-2', 'app-2', '2607'), group_id: 'family-a' }
+    const familyBApp2 = { ...release('release-b-2', 'app-2', '2608'), group_id: 'family-b' }
+    applicationApiMock.listReleases.mockImplementation((applicationId: string) => Promise.resolve({
+      releases: applicationId === 'app-1' ? [familyAApp1, familyBApp1] : [familyAApp2, familyBApp2],
+      count: 2,
+    }))
+
+    await act(async () => {
+      root.render(<ApplicationProvider><Probe /></ApplicationProvider>)
+    })
+    await flushPromises()
+    await flushPromises()
+
+    const select2608 = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Select release 2608')
+    await act(async () => select2608?.click())
+    expect(readTestId('active-release')).toBe('2608')
+
+    const selectCatalog = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Select Catalog')
+    await act(async () => selectCatalog?.click())
+    await flushPromises()
+
+    expect(readTestId('active-application')).toBe('Catalog')
+    expect(readTestId('active-release')).toBe('2608')
+    expect(localStorage.getItem('apexload.activeReleaseId')).toBe('family-b')
+  })
+
   it('keeps the selected release when the active application is selected again', async () => {
     applicationApiMock.listReleases.mockResolvedValue({
       releases: [release('release-1', 'app-1', 'Payments 1.0')],
@@ -546,7 +595,7 @@ describe('ApplicationProvider', () => {
     const staleList = deferred<Awaited<ReturnType<typeof applicationApiMock.listReleases>>>()
     const existing = release('release-existing', 'app-1', 'Existing Release')
     const created = release('release-new', 'app-1', 'New Release')
-    applicationApiMock.createRelease.mockResolvedValue(created)
+    repositoryApiMock.createProjectRelease.mockResolvedValue(created)
     applicationApiMock.listReleases
       .mockImplementationOnce(() => staleList.promise)
       .mockResolvedValueOnce({ releases: [existing], count: 1 })
@@ -563,6 +612,10 @@ describe('ApplicationProvider', () => {
     await flushPromises()
 
     expect(applicationApiMock.listReleases).toHaveBeenCalledTimes(2)
+    expect(repositoryApiMock.createProjectRelease).toHaveBeenCalledWith('project-1', {
+      name: 'New Release',
+      application_id: 'app-1',
+    })
     expect(readTestId('releases')).toBe('Existing Release,New Release')
     expect(readTestId('active-release')).toBe('New Release')
 

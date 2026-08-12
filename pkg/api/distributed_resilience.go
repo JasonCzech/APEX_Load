@@ -147,6 +147,7 @@ func (b *distributedExecutionBackend) evacuateGenerator(tr *TestRunner, test *Ma
 	executionCtx := test.executionCtx
 	remoteLifecycleCtx := test.remoteLifecycleCtx
 	executionGeneration := test.executionGeneration
+	runSupervisionToken := cloneRunSupervisionToken(test.remoteRunSupervisionToken)
 	requireTestExecutionLease := assignmentToleratesGeneratorLoss(test.Assignment)
 	testName := test.Name
 	testID := test.ID
@@ -163,6 +164,7 @@ func (b *distributedExecutionBackend) evacuateGenerator(tr *TestRunner, test *Ma
 		states[key] = value
 	}
 	tr.mu.RUnlock()
+	defer clear(runSupervisionToken)
 	if executionCtx == nil {
 		executionCtx = context.Background()
 	}
@@ -360,7 +362,7 @@ func (b *distributedExecutionBackend) evacuateGenerator(tr *TestRunner, test *Ma
 		return impacts, fmt.Errorf("generator evacuation refused: %s", strings.Join(refused, "; "))
 	}
 
-	openedStreams, newlyAssigned, touchedTargets, rollback, err := b.applyEvacuationShardAdjustments(executionCtx, remoteLifecycleCtx, tr, test, testID, executionGeneration, requireTestExecutionLease, remainingDuration, steadyElapsed, startPaused, groupByName, clientsByTarget, streamsByTarget, shardsByGroup, nextByGroup, target)
+	openedStreams, newlyAssigned, touchedTargets, rollback, err := b.applyEvacuationShardAdjustments(executionCtx, remoteLifecycleCtx, tr, test, testID, executionGeneration, requireTestExecutionLease, remainingDuration, steadyElapsed, startPaused, groupByName, clientsByTarget, streamsByTarget, shardsByGroup, nextByGroup, target, runSupervisionToken)
 	if err != nil {
 		var uncertain *distributedEvacuationUncertainError
 		if errors.As(err, &uncertain) {
@@ -381,6 +383,20 @@ func (b *distributedExecutionBackend) evacuateGenerator(tr *TestRunner, test *Ma
 		if client := clientsByTarget[replacementTarget]; client != nil {
 			replacementClients[replacementTarget] = client
 		}
+	}
+	var stopReplacementSupervision func()
+	if b.requireRunSupervision && len(replacementClients) > 0 {
+		if err := b.claimRunSupervisionClients(executionCtx, testID, replacementClients, executionGeneration, executionLeaseOwnerID, runSupervisionToken); err != nil {
+			rollbackErr := rollback()
+			closeDialedClients()
+			return impacts, errors.Join(fmt.Errorf("claim replacement run supervision: %w", err), rollbackErr)
+		}
+		stopReplacementSupervision = b.startRunSupervisionTargetKeeper(executionCtx, testID, replacementClients, executionGeneration, executionLeaseOwnerID, runSupervisionToken)
+		defer func() {
+			if stopReplacementSupervision != nil {
+				stopReplacementSupervision()
+			}
+		}()
 	}
 	var stopStagedLeaseKeeper context.CancelFunc
 	if requireTestExecutionLease {
@@ -441,6 +457,24 @@ func (b *distributedExecutionBackend) evacuateGenerator(tr *TestRunner, test *Ma
 	}
 	test.remoteTargetStates[target] = remoteTargetStateEvacuating
 	tr.mu.Unlock()
+	var sourceRenewalsJoinedAt time.Time
+	if b.requireRunSupervision {
+		joinCtx, joinCancel := context.WithTimeout(executionCtx, b.runSupervisionKeeperJoinTimeout())
+		joinErr := b.fenceRunSupervisionTarget(joinCtx, tr, test, target, executionGeneration, executionLeaseOwnerID)
+		joinCancel()
+		if joinErr != nil {
+			uncertain := &distributedEvacuationUncertainError{
+				testID:             testID,
+				participantClients: evacuationParticipantClients(runClientsByTarget, dialedClients, touchedTargets),
+				touchedTargets:     orderedTargetList(touchedTargets, b.configuredTargets()),
+				unreachableTargets: unreachableTargets,
+				err:                fmt.Errorf("fence source run-supervision renewals on %s: %w", target, joinErr),
+			}
+			closeUntouchedDialedClients(touchedTargets)
+			return impacts, b.failClosedUncertainEvacuationWithTopologyRelease(tr, test, uncertain, streamsByTarget, openedStreams, releaseTopology)
+		}
+		sourceRenewalsJoinedAt = time.Now()
+	}
 	if requireTestExecutionLease {
 		// Suppress only this assignment's renewal before attempting StopTest. A
 		// claim already in flight can finish, so the controller deadline sampled
@@ -452,7 +486,12 @@ func (b *distributedExecutionBackend) evacuateGenerator(tr *TestRunner, test *Ma
 	// advertised. A timeout is ambiguous: the stop may have applied, so neither
 	// rolling back nor committing the reshard can prove the active VUser count.
 	if source := clientsByTarget[target]; source != nil {
-		if err := b.stopEvacuationClient(testID, executionGeneration, source); err != nil {
+		if err := b.stopEvacuationClient(testID, executionGeneration, source, runSupervisionToken); err != nil {
+			if allowLostSourceLeaseFence && requireTestExecutionLease && !sourceRenewalsJoinedAt.IsZero() {
+				if expiryErr := waitForRunSupervisionProcessFence(executionCtx, tr, test, status, controlGeneration, executionGeneration, runSupervisionProcessFenceDeadline(sourceRenewalsJoinedAt, b.runSupervisionTTL)); expiryErr == nil {
+					goto sourceFenced
+				}
+			}
 			if allowLostSourceLeaseFence && requireTestExecutionLease {
 				if expiryErr := waitForLostGeneratorEpochFence(executionCtx, tr, test, status, controlGeneration, executionGeneration); expiryErr == nil {
 					goto sourceFenced
@@ -469,6 +508,11 @@ func (b *distributedExecutionBackend) evacuateGenerator(tr *TestRunner, test *Ma
 			return impacts, b.failClosedUncertainEvacuationWithTopologyRelease(tr, test, uncertain, streamsByTarget, openedStreams, releaseTopology)
 		}
 	} else {
+		if allowLostSourceLeaseFence && requireTestExecutionLease && !sourceRenewalsJoinedAt.IsZero() {
+			if expiryErr := waitForRunSupervisionProcessFence(executionCtx, tr, test, status, controlGeneration, executionGeneration, runSupervisionProcessFenceDeadline(sourceRenewalsJoinedAt, b.runSupervisionTTL)); expiryErr == nil {
+				goto sourceFenced
+			}
+		}
 		if allowLostSourceLeaseFence && requireTestExecutionLease {
 			if expiryErr := waitForLostGeneratorEpochFence(executionCtx, tr, test, status, controlGeneration, executionGeneration); expiryErr == nil {
 				goto sourceFenced
@@ -549,7 +593,7 @@ sourceFenced:
 		}
 	}
 	replacementStartAt := time.Now().Add(distributedCommitStartLead(b.timeout))
-	if err := b.commitDistributedWork(executionCtx, testID, executionGeneration, replacementStartAt, replacementClients); err != nil {
+	if err := b.commitDistributedWork(executionCtx, testID, executionGeneration, replacementStartAt, replacementClients, runSupervisionToken); err != nil {
 		uncertain := &distributedEvacuationUncertainError{
 			testID:             testID,
 			participantClients: evacuationParticipantClients(runClientsByTarget, dialedClients, touchedTargets),
@@ -651,6 +695,51 @@ sourceFenced:
 		_ = stream.CloseSend()
 	}
 	return impacts, nil
+}
+
+const (
+	// The generator accepts at most a 10-second abandonment drain. After hard
+	// cancellation, replacement must also remain fenced for whichever containment
+	// path is longer: the generator's one-second hard-stop plus two-second process
+	// exit, or an external runner's five-second owner lease plus two-second cleanup
+	// exit. Waiting for this maximum contract (rather than the five-second
+	// deployment default) keeps evacuation safe for every accepted generator and
+	// Java/Bruno sidecar configuration.
+	maxRunSupervisionAbandonDrainContract = 10 * time.Second
+	runSupervisionHardStopContract        = time.Second
+	runSupervisionSafetyExitContract      = 2 * time.Second
+	externalRunnerOwnerLeaseContract      = 5 * time.Second
+	externalRunnerCleanupExitContract     = 2 * time.Second
+	runSupervisionProcessFenceJitter      = 250 * time.Millisecond
+)
+
+func runSupervisionProcessFenceDeadline(renewalsJoinedAt time.Time, ttl time.Duration) time.Time {
+	postDrainFence := max(
+		runSupervisionHardStopContract+runSupervisionSafetyExitContract,
+		externalRunnerOwnerLeaseContract+externalRunnerCleanupExitContract,
+	)
+	return renewalsJoinedAt.Add(ttl + maxRunSupervisionAbandonDrainContract + postDrainFence + runSupervisionProcessFenceJitter)
+}
+
+func waitForRunSupervisionProcessFence(ctx context.Context, tr *TestRunner, test *ManagedTest, status string, controlGeneration, generation uint64, deadline time.Time) error {
+	delay := time.Until(deadline)
+	if delay > 0 {
+		timer := time.NewTimer(delay)
+		defer timer.Stop()
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-timer.C:
+		}
+	}
+	if lostGeneratorEpochFenceAbandoned(tr, test, status, controlGeneration) {
+		return fmt.Errorf("evacuation became stale while waiting for run-supervision process fence")
+	}
+	current, _, _, err := tr.generatorExecutionClaim()
+	if err != nil || current != generation {
+		return fmt.Errorf("execution leadership changed while waiting for run-supervision process fence")
+	}
+	return nil
 }
 
 // lostGeneratorEpochFencePollInterval bounds how long the lost-generator fence
@@ -840,7 +929,7 @@ func generatorSupportsEvacuationAssignmentState(snapshot generatorLoadSnapshot) 
 	return snapshot.HeartbeatOK && stringSliceContainsEqualFold(snapshot.CompatibleFeatures, generatorrpc.FeatureEvacuationAssignmentStateV1)
 }
 
-func (b *distributedExecutionBackend) applyEvacuationShardAdjustments(parent context.Context, metricsParent context.Context, tr *TestRunner, managedTest *ManagedTest, testID string, executionGeneration uint64, requireTestExecutionLease bool, remainingDuration time.Duration, steadyElapsed time.Duration, startPaused bool, groups map[string]TestGroup, clients map[string]generatorClient, streams map[string]*generatorrpc.MetricsStream, previousByGroup map[string][]GeneratorShardSummary, nextByGroup map[string][]GeneratorShardSummary, evacuatedTarget string) (map[string]*generatorrpc.MetricsStream, map[string]map[string]struct{}, map[string]struct{}, func() error, error) {
+func (b *distributedExecutionBackend) applyEvacuationShardAdjustments(parent context.Context, metricsParent context.Context, tr *TestRunner, managedTest *ManagedTest, testID string, executionGeneration uint64, requireTestExecutionLease bool, remainingDuration time.Duration, steadyElapsed time.Duration, startPaused bool, groups map[string]TestGroup, clients map[string]generatorClient, streams map[string]*generatorrpc.MetricsStream, previousByGroup map[string][]GeneratorShardSummary, nextByGroup map[string][]GeneratorShardSummary, evacuatedTarget string, runSupervisionToken []byte) (map[string]*generatorrpc.MetricsStream, map[string]map[string]struct{}, map[string]struct{}, func() error, error) {
 	if parent == nil {
 		parent = context.Background()
 	}
@@ -885,14 +974,14 @@ func (b *distributedExecutionBackend) applyEvacuationShardAdjustments(parent con
 					if _, alreadyStopped := stoppedTargets[change.target]; alreadyStopped {
 						continue
 					}
-					if err := b.stopEvacuationClient(testID, executionGeneration, client); err != nil {
+					if err := b.stopEvacuationClient(testID, executionGeneration, client, runSupervisionToken); err != nil {
 						rollbackErrs = append(rollbackErrs, fmt.Errorf("stop newly provisioned test on %s: %w", change.target, err))
 					}
 					stoppedTargets[change.target] = struct{}{}
 					continue
 				}
 			}
-			if err := b.restoreEvacuationVUsers(testID, executionGeneration, change.group, change.previous, client); err != nil {
+			if err := b.restoreEvacuationVUsers(testID, executionGeneration, change.group, change.previous, client, runSupervisionToken); err != nil {
 				rollbackErrs = append(rollbackErrs, fmt.Errorf("rollback %s on %s: %w", change.group, change.target, err))
 			}
 		}
@@ -1006,6 +1095,7 @@ func (b *distributedExecutionBackend) applyEvacuationShardAdjustments(parent con
 					RedactionRules:            cloneRedactionRules(group.redactionRules),
 					SecretBundle:              secretBundle,
 					SecretBundleID:            secretBundleID,
+					RunSupervisionToken:       runSupervisionToken,
 				})
 				cancel()
 				if assignErr != nil || !assignment.Accepted {
@@ -1095,7 +1185,7 @@ func (b *distributedExecutionBackend) openEvacuationMetricsStreams(parent contex
 	return opened, errors.Join(errs...)
 }
 
-func (b *distributedExecutionBackend) restoreEvacuationVUsers(testID string, executionGeneration uint64, group string, previous int, client generatorClient) error {
+func (b *distributedExecutionBackend) restoreEvacuationVUsers(testID string, executionGeneration uint64, group string, previous int, client generatorClient, runSupervisionToken []byte) error {
 	var lastErr error
 	for attempt := 0; attempt < durableTransitionAttempts; attempt++ {
 		ctx, cancel := context.WithTimeout(context.Background(), b.timeout)
@@ -1104,6 +1194,7 @@ func (b *distributedExecutionBackend) restoreEvacuationVUsers(testID string, exe
 			ExecutionGeneration: executionGeneration,
 			GroupName:           group,
 			TargetVUsers:        int32(previous),
+			RunSupervisionToken: runSupervisionToken,
 		})
 		cancel()
 		switch {
@@ -1123,14 +1214,14 @@ func (b *distributedExecutionBackend) restoreEvacuationVUsers(testID string, exe
 	return lastErr
 }
 
-func (b *distributedExecutionBackend) stopEvacuationClient(testID string, executionGeneration uint64, client generatorClient) error {
+func (b *distributedExecutionBackend) stopEvacuationClient(testID string, executionGeneration uint64, client generatorClient, runSupervisionToken []byte) error {
 	if client == nil {
 		return fmt.Errorf("generator client is unavailable")
 	}
 	var lastErr error
 	for attempt := 0; attempt < durableTransitionAttempts; attempt++ {
 		ctx, cancel := context.WithTimeout(context.Background(), b.timeout)
-		result, err := stopGeneratorTest(ctx, client, testID, false, executionGeneration)
+		result, err := stopGeneratorTestWithToken(ctx, client, testID, false, executionGeneration, runSupervisionToken)
 		cancel()
 		switch {
 		case err != nil:
@@ -1162,11 +1253,11 @@ func evacuationParticipantClients(runClients, dialedClients map[string]generator
 // to stop, because a source whose metrics stream broke may still answer RPCs,
 // but a failure from one is a reconciliation note rather than a reason to hold
 // the run non-terminal: it is fenced by its own execution-lease expiry.
-func (b *distributedExecutionBackend) stopEvacuationParticipants(testID string, executionGeneration uint64, participants map[string]generatorClient, unreachable map[string]struct{}) (blocking error, unreachableFailures error) {
+func (b *distributedExecutionBackend) stopEvacuationParticipants(testID string, executionGeneration uint64, participants map[string]generatorClient, unreachable map[string]struct{}, runSupervisionToken []byte) (blocking error, unreachableFailures error) {
 	var stopErrs []error
 	var unreachableErrs []error
 	for _, target := range orderedGeneratorTargets(participants, b.configuredTargets()) {
-		if err := b.stopEvacuationClient(testID, executionGeneration, participants[target]); err != nil {
+		if err := b.stopEvacuationClient(testID, executionGeneration, participants[target], runSupervisionToken); err != nil {
 			stopErr := fmt.Errorf("stop evacuation participant %s: %w", target, err)
 			if _, tolerated := unreachable[target]; tolerated {
 				unreachableErrs = append(unreachableErrs, stopErr)
@@ -1210,6 +1301,8 @@ func (b *distributedExecutionBackend) failClosedUncertainEvacuationWithTopologyR
 	var persistErr error
 	var cancel context.CancelFunc
 	var eventSnapshot *ManagedTest
+	runSupervisionToken := cloneRunSupervisionToken(test.remoteRunSupervisionToken)
+	defer clear(runSupervisionToken)
 	if active {
 		test.Status = "STOPPING"
 		test.Error = "generator evacuation state is uncertain: " + uncertain.Error()
@@ -1244,7 +1337,7 @@ func (b *distributedExecutionBackend) failClosedUncertainEvacuationWithTopologyR
 		tr.broadcastEvent("test_stopping", eventSnapshot)
 	}
 
-	stopErr, unreachableErr := b.stopEvacuationParticipants(test.ID, test.executionGeneration, participants, unreachable)
+	stopErr, unreachableErr := b.stopEvacuationParticipants(test.ID, test.executionGeneration, participants, unreachable, runSupervisionToken)
 	if cancel != nil {
 		cancel()
 	}
@@ -1262,9 +1355,10 @@ func (b *distributedExecutionBackend) failClosedUncertainEvacuationWithTopologyR
 	// contexts. Generator epoch expiry is an additional fence, not a substitute
 	// for explicit cleanup acknowledgement.
 	if owned {
+		retryRunSupervisionToken := append([]byte(nil), runSupervisionToken...)
 		tr.enqueueTerminalRetry("evacuation:"+test.ID, "uncertain evacuation cleanup", func() error {
 			unlock := tr.lockDistributedTopologyControl(test.ID)
-			retryErr, retryUnreachableErr := b.stopEvacuationParticipants(test.ID, test.executionGeneration, participants, unreachable)
+			retryErr, retryUnreachableErr := b.stopEvacuationParticipants(test.ID, test.executionGeneration, participants, unreachable, retryRunSupervisionToken)
 			if retryErr != nil {
 				unlock()
 				return retryErr
@@ -1272,9 +1366,16 @@ func (b *distributedExecutionBackend) failClosedUncertainEvacuationWithTopologyR
 			unlock()
 			if active {
 				noteUnreachableEvacuationParticipants(tr, test, retryUnreachableErr)
-				return b.finalizeFailClosedEvacuation(tr, test)
+				finalizeErr := b.finalizeFailClosedEvacuation(tr, test)
+				if finalizeErr == nil {
+					clear(retryRunSupervisionToken)
+					retryRunSupervisionToken = nil
+				}
+				return finalizeErr
 			}
 			b.detachEvacuationResourcesUnderTopologyControl(tr, test, participants, allStreams)
+			clear(retryRunSupervisionToken)
+			retryRunSupervisionToken = nil
 			return nil
 		})
 	}

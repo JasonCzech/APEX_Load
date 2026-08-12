@@ -12,7 +12,7 @@ func TestPostgresForeignKeySpecsCoverDeclaredSchema(t *testing.T) {
 	if err != nil {
 		t.Fatalf("postgresForeignKeySpecs returned error: %v", err)
 	}
-	if got, want := len(specs), 67; got != want {
+	if got, want := len(specs), 69; got != want {
 		t.Fatalf("foreign key count = %d, want %d", got, want)
 	}
 
@@ -64,6 +64,8 @@ func TestPostgresForeignKeySpecsCoverDeclaredSchema(t *testing.T) {
 		"protected_source_secret_sessions.project_id":       "projects.id",
 		"runtime_secret_provisioning_attempts.project_id":   "projects.id",
 		"grafana_dashboard_snapshots.test_id":               "tests.id",
+		"local_auth_credentials.user_id":                    "users.id",
+		"local_auth_sessions.user_id":                       "users.id",
 	} {
 		got, ok := byColumn[key]
 		if !ok {
@@ -76,6 +78,11 @@ func TestPostgresForeignKeySpecsCoverDeclaredSchema(t *testing.T) {
 	}
 	if got := byColumn["user_role_bindings.user_id"].onDelete; got != "CASCADE" {
 		t.Errorf("user role binding ON DELETE = %q, want CASCADE", got)
+	}
+	for _, key := range []string{"local_auth_credentials.user_id", "local_auth_sessions.user_id"} {
+		if got := byColumn[key].onDelete; got != "CASCADE" {
+			t.Errorf("%s ON DELETE = %q, want CASCADE", key, got)
+		}
 	}
 }
 

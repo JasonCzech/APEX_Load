@@ -7,9 +7,30 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/distributed/generatorrpc"
 	"github.com/jasonczech/apexload/pkg/importartifact"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 )
+
+func TestGeneratorSafetyWatchdogRemainsIndependentOfShutdownSelect(t *testing.T) {
+	requests := make(chan generatorrpc.SelfTerminationRequest, 1)
+	exits := make(chan int, 1)
+	triggered := startGeneratorSafetyWatchdog(requests, 5*time.Millisecond, func(code int) { exits <- code })
+	requests <- generatorrpc.SelfTerminationRequest{TestID: "run", Reason: "controller_supervision_lost", Outstanding: 1}
+	select {
+	case <-triggered:
+	case <-time.After(time.Second):
+		t.Fatal("watchdog did not observe self-termination request")
+	}
+	select {
+	case code := <-exits:
+		if code != 1 {
+			t.Fatalf("watchdog exit code = %d, want 1", code)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("watchdog did not force exit")
+	}
+}
 
 type blockingGRPCStopper struct {
 	stopOnce sync.Once

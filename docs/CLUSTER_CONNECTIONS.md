@@ -107,8 +107,11 @@ timing out in the connection test.
 
 ## RBAC in the target cluster
 
-Apply `deployments/k8s/<profile>/restart-controls.example.yaml`, which grants
-the namespaced permissions:
+The shipped Kubernetes bases include
+`deployments/k8s/<profile>/restart-controls.yaml` for the controller's own
+cluster. For every registered remote cluster, apply the equivalent manifest in
+that target cluster and bind it to the identity used by the connection. It
+grants the namespaced permissions:
 
 | Resource | Verbs | Used for |
 |---|---|---|
@@ -131,10 +134,10 @@ cluster-scoped `nodes get, list`. Without it everything still works:
 For a remote cluster, apply the equivalents **in that cluster**, bound to the
 identity the connection authenticates as.
 
-The Helm chart does not template this RBAC — its only Role covers the HA
-active-endpoint EndpointSlice. Restart, scaling, and allocation permissions have
-always come from the standalone `restart-controls.example.yaml` manifests, so
-Helm installs apply those (and the optional node ClusterRole) separately.
+The Helm chart templates this Role for the controller's own namespace by
+default. That local Role does not authorize a registered remote cluster; remote
+cluster RBAC and the optional node ClusterRole must still be applied separately
+in each target cluster.
 
 ## Host resource allocation
 

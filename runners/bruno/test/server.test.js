@@ -1,6 +1,7 @@
 'use strict';
 
 const assert = require('node:assert/strict');
+const crypto = require('node:crypto');
 const { EventEmitter } = require('node:events');
 const fs = require('node:fs');
 const http = require('node:http');
@@ -71,28 +72,33 @@ function executePayload() {
   }));
 }
 
-async function createControlledSession(origin, worker) {
+async function createControlledSession(origin, worker, ownerHeaders = {}) {
   const opened = await request(origin, 'POST', '/v1/bundles/open', await standaloneBundle(), {
     'content-type': 'application/x-tar',
     'x-bruno-compatibility-version': '3.5.2'
   });
   assert.equal(opened.status, 201, opened.body.toString());
   const bundleID = JSON.parse(opened.body).bundle_id;
+  const sessionLeaseToken = crypto.randomBytes(32).toString('hex');
   const created = await request(origin, 'POST', '/v1/sessions', Buffer.from(JSON.stringify({
     bundle_id: bundleID,
     compatibility_version: '3.5.2',
-    sandbox: 'developer'
-  })), { 'content-type': 'application/json' });
+    sandbox: 'developer',
+    session_lease_token: sessionLeaseToken
+  })), { 'content-type': 'application/json', ...ownerHeaders });
   assert.equal(created.status, 201, created.body.toString());
-  return { bundleID, sessionID: JSON.parse(created.body).session_id, worker };
+  const decoded = JSON.parse(created.body);
+  const headers = { ...ownerHeaders };
+  if (decoded.session_lease_token) headers['x-apexload-session-lease-token'] = decoded.session_lease_token;
+  return { bundleID, sessionID: decoded.session_id, worker, headers };
 }
 
-function beginExecution(origin, sessionID) {
+function beginExecution(origin, sessionID, ownerHeaders = {}) {
   return new Promise((resolve, reject) => {
     const target = new URL(`/v1/sessions/${sessionID}/execute`, origin);
     const requestStream = http.request(target, {
       method: 'POST',
-      headers: { 'content-type': 'application/json', accept: 'application/x-ndjson' }
+      headers: { 'content-type': 'application/json', accept: 'application/x-ndjson', ...ownerHeaders }
     }, (response) => resolve({ request: requestStream, response }));
     requestStream.on('error', reject);
     requestStream.end(executePayload());
@@ -134,6 +140,22 @@ function request(origin, method, route, body, headers = {}) {
     if (body) req.write(body);
     req.end();
   });
+}
+
+async function claimRunnerOwner(origin, ownerID, leaseTTLMS = 5000) {
+  const response = await request(origin, 'POST', '/v1/owner/claim', Buffer.from(JSON.stringify({
+    owner_id: ownerID,
+    lease_ttl_ms: leaseTTLMS
+  })), { 'content-type': 'application/json' });
+  assert.equal(response.status, 200, response.body.toString());
+  const claim = JSON.parse(response.body);
+  return {
+    claim,
+    headers: {
+      'x-apexload-runner-owner-id': claim.owner_id,
+      'x-apexload-runner-owner-epoch': claim.owner_epoch
+    }
+  };
 }
 
 async function tarBundle(entries) {
@@ -398,12 +420,16 @@ test('session provisioning cannot retain a worker after bundle expiry', async (t
   })), { 'content-type': 'application/json' });
 
   await waitUntil(() => factoryStarted, 'developer worker provisioning');
-  await waitUntil(() => !fs.existsSync(path.join(runner.runnerRoot, bundleID)), 'bundle expiry during worker provisioning');
+	// Bundle expiry starts session destruction, but the bundle itself cannot be
+	// released until the factory's possible late worker is positively reaped.
+	await new Promise((resolve) => setTimeout(resolve, 600));
+	assert.equal(fs.existsSync(path.join(runner.runnerRoot, bundleID)), true);
   releaseFactory();
 
   const created = await creating;
   assert.equal(created.status, 404, created.body.toString());
   await waitUntil(() => worker.terminated, 'late worker cleanup after bundle expiry');
+	await waitUntil(() => !fs.existsSync(path.join(runner.runnerRoot, bundleID)), 'bundle removal after worker reap');
   const capabilities = JSON.parse((await request(origin, 'GET', '/v1/capabilities')).body);
   assert.equal(capabilities.active_sessions, 0);
 });
@@ -644,27 +670,34 @@ test('destroying session retains capacity until worker termination completes', a
 test('never-settling worker termination releases accounting and fails the runner closed', async (t) => {
   const worker = new ControlledWorker();
   worker.terminate = () => new Promise(() => {});
+  const exitCodes = [];
   const runner = createRunnerServer({
     allowDirectEgress: true,
     maxSessions: 1,
     workerTerminationTimeoutMS: 15,
+    cleanupExitDelayMS: 20,
+    processExit: (code) => exitCodes.push(code),
     developerSessionFactory: async () => worker
   });
   await new Promise((resolve) => runner.listen(0, '127.0.0.1', resolve));
   t.after(() => runner.closeRunner());
   const origin = `http://127.0.0.1:${runner.address().port}`;
-  const { sessionID } = await createControlledSession(origin, worker);
+  const { sessionID, headers } = await createControlledSession(origin, worker);
 
   const deleted = await within(
     request(origin, 'DELETE', `/v1/sessions/${sessionID}`),
     'timed-out session deletion',
     500
   );
-  assert.equal(deleted.status, 204, deleted.body.toString());
+  assert.equal(deleted.status, 503, deleted.body.toString());
+  const retry = await request(origin, 'DELETE', `/v1/sessions/${sessionID}`, null, headers);
+  assert.equal(retry.status, 503, `failed cleanup retry must remain unproven: ${retry.body}`);
   const capabilities = JSON.parse((await request(origin, 'GET', '/v1/capabilities')).body);
   assert.equal(capabilities.active_sessions, 0);
   assert.equal(capabilities.cleanup_failed, true);
   assert.equal((await request(origin, 'GET', '/v1/health')).status, 503);
+  await waitUntil(() => exitCodes.length > 0, 'cleanup-failure process exit', 250);
+  assert.deepEqual(exitCodes, [1]);
 });
 
 test('runner shutdown starts all bounded worker terminations concurrently', async () => {
@@ -1172,19 +1205,19 @@ test('global and request-scoped cancel abort active HTTP transport work', async 
   const globalSessionID = await createSession();
   const globalExecution = await beginExecution(origin, globalSessionID);
   const globalBody = collectResponse(globalExecution.response);
-  await waitUntil(() => received === 1, 'globally cancelled target request');
+  await waitUntil(() => received === 1, 'globally cancelled target request', 5000);
   const cancelled = await request(origin, 'POST', `/v1/sessions/${globalSessionID}/cancel`);
   assert.equal(cancelled.status, 204, cancelled.body.toString());
-  await waitUntil(() => aborted === 1, 'global transport abort');
+  await waitUntil(() => aborted === 1, 'global transport abort', 5000);
   const globalTerminal = await within(globalBody, 'global cancellation terminal event', 5000);
   assert.match(globalTerminal.toString(), /"type":"(complete|error)"/);
 
   const scopedSessionID = await createSession();
   const scopedExecution = await beginExecution(origin, scopedSessionID);
   scopedExecution.response.on('error', () => {});
-  await waitUntil(() => received === 2, 'request-scoped cancelled target request');
+  await waitUntil(() => received === 2, 'request-scoped cancelled target request', 5000);
   scopedExecution.response.destroy();
-  await waitUntil(() => aborted === 2, 'request-scoped transport abort');
+  await waitUntil(() => aborted === 2, 'request-scoped transport abort', 5000);
 
   assert.equal((await request(origin, 'DELETE', `/v1/sessions/${globalSessionID}`)).status, 204);
   assert.equal((await request(origin, 'DELETE', `/v1/sessions/${scopedSessionID}`)).status, 204);
@@ -1509,8 +1542,12 @@ test('client-known ID can cancel a session while its worker is still provisionin
     sandbox: 'developer'
   })), { 'content-type': 'application/json' });
   await waitUntil(() => factoryEntered, 'provisioning session placeholder');
-  assert.equal((await request(origin, 'DELETE', `/v1/sessions/${sessionID}`)).status, 204);
+	let deleteSettled = false;
+	const deleting = request(origin, 'DELETE', `/v1/sessions/${sessionID}`).finally(() => { deleteSettled = true; });
+	await new Promise((resolve) => setTimeout(resolve, 50));
+	assert.equal(deleteSettled, false, 'DELETE must retain the containment barrier while a late worker remains possible');
   releaseFactory();
+	assert.equal((await deleting).status, 204);
   const createResponse = await creating;
   assert.equal(createResponse.status, 409, createResponse.body.toString());
   await waitUntil(() => worker.terminated, 'late provisioned worker termination');
@@ -1519,11 +1556,23 @@ test('client-known ID can cancel a session while its worker is still provisionin
   assert.equal((await request(origin, 'DELETE', `/v1/bundles/${bundleID}`)).status, 204);
 });
 
-test('developer worker provisioning deadline releases its placeholder capacity', async (t) => {
+test('non-cooperative provisioning timeout requests process exit before releasing placeholder capacity', async (t) => {
+	const worker = new ControlledWorker();
+	let releaseFactory;
+	const factoryGate = new Promise((resolve) => { releaseFactory = resolve; });
+	const exitCodes = [];
   const runner = createRunnerServer({
     allowDirectEgress: true,
     workerProvisionTimeoutMS: 15,
-    developerSessionFactory: () => new Promise(() => {})
+	cleanupExitDelayMS: 25,
+	processExit: (code) => {
+		exitCodes.push(code);
+		releaseFactory();
+	},
+	developerSessionFactory: async () => {
+		await factoryGate;
+		return worker;
+	}
   });
   await new Promise((resolve) => runner.listen(0, '127.0.0.1', resolve));
   t.after(() => runner.closeRunner());
@@ -1541,6 +1590,8 @@ test('developer worker provisioning deadline releases its placeholder capacity',
     sandbox: 'developer'
   })), { 'content-type': 'application/json' }), 'bounded developer worker provisioning', 500);
   assert.equal(created.status, 504, created.body.toString());
+	assert.deepEqual(exitCodes, [1]);
+	assert.equal(worker.terminated, true);
   const capabilities = JSON.parse((await request(origin, 'GET', '/v1/capabilities')).body);
   assert.equal(capabilities.active_sessions, 0);
   assert.equal((await request(origin, 'DELETE', `/v1/bundles/${bundleID}`)).status, 204);
@@ -1766,4 +1817,176 @@ settings:
   assert.match(execution.body.toString(), /configured output limit|type":"error|success":false/);
   assert.equal((await request(origin, 'DELETE', `/v1/sessions/${sessionID}`)).status, 204);
   assert.equal((await request(origin, 'DELETE', `/v1/bundles/${bundleID}`)).status, 204);
+});
+
+test('runner owner lease is explicitly claimed and advertised', async (t) => {
+  const runner = createRunnerServer({ allowDirectEgress: true, requireOwnerLease: true });
+  await new Promise((resolve) => runner.listen(0, '127.0.0.1', resolve));
+  t.after(() => runner.closeRunner());
+  const origin = `http://127.0.0.1:${runner.address().port}`;
+  const capabilities = JSON.parse((await request(origin, 'GET', '/v1/capabilities')).body);
+  assert.ok(capabilities.features.includes('runner_owner_lease_v1'));
+  assert.ok(capabilities.features.includes('bruno_session_lease_v1'));
+  const claim = await request(origin, 'POST', '/v1/owner/claim', Buffer.from(JSON.stringify({
+    owner_id: 'generator-test',
+    lease_ttl_ms: 5000
+  })), { 'content-type': 'application/json' });
+  assert.equal(claim.status, 200, claim.body.toString());
+  const accepted = JSON.parse(claim.body);
+  assert.equal(accepted.accepted, true);
+  assert.equal(accepted.owner_id, 'generator-test');
+  assert.equal(accepted.lease_ttl_ms, 5000);
+  assert.match(accepted.owner_epoch, /^[a-f0-9]{64}$/);
+});
+
+test('runner owner lease fences execute, cancel, and session deletion', async (t) => {
+  const worker = new ControlledWorker();
+  const runner = createRunnerServer({
+    allowDirectEgress: true,
+    requireOwnerLease: true,
+    developerSessionFactory: async () => worker
+  });
+  await new Promise((resolve) => runner.listen(0, '127.0.0.1', resolve));
+  t.after(() => runner.closeRunner());
+  const origin = `http://127.0.0.1:${runner.address().port}`;
+  const owner = await claimRunnerOwner(origin, 'generator-owner-routes');
+  const { sessionID, headers } = await createControlledSession(origin, worker, owner.headers);
+  const staleHeaders = {
+    'x-apexload-runner-owner-id': owner.claim.owner_id,
+    'x-apexload-runner-owner-epoch': '0'.repeat(64)
+  };
+
+  for (const [method, route, body] of [
+    ['POST', `/v1/sessions/${sessionID}/execute`, executePayload()],
+    ['POST', `/v1/sessions/${sessionID}/cancel`, null],
+    ['DELETE', `/v1/sessions/${sessionID}`, null]
+  ]) {
+    const response = await request(origin, method, route, body, {
+      'content-type': 'application/json',
+      ...staleHeaders
+    });
+    assert.equal(response.status, 409, `${method} ${route}: ${response.body}`);
+  }
+
+  const streaming = await beginExecution(origin, sessionID, headers);
+  const responseBody = collectResponse(streaming.response);
+  await waitUntil(() => worker.messages.some((message) => message.type === 'execute'), 'owner-authorized execution');
+  const execution = worker.messages.find((message) => message.type === 'execute');
+  worker.emit('message', { type: 'complete', requestID: execution.requestID, result: { success: true } });
+  assert.equal(streaming.response.statusCode, 200);
+  await responseBody;
+  assert.equal((await request(origin, 'DELETE', `/v1/sessions/${sessionID}`, null, headers)).status, 204);
+});
+
+test('abandoned session lease reaps only run A while run B keeps renewing', async (t) => {
+  const runAWorker = new ControlledWorker();
+  const runBWorker = new ControlledWorker();
+  const workers = [runAWorker, runBWorker];
+  const runner = createRunnerServer({
+    allowDirectEgress: true,
+    requireOwnerLease: true,
+    sessionLeaseTTLMS: 60,
+    cleanupExitDelayMS: 250,
+    developerSessionFactory: async () => workers.shift()
+  });
+  await new Promise((resolve) => runner.listen(0, '127.0.0.1', resolve));
+  t.after(() => runner.closeRunner());
+  const origin = `http://127.0.0.1:${runner.address().port}`;
+  const owner = await claimRunnerOwner(origin, 'generator-cross-run');
+  const runA = await createControlledSession(origin, runAWorker, owner.headers);
+  const runB = await createControlledSession(origin, runBWorker, owner.headers);
+  let renewals = 0;
+  const renewB = setInterval(() => {
+    void request(origin, 'POST', `/v1/sessions/${runB.sessionID}/lease/renew`, null, runB.headers)
+      .then((response) => { if (response.status === 200) renewals += 1; });
+  }, 15);
+  t.after(() => clearInterval(renewB));
+
+  // Run A's cleanup transport never arrives. Its independent lease must still
+  // reap A even though the process owner and run B remain healthy.
+  await waitUntil(() => runAWorker.terminated, 'run A lease reap', 500);
+  await waitUntil(() => renewals > 1, 'run B lease renewal', 500);
+  assert.equal(runBWorker.terminated, false, 'run A expiry reaped run B');
+  const renewed = await request(origin, 'POST', `/v1/sessions/${runB.sessionID}/lease/renew`, null, runB.headers);
+  assert.equal(renewed.status, 200, renewed.body.toString());
+
+  // A lost positive DELETE response is exactly retryable through the bounded,
+  // token-hashed tombstone and cannot authorize any new work.
+  const reapedRetry = await request(origin, 'DELETE', `/v1/sessions/${runA.sessionID}`, null, runA.headers);
+  assert.equal(reapedRetry.status, 204, reapedRetry.body.toString());
+  clearInterval(renewB);
+  assert.equal((await request(origin, 'DELETE', `/v1/sessions/${runB.sessionID}`, null, runB.headers)).status, 204);
+});
+
+test('expired owner cannot revive while its generation is draining', async (t) => {
+  const expiredWorker = new DeferredTerminateWorker();
+  const replacementWorker = new ControlledWorker();
+  const workers = [expiredWorker, replacementWorker];
+  const exitCodes = [];
+  const leaseTTLMS = 40;
+  const runner = createRunnerServer({
+    allowDirectEgress: true,
+    requireOwnerLease: true,
+    ownerLeaseTTLMS: leaseTTLMS,
+    cleanupExitDelayMS: 250,
+    processExit: (code) => exitCodes.push(code),
+    developerSessionFactory: async () => workers.shift()
+  });
+  await new Promise((resolve) => runner.listen(0, '127.0.0.1', resolve));
+  t.after(() => {
+    expiredWorker.releaseTermination?.();
+    return runner.closeRunner();
+  });
+  const origin = `http://127.0.0.1:${runner.address().port}`;
+  const first = await claimRunnerOwner(origin, 'generator-aba', leaseTTLMS);
+  await createControlledSession(origin, expiredWorker, first.headers);
+  await waitUntil(() => expiredWorker.terminateStarted, 'expired-generation drain', 500);
+
+  let replacementSettled = false;
+  const replacing = claimRunnerOwner(origin, 'generator-aba', leaseTTLMS).finally(() => {
+    replacementSettled = true;
+  });
+  await new Promise((resolve) => setTimeout(resolve, 15));
+  assert.equal(replacementSettled, false, 'same-owner renewal revived a draining generation');
+  assert.equal((await request(origin, 'GET', '/v1/health')).status, 503, 'draining owner remained ready');
+  const duringDrain = await request(origin, 'POST', '/v1/sessions/missing/cancel', null, first.headers);
+  assert.equal(duringDrain.status, 409, duringDrain.body.toString());
+
+  expiredWorker.releaseTermination();
+  const replacement = await replacing;
+  assert.notEqual(replacement.claim.owner_epoch, first.claim.owner_epoch);
+  const { sessionID, headers } = await createControlledSession(origin, replacementWorker, replacement.headers);
+  assert.equal((await request(origin, 'DELETE', `/v1/sessions/${sessionID}`, null, first.headers)).status, 409);
+  assert.equal((await request(origin, 'DELETE', `/v1/sessions/${sessionID}`, null, headers)).status, 204);
+  assert.deepEqual(exitCodes, []);
+});
+
+test('owner expiry hard-exit watchdog starts before bounded worker cleanup', async (t) => {
+  const worker = new DeferredTerminateWorker();
+  const exitCodes = [];
+  const leaseTTLMS = 30;
+  const cleanupExitDelayMS = 45;
+  const runner = createRunnerServer({
+    allowDirectEgress: true,
+    requireOwnerLease: true,
+    ownerLeaseTTLMS: leaseTTLMS,
+    cleanupExitDelayMS,
+    workerTerminationTimeoutMS: 5000,
+    processExit: (code) => exitCodes.push(code),
+    developerSessionFactory: async () => worker
+  });
+  await new Promise((resolve) => runner.listen(0, '127.0.0.1', resolve));
+  t.after(() => {
+    worker.releaseTermination?.();
+    return runner.closeRunner();
+  });
+  const origin = `http://127.0.0.1:${runner.address().port}`;
+  const owner = await claimRunnerOwner(origin, 'generator-watchdog', leaseTTLMS);
+  await createControlledSession(origin, worker, owner.headers);
+  await waitUntil(() => worker.terminateStarted, 'owner-expiry worker termination', 500);
+  const cleanupStartedAt = Date.now();
+  await waitUntil(() => exitCodes.length > 0, 'owner-expiry process exit', 250);
+  assert.deepEqual(exitCodes, [1]);
+  assert.ok(Date.now() - cleanupStartedAt < cleanupExitDelayMS + 75, 'watchdog waited for the worker timeout');
+  worker.releaseTermination();
 });

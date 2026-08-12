@@ -19,7 +19,7 @@
 # with `api_server` red means step 1 or 2 is missing, and the probe message
 # reports the exact caller ARN.
 #
-# Requires restart-controls.example.yaml in the same overlay — that is where the
+# Requires restart-controls.yaml in the same overlay — that is where the
 # least-privilege Role is defined. Bound to a group rather than to the
 # principal's default username so this manifest carries no account ID.
 apiVersion: rbac.authorization.k8s.io/v1

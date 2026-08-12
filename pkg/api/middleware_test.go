@@ -902,6 +902,15 @@ func TestTrustedHeaderAuthScopesGlobalWebSocketToProjectRoles(t *testing.T) {
 		t.Fatalf("project viewer unfiltered global websocket status = %d, want %d body=%s", viewerResp.Code, http.StatusForbidden, viewerResp.Body.String())
 	}
 
+	globalViewerReq := httptest.NewRequest(http.MethodGet, "/api/v1/ws", nil)
+	globalViewerReq.Header.Set("X-Auth-Request-User", "global-viewer")
+	globalViewerReq.Header.Set("X-APEXLoad-Roles", RoleViewer)
+	globalViewerResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(globalViewerResp, globalViewerReq)
+	if globalViewerResp.Code != http.StatusBadRequest {
+		t.Fatalf("global viewer unfiltered websocket status = %d, want %d body=%s", globalViewerResp.Code, http.StatusBadRequest, globalViewerResp.Body.String())
+	}
+
 	filteredReq := httptest.NewRequest(http.MethodGet, "/api/v1/ws?project_id="+project.ID, nil)
 	filteredReq.Header.Set("X-Auth-Request-User", "viewer-user")
 	filteredReq.Header.Set("X-APEXLoad-Project-Roles", project.ID+"="+RoleViewer)
@@ -1035,6 +1044,16 @@ func TestTrustedHeaderAuthProjectRoleGuardsApplicationAndReleaseEndpoints(t *tes
 	server.mux.ServeHTTP(createReleaseResp, createReleaseReq)
 	if createReleaseResp.Code != http.StatusCreated {
 		t.Fatalf("release editor create status = %d, want %d body=%s", createReleaseResp.Code, http.StatusCreated, createReleaseResp.Body.String())
+	}
+
+	createProjectReleaseReq := httptest.NewRequest(http.MethodPost, "/api/v1/projects/"+project.ID+"/releases", bytes.NewReader([]byte(`{"name":"2026.07","application_id":"`+application.ID+`"}`)))
+	createProjectReleaseReq.Header.Set("Content-Type", "application/json")
+	createProjectReleaseReq.Header.Set("X-Auth-Request-User", "editor-user")
+	createProjectReleaseReq.Header.Set("X-APEXLoad-Project-Roles", project.ID+"="+RoleEditor)
+	createProjectReleaseResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(createProjectReleaseResp, createProjectReleaseReq)
+	if createProjectReleaseResp.Code != http.StatusCreated {
+		t.Fatalf("project release editor create status = %d, want %d body=%s", createProjectReleaseResp.Code, http.StatusCreated, createProjectReleaseResp.Body.String())
 	}
 }
 

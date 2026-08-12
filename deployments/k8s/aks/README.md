@@ -5,6 +5,10 @@ data platform: PostgreSQL Flexible Server, Azure Cache for Redis, Blob Storage
 archives, Key Vault script secrets (workload identity — no static tokens), a
 KEDA-autoscaled generator fleet, and DNS-based fleet discovery.
 
+Controller-loss fencing is mandatory. Follow the maintenance-window rollout
+gate and acceptance drill in [Generator run supervision](../../../docs/GENERATOR_RUN_SUPERVISION.md)
+when upgrading from a tokenless release.
+
 The matching infrastructure lives in [`deployments/azure/terraform`](../../azure/terraform/README.md).
 
 ```
@@ -35,9 +39,11 @@ headless service every `APEXLOAD_GENERATOR_DISCOVERY_INTERVAL` (default 15s),
 so generators that KEDA adds or removes join/leave the fleet automatically —
 no static pod list, no controller restart.
 
-Audited Kubernetes restart controls are available as an explicit opt-in via
-[restart-controls.example.yaml](restart-controls.example.yaml). They remain
-disabled and tokenless by default; see
+Audited Kubernetes restart controls are enabled by default through
+[restart-controls.yaml](restart-controls.yaml). Only the controller mounts a
+default Kubernetes API token. Generator pods receive no Kubernetes API token or
+restart RBAC; the workload-identity webhook separately injects its cloud-audience
+token for Azure APIs. See
 [Kubernetes restart controls](../../../docs/KUBERNETES_RESTART_CONTROLS.md).
 
 ## Fresh deployment

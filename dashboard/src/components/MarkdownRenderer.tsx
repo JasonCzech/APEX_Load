@@ -1,5 +1,5 @@
 import { Fragment, useMemo, type ReactNode } from 'react'
-import { parseMarkdown, type MarkdownBlock } from './repositoryGuideMarkdown'
+import { parseMarkdown, type MarkdownBlock, type MarkdownListBlock } from './repositoryGuideMarkdown'
 
 interface MarkdownRendererProps {
   source?: string
@@ -74,6 +74,21 @@ function renderMarkdownInline(text: string, keyPrefix: string): ReactNode[] {
   return nodes
 }
 
+function renderMarkdownList(block: MarkdownListBlock, key: string): ReactNode {
+  const ListTag = block.ordered ? 'ol' : 'ul'
+  const className = block.ordered ? 'markdown-list markdown-ordered-list' : 'markdown-list'
+  return (
+    <ListTag key={key} className={className} {...(block.ordered && block.start ? { start: block.start } : {})}>
+      {block.items.map((item, itemIndex) => (
+        <li key={`${key}-${itemIndex}`}>
+          {renderMarkdownInline(item.text, `${key}-${itemIndex}`)}
+          {item.children && renderMarkdownList(item.children, `${key}-${itemIndex}-sub`)}
+        </li>
+      ))}
+    </ListTag>
+  )
+}
+
 function renderMarkdownBlock(block: MarkdownBlock, key: string): ReactNode {
   switch (block.kind) {
     case 'heading': {
@@ -89,13 +104,7 @@ function renderMarkdownBlock(block: MarkdownBlock, key: string): ReactNode {
         </pre>
       )
     case 'list':
-      return (
-        <ul key={key} className="markdown-list">
-          {block.items.map((item, itemIndex) => (
-            <li key={`${key}-${itemIndex}`}>{renderMarkdownInline(item, `${key}-${itemIndex}`)}</li>
-          ))}
-        </ul>
-      )
+      return renderMarkdownList(block, key)
     case 'table':
       return (
         <div key={key} className="markdown-table-wrap">

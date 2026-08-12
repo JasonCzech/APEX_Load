@@ -60,7 +60,7 @@ func (s *Server) resolveAuthEventActor(r *http.Request, resolution authResolutio
 		return "user", resolution.User.Subject, resolution.User.DisplayName
 	}
 	if s.runner != nil {
-		header := normalizeAuthSettings(s.runner.GetSystemSettings().Auth).UserHeader
+		header := s.authSettingsForRequest().UserHeader
 		if header != "" {
 			if subject := strings.TrimSpace(r.Header.Get(header)); subject != "" {
 				return "user", subject, ""

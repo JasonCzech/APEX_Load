@@ -3864,6 +3864,45 @@ describe('NewTestPage', () => {
     expect(container.textContent).not.toContain('Current session can view scenarios but cannot create runs or schedules for this project.')
   })
 
+  it('shows a retryable access error instead of misreporting an RBAC denial', async () => {
+    apiMock.getAuthEffectiveAccess
+      .mockRejectedValueOnce(new Error('access service unavailable'))
+      .mockResolvedValueOnce({
+        enabled: true,
+        authenticated: true,
+        project_id: 'project-1',
+        resources: [{
+          id: 'tests_and_scenarios',
+          name: 'Tests and Scenarios',
+          description: 'Scenario definitions and runs.',
+          operations: [{ id: 'manage_tests', label: 'Manage tests', allowed: true, grant_source: 'project' }],
+        }],
+      })
+
+    await act(async () => {
+      root.render(
+        <NewTestPage
+          activeApplication={{ id: 'app-1', name: 'ACC', created_at: '', updated_at: '' }}
+          activeRelease={{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }}
+          releases={[{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }]}
+          onSelectTest={vi.fn()}
+          onCreateRelease={vi.fn().mockResolvedValue(null)}
+        />,
+      )
+    })
+    await flushPromises()
+
+    expect(container.textContent).toContain('access service unavailable')
+    expect(container.textContent).not.toContain('Current session can view scenarios but cannot create runs or schedules for this project.')
+    const retry = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Retry permissions')
+    expect(retry).toBeTruthy()
+
+    await act(async () => retry?.click())
+    await flushPromises()
+    expect(apiMock.getAuthEffectiveAccess).toHaveBeenCalledTimes(2)
+    expect(container.textContent).not.toContain('access service unavailable')
+  })
+
   it('waits for a project scope and ignores scenarios returned from the previous project', async () => {
     let resolveProjectOne: ((value: { scenarios: Array<Record<string, unknown>> }) => void) | undefined
     apiMock.listScenarios

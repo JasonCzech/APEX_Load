@@ -138,7 +138,9 @@ function releaseIdsFromRefs(refs?: Array<{ id: string; name: string }>) {
 }
 
 function releaseMatchesApplication(release: Release | undefined, activeApplicationId: string) {
-  return !activeApplicationId || release?.application_id === activeApplicationId
+	return !activeApplicationId
+		|| release?.application_id === activeApplicationId
+		|| Boolean(release?.member_ids?.[activeApplicationId])
 }
 
 function releaseRefMatchesApplication(ref: { id: string; application_id?: string } | undefined, activeApplicationId: string, releaseMap: Map<string, Release>) {
@@ -174,9 +176,15 @@ export function buildRepositoryCatalogRows(input: RepositoryCatalogBuildInput): 
   const releaseMap = new Map<string, Release>()
   const activeApplicationId = input.activeApplication?.id || ''
 
-  Object.values(input.releasesByProject).forEach(releases => {
-    releases.forEach(release => releaseMap.set(release.id, release))
-  })
+	Object.values(input.releasesByProject).forEach(releases => {
+		releases.forEach(release => {
+			releaseMap.set(release.id, release)
+			if (release.group_id) releaseMap.set(release.group_id, release)
+			Object.entries(release.member_ids || {}).forEach(([applicationId, memberId]) => {
+				releaseMap.set(memberId, { ...release, id: memberId, application_id: applicationId })
+			})
+		})
+	})
 
   const rows: RepositoryAssetRow[] = []
 
@@ -211,8 +219,9 @@ export function buildRepositoryCatalogRows(input: RepositoryCatalogBuildInput): 
     for (const release of releases) {
       if (!releaseMatchesApplication(release, activeApplicationId)) continue
       const archived = Boolean(release.archived_at)
-      rows.push({
-        id: release.id,
+		const memberReleaseIds = Object.values(release.member_ids || {})
+		rows.push({
+			id: release.id,
         kind: 'release',
         kindLabel: KIND_LABELS.release,
         name: release.name,
@@ -222,7 +231,7 @@ export function buildRepositoryCatalogRows(input: RepositoryCatalogBuildInput): 
         categoryName: category?.name || 'Uncategorized',
         releaseId: release.id,
         releaseName: release.name,
-        releaseIds: [release.id],
+			releaseIds: unique([release.id, release.group_id, ...memberReleaseIds]),
         releaseNames: [release.name],
         status: archived ? 'Archived' : 'Active',
         summary: release.application_id ? `Application ${release.application_id}` : 'Project release',

@@ -336,6 +336,15 @@ describe('settingsPageModel', () => {
     expect(settingsIssuesForField(validateSettingsDetailed(DEFAULT_SETTINGS), 'auth.trusted_proxy_cidrs')).toEqual([])
   })
 
+  it('accepts Local Test Login without OIDC or trusted-header fields', () => {
+    const local = {
+      ...DEFAULT_SETTINGS,
+      auth: { ...DEFAULT_SETTINGS.auth, mode: 'local' as const },
+    }
+    expect(settingsIssuesForField(validateSettingsDetailed(local), 'auth.mode')).toEqual([])
+    expect(validateSettings(local).some(issue => issue.includes('OIDC'))).toBe(false)
+  })
+
   it('grandfathers a saved ungated trusted_headers posture so unrelated settings stay saveable', () => {
     const trustedHeaders = {
       ...DEFAULT_SETTINGS,

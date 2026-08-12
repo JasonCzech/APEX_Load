@@ -2,6 +2,10 @@
 
 This guide targets Docker Desktop Kubernetes with local Docker images only.
 
+The controller and generators use the mandatory fail-closed lease documented in
+[Generator run supervision](../../../docs/GENERATOR_RUN_SUPERVISION.md). Use its
+connectivity-loss drill after changing the 60s/10s/5s defaults.
+
 Important:
 
 - This workflow is intended for Docker Desktop Kubernetes running in `kubeadm` mode.
@@ -32,9 +36,10 @@ retaining real credentials. Because this local overlay does not provision gRPC
 TLS, secret-bearing distributed runs fail closed; the production Helm, on-prem,
 and AKS deployments provide authenticated TLS delivery.
 
-Audited Kubernetes restart controls are available as an explicit local opt-in
-via [restart-controls.example.yaml](restart-controls.example.yaml). They stay
-disabled and tokenless by default; see
+Audited Kubernetes restart controls are enabled by default through
+[restart-controls.yaml](restart-controls.yaml). Only the controller mounts a
+default Kubernetes API token; generator pods receive no Kubernetes API token or
+restart RBAC. See
 [Kubernetes restart controls](../../../docs/KUBERNETES_RESTART_CONTROLS.md).
 
 ## Prerequisites

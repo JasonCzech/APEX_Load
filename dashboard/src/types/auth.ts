@@ -4,7 +4,7 @@ import type { UsageAccountingBucket, UsageAccountingResponse } from './system'
 // contracts. These are intentionally independent of React view state.
 
 export interface DashboardAuthSettings {
-  mode: 'dev' | 'disabled' | 'trusted_headers' | 'oidc'
+  mode: 'dev' | 'disabled' | 'local' | 'trusted_headers' | 'oidc'
   provider_name?: string
   login_url?: string
   logout_url?: string

@@ -93,18 +93,22 @@ func (s *Server) handleCreateReleaseSLAWaiver(w http.ResponseWriter, r *http.Req
 		writeError(w, http.StatusBadRequest, "waiver reason is required")
 		return
 	}
-	projectID, _, _, err := s.releaseContext(releaseID)
+	family, err := s.resolveReleaseFamily(releaseID)
 	if err != nil && s.store != nil {
 		writeError(w, http.StatusNotFound, err.Error())
 		return
 	}
-	if s.store != nil {
-		release, loadErr := s.store.GetRelease(releaseID)
-		if loadErr != nil || release == nil {
-			writeError(w, http.StatusNotFound, "release not found")
-			return
+	projectID := family.ProjectID
+	storageReleaseID := releaseID
+	if len(family.Members) > 0 {
+		storageReleaseID = family.Members[0].ID
+		for _, member := range family.Members {
+			if member != nil && member.ArchivedAt != nil {
+				writeError(w, http.StatusConflict, "cannot create an SLA waiver for an archived release")
+				return
+			}
 		}
-		if release.ArchivedAt != nil {
+		if storageReleaseID == "" {
 			writeError(w, http.StatusConflict, "cannot create an SLA waiver for an archived release")
 			return
 		}
@@ -117,7 +121,7 @@ func (s *Server) handleCreateReleaseSLAWaiver(w http.ResponseWriter, r *http.Req
 	now := time.Now().UTC()
 	waiver := &storage.ReleaseSLAWaiver{
 		ID:         uuid.New().String(),
-		ReleaseID:  releaseID,
+		ReleaseID:  storageReleaseID,
 		ProjectID:  projectID,
 		Scope:      req.Scope,
 		Reason:     req.Reason,
@@ -134,45 +138,47 @@ func (s *Server) handleCreateReleaseSLAWaiver(w http.ResponseWriter, r *http.Req
 		writeError(w, http.StatusInternalServerError, "failed to save SLA waiver: "+err.Error())
 		return
 	}
-	s.recordAuditEvent(r, "release.sla_waiver.create", "success", "release", releaseID, projectID, map[string]any{
+	canonicalID := firstNonEmpty(family.CanonicalID, releaseID)
+	publicWaiver := *waiver
+	publicWaiver.ReleaseID = canonicalID
+	s.recordAuditEvent(r, "release.sla_waiver.create", "success", "release", canonicalID, projectID, map[string]any{
 		"waiver_id":  waiver.ID,
 		"scope":      waiver.Scope,
 		"reason":     waiver.Reason,
 		"expires_at": waiver.ExpiresAt,
 	})
-	governance, err := s.buildReleaseSLAGovernance(releaseID)
+	governance, err := s.buildReleaseSLAGovernance(canonicalID)
 	if err != nil {
-		writeJSON(w, http.StatusCreated, map[string]any{"waiver": waiver})
+		writeJSON(w, http.StatusCreated, map[string]any{"waiver": &publicWaiver})
 		return
 	}
-	writeJSON(w, http.StatusCreated, map[string]any{"waiver": waiver, "governance": governance})
+	writeJSON(w, http.StatusCreated, map[string]any{"waiver": &publicWaiver, "governance": governance})
 }
 
 func (s *Server) buildReleaseSLAGovernance(releaseID string) (ReleaseSLAGovernanceResponse, error) {
 	if releaseID == "" {
 		return ReleaseSLAGovernanceResponse{}, fmt.Errorf("release id is required")
 	}
-	projectID, releaseName, applicationID, err := s.releaseContext(releaseID)
+	family, err := s.resolveReleaseFamily(releaseID)
 	if err != nil && s.store != nil {
 		return ReleaseSLAGovernanceResponse{}, err
 	}
-	waivers, err := s.listReleaseSLAWaivers(releaseID)
+	waivers, err := s.listReleaseFamilySLAWaivers(family)
 	if err != nil {
 		return ReleaseSLAGovernanceResponse{}, err
 	}
-	tests := s.runner.ListTestSummariesByContext("", releaseID, "")
+	tests := s.listReleaseFamilyTests(family)
 	sort.SliceStable(tests, func(left, right int) bool {
 		return managedTestCompletedAt(tests[left]).After(managedTestCompletedAt(tests[right]))
 	})
 	response := ReleaseSLAGovernanceResponse{
-		GeneratedAt:   time.Now().UTC(),
-		ReleaseID:     releaseID,
-		ReleaseName:   releaseName,
-		ApplicationID: applicationID,
-		ProjectID:     projectID,
+		GeneratedAt: time.Now().UTC(),
+		ReleaseID:   firstNonEmpty(family.CanonicalID, releaseID),
+		ReleaseName: family.Name,
+		ProjectID:   family.ProjectID,
 		Owner: ReleaseSLAGovernanceOwner{
 			Type:        "project",
-			ID:          projectID,
+			ID:          family.ProjectID,
 			DisplayName: "Project administrators",
 		},
 		Waivers: waivers,
@@ -236,7 +242,7 @@ func (s *Server) buildReleaseSLAGovernance(releaseID string) (ReleaseSLAGovernan
 		response.Status = "passed"
 		response.NextActions = []string{"Export executive or audit report profiles for release evidence."}
 	}
-	response.AuditTrail = s.releaseAuditTrail(releaseID)
+	response.AuditTrail = s.releaseFamilyAuditTrail(family)
 	return response, nil
 }
 
@@ -335,17 +341,90 @@ func (s *Server) listReleaseSLAWaivers(releaseID string) ([]*storage.ReleaseSLAW
 	return out, nil
 }
 
-func (s *Server) releaseAuditTrail(releaseID string) []*storage.AuditEvent {
+func (s *Server) listReleaseFamilySLAWaivers(family resolvedReleaseFamily) ([]*storage.ReleaseSLAWaiver, error) {
+	ids := family.memberIDs()
+	if family.CanonicalID != "" {
+		ids = append(ids, family.CanonicalID)
+	}
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	seenWaivers := make(map[string]struct{})
+	waivers := make([]*storage.ReleaseSLAWaiver, 0)
+	seenReleaseIDs := make(map[string]struct{})
+	for _, releaseID := range ids {
+		if releaseID == "" {
+			continue
+		}
+		if _, ok := seenReleaseIDs[releaseID]; ok {
+			continue
+		}
+		seenReleaseIDs[releaseID] = struct{}{}
+		listed, err := s.listReleaseSLAWaivers(releaseID)
+		if err != nil {
+			return nil, err
+		}
+		for _, waiver := range listed {
+			if waiver == nil {
+				continue
+			}
+			if _, ok := seenWaivers[waiver.ID]; ok {
+				continue
+			}
+			seenWaivers[waiver.ID] = struct{}{}
+			projected := *waiver
+			projected.ReleaseID = firstNonEmpty(family.CanonicalID, waiver.ReleaseID)
+			waivers = append(waivers, &projected)
+		}
+	}
+	sort.SliceStable(waivers, func(left, right int) bool {
+		return waivers[left].CreatedAt.After(waivers[right].CreatedAt)
+	})
+	return waivers, nil
+}
+
+func (s *Server) releaseFamilyAuditTrail(family resolvedReleaseFamily) []*storage.AuditEvent {
 	if s.store == nil {
 		return nil
 	}
-	events, err := s.store.ListAuditEvents(storage.AuditEventFilter{
-		ResourceType: "release",
-		ResourceID:   strings.TrimSpace(releaseID),
-		Limit:        20,
+	ids := family.memberIDs()
+	ids = append(ids, family.CanonicalID)
+	seenEvents := make(map[string]struct{})
+	events := make([]*storage.AuditEvent, 0)
+	seenReleaseIDs := make(map[string]struct{})
+	for _, releaseID := range ids {
+		releaseID = strings.TrimSpace(releaseID)
+		if releaseID == "" {
+			continue
+		}
+		if _, ok := seenReleaseIDs[releaseID]; ok {
+			continue
+		}
+		seenReleaseIDs[releaseID] = struct{}{}
+		listed, err := s.store.ListAuditEvents(storage.AuditEventFilter{
+			ResourceType: "release",
+			ResourceID:   releaseID,
+			Limit:        20,
+		})
+		if err != nil {
+			continue
+		}
+		for _, event := range listed {
+			if event == nil {
+				continue
+			}
+			if _, ok := seenEvents[event.ID]; ok {
+				continue
+			}
+			seenEvents[event.ID] = struct{}{}
+			events = append(events, event)
+		}
+	}
+	sort.SliceStable(events, func(left, right int) bool {
+		return events[left].CreatedAt.After(events[right].CreatedAt)
 	})
-	if err != nil {
-		return nil
+	if len(events) > 20 {
+		events = events[:20]
 	}
 	return events
 }

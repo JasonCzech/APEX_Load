@@ -61,18 +61,30 @@ func TestRewriteSQLForPostgres(t *testing.T) {
 		t.Fatalf("rewritten ddl did not normalize timestamp/bool types: %s", got)
 	}
 
-	// Read-side COALESCE defaults on boolean columns must be rewritten to FALSE,
-	// or Postgres rejects COALESCE(boolean, 0) with a type mismatch. Each boolean
+	// Read-side COALESCE integer defaults on boolean columns must be rewritten to
+	// Boolean literals, or Postgres rejects COALESCE(boolean, 0) with a type
+	// mismatch. Each boolean
 	// column whose DDL is rewritten to BOOLEAN must have a matching COALESCE entry;
 	// the object-repository read (auto_promote_on_heal) regressed without it.
-	for _, col := range []string{"shakeout_enabled", "resource_baseline_enabled", "auto_promote_on_heal", "baseline_pinned"} {
-		sel := "SELECT COALESCE(" + col + ", 0) FROM t"
-		gotSel := rewriteSQL(sel, storeDialectPostgres)
-		if strings.Contains(gotSel, "COALESCE("+col+", 0)") {
-			t.Fatalf("COALESCE(%s, 0) was not rewritten for Postgres: %s", col, gotSel)
-		}
-		if !strings.Contains(gotSel, "COALESCE("+col+", FALSE)") {
-			t.Fatalf("COALESCE(%s, ...) not rewritten to FALSE: %s", col, gotSel)
+	booleanCoalesces := []struct {
+		column         string
+		integerDefault string
+		booleanDefault string
+	}{
+		{column: "shakeout_enabled", integerDefault: "0", booleanDefault: "FALSE"},
+		{column: "resource_baseline_enabled", integerDefault: "0", booleanDefault: "FALSE"},
+		{column: "auto_promote_on_heal", integerDefault: "0", booleanDefault: "FALSE"},
+		{column: "enabled", integerDefault: "1", booleanDefault: "TRUE"},
+		{column: "baseline_pinned", integerDefault: "0", booleanDefault: "FALSE"},
+		{column: "base_missing", integerDefault: "0", booleanDefault: "FALSE"},
+	}
+	for _, booleanCoalesce := range booleanCoalesces {
+		for _, qualifier := range []string{"", "test_row."} {
+			sel := "SELECT COALESCE(" + qualifier + booleanCoalesce.column + ", " + booleanCoalesce.integerDefault + ") FROM t"
+			wantSel := "SELECT COALESCE(" + qualifier + booleanCoalesce.column + ", " + booleanCoalesce.booleanDefault + ") FROM t"
+			if gotSel := rewriteSQL(sel, storeDialectPostgres); gotSel != wantSel {
+				t.Fatalf("rewriteSQL(%q) = %q, want exact qualifier/default rewrite %q", sel, gotSel, wantSel)
+			}
 		}
 	}
 }
@@ -229,7 +241,7 @@ func TestPostgresSchemaBooleanColumnsRewriteToBoolean(t *testing.T) {
 	// Read side: every COALESCE(bool_col, 0|1) that actually appears in the storage
 	// package's SQL must be rewritten so the integer default becomes a boolean, or
 	// Postgres rejects COALESCE(boolean, 0) with a type mismatch.
-	coalesce := regexp.MustCompile(`COALESCE\(\s*([a-z_][a-z0-9_]*)\s*,\s*([01])\s*\)`)
+	coalesce := regexp.MustCompile(`(?i)COALESCE\(\s*((?:[a-z_][a-z0-9_]*\s*\.\s*)?)([a-z_][a-z0-9_]*)\s*,\s*([01])\s*\)`)
 	entries, err := os.ReadDir(".")
 	if err != nil {
 		t.Fatalf("read package dir: %v", err)
@@ -245,15 +257,18 @@ func TestPostgresSchemaBooleanColumnsRewriteToBoolean(t *testing.T) {
 			t.Fatalf("read %s: %v", name, err)
 		}
 		for _, m := range coalesce.FindAllStringSubmatch(string(src), -1) {
-			col := strings.ToLower(m[1])
+			qualifier := m[1]
+			col := strings.ToLower(m[2])
 			if !boolCols[col] {
 				continue
 			}
 			seen++
 			raw := m[0]
 			got := rewriteSQL(raw, storeDialectPostgres)
-			if !strings.Contains(got, "COALESCE("+col+", FALSE)") && !strings.Contains(got, "COALESCE("+col+", TRUE)") {
-				t.Errorf("%s: %q is not rewritten to a boolean default for Postgres — add a COALESCE entry to rewriteSQL. got: %s", name, raw, got)
+			booleanDefault := map[string]string{"0": "FALSE", "1": "TRUE"}[m[3]]
+			want := "COALESCE(" + qualifier + col + ", " + booleanDefault + ")"
+			if got != want {
+				t.Errorf("%s: rewriteSQL(%q) = %q, want %q preserving qualifier and default polarity — add or fix the COALESCE entry in rewriteSQL", name, raw, got, want)
 			}
 		}
 	}

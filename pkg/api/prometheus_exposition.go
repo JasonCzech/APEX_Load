@@ -7,6 +7,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/jasonczech/apexload/pkg/distributed/generatorrpc"
 )
 
 func (s *Server) handlePrometheusMetrics(w http.ResponseWriter, r *http.Request) {
@@ -73,6 +75,10 @@ func (s *Server) handlePrometheusMetrics(w http.ResponseWriter, r *http.Request)
 		body.WriteString("# TYPE apexload_generator_drain_state_count gauge\n")
 		body.WriteString("# HELP apexload_generator_compatibility_state_count Number of generators by region and compatibility state.\n")
 		body.WriteString("# TYPE apexload_generator_compatibility_state_count gauge\n")
+		body.WriteString("# HELP apexload_generator_run_supervision_expirations_total Generator runs fenced after controller supervision expired.\n")
+		body.WriteString("# TYPE apexload_generator_run_supervision_expirations_total counter\n")
+		body.WriteString("# HELP apexload_generator_run_supervision_escalations_total Generator supervision expirations that required process self-termination.\n")
+		body.WriteString("# TYPE apexload_generator_run_supervision_escalations_total counter\n")
 		regions := make([]string, 0, len(regionStats))
 		for region := range regionStats {
 			regions = append(regions, region)
@@ -86,6 +92,13 @@ func (s *Server) handlePrometheusMetrics(w http.ResponseWriter, r *http.Request)
 			writeLabeledCounts(&body, "apexload_generator_capacity_state_count", "region", region, "state", stats.CapacityStates)
 			writeLabeledCounts(&body, "apexload_generator_drain_state_count", "region", region, "state", stats.DrainStates)
 			writeLabeledCounts(&body, "apexload_generator_compatibility_state_count", "region", region, "state", stats.CompatibilityStates)
+			sort.Slice(stats.RunSupervisionCounters, func(i, j int) bool {
+				return stats.RunSupervisionCounters[i].Target < stats.RunSupervisionCounters[j].Target
+			})
+			for _, counters := range stats.RunSupervisionCounters {
+				fmt.Fprintf(&body, "apexload_generator_run_supervision_expirations_total{region=%q,generator_id=%q,target=%q} %d\n", region, counters.GeneratorID, counters.Target, counters.Expirations)
+				fmt.Fprintf(&body, "apexload_generator_run_supervision_escalations_total{region=%q,generator_id=%q,target=%q} %d\n", region, counters.GeneratorID, counters.Target, counters.Escalations)
+			}
 		}
 	}
 	body.WriteString("# HELP apexload_max_concurrent_tests Configured maximum concurrent tests.\n")
@@ -279,12 +292,20 @@ func boolMetric(value bool) int {
 }
 
 type generatorRegionStats struct {
-	Count               int
-	AvailableCapacity   int64
-	ActiveVUsers        int64
-	CapacityStates      map[string]int
-	DrainStates         map[string]int
-	CompatibilityStates map[string]int
+	Count                  int
+	AvailableCapacity      int64
+	ActiveVUsers           int64
+	CapacityStates         map[string]int
+	DrainStates            map[string]int
+	CompatibilityStates    map[string]int
+	RunSupervisionCounters []generatorRunSupervisionCounters
+}
+
+type generatorRunSupervisionCounters struct {
+	Target      string
+	GeneratorID string
+	Expirations uint64
+	Escalations uint64
 }
 
 type scalingSignals struct {
@@ -363,6 +384,13 @@ func (s *Server) generatorRegionStats(ctx context.Context) map[string]generatorR
 		current.CapacityStates[usageKey(generator.CapacityState, "unknown")]++
 		current.DrainStates[usageKey(generator.DrainState, "active")]++
 		current.CompatibilityStates[usageKey(generator.CompatibilityState, "compatible")]++
+		if strings.EqualFold(strings.TrimSpace(generator.Status), "connected") && stringSliceContainsEqualFold(generator.CompatibleFeatures, generatorrpc.FeatureRunSupervisionV1) {
+			current.RunSupervisionCounters = append(current.RunSupervisionCounters, generatorRunSupervisionCounters{
+				Target: generator.Target, GeneratorID: generator.GeneratorID,
+				Expirations: generator.RunSupervisionExpirationsTotal,
+				Escalations: generator.RunSupervisionEscalationsTotal,
+			})
+		}
 		stats[region] = current
 	}
 	return stats

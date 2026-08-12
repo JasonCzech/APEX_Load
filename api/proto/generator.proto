@@ -13,6 +13,10 @@ service GeneratorControl {
   // this generator. A higher generation fences all lower-generation work.
   rpc ClaimExecutionEpoch(ExecutionEpochClaim) returns (ExecutionEpochAck);
 
+  // ClaimRunSupervision establishes or renews the controller-owned deadman
+  // lease for one staged or active test. No other RPC renews this lease.
+  rpc ClaimRunSupervision(RunSupervisionClaim) returns (RunSupervisionAck);
+
   // AssignWork sends a test script and VUser allocation to a generator.
   rpc AssignWork(WorkAssignment) returns (AssignmentAck);
 
@@ -105,6 +109,9 @@ message WorkAssignment {
   // require_test_execution_lease makes CommitWork fail closed unless this
   // assignment has a live, explicitly acknowledged run-scoped lease.
   bool require_test_execution_lease = 27;
+  // Opaque, controller-generated run-incarnation capability. Current
+  // execution-enabled generators require exactly 32 non-zero bytes.
+  bytes run_supervision_token = 28;
 }
 
 message WorkCommitRequest {
@@ -114,11 +121,40 @@ message WorkCommitRequest {
   // fleet. A generator rejects a new commit received after this instant rather
   // than starting late and skewing the distributed ramp.
   int64 start_at_unix_nano = 3;
+  bytes run_supervision_token = 4;
 }
 
 message WorkCommitAck {
   bool accepted = 1;
   string error_message = 2;
+  bool run_supervision_armed = 3;
+  int64 run_supervision_ttl_milliseconds = 4;
+}
+
+enum RunSupervisionState {
+  RUN_SUPERVISION_STATE_UNSPECIFIED = 0;
+  RUN_SUPERVISION_STATE_STAGED = 1;
+  RUN_SUPERVISION_STATE_ACTIVE = 2;
+  RUN_SUPERVISION_STATE_STOPPING = 3;
+  RUN_SUPERVISION_STATE_FENCED = 4;
+}
+
+message RunSupervisionClaim {
+  string test_id = 1;
+  uint64 execution_generation = 2;
+  bytes run_supervision_token = 3;
+  int64 requested_ttl_milliseconds = 4;
+  string execution_lease_owner_id = 5;
+}
+
+message RunSupervisionAck {
+  bool accepted = 1;
+  uint32 contract_version = 2;
+  uint64 current_generation = 3;
+  int64 granted_ttl_milliseconds = 4;
+  int64 expires_at_unix_ms = 5;
+  RunSupervisionState state = 6;
+  string error_message = 7;
 }
 
 message ExecutionEpochClaim {
@@ -171,6 +207,7 @@ message VUserAdjustment {
   int32 ramp_seconds = 3;
   uint64 execution_generation = 5;
   google.protobuf.Duration ramp_duration = 6;
+  bytes run_supervision_token = 7;
 }
 
 message AdjustmentAck {
@@ -183,6 +220,7 @@ message DurationAdjustment {
   int64 target_duration_seconds = 2;
   uint64 execution_generation = 3;
   google.protobuf.Duration target_duration = 4;
+  bytes run_supervision_token = 5;
 }
 
 message DurationAck {
@@ -195,6 +233,7 @@ message StopRequest {
   string test_id = 1;
   bool graceful = 2;
   uint64 execution_generation = 3;
+  bytes run_supervision_token = 4;
 }
 
 message StopAck {
@@ -418,6 +457,7 @@ message PauseRequest {
   uint64 execution_generation = 3;
   string operation_id = 4;
   uint64 operation_sequence = 5;
+  bytes run_supervision_token = 6;
 }
 
 message PauseAck {
@@ -450,6 +490,22 @@ message ProtocolRuntimeCapacity {
   string occupancy_mode = 6;
 }
 
+// GeneratorSafetyExitEvidence is the token-free durable explanation for the
+// generator's most recent process safety exit. It survives a generator restart
+// and lets a replacement controller recover the exact failed lifecycle outcome
+// even though the original metrics stream disappeared with both processes.
+message GeneratorSafetyExitEvidence {
+  string test_id = 1;
+  uint64 execution_generation = 2;
+  string lifecycle_state = 3;
+  string reason = 4;
+  int64 requested_at_unix_ms = 5;
+  int32 outstanding_executions = 6;
+  // Exact token-free incident identity. requested_at_unix_ms remains for older
+  // controllers, but cannot distinguish two escalations in the same millisecond.
+  string requested_at_rfc3339_nano = 7;
+}
+
 message HeartbeatPong {
   string generator_id = 3;
   // Millisecond generator wall-clock sample retained for rolling compatibility.
@@ -468,6 +524,14 @@ message HeartbeatPong {
   // response is built. Controllers use the request/response midpoint to
   // estimate the generator clock domain for coordinated start barriers.
   int64 timestamp_unix_nano = 13;
+  // Monotonic process-lifetime safety counters. These are deliberately
+  // generator-scoped so they never introduce run-token labels or disclosure.
+  uint64 run_supervision_expirations_total = 14;
+  uint64 run_supervision_escalations_total = 15;
+  // Retained for rolling compatibility. Current consumers should use
+  // safety_exits so a later incident cannot hide an earlier run.
+  GeneratorSafetyExitEvidence last_safety_exit = 16;
+  repeated GeneratorSafetyExitEvidence safety_exits = 17;
 }
 
 message ScriptPayload {

@@ -662,6 +662,36 @@ func TestHandleRecorderStatusIncludesPersistentCAPath(t *testing.T) {
 	}
 }
 
+func TestHandleRecorderStatusFiltersActiveSessionByProject(t *testing.T) {
+	stubBrowserRecordingDependencyProbe(t, nil)
+	server := NewServer(ServerConfig{})
+	if _, err := server.recorder.StartSessionForProject("rec-project-a", "Project A", "project-a", recorder.SessionFilters{}, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	status := func(projectID string) map[string]any {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/recorder/status?project_id="+projectID, nil)
+		resp := httptest.NewRecorder()
+		server.mux.ServeHTTP(resp, req)
+		if resp.Code != http.StatusOK {
+			t.Fatalf("status for %s = %d body=%s", projectID, resp.Code, resp.Body.String())
+		}
+		var payload map[string]any
+		if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+			t.Fatal(err)
+		}
+		return payload
+	}
+
+	if active := status("project-a")["active"]; active == nil {
+		t.Fatal("matching project did not receive its active recorder session")
+	}
+	if active := status("project-b")["active"]; active != nil {
+		t.Fatalf("foreign project received active recorder session: %#v", active)
+	}
+}
+
 func TestRecorderResponsesDoNotExposeProxyAuthToken(t *testing.T) {
 	stubBrowserRecordingDependencyProbe(t, nil)
 	t.Setenv("APEXLOAD_RECORDER_PROXY_TOKEN", "proxy-secret")

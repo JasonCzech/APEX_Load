@@ -10,7 +10,10 @@ import (
 	"github.com/jasonczech/apexload/pkg/distributed/generatorrpc"
 )
 
-const maxShutdownStopWorkers = 16
+const (
+	maxShutdownStopWorkers          = 16
+	leadershipLossRemoteStopTimeout = 2 * time.Second
+)
 
 var errRunnerShuttingDown = errors.New("controller is shutting down")
 
@@ -95,15 +98,17 @@ func (tr *TestRunner) stopActiveTests(ctx context.Context) error {
 }
 
 type leadershipLossRuntime struct {
-	testID              string
-	executionGeneration uint64
-	cancel              context.CancelFunc
-	stopLocal           func()
-	clientsByTarget     map[string]generatorClient
-	archiveClients      map[string]generatorClient
-	singleClient        generatorClient
-	streamsByTarget     map[string]*generatorrpc.MetricsStream
-	singleStream        *generatorrpc.MetricsStream
+	testID               string
+	executionGeneration  uint64
+	runSupervisionToken  []byte
+	runSupervisionKeeper runSupervisionKeeperHandle
+	cancel               context.CancelFunc
+	stopLocal            func()
+	clientsByTarget      map[string]generatorClient
+	archiveClients       map[string]generatorClient
+	singleClient         generatorClient
+	streamsByTarget      map[string]*generatorrpc.MetricsStream
+	singleStream         *generatorrpc.MetricsStream
 }
 
 // teardownActiveTestsAfterLeadershipLoss is deliberately separate from the
@@ -136,18 +141,21 @@ func (tr *TestRunner) teardownActiveTestsAfterLeadershipLoss(ctx context.Context
 			activeStatus = true
 		}
 		if !activeStatus && test.cancel == nil && test.multiEngine == nil && test.remoteClient == nil &&
-			len(test.remoteClientsByTarget) == 0 && len(test.remoteArchiveClientsByTarget) == 0 && len(test.remoteSecretSnapshots) == 0 {
+			len(test.remoteClientsByTarget) == 0 && len(test.remoteArchiveClientsByTarget) == 0 && len(test.remoteSecretSnapshots) == 0 &&
+			test.remoteRunSupervisionCancel == nil {
 			continue
 		}
 		runtime := leadershipLossRuntime{
-			testID:              test.ID,
-			executionGeneration: test.executionGeneration,
-			cancel:              test.cancel,
-			clientsByTarget:     test.remoteClientsByTarget,
-			archiveClients:      test.remoteArchiveClientsByTarget,
-			singleClient:        test.remoteClient,
-			streamsByTarget:     test.remoteMetricsStreamsByTarget,
-			singleStream:        test.remoteMetricsStream,
+			testID:               test.ID,
+			executionGeneration:  test.executionGeneration,
+			runSupervisionToken:  cloneRunSupervisionToken(test.remoteRunSupervisionToken),
+			runSupervisionKeeper: detachRunSupervisionKeeperLocked(test),
+			cancel:               test.cancel,
+			clientsByTarget:      test.remoteClientsByTarget,
+			archiveClients:       test.remoteArchiveClientsByTarget,
+			singleClient:         test.remoteClient,
+			streamsByTarget:      test.remoteMetricsStreamsByTarget,
+			singleStream:         test.remoteMetricsStream,
 		}
 		if test.multiEngine != nil {
 			engine := test.multiEngine
@@ -176,6 +184,8 @@ func (tr *TestRunner) teardownActiveTestsAfterLeadershipLoss(ctx context.Context
 		test.remoteGoalUpdateRevision = 0
 		test.remoteActivated = false
 		test.remoteActivationPending = false
+		test.remoteRunSupervisionFencedTargets = nil
+		clear(test.remoteRunSupervisionToken[:])
 		clearDistributedRunSecretSnapshotsLocked(test)
 		test.remoteControlGeneration++
 		runtimes = append(runtimes, runtime)
@@ -185,6 +195,15 @@ func (tr *TestRunner) teardownActiveTestsAfterLeadershipLoss(ctx context.Context
 	for _, runtime := range runtimes {
 		if runtime.cancel != nil {
 			runtime.cancel()
+		}
+		if runtime.runSupervisionKeeper.cancel != nil {
+			runtime.runSupervisionKeeper.cancel()
+		}
+	}
+	var errs []error
+	for _, runtime := range runtimes {
+		if err := stopAndWaitRunSupervisionKeeper(ctx, runtime.runSupervisionKeeper); err != nil {
+			errs = append(errs, fmt.Errorf("join stale run-supervision keeper for %s: %w", runtime.testID, err))
 		}
 		if runtime.stopLocal != nil {
 			runtime.stopLocal()
@@ -203,30 +222,34 @@ func (tr *TestRunner) teardownActiveTestsAfterLeadershipLoss(ctx context.Context
 	type remoteStop struct {
 		testID              string
 		executionGeneration uint64
+		runSupervisionToken []byte
 		client              generatorClient
 		stop                bool
 	}
 	jobs := make([]remoteStop, 0)
-	for _, runtime := range runtimes {
+	for runtimeIndex := range runtimes {
+		runtime := &runtimes[runtimeIndex]
 		if len(runtime.clientsByTarget) > 0 {
 			for _, client := range runtime.clientsByTarget {
 				if client != nil {
-					jobs = append(jobs, remoteStop{testID: runtime.testID, executionGeneration: runtime.executionGeneration, client: client, stop: true})
+					jobs = append(jobs, remoteStop{testID: runtime.testID, executionGeneration: runtime.executionGeneration, runSupervisionToken: append([]byte(nil), runtime.runSupervisionToken...), client: client, stop: true})
 				}
 			}
 		} else if runtime.singleClient != nil {
-			jobs = append(jobs, remoteStop{testID: runtime.testID, executionGeneration: runtime.executionGeneration, client: runtime.singleClient, stop: true})
+			jobs = append(jobs, remoteStop{testID: runtime.testID, executionGeneration: runtime.executionGeneration, runSupervisionToken: append([]byte(nil), runtime.runSupervisionToken...), client: runtime.singleClient, stop: true})
 		}
 		for _, client := range runtime.archiveClients {
 			if client != nil {
 				jobs = append(jobs, remoteStop{testID: runtime.testID, client: client})
 			}
 		}
+		clear(runtime.runSupervisionToken)
+		runtime.runSupervisionToken = nil
 	}
 	if len(jobs) == 0 {
-		return nil
+		return errors.Join(errs...)
 	}
-	workerCount := min(len(jobs), 16)
+	workerCount := min(len(jobs), maxShutdownStopWorkers)
 	jobCh := make(chan remoteStop)
 	resultCh := make(chan error, len(jobs))
 	var workers sync.WaitGroup
@@ -236,8 +259,16 @@ func (tr *TestRunner) teardownActiveTestsAfterLeadershipLoss(ctx context.Context
 			defer workers.Done()
 			for job := range jobCh {
 				var stopErr error
-				if job.stop && ctx.Err() == nil {
-					result, err := stopGeneratorTest(ctx, job.client, job.testID, false, job.executionGeneration)
+				if job.stop {
+					// Keeper joins must precede StopTest so no ordinary renewal races the
+					// stop. A cancellation-ignoring keeper can nevertheless exhaust the
+					// leadership teardown context. Use an independent bounded RPC here:
+					// the tokenized stop installs the generator tombstone that rejects a
+					// late claim, and skipping it would throw away the immediate cleanup
+					// path for every run after the stuck keeper.
+					stopCtx, stopCancel := context.WithTimeout(context.Background(), leadershipLossRemoteStopTimeout)
+					result, err := stopGeneratorTestWithToken(stopCtx, job.client, job.testID, false, job.executionGeneration, job.runSupervisionToken)
+					stopCancel()
 					if err != nil {
 						stopErr = fmt.Errorf("stop stale remote test %s: %w", job.testID, err)
 					} else if !result.Acknowledged {
@@ -248,6 +279,8 @@ func (tr *TestRunner) teardownActiveTestsAfterLeadershipLoss(ctx context.Context
 				if closeErr != nil {
 					closeErr = fmt.Errorf("close stale remote test client %s: %w", job.testID, closeErr)
 				}
+				clear(job.runSupervisionToken)
+				job.runSupervisionToken = nil
 				resultCh <- errors.Join(stopErr, closeErr)
 			}
 		}()
@@ -260,7 +293,6 @@ func (tr *TestRunner) teardownActiveTestsAfterLeadershipLoss(ctx context.Context
 	}()
 	workers.Wait()
 	close(resultCh)
-	var errs []error
 	for err := range resultCh {
 		if err != nil {
 			errs = append(errs, err)

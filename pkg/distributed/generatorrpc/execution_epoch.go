@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	pb "github.com/jasonczech/apexload/api/proto"
@@ -189,7 +188,7 @@ func (s *Service) recordTestExecutionLeaseFenceLocked(testID string, generation 
 
 func (s *Service) stopExpiredTestExecutionAssignment(testID string, generation uint64) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	_ = s.forceStopTests(ctx, []string{testID}, generation, "FAILED", "test execution lease expired before completion", false)
+	_ = s.forceStopTests(ctx, []string{testID}, generation, "FAILED", "test execution lease expired before completion", fenceEscalationReason, false)
 	cancel()
 }
 
@@ -271,65 +270,43 @@ func (s *Service) expireExecutionEpochToken(generation uint64, expiresAt time.Ti
 }
 
 func (s *Service) forceStopFencedTests(ctx context.Context, testIDs []string, maximumGeneration uint64) error {
-	return s.forceStopTests(ctx, testIDs, maximumGeneration, "FAILED", "execution generation was fenced before test completion", true)
+	return s.forceStopTests(ctx, testIDs, maximumGeneration, "FAILED", "execution generation was fenced before test completion", fenceEscalationReason, true)
 }
 
-func (s *Service) forceStopTests(ctx context.Context, testIDs []string, maximumGeneration uint64, finalState string, finalError string, trackExecutionEpochFence bool) error {
+func (s *Service) forceStopTests(ctx context.Context, testIDs []string, maximumGeneration uint64, finalState string, finalError string, escalationReason string, trackExecutionEpochFence bool) error {
 	if len(testIDs) == 0 {
 		return nil
 	}
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	// Phase one is deliberately unbounded by the wait-worker pool: detach every
-	// matching assignment and fan out cancellation synchronously. If the first
-	// maxExecutionFenceWorkers executions have blocked done channels, they must
-	// not prevent later assignments from seeing cancellation or remaining
-	// detached and runnable after the controller lease has expired.
+	// Detach and signal every matching assignment before waiting for any one of
+	// them. The retained supervisor owns the exact done barriers even when the
+	// caller's RPC/shutdown context expires.
 	stops := s.detachFencedTests(testIDs, maximumGeneration, trackExecutionEpochFence)
 	for index := range stops {
 		stops[index].finalState = finalState
 		stops[index].finalError = finalError
-	}
-	for _, stop := range stops {
-		for _, execution := range stop.executions {
-			stopGroupExecution(execution)
-		}
+		stops[index].escalationReason = escalationReason
 	}
 	if len(stops) == 0 {
 		return nil
 	}
-
-	// Phase two bounds only quiescence waits and archive finalization. Every job
-	// has already been made non-runnable above, so a slow engine cannot delay the
-	// safety-critical cancellation fanout.
-	workerCount := min(len(stops), maxExecutionFenceWorkers)
-	jobs := make(chan detachedFencedTest, len(stops))
-	errs := make(chan error, len(stops))
+	results := make([]<-chan error, 0, len(stops))
 	for _, stop := range stops {
-		jobs <- stop
+		results = append(results, s.startDetachedRunDrain(stop, true))
 	}
-	close(jobs)
-	var workers sync.WaitGroup
-	workers.Add(workerCount)
-	for range workerCount {
-		go func() {
-			defer workers.Done()
-			for stop := range jobs {
-				if err := s.finishDetachedFencedTest(ctx, stop); err != nil {
-					errs <- fmt.Errorf("stop fenced test %s: %w", stop.testID, err)
-				}
-			}
-		}()
-	}
-	workers.Wait()
-	close(errs)
 	joined := make([]error, 0)
-	for err := range errs {
-		joined = append(joined, err)
-	}
-	if ctx.Err() != nil {
-		joined = append(joined, ctx.Err())
+	for index, result := range results {
+		select {
+		case err := <-result:
+			if err != nil {
+				joined = append(joined, fmt.Errorf("stop fenced test %s: %w", stops[index].testID, err))
+			}
+		case <-ctx.Done():
+			joined = append(joined, ctx.Err())
+			return errors.Join(joined...)
+		}
 	}
 	return errors.Join(joined...)
 }
@@ -342,14 +319,22 @@ type detachedFencedTest struct {
 	trackedFinalizer         bool
 	trackedExecutionFence    bool
 	persistentJavaDrainToken uint64
+	capacityDrainVUsers      int32
 	finalState               string
 	finalError               string
+	escalationReason         string
 }
 
 func (s *Service) detachFencedTests(testIDs []string, maximumGeneration uint64, trackExecutionEpochFence bool) []detachedFencedTest {
+	s.mu.Lock()
+	stops := s.detachFencedTestsLocked(testIDs, maximumGeneration, trackExecutionEpochFence)
+	s.mu.Unlock()
+	return stops
+}
+
+func (s *Service) detachFencedTestsLocked(testIDs []string, maximumGeneration uint64, trackExecutionEpochFence bool) []detachedFencedTest {
 	seen := make(map[string]struct{}, len(testIDs))
 	stops := make([]detachedFencedTest, 0, len(testIDs))
-	s.mu.Lock()
 	for _, testID := range testIDs {
 		if _, duplicate := seen[testID]; duplicate {
 			continue
@@ -362,6 +347,7 @@ func (s *Service) detachFencedTests(testIDs []string, maximumGeneration uint64, 
 		s.markStoppingLocked(testID, assignment.executionGeneration)
 		persistentJavaDrainToken := s.reserveAssignmentJavaDrainLocked(assignment)
 		s.clearTestExecutionLeaseLocked(testID)
+		s.retainRunSupervisionDrainLocked(testID, assignment)
 		delete(s.assignments, testID)
 		s.stopCompletionTimerLocked(testID)
 		s.stopStageTimerLocked(testID)
@@ -386,31 +372,14 @@ func (s *Service) detachFencedTests(testIDs []string, maximumGeneration uint64, 
 			trackedFinalizer:         writer != nil && s.archiveManager.addFinalizer(),
 			trackedExecutionFence:    trackExecutionEpochFence,
 			persistentJavaDrainToken: persistentJavaDrainToken,
+			capacityDrainVUsers:      assignment.vuserCount,
 		})
 	}
-	s.mu.Unlock()
 	return stops
 }
 
 func (s *Service) finishDetachedFencedTest(ctx context.Context, stop detachedFencedTest) error {
 	if err := waitForGeneratorExecutions(ctx, stop.executions); err != nil {
-		finish := func() {
-			_ = waitForGeneratorExecutions(context.Background(), stop.executions)
-			s.releaseStopDrain(stop.persistentJavaDrainToken)
-			s.captureStoppedExecutionMetrics(&stop.assignment, stop.executions)
-			s.finishStoppedTestWithState(stop.testID, stop.assignment, stop.writer, stop.finalState, stop.finalError)
-			if stop.trackedExecutionFence {
-				s.completeDetachedExecutionFence()
-			}
-		}
-		if stop.trackedFinalizer {
-			go func() {
-				defer s.archiveManager.finalizerDone()
-				finish()
-			}()
-		} else {
-			go finish()
-		}
 		return err
 	}
 	if stop.trackedFinalizer {
@@ -422,6 +391,7 @@ func (s *Service) finishDetachedFencedTest(ctx context.Context, stop detachedFen
 	s.releaseStopDrain(stop.persistentJavaDrainToken)
 	s.captureStoppedExecutionMetrics(&stop.assignment, stop.executions)
 	_, finalError := s.finishStoppedTestWithState(stop.testID, stop.assignment, stop.writer, stop.finalState, stop.finalError)
+	s.releaseRunSupervisionDrain(stop)
 	// A FAILED lifecycle reason is expected evidence for a fenced/shutdown test;
 	// only a changed error (for example an appended archive-finalization failure)
 	// means the cleanup itself failed.

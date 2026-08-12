@@ -80,6 +80,10 @@ func runController() (runErr error) {
 
 	generatorTargets := parseGeneratorTargets(os.Getenv("APEXLOAD_GENERATORS"))
 	generatorTimeout := parseGeneratorTimeout(os.Getenv("APEXLOAD_GENERATOR_TIMEOUT"))
+	runSupervisionTTL, runSupervisionRenew, runSupervisionErr := parseGeneratorRunSupervision(os.Getenv)
+	if runSupervisionErr != nil {
+		return runSupervisionErr
+	}
 	if len(generatorTargets) > 0 {
 		security := generatorrpc.TransportSecurityFromEnv()
 		if err := validateGeneratorTransportStartup(generatorTargets, os.Getenv("APEXLOAD_ENV"), security); err != nil {
@@ -138,22 +142,24 @@ func runController() (runErr error) {
 	}
 
 	server := api.NewServer(api.ServerConfig{
-		Addr:                    addr,
-		BindScope:               bindScope,
-		MetricsAddr:             strings.TrimSpace(os.Getenv("APEXLOAD_METRICS_ADDR")),
-		MetricsToken:            strings.TrimSpace(os.Getenv("APEXLOAD_METRICS_TOKEN")),
-		ProxyAddr:               recorderProxyAddr,
-		MaxConcurrent:           10,
-		Store:                   store,
-		GeneratorTargets:        generatorTargets,
-		GeneratorTimeout:        generatorTimeout,
-		ImportAssetDir:          importAssetDir,
-		BrunoArtifactDir:        brunoArtifactDirFromEnv(),
-		K8sRestart:              k8sRestartSettings,
-		KubeRestarter:           restarter,
-		HAExecutionLeadership:   haLeaderElection,
-		ActiveEndpointPublisher: activeEndpointPublisher,
-		TracingStatus:           tracingRuntime.Status(),
+		Addr:                         addr,
+		BindScope:                    bindScope,
+		MetricsAddr:                  strings.TrimSpace(os.Getenv("APEXLOAD_METRICS_ADDR")),
+		MetricsToken:                 strings.TrimSpace(os.Getenv("APEXLOAD_METRICS_TOKEN")),
+		ProxyAddr:                    recorderProxyAddr,
+		MaxConcurrent:                10,
+		Store:                        store,
+		GeneratorTargets:             generatorTargets,
+		GeneratorTimeout:             generatorTimeout,
+		GeneratorRunSupervisionTTL:   runSupervisionTTL,
+		GeneratorRunSupervisionRenew: runSupervisionRenew,
+		ImportAssetDir:               importAssetDir,
+		BrunoArtifactDir:             brunoArtifactDirFromEnv(),
+		K8sRestart:                   k8sRestartSettings,
+		KubeRestarter:                restarter,
+		HAExecutionLeadership:        haLeaderElection,
+		ActiveEndpointPublisher:      activeEndpointPublisher,
+		TracingStatus:                tracingRuntime.Status(),
 	})
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -396,6 +402,32 @@ func parseGeneratorTimeout(raw string) time.Duration {
 		return 10 * time.Second
 	}
 	return duration
+}
+
+func parseGeneratorRunSupervision(getenv func(string) string) (time.Duration, time.Duration, error) {
+	ttl := 60 * time.Second
+	renew := 10 * time.Second
+	if raw := strings.TrimSpace(getenv("APEXLOAD_GENERATOR_RUN_SUPERVISION_TTL")); raw != "" {
+		parsed, err := time.ParseDuration(raw)
+		if err != nil {
+			return 0, 0, fmt.Errorf("invalid APEXLOAD_GENERATOR_RUN_SUPERVISION_TTL: %w", err)
+		}
+		ttl = parsed
+	}
+	if raw := strings.TrimSpace(getenv("APEXLOAD_GENERATOR_RUN_SUPERVISION_RENEW_INTERVAL")); raw != "" {
+		parsed, err := time.ParseDuration(raw)
+		if err != nil {
+			return 0, 0, fmt.Errorf("invalid APEXLOAD_GENERATOR_RUN_SUPERVISION_RENEW_INTERVAL: %w", err)
+		}
+		renew = parsed
+	}
+	if ttl < 30*time.Second || ttl > 60*time.Second {
+		return 0, 0, fmt.Errorf("APEXLOAD_GENERATOR_RUN_SUPERVISION_TTL must be between 30s and 60s")
+	}
+	if renew < time.Second || renew > ttl/3 {
+		return 0, 0, fmt.Errorf("APEXLOAD_GENERATOR_RUN_SUPERVISION_RENEW_INTERVAL must be at least 1s and no greater than one-third of the TTL")
+	}
+	return ttl, renew, nil
 }
 
 func recorderProxyAddrFromEnv() string {

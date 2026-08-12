@@ -1,0 +1,43 @@
+{{- $restartControls := include "apexload.restartControls" . | fromJson -}}
+{{- if $restartControls.enabled }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: apexload-restart-controls
+  namespace: {{ include "apexload.namespace" . }}
+  labels:
+    app.kubernetes.io/name: apexload-controller
+    app.kubernetes.io/component: restart-controls
+{{ include "apexload.labels" . | indent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "delete"]
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get", "patch"]
+  - apiGroups: ["apps"]
+    resources: ["statefulsets"]
+    verbs: ["get", "patch"]
+  - apiGroups: [""]
+    resources: ["resourcequotas"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: apexload-restart-controls
+  namespace: {{ include "apexload.namespace" . }}
+  labels:
+    app.kubernetes.io/name: apexload-controller
+    app.kubernetes.io/component: restart-controls
+{{ include "apexload.labels" . | indent 4 }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ .Values.controller.serviceAccountName }}
+    namespace: {{ include "apexload.namespace" . }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: apexload-restart-controls
+{{- end }}

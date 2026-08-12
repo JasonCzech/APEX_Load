@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -15,6 +16,8 @@ import (
 const systemSettingsStoreKey = "system_settings"
 
 const systemSettingsAuthRefreshInterval = 2 * time.Second
+
+var errSystemSettingsApplyContended = errors.New("system settings apply contended")
 
 const redactedSecretConfiguredField = "has_api_token"
 
@@ -598,6 +601,7 @@ const (
 	capacityAvailabilityConfiguredPlusLive = "configured_plus_live"
 	authModeDev                            = "dev"
 	authModeDisabled                       = "disabled"
+	authModeLocal                          = "local"
 	authModeTrustedHeaders                 = "trusted_headers"
 	authModeOIDC                           = "oidc"
 )
@@ -1459,6 +1463,11 @@ func validateAuthSettings(settings AuthSettings) error {
 	switch mode {
 	case "", authModeDev:
 		return nil
+	case authModeLocal:
+		if productionMode() {
+			return fmt.Errorf("auth.mode %q uses fixed non-production credentials and is not permitted in production", authModeLocal)
+		}
+		return nil
 	case authModeTrustedHeaders:
 		if settings.UserHeader == "" {
 			return fmt.Errorf("auth.user_header is required when auth.mode=%q", authModeTrustedHeaders)
@@ -1520,7 +1529,7 @@ func validateAuthSettings(settings AuthSettings) error {
 		}
 		return nil
 	default:
-		return fmt.Errorf("auth.mode must be one of %q, %q, or %q", authModeDev, authModeTrustedHeaders, authModeOIDC)
+		return fmt.Errorf("auth.mode must be one of %q, %q, %q, or %q", authModeDev, authModeLocal, authModeTrustedHeaders, authModeOIDC)
 	}
 }
 
@@ -1700,60 +1709,148 @@ func (tr *TestRunner) systemSettingsSnapshot() (SystemSettings, uint64) {
 // used before read-modify-write updates so stale replicas cannot overwrite a
 // newer shared value.
 func (tr *TestRunner) refreshSystemSettingsFromStore(force bool) {
+	_ = tr.refreshSystemSettingsFromStoreContext(context.Background(), force)
+}
+
+// refreshSystemSettingsFromStoreContext coalesces durable reads across normal
+// auth/settings callers and the lifecycle-owned readiness cadence. Production
+// SQLite/PostgreSQL stores honor ctx; legacy stores retain the context-free path
+// only for their existing synchronous callers and are never polled by the
+// readiness cadence.
+func (tr *TestRunner) refreshSystemSettingsFromStoreContext(ctx context.Context, force bool) error {
+	return tr.refreshSystemSettingsFromStoreContextMode(ctx, force, false, false)
+}
+
+// refreshSystemSettingsFromStoreContextOpportunistic is reserved for the
+// lifecycle-owned readiness startup/cadence path. It never waits for runner.mu;
+// if a writer owns that lock, the writer's own publication wins and the cadence
+// retries later.
+func (tr *TestRunner) refreshSystemSettingsFromStoreContextOpportunistic(ctx context.Context, force bool) error {
+	return tr.refreshSystemSettingsFromStoreContextMode(ctx, force, true, false)
+}
+
+func (tr *TestRunner) refreshSystemSettingsFromStoreContextStartup(ctx context.Context) error {
+	return tr.refreshSystemSettingsFromStoreContextMode(ctx, true, true, true)
+}
+
+func (tr *TestRunner) refreshSystemSettingsFromStoreContextMode(ctx context.Context, force bool, opportunistic bool, retryContention bool) error {
 	if tr == nil || tr.settingsStore == nil {
-		return
+		return nil
 	}
-	tr.settingsRefreshMu.Lock()
-	now := time.Now()
-	if !force && !tr.settingsAuthRefreshAt.IsZero() && now.Sub(tr.settingsAuthRefreshAt) < systemSettingsAuthRefreshInterval {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	for {
+		tr.settingsRefreshMu.Lock()
+		now := time.Now()
+		if inFlight := tr.settingsRefreshInFlight; inFlight != nil {
+			tr.settingsRefreshMu.Unlock()
+			if !force {
+				return nil
+			}
+			select {
+			case <-inFlight:
+				continue
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		}
+		if !force && !tr.settingsAuthRefreshAt.IsZero() && now.Sub(tr.settingsAuthRefreshAt) < systemSettingsAuthRefreshInterval {
+			tr.settingsRefreshMu.Unlock()
+			return nil
+		}
+		previousRefreshAt := tr.settingsAuthRefreshAt
+		tr.settingsAuthRefreshAt = now
+		revision := tr.settingsRevision
+		done := make(chan struct{})
+		tr.settingsRefreshInFlight = done
 		tr.settingsRefreshMu.Unlock()
-		return
-	}
-	tr.settingsAuthRefreshAt = now
-	revision := tr.settingsRevision
-	tr.settingsRefreshMu.Unlock()
-	raw, err := tr.settingsStore.GetSetting(systemSettingsStoreKey)
-	if err != nil {
-		return
-	}
-	var loaded SystemSettings
-	if strings.TrimSpace(raw) == "" {
-		// Deleting the durable settings row is the canonical reset-to-defaults
-		// operation. Apply that reset coherently so the admission seqlock can
-		// converge instead of comparing an empty durable value to stale cached JSON
-		// forever.
-		loaded = defaultSystemSettings(tr.defaultMaxTests)
-	} else {
-		if err := json.Unmarshal([]byte(raw), &loaded); err != nil {
-			return
+
+		var raw string
+		var err error
+		if contextual, ok := tr.settingsStore.(contextualSettingsPersistence); ok {
+			raw, err = contextual.GetSettingContext(ctx, systemSettingsStoreKey)
+		} else if ctxErr := ctx.Err(); ctxErr != nil {
+			err = ctxErr
+		} else {
+			raw, err = tr.settingsStore.GetSetting(systemSettingsStoreKey)
 		}
-		if !rawJSONHasKey(raw, "prometheus") {
-			loaded.Prometheus = defaultPrometheusSettings()
+		var loaded SystemSettings
+		if err == nil {
+			if strings.TrimSpace(raw) == "" {
+				// Deleting the durable settings row is the canonical reset-to-defaults
+				// operation. Apply that reset coherently so the admission seqlock can
+				// converge instead of comparing empty durable state to a stale cache.
+				loaded = defaultSystemSettings(tr.defaultMaxTests)
+			} else if decodeErr := json.Unmarshal([]byte(raw), &loaded); decodeErr != nil {
+				err = decodeErr
+			} else {
+				if !rawJSONHasKey(raw, "prometheus") {
+					loaded.Prometheus = defaultPrometheusSettings()
+				}
+				if !rawJSONHasKey(raw, "client_downloads") {
+					loaded.ClientDownloads = defaultClientDownloadsSettings()
+				}
+				loaded = normalizeLoadedSystemSettings(loaded, raw, tr.defaultMaxTests)
+			}
 		}
-		if !rawJSONHasKey(raw, "client_downloads") {
-			loaded.ClientDownloads = defaultClientDownloadsSettings()
+		if err == nil {
+			err = validateSystemSettings(loaded)
 		}
-		loaded = normalizeLoadedSystemSettings(loaded, raw, tr.defaultMaxTests)
-	}
-	if err := validateSystemSettings(loaded); err != nil {
-		return
-	}
-	tr.settingsRefreshMu.Lock()
-	if tr.settingsRevision != revision {
+
+		installed := false
+		tr.settingsRefreshMu.Lock()
+		if err == nil && tr.settingsRevision == revision {
+			locked := true
+			if opportunistic {
+				locked = tr.mu.TryLock()
+			retryApply:
+				for !locked && retryContention && ctx.Err() == nil {
+					timer := time.NewTimer(time.Millisecond)
+					select {
+					case <-ctx.Done():
+						timer.Stop()
+						break retryApply
+					case <-timer.C:
+					}
+					locked = tr.mu.TryLock()
+				}
+			} else {
+				tr.mu.Lock()
+			}
+			if locked {
+				// loaded is exclusively owned by this refresh. Assigning it is O(1)
+				// under mu and avoids cloning unbounded settings slices while writers
+				// are excluded.
+				tr.settings = loaded
+				tr.maxTests = loaded.General.MaxConcurrentTests
+				tr.invalidateCapacityAdvisoryCacheLocked()
+				tr.publishRuntimeReadinessLocked(time.Now().UTC())
+				tr.mu.Unlock()
+				if tr.systemSettingsRaw != raw {
+					tr.settingsRevision++
+				}
+				tr.systemSettingsRaw = raw
+				installed = true
+			} else {
+				// An opportunistic readiness refresh must not suppress the next
+				// attempt merely because runner.mu was momentarily held.
+				tr.settingsAuthRefreshAt = previousRefreshAt
+				if ctxErr := ctx.Err(); ctxErr != nil {
+					err = ctxErr
+				} else {
+					err = errSystemSettingsApplyContended
+				}
+			}
+		}
+		tr.settingsRefreshInFlight = nil
+		close(done)
 		tr.settingsRefreshMu.Unlock()
-		return
+		if installed {
+			tr.setNotificationSettings(loaded.Notifications)
+		}
+		return err
 	}
-	tr.mu.Lock()
-	tr.settings = cloneSystemSettings(loaded)
-	tr.maxTests = loaded.General.MaxConcurrentTests
-	tr.invalidateCapacityAdvisoryCacheLocked()
-	tr.mu.Unlock()
-	if tr.systemSettingsRaw != raw {
-		tr.settingsRevision++
-	}
-	tr.systemSettingsRaw = raw
-	tr.setNotificationSettings(loaded.Notifications)
-	tr.settingsRefreshMu.Unlock()
 }
 
 func redactedSystemSettingsResponse(settings SystemSettings) map[string]any {
@@ -1969,6 +2066,7 @@ func (tr *TestRunner) updateSystemSettings(settings SystemSettings, expectedRevi
 	// Capacity advisories are derived from settings (generator specs, headroom,
 	// configured reservations), so a settings change must invalidate the cache.
 	tr.invalidateCapacityAdvisoryCacheLocked()
+	tr.publishRuntimeReadinessLocked(time.Now().UTC())
 	tr.mu.Unlock()
 	tr.settingsAuthRefreshAt = time.Now()
 	tr.setNotificationSettings(normalized.Notifications)

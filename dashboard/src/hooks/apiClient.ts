@@ -526,19 +526,46 @@ export async function requestFromOrigin<T>(
   if (!headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
   }
-  const res = await apiFetchFromOrigin(apiOrigin, path, {
-    ...options,
-    headers,
-  });
-  if (!res.ok) {
-    const body = await parseJsonResponse(res).catch((): ApiErrorPayload => ({
-      error: res.statusText,
-    }));
-    const message =
-      isApiErrorPayload(body) && typeof body.error === "string" && body.error
-        ? body.error
-        : res.statusText;
-    throw new ApiError(message, res.status, body);
+  const { timeoutMs, signal, ...init } = options ?? {};
+  const timeout = createTimeoutSignal(timeoutMs);
+  const mergedSignal = mergeAbortSignals(signal, timeout.signal);
+  const pendingRequest = (async () => {
+    // apiFetchFromOrigin's timeout naturally ends when response headers arrive.
+    // JSON requests need a stronger contract: keep this outer deadline active
+    // until the response body has also been consumed and decoded.
+    const res = await apiFetchFromOrigin(apiOrigin, path, {
+      ...init,
+      headers,
+      signal: mergedSignal,
+    });
+    if (!res.ok) {
+      const body = await parseJsonResponse(res).catch((error: unknown): ApiErrorPayload => {
+        // Preserve cancellation so the full-request timeout can classify it;
+        // only malformed/non-JSON error bodies use the status-text fallback.
+        if (error instanceof DOMException && error.name === "AbortError") {
+          throw error;
+        }
+        return { error: res.statusText };
+      });
+      const message =
+        isApiErrorPayload(body) && typeof body.error === "string" && body.error
+          ? body.error
+          : res.statusText;
+      throw new ApiError(message, res.status, body);
+    }
+    return (await parseJsonResponse(res)) as T;
+  })();
+
+  try {
+    return await (timeout.deadline
+      ? Promise.race([pendingRequest, timeout.deadline])
+      : pendingRequest);
+  } catch (error: unknown) {
+    if (isTimeoutAbort(error, timeout.timedOut())) {
+      throw new Error(`Request timed out after ${timeoutMs}ms`);
+    }
+    throw error;
+  } finally {
+    timeout.clear();
   }
-  return (await parseJsonResponse(res)) as T;
 }

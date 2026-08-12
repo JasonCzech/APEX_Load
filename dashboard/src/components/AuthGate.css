@@ -85,6 +85,73 @@
   margin-top: 20px;
 }
 
+.auth-gate-form {
+  display: grid;
+  gap: 14px;
+  margin-top: 22px;
+}
+
+.auth-gate-form label {
+  display: grid;
+  gap: 6px;
+  font-weight: 650;
+}
+
+.auth-gate-form input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 11px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 10px;
+  background: rgba(4, 10, 17, 0.6);
+  color: inherit;
+  font: inherit;
+}
+
+.auth-gate-form input:focus {
+  outline: 2px solid #f0bf72;
+  outline-offset: 2px;
+}
+
+.auth-gate-personas {
+  margin-top: 24px;
+  padding-top: 18px;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.auth-gate-personas ul {
+  display: grid;
+  gap: 8px;
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.auth-gate-personas li {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  color: rgba(244, 241, 234, 0.78);
+}
+
+.auth-gate-personas code {
+  color: #f0bf72;
+}
+
+.auth-gate-error {
+  margin-top: 14px !important;
+  color: #ffb4a2 !important;
+}
+
+.auth-gate-session-clear {
+  margin-top: 14px;
+  border: 0;
+  background: transparent;
+  color: #9cc6f0;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
 .auth-gate-card--error {
   border-color: rgba(222, 107, 78, 0.5);
 }

@@ -1,0 +1,40 @@
+# Default, namespace-scoped controller permissions for audited restart controls
+# and generator allocation preflight. Generator pods remain tokenless.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: apexload-restart-controls
+  namespace: apexload
+  labels:
+    app.kubernetes.io/name: apexload-controller
+    app.kubernetes.io/component: restart-controls
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "delete"]
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get", "patch"]
+  - apiGroups: ["apps"]
+    resources: ["statefulsets"]
+    verbs: ["get", "patch"]
+  - apiGroups: [""]
+    resources: ["resourcequotas"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: apexload-restart-controls
+  namespace: apexload
+  labels:
+    app.kubernetes.io/name: apexload-controller
+    app.kubernetes.io/component: restart-controls
+subjects:
+  - kind: ServiceAccount
+    name: apexload-controller
+    namespace: apexload
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: apexload-restart-controls

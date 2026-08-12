@@ -8,7 +8,7 @@ import { useActiveTopbarContribution } from '../hooks/TopbarContributionProvider
 import { TopbarContributionProvider } from '../hooks/TopbarContributionRoot'
 import { NavigationGuardRunnerContext } from '../hooks/NavigationGuardProvider'
 import MonitoringPage, { buildRunCalendarModel, mergeDashboardService } from './MonitoringPage'
-import type { RunCalendarEvent, SystemServicesResponse } from '../types'
+import type { RunCalendarEvent, SystemReadinessResponse, SystemServicesResponse } from '../types'
 
 const projectMockState = vi.hoisted(() => ({ activeProjectId: 'project-1' }))
 
@@ -177,7 +177,14 @@ describe('MonitoringPage', () => {
       status: 'degraded',
       generated_at: '2026-05-18T12:05:00Z',
       checks: [
-        { name: 'metadata_store', status: 'ready', message: 'metadata store is reachable' },
+        {
+          name: 'kubernetes_api',
+          status: 'ready',
+          message: 'Kubernetes API and pod-list permission are available',
+          details: { enabled: true, configured: true, namespace: 'apex', pod_count: 2, probe_latency_ms: 4.2 },
+        },
+        { name: 'metadata_store', status: 'ready', message: 'metadata store is reachable', details: { store_type: 'postgres', probe_latency_ms: 1.4 } },
+        { name: 'cache_backend', status: 'ready', message: 'redis cache backend is reachable', details: { cache_backend: 'redis', probe_latency_ms: 0.8 } },
         { name: 'archive_writer', status: 'ready', message: 'archive root is writable' },
         { name: 'generator_rpc', status: 'degraded', message: 'some generator RPC targets are not reachable' },
         { name: 'telemetry_fanout', status: 'ready', message: 'telemetry fan-out is initialized' },
@@ -282,6 +289,28 @@ describe('MonitoringPage', () => {
       await Promise.resolve()
       await Promise.resolve()
     })
+  }
+
+  function infrastructureReadinessRow(label: string): HTMLElement | undefined {
+    return Array.from(container.querySelectorAll<HTMLElement>('.monitor-infrastructure-row'))
+      .find(row => row.querySelector('.monitor-infrastructure-name')?.textContent === label)
+  }
+
+  function readyReadinessFixture(): SystemReadinessResponse {
+    return {
+      status: 'ready',
+      generated_at: '2026-05-18T12:05:00Z',
+      checks: [
+        {
+          name: 'kubernetes_api',
+          status: 'ready',
+          message: 'Kubernetes API and pod-list permission are available',
+          details: { enabled: true, configured: true, namespace: 'apex' },
+        },
+        { name: 'metadata_store', status: 'ready', message: 'metadata store is reachable', details: { store_type: 'postgres' } },
+        { name: 'cache_backend', status: 'ready', message: 'redis cache backend is reachable', details: { cache_backend: 'redis' } },
+      ],
+    }
   }
 
   function TopbarContributionHarness() {
@@ -600,7 +629,7 @@ describe('MonitoringPage', () => {
     expect(container.textContent).toContain('Control Plane')
     expect(container.textContent).toContain('Readiness & Services')
     expect(container.textContent).toContain('Ready Checks')
-    expect(container.textContent).toContain('4/6')
+    expect(container.textContent).toContain('6/8')
     const advisoryBadge = container.querySelector('.monitor-title-advisory')
     expect(advisoryBadge).toBeTruthy()
     expect(advisoryBadge?.className).toContain('danger')
@@ -928,6 +957,507 @@ describe('MonitoringPage', () => {
     await flushAsyncWork()
 
     expect(container.querySelector('.monitor-last-refreshed')).toBeNull()
+  })
+
+  it('always renders provider-specific infrastructure readiness rows', async () => {
+    await act(async () => {
+      root.render(<MonitoringPage connectionState="connected" telemetryDiagnostics={[]} />)
+    })
+
+    const readiness = container.querySelector('[aria-label="Infrastructure readiness"]')
+    expect(readiness).not.toBeNull()
+    expect(readiness!.tagName).toBe('UL')
+    expect(Array.from(readiness!.children).every(row => row.tagName === 'LI')).toBe(true)
+    expect(readiness!.children).toHaveLength(3)
+    expect(readiness!.textContent).toContain('Kubernetes API')
+    expect(readiness!.textContent).toContain('Kubernetes API and pod-list permission are available · 4.2 ms')
+    expect(readiness!.textContent).toContain('PostgreSQL Metadata Store')
+    expect(readiness!.textContent).toContain('metadata store is reachable · 1.4 ms')
+    expect(readiness!.textContent).toContain('Redis Cache')
+    expect(readiness!.textContent).toContain('redis cache backend is reachable · 0.8 ms')
+  })
+
+  it('shows checking only while the first readiness request is unresolved', async () => {
+    apiMock.getSystemReadiness.mockReturnValueOnce(new Promise(() => undefined))
+
+    await act(async () => {
+      root.render(<MonitoringPage connectionState="connected" telemetryDiagnostics={[]} />)
+    })
+
+    const readiness = container.querySelector('[aria-label="Infrastructure readiness"]')
+    expect(readiness!.querySelectorAll('.monitor-infrastructure-status-checking')).toHaveLength(3)
+    expect(readiness!.textContent).toContain('Waiting for readiness data.')
+    expect(container.textContent).toContain('Waiting for /api/v1/system/readiness.')
+    expect(container.textContent).toContain('Waiting for system data...')
+    expect(container.textContent).not.toContain('Readiness data incomplete')
+  })
+
+  it('shows neutral and degraded Kubernetes readiness states without hiding data-platform health', async () => {
+    apiMock.getSystemReadiness.mockResolvedValueOnce({
+      status: 'degraded',
+      generated_at: '2026-05-18T12:05:00Z',
+      checks: [
+        {
+          name: 'kubernetes_api',
+          status: 'degraded',
+          message: 'Kubernetes API or pod-list permission is unavailable',
+          details: { enabled: true, configured: false, reason: 'probe_failed' },
+        },
+        { name: 'metadata_store', status: 'ready', message: 'metadata store is reachable', details: { store_type: 'sqlite' } },
+        { name: 'cache_backend', status: 'ready', message: 'in-memory cache backend is ready', details: { cache_backend: 'memory' } },
+      ],
+    })
+
+    await act(async () => {
+      root.render(<MonitoringPage connectionState="connected" telemetryDiagnostics={[]} />)
+    })
+
+    const readiness = container.querySelector('[aria-label="Infrastructure readiness"]')
+    expect(readiness!.textContent).toContain('Kubernetes API')
+    expect(readiness!.textContent).toContain('Degraded')
+    expect(readiness!.textContent).toContain('Kubernetes API or pod-list permission is unavailable')
+    expect(readiness!.textContent).toContain('SQLite Metadata Store')
+    expect(readiness!.textContent).toContain('In-memory Cache')
+  })
+
+  it('shows checks omitted by an older controller as not reported after loading', async () => {
+    apiMock.getSystemReadiness.mockResolvedValueOnce({
+      status: 'ready',
+      generated_at: '2026-05-18T12:05:00Z',
+      checks: [
+        { name: 'metadata_store', status: 'ready', message: 'metadata store is reachable', details: { store_type: 'sqlite' } },
+        { name: 'cache_backend', status: 'ready', message: 'in-memory cache backend is ready', details: { cache_backend: 'memory' } },
+      ],
+    })
+
+    await act(async () => {
+      root.render(<MonitoringPage connectionState="connected" telemetryDiagnostics={[]} />)
+    })
+
+    const readiness = container.querySelector('[aria-label="Infrastructure readiness"]')
+    expect(readiness!.textContent).toContain('Kubernetes APINot reported by this controller.Not Reported')
+    expect(readiness!.textContent).not.toContain('Waiting for readiness data.')
+    const readinessCardBadge = container.querySelector('[data-card-id="production-readiness"] .monitor-header-badge')
+    expect(readinessCardBadge?.classList.contains('unknown')).toBe(true)
+    expect(readinessCardBadge?.textContent).toContain('1 unreported')
+    expect(container.querySelector('[data-card-id="production-readiness"]')?.textContent).toContain('Ready Checks2/3')
+    expect(container.textContent).not.toContain('All configured production readiness checks are passing.')
+  })
+
+  it('keeps a hard readiness result ahead of mixed-version coverage gaps', async () => {
+    apiMock.getSystemReadiness.mockResolvedValueOnce({
+      status: 'not_ready',
+      generated_at: '2026-05-18T12:05:00Z',
+      checks: [
+        { name: 'metadata_store', status: 'not_ready', message: 'PostgreSQL query failed', details: { store_type: 'postgres' } },
+        { name: 'cache_backend', status: 'ready', message: 'redis cache backend is reachable', details: { cache_backend: 'redis' } },
+      ],
+    })
+
+    await act(async () => {
+      root.render(<MonitoringPage connectionState="connected" telemetryDiagnostics={[]} />)
+    })
+
+    const readinessCard = container.querySelector<HTMLElement>('[data-card-id="production-readiness"]')
+    const readinessCardBadge = readinessCard?.querySelector('.monitor-header-badge')
+    expect(readinessCardBadge?.classList.contains('danger')).toBe(true)
+    expect(readinessCardBadge?.textContent).toContain('Not Ready · 1 unreported')
+    expect(readinessCard?.textContent).toContain('PostgreSQL query failed')
+    expect(container.querySelector('[data-readiness-live-summary]')?.textContent).toContain('Readiness Not Ready · 1 unreported.')
+  })
+
+  it('does not report an empty readiness response as all passing', async () => {
+    apiMock.getSystemReadiness.mockResolvedValueOnce({
+      status: 'ready',
+      generated_at: '2026-05-18T12:05:00Z',
+      checks: [],
+    })
+
+    await act(async () => {
+      root.render(
+        <TopbarContributionProvider>
+          <TopbarContributionHarness />
+          <MonitoringPage connectionState="connected" telemetryDiagnostics={[]} />
+        </TopbarContributionProvider>,
+      )
+    })
+
+    const readiness = container.querySelector('[aria-label="Infrastructure readiness"]')
+    expect(readiness!.querySelectorAll('.monitor-infrastructure-status-not-reported')).toHaveLength(3)
+    const readinessCardBadge = container.querySelector('[data-card-id="production-readiness"] .monitor-header-badge')
+    expect(readinessCardBadge?.classList.contains('unknown')).toBe(true)
+    expect(readinessCardBadge?.textContent).toContain('3 unreported')
+    expect(container.querySelector('[data-card-id="production-readiness"]')?.textContent).toContain('Ready Checks0/3')
+    const topbar = container.querySelector('[data-testid="topbar-contribution"]')
+    expect(topbar?.textContent).toContain('Readiness data incomplete')
+    expect(topbar?.textContent).not.toContain('All systems operational')
+    expect(container.textContent).not.toContain('All configured production readiness checks are passing.')
+  })
+
+  it('shows an initial readiness request failure as unknown instead of checking forever', async () => {
+    apiMock.getSystemReadiness.mockRejectedValueOnce(new Error('controller unavailable'))
+
+    await act(async () => {
+      root.render(<MonitoringPage connectionState="connected" telemetryDiagnostics={[]} />)
+    })
+    await flushAsyncWork()
+
+    const readiness = container.querySelector('[aria-label="Infrastructure readiness"]')
+    expect(readiness!.querySelectorAll('.monitor-infrastructure-status-unknown')).toHaveLength(3)
+    expect(readiness!.textContent).toContain('The readiness endpoint is unavailable.')
+    expect(readiness!.textContent).not.toContain('Waiting for readiness data.')
+    expect(container.textContent).toContain('Unable to load /api/v1/system/readiness. Retrying automatically.')
+    expect(container.textContent).not.toContain('Waiting for /api/v1/system/readiness.')
+    expect(container.textContent).toContain('Readiness unavailable')
+  })
+
+  it('releases the category sweep after a bounded readiness failure and retries on the next poll', async () => {
+    vi.useFakeTimers()
+    apiMock.getSystemReadiness
+      .mockImplementationOnce(() => new Promise((_resolve, reject) => {
+        setTimeout(() => reject(new Error('Request timed out after 4000ms')), 4000)
+      }))
+      .mockResolvedValue(readyReadinessFixture())
+
+    try {
+      await act(async () => {
+        root.render(<MonitoringPage connectionState="connected" activeCategoryId="fleet" telemetryDiagnostics={[]} />)
+        await vi.advanceTimersByTimeAsync(0)
+      })
+      expect(apiMock.getSystemReadiness).toHaveBeenCalledTimes(1)
+      expect(apiMock.getFleetAlerts).not.toHaveBeenCalled()
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(4000)
+      })
+      expect(apiMock.getFleetAlerts).toHaveBeenCalled()
+      expect(apiMock.getAPMIntegrationProfiles).toHaveBeenCalled()
+      expect(apiMock.getScheduleHealth).toHaveBeenCalled()
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1000)
+      })
+      expect(apiMock.getSystemReadiness.mock.calls.length).toBeGreaterThanOrEqual(2)
+      expect(container.querySelector('[data-readiness-live-summary]')?.textContent).toContain('Readiness Ready.')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('keeps retrying readiness outside Overview and refreshes it immediately on return', async () => {
+    vi.useFakeTimers()
+    apiMock.getSystemReadiness
+      .mockRejectedValueOnce(new Error('controller unavailable'))
+      .mockResolvedValue(readyReadinessFixture())
+
+    try {
+      await act(async () => {
+        root.render(<MonitoringPage connectionState="connected" activeCategoryId="fleet" telemetryDiagnostics={[]} />)
+        await vi.advanceTimersByTimeAsync(0)
+      })
+      expect(apiMock.getSystemReadiness).toHaveBeenCalledTimes(1)
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5000)
+      })
+      expect(apiMock.getSystemReadiness.mock.calls.length).toBeGreaterThanOrEqual(2)
+      expect(container.querySelector('[data-readiness-live-summary]')?.textContent).toContain('Readiness Ready.')
+
+      const degraded = readyReadinessFixture()
+      degraded.status = 'degraded'
+      degraded.checks[0] = {
+        ...degraded.checks[0],
+        status: 'degraded',
+        message: 'Kubernetes API access is degraded',
+      }
+      apiMock.getSystemReadiness.mockResolvedValue(degraded)
+      const callsBeforeReturn = apiMock.getSystemReadiness.mock.calls.length
+
+      await act(async () => {
+        root.render(<MonitoringPage connectionState="connected" activeCategoryId="overview" telemetryDiagnostics={[]} />)
+        await vi.advanceTimersByTimeAsync(0)
+      })
+
+      expect(apiMock.getSystemReadiness.mock.calls.length).toBeGreaterThan(callsBeforeReturn)
+      expect(infrastructureReadinessRow('Kubernetes API')?.textContent).toContain('Kubernetes API access is degraded')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('marks last-known readiness stale on Overview and clears it after recovery', async () => {
+    vi.useFakeTimers()
+    apiMock.getSystemReadiness.mockResolvedValue(readyReadinessFixture())
+
+    try {
+      await act(async () => {
+        root.render(
+          <TopbarContributionProvider>
+            <TopbarContributionHarness />
+            <MonitoringPage connectionState="connected" activeCategoryId="overview" telemetryDiagnostics={[]} />
+          </TopbarContributionProvider>,
+        )
+        await vi.advanceTimersByTimeAsync(0)
+      })
+
+      apiMock.getSystemReadiness.mockRejectedValue(new Error('readiness endpoint unavailable'))
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5000)
+      })
+
+      const readinessCard = container.querySelector<HTMLElement>('[data-card-id="production-readiness"]')
+      const readiness = container.querySelector('[aria-label="Infrastructure readiness"]')
+      const topbar = container.querySelector('[data-testid="topbar-contribution"]')
+      expect(readinessCard?.classList.contains('stale')).toBe(true)
+      expect(readiness?.textContent).toContain('Stale data; latest readiness refresh failed.')
+      expect(readinessCard?.textContent).not.toContain('All configured production readiness checks are passing.')
+      expect(container.querySelector('[data-readiness-live-summary]')?.textContent).toContain('Readiness Stale.')
+      expect(topbar?.textContent).toContain('1 advisory warning')
+      expect(topbar?.querySelector('.monitoring-topbar-advisory')?.getAttribute('title')).toContain('Readiness: stale data')
+
+      apiMock.getSystemReadiness.mockResolvedValue(readyReadinessFixture())
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5000)
+      })
+
+      expect(readinessCard?.classList.contains('stale')).toBe(false)
+      expect(readiness?.textContent).not.toContain('Stale data')
+      expect(readinessCard?.textContent).toContain('All configured production readiness checks are passing.')
+      expect(container.querySelector('[data-readiness-live-summary]')?.textContent).toContain('Readiness Ready.')
+      expect(topbar?.textContent).not.toContain('advisory warning')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('surfaces and recovers stale readiness while another Monitoring category is active', async () => {
+    vi.useFakeTimers()
+    apiMock.getSystemReadiness.mockResolvedValue(readyReadinessFixture())
+
+    try {
+      await act(async () => {
+        root.render(
+          <TopbarContributionProvider>
+            <TopbarContributionHarness />
+            <MonitoringPage connectionState="connected" activeCategoryId="fleet" telemetryDiagnostics={[]} />
+          </TopbarContributionProvider>,
+        )
+        await vi.advanceTimersByTimeAsync(0)
+      })
+      expect(container.querySelector('[aria-label="Infrastructure readiness"]')).toBeNull()
+
+      apiMock.getSystemReadiness.mockRejectedValue(new Error('readiness endpoint unavailable'))
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5000)
+      })
+
+      const topbar = container.querySelector('[data-testid="topbar-contribution"]')
+      expect(container.querySelector('[data-readiness-live-summary]')?.textContent).toContain('Readiness Stale.')
+      expect(topbar?.textContent).toContain('1 advisory warning')
+      expect(topbar?.querySelector('.monitoring-topbar-advisory')?.getAttribute('title')).toContain('Readiness: stale data')
+
+      apiMock.getSystemReadiness.mockResolvedValue(readyReadinessFixture())
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5000)
+      })
+
+      expect(container.querySelector('[data-readiness-live-summary]')?.textContent).toContain('Readiness Ready.')
+      expect(topbar?.textContent).not.toContain('advisory warning')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('announces readiness state changes politely and does not rewrite an unchanged summary', async () => {
+    vi.useFakeTimers()
+    apiMock.getSystemReadiness.mockResolvedValue(readyReadinessFixture())
+
+    try {
+      await act(async () => {
+        root.render(<MonitoringPage connectionState="connected" telemetryDiagnostics={[]} />)
+        await vi.advanceTimersByTimeAsync(0)
+      })
+
+      const liveSummary = container.querySelector<HTMLElement>('[data-readiness-live-summary]')
+      expect(liveSummary).not.toBeNull()
+      expect(liveSummary?.getAttribute('role')).toBe('status')
+      expect(liveSummary?.getAttribute('aria-live')).toBe('polite')
+      expect(liveSummary?.getAttribute('aria-atomic')).toBe('true')
+      expect(liveSummary?.textContent).toBe('Readiness Ready. Kubernetes API Ready. Metadata Store Ready. Cache Backend Ready.')
+      const originalTextNode = liveSummary?.firstChild
+
+      const sameStates = readyReadinessFixture()
+      sameStates.generated_at = '2026-05-18T12:10:00Z'
+      sameStates.checks[0] = {
+        ...sameStates.checks[0],
+        message: 'Kubernetes API is still available',
+        details: { ...sameStates.checks[0].details, probe_latency_ms: 9.7 },
+      }
+      apiMock.getSystemReadiness.mockResolvedValue(sameStates)
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5000)
+      })
+
+      expect(liveSummary?.firstChild).toBe(originalTextNode)
+      expect(liveSummary?.textContent).toBe('Readiness Ready. Kubernetes API Ready. Metadata Store Ready. Cache Backend Ready.')
+
+      const changedState = readyReadinessFixture()
+      changedState.status = 'not_ready'
+      changedState.checks[2] = { ...changedState.checks[2], status: 'not_ready', message: 'Redis PING failed' }
+      apiMock.getSystemReadiness.mockResolvedValue(changedState)
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5000)
+      })
+
+      expect(liveSummary?.textContent).toBe('Readiness Not Ready. Kubernetes API Ready. Metadata Store Ready. Cache Backend Not Ready.')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('keeps infrastructure failures out of the capped readiness warning list', async () => {
+    apiMock.getSystemReadiness.mockResolvedValueOnce({
+      status: 'not_ready',
+      generated_at: '2026-05-18T12:05:00Z',
+      checks: [
+        { name: 'kubernetes_api', status: 'degraded', message: 'Kubernetes API probe failed', details: { enabled: true } },
+        { name: 'metadata_store', status: 'not_ready', message: 'PostgreSQL query failed', details: { store_type: 'postgres' } },
+        { name: 'cache_backend', status: 'not_ready', message: 'Redis PING failed', details: { cache_backend: 'redis' } },
+        { name: 'generator_rpc', status: 'degraded', message: 'generator RPC is degraded' },
+        { name: 'auth_mode', status: 'degraded', message: 'authentication is degraded' },
+        { name: 'scheduler_state', status: 'not_ready', message: 'scheduler is blocked' },
+        { name: 'archive_writer', status: 'degraded', message: 'archive writer is degraded' },
+        { name: 'telemetry_fanout', status: 'degraded', message: 'telemetry fan-out is degraded' },
+      ],
+    })
+
+    await act(async () => {
+      root.render(<MonitoringPage connectionState="connected" telemetryDiagnostics={[]} />)
+    })
+
+    const warningRows = Array.from(container.querySelectorAll<HTMLElement>('[data-card-id="production-readiness"] .monitor-warning-list > p'))
+      .map(row => row.textContent)
+    expect(warningRows).toEqual([
+      'Generator RPC: generator RPC is degraded',
+      'Auth Mode: authentication is degraded',
+      'Scheduler State: scheduler is blocked',
+      'Archive Writer: archive writer is degraded',
+    ])
+    expect(warningRows.join(' ')).not.toContain('Kubernetes API probe failed')
+    expect(warningRows.join(' ')).not.toContain('PostgreSQL query failed')
+    expect(warningRows.join(' ')).not.toContain('Redis PING failed')
+  })
+
+  it('preserves the message for a compatibility status it does not recognize', async () => {
+    apiMock.getSystemReadiness.mockResolvedValueOnce({
+      status: 'degraded',
+      generated_at: '2026-05-18T12:05:00Z',
+      checks: [
+        {
+          name: 'kubernetes_api',
+          status: 'maintenance',
+          message: 'Kubernetes API maintenance is in progress',
+          details: { enabled: true, configured: true },
+        },
+        { name: 'metadata_store', status: 'ready', message: 'metadata store is reachable', details: { store_type: 'postgres' } },
+        { name: 'cache_backend', status: 'ready', message: 'in-memory cache backend is ready', details: { cache_backend: 'memory' } },
+      ],
+    })
+
+    await act(async () => {
+      root.render(<MonitoringPage connectionState="connected" telemetryDiagnostics={[]} />)
+    })
+
+    const kubernetesRow = infrastructureReadinessRow('Kubernetes API')
+    expect(kubernetesRow).not.toBeUndefined()
+    expect(kubernetesRow!.textContent).toContain('Kubernetes API maintenance is in progress')
+    expect(kubernetesRow!.textContent).toContain('Unknown')
+    expect(kubernetesRow!.textContent).not.toContain('Waiting for readiness data.')
+    expect(kubernetesRow!.querySelector('.monitor-infrastructure-status-unknown')).not.toBeNull()
+    const readinessCardBadge = container.querySelector('[data-card-id="production-readiness"] .monitor-header-badge')
+    expect(readinessCardBadge?.classList.contains('warning')).toBe(true)
+    expect(readinessCardBadge?.textContent).toContain('Degraded · 1 unknown')
+    expect(container.querySelector('[data-readiness-live-summary]')?.textContent).toContain('Readiness Degraded · 1 unknown.')
+  })
+
+  it('shows the Valkey provider and a not-ready cache state', async () => {
+    apiMock.getSystemReadiness.mockResolvedValueOnce({
+      status: 'not_ready',
+      generated_at: '2026-05-18T12:05:00Z',
+      checks: [
+        {
+          name: 'kubernetes_api',
+          status: 'ready',
+          message: 'Kubernetes integration is not configured for this runtime',
+          details: { enabled: false, configured: false },
+        },
+        { name: 'metadata_store', status: 'ready', message: 'metadata store is reachable', details: { store_type: 'sqlite' } },
+        { name: 'cache_backend', status: 'not_ready', message: 'cache backend probe failed', details: { cache_backend: 'valkey' } },
+      ],
+    })
+
+    await act(async () => {
+      root.render(<MonitoringPage connectionState="connected" telemetryDiagnostics={[]} />)
+    })
+
+    const valkeyRow = infrastructureReadinessRow('Valkey Cache')
+    expect(valkeyRow).not.toBeUndefined()
+    expect(valkeyRow!.textContent).toContain('cache backend probe failed')
+    expect(valkeyRow!.textContent).toContain('Not Ready')
+    expect(valkeyRow!.querySelector('.monitor-infrastructure-status-not-ready')).not.toBeNull()
+  })
+
+  it('shows Kubernetes as not configured outside an in-cluster runtime', async () => {
+    apiMock.getSystemReadiness.mockResolvedValueOnce({
+      status: 'ready',
+      generated_at: '2026-05-18T12:05:00Z',
+      checks: [
+        {
+          name: 'kubernetes_api',
+          status: 'ready',
+          message: 'Kubernetes integration is not configured for this runtime',
+          details: { enabled: false, configured: false },
+        },
+        { name: 'metadata_store', status: 'ready', message: 'metadata store is reachable', details: { store_type: 'sqlite' } },
+        { name: 'cache_backend', status: 'ready', message: 'in-memory cache backend is ready', details: { cache_backend: 'memory' } },
+      ],
+    })
+
+    await act(async () => {
+      root.render(<MonitoringPage connectionState="connected" telemetryDiagnostics={[]} />)
+    })
+
+    const readiness = container.querySelector('[aria-label="Infrastructure readiness"]')
+    expect(readiness!.textContent).toContain('Kubernetes APINot configured for this runtime.Not Configured')
+  })
+
+  it('honors an explicit not-configured status from a newer controller', async () => {
+    apiMock.getSystemReadiness.mockResolvedValueOnce({
+      status: 'ready',
+      generated_at: '2026-05-18T12:05:00Z',
+      checks: [
+        {
+          name: 'kubernetes_api',
+          status: 'not_configured',
+          message: 'Kubernetes integration is disabled',
+          details: { enabled: false, configured: false },
+        },
+        { name: 'metadata_store', status: 'ready', message: 'metadata store is reachable', details: { store_type: 'sqlite' } },
+        { name: 'cache_backend', status: 'ready', message: 'in-memory cache backend is ready', details: { cache_backend: 'memory' } },
+      ],
+    })
+
+    await act(async () => {
+      root.render(<MonitoringPage connectionState="connected" telemetryDiagnostics={[]} />)
+    })
+
+    const kubernetesRow = infrastructureReadinessRow('Kubernetes API')
+    expect(kubernetesRow!.textContent).toContain('Not configured for this runtime.')
+    expect(kubernetesRow!.textContent).toContain('Not Configured')
+    expect(kubernetesRow!.querySelector('.monitor-infrastructure-status-not-configured')).not.toBeNull()
+    expect(kubernetesRow!.querySelector('.monitor-infrastructure-status-unknown')).toBeNull()
+    expect(container.textContent).not.toContain('Kubernetes API: Kubernetes integration is disabled')
+    expect(container.textContent).toContain('All configured production readiness checks are passing.')
   })
 
   it('renders active APEX backend and frontend services', async () => {

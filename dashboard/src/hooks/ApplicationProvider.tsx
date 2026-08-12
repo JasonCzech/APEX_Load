@@ -2,12 +2,17 @@ import { ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 're
 
 import { Application, Release } from '../types'
 import { useApplicationApi } from './api/useApplicationApi'
+import { useRepositoryApi } from './api/useRepositoryApi'
 import { useProject } from './useProject'
 import { ApplicationContext } from './applicationContext'
 import { readStoredString, removeStoredItem, writeStoredString } from '../utils/browserStorage'
 
 const STORAGE_KEY = 'apexload.activeApplicationId'
 const RELEASE_STORAGE_KEY = 'apexload.activeReleaseId'
+
+function releaseFamilyId(release: Pick<Release, 'id' | 'group_id'> | null | undefined) {
+  return release?.group_id || release?.id || null
+}
 
 type TimestampedCatalogRow = {
   id: string
@@ -55,6 +60,7 @@ function reconcileCommittedCatalog<T extends TimestampedCatalogRow>(
 
 export function ApplicationProvider({ children }: { children: ReactNode }) {
   const api = useApplicationApi()
+  const repositoryApi = useRepositoryApi()
   const { activeProject } = useProject()
   const activeProjectId = activeProject?.id
   const [applications, setApplications] = useState<Application[]>([])
@@ -71,6 +77,7 @@ export function ApplicationProvider({ children }: { children: ReactNode }) {
   const releasesRequestGenerationRef = useRef(0)
   const activeApplicationIdRef = useRef<string | null>(null)
   const activeReleaseIdRef = useRef<string | null>(null)
+  const activeReleaseFamilyIdRef = useRef<string | null>(null)
   const applicationsRef = useRef<Application[]>([])
   const releasesRef = useRef<Release[]>([])
   const applicationTombstonesRef = useRef(new Set<string>())
@@ -90,6 +97,7 @@ export function ApplicationProvider({ children }: { children: ReactNode }) {
     releasesRequestGenerationRef.current += 1
     activeApplicationIdRef.current = null
     activeReleaseIdRef.current = null
+    activeReleaseFamilyIdRef.current = null
   }
 
   const setActiveApplication = useCallback((application: Application) => {
@@ -117,7 +125,6 @@ export function ApplicationProvider({ children }: { children: ReactNode }) {
     setReleasesLoading(false)
     setReleasesError('')
     setActiveReleaseState(null)
-    removeStoredItem(RELEASE_STORAGE_KEY)
   }, [])
 
   const setActiveRelease = useCallback((release: Release) => {
@@ -126,13 +133,14 @@ export function ApplicationProvider({ children }: { children: ReactNode }) {
       committedReleasesRef.current.set(release.id, release)
     }
     activeReleaseIdRef.current = release.id
+    activeReleaseFamilyIdRef.current = releaseFamilyId(release)
     setReleases(prev => {
       const next = prev.map(current => current.id === release.id ? release : current)
       releasesRef.current = next
       return next
     })
     setActiveReleaseState(release)
-    writeStoredString(RELEASE_STORAGE_KEY, release.id)
+    writeStoredString(RELEASE_STORAGE_KEY, releaseFamilyId(release) || release.id)
   }, [])
 
   const removeApplication = useCallback((applicationId: string) => {
@@ -157,7 +165,6 @@ export function ApplicationProvider({ children }: { children: ReactNode }) {
     setReleasesLoading(false)
     setReleasesError('')
     setActiveReleaseState(null)
-    removeStoredItem(RELEASE_STORAGE_KEY)
   }, [])
 
   const removeRelease = useCallback((releaseId: string) => {
@@ -171,8 +178,9 @@ export function ApplicationProvider({ children }: { children: ReactNode }) {
 
     const fallback = next[0] || null
     activeReleaseIdRef.current = fallback?.id || null
+    activeReleaseFamilyIdRef.current = releaseFamilyId(fallback)
     setActiveReleaseState(fallback)
-    if (fallback) writeStoredString(RELEASE_STORAGE_KEY, fallback.id)
+    if (fallback) writeStoredString(RELEASE_STORAGE_KEY, releaseFamilyId(fallback) || fallback.id)
     else removeStoredItem(RELEASE_STORAGE_KEY)
   }, [])
 
@@ -223,12 +231,15 @@ export function ApplicationProvider({ children }: { children: ReactNode }) {
       setReleases(next)
       const storedId = readStoredString(RELEASE_STORAGE_KEY)
       const selected = next.find(release => release.id === activeReleaseIdRef.current)
+        || next.find(release => releaseFamilyId(release) === activeReleaseFamilyIdRef.current)
+        || next.find(release => releaseFamilyId(release) === storedId)
         || next.find(release => release.id === storedId)
         || next[0]
         || null
       activeReleaseIdRef.current = selected?.id || null
+      activeReleaseFamilyIdRef.current = releaseFamilyId(selected)
       setActiveReleaseState(selected)
-      if (selected) writeStoredString(RELEASE_STORAGE_KEY, selected.id)
+      if (selected) writeStoredString(RELEASE_STORAGE_KEY, releaseFamilyId(selected) || selected.id)
       else removeStoredItem(RELEASE_STORAGE_KEY)
     } catch (cause: unknown) {
       if (requestIsCurrent()) {
@@ -367,9 +378,18 @@ export function ApplicationProvider({ children }: { children: ReactNode }) {
 
   const createAndSelectRelease = useCallback(async (name: string) => {
     const applicationId = activeApplicationIdRef.current
-    if (!applicationId) return null
+    const projectId = projectScopeRef.current.id
+    if (!applicationId || !projectId) return null
     const scope = { ...projectScopeRef.current }
-    const created = await api.createRelease(applicationId, { name })
+    const family = await repositoryApi.createProjectRelease(projectId, { name, application_id: applicationId })
+    const applicationReleaseId = family.member_ids?.[applicationId] || family.application_release_id || family.id
+    const created: Release = {
+      ...family,
+      id: applicationReleaseId,
+      group_id: family.group_id || family.id,
+      application_id: applicationId,
+      application_release_id: applicationReleaseId,
+    }
     if (
       projectScopeRef.current.id !== scope.id
       || projectScopeRef.current.generation !== scope.generation
@@ -394,7 +414,7 @@ export function ApplicationProvider({ children }: { children: ReactNode }) {
       return created
     }
     return created
-  }, [api, refreshReleases, setActiveRelease])
+  }, [refreshReleases, repositoryApi, setActiveRelease])
 
   useEffect(() => {
     const projectId = activeProjectId
@@ -403,6 +423,7 @@ export function ApplicationProvider({ children }: { children: ReactNode }) {
     releasesRequestGenerationRef.current += 1
     activeApplicationIdRef.current = null
     activeReleaseIdRef.current = null
+    activeReleaseFamilyIdRef.current = null
     setStateProjectId(projectId)
     applicationsRef.current = []
     setApplications([])

@@ -646,6 +646,12 @@ jobs:
         with:
           node-version: 22.22.0
 
+      - name: Setup Go from go.mod
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: go.mod
+          cache: false
+
       - name: Validate App Service launcher
         working-directory: deployments/azure/appservice
         run: |
@@ -808,6 +814,74 @@ jobs:
             echo "default Helm manifest unexpectedly enables the Java Vuser runner" >&2
             exit 1
           fi
+          if ! grep -A1 'name: APEXLOAD_K8S_RESTART_ENABLED' "${RUNNER_TEMP}/apexload-helm.yaml" | \
+               grep -q 'value: "true"'; then
+            echo "default Helm manifest does not explicitly enable restart controls" >&2
+            exit 1
+          fi
+
+          optout_values=(
+            "${values[@]}"
+            --set restartControls.enabled=false
+          )
+          helm lint deployments/helm/apexload "${optout_values[@]}"
+          helm template apexload deployments/helm/apexload --namespace apexload \
+            "${optout_values[@]}" >"${RUNNER_TEMP}/apexload-helm-restart-optout.yaml"
+          "${RUNNER_TEMP}/bin/kubeconform" -strict \
+            -schema-location default \
+            -schema-location "${RUNNER_TEMP}/crd-schemas/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json" \
+            "${RUNNER_TEMP}/apexload-helm-restart-optout.yaml"
+          if grep -q 'name: apexload-restart-controls' "${RUNNER_TEMP}/apexload-helm-restart-optout.yaml"; then
+            echo "restartControls.enabled=false still renders restart RBAC" >&2
+            exit 1
+          fi
+          if ! grep -A1 'name: APEXLOAD_K8S_RESTART_ENABLED' "${RUNNER_TEMP}/apexload-helm-restart-optout.yaml" | \
+               grep -q 'value: "false"'; then
+            echo "restartControls.enabled=false does not explicitly disable the controller integration" >&2
+            exit 1
+          fi
+
+          ha_values=(
+            "${values[@]}"
+            --set controller.ha.enabled=true
+            --set importAssets.persistence.enabled=true
+            --set importAssets.persistence.existingClaim=apexload-import-assets
+          )
+          helm lint deployments/helm/apexload "${ha_values[@]}"
+          helm template apexload deployments/helm/apexload --namespace apexload \
+            "${ha_values[@]}" >"${RUNNER_TEMP}/apexload-helm-ha.yaml"
+          "${RUNNER_TEMP}/bin/kubeconform" -strict \
+            -schema-location default \
+            -schema-location "${RUNNER_TEMP}/crd-schemas/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json" \
+            "${RUNNER_TEMP}/apexload-helm-ha.yaml"
+          grep -q 'name: apexload-restart-controls' "${RUNNER_TEMP}/apexload-helm-ha.yaml"
+          grep -q 'serviceAccountToken:' "${RUNNER_TEMP}/apexload-helm-ha.yaml"
+
+          ha_optout_values=(
+            "${ha_values[@]}"
+            --set restartControls.enabled=false
+          )
+          helm lint deployments/helm/apexload "${ha_optout_values[@]}"
+          helm template apexload deployments/helm/apexload --namespace apexload \
+            "${ha_optout_values[@]}" >"${RUNNER_TEMP}/apexload-helm-ha-restart-optout.yaml"
+          "${RUNNER_TEMP}/bin/kubeconform" -strict \
+            -schema-location default \
+            -schema-location "${RUNNER_TEMP}/crd-schemas/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json" \
+            "${RUNNER_TEMP}/apexload-helm-ha-restart-optout.yaml"
+          if grep -q 'name: apexload-restart-controls' "${RUNNER_TEMP}/apexload-helm-ha-restart-optout.yaml"; then
+            echo "HA restart opt-out still renders restart RBAC" >&2
+            exit 1
+          fi
+          if ! grep -A1 'name: APEXLOAD_K8S_RESTART_ENABLED' "${RUNNER_TEMP}/apexload-helm-ha-restart-optout.yaml" | \
+               grep -q 'value: "false"'; then
+            echo "HA restart opt-out does not explicitly disable the controller integration" >&2
+            exit 1
+          fi
+          grep -q 'serviceAccountToken:' "${RUNNER_TEMP}/apexload-helm-ha-restart-optout.yaml"
+
+          go test -count=1 \
+            -run '^(TestRestartControlsRenderForEveryKubernetesBase|TestHelmRestartControlsDefaultAndOptOut|TestHelmRestartControlsReuseValuesUpgrade|TestHelmRestartControlsUpgradeRunbook)$' \
+            ./deployments/k8s
 
           bruno_values=(
             "${values[@]}"
@@ -847,6 +921,9 @@ jobs:
           grep -q 'value: /tmp' "${RUNNER_TEMP}/apexload-helm-java-vuser.yaml"
 
       - name: Validate Docker Compose and Prometheus
+        env:
+          APEXLOAD_LOCAL_POSTGRES_PASSWORD: compose-postgres-sentinel
+          APEXLOAD_LOCAL_REDIS_PASSWORD: compose-redis-sentinel
         run: |
           set -euo pipefail
           docker compose --file compose.yaml config --quiet
@@ -855,12 +932,80 @@ jobs:
           grep -q 'APEXLOAD_JAVA_VUSER_RUNNER_ENABLED: "true"' "${RUNNER_TEMP}/apexload-compose-java-vuser.yaml"
           grep -q 'APEXLOAD_JAVA_VUSER_WORK_DIR: /tmp' "${RUNNER_TEMP}/apexload-compose-java-vuser.yaml"
           grep -q 'network_mode: service:generator' "${RUNNER_TEMP}/apexload-compose-java-vuser.yaml"
+
+          data_platform_model="${RUNNER_TEMP}/apexload-compose-data-platform.json"
+          docker compose --file compose.yaml \
+            --file deployments/docker/compose.data-platform.yaml \
+            config --format json >"${data_platform_model}"
+          jq --exit-status '
+            .services.controller.environment.APEXLOAD_DATABASE_URL ==
+              "postgres://apexload:compose-postgres-sentinel@postgres:5432/apexload?sslmode=disable" and
+            .services.controller.environment.APEXLOAD_REDIS_URL ==
+              "redis://:compose-redis-sentinel@redis:6379/0" and
+            .services.postgres.environment.POSTGRES_PASSWORD == "compose-postgres-sentinel" and
+            .services.redis.environment.REDIS_PASSWORD == "compose-redis-sentinel" and
+            (.services.postgres.healthcheck.test | join(" ") | contains("PGPASSWORD=\"$$POSTGRES_PASSWORD\"")) and
+            (.services.postgres.healthcheck.test | join(" ") | contains("psql -h postgres")) and
+            (.services.postgres.healthcheck.test | join(" ") | contains("-U \"$$POSTGRES_USER\"")) and
+            (.services.postgres.healthcheck.test | join(" ") | contains("-d \"$$POSTGRES_DB\"")) and
+            (.services.postgres.healthcheck.test | join(" ") | contains("SELECT 1")) and
+            (.services.postgres.healthcheck.test | join(" ") | contains("pg_isready") | not) and
+            (.services.redis.healthcheck.test | join(" ") | contains("redis-cli -h redis")) and
+            (.services.redis.healthcheck.test | join(" ") | contains("-a \"$$REDIS_PASSWORD\"")) and
+            (.services.redis.command | join(" ") | contains("--requirepass \"$$REDIS_PASSWORD\"")) and
+            .networks["data-platform"].internal == true and
+            (.services.controller.networks | keys | sort) == ["data-platform", "default"] and
+            (.services.postgres.networks | keys) == ["data-platform"] and
+            (.services.redis.networks | keys) == ["data-platform"] and
+            ([.services | to_entries[] |
+              select((.value.networks // {}) | has("data-platform")) | .key] | sort) ==
+              ["controller", "postgres", "redis"] and
+            ((.services.postgres.ports // []) | length) == 0 and
+            ((.services.redis.ports // []) | length) == 0
+          ' "${data_platform_model}" >/dev/null
           docker run --rm --entrypoint /bin/promtool \
             --volume "${PWD}/deployments/docker/prometheus:/etc/prometheus:ro" \
             "${PROMETHEUS_IMAGE}" check config /etc/prometheus/prometheus.yml
           docker run --rm --entrypoint /bin/promtool \
             --volume "${PWD}/deployments/docker/prometheus:/etc/prometheus:ro" \
             "${PROMETHEUS_IMAGE}" check rules /etc/prometheus/apexload-rules.yml
+
+      - name: Run PostgreSQL storage migration integration test
+        env:
+          POSTGRES_TEST_PASSWORD: ci-postgres-scheduler-test
+        run: |
+          set -euo pipefail
+          postgres_test_container="apexload-postgres-test-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          postgres_test_image=$(docker compose --file compose.yaml \
+            --file deployments/docker/compose.data-platform.yaml \
+            config --format json | jq --raw-output '.services.postgres.image')
+          docker run --detach --name "${postgres_test_container}" \
+            --env POSTGRES_DB=apexload \
+            --env POSTGRES_USER=apexload \
+            --env POSTGRES_PASSWORD="${POSTGRES_TEST_PASSWORD}" \
+            --publish 127.0.0.1::5432 \
+            "${postgres_test_image}" >/dev/null
+          trap 'docker rm --force "${postgres_test_container}" >/dev/null 2>&1 || true' EXIT
+
+          for attempt in $(seq 1 30); do
+            if docker exec --env PGPASSWORD="${POSTGRES_TEST_PASSWORD}" \
+              "${postgres_test_container}" \
+              psql -h 127.0.0.1 -U apexload -d apexload \
+                --tuples-only --no-align --command 'SELECT 1' 2>/dev/null | grep -qx '1'; then
+              break
+            fi
+            if [[ "${attempt}" == 30 ]]; then
+              docker logs "${postgres_test_container}" >&2
+              exit 1
+            fi
+            sleep 1
+          done
+
+          postgres_test_port=$(docker port "${postgres_test_container}" 5432/tcp | awk -F: 'NR == 1 { print $NF }')
+          test -n "${postgres_test_port}"
+          APEXLOAD_TEST_POSTGRES_URL="postgres://apexload:${POSTGRES_TEST_PASSWORD}@127.0.0.1:${postgres_test_port}/apexload?sslmode=disable" \
+            go test -tags postgres_integration ./pkg/storage \
+              -run '^TestPostgresSchedulerLeaseGenerationMigration$' -count=1
 
   containers:
     name: Container (${{ matrix.binary }}, ${{ matrix.profile }})

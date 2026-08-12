@@ -91,6 +91,10 @@ func (b *distributedExecutionBackend) SystemInventory(ctx context.Context) []Gen
 					entry.CPULimitCores = snapshot.CPULimitCores
 					entry.MemoryLimitBytes = snapshot.MemoryLimitBytes
 					entry.MaxVUsers = snapshot.MaxVUsers
+					entry.RunSupervisionExpirationsTotal = snapshot.RunSupervisionExpirationsTotal
+					entry.RunSupervisionEscalationsTotal = snapshot.RunSupervisionEscalationsTotal
+					entry.LastSafetyExit = generatorSafetyExitEvidenceForInventory(snapshot.LastSafetyExit)
+					entry.SafetyExits = generatorSafetyExitEvidenceListForInventory(snapshot.SafetyExits)
 					entry.CapacityState = generatorCapacityState(entry.AvailableCapacity, entry.MaxVUsers, true)
 					entry.HealthScore = generatorHealthScore(true, entry.CapacityState)
 				}
@@ -111,6 +115,34 @@ enqueue:
 	close(jobs)
 	wg.Wait()
 	return entries
+}
+
+func generatorSafetyExitEvidenceForInventory(value *generatorrpc.GeneratorSafetyExitEvidence) *GeneratorSafetyExitEvidence {
+	if value == nil {
+		return nil
+	}
+	return &GeneratorSafetyExitEvidence{
+		TestID:                value.TestID,
+		ExecutionGeneration:   value.ExecutionGeneration,
+		LifecycleState:        value.LifecycleState,
+		Reason:                value.Reason,
+		RequestedAt:           value.RequestedAt,
+		OutstandingExecutions: value.OutstandingExecutions,
+	}
+}
+
+func generatorSafetyExitEvidenceListForInventory(values []generatorrpc.GeneratorSafetyExitEvidence) []GeneratorSafetyExitEvidence {
+	if len(values) == 0 {
+		return nil
+	}
+	out := make([]GeneratorSafetyExitEvidence, 0, len(values))
+	for index := range values {
+		converted := generatorSafetyExitEvidenceForInventory(&values[index])
+		if converted != nil {
+			out = append(out, *converted)
+		}
+	}
+	return out
 }
 
 func applyGeneratorStatsToInventory(entry *GeneratorInventoryEntry, stats generatorrpc.GeneratorStats) {

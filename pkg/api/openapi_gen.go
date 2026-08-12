@@ -568,6 +568,103 @@ func openAPIComponentSchemas() map[string]oasSchema {
 			},
 			Required: []string{"error"},
 		},
+		"SystemReadinessDetails": {
+			Type:        "object",
+			Description: "Sanitized operational metadata whose fields vary by check. Secret-bearing configuration values are never returned.",
+			Properties: map[string]oasSchema{
+				"enabled":                  {Type: "boolean"},
+				"configured":               {Type: "boolean"},
+				"namespace":                {Type: "string"},
+				"pod_count":                {Type: "integer"},
+				"ready_pods":               {Type: "integer"},
+				"terminating_pods":         {Type: "integer"},
+				"probe_latency_ms":         {Type: "number", Format: "double"},
+				"reason":                   {Type: "string"},
+				"store_type":               {Type: "string", Enum: []string{"sqlite", "postgres", "unknown"}},
+				"lease_capability":         {Type: "boolean"},
+				"timescaledb_enabled":      {Type: "boolean"},
+				"cache_backend":            {Type: "string", Enum: []string{"memory", "redis", "valkey", "unknown"}},
+				"redis_url_configured":     {Type: "boolean"},
+				"tls_enabled":              {Type: "boolean"},
+				"endpoint":                 {Type: "string", Description: "Credential-free Redis/Valkey scheme and authority when safely parseable."},
+				"timeout":                  {Type: "string"},
+				"config_error":             {Type: "string", Description: "Sanitized cache configuration category."},
+				"execution_mode":           {Type: "string", Enum: []string{"local", "distributed"}},
+				"generators":               {Type: "integer"},
+				"available":                {Type: "integer"},
+				"unreachable":              {Type: "integer"},
+				"grpc_transport":           {Type: "string"},
+				"enabled_schedules":        {Type: "integer"},
+				"due_schedules":            {Type: "integer"},
+				"errored_schedules":        {Type: "integer"},
+				"metrics_interval_seconds": {Type: "integer"},
+				"ws_clients":               {Type: "integer"},
+			},
+			AdditionalProperties: boolPointer(true),
+		},
+		"SystemReadinessCheck": {
+			Type: "object",
+			Properties: map[string]oasSchema{
+				"name": {
+					Type: "string",
+					Enum: []string{
+						"kubernetes_api", "metadata_store", "archive_writer", "cache_backend",
+						"generator_rpc", "telemetry_fanout", "auth_mode", "platform_integrations",
+						"github_enterprise", "scheduler_state",
+					},
+				},
+				"status":  {Type: "string", Enum: []string{"ready", "degraded", "not_ready"}},
+				"message": {Type: "string"},
+				"details": {Ref: "#/components/schemas/SystemReadinessDetails"},
+			},
+			Required: []string{"name", "status", "message"},
+		},
+		"SystemReadinessResponse": {
+			Type: "object",
+			Properties: map[string]oasSchema{
+				"status":       {Type: "string", Enum: []string{"ready", "degraded", "not_ready"}},
+				"generated_at": {Type: "string", Format: "date-time"},
+				"checks": {
+					Type:  "array",
+					Items: &oasSchema{Ref: "#/components/schemas/SystemReadinessCheck"},
+				},
+			},
+			Required: []string{"status", "generated_at", "checks"},
+		},
+		"ProjectReleaseCreateRequest": {
+			Type:        "object",
+			Description: "Creates one logical release family joined to every application in the project.",
+			Properties: map[string]oasSchema{
+				"name":           {Type: "string"},
+				"application_id": {Type: "string", Description: "Preferred application member returned for immediate selection."},
+			},
+			Required: []string{"name"},
+		},
+		"ReleaseFamily": {
+			Type:        "object",
+			Description: "Canonical project release family. id and group_id are the stable family id; member_ids maps application ids to physical release ids used for run placement.",
+			Properties: map[string]oasSchema{
+				"id":                     {Type: "string"},
+				"group_id":               {Type: "string"},
+				"project_id":             {Type: "string"},
+				"application_id":         {Type: "string"},
+				"application_release_id": {Type: "string"},
+				"member_ids":             openAPIStringMap("Application id to physical release id."),
+				"name":                   {Type: "string"},
+				"created_at":             {Type: "string", Format: "date-time"},
+				"updated_at":             {Type: "string", Format: "date-time"},
+				"archived_at":            {Type: "string", Format: "date-time", Nullable: true},
+			},
+			Required: []string{"id", "group_id", "project_id", "name", "created_at", "updated_at", "member_ids"},
+		},
+		"ReleaseFamilyListResponse": {
+			Type: "object",
+			Properties: map[string]oasSchema{
+				"releases": {Type: "array", Items: &oasSchema{Ref: "#/components/schemas/ReleaseFamily"}},
+				"count":    {Type: "integer"},
+			},
+			Required: []string{"releases", "count"},
+		},
 		"ScriptDebugBreakpoint": {
 			Type: "object",
 			Properties: map[string]oasSchema{
@@ -1247,6 +1344,9 @@ func openAPIStringMap(description string) oasSchema {
 }
 
 func requestBodyForRoute(method, path string) *oasRequestBody {
+	if method == http.MethodPost && path == "/api/v1/projects/{id}/releases" {
+		return jsonRequestBody("ProjectReleaseCreateRequest", true)
+	}
 	if method == http.MethodPost && path == "/api/v1/scripts/authoring/sessions" {
 		return jsonRequestBody("AuthoringSessionCreateRequest", true)
 	}
@@ -1270,6 +1370,12 @@ func requestBodyForRoute(method, path string) *oasRequestBody {
 
 func responseSchemasForRoute(method, path string, responses map[string]oasResponse) map[string]oasResponse {
 	switch {
+	case method == http.MethodGet && path == "/api/v1/system/readiness":
+		return systemReadinessOpenAPIResponses()
+	case method == http.MethodGet && path == "/api/v1/projects/{id}/releases":
+		setJSONResponseSchema(responses, "200", "ReleaseFamilyListResponse")
+	case method == http.MethodPost && path == "/api/v1/projects/{id}/releases":
+		setJSONResponseSchema(responses, "201", "ReleaseFamily")
 	case method == http.MethodGet && strings.HasSuffix(path, "/swagger.yaml"):
 		setResponseMediaSchema(responses, "2XX", "application/yaml", oasSchema{Type: "string"})
 	case method == http.MethodGet && strings.HasSuffix(path, "/endpoint-catalog"):
@@ -1286,6 +1392,24 @@ func responseSchemasForRoute(method, path string, responses map[string]oasRespon
 		}
 	}
 	return responses
+}
+
+func systemReadinessOpenAPIResponses() map[string]oasResponse {
+	media := map[string]oasMediaType{
+		"application/json": {Schema: oasSchema{Ref: "#/components/schemas/SystemReadinessResponse"}},
+	}
+	return map[string]oasResponse{
+		"200": {
+			Description: "The controller is ready or operational with advisory degradation.",
+			Content:     media,
+		},
+		"503": {
+			Description: "At least one required dependency is not ready.",
+			Content: map[string]oasMediaType{
+				"application/json": {Schema: oasSchema{Ref: "#/components/schemas/SystemReadinessResponse"}},
+			},
+		},
+	}
 }
 
 func setResponseMediaSchema(responses map[string]oasResponse, status, mediaType string, schema oasSchema) {

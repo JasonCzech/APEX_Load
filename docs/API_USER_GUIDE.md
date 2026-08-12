@@ -56,17 +56,20 @@ To force-disable automatic TLS compatibility defaults in any environment:
 APEXLOAD_DISABLE_TLS_COMPAT=true go run ./cmd/controller
 ```
 
-If `APEXLOAD_ENV=production|prod`, the persisted `auth.mode` setting must not be a bypass mode such as `dev`; the controller rejects that combination at startup. Use `oidc` or `trusted_headers` in production environments. (There is no `APEXLOAD_AUTH_MODE` environment variable — the mode is a stored system setting.)
+If `APEXLOAD_ENV=production|prod` or `APEXLOAD_REQUIRE_AUTH` enables production posture, the persisted `auth.mode` setting must not be `dev`, `disabled`, or `local`; the controller rejects that combination at startup. Use `oidc` or `trusted_headers` in production environments. (There is no `APEXLOAD_AUTH_MODE` environment variable — the mode is a stored system setting.)
 
 ## Authentication
 
-APEX Load supports three auth modes:
+APEX Load supports four auth modes:
 
 - `dev`: local development bypass. Do not use for shared environments.
+- `local`: non-production Local Test Login with database-backed personas and 12-hour sessions.
 - `trusted_headers`: an upstream gateway authenticates the user and forwards trusted identity headers.
 - `oidc`: APEX Load handles OIDC login, callback, signed session, and logout.
 
-For human users, OIDC or trusted headers prove identity, but APEX Load access is controlled by local user records and local role bindings. After bootstrap, an upstream-authenticated human principal must have an active local user whose `subject` matches the authenticated subject. Human effective roles come from `UserRoleBinding` rows, not from upstream role headers. Service accounts keep their existing key-based behavior.
+For human users, OIDC, trusted headers, or Local Test Login prove identity, but APEX Load access is controlled by local user records and local role bindings. After bootstrap, an upstream-authenticated human principal must have an active local user whose `subject` matches the authenticated subject. Human effective roles come from `UserRoleBinding` rows, not from upstream role headers. Service accounts keep their existing key-based behavior.
+
+Local Test Login is selected in Settings and takes effect after restart. It seeds `admin/admin` (system administrator), `domainadmin/domainadmin` (Default Domain administrator), `user/user` (read-only default workspace), and `dev/dev` (default workspace editor). Changes to fixture active state and role bindings in Access are preserved. Passwords are stored only as bcrypt hashes, and browser session tokens are stored only as SHA-256 hashes. These fixed credentials are deliberately rejected under production posture.
 
 Service-account automation can authenticate with either header:
 
@@ -88,8 +91,9 @@ Useful auth endpoints:
 | Method | Path | Purpose |
 | --- | --- | --- |
 | `GET` | `/api/v1/auth/login` | Initiate OIDC login flow; redirects to the configured identity provider. |
+| `POST` | `/api/v1/auth/login` | Start a Local Test Login session from a username and password. |
 | `GET` | `/api/v1/auth/callback` | OIDC callback; exchanges the authorization code for a signed session. |
-| `POST` | `/api/v1/auth/logout` | Invalidate the current OIDC session and redirect to the identity-provider logout. |
+| `POST` | `/api/v1/auth/logout` | CSRF-protected logout for the current OIDC or Local Test Login session. |
 | `GET` | `/api/v1/auth/me` | Current auth mode, local user status, locally resolved roles, and session metadata. |
 | `GET` | `/api/v1/auth/effective-access?project_id=<id>` | Operations allowed for the current principal from local user bindings or service-account roles. |
 | `GET` | `/api/v1/auth/access-matrix` | Full role-to-operation catalog. |
@@ -107,7 +111,7 @@ Useful auth endpoints:
 | `DELETE` | `/api/v1/auth/users/{id}/bindings/{binding_id}` | Remove one local role binding. Requires `manage_users` or `manage_user_bindings`, with delegated scope checks. |
 | `POST` | `/api/v1/auth/users/{id}/disable` | Disable a local user while preserving audit history. Requires `manage_users`. |
 | `POST` | `/api/v1/auth/users/{id}/enable` | Re-enable a local user. Requires `manage_users`. |
-| `POST` | `/api/v1/auth/users/{id}/revoke-sessions` | Increment the user's session epoch so existing OIDC sessions can no longer authenticate. |
+| `POST` | `/api/v1/auth/users/{id}/revoke-sessions` | Increment the user's session epoch so existing OIDC and local sessions can no longer authenticate. |
 | `GET` | `/api/v1/auth/user-activity` | Audit events plus attributed usage filtered by user, timeframe, domain, project, action, or status. |
 | `GET` | `/api/v1/auth/user-activity/export` | Export user activity as CSV. |
 | `GET` | `/api/v1/auth/service-accounts` | List service accounts. |
@@ -202,7 +206,7 @@ X-APEXLoad-Dev-View: admin|user
 X-APEXLoad-Dev-Project-ID: <project-id>
 ```
 
-These headers are honored only when the controller auth mode is `dev`. They are ignored in `trusted_headers` and `oidc` modes.
+These headers are honored only when the controller auth mode is `dev`. They are ignored in `local`, `trusted_headers`, and `oidc` modes.
 `user` mode uses global viewer access plus active-project editor access, so local checks match the common script/scenario authoring persona without granting system administration.
 
 ## Core Workflows

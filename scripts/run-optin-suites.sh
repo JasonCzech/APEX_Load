@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
 # Run the test suites that `go test ./...` excludes.
 #
-# The default suite skips every build-tag- and environment-gated suite, so they run
-# in no automated context unless someone runs them on purpose. This script is that
-# "on purpose": one command, an explicit per-suite verdict, and a non-zero exit if
-# any suite that actually ran failed.
+# The default suite skips every build-tag- and environment-gated suite. Dedicated
+# automation covers PostgreSQL migration CI and the protected weekly live-protocol
+# workflow; this script remains the one-command local runner, with an explicit
+# per-suite verdict and a non-zero exit if any suite that ran failed.
 #
 # Inventory and rationale: docs/OPTIN_TEST_SUITES.md
 #
 #   ./scripts/run-optin-suites.sh          # suites needing no external infrastructure
-#   ./scripts/run-optin-suites.sh --all    # also the live-broker suites
+#   ./scripts/run-optin-suites.sh --all    # also suites needing live infrastructure
 #   ./scripts/run-optin-suites.sh --list   # print the inventory, run nothing
 
 set -uo pipefail
@@ -106,6 +106,12 @@ run_suite "HA failover soak" \
 run_suite "performance smoke (perf evidence probes)" \
   "--all" "[[ ${run_all} == 1 ]]" \
   env APEXLOAD_RUN_PERFORMANCE_SMOKE=1 go test -count=1 ./pkg/perfevidence
+
+run_suite "live PostgreSQL scheduler-generation migration" \
+  "--all and APEXLOAD_TEST_POSTGRES_URL (dedicated test database)" \
+  "[[ ${run_all} == 1 && -n \"\${APEXLOAD_TEST_POSTGRES_URL:-}\" ]]" \
+  go test -tags postgres_integration -count=1 \
+    -run '^TestPostgresSchedulerLeaseGenerationMigration$' ./pkg/storage
 
 run_suite "live Kafka integration" \
   "--all and KAFKA_BROKERS" "[[ ${run_all} == 1 && -n \"\${KAFKA_BROKERS:-}\" ]]" \

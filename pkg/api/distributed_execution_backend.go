@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -53,6 +54,18 @@ type setupTimeoutMetricsClient interface {
 
 type coordinatedWorkCommitClient interface {
 	CommitWorkAt(ctx context.Context, testID string, executionGeneration uint64, startAt time.Time) (generatorrpc.WorkCommitResult, error)
+}
+
+type supervisedWorkCommitClient interface {
+	CommitWorkSupervisedAt(ctx context.Context, testID string, executionGeneration uint64, startAt time.Time, token []byte) (generatorrpc.WorkCommitResult, error)
+}
+
+type runSupervisionGeneratorClient interface {
+	ClaimRunSupervision(context.Context, generatorrpc.RunSupervisionClaim) (generatorrpc.RunSupervisionResult, error)
+}
+
+type supervisedStopClient interface {
+	StopTestAtGenerationWithToken(context.Context, string, bool, uint64, []byte) (generatorrpc.StopResult, error)
 }
 
 // acknowledgedPauseClient is implemented by the production generator RPC
@@ -160,18 +173,34 @@ func (b *distributedExecutionBackend) openMetricsStreamWithSetupTimeout(ctx cont
 }
 
 type generatorLoadSnapshot struct {
-	Target             string
-	GeneratorID        string
-	AvailableCapacity  int32
-	Stats              generatorrpc.GeneratorStats
-	HeartbeatOK        bool
-	CPULimitCores      float64
-	MemoryLimitBytes   int64
-	MaxVUsers          int32
-	Version            string
-	SupportedProtocols []string
-	CompatibleFeatures []string
-	RuntimeCapacities  []generatorrpc.ProtocolRuntimeCapacity
+	Target                         string
+	GeneratorID                    string
+	AvailableCapacity              int32
+	Stats                          generatorrpc.GeneratorStats
+	HeartbeatOK                    bool
+	CPULimitCores                  float64
+	MemoryLimitBytes               int64
+	MaxVUsers                      int32
+	Version                        string
+	SupportedProtocols             []string
+	CompatibleFeatures             []string
+	RuntimeCapacities              []generatorrpc.ProtocolRuntimeCapacity
+	RunSupervisionExpirationsTotal uint64
+	RunSupervisionEscalationsTotal uint64
+	LastSafetyExit                 *generatorrpc.GeneratorSafetyExitEvidence
+	SafetyExits                    []generatorrpc.GeneratorSafetyExitEvidence
+}
+
+func cloneRemoteGeneratorSafetyExitEvidence(value *generatorrpc.GeneratorSafetyExitEvidence) *generatorrpc.GeneratorSafetyExitEvidence {
+	if value == nil {
+		return nil
+	}
+	copy := *value
+	return &copy
+}
+
+func cloneRemoteGeneratorSafetyExitEvidenceList(values []generatorrpc.GeneratorSafetyExitEvidence) []generatorrpc.GeneratorSafetyExitEvidence {
+	return append([]generatorrpc.GeneratorSafetyExitEvidence(nil), values...)
 }
 
 func cloneProtocolRuntimeCapacities(values []generatorrpc.ProtocolRuntimeCapacity) []generatorrpc.ProtocolRuntimeCapacity {
@@ -239,7 +268,10 @@ type distributedExecutionBackend struct {
 	// time a generator's id↔target mapping is established or changes — i.e. when a
 	// generator (re)connects. The Server uses it to apply a persisted metadata
 	// cordon to the now-live drain state.
-	onIdentityRecorded func(generatorID string)
+	onIdentityRecorded    func(generatorID string)
+	requireRunSupervision bool
+	runSupervisionTTL     time.Duration
+	runSupervisionRenew   time.Duration
 }
 
 // setOnIdentityRecorded registers a hook fired when a generator (re)connects.
@@ -268,14 +300,29 @@ func newDistributedExecutionBackend(targets []string, timeout time.Duration, dia
 		clonedTargets = append(clonedTargets, spec)
 	}
 	return &distributedExecutionBackend{
-		targets:         clonedTargets,
-		timeout:         timeout,
-		stopGrace:       max(2*timeout, 5*time.Second),
-		dial:            dial,
-		drainStates:     make(map[string]string),
-		testLeaseFences: make(map[distributedTestLeaseFenceKey]uint64),
-		targetIDs:       make(map[string]string),
-		idTargets:       make(map[string]string),
+		targets:             clonedTargets,
+		timeout:             timeout,
+		stopGrace:           max(2*timeout, 5*time.Second),
+		dial:                dial,
+		drainStates:         make(map[string]string),
+		testLeaseFences:     make(map[distributedTestLeaseFenceKey]uint64),
+		targetIDs:           make(map[string]string),
+		idTargets:           make(map[string]string),
+		runSupervisionTTL:   60 * time.Second,
+		runSupervisionRenew: 10 * time.Second,
+	}
+}
+
+func (b *distributedExecutionBackend) enableRunSupervision(ttl, renew time.Duration) {
+	if b == nil {
+		return
+	}
+	b.requireRunSupervision = true
+	if ttl > 0 {
+		b.runSupervisionTTL = ttl
+	}
+	if renew > 0 {
+		b.runSupervisionRenew = renew
 	}
 }
 
@@ -732,6 +779,15 @@ func (tr *TestRunner) enrichGeneratorTargetSpecsWithLabels(specs []generatorTarg
 }
 
 func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
+	var runSupervisionToken [generatorrpc.RunSupervisionTokenSize]byte
+	var runSupervisionTokenBytes []byte
+	if b.requireRunSupervision {
+		if _, err := rand.Read(runSupervisionToken[:]); err != nil {
+			tr.failTestBeforeRunAndLog(test, fmt.Sprintf("generate run supervision token: %v", err))
+			return
+		}
+		runSupervisionTokenBytes = append([]byte(nil), runSupervisionToken[:]...)
+	}
 	executionGeneration, executionLeaseOwnerID, _, termErr := tr.generatorExecutionClaim()
 	if termErr != nil {
 		tr.failTestBeforeRunAndLog(test, fmt.Sprintf("capture generator execution term: %v", termErr))
@@ -755,9 +811,17 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 		tr.failTestBeforeRunAndLog(test, err.Error())
 		return
 	}
+	if err := tr.validateGeneratorLossTolerance(assignment); err != nil {
+		tr.mu.Unlock()
+		tr.failTestBeforeRunAndLog(test, err.Error())
+		return
+	}
 	test.Assignment = assignment
 	requireTestExecutionLease := assignmentToleratesGeneratorLoss(assignment)
 	test.executionGeneration = executionGeneration
+	if b.requireRunSupervision {
+		test.remoteRunSupervisionToken = runSupervisionToken
+	}
 	clearDistributedRunSecretSnapshotsLocked(test)
 	tr.mu.Unlock()
 
@@ -801,6 +865,17 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 	if executionCtx == nil {
 		executionCtx = context.Background()
 	}
+	// Metrics must outlive executionCtx during a graceful stop so the generator's
+	// terminal lifecycle batch can prove quiescence. This context is still bound
+	// to controller leadership and shutdown, and closeRemoteResources cancels it
+	// after terminalization.
+	remoteLifecycleCtx, remoteLifecycleCancel := tr.executionOperationContext(context.Background())
+	remoteLifecycleTransferred := false
+	defer func() {
+		if !remoteLifecycleTransferred {
+			remoteLifecycleCancel()
+		}
+	}()
 	clientsByTarget := make(map[string]generatorClient)
 	streamsByTarget := make(map[string]*generatorrpc.MetricsStream)
 	distributedScripts := make(map[string]map[string]struct{})
@@ -816,7 +891,12 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 		startedTargetsMu.Unlock()
 	}
 	var stopInitialLeaseKeeper context.CancelFunc
+	var stopRunSupervisionKeeper func()
 	cleanup := func(stopStarted bool) {
+		if stopRunSupervisionKeeper != nil {
+			stopRunSupervisionKeeper()
+			stopRunSupervisionKeeper = nil
+		}
 		if stopInitialLeaseKeeper != nil {
 			stopInitialLeaseKeeper()
 			stopInitialLeaseKeeper = nil
@@ -837,7 +917,7 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 					defer stopWorkers.Done()
 					for client := range stopJobs {
 						stopCtx, stopCancel := context.WithTimeout(context.Background(), b.timeout)
-						_, _ = stopGeneratorTest(stopCtx, client, test.ID, false, executionGeneration)
+						_, _ = stopGeneratorTestWithToken(stopCtx, client, test.ID, false, executionGeneration, runSupervisionTokenBytes)
 						stopCancel()
 					}
 				}()
@@ -851,6 +931,11 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 			_ = client.Close()
 		}
 		tr.clearDistributedRunSecretSnapshots(test)
+		tr.mu.Lock()
+		if tr.tests[test.ID] == test {
+			clear(test.remoteRunSupervisionToken[:])
+		}
+		tr.mu.Unlock()
 	}
 	failStartup := func(message string) {
 		cleanup(true)
@@ -922,6 +1007,11 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 			continue
 		}
 		if result.client != nil {
+			if b.requireRunSupervision && !stringSliceContainsEqualFold(result.load.CompatibleFeatures, generatorrpc.FeatureRunSupervisionV1) {
+				_ = result.client.Close()
+				slog.Warn("distributed generator lacks required run supervision", "target", result.target, "feature", generatorrpc.FeatureRunSupervisionV1)
+				continue
+			}
 			clientsByTarget[result.target] = result.client
 			loadByTarget[result.target] = result.load
 		}
@@ -1071,6 +1161,7 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 				RedactionRules:            group.redactionRules,
 				SecretBundle:              secretBundle,
 				SecretBundleID:            secretBundleID,
+				RunSupervisionToken:       append([]byte(nil), runSupervisionTokenBytes...),
 			},
 			group.ScriptName,
 			func() bool { return distributedRunStartable(tr, test) },
@@ -1116,6 +1207,13 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 		_ = client.Close()
 		delete(clientsByTarget, target)
 	}
+	if b.requireRunSupervision {
+		if err := b.claimRunSupervisionClients(executionCtx, test.ID, assignedClients, executionGeneration, executionLeaseOwnerID, runSupervisionToken[:]); err != nil {
+			failStartup(fmt.Sprintf("establish generator run supervision: %v", err))
+			return
+		}
+		stopRunSupervisionKeeper = b.startRunSupervisionKeeper(executionCtx, tr, test, assignedClients, executionGeneration, executionLeaseOwnerID, runSupervisionToken)
+	}
 
 	if requireTestExecutionLease {
 		currentGeneration, currentOwnerID, leaseDeadline, claimErr := tr.generatorExecutionClaim()
@@ -1136,7 +1234,7 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 		if _, ok := streamsByTarget[target]; ok {
 			continue
 		}
-		stream, err := b.openMetricsStream(executionCtx, assignedClients[target], test.ID, executionGeneration)
+		stream, err := b.openMetricsStream(remoteLifecycleCtx, assignedClients[target], test.ID, executionGeneration)
 		if err != nil {
 			failStartup(fmt.Sprintf("open generator metrics stream for %q: %v", target, err))
 			return
@@ -1144,7 +1242,7 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 		streamsByTarget[target] = stream
 	}
 
-	started, activate, startErr := b.prepareDistributedTestRun(tr, test, activeGroupShards, assignedClients, streamsByTarget)
+	started, activate, startErr := b.prepareDistributedTestRunWithLifecycle(tr, test, activeGroupShards, assignedClients, streamsByTarget, remoteLifecycleCtx, remoteLifecycleCancel, time.Now())
 	if startErr != nil {
 		failStartup(startErr.Error())
 		return
@@ -1153,6 +1251,7 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 		cleanup(true)
 		return
 	}
+	remoteLifecycleTransferred = true
 	// Choose and durably persist the exact barrier only after the initial RUNNING
 	// transition. If persistence consumes its safety window, regenerate a later
 	// barrier before any generator is allowed to commit.
@@ -1164,7 +1263,7 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 		}
 		return
 	}
-	if err := b.commitDistributedWork(executionCtx, test.ID, executionGeneration, commitStartAt, assignedClients); err != nil {
+	if err := b.commitDistributedWork(executionCtx, test.ID, executionGeneration, commitStartAt, assignedClients, runSupervisionToken[:]); err != nil {
 		message := fmt.Sprintf("commit distributed work: %v", err)
 		if terminalErr := b.failClosedDistributedCommit(tr, test, message); terminalErr != nil {
 			slog.Error("distributed commit failure teardown remains retryable", "test_id", test.ID, "error", terminalErr)
@@ -1172,6 +1271,7 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 		return
 	}
 	activate()
+	stopRunSupervisionKeeper = nil // ownership is now retained by ManagedTest cleanup.
 	if requireTestExecutionLease {
 		// The staged keeper protects the assignment through metrics setup and
 		// coordinated commit. Once the live topology is published, start its
@@ -1426,7 +1526,7 @@ func distributedCommitAckTimeout(rpcTimeout time.Duration) time.Duration {
 	return min(rpcTimeout, 2*time.Second)
 }
 
-func (b *distributedExecutionBackend) commitDistributedWork(parent context.Context, testID string, executionGeneration uint64, startAt time.Time, clients map[string]generatorClient) error {
+func (b *distributedExecutionBackend) commitDistributedWork(parent context.Context, testID string, executionGeneration uint64, startAt time.Time, clients map[string]generatorClient, runSupervisionToken ...[]byte) error {
 	if parent == nil {
 		parent = context.Background()
 	}
@@ -1438,6 +1538,7 @@ func (b *distributedExecutionBackend) commitDistributedWork(parent context.Conte
 		return fmt.Errorf("no assigned generator clients")
 	}
 	committers := make(map[string]coordinatedWorkCommitClient, len(targets))
+	supervisedCommitters := make(map[string]supervisedWorkCommitClient, len(targets))
 	for _, target := range targets {
 		client := clients[target]
 		if client == nil {
@@ -1448,6 +1549,13 @@ func (b *distributedExecutionBackend) commitDistributedWork(parent context.Conte
 			return fmt.Errorf("generator client %q does not support coordinated staged work commit", target)
 		}
 		committers[target] = committer
+		if b.requireRunSupervision {
+			supervised, ok := client.(supervisedWorkCommitClient)
+			if !ok {
+				return fmt.Errorf("generator client %q does not support supervised staged work commit", target)
+			}
+			supervisedCommitters[target] = supervised
+		}
 	}
 
 	type commitResult struct {
@@ -1459,10 +1567,22 @@ func (b *distributedExecutionBackend) commitDistributedWork(parent context.Conte
 		target := target
 		go func() {
 			ctx, cancel := context.WithTimeout(parent, distributedCommitAckTimeout(b.timeout))
-			result, err := committers[target].CommitWorkAt(ctx, testID, executionGeneration, startAt)
+			var result generatorrpc.WorkCommitResult
+			var err error
+			if b.requireRunSupervision {
+				var token []byte
+				if len(runSupervisionToken) > 0 {
+					token = runSupervisionToken[0]
+				}
+				result, err = supervisedCommitters[target].CommitWorkSupervisedAt(ctx, testID, executionGeneration, startAt, token)
+			} else {
+				result, err = committers[target].CommitWorkAt(ctx, testID, executionGeneration, startAt)
+			}
 			cancel()
 			if err == nil && !result.Accepted {
 				err = fmt.Errorf("generator rejected commit: %s", strings.TrimSpace(result.ErrorMessage))
+			} else if err == nil && b.requireRunSupervision && (!result.RunSupervisionArmed || result.RunSupervisionTTL < 30*time.Second) {
+				err = fmt.Errorf("generator did not arm the required run supervision lease")
 			}
 			results <- commitResult{target: target, err: err}
 		}()
@@ -1542,6 +1662,7 @@ func (b *distributedExecutionBackend) stopTestContext(parent context.Context, tr
 	status := test.Status
 	executionGeneration := test.executionGeneration
 	executionCtx := test.executionCtx
+	runSupervisionToken := cloneRunSupervisionToken(test.remoteRunSupervisionToken)
 	tr.mu.RUnlock()
 	// Stop work is canceled by either the caller's deadline (shutdown/API) or
 	// the run/leadership epoch. Using executionCtx alone would silently ignore a
@@ -1599,7 +1720,7 @@ func (b *distributedExecutionBackend) stopTestContext(parent context.Context, tr
 				return
 			}
 			ctx, cancel := context.WithTimeout(stopBase, b.timeout)
-			stop, err := stopGeneratorTest(ctx, client, test.ID, graceful, executionGeneration)
+			stop, err := stopGeneratorTestWithToken(ctx, client, test.ID, graceful, executionGeneration, runSupervisionToken)
 			cancel()
 			if err == nil && !stop.Acknowledged {
 				err = fmt.Errorf("generator did not acknowledge stop for %s", test.ID)
@@ -1668,6 +1789,7 @@ func (b *distributedExecutionBackend) ScaleVUsers(tr *TestRunner, test *ManagedT
 	controlGeneration := test.remoteControlGeneration
 	executionGeneration := test.executionGeneration
 	executionCtx := test.executionCtx
+	runSupervisionToken := cloneRunSupervisionToken(test.remoteRunSupervisionToken)
 	groupExists := false
 	var scaleGroup TestGroup
 	for _, group := range test.Groups {
@@ -1717,6 +1839,7 @@ func (b *distributedExecutionBackend) ScaleVUsers(tr *TestRunner, test *ManagedT
 			ExecutionGeneration: executionGeneration,
 			GroupName:           groupName,
 			TargetVUsers:        int32(targetVUsers),
+			RunSupervisionToken: runSupervisionToken,
 		})
 		if err != nil || !adjustment.Accepted {
 			forwardErr := err
@@ -1725,7 +1848,7 @@ func (b *distributedExecutionBackend) ScaleVUsers(tr *TestRunner, test *ManagedT
 			} else {
 				forwardErr = fmt.Errorf("generator did not accept vuser adjustment for %s", test.ID)
 			}
-			rollbackErr := b.rollbackSingleShardVUsers(test.ID, executionGeneration, groupName, client, previousGroupVUsers)
+			rollbackErr := b.rollbackSingleShardVUsers(test.ID, executionGeneration, groupName, client, previousGroupVUsers, runSupervisionToken)
 			if rollbackErr != nil {
 				return &distributedVUserUncertainError{
 					testID:            test.ID,
@@ -1739,7 +1862,7 @@ func (b *distributedExecutionBackend) ScaleVUsers(tr *TestRunner, test *ManagedT
 		current := distributedControlCommitCurrentLocked(tr, test, "RUNNING", controlGeneration)
 		tr.mu.Unlock()
 		if !current {
-			rollbackErr := b.rollbackSingleShardVUsers(test.ID, executionGeneration, groupName, client, previousGroupVUsers)
+			rollbackErr := b.rollbackSingleShardVUsers(test.ID, executionGeneration, groupName, client, previousGroupVUsers, runSupervisionToken)
 			if rollbackErr != nil {
 				return &distributedVUserUncertainError{
 					testID:            test.ID,
@@ -1820,6 +1943,7 @@ func (b *distributedExecutionBackend) ScaleVUsers(tr *TestRunner, test *ManagedT
 				ExecutionGeneration: executionGeneration,
 				GroupName:           groupName,
 				TargetVUsers:        int32(shard.VUsers),
+				RunSupervisionToken: runSupervisionToken,
 			})
 			if err != nil {
 				adjustCh <- adjustResult{shard: shard, err: fmt.Errorf("adjust remote vusers on %s: %w", shard.Target, err)}
@@ -1848,7 +1972,7 @@ func (b *distributedExecutionBackend) ScaleVUsers(tr *TestRunner, test *ManagedT
 		}
 	}
 	if adjustErr != nil {
-		if rollbackErr := b.rollbackShardVUsers(executionCtx, test.ID, executionGeneration, groupName, clients, attempted, previousByTarget); rollbackErr != nil {
+		if rollbackErr := b.rollbackShardVUsers(executionCtx, test.ID, executionGeneration, groupName, clients, attempted, previousByTarget, runSupervisionToken); rollbackErr != nil {
 			return &distributedVUserUncertainError{
 				testID:            test.ID,
 				unresolvedTargets: shardTargets(attempted),
@@ -1860,7 +1984,7 @@ func (b *distributedExecutionBackend) ScaleVUsers(tr *TestRunner, test *ManagedT
 	tr.mu.Lock()
 	if !distributedControlCommitCurrentLocked(tr, test, "RUNNING", controlGeneration) {
 		tr.mu.Unlock()
-		if rollbackErr := b.rollbackShardVUsers(executionCtx, test.ID, executionGeneration, groupName, clients, attempted, previousByTarget); rollbackErr != nil {
+		if rollbackErr := b.rollbackShardVUsers(executionCtx, test.ID, executionGeneration, groupName, clients, attempted, previousByTarget, runSupervisionToken); rollbackErr != nil {
 			return &distributedVUserUncertainError{
 				testID:            test.ID,
 				unresolvedTargets: shardTargets(attempted),
@@ -1908,6 +2032,7 @@ func (b *distributedExecutionBackend) AdjustDuration(tr *TestRunner, test *Manag
 	}
 	executionGeneration := test.executionGeneration
 	executionCtx := test.executionCtx
+	runSupervisionToken := cloneRunSupervisionToken(test.remoteRunSupervisionToken)
 	tr.mu.RUnlock()
 	if executionCtx == nil {
 		executionCtx = context.Background()
@@ -1926,11 +2051,12 @@ func (b *distributedExecutionBackend) AdjustDuration(tr *TestRunner, test *Manag
 			ExecutionGeneration:   executionGeneration,
 			TargetDuration:        newDuration,
 			TargetDurationSeconds: distributedCompatibilityDurationSeconds(newDuration),
+			RunSupervisionToken:   runSupervisionToken,
 		})
 		cancel()
 		if err != nil {
 			forwardErr := fmt.Errorf("adjust remote duration on %s: %w", target, err)
-			rollbackErrs, unresolved := b.rollbackDurations(test.ID, executionGeneration, clients, attempted, previousDuration)
+			rollbackErrs, unresolved := b.rollbackDurations(test.ID, executionGeneration, clients, attempted, previousDuration, runSupervisionToken)
 			joined := errors.Join(append([]error{forwardErr}, rollbackErrs...)...)
 			if len(unresolved) > 0 {
 				return &distributedDurationUncertainError{testID: test.ID, unresolvedTargets: unresolved, err: joined}
@@ -1939,7 +2065,7 @@ func (b *distributedExecutionBackend) AdjustDuration(tr *TestRunner, test *Manag
 		}
 		if !result.Accepted {
 			forwardErr := fmt.Errorf("generator %s did not accept duration adjustment for %s", target, test.ID)
-			rollbackErrs, unresolved := b.rollbackDurations(test.ID, executionGeneration, clients, attempted, previousDuration)
+			rollbackErrs, unresolved := b.rollbackDurations(test.ID, executionGeneration, clients, attempted, previousDuration, runSupervisionToken)
 			joined := errors.Join(append([]error{forwardErr}, rollbackErrs...)...)
 			if len(unresolved) > 0 {
 				return &distributedDurationUncertainError{testID: test.ID, unresolvedTargets: unresolved, err: joined}
@@ -1950,7 +2076,7 @@ func (b *distributedExecutionBackend) AdjustDuration(tr *TestRunner, test *Manag
 	return nil
 }
 
-func (b *distributedExecutionBackend) rollbackDurations(testID string, executionGeneration uint64, clients map[string]generatorClient, attempted []string, previousDuration time.Duration) ([]error, []string) {
+func (b *distributedExecutionBackend) rollbackDurations(testID string, executionGeneration uint64, clients map[string]generatorClient, attempted []string, previousDuration time.Duration, runSupervisionToken []byte) ([]error, []string) {
 	rollbackErrs := make([]error, 0)
 	unresolved := make([]string, 0)
 	for i := len(attempted) - 1; i >= 0; i-- {
@@ -1969,6 +2095,7 @@ func (b *distributedExecutionBackend) rollbackDurations(testID string, execution
 				ExecutionGeneration:   executionGeneration,
 				TargetDuration:        previousDuration,
 				TargetDurationSeconds: distributedCompatibilityDurationSeconds(previousDuration),
+				RunSupervisionToken:   runSupervisionToken,
 			})
 			cancel()
 			if err == nil && result.Accepted {
@@ -2015,9 +2142,10 @@ func (b *distributedExecutionBackend) PauseTest(tr *TestRunner, test *ManagedTes
 	targets := orderedMetricsTargets(streams, b.configuredTargets())
 	tr.mu.RLock()
 	executionGeneration := test.executionGeneration
+	runSupervisionToken := cloneRunSupervisionToken(test.remoteRunSupervisionToken)
 	tr.mu.RUnlock()
 	return applyPauseControlFanout(test.ID, true, targets, func(target string, pause bool) error {
-		return streams[target].SendPause(generatorrpc.PauseControl{TestID: test.ID, ExecutionGeneration: executionGeneration, Pause: pause})
+		return streams[target].SendPause(generatorrpc.PauseControl{TestID: test.ID, ExecutionGeneration: executionGeneration, Pause: pause, RunSupervisionToken: runSupervisionToken})
 	})
 }
 
@@ -2032,9 +2160,10 @@ func (b *distributedExecutionBackend) ResumeTest(tr *TestRunner, test *ManagedTe
 	targets := orderedMetricsTargets(streams, b.configuredTargets())
 	tr.mu.RLock()
 	executionGeneration := test.executionGeneration
+	runSupervisionToken := cloneRunSupervisionToken(test.remoteRunSupervisionToken)
 	tr.mu.RUnlock()
 	return applyPauseControlFanout(test.ID, false, targets, func(target string, pause bool) error {
-		return streams[target].SendPause(generatorrpc.PauseControl{TestID: test.ID, ExecutionGeneration: executionGeneration, Pause: pause})
+		return streams[target].SendPause(generatorrpc.PauseControl{TestID: test.ID, ExecutionGeneration: executionGeneration, Pause: pause, RunSupervisionToken: runSupervisionToken})
 	})
 }
 
@@ -2057,6 +2186,7 @@ func (b *distributedExecutionBackend) applyAcknowledgedPauseControl(tr *TestRunn
 	tr.mu.Lock()
 	executionGeneration := test.executionGeneration
 	executionCtx := test.executionCtx
+	runSupervisionToken := cloneRunSupervisionToken(test.remoteRunSupervisionToken)
 	test.remotePauseOperationSequence++
 	if test.remotePauseOperationSequence == 0 {
 		test.remotePauseOperationSequence++
@@ -2077,6 +2207,7 @@ func (b *distributedExecutionBackend) applyAcknowledgedPauseControl(tr *TestRunn
 			Pause:               pause,
 			OperationID:         operationID,
 			OperationSequence:   operationSequence,
+			RunSupervisionToken: runSupervisionToken,
 		}); err != nil {
 			forwardErr := fmt.Errorf("apply acknowledged remote %s on %s: %w", pauseOperationName(pause), target, err)
 			compensationID := uuid.NewString()
@@ -2098,6 +2229,7 @@ func (b *distributedExecutionBackend) applyAcknowledgedPauseControl(tr *TestRunn
 					Pause:               !pause,
 					OperationID:         compensationID,
 					OperationSequence:   compensationSequence,
+					RunSupervisionToken: runSupervisionToken,
 				})
 				if rollbackErr != nil {
 					unresolved = append(unresolved, rollbackTarget)

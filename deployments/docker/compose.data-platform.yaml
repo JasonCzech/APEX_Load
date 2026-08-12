@@ -1,0 +1,75 @@
+# Opt-in local data-platform services for exercising APEX Load's PostgreSQL
+# metadata store and Redis cache/coordination paths. These credentials are for
+# local development only; override them in the repository's ignored .env file.
+services:
+  controller:
+    environment:
+      APEXLOAD_STORE: postgres
+      APEXLOAD_DATABASE_URL: "postgres://apexload:${APEXLOAD_LOCAL_POSTGRES_PASSWORD:-apexload-local-postgres}@postgres:5432/apexload?sslmode=disable"
+      APEXLOAD_DATABASE_MAX_OPEN_CONNS: "10"
+      APEXLOAD_DATABASE_MAX_IDLE_CONNS: "5"
+      APEXLOAD_DATABASE_CONN_MAX_LIFETIME: 30m
+      APEXLOAD_CACHE_BACKEND: redis
+      APEXLOAD_REDIS_URL: "redis://:${APEXLOAD_LOCAL_REDIS_PASSWORD:-apexload-local-redis}@redis:6379/0"
+      APEXLOAD_REDIS_KEY_PREFIX: apexload:local
+      APEXLOAD_REDIS_TIMEOUT: 2s
+      APEXLOAD_REDIS_FANOUT_CHANNEL: telemetry:fanout
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      default:
+      data-platform:
+
+  postgres:
+    image: postgres:16-alpine
+    init: true
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: apexload
+      POSTGRES_USER: apexload
+      POSTGRES_PASSWORD: "${APEXLOAD_LOCAL_POSTGRES_PASSWORD:-apexload-local-postgres}"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      data-platform:
+    healthcheck:
+      # The official image trusts loopback in pg_hba.conf, so use the service
+      # hostname to exercise the controller's password-authenticated path.
+      test: ["CMD-SHELL", "PGPASSWORD=\"$$POSTGRES_PASSWORD\" psql -h postgres -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\" -tAc 'SELECT 1' | grep -qx 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+
+  redis:
+    image: redis:7-alpine
+    init: true
+    restart: unless-stopped
+    environment:
+      REDIS_PASSWORD: "${APEXLOAD_LOCAL_REDIS_PASSWORD:-apexload-local-redis}"
+    command:
+      - /bin/sh
+      - -ec
+      - exec redis-server --appendonly yes --requirepass "$$REDIS_PASSWORD"
+    volumes:
+      - redis-data:/data
+    networks:
+      data-platform:
+    healthcheck:
+      # Exercise the same service-host network path used by the controller.
+      test: ["CMD-SHELL", "redis-cli -h redis --no-auth-warning -a \"$$REDIS_PASSWORD\" ping | grep -q PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+
+volumes:
+  postgres-data:
+  redis-data:
+
+networks:
+  data-platform:
+    internal: true

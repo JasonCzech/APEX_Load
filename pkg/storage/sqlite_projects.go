@@ -7,8 +7,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 func validateFolderCategory(category string) error {
@@ -554,7 +557,8 @@ func (s *SQLiteStore) SaveApplication(application *Application) error {
 	if err != nil {
 		return err
 	}
-	if affected == 1 {
+	applicationExisted := affected == 1
+	if applicationExisted {
 		var currentProjectID string
 		if err := tx.QueryRow(`SELECT COALESCE(project_id, '') FROM applications WHERE id = ?`, application.ID).Scan(&currentProjectID); err != nil {
 			return err
@@ -577,6 +581,52 @@ func (s *SQLiteStore) SaveApplication(application *Application) error {
 	}
 	if affected != 1 {
 		return fmt.Errorf("application %q belongs to another project", application.ID)
+	}
+	// Project release families are represented by one application-owned row per
+	// application. A newly-created application inherits every existing family so
+	// selecting it never makes project releases disappear.
+	if !applicationExisted {
+		rows, err := tx.Query(`SELECT COALESCE(NULLIF(group_id, ''), id), name, created_at, updated_at, archived_at
+			FROM releases
+			WHERE project_id = ?
+			ORDER BY COALESCE(NULLIF(group_id, ''), id) ASC, updated_at DESC, id ASC`, application.ProjectID)
+		if err != nil {
+			return err
+		}
+		type familySeed struct {
+			groupID    string
+			name       string
+			createdAt  time.Time
+			updatedAt  time.Time
+			archivedAt *time.Time
+		}
+		seeds := make([]familySeed, 0)
+		seenFamilies := make(map[string]struct{})
+		for rows.Next() {
+			var seed familySeed
+			if err := rows.Scan(&seed.groupID, &seed.name, &seed.createdAt, &seed.updatedAt, &seed.archivedAt); err != nil {
+				rows.Close()
+				return err
+			}
+			if _, exists := seenFamilies[seed.groupID]; exists {
+				continue
+			}
+			seenFamilies[seed.groupID] = struct{}{}
+			seeds = append(seeds, seed)
+		}
+		if err := rows.Err(); err != nil {
+			rows.Close()
+			return err
+		}
+		if err := rows.Close(); err != nil {
+			return err
+		}
+		for _, seed := range seeds {
+			if _, err := tx.Exec(`INSERT INTO releases (id, group_id, application_id, project_id, name, created_at, updated_at, archived_at)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, uuid.NewString(), seed.groupID, application.ID, application.ProjectID, seed.name, seed.createdAt, application.UpdatedAt, seed.archivedAt); err != nil {
+				return err
+			}
+		}
 	}
 	return tx.Commit()
 }
@@ -718,6 +768,10 @@ func (s *SQLiteStore) SaveRelease(release *Release) error {
 	if release.ID == "" {
 		return errors.New("release id is required")
 	}
+	release.GroupID = strings.TrimSpace(release.GroupID)
+	if release.GroupID == "" {
+		release.GroupID = release.ID
+	}
 	release.ApplicationID = normalizeApplicationID(strings.TrimSpace(release.ApplicationID))
 	if release.ApplicationID == "" {
 		return errors.New("release application id is required")
@@ -777,12 +831,12 @@ func (s *SQLiteStore) SaveRelease(release *Release) error {
 			return fmt.Errorf("release %q already belongs to application %q in project %q", release.ID, currentApplicationID, normalizeProjectID(currentProjectID))
 		}
 	}
-	result, err := tx.Exec(`INSERT INTO releases (id, application_id, project_id, name, created_at, updated_at, archived_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?)
-		ON CONFLICT(id) DO UPDATE SET name=excluded.name, updated_at=excluded.updated_at, archived_at=excluded.archived_at
+	result, err := tx.Exec(`INSERT INTO releases (id, group_id, application_id, project_id, name, created_at, updated_at, archived_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(id) DO UPDATE SET group_id=excluded.group_id, name=excluded.name, updated_at=excluded.updated_at, archived_at=excluded.archived_at
 		WHERE releases.application_id=excluded.application_id
 		AND COALESCE(NULLIF(releases.project_id, ''), '`+DefaultProjectID+`')=excluded.project_id`,
-		release.ID, release.ApplicationID, release.ProjectID, release.Name, release.CreatedAt, release.UpdatedAt, release.ArchivedAt)
+		release.ID, release.GroupID, release.ApplicationID, release.ProjectID, release.Name, release.CreatedAt, release.UpdatedAt, release.ArchivedAt)
 	if err != nil {
 		return err
 	}
@@ -813,10 +867,29 @@ func (s *SQLiteStore) UpdateReleaseIfUnchanged(release *Release, expectedUpdated
 		return false, err
 	}
 	defer tx.Rollback()
+	var preliminaryProjectID string
+	if err := tx.QueryRow(`SELECT COALESCE(project_id, '') FROM releases
+		WHERE id = ? OR COALESCE(NULLIF(group_id, ''), id) = ?
+		ORDER BY CASE WHEN id = ? THEN 0 ELSE 1 END, application_id ASC, id ASC LIMIT 1`, release.ID, release.ID, release.ID).Scan(&preliminaryProjectID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return false, nil
+		}
+		return false, err
+	}
+	preliminaryProjectID = normalizeProjectID(preliminaryProjectID)
+	if err := lockRequiredPlacementParent(tx,
+		`UPDATE projects SET updated_at = updated_at WHERE id = ?`, preliminaryProjectID, "release update", "project"); err != nil {
+		return false, err
+	}
 	var currentApplicationID, currentProjectID string
 	var currentUpdatedAt time.Time
 	var currentUpdatedRaw string
-	if err := tx.QueryRow(`SELECT application_id, COALESCE(project_id, ''), updated_at, CAST(updated_at AS TEXT) FROM releases WHERE id = ?`, release.ID).Scan(&currentApplicationID, &currentProjectID, &currentUpdatedAt, &currentUpdatedRaw); err != nil {
+	var currentID, groupID string
+	if err := tx.QueryRow(`SELECT id, COALESCE(NULLIF(group_id, ''), id), application_id, COALESCE(project_id, ''), updated_at, CAST(updated_at AS TEXT)
+		FROM releases
+		WHERE id = ? OR COALESCE(NULLIF(group_id, ''), id) = ?
+		ORDER BY CASE WHEN id = ? THEN 0 ELSE 1 END, application_id ASC, id ASC LIMIT 1`, release.ID, release.ID, release.ID).Scan(
+		&currentID, &groupID, &currentApplicationID, &currentProjectID, &currentUpdatedAt, &currentUpdatedRaw); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return false, nil
 		}
@@ -827,22 +900,46 @@ func (s *SQLiteStore) UpdateReleaseIfUnchanged(release *Release, expectedUpdated
 	}
 	release.ApplicationID = currentApplicationID
 	release.ProjectID = normalizeProjectID(currentProjectID)
+	release.ID = currentID
+	release.GroupID = groupID
 	release.UpdatedAt = time.Now()
-	result, err := tx.Exec(`UPDATE releases SET name = ?, updated_at = ? WHERE id = ? AND CAST(updated_at AS TEXT) = ?`, release.Name, release.UpdatedAt, release.ID, currentUpdatedRaw)
+	result, err := tx.Exec(`UPDATE releases SET name = ?, updated_at = ?
+		WHERE COALESCE(NULLIF(group_id, ''), id) = ? AND project_id = ?
+		AND EXISTS (SELECT 1 FROM releases current WHERE current.id = ? AND CAST(current.updated_at AS TEXT) = ?)`,
+		release.Name, release.UpdatedAt, groupID, release.ProjectID, currentID, currentUpdatedRaw)
 	if err != nil {
 		return false, err
 	}
 	affected, err := result.RowsAffected()
-	if err != nil || affected != 1 {
+	if err != nil || affected < 1 {
 		return false, err
 	}
 	return true, tx.Commit()
 }
 
+func resolveReleaseFamilyIdentityTx(tx *storeTx, id string) (projectID string, groupID string, err error) {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return "", "", errors.New("release id is required")
+	}
+	err = tx.QueryRow(`SELECT COALESCE(project_id, ''), COALESCE(NULLIF(group_id, ''), id)
+		FROM releases
+		WHERE id = ? OR COALESCE(NULLIF(group_id, ''), id) = ?
+		ORDER BY CASE WHEN id = ? THEN 0 ELSE 1 END, application_id ASC, id ASC LIMIT 1`, id, id, id).Scan(&projectID, &groupID)
+	if err != nil {
+		return "", "", err
+	}
+	return normalizeProjectID(projectID), groupID, nil
+}
+
 func (s *SQLiteStore) GetRelease(id string) (*Release, error) {
 	var release Release
-	err := s.db.QueryRow(`SELECT id, application_id, COALESCE(project_id, ''), name, created_at, updated_at, archived_at FROM releases WHERE id = ?`, id).Scan(
-		&release.ID, &release.ApplicationID, &release.ProjectID, &release.Name, &release.CreatedAt, &release.UpdatedAt, &release.ArchivedAt)
+	err := s.db.QueryRow(`SELECT id, COALESCE(NULLIF(group_id, ''), id), application_id, COALESCE(project_id, ''), name, created_at, updated_at, archived_at
+		FROM releases
+		WHERE id = ? OR COALESCE(NULLIF(group_id, ''), id) = ?
+		ORDER BY CASE WHEN id = ? THEN 0 ELSE 1 END, application_id ASC, id ASC
+		LIMIT 1`, id, id, id).Scan(
+		&release.ID, &release.GroupID, &release.ApplicationID, &release.ProjectID, &release.Name, &release.CreatedAt, &release.UpdatedAt, &release.ArchivedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -852,7 +949,7 @@ func (s *SQLiteStore) GetRelease(id string) (*Release, error) {
 
 func (s *SQLiteStore) ListReleases(applicationID string, includeArchived bool) ([]*Release, error) {
 	args := []any{}
-	query := `SELECT id, application_id, COALESCE(project_id, ''), name, created_at, updated_at, archived_at FROM releases`
+	query := `SELECT id, COALESCE(NULLIF(group_id, ''), id), application_id, COALESCE(project_id, ''), name, created_at, updated_at, archived_at FROM releases`
 	filters := []string{}
 	if applicationID != "" {
 		filters = append(filters, `application_id = ?`)
@@ -873,7 +970,7 @@ func (s *SQLiteStore) ListReleases(applicationID string, includeArchived bool) (
 	var releases []*Release
 	for rows.Next() {
 		var release Release
-		if err := rows.Scan(&release.ID, &release.ApplicationID, &release.ProjectID, &release.Name, &release.CreatedAt, &release.UpdatedAt, &release.ArchivedAt); err != nil {
+		if err := rows.Scan(&release.ID, &release.GroupID, &release.ApplicationID, &release.ProjectID, &release.Name, &release.CreatedAt, &release.UpdatedAt, &release.ArchivedAt); err != nil {
 			return nil, err
 		}
 		release.ProjectID = normalizeProjectID(release.ProjectID)
@@ -883,27 +980,191 @@ func (s *SQLiteStore) ListReleases(applicationID string, includeArchived bool) (
 }
 
 func (s *SQLiteStore) ListReleasesByProject(projectID string, includeArchived bool) ([]*Release, error) {
-	args := []any{normalizeProjectID(projectID)}
-	query := `SELECT id, application_id, COALESCE(project_id, ''), name, created_at, updated_at, archived_at FROM releases WHERE project_id = ?`
-	if !includeArchived {
-		query += ` AND archived_at IS NULL`
-	}
-	query += ` ORDER BY created_at DESC, name ASC`
-	rows, err := s.db.Query(query, args...)
+	projectID = normalizeProjectID(projectID)
+	rows, err := s.db.Query(`SELECT id, COALESCE(NULLIF(group_id, ''), id), application_id, COALESCE(project_id, ''), name, created_at, updated_at, archived_at
+		FROM releases
+		WHERE project_id = ?
+		ORDER BY COALESCE(NULLIF(group_id, ''), id) ASC, updated_at DESC, id ASC`, projectID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var releases []*Release
+	type familyState struct {
+		release       *Release
+		memberCount   int
+		archivedCount int
+	}
+	families := make(map[string]*familyState)
 	for rows.Next() {
 		var release Release
-		if err := rows.Scan(&release.ID, &release.ApplicationID, &release.ProjectID, &release.Name, &release.CreatedAt, &release.UpdatedAt, &release.ArchivedAt); err != nil {
+		if err := rows.Scan(&release.ID, &release.GroupID, &release.ApplicationID, &release.ProjectID, &release.Name, &release.CreatedAt, &release.UpdatedAt, &release.ArchivedAt); err != nil {
 			return nil, err
 		}
 		release.ProjectID = normalizeProjectID(release.ProjectID)
-		releases = append(releases, &release)
+		family := families[release.GroupID]
+		if family == nil {
+			family = &familyState{release: &Release{
+				ID: release.GroupID, GroupID: release.GroupID, ProjectID: release.ProjectID,
+				Name: release.Name, CreatedAt: release.CreatedAt, UpdatedAt: release.UpdatedAt,
+				ArchivedAt: release.ArchivedAt, MemberIDs: make(map[string]string),
+			}}
+			families[release.GroupID] = family
+		}
+		family.memberCount++
+		if release.ArchivedAt != nil {
+			family.archivedCount++
+		}
+		family.release.MemberIDs[release.ApplicationID] = release.ID
+		if release.CreatedAt.Before(family.release.CreatedAt) {
+			family.release.CreatedAt = release.CreatedAt
+		}
+		// Rows are ordered newest-first within a family, so the first row is the
+		// authoritative projection if an older installation ever contains a
+		// partially-reconciled family.
+		if family.release.ApplicationID == "" {
+			family.release.ApplicationID = release.ApplicationID
+			family.release.ApplicationReleaseID = release.ID
+		}
 	}
-	return releases, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	releases := make([]*Release, 0, len(families))
+	for _, family := range families {
+		if !includeArchived && family.archivedCount == family.memberCount {
+			continue
+		}
+		if family.archivedCount != family.memberCount {
+			family.release.ArchivedAt = nil
+		}
+		releases = append(releases, family.release)
+	}
+	sort.Slice(releases, func(i, j int) bool {
+		if releases[i].CreatedAt.Equal(releases[j].CreatedAt) {
+			return releases[i].Name < releases[j].Name
+		}
+		return releases[i].CreatedAt.After(releases[j].CreatedAt)
+	})
+	return releases, nil
+}
+
+// ListReleaseFamilyMembers resolves either a physical release id or a canonical
+// family id and returns every application-owned member in deterministic order.
+// It is intentionally optional on Store so lightweight API test stores retain
+// their exact-id behavior while SQL-backed controllers get family semantics.
+func (s *SQLiteStore) ListReleaseFamilyMembers(id string) ([]*Release, error) {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return nil, errors.New("release id is required")
+	}
+	rows, err := s.db.Query(`SELECT id, COALESCE(NULLIF(group_id, ''), id), application_id, COALESCE(project_id, ''), name, created_at, updated_at, archived_at
+		FROM releases
+		WHERE COALESCE(NULLIF(group_id, ''), id) = (
+			SELECT COALESCE(NULLIF(group_id, ''), id)
+			FROM releases
+			WHERE id = ? OR COALESCE(NULLIF(group_id, ''), id) = ?
+			ORDER BY CASE WHEN id = ? THEN 0 ELSE 1 END, application_id ASC, id ASC
+			LIMIT 1
+		)
+		ORDER BY application_id ASC, id ASC`, id, id, id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	members := make([]*Release, 0)
+	for rows.Next() {
+		var release Release
+		if err := rows.Scan(&release.ID, &release.GroupID, &release.ApplicationID, &release.ProjectID, &release.Name, &release.CreatedAt, &release.UpdatedAt, &release.ArchivedAt); err != nil {
+			return nil, err
+		}
+		release.ProjectID = normalizeProjectID(release.ProjectID)
+		members = append(members, &release)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if len(members) == 0 {
+		return nil, sql.ErrNoRows
+	}
+	return members, nil
+}
+
+// CreateProjectReleaseFamily creates one application-owned release row for
+// every application in the project and returns the row for the preferred
+// application. The shared GroupID lets project-level updates remain singular
+// while run/test placement continues to reference an application-local row.
+func (s *SQLiteStore) CreateProjectReleaseFamily(projectID, name, preferredApplicationID string, createdAt time.Time) (*Release, error) {
+	projectID = normalizeProjectID(projectID)
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return nil, errors.New("release name is required")
+	}
+	if createdAt.IsZero() {
+		createdAt = time.Now()
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+	if err := lockRequiredPlacementParent(tx, `UPDATE projects SET updated_at = updated_at WHERE id = ?`, projectID, "release family", "project"); err != nil {
+		return nil, err
+	}
+	rows, err := tx.Query(`SELECT id FROM applications WHERE project_id = ? ORDER BY name ASC, id ASC`, projectID)
+	if err != nil {
+		return nil, err
+	}
+	applicationIDs := make([]string, 0)
+	for rows.Next() {
+		var applicationID string
+		if err := rows.Scan(&applicationID); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		applicationIDs = append(applicationIDs, applicationID)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return nil, err
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if len(applicationIDs) == 0 {
+		return nil, errors.New("project has no applications")
+	}
+	selectedApplicationID := applicationIDs[0]
+	if preferredApplicationID != "" {
+		selectedApplicationID = ""
+		for _, applicationID := range applicationIDs {
+			if applicationID == preferredApplicationID {
+				selectedApplicationID = applicationID
+				break
+			}
+		}
+		if selectedApplicationID == "" {
+			return nil, errors.New("application does not belong to project")
+		}
+	}
+	groupID := uuid.NewString()
+	var selected *Release
+	for _, applicationID := range applicationIDs {
+		release := &Release{
+			ID: uuid.NewString(), GroupID: groupID, ApplicationID: applicationID,
+			ProjectID: projectID, Name: name, CreatedAt: createdAt, UpdatedAt: createdAt,
+		}
+		if _, err := tx.Exec(`INSERT INTO releases (id, group_id, application_id, project_id, name, created_at, updated_at, archived_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, NULL)`, release.ID, release.GroupID, release.ApplicationID, release.ProjectID, release.Name, release.CreatedAt, release.UpdatedAt); err != nil {
+			return nil, err
+		}
+		if applicationID == selectedApplicationID {
+			selected = release
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return selected, nil
 }
 
 func (s *SQLiteStore) ArchiveRelease(id string) error {
@@ -916,7 +1177,25 @@ func (s *SQLiteStore) ArchiveRelease(id string) error {
 		return err
 	}
 	defer tx.Rollback()
-	locked, err := tx.Exec(`UPDATE releases SET updated_at = updated_at WHERE id = ?`, id)
+	projectID, groupID, err := resolveReleaseFamilyIdentityTx(tx, id)
+	if err != nil {
+		return err
+	}
+	if id == legacyReleaseID(projectID) || groupID == legacyReleaseID(projectID) {
+		return errors.New("legacy release cannot be archived")
+	}
+	// Family mutations use the same project -> application -> release hierarchy
+	// as child creation. Lock every member before checking dependencies so a
+	// concurrent writer cannot add a test or schedule behind the snapshot.
+	if err := lockRequiredPlacementParent(tx,
+		`UPDATE projects SET updated_at = updated_at WHERE id = ?`, projectID, "archive release", "project"); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`UPDATE applications SET updated_at = updated_at WHERE project_id = ?`, projectID); err != nil {
+		return err
+	}
+	locked, err := tx.Exec(`UPDATE releases SET updated_at = updated_at
+		WHERE project_id = ? AND COALESCE(NULLIF(group_id, ''), id) = ?`, projectID, groupID)
 	if err != nil {
 		return err
 	}
@@ -924,28 +1203,22 @@ func (s *SQLiteStore) ArchiveRelease(id string) error {
 	if err != nil {
 		return err
 	}
-	if affected != 1 {
+	if affected < 1 {
 		return sql.ErrNoRows
-	}
-	var projectID string
-	if err := tx.QueryRow(`SELECT COALESCE(project_id, '') FROM releases WHERE id = ?`, id).Scan(&projectID); err != nil {
-		return err
-	}
-	if id == legacyReleaseID(projectID) {
-		return errors.New("legacy release cannot be archived")
 	}
 	var count int
 	if err := tx.QueryRow(`SELECT
-		(SELECT COUNT(*) FROM tests WHERE release_id = ?) +
-		(SELECT COUNT(*) FROM external_result_imports WHERE release_id = ?) +
-		(SELECT COUNT(*) FROM scenario_schedules WHERE release_id = ?)`, id, id, id).Scan(&count); err != nil {
+		(SELECT COUNT(*) FROM tests WHERE release_id IN (SELECT id FROM releases WHERE project_id = ? AND COALESCE(NULLIF(group_id, ''), id) = ?)) +
+		(SELECT COUNT(*) FROM external_result_imports WHERE release_id IN (SELECT id FROM releases WHERE project_id = ? AND COALESCE(NULLIF(group_id, ''), id) = ?)) +
+		(SELECT COUNT(*) FROM scenario_schedules WHERE release_id IN (SELECT id FROM releases WHERE project_id = ? AND COALESCE(NULLIF(group_id, ''), id) = ?))`,
+		projectID, groupID, projectID, groupID, projectID, groupID).Scan(&count); err != nil {
 		return err
 	}
 	if count > 0 {
 		return errors.New("release has associated results or schedules; remove those references first")
 	}
 	now := time.Now()
-	if _, err := tx.Exec(`UPDATE releases SET archived_at = ?, updated_at = ? WHERE id = ?`, now, now, id); err != nil {
+	if _, err := tx.Exec(`UPDATE releases SET archived_at = ?, updated_at = ? WHERE project_id = ? AND COALESCE(NULLIF(group_id, ''), id) = ?`, now, now, projectID, groupID); err != nil {
 		return err
 	}
 	return tx.Commit()
@@ -964,15 +1237,15 @@ func (s *SQLiteStore) DeleteRelease(id string) error {
 		return err
 	}
 	defer tx.Rollback()
-	var applicationID, projectID string
-	if err := tx.QueryRow(`SELECT application_id, COALESCE(project_id, '') FROM releases WHERE id = ?`, id).Scan(&applicationID, &projectID); err != nil {
+	projectID, groupID, err := resolveReleaseFamilyIdentityTx(tx, id)
+	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil
 		}
 		return err
 	}
 	projectID = normalizeProjectID(projectID)
-	if id == legacyReleaseID(projectID) {
+	if id == legacyReleaseID(projectID) || groupID == legacyReleaseID(projectID) {
 		return errors.New("legacy release cannot be deleted")
 	}
 	// Use the same project -> application -> release order as SaveRelease and
@@ -981,25 +1254,32 @@ func (s *SQLiteStore) DeleteRelease(id string) error {
 	if _, err := tx.Exec(`UPDATE projects SET updated_at = updated_at WHERE id = ?`, projectID); err != nil {
 		return err
 	}
-	if _, err := tx.Exec(`UPDATE applications SET updated_at = updated_at WHERE id = ?`, applicationID); err != nil {
+	if _, err := tx.Exec(`UPDATE applications SET updated_at = updated_at WHERE project_id = ?`, projectID); err != nil {
 		return err
 	}
-	if err := lockRequiredPlacementParent(tx,
-		`UPDATE releases SET updated_at = updated_at WHERE id = ?`, id, "delete release", "release"); err != nil {
+	locked, err := tx.Exec(`UPDATE releases SET updated_at = updated_at
+		WHERE project_id = ? AND COALESCE(NULLIF(group_id, ''), id) = ?`, projectID, groupID)
+	if err != nil {
 		return err
+	}
+	if affected, err := locked.RowsAffected(); err != nil {
+		return err
+	} else if affected < 1 {
+		return sql.ErrNoRows
 	}
 	var dependentCount int
 	if err := tx.QueryRow(`SELECT
-		(SELECT COUNT(*) FROM tests WHERE release_id = ?) +
-		(SELECT COUNT(*) FROM external_result_imports WHERE release_id = ?) +
-		(SELECT COUNT(*) FROM scenario_schedules WHERE release_id = ?) +
-		(SELECT COUNT(*) FROM release_sla_waivers WHERE release_id = ?)`, id, id, id, id).Scan(&dependentCount); err != nil {
+		(SELECT COUNT(*) FROM tests WHERE release_id IN (SELECT id FROM releases WHERE project_id = ? AND COALESCE(NULLIF(group_id, ''), id) = ?)) +
+		(SELECT COUNT(*) FROM external_result_imports WHERE release_id IN (SELECT id FROM releases WHERE project_id = ? AND COALESCE(NULLIF(group_id, ''), id) = ?)) +
+		(SELECT COUNT(*) FROM scenario_schedules WHERE release_id IN (SELECT id FROM releases WHERE project_id = ? AND COALESCE(NULLIF(group_id, ''), id) = ?)) +
+		(SELECT COUNT(*) FROM release_sla_waivers WHERE release_id IN (SELECT id FROM releases WHERE project_id = ? AND COALESCE(NULLIF(group_id, ''), id) = ?))`,
+		projectID, groupID, projectID, groupID, projectID, groupID, projectID, groupID).Scan(&dependentCount); err != nil {
 		return err
 	}
 	if dependentCount > 0 {
 		return errors.New("release has associated results, schedules, or governance records")
 	}
-	if _, err := tx.Exec(`DELETE FROM releases WHERE id = ?`, id); err != nil {
+	if _, err := tx.Exec(`DELETE FROM releases WHERE project_id = ? AND COALESCE(NULLIF(group_id, ''), id) = ?`, projectID, groupID); err != nil {
 		return err
 	}
 	return tx.Commit()

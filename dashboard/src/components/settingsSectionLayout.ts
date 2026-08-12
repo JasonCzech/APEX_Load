@@ -3,8 +3,8 @@ export const SETTINGS_SECTIONS = [
   { id: 'thresholds', title: 'Performance Thresholds' },
   { id: 'capacity', title: 'Capacity Planning' },
   { id: 'domains', title: 'Domains' },
-  { id: 'applications', title: 'Applications & Releases' },
   { id: 'projects', title: 'Projects & Compliance' },
+  { id: 'applications', title: 'Applications & Releases' },
   { id: 'data-pools', title: 'Data Pools' },
   { id: 'integrations', title: 'Integrations' },
 ] as const
@@ -146,6 +146,12 @@ export function mergeSettingsOrder(order: SettingsSectionId[]) {
     }
     result.push(id)
   })
+  const projectIndex = result.indexOf('projects')
+  const applicationIndex = result.indexOf('applications')
+  if (projectIndex !== -1 && applicationIndex !== -1 && projectIndex !== applicationIndex - 1) {
+    result.splice(projectIndex, 1)
+    result.splice(result.indexOf('applications'), 0, 'projects')
+  }
   return result
 }
 

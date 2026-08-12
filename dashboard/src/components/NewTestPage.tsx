@@ -603,6 +603,8 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
   const [scheduledStartLocal, setScheduledStartLocal] = useState(initialPrefillStartLocal || '')
   const [effectiveAuthAccessResources, setEffectiveAuthAccessResources] = useState<DashboardAuthEffectiveAccessResource[]>([])
   const [effectiveAccessLoaded, setEffectiveAccessLoaded] = useState(false)
+  const [effectiveAccessError, setEffectiveAccessError] = useState('')
+  const [effectiveAccessRetryNonce, setEffectiveAccessRetryNonce] = useState(0)
   const [generatorInventory, setGeneratorInventory] = useState<SystemInventoryGenerator[]>([])
   const [generatorInventoryLoading, setGeneratorInventoryLoading] = useState(false)
   const [generatorInventoryError, setGeneratorInventoryError] = useState('')
@@ -662,6 +664,7 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
     setSelectedTimeslotId('')
     setEffectiveAuthAccessResources([])
     setEffectiveAccessLoaded(false)
+    setEffectiveAccessError('')
     setError('')
     scheduleRequestGenerationRef.current += 1
     scheduleOccurrenceRequestGenerationRef.current += 1
@@ -818,6 +821,7 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
     let cancelled = false
     setEffectiveAuthAccessResources([])
     setEffectiveAccessLoaded(false)
+    setEffectiveAccessError('')
     const loadEffectiveAccess = async () => {
       if (!activeProject?.id) {
         return
@@ -830,9 +834,10 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
         if (!cancelled) {
           setEffectiveAuthAccessResources(response.resources || [])
         }
-      } catch {
+      } catch (cause: unknown) {
         if (!cancelled) {
           setEffectiveAuthAccessResources([])
+          setEffectiveAccessError(getErrorMessage(cause, 'Unable to verify project permissions'))
         }
       } finally {
         if (!cancelled) {
@@ -844,7 +849,7 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
     return () => {
       cancelled = true
     }
-  }, [activeProject?.id, activeProject?.domain_id, api, applicationRepository?.id])
+  }, [activeProject?.id, activeProject?.domain_id, api, applicationRepository?.id, effectiveAccessRetryNonce])
   useEffect(() => {
     let cancelled = false
     const loadScheduleDefaults = async () => {
@@ -2413,7 +2418,13 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
       </div>
 
       {error && <ErrorDiagnostic error={error} fallback="Unable to create or load test setup" compact className="new-test-error-diagnostic" />}
-      {effectiveAccessLoaded && !canManageTests && <div className="settings-error-inline page-error-banner" role="alert">Current session can view scenarios but cannot create runs or schedules for this project.</div>}
+      {effectiveAccessLoaded && effectiveAccessError && (
+        <div className="settings-error-inline page-error-banner" role="alert">
+          {effectiveAccessError}. Permissions could not be verified, so run and schedule changes remain disabled.
+          <button className="btn btn-sm btn-secondary" type="button" onClick={() => setEffectiveAccessRetryNonce(value => value + 1)}>Retry permissions</button>
+        </div>
+      )}
+      {effectiveAccessLoaded && !effectiveAccessError && !canManageTests && <div className="settings-error-inline page-error-banner" role="alert">Current session can view scenarios but cannot create runs or schedules for this project.</div>}
       {queueRecovery && (
         <div className="new-test-launch-feedback warning" role="status">
           {queueRecovery.status === 'checking' ? (

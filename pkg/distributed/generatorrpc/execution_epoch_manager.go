@@ -32,6 +32,15 @@ type executionEpochManager struct {
 	executionEpochStateErr   error
 	executionEpochStatePath  string
 	executionLeaseOwner      string
+	// runSupervisionRestartFenceArmed is persisted before the first supervised
+	// lease is acknowledged in a generation. Inherited means this process did not
+	// arm it and therefore may not reconstruct pre-restart work. Expired is sticky
+	// for the live generation and prevents clean terminalization of other runs
+	// from disarming a fence established by a semantic lease expiry.
+	runSupervisionRestartFenceArmed     bool
+	runSupervisionRestartFenceInherited bool
+	runSupervisionRestartFenceDisarming bool
+	runSupervisionGenerationExpired     bool
 
 	// executionRestartRevalidation is set only while reconstructing a service
 	// from a positive durable high-water. It permits one exact-owner claim to
@@ -188,6 +197,10 @@ func (manager *executionEpochManager) commitPersistenceLocked(service *Service, 
 		manager.executionGeneration = persistence.generation
 		manager.executionLeaseOwner = persistence.leaseOwner
 		manager.executionRestartRevalidation = false
+		manager.runSupervisionRestartFenceArmed = false
+		manager.runSupervisionRestartFenceInherited = false
+		manager.runSupervisionRestartFenceDisarming = false
+		manager.runSupervisionGenerationExpired = false
 		service.resetTestExecutionLeasesForGenerationLocked(persistence.generation)
 		service.metricsBroker.fenceBeforeGeneration(persistence.generation)
 	} else if persistence.bindOwner {

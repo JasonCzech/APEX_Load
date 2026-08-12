@@ -27,7 +27,6 @@ import {
   WSMessage,
 } from "./types";
 import Sidebar, { type NavPage } from "./components/Sidebar";
-import type { DashboardSnapshotAudience } from "./components/DashboardPage";
 import TablePaginationManager from "./components/TablePaginationManager";
 import {
   type AppView,
@@ -134,6 +133,8 @@ import {
 import { openDesktopBrowserWithPreview } from "./hooks/apiClient";
 import {
   appendProjectTelemetryDiagnostic,
+  dashboardSnapshotAudience,
+  isCurrentApplicationCreateScope,
   isCurrentCatalogRequest,
   isCurrentRepositoryRequest,
   isProjectScopedMessageCurrent,
@@ -299,29 +300,6 @@ function renderTopbarMetaChip(chip: TopbarMetaChip) {
       {chip.label}
     </span>
   );
-}
-
-function dashboardSnapshotAudience(
-  authStatus: import("./types").DashboardAuthStatus | undefined,
-  devViewMode: string,
-  activeProjectId?: string,
-): DashboardSnapshotAudience {
-  if (authStatus?.mode === "dev") {
-    return devViewMode === "user" ? "user" : "admin";
-  }
-  if (!authStatus || !authStatus.enabled) {
-    return "admin";
-  }
-
-  const globalRoles = authStatus.user?.global_roles || [];
-  const projectRoles = activeProjectId
-    ? authStatus.user?.project_roles?.[activeProjectId] || []
-    : [];
-  return [...globalRoles, ...projectRoles].some(
-    (role) => role === "system_admin" || role === "project_admin",
-  )
-    ? "admin"
-    : "user";
 }
 
 function viewConsumesMetrics(view: AppView, testId: string) {
@@ -650,6 +628,16 @@ function AppShell({
 		deleteProject: deleteOuterProject,
     refreshProjects,
   } = outerProjectContext;
+  const applicationCreateScopeRef = useRef({
+    projectId: selectedProject?.id,
+    generation: 0,
+  });
+  if (applicationCreateScopeRef.current.projectId !== selectedProject?.id) {
+    applicationCreateScopeRef.current = {
+      projectId: selectedProject?.id,
+      generation: applicationCreateScopeRef.current.generation + 1,
+    };
+  }
   const domainProjects = useMemo(() => {
     const domainID = activeDomain?.id || "default";
     return projects.filter(
@@ -935,6 +923,7 @@ function AppShell({
     ApplicationContextValue["createAndSelectApplication"]
   >(
     async (name, projectID) => {
+      const invocationScope = { ...applicationCreateScopeRef.current };
       const target = resolveApplicationCreateTarget(
         projects,
         domainProjects,
@@ -964,6 +953,9 @@ function AppShell({
         name,
         target.project.id,
       );
+      if (!isCurrentApplicationCreateScope(invocationScope, applicationCreateScopeRef.current)) {
+        return created;
+      }
       if (target.project.id !== selectedProject?.id) {
         // The provider refused to select the created application because the
         // workspace still pointed at the previous project. Flip the scope in
@@ -1190,6 +1182,14 @@ function AppShell({
     "manage_repository_releases",
     false,
   );
+  const canManageApplications = effectiveAccessLoaded && !effectiveAccessError && isEffectiveOperationAllowed(
+    effectiveAccessResources,
+    "manage_applications",
+    false,
+  );
+  const canCreateReleases = effectiveAccessLoaded && !effectiveAccessError && (
+    canManageApplications || canManageRepositoryReleases
+  );
   const canManageRepository = isEffectiveOperationAllowed(
     effectiveAccessResources,
     "manage_application_repository",
@@ -1200,12 +1200,6 @@ function AppShell({
     "manage_system",
     false,
   );
-  const snapshotAudience = dashboardSnapshotAudience(
-    authStatus,
-    devViewMode,
-    activeProject?.id,
-  );
-
   const selectProjectScopeForRoute = useCallback(
     (projectID: string) => {
       const project = projects.find((candidate) => candidate.id === projectID);
@@ -2802,6 +2796,13 @@ function AppShell({
       repositoryCatalogState,
       activeDomain?.id,
     );
+  const snapshotAudience = dashboardSnapshotAudience(
+    authStatus,
+    devViewMode,
+    activeProject?.id,
+    activeDomain?.id,
+    applicationRepository?.id,
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -3043,6 +3044,7 @@ function AppShell({
           onCreateProject={createAndSelectProject}
           domains={domains}
           activeDomain={activeDomain}
+          applicationRepository={applicationRepository}
           onDomainChange={handleSidebarDomainChange}
           applications={applications}
           releases={releases}
@@ -3051,7 +3053,9 @@ function AppShell({
           onApplicationChange={handleSidebarApplicationChange}
           onReleaseChange={handleSidebarReleaseChange}
           onCreateApplication={createAndSelectApplication}
+          onCreateRelease={createAndSelectRelease}
           canCreateProjects={canManageRepositoryProjects}
+          canCreateReleases={canCreateReleases}
           showAccess={canUseAccessWorkspace}
         />
         <main
@@ -3554,6 +3558,7 @@ function AppContent() {
       <AuthGate
         state={authState}
         onDesktopHandlersChange={desktopHandlerCoordinator.setGatedHandlers}
+        onAuthenticationChanged={() => window.location.reload()}
       >
         <ProjectProvider>
           <ApplicationProvider>

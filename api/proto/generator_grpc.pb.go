@@ -20,6 +20,7 @@ const _ = grpc.SupportPackageIsVersion9
 
 const (
 	GeneratorControl_ClaimExecutionEpoch_FullMethodName   = "/apexload.v1.GeneratorControl/ClaimExecutionEpoch"
+	GeneratorControl_ClaimRunSupervision_FullMethodName   = "/apexload.v1.GeneratorControl/ClaimRunSupervision"
 	GeneratorControl_AssignWork_FullMethodName            = "/apexload.v1.GeneratorControl/AssignWork"
 	GeneratorControl_CommitWork_FullMethodName            = "/apexload.v1.GeneratorControl/CommitWork"
 	GeneratorControl_AdjustVUsers_FullMethodName          = "/apexload.v1.GeneratorControl/AdjustVUsers"
@@ -43,6 +44,9 @@ type GeneratorControlClient interface {
 	// ClaimExecutionEpoch establishes or renews the controller execution term on
 	// this generator. A higher generation fences all lower-generation work.
 	ClaimExecutionEpoch(ctx context.Context, in *ExecutionEpochClaim, opts ...grpc.CallOption) (*ExecutionEpochAck, error)
+	// ClaimRunSupervision establishes or renews the controller-owned deadman
+	// lease for one staged or active test. No other RPC renews this lease.
+	ClaimRunSupervision(ctx context.Context, in *RunSupervisionClaim, opts ...grpc.CallOption) (*RunSupervisionAck, error)
 	// AssignWork sends a test script and VUser allocation to a generator.
 	AssignWork(ctx context.Context, in *WorkAssignment, opts ...grpc.CallOption) (*AssignmentAck, error)
 	// CommitWork releases every successfully staged shard for one test on this
@@ -88,6 +92,16 @@ func (c *generatorControlClient) ClaimExecutionEpoch(ctx context.Context, in *Ex
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ExecutionEpochAck)
 	err := c.cc.Invoke(ctx, GeneratorControl_ClaimExecutionEpoch_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *generatorControlClient) ClaimRunSupervision(ctx context.Context, in *RunSupervisionClaim, opts ...grpc.CallOption) (*RunSupervisionAck, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RunSupervisionAck)
+	err := c.cc.Invoke(ctx, GeneratorControl_ClaimRunSupervision_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -229,6 +243,9 @@ type GeneratorControlServer interface {
 	// ClaimExecutionEpoch establishes or renews the controller execution term on
 	// this generator. A higher generation fences all lower-generation work.
 	ClaimExecutionEpoch(context.Context, *ExecutionEpochClaim) (*ExecutionEpochAck, error)
+	// ClaimRunSupervision establishes or renews the controller-owned deadman
+	// lease for one staged or active test. No other RPC renews this lease.
+	ClaimRunSupervision(context.Context, *RunSupervisionClaim) (*RunSupervisionAck, error)
 	// AssignWork sends a test script and VUser allocation to a generator.
 	AssignWork(context.Context, *WorkAssignment) (*AssignmentAck, error)
 	// CommitWork releases every successfully staged shard for one test on this
@@ -272,6 +289,9 @@ type UnimplementedGeneratorControlServer struct{}
 
 func (UnimplementedGeneratorControlServer) ClaimExecutionEpoch(context.Context, *ExecutionEpochClaim) (*ExecutionEpochAck, error) {
 	return nil, status.Error(codes.Unimplemented, "method ClaimExecutionEpoch not implemented")
+}
+func (UnimplementedGeneratorControlServer) ClaimRunSupervision(context.Context, *RunSupervisionClaim) (*RunSupervisionAck, error) {
+	return nil, status.Error(codes.Unimplemented, "method ClaimRunSupervision not implemented")
 }
 func (UnimplementedGeneratorControlServer) AssignWork(context.Context, *WorkAssignment) (*AssignmentAck, error) {
 	return nil, status.Error(codes.Unimplemented, "method AssignWork not implemented")
@@ -341,6 +361,24 @@ func _GeneratorControl_ClaimExecutionEpoch_Handler(srv interface{}, ctx context.
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(GeneratorControlServer).ClaimExecutionEpoch(ctx, req.(*ExecutionEpochClaim))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _GeneratorControl_ClaimRunSupervision_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RunSupervisionClaim)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(GeneratorControlServer).ClaimRunSupervision(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: GeneratorControl_ClaimRunSupervision_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(GeneratorControlServer).ClaimRunSupervision(ctx, req.(*RunSupervisionClaim))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -524,6 +562,10 @@ var GeneratorControl_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ClaimExecutionEpoch",
 			Handler:    _GeneratorControl_ClaimExecutionEpoch_Handler,
+		},
+		{
+			MethodName: "ClaimRunSupervision",
+			Handler:    _GeneratorControl_ClaimRunSupervision_Handler,
 		},
 		{
 			MethodName: "AssignWork",

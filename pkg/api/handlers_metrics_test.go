@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/jasonczech/apexload/pkg/distributed/generatorrpc"
 )
 
 func TestHandlePrometheusMetricsExportsControllerState(t *testing.T) {
@@ -96,15 +98,18 @@ func TestHandlePrometheusMetricsExportsGeneratorRegionStats(t *testing.T) {
 	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080"})
 	server.runner.setExecutionBackend(stubInventoryBackend{entries: []GeneratorInventoryEntry{
 		{
-			Target:             "gen-a:9090",
-			GeneratorID:        "gen-a",
-			Region:             "us-east",
-			Status:             "connected",
-			CapacityState:      "available",
-			DrainState:         "active",
-			CompatibilityState: "compatible",
-			AvailableCapacity:  9000,
-			ActiveVUsers:       1000,
+			Target:                         "gen-a:9090",
+			GeneratorID:                    "gen-a",
+			Region:                         "us-east",
+			Status:                         "connected",
+			CapacityState:                  "available",
+			DrainState:                     "active",
+			CompatibilityState:             "compatible",
+			CompatibleFeatures:             []string{generatorrpc.FeatureRunSupervisionV1},
+			AvailableCapacity:              9000,
+			ActiveVUsers:                   1000,
+			RunSupervisionExpirationsTotal: 3,
+			RunSupervisionEscalationsTotal: 1,
 		},
 		{
 			Target:             "gen-b:9090",
@@ -151,6 +156,8 @@ func TestHandlePrometheusMetricsExportsGeneratorRegionStats(t *testing.T) {
 		"apexload_generator_drain_state_count{region=\"us-east\",state=\"cordoned\"} 1",
 		"apexload_generator_compatibility_state_count{region=\"us-east\",state=\"compatible\"} 2",
 		"apexload_generator_compatibility_state_count{region=\"unassigned\",state=\"incompatible\"} 1",
+		"apexload_generator_run_supervision_expirations_total{region=\"us-east\",generator_id=\"gen-a\",target=\"gen-a:9090\"} 3",
+		"apexload_generator_run_supervision_escalations_total{region=\"us-east\",generator_id=\"gen-a\",target=\"gen-a:9090\"} 1",
 	}
 	for _, check := range checks {
 		if !strings.Contains(body, check) {

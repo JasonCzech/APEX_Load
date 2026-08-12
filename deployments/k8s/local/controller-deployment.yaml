@@ -16,7 +16,8 @@ spec:
         app.kubernetes.io/name: apexload-controller
         app.kubernetes.io/component: controller
     spec:
-      automountServiceAccountToken: false
+      serviceAccountName: apexload-controller
+      automountServiceAccountToken: true
       securityContext:
         runAsNonRoot: true
         runAsUser: 65532
@@ -45,6 +46,12 @@ spec:
               value: kubernetes
             - name: APEXLOAD_ADDR
               value: ":8080"
+            - name: APEXLOAD_K8S_RESTART_ENABLED
+              value: "true"
+            - name: APEXLOAD_K8S_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
             - name: APEXLOAD_DB
               value: /var/lib/apexload/apexload.db
             - name: APEXLOAD_STORE
@@ -62,6 +69,10 @@ spec:
             - name: APEXLOAD_EXPORT_DIR
               value: /var/lib/apexload/exports
             - name: APEXLOAD_GENERATOR_TIMEOUT
+              value: 10s
+            - name: APEXLOAD_GENERATOR_RUN_SUPERVISION_TTL
+              value: 60s
+            - name: APEXLOAD_GENERATOR_RUN_SUPERVISION_RENEW_INTERVAL
               value: 10s
             - name: APEXLOAD_GENERATORS
               value: dns://apexload-generator.apexload-local.svc.cluster.local:9090

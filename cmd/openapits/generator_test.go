@@ -64,6 +64,11 @@ paths:
                 $ref: '#/components/schemas/Widget'
         "204":
           description: No content
+        "503":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Widget'
   /widgets:
     post:
       operationId: createWidget
@@ -105,6 +110,7 @@ paths:
 		`"post": operations["createWidget"];`,
 		`"verbose"?: boolean;`,
 		`"application/json": components["schemas"]["Widget"];`,
+		`"503": {`,
 		`content?: never;`,
 		`export type JsonRequestBody<OperationId extends ApiOperationId> =`,
 		`export type JsonSuccessResponseBody<`,

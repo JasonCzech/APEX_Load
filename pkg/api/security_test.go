@@ -138,6 +138,9 @@ func TestCORSPreflightAllowsAllowListedWailsOrigin(t *testing.T) {
 	if got := allowed.Header().Get("Access-Control-Allow-Headers"); !strings.Contains(got, desktopCapabilityHeader) {
 		t.Fatalf("Access-Control-Allow-Headers = %q, want desktop capability header", got)
 	}
+	if got := allowed.Header().Get("Access-Control-Allow-Headers"); !strings.Contains(got, "If-Match") {
+		t.Fatalf("Access-Control-Allow-Headers = %q, want settings concurrency header", got)
+	}
 }
 
 func TestDesktopCapabilityMiddleware(t *testing.T) {
@@ -253,7 +256,7 @@ func TestDesktopAuthMaterialMiddlewareInjectsOnlyBoundInProcessSession(t *testin
 			return encodedSession, true
 		}
 		return "", false
-	})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	}, nil)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if _, err := r.Cookie(oidcStateCookieName); err == nil {
 			http.Error(w, "state cookie was not stripped", http.StatusBadRequest)
 			return

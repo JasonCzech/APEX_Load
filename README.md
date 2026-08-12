@@ -239,7 +239,7 @@ Controller runtime configuration:
 See [Project Secrets](docs/PROJECT_SECRETS.md) for provider setup, import
 migration governance, and secure distributed delivery requirements.
 
-Note: If you run with `APEXLOAD_ENV=production|prod`, the persisted authentication mode (Settings → Authentication, stored as `auth.mode`) must not be a bypass mode such as `dev`. The controller refuses to start in that combination by design; use `oidc` or `trusted_headers`.
+Note: If you run with `APEXLOAD_ENV=production|prod` or enable `APEXLOAD_REQUIRE_AUTH`, the persisted authentication mode (Settings → Authentication, stored as `auth.mode`) must not be `dev`, `disabled`, or the fixed-credential `local` test-login mode. The controller refuses to start in that combination by design; use `oidc` or `trusted_headers`.
 
 ## Build and Test
 

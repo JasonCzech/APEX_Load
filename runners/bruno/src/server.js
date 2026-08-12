@@ -28,6 +28,11 @@ const DEFAULT_STALE_ROOT_TTL_MS = 24 * 60 * 60 * 1000;
 const RUNNER_ROOT_PREFIX = 'apexload-bruno-runner-';
 const RUNNER_OWNER_FILE = '.apexload-owner.json';
 const MAX_RUNNER_OWNER_BYTES = 16 * 1024;
+const RUNNER_OWNER_LEASE_TTL_MS = 5000;
+const RUNNER_OWNER_LEASE_FEATURE = 'runner_owner_lease_v1';
+const SESSION_LEASE_TTL_MS = 5000;
+const SESSION_LEASE_FEATURE = 'bruno_session_lease_v1';
+const OWNER_CLEANUP_EXIT_DELAY_MS = 2000;
 
 function positiveInteger(value, fallback, name) {
   const parsed = Number(value ?? fallback);
@@ -161,11 +166,14 @@ async function provisionWorkerBounded(
   } catch (error) {
     if (interrupted) {
       // A non-cooperative factory may still return a worker after its caller was
-      // cancelled. Dispose that late worker independently; never reattach it to
-      // released capacity or await it from the request/shutdown path.
-      void pending.then(async (worker) => {
-        if (!await terminateWorkerBounded(worker, terminationTimeoutMS)) terminationFailed();
-      }, () => {});
+      // cancelled. Expose that late-worker containment barrier to the owning
+      // session: releasing capacity or acknowledging DELETE before it settles
+      // would let a later run's process-owner renewal preserve an orphan.
+      error.provisionContainment = pending.then(async (worker) => {
+        const contained = await terminateWorkerBounded(worker, terminationTimeoutMS);
+        if (!contained) terminationFailed();
+        return contained;
+      }, () => true);
     }
     throw error;
   } finally {
@@ -192,16 +200,21 @@ async function destroySessionResources(
   try { session.worker?.postMessage({ type: 'cancel' }); } catch {
     // The worker may already have exited; bounded termination below is authoritative.
   }
+  let contained = true;
   try {
     await finishPendingSession(session, terminalError, timeoutMS);
+		if (session.provisionDone) await session.provisionDone;
+		if (session.provisionContained === false) contained = false;
     session.closed = true;
     if (!await terminateWorkerBounded(session.worker, terminationTimeoutMS)) {
+			contained = false;
       terminationFailed();
     }
   } finally {
     session.closed = true;
     release(session);
   }
+	return contained;
 }
 
 function json(response, status, value) {
@@ -512,6 +525,26 @@ async function detectCollectionRoot(bundleRoot) {
 function createRunnerServer(options = {}) {
   const bundles = new Map();
   const sessions = new Map();
+	const sessionTombstones = new Map();
+	const sessionTombstoneOrder = [];
+	const sessionTombstoneTTLMS = 15 * 60 * 1000;
+	const maxSessionTombstones = 65536;
+  const requireOwnerLease = options.requireOwnerLease === true || process.env.APEXLOAD_BRUNO_RUNNER_OWNER_LEASE_V1 === 'true';
+	const requireSessionLease = requireOwnerLease;
+  const ownerLeaseTTLMS = positiveInteger(
+    options.ownerLeaseTTLMS,
+    RUNNER_OWNER_LEASE_TTL_MS,
+    'Bruno runner owner lease TTL milliseconds'
+  );
+	const sessionLeaseTTLMS = positiveInteger(
+		options.sessionLeaseTTLMS,
+		SESSION_LEASE_TTL_MS,
+		'Bruno session lease TTL milliseconds'
+	);
+  let runOwner = null;
+  let runOwnerTimer = null;
+  let runOwnerGeneration = 0;
+  let ownerTransitionTail = Promise.resolve();
   const maxBundleBytes = positiveInteger(
     options.maxBundleBytes ?? process.env.APEXLOAD_BRUNO_MAX_BUNDLE_BYTES,
     DEFAULT_MAX_BUNDLE_BYTES,
@@ -577,9 +610,74 @@ function createRunnerServer(options = {}) {
   const developerSessionFactory = options.developerSessionFactory;
   const sessionBindingKey = crypto.randomBytes(32);
   let cleanupFailed = false;
+  let cleanupExitTimer = null;
+  const processExit = typeof options.processExit === 'function' ? options.processExit : (code) => process.exit(code);
+	let exitCommitted = false;
+	const requestProcessExit = () => {
+		if (exitCommitted) return;
+		exitCommitted = true;
+		processExit(1);
+	};
+  const cleanupExitDelayMS = positiveInteger(
+    options.cleanupExitDelayMS,
+    OWNER_CLEANUP_EXIT_DELAY_MS,
+    'Bruno cleanup failure exit delay milliseconds'
+  );
+  const scheduleCleanupExit = () => {
+    if (cleanupExitTimer) return cleanupExitTimer;
+    cleanupExitTimer = setTimeout(requestProcessExit, cleanupExitDelayMS);
+    cleanupExitTimer.unref?.();
+    return cleanupExitTimer;
+  };
+  const cancelCleanupExit = (timer) => {
+    if (!timer || cleanupExitTimer !== timer || cleanupFailed) return;
+    clearTimeout(timer);
+    cleanupExitTimer = null;
+  };
   const markCleanupFailed = () => {
     cleanupFailed = true;
+    scheduleCleanupExit();
   };
+	const startScopedCleanupWatchdog = () => {
+		const timer = setTimeout(requestProcessExit, cleanupExitDelayMS);
+		timer.unref?.();
+		return timer;
+	};
+	const pruneSessionTombstones = (now = Date.now()) => {
+		while (sessionTombstoneOrder.length > 0) {
+			const id = sessionTombstoneOrder[0];
+			const tombstone = sessionTombstones.get(id);
+			if (tombstone && now < tombstone.expiresAt) break;
+			sessionTombstoneOrder.shift();
+			sessionTombstones.delete(id);
+		}
+	};
+	const retainSessionTombstone = (session, contained) => {
+		if (!session?.id || !session?.leaseToken) return;
+		pruneSessionTombstones();
+		sessionTombstones.set(session.id, {
+			tokenHash: crypto.createHash('sha256').update(session.leaseToken).digest(),
+			ownerEpoch: session.ownerEpoch,
+			ownerGeneration: session.ownerGeneration,
+			expiresAt: Date.now() + sessionTombstoneTTLMS,
+			contained: Boolean(contained)
+		});
+		sessionTombstoneOrder.push(session.id);
+		session.leaseToken = '';
+		while (sessionTombstones.size > maxSessionTombstones && sessionTombstoneOrder.length > 0) {
+			sessionTombstones.delete(sessionTombstoneOrder.shift());
+		}
+	};
+	const matchingSessionTombstone = (request, id, owner) => {
+		pruneSessionTombstones();
+		const tombstone = sessionTombstones.get(id);
+		if (!tombstone) return null;
+		if (requireOwnerLease && (!owner || tombstone.ownerEpoch !== owner.epoch || tombstone.ownerGeneration !== owner.generation)) return null;
+		if (!requireSessionLease) return tombstone;
+		const token = String(request.headers['x-apexload-session-lease-token'] || '');
+		if (!/^[a-f0-9]{64}$/.test(token)) return null;
+		return crypto.timingSafeEqual(tombstone.tokenHash, crypto.createHash('sha256').update(token).digest()) ? tombstone : null;
+	};
   if (egressBrokerURL) {
     const parsedBroker = new URL(egressBrokerURL);
     if (parsedBroker.protocol !== 'http:' || parsedBroker.username || parsedBroker.password) {
@@ -654,24 +752,59 @@ function createRunnerServer(options = {}) {
     await fsp.rm(path.join(root, bundle.id), { recursive: true, force: true });
   }
 
-	function destroySession(session, terminalError = 'Bruno runner session closed') {
-		if (!session) return Promise.resolve();
-		if (session.destroyPromise) return session.destroyPromise;
-		session.destroyPromise = destroySessionResources(
-			session,
+		function destroySession(session, terminalError = 'Bruno runner session closed') {
+			if (!session) return Promise.resolve();
+			if (session.destroyPromise) return session.destroyPromise;
+			session.leaseState = 'draining';
+			if (session.leaseTimer) clearTimeout(session.leaseTimer);
+			session.leaseTimer = null;
+			// This deadline starts at the per-session revocation boundary. Pending
+			// response drain and worker termination are best-effort inner phases;
+			// neither may extend an abandoned run beyond the advertised 2 seconds.
+			const cleanupWatchdog = startScopedCleanupWatchdog();
+			session.destroyPromise = destroySessionResources(
+				session,
 			terminalError,
-			pendingDrainTimeoutMS,
-			releaseSession,
-			workerTerminationTimeoutMS,
-			markCleanupFailed
-		);
-			return session.destroyPromise;
+				pendingDrainTimeoutMS,
+				releaseSession,
+				workerTerminationTimeoutMS,
+				() => { cleanupFailed = true; }
+			).then((contained) => {
+				if (!contained) {
+					retainSessionTombstone(session, false);
+					const error = new Error('Bruno session cleanup could not be proven');
+					error.statusCode = 503;
+					throw error;
+				}
+				retainSessionTombstone(session, true);
+				clearTimeout(cleanupWatchdog);
+				return true;
+			}, (error) => {
+				retainSessionTombstone(session, false);
+				markCleanupFailed();
+				throw error;
+			});
+				return session.destroyPromise;
+  }
+
+  async function serializeOwnerTransition(operation) {
+    const previous = ownerTransitionTail;
+    let release;
+    ownerTransitionTail = new Promise((resolve) => { release = resolve; });
+    await previous;
+    try {
+      return await operation();
+    } finally {
+      release();
+    }
   }
 
   function releaseSession(session) {
     if (!session || sessions.get(session.id) !== session) return;
     if (session.expiryTimer) clearTimeout(session.expiryTimer);
-    session.expiryTimer = null;
+		if (session.leaseTimer) clearTimeout(session.leaseTimer);
+		session.expiryTimer = null;
+		session.leaseTimer = null;
     sessions.delete(session.id);
     const bundle = bundles.get(session.bundleID);
     if (bundle) {
@@ -679,6 +812,97 @@ function createRunnerServer(options = {}) {
       touchBundle(bundle);
     }
   }
+
+  function revokeRunOwner(owner, terminalError) {
+    if (!owner || runOwner !== owner) return Promise.resolve(true);
+    if (owner.revokePromise) return owner.revokePromise;
+    owner.state = 'draining';
+    // This is the outer containment deadline. It starts at the semantic
+    // revocation boundary rather than after response-drain and worker-stop
+    // timeouts have elapsed, so those inner best-effort phases cannot extend
+    // the lifetime of an orphaned worker process.
+    const cleanupWatchdog = scheduleCleanupExit();
+    if (runOwnerTimer) clearTimeout(runOwnerTimer);
+    runOwnerTimer = null;
+    const retainedSessions = Array.from(sessions.values()).filter((session) => (
+      session.ownerGeneration === owner.generation
+    ));
+    owner.revokePromise = Promise.allSettled(retainedSessions.map((session) => (
+      destroySession(session, terminalError)
+    ))).then((results) => {
+      const contained = results.every((result) => result.status === 'fulfilled');
+      if (!contained) markCleanupFailed();
+      if (runOwner === owner) runOwner = null;
+      if (contained) cancelCleanupExit(cleanupWatchdog);
+      return contained && !cleanupFailed;
+    }, () => {
+      markCleanupFailed();
+      if (runOwner === owner) runOwner = null;
+      return false;
+    });
+    return owner.revokePromise;
+  }
+
+  function armRunOwnerLease(owner) {
+    if (runOwnerTimer) clearTimeout(runOwnerTimer);
+    runOwnerTimer = setTimeout(() => {
+      if (runOwner !== owner || owner.state !== 'active') return;
+      if (Date.now() < owner.expiresAt) {
+        armRunOwnerLease(owner);
+        return;
+      }
+      // Transition to draining synchronously before cleanup yields. A renewal
+      // that arrives after the semantic deadline can no longer revive this
+      // generation while its old expiry callback is destroying sessions.
+      void revokeRunOwner(owner, 'Bruno runner owner lease expired');
+    }, Math.max(1, owner.expiresAt - Date.now()));
+    runOwnerTimer.unref?.();
+  }
+
+  function currentRequestOwner(request, session = null) {
+    if (!requireOwnerLease) return null;
+    const owner = runOwner;
+    if (!owner || owner.state !== 'active') return null;
+    if (Date.now() >= owner.expiresAt) {
+      void revokeRunOwner(owner, 'Bruno runner owner lease expired');
+      return null;
+    }
+    if (request.headers['x-apexload-runner-owner-id'] !== owner.ownerID ||
+        request.headers['x-apexload-runner-owner-epoch'] !== owner.epoch) {
+      return null;
+    }
+    if (session && (session.ownerGeneration !== owner.generation || session.ownerEpoch !== owner.epoch)) {
+      return null;
+    }
+    return owner;
+  }
+
+	function sessionLeaseMatches(request, session) {
+		if (!requireSessionLease) return true;
+		if (!session || session.leaseState !== 'active') return false;
+		if (Date.now() >= session.leaseExpiresAt) {
+			void destroySession(session, 'Bruno runner session lease expired').catch(() => {});
+			return false;
+		}
+		const actual = String(request.headers['x-apexload-session-lease-token'] || '');
+		if (!/^[a-f0-9]{64}$/.test(actual) || !/^[a-f0-9]{64}$/.test(session.leaseToken)) return false;
+		return crypto.timingSafeEqual(Buffer.from(actual, 'hex'), Buffer.from(session.leaseToken, 'hex'));
+	}
+
+	function armSessionLease(session) {
+		if (!requireSessionLease || !session || session.leaseState !== 'active' || sessions.get(session.id) !== session) return;
+		if (session.leaseTimer) clearTimeout(session.leaseTimer);
+		session.leaseTimer = setTimeout(() => {
+			session.leaseTimer = null;
+			if (session.leaseState !== 'active' || sessions.get(session.id) !== session) return;
+			if (Date.now() < session.leaseExpiresAt) {
+				armSessionLease(session);
+				return;
+			}
+			void destroySession(session, 'Bruno runner session lease expired').catch(() => {});
+		}, Math.max(1, session.leaseExpiresAt - Date.now()));
+		session.leaseTimer.unref?.();
+	}
 
   function sessionExpiryDeadline(session) {
     const hardDeadline = session.createdAt + sessionTTLMS;
@@ -841,8 +1065,9 @@ function createRunnerServer(options = {}) {
     try {
       const requestURL = new URL(request.url, 'http://runner.local');
       if (request.method === 'GET' && requestURL.pathname === '/v1/health') {
-        json(response, cleanupFailed ? 503 : 200, {
-          status: cleanupFailed ? 'cleanup_failed' : 'ok',
+        const ownerDraining = requireOwnerLease && runOwner?.state === 'draining';
+        json(response, cleanupFailed || ownerDraining ? 503 : 200, {
+          status: cleanupFailed ? 'cleanup_failed' : (ownerDraining ? 'draining' : 'ok'),
           runner_version: RUNNER_VERSION,
           compatibility_version: COMPATIBILITY_VERSION
         });
@@ -866,10 +1091,54 @@ function createRunnerServer(options = {}) {
           governed_egress_ready: Boolean(egressBrokerURL),
           direct_egress_allowed: allowDirectEgress,
           cleanup_failed: cleanupFailed,
+		  features: requireOwnerLease ? [RUNNER_OWNER_LEASE_FEATURE, SESSION_LEASE_FEATURE] : [],
           intentional_extensions: ['grpc_collection_execution', 'websocket_collection_execution', 'cross_protocol_run_request']
         });
         return;
       }
+		if (request.method === 'POST' && requestURL.pathname === '/v1/owner/claim') {
+				const payload = JSON.parse((await readBody(request, 64 * 1024)).toString('utf8'));
+				const ownerID = String(payload.owner_id || '').trim();
+				if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(ownerID) || Number(payload.lease_ttl_ms) !== ownerLeaseTTLMS) {
+					json(response, 422, { error: 'owner lease claim is invalid' });
+					return;
+				}
+				const transition = await serializeOwnerTransition(async () => {
+					if (cleanupFailed) return { error: 'prior owner cleanup failed', status: 503 };
+					let owner = runOwner;
+					if (owner && owner.state === 'active' && Date.now() < owner.expiresAt && owner.ownerID === ownerID) {
+						owner.expiresAt = Date.now() + ownerLeaseTTLMS;
+						armRunOwnerLease(owner);
+						return { owner };
+					}
+					if (owner) {
+						const contained = await revokeRunOwner(owner, 'Bruno runner owner replaced');
+						if (!contained || cleanupFailed) return { error: 'prior owner cleanup failed', status: 503 };
+					}
+					owner = {
+						ownerID,
+						epoch: crypto.randomBytes(32).toString('hex'),
+						expiresAt: Date.now() + ownerLeaseTTLMS,
+						generation: ++runOwnerGeneration,
+						state: 'active',
+						revokePromise: null
+					};
+					runOwner = owner;
+					armRunOwnerLease(owner);
+					return { owner };
+				});
+				if (transition.error) {
+					json(response, transition.status, { error: transition.error });
+					return;
+				}
+				json(response, 200, {
+					owner_id: transition.owner.ownerID,
+					owner_epoch: transition.owner.epoch,
+					lease_ttl_ms: ownerLeaseTTLMS,
+					accepted: true
+				});
+				return;
+			}
 		if (cleanupFailed && request.method !== 'DELETE') {
 			json(response, 503, { error: 'Bruno runner cleanup failed; restart is required before accepting more work' });
 			return;
@@ -941,7 +1210,17 @@ function createRunnerServer(options = {}) {
         return;
       }
       if (request.method === 'POST' && requestURL.pathname === '/v1/sessions') {
+		let requestOwner = currentRequestOwner(request);
+		if (requireOwnerLease && !requestOwner) {
+			json(response, 409, { error: 'runner owner lease is not current' });
+			return;
+		}
         const payload = JSON.parse((await readBody(request, 2 * 1024 * 1024)).toString('utf8'));
+		requestOwner = currentRequestOwner(request);
+		if (requireOwnerLease && !requestOwner) {
+			json(response, 409, { error: 'runner owner lease is not current' });
+			return;
+		}
         const bundle = bundles.get(payload.bundle_id);
         if (!bundle || bundleExpired(bundle)) {
           if (bundle) await expireBundle(bundle);
@@ -981,6 +1260,11 @@ function createRunnerServer(options = {}) {
           return;
         }
         const sessionID = requestedSessionID || safeID('session');
+		const requestedLeaseToken = String(payload.session_lease_token || '').trim().toLowerCase();
+		if (requireSessionLease && !/^[a-f0-9]{64}$/.test(requestedLeaseToken)) {
+			json(response, 422, { error: 'session lease token is invalid' });
+			return;
+		}
         const bindingPayload = { ...payload };
         delete bindingPayload.session_id;
         // Bind retries to the complete creation request, including policy,
@@ -991,7 +1275,16 @@ function createRunnerServer(options = {}) {
           .update(JSON.stringify(bindingPayload))
           .digest('hex');
         const retained = sessions.get(sessionID);
+		pruneSessionTombstones();
+		if (!retained && sessionTombstones.has(sessionID)) {
+			json(response, 409, { error: 'session_id belongs to a completed session lease' });
+			return;
+		}
         if (retained) {
+          if (requireOwnerLease && currentRequestOwner(request, retained) !== requestOwner) {
+            json(response, 409, { error: 'runner owner lease is not current for this session' });
+            return;
+          }
           if (retained.creationBinding !== creationBinding) {
             json(response, 409, { error: 'session_id is already bound to different session parameters' });
             return;
@@ -1001,7 +1294,13 @@ function createRunnerServer(options = {}) {
             json(response, 409, { error: 'idempotent session creation did not complete' });
             return;
           }
-          json(response, 201, { session_id: sessionID });
+			if (!sessionLeaseMatches({ headers: { 'x-apexload-session-lease-token': requestedLeaseToken } }, retained)) {
+				json(response, 409, { error: 'session lease is not current' });
+				return;
+			}
+			retained.leaseExpiresAt = Date.now() + sessionLeaseTTLMS;
+			armSessionLease(retained);
+			json(response, 201, { session_id: sessionID, session_lease_token: retained.leaseToken, lease_ttl_ms: sessionLeaseTTLMS });
           return;
         }
         if (sessions.size >= maxSessions) {
@@ -1011,10 +1310,12 @@ function createRunnerServer(options = {}) {
         const now = Date.now();
         let readyResolve;
         let readyReject;
+        let provisionResolve;
         const readyPromise = new Promise((resolve, reject) => {
           readyResolve = resolve;
           readyReject = reject;
         });
+        const provisionDone = new Promise((resolve) => { provisionResolve = resolve; });
         // The route itself observes rejections, but keep an explicit handler so
         // cancellation after a disconnected create request never becomes an
         // unhandled process-level rejection.
@@ -1027,6 +1328,9 @@ function createRunnerServer(options = {}) {
           readyPromise,
           readyResolve,
           readyReject,
+			  provisionDone,
+			  provisionResolve,
+			  provisionContained: true,
           pending: new Map(),
           outputLimit,
           busy: false,
@@ -1036,7 +1340,13 @@ function createRunnerServer(options = {}) {
           provisionAbort: sandbox === 'developer' ? new AbortController() : null,
           createdAt: now,
           lastActiveAt: now,
-          expiryTimer: null
+          expiryTimer: null,
+          ownerEpoch: requestOwner?.epoch || '',
+		  ownerGeneration: requestOwner?.generation || 0,
+		  leaseToken: requestedLeaseToken,
+		  leaseExpiresAt: now + sessionLeaseTTLMS,
+		  leaseState: 'active',
+		  leaseTimer: null
         };
         // Reserve the client-generated ID and capacity before any asynchronous
         // developer factory work. A retry waits on this exact placeholder and a
@@ -1045,6 +1355,7 @@ function createRunnerServer(options = {}) {
         bundle.sessions += 1;
         touchBundle(bundle);
         scheduleSessionExpiry(session);
+		armSessionLease(session);
         let worker;
         try {
           worker = sandbox === 'developer'
@@ -1075,6 +1386,17 @@ function createRunnerServer(options = {}) {
               resourceLimits: workerResourceLimits(payload)
             });
         } catch (error) {
+			  session.leaseState = 'draining';
+			  session.expiring = true;
+			  if (session.leaseTimer) clearTimeout(session.leaseTimer);
+			  session.leaseTimer = null;
+			  if (error.provisionContainment) {
+				const cleanupWatchdog = startScopedCleanupWatchdog();
+				session.provisionContained = await error.provisionContainment;
+				if (session.provisionContained) clearTimeout(cleanupWatchdog);
+				else markCleanupFailed();
+			  }
+			  session.provisionResolve();
           if (bundles.get(bundle.id) !== bundle || bundleExpired(bundle)) {
             error.statusCode = 404;
           }
@@ -1087,7 +1409,9 @@ function createRunnerServer(options = {}) {
         // while an asynchronous developer factory was provisioning the worker.
         const bundleUnavailable = bundles.get(bundle.id) !== bundle || bundleExpired(bundle);
         if (sessions.get(sessionID) !== session || session.closed || session.expiring || bundleUnavailable) {
-          if (!await terminateWorkerBounded(worker, workerTerminationTimeoutMS)) markCleanupFailed();
+		  session.provisionContained = await terminateWorkerBounded(worker, workerTerminationTimeoutMS);
+		  if (!session.provisionContained) markCleanupFailed();
+		  session.provisionResolve();
           const error = new Error('session creation was cancelled before the worker became ready');
           error.statusCode = bundleUnavailable ? 404 : 409;
           readyReject(error);
@@ -1096,7 +1420,10 @@ function createRunnerServer(options = {}) {
         }
         if (!worker || typeof worker.on !== 'function' ||
             typeof worker.postMessage !== 'function' || typeof worker.terminate !== 'function') {
-          if (!await terminateWorkerBounded(worker, workerTerminationTimeoutMS)) markCleanupFailed();
+		  session.provisionContained = !worker || (typeof worker.terminate === 'function' &&
+			await terminateWorkerBounded(worker, workerTerminationTimeoutMS));
+		  if (!session.provisionContained) markCleanupFailed();
+		  session.provisionResolve();
           const error = new Error('developer worker factory returned an invalid worker');
           error.statusCode = 500;
           session.closed = true;
@@ -1106,6 +1433,7 @@ function createRunnerServer(options = {}) {
         }
         session.worker = worker;
         session.creating = false;
+		session.provisionResolve();
         worker.on('message', (message) => {
           const pending = session.pending.get(message.requestID);
           if (pending) pending.handle(message);
@@ -1125,13 +1453,37 @@ function createRunnerServer(options = {}) {
           })();
         });
         readyResolve();
-        json(response, 201, { session_id: sessionID });
+		json(response, 201, { session_id: sessionID, session_lease_token: session.leaseToken, lease_ttl_ms: sessionLeaseTTLMS });
         return;
       }
+	  const leaseRenewMatch = requestURL.pathname.match(/^\/v1\/sessions\/([^/]+)\/lease\/renew$/);
+	  if (request.method === 'POST' && leaseRenewMatch) {
+		const session = sessions.get(leaseRenewMatch[1]);
+		if (requireOwnerLease && !currentRequestOwner(request, session)) {
+			json(response, 409, { error: 'runner owner lease is not current for this session' });
+			return;
+		}
+		if (!sessionLeaseMatches(request, session)) {
+			json(response, 409, { error: 'session lease is not current' });
+			return;
+		}
+		session.leaseExpiresAt = Date.now() + sessionLeaseTTLMS;
+		armSessionLease(session);
+		json(response, 200, { session_id: session.id, renewed: true, lease_ttl_ms: sessionLeaseTTLMS });
+		return;
+	  }
       const executeMatch = requestURL.pathname.match(/^\/v1\/sessions\/([^/]+)\/execute$/);
       if (request.method === 'POST' && executeMatch) {
         const session = sessions.get(executeMatch[1]);
         const bundle = session ? bundles.get(session.bundleID) : null;
+		if (requireOwnerLease && !currentRequestOwner(request, session)) {
+			json(response, 409, { error: 'runner owner lease is not current for this session' });
+			return;
+		}
+		if (!sessionLeaseMatches(request, session)) {
+			json(response, 409, { error: 'session lease is not current' });
+			return;
+		}
 		if (!session || session.closed || session.expiring || session.creating || !session.worker || sessionExpired(session) || !bundle || bundleExpired(bundle)) {
           if (bundle && bundleExpired(bundle)) await expireBundle(bundle);
           else if (session) await expireSession(session);
@@ -1140,6 +1492,14 @@ function createRunnerServer(options = {}) {
         }
         const payload = JSON.parse((await readBody(request, 2 * 1024 * 1024)).toString('utf8'));
         const currentBundle = bundles.get(session.bundleID);
+		if (requireOwnerLease && !currentRequestOwner(request, session)) {
+			json(response, 409, { error: 'runner owner lease is not current for this session' });
+			return;
+		}
+		if (!sessionLeaseMatches(request, session)) {
+			json(response, 409, { error: 'session lease is not current' });
+			return;
+		}
 		if (sessions.get(session.id) !== session || session.closed || session.expiring || sessionExpired(session) ||
             !currentBundle || bundleExpired(currentBundle)) {
           if (currentBundle && bundleExpired(currentBundle)) await expireBundle(currentBundle);
@@ -1154,6 +1514,14 @@ function createRunnerServer(options = {}) {
       if (request.method === 'POST' && cancelMatch) {
         const session = sessions.get(cancelMatch[1]);
         const bundle = session ? bundles.get(session.bundleID) : null;
+		if (requireOwnerLease && !currentRequestOwner(request, session)) {
+			json(response, 409, { error: 'runner owner lease is not current for this session' });
+			return;
+		}
+		if (!sessionLeaseMatches(request, session)) {
+			json(response, 409, { error: 'session lease is not current' });
+			return;
+		}
 		if (!session || session.closed || session.expiring || session.creating || !session.worker || sessionExpired(session) || !bundle || bundleExpired(bundle)) {
           if (bundle && bundleExpired(bundle)) await expireBundle(bundle);
           else if (session) await expireSession(session);
@@ -1168,10 +1536,25 @@ function createRunnerServer(options = {}) {
       const sessionDelete = requestURL.pathname.match(/^\/v1\/sessions\/([^/]+)$/);
       if (request.method === 'DELETE' && sessionDelete) {
         const session = sessions.get(sessionDelete[1]);
-        if (!session) {
-          empty(response, 404);
+		const requestOwner = requireOwnerLease ? currentRequestOwner(request, session) : null;
+		if (requireOwnerLease && !requestOwner) {
+          json(response, 409, { error: 'runner owner lease is not current for this session' });
           return;
         }
+		if (!session) {
+			const tombstone = matchingSessionTombstone(request, sessionDelete[1], requestOwner);
+			if (tombstone) {
+				if (tombstone.contained) empty(response, 204);
+				else json(response, 503, { error: 'session cleanup could not be proven' });
+				return;
+			}
+			empty(response, 404);
+			return;
+		}
+		if (!sessionLeaseMatches(request, session)) {
+			json(response, 409, { error: 'session lease is not current' });
+			return;
+		}
         await destroySession(session, 'Bruno runner session deleted');
         empty(response, 204);
         return;
@@ -1204,6 +1587,7 @@ function createRunnerServer(options = {}) {
 
   server.closeRunner = async () => {
     clearInterval(ownerHeartbeat);
+    if (runOwnerTimer) clearTimeout(runOwnerTimer);
     await Promise.allSettled(Array.from(sessions.values()).map((session) => (
       destroySession(session, 'Bruno runner shutting down')
     )));

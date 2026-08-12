@@ -17,7 +17,9 @@ func accessRequirementForRequest(r *http.Request) (accessRequirement, bool) {
 
 	// The declarative route catalog (route_catalog.go) is the single source of
 	// truth for every route whose access requirement is fixed by method+path. It
-	// is consulted first and wins. The branches below are the deliberate residue
+	// is consulted first. A small set of global collection routes is narrowed to
+	// a project requirement when project_id is present; the branches below are
+	// the remaining deliberate residue
 	// that the static catalog cannot express:
 	//   1. Query-conditional routes — the requirement depends on query params
 	//      (e.g. list endpoints that are global when project_id/folder_id is
@@ -31,12 +33,17 @@ func accessRequirementForRequest(r *http.Request) (accessRequirement, bool) {
 	//      exact-segment-count template matcher would require enumerating every
 	//      sub-path, so the catch-all stays here on purpose.
 	if requirement, ok := accessRequirementFromRouteCatalog(method, path); ok {
+		if method == http.MethodGet && strings.TrimSpace(r.URL.Query().Get("project_id")) != "" && projectFilterNarrowsGlobalCollection(path) {
+			requirement.ProjectRoles = []string{RoleViewer, RoleEditor, RoleProjectAdmin}
+			requirement.ProjectLookup = resolveProjectIDFromQuery
+			requirement.RequireUnrestrictedViewer = false
+		}
 		return requirement, true
 	}
 
 	if path == "/api/v1/library/catalog" && method == http.MethodGet {
 		if strings.TrimSpace(r.URL.Query().Get("project_id")) == "" {
-			return accessRequirement{GlobalRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}}, true
+			return accessRequirement{GlobalRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}, RequireUnrestrictedViewer: true}, true
 		}
 		return accessRequirement{
 			GlobalRoles:   []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
@@ -47,7 +54,11 @@ func accessRequirementForRequest(r *http.Request) (accessRequirement, bool) {
 
 	if (path == "/api/v1/ai/policy" || path == "/api/v1/ai/review-queue" || path == "/api/v1/scripts/authoring/capabilities") && method == http.MethodGet {
 		if strings.TrimSpace(r.URL.Query().Get("project_id")) == "" {
-			return accessRequirement{GlobalRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}, ServiceAccountScope: "read"}, true
+			return accessRequirement{
+				GlobalRoles:               []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
+				RequireUnrestrictedViewer: path == "/api/v1/ai/review-queue",
+				ServiceAccountScope:       "read",
+			}, true
 		}
 		return accessRequirement{
 			GlobalRoles:         []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
@@ -59,7 +70,7 @@ func accessRequirementForRequest(r *http.Request) (accessRequirement, bool) {
 
 	if path == "/api/v1/recorder/status" && method == http.MethodGet {
 		if strings.TrimSpace(r.URL.Query().Get("project_id")) == "" {
-			return accessRequirement{GlobalRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}}, true
+			return accessRequirement{GlobalRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}, RequireUnrestrictedViewer: true}, true
 		}
 		return accessRequirement{
 			GlobalRoles:  []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
@@ -85,7 +96,7 @@ func accessRequirementForRequest(r *http.Request) (accessRequirement, bool) {
 
 	if path == "/api/v1/browser-recorder/sessions" && method == http.MethodGet {
 		if strings.TrimSpace(r.URL.Query().Get("project_id")) == "" {
-			return accessRequirement{GlobalRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}}, true
+			return accessRequirement{GlobalRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}, RequireUnrestrictedViewer: true}, true
 		}
 		return accessRequirement{
 			GlobalRoles:  []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
@@ -98,7 +109,9 @@ func accessRequirementForRequest(r *http.Request) (accessRequirement, bool) {
 
 	if path == "/api/v1/ws" && method == http.MethodGet {
 		if strings.TrimSpace(r.URL.Query().Get("project_id")) == "" {
-			return accessRequirement{GlobalRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}}, true
+			// An unfiltered socket receives events from every project. A baseline
+			// viewer must select a bound project instead of bypassing scope filters.
+			return accessRequirement{GlobalRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}, RequireUnrestrictedViewer: true}, true
 		}
 		return accessRequirement{
 			GlobalRoles:   []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
@@ -307,7 +320,7 @@ func accessRequirementForRequest(r *http.Request) (accessRequirement, bool) {
 		switch method {
 		case http.MethodGet:
 			if strings.TrimSpace(r.URL.Query().Get("project_id")) == "" && !r.URL.Query().Has("folder_id") {
-				return accessRequirement{GlobalRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}}, true
+				return accessRequirement{GlobalRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}, RequireUnrestrictedViewer: true}, true
 			}
 			return accessRequirement{
 				GlobalRoles:   []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
@@ -327,7 +340,7 @@ func accessRequirementForRequest(r *http.Request) (accessRequirement, bool) {
 		switch method {
 		case http.MethodGet:
 			if strings.TrimSpace(r.URL.Query().Get("project_id")) == "" {
-				return accessRequirement{GlobalRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}}, true
+				return accessRequirement{GlobalRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}, RequireUnrestrictedViewer: true}, true
 			}
 			return accessRequirement{
 				GlobalRoles:   []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
@@ -371,7 +384,7 @@ func accessRequirementForRequest(r *http.Request) (accessRequirement, bool) {
 				}, true
 			}
 			if strings.TrimSpace(r.URL.Query().Get("project_id")) == "" && !r.URL.Query().Has("folder_id") {
-				return accessRequirement{GlobalRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}}, true
+				return accessRequirement{GlobalRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}, RequireUnrestrictedViewer: true}, true
 			}
 			return accessRequirement{
 				GlobalRoles:   []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
@@ -391,7 +404,7 @@ func accessRequirementForRequest(r *http.Request) (accessRequirement, bool) {
 		switch method {
 		case http.MethodGet:
 			if strings.TrimSpace(r.URL.Query().Get("project_id")) == "" {
-				return accessRequirement{GlobalRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}}, true
+				return accessRequirement{GlobalRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}, RequireUnrestrictedViewer: true}, true
 			}
 			return accessRequirement{
 				GlobalRoles:   []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
@@ -525,4 +538,24 @@ func accessRequirementForRequest(r *http.Request) (accessRequirement, bool) {
 	}
 
 	return accessRequirement{}, false
+}
+
+// projectFilterNarrowsGlobalCollection identifies read surfaces whose unfiltered
+// form spans projects but whose handlers already honor an explicit project_id.
+// Retrofitting the scoped lookup here preserves each catalog entry's generated
+// service-account scope while binding Local Test Login personas to their RBAC
+// project/domain/repository grants.
+func projectFilterNarrowsGlobalCollection(path string) bool {
+	switch path {
+	case "/api/v1/results/imports",
+		"/api/v1/fleet/capacity",
+		"/api/v1/fleet/load-zones",
+		"/api/v1/system/usage",
+		"/api/v1/system/usage/export",
+		"/api/v1/system/usage/snapshots",
+		"/api/v1/run-calendar":
+		return true
+	default:
+		return false
+	}
 }

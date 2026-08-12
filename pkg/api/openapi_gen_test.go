@@ -451,6 +451,7 @@ func TestInferredJSONRequestRequiredFieldsFollowRouteSemantics(t *testing.T) {
 		path     string
 		required []string
 	}{
+		{path: "/api/v1/auth/login", required: []string{"password", "username"}},
 		{path: "/api/v1/auth/users", required: []string{"subject"}},
 		{path: "/api/v1/auth/service-accounts", required: []string{"name"}},
 	} {
@@ -679,6 +680,123 @@ func TestOpenAPIContractSpecialCasesMatchRuntimeWireTypes(t *testing.T) {
 				t.Errorf("GET %s query parameter %s is not required", path, name)
 			}
 		}
+	}
+}
+
+func sortedOpenAPIResponseStatuses(responses map[string]oasResponse) []string {
+	statuses := make([]string, 0, len(responses))
+	for status := range responses {
+		statuses = append(statuses, status)
+	}
+	sort.Strings(statuses)
+	return statuses
+}
+
+func TestSystemReadinessOpenAPIResponsesAreExactAndTyped(t *testing.T) {
+	responses := systemReadinessOpenAPIResponses()
+	if got, want := sortedOpenAPIResponseStatuses(responses), []string{"200", "503"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("system readiness response statuses = %v, want %v", got, want)
+	}
+
+	for _, status := range []string{"200", "503"} {
+		response := responses[status]
+		media, ok := response.Content["application/json"]
+		if !ok {
+			t.Fatalf("system readiness %s response content = %#v, want application/json", status, response.Content)
+		}
+		if got, want := media.Schema.Ref, "#/components/schemas/SystemReadinessResponse"; got != want {
+			t.Fatalf("system readiness %s response schema = %q, want %q", status, got, want)
+		}
+	}
+	if got := responses["200"].Description; !strings.Contains(got, "advisory degradation") {
+		t.Fatalf("system readiness 200 description = %q, want degraded-but-operational semantics", got)
+	}
+	if got := responses["503"].Description; !strings.Contains(got, "required dependency") {
+		t.Fatalf("system readiness 503 description = %q, want required-dependency failure semantics", got)
+	}
+}
+
+func TestGeneratedSystemReadinessRoutePublishesStructured503Body(t *testing.T) {
+	data, err := GenerateOpenAPIYAML("server.go")
+	if err != nil {
+		t.Fatalf("GenerateOpenAPIYAML: %v", err)
+	}
+	var spec struct {
+		Components struct {
+			Schemas map[string]oasSchema `yaml:"schemas"`
+		} `yaml:"components"`
+		Paths map[string]map[string]oasOperation `yaml:"paths"`
+	}
+	if err := yaml.Unmarshal(data, &spec); err != nil {
+		t.Fatalf("decode generated OpenAPI: %v", err)
+	}
+
+	operation, ok := spec.Paths["/api/v1/system/readiness"]["get"]
+	if !ok {
+		t.Fatal("generated OpenAPI is missing GET /api/v1/system/readiness")
+	}
+	if operation.OperationID != "handleSystemReadiness" {
+		t.Fatalf("system readiness operationId = %q, want handleSystemReadiness", operation.OperationID)
+	}
+	if operation.Security == nil || len(*operation.Security) != 0 {
+		t.Fatalf("system readiness security = %#v, want explicit public override", operation.Security)
+	}
+	if got, want := sortedOpenAPIResponseStatuses(operation.Responses), []string{"200", "503"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("generated system readiness response statuses = %v, want %v", got, want)
+	}
+	for _, status := range []string{"200", "503"} {
+		media, ok := operation.Responses[status].Content["application/json"]
+		if !ok {
+			t.Fatalf("generated system readiness %s response has no JSON body", status)
+		}
+		if got, want := media.Schema.Ref, "#/components/schemas/SystemReadinessResponse"; got != want {
+			t.Fatalf("generated system readiness %s schema = %q, want %q", status, got, want)
+		}
+	}
+
+	responseSchema, ok := spec.Components.Schemas["SystemReadinessResponse"]
+	if !ok {
+		t.Fatal("generated OpenAPI is missing SystemReadinessResponse")
+	}
+	for _, field := range []string{"status", "generated_at", "checks"} {
+		if _, ok := responseSchema.Properties[field]; !ok {
+			t.Errorf("SystemReadinessResponse is missing %q", field)
+		}
+		if !openAPIStringSliceContains(responseSchema.Required, field) {
+			t.Errorf("SystemReadinessResponse required fields = %v, want %q", responseSchema.Required, field)
+		}
+	}
+	wantStatuses := []string{"ready", "degraded", "not_ready"}
+	if got := responseSchema.Properties["status"].Enum; !reflect.DeepEqual(got, wantStatuses) {
+		t.Errorf("SystemReadinessResponse.status enum = %v, want %v", got, wantStatuses)
+	}
+	if generatedAt := responseSchema.Properties["generated_at"]; generatedAt.Type != "string" || generatedAt.Format != "date-time" {
+		t.Errorf("SystemReadinessResponse.generated_at = %#v, want date-time string", generatedAt)
+	}
+	checks := responseSchema.Properties["checks"]
+	if checks.Type != "array" || checks.Items == nil || checks.Items.Ref != "#/components/schemas/SystemReadinessCheck" {
+		t.Fatalf("SystemReadinessResponse.checks = %#v, want SystemReadinessCheck array", checks)
+	}
+
+	checkSchema, ok := spec.Components.Schemas["SystemReadinessCheck"]
+	if !ok {
+		t.Fatal("generated OpenAPI is missing SystemReadinessCheck")
+	}
+	for _, field := range []string{"name", "status", "message"} {
+		if !openAPIStringSliceContains(checkSchema.Required, field) {
+			t.Errorf("SystemReadinessCheck required fields = %v, want %q", checkSchema.Required, field)
+		}
+	}
+	if got := checkSchema.Properties["status"].Enum; !reflect.DeepEqual(got, wantStatuses) {
+		t.Errorf("SystemReadinessCheck.status enum = %v, want %v", got, wantStatuses)
+	}
+	details := checkSchema.Properties["details"]
+	if details.Ref != "#/components/schemas/SystemReadinessDetails" {
+		t.Fatalf("SystemReadinessCheck.details = %#v, want readiness details object", details)
+	}
+	detailsSchema, ok := spec.Components.Schemas["SystemReadinessDetails"]
+	if !ok || detailsSchema.Type != "object" || detailsSchema.AdditionalProperties != true {
+		t.Fatalf("SystemReadinessDetails = %#v, want extensible object", detailsSchema)
 	}
 }
 

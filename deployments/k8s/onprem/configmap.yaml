@@ -35,6 +35,8 @@ data:
   APEXLOAD_GENERATORS: dns://apexload-generator.apexload.svc.cluster.local:9090
   APEXLOAD_GENERATOR_DISCOVERY_INTERVAL: 15s
   APEXLOAD_GENERATOR_TIMEOUT: 10s
+  APEXLOAD_GENERATOR_RUN_SUPERVISION_TTL: 60s
+  APEXLOAD_GENERATOR_RUN_SUPERVISION_RENEW_INTERVAL: 10s
 
   # --- Controller<->generator gRPC transport security ---
   # Certificates are mounted from the apexload-grpc-tls secrets (see

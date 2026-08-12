@@ -45,6 +45,8 @@ data:
   APEXLOAD_GENERATORS: {{ default (printf "dns://apexload-generator.%s.svc.cluster.local:9090" (include "apexload.namespace" .)) .Values.dataPlatform.generators | quote }}
   APEXLOAD_GENERATOR_DISCOVERY_INTERVAL: {{ .Values.dataPlatform.generatorDiscoveryInterval | quote }}
   APEXLOAD_GENERATOR_TIMEOUT: {{ .Values.dataPlatform.generatorTimeout | quote }}
+  APEXLOAD_GENERATOR_RUN_SUPERVISION_TTL: {{ .Values.generator.runSupervision.ttl | quote }}
+  APEXLOAD_GENERATOR_RUN_SUPERVISION_RENEW_INTERVAL: {{ .Values.generator.runSupervision.renewInterval | quote }}
   APEXLOAD_GENERATOR_AUTOSCALING_OWNER: {{ ternary "keda" "controller" .Values.keda.enabled | quote }}
   APEXLOAD_GRPC_TLS_CERT: /etc/apexload/grpc-tls/tls.crt
   APEXLOAD_GRPC_TLS_KEY: /etc/apexload/grpc-tls/tls.key

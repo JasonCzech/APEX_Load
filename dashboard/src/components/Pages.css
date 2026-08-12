@@ -428,7 +428,7 @@
   padding: 5px;
   border: 1px solid var(--border);
   border-radius: 8px;
-  background: var(--bg-card);
+  background: var(--dropdown-menu-bg);
   box-shadow: 0 16px 38px rgba(15, 23, 42, 0.18);
 }
 
@@ -1513,10 +1513,31 @@
 .markdown-list {
   margin: 0 0 16px;
   padding-left: 22px;
+  list-style: disc;
+}
+
+.markdown-ordered-list {
+  list-style: decimal;
 }
 
 .markdown-list li {
   margin-bottom: 6px;
+}
+
+/* Nested lists sit inside their parent item, so they must not repeat the
+   bottom margin that separates one top-level list from the next block. */
+.markdown-list .markdown-list {
+  margin: 6px 0 0;
+  padding-left: 20px;
+  list-style: circle;
+}
+
+.markdown-list .markdown-ordered-list {
+  list-style: lower-alpha;
+}
+
+.markdown-list .markdown-list li {
+  margin-bottom: 4px;
 }
 
 .markdown-table-wrap {
@@ -4305,6 +4326,18 @@
 .text-muted { color: var(--text-muted); }
 
 /* Monitoring page */
+.monitor-readiness-live-summary {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 .monitor-page-title {
   display: flex;
   align-items: center;
@@ -4517,6 +4550,111 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
+}
+
+.monitor-infrastructure-readiness {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  margin: 0;
+  padding: 4px 0 0;
+  list-style: none;
+}
+
+.monitor-infrastructure-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+  padding: 9px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--subtle-fill);
+}
+
+.monitor-infrastructure-main {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.monitor-infrastructure-name {
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.monitor-infrastructure-summary {
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.monitor-infrastructure-status {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.monitor-infrastructure-status-ready {
+  color: #d1fae5;
+  background: #065f46;
+}
+
+.monitor-infrastructure-status-degraded {
+  color: #fef3c7;
+  background: #92400e;
+}
+
+.monitor-infrastructure-status-not-ready {
+  color: #fee2e2;
+  background: #991b1b;
+}
+
+.monitor-infrastructure-status-not-configured,
+.monitor-infrastructure-status-not-reported,
+.monitor-infrastructure-status-checking,
+.monitor-infrastructure-status-unknown {
+  color: #f1f5f9;
+  background: #475569;
+}
+
+:root[data-theme='light'] .monitor-infrastructure-status-ready,
+:root[data-theme='solarized-light'] .monitor-infrastructure-status-ready {
+  color: #065f46;
+  background: #d1fae5;
+}
+
+:root[data-theme='light'] .monitor-infrastructure-status-degraded,
+:root[data-theme='solarized-light'] .monitor-infrastructure-status-degraded {
+  color: #78350f;
+  background: #fef3c7;
+}
+
+:root[data-theme='light'] .monitor-infrastructure-status-not-ready,
+:root[data-theme='solarized-light'] .monitor-infrastructure-status-not-ready {
+  color: #7f1d1d;
+  background: #fee2e2;
+}
+
+:root[data-theme='light'] .monitor-infrastructure-status-not-configured,
+:root[data-theme='light'] .monitor-infrastructure-status-not-reported,
+:root[data-theme='light'] .monitor-infrastructure-status-checking,
+:root[data-theme='light'] .monitor-infrastructure-status-unknown,
+:root[data-theme='solarized-light'] .monitor-infrastructure-status-not-configured,
+:root[data-theme='solarized-light'] .monitor-infrastructure-status-not-reported,
+:root[data-theme='solarized-light'] .monitor-infrastructure-status-checking,
+:root[data-theme='solarized-light'] .monitor-infrastructure-status-unknown {
+  color: #334155;
+  background: #e2e8f0;
+}
+
+@media (max-width: 480px) {
+  .monitor-infrastructure-row {
+    align-items: flex-start;
+    flex-direction: column;
+  }
 }
 
 .monitor-build-grid {

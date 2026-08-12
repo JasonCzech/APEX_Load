@@ -12,6 +12,31 @@ import (
 
 var errApplicationProjectMismatch = errors.New("application does not belong to project")
 
+type projectReleaseFamilyCreator interface {
+	CreateProjectReleaseFamily(projectID, name, preferredApplicationID string, createdAt time.Time) (*storage.Release, error)
+}
+
+type releaseFamilyMemberLister interface {
+	ListReleaseFamilyMembers(id string) ([]*storage.Release, error)
+}
+
+func projectReleaseFamilyProjection(preferred *storage.Release, members []*storage.Release) *storage.Release {
+	if preferred == nil {
+		return nil
+	}
+	projected := *preferred
+	projected.ID = firstNonEmpty(preferred.GroupID, preferred.ID)
+	projected.GroupID = projected.ID
+	projected.ApplicationReleaseID = preferred.ID
+	projected.MemberIDs = make(map[string]string, len(members))
+	for _, member := range members {
+		if member != nil {
+			projected.MemberIDs[member.ApplicationID] = member.ID
+		}
+	}
+	return &projected
+}
+
 func (s *Server) handleCreateApplication(w http.ResponseWriter, r *http.Request) {
 	if s.store == nil {
 		writeError(w, http.StatusServiceUnavailable, "storage is not configured")
@@ -183,12 +208,17 @@ func (s *Server) handleCreateRelease(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "project_id does not match application project")
 		return
 	}
-	release := &storage.Release{ID: uuid.New().String(), ApplicationID: r.PathValue("id"), ProjectID: projectID, Name: strings.TrimSpace(req.Name), CreatedAt: time.Now()}
-	if err := s.store.SaveRelease(release); err != nil {
+	creator, supported := s.store.(projectReleaseFamilyCreator)
+	if !supported {
+		writeError(w, http.StatusNotImplemented, "project-wide release creation is not supported by this storage backend")
+		return
+	}
+	release, err := creator.CreateProjectReleaseFamily(projectID, strings.TrimSpace(req.Name), application.ID, time.Now())
+	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	s.recordAuditEvent(r, "release.create", "success", "release", release.ID, projectID, map[string]any{"name": release.Name, "application_id": release.ApplicationID})
+	s.recordAuditEvent(r, "release.create", "success", "release", firstNonEmpty(release.GroupID, release.ID), projectID, map[string]any{"name": release.Name, "application_id": release.ApplicationID})
 	writeJSON(w, http.StatusCreated, release)
 }
 
@@ -232,13 +262,25 @@ func (s *Server) handleCreateProjectRelease(w http.ResponseWriter, r *http.Reque
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	release := &storage.Release{ID: uuid.New().String(), ApplicationID: applicationID, ProjectID: projectID, Name: strings.TrimSpace(req.Name), CreatedAt: time.Now()}
-	if err := s.store.SaveRelease(release); err != nil {
+	creator, supported := s.store.(projectReleaseFamilyCreator)
+	if !supported {
+		writeError(w, http.StatusNotImplemented, "project-wide release creation is not supported by this storage backend")
+		return
+	}
+	release, err := creator.CreateProjectReleaseFamily(projectID, strings.TrimSpace(req.Name), applicationID, time.Now())
+	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	s.recordAuditEvent(r, "release.create", "success", "release", release.ID, projectID, map[string]any{"name": release.Name, "application_id": release.ApplicationID, "project_scoped": true})
-	writeJSON(w, http.StatusCreated, release)
+	members := []*storage.Release{release}
+	if lister, ok := s.store.(releaseFamilyMemberLister); ok {
+		if listed, listErr := lister.ListReleaseFamilyMembers(release.ID); listErr == nil {
+			members = listed
+		}
+	}
+	family := projectReleaseFamilyProjection(release, members)
+	s.recordAuditEvent(r, "release.create", "success", "release", family.ID, projectID, map[string]any{"name": release.Name, "application_id": release.ApplicationID, "project_scoped": true})
+	writeJSON(w, http.StatusCreated, family)
 }
 
 func (s *Server) handleListProjectReleases(w http.ResponseWriter, r *http.Request) {
@@ -359,7 +401,7 @@ func (s *Server) handleUpdateRelease(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	projectID := normalizeProjectID(release.ProjectID)
-	s.recordAuditEvent(r, "release.update", "success", "release", release.ID, projectID, map[string]any{"name": release.Name, "application_id": release.ApplicationID})
+	s.recordAuditEvent(r, "release.update", "success", "release", firstNonEmpty(release.GroupID, release.ID), projectID, map[string]any{"name": release.Name, "application_id": release.ApplicationID})
 	writeJSON(w, http.StatusOK, release)
 }
 
@@ -372,16 +414,18 @@ func (s *Server) handleDeleteRelease(w http.ResponseWriter, r *http.Request) {
 	projectID := ""
 	name := ""
 	applicationID := ""
+	canonicalID := id
 	if release, err := s.store.GetRelease(id); err == nil && release != nil {
 		name = release.Name
 		applicationID = release.ApplicationID
 		projectID = normalizeProjectID(release.ProjectID)
+		canonicalID = firstNonEmpty(release.GroupID, release.ID)
 	}
 	if err := s.store.DeleteRelease(id); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	s.recordAuditEvent(r, "release.delete", "success", "release", id, projectID, map[string]any{"name": name, "application_id": applicationID})
+	s.recordAuditEvent(r, "release.delete", "success", "release", canonicalID, projectID, map[string]any{"name": name, "application_id": applicationID})
 	writeJSON(w, http.StatusOK, map[string]string{"deleted": id})
 }
 
@@ -401,6 +445,6 @@ func (s *Server) handleArchiveRelease(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	projectID := normalizeProjectID(release.ProjectID)
-	s.recordAuditEvent(r, "release.archive", "success", "release", release.ID, projectID, map[string]any{"name": release.Name, "application_id": release.ApplicationID})
+	s.recordAuditEvent(r, "release.archive", "success", "release", firstNonEmpty(release.GroupID, release.ID), projectID, map[string]any{"name": release.Name, "application_id": release.ApplicationID})
 	writeJSON(w, http.StatusOK, release)
 }

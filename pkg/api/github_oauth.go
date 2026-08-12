@@ -177,7 +177,7 @@ func (s *Server) handleGitHubLogin(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusInternalServerError, "failed to initialize github state")
 			return
 		}
-		s.setSignedAuthCookie(w, normalizeAuthSettings(s.runner.GetSystemSettings().Auth), &http.Cookie{
+		s.setSignedAuthCookie(w, s.authSettingsForRequest(), &http.Cookie{
 			Name:     githubStateCookieName,
 			Value:    encoded,
 			Path:     "/api/v1/integrations/github",
@@ -311,7 +311,7 @@ func (s *Server) handleGitHubCallback(w http.ResponseWriter, r *http.Request) {
 	}
 	if !saved {
 		if !s.desktopMode {
-			s.clearAuthCookie(w, normalizeAuthSettings(s.runner.GetSystemSettings().Auth), githubStateCookieName, "/api/v1/integrations/github")
+			s.clearAuthCookie(w, s.authSettingsForRequest(), githubStateCookieName, "/api/v1/integrations/github")
 		}
 		writeError(w, http.StatusConflict, "github connection flow was canceled by a newer disconnect")
 		return
@@ -323,7 +323,7 @@ func (s *Server) handleGitHubCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Clear the hosted state cookie and return to the dashboard.
-	s.clearAuthCookie(w, normalizeAuthSettings(s.runner.GetSystemSettings().Auth), githubStateCookieName, "/api/v1/integrations/github")
+	s.clearAuthCookie(w, s.authSettingsForRequest(), githubStateCookieName, "/api/v1/integrations/github")
 	http.Redirect(w, r, sanitizeReturnTo(state.ReturnTo), http.StatusFound)
 }
 
@@ -371,7 +371,7 @@ func (s *Server) handleGitHubDisconnect(w http.ResponseWriter, r *http.Request) 
 	if s.desktopMode {
 		s.clearDesktopGitHubState(desktopBrowserCapabilityFromRequest(r))
 	} else {
-		s.clearAuthCookie(w, normalizeAuthSettings(s.runner.GetSystemSettings().Auth), githubStateCookieName, "/api/v1/integrations/github")
+		s.clearAuthCookie(w, s.authSettingsForRequest(), githubStateCookieName, "/api/v1/integrations/github")
 	}
 	s.recordAuditEvent(r, "github.connection.delete", "success", "github_connection", userKey, "", nil)
 	writeJSON(w, http.StatusOK, map[string]any{"disconnected": true})

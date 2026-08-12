@@ -232,6 +232,7 @@ func (tr *TestRunner) DeleteScenarioIfUnchanged(id string, expectedUpdatedAt tim
 	}
 	if current := tr.scenarios[id]; current != nil {
 		tr.removeRefKeyLocked(current.RefKey)
+		tr.removeScenarioReadinessLocked(current)
 	}
 	delete(tr.scenarios, id)
 	tr.contentRevision++
@@ -720,6 +721,7 @@ func (tr *TestRunner) DeleteScenarioDurable(id string) (bool, error) {
 		}
 	}
 	tr.removeRefKeyLocked(scenario.RefKey)
+	tr.removeScenarioReadinessLocked(scenario)
 	delete(tr.scenarios, id)
 	tr.contentRevision++
 	return true, nil
@@ -806,12 +808,15 @@ func (tr *TestRunner) installScenarioScheduleAfterPersistenceLocked(schedule *st
 	if fence.existed && currentIndex < 0 {
 		return fmt.Errorf("%w: scenario schedule %q was deleted while persistence was in flight", errScheduleConcurrentChange, fence.scheduleID)
 	}
+	var previous *storage.ScenarioSchedule
 	if currentIndex >= 0 {
+		previous = scenario.Schedules[currentIndex]
 		scenario.Schedules[currentIndex] = cloneScenarioSchedule(schedule)
 	} else {
 		scenario.Schedules = append(scenario.Schedules, cloneScenarioSchedule(schedule))
 	}
 	tr.contentRevision++
+	tr.adjustSchedulerReadinessLocked(previous, schedule)
 	return nil
 }
 

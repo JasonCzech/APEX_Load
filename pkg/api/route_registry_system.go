@@ -8,7 +8,7 @@ var systemEntitlementsAPIRouteCatalog = apiRouteCatalog{
 		newAuthenticatedAPIRoute(http.MethodGet, "/api/v1/system/entitlements", "handleGetEntitlements", viewerGlobalAccess(), func(s *Server) http.Handler {
 			return http.HandlerFunc(s.handleGetEntitlements)
 		}),
-		newAuthenticatedAPIRoute(http.MethodGet, "/api/v1/system/entitlements/usage", "handleGetEntitlementsUsage", viewerGlobalAccess(), func(s *Server) http.Handler {
+		newAuthenticatedAPIRoute(http.MethodGet, "/api/v1/system/entitlements/usage", "handleGetEntitlementsUsage", unrestrictedViewerGlobalAccess(), func(s *Server) http.Handler {
 			return http.HandlerFunc(s.handleGetEntitlementsUsage)
 		}),
 	},
@@ -23,13 +23,13 @@ var systemObservabilityAPIRouteCatalog = apiRouteCatalog{
 		newAuthenticatedAPIRoute(http.MethodGet, "/api/v1/system/services", "handleGetSystemServices", viewerGlobalAccess(), func(s *Server) http.Handler {
 			return http.HandlerFunc(s.handleGetSystemServices)
 		}),
-		newAuthenticatedAPIRoute(http.MethodGet, "/api/v1/system/usage", "handleGetUsageAccounting", viewerGlobalAccess(), func(s *Server) http.Handler {
+		newAuthenticatedAPIRoute(http.MethodGet, "/api/v1/system/usage", "handleGetUsageAccounting", unrestrictedViewerGlobalAccess(), func(s *Server) http.Handler {
 			return http.HandlerFunc(s.handleGetUsageAccounting)
 		}),
-		newAuthenticatedAPIRoute(http.MethodGet, "/api/v1/system/usage/export", "handleExportUsageAccounting", viewerGlobalAccess(), func(s *Server) http.Handler {
+		newAuthenticatedAPIRoute(http.MethodGet, "/api/v1/system/usage/export", "handleExportUsageAccounting", unrestrictedViewerGlobalAccess(), func(s *Server) http.Handler {
 			return http.HandlerFunc(s.handleExportUsageAccounting)
 		}),
-		newAuthenticatedAPIRoute(http.MethodGet, "/api/v1/system/usage/snapshots", "handleListUsageAccountingSnapshots", viewerGlobalAccess(), func(s *Server) http.Handler {
+		newAuthenticatedAPIRoute(http.MethodGet, "/api/v1/system/usage/snapshots", "handleListUsageAccountingSnapshots", unrestrictedViewerGlobalAccess(), func(s *Server) http.Handler {
 			return http.HandlerFunc(s.handleListUsageAccountingSnapshots)
 		}),
 		newAuthenticatedAPIRoute(http.MethodPost, "/api/v1/system/usage/snapshots", "handleCreateUsageAccountingSnapshot", systemAdminAccess(), func(s *Server) http.Handler {

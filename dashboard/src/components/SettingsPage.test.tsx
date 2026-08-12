@@ -1297,6 +1297,7 @@ describe('SettingsPage', () => {
     })
     expect(container.textContent).toContain('Domain "Retail Banking" saved.')
     expect(domainSection.querySelector('.settings-app-card.active')?.textContent).toContain('Retail Banking')
+    expect(JSON.parse(window.sessionStorage.getItem('apexload.settings.domainMessage') || '{}').value).toBe('Domain "Retail Banking" saved.')
   })
 
   it('guards domain deletion for default and non-empty domains', async () => {
@@ -2624,7 +2625,65 @@ describe('SettingsPage', () => {
     const authModeSelect = findSettingSelect(generalSection, 'Access Control Mode')
     expect(authModeSelect?.querySelector<HTMLOptionElement>('option[value="oidc"]')?.disabled).toBe(true)
     expect(authModeSelect?.querySelector<HTMLOptionElement>('option[value="trusted_headers"]')?.disabled).toBe(true)
-    expect(generalSection.textContent).toContain('embedded desktop workspace requires Dev Bypass')
+    expect(authModeSelect?.querySelector<HTMLOptionElement>('option[value="local"]')?.disabled).toBe(false)
+    expect(generalSection.textContent).toContain('Local Test Login and Dev Bypass work in the embedded desktop workspace')
+  })
+
+  it('distinguishes a saved auth mode awaiting restart from the active runtime mode', async () => {
+    apiMock.updateSystemSettings.mockImplementation(async (settings) => settings)
+    const onThemeChange = vi.fn()
+
+    await act(async () => {
+      renderWithSettingsTopbar(
+        root,
+        <SettingsPage
+          theme="dark"
+          onThemeChange={onThemeChange}
+          authStatus={{ enabled: false, mode: 'dev', authenticated: false }}
+        />,
+      )
+    })
+    await flushPromises()
+
+    const generalSection = container.querySelector('#settings-section-general')
+    expect(generalSection).toBeTruthy()
+    if (!generalSection) return
+    await selectGeneralSubnav(generalSection, 'Authentication')
+
+    const authModeSelect = findSettingSelect(generalSection, 'Access Control Mode')
+    expect(authModeSelect).toBeTruthy()
+    if (!authModeSelect) return
+    await setFieldValue(authModeSelect, 'local')
+
+    expect(generalSection.textContent).toContain('Draft: Local Test Login')
+    expect(generalSection.querySelector('[data-testid="auth-mode-restart-pending"]')).toBeNull()
+
+    const saveButton = findButton('Save Changes')
+    expect(saveButton).toBeDefined()
+    if (!saveButton) return
+    await act(async () => {
+      saveButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    const restartPending = generalSection.querySelector('[data-testid="auth-mode-restart-pending"]')
+    expect(restartPending?.textContent).toContain('Authentication restart pending.')
+    expect(restartPending?.textContent).toContain('Saved mode: Local Test Login.')
+    expect(restartPending?.textContent).toContain('Active runtime mode: Dev Bypass.')
+    expect(generalSection.textContent).toContain('Saved: Local Test Login')
+
+    await act(async () => {
+      renderWithSettingsTopbar(
+        root,
+        <SettingsPage
+          theme="dark"
+          onThemeChange={onThemeChange}
+          authStatus={{ enabled: true, mode: 'local', authenticated: false }}
+        />,
+      )
+    })
+
+    expect(generalSection.querySelector('[data-testid="auth-mode-restart-pending"]')).toBeNull()
   })
 
   it('disables settings, access handoff, and audit actions when effective RBAC denies them', async () => {
@@ -4729,6 +4788,45 @@ describe('SettingsPage', () => {
     expect(document.querySelector('.unsaved-changes-modal')).toBeFalsy()
     expect(applicationSection.textContent).toContain(releaseB.name)
     expect(applicationSection.textContent).not.toContain(renamedReleaseA.name)
+  })
+
+  it('hides the previous applications releases while the next catalog is loading', async () => {
+    const applicationA = { id: 'app-a', project_id: 'project-1', name: 'Checkout', created_at: '', updated_at: '' }
+    const applicationB = { id: 'app-b', project_id: 'project-1', name: 'Payments', created_at: '', updated_at: '' }
+    const releaseA = { id: 'release-a', application_id: applicationA.id, name: 'App A Only', created_at: '', updated_at: '' }
+    Object.assign(applicationContextMock, {
+      applications: [applicationA, applicationB],
+      activeApplication: applicationA,
+      releases: [releaseA],
+      activeRelease: releaseA,
+    })
+    applicationApiMock.listReleases
+      .mockResolvedValueOnce({ releases: [releaseA] })
+      .mockImplementationOnce(() => new Promise(() => undefined))
+
+    const renderPage = () => root.render(
+      <NavigationGuardProvider>
+        <TopbarContributionProvider>
+          <SettingsTopbarHarness />
+          <SettingsPage theme="dark" onThemeChange={vi.fn()} />
+        </TopbarContributionProvider>
+      </NavigationGuardProvider>,
+    )
+    await act(async () => renderPage())
+    await flushPromises()
+    await selectTopLevelSettingsTab('Applications & Releases')
+    const applicationSection = container.querySelector('#settings-section-applications')
+    expect(applicationSection?.textContent).toContain(releaseA.name)
+
+    Object.assign(applicationContextMock, {
+      activeApplication: applicationB,
+      releases: [],
+      activeRelease: null,
+    })
+    await act(async () => renderPage())
+
+    expect(applicationSection?.textContent).not.toContain(releaseA.name)
+    expect(applicationSection?.querySelectorAll('.settings-release-row')).toHaveLength(0)
   })
 
   it('discards a release rename before completing a guarded application switch', async () => {

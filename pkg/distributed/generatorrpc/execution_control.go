@@ -452,7 +452,31 @@ func (service *Service) commitValidatedWork(ctx context.Context, request *pb.Wor
 			service.metricsBroker.unlockPublication()
 			return nil, status.FromContextError(ctx.Err()).Err()
 		}
-		transition := service.lifecycleCoordinator.commitWorkValidatedLocked(service, ctx, request, time.Now(), runtimeValidation)
+		now := time.Now()
+		supervision, supervisionErr := service.validateRunSupervisionCommitLocked(request, now)
+		if supervisionErr != nil {
+			service.mu.Unlock()
+			service.metricsBroker.unlockPublication()
+			return nil, supervisionErr
+		}
+		transition := service.lifecycleCoordinator.commitWorkValidatedLocked(service, ctx, request, now, runtimeValidation)
+		if transition.err == nil && transition.kind == commitTransitionApply {
+			// Only the transition that actually crosses the staged start boundary
+			// arms a fresh full lease. A delayed duplicate Commit is an ACK retry,
+			// not a supervision renewal; ClaimRunSupervision is the sole renewal API.
+			service.armRunSupervisionLocked(request.GetTestId(), supervision, now)
+		} else if transition.err == nil && transition.kind == commitTransitionAccepted &&
+			supervision != nil && supervision.state != pb.RunSupervisionState_RUN_SUPERVISION_STATE_ACTIVE {
+			transition.err = status.Error(codes.FailedPrecondition, "committed run supervision lease is not active")
+		}
+		supervisionArmed := supervision != nil && supervision.state == pb.RunSupervisionState_RUN_SUPERVISION_STATE_ACTIVE
+		supervisionTTL := time.Duration(0)
+		if supervision != nil {
+			// The wire field is the granted lease contract, not the wall-clock
+			// remainder. In particular, a 30s grant must not round down below the
+			// controller's 30s safety minimum immediately after it is armed.
+			supervisionTTL = supervision.ttl
+		}
 		service.mu.Unlock()
 		if transition.lifecycle != nil {
 			service.publishLifecycleTransitionLocked(transition.lifecycle)
@@ -464,7 +488,7 @@ func (service *Service) commitValidatedWork(ctx context.Context, request *pb.Wor
 		}
 		switch transition.kind {
 		case commitTransitionAccepted:
-			return &pb.WorkCommitAck{Accepted: true}, nil
+			return &pb.WorkCommitAck{Accepted: true, RunSupervisionArmed: supervisionArmed, RunSupervisionTtlMilliseconds: supervisionTTL.Milliseconds()}, nil
 		case commitTransitionRejected:
 			return &pb.WorkCommitAck{Accepted: false, ErrorMessage: transition.errorMessage}, nil
 		case commitTransitionWait:
@@ -482,7 +506,7 @@ func (service *Service) commitValidatedWork(ctx context.Context, request *pb.Wor
 			for _, event := range transition.starts {
 				service.startExecutionEvent(event)
 			}
-			return &pb.WorkCommitAck{Accepted: true}, nil
+			return &pb.WorkCommitAck{Accepted: true, RunSupervisionArmed: supervisionArmed, RunSupervisionTtlMilliseconds: supervisionTTL.Milliseconds()}, nil
 		default:
 			return nil, status.Error(codes.Internal, "assignment coordinator returned an invalid commit decision")
 		}
@@ -579,6 +603,10 @@ type stopTransitionPlan struct {
 	acknowledged             bool
 	pendingVUsers            int32
 	persistentJavaDrainToken uint64
+	capacityDrainVUsers      int32
+	writer                   *archiveRecorder
+	trackedFinalizer         bool
+	graceful                 bool
 	err                      error
 }
 
@@ -603,7 +631,17 @@ func (coordinator *assignmentLifecycleCoordinator) planStopLocked(service *Servi
 	if ok && !bypassExecutionFence && assignment.executionGeneration != request.GetExecutionGeneration() {
 		return stopTransitionPlan{err: status.Errorf(codes.FailedPrecondition, "test belongs to execution generation %d", assignment.executionGeneration)}
 	}
+	if ok && !bypassExecutionFence {
+		if err := service.validateRunMutationTokenLocked(testID, request.GetExecutionGeneration(), request.GetRunSupervisionToken()); err != nil {
+			return stopTransitionPlan{err: err}
+		}
+	}
 	if !ok {
+		if !bypassExecutionFence {
+			if err := service.validateRunMutationTokenLocked(testID, request.GetExecutionGeneration(), request.GetRunSupervisionToken()); err != nil {
+				return stopTransitionPlan{err: err}
+			}
+		}
 		_, stopping := coordinator.stoppingTests[testID]
 		stoppingGeneration, trackedGeneration := coordinator.stoppingGenerations[testID]
 		completion := coordinator.stopCompletions[testID]
@@ -627,47 +665,9 @@ func (coordinator *assignmentLifecycleCoordinator) planStopLocked(service *Servi
 
 	assignment, _ = coordinator.beginStopping(testID, assignment.executionGeneration, assignment)
 	service.assignments[testID] = assignment
-	// A positively acknowledged StopTest is itself the assignment fence. Stop
-	// renewing/expiring its loss-tolerance lease while graceful shutdown drains.
-	service.clearTestExecutionLeaseLocked(testID)
-	if request.GetGraceful() && assignment.committed {
-		executionMap := service.executions[testID]
-		if len(executionMap) > 0 {
-			running := make([]*groupExecution, 0, len(executionMap))
-			staged := make([]*groupExecution, 0)
-			stagedNames := make([]string, 0)
-			for groupName, execution := range executionMap {
-				if execution != nil && execution.started.Load() {
-					running = append(running, execution)
-					continue
-				}
-				staged = append(staged, execution)
-				stagedNames = append(stagedNames, groupName)
-			}
-			if len(running) > 0 {
-				for _, groupName := range stagedNames {
-					delete(executionMap, groupName)
-					if assignment.activeGroups != nil {
-						assignment.activeGroups[groupName] = 0
-					}
-				}
-				service.assignments[testID] = assignment
-				coordinator.stopStageTimerLocked(testID)
-				return stopTransitionPlan{
-					kind:          stopTransitionGraceful,
-					testID:        testID,
-					assignment:    assignment,
-					staged:        append([]*groupExecution(nil), staged...),
-					running:       append([]*groupExecution(nil), running...),
-					acknowledged:  true,
-					pendingVUsers: assignment.vuserCount,
-				}
-			}
-		}
-	}
-
 	persistentJavaDrainToken := service.reserveAssignmentJavaDrainLocked(assignment)
 	service.clearTestExecutionLeaseLocked(testID)
+	service.retainRunSupervisionDrainLocked(testID, assignment)
 	delete(service.assignments, testID)
 	service.stopCompletionTimerLocked(testID)
 	coordinator.stopStageTimerLocked(testID)
@@ -677,6 +677,8 @@ func (coordinator *assignmentLifecycleCoordinator) planStopLocked(service *Servi
 	for _, execution := range executionMap {
 		executions = append(executions, execution)
 	}
+	writer := service.archiveManager.takeWriter(testID)
+	trackedFinalizer := writer != nil && service.archiveManager.addFinalizer()
 	return stopTransitionPlan{
 		kind:                     stopTransitionDetached,
 		testID:                   testID,
@@ -685,10 +687,19 @@ func (coordinator *assignmentLifecycleCoordinator) planStopLocked(service *Servi
 		acknowledged:             true,
 		pendingVUsers:            assignment.vuserCount,
 		persistentJavaDrainToken: persistentJavaDrainToken,
+		capacityDrainVUsers:      assignment.vuserCount,
+		writer:                   writer,
+		trackedFinalizer:         trackedFinalizer,
+		graceful:                 request.GetGraceful(),
 	}
 }
 
 func (service *Service) StopTest(ctx context.Context, request *pb.StopRequest) (*pb.StopAck, error) {
+	if request != nil {
+		if err := service.validateRunMutationToken(request.GetTestId(), request.GetExecutionGeneration(), request.GetRunSupervisionToken()); err != nil {
+			return nil, err
+		}
+	}
 	return service.stopTest(ctx, request, false, false, 0)
 }
 
@@ -723,18 +734,6 @@ func (service *Service) stopTest(ctx context.Context, request *pb.StopRequest, b
 				continue
 			}
 			return &pb.StopAck{Acknowledged: true}, nil
-		case stopTransitionGraceful:
-			for _, execution := range plan.staged {
-				stopGroupExecution(execution)
-			}
-			for _, execution := range plan.running {
-				if !execution.startAt.IsZero() && time.Now().Before(execution.startAt) && execution.cancel != nil {
-					execution.cancel()
-				} else {
-					execution.engine.GracefulStop()
-				}
-			}
-			return &pb.StopAck{Acknowledged: true, PendingVusers: plan.pendingVUsers}, nil
 		case stopTransitionDetached:
 			return service.finishDetachedStop(ctx, plan)
 		default:
@@ -744,40 +743,33 @@ func (service *Service) stopTest(ctx context.Context, request *pb.StopRequest, b
 }
 
 func (service *Service) finishDetachedStop(ctx context.Context, plan stopTransitionPlan) (*pb.StopAck, error) {
-	writer := service.archiveManager.takeWriter(plan.testID)
-	trackedFinalizer := writer != nil && service.archiveManager.addFinalizer()
-	for _, execution := range plan.executions {
-		stopGroupExecution(execution)
+	if ctx == nil {
+		ctx = context.Background()
 	}
-	if err := waitForGeneratorExecutions(ctx, plan.executions); err != nil {
-		if !trackedFinalizer {
-			go func() {
-				_ = waitForGeneratorExecutions(context.Background(), plan.executions)
-				service.releaseStopDrain(plan.persistentJavaDrainToken)
-				service.captureStoppedExecutionMetrics(&plan.assignment, plan.executions)
-				service.finishStoppedTest(plan.testID, plan.assignment, writer)
-			}()
+	stop := detachedFencedTest{
+		testID:                   plan.testID,
+		assignment:               plan.assignment,
+		executions:               plan.executions,
+		writer:                   plan.writer,
+		trackedFinalizer:         plan.trackedFinalizer,
+		persistentJavaDrainToken: plan.persistentJavaDrainToken,
+		capacityDrainVUsers:      plan.capacityDrainVUsers,
+		finalState:               "COMPLETE",
+		escalationReason:         stopEscalationReason,
+	}
+	result := service.startDetachedRunDrain(stop, plan.graceful)
+	if plan.graceful {
+		return &pb.StopAck{Acknowledged: true, PendingVusers: plan.pendingVUsers}, nil
+	}
+	select {
+	case err := <-result:
+		if err != nil {
 			return nil, status.Errorf(codes.DeadlineExceeded, "wait for stopped execution: %v", err)
 		}
-		go func() {
-			defer service.archiveManager.finalizerDone()
-			_ = waitForGeneratorExecutions(context.Background(), plan.executions)
-			service.releaseStopDrain(plan.persistentJavaDrainToken)
-			service.captureStoppedExecutionMetrics(&plan.assignment, plan.executions)
-			service.finishStoppedTest(plan.testID, plan.assignment, writer)
-		}()
-		return nil, status.Errorf(codes.DeadlineExceeded, "wait for stopped execution: %v", err)
+		return &pb.StopAck{Acknowledged: true, PendingVusers: plan.pendingVUsers}, nil
+	case <-ctx.Done():
+		return nil, status.FromContextError(ctx.Err()).Err()
 	}
-	if trackedFinalizer {
-		defer service.archiveManager.finalizerDone()
-	}
-	service.releaseStopDrain(plan.persistentJavaDrainToken)
-	service.captureStoppedExecutionMetrics(&plan.assignment, plan.executions)
-	_, finalError := service.finishStoppedTest(plan.testID, plan.assignment, writer)
-	if finalError != "" {
-		return nil, status.Error(codes.Internal, finalError)
-	}
-	return &pb.StopAck{Acknowledged: true, PendingVusers: plan.pendingVUsers}, nil
 }
 
 func (service *Service) releaseStopDrain(token uint64) {
@@ -794,14 +786,15 @@ type enginePauseParticipant struct {
 }
 
 type pauseTransitionPlan struct {
-	control           *pendingAssignmentControl
-	testID            string
-	generation        uint64
-	targetPaused      bool
-	previousPaused    bool
-	operationID       string
-	operationSequence uint64
-	participants      []enginePauseParticipant
+	control             *pendingAssignmentControl
+	testID              string
+	generation          uint64
+	targetPaused        bool
+	previousPaused      bool
+	operationID         string
+	operationSequence   uint64
+	runSupervisionToken []byte
+	participants        []enginePauseParticipant
 }
 
 type pauseTransitionDecision struct {
@@ -814,6 +807,10 @@ type pauseTransitionDecision struct {
 }
 
 func (coordinator *assignmentLifecycleCoordinator) planPauseLocked(service *Service, testID string, paused bool, generation uint64, operationID string, operationSequence uint64) pauseTransitionDecision {
+	return coordinator.planPauseWithTokenLocked(service, testID, paused, generation, operationID, operationSequence, nil)
+}
+
+func (coordinator *assignmentLifecycleCoordinator) planPauseWithTokenLocked(service *Service, testID string, paused bool, generation uint64, operationID string, operationSequence uint64, runSupervisionToken []byte) pauseTransitionDecision {
 	if stage := coordinator.pendingStages[testID]; stage != nil {
 		return pauseTransitionDecision{wait: stage.done}
 	}
@@ -821,6 +818,9 @@ func (coordinator *assignmentLifecycleCoordinator) planPauseLocked(service *Serv
 		return pauseTransitionDecision{wait: control.done}
 	}
 	if err := service.validateMutationGenerationLocked(generation); err != nil {
+		return pauseTransitionDecision{err: err}
+	}
+	if err := service.validateLiveRunMutationLocked(testID, runSupervisionToken, time.Now()); err != nil {
 		return pauseTransitionDecision{err: err}
 	}
 	assignment, ok := service.assignments[testID]
@@ -871,14 +871,15 @@ func (coordinator *assignmentLifecycleCoordinator) planPauseLocked(service *Serv
 		return pauseTransitionDecision{wait: wait}
 	}
 	return pauseTransitionDecision{plan: &pauseTransitionPlan{
-		control:           control,
-		testID:            testID,
-		generation:        generation,
-		targetPaused:      paused,
-		previousPaused:    assignment.paused,
-		operationID:       operationID,
-		operationSequence: operationSequence,
-		participants:      participants,
+		control:             control,
+		testID:              testID,
+		generation:          generation,
+		targetPaused:        paused,
+		previousPaused:      assignment.paused,
+		operationID:         operationID,
+		operationSequence:   operationSequence,
+		runSupervisionToken: append([]byte(nil), runSupervisionToken...),
+		participants:        participants,
 	}}
 }
 
@@ -920,6 +921,9 @@ func (coordinator *assignmentLifecycleCoordinator) commitPauseLocked(service *Se
 	if err := service.validateMutationGenerationLocked(plan.generation); err != nil {
 		return nil, err
 	}
+	if err := service.validateLiveRunMutationLocked(plan.testID, plan.runSupervisionToken, time.Now()); err != nil {
+		return nil, err
+	}
 	assignment, ok := service.assignments[plan.testID]
 	if !ok {
 		return nil, status.Error(codes.NotFound, "test assignment not found")
@@ -951,6 +955,11 @@ func (service *Service) abortControl(plan *pendingAssignmentControl) {
 }
 
 func (service *Service) SetPaused(ctx context.Context, request *pb.PauseRequest) (*pb.PauseAck, error) {
+	if request != nil {
+		if err := service.validateRunMutationToken(request.GetTestId(), request.GetExecutionGeneration(), request.GetRunSupervisionToken()); err != nil {
+			return nil, err
+		}
+	}
 	operationID := strings.TrimSpace(request.GetOperationId())
 	if operationID == "" {
 		return nil, status.Error(codes.InvalidArgument, "operation_id is required")
@@ -961,7 +970,7 @@ func (service *Service) SetPaused(ctx context.Context, request *pb.PauseRequest)
 	if request.GetOperationSequence() == 0 {
 		return nil, status.Error(codes.InvalidArgument, "operation_sequence is required")
 	}
-	appliedOperationID, appliedSequence, err := service.setPausedWithOperation(ctx, request.GetTestId(), request.GetPause(), request.GetExecutionGeneration(), operationID, request.GetOperationSequence())
+	appliedOperationID, appliedSequence, err := service.setPausedWithOperation(ctx, request.GetTestId(), request.GetPause(), request.GetExecutionGeneration(), operationID, request.GetOperationSequence(), request.GetRunSupervisionToken())
 	if err != nil {
 		return nil, err
 	}
@@ -973,7 +982,7 @@ func (service *Service) SetPaused(ctx context.Context, request *pb.PauseRequest)
 	}, nil
 }
 
-func (service *Service) setPausedWithOperation(ctx context.Context, testID string, paused bool, executionGeneration uint64, operationID string, operationSequence uint64) (string, uint64, error) {
+func (service *Service) setPausedWithOperation(ctx context.Context, testID string, paused bool, executionGeneration uint64, operationID string, operationSequence uint64, runSupervisionToken []byte) (string, uint64, error) {
 	if testID == "" {
 		return "", 0, status.Error(codes.InvalidArgument, "test_id is required")
 	}
@@ -988,7 +997,7 @@ func (service *Service) setPausedWithOperation(ctx context.Context, testID strin
 			service.mu.Unlock()
 			return "", 0, status.FromContextError(ctx.Err()).Err()
 		}
-		decision := service.lifecycleCoordinator.planPauseLocked(service, testID, paused, executionGeneration, operationID, operationSequence)
+		decision := service.lifecycleCoordinator.planPauseWithTokenLocked(service, testID, paused, executionGeneration, operationID, operationSequence, runSupervisionToken)
 		service.mu.Unlock()
 		if decision.err != nil {
 			return "", 0, decision.err
@@ -1047,8 +1056,11 @@ func (service *Service) setPausedWithOperation(ctx context.Context, testID strin
 	}
 }
 
-func (service *Service) setPaused(ctx context.Context, testID string, paused bool, executionGeneration uint64) error {
-	_, _, err := service.setPausedWithOperation(ctx, testID, paused, executionGeneration, "", 0)
+func (service *Service) setPaused(ctx context.Context, testID string, paused bool, executionGeneration uint64, runSupervisionToken []byte) error {
+	if err := service.validateRunMutationToken(testID, executionGeneration, runSupervisionToken); err != nil {
+		return err
+	}
+	_, _, err := service.setPausedWithOperation(ctx, testID, paused, executionGeneration, "", 0, runSupervisionToken)
 	return err
 }
 
@@ -1063,8 +1075,11 @@ type scaleTransitionPlan struct {
 	persistentJavaPreviousDemand int64
 	persistentJavaTargetDemand   int64
 	persistentJavaDrainToken     uint64
+	capacityDrainVUsers          int32
 	legacyJavaLifecycle          bool
+	runSupervisionToken          []byte
 	engine                       *engine.MultiGroupEngine
+	executionDone                <-chan struct{}
 }
 
 type scaleTransitionDecision struct {
@@ -1082,6 +1097,9 @@ func (coordinator *assignmentLifecycleCoordinator) planScaleLocked(service *Serv
 		return scaleTransitionDecision{wait: control.done}
 	}
 	if err := service.validateMutationGenerationLocked(request.GetExecutionGeneration()); err != nil {
+		return scaleTransitionDecision{err: err}
+	}
+	if err := service.validateLiveRunMutationLocked(testID, request.GetRunSupervisionToken(), time.Now()); err != nil {
 		return scaleTransitionDecision{err: err}
 	}
 	assignment, ok := service.assignments[testID]
@@ -1143,6 +1161,7 @@ func (coordinator *assignmentLifecycleCoordinator) planScaleLocked(service *Serv
 		return scaleTransitionDecision{err: status.Error(codes.ResourceExhausted, "insufficient generator capacity")}
 	}
 	var executionEngine *engine.MultiGroupEngine
+	var executionDone <-chan struct{}
 	if service.executionEnabled {
 		if executions := service.executions[testID]; executions != nil {
 			execution := executions[request.GetGroupName()]
@@ -1151,6 +1170,7 @@ func (coordinator *assignmentLifecycleCoordinator) planScaleLocked(service *Serv
 					return scaleTransitionDecision{err: status.Error(codes.FailedPrecondition, "group assignment is staged but not committed")}
 				}
 				executionEngine = execution.engine
+				executionDone = execution.done
 			}
 		}
 	}
@@ -1163,6 +1183,11 @@ func (coordinator *assignmentLifecycleCoordinator) planScaleLocked(service *Serv
 		persistentJavaDrainToken = service.reservePersistentJavaDrainLocked(persistentJavaCurrentDemand - persistentJavaTargetDemand)
 	} else if legacyJavaLifecycle && currentGroupVUsers > 0 && request.GetTargetVusers() == 0 {
 		persistentJavaDrainToken = service.reserveLegacyJavaDrainLocked()
+	}
+	capacityDrainVUsers := int32(0)
+	if executionEngine != nil && currentGroupVUsers > request.GetTargetVusers() {
+		capacityDrainVUsers = currentGroupVUsers - request.GetTargetVusers()
+		service.runSupervisionDrainingVUsers += int64(capacityDrainVUsers)
 	}
 	updatedTotal := int32(updatedTotal64)
 	assignment.groups[request.GetGroupName()] = request.GetTargetVusers()
@@ -1183,8 +1208,11 @@ func (coordinator *assignmentLifecycleCoordinator) planScaleLocked(service *Serv
 		persistentJavaPreviousDemand: persistentJavaCurrentDemand,
 		persistentJavaTargetDemand:   persistentJavaTargetDemand,
 		persistentJavaDrainToken:     persistentJavaDrainToken,
+		capacityDrainVUsers:          capacityDrainVUsers,
 		legacyJavaLifecycle:          legacyJavaLifecycle,
+		runSupervisionToken:          append([]byte(nil), request.GetRunSupervisionToken()...),
 		engine:                       executionEngine,
+		executionDone:                executionDone,
 	}}
 }
 
@@ -1193,6 +1221,9 @@ func (coordinator *assignmentLifecycleCoordinator) commitScaleLocked(service *Se
 		return nil, 0, status.Error(codes.Aborted, "group assignment changed while scaling")
 	}
 	if err := service.validateMutationGenerationLocked(plan.generation); err != nil {
+		return nil, 0, err
+	}
+	if err := service.validateLiveRunMutationLocked(plan.testID, plan.runSupervisionToken, time.Now()); err != nil {
 		return nil, 0, err
 	}
 	assignment, ok := service.assignments[plan.testID]
@@ -1250,19 +1281,22 @@ func (coordinator *assignmentLifecycleCoordinator) releaseScaleWithoutRollbackLo
 }
 
 func (service *Service) ensureScaleRollbackDrainLocked(plan *scaleTransitionPlan) {
-	if plan == nil || plan.persistentJavaDrainToken != 0 {
+	if plan == nil {
 		return
 	}
-	if plan.legacyJavaLifecycle && plan.targetGroupVUsers > 0 && plan.previousGroupVUsers == 0 {
-		plan.persistentJavaDrainToken = service.reserveLegacyJavaDrainLocked()
-		return
+	if plan.persistentJavaDrainToken == 0 {
+		if plan.legacyJavaLifecycle && plan.targetGroupVUsers > 0 && plan.previousGroupVUsers == 0 {
+			plan.persistentJavaDrainToken = service.reserveLegacyJavaDrainLocked()
+		} else if plan.persistentJavaTargetDemand > plan.persistentJavaPreviousDemand {
+			plan.persistentJavaDrainToken = service.reservePersistentJavaDrainLocked(
+				plan.persistentJavaTargetDemand - plan.persistentJavaPreviousDemand,
+			)
+		}
 	}
-	if plan.persistentJavaTargetDemand <= plan.persistentJavaPreviousDemand {
-		return
+	if plan.capacityDrainVUsers == 0 && plan.engine != nil && plan.targetGroupVUsers > plan.previousGroupVUsers {
+		plan.capacityDrainVUsers = plan.targetGroupVUsers - plan.previousGroupVUsers
+		service.runSupervisionDrainingVUsers += int64(plan.capacityDrainVUsers)
 	}
-	plan.persistentJavaDrainToken = service.reservePersistentJavaDrainLocked(
-		plan.persistentJavaTargetDemand - plan.persistentJavaPreviousDemand,
-	)
 }
 
 func (service *Service) prepareScaleRollbackOverlapLocked(plan *scaleTransitionPlan) {
@@ -1287,15 +1321,24 @@ func (service *Service) normalizeScaleRollbackDrainLocked(plan *scaleTransitionP
 }
 
 func (service *Service) releaseScaleDrainLocked(plan *scaleTransitionPlan) {
-	if plan == nil || plan.persistentJavaDrainToken == 0 {
+	if plan == nil {
 		return
 	}
-	service.releasePersistentJavaDrainLocked(plan.persistentJavaDrainToken)
-	plan.persistentJavaDrainToken = 0
+	if plan.persistentJavaDrainToken != 0 {
+		service.releasePersistentJavaDrainLocked(plan.persistentJavaDrainToken)
+		plan.persistentJavaDrainToken = 0
+	}
+	if plan.capacityDrainVUsers > 0 {
+		service.runSupervisionDrainingVUsers -= int64(plan.capacityDrainVUsers)
+		if service.runSupervisionDrainingVUsers < 0 {
+			service.runSupervisionDrainingVUsers = 0
+		}
+		plan.capacityDrainVUsers = 0
+	}
 }
 
 func (service *Service) releaseScaleDrainAfterReap(plan *scaleTransitionPlan, maxLive int32) {
-	if plan == nil || plan.persistentJavaDrainToken == 0 {
+	if plan == nil || (plan.persistentJavaDrainToken == 0 && plan.capacityDrainVUsers == 0) {
 		return
 	}
 	if plan.engine == nil {
@@ -1305,11 +1348,31 @@ func (service *Service) releaseScaleDrainAfterReap(plan *scaleTransitionPlan, ma
 		return
 	}
 	token := plan.persistentJavaDrainToken
+	capacityDrainVUsers := plan.capacityDrainVUsers
 	plan.persistentJavaDrainToken = 0
+	plan.capacityDrainVUsers = 0
 	go func() {
-		_ = plan.engine.WaitForGroupVUsers(context.Background(), plan.groupName, int(maxLive))
+		reaped := make(chan struct{})
+		go func() {
+			_ = plan.engine.WaitForGroupVUsers(context.Background(), plan.groupName, int(maxLive))
+			close(reaped)
+		}()
+		if plan.executionDone == nil {
+			<-reaped
+		} else {
+			select {
+			case <-reaped:
+			case <-plan.executionDone:
+			}
+		}
 		service.mu.Lock()
-		service.releasePersistentJavaDrainLocked(token)
+		if token != 0 {
+			service.releasePersistentJavaDrainLocked(token)
+		}
+		service.runSupervisionDrainingVUsers -= int64(capacityDrainVUsers)
+		if service.runSupervisionDrainingVUsers < 0 {
+			service.runSupervisionDrainingVUsers = 0
+		}
 		service.mu.Unlock()
 	}()
 }
@@ -1328,6 +1391,11 @@ func (service *Service) waitForControlDecision(ctx context.Context, wait <-chan 
 }
 
 func (service *Service) AdjustVUsers(ctx context.Context, request *pb.VUserAdjustment) (*pb.AdjustmentAck, error) {
+	if request != nil {
+		if err := service.validateRunMutationToken(request.GetTestId(), request.GetExecutionGeneration(), request.GetRunSupervisionToken()); err != nil {
+			return nil, err
+		}
+	}
 	if request.GetTestId() == "" {
 		return nil, status.Error(codes.InvalidArgument, "test_id is required")
 	}
@@ -1419,7 +1487,19 @@ func (service *Service) applyVUserAdjustment(ctx context.Context, request *pb.VU
 
 		if plan.engine != nil {
 			service.mu.Lock()
+			assignment, assignmentExists := service.assignments[plan.testID]
+			_, stopping := service.lifecycleCoordinator.stoppingTests[plan.testID]
+			reservationCurrent := service.lifecycleCoordinator.controlCurrentLocked(plan.control) &&
+				assignmentExists && !stopping && assignment.executionGeneration == plan.generation &&
+				assignment.vuserCount == plan.reservedTotalVUsers && assignment.groups[plan.groupName] == plan.targetGroupVUsers
+			if !reservationCurrent {
+				service.lifecycleCoordinator.releaseScaleWithoutRollbackLocked(service, plan)
+				service.mu.Unlock()
+				service.releaseScaleDrainAfterReap(plan, plan.targetGroupVUsers)
+				return nil, commitErr
+			}
 			service.prepareScaleRollbackOverlapLocked(plan)
+			service.ensureScaleRollbackDrainLocked(plan)
 			service.mu.Unlock()
 			if rollbackErr := plan.engine.ScaleVUsers(plan.groupName, int(plan.previousGroupVUsers)); rollbackErr != nil {
 				service.mu.Lock()
@@ -1461,11 +1541,12 @@ type durationEngineApplied struct {
 }
 
 type durationTransitionPlan struct {
-	control      *pendingAssignmentControl
-	testID       string
-	generation   uint64
-	duration     time.Duration
-	participants []durationEngineTarget
+	control             *pendingAssignmentControl
+	testID              string
+	generation          uint64
+	duration            time.Duration
+	runSupervisionToken []byte
+	participants        []durationEngineTarget
 }
 
 type durationTransitionDecision struct {
@@ -1475,6 +1556,10 @@ type durationTransitionDecision struct {
 }
 
 func (coordinator *assignmentLifecycleCoordinator) planDurationLocked(service *Service, testID string, generation uint64, duration time.Duration) durationTransitionDecision {
+	return coordinator.planDurationWithTokenLocked(service, testID, generation, duration, nil)
+}
+
+func (coordinator *assignmentLifecycleCoordinator) planDurationWithTokenLocked(service *Service, testID string, generation uint64, duration time.Duration, runSupervisionToken []byte) durationTransitionDecision {
 	if stage := coordinator.pendingStages[testID]; stage != nil {
 		return durationTransitionDecision{wait: stage.done}
 	}
@@ -1482,6 +1567,9 @@ func (coordinator *assignmentLifecycleCoordinator) planDurationLocked(service *S
 		return durationTransitionDecision{wait: control.done}
 	}
 	if err := service.validateMutationGenerationLocked(generation); err != nil {
+		return durationTransitionDecision{err: err}
+	}
+	if err := service.validateLiveRunMutationLocked(testID, runSupervisionToken, time.Now()); err != nil {
 		return durationTransitionDecision{err: err}
 	}
 	assignment, ok := service.assignments[testID]
@@ -1529,11 +1617,12 @@ func (coordinator *assignmentLifecycleCoordinator) planDurationLocked(service *S
 		return durationTransitionDecision{wait: wait}
 	}
 	return durationTransitionDecision{plan: &durationTransitionPlan{
-		control:      control,
-		testID:       testID,
-		generation:   generation,
-		duration:     duration,
-		participants: participants,
+		control:             control,
+		testID:              testID,
+		generation:          generation,
+		duration:            duration,
+		runSupervisionToken: append([]byte(nil), runSupervisionToken...),
+		participants:        participants,
 	}}
 }
 
@@ -1566,6 +1655,9 @@ func (coordinator *assignmentLifecycleCoordinator) commitDurationLocked(service 
 	if err := service.validateMutationGenerationLocked(plan.generation); err != nil {
 		return nil, err
 	}
+	if err := service.validateLiveRunMutationLocked(plan.testID, plan.runSupervisionToken, time.Now()); err != nil {
+		return nil, err
+	}
 	assignment, ok := service.assignments[plan.testID]
 	if !ok {
 		return nil, status.Error(codes.NotFound, "test assignment not found")
@@ -1594,6 +1686,11 @@ func (coordinator *assignmentLifecycleCoordinator) commitDurationLocked(service 
 }
 
 func (service *Service) AdjustDuration(ctx context.Context, request *pb.DurationAdjustment) (*pb.DurationAck, error) {
+	if request != nil {
+		if err := service.validateRunMutationToken(request.GetTestId(), request.GetExecutionGeneration(), request.GetRunSupervisionToken()); err != nil {
+			return nil, err
+		}
+	}
 	if request == nil {
 		return nil, status.Error(codes.InvalidArgument, "duration adjustment is required")
 	}
@@ -1619,7 +1716,7 @@ func (service *Service) applyDurationAdjustment(ctx context.Context, request *pb
 			service.mu.Unlock()
 			return nil, status.FromContextError(ctx.Err()).Err()
 		}
-		decision := service.lifecycleCoordinator.planDurationLocked(service, request.GetTestId(), request.GetExecutionGeneration(), duration)
+		decision := service.lifecycleCoordinator.planDurationWithTokenLocked(service, request.GetTestId(), request.GetExecutionGeneration(), duration, request.GetRunSupervisionToken())
 		service.mu.Unlock()
 		if decision.err != nil {
 			return nil, decision.err

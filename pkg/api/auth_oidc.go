@@ -75,7 +75,7 @@ type oidcSessionResolution struct {
 }
 
 func authStatusURLs(settings AuthSettings) (string, string) {
-	if settings.Mode == authModeOIDC {
+	if settings.Mode == authModeOIDC || settings.Mode == authModeLocal {
 		return oidcLoginPath, oidcLogoutPath
 	}
 	return settings.LoginURL, settings.LogoutURL
@@ -124,7 +124,7 @@ func resolveOIDCSession(r *http.Request, settings AuthSettings) oidcSessionResol
 }
 
 func (s *Server) handleOIDCLogin(w http.ResponseWriter, r *http.Request) {
-	settings := normalizeAuthSettings(s.runner.GetSystemSettings().Auth)
+	settings := s.authSettingsForRequest()
 	if settings.Mode != authModeOIDC {
 		writeError(w, http.StatusNotFound, "oidc login is not enabled")
 		return
@@ -205,7 +205,7 @@ func writeAuthNavigation(w http.ResponseWriter, r *http.Request, redirectURL str
 }
 
 func (s *Server) handleOIDCCallback(w http.ResponseWriter, r *http.Request) {
-	settings := normalizeAuthSettings(s.runner.GetSystemSettings().Auth)
+	settings := s.authSettingsForRequest()
 	if settings.Mode != authModeOIDC {
 		writeError(w, http.StatusNotFound, "oidc callback is not enabled")
 		return
@@ -374,7 +374,7 @@ func (s *Server) recordOIDCCallbackFailure(r *http.Request, reason string, detai
 }
 
 func (s *Server) handleOIDCLogout(w http.ResponseWriter, r *http.Request) {
-	settings := normalizeAuthSettings(s.runner.GetSystemSettings().Auth)
+	settings := s.authSettingsForRequest()
 	if settings.Mode != authModeOIDC {
 		writeError(w, http.StatusNotFound, "oidc logout is not enabled")
 		return
@@ -641,6 +641,9 @@ func authenticatedUserFromOIDCClaims(claims map[string]any, expiry time.Time, se
 	subject := strings.TrimSpace(stringClaim(claims["sub"]))
 	if subject == "" {
 		return nil, oidcSessionToken{}, fmt.Errorf("oidc subject claim is required")
+	}
+	if err := validateExternalAuthSubject(subject); err != nil {
+		return nil, oidcSessionToken{}, err
 	}
 	globalRoles := normalizeRoleList(anyToStringSlice(claims[settings.RolesClaim]))
 	projectRoles := normalizeProjectRoleClaims(claims[settings.ProjectRolesClaim])

@@ -10,6 +10,33 @@ import (
 	"github.com/jasonczech/apexload/pkg/distributed/generatorrpc"
 )
 
+func TestParseGeneratorRunSupervision(t *testing.T) {
+	tests := []struct {
+		name      string
+		values    map[string]string
+		wantTTL   time.Duration
+		wantRenew time.Duration
+		wantErr   bool
+	}{
+		{name: "defaults", values: map[string]string{}, wantTTL: 60 * time.Second, wantRenew: 10 * time.Second},
+		{name: "minimum", values: map[string]string{"APEXLOAD_GENERATOR_RUN_SUPERVISION_TTL": "30s", "APEXLOAD_GENERATOR_RUN_SUPERVISION_RENEW_INTERVAL": "10s"}, wantTTL: 30 * time.Second, wantRenew: 10 * time.Second},
+		{name: "ttl too short", values: map[string]string{"APEXLOAD_GENERATOR_RUN_SUPERVISION_TTL": "29s"}, wantErr: true},
+		{name: "renew too fast", values: map[string]string{"APEXLOAD_GENERATOR_RUN_SUPERVISION_RENEW_INTERVAL": "999ms"}, wantErr: true},
+		{name: "renew too slow", values: map[string]string{"APEXLOAD_GENERATOR_RUN_SUPERVISION_TTL": "30s", "APEXLOAD_GENERATOR_RUN_SUPERVISION_RENEW_INTERVAL": "11s"}, wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ttl, renew, err := parseGeneratorRunSupervision(func(key string) string { return tt.values[key] })
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if !tt.wantErr && (ttl != tt.wantTTL || renew != tt.wantRenew) {
+				t.Fatalf("got ttl=%s renew=%s, want ttl=%s renew=%s", ttl, renew, tt.wantTTL, tt.wantRenew)
+			}
+		})
+	}
+}
+
 type controllerLifecycleStub struct {
 	startErr      error
 	shutdownErr   error

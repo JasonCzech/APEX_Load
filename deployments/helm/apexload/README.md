@@ -13,6 +13,46 @@ The chart includes `values.schema.json` and fails on placeholder defaults such
 as `changeme.azurecr.io`, `apexload.example.com`, and
 `https://change-me.vault.azure.net`.
 
+Audited Kubernetes restart controls are enabled by default. The chart grants
+the controller ServiceAccount only namespace-scoped pod read/delete, workload
+read/patch, and ResourceQuota read permissions. Generator pods do not receive
+the default Kubernetes API token or restart RBAC; an audience-specific Azure
+Workload Identity token may still be injected for cloud API access. Set
+`restartControls.enabled=false` to omit that RBAC and keep the restart token
+unmounted. The controller renders
+`APEXLOAD_K8S_RESTART_ENABLED=false` directly in its environment so a value from
+the shared ConfigMap or Secret cannot re-enable the integration. An HA
+controller still receives the separate projected token required for
+EndpointSlice leadership, without restart permissions.
+Registered remote clusters still require their own RBAC; see
+[Kubernetes restart controls](../../../docs/KUBERNETES_RESTART_CONTROLS.md).
+
+| Value | Default | Purpose |
+|---|---|---|
+| `restartControls.enabled` | `true` | Enable the integration, controller API token, and scoped RBAC. |
+| `restartControls.allowForce` | `true` | Allow explicitly confirmed forced restarts. |
+| `restartControls.controllerDeployment` | `apexload-controller` | Controller Deployment restart target. |
+| `restartControls.generatorStatefulSet` | `apexload-generator` | Generator StatefulSet restart target. |
+| `restartControls.generatorSelector` | `app.kubernetes.io/name=apexload-generator` | Generator pod selector. The chart accepts one validated existence, equality, or canonical set requirement; see the linked runbook for the exact subset. |
+
+On an upgrade with `--reuse-values`, a legacy release whose stored values do
+not contain `restartControls` receives the chart's current default: restart
+controls become enabled and the controller receives the scoped RBAC and token.
+Use this upgrade command to remain opted out:
+
+```bash
+helm upgrade apexload deployments/helm/apexload \
+  --namespace apexload \
+  --reuse-values \
+  --set restartControls.enabled=false
+```
+
+If `Role/apexload-restart-controls` or
+`RoleBinding/apexload-restart-controls` was applied manually before Helm owned
+it, an enabled upgrade cannot adopt the object automatically. Complete the
+ownership preflight and adoption (or controlled deletion) in the linked
+restart-controls runbook before upgrading.
+
 Minimum production values:
 
 - `image.registry`
@@ -61,6 +101,17 @@ high-water and generator-side run evidence awaiting controller ingestion.
 Configure `generator.statePersistence.storageClassName` when the cluster has no
 default StorageClass, and size it with `generator.statePersistence.size` (the
 default is `10Gi`).
+
+Generator runs also use a mandatory renewable controller lease. The chart ships
+the fail-closed 60-second TTL, 10-second renewal, and 5-second abandonment drain;
+its values schema caps renewal at 10 seconds so every allowed TTL retains at
+least three renewal opportunities. The first upgrade from a tokenless release
+requires a no-active-tests maintenance window because mixed controller/generator
+versions intentionally reject new work. Follow the rollout gate and connectivity
+drill in [Generator run supervision](../../../docs/GENERATOR_RUN_SUPERVISION.md).
+The controller pod template checksums the shared ConfigMap, so changing the TTL
+or renewal value triggers a controller rollout instead of leaving stale process
+environment behind.
 
 Generic import assets also use persistent storage by default. For a single
 controller, configure `importAssets.persistence` or its StorageClass. When

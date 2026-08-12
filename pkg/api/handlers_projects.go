@@ -252,7 +252,7 @@ func (s *Server) requireSystemAdminForGitHubPolicyMutation(w http.ResponseWriter
 		writeError(w, http.StatusForbidden, "github project policy changes require system_admin access")
 		return false
 	}
-	if isAuthBypassMode(normalizeAuthSettings(s.runner.GetSystemSettings().Auth).Mode) {
+	if isAuthBypassMode(s.authSettingsForRequest().Mode) {
 		return true
 	}
 	writeError(w, http.StatusForbidden, "github project policy changes require system_admin access")

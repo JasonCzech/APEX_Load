@@ -81,8 +81,8 @@ func TestScenarioSchedulingRouteCatalogPreservesAccessContracts(t *testing.T) {
 		{http.MethodGet, "/api/v1/scenarios/{id}/schedules/{schedule_id}/approvals", viewerProjectAccess(resolveScenarioProjectID), "results:read", false},
 		{http.MethodPost, "/api/v1/scenarios/{id}/schedules/{schedule_id}/approvals/{approval_id}/approve", projectAdminAccess(resolveScenarioProjectID), "tests:run", false},
 		{http.MethodPost, "/api/v1/scenarios/{id}/schedules/{schedule_id}/approvals/{approval_id}/reject", projectAdminAccess(resolveScenarioProjectID), "tests:run", false},
-		{http.MethodGet, "/api/v1/schedules/health", viewerGlobalAccess(), "read", true},
-		{http.MethodGet, "/api/v1/run-calendar", viewerGlobalAccess(), "read", true},
+		{http.MethodGet, "/api/v1/schedules/health", unrestrictedViewerGlobalAccess(), "read", true},
+		{http.MethodGet, "/api/v1/run-calendar", unrestrictedViewerGlobalAccess(), "read", true},
 	}
 
 	for _, test := range cases {

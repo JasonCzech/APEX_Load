@@ -2,11 +2,15 @@ package generatorrpc
 
 import (
 	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
 	pb "github.com/jasonczech/apexload/api/proto"
 	"github.com/jasonczech/apexload/pkg/config"
+	"github.com/jasonczech/apexload/pkg/javasidecar"
 	"github.com/jasonczech/apexload/pkg/protocol"
 	_ "github.com/jasonczech/apexload/pkg/protocol/builtin"
 	"google.golang.org/grpc/codes"
@@ -74,6 +78,141 @@ func TestAssignWorkOneShotJavaVuserBypassesProcessCapacityCap(t *testing.T) {
 	}
 	if !strings.Contains(message, "legacy one-shot runtime is unavailable") {
 		t.Fatalf("unexpected rejection reason for one-shot script: %#v", ack)
+	}
+}
+
+func TestAssignWorkLegacyJavaVuserRequiresDistributedContainment(t *testing.T) {
+	script := []byte(`{
+		"name":"legacy-java",
+		"protocol":"java_vuser",
+		"actions":[{"name":"Action","type":"java_vuser_run","target":"Actions","params":{"method":"full_lifecycle"}}]
+	}`)
+	for _, test := range []struct {
+		name         string
+		features     []string
+		wantAccepted bool
+	}{
+		{
+			name: "stale sidecar missing owner lease",
+			features: []string{
+				javasidecar.FeatureOwnerFencingV1,
+				javasidecar.FeatureExternalRuntimeV1,
+				javasidecar.FeatureRuntimeLeaseV1,
+			},
+		},
+		{
+			name: "stale sidecar missing runtime lease",
+			features: []string{
+				javasidecar.FeatureOwnerFencingV1,
+				javasidecar.FeatureExternalRuntimeV1,
+				javasidecar.FeatureRunnerOwnerLeaseV1,
+			},
+		},
+		{
+			name: "fully leased external sidecar",
+			features: []string{
+				javasidecar.FeatureOwnerFencingV1,
+				javasidecar.FeatureExternalRuntimeV1,
+				javasidecar.FeatureRunnerOwnerLeaseV1,
+				javasidecar.FeatureRuntimeLeaseV1,
+			},
+			wantAccepted: true,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			runner := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+				switch {
+				case request.Method == http.MethodGet && request.URL.Path == "/v1/capabilities":
+					_ = json.NewEncoder(response).Encode(javasidecar.CapabilitiesResponse{
+						Contract:              javasidecar.ContractVersion,
+						Healthy:               true,
+						Features:              test.features,
+						MinimumJavaMajor:      17,
+						JavaMajor:             17,
+						MaxProcesses:          4,
+						MaxExecutionTimeoutMS: javasidecar.MaximumExecutionTimeout.Milliseconds(),
+						MaxCaptureBytes:       javasidecar.MaxCaptureBytes,
+					})
+				case request.Method == http.MethodPost && request.URL.Path == "/v1/validate":
+					_ = json.NewEncoder(response).Encode(javasidecar.ValidateResponse{
+						Contract:  javasidecar.ContractVersion,
+						Valid:     true,
+						JavaMajor: 17,
+					})
+				default:
+					http.NotFound(response, request)
+				}
+			}))
+			defer runner.Close()
+			t.Setenv(config.EnvJavaVuserRunnerEnabled, "true")
+			t.Setenv(config.EnvJavaVuserRunnerMode, config.JavaVuserRunnerModeSidecar)
+			t.Setenv(config.EnvJavaVuserRunnerURL, runner.URL)
+			t.Setenv(config.EnvJavaVuserRunnerAuthToken, "test-"+strings.ReplaceAll(test.name, " ", "-"))
+			t.Setenv(config.EnvJavaVuserMaxProcesses, "4")
+
+			service := newIsolatedService(t, 10, WithExecution())
+			ack, err := service.AssignWork(context.Background(), &pb.WorkAssignment{
+				TestId:        "legacy-java-" + strings.ReplaceAll(test.name, " ", "-"),
+				GroupName:     "default",
+				ScriptId:      "legacy-java-script",
+				ScriptContent: script,
+				VuserCount:    1,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if ack.GetAccepted() != test.wantAccepted {
+				t.Fatalf("legacy Java assignment accepted = %v, want %v (ack %#v)", ack.GetAccepted(), test.wantAccepted, ack)
+			}
+			if !test.wantAccepted && !strings.Contains(strings.ToLower(ack.GetErrorMessage()), "containment") {
+				t.Fatalf("legacy Java assignment error = %q, want containment rejection", ack.GetErrorMessage())
+			}
+		})
+	}
+}
+
+func TestJavaVuserDistributedContainmentAdmission(t *testing.T) {
+	for _, test := range []struct {
+		name         string
+		capabilities protocol.RuntimeCapabilities
+		wantError    bool
+	}{
+		{
+			name: "contained local process",
+			capabilities: protocol.RuntimeCapabilities{
+				Available: true,
+				Features:  []string{"java_vuser_local_process_containment_v1"},
+			},
+		},
+		{
+			name: "fully leased external process",
+			capabilities: protocol.RuntimeCapabilities{
+				Available: true,
+				Features: []string{
+					javasidecar.FeatureExternalRuntimeV1,
+					javasidecar.FeatureRunnerOwnerLeaseV1,
+					javasidecar.FeatureRuntimeLeaseV1,
+				},
+			},
+		},
+		{
+			name: "external process missing owner lease",
+			capabilities: protocol.RuntimeCapabilities{
+				Available: true,
+				Features: []string{
+					javasidecar.FeatureExternalRuntimeV1,
+					javasidecar.FeatureRuntimeLeaseV1,
+				},
+			},
+			wantError: true,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			err := javaVuserDistributedContainmentError(test.capabilities, true)
+			if (err != nil) != test.wantError {
+				t.Fatalf("containment admission error = %v, wantError %v", err, test.wantError)
+			}
+		})
 	}
 }
 

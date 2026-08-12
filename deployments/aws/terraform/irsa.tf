@@ -182,7 +182,7 @@ resource "aws_iam_role_policy" "generator" {
 #     (AmazonEKSAdminPolicy and friends) would be wildly over-privileged for a
 #     controller that only needs to scale one StatefulSet.
 #   - The permissions it actually needs are already expressed, least-privilege,
-#     in deployments/k8s/eks/restart-controls.example.yaml. Bind that Role to
+#     in deployments/k8s/eks/restart-controls.yaml. Bind that Role to
 #     this group with cluster-access.example.yaml in the same overlay.
 #
 # Note this matters only for a REMOTE registration — a controller in another

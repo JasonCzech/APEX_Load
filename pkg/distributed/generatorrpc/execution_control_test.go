@@ -7,9 +7,47 @@ import (
 	"time"
 
 	pb "github.com/jasonczech/apexload/api/proto"
+	"github.com/jasonczech/apexload/pkg/engine"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
+
+func TestScaleDownRetainsGeneralCapacityUntilVUsersAreReaped(t *testing.T) {
+	service := newIsolatedService(t, 10, WithExecution())
+	execution := &groupExecution{groupName: "group", engine: &engine.MultiGroupEngine{}, done: make(chan struct{})}
+	execution.started.Store(true)
+	service.mu.Lock()
+	service.assignments["run"] = assignedTest{
+		testID: "run", committed: true, vuserCount: 7,
+		groups: map[string]int32{"group": 7}, activeGroups: map[string]int32{"group": 7},
+	}
+	service.executions["run"] = map[string]*groupExecution{"group": execution}
+	decision := service.lifecycleCoordinator.planScaleLocked(service, &pb.VUserAdjustment{
+		TestId: "run", GroupName: "group", TargetVusers: 3,
+	}, javaVuserCapacityObservation{})
+	if decision.err != nil || decision.plan == nil {
+		service.mu.Unlock()
+		t.Fatalf("scale plan = %+v", decision)
+	}
+	if got := service.activeVUsers64Locked(); got != 7 {
+		service.mu.Unlock()
+		t.Fatalf("active capacity after scale-down plan = %d, want prior 7 until reap", got)
+	}
+	if got := service.runSupervisionDrainingVUsers; got != 4 {
+		service.mu.Unlock()
+		t.Fatalf("scale-down capacity drain = %d, want 4", got)
+	}
+	if !service.lifecycleCoordinator.rollbackScaleLocked(service, decision.plan) {
+		service.mu.Unlock()
+		t.Fatal("scale reservation rollback failed")
+	}
+	service.releaseScaleDrainLocked(decision.plan)
+	if got := service.activeVUsers64Locked(); got != 7 {
+		service.mu.Unlock()
+		t.Fatalf("active capacity after rollback = %d, want 7", got)
+	}
+	service.mu.Unlock()
+}
 
 func TestPauseCoordinatorTransitionTable(t *testing.T) {
 	tests := []struct {

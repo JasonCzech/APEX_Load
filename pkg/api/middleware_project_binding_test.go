@@ -83,6 +83,18 @@ func TestGlobalReadAuthorizationSkipsMutationProjectLookup(t *testing.T) {
 	}
 }
 
+func TestAuthorizedProjectOrPreservesAbsentUnrestrictedFilter(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/fleet/load-zones", nil)
+	if got := authorizedProjectOr(req, ""); got != "" {
+		t.Fatalf("authorizedProjectOr without a binding or filter = %q, want empty", got)
+	}
+
+	bindAuthorizedProjectToRequest(req, "project-a")
+	if got := authorizedProjectOr(req, ""); got != "project-a" {
+		t.Fatalf("authorizedProjectOr with a bound project = %q, want project-a", got)
+	}
+}
+
 func TestDomainAuthorizationBindsOnlyMutationProject(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/projects/project-a/releases", nil)
 	rec := httptest.NewRecorder()

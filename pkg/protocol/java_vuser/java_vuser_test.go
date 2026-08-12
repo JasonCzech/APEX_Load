@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -222,6 +223,7 @@ func TestStrongContainmentProbeFailureQuarantinesLocalProbeCapacity(t *testing.T
 }
 
 type fakeJavaVuserSidecarClient struct {
+	claimMu              sync.Mutex
 	healthResponse       javasidecar.HealthResponse
 	healthErr            error
 	capabilitiesResponse javasidecar.CapabilitiesResponse
@@ -230,6 +232,10 @@ type fakeJavaVuserSidecarClient struct {
 	validateErr          error
 	claimResponse        javasidecar.ClaimOwnerResponse
 	claimErr             error
+	leaseClaimResponse   javasidecar.ClaimRuntimeLeaseResponse
+	leaseClaimErr        error
+	leaseRenewErr        error
+	leaseRevokeErr       error
 	executeResponse      javasidecar.ExecutionResponse
 	executeErr           error
 	validateRequest      javasidecar.ValidateRequest
@@ -242,6 +248,9 @@ type fakeJavaVuserSidecarClient struct {
 	capabilityCalls      int
 	validateCalls        int
 	claimCalls           int
+	leaseClaimCalls      int
+	leaseRenewCalls      int
+	leaseRevokeCalls     int
 	executeCalls         int
 	closeCalls           int
 }
@@ -263,6 +272,8 @@ func (f *fakeJavaVuserSidecarClient) Validate(_ context.Context, request javasid
 }
 
 func (f *fakeJavaVuserSidecarClient) ClaimOwner(_ context.Context, ownerID string) (javasidecar.ClaimOwnerResponse, error) {
+	f.claimMu.Lock()
+	defer f.claimMu.Unlock()
 	f.claimCalls++
 	response := f.claimResponse
 	if response.OwnerID == "" {
@@ -273,6 +284,48 @@ func (f *fakeJavaVuserSidecarClient) ClaimOwner(_ context.Context, ownerID strin
 	}
 	response.Claimed = f.claimErr == nil
 	return response, f.claimErr
+}
+
+func (f *fakeJavaVuserSidecarClient) claimCallCount() int {
+	f.claimMu.Lock()
+	defer f.claimMu.Unlock()
+	return f.claimCalls
+}
+
+func (f *fakeJavaVuserSidecarClient) ClaimRuntimeLease(context.Context) (javasidecar.ClaimRuntimeLeaseResponse, error) {
+	f.claimMu.Lock()
+	defer f.claimMu.Unlock()
+	f.leaseClaimCalls++
+	response := f.leaseClaimResponse
+	if response.LeaseID == "" {
+		response.LeaseID = "runtime-test-lease"
+	}
+	if response.LeaseToken == "" {
+		response.LeaseToken = strings.Repeat("a", 64)
+	}
+	response.Claimed = f.leaseClaimErr == nil
+	response.LeaseTTLMS = javasidecar.RuntimeLeaseTTL.Milliseconds()
+	return response, f.leaseClaimErr
+}
+
+func (f *fakeJavaVuserSidecarClient) RenewRuntimeLease(context.Context) (javasidecar.RenewRuntimeLeaseResponse, error) {
+	f.claimMu.Lock()
+	defer f.claimMu.Unlock()
+	f.leaseRenewCalls++
+	return javasidecar.RenewRuntimeLeaseResponse{
+		Contract: javasidecar.ContractVersion, LeaseID: "runtime-test-lease", Renewed: f.leaseRenewErr == nil,
+		LeaseTTLMS: javasidecar.RuntimeLeaseTTL.Milliseconds(),
+	}, f.leaseRenewErr
+}
+
+func (f *fakeJavaVuserSidecarClient) RevokeRuntimeLease(context.Context) (javasidecar.RevokeRuntimeLeaseResponse, error) {
+	f.claimMu.Lock()
+	defer f.claimMu.Unlock()
+	f.leaseRevokeCalls++
+	return javasidecar.RevokeRuntimeLeaseResponse{
+		Contract: javasidecar.ContractVersion, LeaseID: "runtime-test-lease",
+		Revoked: f.leaseRevokeErr == nil, Reaped: f.leaseRevokeErr == nil,
+	}, f.leaseRevokeErr
 }
 
 func (f *fakeJavaVuserSidecarClient) Execute(_ context.Context, request javasidecar.ExecutionRequest) (javasidecar.ExecutionResponse, error) {
@@ -345,6 +398,24 @@ func resetProcessSlots() {
 	localContainmentSignal.Unlock()
 	resetLocalHarnessCapabilitiesCache()
 	resetSidecarRuntimeCaches()
+}
+
+func TestLocalProcessContainmentFailureSignalClosesOnTerminalFailure(t *testing.T) {
+	resetProcessSlots()
+	defer resetProcessSlots()
+
+	failed := LocalProcessContainmentFailure()
+	select {
+	case <-failed:
+		t.Fatal("local containment signal was closed before a terminal failure")
+	default:
+	}
+	markLocalContainmentFailed()
+	select {
+	case <-failed:
+	case <-time.After(time.Second):
+		t.Fatal("local containment signal did not close")
+	}
 }
 
 func resetSidecarRuntimeCaches() {
@@ -481,8 +552,21 @@ func TestTeardownDoesNotSuppressContainmentFailureAfterSessionError(t *testing.T
 	}
 	err := runner.Teardown(context.Background())
 	if !errors.Is(err, javarunner.ErrProcessContainmentFailed) ||
+		!errors.Is(err, protocol.ErrContainmentUnproven) ||
 		!strings.Contains(err.Error(), "process_containment_unavailable") {
 		t.Fatalf("Teardown() = %v, want containment failure despite prior session error", err)
+	}
+}
+
+func TestTeardownMarksPriorLocalContainmentFailureUnprovenWithoutSession(t *testing.T) {
+	resetProcessSlots()
+	defer resetProcessSlots()
+	markLocalContainmentFailed()
+	runner := &JavaVuser{cfg: configuration{ActionTimeout: time.Second}}
+	err := runner.Teardown(context.Background())
+	if !errors.Is(err, protocol.ErrContainmentUnproven) ||
+		!errors.Is(err, javarunner.ErrProcessContainmentFailed) {
+		t.Fatalf("Teardown() = %v, want retained unproven local containment", err)
 	}
 }
 
@@ -686,6 +770,33 @@ func TestJavaVuserSidecarPreflightUsesValueFreeValidationIssues(t *testing.T) {
 	}
 }
 
+func TestJavaVuserSidecarPreflightDoesNotClaimShortLivedOwner(t *testing.T) {
+	t.Setenv(config.EnvJavaVuserRunnerEnabled, "true")
+	t.Setenv(config.EnvJavaVuserRunnerMode, config.JavaVuserRunnerModeSidecar)
+	t.Setenv(config.EnvJavaVuserRunnerURL, "http://127.0.0.1:19013")
+	fake := &fakeJavaVuserSidecarClient{validateResponse: javasidecar.ValidateResponse{Valid: true}}
+	runner := JavaVuser{sidecar: fake}
+	preflightCtx, cancelPreflight := context.WithCancel(context.Background())
+	if _, err := runner.PreflightRuntime(preflightCtx, protocol.RuntimePreflightRequest{
+		Targets: []protocol.RuntimePreflightTarget{{ClassName: "Actions", Method: "full_lifecycle"}},
+	}); err != nil {
+		t.Fatalf("PreflightRuntime: %v", err)
+	}
+	cancelPreflight()
+	if calls := fake.claimCallCount(); calls != 0 {
+		t.Fatalf("preflight owner claims = %d, want 0", calls)
+	}
+
+	initCtx, cancelInit := context.WithCancel(context.Background())
+	defer cancelInit()
+	if err := runner.Init(initCtx, map[string]any{}); err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	if calls := fake.claimCallCount(); calls != 1 {
+		t.Fatalf("committed runtime owner claims = %d, want 1", calls)
+	}
+}
+
 func TestJavaVuserSidecarAdvertisesPersistentLifecycleCapacity(t *testing.T) {
 	t.Setenv(config.EnvJavaVuserRunnerEnabled, "true")
 	t.Setenv(config.EnvJavaVuserRunnerMode, config.JavaVuserRunnerModeSidecar)
@@ -701,6 +812,9 @@ func TestJavaVuserSidecarAdvertisesPersistentLifecycleCapacity(t *testing.T) {
 				protocol.FeatureJavaVuserPersistentLifecycleV1,
 				javasidecar.FeatureSessionFrameTokenV1,
 				javasidecar.FeatureOwnerFencingV1,
+				javasidecar.FeatureExternalRuntimeV1,
+				javasidecar.FeatureRunnerOwnerLeaseV1,
+				javasidecar.FeatureRuntimeLeaseV1,
 			},
 		},
 		executeResponse: javasidecar.ExecutionResponse{
@@ -722,8 +836,8 @@ func TestJavaVuserSidecarAdvertisesPersistentLifecycleCapacity(t *testing.T) {
 	if !runner.RuntimeHealthy(context.Background()) || !runner.LegacyRuntimeHealthy() {
 		t.Fatal("healthy sidecar was not accepted by runtime health checks")
 	}
-	if fake.claimCalls != 1 || fake.capabilityCalls != 1 || fake.healthCalls == 0 {
-		t.Fatalf("sidecar calls: claims=%d capabilities=%d health=%d", fake.claimCalls, fake.capabilityCalls, fake.healthCalls)
+	if fake.claimCallCount() != 1 || fake.capabilityCalls != 1 || fake.healthCalls == 0 {
+		t.Fatalf("sidecar calls: claims=%d capabilities=%d health=%d", fake.claimCallCount(), fake.capabilityCalls, fake.healthCalls)
 	}
 
 	result, err := runner.Execute(context.Background(), &protocol.Action{
@@ -774,6 +888,9 @@ func TestJavaVuserSidecarKeepsLegacyAvailabilityWithoutPersistentFrameToken(t *t
 			Features: []string{
 				javasidecar.FeatureValidationOnly,
 				javasidecar.FeatureOwnerFencingV1,
+				javasidecar.FeatureExternalRuntimeV1,
+				javasidecar.FeatureRunnerOwnerLeaseV1,
+				javasidecar.FeatureRuntimeLeaseV1,
 			},
 		},
 	}
@@ -799,6 +916,39 @@ func TestJavaVuserSidecarKeepsLegacyAvailabilityWithoutPersistentFrameToken(t *t
 	}
 }
 
+func TestJavaVuserSidecarRequiresExplicitExternalLeaseCapabilities(t *testing.T) {
+	for index, omitted := range []string{
+		javasidecar.FeatureExternalRuntimeV1,
+		javasidecar.FeatureRunnerOwnerLeaseV1,
+		javasidecar.FeatureRuntimeLeaseV1,
+	} {
+		t.Run(omitted, func(t *testing.T) {
+			resetSidecarRuntimeCaches()
+			t.Cleanup(resetSidecarRuntimeCaches)
+			features := []string{
+				javasidecar.FeatureOwnerFencingV1,
+				javasidecar.FeatureExternalRuntimeV1,
+				javasidecar.FeatureRunnerOwnerLeaseV1,
+				javasidecar.FeatureRuntimeLeaseV1,
+			}
+			features = slices.DeleteFunc(features, func(feature string) bool { return feature == omitted })
+			fake := &fakeJavaVuserSidecarClient{capabilitiesResponse: javasidecar.CapabilitiesResponse{
+				Healthy: true, JavaMajor: 21, MaxProcesses: 3, Features: features,
+			}}
+			runner := JavaVuser{
+				cfg: configuration{
+					Enabled: true, RunnerMode: config.JavaVuserRunnerModeSidecar,
+					RunnerURL: fmt.Sprintf("http://127.0.0.1:%d", 19120+index), RunnerCommand: defaultRunnerCommand,
+				},
+				sidecar: fake,
+			}
+			if capabilities := runner.RuntimeCapabilities(); capabilities.Available || capabilities.MaxVUsers != 0 {
+				t.Fatalf("RuntimeCapabilities without %q = %#v, want unavailable", omitted, capabilities)
+			}
+		})
+	}
+}
+
 func TestJavaVuserSidecarCapabilitiesCacheIsScopedByAuthCredential(t *testing.T) {
 	resetSidecarRuntimeCaches()
 	t.Cleanup(resetSidecarRuntimeCaches)
@@ -817,6 +967,9 @@ func TestJavaVuserSidecarCapabilitiesCacheIsScopedByAuthCredential(t *testing.T)
 				protocol.FeatureJavaVuserPersistentLifecycleV1,
 				javasidecar.FeatureSessionFrameTokenV1,
 				javasidecar.FeatureOwnerFencingV1,
+				javasidecar.FeatureExternalRuntimeV1,
+				javasidecar.FeatureRunnerOwnerLeaseV1,
+				javasidecar.FeatureRuntimeLeaseV1,
 			},
 		},
 	}
@@ -879,6 +1032,9 @@ func TestJavaVuserEffectiveConfigurationScopesCapabilitiesByOperatorSidecarCrede
 				protocol.FeatureJavaVuserPersistentLifecycleV1,
 				javasidecar.FeatureSessionFrameTokenV1,
 				javasidecar.FeatureOwnerFencingV1,
+				javasidecar.FeatureExternalRuntimeV1,
+				javasidecar.FeatureRunnerOwnerLeaseV1,
+				javasidecar.FeatureRuntimeLeaseV1,
 			},
 		},
 	}
@@ -910,6 +1066,9 @@ func TestJavaVuserSidecarPreflightPublishesFreshCapacityForAdmission(t *testing.
 		protocol.FeatureJavaVuserPersistentLifecycleV1,
 		javasidecar.FeatureSessionFrameTokenV1,
 		javasidecar.FeatureOwnerFencingV1,
+		javasidecar.FeatureExternalRuntimeV1,
+		javasidecar.FeatureRunnerOwnerLeaseV1,
+		javasidecar.FeatureRuntimeLeaseV1,
 	}
 	stale := &fakeJavaVuserSidecarClient{
 		capabilitiesResponse: javasidecar.CapabilitiesResponse{
@@ -2546,6 +2705,39 @@ public class Actions {
 	}
 	if got := len(processSlotChan()); got != 0 {
 		t.Fatalf("occupied process slots after teardown = %d, want 0", got)
+	}
+}
+
+func TestJavaVuserLocalRuntimeAdvertisesOnlyProvenContainment(t *testing.T) {
+	runnerCommand, err := exec.LookPath("sh")
+	if err != nil {
+		t.Skip("no local wrapper command is available")
+	}
+	for _, test := range []struct {
+		name        string
+		contained   bool
+		wantFeature bool
+	}{
+		{name: "strong containment", contained: true, wantFeature: true},
+		{name: "best effort only", contained: false, wantFeature: false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			runner := JavaVuser{
+				cfg: configuration{
+					Enabled: true, RunnerMode: config.JavaVuserRunnerModeLocal,
+					RunnerCommand: runnerCommand, MaxProcesses: 2,
+				},
+				supportsStrongProcessContainment: func() bool { return test.contained },
+			}
+			capabilities := runner.RuntimeCapabilities()
+			if !capabilities.Available || capabilities.MaxVUsers != 2 {
+				t.Fatalf("RuntimeCapabilities = %#v, want local capacity", capabilities)
+			}
+			gotFeature := protocol.RuntimeFeaturesSatisfy(capabilities.Features, FeatureLocalProcessContainmentV1)
+			if gotFeature != test.wantFeature {
+				t.Fatalf("local containment feature = %v in %v, want %v", gotFeature, capabilities.Features, test.wantFeature)
+			}
+		})
 	}
 }
 

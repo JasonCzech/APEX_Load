@@ -4,9 +4,10 @@ This runbook covers the self-hosted operational paths for APEX Load auth, RBAC, 
 
 ## Supported Production Modes
 
-APEX Load supports three auth modes:
+APEX Load supports four auth modes:
 
 - `dev`: local development bypass. Use only for local development or a controlled break-glass recovery window.
+- `local`: fixed-credential, database-backed test personas for non-production browser and packaged desktop testing.
 - `trusted_headers`: production mode for an upstream gateway that owns browser sign-in and forwards identity or role headers.
 - `oidc`: native APEX Load OIDC login, callback, signed local session, logout, and claim mapping.
 
@@ -14,7 +15,21 @@ Recommended default:
 
 - Use `trusted_headers` when Microsoft Entra ID, SAML, or another identity gateway already protects the ingress.
 - Use `oidc` when APEX Load should own the browser login redirect and local dashboard session.
+- Use `local` only on non-production controllers when persona switching and authorization testing are required. The controller rejects it whenever production posture is enabled.
 - Do not run shared production controllers in `dev` mode except during an approved break-glass window.
+
+## Local Test Login
+
+Select **Local Test Login** in Settings, save, and restart the controller. The landing page then accepts these seeded identities:
+
+| Credential | Initial access |
+| --- | --- |
+| `admin/admin` | Global `system_admin` |
+| `domainadmin/domainadmin` | Global `viewer`; `project_admin` for Default Domain |
+| `user/user` | Global `viewer`; viewer for the default domain, repository, and project |
+| `dev/dev` | Global `viewer`; editor for the default domain, repository, and project |
+
+Use Access to disable identities or alter their bindings; startup seeding does not overwrite those edits. Add more domain bindings to make `domainadmin` responsible for a domain list. Deleting a fixture recreates it on the next Local Test Login startup. Logout requires the CSRF token returned by `/api/v1/auth/me`, deletes the persisted session, and clears the browser cookie or desktop capability binding.
 
 ## Native OIDC Bootstrap Checklist
 
@@ -117,7 +132,7 @@ When the controller reports `auth.mode = dev`, the dashboard sidebar shows a dev
 - User preview keeps script, scenario, run, replay, and application authoring controls available for the active project while hiding system administration and project-governance controls.
 - Backend RBAC still enforces protected APIs in User preview, returning normal `403` responses for admin-only operations.
 
-The preview headers are ignored when auth mode is `trusted_headers` or `oidc`; production identity and RBAC always come from the configured gateway or OIDC session.
+The preview headers are ignored when auth mode is `local`, `trusted_headers`, or `oidc`; identity and RBAC then come from the configured local session, gateway, or OIDC session.
 
 ## Break-Glass Recovery
 

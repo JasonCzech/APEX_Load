@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"strings"
 	"time"
@@ -10,12 +11,16 @@ import (
 const (
 	defaultGeneratorPodTerminationWatchInterval = 5 * time.Second
 	generatorPodInventoryCacheTTL               = 4 * time.Second
+	generatorPodInventoryFailureCacheTTL        = 1 * time.Second
 )
+
+var errGeneratorPodInventoryProbeFailed = errors.New("kubernetes pod inventory probe failed")
 
 type generatorPodInventoryCache struct {
 	namespace string
 	selector  string
 	pods      []KubePodRef
+	err       error
 	expiresAt time.Time
 	inFlight  chan struct{}
 }
@@ -109,8 +114,9 @@ func (s *Server) cachedGeneratorPods(ctx context.Context) ([]KubePodRef, error) 
 			s.kubePodsCache.selector == selector &&
 			now.Before(s.kubePodsCache.expiresAt) {
 			pods := cloneKubePodRefs(s.kubePodsCache.pods)
+			err := s.kubePodsCache.err
 			s.kubePodsCacheMu.Unlock()
-			return pods, nil
+			return pods, err
 		}
 		if wait := s.kubePodsCache.inFlight; wait != nil {
 			s.kubePodsCacheMu.Unlock()
@@ -126,12 +132,20 @@ func (s *Server) cachedGeneratorPods(ctx context.Context) ([]KubePodRef, error) 
 		s.kubePodsCacheMu.Unlock()
 
 		pods, err := s.kubeRestarter.ListPods(ctx, namespace, selector)
+		safeErr, cacheFailure := safeGeneratorPodInventoryError(ctx, err)
 		s.kubePodsCacheMu.Lock()
 		if err == nil {
 			s.kubePodsCache.namespace = namespace
 			s.kubePodsCache.selector = selector
 			s.kubePodsCache.pods = cloneKubePodRefs(pods)
+			s.kubePodsCache.err = nil
 			s.kubePodsCache.expiresAt = time.Now().Add(generatorPodInventoryCacheTTL)
+		} else if cacheFailure {
+			s.kubePodsCache.namespace = namespace
+			s.kubePodsCache.selector = selector
+			s.kubePodsCache.pods = nil
+			s.kubePodsCache.err = safeErr
+			s.kubePodsCache.expiresAt = time.Now().Add(generatorPodInventoryFailureCacheTTL)
 		}
 		if s.kubePodsCache.inFlight == wait {
 			s.kubePodsCache.inFlight = nil
@@ -139,10 +153,27 @@ func (s *Server) cachedGeneratorPods(ctx context.Context) ([]KubePodRef, error) 
 		}
 		s.kubePodsCacheMu.Unlock()
 		if err != nil {
-			return nil, err
+			return nil, safeErr
 		}
 		return cloneKubePodRefs(pods), nil
 	}
+}
+
+// safeGeneratorPodInventoryError keeps credential-bearing Kubernetes response
+// bodies out of the shared cache and logs. Caller cancellation is not cached
+// because it says nothing about the API server; timeouts and operational
+// failures receive a short negative TTL to prevent readiness-request storms.
+func safeGeneratorPodInventoryError(ctx context.Context, err error) (error, bool) {
+	if err == nil {
+		return nil, false
+	}
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		return context.DeadlineExceeded, true
+	}
+	if errors.Is(err, context.Canceled) || errors.Is(ctx.Err(), context.Canceled) {
+		return context.Canceled, false
+	}
+	return errGeneratorPodInventoryProbeFailed, true
 }
 
 func cloneKubePodRefs(pods []KubePodRef) []KubePodRef {

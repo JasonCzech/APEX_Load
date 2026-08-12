@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useMemo, useRef, useState, type Dispatch, type ReactNode, type SetStateAction } from 'react'
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type Dispatch, type ReactNode, type SetStateAction } from 'react'
 import { type DashboardThemePreference } from '../hooks/useDashboardTheme'
 import { useApplicationApi } from '../hooks/api/useApplicationApi'
 import { useRepositoryApi } from '../hooks/api/useRepositoryApi'
@@ -424,6 +424,7 @@ export default function SettingsPage({
   }>('apexload.settings.domainWarning'))
   const [confirmDeleteDomain, setConfirmDeleteDomain] = useState<Domain | null>(null)
   const [managedReleases, setManagedReleases] = useState(releases)
+  const [managedReleasesApplicationId, setManagedReleasesApplicationId] = useState(activeApplication?.id || '')
   const [newApplicationName, setNewApplicationName] = useState('')
   const [newApplicationProjectId, setNewApplicationProjectId] = useState('')
   const [applicationCreateBusy, setApplicationCreateBusy] = useState(false)
@@ -643,6 +644,14 @@ export default function SettingsPage({
   }, [loadSettings])
 
   const fleetApi = useFleetApi()
+  useLayoutEffect(() => {
+    const applicationId = activeApplication?.id || ''
+    setManagedReleasesApplicationId(applicationId)
+    setManagedReleases([])
+    setConfirmDeleteRelease(null)
+    setConfirmArchiveRelease(null)
+  }, [activeApplication?.id])
+
   useEffect(() => {
     let cancelled = false
     listAllFleetPools(fleetApi.listFleetPools)
@@ -902,6 +911,9 @@ export default function SettingsPage({
     [hasCapacityDraftChanges, settings, savedSettings],
   )
   const authDiagnosticsStale = useMemo(() => JSON.stringify(settings.auth) !== JSON.stringify(savedSettings.auth), [settings.auth, savedSettings.auth])
+  const activeAuthMode = authStatus?.mode
+  const savedAuthMode = savedSettings.auth.mode
+  const authModeRestartPending = Boolean(activeAuthMode && activeAuthMode !== savedAuthMode)
   // Effective-access resources belong to the exact domain/project/repository
   // scope that produced them. While a new scope is loading, fail every
   // capability closed so standalone actions and topbar saves cannot reuse the
@@ -1124,6 +1136,7 @@ export default function SettingsPage({
       try {
         const response = await applicationApi.listReleases(activeApplication.id, true)
         if (!cancelled) {
+          setManagedReleasesApplicationId(activeApplication.id)
           setManagedReleases(reconcileManagedReleaseSnapshots(
             response.releases || [],
             activeApplication.id,
@@ -1133,6 +1146,7 @@ export default function SettingsPage({
         }
       } catch {
         if (!cancelled) {
+          setManagedReleasesApplicationId(activeApplication.id)
           setManagedReleases(reconcileManagedReleaseSnapshots(
             releases,
             activeApplication.id,
@@ -1147,6 +1161,10 @@ export default function SettingsPage({
       cancelled = true
     }
   }, [activeApplication?.id, applicationApi, releases])
+
+  const visibleManagedReleases = managedReleasesApplicationId === (activeApplication?.id || '')
+    ? managedReleases
+    : []
 
   // Settings reads the project catalog from ProjectContext rather than fetching
   // its own. App re-provides that context already filtered to the active domain,
@@ -1975,7 +1993,9 @@ export default function SettingsPage({
     setDomainDraftName(updated.name)
     setDomainDraftDescription(updated.description || '')
     onDomainChange?.(updated)
-    setDomainActionMessage(`Domain "${updated.name}" saved.`)
+    const savedMessage = `Domain "${updated.name}" saved.`
+    setDomainActionMessage(savedMessage)
+    writeSettingsBreadcrumb('apexload.settings.domainMessage', savedMessage)
     setDomainActionError('')
     try {
       await onDomainsRefresh?.(updated.id, { preserveDomain: updated })
@@ -1985,11 +2005,13 @@ export default function SettingsPage({
       // "do not retry" warning about a list that is now current.
       clearSettingsBreadcrumb('apexload.settings.domainWarning')
     } catch {
-      setDomainReconciliationWarning({
+      const warning = {
         message: `Domain "${updated.name}" was saved, but the domain list could not be refreshed. The save succeeded—do not save it again. Retry synchronization below.`,
         preferredId: updated.id,
         preserveDomain: updated,
-      })
+      }
+      setDomainReconciliationWarning(warning)
+      writeSettingsBreadcrumb('apexload.settings.domainWarning', warning)
     }
     return true
   }
@@ -3403,14 +3425,14 @@ export default function SettingsPage({
               <div className="settings-manager-summary">
                 <div>
                   <span className="setting-label">Access Control</span>
-                  <span className="setting-desc">Backend 3.1 scaffold for local development bypass, Microsoft Entra ID-backed trusted headers, service-account API keys, and governance audit history.</span>
+                  <span className="setting-desc">Choose open development access, non-production local test personas, trusted headers, or native OIDC. Service-account API keys remain available for automation.</span>
                 </div>
-                <strong>{formatAuthMode(settings.auth.mode)}</strong>
+                <strong>{authDiagnosticsStale ? 'Draft: ' : 'Saved: '}{formatAuthMode(settings.auth.mode)}</strong>
               </div>
               <div className="setting-row">
                 <div className="setting-info">
                   <span className="setting-label">Access Control Mode <span className="settings-restart-badge">Restart required</span></span>
-                  <span className="setting-desc">Dev Bypass keeps local development open by default. Trusted Headers expects an authenticating reverse proxy to inject user and role headers before requests reach APEX Load. Changes to auth mode take effect after restarting the controller.</span>
+                  <span className="setting-desc">Dev Bypass remains the default. Local Test Login enables four database-backed personas and is rejected in production posture. Changes take effect after restarting the controller.</span>
                 </div>
                 <select
                   className="settings-input"
@@ -3418,13 +3440,25 @@ export default function SettingsPage({
                   onChange={(e) => updateAuth('mode', e.target.value)}
                 >
                   <option value="dev">Dev Bypass</option>
+                  <option value="local">Local Test Login (non-production only)</option>
                   <option value="oidc" disabled={desktopSurface}>Native OIDC</option>
                   <option value="trusted_headers" disabled={desktopSurface}>Trusted Headers</option>
                 </select>
               </div>
+              {authModeRestartPending && activeAuthMode && (
+                <div
+                  className="settings-inline-note"
+                  role="status"
+                  aria-live="polite"
+                  data-testid="auth-mode-restart-pending"
+                >
+                  <strong>Authentication restart pending.</strong>{' '}
+                  Saved mode: {formatAuthMode(savedAuthMode)}. Active runtime mode: {formatAuthMode(activeAuthMode)}. Restart the controller to activate the saved mode.
+                </div>
+              )}
               {desktopSurface && (
                 <div className="settings-inline-note" role="note">
-                  Native OIDC and Trusted Headers are configured and used from the hosted browser dashboard. The embedded desktop workspace requires Dev Bypass because browser sessions and proxy-injected headers are not available on its loopback connection.
+                  Local Test Login and Dev Bypass work in the embedded desktop workspace. Native OIDC and Trusted Headers must be used from the hosted browser dashboard.
                 </div>
               )}
               {settings.auth.mode === 'dev' && (
@@ -3442,6 +3476,24 @@ export default function SettingsPage({
                       <span className="setting-desc">All operations are currently permitted through the explicit dev-mode bypass. Switch to Trusted Headers before production use.</span>
                     </div>
                     <span className="settings-value-display">Open access for local development</span>
+                  </div>
+                </div>
+              )}
+              {settings.auth.mode === 'local' && (
+                <div className="settings-subsection">
+                  <div className="settings-manager-summary">
+                    <div>
+                      <span className="setting-label">Local Test Login</span>
+                      <span className="setting-desc">Non-production-only username/password access for persona and authorization testing. Restart the controller after saving.</span>
+                    </div>
+                    <strong>Testing only</strong>
+                  </div>
+                  <div className="setting-row">
+                    <div className="setting-info">
+                      <span className="setting-label">Seeded Personas</span>
+                      <span className="setting-desc">Access edits are preserved across restarts. Deleted fixtures are recreated the next time Local Test Login starts.</span>
+                    </div>
+                    <span className="settings-value-display cell-mono">admin/admin · domainadmin/domainadmin · user/user · dev/dev</span>
                   </div>
                 </div>
               )}
@@ -3869,7 +3921,7 @@ export default function SettingsPage({
                   </div>
                 </>
               )}
-              {(settings.auth.mode === 'trusted_headers' || settings.auth.mode === 'oidc') && (
+              {(settings.auth.mode === 'local' || settings.auth.mode === 'trusted_headers' || settings.auth.mode === 'oidc') && (
                 <div className="settings-subsection">
                   <div className="settings-manager-summary">
                     <div>
@@ -5147,13 +5199,13 @@ export default function SettingsPage({
               <div className="settings-manager-summary">
                 <div>
                   <span className="setting-label">Releases</span>
-                  <span className="setting-desc">These belong to {activeApplication?.name || 'the selected application'}. Create new releases from the New Test page.</span>
+                  <span className="setting-desc">Release families belong to the project and are joined to every application. Create them from the sidebar or repository.</span>
                 </div>
-                <strong>{managedReleases.length}</strong>
+                <strong>{visibleManagedReleases.length}</strong>
               </div>
-              {managedReleases.length > 0 ? (
+              {visibleManagedReleases.length > 0 ? (
                 <div className="settings-release-list">
-                  {managedReleases.map(release => (
+                  {visibleManagedReleases.map(release => (
                     <div key={release.id} className={`settings-release-row ${!release.archived_at && activeRelease?.id === release.id ? 'active' : ''}`}>
                       <button
                         type="button"

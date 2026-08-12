@@ -43,8 +43,12 @@ const (
 	javaVuserEventV2       = "apexload.java_vuser.lrapi_events.v2"
 	javaVuserValidationV1  = "java_vuser_validation_only_v1"
 	javaVuserClassloaderV1 = "java_vuser_dedicated_classloader_v1"
-	modernXBootWarning     = javasidecar.WarningModernXBootClasspathFallback
-	sessionFramePrefix     = "APEXLOAD_JAVA_VUSER_V2 "
+	// FeatureLocalProcessContainmentV1 distinguishes an in-generator runtime
+	// with proven strong process-tree ownership from an external sidecar, whose
+	// safety depends on a renewable runner-owner lease.
+	FeatureLocalProcessContainmentV1 = "java_vuser_local_process_containment_v1"
+	modernXBootWarning               = javasidecar.WarningModernXBootClasspathFallback
+	sessionFramePrefix               = "APEXLOAD_JAVA_VUSER_V2 "
 )
 
 var runnerWaitDelay = 2 * time.Second
@@ -83,7 +87,10 @@ var knownSidecarCodes = map[string]struct{}{
 	"session_configuration_mismatch": {}, "session_id_invalid": {}, "session_unusable": {},
 	"session_not_started": {},
 	"owner_claim_failed":  {}, "owner_claim_in_progress": {}, "owner_fenced": {},
-	"owner_id_invalid": {}, "owner_not_claimed": {},
+	"owner_id_invalid": {}, "owner_identity_unavailable": {}, "owner_lease_ttl_invalid": {}, "owner_not_claimed": {},
+	"runtime_cleanup_failed": {}, "runtime_lease_expired": {}, "runtime_lease_fenced": {},
+	"runtime_lease_id_invalid": {}, "runtime_lease_identity_unavailable": {},
+	"runtime_lease_not_found": {}, "runtime_lease_revoked": {}, "runtime_lease_ttl_invalid": {},
 	"shared_classpath_unavailable": {}, "startup_timeout_out_of_range": {},
 	"target_class_invalid": {}, "target_method_invalid": {}, "target_validation_failed": {}, "validation_timeout": {},
 	"timeout_out_of_range": {}, "work_dir_unavailable": {},
@@ -91,6 +98,10 @@ var knownSidecarCodes = map[string]struct{}{
 	protocol.FeatureJavaVuserPhaseLifecycleV1:                  {},
 	protocol.FeatureJavaVuserPersistentLifecycleV1:             {},
 	protocol.FeatureJavaVuserSessionFrameTokenV1:               {},
+	javasidecar.FeatureOwnerFencingV1:                          {},
+	javasidecar.FeatureExternalRuntimeV1:                       {},
+	javasidecar.FeatureRunnerOwnerLeaseV1:                      {},
+	javasidecar.FeatureRuntimeLeaseV1:                          {},
 	"vm_parameter_" + javarunner.VMParameterTooMany:            {},
 	"vm_parameter_" + javarunner.VMParameterTotalTooLarge:      {},
 	"vm_parameter_" + javarunner.VMParameterEmpty:              {},
@@ -109,7 +120,6 @@ var knownSidecarCodes = map[string]struct{}{
 	"vm_parameter_" + javarunner.VMParameterReservedProperty:   {},
 	"vm_parameter_" + javarunner.VMParameterTemplateForbidden:  {},
 	"vm_parameter_" + javarunner.VMParameterSensitiveProperty:  {},
-	javasidecar.FeatureOwnerFencingV1:                          {},
 }
 
 // processSlots bounds the number of concurrent runner processes per generator.
@@ -197,6 +207,18 @@ func localContainmentFailureDone() <-chan struct{} {
 	return localContainmentSignal.done
 }
 
+// LocalProcessContainmentFailure returns the process-wide, close-only signal
+// for a terminal loss of local Java process-tree containment. The generator
+// process owner watches this signal so a controller that is still renewing a
+// run lease cannot keep an uncontained JVM (or one of its descendants) alive.
+// External sidecars enforce their own owner lease and process-exit contract.
+func LocalProcessContainmentFailure() <-chan struct{} {
+	// Synchronize a failure first observed by the shared javarunner package into
+	// this protocol-level signal before returning it to the process owner.
+	_ = localProcessContainmentFailed()
+	return localContainmentFailureDone()
+}
+
 func markLocalContainmentFailed() {
 	localContainmentFailed.Store(true)
 	localContainmentSignal.Lock()
@@ -231,12 +253,16 @@ type JavaVuser struct {
 	// fork. Production instances receive *javasidecar.Client during Init.
 	sidecar javaVuserSidecarClient
 
-	sessionMu          sync.Mutex
-	session            *runnerSession
-	sessionErr         error
-	sidecarSessionID   string
-	sidecarSessionErr  error
-	sidecarSessionLive bool
+	sessionMu           sync.Mutex
+	session             *runnerSession
+	sessionErr          error
+	sidecarSessionID    string
+	sidecarSessionErr   error
+	sidecarSessionLive  bool
+	sidecarLeaseMu      sync.Mutex
+	sidecarLeaseCancel  context.CancelFunc
+	sidecarLeaseDone    chan struct{}
+	sidecarLeaseClaimed bool
 
 	failedStartMu    sync.Mutex
 	failedStartReaps []<-chan struct{}
@@ -285,6 +311,9 @@ type javaVuserSidecarClient interface {
 	Capabilities(context.Context) (javasidecar.CapabilitiesResponse, error)
 	Validate(context.Context, javasidecar.ValidateRequest) (javasidecar.ValidateResponse, error)
 	ClaimOwner(context.Context, string) (javasidecar.ClaimOwnerResponse, error)
+	ClaimRuntimeLease(context.Context) (javasidecar.ClaimRuntimeLeaseResponse, error)
+	RenewRuntimeLease(context.Context) (javasidecar.RenewRuntimeLeaseResponse, error)
+	RevokeRuntimeLease(context.Context) (javasidecar.RevokeRuntimeLeaseResponse, error)
 	Execute(context.Context, javasidecar.ExecutionRequest) (javasidecar.ExecutionResponse, error)
 	CloseSession(context.Context, string) (javasidecar.CloseSessionResponse, error)
 }
@@ -340,6 +369,10 @@ func (j *JavaVuser) Name() string {
 }
 
 func (j *JavaVuser) Init(ctx context.Context, cfg map[string]any) error {
+	return j.init(ctx, cfg, true)
+}
+
+func (j *JavaVuser) init(ctx context.Context, cfg map[string]any, claimSidecarOwner bool) error {
 	if len(protocol.TargetPolicyHosts(cfg)) > 0 {
 		return fmt.Errorf("java_vuser runner cannot enforce the CI runtime target policy")
 	}
@@ -441,10 +474,21 @@ func (j *JavaVuser) Init(ctx context.Context, cfg map[string]any) error {
 		if j.sidecar == nil {
 			j.sidecar = client
 		}
-		if operator.Enabled {
+		if operator.Enabled && claimSidecarOwner {
 			if _, claimErr := j.sidecar.ClaimOwner(ctx, javaVuserProcessOwnerID()); claimErr != nil {
 				return fmt.Errorf("java_vuser sidecar owner claim failed (%s)", sidecarCallErrorCode(claimErr))
 			}
+			if _, claimErr := j.sidecar.ClaimRuntimeLease(ctx); claimErr != nil {
+				return fmt.Errorf("java_vuser sidecar runtime lease claim failed (%s)", sidecarCallErrorCode(claimErr))
+			}
+			keeperCtx, keeperCancel := context.WithCancel(ctx)
+			keeperDone := make(chan struct{})
+			j.sidecarLeaseMu.Lock()
+			j.sidecarLeaseCancel = keeperCancel
+			j.sidecarLeaseDone = keeperDone
+			j.sidecarLeaseClaimed = true
+			j.sidecarLeaseMu.Unlock()
+			go j.renewSidecarLeases(keeperCtx, keeperDone)
 		}
 	} else if operator.Enabled {
 		j.cfg.DirectJavaRunner = javarunner.IsDirectJavaCommand(j.cfg.RunnerCommand)
@@ -466,6 +510,59 @@ func (j *JavaVuser) Init(ctx context.Context, cfg map[string]any) error {
 		j.cfg.ActionTimeout = defaultActionTimeout
 	}
 	return nil
+}
+
+func (j *JavaVuser) renewSidecarLeases(ctx context.Context, done chan<- struct{}) {
+	defer close(done)
+	ticker := time.NewTicker(javasidecar.RunnerOwnerLeaseRenewInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			renewCtx, cancel := context.WithTimeout(ctx, javasidecar.RunnerOwnerLeaseRenewInterval)
+			_, _ = j.sidecar.ClaimOwner(renewCtx, javaVuserProcessOwnerID())
+			cancel()
+			renewCtx, cancel = context.WithTimeout(ctx, javasidecar.RuntimeLeaseRenewInterval)
+			_, _ = j.sidecar.RenewRuntimeLease(renewCtx)
+			cancel()
+		}
+	}
+}
+
+func (j *JavaVuser) stopSidecarLeaseKeeper() bool {
+	j.sidecarLeaseMu.Lock()
+	cancel, done, claimed := j.sidecarLeaseCancel, j.sidecarLeaseDone, j.sidecarLeaseClaimed
+	j.sidecarLeaseCancel, j.sidecarLeaseDone = nil, nil
+	j.sidecarLeaseMu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
+	if done != nil {
+		<-done
+	}
+	return claimed
+}
+
+// revokeSidecarRuntimeLease is intentionally not bounded by the engine's
+// teardown context after the lease keeper stops. An ambiguous cleanup response
+// cannot be converted into quiescence: this barrier remains open until a retry
+// positively observes reap, or the generator's outer run fence exits the
+// process. Each individual transport attempt remains bounded.
+func (j *JavaVuser) revokeSidecarRuntimeLease() error {
+	for {
+		attemptCtx, cancel := context.WithTimeout(context.Background(), javasidecar.RuntimeLeaseRenewInterval)
+		_, err := j.sidecar.RevokeRuntimeLease(attemptCtx)
+		cancel()
+		if err == nil {
+			j.sidecarLeaseMu.Lock()
+			j.sidecarLeaseClaimed = false
+			j.sidecarLeaseMu.Unlock()
+			return nil
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
 }
 
 func (j *JavaVuser) Execute(ctx context.Context, action *protocol.Action) (*protocol.Result, error) {
@@ -1085,6 +1182,7 @@ func (j *JavaVuser) Teardown(ctx context.Context) error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	leaseClaimed := j.stopSidecarLeaseKeeper()
 	j.sessionMu.Lock()
 	defer j.sessionMu.Unlock()
 
@@ -1107,10 +1205,22 @@ func (j *JavaVuser) Teardown(ctx context.Context) error {
 					),
 				)
 			}
+			if errors.Is(closeErr, javarunner.ErrProcessContainmentFailed) {
+				teardownErrs = append(teardownErrs, protocol.ErrContainmentUnproven)
+			}
 		}
 		j.session = nil
 	}
-	if j.sidecarSessionID != "" && j.sidecar != nil {
+	if leaseClaimed && j.sidecar != nil {
+		// Runtime revoke encompasses every one-shot execution and persistent JVM
+		// created by this JavaVuser. The server acknowledges only after positive
+		// reap, making this the engine's exact quiescence barrier.
+		if revokeErr := j.revokeSidecarRuntimeLease(); revokeErr != nil {
+			teardownErrs = append(teardownErrs, revokeErr)
+		}
+		j.sidecarSessionID = ""
+		j.sidecarSessionLive = false
+	} else if j.sidecarSessionID != "" && j.sidecar != nil {
 		_, closeErr := j.sidecar.CloseSession(ctx, j.sidecarSessionID)
 		if closeErr != nil {
 			code := sidecarCallErrorCode(closeErr)
@@ -1124,7 +1234,7 @@ func (j *JavaVuser) Teardown(ctx context.Context) error {
 	if reapErr := j.waitForFailedStartReaps(ctx, j.cfg.ActionTimeout); reapErr != nil {
 		teardownErrs = append(teardownErrs, reapErr)
 	}
-	if javarunner.ProcessContainmentFailed() {
+	if localProcessContainmentFailed() {
 		reapCtx := ctx
 		cancel := func() {}
 		if _, hasDeadline := ctx.Deadline(); !hasDeadline {
@@ -1141,6 +1251,10 @@ func (j *JavaVuser) Teardown(ctx context.Context) error {
 			)
 		}
 		cancel()
+		teardownErrs = append(teardownErrs, errors.Join(
+			protocol.ErrContainmentUnproven,
+			javarunner.ErrProcessContainmentFailed,
+		))
 	}
 	return errors.Join(teardownErrs...)
 }
@@ -1223,14 +1337,14 @@ func (j *JavaVuser) RuntimeCapabilities() protocol.RuntimeCapabilities {
 		if err != nil || !capabilities.Healthy || capabilities.JavaMajor < javarunner.EffectiveMinimumJavaMajor(cfg.AllowLegacyJava) {
 			return protocol.RuntimeCapabilities{MaxVUsers: 0}
 		}
-		// Owner fencing is part of every current sidecar execution, including
-		// legacy one-shot full_lifecycle calls. Authenticated session frames are
-		// required only for persistent phase execution. Requiring that feature
-		// here would suppress the entire java_vuser protocol on the documented
-		// stock/weak-containment sidecar even though it can safely run one-shot
-		// scripts. Persistent admission remains fail-closed through the composite
-		// RuntimeFeaturesSatisfy(PersistentLifecycleV1) check.
-		if !protocol.RuntimeFeaturesSatisfy(capabilities.Features, javasidecar.FeatureOwnerFencingV1) {
+		// External mode is eligible only when the peer explicitly identifies
+		// itself as the out-of-process runtime and proves both owner fencing and
+		// renewable owner leases. Authenticated session frames remain a separate
+		// requirement for persistent phase execution.
+		if !protocol.RuntimeFeaturesSatisfy(capabilities.Features, javasidecar.FeatureOwnerFencingV1) ||
+			!protocol.RuntimeFeaturesSatisfy(capabilities.Features, javasidecar.FeatureExternalRuntimeV1) ||
+			!protocol.RuntimeFeaturesSatisfy(capabilities.Features, javasidecar.FeatureRunnerOwnerLeaseV1) ||
+			!protocol.RuntimeFeaturesSatisfy(capabilities.Features, javasidecar.FeatureRuntimeLeaseV1) {
 			return protocol.RuntimeCapabilities{MaxVUsers: 0}
 		}
 		features := make([]string, 0, len(capabilities.Features))
@@ -1264,11 +1378,17 @@ func (j *JavaVuser) RuntimeCapabilities() protocol.RuntimeCapabilities {
 	// Availability is the base legacy full_lifecycle contract. Only a live
 	// harness capability frame may add persistent per-VUser lifecycle support.
 	features := []string{}
+	containmentCtx, containmentCancel := context.WithTimeout(context.Background(), defaultHealthTimeout)
+	strongProcessContainment := j.supportsStrongProcessContainmentAvailable(containmentCtx)
+	containmentCancel()
+	if strongProcessContainment {
+		features = append(features, FeatureLocalProcessContainmentV1)
+	}
 	if prepared.DirectJavaRunner {
 		evidence, evidenceErr := modernHarnessEvidence(prepared)
 		healthCtx, cancel := context.WithTimeout(context.Background(), defaultHealthTimeout)
 		defer cancel()
-		if j.supportsStrongProcessContainmentAvailable(healthCtx) &&
+		if strongProcessContainment &&
 			evidenceErr == nil && evidence == harnessEvidencePresent &&
 			checkHarnessFeature(healthCtx, prepared, protocol.FeatureJavaVuserPersistentLifecycleV1) == nil &&
 			checkHarnessFeature(healthCtx, prepared, protocol.FeatureJavaVuserSessionFrameTokenV1) == nil {
@@ -1478,7 +1598,11 @@ func javaVuserProcessOwnerID() string {
 // value-free: VM arguments may contain resolved secrets and must never be
 // reflected into logs or API responses.
 func (j *JavaVuser) PreflightRuntime(ctx context.Context, request protocol.RuntimePreflightRequest) (protocol.RuntimePreflightResult, error) {
-	if err := j.Init(ctx, request.Config); err != nil {
+	// Preflight contexts are deliberately short lived. Claiming here would
+	// start an owner keeper tied to that short context; it would stop before
+	// commit and let the external runtime expire while the test is starting.
+	// Validation itself is side-effect free and does not require an owner.
+	if err := j.init(ctx, request.Config, false); err != nil {
 		return protocol.RuntimePreflightResult{}, err
 	}
 	if !j.cfg.Enabled {
@@ -1570,7 +1694,10 @@ func (j *JavaVuser) preflightSidecar(ctx context.Context, targets []protocol.Run
 		if capabilityErr != nil || !capabilities.Healthy ||
 			!protocol.RuntimeFeaturesSatisfy(capabilities.Features, protocol.FeatureJavaVuserPersistentLifecycleV1) ||
 			!protocol.RuntimeFeaturesSatisfy(capabilities.Features, protocol.FeatureJavaVuserSessionFrameTokenV1) ||
-			!protocol.RuntimeFeaturesSatisfy(capabilities.Features, javasidecar.FeatureOwnerFencingV1) {
+			!protocol.RuntimeFeaturesSatisfy(capabilities.Features, javasidecar.FeatureOwnerFencingV1) ||
+			!protocol.RuntimeFeaturesSatisfy(capabilities.Features, javasidecar.FeatureExternalRuntimeV1) ||
+			!protocol.RuntimeFeaturesSatisfy(capabilities.Features, javasidecar.FeatureRunnerOwnerLeaseV1) ||
+			!protocol.RuntimeFeaturesSatisfy(capabilities.Features, javasidecar.FeatureRuntimeLeaseV1) {
 			return protocol.RuntimePreflightResult{}, fmt.Errorf("java_vuser sidecar runtime is unavailable (persistent_lifecycle_unavailable)")
 		}
 	}

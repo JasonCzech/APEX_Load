@@ -150,8 +150,10 @@ func (tr *TestRunner) ResolveScenarioScheduleOccurrence(scenarioID, scheduleID, 
 		}
 		return occurrence, schedule, true, errScheduleConcurrentChange
 	}
+	previous := scenario.Schedules[scheduleIndex]
 	scenario.Schedules[scheduleIndex] = cloneScenarioSchedule(schedule)
 	tr.contentRevision++
+	tr.adjustSchedulerReadinessLocked(previous, schedule)
 	return cloneScenarioScheduleOccurrence(occurrence), cloneScenarioSchedule(schedule), true, nil
 }
 

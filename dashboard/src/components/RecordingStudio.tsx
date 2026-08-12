@@ -1122,7 +1122,7 @@ export default function RecordingStudio({
       try {
         const [listRes, statusRes, browserListRes] = await Promise.all([
           api.listRecordings(projectId),
-          api.getRecorderStatus(),
+          api.getRecorderStatus(projectId),
           api
             .listBrowserRecordings(projectId)
             .catch(() => ({ sessions: [], count: 0 })),

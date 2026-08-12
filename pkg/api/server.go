@@ -45,9 +45,16 @@ type desktopBrowserBootstrap struct {
 const maxDesktopBrowserCapabilities = 32
 
 type Server struct {
-	httpServer                *http.Server
-	hub                       *Hub
-	runner                    *TestRunner
+	httpServer *http.Server
+	hub        *Hub
+	runner     *TestRunner
+	// startupAuthSettings is the authentication configuration activated for this
+	// controller process. Transitions into or out of Local Test Login are held at
+	// this snapshot until restart so saving the restart-required setting cannot
+	// strand the current operator before fixtures have been initialized.
+	authRuntimeMu             sync.RWMutex
+	startupAuthSettings       AuthSettings
+	startupAuthSettingsSet    bool
 	settingsService           systemSettingsService
 	archiveService            archiveService
 	schedulingService         schedulingService
@@ -159,6 +166,8 @@ type Server struct {
 	backgroundMu                      sync.Mutex
 	backgroundStopping                bool
 	backgroundWG                      sync.WaitGroup
+	readinessSettingsMu               sync.Mutex
+	readinessSettingsCadence          *readinessSettingsCadence
 	usageCancel                       context.CancelFunc
 	auditRetentionCancel              context.CancelFunc
 	timeslotRetentionCancel           context.CancelFunc
@@ -179,6 +188,11 @@ type Server struct {
 	kubeRestarter                     KubeRestarter
 	kubePodsCacheMu                   sync.Mutex
 	kubePodsCache                     generatorPodInventoryCache
+	metadataReadinessMu               sync.Mutex
+	metadataReadiness                 legacyMetadataReadinessProbeState
+	archiveReadinessMu                sync.Mutex
+	archiveReadiness                  archiveReadinessProbeState
+	archiveReadinessProbe             func() SystemReadinessCheck
 	restartMu                         sync.Mutex
 	restartInFlight                   map[string]struct{}
 	testNotesArchiveMu                sync.Mutex
@@ -191,6 +205,7 @@ type Server struct {
 	metricsBoundAddr                  string
 	desktopMode                       bool
 	desktopCapability                 string
+	desktopLocalSessionToken          string
 	desktopBootstrapMu                sync.Mutex
 	desktopBootstrapNonces            map[string]desktopBrowserBootstrap
 	desktopBrowserCapabilities        map[string]desktopBrowserCapability
@@ -262,18 +277,20 @@ type ServerConfig struct {
 	// RecorderCACertPath and RecorderCAKeyPath locate the persistent interception
 	// CA. Desktop shells should place both below their private application-data
 	// directory so launch working directories cannot redirect CA persistence.
-	RecorderCACertPath string
-	RecorderCAKeyPath  string
-	MaxConcurrent      int
-	AllowedOrigins     []string
-	Store              storage.Store
-	Cache              CacheBackend
-	LibraryCredentials LibraryCredentialStore
-	GeneratorTargets   []string
-	GeneratorTimeout   time.Duration
-	K8sRestart         K8sRestartSettings
-	KubeRestarter      KubeRestarter
-	DesktopMode        bool
+	RecorderCACertPath           string
+	RecorderCAKeyPath            string
+	MaxConcurrent                int
+	AllowedOrigins               []string
+	Store                        storage.Store
+	Cache                        CacheBackend
+	LibraryCredentials           LibraryCredentialStore
+	GeneratorTargets             []string
+	GeneratorTimeout             time.Duration
+	GeneratorRunSupervisionTTL   time.Duration
+	GeneratorRunSupervisionRenew time.Duration
+	K8sRestart                   K8sRestartSettings
+	KubeRestarter                KubeRestarter
+	DesktopMode                  bool
 	// DesktopCapability is a high-entropy, per-launch bearer capability required
 	// by every /api/v1 request when DesktopMode is enabled. When omitted, NewServer
 	// generates one so desktop mode can never accidentally expose an unauthenticated
@@ -377,6 +394,7 @@ func NewServer(cfg ServerConfig) *Server {
 	var distributedBackend *distributedExecutionBackend
 	if len(staticTargets) > 0 || len(discoverySpecs) > 0 {
 		distributedBackend = newDistributedExecutionBackend(staticTargets, cfg.GeneratorTimeout, nil)
+		distributedBackend.enableRunSupervision(cfg.GeneratorRunSupervisionTTL, cfg.GeneratorRunSupervisionRenew)
 		distributedBackend.ApplyGeneratorDrainStates(loadGeneratorDrainStates(cfg.Store))
 		runnerOpts = append(runnerOpts, WithExecutionBackend(distributedBackend))
 	}
@@ -408,6 +426,7 @@ func NewServer(cfg ServerConfig) *Server {
 	runnerOpts = append(runnerOpts, WithProjectSecretStore(projectSecretStore))
 	runner := NewTestRunner(cfg.MaxConcurrent, hub, cfg.Store, runnerOpts...)
 	runner.setLiveStateStore(cache)
+	startupAuthSettings := normalizeAuthSettings(runner.GetSystemSettings().Auth)
 	var discovery *generatorDiscovery
 	if distributedBackend != nil && len(discoverySpecs) > 0 {
 		discovery = newGeneratorDiscovery(staticTargets, discoverySpecs, distributedBackend)
@@ -431,6 +450,8 @@ func NewServer(cfg ServerConfig) *Server {
 	s := &Server{
 		hub:                         hub,
 		runner:                      runner,
+		startupAuthSettings:         startupAuthSettings,
+		startupAuthSettingsSet:      true,
 		settingsService:             newTestRunnerSystemSettingsService(runner),
 		archiveService:              newTestRunnerArchiveService(runner, cfg.Store),
 		schedulingService:           newTestRunnerSchedulingService(runner, scheduler),
@@ -498,7 +519,7 @@ func NewServer(cfg ServerConfig) *Server {
 		tracing:                 cfg.TracingStatus,
 	}
 	s.configureReplaySessionReservations()
-	hub.SetOriginAuthProvider(func() AuthSettings { return s.runner.GetSystemSettings().Auth })
+	hub.SetOriginAuthProvider(s.authSettingsForRequest)
 	if leadership != nil {
 		leadership.setOnLoss(func() {
 			s.clearActiveExecutionEndpoint()
@@ -601,7 +622,7 @@ func NewServer(cfg ServerConfig) *Server {
 
 	handler := bodyLimitMiddleware(s.mux)
 	if s.desktopCapability != "" {
-		handler = desktopAuthMaterialMiddleware(s.desktopOIDCSessionForCapability, s.desktopDevPreviewForCapability)(handler)
+		handler = desktopAuthMaterialMiddleware(s.desktopOIDCSessionForCapability, s.desktopLocalSessionForCapability, s.desktopDevPreviewForCapability)(handler)
 		handler = desktopCapabilityMiddleware(s.desktopCapability, cfg.AllowedOrigins, s.validDesktopBrowserCapability)(handler)
 	}
 	s.httpServer = &http.Server{
@@ -616,16 +637,64 @@ func NewServer(cfg ServerConfig) *Server {
 	return s
 }
 
+// authSettingsForRequest returns the authentication configuration activated for
+// this controller process. Local Test Login is deliberately restart-required:
+// entering it needs fixture initialization, while leaving it must not silently
+// drop the active login gate. Other authentication modes retain their existing
+// live-update behavior.
+func (s *Server) authSettingsForRequest() AuthSettings {
+	if s == nil || s.runner == nil {
+		return normalizeAuthSettings(AuthSettings{})
+	}
+	return s.authSettingsForRuntime(s.runner.GetSystemSettings().Auth)
+}
+
+// authSettingsForRuntime applies the restart-required local-auth rule to an
+// already resolved settings snapshot. Readiness uses this path so its auth row
+// does not independently refresh durable settings.
+func (s *Server) authSettingsForRuntime(current AuthSettings) AuthSettings {
+	current = normalizeAuthSettings(current)
+	s.authRuntimeMu.RLock()
+	startup := s.startupAuthSettings
+	captured := s.startupAuthSettingsSet
+	s.authRuntimeMu.RUnlock()
+	if !captured {
+		return current
+	}
+	startup = normalizeAuthSettings(startup)
+	if startup.Mode == authModeLocal || current.Mode == authModeLocal {
+		return startup
+	}
+	return current
+}
+
+// captureStartupAuthSettings snapshots the already-refreshed runner state
+// immediately before listeners are started. NewServer also initializes it so
+// handler-only tests and embedded callers that do not invoke Start observe the
+// same semantics.
+func (s *Server) captureStartupAuthSettings() {
+	if s == nil || s.runner == nil {
+		return
+	}
+	s.runner.mu.RLock()
+	settings := normalizeAuthSettings(s.runner.settings.Auth)
+	s.runner.mu.RUnlock()
+	s.authRuntimeMu.Lock()
+	s.startupAuthSettings = settings
+	s.startupAuthSettingsSet = true
+	s.authRuntimeMu.Unlock()
+}
+
 func (s *Server) routes(allowedOrigins []string) {
-	cors := corsMiddleware(allowedOrigins, func() AuthSettings { return s.runner.GetSystemSettings().Auth })
+	cors := corsMiddleware(allowedOrigins, s.authSettingsForRequest)
 	log := loggingMiddleware
-	baseAuth := authMiddleware(func() AuthSettings { return s.runner.GetSystemSettings().Auth }, s.store, s.cache, withAuthAuditRecorder(s))
+	baseAuth := authMiddleware(s.authSettingsForRequest, s.store, s.cache, withAuthAuditRecorder(s))
 	auth := s.projectMutationCoordinatedAuth(baseAuth)
 	standardRouteMiddleware := apiRouteMiddlewareStack{cors: cors, log: log, auth: auth}
 	ciAuth := s.ciAuthMiddleware(baseAuth)
 	ciMutationAuth := s.projectMutationCoordinatedAuth(ciAuth)
 	recorderViewAuth := s.projectMutationCoordinatedAuth(projectScopedAuthMiddleware(
-		func() AuthSettings { return s.runner.GetSystemSettings().Auth },
+		s.authSettingsForRequest,
 		s.store,
 		s.cache,
 		[]string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
@@ -634,7 +703,7 @@ func (s *Server) routes(allowedOrigins []string) {
 		withAuthAuditRecorder(s),
 	))
 	recorderCreateAuth := s.projectMutationCoordinatedAuth(projectScopedAuthMiddleware(
-		func() AuthSettings { return s.runner.GetSystemSettings().Auth },
+		s.authSettingsForRequest,
 		s.store,
 		s.cache,
 		[]string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
@@ -643,7 +712,7 @@ func (s *Server) routes(allowedOrigins []string) {
 		withAuthAuditRecorder(s),
 	))
 	recorderSessionViewAuth := s.projectMutationCoordinatedAuth(projectScopedAuthMiddleware(
-		func() AuthSettings { return s.runner.GetSystemSettings().Auth },
+		s.authSettingsForRequest,
 		s.store,
 		s.cache,
 		[]string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
@@ -652,7 +721,7 @@ func (s *Server) routes(allowedOrigins []string) {
 		withAuthAuditRecorder(s),
 	))
 	recorderSessionEditAuth := s.projectMutationCoordinatedAuth(projectScopedAuthMiddleware(
-		func() AuthSettings { return s.runner.GetSystemSettings().Auth },
+		s.authSettingsForRequest,
 		s.store,
 		s.cache,
 		[]string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
@@ -661,7 +730,7 @@ func (s *Server) routes(allowedOrigins []string) {
 		withAuthAuditRecorder(s),
 	))
 	browserReplaySessionViewAuth := s.projectMutationCoordinatedAuth(projectScopedAuthMiddleware(
-		func() AuthSettings { return s.runner.GetSystemSettings().Auth },
+		s.authSettingsForRequest,
 		s.store,
 		s.cache,
 		[]string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
@@ -670,7 +739,7 @@ func (s *Server) routes(allowedOrigins []string) {
 		withAuthAuditRecorder(s),
 	))
 	browserReplaySessionEditAuth := s.projectMutationCoordinatedAuth(projectScopedAuthMiddleware(
-		func() AuthSettings { return s.runner.GetSystemSettings().Auth },
+		s.authSettingsForRequest,
 		s.store,
 		s.cache,
 		[]string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
@@ -679,7 +748,7 @@ func (s *Server) routes(allowedOrigins []string) {
 		withAuthAuditRecorder(s),
 	))
 	scriptDebugSessionViewAuth := s.projectMutationCoordinatedAuth(projectScopedAuthMiddleware(
-		func() AuthSettings { return s.runner.GetSystemSettings().Auth },
+		s.authSettingsForRequest,
 		s.store,
 		s.cache,
 		[]string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
@@ -688,7 +757,7 @@ func (s *Server) routes(allowedOrigins []string) {
 		withAuthAuditRecorder(s),
 	))
 	scriptDebugSessionEditAuth := s.projectMutationCoordinatedAuth(projectScopedAuthMiddleware(
-		func() AuthSettings { return s.runner.GetSystemSettings().Auth },
+		s.authSettingsForRequest,
 		s.store,
 		s.cache,
 		[]string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
@@ -697,7 +766,7 @@ func (s *Server) routes(allowedOrigins []string) {
 		withAuthAuditRecorder(s),
 	))
 	browserRecordingCreateAuth := s.projectMutationCoordinatedAuth(projectScopedAuthMiddleware(
-		func() AuthSettings { return s.runner.GetSystemSettings().Auth },
+		s.authSettingsForRequest,
 		s.store,
 		s.cache,
 		[]string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
@@ -706,7 +775,7 @@ func (s *Server) routes(allowedOrigins []string) {
 		withAuthAuditRecorder(s),
 	))
 	browserRecordingSessionViewAuth := s.projectMutationCoordinatedAuth(projectScopedAuthMiddleware(
-		func() AuthSettings { return s.runner.GetSystemSettings().Auth },
+		s.authSettingsForRequest,
 		s.store,
 		s.cache,
 		[]string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
@@ -715,7 +784,7 @@ func (s *Server) routes(allowedOrigins []string) {
 		withAuthAuditRecorder(s),
 	))
 	browserRecordingSessionEditAuth := s.projectMutationCoordinatedAuth(projectScopedAuthMiddleware(
-		func() AuthSettings { return s.runner.GetSystemSettings().Auth },
+		s.authSettingsForRequest,
 		s.store,
 		s.cache,
 		[]string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
@@ -1053,9 +1122,10 @@ func (s *Server) routes(allowedOrigins []string) {
 
 	// System endpoints for health and global settings.
 	s.mux.Handle("GET /api/v1/auth/login", cors(log(http.HandlerFunc(s.handleOIDCLogin))))
+	s.mux.Handle("POST /api/v1/auth/login", cors(log(http.HandlerFunc(s.handleLocalLogin))))
 	s.mux.Handle("GET /api/v1/auth/callback", cors(log(http.HandlerFunc(s.handleOIDCCallback))))
 	s.mux.Handle("POST /api/v1/auth/callback", cors(log(http.HandlerFunc(s.handleOIDCCallback))))
-	s.mux.Handle("POST /api/v1/auth/logout", cors(log(http.HandlerFunc(s.handleOIDCLogout))))
+	s.mux.Handle("POST /api/v1/auth/logout", cors(log(http.HandlerFunc(s.handleAuthLogout))))
 	s.mux.Handle("GET /api/v1/auth/me", cors(log(http.HandlerFunc(s.handleGetAuthStatus))))
 	s.mux.Handle("GET /api/v1/auth/diagnostics", cors(log(http.HandlerFunc(s.handleGetAuthDiagnostics))))
 	s.mux.Handle("GET /api/v1/auth/roles", cors(log(http.HandlerFunc(s.handleGetAuthRoleCatalog))))
@@ -1283,6 +1353,9 @@ func setDashboardStaticHeaders(w http.ResponseWriter) {
 func (s *Server) enforceAuthPosture() error {
 	settings := normalizeAuthSettings(s.runner.GetSystemSettings().Auth)
 	mode := settings.Mode
+	if mode == authModeLocal && productionMode() {
+		return fmt.Errorf("refusing to start: auth mode %q uses fixed non-production credentials and cannot run with production authentication posture", authModeLocal)
+	}
 	if !isAuthBypassMode(mode) {
 		// Trusted-headers mode trusts forwarded identity headers. In production it must
 		// be fronted by a verifiable trust boundary (a trusted-proxy CIDR allowlist or a
@@ -1337,11 +1410,20 @@ func (s *Server) Start() (startErr error) {
 	// Registered after the rollback defer so it runs first on an error; rollback
 	// Shutdown can then observe that startup has stopped publishing components.
 	defer s.finishServerStartup()
+	if err := s.refreshReadinessSettingsForStartup(); err != nil {
+		return err
+	}
+	s.captureStartupAuthSettings()
 	if s.bridgeMode {
 		return s.startBridge()
 	}
 	if err := s.enforceAuthPosture(); err != nil {
 		return err
+	}
+	if normalizeAuthSettings(s.runner.GetSystemSettings().Auth).Mode == authModeLocal {
+		if err := s.ensureLocalAuthFixtures(); err != nil {
+			return fmt.Errorf("initialize local test login: %w", err)
+		}
 	}
 	// Import-claim recovery used to run in an untracked goroutine from
 	// NewServer. That goroutine could race an embedding caller immediately after
@@ -1369,6 +1451,7 @@ func (s *Server) Start() (startErr error) {
 		return err
 	}
 	s.startUsageAccountingSnapshotCadence()
+	s.startReadinessSettingsRefreshCadence()
 	s.startGeneratorInventoryRefreshCadence()
 	s.startAuditRetentionCadence()
 	s.startTimeslotRetentionCadence()
@@ -1814,6 +1897,13 @@ func (s *Server) shutdown(ctx context.Context) error {
 	}
 	if s.runner != nil {
 		s.runner.beginShutdown()
+	}
+	s.readinessSettingsMu.Lock()
+	readinessSettingsCadence := s.readinessSettingsCadence
+	s.readinessSettingsCadence = nil
+	s.readinessSettingsMu.Unlock()
+	if readinessSettingsCadence != nil {
+		readinessSettingsCadence.cancel()
 	}
 	s.beginBackgroundShutdown()
 	s.clearAllSourceSecretSessions()

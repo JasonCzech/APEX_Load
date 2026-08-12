@@ -47,6 +47,96 @@ func TestSidecarSessionFrameTokenHelper(t *testing.T) {
 	os.Exit(0)
 }
 
+func TestOwnerLeaseExpiryDrainsSidecarAndSignalsExit(t *testing.T) {
+	server := NewServer(ServerOptions{})
+	generation := &ownerGeneration{ownerID: "generator", epoch: "epoch", ready: true, leaseDeadline: time.Now().Add(-time.Second), leaseToken: 7}
+	server.ownerMu.Lock()
+	server.owner = generation
+	server.ownerMu.Unlock()
+	server.runtimeLeaseMu.Lock()
+	server.runtimeLeases["active-runtime"] = &runtimeLease{id: "active-runtime", owner: generation, state: runtimeLeaseActive}
+	server.runtimeLeaseMu.Unlock()
+	server.expireOwnerLease(generation, 7)
+	select {
+	case <-server.OwnerLeaseExpired():
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for owner lease expiry")
+	}
+	if !server.draining.Load() {
+		t.Fatal("sidecar did not enter draining state")
+	}
+}
+
+func TestExpiredOwnerCannotRenewBeforeDelayedTimerCallback(t *testing.T) {
+	server := NewServer(ServerOptions{Operator: config.JavaVuserOperatorConfig{
+		Enabled: true, AuthToken: testSidecarAuthToken, MaxProcesses: 1,
+	}})
+	generation := &ownerGeneration{
+		ownerID:       "generator-delayed-timer",
+		epoch:         "stale-owner-epoch",
+		ready:         true,
+		leaseDeadline: time.Now().Add(-time.Second),
+		leaseToken:    11,
+	}
+	server.ownerMu.Lock()
+	server.owner = generation
+	server.ownerMu.Unlock()
+	server.runtimeLeaseMu.Lock()
+	server.runtimeLeases["active-runtime"] = &runtimeLease{id: "active-runtime", owner: generation, state: runtimeLeaseActive}
+	server.runtimeLeaseMu.Unlock()
+
+	body := strings.NewReader(`{"contract":"` + ContractVersion + `","owner_id":"generator-delayed-timer","lease_ttl_ms":5000}`)
+	request := httptest.NewRequest(http.MethodPost, "/v1/owner/claim", body)
+	request.Header.Set("X-Apexload-Java-Runner-Token", testSidecarAuthToken)
+	recorder := httptest.NewRecorder()
+	server.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusServiceUnavailable {
+		t.Fatalf("delayed-callback renewal status = %d, want %d; body=%s", recorder.Code, http.StatusServiceUnavailable, recorder.Body.String())
+	}
+	var response ErrorResponse
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode delayed-callback response: %v", err)
+	}
+	if response.ErrorCode != "server_draining" {
+		t.Fatalf("delayed-callback renewal error = %q, want server_draining", response.ErrorCode)
+	}
+	if generation.ready || !server.draining.Load() {
+		t.Fatalf("expired generation was revived: ready=%v draining=%v", generation.ready, server.draining.Load())
+	}
+	select {
+	case <-server.OwnerLeaseExpired():
+	case <-time.After(time.Second):
+		t.Fatal("expired semantic deadline did not signal the outer exit watchdog")
+	}
+}
+
+func TestIdleOwnerLeaseExpiryRelinquishesWithoutRunnerExit(t *testing.T) {
+	server := NewServer(ServerOptions{})
+	generation := &ownerGeneration{
+		ownerID: "idle-generator", epoch: "idle-epoch", ready: true,
+		leaseDeadline: time.Now().Add(-time.Second), leaseToken: 3,
+	}
+	server.ownerMu.Lock()
+	server.owner = generation
+	server.ownerMu.Unlock()
+	server.expireOwnerLease(generation, 3)
+	if server.draining.Load() {
+		t.Fatal("idle owner expiry drained an otherwise reusable sidecar")
+	}
+	server.ownerMu.Lock()
+	owner := server.owner
+	server.ownerMu.Unlock()
+	if owner != nil {
+		t.Fatalf("idle owner expiry retained stale owner %#v", owner)
+	}
+	select {
+	case <-server.OwnerLeaseExpired():
+		t.Fatal("idle owner expiry requested a process restart")
+	default:
+	}
+}
+
 type callbackWriteCloser struct {
 	close func() error
 }
@@ -72,6 +162,9 @@ func TestCapabilityFeaturesWithholdPersistentLifecycleWithoutStrongContainment(t
 		FeatureDedicatedClassloader,
 		FeatureValidationOnly,
 		FeatureOwnerFencingV1,
+		FeatureExternalRuntimeV1,
+		FeatureRunnerOwnerLeaseV1,
+		FeatureRuntimeLeaseV1,
 	} {
 		if !slices.Contains(features, required) {
 			t.Fatalf("capabilityFeatures(false) = %v, missing one-shot feature %q", features, required)
@@ -446,6 +539,139 @@ func TestServerHealthCapabilitiesAndExecution(t *testing.T) {
 	}
 }
 
+func TestRuntimeLeaseExpiryReapsOnlyAbandonedRunWhileSiblingRenews(t *testing.T) {
+	started := filepath.Join(t.TempDir(), "run-a-started")
+	fixture := makeSidecarFixture(t, `
+if printf '%s' "$payload" | grep -q 'run-a-blocked'; then
+  touch `+shellQuote(started)+`
+  sleep 30
+fi`)
+	implementation := fixture.server(2)
+	server := httptest.NewServer(implementation)
+	defer server.Close()
+
+	runA := newClaimedTestClient(t, server.URL, server.Client(), "shared-generator")
+	runB, err := NewClientWithToken(server.URL, testSidecarAuthToken, server.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runB.ClaimOwner(context.Background(), "shared-generator"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runB.ClaimRuntimeLease(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	stopRunBRenewal := keepTestOwnerLease(runB, "shared-generator")
+	defer stopRunBRenewal()
+
+	runADone := make(chan error, 1)
+	go func() {
+		_, executeErr := runA.Execute(context.Background(), fixture.executionRequest("run-a-blocked"))
+		runADone <- executeErr
+	}()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		if _, statErr := os.Stat(started); statErr == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("run A worker did not start")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	// Model a lost cleanup transport after run A's keeper has stopped. Run B
+	// retains and renews the same process owner, so only the independent A lease
+	// can fence the abandoned worker.
+	implementation.runtimeLeaseMu.Lock()
+	abandoned := implementation.runtimeLeases[runA.leaseID]
+	if abandoned == nil {
+		implementation.runtimeLeaseMu.Unlock()
+		t.Fatal("run A runtime lease was not registered")
+	}
+	abandoned.deadline = time.Now().Add(100 * time.Millisecond)
+	implementation.armRuntimeLeaseLocked(abandoned)
+	implementation.runtimeLeaseMu.Unlock()
+	if _, err := runB.RenewRuntimeLease(context.Background()); err != nil {
+		t.Fatalf("run B renewal failed while run A was abandoned: %v", err)
+	}
+
+	select {
+	case <-abandoned.cleanupDone:
+		if abandoned.cleanupErr != nil {
+			t.Fatalf("run A cleanup failed: %v", abandoned.cleanupErr)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("run A was not fenced and positively reaped by its lease")
+	}
+	select {
+	case <-runADone:
+	case <-time.After(time.Second):
+		t.Fatal("run A execution remained live after lease reap")
+	}
+	if implementation.containmentUnavailable() {
+		t.Fatal("cooperative run A cleanup poisoned the sidecar")
+	}
+	if _, err := runB.Execute(context.Background(), fixture.executionRequest("run-b-continues")); err != nil {
+		t.Fatalf("run B did not remain usable after run A reap: %v", err)
+	}
+	if _, err := runB.RevokeRuntimeLease(context.Background()); err != nil {
+		t.Fatalf("run B cleanup: %v", err)
+	}
+}
+
+func TestRuntimeLeaseCleanupDeadlineSignalsTerminalContainmentFailure(t *testing.T) {
+	implementation := NewServer(ServerOptions{
+		Operator:                    config.JavaVuserOperatorConfig{Enabled: true, AuthToken: testSidecarAuthToken},
+		runtimeLeaseCleanupDeadline: 25 * time.Millisecond,
+	})
+	lease := &runtimeLease{
+		id: "runtime-stuck", token: strings.Repeat("b", 64), state: runtimeLeaseDraining,
+		cleanupDone: make(chan struct{}),
+	}
+	lease.operations.Add(1)
+	implementation.runtimeLeaseMu.Lock()
+	implementation.runtimeLeases[lease.id] = lease
+	implementation.runtimeLeaseMu.Unlock()
+	implementation.startRuntimeLeaseCleanup(lease)
+	select {
+	case <-implementation.ContainmentFailed():
+	case <-time.After(time.Second):
+		t.Fatal("runtime cleanup watchdog did not signal terminal containment failure")
+	}
+	lease.operations.Done()
+	select {
+	case <-lease.cleanupDone:
+	case <-time.After(time.Second):
+		t.Fatal("runtime cleanup did not finish after the blocked operation released")
+	}
+}
+
+func TestOpaqueLeaseCredentialsFailClosedWithoutSecureRandomness(t *testing.T) {
+	wantErr := errors.New("entropy unavailable")
+	if token, err := newOpaqueToken(func([]byte) (int, error) { return 0, wantErr }); token != "" || !errors.Is(err, wantErr) {
+		t.Fatalf("newOpaqueToken() = %q, %v; want empty token and entropy error", token, err)
+	}
+	if token, err := newOpaqueToken(func(buffer []byte) (int, error) {
+		buffer[0] = 1
+		return 1, nil
+	}); token != "" || !errors.Is(err, io.ErrUnexpectedEOF) {
+		t.Fatalf("newOpaqueToken(short read) = %q, %v; want fail-closed unexpected EOF", token, err)
+	}
+	implementation := NewServer(ServerOptions{
+		Operator:    config.JavaVuserOperatorConfig{Enabled: true, AuthToken: testSidecarAuthToken},
+		randomBytes: func([]byte) (int, error) { return 0, wantErr },
+	})
+	body := strings.NewReader(`{"contract":"` + ContractVersion + `","owner_id":"generator-a","lease_ttl_ms":5000}`)
+	request := httptest.NewRequest(http.MethodPost, "/v1/owner/claim", body)
+	request.Header.Set("X-Apexload-Java-Runner-Token", testSidecarAuthToken)
+	response := httptest.NewRecorder()
+	implementation.ServeHTTP(response, request)
+	if response.Code != http.StatusServiceUnavailable || !strings.Contains(response.Body.String(), "owner_identity_unavailable") {
+		t.Fatalf("owner claim without entropy = %d %s", response.Code, response.Body.String())
+	}
+}
+
 func TestServerEnablementAuthenticationAndProbeBoundaries(t *testing.T) {
 	fixture := makeSidecarFixture(t, "")
 	executionBody := strings.NewReader(`{"contract":"` + ContractVersion + `","execution_id":"blocked","runtime":{},"command":{"class_name":"Actions"}}`)
@@ -524,7 +750,7 @@ func TestReadinessIsCachedAndPreservesPersistentState(t *testing.T) {
 			return nil
 		},
 	})
-	generation := &ownerGeneration{ownerID: "probe-owner", epoch: "probe-epoch", ready: true}
+	generation := &ownerGeneration{ownerID: "probe-owner", epoch: "probe-epoch", ready: true, leaseDeadline: time.Now().Add(time.Hour)}
 	session := &persistentSession{generation: generation}
 	implementation.owner = generation
 	implementation.sessions["probe-session"] = session
@@ -630,7 +856,7 @@ func TestShutdownDrainsOwnerOperationsAndRejectsNewWork(t *testing.T) {
 		},
 		CredentialCheck: func() error { return nil },
 	})
-	generation := &ownerGeneration{ownerID: "shutdown-owner", epoch: "shutdown-epoch", ready: true}
+	generation := &ownerGeneration{ownerID: "shutdown-owner", epoch: "shutdown-epoch", ready: true, leaseDeadline: time.Now().Add(time.Hour)}
 	implementation.owner = generation
 	active, ownerError := implementation.beginOwnerOperation(generation.ownerID, generation.epoch)
 	if ownerError != "" || active != generation {
@@ -793,7 +1019,7 @@ func TestShutdownDeadlineIsIndependentOfBlockingCleanupKill(t *testing.T) {
 		},
 		CredentialCheck: func() error { return nil },
 	})
-	generation := &ownerGeneration{ownerID: "blocking-kill-owner", epoch: "blocking-kill-epoch", ready: true}
+	generation := &ownerGeneration{ownerID: "blocking-kill-owner", epoch: "blocking-kill-epoch", ready: true, leaseDeadline: time.Now().Add(time.Hour)}
 	implementation.owner = generation
 	eventPath := filepath.Join(t.TempDir(), "blocking-kill-events.log")
 	diagnosticPath := filepath.Join(t.TempDir(), "blocking-kill-diagnostics.log")
@@ -868,7 +1094,7 @@ func TestRepeatedTimedOutShutdownCallsShareOneDrainWorker(t *testing.T) {
 		},
 		CredentialCheck: func() error { return nil },
 	})
-	generation := &ownerGeneration{ownerID: "coalesced-owner", epoch: "coalesced-epoch", ready: true}
+	generation := &ownerGeneration{ownerID: "coalesced-owner", epoch: "coalesced-epoch", ready: true, leaseDeadline: time.Now().Add(time.Hour)}
 	implementation.owner = generation
 	active, ownerError := implementation.beginOwnerOperation(generation.ownerID, generation.epoch)
 	if ownerError != "" || active != generation {
@@ -974,7 +1200,7 @@ func TestPersistentKillFailureFailsClosedWithoutWaitingForeverForReap(t *testing
 	if failure != nil {
 		t.Fatalf("acquire initial process slot: %#v", failure)
 	}
-	generation := &ownerGeneration{ownerID: "failed-kill-owner", epoch: "failed-kill-epoch", ready: true}
+	generation := &ownerGeneration{ownerID: "failed-kill-owner", epoch: "failed-kill-epoch", ready: true, leaseDeadline: time.Now().Add(time.Hour)}
 	eventPath := filepath.Join(t.TempDir(), "failed-kill-events.log")
 	diagnosticPath := filepath.Join(t.TempDir(), "failed-kill-diagnostics.log")
 	for _, path := range []string{eventPath, diagnosticPath} {
@@ -1105,7 +1331,7 @@ func TestOwnerClaimRejectsContainmentFailureWithoutWaitingForReap(t *testing.T) 
 	if failure != nil {
 		t.Fatalf("acquire initial process slot: %#v", failure)
 	}
-	generation := &ownerGeneration{ownerID: "old-owner", epoch: "old-epoch", ready: true}
+	generation := &ownerGeneration{ownerID: "old-owner", epoch: "old-epoch", ready: true, leaseDeadline: time.Now().Add(time.Hour)}
 	waitDone := make(chan struct{})
 	session := &persistentSession{
 		waitDone:     waitDone,
@@ -1161,7 +1387,7 @@ func TestBackgroundShutdownWaitsForDelayedReapBeforeCompletion(t *testing.T) {
 		},
 		CredentialCheck: func() error { return nil },
 	})
-	generation := &ownerGeneration{ownerID: "delayed-reap-owner", epoch: "delayed-reap-epoch", ready: true}
+	generation := &ownerGeneration{ownerID: "delayed-reap-owner", epoch: "delayed-reap-epoch", ready: true, leaseDeadline: time.Now().Add(time.Hour)}
 	implementation.owner = generation
 	eventPath := filepath.Join(t.TempDir(), "delayed-reap-events.log")
 	diagnosticPath := filepath.Join(t.TempDir(), "delayed-reap-diagnostics.log")
@@ -1630,7 +1856,7 @@ func TestPersistentCapacityTimeoutReportsSessionNotStarted(t *testing.T) {
 	implementation := fixture.server(1)
 	request := fixture.executionRequest("capacity-timeout")
 	request.SessionID = "capacity-session"
-	generation := &ownerGeneration{ownerID: "test-owner", epoch: "test-epoch", ready: true}
+	generation := &ownerGeneration{ownerID: "test-owner", epoch: "test-epoch", ready: true, leaseDeadline: time.Now().Add(time.Hour)}
 	implementation.owner = generation
 	prepared, failure := implementation.prepareRuntime(context.Background(), request.Runtime)
 	if failure != nil {
@@ -1896,6 +2122,8 @@ public class Actions {
 	server := httptest.NewServer(implementation)
 	defer server.Close()
 	client := newClaimedTestClient(t, server.URL, server.Client(), "real-harness-test")
+	stopOwnerRenewal := keepTestOwnerLease(client, "real-harness-test")
+	defer func() { stopOwnerRenewal() }()
 	response, err := client.Execute(context.Background(), ExecutionRequest{
 		ExecutionID: "real-harness",
 		Runtime: RuntimeSettings{
@@ -2037,6 +2265,7 @@ public class Actions {
 	// sidecar remains alive. Claim success is the capacity-release barrier: the
 	// prior JVM must be reaped before the new lease is returned.
 	staleClient := client
+	stopOwnerRenewal()
 	restartedClient, err := NewClientWithToken(server.URL, testSidecarAuthToken, server.Client())
 	if err != nil {
 		t.Fatal(err)
@@ -2044,6 +2273,10 @@ public class Actions {
 	if _, err := restartedClient.ClaimOwner(context.Background(), "restarted-generator"); err != nil {
 		t.Fatalf("takeover ClaimOwner: %v", err)
 	}
+	if _, err := restartedClient.ClaimRuntimeLease(context.Background()); err != nil {
+		t.Fatalf("takeover ClaimRuntimeLease: %v", err)
+	}
+	stopOwnerRenewal = keepTestOwnerLease(restartedClient, "restarted-generator")
 	if occupied := len(implementation.slots); occupied != 0 {
 		t.Fatalf("occupied slots after owner takeover = %d, want 0", occupied)
 	}
@@ -2274,7 +2507,40 @@ func newClaimedTestClient(
 	if _, err := client.ClaimOwner(context.Background(), ownerID); err != nil {
 		t.Fatalf("ClaimOwner(%q): %v", ownerID, err)
 	}
+	if _, err := client.ClaimRuntimeLease(context.Background()); err != nil {
+		t.Fatalf("ClaimRuntimeLease(%q): %v", ownerID, err)
+	}
 	return client
+}
+
+func keepTestOwnerLease(client *Client, ownerID string) func() {
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		ticker := time.NewTicker(RunnerOwnerLeaseRenewInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				renewCtx, renewCancel := context.WithTimeout(ctx, RunnerOwnerLeaseRenewInterval)
+				_, _ = client.ClaimOwner(renewCtx, ownerID)
+				renewCancel()
+				renewCtx, renewCancel = context.WithTimeout(ctx, RuntimeLeaseRenewInterval)
+				_, _ = client.RenewRuntimeLease(renewCtx)
+				renewCancel()
+			}
+		}
+	}()
+	var stopOnce sync.Once
+	return func() {
+		stopOnce.Do(func() {
+			cancel()
+			<-done
+		})
+	}
 }
 
 func authenticatedPost(client *http.Client, endpoint string, body io.Reader) (*http.Response, error) {

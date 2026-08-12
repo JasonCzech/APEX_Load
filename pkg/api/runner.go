@@ -181,43 +181,49 @@ type runtimeSecretRecoveryState struct {
 }
 
 type TestRunner struct {
-	tests                       map[string]*ManagedTest
-	scripts                     map[string]*StoredScript
-	privateCISnapshots          map[string]int
-	scenarios                   map[string]*StoredScenario
-	archives                    map[string]*storage.RunArchiveRecord
-	deletingProjects            map[string]struct{}
-	projectDeletionGates        projectMutationCoordinator
-	projectDeletionUnlock       map[string]func()
-	shuttingDown                bool
-	mu                          sync.RWMutex
-	scriptMutationMu            sync.Mutex
-	scenarioMutationMu          sync.Mutex
-	compatCreateMu              sync.Mutex
-	reservedLaunchCreateMu      sync.Mutex
-	contentRevision             uint64
-	contentReloadMu             sync.Mutex
-	haScriptRefresh             haRefreshCoalescer
-	testReloadMu                sync.Mutex
-	haTestRefresh               haRefreshCoalescer
-	capacityBindingRefresh      haRefreshCoalescer
-	haScenarioRefreshMu         sync.Mutex
-	haScenarioRefreshAt         time.Time
-	schedulerContentMu          sync.Mutex
-	schedulerContentToken       string
-	schedulerContentKnown       bool
-	activeStopMu                sync.Mutex
-	remoteControlMu             sync.Mutex
-	remoteControlGates          map[string]*distributedControlGate
-	hub                         *Hub
-	maxTests                    int
-	defaultMaxTests             int
-	settings                    SystemSettings
-	settingsRefreshMu           sync.Mutex
-	settingsWriteMu             sync.Mutex
-	settingsAuthRefreshAt       time.Time
-	systemSettingsRaw           string
-	settingsRevision            uint64
+	tests                   map[string]*ManagedTest
+	scripts                 map[string]*StoredScript
+	privateCISnapshots      map[string]int
+	scenarios               map[string]*StoredScenario
+	archives                map[string]*storage.RunArchiveRecord
+	deletingProjects        map[string]struct{}
+	projectDeletionGates    projectMutationCoordinator
+	projectDeletionUnlock   map[string]func()
+	shuttingDown            bool
+	mu                      sync.RWMutex
+	scriptMutationMu        sync.Mutex
+	scenarioMutationMu      sync.Mutex
+	compatCreateMu          sync.Mutex
+	reservedLaunchCreateMu  sync.Mutex
+	contentRevision         uint64
+	contentReloadMu         sync.Mutex
+	haScriptRefresh         haRefreshCoalescer
+	testReloadMu            sync.Mutex
+	haTestRefresh           haRefreshCoalescer
+	capacityBindingRefresh  haRefreshCoalescer
+	haScenarioRefreshMu     sync.Mutex
+	haScenarioRefreshAt     time.Time
+	schedulerContentMu      sync.Mutex
+	schedulerContentToken   string
+	schedulerContentKnown   bool
+	activeStopMu            sync.Mutex
+	remoteControlMu         sync.Mutex
+	remoteControlGates      map[string]*distributedControlGate
+	hub                     *Hub
+	maxTests                int
+	defaultMaxTests         int
+	settings                SystemSettings
+	settingsRefreshMu       sync.Mutex
+	settingsWriteMu         sync.Mutex
+	settingsAuthRefreshAt   time.Time
+	settingsRefreshInFlight chan struct{}
+	systemSettingsRaw       string
+	settingsRevision        uint64
+	// readinessRuntime is a fixed-size immutable projection published only
+	// while mu is held. readinessScheduler is the mutable counter source for
+	// that combined projection and is likewise guarded by mu.
+	readinessRuntime            atomic.Pointer[runnerReadinessSnapshot]
+	readinessScheduler          schedulerReadinessProjection
 	scriptStore                 scriptPersistence
 	testStore                   testPersistence
 	startAdmissionRevisionStore startAdmissionRevisionPersistence
@@ -558,10 +564,15 @@ type ManagedTest struct {
 	// CommitWork. The durable RUNNING transition intentionally precedes those
 	// acknowledgements, so non-stop controls must remain closed while this is
 	// false to avoid mutating a partially committed fleet.
-	remoteActivated              bool
-	remoteActivationPending      bool
-	remoteControlGeneration      uint64
-	remotePauseOperationSequence uint64
+	remoteActivated                      bool
+	remoteActivationPending              bool
+	remoteControlGeneration              uint64
+	remotePauseOperationSequence         uint64
+	remoteRunSupervisionToken            [generatorrpc.RunSupervisionTokenSize]byte
+	remoteRunSupervisionCancel           context.CancelFunc
+	remoteRunSupervisionDone             chan struct{}
+	remoteRunSupervisionKeeperGeneration uint64
+	remoteRunSupervisionFencedTargets    map[string]bool
 	// executionFence is the scheduler-lease owner token captured by the epoch
 	// that created/claimed this run. It is intentionally process-private and is
 	// checked transactionally for every production full-row save.
@@ -1455,6 +1466,9 @@ func NewTestRunner(maxTests int, hub *Hub, store storage.Store, opts ...TestRunn
 		slog.Warn("queued CI run recovery failed during startup", "error", err)
 	}
 	tr.ReconcilePendingTests()
+	tr.mu.Lock()
+	tr.resetSchedulerReadinessLocked(time.Now().UTC())
+	tr.mu.Unlock()
 
 	return tr
 }
@@ -1476,6 +1490,7 @@ func (tr *TestRunner) setExecutionBackend(backend testExecutionBackend) {
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
 	tr.execution = backend
+	tr.publishRuntimeReadinessLocked(time.Now().UTC())
 }
 
 func (tr *TestRunner) setLiveStateStore(store LiveStateStore) {

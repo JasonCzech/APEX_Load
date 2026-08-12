@@ -44,10 +44,10 @@ var scenarioSchedulingAPIRouteCatalog = apiRouteCatalog{
 		preserveRawAccessRequirement(newAuthenticatedAPIRoute(http.MethodPost, "/api/v1/scenarios/{id}/schedules/{schedule_id}/approvals/{approval_id}/reject", "handleRejectScenarioScheduleApproval", projectAdminAccess(resolveScenarioProjectID), func(s *Server) http.Handler {
 			return http.HandlerFunc(s.handleRejectScenarioScheduleApproval)
 		})),
-		newAuthenticatedAPIRoute(http.MethodGet, "/api/v1/schedules/health", "handleScenarioScheduleHealth", viewerGlobalAccess(), func(s *Server) http.Handler {
+		newAuthenticatedAPIRoute(http.MethodGet, "/api/v1/schedules/health", "handleScenarioScheduleHealth", unrestrictedViewerGlobalAccess(), func(s *Server) http.Handler {
 			return http.HandlerFunc(s.handleScenarioScheduleHealth)
 		}),
-		newAuthenticatedAPIRoute(http.MethodGet, "/api/v1/run-calendar", "handleGetRunCalendar", viewerGlobalAccess(), func(s *Server) http.Handler {
+		newAuthenticatedAPIRoute(http.MethodGet, "/api/v1/run-calendar", "handleGetRunCalendar", unrestrictedViewerGlobalAccess(), func(s *Server) http.Handler {
 			return http.HandlerFunc(s.handleGetRunCalendar)
 		}),
 	},

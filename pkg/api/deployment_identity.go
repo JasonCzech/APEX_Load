@@ -39,7 +39,7 @@ func (s *Server) deploymentIdentity(info buildinfo.Info) DeploymentIdentity {
 		bindScope = config.BindScopeWide
 	}
 	kind, label := s.deploymentKindAndLabel(info.Environment)
-	auth := normalizeAuthSettings(settings.Auth)
+	auth := s.authSettingsForRequest()
 	return DeploymentIdentity{
 		Kind:                   kind,
 		Label:                  label,

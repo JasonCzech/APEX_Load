@@ -117,6 +117,13 @@ func normalizeGeneratorAssignmentSettings(in *GeneratorAssignmentSettings) (*Gen
 	}
 }
 
+func (tr *TestRunner) validateGeneratorLossTolerance(assignment *GeneratorAssignmentSettings) error {
+	if assignmentToleratesGeneratorLoss(assignment) && (tr == nil || !tr.durableExecutionFence) {
+		return fmt.Errorf("assignment.tolerate_generator_loss requires HA execution leadership backed by the same durable test store")
+	}
+	return nil
+}
+
 func normalizePositiveWeights(in map[string]int, _ string) map[string]int {
 	out := make(map[string]int)
 	seen := make(map[string]struct{})

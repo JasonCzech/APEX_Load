@@ -18,6 +18,7 @@ import (
 // them, as the recording-agent download was).
 var intentionallyPublicAPIRoutes = map[string]bool{
 	"GET /api/v1/auth/login":    true,
+	"POST /api/v1/auth/login":   true,
 	"GET /api/v1/auth/callback": true,
 	// Desktop callback finalization is anonymous at the HTTP auth layer but is
 	// protected by the per-tab capability and one-time server-side OAuth state.

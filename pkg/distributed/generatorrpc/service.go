@@ -36,6 +36,7 @@ type assignedTest struct {
 	lifecycle                 assignmentLifecycleState
 	executionGeneration       uint64
 	requireTestExecutionLease bool
+	runSupervisionTokenHash   [sha256.Size]byte
 	vuserCount                int32
 	paused                    bool
 	pauseOperationID          string
@@ -85,6 +86,7 @@ type groupExecution struct {
 	started         atomic.Bool
 	startAt         time.Time
 	stagedDoneOnce  sync.Once
+	stopOnce        sync.Once
 	results         *transactionBuffer
 	publisherDone   chan struct{}
 	done            chan struct{}
@@ -641,6 +643,23 @@ type Service struct {
 	testExecutionLeaseFences             map[string]uint64
 	testExecutionLeaseFenceAllGeneration uint64
 	nextTestLeaseToken                   uint64
+	runSupervisions                      map[string]*runSupervisionLease
+	runSupervisionTombstoneOrder         []runSupervisionTombstoneKey
+	runSupervisionRequired               bool
+	runSupervisionTTL                    time.Duration
+	runSupervisionDrain                  time.Duration
+	runSupervisionHardGrace              time.Duration
+	runSupervisionDrainingVUsers         int64
+	runSupervisionExpirations            atomic.Uint64
+	runSupervisionEscalations            atomic.Uint64
+	runSupervisionFencePersistenceMu     sync.Mutex
+	runSupervisionIntentMu               sync.Mutex
+	runSupervisionIntentErr              error
+	safetyExitEvidence                   []runSupervisionCrashIntent
+	selfTermination                      chan SelfTerminationRequest
+	selfTerminationOnce                  sync.Once
+	runtimeContainmentFailure            <-chan struct{}
+	runtimeContainmentBeforePersist      func()
 	*executionEpochManager
 	shutdown     chan struct{}
 	shutdownOnce sync.Once
@@ -687,6 +706,9 @@ func (s *Service) ReadinessError() error {
 	if err := s.archiveManager.readinessError(); err != nil {
 		return fmt.Errorf("generator archive namespace: %w", err)
 	}
+	if s.runSupervisionIntentErr != nil {
+		return fmt.Errorf("generator safety-exit evidence: %w", s.runSupervisionIntentErr)
+	}
 	return nil
 }
 
@@ -710,6 +732,21 @@ func (s *Service) notifyReadinessChangedLocked() {
 func WithExecution() ServiceOption {
 	return func(s *Service) {
 		s.executionEnabled = true
+	}
+}
+
+// WithRunSupervisionRequired enables the production fail-closed distributed
+// execution contract. Tests that intentionally characterize legacy RPC shapes
+// omit this option.
+func WithRunSupervisionRequired(ttl, drain time.Duration) ServiceOption {
+	return func(s *Service) {
+		s.runSupervisionRequired = true
+		if ttl > 0 {
+			s.runSupervisionTTL = ttl
+		}
+		if drain >= 0 {
+			s.runSupervisionDrain = drain
+		}
 	}
 }
 
@@ -795,6 +832,11 @@ func NewService(generatorID string, maxVUsers int, opts ...ServiceOption) *Servi
 		stageTokens:              lifecycleCoordinator.stageTokens,
 		testExecutionLeases:      make(map[string]testExecutionLease),
 		testExecutionLeaseFences: make(map[string]uint64),
+		runSupervisions:          make(map[string]*runSupervisionLease),
+		runSupervisionTTL:        defaultRunSupervisionTTL,
+		runSupervisionDrain:      defaultRunSupervisionDrain,
+		runSupervisionHardGrace:  defaultRunSupervisionHardGrace,
+		selfTermination:          make(chan SelfTerminationRequest, 1),
 		executionEpochManager:    executionEpochManager,
 		shutdown:                 make(chan struct{}),
 		metricsBroker:            newMetricsBroker(defaultMaxMetricsSubscribers, archiveRecordMax, archiveTTL),
@@ -815,6 +857,13 @@ func NewService(generatorID string, maxVUsers int, opts ...ServiceOption) *Servi
 		slog.Error("initialize durable generator execution epoch", "generator_id", generatorID, "error", service.executionEpochStateErr)
 	}
 	service.sweepGeneratorArchiveDirectories(time.Now())
+	if service.executionEpochStateErr == nil {
+		if err := service.reconcileRunSupervisionCrashIntent(); err != nil {
+			service.runSupervisionIntentErr = err
+			slog.Error("reconcile generator safety-exit intent", "generator_id", generatorID, "error", err)
+		}
+	}
+	service.startRuntimeContainmentFailureMonitor()
 	return service
 }
 
@@ -828,6 +877,18 @@ func (s *Service) Shutdown(ctx context.Context) error {
 	s.SetDraining(true)
 	var failures []error
 	epochQuiesced := true
+	s.mu.RLock()
+	testIDs := make([]string, 0, len(s.assignments))
+	for testID := range s.assignments {
+		testIDs = append(testIDs, testID)
+	}
+	s.mu.RUnlock()
+	sort.Strings(testIDs)
+	// Detach and synchronously signal the whole fleet before persistence,
+	// staging, or control waits consume the caller's shutdown budget.
+	if err := s.forceStopTests(ctx, testIDs, ^uint64(0), "FAILED", "generator shut down before test completion", shutdownEscalationReason, true); err != nil {
+		failures = append(failures, fmt.Errorf("stop active generator tests: %w", err))
+	}
 	if err := s.executionEpochManager.waitForPersistence(ctx, s); err != nil {
 		epochQuiesced = false
 		failures = append(failures, fmt.Errorf("wait for execution epoch persistence: %w", err))
@@ -837,19 +898,6 @@ func (s *Service) Shutdown(ctx context.Context) error {
 	}
 	if err := s.waitForAllPendingControls(ctx); err != nil {
 		failures = append(failures, fmt.Errorf("wait for pending generator controls: %w", err))
-	}
-	s.mu.RLock()
-	testIDs := make([]string, 0, len(s.assignments))
-	for testID := range s.assignments {
-		testIDs = append(testIDs, testID)
-	}
-	s.mu.RUnlock()
-	sort.Strings(testIDs)
-	// Detach and cancel the whole fleet before waiting for any one engine. A
-	// protocol that is slow to honor cancellation must not leave later tests
-	// generating load until the process-level timeout expires.
-	if err := s.forceStopTests(ctx, testIDs, ^uint64(0), "FAILED", "generator shut down before test completion", true); err != nil {
-		failures = append(failures, fmt.Errorf("stop active generator tests: %w", err))
 	}
 	s.archiveManager.beginShutdown()
 	s.shutdownOnce.Do(func() { close(s.shutdown) })
@@ -870,9 +918,11 @@ func (s *Service) Shutdown(ctx context.Context) error {
 		failures = append(failures, fmt.Errorf("wait for generator finalizers: %w", ctx.Err()))
 	}
 	if epochState != nil {
+		s.runSupervisionIntentMu.Lock()
 		if err := epochState.close(); err != nil {
 			failures = append(failures, fmt.Errorf("close execution epoch state: %w", err))
 		}
+		s.runSupervisionIntentMu.Unlock()
 	}
 	return errors.Join(failures...)
 }
@@ -945,17 +995,19 @@ func stopGroupExecution(execution *groupExecution) {
 	if execution == nil {
 		return
 	}
-	if execution.cancel != nil {
-		execution.cancel()
-		return
-	}
-	// A staged execution has no goroutines that could close done. Closing it at
-	// detach time preserves the reuse/fencing barrier without ever starting the
-	// engine merely to tear it down.
-	execution.stagedDoneOnce.Do(func() {
-		if execution.done != nil {
-			close(execution.done)
+	execution.stopOnce.Do(func() {
+		if execution.cancel != nil {
+			execution.cancel()
+			return
 		}
+		// A staged execution has no goroutines that could close done. Closing it at
+		// detach time preserves the reuse/fencing barrier without ever starting the
+		// engine merely to tear it down.
+		execution.stagedDoneOnce.Do(func() {
+			if execution.done != nil {
+				close(execution.done)
+			}
+		})
 	})
 }
 
@@ -965,6 +1017,7 @@ func (s *Service) finishStoppedTest(testID string, assignment assignedTest, writ
 
 func (s *Service) finishStoppedTestWithState(testID string, assignment assignedTest, writer *archiveRecorder, finalState string, finalError string) (string, string) {
 	defer s.completeStoppingTest(testID, assignment.executionGeneration)
+	archiveFinalized := true
 	assignment = s.lifecycleCoordinator.finish(assignment)
 	finalState = strings.ToUpper(strings.TrimSpace(finalState))
 	if finalState == "" {
@@ -976,6 +1029,7 @@ func (s *Service) finishStoppedTestWithState(testID string, assignment assignedT
 		_ = writer.setTerminalMetrics(batch)
 		err := s.finalizeArchiveWriter(writer, finalState, time.Now(), finalError)
 		if err != nil {
+			archiveFinalized = false
 			finalState = "FAILED"
 			if finalError != "" {
 				finalError += "; "
@@ -985,6 +1039,9 @@ func (s *Service) finishStoppedTestWithState(testID string, assignment assignedT
 	}
 	batch = s.metricsBatchForAssignment(testID, assignment, finalState, finalError)
 	s.publishTerminalMetrics(batch)
+	if archiveFinalized {
+		s.maybeDisarmRunSupervisionRestartFence(assignment.executionGeneration)
+	}
 	return finalState, finalError
 }
 
@@ -1029,7 +1086,7 @@ func (s *Service) StreamMetrics(stream pb.GeneratorControl_StreamMetricsServer) 
 				return
 			}
 
-			if err := s.setPaused(stream.Context(), pause.GetTestId(), pause.GetPause(), pause.GetExecutionGeneration()); err != nil {
+			if err := s.setPaused(stream.Context(), pause.GetTestId(), pause.GetPause(), pause.GetExecutionGeneration(), pause.GetRunSupervisionToken()); err != nil {
 				recvErr <- err
 				return
 			}
@@ -1238,21 +1295,26 @@ func (s *Service) Heartbeat(stream pb.GeneratorControl_HeartbeatServer) error {
 			map[string]string{"java_vuser": javaOccupancyMode},
 		)
 		activeTestIDs := s.activeTestIDs()
+		lastSafetyExit, safetyExits := s.safetyExitEvidenceProto()
 		generatorNow := time.Now()
 		if err := stream.Send(&pb.HeartbeatPong{
-			GeneratorId:        s.generatorID,
-			TimestampUnixMs:    generatorNow.UnixMilli(),
-			TimestampUnixNano:  generatorNow.UnixNano(),
-			ActiveTestIds:      activeTestIDs,
-			Stats:              toProtoStats(stats),
-			AvailableCapacity:  avail,
-			CpuLimitCores:      s.podResources.CPULimitCores,
-			MemoryLimitBytes:   s.podResources.MemoryLimitBytes,
-			MaxVusers:          s.podResources.MaxVUsers,
-			Version:            buildinfo.Get().Version,
-			SupportedProtocols: supportedProtocols,
-			CompatibleFeatures: compatibleFeatures,
-			RuntimeCapacities:  runtimeCapacities,
+			GeneratorId:                    s.generatorID,
+			TimestampUnixMs:                generatorNow.UnixMilli(),
+			TimestampUnixNano:              generatorNow.UnixNano(),
+			ActiveTestIds:                  activeTestIDs,
+			Stats:                          toProtoStats(stats),
+			AvailableCapacity:              avail,
+			CpuLimitCores:                  s.podResources.CPULimitCores,
+			MemoryLimitBytes:               s.podResources.MemoryLimitBytes,
+			MaxVusers:                      s.podResources.MaxVUsers,
+			Version:                        buildinfo.Get().Version,
+			SupportedProtocols:             supportedProtocols,
+			CompatibleFeatures:             compatibleFeatures,
+			RuntimeCapacities:              runtimeCapacities,
+			RunSupervisionExpirationsTotal: s.runSupervisionExpirations.Load(),
+			RunSupervisionEscalationsTotal: s.runSupervisionEscalations.Load(),
+			LastSafetyExit:                 lastSafetyExit,
+			SafetyExits:                    safetyExits,
 		}); err != nil {
 			return err
 		}
@@ -1301,7 +1363,7 @@ func runtimeAdvertisementWithCapacities(ctx context.Context, requireHealthy bool
 	names := protocol.List()
 	sort.Strings(names)
 	available := make([]string, 0, len(names))
-	features := []string{FeatureEvacuationAssignmentStateV1, FeatureSecretBundleV1}
+	features := []string{FeatureEvacuationAssignmentStateV1, FeatureSecretBundleV1, FeatureRunSupervisionV1}
 	runtimeCapacities := make([]*pb.ProtocolRuntimeCapacity, 0)
 	for _, name := range names {
 		normalized := strings.ToLower(strings.TrimSpace(name))
@@ -1322,6 +1384,14 @@ func runtimeAdvertisementWithCapacities(ctx context.Context, requireHealthy bool
 		capabilities, capabilitySupported, capabilityErr := protocol.ReadRuntimeCapabilities(instance)
 		runtimeAvailable := !capabilitySupported || capabilities.Available
 		if capabilityErr != nil {
+			runtimeAvailable = false
+		}
+		if normalized == "bruno" &&
+			(!capabilitySupported || !brunoRuntimeContained(capabilities.Features)) {
+			runtimeAvailable = false
+		}
+		if normalized == "java_vuser" &&
+			(!capabilitySupported || !javaVuserRuntimeContained(capabilities.Features)) {
 			runtimeAvailable = false
 		}
 		if requireHealthy && runtimeAvailable {
@@ -1359,6 +1429,18 @@ func runtimeAdvertisementWithCapacities(ctx context.Context, requireHealthy bool
 		}
 	}
 	return sortedUniqueRuntimeNames(available), sortedUniqueRuntimeNames(features), runtimeCapacities
+}
+
+func brunoRuntimeContained(features []string) bool {
+	return protocol.RuntimeFeaturesSatisfy(features, "runner_owner_lease_v1") &&
+		protocol.RuntimeFeaturesSatisfy(features, "bruno_session_lease_v1")
+}
+
+func javaVuserRuntimeContained(features []string) bool {
+	return protocol.RuntimeFeaturesSatisfy(features, "java_vuser_local_process_containment_v1") ||
+		(protocol.RuntimeFeaturesSatisfy(features, "java_vuser_external_runtime_v1") &&
+			protocol.RuntimeFeaturesSatisfy(features, "runner_owner_lease_v1") &&
+			protocol.RuntimeFeaturesSatisfy(features, "java_vuser_runtime_lease_v1"))
 }
 
 func sortedUniqueRuntimeNames(values []string) []string {
@@ -1482,7 +1564,7 @@ func (s *Service) activeVUsersLocked() int32 {
 }
 
 func (s *Service) activeVUsers64Locked() int64 {
-	var total int64
+	total := s.runSupervisionDrainingVUsers
 	for _, assignment := range s.assignments {
 		total += int64(assignment.vuserCount)
 	}
@@ -1505,67 +1587,23 @@ func (s *Service) availableCapacityLocked() int32 {
 }
 
 func (s *Service) FailTest(testID string, message string) {
-	s.mu.Lock()
-	assignment, ok := s.assignments[testID]
-	persistentJavaDrainToken := uint64(0)
-	if ok {
-		s.markStoppingLocked(testID, assignment.executionGeneration)
-		persistentJavaDrainToken = s.reserveAssignmentJavaDrainLocked(assignment)
-		s.clearTestExecutionLeaseLocked(testID)
-		delete(s.assignments, testID)
+	stops := s.detachFencedTests([]string{testID}, ^uint64(0), false)
+	if len(stops) == 0 {
+		return
 	}
-	execs := s.executions[testID]
-	delete(s.executions, testID)
-	writer := s.archiveManager.takeWriter(testID)
-	trackedFinalizer := writer != nil && s.archiveManager.addFinalizer()
-	s.stopCompletionTimerLocked(testID)
-	s.stopStageTimerLocked(testID)
-	s.mu.Unlock()
-	executions := make([]*groupExecution, 0, len(execs))
-	for _, exec := range execs {
-		executions = append(executions, exec)
+	stop := stops[0]
+	for _, exec := range stop.executions {
 		if exec != nil {
 			message = scrubGeneratorTerminalError(message, exec.redactionConfig)
 		}
-		stopGroupExecution(exec)
 	}
-	if len(executions) == 0 {
+	if len(stop.executions) == 0 {
 		message = scrubGeneratorTerminalError(message, nil)
 	}
-	if !ok {
-		if trackedFinalizer {
-			s.archiveManager.finalizerDone()
-		}
-		return
-	}
-	waitCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	waitErr := waitForGeneratorExecutions(waitCtx, executions)
-	cancel()
-	if waitErr != nil {
-		if !trackedFinalizer {
-			go func() {
-				_ = waitForGeneratorExecutions(context.Background(), executions)
-				s.releaseStopDrain(persistentJavaDrainToken)
-				s.captureStoppedExecutionMetrics(&assignment, executions)
-				s.finishFailedTest(testID, assignment, writer, message)
-			}()
-			return
-		}
-		go func() {
-			defer s.archiveManager.finalizerDone()
-			_ = waitForGeneratorExecutions(context.Background(), executions)
-			s.releaseStopDrain(persistentJavaDrainToken)
-			s.captureStoppedExecutionMetrics(&assignment, executions)
-			s.finishFailedTest(testID, assignment, writer, message)
-		}()
-		return
-	}
-	if trackedFinalizer {
-		defer s.archiveManager.finalizerDone()
-	}
-	s.releaseStopDrain(persistentJavaDrainToken)
-	s.captureStoppedExecutionMetrics(&assignment, executions)
-	s.finishFailedTest(testID, assignment, writer, message)
+	stop.finalState = "FAILED"
+	stop.finalError = message
+	stop.escalationReason = testFailureEscalationReason
+	<-s.startDetachedRunDrain(stop, false)
 }
 
 func (s *Service) hasStagedExecutionLocked(testID string) bool {
@@ -2192,9 +2230,20 @@ func (s *Service) completeAssignmentMatchingTimer(testID string, token uint64, r
 		return
 	}
 	assignment, ok := s.assignments[testID]
+	if ok && len(s.executions[testID]) > 0 {
+		stops := s.detachFencedTestsLocked([]string{testID}, assignment.executionGeneration, false)
+		s.mu.Unlock()
+		if len(stops) > 0 {
+			stops[0].finalState = "COMPLETE"
+			stops[0].escalationReason = durationEscalationReason
+			s.startDetachedRunDrain(stops[0], true)
+		}
+		return
+	}
 	if ok {
 		s.markStoppingLocked(testID, assignment.executionGeneration)
 		s.clearTestExecutionLeaseLocked(testID)
+		s.clearRunSupervisionLocked(testID)
 		delete(s.assignments, testID)
 	}
 	delete(s.executions, testID)
@@ -2630,6 +2679,7 @@ func (s *Service) finishExecutionMatching(testID string, groupName string, expec
 	}
 	s.markStoppingLocked(testID, assignment.executionGeneration)
 	s.clearTestExecutionLeaseLocked(testID)
+	s.clearRunSupervisionLocked(testID)
 	delete(s.assignments, testID)
 	s.stopCompletionTimerLocked(testID)
 	s.stopStageTimerLocked(testID)

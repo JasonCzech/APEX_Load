@@ -282,7 +282,7 @@ export function formatAuthDiagnosticsHeadline(diagnostics: DashboardAuthDiagnost
 }
 
 export function normalizeDashboardAuthMode(mode?: DashboardSystemSettings['auth']['mode']): DashboardSystemSettings['auth']['mode'] {
-  if (mode === 'trusted_headers' || mode === 'oidc' || mode === 'disabled') {
+  if (mode === 'local' || mode === 'trusted_headers' || mode === 'oidc' || mode === 'disabled') {
     return mode
   }
   return 'dev'
@@ -290,6 +290,8 @@ export function normalizeDashboardAuthMode(mode?: DashboardSystemSettings['auth'
 
 export function formatAuthMode(mode: DashboardSystemSettings['auth']['mode']): string {
   switch (mode) {
+    case 'local':
+      return 'Local Test Login'
     case 'oidc':
       return 'Native OIDC'
     case 'trusted_headers':

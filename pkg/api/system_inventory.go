@@ -30,6 +30,15 @@ type ControllerInventoryEntry struct {
 	ExecutionMode string `json:"execution_mode"`
 }
 
+type GeneratorSafetyExitEvidence struct {
+	TestID                string    `json:"test_id"`
+	ExecutionGeneration   uint64    `json:"execution_generation"`
+	LifecycleState        string    `json:"lifecycle_state"`
+	Reason                string    `json:"reason"`
+	RequestedAt           time.Time `json:"requested_at"`
+	OutstandingExecutions int32     `json:"outstanding_executions"`
+}
+
 type GeneratorInventoryEntry struct {
 	Target                            string                                 `json:"target"`
 	GeneratorID                       string                                 `json:"generator_id"`
@@ -84,6 +93,10 @@ type GeneratorInventoryEntry struct {
 	TCPEstablished                    int                                    `json:"tcp_established,omitempty"`
 	TCPTimeWait                       int                                    `json:"tcp_time_wait,omitempty"`
 	DiskIOTimePct                     float64                                `json:"disk_io_time_pct,omitempty"`
+	RunSupervisionExpirationsTotal    uint64                                 `json:"run_supervision_expirations_total"`
+	RunSupervisionEscalationsTotal    uint64                                 `json:"run_supervision_escalations_total"`
+	LastSafetyExit                    *GeneratorSafetyExitEvidence           `json:"last_safety_exit,omitempty"`
+	SafetyExits                       []GeneratorSafetyExitEvidence          `json:"safety_exits,omitempty"`
 }
 
 type DataPlatformInventory struct {
@@ -106,15 +119,7 @@ func (s *Server) systemInventory(ctx context.Context) SystemInventoryResponse {
 		controllerID = controllerInstanceID()
 	}
 
-	executionMode := "local"
-	entries := []GeneratorInventoryEntry{}
-	if backend, ok := s.runner.getExecutionBackend().(inventoryExecutionBackend); ok {
-		executionMode = "distributed"
-		entries = backend.SystemInventory(ctx)
-	}
-	for i := range entries {
-		entries[i] = normalizeGeneratorInventoryEntry(entries[i])
-	}
+	executionMode, entries := s.baseGeneratorInventory(ctx)
 	s.enrichGeneratorRestartability(ctx, entries)
 	s.enrichGeneratorInventoryWithPools(entries)
 	s.runner.setCachedGeneratorInventory(entries, time.Now())
@@ -132,6 +137,22 @@ func (s *Server) systemInventory(ctx context.Context) SystemInventoryResponse {
 		Generators:   entries,
 		DataPlatform: s.dataPlatformInventory(),
 	}
+}
+
+// baseGeneratorInventory reads transport health without Kubernetes or storage
+// enrichment. Readiness uses this narrow view so its dedicated Kubernetes API
+// check is the only pod-list request made while serving a readiness response.
+func (s *Server) baseGeneratorInventory(ctx context.Context) (string, []GeneratorInventoryEntry) {
+	executionMode := "local"
+	entries := []GeneratorInventoryEntry{}
+	if backend, ok := s.runner.getExecutionBackend().(inventoryExecutionBackend); ok {
+		executionMode = "distributed"
+		entries = backend.SystemInventory(ctx)
+	}
+	for i := range entries {
+		entries[i] = normalizeGeneratorInventoryEntry(entries[i])
+	}
+	return executionMode, entries
 }
 
 // enrichGeneratorInventoryWithPools folds persisted fleet metadata (pool

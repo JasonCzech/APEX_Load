@@ -6,6 +6,7 @@ import './ProjectModal.css'
 interface Props {
   title?: string
   initialName?: string
+  namePlaceholder?: string
   onClose: () => void
   onSubmit: (name: string) => Promise<void> | void
 }
@@ -15,7 +16,7 @@ interface Props {
 // trapped behind the modal by a black-holed request.
 const SLOW_SAVE_MS = 15_000
 
-export default function ProjectModal({ title = 'New Project', initialName = '', onClose, onSubmit }: Props) {
+export default function ProjectModal({ title = 'New Project', initialName = '', namePlaceholder = 'Application or service name', onClose, onSubmit }: Props) {
   const [name, setName] = useState(initialName)
   const [saving, setSaving] = useState(false)
   const [slowSave, setSlowSave] = useState(false)
@@ -29,8 +30,14 @@ export default function ProjectModal({ title = 'New Project', initialName = '', 
   const closedRef = useRef(false)
 
   useEffect(() => setName(initialName), [initialName])
-  useEffect(() => () => {
-    closedRef.current = true
+  useEffect(() => {
+    // React Strict Mode intentionally replays effect setup/cleanup during
+    // development. Reset the marker on every setup so that replay does not
+    // make a live dialog ignore its successful submit continuation.
+    closedRef.current = false
+    return () => {
+      closedRef.current = true
+    }
   }, [])
 
   useEffect(() => {
@@ -84,7 +91,7 @@ export default function ProjectModal({ title = 'New Project', initialName = '', 
         </div>
         <label className="project-modal-field">
           <span>Name</span>
-          <input ref={nameInputRef} value={name} onChange={(event) => setName(event.target.value)} placeholder="Application or service name" />
+          <input ref={nameInputRef} value={name} onChange={(event) => setName(event.target.value)} placeholder={namePlaceholder} />
         </label>
         {error && <p className="project-modal-error" role="alert">{error}</p>}
         {saving && slowSave && (

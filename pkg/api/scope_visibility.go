@@ -2,7 +2,9 @@ package api
 
 import (
 	"net/http"
+	"strings"
 
+	"github.com/jasonczech/apexload/pkg/recorder"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
@@ -27,7 +29,7 @@ import (
 // out global viewer alongside a domain binding expects the domain binding to be
 // what bounds the list.
 func (s *Server) requestHasUnrestrictedScopeVisibility(r *http.Request) bool {
-	if isAuthBypassMode(normalizeAuthSettings(s.runner.GetSystemSettings().Auth).Mode) {
+	if isAuthBypassMode(s.authSettingsForRequest().Mode) {
 		return true
 	}
 	user, ok := AuthenticatedUserFromContext(r.Context())
@@ -37,6 +39,31 @@ func (s *Server) requestHasUnrestrictedScopeVisibility(r *http.Request) bool {
 		return false
 	}
 	return user.hasGlobalRole(RoleSystemAdmin)
+}
+
+// requestCanViewProjectPayload keeps project-specific overlays out of otherwise
+// global infrastructure/status responses for Local Test Login's scope-bound
+// personas. Established providers retain their historical global-viewer
+// behavior; their authorization model is not reinterpreted here.
+func (s *Server) requestCanViewProjectPayload(r *http.Request, projectID string) bool {
+	user, ok := AuthenticatedUserFromContext(r.Context())
+	if !ok || user == nil || !user.LocalScopeBoundViewer {
+		return true
+	}
+	return s.websocketUserCanViewProject(user, normalizeProjectID(projectID))
+}
+
+func (s *Server) visibleRecorderSessionForRequest(r *http.Request, session *recorder.Session, projectFilter string) *recorder.Session {
+	if session == nil {
+		return nil
+	}
+	if projectFilter = strings.TrimSpace(projectFilter); projectFilter != "" && normalizeProjectID(session.ProjectID) != normalizeProjectID(projectFilter) {
+		return nil
+	}
+	if !s.requestCanViewProjectPayload(r, session.ProjectID) {
+		return nil
+	}
+	return session
 }
 
 // visibleDomainIDsForUser is the union of the domains a user holds a direct

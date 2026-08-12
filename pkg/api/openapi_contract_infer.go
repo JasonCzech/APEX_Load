@@ -1028,13 +1028,14 @@ func deprecatedCompatibilityInput(route discoveredRoute, name string) (string, b
 
 func explicitRequestRequiredFields(method, path string, properties map[string]oasSchema) ([]string, bool) {
 	declared := map[string][]string{
-		"POST /api/v1/auth/ci/github/exchange":                                                          {"id_token", "project_id"},
-		"POST /api/v1/correlations/diff":                                                                {"recording_a", "recording_b"},
-		"POST /api/v1/scenarios":                                                                        {"name", "duration", "groups"},
-		"PUT /api/v1/scenarios/{id}":                                                                    {"name", "duration", "groups"},
-		"POST /api/v1/scenarios/{id}/schedules":                                                         {"name", "cron_expr"},
-		"PUT /api/v1/scenarios/{id}/schedules/{schedule_id}":                                            {"name", "cron_expr"},
-		"POST /api/v1/scenarios/{id}/schedules/preview":                                                 {"cron_expr"},
+		"POST /api/v1/auth/login":                            {"password", "username"},
+		"POST /api/v1/auth/ci/github/exchange":               {"id_token", "project_id"},
+		"POST /api/v1/correlations/diff":                     {"recording_a", "recording_b"},
+		"POST /api/v1/scenarios":                             {"name", "duration", "groups"},
+		"PUT /api/v1/scenarios/{id}":                         {"name", "duration", "groups"},
+		"POST /api/v1/scenarios/{id}/schedules":              {"name", "cron_expr"},
+		"PUT /api/v1/scenarios/{id}/schedules/{schedule_id}": {"name", "cron_expr"},
+		"POST /api/v1/scenarios/{id}/schedules/preview":      {"cron_expr"},
 		"POST /api/v1/scenarios/{id}/schedules/{schedule_id}/occurrences/{occurrence_id}/resolve":       {"action"},
 		"POST /api/v1/execution-plans/{id}/schedules":                                                   {"cron_expr"},
 		"PUT /api/v1/execution-plans/{id}/schedules/{schedule_id}":                                      {"cron_expr"},

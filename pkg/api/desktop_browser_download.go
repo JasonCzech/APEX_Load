@@ -55,7 +55,7 @@ func (s *Server) handleCreateDesktopBrowserDownload(w http.ResponseWriter, r *ht
 		writeError(w, http.StatusBadRequest, "desktop browser download mode must be download or open")
 		return
 	}
-	devMode, devModeOK := devPreviewModeForRequest(normalizeAuthSettings(s.runner.GetSystemSettings().Auth), r)
+	devMode, devModeOK := devPreviewModeForRequest(s.authSettingsForRequest(), r)
 	devProjectID := ""
 	if devModeOK && devMode == devViewModeUser {
 		// Keep the exact normalized input semantics: an absent project header

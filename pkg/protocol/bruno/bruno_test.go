@@ -21,7 +21,79 @@ import (
 	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
+func acknowledgedSession(request createSessionRequest) createSessionResponse {
+	return createSessionResponse{
+		SessionID: request.SessionID, SessionLeaseToken: request.SessionLeaseToken,
+		LeaseTTLMS: runnerSessionLeaseTTL.Milliseconds(),
+	}
+}
+
+func TestCreateSessionRenewsLeaseWhileProvisioning(t *testing.T) {
+	var mu sync.Mutex
+	var sessionID, leaseToken string
+	renewed := make(chan struct{})
+	var renewedOnce sync.Once
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		switch {
+		case request.Method == http.MethodPost && request.URL.Path == "/v1/sessions":
+			var payload createSessionRequest
+			if err := json.NewDecoder(request.Body).Decode(&payload); err != nil {
+				http.Error(response, err.Error(), http.StatusBadRequest)
+				return
+			}
+			mu.Lock()
+			sessionID, leaseToken = payload.SessionID, payload.SessionLeaseToken
+			mu.Unlock()
+			select {
+			case <-renewed:
+				response.WriteHeader(http.StatusCreated)
+				_ = json.NewEncoder(response).Encode(acknowledgedSession(payload))
+			case <-time.After(3 * runnerSessionLeaseRenew):
+				http.Error(response, "session lease was not renewed during provisioning", http.StatusGatewayTimeout)
+			}
+		case request.Method == http.MethodPost && strings.HasSuffix(request.URL.Path, "/lease/renew"):
+			mu.Lock()
+			wantPath := "/v1/sessions/" + sessionID + "/lease/renew"
+			wantToken := leaseToken
+			mu.Unlock()
+			if request.URL.Path != wantPath || request.Header.Get("X-Apexload-Session-Lease-Token") != wantToken {
+				http.Error(response, "wrong session lease generation", http.StatusConflict)
+				return
+			}
+			renewedOnce.Do(func() { close(renewed) })
+			_ = json.NewEncoder(response).Encode(map[string]any{
+				"renewed": true, "lease_ttl_ms": runnerSessionLeaseTTL.Milliseconds(),
+			})
+		default:
+			http.Error(response, "unexpected route", http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	instance := &Protocol{
+		client:        server.Client(),
+		runnerURL:     server.URL,
+		bundleID:      "bundle-provisioning",
+		sandbox:       "developer",
+		compatibility: CompatibilityVersion,
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	gotSessionID, gotLeaseToken, err := instance.createSession(ctx, nil)
+	if err != nil {
+		t.Fatalf("createSession: %v", err)
+	}
+	mu.Lock()
+	wantSessionID, wantLeaseToken := sessionID, leaseToken
+	mu.Unlock()
+	if gotSessionID != wantSessionID || gotLeaseToken != wantLeaseToken {
+		t.Fatalf("created session generation = %q/%q, want %q/%q", gotSessionID, gotLeaseToken, wantSessionID, wantLeaseToken)
+	}
+}
+
 func TestProtocolLifecycleAndStreamingResults(t *testing.T) {
+	t.Setenv("APEXLOAD_BRUNO_DISTRIBUTED_EXECUTION_ENABLED", "false")
+	t.Setenv("APEXLOAD_BRUNO_RUNNER_OWNER_LEASE_V1", "false")
 	t.Setenv("APEXLOAD_BRUNO_MAX_JUMPS", "50")
 	t.Setenv("APEXLOAD_BRUNO_MAX_RUN_REQUEST_DEPTH", "8")
 	t.Setenv("APEXLOAD_BRUNO_MAX_PARALLEL_REQUESTS", "2")
@@ -75,7 +147,7 @@ func TestProtocolLifecycleAndStreamingResults(t *testing.T) {
 			created = true
 			runnerSessionID = payload.SessionID
 			response.WriteHeader(http.StatusCreated)
-			_ = json.NewEncoder(response).Encode(createSessionResponse{SessionID: runnerSessionID})
+			_ = json.NewEncoder(response).Encode(acknowledgedSession(payload))
 		case request.Method == http.MethodPost && request.URL.Path == "/v1/sessions/"+runnerSessionID+"/execute":
 			executed = true
 			response.Header().Set("Content-Type", "application/x-ndjson")
@@ -196,7 +268,7 @@ func TestProtocolSharesBundleAcrossVUsers(t *testing.T) {
 			var payload createSessionRequest
 			_ = json.NewDecoder(request.Body).Decode(&payload)
 			response.WriteHeader(http.StatusCreated)
-			_ = json.NewEncoder(response).Encode(createSessionResponse{SessionID: payload.SessionID})
+			_ = json.NewEncoder(response).Encode(acknowledgedSession(payload))
 		case request.Method == http.MethodDelete && strings.HasPrefix(request.URL.Path, "/v1/sessions/"):
 			response.WriteHeader(http.StatusNoContent)
 		case request.Method == http.MethodDelete && request.URL.Path == "/v1/bundles/shared":
@@ -305,6 +377,197 @@ func TestRunnerHealthRejectsControlRedirects(t *testing.T) {
 	}
 }
 
+func TestRuntimeCapabilitiesRequireRunnerOwnerLeaseEvidence(t *testing.T) {
+	restore := importartifact.SetResolver(importartifact.ResolverFunc(func(context.Context, importartifact.Request) ([]byte, error) {
+		return []byte("bundle"), nil
+	}))
+	t.Cleanup(restore)
+	t.Setenv("APEXLOAD_BRUNO_DISTRIBUTED_EXECUTION_ENABLED", "true")
+	t.Setenv("APEXLOAD_BRUNO_ALLOW_DIRECT_EGRESS", "true")
+	for _, test := range []struct {
+		name              string
+		ownerLeaseEnabled string
+		reportedFeatures  []string
+		wantAvailable     bool
+	}{
+		{name: "operator lease disabled", ownerLeaseEnabled: "false", reportedFeatures: []string{runnerOwnerLeaseFeature, runnerSessionLeaseFeature}},
+		{name: "runner omits leases", ownerLeaseEnabled: "true"},
+		{name: "runner reports owner lease only", ownerLeaseEnabled: "true", reportedFeatures: []string{runnerOwnerLeaseFeature}},
+		{name: "runner reports session lease only", ownerLeaseEnabled: "true", reportedFeatures: []string{runnerSessionLeaseFeature}},
+		{name: "operator and runner require both leases", ownerLeaseEnabled: "true", reportedFeatures: []string{runnerOwnerLeaseFeature, runnerSessionLeaseFeature}, wantAvailable: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Setenv("APEXLOAD_BRUNO_RUNNER_OWNER_LEASE_V1", test.ownerLeaseEnabled)
+			server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+				switch request.URL.Path {
+				case "/v1/health":
+					_ = json.NewEncoder(response).Encode(map[string]any{"compatibility_version": CompatibilityVersion})
+				case "/v1/capabilities":
+					_ = json.NewEncoder(response).Encode(map[string]any{
+						"compatibility_version": CompatibilityVersion,
+						"features":              test.reportedFeatures,
+						"cleanup_failed":        false,
+					})
+				default:
+					http.NotFound(response, request)
+				}
+			}))
+			defer server.Close()
+			t.Setenv("APEXLOAD_BRUNO_RUNNER_URL", server.URL)
+			runnerHealthCache.Lock()
+			runnerHealthCache.url = ""
+			runnerHealthCache.checkedAt = time.Time{}
+			runnerHealthCache.healthy = false
+			runnerHealthCache.features = nil
+			runnerHealthCache.Unlock()
+
+			capabilities := (&Protocol{}).RuntimeCapabilities()
+			if capabilities.Available != test.wantAvailable {
+				t.Fatalf("runtime available = %v, want %v (features %v)", capabilities.Available, test.wantAvailable, capabilities.Features)
+			}
+			for _, feature := range []string{runnerOwnerLeaseFeature, runnerSessionLeaseFeature} {
+				if got := protocol.RuntimeFeaturesSatisfy(capabilities.Features, feature); got != test.wantAvailable {
+					t.Fatalf("feature %q advertised = %v in %v, want %v", feature, got, capabilities.Features, test.wantAvailable)
+				}
+			}
+			if got := DistributedExecutionAvailable(); got != test.wantAvailable {
+				t.Fatalf("DistributedExecutionAvailable() = %v, want %v", got, test.wantAvailable)
+			}
+			if !RunnerHealthy(context.Background()) {
+				t.Fatal("compatible runner with capabilities endpoint was unhealthy")
+			}
+		})
+	}
+}
+
+func TestInitRejectsDistributedBrunoWhenRunnerLeasesAreDisabled(t *testing.T) {
+	var requests atomic.Int64
+	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		requests.Add(1)
+	}))
+	defer server.Close()
+	t.Setenv("APEXLOAD_BRUNO_DISTRIBUTED_EXECUTION_ENABLED", "true")
+	t.Setenv("APEXLOAD_BRUNO_RUNNER_OWNER_LEASE_V1", "false")
+
+	err := (&Protocol{}).Init(context.Background(), map[string]any{
+		"bruno_runner_url": server.URL,
+	})
+	if err == nil || !strings.Contains(err.Error(), runnerOwnerLeaseFeature) || !strings.Contains(err.Error(), runnerSessionLeaseFeature) {
+		t.Fatalf("Init error = %v, want both required runner lease features", err)
+	}
+	if got := requests.Load(); got != 0 {
+		t.Fatalf("runner requests = %d, want none before distributed lease admission", got)
+	}
+}
+
+func TestInitRejectsDistributedBrunoWhenRunnerOmitsLeaseFeature(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		features []string
+	}{
+		{name: "both leases", features: nil},
+		{name: "session lease", features: []string{runnerOwnerLeaseFeature}},
+		{name: "owner lease", features: []string{runnerSessionLeaseFeature}},
+	} {
+		t.Run("missing "+test.name, func(t *testing.T) {
+			var ownerClaims atomic.Int64
+			server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+				switch request.URL.Path {
+				case "/v1/health":
+					_ = json.NewEncoder(response).Encode(map[string]any{"compatibility_version": CompatibilityVersion})
+				case "/v1/capabilities":
+					_ = json.NewEncoder(response).Encode(map[string]any{
+						"compatibility_version": CompatibilityVersion,
+						"features":              test.features,
+						"cleanup_failed":        false,
+					})
+				case "/v1/owner/claim":
+					ownerClaims.Add(1)
+					http.Error(response, "owner claim must not be reached", http.StatusInternalServerError)
+				default:
+					http.NotFound(response, request)
+				}
+			}))
+			defer server.Close()
+			t.Setenv("APEXLOAD_BRUNO_DISTRIBUTED_EXECUTION_ENABLED", "true")
+			t.Setenv("APEXLOAD_BRUNO_RUNNER_OWNER_LEASE_V1", "true")
+
+			err := (&Protocol{}).Init(context.Background(), map[string]any{
+				"bruno_runner_url": server.URL,
+			})
+			if err == nil || !strings.Contains(err.Error(), runnerOwnerLeaseFeature) || !strings.Contains(err.Error(), runnerSessionLeaseFeature) {
+				t.Fatalf("Init error = %v, want both required runner lease features", err)
+			}
+			if got := ownerClaims.Load(); got != 0 {
+				t.Fatalf("owner claims = %d, want none before distributed lease feature admission", got)
+			}
+		})
+	}
+}
+
+func TestInitAcceptsDistributedBrunoWithRunnerLeaseContract(t *testing.T) {
+	bundle := []byte("distributed lease contract bundle")
+	sum := sha256.Sum256(bundle)
+	digest := hex.EncodeToString(sum[:])
+	var ownerClaims atomic.Int64
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		switch {
+		case request.Method == http.MethodGet && request.URL.Path == "/v1/health":
+			_ = json.NewEncoder(response).Encode(map[string]any{"compatibility_version": CompatibilityVersion})
+		case request.Method == http.MethodGet && request.URL.Path == "/v1/capabilities":
+			_ = json.NewEncoder(response).Encode(map[string]any{
+				"compatibility_version": CompatibilityVersion,
+				"features":              []string{runnerOwnerLeaseFeature, runnerSessionLeaseFeature},
+				"cleanup_failed":        false,
+			})
+		case request.Method == http.MethodPost && request.URL.Path == "/v1/owner/claim":
+			var claim map[string]any
+			_ = json.NewDecoder(request.Body).Decode(&claim)
+			ownerClaims.Add(1)
+			_ = json.NewEncoder(response).Encode(map[string]any{
+				"owner_id":     claim["owner_id"],
+				"owner_epoch":  strings.Repeat("a", 64),
+				"lease_ttl_ms": runnerOwnerLeaseTTL.Milliseconds(),
+				"accepted":     true,
+			})
+		case request.Method == http.MethodPost && request.URL.Path == "/v1/bundles/open":
+			response.WriteHeader(http.StatusCreated)
+			_ = json.NewEncoder(response).Encode(openBundleResponse{BundleID: "distributed-bundle"})
+		case request.Method == http.MethodPost && request.URL.Path == "/v1/sessions":
+			var payload createSessionRequest
+			_ = json.NewDecoder(request.Body).Decode(&payload)
+			response.WriteHeader(http.StatusCreated)
+			_ = json.NewEncoder(response).Encode(acknowledgedSession(payload))
+		case request.Method == http.MethodDelete:
+			response.WriteHeader(http.StatusNoContent)
+		default:
+			http.NotFound(response, request)
+		}
+	}))
+	defer server.Close()
+	t.Setenv("APEXLOAD_BRUNO_DISTRIBUTED_EXECUTION_ENABLED", "true")
+	t.Setenv("APEXLOAD_BRUNO_RUNNER_OWNER_LEASE_V1", "true")
+
+	instance := &Protocol{}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	if err := instance.Init(ctx, map[string]any{
+		"bruno_runner_url":            server.URL,
+		"bruno_bundle_bytes":          bundle,
+		"bruno_bundle_sha256":         digest,
+		"bruno_compatibility_version": CompatibilityVersion,
+		"bruno_sandbox":               "safe",
+	}); err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	if got := ownerClaims.Load(); got != 1 {
+		t.Fatalf("owner claims = %d, want 1", got)
+	}
+	if err := instance.Teardown(context.Background()); err != nil {
+		t.Fatalf("Teardown: %v", err)
+	}
+}
+
 func TestProtocolRecoversLostCreateResponseWithSameClientSessionID(t *testing.T) {
 	bundle := []byte("idempotent create bundle")
 	sum := sha256.Sum256(bundle)
@@ -342,7 +605,7 @@ func TestProtocolRecoversLostCreateResponseWithSameClientSessionID(t *testing.T)
 				return
 			}
 			response.WriteHeader(http.StatusCreated)
-			_ = json.NewEncoder(response).Encode(createSessionResponse{SessionID: payload.SessionID})
+			_ = json.NewEncoder(response).Encode(acknowledgedSession(payload))
 		case request.Method == http.MethodDelete && strings.HasPrefix(request.URL.Path, "/v1/sessions/"):
 			response.WriteHeader(http.StatusNoContent)
 		case request.Method == http.MethodDelete && request.URL.Path == "/v1/bundles/idempotent-bundle":
@@ -438,6 +701,40 @@ func TestProtocolDeletesClientSessionIDAfterAllCreateResponsesAreLost(t *testing
 	}
 }
 
+func TestAmbiguousCreateCleanupRetainsContainmentBarrier(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		switch {
+		case request.Method == http.MethodPost && request.URL.Path == "/v1/sessions":
+			var payload createSessionRequest
+			_ = json.NewDecoder(request.Body).Decode(&payload)
+			response.WriteHeader(http.StatusCreated)
+			_ = json.NewEncoder(response).Encode(createSessionResponse{
+				SessionID: payload.SessionID, SessionLeaseToken: "mismatched-lease-token",
+				LeaseTTLMS: runnerSessionLeaseTTL.Milliseconds(),
+			})
+		case request.Method == http.MethodDelete && strings.HasPrefix(request.URL.Path, "/v1/sessions/"):
+			http.Error(response, "cleanup remains unproven", http.StatusServiceUnavailable)
+		default:
+			http.NotFound(response, request)
+		}
+	}))
+	defer server.Close()
+
+	instance := &Protocol{
+		client: server.Client(), runnerURL: server.URL, bundleID: "bundle-create-uncertain",
+		sandbox: "developer", compatibility: CompatibilityVersion,
+	}
+	if _, _, err := instance.createSession(context.Background(), nil); !errors.Is(err, protocol.ErrContainmentUnproven) {
+		t.Fatalf("createSession error = %v, want ErrContainmentUnproven", err)
+	}
+	instance.mu.Lock()
+	instance.bundleID = ""
+	instance.mu.Unlock()
+	if err := instance.Teardown(context.Background()); !errors.Is(err, protocol.ErrContainmentUnproven) {
+		t.Fatalf("Teardown error = %v, want retained ErrContainmentUnproven", err)
+	}
+}
+
 func TestProtocolReuploadsCachedBundleAfterRunnerExpiry(t *testing.T) {
 	bundle := []byte("runner-expiring shared bundle")
 	sum := sha256.Sum256(bundle)
@@ -463,7 +760,7 @@ func TestProtocolReuploadsCachedBundleAfterRunnerExpiry(t *testing.T) {
 				return
 			}
 			response.WriteHeader(http.StatusCreated)
-			_ = json.NewEncoder(response).Encode(createSessionResponse{SessionID: payload.SessionID})
+			_ = json.NewEncoder(response).Encode(acknowledgedSession(payload))
 		case request.Method == http.MethodDelete:
 			response.WriteHeader(http.StatusNoContent)
 		default:
@@ -690,7 +987,7 @@ func TestProtocolTeardownRetainsIdentityAndBundleOwnershipForRetry(t *testing.T)
 			_ = json.NewDecoder(request.Body).Decode(&payload)
 			runnerSessionID.Store(payload.SessionID)
 			response.WriteHeader(http.StatusCreated)
-			_ = json.NewEncoder(response).Encode(createSessionResponse{SessionID: payload.SessionID})
+			_ = json.NewEncoder(response).Encode(acknowledgedSession(payload))
 		case request.Method == http.MethodDelete && request.URL.Path == "/v1/sessions/"+runnerSessionID.Load().(string):
 			sessionDeletes.Add(1)
 			if hangSessionDelete.Load() {
@@ -719,9 +1016,15 @@ func TestProtocolTeardownRetainsIdentityAndBundleOwnershipForRetry(t *testing.T)
 		t.Fatalf("Init: %v", err)
 	}
 	start := time.Now()
-	if err := instance.Teardown(context.Background()); err == nil {
+	firstCleanupCtx, firstCleanupCancel := context.WithTimeout(context.Background(), 25*time.Millisecond)
+	firstCleanupErr := instance.Teardown(firstCleanupCtx)
+	if firstCleanupErr == nil {
 		t.Fatal("first Teardown unexpectedly succeeded")
 	}
+	if !errors.Is(firstCleanupErr, protocol.ErrContainmentUnproven) {
+		t.Fatalf("ambiguous cleanup error = %v, want ErrContainmentUnproven", firstCleanupErr)
+	}
+	firstCleanupCancel()
 	if elapsed := time.Since(start); elapsed > 250*time.Millisecond {
 		t.Fatalf("first Teardown took %s despite bounded cleanup", elapsed)
 	}
@@ -763,7 +1066,7 @@ func TestConcurrentProtocolTeardownCoalescesCleanup(t *testing.T) {
 			_ = json.NewDecoder(request.Body).Decode(&payload)
 			runnerSessionID.Store(payload.SessionID)
 			response.WriteHeader(http.StatusCreated)
-			_ = json.NewEncoder(response).Encode(createSessionResponse{SessionID: payload.SessionID})
+			_ = json.NewEncoder(response).Encode(acknowledgedSession(payload))
 		case request.Method == http.MethodDelete && request.URL.Path == "/v1/sessions/"+runnerSessionID.Load().(string):
 			if sessionDeletes.Add(1) == 1 {
 				close(deleteEntered)

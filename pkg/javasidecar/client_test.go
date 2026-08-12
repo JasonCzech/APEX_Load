@@ -132,7 +132,7 @@ func TestClientFailsClosedOnContractMismatch(t *testing.T) {
 	}
 }
 
-func TestClientPropagatesAuthAndOwnerLease(t *testing.T) {
+func TestClientPropagatesAuthOwnerAndRuntimeLease(t *testing.T) {
 	var executeLease, cancelLease, closeLease bool
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("X-Apexload-Java-Runner-Token") != "runner-token" {
@@ -144,26 +144,34 @@ func TestClientPropagatesAuthAndOwnerLease(t *testing.T) {
 			_ = json.NewDecoder(r.Body).Decode(&request)
 			_ = json.NewEncoder(w).Encode(ClaimOwnerResponse{
 				Contract: ContractVersion, OwnerID: request.OwnerID,
-				Epoch: "owner-epoch-1", Claimed: true,
+				Epoch: "owner-epoch-1", Claimed: true, LeaseTTLMS: RunnerOwnerLeaseTTL.Milliseconds(),
+			})
+		case r.URL.Path == "/v1/runtime-leases/claim":
+			_ = json.NewEncoder(w).Encode(ClaimRuntimeLeaseResponse{
+				Contract: ContractVersion, LeaseID: "runtime-lease-1",
+				LeaseToken: strings.Repeat("a", 64), Claimed: true, LeaseTTLMS: RuntimeLeaseTTL.Milliseconds(),
 			})
 		case r.URL.Path == "/v1/executions":
 			var request ExecutionRequest
 			_ = json.NewDecoder(r.Body).Decode(&request)
-			executeLease = request.OwnerID == "generator-a" && request.OwnerEpoch == "owner-epoch-1"
+			executeLease = request.OwnerID == "generator-a" && request.OwnerEpoch == "owner-epoch-1" &&
+				request.RuntimeLeaseID == "runtime-lease-1" && request.RuntimeLeaseToken == strings.Repeat("a", 64)
 			_ = json.NewEncoder(w).Encode(ExecutionResponse{
 				Contract: ContractVersion, ExecutionID: request.ExecutionID, Success: true,
 			})
 		case strings.HasSuffix(r.URL.Path, "/cancel"):
 			var request CancelRequest
 			_ = json.NewDecoder(r.Body).Decode(&request)
-			cancelLease = request.OwnerID == "generator-a" && request.OwnerEpoch == "owner-epoch-1"
+			cancelLease = request.OwnerID == "generator-a" && request.OwnerEpoch == "owner-epoch-1" &&
+				request.RuntimeLeaseID == "runtime-lease-1" && request.RuntimeLeaseToken == strings.Repeat("a", 64)
 			_ = json.NewEncoder(w).Encode(CancelResponse{
 				Contract: ContractVersion, ExecutionID: "exec-1", Canceled: true,
 			})
 		case strings.HasSuffix(r.URL.Path, "/close"):
 			var request CloseSessionRequest
 			_ = json.NewDecoder(r.Body).Decode(&request)
-			closeLease = request.OwnerID == "generator-a" && request.OwnerEpoch == "owner-epoch-1"
+			closeLease = request.OwnerID == "generator-a" && request.OwnerEpoch == "owner-epoch-1" &&
+				request.RuntimeLeaseID == "runtime-lease-1" && request.RuntimeLeaseToken == strings.Repeat("a", 64)
 			_ = json.NewEncoder(w).Encode(CloseSessionResponse{
 				Contract: ContractVersion, SessionID: "session-1", Closed: true,
 			})
@@ -177,6 +185,9 @@ func TestClientPropagatesAuthAndOwnerLease(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := client.ClaimOwner(context.Background(), "generator-a"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.ClaimRuntimeLease(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := client.Execute(context.Background(), ExecutionRequest{ExecutionID: "exec-1"}); err != nil {

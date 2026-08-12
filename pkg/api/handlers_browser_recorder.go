@@ -330,7 +330,7 @@ func (s *Server) handleGetBrowserRecording(w http.ResponseWriter, r *http.Reques
 }
 
 func (s *Server) handleListBrowserRecordings(w http.ResponseWriter, r *http.Request) {
-	projectID := strings.TrimSpace(r.URL.Query().Get("project_id"))
+	projectID := authorizedProjectOr(r, strings.TrimSpace(r.URL.Query().Get("project_id")))
 	sessions := s.browserRecording.List(projectID)
 	for index := range sessions {
 		sessions[index] = sanitizeBrowserRecordingSessionForResponse(sessions[index])
@@ -678,6 +678,19 @@ func (s *Server) handleAttestBridgedBrowserRecordingImport(w http.ResponseWriter
 		}
 	}
 	projectID := authorizedProjectOr(r, projectHint)
+	if resolvedProjectID, resolved := mutationProjectFromRequest(r); resolved {
+		// Global administrators and Dev Bypass are intentionally not bound to an
+		// authorized-project context. This mutating route still has a trusted
+		// resolver result, though, including its Default Project fallback when
+		// every optional project hint is omitted.
+		projectID = resolvedProjectID
+	} else if projectID == "" {
+		// Handler-only tests and storage-free embeddings do not install the
+		// mutation coordinator. Preserve this route's documented resolver
+		// default there as well; unlike collection reads, an imported script
+		// must always belong to a concrete project.
+		projectID = normalizeProjectID(projectHint)
+	}
 	if !requireAuthorizedProjectMatch(w, r, projectID) {
 		return
 	}
