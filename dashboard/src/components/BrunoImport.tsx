@@ -17,6 +17,9 @@ import {
   type SecretBindingSelection,
 } from '../types/scriptImports'
 import { useApi } from '../hooks/useApi'
+import { ApiError } from '../hooks/apiClient'
+import { useModalDialog } from '../hooks/useModalDialog'
+import { isEffectiveOperationAllowed } from '../utils/authAccessUtils'
 import { getErrorMessage } from '../utils/errorUtils'
 import DesktopApiResourceLink from './DesktopApiResourceLink'
 import SecretBindingReview, {
@@ -35,6 +38,7 @@ import {
   isOpenCollectionFileName,
 } from '../nativeImportRouting'
 import { brunoDestinationFolderOptions } from './brunoFolderOptions'
+import { nativeReviewGuidance } from './brunoNativeReviewGuidance'
 import { mergeProtectedParameterizationSelectionIds } from './protectedImportSession'
 import './BrunoImport.css'
 
@@ -66,6 +70,9 @@ type RunOptions = {
 }
 
 type OutputMode = 'canonical' | 'native_requests'
+type FolderCreationAccess = 'checking' | 'allowed' | 'denied' | 'unavailable'
+
+const FOLDER_CREATION_DENIED_MESSAGE = 'Your current role can import scripts but cannot create project folders. Select an existing script folder, or ask a Project Administrator to create one for this project.'
 
 const DEFAULT_RUN_OPTIONS: RunOptions = {
   selection: 'collection',
@@ -214,6 +221,102 @@ function nativeCandidateTarget(candidate: BrunoNativeScriptCandidate) {
   return candidate.target || candidate.script.actions[0]?.target || candidate.script.config?.base_url || ''
 }
 
+function BrunoNativeReviewDialog({
+  candidate,
+  onClose,
+}: {
+  candidate: BrunoNativeScriptCandidate
+  onClose: () => void
+}) {
+  const dialogRef = useRef<HTMLElement | null>(null)
+  const closeButtonRef = useRef<HTMLButtonElement | null>(null)
+  useModalDialog({ dialogRef, initialFocusRef: closeButtonRef, onClose })
+
+  return (
+    <div
+      className="modal-overlay"
+      role="presentation"
+      onClick={event => {
+        if (event.target === event.currentTarget) onClose()
+      }}
+    >
+      <section
+        ref={dialogRef}
+        className="modal-content bruno-native-review-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="bruno-native-review-dialog-title"
+        aria-describedby="bruno-native-review-dialog-source"
+      >
+        <header className="bruno-native-review-dialog-header">
+          <div>
+            <h3 id="bruno-native-review-dialog-title">Review imported script</h3>
+            <p id="bruno-native-review-dialog-source">{candidate.source_path}</p>
+          </div>
+          <button
+            ref={closeButtonRef}
+            type="button"
+            className="btn btn-ghost bruno-native-review-dialog-close"
+            aria-label={`Close review for ${candidate.source_path}`}
+            onClick={onClose}
+          >
+            ×
+          </button>
+        </header>
+        <div className="bruno-native-review-dialog-body">
+          <div className="bruno-native-review-summary" aria-label="Imported request summary">
+            <span><small>Method</small><code>{nativeCandidateMethod(candidate)}</code></span>
+            <span><small>Target</small><code>{nativeCandidateTarget(candidate)}</code></span>
+            {candidate.sequence !== undefined && <span><small>Sequence</small><strong>{candidate.sequence}</strong></span>}
+          </div>
+          {(candidate.missing_variables || []).length > 0 && (
+            <section className="bruno-native-review-section">
+              <h4>Missing variables</h4>
+              <p>{candidate.missing_variables?.join(', ')}</p>
+            </section>
+          )}
+          {(candidate.secret_requirements || []).length > 0 && (
+            <section className="bruno-native-review-section">
+              <h4>Secrets</h4>
+              <ul>
+                {candidate.secret_requirements?.map(requirement => (
+                  <li key={requirement.id}>
+                    <code>{requirement.suggested_name}</code>
+                    {requirement.context && <span>{requirement.context}</span>}
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+          {(candidate.diagnostics || []).length > 0 && (
+            <section className="bruno-native-review-section bruno-native-diagnostics">
+              <h4>Diagnostics</h4>
+              {candidate.diagnostics?.map((diagnostic, index) => (
+                <p key={nativeFindingID(diagnostic) || `${diagnostic.code}-${index}`}>
+                  <code>{diagnostic.code || 'finding'}</code> {diagnostic.message}
+                </p>
+              ))}
+            </section>
+          )}
+          {(candidate.source_mappings || []).length > 0 && (
+            <section className="bruno-native-review-section">
+              <h4>Source mappings</h4>
+              <pre className="bruno-json">{JSON.stringify(candidate.source_mappings, null, 2)}</pre>
+            </section>
+          )}
+          <section className="bruno-native-review-section">
+            <h4>Masked native script</h4>
+            <BrunoImportPreviewScript script={candidate.script} />
+          </section>
+        </div>
+        <footer className="bruno-native-review-dialog-footer">
+          <button type="button" className="btn btn-secondary" onClick={onClose}>Close</button>
+        </footer>
+      </section>
+    </div>
+  )
+}
+
 function CollectionTree({ items }: { items: BrunoCollectionItem[] }) {
   if (items.length === 0) return <p className="bruno-empty">No collection items were detected.</p>
   return (
@@ -274,9 +377,11 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
   const [newFolderName, setNewFolderName] = useState(() => suggestedBrunoFolderName(initialFiles || []))
   const [folderCreateError, setFolderCreateError] = useState('')
   const [creatingFolder, setCreatingFolder] = useState(false)
+  const [folderCreationAccess, setFolderCreationAccess] = useState<FolderCreationAccess>(projectId ? 'checking' : 'denied')
   const [selectedCandidateIds, setSelectedCandidateIds] = useState<string[]>([])
   const [nativeNameOverrides, setNativeNameOverrides] = useState<Record<string, string>>({})
   const [acknowledgedFindingIds, setAcknowledgedFindingIds] = useState<string[]>([])
+  const [nativeReviewCandidateId, setNativeReviewCandidateId] = useState<string | null>(null)
   const [migrateSecrets, setMigrateSecrets] = useState(false)
   const [preparedSecrets, setPreparedSecrets] = useState<PreparedSecretBindings | null>(null)
   const secretBindingsRef = useRef<Record<string, string>>({})
@@ -299,6 +404,7 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
     const next = sourceGenerationRef.current + 1
     sourceGenerationRef.current = next
     setSourceGeneration(next)
+    setNativeReviewCandidateId(null)
     return next
   }, [])
   const selectSynchronizationTarget = useCallback((nextScriptId: string) => {
@@ -414,10 +520,31 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
     return () => { cancelled = true }
   }, [api, folderReloadToken, projectId])
 
+  useEffect(() => {
+    if (!projectId) {
+      setFolderCreationAccess('denied')
+      return
+    }
+    let cancelled = false
+    setFolderCreationAccess('checking')
+    void api.getAuthEffectiveAccess(projectId)
+      .then(response => {
+        if (cancelled) return
+        setFolderCreationAccess(isEffectiveOperationAllowed(response.resources || [], 'manage_projects')
+          ? 'allowed'
+          : 'denied')
+      })
+      .catch(() => {
+        if (!cancelled) setFolderCreationAccess('unavailable')
+      })
+    return () => { cancelled = true }
+  }, [api, projectId])
+
   const nativeCandidates = useMemo(
     () => inspection?.result.output_mode === 'native_requests' ? inspection.result.scripts : [],
     [inspection],
   )
+  const nativeReviewCandidate = nativeCandidates.find(candidate => candidate.candidate_id === nativeReviewCandidateId) || null
   const destinationFolderOptions = useMemo(
     () => brunoDestinationFolderOptions(folders),
     [folders],
@@ -464,14 +591,26 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
   const nativeIdentityError = outputMode === 'native_requests'
     ? nativeCandidateIdentityError(nativeCandidates)
     : ''
-  const nativeReviewFindingIds = Array.from(new Set(selectedNativeCandidates.flatMap(nativeCandidateReviewFindings))).sort()
-  const unacknowledgedFindingIds = nativeReviewFindingIds.filter(id => !acknowledgedFindingIds.includes(id))
+  const nativeReviewFindings = Array.from(new Map(selectedNativeCandidates.flatMap(candidate => (
+    candidate.diagnostics || []
+  ).flatMap(diagnostic => {
+    const id = nativeFindingID(diagnostic)
+    if (!diagnostic.acknowledgement_required || !id) return []
+    return [[id, {
+      id,
+      code: diagnostic.code || '',
+      sourcePath: candidate.source_path || candidate.script.name,
+      message: diagnostic.message || diagnostic.code || 'Imported behavior requires review.',
+    }] as const]
+  }))).values()).sort((left, right) => left.id.localeCompare(right.id))
+  const nativeReviewFindingIds = nativeReviewFindings.map(finding => finding.id)
+  const unacknowledgedReviewFindings = nativeReviewFindings.filter(finding => !acknowledgedFindingIds.includes(finding.id))
+  const unacknowledgedFindingIds = unacknowledgedReviewFindings.map(finding => finding.id)
   const selectedNativeMissingVariables = Array.from(new Set(
     selectedNativeCandidates.flatMap(candidate => candidate.missing_variables || []),
   )).sort()
   const selectedNativeNames = selectedNativeCandidates.map(candidate => (nativeNameOverrides[candidate.candidate_id] ?? candidate.script.name).trim())
   const duplicateNativeNames = new Set(selectedNativeNames.map(value => value.toLowerCase())).size !== selectedNativeNames.length
-  const nativeNamesValid = selectedNativeNames.every(Boolean) && !duplicateNativeNames
   const credentialsValid = requirements.length === 0 || preparedSecrets?.valid === true
   const deferredSecretCount = preparedSecrets?.configureLaterCount ?? 0
   const credentialsReadyForExecution = credentialsValid && deferredSecretCount === 0
@@ -485,18 +624,46 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
       ? 'This Bruno import session has expired. Re-inspect the source before saving.'
       : `Bruno import session available until ${new Date(protectedSessionExpiry).toLocaleString()}.`
     : ''
-  const canCommit = Boolean(
-    inspection &&
-    !protectedSessionExpired &&
-    !loading &&
-    !parameterizationApplying &&
-    credentialsValid &&
-    !selectionMissing &&
-    (outputMode === 'native_requests'
-      ? destinationFolderId !== '' && selectedNativeCandidates.length > 0 && nativeNamesValid && unacknowledgedFindingIds.length === 0
-        && nativeIdentityError === ''
-      : unresolvedConflicts.length === 0 && (!syncScriptId || inspection.sync_preview)),
-  )
+  const saveBlockers: string[] = []
+  if (protectedSessionExpired) {
+    saveBlockers.push('This import session expired. Re-inspect the source to create a fresh review session.')
+  }
+  if (loading) saveBlockers.push('Wait for the current import operation to finish.')
+  if (parameterizationApplying) saveBlockers.push('Wait for the selected parameterization changes to finish applying.')
+  if (requirements.length > 0 && preparedSecrets === null) {
+    saveBlockers.push('Wait for the credential review to finish preparing the selected credential choices.')
+  } else if (!credentialsValid) {
+    saveBlockers.push('Correct the invalid credential destination choices or secret reference names in Credentials.')
+  }
+  if (selectionMissing) saveBlockers.push('Enter at least one source path for the selected folder or request import scope.')
+  if (outputMode === 'native_requests') {
+    if (!destinationFolderId) {
+      if (folderLoadError) {
+        saveBlockers.push(`Destination folders could not be loaded: ${folderLoadError} Retry loading folders before saving.`)
+      } else if (destinationFolderOptions.length > 0) {
+        saveBlockers.push('Select an existing destination folder in Import and execution profile.')
+      } else if (folderCreationAccess === 'allowed') {
+        saveBlockers.push('Create and select a destination folder in Import and execution profile.')
+      } else if (folderCreationAccess === 'denied') {
+        saveBlockers.push('No destination folder is available, and your current role cannot create project folders. Ask a Project Administrator to create a script folder, then reload this page and select it.')
+      } else if (folderCreationAccess === 'checking') {
+        saveBlockers.push('No destination folder is available. Waiting for the folder-creation permission check to finish.')
+      } else {
+        saveBlockers.push('No destination folder is available, and folder-creation permission could not be verified. Refresh the page or ask a Project Administrator to create a script folder.')
+      }
+    }
+    if (selectedNativeCandidates.length === 0) saveBlockers.push('Select at least one API request to import.')
+    if (selectedNativeNames.some(name => name === '')) saveBlockers.push('Enter a non-empty script name for every selected API request.')
+    if (duplicateNativeNames) saveBlockers.push('Give every selected API request a unique script name.')
+    for (const finding of unacknowledgedReviewFindings) {
+      saveBlockers.push(`Review ${finding.sourcePath}: ${finding.message} Acknowledge this finding under Review-gated conversions.`)
+    }
+    if (nativeIdentityError) saveBlockers.push(nativeIdentityError)
+  } else {
+    if (unresolvedConflicts.length > 0) saveBlockers.push(`Resolve ${unresolvedConflicts.length} synchronization conflict${unresolvedConflicts.length === 1 ? '' : 's'}.`)
+    if (syncScriptId && !inspection?.sync_preview) saveBlockers.push('Re-inspect the source to prepare the selected synchronization target.')
+  }
+  const canCommit = Boolean(inspection) && saveBlockers.length === 0
   const commitActionLabel = outputMode === 'native_requests'
     ? `Save ${selectedNativeCandidates.length} native script${selectedNativeCandidates.length === 1 ? '' : 's'}`
     : syncScriptId ? 'Synchronize Bruno source' : 'Import Bruno collection'
@@ -586,7 +753,7 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
   const createDestinationFolder = async () => {
     const folderName = newFolderName.trim()
     const sourceProjectId = sourceProjectIdRef.current
-    if (!sourceProjectId || !folderName || creatingFolder) return
+    if (!sourceProjectId || !folderName || creatingFolder || folderCreationAccess !== 'allowed') return
     setCreatingFolder(true)
     setFolderCreateError('')
     try {
@@ -602,7 +769,12 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
       setNotice(`Created and selected script folder “${created.name}”.`)
     } catch (cause) {
       if (mountedRef.current && sourceProjectIdRef.current === sourceProjectId) {
-        setFolderCreateError(getErrorMessage(cause, 'Unable to create the destination folder.'))
+        if (cause instanceof ApiError && cause.status === 403) {
+          setFolderCreationAccess('denied')
+          setFolderCreateError(FOLDER_CREATION_DENIED_MESSAGE)
+        } else {
+          setFolderCreateError(getErrorMessage(cause, 'Unable to create the destination folder.'))
+        }
       }
     } finally {
       if (mountedRef.current && sourceProjectIdRef.current === sourceProjectId) {
@@ -1103,30 +1275,40 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
         </div>
         {outputMode === 'native_requests' && destinationFolderOptions.length === 0 && !folderLoadError && (
           <div id="bruno-folder-empty-guidance" className="bruno-preflight warning" role="status">
-            No script folders exist in this project. Native import creates one script per API, so create and select a folder before saving.
+            No script folders exist in this project. Native import creates one script per API and requires an existing destination folder before saving.
           </div>
         )}
-        <div className="bruno-folder-create">
-          <label>
-            <span>New script folder name</span>
-            <input
-              value={newFolderName}
-              disabled={loading || creatingFolder || !projectId}
-              onChange={event => {
-                setNewFolderName(event.target.value)
-                setFolderCreateError('')
-              }}
-              placeholder="Imported Bruno APIs"
-            />
-          </label>
-          <button
-            className="btn btn-secondary"
-            disabled={loading || creatingFolder || !projectId || newFolderName.trim() === ''}
-            onClick={() => void createDestinationFolder()}
-          >
-            {creatingFolder ? 'Creating folder…' : 'Create and select folder'}
-          </button>
-        </div>
+        {folderCreationAccess === 'allowed' ? (
+          <div className="bruno-folder-create">
+            <label>
+              <span>New script folder name</span>
+              <input
+                value={newFolderName}
+                disabled={loading || creatingFolder || !projectId}
+                onChange={event => {
+                  setNewFolderName(event.target.value)
+                  setFolderCreateError('')
+                }}
+                placeholder="Imported Bruno APIs"
+              />
+            </label>
+            <button
+              className="btn btn-secondary"
+              disabled={loading || creatingFolder || !projectId || newFolderName.trim() === ''}
+              onClick={() => void createDestinationFolder()}
+            >
+              {creatingFolder ? 'Creating folder…' : 'Create and select folder'}
+            </button>
+          </div>
+        ) : outputMode === 'native_requests' && destinationFolderOptions.length === 0 && !folderCreateError ? (
+          <div className="bruno-folder-permission" role="status">
+            {folderCreationAccess === 'checking'
+              ? 'Checking whether this session can create project folders…'
+              : folderCreationAccess === 'denied'
+                ? FOLDER_CREATION_DENIED_MESSAGE
+                : 'Folder-creation permission could not be verified. Refresh the page, select an existing folder, or ask a Project Administrator to create one.'}
+          </div>
+        ) : null}
         {folderCreateError && <div className="bruno-preflight warning" role="alert">{folderCreateError}</div>}
         {folderLoadError && (
           <div className="bruno-preflight warning" role="alert">
@@ -1326,30 +1508,14 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
                           <td><code>{nativeCandidateMethod(candidate)}</code><small>{nativeCandidateTarget(candidate)}</small></td>
                           <td><span className={`bruno-native-status ${status}`}>{statusLabel}</span></td>
                           <td>
-                            <details>
-                              <summary>Review</summary>
-                              {(candidate.missing_variables || []).length > 0 && (
-                                <div><strong>Missing variables</strong><p>{candidate.missing_variables?.join(', ')}</p></div>
-                              )}
-                              {(candidate.secret_requirements || []).length > 0 && (
-                                <div><strong>Secrets</strong><p>{candidate.secret_requirements?.map(requirement => requirement.suggested_name).join(', ')}</p></div>
-                              )}
-                              {(candidate.diagnostics || []).length > 0 && (
-                                <div className="bruno-native-diagnostics">
-                                  <strong>Diagnostics</strong>
-                                  {candidate.diagnostics?.map((diagnostic, index) => (
-                                    <p key={nativeFindingID(diagnostic) || `${diagnostic.code}-${index}`}>
-                                      <code>{diagnostic.code || diagnostic.id || 'finding'}</code> {diagnostic.message}
-                                    </p>
-                                  ))}
-                                </div>
-                              )}
-                              {(candidate.source_mappings || []).length > 0 && (
-                                <div><strong>Source mappings</strong><pre className="bruno-json">{JSON.stringify(candidate.source_mappings, null, 2)}</pre></div>
-                              )}
-                              <strong>Masked native script</strong>
-                              <BrunoImportPreviewScript script={candidate.script} />
-                            </details>
+                            <button
+                              type="button"
+                              className="btn btn-ghost bruno-native-review-button"
+                              aria-haspopup="dialog"
+                              onClick={() => setNativeReviewCandidateId(candidate.candidate_id)}
+                            >
+                              Review
+                            </button>
                           </td>
                         </tr>
                       )
@@ -1357,23 +1523,57 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
                   </tbody>
                 </table>
               </div>
+              {nativeReviewCandidate && (
+                <BrunoNativeReviewDialog
+                  candidate={nativeReviewCandidate}
+                  onClose={() => setNativeReviewCandidateId(null)}
+                />
+              )}
               {nativeReviewFindingIds.length > 0 && (
                 <div className="bruno-native-acknowledgements">
                   <h4>Review-gated conversions</h4>
-                  <p>These scripts can be saved as drafts, but replay remains blocked until the unsupported behavior is translated and its gate removed.</p>
-                  {nativeReviewFindingIds.map(findingId => (
-                    <label key={findingId}>
-                      <input
-                        type="checkbox"
-                        disabled={loading}
-                        checked={acknowledgedFindingIds.includes(findingId)}
-                        onChange={event => setAcknowledgedFindingIds(previous => event.target.checked
-                          ? [...previous, findingId]
-                          : previous.filter(id => id !== findingId))}
-                      />
-                      I reviewed and acknowledge <code>{findingId}</code>
-                    </label>
-                  ))}
+                  <p>Each item below is a separate finding in an affected script. To save these incomplete drafts, acknowledge that you understand each limitation. Acknowledgement records awareness only; it does not approve replay or remove the safety gate.</p>
+                  <div className="bruno-native-acknowledgement-list">
+                    {nativeReviewFindings.map((finding, index) => {
+                      const guidance = nativeReviewGuidance(finding.code)
+                      const detailsId = `bruno-review-finding-${index + 1}`
+                      return (
+                        <article key={finding.id} className="bruno-native-acknowledgement-card">
+                          <div className="bruno-native-acknowledgement-heading">
+                            <strong>{guidance.title}</strong>
+                            <span>{finding.sourcePath}</span>
+                          </div>
+                          <dl id={detailsId}>
+                            <div>
+                              <dt>What was found</dt>
+                              <dd>{finding.message}</dd>
+                            </div>
+                            <div>
+                              <dt>Why replay is blocked</dt>
+                              <dd>{guidance.impact}</dd>
+                            </div>
+                            <div>
+                              <dt>Required before replay</dt>
+                              <dd>{guidance.resolution}</dd>
+                            </div>
+                          </dl>
+                          <label>
+                            <input
+                              type="checkbox"
+                              disabled={loading}
+                              checked={acknowledgedFindingIds.includes(finding.id)}
+                              aria-describedby={detailsId}
+                              aria-label={`Acknowledge ${guidance.title} for ${finding.sourcePath}`}
+                              onChange={event => setAcknowledgedFindingIds(previous => event.target.checked
+                                ? [...previous, finding.id]
+                                : previous.filter(id => id !== finding.id))}
+                            />
+                            I understand this draft remains blocked from replay until this finding is resolved.
+                          </label>
+                        </article>
+                      )
+                    })}
+                  </div>
                 </div>
               )}
             </section>
@@ -1440,10 +1640,21 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
                     ? 'All selected scripts will be saved atomically to the selected folder.'
                     : 'Select a destination folder before saving.'
                   : 'Raw and sanitized source artifacts are immutable, encrypted, and content-addressed.'}</span>
-                {unacknowledgedFindingIds.length > 0 && <span>{unacknowledgedFindingIds.length} review finding{unacknowledgedFindingIds.length === 1 ? '' : 's'} must be acknowledged before saving.</span>}
-                {duplicateNativeNames && <span>Selected script names must be unique.</span>}
+                {saveBlockers.length > 0 && (
+                  <div id="bruno-save-blockers" className="bruno-save-blockers" role="status">
+                    <strong>Save is unavailable for these reasons:</strong>
+                    <ul>{saveBlockers.map(blocker => <li key={blocker}>{blocker}</li>)}</ul>
+                    {deferredSecretCount > 0 && <p>{deferredSecretCount} project secret{deferredSecretCount === 1 ? ' is' : 's are'} still unconfigured, but that does not prevent saving.</p>}
+                    {selectedNativeMissingVariables.length > 0 && <p>{selectedNativeMissingVariables.length} unresolved runtime variable{selectedNativeMissingVariables.length === 1 ? ' does' : 's do'} not prevent saving, but must be configured before execution.</p>}
+                  </div>
+                )}
               </div>
-              <button className="btn btn-primary" disabled={!canCommit} onClick={() => void commit()}>
+              <button
+                className="btn btn-primary"
+                disabled={!canCommit}
+                aria-describedby={!canCommit && saveBlockers.length > 0 ? 'bruno-save-blockers' : undefined}
+                onClick={() => void commit()}
+              >
                 {commitButtonLabel}
               </button>
             </section>

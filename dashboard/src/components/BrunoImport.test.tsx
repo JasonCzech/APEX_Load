@@ -9,11 +9,13 @@ import { type Folder } from '../types'
 import { storedZipFixture } from '../test/zipFixture'
 import BrunoImport from './BrunoImport'
 import { brunoDestinationFolderOptions } from './brunoFolderOptions'
+import { nativeReviewGuidance } from './brunoNativeReviewGuidance'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 const apiMock = {
   getBrunoSupportMatrix: vi.fn(),
+  getAuthEffectiveAccess: vi.fn(),
   listScripts: vi.fn(),
   listFolders: vi.fn(),
   createFolder: vi.fn(),
@@ -34,6 +36,40 @@ const apiMock = {
 vi.mock('../hooks/useApi', () => ({
   useApi: () => apiMock,
 }))
+
+describe('nativeReviewGuidance', () => {
+  it.each([
+    ['bruno_form_template_review_required', 'Form body template encoding differs'],
+    ['bruno_multipart_template_and_file_review_required', 'Multipart templates and files need translation'],
+    ['bruno_multipart_template_review_required', 'Multipart template escaping differs'],
+    ['bruno_multipart_file_review_required', 'Multipart file parts were omitted'],
+    ['bruno_graphql_body_review_required', 'GraphQL body needs translation'],
+    ['bruno_url_secret_encoding_review_required', 'Credential URL encoding cannot be preserved'],
+    ['bruno_sensitive_header_resolution_review_required', 'Unresolved sensitive header template'],
+    ['bruno_url_template_encoding_review_required', 'URL template encoding differs'],
+    ['bruno_json_secret_escaping_review_required', 'JSON credential escaping is not guaranteed'],
+    ['bruno_xml_unsupported_markup_review_required', 'Credential-bearing XML was redacted'],
+    ['bruno_auth_review_required', 'Authentication mode is unsupported'],
+    ['bruno_max_redirects_clamped', 'Redirect limit was reduced'],
+    ['bruno_encode_url_false_review_required', 'Unencoded URL behavior is not guaranteed'],
+    ['bruno_javascript_review_required', 'Unsupported Bruno JavaScript'],
+  ])('provides specific guidance for converter review gate %s', (code, expectedTitle) => {
+    const guidance = nativeReviewGuidance(code)
+
+    expect(guidance.title).toBe(expectedTitle)
+    expect(guidance.title).not.toBe('Imported behavior requires manual translation')
+    expect(guidance.impact.length).toBeGreaterThan(80)
+    expect(guidance.resolution).toContain('remove the script’s review gate')
+  })
+
+  it('keeps disclosure-safe fallback guidance for an unknown future finding', () => {
+    expect(nativeReviewGuidance('bruno_future_review_required')).toEqual({
+      title: 'Imported behavior requires manual translation',
+      impact: 'APEX preserved the request as an incomplete draft but cannot guarantee behavior equivalent to the Bruno source. Replay remains blocked to prevent misleading test results.',
+      resolution: 'Review the finding, translate or correct the unsupported behavior, verify the result, and then remove the script’s review gate.',
+    })
+  })
+})
 
 function setInput(input: HTMLInputElement, value: string) {
   const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set
@@ -242,6 +278,21 @@ describe('BrunoImport', () => {
         fallback: 'binding_only',
         source_secret_migration_policy_enabled: true,
       },
+    })
+    apiMock.getAuthEffectiveAccess.mockResolvedValue({
+      enabled: true,
+      authenticated: true,
+      project_id: 'project-1',
+      resources: [{
+        id: 'projects_and_folders',
+        name: 'Projects and Folders',
+        description: 'Project governance defaults and result-folder organization.',
+        operations: [{
+          id: 'manage_projects',
+          label: 'Create, update, delete projects and folders',
+          allowed: true,
+        }],
+      }],
     })
     apiMock.listScripts.mockResolvedValue({ scripts: [], count: 0 })
     apiMock.listFolders.mockResolvedValue({
@@ -803,6 +854,10 @@ describe('BrunoImport', () => {
     expect(container.textContent).toContain('Read and acknowledge 1 finding before saving')
     expect(container.textContent).toContain('Execution blocked')
     expect(container.textContent).toContain('Review required')
+    expect(container.textContent).toContain('Unsupported Bruno JavaScript')
+    expect(container.textContent).toContain('Translate unsupported response JavaScript.')
+    expect(container.textContent).toContain('Acknowledgement records awareness only')
+    expect(container.textContent).not.toContain('finding-js-1')
     expect(container.textContent?.indexOf('CTA/first.yml')).toBeLessThan(container.textContent?.indexOf('CTA/second.yml'))
     const nameInput = container.querySelector<HTMLInputElement>('input[aria-label="Name for CTA/second.yml"]')
     expect(nameInput).not.toBeNull()
@@ -812,7 +867,7 @@ describe('BrunoImport', () => {
       .find(button => button.textContent?.includes('Save 2 native scripts'))
     expect(saveButton?.disabled).toBe(true)
     const acknowledgement = Array.from(container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]'))
-      .find(input => input.parentElement?.textContent?.includes('finding-js-1'))
+      .find(input => input.getAttribute('aria-label') === 'Acknowledge Unsupported Bruno JavaScript for CTA/second.yml')
     await act(async () => acknowledgement?.click())
     expect(saveButton?.disabled).toBe(true)
 
@@ -846,6 +901,146 @@ describe('BrunoImport', () => {
       ],
     })
     expect(container.textContent).toContain('Native batch saved')
+  })
+
+  it('shows separate contextual cards for multiple review findings without exposing internal ids', async () => {
+    const inspection = nativeInspectionFixture()
+    inspection.result.scripts[0].diagnostics = [{
+      id: 'bruno-native-sensitive-internal-id',
+      code: 'bruno_sensitive_header_resolution_review_required',
+      severity: 'warning',
+      message: 'Sensitive header "X-CDF-AUTH-TOKEN" contains a composed template that could not be fully resolved.',
+      acknowledgement_required: true,
+    }]
+    apiMock.inspectBrunoImport.mockResolvedValueOnce(inspection)
+    const file = new File(['version: 1'], 'opencollection.yml', { type: 'application/yaml' })
+
+    await act(async () => {
+      root.render(<BrunoImport initialFiles={[file]} projectId="project-1" />)
+      await Promise.resolve()
+    })
+    const inspectButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent?.includes('Inspect source'))
+    await act(async () => {
+      inspectButton?.click()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    const cards = Array.from(container.querySelectorAll<HTMLElement>('.bruno-native-acknowledgement-card'))
+    expect(cards).toHaveLength(2)
+    const javascriptCard = cards.find(card => card.textContent?.includes('Unsupported Bruno JavaScript'))
+    expect(javascriptCard?.textContent).toContain('CTA/second.yml')
+    expect(javascriptCard?.textContent).toContain('Translate unsupported response JavaScript.')
+    expect(javascriptCard?.textContent).toContain('Why replay is blocked')
+    expect(javascriptCard?.textContent).toContain('assertions, variable updates, or other behavior will not run')
+    expect(javascriptCard?.textContent).toContain('Required before replay')
+
+    const sensitiveHeaderCard = cards.find(card => card.textContent?.includes('Unresolved sensitive header template'))
+    expect(sensitiveHeaderCard?.textContent).toContain('CTA/first.yml')
+    expect(sensitiveHeaderCard?.textContent).toContain('X-CDF-AUTH-TOKEN')
+    expect(sensitiveHeaderCard?.textContent).toContain('incorrect or unsafe credential')
+    expect(sensitiveHeaderCard?.textContent).toContain('Bind and verify the governed whole-header value')
+    expect(container.textContent).not.toContain('finding-js-1')
+    expect(container.textContent).not.toContain('bruno-native-sensitive-internal-id')
+    expect(container.textContent).toContain('Each item below is a separate finding in an affected script')
+
+    const javascriptAcknowledgement = container.querySelector<HTMLInputElement>(
+      'input[aria-label="Acknowledge Unsupported Bruno JavaScript for CTA/second.yml"]',
+    )
+    const sensitiveHeaderAcknowledgement = container.querySelector<HTMLInputElement>(
+      'input[aria-label="Acknowledge Unresolved sensitive header template for CTA/first.yml"]',
+    )
+    await act(async () => javascriptAcknowledgement?.click())
+    expect(javascriptAcknowledgement?.checked).toBe(true)
+    expect(sensitiveHeaderAcknowledgement?.checked).toBe(false)
+    expect(container.querySelector('#bruno-save-blockers')?.textContent)
+      .not.toContain('Review CTA/second.yml: Translate unsupported response JavaScript.')
+    expect(container.querySelector('#bruno-save-blockers')?.textContent)
+      .toContain('Review CTA/first.yml: Sensitive header "X-CDF-AUTH-TOKEN"')
+
+    await act(async () => sensitiveHeaderAcknowledgement?.click())
+    expect(sensitiveHeaderAcknowledgement?.checked).toBe(true)
+    expect(container.querySelector('#bruno-save-blockers')?.textContent)
+      .not.toContain('Review CTA/first.yml: Sensitive header "X-CDF-AUTH-TOKEN"')
+  })
+
+  it('opens per-script review details in a modal and restores focus when it closes', async () => {
+    const inspection = nativeInspectionFixture()
+    apiMock.inspectBrunoImport.mockResolvedValueOnce(inspection)
+    const file = new File(['version: 1'], 'opencollection.yml', { type: 'application/yaml' })
+
+    await act(async () => {
+      root.render(<BrunoImport initialFiles={[file]} projectId="project-1" />)
+      await Promise.resolve()
+    })
+    const inspectButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent?.includes('Inspect source'))
+    await act(async () => {
+      inspectButton?.click()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(container.querySelector('.bruno-native-table details')).toBeNull()
+    const reviewButtons = Array.from(container.querySelectorAll<HTMLButtonElement>('.bruno-native-review-button'))
+    expect(reviewButtons).toHaveLength(2)
+
+    await act(async () => {
+      reviewButtons[0].focus()
+      reviewButtons[0].click()
+    })
+    await act(async () => {
+      await new Promise(resolve => window.setTimeout(resolve, 0))
+    })
+    let dialog = container.querySelector<HTMLElement>('[role="dialog"]')
+    expect(dialog?.getAttribute('aria-modal')).toBe('true')
+    expect(dialog?.parentElement?.getAttribute('role')).toBe('presentation')
+    expect(dialog?.parentElement?.hasAttribute('tabindex')).toBe(false)
+    expect(document.getElementById(dialog?.getAttribute('aria-labelledby') || '')?.textContent).toBe('Review imported script')
+    expect(dialog?.textContent).toContain('CTA/first.yml')
+    expect(dialog?.textContent).toContain('Missing variables')
+    expect(dialog?.textContent).toContain('env')
+    expect(dialog?.textContent).toContain('Source mappings')
+    expect(dialog?.textContent).toContain('Masked native script')
+    expect(dialog?.textContent).toContain('First API')
+    expect(document.activeElement?.getAttribute('aria-label')).toBe('Close review for CTA/first.yml')
+
+    const closeButton = Array.from(dialog?.querySelectorAll<HTMLButtonElement>('button') || [])
+      .find(button => button.textContent === 'Close')
+    await act(async () => closeButton?.click())
+    expect(container.querySelector('[role="dialog"]')).toBeNull()
+    expect(document.activeElement).toBe(reviewButtons[0])
+
+    await act(async () => {
+      reviewButtons[1].focus()
+      reviewButtons[1].click()
+    })
+    await act(async () => {
+      await new Promise(resolve => window.setTimeout(resolve, 0))
+    })
+    dialog = container.querySelector<HTMLElement>('[role="dialog"]')
+    expect(dialog?.textContent).toContain('CTA/second.yml')
+    expect(dialog?.textContent).toContain('Diagnostics')
+    expect(dialog?.textContent).toContain('Translate unsupported response JavaScript.')
+    await act(async () => {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    })
+    expect(container.querySelector('[role="dialog"]')).toBeNull()
+    expect(document.activeElement).toBe(reviewButtons[1])
+
+    await act(async () => {
+      reviewButtons[0].focus()
+      reviewButtons[0].click()
+      await new Promise(resolve => window.setTimeout(resolve, 0))
+    })
+    dialog = container.querySelector<HTMLElement>('[role="dialog"]')
+    const backdrop = dialog?.parentElement
+    await act(async () => dialog?.click())
+    expect(container.querySelector('[role="dialog"]')).toBe(dialog)
+    await act(async () => backdrop?.click())
+    expect(container.querySelector('[role="dialog"]')).toBeNull()
+    expect(document.activeElement).toBe(reviewButtons[0])
   })
 
   it('detects native mode from standalone OpenCollection request content', async () => {
@@ -919,6 +1114,81 @@ describe('BrunoImport', () => {
     expect(destination?.disabled).toBe(false)
     expect(destination?.value).toBe('folder-cta')
     expect(container.textContent).toContain('Created and selected script folder “CTA Collection 6a”.')
+  })
+
+  it('explains that a project administrator must create the missing destination when folder management is denied', async () => {
+    apiMock.listFolders.mockResolvedValueOnce({ folders: [], count: 0 })
+    apiMock.getAuthEffectiveAccess.mockResolvedValueOnce({
+      enabled: true,
+      authenticated: true,
+      project_id: 'project-1',
+      resources: [{
+        id: 'projects_and_folders',
+        name: 'Projects and Folders',
+        description: 'Project governance defaults and result-folder organization.',
+        operations: [{
+          id: 'manage_projects',
+          label: 'Create, update, delete projects and folders',
+          allowed: false,
+        }],
+      }],
+    })
+    apiMock.inspectBrunoImport.mockResolvedValueOnce(nativeInspectionFixture())
+    const file = new File(['version: 1'], 'opencollection.yml', { type: 'application/yaml' })
+
+    await act(async () => {
+      root.render(<BrunoImport initialFiles={[file]} projectId="project-1" />)
+      await Promise.resolve()
+      await Promise.resolve()
+      await new Promise(resolve => setTimeout(resolve, 0))
+    })
+
+    expect(container.textContent).toContain('Your current role can import scripts but cannot create project folders')
+    expect(Array.from(container.querySelectorAll('button'))
+      .some(button => button.textContent?.includes('Create and select folder'))).toBe(false)
+
+    const inspectButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent?.includes('Inspect source'))
+    await act(async () => {
+      inspectButton?.click()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    const saveButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent?.includes('Save 2 native scripts'))
+    const blockers = container.querySelector<HTMLElement>('#bruno-save-blockers')
+    expect(saveButton?.disabled).toBe(true)
+    expect(saveButton?.getAttribute('aria-describedby')).toBe('bruno-save-blockers')
+    expect(blockers?.textContent).toContain('No destination folder is available, and your current role cannot create project folders')
+    expect(blockers?.textContent).toContain('Review CTA/second.yml: Translate unsupported response JavaScript.')
+    expect(blockers?.textContent).toContain('1 unresolved runtime variable does not prevent saving')
+    expect(apiMock.createFolder).not.toHaveBeenCalled()
+  })
+
+  it('replaces a folder-create 403 with role-specific guidance', async () => {
+    apiMock.listFolders.mockResolvedValueOnce({ folders: [], count: 0 })
+    apiMock.createFolder.mockRejectedValueOnce(new ApiError('Current session is not allowed to perform this action', 403))
+    const file = new File(['version: 1'], 'opencollection.yml', { type: 'application/yaml' })
+
+    await act(async () => {
+      root.render(<BrunoImport initialFiles={[file]} projectId="project-1" />)
+      await Promise.resolve()
+      await Promise.resolve()
+      await new Promise(resolve => setTimeout(resolve, 0))
+    })
+    const createButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent?.includes('Create and select folder'))
+    await act(async () => {
+      createButton?.click()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(apiMock.createFolder).toHaveBeenCalledTimes(1)
+    expect(container.textContent).toContain('Your current role can import scripts but cannot create project folders')
+    expect(container.textContent).toContain('ask a Project Administrator to create one for this project')
+    expect(container.textContent).not.toContain('Current session is not allowed to perform this action')
   })
 
   it('blocks inspection until asynchronous content mode detection resolves', async () => {
@@ -1456,6 +1726,15 @@ describe('BrunoImport', () => {
     })
 
     expect(container.textContent).toContain('folder service unavailable')
+    const inspect = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent?.includes('Inspect source'))
+    await act(async () => {
+      inspect?.click()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(container.querySelector('#bruno-save-blockers')?.textContent)
+      .toContain('Destination folders could not be loaded: folder service unavailable')
     const retry = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
       .find(button => button.textContent === 'Retry')
     await act(async () => {

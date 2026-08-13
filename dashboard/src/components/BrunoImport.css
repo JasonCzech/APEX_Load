@@ -251,6 +251,17 @@
   border-color: var(--accent);
 }
 
+.bruno-folder-permission {
+  margin: 10px 0 14px;
+  padding: 10px 12px;
+  border: 1px solid var(--warning-border);
+  border-radius: 7px;
+  background: var(--warning-bg);
+  color: var(--warning-text);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 .bruno-checks {
   margin: 12px 0 16px;
 }
@@ -332,21 +343,145 @@
   color: var(--text-primary);
 }
 
-.bruno-native-table details {
-  min-width: 100px;
-}
-
-.bruno-native-table details[open] {
-  min-width: 340px;
-}
-
-.bruno-native-table details > div {
-  margin-top: 10px;
-}
-
-.bruno-native-table summary {
+.bruno-native-review-button {
+  min-width: 84px;
   color: var(--accent);
-  cursor: pointer;
+}
+
+.bruno-native-review-dialog {
+  display: flex;
+  flex-direction: column;
+  width: min(980px, 96vw);
+  max-width: 96vw;
+  height: min(820px, 90vh);
+  max-height: 90vh;
+  padding: 0;
+  overflow: hidden;
+}
+
+.bruno-native-review-dialog-header {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 20px 22px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.bruno-native-review-dialog-header h3,
+.bruno-native-review-dialog-header p {
+  margin: 0;
+}
+
+.bruno-native-review-dialog-header p {
+  margin-top: 5px;
+  overflow-wrap: anywhere;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.bruno-native-review-dialog-close {
+  flex: 0 0 auto;
+  min-width: 36px;
+  padding: 4px 9px;
+  font-size: 22px;
+  line-height: 1;
+}
+
+.bruno-native-review-dialog-body {
+  display: grid;
+  flex: 1 1 auto;
+  gap: 14px;
+  min-height: 0;
+  padding: 18px 22px;
+  overflow: auto;
+}
+
+.bruno-native-review-summary {
+  display: grid;
+  grid-template-columns: minmax(90px, 0.18fr) minmax(0, 1fr) minmax(80px, 0.15fr);
+  gap: 10px;
+}
+
+.bruno-native-review-summary > span {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+  padding: 9px 10px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--bg-primary);
+}
+
+.bruno-native-review-summary small {
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.bruno-native-review-summary code {
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.bruno-native-review-section {
+  min-width: 0;
+  padding: 13px 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-primary);
+}
+
+.bruno-native-review-section h4,
+.bruno-native-review-section p,
+.bruno-native-review-section ul {
+  margin: 0;
+}
+
+.bruno-native-review-section h4 {
+  margin-bottom: 8px;
+}
+
+.bruno-native-review-section ul {
+  display: grid;
+  gap: 7px;
+  padding-left: 20px;
+}
+
+.bruno-native-review-section li span {
+  display: block;
+  margin-top: 2px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.bruno-native-review-section .bruno-json {
+  max-height: 320px;
+}
+
+.bruno-native-review-dialog-footer {
+  display: flex;
+  flex: 0 0 auto;
+  justify-content: flex-end;
+  padding: 12px 22px;
+  border-top: 1px solid var(--border);
+  background: var(--bg-secondary);
+}
+
+@media (max-width: 700px) {
+  .bruno-native-review-dialog {
+    width: 96vw;
+    height: 92vh;
+    max-height: 92vh;
+  }
+
+  .bruno-native-review-summary {
+    grid-template-columns: 1fr;
+  }
 }
 
 .bruno-native-badges {
@@ -397,11 +532,74 @@
   color: var(--text-muted);
 }
 
-.bruno-native-acknowledgements label {
+.bruno-native-acknowledgement-list {
+  display: grid;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.bruno-native-acknowledgement-card {
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--bg-secondary);
+}
+
+.bruno-native-acknowledgement-heading {
   display: flex;
-  align-items: center;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 6px 12px;
+}
+
+.bruno-native-acknowledgement-heading span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.bruno-native-acknowledgement-card dl {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+}
+
+.bruno-native-acknowledgement-card dl > div {
+  display: grid;
+  grid-template-columns: minmax(130px, 0.3fr) minmax(0, 1fr);
+  gap: 4px 12px;
+}
+
+.bruno-native-acknowledgement-card dt {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.bruno-native-acknowledgement-card dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.bruno-native-acknowledgement-card label {
+  display: flex;
+  align-items: flex-start;
   gap: 7px;
-  margin-top: 8px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+  font-weight: 600;
+}
+
+@media (max-width: 640px) {
+  .bruno-native-acknowledgement-card dl > div {
+    grid-template-columns: 1fr;
+  }
 }
 
 .bruno-native-saved-list {
@@ -668,6 +866,35 @@
 .bruno-commit-bar span {
   color: var(--text-muted);
   font-size: 12px;
+}
+
+.bruno-save-blockers {
+  display: grid;
+  gap: 6px;
+  margin-top: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--warning-border);
+  border-radius: 7px;
+  background: var(--warning-bg);
+  color: var(--warning-text);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.bruno-save-blockers strong {
+  color: inherit;
+}
+
+.bruno-save-blockers ul {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding-left: 20px;
+}
+
+.bruno-save-blockers p {
+  margin: 0;
+  color: var(--text-muted);
 }
 
 .bruno-committed {
