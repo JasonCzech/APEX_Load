@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/csv"
 	"encoding/hex"
 	"encoding/json"
 	"io"
@@ -28,7 +29,9 @@ func TestRunArchiveWriterScrubsNamedSecretsAndTypedEvidence(t *testing.T) {
 		txEncoder: json.NewEncoder(&output),
 	}
 	if err := w.RecordResult(&protocol.Result{
-		Success: true,
+		Success:             true,
+		BusinessTransaction: true,
+		ActionName:          "Checkout",
 		Extractions: map[string]string{
 			"jms_settlement_token": "x",
 			"soap_operation":       "CreateOrder",
@@ -49,9 +52,48 @@ func TestRunArchiveWriterScrubsNamedSecretsAndTypedEvidence(t *testing.T) {
 	if event.Extractions["jms_settlement_token"] != scrub.Redacted || event.Extractions["soap_operation"] != "CreateOrder" {
 		t.Fatalf("archived extractions = %#v", event.Extractions)
 	}
+	if !event.BusinessTransaction || event.ActionName != "Checkout" {
+		t.Fatalf("archived transaction provenance = %#v", event)
+	}
 	encoded, _ := json.Marshal(event.ProtocolEvidence)
 	if strings.Contains(string(encoded), `"private_key":"y"`) || !strings.Contains(string(encoded), `"status":"ok"`) {
 		t.Fatalf("archived evidence = %s", encoded)
+	}
+}
+
+func TestCombinedResultSinkArchivesSyntheticTransactionWithoutDuplicatingActionResult(t *testing.T) {
+	var output bytes.Buffer
+	writer := &runArchiveWriter{
+		manifest:  RunArchiveManifest{TestID: "run-synthetic", TestName: "Synthetic"},
+		txEncoder: json.NewEncoder(&output),
+	}
+	sink := combinedResultSink{writer}
+	ordinary := &protocol.Result{ActionName: "HTTP request", Success: true, StartTime: time.Now()}
+	synthetic := &protocol.Result{ActionName: "Checkout flow", BusinessTransaction: true, Success: true, StartTime: time.Now()}
+	if err := sink.RecordResult(ordinary); err != nil {
+		t.Fatalf("RecordResult: %v", err)
+	}
+	if err := sink.RecordTransaction(synthetic); err != nil {
+		t.Fatalf("RecordTransaction: %v", err)
+	}
+
+	decoder := json.NewDecoder(bytes.NewReader(output.Bytes()))
+	var events []TransactionEvent
+	for decoder.More() {
+		var event TransactionEvent
+		if err := decoder.Decode(&event); err != nil {
+			t.Fatalf("decode transaction: %v", err)
+		}
+		events = append(events, event)
+	}
+	if len(events) != 2 || writer.manifest.TransactionCount != 2 {
+		t.Fatalf("archive events/count = %#v/%d, want one action plus one logical transaction", events, writer.manifest.TransactionCount)
+	}
+	if events[0].ActionName != "HTTP request" || events[0].BusinessTransaction {
+		t.Fatalf("ordinary action event = %#v", events[0])
+	}
+	if events[1].ActionName != "Checkout flow" || !events[1].BusinessTransaction {
+		t.Fatalf("synthetic transaction event = %#v", events[1])
 	}
 }
 
@@ -254,5 +296,101 @@ func assertSanitizedLegacyTransaction(t *testing.T, item TransactionEvent) {
 		if strings.Contains(text, leaked) {
 			t.Fatalf("loaded transaction leaked %q: %s", leaked, text)
 		}
+	}
+}
+
+func TestSanitizeArchivedTransactionPreservesReportIdentityNames(t *testing.T) {
+	const tokenLikeName = "AbCdEfGh1234567890ijklMN"
+	item := &TransactionEvent{
+		TestName:            "test-" + tokenLikeName,
+		Group:               "group-" + tokenLikeName,
+		ActionName:          "transaction-" + tokenLikeName,
+		BusinessTransaction: true,
+		SourceActionName:    "action-" + tokenLikeName,
+		SourceTransaction:   "source-transaction-" + tokenLikeName,
+		ErrorMessage:        "request failed with token " + tokenLikeName,
+	}
+
+	sanitizeArchivedTransaction(item)
+
+	for name, value := range map[string]string{
+		"group":              item.Group,
+		"transaction":        item.ActionName,
+		"source transaction": item.SourceTransaction,
+	} {
+		if !strings.Contains(value, tokenLikeName) || strings.Contains(value, "[REDACTED]") {
+			t.Fatalf("%s identity = %q, want authored name preserved", name, value)
+		}
+	}
+	if strings.Contains(item.ErrorMessage, tokenLikeName) || !strings.Contains(item.ErrorMessage, "[REDACTED]") {
+		t.Fatalf("error evidence was not scrubbed: %q", item.ErrorMessage)
+	}
+	if strings.Contains(item.TestName, tokenLikeName) || strings.Contains(item.SourceActionName, tokenLikeName) {
+		t.Fatalf("non-transaction metadata was not scrubbed: test=%q source_action=%q", item.TestName, item.SourceActionName)
+	}
+
+	ordinary := &TransactionEvent{ActionName: "action-" + tokenLikeName}
+	sanitizeArchivedTransaction(ordinary)
+	if strings.Contains(ordinary.ActionName, tokenLikeName) || !strings.Contains(ordinary.ActionName, scrub.Redacted) {
+		t.Fatalf("ordinary archived action bypassed defense-in-depth scrubbing: %q", ordinary.ActionName)
+	}
+
+	structured := &TransactionEvent{
+		Group:               "group token=abc123",
+		ActionName:          "transaction token=abc123",
+		BusinessTransaction: true,
+		SourceTransaction:   "source token=abc123",
+	}
+	sanitizeArchivedTransaction(structured)
+	encoded, err := json.Marshal(structured)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(encoded), "abc123") {
+		t.Fatalf("structured credential survived archive identity scrubbing: %s", encoded)
+	}
+}
+
+func TestArchiveTransactionCSVIncludesBusinessTransactionProvenance(t *testing.T) {
+	var output bytes.Buffer
+	if err := writeArchiveTransactionsCSV([]TransactionEvent{{
+		ActionName:          "Checkout",
+		BusinessTransaction: true,
+	}}, &output); err != nil {
+		t.Fatalf("writeArchiveTransactionsCSV: %v", err)
+	}
+	rows, err := csv.NewReader(&output).ReadAll()
+	if err != nil {
+		t.Fatalf("read CSV: %v", err)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("CSV rows = %#v", rows)
+	}
+	column := -1
+	for index, header := range rows[0] {
+		if header == "business_transaction" {
+			column = index
+			break
+		}
+	}
+	if column < 0 || rows[1][column] != "true" {
+		t.Fatalf("CSV transaction provenance = %#v", rows)
+	}
+}
+
+func TestCompactArchiveAnalysisTransactionCarriesBusinessTransactionProvenance(t *testing.T) {
+	transaction := compactArchiveAnalysisTransaction(TransactionEvent{
+		ActionName:          "Checkout",
+		BusinessTransaction: true,
+	})
+	if !transaction.BusinessTransaction {
+		t.Fatalf("compacted transaction provenance = %#v", transaction)
+	}
+}
+
+func TestIntervalSummaryTransactionNamePreservesAuthoredIdentity(t *testing.T) {
+	const transactionName = "checkout-AbCdEfGh1234567890ijklMN"
+	if got := intervalTransactionName(transactionName); got != transactionName {
+		t.Fatalf("interval transaction identity = %q, want %q", got, transactionName)
 	}
 }

@@ -21,12 +21,13 @@ import (
 
 func TestOpenAPIAndPostmanCredentialValuesRemainRunnableThroughProtectedCommit(t *testing.T) {
 	tests := []struct {
-		name       string
-		profile    string
-		inspectURL string
-		commitURL  string
-		content    func(string) string
-		protected  func(string) string
+		name           string
+		profile        string
+		inspectURL     string
+		commitURL      string
+		content        func(string) string
+		protected      func(string) string
+		viewInDataFile bool
 	}{
 		{
 			name:       "OpenAPI",
@@ -91,6 +92,7 @@ func TestOpenAPIAndPostmanCredentialValuesRemainRunnableThroughProtectedCommit(t
 			protected: func(value string) string {
 				return "Bearer " + value
 			},
+			viewInDataFile: true,
 		},
 	}
 
@@ -221,8 +223,12 @@ func TestOpenAPIAndPostmanCredentialValuesRemainRunnableThroughProtectedCommit(t
 			if readResponse.Code != http.StatusOK {
 				t.Fatalf("ordinary read status = %d body=%s", readResponse.Code, readResponse.Body.String())
 			}
-			if bytes.Contains(readResponse.Body.Bytes(), []byte(value)) {
-				t.Fatal("ordinary stored-script read disclosed the imported credential")
+			viewContainsValue := bytes.Contains(readResponse.Body.Bytes(), []byte(value))
+			if test.viewInDataFile && !viewContainsValue {
+				t.Fatal("ordinary stored-script data-file view hid the imported value")
+			}
+			if !test.viewInDataFile && viewContainsValue {
+				t.Fatal("ordinary stored-script read disclosed a credential outside a data file")
 			}
 			assertProtectedImportArtifactsEncrypted(t, artifactDir, value)
 		})

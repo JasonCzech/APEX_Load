@@ -72,12 +72,7 @@ func (tr *TestRunner) testLoadReadyLocked(test *ManagedTest, now time.Time) bool
 		return false
 	}
 	if test.multiEngine != nil {
-		select {
-		case <-test.multiEngine.Ready():
-			return true
-		default:
-			return false
-		}
+		return test.multiEngine.ScalingReady()
 	}
 	if _, distributed := tr.resolveBackend(test).(*distributedExecutionBackend); !distributed {
 		// Custom execution backends used by extensions/tests have no common
@@ -3293,6 +3288,16 @@ func (tr *TestRunner) runVUserScaleRamp(ctx context.Context, ramp *vuserScaleRam
 			if err == nil {
 				break
 			}
+			if errors.Is(err, engine.ErrInitialRampInProgress) {
+				if !waitContextDuration(ctx, initialRampScaleRetryInterval) {
+					result = ctx.Err()
+					if result == nil {
+						result = context.Canceled
+					}
+					return
+				}
+				continue
+			}
 			if tr.testExecutionStatus(id) == "PAUSED" && tr.waitTestRunning(ctx, id) {
 				continue
 			}
@@ -3303,11 +3308,27 @@ func (tr *TestRunner) runVUserScaleRamp(ctx context.Context, ramp *vuserScaleRam
 	}
 }
 
+func waitContextDuration(ctx context.Context, delay time.Duration) bool {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return false
+	case <-timer.C:
+		return true
+	}
+}
+
 // A gradual scale used to persist one full test row per VUser. Large changes
 // therefore generated thousands of writes and could occupy the lifecycle lock
 // for most of the requested ramp. Keep the fine-grained behavior for ordinary
 // changes, but bound large ramps while retaining monotonic, exact endpoints.
 const maxVUserRampSteps = 100
+
+const initialRampScaleRetryInterval = 200 * time.Millisecond
 
 func vuserRampTargets(current, target int) []int {
 	delta := target - current
@@ -3437,6 +3458,55 @@ func (tr *TestRunner) runStageSchedule(ctx context.Context, testID string, group
 			return
 		case <-mge.Ready():
 		}
+		// Ready exposes pause/stop controls before configured VUsers finish their
+		// initial preparation/ramp. Stage scaling needs the narrower admission
+		// barrier or its first valid stage can be rejected and abandoned.
+		ticker := time.NewTicker(executionClockPollInterval)
+		defer ticker.Stop()
+		for !mge.ScalingReady() {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+			}
+		}
+	}
+	if mge == nil {
+		// Distributed generators expose initial-ramp readiness through the typed
+		// scale precondition rather than a local ScalingReady channel. Probe the
+		// already-configured target and retry only that transient sentinel before
+		// starting any stage clock; otherwise a slow Init silently consumes the
+		// first hold/ramp duration while no load is running.
+		tr.mu.RLock()
+		currentTest := tr.tests[testID]
+		currentVUsers, found := testGroupVUsers(currentTest, groupName)
+		distributed := false
+		if currentTest != nil {
+			_, distributed = tr.resolveBackend(currentTest).(initialRampReadinessProbeExecutionBackend)
+		}
+		tr.mu.RUnlock()
+		if currentTest == nil || ctx.Err() != nil {
+			return
+		}
+		if distributed && found {
+			for {
+				err := tr.scaleVUsersNow(testID, groupName, currentVUsers, false)
+				if err == nil {
+					break
+				}
+				if errors.Is(err, engine.ErrInitialRampInProgress) {
+					if !waitContextDuration(ctx, initialRampScaleRetryInterval) {
+						return
+					}
+					continue
+				}
+				if tr.testExecutionStatus(testID) == "PAUSED" && tr.waitTestRunning(ctx, testID) {
+					continue
+				}
+				slog.Warn("stage schedule readiness probe failed", "test_id", testID, "group", groupName, "error", err)
+				return
+			}
+		}
 	}
 	for index, stage := range stages {
 		stageType := strings.ToLower(strings.TrimSpace(stage.Type))
@@ -3476,14 +3546,68 @@ func (tr *TestRunner) runStageSchedule(ctx context.Context, testID string, group
 			}
 			continue
 		case "hold":
-			// The engine is already at the hold target: first holds are seeded by
-			// compilation, later holds inherit the preceding ramp target.
+			// The first hold is seeded by compilation, but later holds can define a
+			// different explicit target (the dashboard's stair-step model uses
+			// consecutive holds for this). Apply that target at the stage boundary
+			// instead of assuming every hold inherits the preceding load.
+			if !tr.waitTestRunning(ctx, testID) {
+				return
+			}
+			if err := tr.applyStageHoldTarget(ctx, testID, groupName, stage.TargetVUsers); err != nil {
+				slog.Warn("stage schedule hold scale failed", "test_id", testID, "group", groupName, "stage", index, "target_vusers", stage.TargetVUsers, "error", err)
+				return
+			}
 		default:
 			slog.Warn("stage schedule stopped on invalid stage type", "test_id", testID, "group", groupName, "stage", index, "type", stage.Type)
 			return
 		}
 		if !tr.waitTestActiveDuration(ctx, testID, duration) {
 			return
+		}
+	}
+}
+
+// applyStageHoldTarget enforces the absolute load at a hold boundary. Existing
+// ramps must not continue past that boundary, including when the group already
+// happens to be at the requested target. A pause can race the readiness check in
+// runStageSchedule, so retry after resume instead of abandoning the remaining
+// stage schedule on that transient lifecycle transition.
+func (tr *TestRunner) applyStageHoldTarget(ctx context.Context, testID string, groupName string, targetVUsers int) error {
+	for {
+		tr.mu.Lock()
+		currentTest := tr.tests[testID]
+		currentVUsers, found := testGroupVUsers(currentTest, groupName)
+		if found && currentVUsers == targetVUsers {
+			tr.cancelVUserScaleRampLocked(currentTest, groupName)
+			tr.mu.Unlock()
+			return nil
+		}
+		tr.mu.Unlock()
+		if !found {
+			return fmt.Errorf("group not found: %s", groupName)
+		}
+
+		err := tr.scaleVUsersNow(testID, groupName, targetVUsers, true)
+		if err == nil {
+			return nil
+		}
+		if errors.Is(err, engine.ErrInitialRampInProgress) {
+			if !waitContextDuration(ctx, initialRampScaleRetryInterval) {
+				if ctxErr := ctx.Err(); ctxErr != nil {
+					return ctxErr
+				}
+				return err
+			}
+			continue
+		}
+		if tr.testExecutionStatus(testID) != "PAUSED" {
+			return err
+		}
+		if !tr.waitTestRunning(ctx, testID) {
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return ctxErr
+			}
+			return err
 		}
 	}
 }
@@ -4363,6 +4487,12 @@ func (tr *TestRunner) ResumeTest(id string) error {
 		if test.PausedAt != nil && !test.PausedAt.IsZero() {
 			pausedAt = test.PausedAt.UTC()
 		}
+		if test.StartedAt != nil && pausedAt.Before(test.StartedAt.UTC()) {
+			// A distributed run can be paused after CommitWork acknowledges but
+			// before its coordinated future barrier. Only post-barrier pause time
+			// extends the active duration; the scheduled lead was never active.
+			pausedAt = test.StartedAt.UTC()
+		}
 		pauseDelta := now.Sub(pausedAt)
 		if pauseDelta > 0 {
 			test.CumulativePause += pauseDelta
@@ -4397,6 +4527,9 @@ func (tr *TestRunner) ResumeTest(id string) error {
 	pausedAt := now
 	if test.PausedAt != nil && !test.PausedAt.IsZero() {
 		pausedAt = test.PausedAt.UTC()
+	}
+	if test.StartedAt != nil && pausedAt.Before(test.StartedAt.UTC()) {
+		pausedAt = test.StartedAt.UTC()
 	}
 	pauseDelta := now.Sub(pausedAt)
 	if pauseDelta < 0 {
@@ -4483,23 +4616,15 @@ func (tr *TestRunner) ResumeTest(id string) error {
 	// run's active clock; otherwise the first post-resume sample can stop or
 	// scale immediately because of time spent paused.
 	shiftGoalControllerForPause(test.goalControl, pauseDelta)
-	// Pause publishes an immediate zero-VUser snapshot. Restore the configured
-	// live counts as part of the durable resume commit instead of leaving the API
-	// and dashboard at zero until the next generator/engine metrics interval.
-	if test.LiveMetrics != nil {
+	// Pause publishes an immediate zero-VUser snapshot. Do not replace that
+	// observed lifecycle gauge with configured/desired group targets on resume:
+	// during a startup ramp or asynchronous scale-down the targets can differ from
+	// the VUsers that have actually activated. The next engine/generator sample is
+	// the authoritative post-resume gauge. Goal-clock metadata can still advance
+	// independently without changing the active-VUser values.
+	if test.LiveMetrics != nil && test.LiveMetrics.GoalStatus != nil && test.goalControl != nil {
 		updated := cloneLiveMetrics(test.LiveMetrics)
-		activeVUsers := 0
-		for _, configuredGroup := range test.Groups {
-			vusers := groupCurrentVUsers(configuredGroup)
-			activeVUsers += vusers
-			if groupMetrics := updated.GroupMetrics[configuredGroup.Name]; groupMetrics != nil {
-				groupMetrics.VUsers = vusers
-			}
-		}
-		updated.ActiveVUsers = int64(activeVUsers)
-		if updated.GoalStatus != nil && test.goalControl != nil {
-			updated.GoalStatus.LastScaleAt = cloneTimePtr(test.goalControl.lastScaleAt)
-		}
+		updated.GoalStatus.LastScaleAt = cloneTimePtr(test.goalControl.lastScaleAt)
 		replaceLiveMetricsLocked(test, updated)
 	}
 	eventSnapshot := cloneManagedTestFieldsLocked(test)

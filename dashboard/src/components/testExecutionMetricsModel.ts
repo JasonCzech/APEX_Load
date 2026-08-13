@@ -1,6 +1,7 @@
 import { IntervalSummaryRecord, LiveMetrics, MetricsHistoryPoint, ResourceSample, TestStatus } from '../types'
 import { resourceImpactHistoryValues } from './generatorImpact'
 import { routeLatencySeriesValuesForTarget } from './latencySeries'
+import { transactionChartSeriesKey } from './transactionChartSeries'
 import {
   executionChartMinuteRangeValue,
   type ExecutionChartTimeRange,
@@ -115,6 +116,18 @@ export function mapExecutionMetricToHistoryPoint(metric: LiveMetrics): MetricsHi
       point[`${name}_p99`] = roundedOptional(groupMetric.p99_ms)
       const attempts = (groupMetric.transactions ?? 0) + (groupMetric.errors ?? 0)
       point[`${name}_errorPct`] = attempts > 0 ? rounded((groupMetric.errors ?? 0) / attempts * 100, 100) : 0
+    })
+  }
+
+  if (metric.transactions) {
+    Object.entries(metric.transactions).forEach(([fallbackName, transactionMetric]) => {
+      const name = transactionMetric.name?.trim() || fallbackName
+      if (!name) return
+      point[transactionChartSeriesKey(name, 'tps')] = roundedOptional(transactionMetric.tps)
+      point[transactionChartSeriesKey(name, 'avgMs')] = rounded(transactionMetric.avg_ms)
+      point[transactionChartSeriesKey(name, 'errorPct')] = transactionMetric.count > 0
+        ? rounded(transactionMetric.errors / transactionMetric.count * 100, 100)
+        : 0
     })
   }
 
@@ -314,6 +327,17 @@ export function mapArchiveSummarySamples(summaries: IntervalSummaryRecord[] | un
           point[`${name}_errorPct`] = attempts > 0 ? (groupMetric.errors ?? 0) / attempts * 100 : 0
         })
       }
+      if (summary.transactions) {
+        Object.entries(summary.transactions).forEach(([fallbackName, transactionMetric]) => {
+          const name = transactionMetric.name?.trim() || fallbackName
+          if (!name) return
+          point[transactionChartSeriesKey(name, 'tps')] = roundedOptional(transactionMetric.tps)
+          point[transactionChartSeriesKey(name, 'avgMs')] = rounded(transactionMetric.avg_ms)
+          point[transactionChartSeriesKey(name, 'errorPct')] = transactionMetric.count > 0
+            ? rounded(transactionMetric.errors / transactionMetric.count * 100, 100)
+            : 0
+        })
+      }
       summary.latency?.targets?.forEach((target) => {
         Object.assign(point, routeLatencySeriesValuesForTarget(target))
       })
@@ -353,7 +377,10 @@ export function mergeArchiveResourceHistory(
     matchedResourceTimestamps.add(point.timestampMs)
     return {
       ...point,
-      vusers: point.vusers || resourcePoint.vusers,
+      // Interval summaries own the load timeline. In particular, zero is an
+      // authoritative stair-step level and must not be replaced by a stale
+      // positive resource sample from the same timestamp.
+      vusers: point.vusers ?? resourcePoint.vusers,
       cpuProcess: resourcePoint.cpuProcess,
       cpuFree: resourcePoint.cpuFree,
       memProcess: resourcePoint.memProcess,

@@ -82,6 +82,11 @@ type scalableExecutionBackendSpy struct {
 	calls chan scaleBackendCall
 }
 
+type initialRampRetryBackendSpy struct {
+	calls     chan scaleBackendCall
+	remaining atomic.Int64
+}
+
 type blockingScaleExecutionBackendSpy struct {
 	calls       chan scaleBackendCall
 	blockTarget int
@@ -106,6 +111,16 @@ func (b *scalableExecutionBackendSpy) Run(_ *TestRunner, _ *ManagedTest) {}
 
 func (b *scalableExecutionBackendSpy) ScaleVUsers(_ *TestRunner, _ *ManagedTest, groupName string, targetVUsers int) error {
 	b.calls <- scaleBackendCall{group: groupName, target: targetVUsers}
+	return nil
+}
+
+func (b *initialRampRetryBackendSpy) Run(_ *TestRunner, _ *ManagedTest) {}
+
+func (b *initialRampRetryBackendSpy) ScaleVUsers(_ *TestRunner, _ *ManagedTest, groupName string, targetVUsers int) error {
+	b.calls <- scaleBackendCall{group: groupName, target: targetVUsers}
+	if b.remaining.Add(-1) >= 0 {
+		return fmt.Errorf("generator preparing: %w", engine.ErrInitialRampInProgress)
+	}
 	return nil
 }
 
@@ -1852,6 +1867,58 @@ func TestCompileManagedTestGroupLockedDerivesRampFromStages(t *testing.T) {
 	}
 }
 
+func TestCompileManagedTestGroupRejectsOpenWorkloadVUserStages(t *testing.T) {
+	runner := NewTestRunner(1, NewHub(), nil)
+	runner.StoreScript(&dsl.Script{
+		ID: "script-open-stages", Name: "Open Stages", Protocol: "http", Version: "1.0.0",
+		Config: dsl.ScriptConfig{
+			BaseURL:  "https://example.com",
+			RunLogic: dsl.RunLogicConfig{WorkloadModel: "open"},
+			Pacing:   dsl.PacingConfig{Type: "tps", TPS: 10},
+		},
+		Actions: []dsl.Action{{Name: "step", Type: "GET", Target: "/orders"}},
+	})
+
+	for _, tc := range []struct {
+		name   string
+		stages []storage.LoadStage
+	}{
+		{name: "zero-start ramp", stages: []storage.LoadStage{
+			{Type: "ramp_up", Duration: "1s", TargetVUsers: 2},
+		}},
+		{name: "positive initial hold", stages: []storage.LoadStage{
+			{Type: "hold", Duration: "1s", TargetVUsers: 2},
+			{Type: "ramp_down", Duration: "1s", TargetVUsers: 0},
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, _, err := runner.compileManagedTestGroupLocked(0, 1, CreateGroupEntry{
+				ScriptID: "script-open-stages", Stages: tc.stages,
+			}, nil, nil)
+			if err == nil || !strings.Contains(err.Error(), "vuser-driven stages are not supported for open workload") {
+				t.Fatalf("compile error = %v, want open-workload stage rejection", err)
+			}
+		})
+	}
+
+	runner.StoreScript(&dsl.Script{
+		ID: "script-overridden-open-stages", Name: "Overridden Open Stages", Protocol: "http", Version: "1.0.0",
+		Config:  dsl.ScriptConfig{BaseURL: "https://example.com"},
+		Actions: []dsl.Action{{Name: "step", Type: "GET", Target: "/orders"}},
+	})
+	_, _, err := runner.compileManagedTestGroupLocked(0, 1, CreateGroupEntry{
+		ScriptID: "script-overridden-open-stages",
+		Stages:   []storage.LoadStage{{Type: "hold", Duration: "1s", TargetVUsers: 2}},
+		RuntimeSettings: &RuntimeSettingsOverride{
+			RunLogic: &dsl.RunLogicConfig{WorkloadModel: "open"},
+			Pacing:   &dsl.PacingConfig{Type: "tps", TPS: 10},
+		},
+	}, nil, nil)
+	if err == nil || !strings.Contains(err.Error(), "vuser-driven stages are not supported for open workload") {
+		t.Fatalf("runtime-override compile error = %v, want open-workload stage rejection", err)
+	}
+}
+
 func TestCompileManagedTestGroupLockedAppliesHeadlessOverrideWithoutMutatingStoredScript(t *testing.T) {
 	hub := NewHub()
 	runner := NewTestRunner(1, hub, nil)
@@ -2098,6 +2165,7 @@ func TestBuildLiveMetricsFromSnapshot(t *testing.T) {
 
 	live := buildLiveMetricsFromSnapshot(engine.MetricsSnapshot{
 		Timestamp:              timestamp,
+		Window:                 2 * time.Second,
 		ActiveVUsers:           18,
 		TPS:                    24.5,
 		TargetTPS:              30,
@@ -2299,6 +2367,9 @@ func TestBuildLiveMetricsFromSnapshot(t *testing.T) {
 	}
 	if login.Count != 10 || login.Errors != 1 {
 		t.Fatalf("unexpected login metrics: %+v", login)
+	}
+	if login.TPS != 4.5 {
+		t.Fatalf("login TPS = %v, want 4.5 successful transactions/s", login.TPS)
 	}
 	if login.LastErrorMessage != "HTTP 503: backend timeout 12345" || login.LastStatusCode != 503 || !login.LastErrorAt.Equal(timestamp.Add(2*time.Second)) {
 		t.Fatalf("expected login last error metadata, got %+v", login)
@@ -3813,6 +3884,188 @@ func TestRunStageScheduleDrivesRampHoldAndDrain(t *testing.T) {
 	}
 }
 
+func TestRunStageScheduleRetriesDistributedInitialRampRejection(t *testing.T) {
+	runner := NewTestRunner(1, NewHub(), nil)
+	backend := &initialRampRetryBackendSpy{calls: make(chan scaleBackendCall, 8)}
+	backend.remaining.Store(2) // reject the first two attempts, then admit
+	runner.setExecutionBackend(backend)
+	runner.tests["test-retry-initial-ramp"] = &ManagedTest{
+		ID: "test-retry-initial-ramp", Name: "Retry distributed admission", Status: "RUNNING",
+		ScenarioMode: "vuser_driven", ProjectID: storage.DefaultProjectID, TotalVUsers: 2,
+		Groups: []TestGroup{{
+			Name: "buyers", VUsers: 2, stageDriven: true, initialVUsers: 0, currentVUsers: 0,
+		}},
+	}
+
+	done := make(chan struct{})
+	go func() {
+		runner.runStageSchedule(context.Background(), "test-retry-initial-ramp", "buyers", []storage.LoadStage{
+			{Type: "hold", Duration: "1ms", TargetVUsers: 1},
+			{Type: "hold", Duration: "1ms", TargetVUsers: 2},
+		}, nil)
+		close(done)
+	}()
+
+	var calls []int
+	deadline := time.After(2 * time.Second)
+	for {
+		select {
+		case call := <-backend.calls:
+			calls = append(calls, call.target)
+		case <-done:
+			for {
+				select {
+				case call := <-backend.calls:
+					calls = append(calls, call.target)
+				default:
+					goto drained
+				}
+			}
+		drained:
+			if !intSlicesEqual(calls, []int{1, 1, 1, 2}) {
+				t.Fatalf("stage calls = %v, want two transient target-1 rejections, admitted 1, then target 2", calls)
+			}
+			return
+		case <-deadline:
+			t.Fatalf("stage schedule did not recover from initial-ramp rejections; calls=%v", calls)
+		}
+	}
+}
+
+func TestRunStageScheduleAppliesConsecutiveHoldTargets(t *testing.T) {
+	runner := NewTestRunner(1, NewHub(), nil)
+	backend := &scalableExecutionBackendSpy{calls: make(chan scaleBackendCall, 8)}
+	runner.setExecutionBackend(backend)
+	runner.tests["test-stair-step"] = &ManagedTest{
+		ID:           "test-stair-step",
+		Name:         "Stair-step hold schedule",
+		Status:       "RUNNING",
+		ScenarioMode: "vuser_driven",
+		ProjectID:    storage.DefaultProjectID,
+		TotalVUsers:  5,
+		Groups: []TestGroup{{
+			Name:          "buyers",
+			VUsers:        5,
+			stageDriven:   true,
+			initialVUsers: 1,
+			currentVUsers: 1,
+		}},
+	}
+
+	runner.runStageSchedule(context.Background(), "test-stair-step", "buyers", []storage.LoadStage{
+		{Name: "Level 1", Type: "hold", Duration: "5ms", TargetVUsers: 1},
+		{Name: "Level 2", Type: "hold", Duration: "5ms", TargetVUsers: 3},
+		{Name: "Level 3", Type: "hold", Duration: "5ms", TargetVUsers: 5},
+	}, nil)
+
+	got := drainScaleCalls(t, backend.calls, 2)
+	want := []int{3, 5}
+	if !intSlicesEqual(got, want) {
+		t.Fatalf("stair-step hold scale targets = %v, want %v", got, want)
+	}
+	scaled, ok := runner.GetTest("test-stair-step")
+	if !ok {
+		t.Fatal("expected stair-step test to exist")
+	}
+	if scaled.Groups[0].currentVUsers != 5 {
+		t.Fatalf("current staged vusers = %d, want final hold target 5", scaled.Groups[0].currentVUsers)
+	}
+}
+
+func TestApplyStageHoldTargetRetriesAfterPause(t *testing.T) {
+	runner := NewTestRunner(1, NewHub(), nil)
+	backend := &scalableExecutionBackendSpy{calls: make(chan scaleBackendCall, 8)}
+	runner.setExecutionBackend(backend)
+	pausedAt := time.Now().UTC()
+	runner.tests["test-hold-pause-race"] = &ManagedTest{
+		ID:           "test-hold-pause-race",
+		Status:       "PAUSED",
+		PausedAt:     &pausedAt,
+		ScenarioMode: "vuser_driven",
+		ProjectID:    storage.DefaultProjectID,
+		TotalVUsers:  3,
+		Groups: []TestGroup{{
+			Name:          "buyers",
+			VUsers:        3,
+			stageDriven:   true,
+			initialVUsers: 1,
+			currentVUsers: 1,
+		}},
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	done := make(chan error, 1)
+	go func() {
+		done <- runner.applyStageHoldTarget(ctx, "test-hold-pause-race", "buyers", 3)
+	}()
+
+	select {
+	case call := <-backend.calls:
+		t.Fatalf("hold target reached backend while paused: %+v", call)
+	case <-time.After(30 * time.Millisecond):
+	}
+
+	resumedAt := time.Now().UTC()
+	runner.mu.Lock()
+	test := runner.tests["test-hold-pause-race"]
+	test.CumulativePause += resumedAt.Sub(pausedAt)
+	test.PausedAt = nil
+	test.Status = "RUNNING"
+	runner.mu.Unlock()
+
+	select {
+	case call := <-backend.calls:
+		if call.target != 3 {
+			t.Fatalf("resumed hold target = %d, want 3", call.target)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("hold target was not retried after resume")
+	}
+	if err := <-done; err != nil {
+		t.Fatalf("applyStageHoldTarget after resume: %v", err)
+	}
+}
+
+func TestApplyStageHoldTargetCancelsExistingRampAtCurrentTarget(t *testing.T) {
+	runner := NewTestRunner(1, NewHub(), nil)
+	backend := &scalableExecutionBackendSpy{calls: make(chan scaleBackendCall, 8)}
+	runner.setExecutionBackend(backend)
+	runner.tests["test-hold-cancels-ramp"] = &ManagedTest{
+		ID:           "test-hold-cancels-ramp",
+		Status:       "RUNNING",
+		ScenarioMode: "vuser_driven",
+		ProjectID:    storage.DefaultProjectID,
+		TotalVUsers:  3,
+		Groups: []TestGroup{{
+			Name:          "buyers",
+			VUsers:        3,
+			stageDriven:   true,
+			initialVUsers: 1,
+			currentVUsers: 1,
+		}},
+	}
+
+	ramp, err := runner.startVUserScaleRamp(context.Background(), "test-hold-cancels-ramp", "buyers", 3, 300*time.Millisecond)
+	if err != nil {
+		t.Fatalf("startVUserScaleRamp: %v", err)
+	}
+	if ramp == nil {
+		t.Fatal("expected an active VUser ramp")
+	}
+	if err := runner.applyStageHoldTarget(context.Background(), "test-hold-cancels-ramp", "buyers", 1); err != nil {
+		t.Fatalf("applyStageHoldTarget: %v", err)
+	}
+	if err := <-ramp.done; !errors.Is(err, context.Canceled) {
+		t.Fatalf("canceled ramp error = %v, want context.Canceled", err)
+	}
+	select {
+	case call := <-backend.calls:
+		t.Fatalf("canceled ramp changed VUsers after hold boundary: %+v", call)
+	case <-time.After(200 * time.Millisecond):
+	}
+}
+
 func TestRunStageScheduleWaitsForRampCompletionBeforeAdvancing(t *testing.T) {
 	runner := NewTestRunner(1, NewHub(), nil)
 	backend := &blockingScaleExecutionBackendSpy{
@@ -4040,6 +4293,39 @@ func TestDistributedStageScheduleWaitsForPreBaselineReadiness(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("distributed stage did not start after pre-baseline readiness")
+	}
+}
+
+func TestDistributedZeroBaselineStageWaitsForCoordinatedStart(t *testing.T) {
+	runner := NewTestRunner(1, NewHub(), nil)
+	backend := &scalableExecutionBackendSpy{calls: make(chan scaleBackendCall, 4)}
+	runner.setExecutionBackend(backend)
+	startedAt := time.Now().UTC().Add(150 * time.Millisecond)
+	test := &ManagedTest{
+		ID: "test-distributed-zero-baseline", Status: "RUNNING", StartedAt: &startedAt,
+		ScenarioMode: "vuser_driven", ProjectID: storage.DefaultProjectID,
+		Groups: []TestGroup{{
+			Name: "buyers", stageDriven: true, initialVUsers: 0, currentVUsers: 0,
+			Stages: []storage.LoadStage{{Type: "ramp_up", Duration: "20ms", TargetVUsers: 1}},
+		}},
+	}
+	runner.tests[test.ID] = test
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go runner.startDistributedStageSchedulesAfterBaseline(ctx, test, 0)
+
+	select {
+	case call := <-backend.calls:
+		t.Fatalf("zero-baseline stage adjusted before coordinated start: %+v", call)
+	case <-time.After(100 * time.Millisecond):
+	}
+	select {
+	case call := <-backend.calls:
+		if call.target != 1 {
+			t.Fatalf("first post-start target = %d, want 1", call.target)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("zero-baseline stage did not start after coordinated epoch")
 	}
 }
 

@@ -29,7 +29,7 @@ Select **Local Test Login** in Settings, save, and restart the controller. The l
 | `user/user` | Global `viewer`; viewer for the default domain, repository, and project |
 | `dev/dev` | Global `viewer`; editor for the default domain, repository, and project |
 
-Use Access to disable identities or alter their bindings; startup seeding does not overwrite those edits. Add more domain bindings to make `domainadmin` responsible for a domain list. Deleting a fixture recreates it on the next Local Test Login startup. Logout requires the CSRF token returned by `/api/v1/auth/me`, deletes the persisted session, and clears the browser cookie or desktop capability binding.
+Use Access to disable identities or alter their bindings; startup seeding does not overwrite those edits. Add more domain bindings to make `domainadmin` responsible for a domain list. Deleting a fixture recreates it on the next Local Test Login startup. Every controller startup while Local Test Login is active invalidates all of its sessions, so the next dashboard load returns to the persona login even if the browser still has an old cookie. Logout for any persona, including `dev`, requires the CSRF token returned by `/api/v1/auth/me`, deletes the persisted session, clears the browser cookie or desktop capability binding, and returns to the persona login.
 
 ## Native OIDC Bootstrap Checklist
 

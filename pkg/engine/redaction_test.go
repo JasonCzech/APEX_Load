@@ -315,33 +315,38 @@ func TestVUserRecordResultNeverPublishesCorrelationEvidence(t *testing.T) {
 	}
 }
 
-func TestVUserRecordResultScrubsMetricAndArchiveMetadata(t *testing.T) {
-	const secret = "customer-secret-42"
+func TestVUserRecordResultPreservesIdentityAndScrubsEvidenceMetadata(t *testing.T) {
+	const (
+		identity = "AbCdEfGh1234567890ijklMN"
+		secret   = "customer-secret-42"
+	)
 	config, err := NewRedactionConfig([]RedactionRule{{Pattern: secret}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	sink := &captureResultSink{}
 	vu := &VUser{
-		Group:           "group-" + secret,
+		Group:           "group-" + identity,
 		Metrics:         NewMetricsCollector(2),
 		ResultSink:      sink,
 		Variables:       map[string]string{},
 		RedactionConfig: config,
 	}
 	result := &protocol.Result{
-		ActionName:        "action-" + secret,
-		Region:            "region-" + secret,
-		CorrelationID:     "correlation-" + secret,
-		NetworkProfile:    "network-" + secret,
-		DependencyType:    "dependency-" + secret,
-		DependencyTarget:  "target-" + secret,
-		SourceStepID:      "step-" + secret,
-		SourceAction:      "source-action-" + secret,
-		SourceActionName:  "source-name-" + secret,
-		SourceTransaction: "transaction-" + secret,
-		SourceProfile:     "profile-" + secret,
-		Success:           true,
+		ActionName:          "transaction-" + identity,
+		BusinessTransaction: true,
+		ParentActionName:    "parent-" + secret,
+		Region:              "region-" + secret,
+		CorrelationID:       "correlation-" + secret,
+		NetworkProfile:      "network-" + secret,
+		DependencyType:      "dependency-" + secret,
+		DependencyTarget:    "target-" + secret,
+		SourceStepID:        "step-" + secret,
+		SourceAction:        "source-action-" + secret,
+		SourceActionName:    "source-name-" + secret,
+		SourceTransaction:   "source-transaction-" + identity,
+		SourceProfile:       "profile-" + secret,
+		Success:             true,
 		ClientMetrics: &protocol.ClientMetrics{
 			DeviceProfile:  "device-" + secret,
 			DevicePlatform: "platform-" + secret,
@@ -362,12 +367,22 @@ func TestVUserRecordResultScrubsMetricAndArchiveMetadata(t *testing.T) {
 	if sink.result == nil {
 		t.Fatal("result did not reach archive/metrics sink")
 	}
+	for name, value := range map[string]string{
+		"action":             sink.result.ActionName,
+		"group":              sink.result.Group,
+		"source transaction": sink.result.SourceTransaction,
+	} {
+		if !strings.Contains(value, identity) || strings.Contains(value, redactedPayloadValue) {
+			t.Fatalf("%s identity = %q, want authored name preserved", name, value)
+		}
+	}
 	values := []string{
-		sink.result.ActionName, sink.result.Group, sink.result.Region,
+		sink.result.ParentActionName,
+		sink.result.Region,
 		sink.result.CorrelationID, sink.result.NetworkProfile,
 		sink.result.DependencyType, sink.result.DependencyTarget,
 		sink.result.SourceStepID, sink.result.SourceAction,
-		sink.result.SourceActionName, sink.result.SourceTransaction,
+		sink.result.SourceActionName,
 		sink.result.SourceProfile,
 		sink.result.ClientMetrics.DeviceProfile,
 		sink.result.ClientMetrics.DevicePlatform,
@@ -383,6 +398,31 @@ func TestVUserRecordResultScrubsMetricAndArchiveMetadata(t *testing.T) {
 	for index, value := range values {
 		if strings.Contains(value, secret) || !strings.Contains(value, redactedPayloadValue) {
 			t.Fatalf("metadata value[%d] = %q, want custom secret redacted", index, value)
+		}
+	}
+}
+
+func TestCustomPolicyStillRedactsIdentityDimensions(t *testing.T) {
+	config, err := NewRedactionConfig([]RedactionRule{{Pattern: `customer-[0-9]+`}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := &protocol.Result{
+		ActionName:          "transaction-customer-1234",
+		BusinessTransaction: true,
+		Group:               "group-customer-1234",
+		SourceTransaction:   "source-customer-1234",
+	}
+
+	scrubSensitiveResult(result, config)
+
+	for name, value := range map[string]string{
+		"transaction":        result.ActionName,
+		"group":              result.Group,
+		"source transaction": result.SourceTransaction,
+	} {
+		if strings.Contains(value, "customer-1234") || !strings.Contains(value, redactedPayloadValue) {
+			t.Fatalf("%s identity did not apply the explicit policy: %q", name, value)
 		}
 	}
 }
@@ -552,10 +592,9 @@ func TestHarvestedCookieSubstringLeavesDimensionsAndEvidenceIntact(t *testing.T)
 	}
 }
 
-// The safety half of the same change: a value the platform itself issued
-// ({{secret.NAME}} resolved from the project secret store) must still be removed
-// from the stable metric dimensions, which bypass response/snapshot handling.
-func TestPlatformManagedSecretStillRedactsStableDimensions(t *testing.T) {
+// Platform-managed values remain redacted even in stable identity labels; only
+// generic token-shape guesses are skipped for those fields.
+func TestPlatformManagedSecretStillRedactsIdentityDimensions(t *testing.T) {
 	const credential = "resolved-secret-4821"
 	vu := &VUser{
 		Group:           "group-" + credential,
@@ -564,16 +603,21 @@ func TestPlatformManagedSecretStillRedactsStableDimensions(t *testing.T) {
 		RedactionConfig: WithSecretValueRedaction(nil, []string{credential}),
 	}
 	result := &protocol.Result{
-		ActionName:       "action-" + credential,
-		DependencyTarget: "https://example.test/" + credential,
-		Success:          true,
+		ActionName:          "transaction-" + credential,
+		BusinessTransaction: true,
+		ParentActionName:    "parent-" + credential,
+		SourceTransaction:   "source-transaction-" + credential,
+		DependencyTarget:    "https://example.test/" + credential,
+		Success:             true,
 	}
 
 	vu.recordResult(result, dsl.ErrorHandlingConfig{}, dsl.LogConfig{})
 	for name, value := range map[string]string{
-		"action": result.ActionName,
-		"group":  result.Group,
-		"target": result.DependencyTarget,
+		"action":             result.ActionName,
+		"parent action":      result.ParentActionName,
+		"group":              result.Group,
+		"source transaction": result.SourceTransaction,
+		"target":             result.DependencyTarget,
 	} {
 		if strings.Contains(value, credential) {
 			t.Fatalf("%s dimension retained a platform-managed secret: %q", name, value)
@@ -581,9 +625,9 @@ func TestPlatformManagedSecretStillRedactsStableDimensions(t *testing.T) {
 	}
 }
 
-// A sensitively NAMED extraction is suppressed regardless of where the value came
-// from, and that suppression reaches the stable dimensions too.
-func TestSensitivelyNamedExtractionStillRedactsStableDimensions(t *testing.T) {
+// A sensitively named extraction is suppressed from every output dimension,
+// including identity labels, regardless of where it came from.
+func TestSensitivelyNamedExtractionStillRedactsIdentityDimensions(t *testing.T) {
 	const extracted = "harvested-bearer-3390"
 	vu := &VUser{
 		Group:     "group-" + extracted,

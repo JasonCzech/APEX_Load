@@ -1203,8 +1203,8 @@ func compactTerminalManagedTestLocked(test *ManagedTest) {
 	// The single retained point stays resident for the lifetime of the process,
 	// so release the cardinality-unbounded breakdowns it carries. A run that is
 	// terminalized in-process otherwise pins one map entry per distinct
-	// transaction/error/dependency/operation forever, while the same run
-	// re-hydrated after a restart never carries them at all.
+	// transaction/error/dependency/operation forever. Re-hydrated terminal runs
+	// pass through this same compaction after their bounded typed history loads.
 	var compactedTail *LiveMetrics
 	if len(test.History) == 1 {
 		compactedTail = compactTerminalLiveMetricsTail(test.History[0])
@@ -1234,10 +1234,10 @@ func compactTerminalManagedTestLocked(test *ManagedTest) {
 // The detailed terminal view is served from the run archive
 // (RunArchiveRecord) and the bounded run-snapshot cache, not from this resident
 // point: a terminal run re-hydrated at boot builds its tail from the typed
-// interval-summary columns (intervalSummaryRecordToLiveMetrics), which never
-// populate these fields. Dropping them here makes an in-process terminalized
-// run match that post-restart shape instead of pinning the full live maps until
-// the controller is restarted.
+// interval-summary columns and immediately passes it through this same
+// compaction. Dropping them here makes an in-process terminalized run match
+// that post-restart shape instead of pinning the live maps until the controller
+// is restarted.
 //
 // The CI SLA limits that are evaluated against per-transaction server telemetry
 // have no other terminal source, so the worst transaction per such metric is
@@ -1390,6 +1390,7 @@ func intervalSummaryRecordToLiveMetrics(record storage.IntervalSummaryRecord) *L
 		P90Ms:           record.P90Ms,
 		P95Ms:           record.P95Ms,
 		P99Ms:           record.P99Ms,
+		Transactions:    intervalTransactionRecordsToLiveMetrics(record.Transactions),
 		Browser:         browserSummaryRecordToLiveMetrics(record.Browser),
 		BrowserByDevice: browserDeviceSummaryRecordToLiveMetrics(record.BrowserByDevice),
 		Latency:         networkLatencyRecordToLiveMetrics(record.Latency),
@@ -1411,6 +1412,29 @@ func intervalSummaryRecordToLiveMetrics(record storage.IntervalSummaryRecord) *L
 		}
 	}
 	return live
+}
+
+func intervalTransactionRecordsToLiveMetrics(records map[string]*storage.IntervalTransactionRecord) map[string]*TxMetrics {
+	if len(records) == 0 {
+		return nil
+	}
+	transactions := make(map[string]*TxMetrics, len(records))
+	for name, record := range records {
+		if record == nil {
+			continue
+		}
+		transactions[name] = &TxMetrics{
+			Name:   record.Name,
+			TPS:    record.TPS,
+			Count:  record.Count,
+			Errors: record.Errors,
+			AvgMs:  record.AvgMs,
+		}
+	}
+	if len(transactions) == 0 {
+		return nil
+	}
+	return transactions
 }
 
 func browserSummaryRecordToLiveMetrics(record *storage.BrowserMetricsSummaryRecord) *BrowserLiveMetrics {

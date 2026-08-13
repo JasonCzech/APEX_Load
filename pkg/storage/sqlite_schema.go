@@ -501,6 +501,7 @@ func schemaCreateTableStatements() []string {
 			p90_ms REAL,
 			p95_ms REAL,
 			p99_ms REAL,
+			transactions_json TEXT,
 			browser_json TEXT,
 			browser_by_device_json TEXT,
 			latency_json TEXT,
@@ -825,6 +826,11 @@ func schemaCreateTableStatements() []string {
 			created_at DATETIME NOT NULL,
 			expires_at DATETIME NOT NULL,
 			FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+		)`,
+		`CREATE TABLE IF NOT EXISTS local_auth_runtime (
+			singleton_key TEXT PRIMARY KEY,
+			generation TEXT NOT NULL,
+			activated_at DATETIME NOT NULL
 		)`,
 		`CREATE TABLE IF NOT EXISTS audit_events (
 			id TEXT PRIMARY KEY,
@@ -1326,6 +1332,7 @@ func schemaColumnMigrations() []optionalSchemaMigration {
 		{name: "test_interval_summaries.generator_processing_lag_ms", query: `ALTER TABLE test_interval_summaries ADD COLUMN generator_processing_lag_ms REAL`},
 		{name: "test_interval_summaries.transport_lag_ms", query: `ALTER TABLE test_interval_summaries ADD COLUMN transport_lag_ms REAL`},
 		{name: "test_interval_summaries.controller_fanout_lag_ms", query: `ALTER TABLE test_interval_summaries ADD COLUMN controller_fanout_lag_ms REAL`},
+		{name: "test_interval_summaries.transactions_json", query: `ALTER TABLE test_interval_summaries ADD COLUMN transactions_json TEXT`},
 		{name: "test_interval_summaries.browser_json", query: `ALTER TABLE test_interval_summaries ADD COLUMN browser_json TEXT`},
 		{name: "test_interval_summaries.browser_by_device_json", query: `ALTER TABLE test_interval_summaries ADD COLUMN browser_by_device_json TEXT`},
 		{name: "test_interval_summaries.latency_json", query: `ALTER TABLE test_interval_summaries ADD COLUMN latency_json TEXT`},

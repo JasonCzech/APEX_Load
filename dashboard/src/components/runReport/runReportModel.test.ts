@@ -59,6 +59,17 @@ describe('runReportModel', () => {
     ])
   })
 
+  it('keeps a zero-load summary when the matching resource sample is stale', () => {
+    const merged = mergeTimelineHistory(
+      [point('10:00:00', 1_000, { vusers: 0, tps: 0 })],
+      [point('10:00:00', 1_000, { vusers: 9, cpuProcess: 44 })],
+    )
+
+    expect(merged).toHaveLength(1)
+    expect(merged[0].vusers).toBe(0)
+    expect(merged[0].cpuProcess).toBe(44)
+  })
+
   it('aligns baseline curves by nearest timestamp instead of sample index', () => {
     const aligned = alignBaselineTimeline(
       [point('10:00:00', 1_000), point('10:00:10', 10_000)],

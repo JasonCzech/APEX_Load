@@ -201,6 +201,150 @@ export function formatDebugLogEntry(entry: ScriptDebugLogEntry): string {
   return `[${formatReplayTime(entry.timestamp)}] ${entry.level.toUpperCase()} ${entry.category}${location} ${entry.message}${raw}`
 }
 
+export type DebugLogTokenKind =
+  | 'plain'
+  | 'method'
+  | 'target'
+  | 'status-success'
+  | 'status-warning'
+  | 'status-error'
+  | 'header'
+  | 'key'
+  | 'string'
+  | 'number'
+  | 'literal'
+  | 'punctuation'
+
+export interface DebugLogToken {
+  kind: DebugLogTokenKind
+  text: string
+}
+
+export interface DebugLogHighlightResult {
+  omittedCharCount: number
+  plainRemainder: string
+  tokens: DebugLogToken[]
+}
+
+export const DEBUG_LOG_HIGHLIGHT_CHAR_LIMIT = 12_000
+export const DEBUG_LOG_HIGHLIGHT_TOKEN_LIMIT = 600
+export const DEBUG_LOG_RENDER_CHAR_LIMIT = 64 * 1024
+
+const DEBUG_HTTP_METHOD_PATTERN = /^(CONNECT|DELETE|GET|HEAD|OPTIONS|PATCH|POST|PUT|TRACE)(\s+)(\S+)(.*)$/i
+const DEBUG_HTTP_STATUS_PATTERN = /^(HTTP\/\S+\s+)(\d{3})(.*)$/i
+const DEBUG_HEADER_PATTERN = /^([!#$%&'*+\-.^_`|~0-9A-Za-z]+)(:\s*)(.*)$/
+const DEBUG_LITERAL_PATTERN = /"(?:\\.|[^"\\])*"|\b(?:true|false|null)\b|-?\b\d+(?:\.\d+)?\b|[\u005b\u005d{},:]/g
+
+function tokenizeDebugLiterals(text: string): DebugLogToken[] {
+  const tokens: DebugLogToken[] = []
+  let cursor = 0
+  for (const match of text.matchAll(DEBUG_LITERAL_PATTERN)) {
+    const index = match.index ?? 0
+    if (index > cursor) tokens.push({ kind: 'plain', text: text.slice(cursor, index) })
+    const value = match[0]
+    let kind: DebugLogTokenKind = 'punctuation'
+    if (value.startsWith('"')) {
+      kind = /^\s*:/.test(text.slice(index + value.length)) ? 'key' : 'string'
+    } else if (/^-?\d/.test(value)) {
+      kind = 'number'
+    } else if (/^(?:true|false|null)$/.test(value)) {
+      kind = 'literal'
+    }
+    tokens.push({ kind, text: value })
+    cursor = index + value.length
+  }
+  if (cursor < text.length) tokens.push({ kind: 'plain', text: text.slice(cursor) })
+  return tokens.length > 0 ? tokens : [{ kind: 'plain', text }]
+}
+
+export function tokenizeDebugLogRawLine(line: string): DebugLogToken[] {
+  const request = line.match(DEBUG_HTTP_METHOD_PATTERN)
+  if (request) {
+    return [
+      { kind: 'method', text: request[1] },
+      { kind: 'plain', text: request[2] },
+      { kind: 'target', text: request[3] },
+      ...tokenizeDebugLiterals(request[4]),
+    ]
+  }
+
+  const response = line.match(DEBUG_HTTP_STATUS_PATTERN)
+  if (response) {
+    const status = Number(response[2])
+    const statusKind: DebugLogTokenKind = status >= 500
+      ? 'status-error'
+      : status >= 400
+        ? 'status-warning'
+        : 'status-success'
+    return [
+      { kind: 'plain', text: response[1] },
+      { kind: statusKind, text: response[2] },
+      { kind: 'plain', text: response[3] },
+    ]
+  }
+
+  const header = line.match(DEBUG_HEADER_PATTERN)
+  if (header) {
+    return [
+      { kind: 'header', text: header[1] },
+      { kind: 'punctuation', text: header[2] },
+      ...tokenizeDebugLiterals(header[3]),
+    ]
+  }
+
+  return tokenizeDebugLiterals(line)
+}
+
+export function highlightDebugLogRaw(
+  raw: string,
+  limits: {
+    highlightChars?: number
+    highlightTokens?: number
+    renderChars?: number
+  } = {},
+): DebugLogHighlightResult {
+  const renderChars = Math.max(0, limits.renderChars ?? DEBUG_LOG_RENDER_CHAR_LIMIT)
+  const highlightChars = Math.min(renderChars, Math.max(0, limits.highlightChars ?? DEBUG_LOG_HIGHLIGHT_CHAR_LIMIT))
+  const highlightTokens = Math.max(0, limits.highlightTokens ?? DEBUG_LOG_HIGHLIGHT_TOKEN_LIMIT)
+  const visible = raw.slice(0, renderChars)
+  const highlightSource = visible.slice(0, highlightChars)
+  const lines = highlightSource.split('\n')
+  const tokens: DebugLogToken[] = []
+  let consumed = 0
+
+  for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
+    const lineTokens = tokenizeDebugLogRawLine(lines[lineIndex])
+    for (const token of lineTokens) {
+      if (tokens.length >= highlightTokens) {
+        return {
+          tokens,
+          plainRemainder: visible.slice(consumed),
+          omittedCharCount: Math.max(0, raw.length - visible.length),
+        }
+      }
+      tokens.push(token)
+      consumed += token.text.length
+    }
+    if (lineIndex < lines.length - 1) {
+      if (tokens.length >= highlightTokens) {
+        return {
+          tokens,
+          plainRemainder: visible.slice(consumed),
+          omittedCharCount: Math.max(0, raw.length - visible.length),
+        }
+      }
+      tokens.push({ kind: 'plain', text: '\n' })
+      consumed += 1
+    }
+  }
+
+  return {
+    tokens,
+    plainRemainder: visible.slice(consumed),
+    omittedCharCount: Math.max(0, raw.length - visible.length),
+  }
+}
+
 export function upsertReplayActivity(
   items: ReplayActivityItem[],
   next: ReplayActivityItem,

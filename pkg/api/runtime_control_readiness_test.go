@@ -229,6 +229,107 @@ func TestResumeShiftsGoalControllerTimersByPauseDuration(t *testing.T) {
 	}
 }
 
+func TestResumeCountsOnlyPostStartPauseForCoordinatedRun(t *testing.T) {
+	runner := NewTestRunner(1, NewHub(), nil)
+	backend := &lifecycleTransitionBackend{}
+	runner.setExecutionBackend(backend)
+	now := time.Now().UTC()
+	startedAt := now.Add(-100 * time.Millisecond)
+	pausedAt := startedAt.Add(-10 * time.Minute)
+	breachStartedAt := startedAt.Add(-5 * time.Second)
+	lastScaleAt := startedAt.Add(-2 * time.Second)
+	targetTPS := 100.0
+	maxP95 := 1.0
+	test := &ManagedTest{
+		ID:           "goal-pre-start-pause-clock",
+		Status:       "PAUSED",
+		ProjectID:    storage.DefaultProjectID,
+		Duration:     time.Hour,
+		DurationStr:  time.Hour.String(),
+		StartedAt:    &startedAt,
+		PausedAt:     &pausedAt,
+		Groups:       []TestGroup{{Name: "buyers", VUsers: 1}},
+		TotalVUsers:  1,
+		ScenarioMode: "goal_oriented",
+		GoalConfig: &GoalConfig{
+			TargetAverageTPS: &targetTPS,
+			P95LatencyMs:     &maxP95,
+			StopOnSLABreach:  true,
+			SLABreachWindow:  "30s",
+		},
+		goalControl:      &goalControllerState{breachStartedAt: &breachStartedAt, lastScaleAt: &lastScaleAt},
+		executionBackend: backend,
+		LiveMetrics:      &LiveMetrics{GoalStatus: &GoalStatus{LastScaleAt: &lastScaleAt}},
+	}
+	runner.tests[test.ID] = test
+
+	if err := runner.ResumeTest(test.ID); err != nil {
+		t.Fatalf("ResumeTest: %v", err)
+	}
+	if test.CumulativePause < 75*time.Millisecond || test.CumulativePause > time.Second {
+		t.Fatalf("cumulative pause = %s, want only the roughly 100ms after coordinated start", test.CumulativePause)
+	}
+	wantBreachStart := breachStartedAt.Add(test.CumulativePause)
+	wantLastScale := lastScaleAt.Add(test.CumulativePause)
+	if test.goalControl.breachStartedAt == nil || !test.goalControl.breachStartedAt.Equal(wantBreachStart) {
+		t.Fatalf("breach start = %v, want %v", test.goalControl.breachStartedAt, wantBreachStart)
+	}
+	if test.goalControl.lastScaleAt == nil || !test.goalControl.lastScaleAt.Equal(wantLastScale) {
+		t.Fatalf("last scale = %v, want %v", test.goalControl.lastScaleAt, wantLastScale)
+	}
+	if test.LiveMetrics == nil || test.LiveMetrics.GoalStatus == nil || test.LiveMetrics.GoalStatus.LastScaleAt == nil || !test.LiveMetrics.GoalStatus.LastScaleAt.Equal(wantLastScale) {
+		t.Fatalf("live last scale = %+v, want %v", test.LiveMetrics, wantLastScale)
+	}
+}
+
+func TestResumeDoesNotProjectConfiguredVUsersIntoObservedMetrics(t *testing.T) {
+	runner := NewTestRunner(1, NewHub(), nil)
+	backend := &lifecycleTransitionBackend{}
+	runner.setExecutionBackend(backend)
+	now := time.Now().UTC()
+	startedAt := now.Add(-time.Minute)
+	pausedAt := now.Add(-time.Second)
+	pausedMetrics := &LiveMetrics{
+		Timestamp:    pausedAt,
+		ActiveVUsers: 0,
+		GroupMetrics: map[string]*GroupLiveMetrics{
+			"buyers": {Name: "buyers", VUsers: 0},
+		},
+	}
+	test := &ManagedTest{
+		ID:               "resume-observed-vusers",
+		Status:           "PAUSED",
+		ProjectID:        storage.DefaultProjectID,
+		Duration:         time.Hour,
+		DurationStr:      time.Hour.String(),
+		StartedAt:        &startedAt,
+		PausedAt:         &pausedAt,
+		Groups:           []TestGroup{{Name: "buyers", VUsers: 100}},
+		TotalVUsers:      100,
+		LiveMetrics:      pausedMetrics,
+		History:          []*LiveMetrics{pausedMetrics},
+		executionBackend: backend,
+	}
+	runner.tests[test.ID] = test
+
+	if err := runner.ResumeTest(test.ID); err != nil {
+		t.Fatalf("ResumeTest: %v", err)
+	}
+	if test.Status != "RUNNING" {
+		t.Fatalf("status = %q, want RUNNING", test.Status)
+	}
+	if test.LiveMetrics != pausedMetrics {
+		t.Fatal("resume replaced the last observed metrics before a new runtime sample arrived")
+	}
+	if test.LiveMetrics.ActiveVUsers != 0 || test.LiveMetrics.GroupMetrics["buyers"].VUsers != 0 {
+		t.Fatalf("resumed live active VUsers = %d/%d, want last observed 0/0 until the next runtime sample",
+			test.LiveMetrics.ActiveVUsers, test.LiveMetrics.GroupMetrics["buyers"].VUsers)
+	}
+	if len(test.History) != 1 || test.History[0] != pausedMetrics || test.History[0].ActiveVUsers != 0 || test.History[0].GroupMetrics["buyers"].VUsers != 0 {
+		t.Fatalf("resume rewrote observed history with configured target: %+v", test.History)
+	}
+}
+
 func TestPublishLiveMetricsKeepsPausedVUsersZero(t *testing.T) {
 	hub := NewHub()
 	store := &metricsStoreSpy{}

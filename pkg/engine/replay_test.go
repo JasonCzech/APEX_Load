@@ -1191,6 +1191,103 @@ func TestReplayScriptAppliesCustomRedactionRulesToEventsAndSnapshots(t *testing.
 	}
 }
 
+func TestReplayScrubbingPreservesDebuggerIdentityNames(t *testing.T) {
+	const identity = "AbCdEfGh1234567890ijklMN"
+	event := &ReplayActionEvent{
+		ActionName:        "transaction-" + identity,
+		ActionType:        "source_transaction",
+		ParentActionName:  "parent-" + identity,
+		SourceActionName:  "source-action-" + identity,
+		SourceTransaction: "source-transaction-" + identity,
+		StepPath:          []string{"requests[0]"},
+		Body:              "response token " + identity,
+	}
+
+	scrubReplayActionEvent(event, nil)
+
+	for name, value := range map[string]string{
+		"action":             event.ActionName,
+		"source transaction": event.SourceTransaction,
+	} {
+		if !strings.Contains(value, identity) || strings.Contains(value, redactedPayloadValue) {
+			t.Fatalf("%s identity = %q, want authored name preserved", name, value)
+		}
+	}
+	if strings.Contains(event.Body, identity) || !strings.Contains(event.Body, redactedPayloadValue) {
+		t.Fatalf("event evidence was not scrubbed: %q", event.Body)
+	}
+	if strings.Contains(event.SourceActionName, identity) || !strings.Contains(event.SourceActionName, redactedPayloadValue) {
+		t.Fatalf("adapter source action was not scrubbed: %q", event.SourceActionName)
+	}
+	if strings.Contains(event.ParentActionName, identity) || !strings.Contains(event.ParentActionName, redactedPayloadValue) {
+		t.Fatalf("ordinary parent action was not scrubbed: %q", event.ParentActionName)
+	}
+	if len(event.StepPath) != 1 || event.StepPath[0] != "requests[0]" {
+		t.Fatalf("structural step path was rewritten: %#v", event.StepPath)
+	}
+
+	debugAction := &ReplayDebugAction{
+		ActionName:       "transaction-" + identity,
+		ActionType:       "source_transaction",
+		ParentActionName: "parent-" + identity,
+		StepPath:         []string{"requests[0]"},
+		Target:           "/customers/" + identity,
+	}
+	scrubReplayDebugAction(debugAction, nil)
+	if debugAction.ActionName != "transaction-"+identity || debugAction.StepPath[0] != "requests[0]" {
+		t.Fatalf("debug identity names were rewritten: %#v", debugAction)
+	}
+	if strings.Contains(debugAction.ParentActionName, identity) || !strings.Contains(debugAction.ParentActionName, redactedPayloadValue) {
+		t.Fatalf("debug parent action was not scrubbed: %q", debugAction.ParentActionName)
+	}
+	if strings.Contains(debugAction.Target, identity) || !strings.Contains(debugAction.Target, redactedPayloadValue) {
+		t.Fatalf("debug target evidence was not scrubbed: %q", debugAction.Target)
+	}
+
+	transactionParent := &ReplayActionEvent{
+		ParentActionName:          "sequence-" + identity,
+		parentBusinessTransaction: true,
+	}
+	scrubReplayActionEvent(transactionParent, nil)
+	if transactionParent.ParentActionName != "sequence-"+identity {
+		t.Fatalf("transaction parent identity was rewritten: %q", transactionParent.ParentActionName)
+	}
+	sequenceAction := &ReplayDebugAction{ActionName: "sequence-" + identity, ActionType: "http_sequence"}
+	scrubReplayDebugAction(sequenceAction, nil)
+	if sequenceAction.ActionName != "sequence-"+identity {
+		t.Fatalf("http_sequence transaction identity was rewritten: %q", sequenceAction.ActionName)
+	}
+
+	governed, err := WithSecretValueRedactionChecked(nil, []string{identity})
+	if err != nil {
+		t.Fatal(err)
+	}
+	secretEvent := &ReplayActionEvent{
+		ActionName:        "transaction-" + identity,
+		ActionType:        "source_transaction",
+		SourceTransaction: "source-transaction-" + identity,
+	}
+	scrubReplayActionEvent(secretEvent, governed)
+	if strings.Contains(secretEvent.ActionName, identity) || strings.Contains(secretEvent.SourceTransaction, identity) {
+		t.Fatalf("exact runtime secret survived replay identity fields: %#v", secretEvent)
+	}
+}
+
+func TestReplayGroupNameUsesIdentityScrubbing(t *testing.T) {
+	const identity = "AbCdEfGh1234567890ijklMN"
+	group := "group-" + identity
+	if got := scrubReplayGroupName(group, nil); got != group {
+		t.Fatalf("token-shaped group identity = %q, want %q", got, group)
+	}
+	governed, err := WithSecretValueRedactionChecked(nil, []string{identity})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := scrubReplayGroupName(group, governed); strings.Contains(got, identity) {
+		t.Fatalf("runtime secret survived replay group identity: %q", got)
+	}
+}
+
 func httpSequenceTestAction(name string, children ...dsl.Action) dsl.Action {
 	return dsl.Action{
 		Name:   name,

@@ -6962,11 +6962,12 @@
   min-height: 0;
   border-bottom: 1px solid var(--border);
 }
-.debugger-rail-section:first-child {
+.debugger-rail > .debugger-rail-section:first-of-type {
   flex: 1 1 auto;
   display: flex;
   min-height: 0;
   flex-direction: column;
+  overflow: hidden;
 }
 .debugger-rail-section-toggle {
   min-width: 0;
@@ -7011,6 +7012,7 @@
 .debugger-rail-header {
   display: flex;
   flex-direction: column;
+  flex-shrink: 0;
   gap: 4px;
   padding: 10px 12px;
   border-bottom: 1px solid var(--border);
@@ -7035,8 +7037,17 @@
   align-items: center;
   justify-content: space-between;
 }
+.debugger-parameter-section {
+  flex: 0 1 auto;
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--bg-primary);
+}
 .debugger-parameter-list {
   display: grid;
+  min-height: 0;
   max-height: min(240px, 22vh);
   overflow-y: auto;
 }
@@ -7385,6 +7396,23 @@
   flex-direction: column;
   padding: 6px;
 }
+.debugger-console .debug-raw-output.virtualized {
+  display: block;
+  position: relative;
+}
+.debug-log-list {
+  display: flex;
+  flex-direction: column;
+}
+.debug-log-virtual-list {
+  position: relative;
+  width: 100%;
+}
+.debug-log-virtual-list .debug-log-line {
+  position: absolute;
+  top: 0;
+  left: 0;
+}
 .debug-log-empty { color: #64748b; padding: 6px; }
 .debug-log-line {
   display: block;
@@ -7392,7 +7420,7 @@
   text-align: left;
   border: none;
   background: transparent;
-  color: #cbd5f5;
+  color: #cbd5e1;
   font-family: 'SF Mono', 'Fira Code', monospace;
   font-size: 12px;
   line-height: 1.5;
@@ -7402,11 +7430,38 @@
   border-radius: 4px;
   border-left: 2px solid transparent;
 }
-.debug-log-line.level-error { color: #fca5a5; border-left-color: #ef4444; }
-.debug-log-line.level-warn { color: #fcd34d; border-left-color: #f59e0b; }
-.debug-log-line.level-info { color: #cbd5f5; }
-.debug-log-line.level-debug { color: #93c5fd; }
-.debug-log-line.level-trace { color: #94a3b8; }
+.debug-log-line.level-error { border-left-color: #ef4444; }
+.debug-log-line.level-warn { border-left-color: #f59e0b; }
+.debug-log-summary,
+.debug-log-raw {
+  display: inline;
+}
+.debug-log-timestamp { color: #94a3b8; }
+.debug-log-level { font-weight: 800; }
+.debug-log-level.level-error,
+.debug-log-line.level-error .debug-log-message { color: #f87171; }
+.debug-log-level.level-warn,
+.debug-log-line.level-warn .debug-log-message { color: #fbbf24; }
+.debug-log-level.level-info { color: #60a5fa; }
+.debug-log-level.level-debug { color: #c084fc; }
+.debug-log-level.level-trace { color: #94a3b8; }
+.debug-log-category { color: #2dd4bf; }
+.debug-log-location { color: #c084fc; }
+.debug-log-message { color: #d6deeb; }
+.debug-log-raw { color: #cbd5e1; }
+.debug-log-token.token-method { color: #7dd3fc; font-weight: 800; }
+.debug-log-token.token-target { color: #86efac; }
+.debug-log-token.token-status-success { color: #4ade80; font-weight: 800; }
+.debug-log-token.token-status-warning { color: #fbbf24; font-weight: 800; }
+.debug-log-token.token-status-error { color: #f87171; font-weight: 800; }
+.debug-log-token.token-header,
+.debug-log-token.token-key { color: #93c5fd; }
+.debug-log-token.token-string { color: #a7f3d0; }
+.debug-log-token.token-number { color: #fbbf24; }
+.debug-log-token.token-literal { color: #c4b5fd; }
+.debug-log-token.token-punctuation { color: #94a3b8; }
+.debug-log-unhighlighted { color: #cbd5e1; }
+.debug-log-omission { color: #94a3b8; font-style: italic; }
 .debug-log-line.jumpable { cursor: pointer; }
 .debug-log-line.jumpable:hover { background: rgba(99, 102, 241, 0.18); }
 .debug-log-line:disabled { cursor: default; }

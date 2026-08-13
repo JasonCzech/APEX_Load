@@ -144,6 +144,10 @@ export interface SecretBindingRequirement {
   script_name?: string
   source_value_available?: boolean
   destination_value_preserved?: boolean
+  preservation_unavailable_reason?:
+    | 'source_value_unavailable'
+    | 'existing_secret_reference'
+    | 'destination_mapping_incomplete'
 }
 
 // Multiple requirements may deliberately select the same logical name. That

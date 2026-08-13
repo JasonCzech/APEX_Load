@@ -74,6 +74,10 @@ func TestPublishFinalLocalMetricsFlushesSubIntervalSLAEvidenceOnce(t *testing.T)
 		Groups:       []TestGroup{{Name: "buyers", VUsers: 1}},
 		GoalConfig:   &GoalConfig{P95LatencyMs: &p95Limit},
 		goalControl:  &goalControllerState{},
+		// Run returns only after the local engine has quiesced, at which point it
+		// is no longer scaling-ready. Terminal SLA evaluation must still consume
+		// its final drained metrics window.
+		multiEngine: &engine.MultiGroupEngine{},
 	}
 	runner.tests[testRun.ID] = testRun
 	recorder := &finalMetricsRecorder{}
@@ -136,6 +140,53 @@ func TestPublishFinalLocalMetricsSatisfiesPassingRequireSLA(t *testing.T) {
 	}
 	if outcome := ciRunOutcome("COMPLETE", false, testRun.ciSLAEvaluated, true, ciRunMetadata{RequireSLA: true}, ""); outcome != "passed" {
 		t.Fatalf("RequireSLA outcome = %q, want passed", outcome)
+	}
+}
+
+func TestPublishFinalLocalMetricsReconcilesTickerPublishedTerminalSLAWithoutDuplicateInterval(t *testing.T) {
+	runner := NewTestRunner(1, NewHub(), nil)
+	p95Limit := 10.0
+	testRun := &ManagedTest{
+		ID: "ticker-won-final-window", Name: "Ticker won final window", Status: "RUNNING", ScenarioMode: "goal_oriented",
+		Groups: []TestGroup{{Name: "buyers", VUsers: 1}}, GoalConfig: &GoalConfig{P95LatencyMs: &p95Limit},
+		goalControl: &goalControllerState{}, multiEngine: &engine.MultiGroupEngine{},
+	}
+	runner.tests[testRun.ID] = testRun
+	recorder := &finalMetricsRecorder{}
+	artifacts := &runArtifacts{runner: runner, test: testRun, recorder: recorder}
+	timestamp := time.Now().UTC()
+	snapshot := engine.MetricsSnapshot{
+		Timestamp: timestamp, Window: 25 * time.Millisecond, Transactions: 1, P95: 20 * time.Millisecond,
+		ByGroup: map[string]*engine.GroupMetrics{"buyers": {Name: "buyers", Transactions: 1, P95: 20 * time.Millisecond}},
+	}
+
+	// Model the ticker publishing after scaling admission closes: the interval is
+	// durable, but ordinary goal evaluation was suppressed by readiness.
+	publishedAt := timestamp.Add(250 * time.Millisecond)
+	runner.publishLiveMetrics(testRun, buildLiveMetricsForBroadcast(snapshot, map[string]int{"buyers": 1}, publishedAt), artifacts)
+	if testRun.LiveMetrics.GoalStatus != nil || !testRun.ciSLAEvaluated || testRun.ciSLABreached {
+		t.Fatalf("pre-reconciliation SLA state = goal:%#v evaluated:%t breached:%t", testRun.LiveMetrics.GoalStatus, testRun.ciSLAEvaluated, testRun.ciSLABreached)
+	}
+	if !testRun.LiveMetrics.Timestamp.Equal(publishedAt) || testRun.LiveMetrics.Telemetry == nil ||
+		!testRun.LiveMetrics.Telemetry.CollectedAt.Equal(timestamp) {
+		t.Fatalf("ticker timestamps = published:%s collected:%#v", testRun.LiveMetrics.Timestamp, testRun.LiveMetrics.Telemetry)
+	}
+	if recorder.intervals != 1 || len(testRun.History) != 1 {
+		t.Fatalf("pre-reconciliation intervals/history = %d/%d, want 1/1", recorder.intervals, len(testRun.History))
+	}
+
+	if runner.publishFinalLocalMetrics(testRun, snapshot, timestamp, map[string]int{"buyers": 1}, artifacts) {
+		t.Fatal("already-published final window was appended again")
+	}
+	if testRun.LiveMetrics.GoalStatus == nil || !testRun.LiveMetrics.GoalStatus.LatencyBreached ||
+		!testRun.ciSLABreached || !artifacts.slaBreached {
+		t.Fatalf("reconciled SLA state = live:%#v test:%t artifact:%t", testRun.LiveMetrics.GoalStatus, testRun.ciSLABreached, artifacts.slaBreached)
+	}
+	if len(testRun.History) != 1 || testRun.History[0].GoalStatus == nil || !testRun.History[0].GoalStatus.LatencyBreached {
+		t.Fatalf("reconciled history = %#v", testRun.History)
+	}
+	if recorder.intervals != 1 {
+		t.Fatalf("reconciled archive intervals = %d, want 1", recorder.intervals)
 	}
 }
 

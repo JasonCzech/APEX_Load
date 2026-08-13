@@ -1015,11 +1015,10 @@ export default function RuntimeSettingsGroupEditor({
                 <input type="checkbox" checked={Boolean(effectiveLog.on_error_only)} onChange={event => patchLog({ on_error_only: event.target.checked })} />
                 <div><strong>Extended logging on error only</strong><span>Use extended logging only when a step fails.</span></div>
               </label>
-              {/* Defaults ON: an absent value reads as checked (`?? true`, never
-                  Boolean()/`|| false`). Governs run output only — the script keeps
+              {/* Defaults OFF: an absent value reads as unchecked. Governs run output only — the script keeps
                   its literal credential values either way. */}
-              <label className={`scenario-option-card ${(effectiveLog.redact_run_evidence ?? true) ? 'selected' : ''}`}>
-                <input type="checkbox" checked={effectiveLog.redact_run_evidence ?? true} onChange={event => patchLog({ redact_run_evidence: event.target.checked })} />
+              <label className={`scenario-option-card ${Boolean(effectiveLog.redact_run_evidence) ? 'selected' : ''}`}>
+                <input type="checkbox" checked={Boolean(effectiveLog.redact_run_evidence)} onChange={event => patchLog({ redact_run_evidence: event.target.checked })} />
                 <div><strong>Redact credentials in run evidence</strong><span>Redacts credential values from run logs, snapshots, reports, archives and debugger evidence. Does not change the script itself.</span></div>
               </label>
               <label className={`scenario-option-card ${effectiveLog.extended_options?.includes('parameter_substitution') ? 'selected' : ''}`}>

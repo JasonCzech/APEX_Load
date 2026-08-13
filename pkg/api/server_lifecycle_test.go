@@ -2,12 +2,32 @@ package api
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"net"
 	"net/http"
+	"path/filepath"
+	"strings"
+	"sync"
 	"testing"
 	"time"
+
+	"github.com/jasonczech/apexload/pkg/storage"
 )
+
+type blockedLocalAuthActivationStore struct {
+	*storage.SQLiteStore
+	entered chan struct{}
+	once    sync.Once
+}
+
+func (s *blockedLocalAuthActivationStore) ActivateLocalAuthGenerationContext(ctx context.Context, _ string, _ time.Time) (int64, error) {
+	s.once.Do(func() { close(s.entered) })
+	<-ctx.Done()
+	// database/sql is allowed to report a canceled transaction as ErrTxDone.
+	// Start must still recognize that Shutdown canceled its parent context.
+	return 0, sql.ErrTxDone
+}
 
 func TestServerBackgroundLifecycleRejectsNewWorkAndWaitsForOwnedWorker(t *testing.T) {
 	server := &Server{}
@@ -212,6 +232,51 @@ func TestConcurrentStartShutdownCannotResurrectListener(t *testing.T) {
 	}
 	if server.BoundAddrReady() {
 		t.Fatalf("listener remained bound after concurrent shutdown: %s", server.BoundAddr())
+	}
+}
+
+func TestShutdownDeadlineCancelsBlockedLocalAuthGenerationActivation(t *testing.T) {
+	base, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "blocked-local-auth-startup.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer base.Close()
+
+	initialGeneration := strings.Repeat("a", 64)
+	if _, err := base.ActivateLocalAuthGeneration(initialGeneration, time.Now().UTC()); err != nil {
+		t.Fatalf("activate initial generation: %v", err)
+	}
+	blocked := &blockedLocalAuthActivationStore{SQLiteStore: base, entered: make(chan struct{})}
+	server := NewServer(ServerConfig{Store: blocked, Addr: "127.0.0.1:0", ProxyAddr: "127.0.0.1:0"})
+	startResult := make(chan error, 1)
+	go func() { startResult <- server.Start() }()
+
+	select {
+	case <-blocked.entered:
+	case err := <-startResult:
+		t.Fatalf("Start returned before generation activation blocked: %v", err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("Start did not reach generation activation")
+	}
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if err := server.Shutdown(shutdownCtx); err != nil {
+		t.Fatalf("Shutdown while generation activation was blocked: %v", err)
+	}
+	select {
+	case err := <-startResult:
+		if !errors.Is(err, http.ErrServerClosed) {
+			t.Fatalf("Start after canceled generation activation = %v, want http.ErrServerClosed", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Start did not return after generation activation was canceled")
+	}
+	if server.BoundAddrReady() {
+		t.Fatalf("canceled startup published listener %q", server.BoundAddr())
+	}
+	if generation, err := base.GetLocalAuthGeneration(); err != nil || generation != initialGeneration {
+		t.Fatalf("generation after canceled activation = (%q, %v), want %q", generation, err, initialGeneration)
 	}
 }
 

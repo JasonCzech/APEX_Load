@@ -55,7 +55,7 @@ func withAuthenticatedContext(r *http.Request, resolution authResolution) *http.
 	return r.WithContext(ctx)
 }
 
-func resolveRequestAuth(r *http.Request, settings AuthSettings, store storage.Store) (authResolution, error) {
+func resolveRequestAuth(r *http.Request, settings AuthSettings, store storage.Store, expectedLocalGeneration ...string) (authResolution, error) {
 	if account, user, ok, err := authenticatedUserFromAPIKey(r, store); err != nil {
 		return authResolution{}, err
 	} else if ok {
@@ -73,7 +73,11 @@ func resolveRequestAuth(r *http.Request, settings AuthSettings, store storage.St
 		return authResolution{User: localUser}, nil
 	}
 	if settings.Mode == authModeLocal {
-		user, _, err := authenticatedUserFromLocalSession(r, store)
+		expected := ""
+		if len(expectedLocalGeneration) > 0 {
+			expected = expectedLocalGeneration[0]
+		}
+		user, _, err := authenticatedUserFromLocalSession(r, store, expected)
 		if err != nil {
 			return authResolution{}, err
 		}

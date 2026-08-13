@@ -737,6 +737,9 @@ func (c *Client) AdjustVUsers(ctx context.Context, adjustment VUserAdjustment) (
 		RunSupervisionToken: append([]byte(nil), adjustment.RunSupervisionToken...),
 	})
 	if err != nil {
+		if isInitialRampInProgressStatus(err) {
+			return AdjustmentResult{}, &initialRampInProgressRPCError{cause: err}
+		}
 		return AdjustmentResult{}, err
 	}
 

@@ -699,6 +699,7 @@ type remoteArchiveSummaryCursor struct {
 type remoteArchiveSourceWindow struct {
 	end        time.Time
 	fleetIndex int
+	seconds    float64
 }
 
 type remoteArchiveSummaryHeap []*remoteArchiveSummaryCursor
@@ -808,6 +809,36 @@ func mergeRemoteArchiveIntervalSummariesWithTargets(destinationPath string, bund
 	sourceWindowCount := 0
 	windowGeneratorMarks := make([]int64, len(bundles))
 	windowRecords := make([]IntervalSummaryRecord, 0, windowCapacity)
+	sourceCumulativeTx := make([]int64, len(bundles))
+	previousSourceTimestamps := make([]time.Time, len(bundles))
+	recordSourceWindow := func(cursor *remoteArchiveSummaryCursor, fleetIndex int) {
+		if !collectSourceWindows {
+			return
+		}
+		if sourceWindowCount >= maxArchiveAnalysisRecords {
+			sourceWindows = nil
+			collectSourceWindows = false
+			return
+		}
+		sourceWindowTx := cursor.record.TotalTx - sourceCumulativeTx[cursor.index]
+		windowSeconds := remoteArchiveSummaryCadence.Seconds()
+		if sourceWindowTx > 0 && cursor.record.TPS > 0 {
+			windowSeconds = float64(sourceWindowTx) / cursor.record.TPS
+		} else if previous := previousSourceTimestamps[cursor.index]; !previous.IsZero() {
+			if seconds := cursor.timestamp.Sub(previous).Seconds(); seconds > 0 {
+				windowSeconds = seconds
+			}
+		}
+		if windowSeconds <= 0 {
+			windowSeconds = remoteArchiveSummaryCadence.Seconds()
+		}
+		sourceWindows[cursor.index] = append(sourceWindows[cursor.index], remoteArchiveSourceWindow{
+			end: cursor.timestamp, fleetIndex: fleetIndex, seconds: windowSeconds,
+		})
+		sourceWindowCount++
+		sourceCumulativeTx[cursor.index] = cursor.record.TotalTx
+		previousSourceTimestamps[cursor.index] = cursor.timestamp
+	}
 	var cumulativeTx, cumulativeErrors int64
 	var previousFleetTimestamp time.Time
 	for cursors.Len() > 0 {
@@ -817,15 +848,7 @@ func mergeRemoteArchiveIntervalSummariesWithTargets(destinationPath string, bund
 		windowRecords = windowRecords[:0]
 		windowRecords = append(windowRecords, anchor.record)
 		windowGeneratorMarks[anchor.index] = windowMark
-		if collectSourceWindows {
-			if sourceWindowCount >= maxArchiveAnalysisRecords {
-				sourceWindows = nil
-				collectSourceWindows = false
-			} else {
-				sourceWindows[anchor.index] = append(sourceWindows[anchor.index], remoteArchiveSourceWindow{end: anchor.timestamp, fleetIndex: int(count)})
-				sourceWindowCount++
-			}
-		}
+		recordSourceWindow(anchor, int(count))
 		advanced, advanceErr := advanceRemoteArchiveSummaryCursor(anchor, bundles)
 		if advanceErr != nil {
 			return count, advanceErr
@@ -846,15 +869,7 @@ func mergeRemoteArchiveIntervalSummariesWithTargets(destinationPath string, bund
 			}
 			windowRecords = append(windowRecords, cursor.record)
 			windowGeneratorMarks[cursor.index] = windowMark
-			if collectSourceWindows {
-				if sourceWindowCount >= maxArchiveAnalysisRecords {
-					sourceWindows = nil
-					collectSourceWindows = false
-				} else {
-					sourceWindows[cursor.index] = append(sourceWindows[cursor.index], remoteArchiveSourceWindow{end: cursor.timestamp, fleetIndex: int(count)})
-					sourceWindowCount++
-				}
-			}
+			recordSourceWindow(cursor, int(count))
 			advanced, advanceErr := advanceRemoteArchiveSummaryCursor(cursor, bundles)
 			if advanceErr != nil {
 				return count, advanceErr
@@ -888,6 +903,7 @@ func mergeRemoteArchiveIntervalSummariesWithTargets(destinationPath string, bund
 			}
 			sourceThroughputMissed = sourceThroughputMissed || record.ThroughputTargetMissed
 			aggregate.Groups = mergeRemoteArchiveSummaryGroups(aggregate.Groups, record.Groups)
+			aggregate.Transactions = mergeIntervalTransactions(aggregate.Transactions, record.Transactions)
 			aggregate.Browser = mergeRemoteArchiveSummaryBrowser(aggregate.Browser, record.Browser)
 			aggregate.BrowserByDevice = mergeRemoteArchiveSummaryBrowserByDevice(aggregate.BrowserByDevice, record.BrowserByDevice)
 			aggregate.Telemetry = mergeRemoteArchiveSummaryTelemetry(aggregate.Telemetry, record.Telemetry)
@@ -926,6 +942,7 @@ func mergeRemoteArchiveIntervalSummariesWithTargets(destinationPath string, bund
 				aggregate.PercentileQuality = archivePercentileQualityUnavailable
 			}
 		}
+		aggregate.Transactions = compactIntervalTransactions(aggregate.Transactions)
 		aggregate.TotalTx = cumulativeTx
 		aggregate.TotalErrors = cumulativeErrors
 		if attempts > 0 {
@@ -1300,6 +1317,7 @@ type remoteArchiveFleetIntervalMetric struct {
 	p99             float64
 	hasPercentiles  bool
 	groups          map[string]*remoteArchiveFleetGroupMetric
+	transactions    map[string]*intervalTransactionAccumulator
 }
 
 type remoteArchiveFleetGroupMetric struct {
@@ -1312,6 +1330,76 @@ type remoteArchiveFleetGroupMetric struct {
 	p95             float64
 	p99             float64
 	hasPercentiles  bool
+}
+
+type remoteArchiveFleetRawMetric struct {
+	successes       int64
+	errors          int64
+	totalDurationMs float64
+	durations       []float64
+	groups          map[string]*remoteArchiveFleetGroupMetric
+}
+
+func addRemoteArchiveFleetRawMetric(metric *remoteArchiveFleetRawMetric, transaction TransactionEvent) {
+	if metric == nil {
+		return
+	}
+	if transaction.Success {
+		metric.successes++
+	} else {
+		metric.errors++
+	}
+	metric.totalDurationMs += transaction.DurationMs
+	metric.durations = append(metric.durations, transaction.DurationMs)
+	groupName := strings.TrimSpace(transaction.Group)
+	if groupName == "" {
+		return
+	}
+	if metric.groups == nil {
+		metric.groups = make(map[string]*remoteArchiveFleetGroupMetric)
+	}
+	group := metric.groups[groupName]
+	if group == nil {
+		group = &remoteArchiveFleetGroupMetric{}
+		metric.groups[groupName] = group
+	}
+	if transaction.Success {
+		group.successes++
+	} else {
+		group.errors++
+	}
+	group.totalDurationMs += transaction.DurationMs
+	group.durations = append(group.durations, transaction.DurationMs)
+}
+
+func mergeRemoteArchiveFleetRawMetric(interval *remoteArchiveFleetIntervalMetric, durations *[]float64, incoming remoteArchiveFleetRawMetric) {
+	if interval == nil || durations == nil {
+		return
+	}
+	interval.successes += incoming.successes
+	interval.errors += incoming.errors
+	interval.totalDurationMs += incoming.totalDurationMs
+	*durations = append(*durations, incoming.durations...)
+	if len(incoming.groups) == 0 {
+		return
+	}
+	if interval.groups == nil {
+		interval.groups = make(map[string]*remoteArchiveFleetGroupMetric)
+	}
+	for name, source := range incoming.groups {
+		if source == nil {
+			continue
+		}
+		group := interval.groups[name]
+		if group == nil {
+			group = &remoteArchiveFleetGroupMetric{}
+			interval.groups[name] = group
+		}
+		group.successes += source.successes
+		group.errors += source.errors
+		group.totalDurationMs += source.totalDurationMs
+		group.durations = append(group.durations, source.durations...)
+	}
 }
 
 func remoteArchiveFleetIntervalMetrics(bundles []remoteArchiveBundle, windowEnds []time.Time, sourceWindows [][]remoteArchiveSourceWindow, completeWindows bool) ([]remoteArchiveFleetIntervalMetric, bool, error) {
@@ -1341,8 +1429,14 @@ func remoteArchiveFleetIntervalMetrics(bundles []remoteArchiveBundle, windowEnds
 	intervals := make([]remoteArchiveFleetIntervalMetric, len(windowEnds))
 	durations := make([][]float64, len(windowEnds))
 	groupNames := make(map[string]struct{})
+	transactionNames := make(map[string]struct{})
 	transactionCount := 0
 	for bundleIndex, bundle := range bundles {
+		bundleMetrics := make([]remoteArchiveFleetRawMetric, len(intervals))
+		bundleBusinessMetrics := make([]remoteArchiveFleetRawMetric, len(intervals))
+		bundleTransactions := make([]map[string]*intervalTransactionAccumulator, len(intervals))
+		bundleBusinessTransactions := make([]map[string]*intervalTransactionAccumulator, len(intervals))
+		bundleHasBusinessTransactions := false
 		path := bundle.transactionsPath
 		file, _, err := openArchiveArtifactForRead(filepath.Dir(path), filepath.Base(path))
 		if err != nil {
@@ -1382,16 +1476,42 @@ func remoteArchiveFleetIntervalMetrics(bundles []remoteArchiveBundle, windowEnds
 				_ = file.Close()
 				return nil, false, fmt.Errorf("remote archive target %q maps a source interval to invalid fleet window %d", bundle.target, index)
 			}
-			interval := &intervals[index]
-			if transaction.Success {
-				interval.successes++
-			} else {
-				interval.errors++
+			addRemoteArchiveFleetRawMetric(&bundleMetrics[index], transaction)
+			if transaction.BusinessTransaction {
+				addRemoteArchiveFleetRawMetric(&bundleBusinessMetrics[index], transaction)
 			}
-			interval.totalDurationMs += transaction.DurationMs
-			durations[index] = append(durations[index], transaction.DurationMs)
-			groupName := strings.TrimSpace(transaction.Group)
-			if groupName != "" {
+			transactionName := intervalTransactionName(transaction.ActionName)
+			if _, exists := transactionNames[transactionName]; !exists {
+				if len(transactionNames) >= maxArchiveAnalysisDimensions {
+					_ = file.Close()
+					return nil, false, fmt.Errorf("remote archive exceeds %d distinct transaction names", maxArchiveAnalysisDimensions)
+				}
+				transactionNames[transactionName] = struct{}{}
+			}
+			addIntervalTransaction := func(metricsByInterval []map[string]*intervalTransactionAccumulator) {
+				if metricsByInterval[index] == nil {
+					metricsByInterval[index] = make(map[string]*intervalTransactionAccumulator)
+				}
+				metrics := metricsByInterval[index]
+				transactionMetric := metrics[transactionName]
+				if transactionMetric == nil {
+					transactionMetric = &intervalTransactionAccumulator{sourceWindows: 1}
+					metrics[transactionName] = transactionMetric
+				}
+				transactionMetric.count++
+				if !transaction.Success {
+					transactionMetric.errors++
+				} else if windows[sourceIndex].seconds > 0 {
+					transactionMetric.sourceTPS += 1 / windows[sourceIndex].seconds
+				}
+				transactionMetric.totalDurationMs += transaction.DurationMs
+			}
+			addIntervalTransaction(bundleTransactions)
+			if transaction.BusinessTransaction {
+				addIntervalTransaction(bundleBusinessTransactions)
+				bundleHasBusinessTransactions = true
+			}
+			if groupName := strings.TrimSpace(transaction.Group); groupName != "" {
 				if _, exists := groupNames[groupName]; !exists {
 					if len(groupNames) >= maxArchiveAnalysisDimensions {
 						_ = file.Close()
@@ -1399,21 +1519,6 @@ func remoteArchiveFleetIntervalMetrics(bundles []remoteArchiveBundle, windowEnds
 					}
 					groupNames[groupName] = struct{}{}
 				}
-				if interval.groups == nil {
-					interval.groups = make(map[string]*remoteArchiveFleetGroupMetric)
-				}
-				group := interval.groups[groupName]
-				if group == nil {
-					group = &remoteArchiveFleetGroupMetric{}
-					interval.groups[groupName] = group
-				}
-				if transaction.Success {
-					group.successes++
-				} else {
-					group.errors++
-				}
-				group.totalDurationMs += transaction.DurationMs
-				group.durations = append(group.durations, transaction.DurationMs)
 			}
 		}
 		if err := file.Close(); err != nil {
@@ -1421,6 +1526,35 @@ func remoteArchiveFleetIntervalMetrics(bundles []remoteArchiveBundle, windowEnds
 		}
 		if bundleTransactionCount != bundle.manifest.TransactionCount {
 			return nil, false, fmt.Errorf("remote transaction count for target %q is %d, manifest declares %d", bundle.target, bundleTransactionCount, bundle.manifest.TransactionCount)
+		}
+		chosenTransactions := bundleTransactions
+		chosenMetrics := bundleMetrics
+		if bundleHasBusinessTransactions {
+			chosenTransactions = bundleBusinessTransactions
+			chosenMetrics = bundleBusinessMetrics
+		}
+		for intervalIndex, metrics := range chosenMetrics {
+			mergeRemoteArchiveFleetRawMetric(&intervals[intervalIndex], &durations[intervalIndex], metrics)
+		}
+		for intervalIndex, metrics := range chosenTransactions {
+			if len(metrics) == 0 {
+				continue
+			}
+			if intervals[intervalIndex].transactions == nil {
+				intervals[intervalIndex].transactions = make(map[string]*intervalTransactionAccumulator)
+			}
+			for name, incoming := range metrics {
+				current := intervals[intervalIndex].transactions[name]
+				if current == nil {
+					current = &intervalTransactionAccumulator{}
+					intervals[intervalIndex].transactions[name] = current
+				}
+				current.count += incoming.count
+				current.errors += incoming.errors
+				current.totalDurationMs += incoming.totalDurationMs
+				current.sourceTPS += incoming.sourceTPS
+				current.sourceWindows += incoming.sourceWindows
+			}
 		}
 	}
 	for index, values := range durations {
@@ -1525,6 +1659,7 @@ func writeRemoteArchiveFleetSummaries(destinationPath, provisionalPath string, i
 				record.ThroughputGapPct, record.ThroughputTargetMissed = throughputGap(record.TPS, record.TargetTPS)
 			}
 			record.Groups = recomputeRemoteArchiveSummaryGroups(record.Groups, interval.groups, windowSeconds)
+			record.Transactions = intervalTransactionsFromAccumulators(interval.transactions, windowSeconds)
 		}
 		applyRemoteArchiveTargetSnapshot(&record, targetHistory)
 		if err := encoder.Encode(record); err != nil {

@@ -16,8 +16,8 @@ import (
 // evidence).
 //
 // The operator owns that choice through script.Config.Log.RedactRunEvidence,
-// which defaults to redacting. A nil pointer means "not set", which is the
-// default, so read it as `nil || *v`.
+// which defaults to leaving script-sourced values visible. A nil pointer means
+// "not set", so read it as off.
 //
 // Two invariants hold regardless of the setting:
 //
@@ -37,22 +37,22 @@ const scriptSourcedRedactionDroppedWarning = "script-sourced run-evidence redact
 
 // ScriptRedactsRunEvidence exposes the operator setting to the one caller
 // outside this package — the generator RPC staging boundary — so the
-// default-true reading is written down exactly once.
+// default-false reading is written down exactly once.
 func ScriptRedactsRunEvidence(script *dsl.Script) bool {
 	return scriptRedactsRunEvidence(script)
 }
 
 // scriptRedactsRunEvidence reports whether script-sourced credential values
-// participate in run-output redaction. Absent configuration redacts.
+// participate in run-output redaction. Absent configuration does not redact.
 func scriptRedactsRunEvidence(script *dsl.Script) bool {
 	if script == nil {
-		return true
+		return false
 	}
 	return logConfigRedactsRunEvidence(script.Config.Log)
 }
 
 func logConfigRedactsRunEvidence(logCfg dsl.LogConfig) bool {
-	return logCfg.RedactRunEvidence == nil || *logCfg.RedactRunEvidence
+	return logCfg.RedactRunEvidence != nil && *logCfg.RedactRunEvidence
 }
 
 // runtimeSecretValuesForScript is the one static, per-run credential chokepoint.

@@ -1029,6 +1029,7 @@ type goalControllerUpdate struct {
 
 type TxMetrics struct {
 	Name             string                  `json:"name"`
+	TPS              float64                 `json:"tps"`
 	DependencyType   string                  `json:"dependency_type,omitempty"`
 	DependencyTarget string                  `json:"dependency_target,omitempty"`
 	LastErrorMessage string                  `json:"last_error_message,omitempty"`

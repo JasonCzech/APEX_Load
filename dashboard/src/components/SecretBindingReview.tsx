@@ -50,6 +50,15 @@ interface RequirementGroup {
 }
 
 type DestinationChoice = 'preserve' | 'project-secret'
+type PreservationUnavailableReason = NonNullable<SecretBindingRequirement['preservation_unavailable_reason']>
+
+const preservationUnavailableMessages: Record<PreservationUnavailableReason, string> = {
+  source_value_unavailable: 'The source did not provide one exact recoverable value. It contains an unresolved reference, a redacted placeholder, or conflicting values. Use a project secret and configure its value before execution.',
+  existing_secret_reference: 'The source already uses a governed secret reference rather than a literal value. Configure that project secret; there is no imported value to preserve.',
+  destination_mapping_incomplete: 'The importer found an exact source value but could not prove it can restore every generated destination occurrence. Use a project secret to avoid silently changing or dropping the credential.',
+}
+
+const genericPreservationUnavailableMessage = 'The server could not verify an exact imported value at every generated destination. Use a project secret for this credential.'
 
 export interface PreparedSecretBindings {
   valid: boolean
@@ -136,6 +145,7 @@ function semanticRequirementsIdentity(requirements: readonly SecretBindingRequir
       script_name: requirement.script_name ?? '',
       source_value_available: requirement.source_value_available === true,
       destination_value_preserved: requirement.destination_value_preserved === true,
+      preservation_unavailable_reason: requirement.preservation_unavailable_reason ?? '',
     }))
     .sort((left, right) => {
       const leftKey = `${left.id}\u0000${left.path}\u0000${left.occurrence ?? ''}`
@@ -153,6 +163,18 @@ function groupCanPreserveDestinationValue(group: RequirementGroup): boolean {
     group.requirements.length > 0
     && group.requirements.every(requirement => requirement.destination_value_preserved === true)
   )
+}
+
+function groupPreservationUnavailableMessages(group: RequirementGroup): string[] {
+  const messages = new Set<string>()
+  for (const requirement of group.requirements) {
+    const reason = requirement.preservation_unavailable_reason
+    if (reason) messages.add(preservationUnavailableMessages[reason] ?? genericPreservationUnavailableMessage)
+  }
+  if (messages.size === 0) {
+    messages.add(genericPreservationUnavailableMessage)
+  }
+  return Array.from(messages)
 }
 
 function initialDestinationChoices(groups: RequirementGroup[]): Record<string, DestinationChoice> {
@@ -953,10 +975,14 @@ const SecretBindingReview = forwardRef<SecretBindingReviewHandle, Props>(functio
           const helpId = `${inputId}-help`
           const nameErrorId = `${inputId}-name-error`
           const valueConflictErrorId = `${inputId}-value-conflict-error`
+          const preservationHelpId = `${inputId}-preservation-help`
           const preserveId = `${inputId}-preserve`
           const projectSecretId = `${inputId}-project-secret`
           const name = names[group.key] ?? ''
           const canPreserveDestinationValue = groupCanPreserveDestinationValue(group)
+          const preserveUnavailableMessages = canPreserveDestinationValue
+            ? []
+            : groupPreservationUnavailableMessages(group)
           const bindingSelected = effectiveDestinationChoice(group, destinationChoices) === 'project-secret'
           const nameError = bindingSelected ? validationErrors[group.key] : ''
           const configured = statuses.get(name.trim())?.configured === true
@@ -1018,6 +1044,7 @@ const SecretBindingReview = forwardRef<SecretBindingReviewHandle, Props>(functio
                       name={`${idPrefix}-destination-${index}`}
                       checked={!bindingSelected}
                       disabled={applying || disabled || !canPreserveDestinationValue}
+                      aria-describedby={preserveUnavailableMessages.length > 0 ? preservationHelpId : undefined}
                       onChange={() => updateDestinationChoice(group, 'preserve')}
                     />
                     Preserve imported value
@@ -1033,8 +1060,10 @@ const SecretBindingReview = forwardRef<SecretBindingReviewHandle, Props>(functio
                     />
                     Use project secret
                   </label>
-                  {!canPreserveDestinationValue && (
-                    <small>The server did not confirm that this exact destination value was preserved.</small>
+                  {preserveUnavailableMessages.length > 0 && (
+                    <div id={preservationHelpId} className="secret-binding-review-preservation-reasons">
+                      {preserveUnavailableMessages.map(message => <small key={message}>{message}</small>)}
+                    </div>
                   )}
                 </fieldset>
                 <label htmlFor={inputId}>Secret reference name</label>

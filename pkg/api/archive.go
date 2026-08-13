@@ -148,44 +148,45 @@ type RunArchiveExecutionPlanApprovalSnapshot struct {
 }
 
 type TransactionEvent struct {
-	Timestamp         time.Time                 `json:"timestamp"`
-	TestID            string                    `json:"test_id"`
-	TestName          string                    `json:"test_name"`
-	Group             string                    `json:"group,omitempty"`
-	Region            string                    `json:"region,omitempty"`
-	ActionName        string                    `json:"action_name,omitempty"`
-	CorrelationID     string                    `json:"correlation_id,omitempty"`
-	TraceID           string                    `json:"trace_id,omitempty"`
-	SpanID            string                    `json:"span_id,omitempty"`
-	NetworkProfile    string                    `json:"network_profile,omitempty"`
-	DependencyType    string                    `json:"dependency_type,omitempty"`
-	DependencyTarget  string                    `json:"dependency_target,omitempty"`
-	DurationMs        float64                   `json:"duration_ms"`
-	DNSMs             float64                   `json:"dns_ms,omitempty"`
-	ConnectMs         float64                   `json:"connect_ms,omitempty"`
-	TLSMs             float64                   `json:"tls_ms,omitempty"`
-	TTFBMs            float64                   `json:"ttfb_ms,omitempty"`
-	BytesSent         int64                     `json:"bytes_sent,omitempty"`
-	BytesReceived     int64                     `json:"bytes_received,omitempty"`
-	StatusCode        int                       `json:"status_code,omitempty"`
-	Success           bool                      `json:"success"`
-	ErrorMessage      string                    `json:"error_message,omitempty"`
-	Extractions       map[string]string         `json:"extractions,omitempty"`
-	PageURL           string                    `json:"page_url,omitempty"`
-	PageTitle         string                    `json:"page_title,omitempty"`
-	ConsoleEntries    []protocol.ConsoleEntry   `json:"console_entries,omitempty"`
-	NetworkEntries    []protocol.NetworkEntry   `json:"network_entries,omitempty"`
-	DOMSummary        *protocol.DOMSummary      `json:"dom_summary,omitempty"`
-	ClientMetrics     *protocol.ClientMetrics   `json:"client_metrics,omitempty"`
-	ServerTelemetry   *protocol.ServerTelemetry `json:"server_telemetry,omitempty"`
-	ProtocolEvidence  map[string]any            `json:"protocol_evidence,omitempty"`
-	Snapshot          *protocol.ErrorSnapshot   `json:"snapshot,omitempty"`
-	SourceStepID      string                    `json:"source_step_id,omitempty"`
-	SourceStepIndex   int                       `json:"source_step_index,omitempty"`
-	SourceAction      string                    `json:"source_action,omitempty"`
-	SourceActionName  string                    `json:"source_action_name,omitempty"`
-	SourceTransaction string                    `json:"source_transaction,omitempty"`
-	SourceProfile     string                    `json:"source_profile,omitempty"`
+	Timestamp           time.Time                 `json:"timestamp"`
+	TestID              string                    `json:"test_id"`
+	TestName            string                    `json:"test_name"`
+	Group               string                    `json:"group,omitempty"`
+	Region              string                    `json:"region,omitempty"`
+	ActionName          string                    `json:"action_name,omitempty"`
+	BusinessTransaction bool                      `json:"business_transaction,omitempty"`
+	CorrelationID       string                    `json:"correlation_id,omitempty"`
+	TraceID             string                    `json:"trace_id,omitempty"`
+	SpanID              string                    `json:"span_id,omitempty"`
+	NetworkProfile      string                    `json:"network_profile,omitempty"`
+	DependencyType      string                    `json:"dependency_type,omitempty"`
+	DependencyTarget    string                    `json:"dependency_target,omitempty"`
+	DurationMs          float64                   `json:"duration_ms"`
+	DNSMs               float64                   `json:"dns_ms,omitempty"`
+	ConnectMs           float64                   `json:"connect_ms,omitempty"`
+	TLSMs               float64                   `json:"tls_ms,omitempty"`
+	TTFBMs              float64                   `json:"ttfb_ms,omitempty"`
+	BytesSent           int64                     `json:"bytes_sent,omitempty"`
+	BytesReceived       int64                     `json:"bytes_received,omitempty"`
+	StatusCode          int                       `json:"status_code,omitempty"`
+	Success             bool                      `json:"success"`
+	ErrorMessage        string                    `json:"error_message,omitempty"`
+	Extractions         map[string]string         `json:"extractions,omitempty"`
+	PageURL             string                    `json:"page_url,omitempty"`
+	PageTitle           string                    `json:"page_title,omitempty"`
+	ConsoleEntries      []protocol.ConsoleEntry   `json:"console_entries,omitempty"`
+	NetworkEntries      []protocol.NetworkEntry   `json:"network_entries,omitempty"`
+	DOMSummary          *protocol.DOMSummary      `json:"dom_summary,omitempty"`
+	ClientMetrics       *protocol.ClientMetrics   `json:"client_metrics,omitempty"`
+	ServerTelemetry     *protocol.ServerTelemetry `json:"server_telemetry,omitempty"`
+	ProtocolEvidence    map[string]any            `json:"protocol_evidence,omitempty"`
+	Snapshot            *protocol.ErrorSnapshot   `json:"snapshot,omitempty"`
+	SourceStepID        string                    `json:"source_step_id,omitempty"`
+	SourceStepIndex     int                       `json:"source_step_index,omitempty"`
+	SourceAction        string                    `json:"source_action,omitempty"`
+	SourceActionName    string                    `json:"source_action_name,omitempty"`
+	SourceTransaction   string                    `json:"source_transaction,omitempty"`
+	SourceProfile       string                    `json:"source_profile,omitempty"`
 }
 
 type ResourceSample struct {
@@ -265,12 +266,25 @@ type IntervalSummaryRecord struct {
 	// combined, "recomputed_from_transactions" when the controller rebuilt the
 	// fleet distribution, and "unavailable" when multiple generator
 	// distributions could not be merged without inventing a percentile.
-	PercentileQuality string                               `json:"percentile_quality,omitempty"`
-	Groups            map[string]*GroupLiveMetrics         `json:"groups,omitempty"`
-	Browser           *BrowserLiveMetrics                  `json:"browser,omitempty"`
-	BrowserByDevice   map[string]*BrowserDeviceLiveMetrics `json:"browser_by_device,omitempty"`
-	Telemetry         *TelemetryHealth                     `json:"telemetry,omitempty"`
-	TelemetryStatus   *TelemetryRunHealth                  `json:"telemetry_status,omitempty"`
+	PercentileQuality string                                 `json:"percentile_quality,omitempty"`
+	Groups            map[string]*GroupLiveMetrics           `json:"groups,omitempty"`
+	Transactions      map[string]*IntervalTransactionMetrics `json:"transactions,omitempty"`
+	Browser           *BrowserLiveMetrics                    `json:"browser,omitempty"`
+	BrowserByDevice   map[string]*BrowserDeviceLiveMetrics   `json:"browser_by_device,omitempty"`
+	Telemetry         *TelemetryHealth                       `json:"telemetry,omitempty"`
+	TelemetryStatus   *TelemetryRunHealth                    `json:"telemetry_status,omitempty"`
+}
+
+// IntervalTransactionMetrics is the bounded, chart-focused transaction
+// breakdown persisted with an interval summary. Count is the number of
+// attempts, Errors is a subset of Count, and TPS is the successful transaction
+// rate for the interval, matching the live TxMetrics contract.
+type IntervalTransactionMetrics struct {
+	Name   string  `json:"name"`
+	TPS    float64 `json:"tps"`
+	Count  int64   `json:"count"`
+	Errors int64   `json:"errors"`
+	AvgMs  float64 `json:"avg_ms"`
 }
 
 type archivePage struct {

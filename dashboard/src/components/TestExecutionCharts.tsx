@@ -13,6 +13,7 @@ import {
   XAxis,
   YAxis,
   type MouseHandlerDataParam,
+  type TooltipPayloadEntry,
   type YAxisTickContentProps,
 } from 'recharts'
 
@@ -38,12 +39,13 @@ import {
   buildPrometheusCharts,
   hasLoadImpactPercentileRows,
   buildSmoothedGraphData,
+  boundedChartItems,
   chartMetricLinePresentation,
   chartConfigs,
   chartMarginForOverlayKeys,
   chartMetricKeys,
   chartMetricRows,
-  chartMetricSummary,
+  chartMetricSummaries,
   chartPrimaryYAxisLabel,
   chartStateForMonitorPreset,
   chartTitleWithOverlays,
@@ -72,6 +74,8 @@ import {
   granularityOptionLabel,
   GRANULARITY_OPTIONS,
   loadImpactPercentileChartData,
+  MAX_CHART_LEGEND_ITEMS,
+  MAX_CHART_TOOLTIP_ITEMS,
   normalizedChartOrder,
   overlayMetricMenuLabels,
   overlayMetricRows,
@@ -89,6 +93,7 @@ import {
   smoothingRadiusForGraphDensity,
   smoothedGraphMetricKey,
   smoothedMetricKeysForChart,
+  singletonTransactionMetricKeys,
   visibleMetricDomain,
   type ChartConfig,
   type ChartDensityMode,
@@ -108,6 +113,7 @@ import {
   routeLatencySeriesLabel,
   routeLatencyTargetLabelFromKey,
 } from './latencySeries'
+import { transactionChartSeriesNames } from './transactionChartSeries'
 import {
   executionChartMaxMinuteRange,
   executionChartMinMinuteRange,
@@ -331,9 +337,10 @@ function latestGraphValuesText(
   overlayMetricKeys: OverlayMetricKey[] = [],
   routeLatencyMode: RouteLatencyMode = 'total',
   selectedRouteLatencyKey?: string,
+  transactionNames: string[] = [],
 ) {
-  const keys = chartMetricKeys(chart, groupNames, latencyKeys, false, overlayMetricKeys, routeLatencyMode, selectedRouteLatencyKey)
-  const labels = new Map(chartMetricRows(chart, groupNames, latencyKeys, [], false, overlayMetricKeys, routeLatencyMode, selectedRouteLatencyKey).map(row => [row.key, row.label]))
+  const keys = chartMetricKeys(chart, groupNames, latencyKeys, false, overlayMetricKeys, routeLatencyMode, selectedRouteLatencyKey, transactionNames)
+  const labels = new Map(chartMetricRows(chart, groupNames, latencyKeys, [], false, overlayMetricKeys, routeLatencyMode, selectedRouteLatencyKey, transactionNames).map(row => [row.key, row.label]))
   const lines = [`${chart.title}`]
   keys.forEach(key => {
     const value = chart.id === 'network_latency' ? latencyLatestValues[key] : latest[key]
@@ -372,6 +379,48 @@ function rawTooltipMetricValue(value: unknown, item: unknown) {
   return Array.isArray(resolved)
     ? resolved.map(itemValue => formatGraphOverlayMetricValue(itemValue)).join(' - ')
     : resolved
+}
+
+type ChartTooltipEntry = Pick<TooltipPayloadEntry, 'color' | 'dataKey' | 'name' | 'payload' | 'stroke' | 'value'>
+
+export interface BoundedChartTooltipContentProps {
+  active?: boolean
+  payload?: ReadonlyArray<ChartTooltipEntry>
+  label?: string | number
+  showLabel?: boolean
+}
+
+export function BoundedChartTooltipContent({
+  active,
+  payload = [],
+  label,
+  showLabel = true,
+}: BoundedChartTooltipContentProps) {
+  if (!active) return null
+  const presentEntries = payload.filter(entry => entry.value !== undefined && entry.value !== null)
+  if (presentEntries.length === 0) return null
+  const bounded = boundedChartItems(presentEntries, MAX_CHART_TOOLTIP_ITEMS)
+  return (
+    <div className="bounded-chart-tooltip" style={chartTooltipContentStyle}>
+      {showLabel && label !== undefined && <div className="bounded-chart-tooltip-label">{String(label)}</div>}
+      <div className="bounded-chart-tooltip-items">
+        {bounded.items.map((entry, index) => {
+          const name = String(entry.name ?? entry.dataKey ?? 'Series')
+          const color = entry.color || (typeof entry.stroke === 'string' ? entry.stroke : 'var(--text-muted)')
+          return (
+            <div className="bounded-chart-tooltip-item" key={`${String(entry.dataKey ?? name)}-${index}`}>
+              <span className="bounded-chart-tooltip-swatch" style={{ background: color }} />
+              <span className="bounded-chart-tooltip-name">{name}</span>
+              <strong>{formatGraphOverlayMetricValue(rawTooltipMetricValue(entry.value, entry))}</strong>
+            </div>
+          )
+        })}
+      </div>
+      {bounded.omitted > 0 && (
+        <div className="chart-tooltip-overflow" role="status">+{bounded.omitted} more visible series</div>
+      )}
+    </div>
+  )
 }
 
 function generatorImpactVerdictLabel(verdict: GeneratorImpactVerdict) {
@@ -522,6 +571,8 @@ export default function TestExecutionCharts({
       downsampledChartData: MetricsHistoryPoint[]
       chartDataWithDisplayBands: MetricsHistoryPoint[]
       displayChartData: MetricsHistoryPoint[]
+      metricSummaries: Record<string, ChartMetricSummary>
+      singletonTransactionMetricKeys: Set<string>
     }>
   >(new Map())
   const commandCenterSurface = surface === 'command-center'
@@ -750,15 +801,17 @@ export default function TestExecutionCharts({
     return ordered.length ? ordered : allChartConfigs
   }, [allChartConfigs, chartOrder])
   const latencyKeys = useMemo(() => routeLatencySeriesKeys(filteredData), [filteredData])
+  const transactionNames = useMemo(() => transactionChartSeriesNames(filteredData), [filteredData])
+  const graphGroupNames = useMemo(() => isMultiGroup ? groupNames : [], [groupNames, isMultiGroup])
   const activeRouteLatencyKey = latencyKeys.includes(selectedRouteLatencyKey)
     ? selectedRouteLatencyKey
     : latencyKeys[0]
   const latencyLatestValues = useMemo(() => latestRouteLatencyValues(filteredData, latencyKeys), [filteredData, latencyKeys])
   const responseTimeChartData = useMemo(
     () => responseTimeNetworkMode === 'application'
-      ? responseTimeDataWithoutNetworkLatency(filteredData, latencyKeys, groupNames)
+      ? responseTimeDataWithoutNetworkLatency(filteredData, latencyKeys, groupNames, transactionNames)
       : filteredData,
-    [filteredData, groupNames, latencyKeys, responseTimeNetworkMode],
+    [filteredData, groupNames, latencyKeys, responseTimeNetworkMode, transactionNames],
   )
   // Display granularity: averages the live series into time buckets (Auto adapts
   // to the visible span). Applied only to the time-series charts; load-impact and
@@ -1029,8 +1082,15 @@ export default function TestExecutionCharts({
     const showTimeLabel = showCursorLabels && hoveredChartId === chartId
     return (
       <Tooltip
-        contentStyle={{ ...chartTooltipContentStyle, borderRadius: 8 }}
-        labelStyle={{ color: 'var(--text-primary)', fontWeight: 700, marginBottom: showTimeLabel ? 4 : 0, display: showTimeLabel ? undefined : 'none' }}
+        content={props => (
+          <BoundedChartTooltipContent
+            active={props.active}
+            payload={props.payload}
+            label={props.label === undefined ? undefined : formatXAxisLabel(props.label)}
+            showLabel={showTimeLabel}
+          />
+        )}
+        labelStyle={{ display: showTimeLabel ? undefined : 'none' }}
         labelFormatter={(value) => showTimeLabel ? formatXAxisLabel(value) : ''}
         formatter={(value, name, item) => [formatGraphOverlayMetricValue(rawTooltipMetricValue(value, item)), name]}
         itemSorter={preserveChartItemOrder}
@@ -1195,7 +1255,7 @@ export default function TestExecutionCharts({
     })
   }
 
-  const metricRowsForChart = (chart: ChartConfig) => chartMetricRows(chart, groupNames, latencyKeys, groupColors, false, overlayMetricKeysForChart(chart), routeLatencyMode, activeRouteLatencyKey)
+  const metricRowsForChart = (chart: ChartConfig) => chartMetricRows(chart, graphGroupNames, latencyKeys, groupColors, false, overlayMetricKeysForChart(chart), routeLatencyMode, activeRouteLatencyKey, transactionNames)
 
   const visibleMetricKeysForChart = (chart: ChartConfig, rows = metricRowsForChart(chart)) => {
     const availableKeys = rows.map(row => row.key)
@@ -1354,30 +1414,30 @@ export default function TestExecutionCharts({
   const downloadChartSvgSnapshot = async (chart: ChartConfig) => {
     const card = chartCardRefs.current[chart.id]
     if (!card) {
-      await downloadTextFile(latestGraphValuesText({ ...chart, title: displayTitleForChart(chart) }, latest, groupNames, latencyKeys, latencyLatestValues, overlayMetricKeysForChart(chart), routeLatencyMode, activeRouteLatencyKey), `${safeFileName(displayTitleForChart(chart))}-values.txt`, 'text/plain;charset=utf-8')
+      await downloadTextFile(latestGraphValuesText({ ...chart, title: displayTitleForChart(chart) }, latest, graphGroupNames, latencyKeys, latencyLatestValues, overlayMetricKeysForChart(chart), routeLatencyMode, activeRouteLatencyKey, transactionNames), `${safeFileName(displayTitleForChart(chart))}-values.txt`, 'text/plain;charset=utf-8')
       return
     }
     const displayTitle = displayTitleForChart(chart)
     const snapshot = chartSnapshotSvg(card, { ...chart, title: displayTitle })
     if (!snapshot) {
-      await downloadTextFile(latestGraphValuesText({ ...chart, title: displayTitle }, latest, groupNames, latencyKeys, latencyLatestValues, overlayMetricKeysForChart(chart), routeLatencyMode, activeRouteLatencyKey), `${safeFileName(displayTitle)}-values.txt`, 'text/plain;charset=utf-8')
+      await downloadTextFile(latestGraphValuesText({ ...chart, title: displayTitle }, latest, graphGroupNames, latencyKeys, latencyLatestValues, overlayMetricKeysForChart(chart), routeLatencyMode, activeRouteLatencyKey, transactionNames), `${safeFileName(displayTitle)}-values.txt`, 'text/plain;charset=utf-8')
       return
     }
     await downloadTextFile(snapshot, `${safeFileName(displayTitle)}-snapshot.svg`, 'image/svg+xml;charset=utf-8')
   }
 
   const exportChartCsv = async (chart: ChartConfig) => {
-    await downloadTextFile(graphCsvForChart(chart, chartDataFor(chart), groupNames, latencyKeys, false, overlayMetricKeysForChart(chart), routeLatencyMode, activeRouteLatencyKey), `${safeFileName(displayTitleForChart(chart))}-data.csv`, 'text/csv;charset=utf-8')
+    await downloadTextFile(graphCsvForChart(chart, chartDataFor(chart), graphGroupNames, latencyKeys, false, overlayMetricKeysForChart(chart), routeLatencyMode, activeRouteLatencyKey, transactionNames), `${safeFileName(displayTitleForChart(chart))}-data.csv`, 'text/csv;charset=utf-8')
   }
 
   const copyLatestValues = async (chart: ChartConfig) => {
     const chartData = chartDataFor(chart)
     const chartLatest = chartData[chartData.length - 1] || latest
-    const visibleKeys = chartMetricKeys(chart, groupNames, latencyKeys, false, overlayMetricKeysForChart(chart), routeLatencyMode, activeRouteLatencyKey)
+    const visibleKeys = chartMetricKeys(chart, graphGroupNames, latencyKeys, false, overlayMetricKeysForChart(chart), routeLatencyMode, activeRouteLatencyKey, transactionNames)
     const routeLatestValues = chart.id === 'network_latency'
       ? latestRouteLatencyValues(chartData, visibleKeys)
       : latencyLatestValues
-    const text = latestGraphValuesText({ ...chart, title: displayTitleForChart(chart) }, chartLatest, groupNames, latencyKeys, routeLatestValues, overlayMetricKeysForChart(chart), routeLatencyMode, activeRouteLatencyKey)
+    const text = latestGraphValuesText({ ...chart, title: displayTitleForChart(chart) }, chartLatest, graphGroupNames, latencyKeys, routeLatestValues, overlayMetricKeysForChart(chart), routeLatencyMode, activeRouteLatencyKey, transactionNames)
     if (!await copyTextToClipboard(text)) {
       await downloadTextFile(text, `${safeFileName(displayTitleForChart(chart))}-latest-values.txt`, 'text/plain;charset=utf-8')
     }
@@ -1913,34 +1973,58 @@ export default function TestExecutionCharts({
     )
   }
 
+  const renderChartSeriesLegendItems = (items: ChartMetricRow[]) => items.map(row => {
+    const presentation = chartMetricLinePresentation(row)
+    return (
+      <span key={row.key} className={`chart-series-legend-item ${presentation.role}${presentation.strokeDasharray ? ' dashed' : ''}`}>
+        <span
+          className="chart-series-swatch"
+          style={{
+            background: row.kind === 'percentile' ? undefined : row.color,
+            borderColor: row.color,
+          }}
+        />
+        <span>{row.label}</span>
+      </span>
+    )
+  })
+
+  const renderLegendOverflow = (omitted: number, label = 'series') => omitted > 0 ? (
+    <span className="chart-series-legend-overflow" role="status">+{omitted} more visible {label}</span>
+  ) : null
+
+  const renderLineMultiSeriesLegend = (chart: ChartConfig, rows: ChartMetricRow[], visibleMetricKeys: string[]) => {
+    const visibleRows = rows.filter(row => (
+      visibleMetricKeys.includes(row.key)
+      && !overlayMetricKeysForChart(chart).includes(row.key as OverlayMetricKey)
+    ))
+    if (visibleRows.length <= 1) return null
+    const bounded = boundedChartItems(visibleRows, MAX_CHART_LEGEND_ITEMS)
+    return (
+      <div className="chart-series-legend" aria-label={`${chart.title} series legend`}>
+        <div className="chart-series-legend-group">
+          <span className="chart-series-legend-heading">Series</span>
+          {renderChartSeriesLegendItems(bounded.items)}
+          {renderLegendOverflow(bounded.omitted)}
+        </div>
+      </div>
+    )
+  }
+
   const renderLatencySeriesLegend = (rows: ChartMetricRow[], visibleMetricKeys: string[], includeArtStdDevBand: boolean) => {
     const visibleRows = rows.filter(row => visibleMetricKeys.includes(row.key))
     const transactionRows = visibleRows.filter(row => row.kind === 'transaction')
     const percentileRows = visibleRows.filter(row => row.kind === 'percentile')
     if (transactionRows.length === 0 && percentileRows.length === 0 && !includeArtStdDevBand) return null
-
-    const renderLegendItems = (items: ChartMetricRow[]) => items.map(row => {
-      const presentation = chartMetricLinePresentation(row)
-      return (
-        <span key={row.key} className={`chart-series-legend-item ${presentation.role}${presentation.strokeDasharray ? ' dashed' : ''}`}>
-          <span
-            className="chart-series-swatch"
-            style={{
-              background: row.kind === 'percentile' ? undefined : row.color,
-              borderColor: row.color,
-            }}
-          />
-          <span>{row.label}</span>
-        </span>
-      )
-    })
+    const boundedTransactions = boundedChartItems(transactionRows, MAX_CHART_LEGEND_ITEMS)
 
     return (
       <div className="chart-series-legend" aria-label="Response time series legend">
         {transactionRows.length > 0 && (
           <div className="chart-series-legend-group">
             <span className="chart-series-legend-heading">Transactions</span>
-            {renderLegendItems(transactionRows)}
+            {renderChartSeriesLegendItems(boundedTransactions.items)}
+            {renderLegendOverflow(boundedTransactions.omitted, 'transaction series')}
             {includeArtStdDevBand && (
               <span className="chart-series-legend-item band">
                 <span className="chart-series-swatch" />
@@ -1952,7 +2036,7 @@ export default function TestExecutionCharts({
         {percentileRows.length > 0 && (
           <div className="chart-series-legend-group percentiles">
             <span className="chart-series-legend-heading">Percentiles</span>
-            {renderLegendItems(percentileRows)}
+            {renderChartSeriesLegendItems(percentileRows)}
           </div>
         )}
       </div>
@@ -2410,6 +2494,7 @@ export default function TestExecutionCharts({
                   ? 170
                   : 200
             const metricRows = metricRowsForChart(chart)
+            const metricRowKeys = metricRows.map(row => row.key)
             const visibleMetricKeys = visibleMetricKeysForChart(chart, metricRows)
             const visibleOverlayKeysForTitle = visibleOverlayMetricKeys(chart, visibleMetricKeys)
             const smoothedMetricKeys = commandCenterSurface
@@ -2433,6 +2518,7 @@ export default function TestExecutionCharts({
               chartWidth: chartCardSize?.width ?? null,
               chartHeight,
               expanded: expandedChart === chart.id,
+              metricRowKeys,
               metricKeys: visibleMetricKeys,
               overlayKeys: visibleOverlayKeysForTitle,
               smoothedMetricKeys,
@@ -2442,10 +2528,14 @@ export default function TestExecutionCharts({
             let downsampledChartData: MetricsHistoryPoint[]
             let chartDataWithDisplayBands: MetricsHistoryPoint[]
             let displayChartData: MetricsHistoryPoint[]
+            let metricSummaries: Record<string, ChartMetricSummary>
+            let singletonTransactionMetricKeySet: Set<string>
             if (cachedDerived && cachedDerived.signature === derivedSignature && cachedDerived.sourceChartData === chartData) {
               downsampledChartData = cachedDerived.downsampledChartData
               chartDataWithDisplayBands = cachedDerived.chartDataWithDisplayBands
               displayChartData = cachedDerived.displayChartData
+              metricSummaries = cachedDerived.metricSummaries
+              singletonTransactionMetricKeySet = cachedDerived.singletonTransactionMetricKeys
             } else {
               downsampledChartData = downsampleDenseCharts
                 ? downsampleGraphData(
@@ -2466,19 +2556,20 @@ export default function TestExecutionCharts({
               displayChartData = smoothedMetricKeys.length > 0
                 ? buildSmoothedGraphData(chartDataWithDisplayBands, smoothedMetricKeys, smoothingRadiusForBuild)
                 : chartDataWithDisplayBands
+              metricSummaries = chartMetricSummaries(chartData, metricRowKeys)
+              singletonTransactionMetricKeySet = singletonTransactionMetricKeys(displayChartData, metricRowKeys)
               derivedSeriesCacheRef.current.set(chart.id, {
                 signature: derivedSignature,
                 sourceChartData: chartData,
                 downsampledChartData,
                 chartDataWithDisplayBands,
                 displayChartData,
+                metricSummaries,
+                singletonTransactionMetricKeys: singletonTransactionMetricKeySet,
               })
             }
-            const metricSummaries = metricRows.reduce<Record<string, ChartMetricSummary>>((accumulator, row) => {
-              accumulator[row.key] = chartMetricSummary(chartData, row.key)
-              return accumulator
-            }, {})
             const displayMetricKey = (key: string) => smoothedMetricKeySet.has(key) ? smoothedGraphMetricKey(key) : key
+            const metricDot = (key: string) => singletonTransactionMetricKeySet.has(key) ? { r: 3 } : false
             const primaryMetricKeysForDomain = visibleMetricKeys.filter(key => (
               !visibleOverlayKeysForTitle.includes(key as OverlayMetricKey)
               && key !== routeLatencySuccessRateKey
@@ -2768,34 +2859,32 @@ export default function TestExecutionCharts({
                 {renderOverlayAxes(chart, visibleMetricKeys)}
                 {renderTooltip(chart.id)}
                 {renderSharedCursor(displayChartData, metricAxisIdForChart)}
-                {isMultiGroup && <Legend verticalAlign="bottom" itemSorter={preserveChartItemOrder} />}
                 {renderChartGradientDefs(chart, metricRows, visibleMetricKeys)}
                 {showGradientUnderlays && renderGradientUnderlays(chart, metricRows, visibleMetricKeys, displayMetricKey, metricAxisIdForChart)}
-                {chart.totalKey && showMetric(chart.totalKey) && (
-                  <Line yAxisId={metricAxisIdForChart} type="monotone" dataKey={displayMetricKey(chart.totalKey)} name="Total" stroke="var(--text-muted)" dot={false} strokeWidth={2} strokeDasharray={isMultiGroup ? '4 2' : undefined} isAnimationActive={false} />
-                )}
+                {metricRows
+                  .filter(row => !overlayMetricKeysForChart(chart).includes(row.key as OverlayMetricKey))
+                  .map(row => {
+                    const presentation = chartMetricLinePresentation(row)
+                    return showMetric(row.key) && (
+                      <Line
+                        key={row.key}
+                        yAxisId={metricAxisIdForChart}
+                        type="monotone"
+                        dataKey={displayMetricKey(row.key)}
+                        name={row.label}
+                        stroke={row.color}
+                        dot={metricDot(row.key)}
+                        strokeWidth={presentation.strokeWidth}
+                        strokeDasharray={presentation.strokeDasharray}
+                        strokeOpacity={presentation.strokeOpacity}
+                        connectNulls
+                        isAnimationActive={false}
+                      />
+                    )
+                  })}
                 {surface === 'command-center' && chartData.some(point => typeof point.targetTps === 'number') && (
                   <Line yAxisId={metricAxisIdForChart} type="monotone" dataKey="targetTps" name="Target" stroke="var(--warning)" dot={false} strokeWidth={1.75} strokeDasharray="5 3" isAnimationActive={false} />
                 )}
-                {isMultiGroup && groupNames.map((name, index) => {
-                  const row = metricRows.find(candidate => candidate.key === `${name}_tps`)
-                  const presentation = row ? chartMetricLinePresentation(row) : undefined
-                  return showMetric(`${name}_tps`) && (
-                    <Line
-                      key={name}
-                      yAxisId={metricAxisIdForChart}
-                      type="monotone"
-                      dataKey={displayMetricKey(`${name}_tps`)}
-                      name={name}
-                      stroke={row?.color ?? groupColors[index % groupColors.length]}
-                      dot={false}
-                      strokeWidth={presentation?.strokeWidth}
-                      strokeDasharray={presentation?.strokeDasharray}
-                      strokeOpacity={presentation?.strokeOpacity}
-                      isAnimationActive={false}
-                    />
-                  )
-                })}
                 {renderOverlayLines(chart, visibleMetricKeys, displayMetricKey)}
                 {renderSelectedSeriesEmphasis(chart, metricRows, visibleMetricKeys, displayMetricKey, metricAxisIdForChart)}
                 {showRefArea && (
@@ -2832,10 +2921,11 @@ export default function TestExecutionCharts({
                         dataKey={displayMetricKey(row.key)}
                         name={row.label}
                         stroke={row.color}
-                        dot={false}
+                        dot={metricDot(row.key)}
                         strokeWidth={presentation.strokeWidth}
                         strokeDasharray={presentation.strokeDasharray}
                         strokeOpacity={presentation.strokeOpacity}
+                        connectNulls
                         isAnimationActive={false}
                       />
                     )
@@ -3000,6 +3090,7 @@ export default function TestExecutionCharts({
                 </div>
                 {renderAccessibleMetricsTable(metricRows, visibleMetricKeys, chartTitle, accessibleTableId, metricSummaries)}
 
+          {(chart.id === 'tps' || chart.id === 'errors') && renderLineMultiSeriesLegend(chart, metricRows, visibleMetricKeys)}
           {chart.id === 'latency' && renderLatencySeriesLegend(metricRows, visibleMetricKeys, includeArtStdDevBand)}
           {chart.id === 'network_latency' && showDetails && renderRouteLatencyDetails()}
           {chart.id === 'generator_impact' && showDetails && renderGeneratorImpactDetails()}

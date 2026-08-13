@@ -21,6 +21,7 @@ import { getErrorMessage } from '../utils/errorUtils'
 import TestExecutionCharts, { type GraphCursorState, type GraphGroupTabId, type UnderLoadDisplayMode } from './TestExecutionCharts'
 import type { ExecutionChartTimeRange, ExecutionChartZoomAnchor } from './testExecutionChartZoomModel'
 import { mapArchiveSummarySamples, mapExecutionHistory, mapExecutionMetricToHistoryPoint, recentMetricAverages } from './testExecutionMetricsModel'
+import { useExecutionArchiveSummaryHistory } from './useExecutionArchiveSummaryHistory'
 import { useExecutionChartModel } from './useExecutionChartModel'
 import { useExecutionMetricsStream } from './useExecutionMetricsStream'
 import { usePrometheusGraphs } from './usePrometheusGraphs'
@@ -28,6 +29,7 @@ import { useImportedDashboardGraphs } from './useImportedDashboardGraphs'
 import { EXECUTION_ARCHIVE_FINALIZATION_TIMEOUT_MS, EXECUTION_POLL_INTERVAL_MS } from './useExecutionTestPolling'
 import { ARCHIVE_CHART_MAX_SAMPLES } from './archiveHistorySampling'
 import { chartTooltipContentStyle, chartTooltipLabelStyle } from './chartTooltipTheme'
+import { omitTransactionChartSeries } from './transactionChartSeries'
 import SnapshotBodyPreview from './SnapshotBodyPreview'
 import SnapshotTextPreview from './SnapshotTextPreview'
 import TestNotesDialog from './TestNotesDialog'
@@ -808,6 +810,7 @@ export default function CommandCenterPrototype({
     if (history.length > 0) return history
     return displayTest.live_metrics ? [mapExecutionMetricToHistoryPoint(displayTest.live_metrics)] : []
   }, [displayTest.live_metrics, emptyMode, hasLiveRoute, history, liveMode, prototypeFixtures])
+  const { archiveSummaryHistory } = useExecutionArchiveSummaryHistory(liveMode ? displayTest : null)
   const {
     filteredData: chartData,
     timeRange,
@@ -823,6 +826,7 @@ export default function CommandCenterPrototype({
     test: liveMode ? displayTest : null,
     history: chartFallbackHistory,
     localMetricsHistory: liveMode ? localMetricsHistory : [],
+    archiveSummaryHistory,
   })
   // Only genuine live runs query Prometheus. Passing an empty window (null test +
   // no data) keeps usePrometheusGraphs in its reset branch, so the prototype/mock
@@ -855,11 +859,11 @@ export default function CommandCenterPrototype({
     () => backendScopedChartData ? alignScopedChartDataToReference(backendScopedChartData, chartData) : null,
     [backendScopedChartData, chartData],
   )
-  const graphScopedChartData = noGraphWallGroupsVisible
-    ? []
-    : allGraphWallGroupsVisible
-      ? chartData
-      : alignedBackendScopedChartData ?? clientScopedChartData
+  const graphScopedChartData = useMemo(() => {
+    if (noGraphWallGroupsVisible) return []
+    if (allGraphWallGroupsVisible) return chartData
+    return (alignedBackendScopedChartData ?? clientScopedChartData).map(omitTransactionChartSeries)
+  }, [alignedBackendScopedChartData, allGraphWallGroupsVisible, chartData, clientScopedChartData, noGraphWallGroupsVisible])
   const graphScopedMetrics = allGraphWallGroupsVisible || noGraphWallGroupsVisible
     ? displayTest.live_metrics
     : backendScopedMetrics ?? displayTest.live_metrics
@@ -2588,10 +2592,12 @@ export function selectedGroupHistoryHasFields(data: MetricsHistoryPoint[], group
 export function selectedGroupLoadImpactData(data: MetricsHistoryPoint[], groups: CommandGroup[]) {
   if (groups.length === 0) return []
   const selectedNames = groups.map(group => group.name)
-  if (!selectedGroupHistoryHasFields(data, selectedNames)) return data
-  return data.map(point => {
+  const safelyScopedData = data.map(omitTransactionChartSeries)
+  if (!selectedGroupHistoryHasFields(safelyScopedData, selectedNames)) return safelyScopedData
+  return safelyScopedData.map(point => {
     let hasGroupData = false
     let selectedVUsers = 0
+    let vuserSamples = 0
     let selectedTps = 0
     let selectedTargetTps = 0
     let selectedTransactions = 0
@@ -2616,6 +2622,7 @@ export function selectedGroupLoadImpactData(data: MetricsHistoryPoint[], groups:
 
       if (typeof groupVusers === 'number' && Number.isFinite(groupVusers)) {
         selectedVUsers += groupVusers
+        vuserSamples += 1
         hasGroupData = true
       }
       if (typeof groupTps === 'number' && Number.isFinite(groupTps)) {
@@ -2693,7 +2700,7 @@ export function selectedGroupLoadImpactData(data: MetricsHistoryPoint[], groups:
 
     return {
       ...point,
-      vusers: selectedVUsers > 0 ? selectedVUsers : point.vusers,
+      vusers: vuserSamples > 0 ? selectedVUsers : point.vusers,
       tps: tpsSamples > 0 ? Math.round(selectedTps * 10) / 10 : point.tps,
       targetTps: selectedTargetTps > 0 ? Math.round(selectedTargetTps * 10) / 10 : point.targetTps,
       avgMs: artWeight > 0 ? Math.round((weightedArt / artWeight) * 10) / 10 : point.avgMs,

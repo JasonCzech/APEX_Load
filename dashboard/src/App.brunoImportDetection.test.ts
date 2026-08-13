@@ -3,16 +3,67 @@
 import { describe, expect, it, vi } from 'vitest'
 
 import {
+  archiveContainsOpenCollectionMarker,
   filesContainNativeBrunoSource,
   nativeImportTargetForFile,
   nativeImportTargetForFileName,
   resolveNativeImportRequest,
 } from './nativeImportRouting'
+import { storedZipFixture } from './test/zipFixture'
 
 describe('Bruno source auto-detection', () => {
   it('routes classic and explicitly named Bruno artifacts to the Bruno importer', () => {
     expect(nativeImportTargetForFileName('collection.bru')).toEqual({ launcher: 'bruno' })
     expect(nativeImportTargetForFileName('checkout.bruno.zip')).toEqual({ launcher: 'bruno' })
+  })
+
+  it('routes a generically named ZIP from bounded OpenCollection member metadata', async () => {
+    const archive = new File([storedZipFixture([
+      'CTA_Collection/CTA/request.yml',
+      'CTA_Collection/opencollection.yml',
+    ])], 'CTA_Collection 6a.zip', { type: 'application/zip' })
+
+    await expect(archiveContainsOpenCollectionMarker(archive)).resolves.toBe(true)
+    await expect(filesContainNativeBrunoSource([archive])).resolves.toBe(true)
+    await expect(nativeImportTargetForFile(archive)).resolves.toEqual({
+      launcher: 'bruno',
+      mode: 'native_requests',
+    })
+  })
+
+  it('keeps unrelated generic ZIP archives on the enterprise archive path', async () => {
+    const archive = new File([storedZipFixture(['Action.c'])], 'loadrunner.zip', { type: 'application/zip' })
+    await expect(archiveContainsOpenCollectionMarker(archive)).resolves.toBe(false)
+    await expect(nativeImportTargetForFile(archive)).resolves.toEqual({ launcher: 'enterprise_archive' })
+  })
+
+  it('detects a root-level OpenCollection manifest without matching similarly named files', async () => {
+    const archive = new File([storedZipFixture([
+      'not-opencollection.yml',
+      'opencollection.yaml',
+    ])], 'collection.zip', { type: 'application/zip' })
+    await expect(archiveContainsOpenCollectionMarker(archive)).resolves.toBe(true)
+  })
+
+  it('finds an early OpenCollection entry in a central directory larger than the old tail window', async () => {
+    const filler = Array.from({ length: 6_000 }, (_, index) =>
+      `CTA_Collection/filler-${String(index).padStart(5, '0')}-with-a-long-central-directory-name.yml`)
+    const memberNames = [
+      'CTA_Collection/opencollection.yml',
+      ...filler,
+    ]
+    const centralDirectoryBytes = memberNames.reduce(
+      (total, name) => total + 46 + new TextEncoder().encode(name).length,
+      0,
+    )
+    const archive = new File([storedZipFixture(memberNames)], 'large-collection.zip', { type: 'application/zip' })
+
+    expect(centralDirectoryBytes).toBeGreaterThan(512 * 1024)
+    await expect(archiveContainsOpenCollectionMarker(archive)).resolves.toBe(true)
+    await expect(nativeImportTargetForFile(archive)).resolves.toEqual({
+      launcher: 'bruno',
+      mode: 'native_requests',
+    })
   })
 
   it('checks Bruno YAML markers before generic OpenAPI routing', async () => {

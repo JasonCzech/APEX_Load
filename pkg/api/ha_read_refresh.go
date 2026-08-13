@@ -36,9 +36,13 @@ type haRefreshCoalescer struct {
 	mu sync.Mutex
 	// inflight is closed when the current reload finishes; nil while idle.
 	inflight chan struct{}
-	// doneAt is when the most recently completed reload finished, regardless of
-	// its outcome. It bounds how many reloads a concurrent burst can produce.
-	doneAt time.Time
+	// arrivals assigns each caller a process-local order before it contends for
+	// mu. completedThrough is the greatest arrival included in the most recently
+	// completed reload. Together they distinguish a caller that was concurrent
+	// with that reload from a later sequential caller without relying on wall-clock
+	// timestamps, whose resolution can make those two events appear equal.
+	arrivals         atomic.Uint64
+	completedThrough uint64
 	// freshAt is when the most recent successful reload finished, and anchors
 	// the staleness window.
 	freshAt time.Time
@@ -79,6 +83,7 @@ func (c *haRefreshCoalescer) refresh(window time.Duration, reload func() error) 
 	if c == nil || reload == nil {
 		return nil
 	}
+	arrival := c.arrivals.Add(1)
 	arrivedAt := time.Now()
 	for {
 		c.mu.Lock()
@@ -86,7 +91,7 @@ func (c *haRefreshCoalescer) refresh(window time.Duration, reload func() error) 
 			c.mu.Unlock()
 			return nil
 		}
-		if !c.doneAt.IsZero() && !c.doneAt.Before(arrivedAt) {
+		if c.completedThrough >= arrival {
 			// A reload finished after this caller arrived, so its result is
 			// evidence this caller can use.
 			err := c.lastErr
@@ -116,11 +121,11 @@ func (c *haRefreshCoalescer) runOnce(done chan struct{}, reload func() error) (e
 	defer func() {
 		c.mu.Lock()
 		c.inflight = nil
-		c.doneAt = time.Now()
+		c.completedThrough = c.arrivals.Load()
 		if completed {
 			c.lastErr = err
 			if err == nil {
-				c.freshAt = c.doneAt
+				c.freshAt = time.Now()
 			}
 		} else {
 			c.lastErr = errHARefreshAborted
@@ -144,7 +149,7 @@ func (c *haRefreshCoalescer) markFresh(at time.Time) {
 func (c *haRefreshCoalescer) expire() {
 	c.mu.Lock()
 	c.freshAt = time.Time{}
-	c.doneAt = time.Time{}
+	c.completedThrough = 0
 	c.lastErr = nil
 	c.mu.Unlock()
 }

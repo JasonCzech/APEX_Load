@@ -31,6 +31,7 @@ func (s *Server) websocketAuthorizer(r *http.Request, projectID string) func() b
 	snapshot := *user
 	initialKeyHash := ""
 	localSessionHash := ""
+	localSessionGeneration := ""
 	if account != nil && s.store != nil {
 		stored, err := s.store.GetServiceAccount(account.ID)
 		if err != nil || stored == nil {
@@ -42,10 +43,18 @@ func (s *Server) websocketAuthorizer(r *http.Request, projectID string) func() b
 		if err != nil || strings.TrimSpace(cookie.Value) == "" {
 			return func() bool { return false }
 		}
-		if _, ok := s.store.(localAuthStore); !ok {
+		localStore, ok := s.store.(localAuthStore)
+		if !ok {
 			return func() bool { return false }
 		}
-		localSessionHash = localSessionTokenHash(cookie.Value)
+		generation, err := localStore.GetLocalAuthGeneration()
+		expectedGeneration := s.activeLocalAuthGeneration()
+		if err != nil || strings.TrimSpace(generation) == "" || strings.TrimSpace(expectedGeneration) == "" ||
+			subtle.ConstantTimeCompare([]byte(generation), []byte(expectedGeneration)) != 1 {
+			return func() bool { return false }
+		}
+		localSessionGeneration = expectedGeneration
+		localSessionHash = localSessionTokenHashForGeneration(generation, cookie.Value)
 	}
 
 	return func() bool {
@@ -86,7 +95,7 @@ func (s *Server) websocketAuthorizer(r *http.Request, projectID string) func() b
 		}
 		if localSessionHash != "" {
 			localStore := s.store.(localAuthStore)
-			session, err := localStore.GetLocalAuthSessionByTokenHash(localSessionHash)
+			session, err := localStore.GetLocalAuthSessionByTokenHashForGeneration(localSessionGeneration, localSessionHash)
 			if err != nil || session == nil || !now.Before(session.ExpiresAt.UTC()) {
 				return false
 			}

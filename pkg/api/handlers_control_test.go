@@ -320,6 +320,38 @@ func TestHandleScaleVUsersReturnsGroupError(t *testing.T) {
 	}
 }
 
+func TestHandleScaleVUsersMapsDistributedActivationToConflict(t *testing.T) {
+	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080"})
+	now := time.Now().UTC()
+	backend := newDistributedExecutionBackend(nil, 50*time.Millisecond, nil)
+	testRun := &ManagedTest{
+		ID:                      "activating-scale",
+		Name:                    "activating distributed scale",
+		Status:                  "RUNNING",
+		ProjectID:               storage.DefaultProjectID,
+		Duration:                time.Minute,
+		DurationStr:             time.Minute.String(),
+		Groups:                  []TestGroup{{Name: "buyers", VUsers: 1}},
+		TotalVUsers:             1,
+		StartedAt:               &now,
+		executionBackend:        backend,
+		remoteActivationPending: true,
+	}
+	server.runner.tests[testRun.ID] = testRun
+
+	req := httptest.NewRequest(http.MethodPatch, "/api/v1/tests/"+testRun.ID+"/vusers", bytes.NewBufferString(`{"group":"buyers","target_vusers":2}`))
+	req.Header.Set("Content-Type", "application/json")
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusConflict, resp.Body.String())
+	}
+	if !strings.Contains(resp.Body.String(), "activating") {
+		t.Fatalf("body = %q, want activation retry guidance", resp.Body.String())
+	}
+}
+
 func TestHandleScaleVUsersAcceptsGradualRampDuration(t *testing.T) {
 	server, testRun := newRunningControlTestServer(t)
 

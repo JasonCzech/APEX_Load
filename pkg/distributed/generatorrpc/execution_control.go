@@ -367,7 +367,10 @@ func (coordinator *assignmentLifecycleCoordinator) commitWorkValidatedLocked(ser
 			}
 		}
 
-		startAt := now
+		// A zero wire value means an immediate, uncoordinated start. Preserve the
+		// zero-time sentinel for RunAt; replacing it with now makes RunAt enforce a
+		// barrier that protocol preparation cannot possibly finish before.
+		startAt := time.Time{}
 		if request.GetStartAtUnixNano() != 0 {
 			startAt = time.Unix(0, request.GetStartAtUnixNano())
 			if !startAt.After(now) {
@@ -558,11 +561,10 @@ func (service *Service) startExecutionEvent(event executionStartEvent) {
 		service.runExecutionPublisher(event.ctx, event.testID, event.groupName, event.execution)
 	}()
 	go func() {
-		if !waitForCoordinatedExecutionStart(event.ctx, event.execution.startAt) {
-			service.completeExecutionCallbacks(event.testID, event.groupName, event.execution, nil)
-			return
-		}
-		_, runErr := event.execution.engine.Run(event.ctx)
+		// RunAt owns the release barrier. Enter it immediately so zero-baseline
+		// assignments can prepare protocol instances during the controller's
+		// commit lead time, then publish user traffic on the shared epoch.
+		_, runErr := event.execution.engine.RunAt(event.ctx, event.execution.startAt)
 		service.completeExecutionCallbacks(event.testID, event.groupName, event.execution, runErr)
 	}()
 }
@@ -1070,6 +1072,7 @@ type scaleTransitionPlan struct {
 	groupName                    string
 	generation                   uint64
 	previousGroupVUsers          int32
+	previousActiveVUsers         int32
 	targetGroupVUsers            int32
 	reservedTotalVUsers          int32
 	persistentJavaPreviousDemand int64
@@ -1194,7 +1197,12 @@ func (coordinator *assignmentLifecycleCoordinator) planScaleLocked(service *Serv
 	if assignment.activeGroups == nil {
 		assignment.activeGroups = make(map[string]int32)
 	}
-	assignment.activeGroups[request.GetGroupName()] = request.GetTargetVusers()
+	previousActiveVUsers := assignment.activeGroups[request.GetGroupName()]
+	// Capacity reservation changes the desired target, not the live gauge. The
+	// engine snapshot advances activeGroups only after VUsers actually launch.
+	if executionEngine == nil {
+		assignment.activeGroups[request.GetGroupName()] = request.GetTargetVusers()
+	}
 	assignment.vuserCount = updatedTotal
 	service.assignments[testID] = assignment
 	return scaleTransitionDecision{plan: &scaleTransitionPlan{
@@ -1203,6 +1211,7 @@ func (coordinator *assignmentLifecycleCoordinator) planScaleLocked(service *Serv
 		groupName:                    request.GetGroupName(),
 		generation:                   request.GetExecutionGeneration(),
 		previousGroupVUsers:          currentGroupVUsers,
+		previousActiveVUsers:         previousActiveVUsers,
 		targetGroupVUsers:            request.GetTargetVusers(),
 		reservedTotalVUsers:          updatedTotal,
 		persistentJavaPreviousDemand: persistentJavaCurrentDemand,
@@ -1260,7 +1269,7 @@ func (coordinator *assignmentLifecycleCoordinator) rollbackScaleLocked(service *
 			if assignment.activeGroups == nil {
 				assignment.activeGroups = make(map[string]int32)
 			}
-			assignment.activeGroups[plan.groupName] = plan.previousGroupVUsers
+			assignment.activeGroups[plan.groupName] = plan.previousActiveVUsers
 			assignment.vuserCount = assignment.vuserCount - plan.targetGroupVUsers + plan.previousGroupVUsers
 			service.assignments[plan.testID] = assignment
 			restored = true
@@ -1439,25 +1448,31 @@ func (service *Service) applyVUserAdjustment(ctx context.Context, request *pb.VU
 		plan := decision.plan
 
 		if plan.engine != nil {
-			if ctx == nil {
-				<-plan.engine.Ready()
-			} else {
-				select {
-				case <-ctx.Done():
-					service.mu.Lock()
-					service.lifecycleCoordinator.rollbackScaleLocked(service, plan)
-					service.releaseScaleDrainLocked(plan)
-					service.mu.Unlock()
-					return nil, status.FromContextError(ctx.Err()).Err()
-				case <-plan.engine.Ready():
-				}
-				if err := ctx.Err(); err != nil {
-					service.mu.Lock()
-					service.lifecycleCoordinator.rollbackScaleLocked(service, plan)
-					service.releaseScaleDrainLocked(plan)
-					service.mu.Unlock()
-					return nil, status.FromContextError(err).Err()
-				}
+			waitCtx := ctx
+			if waitCtx == nil {
+				waitCtx = context.Background()
+			}
+			select {
+			case <-waitCtx.Done():
+				service.mu.Lock()
+				service.lifecycleCoordinator.rollbackScaleLocked(service, plan)
+				service.releaseScaleDrainLocked(plan)
+				service.mu.Unlock()
+				return nil, status.FromContextError(waitCtx.Err()).Err()
+			case <-plan.executionDone:
+				service.mu.Lock()
+				service.lifecycleCoordinator.rollbackScaleLocked(service, plan)
+				service.releaseScaleDrainLocked(plan)
+				service.mu.Unlock()
+				return nil, status.Error(codes.FailedPrecondition, "execution stopped before scaling became ready")
+			case <-plan.engine.Ready():
+			}
+			if err := waitCtx.Err(); err != nil {
+				service.mu.Lock()
+				service.lifecycleCoordinator.rollbackScaleLocked(service, plan)
+				service.releaseScaleDrainLocked(plan)
+				service.mu.Unlock()
+				return nil, status.FromContextError(err).Err()
 			}
 			if err := plan.engine.ScaleVUsers(plan.groupName, int(plan.targetGroupVUsers)); err != nil {
 				service.mu.Lock()
@@ -1465,6 +1480,9 @@ func (service *Service) applyVUserAdjustment(ctx context.Context, request *pb.VU
 				service.lifecycleCoordinator.rollbackScaleLocked(service, plan)
 				service.mu.Unlock()
 				service.releaseScaleDrainAfterReap(plan, plan.previousGroupVUsers)
+				if errors.Is(err, engine.ErrInitialRampInProgress) {
+					return nil, initialRampInProgressStatusError()
+				}
 				return nil, status.Errorf(codes.FailedPrecondition, "scale running group: %v", err)
 			}
 		}
@@ -1531,8 +1549,9 @@ func (service *Service) applyVUserAdjustment(ctx context.Context, request *pb.VU
 }
 
 type durationEngineTarget struct {
-	engine *engine.MultiGroupEngine
-	target time.Duration
+	engine        *engine.MultiGroupEngine
+	executionDone <-chan struct{}
+	target        time.Duration
 }
 
 type durationEngineApplied struct {
@@ -1609,7 +1628,11 @@ func (coordinator *assignmentLifecycleCoordinator) planDurationWithTokenLocked(s
 			if target <= 0 {
 				target = time.Nanosecond
 			}
-			participants = append(participants, durationEngineTarget{engine: execution.engine, target: target})
+			participants = append(participants, durationEngineTarget{
+				engine:        execution.engine,
+				executionDone: execution.done,
+				target:        target,
+			})
 		}
 	}
 	control, wait := coordinator.reserveControlLocked(testID, generation, assignmentControlDuration)
@@ -1626,9 +1649,29 @@ func (coordinator *assignmentLifecycleCoordinator) planDurationWithTokenLocked(s
 	}}
 }
 
-func applyDurationParticipants(participants []durationEngineTarget) ([]durationEngineApplied, error) {
+func applyDurationParticipants(ctx context.Context, participants []durationEngineTarget) ([]durationEngineApplied, error) {
 	applied := make([]durationEngineApplied, 0, len(participants))
 	for _, participant := range participants {
+		// Production executions always carry a completion channel. Retain direct
+		// application for synthetic/legacy state without one so a malformed
+		// participant without lifecycle signaling fails promptly instead of
+		// waiting forever on an unopened readiness channel.
+		if participant.executionDone != nil {
+			waitCtx := ctx
+			if waitCtx == nil {
+				waitCtx = context.Background()
+			}
+			select {
+			case <-waitCtx.Done():
+				return applied, waitCtx.Err()
+			case <-participant.executionDone:
+				return applied, fmt.Errorf("execution stopped before duration control became ready")
+			case <-participant.engine.Ready():
+			}
+			if err := waitCtx.Err(); err != nil {
+				return applied, err
+			}
+		}
 		previous := participant.engine.GetBaseTargetDuration()
 		if err := participant.engine.AdjustDuration(participant.target); err != nil {
 			return applied, err
@@ -1728,10 +1771,13 @@ func (service *Service) applyDurationAdjustment(ctx context.Context, request *pb
 			continue
 		}
 		plan := decision.plan
-		applied, applyErr := applyDurationParticipants(plan.participants)
+		applied, applyErr := applyDurationParticipants(ctx, plan.participants)
 		if applyErr != nil {
 			rollbackErr := rollbackDurationParticipants(applied)
 			service.abortControl(plan.control)
+			if ctx != nil && ctx.Err() != nil {
+				return nil, status.FromContextError(ctx.Err()).Err()
+			}
 			if rollbackErr != nil {
 				return nil, status.Errorf(codes.Internal, "adjust running duration: %v; rollback failed: %v", applyErr, rollbackErr)
 			}

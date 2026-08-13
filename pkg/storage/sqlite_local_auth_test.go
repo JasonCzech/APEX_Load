@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"context"
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
@@ -236,6 +237,142 @@ func TestLocalAuthSessionLifecycle(t *testing.T) {
 	}
 	if _, err := store.GetLocalAuthSessionByTokenHash(activeHash); err != sql.ErrNoRows {
 		t.Fatalf("deleted session lookup error = %v", err)
+	}
+}
+
+func TestLocalAuthGenerationFencesSessionsAcrossControllerStarts(t *testing.T) {
+	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "local-auth-generation.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	now := time.Now().UTC().Truncate(time.Second)
+	fixture := localAuthFixtureForTest(now)
+	if err := store.EnsureLocalAuthFixtures([]LocalAuthFixture{fixture}); err != nil {
+		t.Fatal(err)
+	}
+	firstGeneration := localAuthTokenHashForTest("first-controller-generation")
+	secondGeneration := localAuthTokenHashForTest("second-controller-generation")
+	if deleted, err := store.ActivateLocalAuthGeneration(firstGeneration, now); err != nil || deleted != 0 {
+		t.Fatalf("activate first generation = (%d, %v), want (0, nil)", deleted, err)
+	}
+	if current, err := store.GetLocalAuthGeneration(); err != nil || current != firstGeneration {
+		t.Fatalf("current generation = (%q, %v), want %q", current, err, firstGeneration)
+	}
+
+	firstSession := &LocalAuthSession{
+		TokenHash: localAuthTokenHashForTest("first-generation-session"), UserID: fixture.User.ID,
+		CreatedAt: now, ExpiresAt: now.Add(time.Hour),
+	}
+	if err := store.SaveLocalAuthSessionForGeneration(firstGeneration, firstSession); err != nil {
+		t.Fatalf("save first-generation session: %v", err)
+	}
+	if _, err := store.GetLocalAuthSessionByTokenHashForGeneration(firstGeneration, firstSession.TokenHash); err != nil {
+		t.Fatalf("lookup first-generation session: %v", err)
+	}
+
+	if deleted, err := store.ActivateLocalAuthGeneration(secondGeneration, now.Add(time.Minute)); err != nil || deleted != 1 {
+		t.Fatalf("activate second generation = (%d, %v), want (1, nil)", deleted, err)
+	}
+	if _, err := store.GetLocalAuthSessionByTokenHashForGeneration(firstGeneration, firstSession.TokenHash); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("old-generation lookup error = %v, want sql.ErrNoRows", err)
+	}
+	staleSession := &LocalAuthSession{
+		TokenHash: localAuthTokenHashForTest("stale-controller-session"), UserID: fixture.User.ID,
+		CreatedAt: now, ExpiresAt: now.Add(time.Hour),
+	}
+	if err := store.SaveLocalAuthSessionForGeneration(firstGeneration, staleSession); !errors.Is(err, ErrLocalAuthGenerationChanged) {
+		t.Fatalf("stale-generation save error = %v, want ErrLocalAuthGenerationChanged", err)
+	}
+	currentSession := &LocalAuthSession{
+		TokenHash: localAuthTokenHashForTest("current-controller-session"), UserID: fixture.User.ID,
+		CreatedAt: now, ExpiresAt: now.Add(time.Hour),
+	}
+	if err := store.SaveLocalAuthSessionForGeneration(secondGeneration, currentSession); err != nil {
+		t.Fatalf("save current-generation session: %v", err)
+	}
+	if _, err := store.GetLocalAuthSessionByTokenHashForGeneration(secondGeneration, currentSession.TokenHash); err != nil {
+		t.Fatalf("lookup current-generation session: %v", err)
+	}
+}
+
+func TestLocalAuthGenerationRejectsNonCanonicalValues(t *testing.T) {
+	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "local-auth-generation-validation.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	valid := localAuthTokenHashForTest("canonical-generation")
+	for _, generation := range []string{"", "short", strings.Repeat("A", 64), strings.Repeat("z", 64), " " + valid, valid + " "} {
+		if _, err := store.ActivateLocalAuthGeneration(generation, time.Now()); err == nil {
+			t.Fatalf("ActivateLocalAuthGeneration(%q) succeeded", generation)
+		}
+	}
+}
+
+func TestLocalAuthGenerationActivationRollsBackOnSessionDeleteFailure(t *testing.T) {
+	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "local-auth-generation-rollback.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	now := time.Now().UTC().Truncate(time.Second)
+	fixture := localAuthFixtureForTest(now)
+	if err := store.EnsureLocalAuthFixtures([]LocalAuthFixture{fixture}); err != nil {
+		t.Fatal(err)
+	}
+	firstGeneration := localAuthTokenHashForTest("rollback-first-generation")
+	secondGeneration := localAuthTokenHashForTest("rollback-second-generation")
+	if _, err := store.ActivateLocalAuthGeneration(firstGeneration, now); err != nil {
+		t.Fatal(err)
+	}
+	session := &LocalAuthSession{
+		TokenHash: localAuthTokenHashForTest("rollback-session"), UserID: fixture.User.ID,
+		CreatedAt: now, ExpiresAt: now.Add(time.Hour),
+	}
+	if err := store.SaveLocalAuthSessionForGeneration(firstGeneration, session); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.db.Exec(`CREATE TRIGGER fail_local_auth_session_delete
+		BEFORE DELETE ON local_auth_sessions
+		BEGIN SELECT RAISE(ABORT, 'injected local session delete failure'); END`); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := store.ActivateLocalAuthGeneration(secondGeneration, now.Add(time.Minute)); err == nil {
+		t.Fatal("generation activation succeeded despite injected delete failure")
+	}
+	if generation, err := store.GetLocalAuthGeneration(); err != nil || generation != firstGeneration {
+		t.Fatalf("generation after rollback = (%q, %v), want %q", generation, err, firstGeneration)
+	}
+	if _, err := store.GetLocalAuthSessionByTokenHashForGeneration(firstGeneration, session.TokenHash); err != nil {
+		t.Fatalf("first-generation session was not rolled back: %v", err)
+	}
+}
+
+func TestLocalAuthGenerationActivationHonorsCanceledContext(t *testing.T) {
+	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "local-auth-generation-context.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	now := time.Now().UTC().Truncate(time.Second)
+	firstGeneration := localAuthTokenHashForTest("context-first-generation")
+	secondGeneration := localAuthTokenHashForTest("context-second-generation")
+	if _, err := store.ActivateLocalAuthGeneration(firstGeneration, now); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := store.ActivateLocalAuthGenerationContext(ctx, secondGeneration, now.Add(time.Minute)); !errors.Is(err, context.Canceled) {
+		t.Fatalf("canceled generation activation error = %v, want context.Canceled", err)
+	}
+	if generation, err := store.GetLocalAuthGeneration(); err != nil || generation != firstGeneration {
+		t.Fatalf("generation after canceled activation = (%q, %v), want %q", generation, err, firstGeneration)
 	}
 }
 

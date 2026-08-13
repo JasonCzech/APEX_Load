@@ -12,6 +12,7 @@ import (
 
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/engine"
+	"github.com/jasonczech/apexload/pkg/scrub"
 )
 
 func TestSQLiteDSNAddsPerformancePragmas(t *testing.T) {
@@ -1397,6 +1398,22 @@ func TestSQLiteStoreSaveHistoryUsesTypedIntervalSummaries(t *testing.T) {
 		"p90_ms":             300.0,
 		"p95_ms":             350.0,
 		"p99_ms":             420.0,
+		"transactions": map[string]any{
+			"checkout": map[string]any{
+				"name":   "checkout",
+				"tps":    11.25,
+				"count":  80,
+				"errors": 3,
+				"avg_ms": 245.5,
+			},
+			"search": map[string]any{
+				"name":   "search",
+				"tps":    7.5,
+				"count":  40,
+				"errors": 1,
+				"avg_ms": 125.25,
+			},
+		},
 		"browser": map[string]any{
 			"samples":                2,
 			"avg_fcp_ms":             120.0,
@@ -1494,6 +1511,14 @@ func TestSQLiteStoreSaveHistoryUsesTypedIntervalSummaries(t *testing.T) {
 	if record.ActiveVUsers != 12 || record.TotalTx != 120 || record.DroppedResults != 3 || record.WebsocketDroppedMessages != 4 {
 		t.Fatalf("unexpected typed interval summary: %#v", record)
 	}
+	checkout := record.Transactions["checkout"]
+	if checkout == nil || checkout.Name != "checkout" || checkout.TPS != 11.25 || checkout.Count != 80 || checkout.Errors != 3 || checkout.AvgMs != 245.5 {
+		t.Fatalf("unexpected checkout transaction summary: %#v", checkout)
+	}
+	search := record.Transactions["search"]
+	if search == nil || search.Name != "search" || search.TPS != 7.5 || search.Count != 40 || search.Errors != 1 || search.AvgMs != 125.25 {
+		t.Fatalf("unexpected search transaction summary: %#v", search)
+	}
 	if record.Browser == nil || record.Browser.Samples != 2 || record.Browser.AvgCLSScore != 0.031 {
 		t.Fatalf("unexpected browser summary: %#v", record.Browser)
 	}
@@ -1532,6 +1557,57 @@ func TestSQLiteStoreSaveHistoryUsesTypedIntervalSummaries(t *testing.T) {
 	}
 	if storedSchemaVersion != intervalSummarySchemaVersion {
 		t.Fatalf("stored schema version = %q, want %q", storedSchemaVersion, intervalSummarySchemaVersion)
+	}
+}
+
+func TestIntervalSummaryTransactionsAreDeterministicallyBounded(t *testing.T) {
+	transactions := make(map[string]any, maxPersistedIntervalSummaryTransactions+1)
+	for index := 0; index <= maxPersistedIntervalSummaryTransactions; index++ {
+		name := fmt.Sprintf("transaction-%03d", index)
+		transactions[name] = map[string]any{
+			"name":   name,
+			"tps":    1.0,
+			"count":  1,
+			"errors": index % 2,
+			"avg_ms": float64(index),
+		}
+	}
+
+	record, err := intervalSummaryRecordFromMetrics(time.Now().UTC(), map[string]any{"transactions": transactions})
+	if err != nil {
+		t.Fatalf("intervalSummaryRecordFromMetrics returned error: %v", err)
+	}
+	if len(record.Transactions) != maxPersistedIntervalSummaryTransactions {
+		t.Fatalf("persisted transactions = %d, want bound %d", len(record.Transactions), maxPersistedIntervalSummaryTransactions)
+	}
+	if record.Transactions["transaction-510"] == nil || record.Transactions["transaction-511"] != nil || record.Transactions["transaction-512"] != nil {
+		t.Fatalf("deterministic retained set is wrong: tail=%#v omitted-511=%#v omitted-512=%#v",
+			record.Transactions["transaction-510"], record.Transactions["transaction-511"], record.Transactions["transaction-512"])
+	}
+	overflow := record.Transactions[intervalSummaryTransactionOverflow]
+	if overflow == nil || overflow.Name != intervalSummaryTransactionOverflow || overflow.TPS != 2 || overflow.Count != 2 || overflow.Errors != 1 || overflow.AvgMs != 511.5 {
+		t.Fatalf("overflow transaction = %#v, want folded tail totals", overflow)
+	}
+}
+
+func TestIntervalSummaryTransactionsScrubAndMergeNames(t *testing.T) {
+	record, err := intervalSummaryRecordFromMetrics(time.Now().UTC(), map[string]any{
+		"transactions": map[string]any{
+			"first": map[string]any{
+				"name": "checkout?token=first-secret", "tps": 2.0, "count": 2, "avg_ms": 100.0,
+			},
+			"second": map[string]any{
+				"name": "checkout?token=second-secret", "tps": 1.0, "count": 2, "errors": 1, "avg_ms": 400.0,
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("intervalSummaryRecordFromMetrics returned error: %v", err)
+	}
+	name := "checkout?token=" + scrub.Redacted
+	transaction := record.Transactions[name]
+	if len(record.Transactions) != 1 || transaction == nil || transaction.Name != name || transaction.TPS != 3 || transaction.Count != 4 || transaction.Errors != 1 || transaction.AvgMs != 250 {
+		t.Fatalf("scrubbed merged transactions = %#v, want one weighted %q record", record.Transactions, name)
 	}
 }
 
@@ -1648,6 +1724,9 @@ func TestSQLiteStoreMigratesTelemetrySchemaVersionsForExistingRows(t *testing.T)
 	}
 	if record.SchemaVersion != intervalSummarySchemaVersionV1 {
 		t.Fatalf("migrated summary schema version = %q, want %q", record.SchemaVersion, intervalSummarySchemaVersionV1)
+	}
+	if record.Transactions != nil {
+		t.Fatalf("legacy summary transactions = %#v, want nil", record.Transactions)
 	}
 
 	archive, err := store.GetRunArchive("test-legacy")

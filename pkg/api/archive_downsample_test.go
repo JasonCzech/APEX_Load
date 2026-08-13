@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -200,6 +201,11 @@ func TestLoadArchiveIntervalSummariesDownsampledPreservesErrorRateSpike(t *testi
 		if index == 62 {
 			summary.TotalErrors = 10_000
 		}
+		if index == 73 {
+			summary.Transactions = map[string]*IntervalTransactionMetrics{
+				"Search": {Name: "Search", TPS: 750, Count: 750, AvgMs: 75},
+			}
+		}
 		values[index] = summary
 	}
 	writeJSONL(t, filepath.Join(archiveDir, manifest.IntervalSummariesFile), values...)
@@ -212,7 +218,7 @@ func TestLoadArchiveIntervalSummariesDownsampledPreservesErrorRateSpike(t *testi
 	if total != 100 || len(items) > minArchiveSampleLimit {
 		t.Fatalf("sampled summaries total=%d len=%d, want total 100 and at most %d items", total, len(items), minArchiveSampleLimit)
 	}
-	var sawErrorRateSpike, sawTotalErrorsSpike bool
+	var sawErrorRateSpike, sawTotalErrorsSpike, sawTransactionSpike bool
 	for _, item := range items {
 		if item.ErrorPct == 100 {
 			sawErrorRateSpike = true
@@ -220,9 +226,12 @@ func TestLoadArchiveIntervalSummariesDownsampledPreservesErrorRateSpike(t *testi
 		if item.TotalErrors == 10_000 {
 			sawTotalErrorsSpike = true
 		}
+		if search := item.Transactions["Search"]; search != nil && search.TPS == 750 {
+			sawTransactionSpike = true
+		}
 	}
-	if !sawErrorRateSpike || !sawTotalErrorsSpike {
-		t.Fatalf("sampled summaries omitted independent error extrema: rate=%v total=%v items=%#v", sawErrorRateSpike, sawTotalErrorsSpike, items)
+	if !sawErrorRateSpike || !sawTotalErrorsSpike || !sawTransactionSpike {
+		t.Fatalf("sampled summaries omitted independent extrema: rate=%v total=%v transaction=%v items=%#v", sawErrorRateSpike, sawTotalErrorsSpike, sawTransactionSpike, items)
 	}
 }
 
@@ -284,4 +293,93 @@ func TestLoadArchiveIntervalSummariesForFiltersDownsampledReturnsBoundedSeries(t
 	if !sawFailureInterval {
 		t.Fatalf("filtered sample omitted the selected group's failure interval: %#v", items)
 	}
+}
+
+func TestLoadArchiveIntervalSummariesForFiltersDownsampledRetainsRareTransactionSeries(t *testing.T) {
+	archiveDir := t.TempDir()
+	start := time.Date(2026, 7, 15, 16, 0, 0, 0, time.UTC)
+	manifest := RunArchiveManifest{
+		SchemaVersion:         archiveSchemaVersion,
+		TestID:                "filtered-rare-series",
+		TransactionsFile:      "transactions.jsonl",
+		IntervalSummariesFile: "interval_summaries.jsonl",
+		TransactionCount:      40,
+		IntervalSummaryCount:  40,
+	}
+	manifestPath := filepath.Join(archiveDir, runArchiveManifestFileName)
+	writeJSONL(t, manifestPath, manifest)
+	summaries := make([]any, 40)
+	transactions := make([]any, 40)
+	const rareIndex = 13
+	for index := range summaries {
+		timestamp := start.Add(time.Duration(index) * time.Second)
+		summaries[index] = IntervalSummaryRecord{
+			Timestamp: timestamp,
+			TestID:    manifest.TestID,
+			Groups: map[string]*GroupLiveMetrics{
+				"Checkout": {Name: "Checkout", VUsers: 4},
+			},
+		}
+		action := "Steady"
+		if index == rareIndex {
+			action = "Rare"
+		}
+		transactions[index] = TransactionEvent{
+			Timestamp: timestamp, TestID: manifest.TestID, Group: "Checkout", ActionName: action, DurationMs: 100, Success: true,
+		}
+	}
+	writeJSONL(t, filepath.Join(archiveDir, manifest.IntervalSummariesFile), summaries...)
+	writeJSONL(t, filepath.Join(archiveDir, manifest.TransactionsFile), transactions...)
+	record := &storage.RunArchiveRecord{TestID: manifest.TestID, ArchivePath: archiveDir, ManifestPath: manifestPath}
+
+	items, total, err := loadArchiveIntervalSummariesForFiltersDownsampled(
+		record,
+		minArchiveSampleLimit,
+		"",
+		groupFilterQuery{Names: []string{"Checkout"}, Explicit: true},
+	)
+	if err != nil {
+		t.Fatalf("loadArchiveIntervalSummariesForFiltersDownsampled returned error: %v", err)
+	}
+	if total != 40 || len(items) > minArchiveSampleLimit {
+		t.Fatalf("filtered sample total=%d len=%d, want total 40 and at most %d items", total, len(items), minArchiveSampleLimit)
+	}
+	for _, item := range items {
+		if item.Timestamp.Equal(start.Add(rareIndex * time.Second)) {
+			rare := item.Transactions["Rare"]
+			if rare == nil || rare.TPS != 1 || rare.Count != 1 {
+				t.Fatalf("retained rare-series sample = %#v", item.Transactions)
+			}
+			return
+		}
+	}
+	t.Fatalf("filtered sample omitted the rare transaction's first finite point: %#v", items)
+}
+
+func TestDownsampleIntervalSummariesRetainsFirstFiniteTransactionPoint(t *testing.T) {
+	items := make([]IntervalSummaryRecord, 40)
+	start := time.Date(2026, 7, 16, 16, 0, 0, 0, time.UTC)
+	items[7].Transactions = map[string]*IntervalTransactionMetrics{
+		"Rare": {Name: "Rare", TPS: math.NaN(), AvgMs: 100},
+	}
+	items[13].Transactions = map[string]*IntervalTransactionMetrics{
+		"Rare": {Name: "Rare", TPS: 1, Count: 1, AvgMs: 100},
+	}
+	for index := range items {
+		items[index].Timestamp = start.Add(time.Duration(index) * time.Second)
+	}
+
+	sampled, err := downsampleIntervalSummaries(items, minArchiveSampleLimit)
+	if err != nil {
+		t.Fatalf("downsampleIntervalSummaries returned error: %v", err)
+	}
+	if len(sampled) > minArchiveSampleLimit {
+		t.Fatalf("sampled len = %d, want at most %d", len(sampled), minArchiveSampleLimit)
+	}
+	for _, item := range sampled {
+		if item.Timestamp.Equal(start.Add(13*time.Second)) && item.Transactions["Rare"] != nil {
+			return
+		}
+	}
+	t.Fatalf("sample omitted the first finite Rare point: %#v", sampled)
 }

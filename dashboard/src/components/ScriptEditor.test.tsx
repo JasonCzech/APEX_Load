@@ -5195,6 +5195,54 @@ describe('ScriptEditor', () => {
     }))
   })
 
+  it('renders semantic debugger colors in the console without flattening protocol output', async () => {
+    const oversizedResponse = `HTTP/1.1 503 Unavailable\n${'x'.repeat(66_000)}`
+    apiMock.startScriptDebugSession.mockResolvedValueOnce(debugSessionResponse({
+      group: 'Checkout Flow-debug',
+      protocol: 'http',
+      started_at: '2026-05-14T20:00:00Z',
+      completed_at: '2026-05-14T20:00:01Z',
+      success: true,
+      events: [],
+    }, {
+      logs: [
+        {
+          id: 'request-log', timestamp: '2026-05-14T20:00:00Z', level: 'info', category: 'request',
+          phase: 'action', action_index: 0, message: 'sent',
+          raw: 'GET /api/orders HTTP/1.1\nContent-Type: application/json\n{"customer_id":42}',
+        },
+        {
+          id: 'response-log', timestamp: '2026-05-14T20:00:01Z', level: 'error', category: 'response',
+          phase: 'action', action_index: 0, message: 'failed', raw: oversizedResponse,
+        },
+      ],
+    }))
+
+    await act(async () => {
+      root.render(<ScriptEditor scriptId="script-1" initialScript={initialScript} projectId="project-1" />)
+    })
+    await act(async () => {
+      findDebuggerRunButton(container)?.click()
+      await Promise.resolve()
+    })
+    await flushReact()
+
+    const lines = container.querySelectorAll('.debug-log-line')
+    expect(lines).toHaveLength(2)
+    expect(lines[0].querySelector('.debug-log-level.level-info')?.textContent).toBe('INFO')
+    expect(lines[0].querySelector('.debug-log-category')?.textContent).toBe('request')
+    expect(lines[0].querySelector('.debug-log-location')?.textContent).toBe('action[0]')
+    expect(lines[0].querySelector('.token-method')?.textContent).toBe('GET')
+    expect(lines[0].querySelector('.token-target')?.textContent).toBe('/api/orders')
+    expect(lines[0].querySelector('.token-header')?.textContent).toBe('Content-Type')
+    expect(lines[0].querySelector('.token-key')?.textContent).toBe('"customer_id"')
+    expect(lines[0].querySelector('.token-number')?.textContent).toBe('1.1')
+    expect(lines[1].querySelector('.debug-log-level.level-error')?.textContent).toBe('ERROR')
+    expect(lines[1].querySelector('.token-status-error')?.textContent).toBe('503')
+    expect(lines[1].querySelector('.debug-log-omission')?.textContent).toContain('characters omitted from display')
+    expect(lines[1].querySelector('.debug-log-raw')?.textContent?.length).toBeLessThan(oversizedResponse.length)
+  })
+
   it('surfaces an expired debugger session when polling returns not found', async () => {
     apiMock.startDraftScriptDebugSession.mockResolvedValueOnce(debugSessionResponse({
       group: 'Checkout Flow-debug',

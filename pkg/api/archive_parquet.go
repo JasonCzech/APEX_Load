@@ -21,6 +21,7 @@ type parquetTransactionEvent struct {
 	Group               string  `parquet:"name=group_name, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
 	Region              string  `parquet:"name=region, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
 	ActionName          string  `parquet:"name=action_name, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
+	BusinessTransaction bool    `parquet:"name=business_transaction, type=BOOLEAN"`
 	CorrelationID       string  `parquet:"name=correlation_id, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
 	TraceID             string  `parquet:"name=trace_id, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
 	SpanID              string  `parquet:"name=span_id, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
@@ -113,6 +114,7 @@ type parquetIntervalSummary struct {
 	P99Ms                  float64 `parquet:"name=p99_ms, type=DOUBLE"`
 	PercentileQuality      string  `parquet:"name=percentile_quality, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
 	GroupsJSON             string  `parquet:"name=groups_json, type=BYTE_ARRAY, convertedtype=UTF8"`
+	TransactionsJSON       string  `parquet:"name=transactions_json, type=BYTE_ARRAY, convertedtype=UTF8"`
 	BrowserJSON            string  `parquet:"name=browser_json, type=BYTE_ARRAY, convertedtype=UTF8"`
 	BrowserDeviceJSON      string  `parquet:"name=browser_by_device_json, type=BYTE_ARRAY, convertedtype=UTF8"`
 	TelemetryJSON          string  `parquet:"name=telemetry_json, type=BYTE_ARRAY, convertedtype=UTF8"`
@@ -222,6 +224,7 @@ func toParquetTransactions(items []TransactionEvent) []parquetTransactionEvent {
 			Group:               item.Group,
 			Region:              item.Region,
 			ActionName:          item.ActionName,
+			BusinessTransaction: item.BusinessTransaction,
 			CorrelationID:       item.CorrelationID,
 			TraceID:             item.TraceID,
 			SpanID:              item.SpanID,
@@ -326,6 +329,7 @@ func toParquetSummaries(items []IntervalSummaryRecord) []parquetIntervalSummary 
 			P99Ms:                  item.P99Ms,
 			PercentileQuality:      item.PercentileQuality,
 			GroupsJSON:             mustJSON(item.Groups),
+			TransactionsJSON:       mustJSON(item.Transactions),
 			BrowserJSON:            mustJSON(item.Browser),
 			BrowserDeviceJSON:      mustJSON(item.BrowserByDevice),
 			TelemetryJSON:          mustJSON(item.Telemetry),

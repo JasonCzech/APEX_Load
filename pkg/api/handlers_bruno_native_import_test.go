@@ -226,7 +226,8 @@ settings: {followRedirects: true, maxRedirects: 5, timeout: 1000}
 	}
 	requirement := inspection.Result.SecretRequirements[0]
 	if requirement.Value != "" || requirement.SourceValueAvailable ||
-		requirement.DestinationValuePreserved || !requirement.ExistingReference {
+		requirement.DestinationValuePreserved || !requirement.ExistingReference ||
+		requirement.PreservationUnavailableReason != brunoconvert.PreservationUnavailableReference {
 		t.Fatalf("non-migratable secret requirement = %#v", requirement)
 	}
 
@@ -246,6 +247,34 @@ settings: {followRedirects: true, maxRedirects: 5, timeout: 1000}
 		context.Background(), brunoImportTestProject, requirement.SuggestedName,
 	); !errors.Is(err, secretstore.ErrNotFound) {
 		t.Fatalf("non-migratable requirement unexpectedly created a secret: %v", err)
+	}
+}
+
+func TestBrunoNativeInspectExplainsUnresolvedCredentialValue(t *testing.T) {
+	server, _, _ := newBrunoImportAPITestServer(t)
+	inspection := inspectBrunoNativeFiles(t, server, brunoImportTestProject, []brunoInspectJSONFile{
+		{
+			Path:    "demo/opencollection.yml",
+			Content: "opencollection: 1.0.0\ninfo: {name: Unresolved credential}\n",
+		},
+		{
+			Path: "demo/request.yml",
+			Content: `info: {name: Unresolved credential, uid: unresolved-credential, type: http}
+http:
+  method: GET
+  url: https://example.test
+  auth: {type: basic, username: '{{username}}', password: '{{password}}'}
+`,
+		},
+	})
+	if len(inspection.Result.SecretRequirements) != 2 {
+		t.Fatalf("secret requirements = %#v", inspection.Result.SecretRequirements)
+	}
+	for _, requirement := range inspection.Result.SecretRequirements {
+		if requirement.DestinationValuePreserved ||
+			requirement.PreservationUnavailableReason != brunoconvert.PreservationUnavailableSourceValue {
+			t.Fatalf("unresolved requirement = %#v", requirement)
+		}
 	}
 }
 

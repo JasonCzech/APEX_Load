@@ -105,6 +105,12 @@ func TestWebSocketAuthorizerRechecksExactLocalSessionAfterLogout(t *testing.T) {
 	if !secondAuthorized() {
 		t.Fatal("logging out one local session revoked a separate session")
 	}
+	if _, err := server.activateLocalAuthGenerationForStartup(); err != nil {
+		t.Fatalf("rotate local auth generation: %v", err)
+	}
+	if secondAuthorized() {
+		t.Fatal("controller restart generation continued to authorize an existing websocket")
+	}
 }
 
 func TestWebSocketAuthorizerRejectsRotatedServiceAccountKey(t *testing.T) {

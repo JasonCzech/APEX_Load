@@ -328,6 +328,18 @@ func TestDockerLocalRunsAsNonRoot(t *testing.T) {
 	}
 }
 
+func TestDockerRuntimeImagePreparesBrunoArtifactDirectory(t *testing.T) {
+	dockerfile := readTextFile(t, "../../Dockerfile")
+	for _, check := range []string{
+		"mkdir -p /data /tmp /opt/playwright-driver /var/lib/apexload-bruno",
+		"chown -R 65532:65532 /data /tmp /var/lib/apexload-bruno",
+	} {
+		if !strings.Contains(dockerfile, check) {
+			t.Fatalf("Dockerfile must prepare the Bruno artifact directory for uid 65532; missing %q", check)
+		}
+	}
+}
+
 func TestDockerComposeIncludesGeneratorFleet(t *testing.T) {
 	compose := readTextFile(t, "../../compose.yaml")
 	for _, check := range []string{"generator:", "BINARY: generator", "APEXLOAD_GENERATORS: dns://generator:9090", "APEXLOAD_GENERATOR_MAX_VUSERS"} {
@@ -460,6 +472,9 @@ func TestDockerDataPlatformOverride(t *testing.T) {
 func TestDockerComposeIncludesBrunoRunnerAndSharedEncryptedArtifacts(t *testing.T) {
 	compose := readTextFile(t, "../../compose.yaml")
 	for _, check := range []string{
+		"bruno-artifacts-init:",
+		`chown -R 65532:65532 /var/lib/apexload-bruno`,
+		"condition: service_completed_successfully",
 		"bruno-runner:",
 		"context: ./runners/bruno",
 		"network_mode: service:generator",
@@ -469,6 +484,58 @@ func TestDockerComposeIncludesBrunoRunnerAndSharedEncryptedArtifacts(t *testing.
 	} {
 		if !strings.Contains(compose, check) {
 			t.Fatalf("compose.yaml missing Bruno runtime check %q", check)
+		}
+	}
+}
+
+func TestDockerComposeBrunoArtifactInitializationFailsClosed(t *testing.T) {
+	type composeDependency struct {
+		Condition string `yaml:"condition"`
+	}
+	var model struct {
+		Services map[string]yaml.Node `yaml:"services"`
+	}
+	if err := yaml.Unmarshal([]byte(readTextFile(t, "../../compose.yaml")), &model); err != nil {
+		t.Fatalf("parse compose.yaml: %v", err)
+	}
+
+	initNode, ok := model.Services["bruno-artifacts-init"]
+	if !ok {
+		t.Fatal("compose.yaml must define bruno-artifacts-init")
+	}
+	var initService struct {
+		Command []string `yaml:"command"`
+	}
+	if err := initNode.Decode(&initService); err != nil {
+		t.Fatalf("decode bruno-artifacts-init: %v", err)
+	}
+	if len(initService.Command) != 3 || initService.Command[0] != "sh" || initService.Command[1] != "-ec" {
+		t.Fatalf("Bruno artifact initialization must run with shell errexit enabled; command=%q", initService.Command)
+	}
+	command := initService.Command[2]
+	for _, required := range []string{
+		`if [ "$(stat -c '%u:%g' /var/lib/apexload-bruno)" != "65532:65532" ]; then`,
+		"chown -R 65532:65532 /var/lib/apexload-bruno",
+		"fi; chmod 0700 /var/lib/apexload-bruno",
+	} {
+		if !strings.Contains(command, required) {
+			t.Fatalf("Bruno artifact initialization command missing %q: %q", required, command)
+		}
+	}
+	for _, serviceName := range []string{"controller", "generator"} {
+		serviceNode, ok := model.Services[serviceName]
+		if !ok {
+			t.Fatalf("compose.yaml must define %s", serviceName)
+		}
+		var service struct {
+			DependsOn map[string]composeDependency `yaml:"depends_on"`
+		}
+		if err := serviceNode.Decode(&service); err != nil {
+			t.Fatalf("decode %s: %v", serviceName, err)
+		}
+		dependency, ok := service.DependsOn["bruno-artifacts-init"]
+		if !ok || dependency.Condition != "service_completed_successfully" {
+			t.Fatalf("%s must wait for successful Bruno artifact initialization", serviceName)
 		}
 	}
 }

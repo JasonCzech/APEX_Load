@@ -309,6 +309,7 @@ export interface components {
       "id": string;
       "key": string;
       "path": string;
+      "preservation_unavailable_reason"?: "source_value_unavailable" | "existing_secret_reference" | "destination_mapping_incomplete";
       "replacement": string;
       "source_value_available"?: boolean;
       "suggested_name": string;
@@ -13059,6 +13060,7 @@ export interface operations {
                   "p95_ms"?: number;
                   "p99_ms": number;
                   "server_telemetry"?: (Record<string, unknown>) | null;
+                  "tps": number;
                 }) | null>;
                 "policy"?: string;
                 "source_test_id": string;
@@ -13084,6 +13086,7 @@ export interface operations {
                   "p95_ms"?: number;
                   "p99_ms": number;
                   "server_telemetry"?: (Record<string, unknown>) | null;
+                  "tps": number;
                 }) | null>;
               }) | null;
               "created_at": string;
@@ -13441,6 +13444,7 @@ export interface operations {
                   "p95_ms"?: number;
                   "p99_ms": number;
                   "server_telemetry"?: (Record<string, unknown>) | null;
+                  "tps": number;
                 }) | null>;
                 "dependency_map"?: ({
                   "edges": Array<Record<string, unknown>>;
@@ -13547,6 +13551,7 @@ export interface operations {
                   "p95_ms"?: number;
                   "p99_ms": number;
                   "server_telemetry"?: (Record<string, unknown>) | null;
+                  "tps": number;
                 }) | null>;
                 "p50_ms": number;
                 "p90_ms": number;
@@ -13619,6 +13624,7 @@ export interface operations {
                   "p95_ms"?: number;
                   "p99_ms": number;
                   "server_telemetry"?: (Record<string, unknown>) | null;
+                  "tps": number;
                 }) | null>;
                 "target_tps"?: number;
                 "telemetry"?: ({
@@ -13680,6 +13686,7 @@ export interface operations {
                   "p95_ms"?: number;
                   "p99_ms": number;
                   "server_telemetry"?: (Record<string, unknown>) | null;
+                  "tps": number;
                 }) | null>;
               }) | null;
               "name": string;
@@ -17584,6 +17591,7 @@ export interface operations {
                   "total_server_busy_count"?: number;
                   "total_throttled_requests"?: number;
                 }) | null;
+                "tps": number;
               }) | null>;
               "policy"?: string;
               "source_test_id": string;
@@ -17652,6 +17660,7 @@ export interface operations {
                   "total_server_busy_count"?: number;
                   "total_throttled_requests"?: number;
                 }) | null;
+                "tps": number;
               }) | null>;
             }) | null;
             "created_at": string;
@@ -17967,6 +17976,7 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "server_telemetry"?: (Record<string, unknown>) | null;
+                "tps": number;
               }) | null>;
               "dependency_map"?: ({
                 "edges": Array<Record<string, unknown>>;
@@ -18073,6 +18083,7 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "server_telemetry"?: (Record<string, unknown>) | null;
+                "tps": number;
               }) | null>;
               "p50_ms": number;
               "p90_ms": number;
@@ -18145,6 +18156,7 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "server_telemetry"?: (Record<string, unknown>) | null;
+                "tps": number;
               }) | null>;
               "target_tps"?: number;
               "telemetry"?: ({
@@ -18206,6 +18218,7 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "server_telemetry"?: (Record<string, unknown>) | null;
+                "tps": number;
               }) | null>;
             }) | null>;
             "id": string;
@@ -18329,6 +18342,7 @@ export interface operations {
                   "total_server_busy_count"?: number;
                   "total_throttled_requests"?: number;
                 }) | null;
+                "tps": number;
               }) | null>;
               "dependency_map"?: ({
                 "edges": Array<{
@@ -18561,6 +18575,7 @@ export interface operations {
                   "total_server_busy_count"?: number;
                   "total_throttled_requests"?: number;
                 }) | null;
+                "tps": number;
               }) | null>;
               "p50_ms": number;
               "p90_ms": number;
@@ -18676,6 +18691,7 @@ export interface operations {
                   "total_server_busy_count"?: number;
                   "total_throttled_requests"?: number;
                 }) | null;
+                "tps": number;
               }) | null>;
               "target_tps"?: number;
               "telemetry"?: ({
@@ -18780,6 +18796,7 @@ export interface operations {
                   "total_server_busy_count"?: number;
                   "total_throttled_requests"?: number;
                 }) | null;
+                "tps": number;
               }) | null>;
             }) | null;
             "name": string;
@@ -27678,6 +27695,7 @@ export interface operations {
                   "p95_ms"?: number;
                   "p99_ms": number;
                   "server_telemetry"?: (Record<string, unknown>) | null;
+                  "tps": number;
                 }) | null>;
                 "policy"?: string;
                 "source_test_id": string;
@@ -27703,6 +27721,7 @@ export interface operations {
                   "p95_ms"?: number;
                   "p99_ms": number;
                   "server_telemetry"?: (Record<string, unknown>) | null;
+                  "tps": number;
                 }) | null>;
               }) | null;
               "created_at": string;
@@ -28060,6 +28079,7 @@ export interface operations {
                   "p95_ms"?: number;
                   "p99_ms": number;
                   "server_telemetry"?: (Record<string, unknown>) | null;
+                  "tps": number;
                 }) | null>;
                 "dependency_map"?: ({
                   "edges": Array<Record<string, unknown>>;
@@ -28166,6 +28186,7 @@ export interface operations {
                   "p95_ms"?: number;
                   "p99_ms": number;
                   "server_telemetry"?: (Record<string, unknown>) | null;
+                  "tps": number;
                 }) | null>;
                 "p50_ms": number;
                 "p90_ms": number;
@@ -28238,6 +28259,7 @@ export interface operations {
                   "p95_ms"?: number;
                   "p99_ms": number;
                   "server_telemetry"?: (Record<string, unknown>) | null;
+                  "tps": number;
                 }) | null>;
                 "target_tps"?: number;
                 "telemetry"?: ({
@@ -28299,6 +28321,7 @@ export interface operations {
                   "p95_ms"?: number;
                   "p99_ms": number;
                   "server_telemetry"?: (Record<string, unknown>) | null;
+                  "tps": number;
                 }) | null>;
               }) | null;
               "name": string;
@@ -33744,6 +33767,7 @@ export interface operations {
                   "total_server_busy_count"?: number;
                   "total_throttled_requests"?: number;
                 }) | null;
+                "tps": number;
               }) | null>;
               "policy"?: string;
               "source_test_id": string;
@@ -33812,6 +33836,7 @@ export interface operations {
                   "total_server_busy_count"?: number;
                   "total_throttled_requests"?: number;
                 }) | null;
+                "tps": number;
               }) | null>;
             }) | null;
             "created_at": string;
@@ -34127,6 +34152,7 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "server_telemetry"?: (Record<string, unknown>) | null;
+                "tps": number;
               }) | null>;
               "dependency_map"?: ({
                 "edges": Array<Record<string, unknown>>;
@@ -34233,6 +34259,7 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "server_telemetry"?: (Record<string, unknown>) | null;
+                "tps": number;
               }) | null>;
               "p50_ms": number;
               "p90_ms": number;
@@ -34305,6 +34332,7 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "server_telemetry"?: (Record<string, unknown>) | null;
+                "tps": number;
               }) | null>;
               "target_tps"?: number;
               "telemetry"?: ({
@@ -34366,6 +34394,7 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "server_telemetry"?: (Record<string, unknown>) | null;
+                "tps": number;
               }) | null>;
             }) | null>;
             "id": string;
@@ -34489,6 +34518,7 @@ export interface operations {
                   "total_server_busy_count"?: number;
                   "total_throttled_requests"?: number;
                 }) | null;
+                "tps": number;
               }) | null>;
               "dependency_map"?: ({
                 "edges": Array<{
@@ -34721,6 +34751,7 @@ export interface operations {
                   "total_server_busy_count"?: number;
                   "total_throttled_requests"?: number;
                 }) | null;
+                "tps": number;
               }) | null>;
               "p50_ms": number;
               "p90_ms": number;
@@ -34836,6 +34867,7 @@ export interface operations {
                   "total_server_busy_count"?: number;
                   "total_throttled_requests"?: number;
                 }) | null;
+                "tps": number;
               }) | null>;
               "target_tps"?: number;
               "telemetry"?: ({
@@ -34940,6 +34972,7 @@ export interface operations {
                   "total_server_busy_count"?: number;
                   "total_throttled_requests"?: number;
                 }) | null;
+                "tps": number;
               }) | null>;
             }) | null;
             "name": string;
@@ -45129,6 +45162,7 @@ export interface operations {
                   "total_server_busy_count"?: number;
                   "total_throttled_requests"?: number;
                 }) | null;
+                "tps": number;
               }) | null>;
               "policy"?: string;
               "source_test_id": string;
@@ -45197,6 +45231,7 @@ export interface operations {
                   "total_server_busy_count"?: number;
                   "total_throttled_requests"?: number;
                 }) | null;
+                "tps": number;
               }) | null>;
             }) | null;
             "created_at": string;
@@ -45512,6 +45547,7 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "server_telemetry"?: (Record<string, unknown>) | null;
+                "tps": number;
               }) | null>;
               "dependency_map"?: ({
                 "edges": Array<Record<string, unknown>>;
@@ -45618,6 +45654,7 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "server_telemetry"?: (Record<string, unknown>) | null;
+                "tps": number;
               }) | null>;
               "p50_ms": number;
               "p90_ms": number;
@@ -45690,6 +45727,7 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "server_telemetry"?: (Record<string, unknown>) | null;
+                "tps": number;
               }) | null>;
               "target_tps"?: number;
               "telemetry"?: ({
@@ -45751,6 +45789,7 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "server_telemetry"?: (Record<string, unknown>) | null;
+                "tps": number;
               }) | null>;
             }) | null>;
             "id": string;
@@ -45874,6 +45913,7 @@ export interface operations {
                   "total_server_busy_count"?: number;
                   "total_throttled_requests"?: number;
                 }) | null;
+                "tps": number;
               }) | null>;
               "dependency_map"?: ({
                 "edges": Array<{
@@ -46106,6 +46146,7 @@ export interface operations {
                   "total_server_busy_count"?: number;
                   "total_throttled_requests"?: number;
                 }) | null;
+                "tps": number;
               }) | null>;
               "p50_ms": number;
               "p90_ms": number;
@@ -46221,6 +46262,7 @@ export interface operations {
                   "total_server_busy_count"?: number;
                   "total_throttled_requests"?: number;
                 }) | null;
+                "tps": number;
               }) | null>;
               "target_tps"?: number;
               "telemetry"?: ({
@@ -46325,6 +46367,7 @@ export interface operations {
                   "total_server_busy_count"?: number;
                   "total_throttled_requests"?: number;
                 }) | null;
+                "tps": number;
               }) | null>;
             }) | null;
             "name": string;
@@ -50928,6 +50971,7 @@ export interface operations {
                   "p95_ms"?: number;
                   "p99_ms": number;
                   "server_telemetry"?: (Record<string, unknown>) | null;
+                  "tps": number;
                 }) | null>;
                 "policy"?: string;
                 "source_test_id": string;
@@ -50953,6 +50997,7 @@ export interface operations {
                   "p95_ms"?: number;
                   "p99_ms": number;
                   "server_telemetry"?: (Record<string, unknown>) | null;
+                  "tps": number;
                 }) | null>;
               }) | null;
               "created_at": string;
@@ -51310,6 +51355,7 @@ export interface operations {
                   "p95_ms"?: number;
                   "p99_ms": number;
                   "server_telemetry"?: (Record<string, unknown>) | null;
+                  "tps": number;
                 }) | null>;
                 "dependency_map"?: ({
                   "edges": Array<Record<string, unknown>>;
@@ -51416,6 +51462,7 @@ export interface operations {
                   "p95_ms"?: number;
                   "p99_ms": number;
                   "server_telemetry"?: (Record<string, unknown>) | null;
+                  "tps": number;
                 }) | null>;
                 "p50_ms": number;
                 "p90_ms": number;
@@ -51488,6 +51535,7 @@ export interface operations {
                   "p95_ms"?: number;
                   "p99_ms": number;
                   "server_telemetry"?: (Record<string, unknown>) | null;
+                  "tps": number;
                 }) | null>;
                 "target_tps"?: number;
                 "telemetry"?: ({
@@ -51549,6 +51597,7 @@ export interface operations {
                   "p95_ms"?: number;
                   "p99_ms": number;
                   "server_telemetry"?: (Record<string, unknown>) | null;
+                  "tps": number;
                 }) | null>;
               }) | null;
               "name": string;
@@ -52026,6 +52075,7 @@ export interface operations {
                   "p95_ms"?: number;
                   "p99_ms": number;
                   "server_telemetry"?: (Record<string, unknown>) | null;
+                  "tps": number;
                 }) | null>;
                 "policy"?: string;
                 "source_test_id": string;
@@ -52051,6 +52101,7 @@ export interface operations {
                   "p95_ms"?: number;
                   "p99_ms": number;
                   "server_telemetry"?: (Record<string, unknown>) | null;
+                  "tps": number;
                 }) | null>;
               }) | null;
               "created_at": string;
@@ -52408,6 +52459,7 @@ export interface operations {
                   "p95_ms"?: number;
                   "p99_ms": number;
                   "server_telemetry"?: (Record<string, unknown>) | null;
+                  "tps": number;
                 }) | null>;
                 "dependency_map"?: ({
                   "edges": Array<Record<string, unknown>>;
@@ -52514,6 +52566,7 @@ export interface operations {
                   "p95_ms"?: number;
                   "p99_ms": number;
                   "server_telemetry"?: (Record<string, unknown>) | null;
+                  "tps": number;
                 }) | null>;
                 "p50_ms": number;
                 "p90_ms": number;
@@ -52586,6 +52639,7 @@ export interface operations {
                   "p95_ms"?: number;
                   "p99_ms": number;
                   "server_telemetry"?: (Record<string, unknown>) | null;
+                  "tps": number;
                 }) | null>;
                 "target_tps"?: number;
                 "telemetry"?: ({
@@ -52647,6 +52701,7 @@ export interface operations {
                   "p95_ms"?: number;
                   "p99_ms": number;
                   "server_telemetry"?: (Record<string, unknown>) | null;
+                  "tps": number;
                 }) | null>;
               }) | null;
               "name": string;
@@ -53124,6 +53179,7 @@ export interface operations {
                   "p95_ms"?: number;
                   "p99_ms": number;
                   "server_telemetry"?: (Record<string, unknown>) | null;
+                  "tps": number;
                 }) | null>;
                 "policy"?: string;
                 "source_test_id": string;
@@ -53149,6 +53205,7 @@ export interface operations {
                   "p95_ms"?: number;
                   "p99_ms": number;
                   "server_telemetry"?: (Record<string, unknown>) | null;
+                  "tps": number;
                 }) | null>;
               }) | null;
               "created_at": string;
@@ -53506,6 +53563,7 @@ export interface operations {
                   "p95_ms"?: number;
                   "p99_ms": number;
                   "server_telemetry"?: (Record<string, unknown>) | null;
+                  "tps": number;
                 }) | null>;
                 "dependency_map"?: ({
                   "edges": Array<Record<string, unknown>>;
@@ -53612,6 +53670,7 @@ export interface operations {
                   "p95_ms"?: number;
                   "p99_ms": number;
                   "server_telemetry"?: (Record<string, unknown>) | null;
+                  "tps": number;
                 }) | null>;
                 "p50_ms": number;
                 "p90_ms": number;
@@ -53684,6 +53743,7 @@ export interface operations {
                   "p95_ms"?: number;
                   "p99_ms": number;
                   "server_telemetry"?: (Record<string, unknown>) | null;
+                  "tps": number;
                 }) | null>;
                 "target_tps"?: number;
                 "telemetry"?: ({
@@ -53745,6 +53805,7 @@ export interface operations {
                   "p95_ms"?: number;
                   "p99_ms": number;
                   "server_telemetry"?: (Record<string, unknown>) | null;
+                  "tps": number;
                 }) | null>;
               }) | null;
               "name": string;
@@ -54222,6 +54283,7 @@ export interface operations {
                   "p95_ms"?: number;
                   "p99_ms": number;
                   "server_telemetry"?: (Record<string, unknown>) | null;
+                  "tps": number;
                 }) | null>;
                 "policy"?: string;
                 "source_test_id": string;
@@ -54247,6 +54309,7 @@ export interface operations {
                   "p95_ms"?: number;
                   "p99_ms": number;
                   "server_telemetry"?: (Record<string, unknown>) | null;
+                  "tps": number;
                 }) | null>;
               }) | null;
               "created_at": string;
@@ -54604,6 +54667,7 @@ export interface operations {
                   "p95_ms"?: number;
                   "p99_ms": number;
                   "server_telemetry"?: (Record<string, unknown>) | null;
+                  "tps": number;
                 }) | null>;
                 "dependency_map"?: ({
                   "edges": Array<Record<string, unknown>>;
@@ -54710,6 +54774,7 @@ export interface operations {
                   "p95_ms"?: number;
                   "p99_ms": number;
                   "server_telemetry"?: (Record<string, unknown>) | null;
+                  "tps": number;
                 }) | null>;
                 "p50_ms": number;
                 "p90_ms": number;
@@ -54782,6 +54847,7 @@ export interface operations {
                   "p95_ms"?: number;
                   "p99_ms": number;
                   "server_telemetry"?: (Record<string, unknown>) | null;
+                  "tps": number;
                 }) | null>;
                 "target_tps"?: number;
                 "telemetry"?: ({
@@ -54843,6 +54909,7 @@ export interface operations {
                   "p95_ms"?: number;
                   "p99_ms": number;
                   "server_telemetry"?: (Record<string, unknown>) | null;
+                  "tps": number;
                 }) | null>;
               }) | null;
               "name": string;
@@ -55320,6 +55387,7 @@ export interface operations {
                   "p95_ms"?: number;
                   "p99_ms": number;
                   "server_telemetry"?: (Record<string, unknown>) | null;
+                  "tps": number;
                 }) | null>;
                 "policy"?: string;
                 "source_test_id": string;
@@ -55345,6 +55413,7 @@ export interface operations {
                   "p95_ms"?: number;
                   "p99_ms": number;
                   "server_telemetry"?: (Record<string, unknown>) | null;
+                  "tps": number;
                 }) | null>;
               }) | null;
               "created_at": string;
@@ -55702,6 +55771,7 @@ export interface operations {
                   "p95_ms"?: number;
                   "p99_ms": number;
                   "server_telemetry"?: (Record<string, unknown>) | null;
+                  "tps": number;
                 }) | null>;
                 "dependency_map"?: ({
                   "edges": Array<Record<string, unknown>>;
@@ -55808,6 +55878,7 @@ export interface operations {
                   "p95_ms"?: number;
                   "p99_ms": number;
                   "server_telemetry"?: (Record<string, unknown>) | null;
+                  "tps": number;
                 }) | null>;
                 "p50_ms": number;
                 "p90_ms": number;
@@ -55880,6 +55951,7 @@ export interface operations {
                   "p95_ms"?: number;
                   "p99_ms": number;
                   "server_telemetry"?: (Record<string, unknown>) | null;
+                  "tps": number;
                 }) | null>;
                 "target_tps"?: number;
                 "telemetry"?: ({
@@ -55941,6 +56013,7 @@ export interface operations {
                   "p95_ms"?: number;
                   "p99_ms": number;
                   "server_telemetry"?: (Record<string, unknown>) | null;
+                  "tps": number;
                 }) | null>;
               }) | null;
               "name": string;
@@ -70990,6 +71063,7 @@ export interface operations {
                   "total_server_busy_count"?: number;
                   "total_throttled_requests"?: number;
                 }) | null;
+                "tps": number;
               }) | null>;
               "policy"?: string;
               "source_test_id": string;
@@ -71058,6 +71132,7 @@ export interface operations {
                   "total_server_busy_count"?: number;
                   "total_throttled_requests"?: number;
                 }) | null;
+                "tps": number;
               }) | null>;
             }) | null;
             "created_at": string;
@@ -71373,6 +71448,7 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "server_telemetry"?: (Record<string, unknown>) | null;
+                "tps": number;
               }) | null>;
               "dependency_map"?: ({
                 "edges": Array<Record<string, unknown>>;
@@ -71479,6 +71555,7 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "server_telemetry"?: (Record<string, unknown>) | null;
+                "tps": number;
               }) | null>;
               "p50_ms": number;
               "p90_ms": number;
@@ -71551,6 +71628,7 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "server_telemetry"?: (Record<string, unknown>) | null;
+                "tps": number;
               }) | null>;
               "target_tps"?: number;
               "telemetry"?: ({
@@ -71612,6 +71690,7 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "server_telemetry"?: (Record<string, unknown>) | null;
+                "tps": number;
               }) | null>;
             }) | null>;
             "id": string;
@@ -71735,6 +71814,7 @@ export interface operations {
                   "total_server_busy_count"?: number;
                   "total_throttled_requests"?: number;
                 }) | null;
+                "tps": number;
               }) | null>;
               "dependency_map"?: ({
                 "edges": Array<{
@@ -71967,6 +72047,7 @@ export interface operations {
                   "total_server_busy_count"?: number;
                   "total_throttled_requests"?: number;
                 }) | null;
+                "tps": number;
               }) | null>;
               "p50_ms": number;
               "p90_ms": number;
@@ -72082,6 +72163,7 @@ export interface operations {
                   "total_server_busy_count"?: number;
                   "total_throttled_requests"?: number;
                 }) | null;
+                "tps": number;
               }) | null>;
               "target_tps"?: number;
               "telemetry"?: ({
@@ -72186,6 +72268,7 @@ export interface operations {
                   "total_server_busy_count"?: number;
                   "total_throttled_requests"?: number;
                 }) | null;
+                "tps": number;
               }) | null>;
             }) | null;
             "name": string;

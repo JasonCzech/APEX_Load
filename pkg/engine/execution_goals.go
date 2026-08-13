@@ -30,6 +30,14 @@ func hasExecutionGoals(runLogic dsl.RunLogicConfig) bool {
 	return runLogic.GlobalIterations > 0 || runLogic.MaxTransactions > 0
 }
 
+// hasExactSingleExecutionGoal identifies the narrow case where one admitted
+// VUser can mathematically finish the shared run before any peer is entitled to
+// start. Only this case needs lazy peer initialization; larger goals retain the
+// all-user startup barrier and its fail-fast guarantee.
+func hasExactSingleExecutionGoal(runLogic dsl.RunLogicConfig) bool {
+	return runLogic.GlobalIterations == 1 || runLogic.MaxTransactions == 1
+}
+
 // NewExecutionGoalLimiter builds a limiter that stops the run once a shared
 // goal is reached. The cancel function must only stop VUsers from *starting*
 // new iterations/transactions: a VUser that already claimed a reservation via

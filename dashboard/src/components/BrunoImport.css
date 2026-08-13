@@ -1,9 +1,14 @@
 .bruno-import {
   display: flex;
+  width: 100%;
+  min-width: 0;
   flex-direction: column;
   gap: 18px;
-  max-width: 1180px;
-  margin: 0 auto;
+  max-width: none;
+  margin: 0;
+  box-sizing: border-box;
+  container-name: bruno-import;
+  container-type: inline-size;
 }
 
 .bruno-import-header,
@@ -20,6 +25,13 @@
 .bruno-card h3,
 .bruno-card h4 {
   margin: 0;
+}
+
+.bruno-import-header > div,
+.bruno-card-heading > div,
+.bruno-commit-bar > div,
+.bruno-projection > div {
+  min-width: 0;
 }
 
 .bruno-import-header p,
@@ -47,10 +59,14 @@
 }
 
 .bruno-card {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
   padding: 18px 20px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--bg-card);
+  box-sizing: border-box;
 }
 
 .bruno-stat,
@@ -140,6 +156,35 @@
   color: var(--text-muted);
 }
 
+.bruno-source-recommendation {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-top: 12px;
+  padding: 11px 12px;
+  border: 1px solid color-mix(in srgb, var(--success) 42%, var(--border));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--success) 7%, transparent);
+}
+
+.bruno-source-recommendation.warning {
+  border-color: color-mix(in srgb, var(--warning) 45%, var(--border));
+  background: color-mix(in srgb, var(--warning) 8%, transparent);
+}
+
+.bruno-source-recommendation > div,
+.bruno-source-recommendation span {
+  display: block;
+}
+
+.bruno-source-recommendation span {
+  margin-top: 3px;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 .bruno-options-grid label,
 .bruno-binding-list label {
   display: flex;
@@ -172,6 +217,40 @@
   border-color: var(--accent);
 }
 
+.bruno-folder-create {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  margin: 10px 0 14px;
+}
+
+.bruno-folder-create label {
+  display: flex;
+  min-width: min(100%, 360px);
+  flex-direction: column;
+  gap: 5px;
+}
+
+.bruno-folder-create label > span {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.bruno-folder-create input {
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  outline: none;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+}
+
+.bruno-folder-create input:focus {
+  border-color: var(--accent);
+}
+
 .bruno-checks {
   margin: 12px 0 16px;
 }
@@ -198,8 +277,12 @@
 }
 
 .bruno-native-table-wrap {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
   overflow-x: auto;
   margin-top: 16px;
+  box-sizing: border-box;
 }
 
 .bruno-native-table {
@@ -361,6 +444,36 @@
   display: grid;
   grid-template-columns: minmax(0, 1.35fr) minmax(300px, 0.65fr);
   gap: 18px;
+}
+
+.bruno-validation-guidance ol {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 9px;
+  margin: 16px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.bruno-validation-guidance li {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 11px;
+  border: 1px solid color-mix(in srgb, var(--success) 38%, var(--border));
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--success) 5%, transparent);
+}
+
+.bruno-validation-guidance li.warning {
+  border-color: color-mix(in srgb, var(--warning) 42%, var(--border));
+  background: color-mix(in srgb, var(--warning) 7%, transparent);
+}
+
+.bruno-validation-guidance li span {
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.45;
 }
 
 .bruno-tree {
@@ -612,11 +725,13 @@
   font-size: 12px;
 }
 
-@media (max-width: 820px) {
+@container bruno-import (max-width: 820px) {
   .bruno-import-header,
   .bruno-card-heading,
   .bruno-commit-bar,
-  .bruno-projection {
+  .bruno-projection,
+  .bruno-source-recommendation,
+  .bruno-folder-create {
     align-items: stretch;
     flex-direction: column;
   }
@@ -627,6 +742,26 @@
     grid-template-columns: 1fr;
   }
 
+  .bruno-binding-list label {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Viewport fallback for browsers without container-query support. */
+@media (max-width: 820px) {
+  .bruno-import-header,
+  .bruno-card-heading,
+  .bruno-commit-bar,
+  .bruno-projection,
+  .bruno-source-recommendation,
+  .bruno-folder-create {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .bruno-mode-selector,
+  .bruno-options-grid,
+  .bruno-summary-grid,
   .bruno-binding-list label {
     grid-template-columns: 1fr;
   }

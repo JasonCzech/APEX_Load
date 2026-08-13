@@ -21,9 +21,10 @@ const (
 	maxArchiveComparisonRuns = 10
 	maxArchivePageLimit      = 1000
 	// The downsampler reserves two temporal endpoints plus independent min/max
-	// slots for every resource safety dimension. Keeping the public minimum at
-	// this bound prevents a small request from silently dropping critical extrema.
-	minArchiveSampleLimit = 16
+	// slots for every resource or interval-summary dimension. Keeping the public
+	// minimum at this bound prevents a small request from silently dropping
+	// critical extrema.
+	minArchiveSampleLimit = 20
 	maxArchiveSampleLimit = 5000
 )
 const (

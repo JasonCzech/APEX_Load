@@ -12,6 +12,7 @@ import CommandCenterPrototype, {
 import { buildLoadModelProfile, plannedGroupLoadAt } from './commandCenterLoadModel'
 import { buildScenarioRunRows, type CommandGroup } from './commandCenterScenarioRows'
 import { liveEvidenceCacheKey } from './commandCenterEvidenceModel'
+import { transactionChartSeriesKey } from './transactionChartSeries'
 import { EXECUTION_ARCHIVE_FINALIZATION_TIMEOUT_MS } from './useExecutionTestPolling'
 import type { MetricsHistoryPoint, TestSummary, TransactionEvent, TxMetrics } from '../types'
 
@@ -161,6 +162,64 @@ describe('CommandCenterPrototype', () => {
     const selectedGroups = [commandGroup('Wikipedia', 10)]
 
     expect(selectedGroupLoadImpactData(data, selectedGroups)).toEqual(data)
+  })
+
+  it('omits global transaction series from client-scoped group data', () => {
+    const checkoutTpsKey = transactionChartSeriesKey('Checkout / submit', 'tps')
+    const browseAvgKey = transactionChartSeriesKey('Browse:catalog', 'avgMs')
+    const data: MetricsHistoryPoint[] = [{
+      time: '12:00',
+      timestampMs: Date.parse('2026-06-08T12:00:00Z'),
+      vusers: 20,
+      tps: 10,
+      avgMs: 150,
+      errorPct: 1,
+      p50: 100,
+      p90: 200,
+      p95: 250,
+      p99: 300,
+      Checkout_vusers: 10,
+      Checkout_tps: 4,
+      Checkout_avgMs: 120,
+      Checkout_transactions: 4,
+      Checkout_errors: 0,
+      [checkoutTpsKey]: 4,
+      [browseAvgKey]: 900,
+    }]
+
+    const [scoped] = selectedGroupLoadImpactData(data, [commandGroup('Checkout', 10)])
+
+    expect(scoped.tps).toBe(4)
+    expect(checkoutTpsKey in scoped).toBe(false)
+    expect(browseAvgKey in scoped).toBe(false)
+    expect(data[0][checkoutTpsKey]).toBe(4)
+    expect(data[0][browseAvgKey]).toBe(900)
+  })
+
+  it('preserves a reported selected-group zero and only falls back when VUsers are absent', () => {
+    const base: MetricsHistoryPoint = {
+      time: '12:00',
+      timestampMs: Date.parse('2026-06-08T12:00:00Z'),
+      vusers: 8,
+      tps: 12,
+      avgMs: 100,
+      errorPct: 0,
+      p50: 90,
+      p90: 120,
+      p95: 140,
+      p99: 180,
+      Checkout_tps: 0,
+      Checkout_avgMs: 0,
+      Checkout_transactions: 0,
+      Checkout_errors: 0,
+    }
+    const group = commandGroup('Checkout', 10)
+
+    const [reportedZero] = selectedGroupLoadImpactData([{ ...base, Checkout_vusers: 0 }], [group])
+    const [missingVusers] = selectedGroupLoadImpactData([base], [group])
+
+    expect(reportedZero.vusers).toBe(0)
+    expect(missingVusers.vusers).toBe(8)
   })
 
   it('does not dilute aggregate percentiles when a selected group omits one', () => {
@@ -633,6 +692,108 @@ describe('CommandCenterPrototype', () => {
     expect(testPollCalls).toBe(callsAtTimeout + 1)
     expect(container.textContent).toContain('Open Results Archive')
     expect(container.textContent).not.toContain('Check again')
+  })
+
+  it('restores every archived transaction series after a completed run reload', async () => {
+    const terminalRun: TestSummary = {
+      id: 'completed-transactions',
+      name: 'Completed transaction run',
+      status: 'COMPLETE',
+      total_vusers: 6,
+      duration: '25s',
+      created_at: '2026-06-08T13:00:00Z',
+      ended_at: '2026-06-08T13:00:25Z',
+      groups: [{
+        name: 'smoke',
+        protocol: 'http',
+        script_id: 'script-1',
+        script_name: 'Multi transaction script',
+        vusers: 3,
+      }, {
+        name: 'browse',
+        protocol: 'http',
+        script_id: 'script-2',
+        script_name: 'Second transaction script',
+        vusers: 3,
+      }],
+      archive: {
+        test_id: 'completed-transactions',
+        schema_version: 'apexload.archive.v2',
+        archive_path: '/archives/completed-transactions',
+        manifest_path: '/archives/completed-transactions/manifest.json',
+        transaction_count: 24,
+        resource_sample_count: 1,
+        interval_summary_count: 1,
+        created_at: '2026-06-08T13:00:00Z',
+        completed_at: '2026-06-08T13:00:25Z',
+      },
+    }
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async input => {
+      const url = new URL(requestUrl(input), 'http://localhost')
+      if (url.pathname === '/api/v1/tests/completed-transactions/archive/summaries') {
+        const selectedGroups = url.searchParams.getAll('groups')
+        return jsonResponse({
+          ...(selectedGroups.length > 0 ? { filters: { groups: selectedGroups } } : {}),
+          summaries: [{
+            timestamp: '2026-06-08T13:00:24Z',
+            test_id: terminalRun.id,
+            test_name: terminalRun.name,
+            active_vusers: 3,
+            tps: 24,
+            avg_response_ms: 10,
+            error_pct: 0,
+            total_transactions: 24,
+            total_errors: 0,
+            p50_ms: 8,
+            p90_ms: 12,
+            p95_ms: 14,
+            p99_ms: 16,
+            transactions: {
+              Login: { name: 'Login', tps: 12, count: 12, errors: 0, avg_ms: 8 },
+              Search: { name: 'Search', tps: 12, count: 12, errors: 0, avg_ms: 12 },
+            },
+          }],
+        })
+      }
+      return jsonResponse({})
+    })
+
+    await act(async () => {
+      root.render(<CommandCenterPrototype testId={terminalRun.id} initialTest={terminalRun} history={[]} />)
+    })
+    await flush()
+    await click(buttonNamed('Graph Wall'))
+    await flush()
+
+    const responseTimeChart = container.querySelector('[aria-label^="Response Time (ms) chart."]')
+    const tpsChart = container.querySelector('[aria-label^="Transactions Per Second chart."]')
+    expect(responseTimeChart?.getAttribute('aria-label')).toContain('Transaction · Login')
+    expect(responseTimeChart?.getAttribute('aria-label')).toContain('Transaction · Search')
+    expect(tpsChart?.getAttribute('aria-label')).toContain('Transaction · Login')
+    expect(tpsChart?.getAttribute('aria-label')).toContain('Transaction · Search')
+
+    const groupSelection = container.querySelector('[aria-label="Group selection"]')
+    const smokeVisibility = groupSelection?.querySelector<HTMLButtonElement>('[aria-label="smoke graph visibility"]')
+    expect(smokeVisibility).not.toBeNull()
+    await click(smokeVisibility!)
+    await flush()
+
+    expect(responseTimeChart?.getAttribute('aria-label')).not.toContain('Transaction · Login')
+    expect(responseTimeChart?.getAttribute('aria-label')).not.toContain('Transaction · Search')
+    expect(tpsChart?.getAttribute('aria-label')).not.toContain('Transaction · Login')
+    expect(tpsChart?.getAttribute('aria-label')).not.toContain('Transaction · Search')
+
+    await click(smokeVisibility!)
+    await flush()
+
+    expect(responseTimeChart?.getAttribute('aria-label')).toContain('Transaction · Login')
+    expect(responseTimeChart?.getAttribute('aria-label')).toContain('Transaction · Search')
+    expect(tpsChart?.getAttribute('aria-label')).toContain('Transaction · Login')
+    expect(tpsChart?.getAttribute('aria-label')).toContain('Transaction · Search')
+    expect(fetchMock.mock.calls.some(([input]) => {
+      const url = new URL(requestUrl(input), 'http://localhost')
+      return url.pathname.endsWith('/archive/summaries') && url.searchParams.get('sample_limit') === '5000'
+    })).toBe(true)
   })
 
   it('switches between the OPS View and Graph Wall variants from the sidebar', async () => {

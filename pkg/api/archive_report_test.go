@@ -1284,6 +1284,9 @@ func TestRunArchiveWriterPersistsThroughputGapSummary(t *testing.T) {
 		ThroughputGapPct:       20,
 		ThroughputTargetMissed: true,
 		TotalTx:                40,
+		Transactions: map[string]*TxMetrics{
+			"Search": {Name: "Search", TPS: 4, Count: 5, Errors: 1, AvgMs: 120},
+		},
 		Telemetry: &TelemetryHealth{
 			SampleAgeMs:              2100,
 			GeneratorProcessingLagMs: 650,
@@ -1310,6 +1313,20 @@ func TestRunArchiveWriterPersistsThroughputGapSummary(t *testing.T) {
 	}
 	if summaries[0].TargetTPS != 50 || summaries[0].ThroughputGapPct != 20 || !summaries[0].ThroughputTargetMissed {
 		t.Fatalf("summary = %#v, want throughput gap evidence persisted", summaries[0])
+	}
+	if search := summaries[0].Transactions["Search"]; search == nil || search.TPS != 4 || search.Count != 5 || search.Errors != 1 || search.AvgMs != 120 {
+		t.Fatalf("summary transaction metrics = %#v, want compact Search series persisted", summaries[0].Transactions)
+	}
+	summaryData, err := os.ReadFile(filepath.Join(record.ArchivePath, "interval_summaries.jsonl"))
+	if err != nil {
+		t.Fatalf("ReadFile interval summaries returned error: %v", err)
+	}
+	var summaryJSON map[string]json.RawMessage
+	if err := json.Unmarshal(bytes.TrimSpace(summaryData), &summaryJSON); err != nil {
+		t.Fatalf("Unmarshal interval summary JSONL returned error: %v", err)
+	}
+	if _, ok := summaryJSON["transactions"]; !ok {
+		t.Fatalf("durable interval summary JSONL omitted transactions: %s", summaryData)
 	}
 	if summaries[0].Telemetry == nil || summaries[0].Telemetry.SampleAgeMs != 2100 || summaries[0].Telemetry.GeneratorProcessingLagMs != 650 {
 		t.Fatalf("summary telemetry = %#v, want telemetry lag evidence persisted", summaries[0].Telemetry)

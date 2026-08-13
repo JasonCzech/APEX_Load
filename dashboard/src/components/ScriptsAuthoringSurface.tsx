@@ -171,8 +171,10 @@ function ScriptsAuthoringContent({
         <JMeterImport initialFile={importFiles?.[0] || null} projectId={projectId} onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} />,
       )
     case 'bruno-import':
-      return renderCreateOptionsSurface(
-        <BrunoImport initialFiles={importFiles || undefined} initialOutputMode={importMode === 'native_requests' ? 'native_requests' : null} projectId={projectId} onImported={onImported} onConfigureSecrets={onConfigureSecrets} onClose={onOpenCreateOptions} />,
+      return createOptionsSurface(
+        <BrunoImport initialFiles={importFiles || undefined} initialOutputMode={importMode === 'native_requests' ? 'native_requests' : null} projectId={projectId} folderId={destinationFolderValue} onFolderChange={setDestinationFolderId} onImported={onImported} onConfigureSecrets={onConfigureSecrets} onClose={onOpenCreateOptions} />,
+        false,
+        null,
       )
     case 'recorder':
       return renderCreateOptionsSurface(

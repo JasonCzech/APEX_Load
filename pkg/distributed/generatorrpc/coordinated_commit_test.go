@@ -194,6 +194,88 @@ func stageCoordinatedHTTPWork(t *testing.T, service *Service, testID, scriptID, 
 	}
 }
 
+func TestExecutionCommitPublishesZeroLiveVUsersBeforeFutureBarrier(t *testing.T) {
+	t.Setenv("APEXLOAD_ARCHIVE_DIR", t.TempDir())
+	t.Setenv("APEXLOAD_GENERATOR_ARCHIVE_MIN_FREE_BYTES", "1")
+	service := newIsolatedService(t, 20, WithExecution())
+	stageCoordinatedHTTPWork(t, service, "future-zero", "future-zero-script", "http://127.0.0.1:1", "/never-before-barrier")
+	id, subscriber, _, err := service.registerScopedSubscriber(0, "future-zero")
+	if err != nil {
+		t.Fatalf("register subscriber: %v", err)
+	}
+	defer service.unregisterSubscriber(id)
+
+	startAt := time.Now().Add(500 * time.Millisecond)
+	ack, err := service.CommitWork(context.Background(), &pb.WorkCommitRequest{TestId: "future-zero", StartAtUnixNano: startAt.UnixNano()})
+	if err != nil || !ack.GetAccepted() {
+		t.Fatalf("CommitWork = (%#v, %v)", ack, err)
+	}
+
+	var running *pb.MetricsBatch
+	deadline := time.Now().Add(250 * time.Millisecond)
+	for running == nil && time.Now().Before(deadline) {
+		batch := subscriber.pop()
+		if batch != nil && batch.GetLifecycleState() == "RUNNING" {
+			running = batch
+			break
+		}
+		time.Sleep(time.Millisecond)
+	}
+	if running == nil {
+		t.Fatal("missing pre-barrier RUNNING lifecycle batch")
+	}
+	if got := running.GetStats().GetActiveVusers(); got != 0 {
+		t.Fatalf("pre-barrier global active VUsers = %d, want 0", got)
+	}
+	if len(running.GetGroups()) != 1 || running.GetGroups()[0].GetActiveVusers() != 0 {
+		t.Fatalf("pre-barrier group metrics = %#v, want one explicit zero", running.GetGroups())
+	}
+	service.StopTest(context.Background(), &pb.StopRequest{TestId: "future-zero"})
+}
+
+func TestCommitWithoutBarrierPreservesUncoordinatedStart(t *testing.T) {
+	t.Setenv("APEXLOAD_ARCHIVE_DIR", t.TempDir())
+	t.Setenv("APEXLOAD_GENERATOR_ARCHIVE_MIN_FREE_BYTES", "1")
+	requestStarted := make(chan struct{}, 1)
+	sut := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, request *http.Request) {
+		select {
+		case requestStarted <- struct{}{}:
+		default:
+		}
+		<-request.Context().Done()
+	}))
+	t.Cleanup(sut.Close)
+	service := newIsolatedService(t, 20, WithExecution())
+	stageCoordinatedHTTPWork(t, service, "immediate", "immediate-script", sut.URL, "/immediate")
+
+	ack, err := service.CommitWork(context.Background(), &pb.WorkCommitRequest{TestId: "immediate"})
+	if err != nil || !ack.GetAccepted() {
+		t.Fatalf("CommitWork = (%#v, %v)", ack, err)
+	}
+
+	service.mu.RLock()
+	execution := service.executions["immediate"]["group"]
+	service.mu.RUnlock()
+	if execution == nil {
+		t.Fatal("committed execution is missing")
+	}
+	if !execution.startAt.IsZero() {
+		t.Fatalf("uncoordinated execution start = %s, want zero-time sentinel", execution.startAt)
+	}
+
+	select {
+	case <-requestStarted:
+	case <-time.After(time.Second):
+		t.Fatal("uncoordinated execution did not issue traffic promptly")
+	}
+	select {
+	case <-execution.done:
+		t.Fatal("uncoordinated execution exited immediately after commit")
+	case <-time.After(50 * time.Millisecond):
+	}
+	_, _ = service.StopTest(context.Background(), &pb.StopRequest{TestId: "immediate"})
+}
+
 func TestCommitWorkUsesCommonFutureStartBarrier(t *testing.T) {
 	t.Setenv("APEXLOAD_ARCHIVE_DIR", t.TempDir())
 	t.Setenv("APEXLOAD_GENERATOR_ARCHIVE_MIN_FREE_BYTES", "1")

@@ -63,7 +63,13 @@
 }
 
 .secret-binding-review {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
   background: color-mix(in srgb, var(--accent) 4%, var(--bg-primary));
+  container-name: secret-binding-review;
+  container-type: inline-size;
 }
 
 .secret-binding-review-header {
@@ -71,6 +77,10 @@
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
+}
+
+.secret-binding-review-header > div {
+  min-width: 0;
 }
 
 .secret-binding-review-header h4 {
@@ -103,6 +113,7 @@
   background: var(--bg-secondary);
   color: var(--text-secondary);
   font-size: 11px;
+  overflow-wrap: anywhere;
 }
 
 .credentials-source-migration {
@@ -168,6 +179,7 @@
 
 .secret-binding-review-list {
   display: grid;
+  min-width: 0;
   gap: 10px;
   margin: 12px 0 0;
   padding: 0;
@@ -176,12 +188,16 @@
 
 .secret-binding-review-item {
   display: grid;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
   grid-template-columns: minmax(0, 1fr) minmax(240px, 0.8fr);
   gap: 18px;
   padding: 12px;
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--bg-primary);
+  box-sizing: border-box;
 }
 
 .secret-binding-review-location,
@@ -196,6 +212,13 @@
   gap: 8px;
   color: var(--text-primary);
   font-size: 13px;
+}
+
+.secret-binding-review-label-row > strong {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .secret-binding-review-reuse-badge {
@@ -215,6 +238,7 @@
   color: var(--text-muted);
   font-size: 12px;
   line-height: 1.45;
+  overflow-wrap: anywhere;
 }
 
 .secret-binding-review-location > code {
@@ -246,11 +270,15 @@
 
 .secret-binding-review-choice {
   display: flex;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
   flex-wrap: wrap;
   gap: 7px 14px;
   margin: 0 0 5px;
   padding: 0;
   border: 0;
+  box-sizing: border-box;
 }
 
 .secret-binding-review-choice legend {
@@ -272,11 +300,20 @@
   margin: 0;
 }
 
-.secret-binding-review-choice small {
+.secret-binding-review-choice small,
+.secret-binding-review-preservation-reasons {
   flex-basis: 100%;
+}
+
+.secret-binding-review-choice small {
   color: var(--text-muted);
   font-size: 11px;
   line-height: 1.4;
+}
+
+.secret-binding-review-preservation-reasons {
+  display: grid;
+  gap: 3px;
 }
 
 .secret-binding-review-control label {
@@ -312,6 +349,13 @@
 
 .secret-binding-review-reference {
   color: var(--text-muted);
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.secret-binding-review-reference code {
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .secret-binding-review-field-error {
@@ -437,6 +481,21 @@
 }
 
 @media (max-width: 720px) {
+  .script-import-review-header,
+  .secret-binding-review-header {
+    flex-direction: column;
+  }
+
+  .script-import-review-actions {
+    justify-content: flex-start;
+  }
+
+  .secret-binding-review-item {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@container secret-binding-review (max-width: 720px) {
   .script-import-review-header,
   .secret-binding-review-header {
     flex-direction: column;

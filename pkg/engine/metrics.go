@@ -21,6 +21,7 @@ type MetricsCollector struct {
 	current           *liveCounters
 	resCollector      *ResourceCollector
 	emitIdleSnapshots atomic.Bool
+	activeGaugeDirty  atomic.Bool
 	done              chan struct{}
 	aggregateDone     chan struct{}
 	startOnce         sync.Once
@@ -222,6 +223,7 @@ type GroupMetrics struct {
 	Transactions           int64
 	Errors                 int64
 	ActiveVUsers           int64
+	ActiveVUsersReported   bool `json:"active_vusers_reported,omitempty"`
 	TPS                    float64
 	TargetTPS              float64 `json:"target_tps,omitempty"`
 	ThroughputGapPct       float64 `json:"throughput_gap_pct,omitempty"`
@@ -329,7 +331,13 @@ func (mc *MetricsCollector) Record(r *protocol.Result) {
 }
 
 func (mc *MetricsCollector) SetActiveVUsers(n int64) {
-	mc.current.activeVUsers.Store(n)
+	if mc.current.activeVUsers.Swap(n) != n {
+		// A zero active gauge is still live execution evidence when the engine can
+		// later scale up again. Remember the transition until the aggregator emits
+		// it; unlike emitIdleSnapshots this produces one point per transition rather
+		// than an unbounded stream of idle zero windows.
+		mc.activeGaugeDirty.Store(true)
+	}
 }
 
 // SetGroupActiveVUsersProvider registers a callback the collector invokes once
@@ -462,8 +470,8 @@ func (mc *MetricsCollector) aggregate(interval time.Duration) {
 
 	var batch []*protocol.Result
 	windowStart := mc.startedAt
-	publishBatch := func(windowEnd time.Time) {
-		if len(batch) == 0 {
+	publishBatch := func(windowEnd time.Time, force bool) {
+		if len(batch) == 0 && !force {
 			return
 		}
 		window := windowEnd.Sub(windowStart)
@@ -484,10 +492,10 @@ func (mc *MetricsCollector) aggregate(interval time.Duration) {
 				case r := <-mc.ch:
 					batch = append(batch, r)
 					if len(batch) >= maxMetricsBatchSize {
-						publishBatch(time.Now())
+						publishBatch(time.Now(), false)
 					}
 				default:
-					publishBatch(time.Now())
+					publishBatch(time.Now(), mc.activeGaugeDirty.Swap(false))
 					return
 				}
 			}
@@ -503,15 +511,17 @@ func (mc *MetricsCollector) aggregate(interval time.Duration) {
 				}
 			}
 		process:
+			activeGaugeChanged := mc.activeGaugeDirty.Swap(false)
 			// An empty window still gets a zero-valued, correctly-timestamped
 			// snapshot while the run is live (active VUsers) or during a
 			// configured baseline (emitIdleSnapshots) — so a stall, a long
 			// think-time/pacing window, or an idle baseline renders as a flat
-			// zero line in the runtime graphs instead of a gap. Only a truly
-			// idle window — no active VUsers and no baseline — is skipped, so we
-			// don't emit leading/trailing zeros before ramp-up starts or after
-			// ramp-down completes.
-			if len(batch) == 0 && !mc.emitIdleSnapshots.Load() && mc.current.activeVUsers.Load() == 0 {
+			// zero line in the runtime graphs instead of a gap. A transition to
+			// zero also emits exactly once: scale-to-zero can be nonterminal, and
+			// consumers must not keep projecting the previous nonzero gauge. Only
+			// a truly idle, unchanged window is skipped, avoiding leading/trailing
+			// zero noise before ramp-up starts or after ramp-down completes.
+			if len(batch) == 0 && !activeGaugeChanged && !mc.emitIdleSnapshots.Load() && mc.current.activeVUsers.Load() == 0 {
 				windowStart = windowEnd
 				continue
 			}
@@ -746,6 +756,31 @@ func (mc *MetricsCollector) computeSnapshot(results []*protocol.Result, window t
 	}
 	applyThroughputGap(&snap.TPS, snap.TargetTPS, &snap.ThroughputGapPct, &snap.ThroughputTargetMissed)
 
+	// Attach live per-group active VUser counts before finalizing group metrics
+	// so resultless groups still receive their configured target and throughput
+	// gap. Keep explicit zeroes: zero is reported live state, not missing data.
+	if groupActiveFn != nil {
+		activeGroups := groupActiveFn()
+		var totalActive int64
+		for _, active := range activeGroups {
+			totalActive += int64(active)
+		}
+		for _, name := range boundedtext.SmallestStringKeys(activeGroups, maxMetricDimensionEntries) {
+			active := activeGroups[name]
+			name = boundedDimensionKey(name, snap.ByGroup)
+			gm, ok := snap.ByGroup[name]
+			if !ok {
+				gm = &GroupMetrics{Name: name}
+				snap.ByGroup[name] = gm
+			}
+			gm.ActiveVUsers += int64(active)
+			gm.ActiveVUsersReported = true
+		}
+		// The provider samples every group under the engine lock. Derive the
+		// global gauge from that same sample so a ramp transition cannot publish
+		// internally inconsistent global and group counts.
+		snap.ActiveVUsers = totalActive
+	}
 	for name, gm := range snap.ByGroup {
 		gm.TargetTPS = groupTargets[name]
 		groupAttempts := gm.Transactions + gm.Errors
@@ -761,23 +796,6 @@ func (mc *MetricsCollector) computeSnapshot(results []*protocol.Result, window t
 			gm.DurationDigest = &digestSnapshot
 		}
 		applyThroughputGap(&gm.TPS, gm.TargetTPS, &gm.ThroughputGapPct, &gm.ThroughputTargetMissed)
-	}
-	// Attach live per-group active VUser counts so group-scoped views (and the
-	// load-impact x-axis when group-filtered) follow the live ramp rather than
-	// static configured counts. Adds active groups that produced no results in
-	// this window so they are still counted when selected.
-	if groupActiveFn != nil {
-		activeGroups := groupActiveFn()
-		for _, name := range boundedtext.SmallestStringKeys(activeGroups, maxMetricDimensionEntries) {
-			active := activeGroups[name]
-			name = boundedDimensionKey(name, snap.ByGroup)
-			gm, ok := snap.ByGroup[name]
-			if !ok {
-				gm = &GroupMetrics{Name: name}
-				snap.ByGroup[name] = gm
-			}
-			gm.ActiveVUsers += int64(active)
-		}
 	}
 	for name, am := range snap.ByAction {
 		finalizeActionMetrics(am, actionDurationSum[name], actionDigests[name])

@@ -29,8 +29,8 @@ func unboundedTerminalLiveMetrics() *LiveMetrics {
 // metrics point stays in tr.tests for the lifetime of the controller, so it
 // must not keep the per-transaction / per-error / per-dependency maps whose
 // size grows with the workload's cardinality. The same run re-hydrated at boot
-// never carries them (intervalSummaryRecordToLiveMetrics does not populate
-// them), so this is also what makes the two paths agree.
+// has its bounded typed transaction map passed through the same compaction, so
+// this is also what makes the two paths agree.
 func TestCompactTerminalManagedTestReleasesUnboundedMetricBreakdowns(t *testing.T) {
 	live := unboundedTerminalLiveMetrics()
 	testRun := &ManagedTest{

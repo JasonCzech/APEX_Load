@@ -5,8 +5,10 @@ import type { ReactNode } from 'react'
 import { createRoot, Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import type { MetricsHistoryPoint } from '../types'
 import { downloadTextFile } from '../utils/fileUtils'
-import TestExecutionCharts from './TestExecutionCharts'
+import TestExecutionCharts, { BoundedChartTooltipContent } from './TestExecutionCharts'
+import { transactionChartSeriesKey } from './transactionChartSeries'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -57,19 +59,19 @@ vi.mock('recharts', () => {
     labelFormatter?: (value: string | number) => ReactNode
     labelStyle?: { display?: string }
   }) => {
+    const formatted = formatter?.(123.4567, 'TPS')
+    const formattedValue = Array.isArray(formatted) ? formatted[0] : formatted
     if (content) {
       return (
         <g
           data-testid="mock-tooltip"
           data-content-hidden="true"
-          data-label-display="none"
-          data-label-text=""
-          data-formatted-value=""
+          data-label-display={labelStyle?.display ?? ''}
+          data-label-text={labelFormatter ? String(labelFormatter('10:00:01') ?? '') : ''}
+          data-formatted-value={formattedValue === undefined ? '' : String(formattedValue)}
         />
       )
     }
-    const formatted = formatter?.(123.4567, 'TPS')
-    const formattedValue = Array.isArray(formatted) ? formatted[0] : formatted
     return (
       <g
         data-testid="mock-tooltip"
@@ -94,6 +96,8 @@ vi.mock('recharts', () => {
       strokeWidth,
       strokeDasharray,
       strokeOpacity,
+      connectNulls,
+      dot,
     }: {
       dataKey?: string
       name?: string
@@ -101,6 +105,8 @@ vi.mock('recharts', () => {
       strokeWidth?: number
       strokeDasharray?: string
       strokeOpacity?: number
+      connectNulls?: boolean
+      dot?: boolean | { r?: number }
     }) => (
       <path
         data-testid="mock-line"
@@ -110,6 +116,8 @@ vi.mock('recharts', () => {
         data-stroke-width={String(strokeWidth ?? '')}
         data-stroke-dasharray={strokeDasharray ?? ''}
         data-stroke-opacity={String(strokeOpacity ?? '')}
+        data-connect-nulls={String(connectNulls ?? false)}
+        data-dot-radius={typeof dot === 'object' ? String(dot.r ?? '') : ''}
       />
     ),
     LineChart: MockChart,
@@ -490,6 +498,134 @@ describe('TestExecutionCharts context menu', () => {
     expect(tpsChart?.querySelector('path[data-testid="mock-line"][data-key="Checkout_tps"]')).toBeNull()
     expect(tpsChart?.querySelector('path[data-testid="mock-line"][data-key="Search_tps"]')).not.toBeNull()
     expect(window.localStorage.getItem('apexload.execution.chartMetricFilters')).toContain('"tps":["tps","Search_tps"]')
+  })
+
+  it('renders every live transaction, marks singletons, and gates sole-group duplicates', async () => {
+    const transactionValues = (loginTps: number, searchTps?: number) => ({
+      [transactionChartSeriesKey('Login', 'tps')]: loginTps,
+      [transactionChartSeriesKey('Login', 'avgMs')]: 90,
+      [transactionChartSeriesKey('Login', 'errorPct')]: 0,
+      ...(searchTps === undefined ? {} : {
+        [transactionChartSeriesKey('Search', 'tps')]: searchTps,
+        [transactionChartSeriesKey('Search', 'avgMs')]: 130,
+        [transactionChartSeriesKey('Search', 'errorPct')]: 5,
+      }),
+    })
+
+    await act(async () => {
+      root.render(
+        <TestExecutionCharts
+          filteredData={[
+            { time: '10:00:00', vusers: 2, tps: 3, avgMs: 100, errorPct: 2, p50: 80, p90: 120, p99: 160, Only_tps: 3, Only_avgMs: 100, Only_errorPct: 2, ...transactionValues(1, 2) },
+            { time: '10:00:01', vusers: 4, tps: 6, avgMs: 110, errorPct: 3, p50: 85, p90: 125, p99: 170, Only_tps: 6, Only_avgMs: 110, Only_errorPct: 3, ...transactionValues(2) },
+          ]}
+          expandedChart={null}
+          onExpandedChartChange={vi.fn()}
+          onChartMouseDown={vi.fn()}
+          onChartMouseMove={vi.fn()}
+          onZoom={vi.fn()}
+          onResetZoom={vi.fn()}
+          showRefArea={false}
+          refAreaLeft=""
+          refAreaEnd=""
+          timeRange="3m"
+          onTimeRangeChange={vi.fn()}
+          isMultiGroup={false}
+          groupNames={['Only']}
+          groupColors={['#00a3ff', '#ffaa00']}
+        />,
+      )
+    })
+
+    const chartFor = (title: string) => Array.from(container.querySelectorAll('.chart-card'))
+      .find(chart => chart.textContent?.includes(title))
+    const expectTransactionLines = (chart: Element | undefined, metric: 'tps' | 'avgMs' | 'errorPct') => {
+      const loginLine = chart?.querySelector(`path[data-testid="mock-line"][data-key="${transactionChartSeriesKey('Login', metric)}"]`)
+      const searchLine = chart?.querySelector(`path[data-testid="mock-line"][data-key="${transactionChartSeriesKey('Search', metric)}"]`)
+      expect(loginLine).not.toBeNull()
+      expect(searchLine).not.toBeNull()
+      expect(loginLine?.getAttribute('data-connect-nulls')).toBe('true')
+      expect(searchLine?.getAttribute('data-connect-nulls')).toBe('true')
+      expect(loginLine?.getAttribute('data-dot-radius')).toBe('')
+      expect(searchLine?.getAttribute('data-dot-radius')).toBe('3')
+      expect(chart?.querySelector(`path[data-testid="mock-line"][data-key="Only_${metric}"]`)).toBeNull()
+      expect(chart?.textContent).toContain('Transaction · Login')
+      expect(chart?.textContent).toContain('Transaction · Search')
+    }
+
+    expectTransactionLines(chartFor('Transactions Per Second'), 'tps')
+    expectTransactionLines(chartFor('Response Time (ms)'), 'avgMs')
+    expectTransactionLines(chartFor('Error Rate (%)'), 'errorPct')
+  })
+
+  it('bounds transaction legends with an explicit overflow count while retaining every line', async () => {
+    const transactionNames = Array.from({ length: 30 }, (_, index) => `Transaction ${String(index).padStart(2, '0')}`)
+    const point: MetricsHistoryPoint = {
+      time: '10:00:00',
+      vusers: 10,
+      tps: 30,
+      avgMs: 100,
+      errorPct: 0,
+      p50: 90,
+      p90: 110,
+      p99: 150,
+    }
+    transactionNames.forEach(name => {
+      point[transactionChartSeriesKey(name, 'tps')] = 1
+      point[transactionChartSeriesKey(name, 'avgMs')] = 100
+      point[transactionChartSeriesKey(name, 'errorPct')] = 0
+    })
+
+    await act(async () => {
+      root.render(
+        <TestExecutionCharts
+          filteredData={[point]}
+          expandedChart={null}
+          onExpandedChartChange={vi.fn()}
+          onChartMouseDown={vi.fn()}
+          onChartMouseMove={vi.fn()}
+          onZoom={vi.fn()}
+          onResetZoom={vi.fn()}
+          showRefArea={false}
+          refAreaLeft=""
+          refAreaEnd=""
+          timeRange="3m"
+          onTimeRangeChange={vi.fn()}
+          isMultiGroup={false}
+          groupNames={[]}
+          groupColors={['#00a3ff']}
+        />,
+      )
+    })
+
+    const tpsChart = Array.from(container.querySelectorAll('.chart-card'))
+      .find(chart => chart.textContent?.includes('Transactions Per Second'))
+    const responseTimeChart = Array.from(container.querySelectorAll('.chart-card'))
+      .find(chart => chart.textContent?.includes('Response Time (ms)'))
+    const transactionLines = tpsChart?.querySelectorAll('path[data-testid="mock-line"][data-key^="transaction:"]')
+
+    expect(transactionLines).toHaveLength(transactionNames.length)
+    expect(tpsChart?.querySelectorAll('.chart-series-legend-item')).toHaveLength(24)
+    expect(tpsChart?.querySelector('.chart-series-legend-overflow')?.textContent).toBe('+7 more visible series')
+    expect(responseTimeChart?.querySelector('.chart-series-legend-overflow')?.textContent).toBe('+7 more visible transaction series')
+  })
+
+  it('caps tooltip entries and reports how many visible series were omitted', async () => {
+    const payload = Array.from({ length: 20 }, (_, index) => ({
+      dataKey: `transaction-${index}`,
+      name: `Transaction ${index}`,
+      value: index,
+      color: '#00a3ff',
+      payload: {},
+    }))
+
+    await act(async () => {
+      root.render(<BoundedChartTooltipContent active payload={payload} label="10:00:00" />)
+    })
+
+    expect(container.querySelectorAll('.bounded-chart-tooltip-item')).toHaveLength(12)
+    expect(container.querySelector('.chart-tooltip-overflow')?.textContent).toBe('+8 more visible series')
+    expect(container.textContent).toContain('10:00:00')
   })
 
   it('exposes chart labels, hidden measurement tables, and terminal status cues', async () => {

@@ -196,7 +196,7 @@ describe('SecretBindingReview', () => {
     expect(items[1].querySelector<HTMLInputElement>('input[id$="-project-secret"]')?.checked).toBe(true)
     expect(items[1].querySelector<HTMLInputElement>('input[id$="-preserve"]')?.disabled).toBe(true)
     expect(container.querySelector('.credentials-card-summary')?.textContent).toContain('1 imported value preserved')
-    expect(container.textContent).toContain('server did not confirm that this exact destination value was preserved')
+    expect(container.textContent).toContain('server could not verify an exact imported value at every generated destination')
     await act(async () => {
       expect(await reviewRef.current?.commit()).toBe(true)
     })
@@ -204,6 +204,60 @@ describe('SecretBindingReview', () => {
       requirement_id: 'authorization-header-second',
       secret_name: 'ORDER_API_TOKEN_2',
     }])
+  })
+
+  it.each([
+    {
+      reason: 'source_value_unavailable' as const,
+      message: 'source did not provide one exact recoverable value',
+    },
+    {
+      reason: 'existing_secret_reference' as const,
+      message: 'source already uses a governed secret reference',
+    },
+    {
+      reason: 'destination_mapping_incomplete' as const,
+      message: 'could not prove it can restore every generated destination occurrence',
+    },
+  ])('explains why preservation is unavailable for $reason', ({ reason, message }) => {
+    act(() => {
+      root.render(
+        <SecretBindingReview
+          requirements={[{ ...requirements[0], preservation_unavailable_reason: reason }]}
+          onApply={vi.fn()}
+        />,
+      )
+    })
+
+    const preserve = container.querySelector<HTMLInputElement>('input[id$="-preserve"]')
+    expect(preserve?.disabled).toBe(true)
+    expect(container.textContent).toContain(message)
+    expect(preserve?.getAttribute('aria-describedby')).toBeTruthy()
+    expect(document.getElementById(preserve!.getAttribute('aria-describedby')!)).not.toBeNull()
+  })
+
+  it('lists each distinct reason when one destination group has mixed preservation failures', () => {
+    act(() => {
+      root.render(
+        <SecretBindingReview
+          requirements={[
+            { ...requirements[0], preservation_unavailable_reason: 'source_value_unavailable' },
+            {
+              ...requirements[0],
+              id: 'authorization-header-second',
+              path: '/actions/1/headers/Authorization',
+              preservation_unavailable_reason: 'destination_mapping_incomplete',
+            },
+          ]}
+          onApply={vi.fn()}
+        />,
+      )
+    })
+
+    expect(container.querySelectorAll('.secret-binding-review-item')).toHaveLength(1)
+    expect(container.querySelectorAll('.secret-binding-review-preservation-reasons small')).toHaveLength(2)
+    expect(container.textContent).toContain('source did not provide one exact recoverable value')
+    expect(container.textContent).toContain('could not prove it can restore every generated destination occurrence')
   })
 
   it('fails closed when refreshed server evidence withdraws destination preservation', () => {

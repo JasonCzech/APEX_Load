@@ -71,7 +71,7 @@ func TestStagedAssignmentScriptSourcedRedactionFollowsScriptSetting(t *testing.T
 		redactRunEvidence *bool
 		redacted          bool
 	}{
-		{name: "unset_defaults_to_redacting", redactRunEvidence: nil, redacted: true},
+		{name: "unset_defaults_to_visible", redactRunEvidence: nil, redacted: false},
 		{name: "redaction_on", redactRunEvidence: &redactOn, redacted: true},
 		{name: "redaction_off", redactRunEvidence: &redactOff, redacted: false},
 	} {

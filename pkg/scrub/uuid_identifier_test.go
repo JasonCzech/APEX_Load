@@ -66,3 +66,17 @@ func TestUUIDExemptionDoesNotWeakenTheOtherRedactionPaths(t *testing.T) {
 		}
 	})
 }
+
+func TestValueLabelSkipsOnlyBareTokenHeuristics(t *testing.T) {
+	const tokenLikeLabel = "checkout-AbCdEfGh1234567890ijklMN"
+	if got := ValueLabel(tokenLikeLabel, Policy{}); got != tokenLikeLabel {
+		t.Fatalf("ValueLabel(%q) = %q, want stable label preserved", tokenLikeLabel, got)
+	}
+	if got := ValueLabel("checkout token=abc123", Policy{}); got != "checkout token="+Redacted {
+		t.Fatalf("structured credential label = %q", got)
+	}
+	policy := Policy{ExtraPatterns: []Rule{{Pattern: `customer-[0-9]+`}}}
+	if got := ValueLabel("checkout-customer-1234", policy); got != "checkout-"+Redacted {
+		t.Fatalf("explicit policy label = %q", got)
+	}
+}

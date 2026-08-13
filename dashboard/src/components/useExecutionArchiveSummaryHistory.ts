@@ -10,15 +10,25 @@ function isTerminalStatus(status?: string): boolean {
   return status === 'COMPLETE' || status === 'FAILED' || status === 'ABORTED'
 }
 
+interface ArchiveSummaryState {
+  testID: string
+  summaries: IntervalSummaryRecord[]
+  error: string
+  loading: boolean
+}
+
 export function useExecutionArchiveSummaryHistory(test: TestSummary | null): {
   archiveSummaryHistory: MetricsHistoryPoint[]
   archiveSummaryError: string
   archiveSummariesLoading: boolean
 } {
   const { getTestArchiveSummaries } = useTestApi()
-  const [summaries, setSummaries] = useState<IntervalSummaryRecord[]>([])
-  const [archiveSummaryError, setArchiveSummaryError] = useState('')
-  const [archiveSummariesLoading, setArchiveSummariesLoading] = useState(false)
+  const [summaryState, setSummaryState] = useState<ArchiveSummaryState>({
+    testID: '',
+    summaries: [],
+    error: '',
+    loading: false,
+  })
 
   const testID = test?.id || ''
   const testStatus = test?.status
@@ -28,32 +38,34 @@ export function useExecutionArchiveSummaryHistory(test: TestSummary | null): {
 
   useEffect(() => {
     if (!shouldLoadSummaries) {
-      setSummaries([])
-      setArchiveSummaryError('')
-      setArchiveSummariesLoading(false)
+      setSummaryState({ testID: '', summaries: [], error: '', loading: false })
       return
     }
 
     let cancelled = false
 
     const loadArchiveSummaries = async () => {
-      setArchiveSummariesLoading(true)
-      setArchiveSummaryError('')
+      setSummaryState(current => ({
+        testID,
+        summaries: current.testID === testID ? current.summaries : [],
+        error: '',
+        loading: true,
+      }))
       try {
         const response = await getTestArchiveSummaries(testID, { sample_limit: ARCHIVE_CHART_MAX_SAMPLES })
         const loaded = response.summaries || []
 
         if (!cancelled) {
-          setSummaries(loaded)
+          setSummaryState({ testID, summaries: loaded, error: '', loading: false })
         }
       } catch (error: unknown) {
         if (!cancelled) {
-          setSummaries([])
-          setArchiveSummaryError(getErrorMessage(error, 'Unable to load archive interval summaries'))
-        }
-      } finally {
-        if (!cancelled) {
-          setArchiveSummariesLoading(false)
+          setSummaryState({
+            testID,
+            summaries: [],
+            error: getErrorMessage(error, 'Unable to load archive interval summaries'),
+            loading: false,
+          })
         }
       }
     }
@@ -65,11 +77,15 @@ export function useExecutionArchiveSummaryHistory(test: TestSummary | null): {
     }
   }, [archiveCompletedAt, getTestArchiveSummaries, intervalSummaryCount, shouldLoadSummaries, testID])
 
-  const archiveSummaryHistory = useMemo(() => mapArchiveSummarySamples(summaries), [summaries])
+  const stateMatchesTest = shouldLoadSummaries && summaryState.testID === testID
+  const archiveSummaryHistory = useMemo(
+    () => mapArchiveSummarySamples(stateMatchesTest ? summaryState.summaries : []),
+    [stateMatchesTest, summaryState.summaries],
+  )
 
   return {
     archiveSummaryHistory,
-    archiveSummaryError,
-    archiveSummariesLoading,
+    archiveSummaryError: stateMatchesTest ? summaryState.error : '',
+    archiveSummariesLoading: shouldLoadSummaries && (!stateMatchesTest || summaryState.loading),
   }
 }

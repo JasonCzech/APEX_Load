@@ -88,8 +88,8 @@ type importedCredentialTemplatePlan struct {
 // consume them:
 //
 //   - Run-evidence redaction, gated by the operator's
-//     script.Config.Log.RedactRunEvidence, which defaults to redacting (a nil
-//     pointer reads as on). The generator RPC staging boundary calls this
+//     script.Config.Log.RedactRunEvidence, which defaults to off (a nil pointer
+//     reads as off). The generator RPC staging boundary calls this
 //     function directly (pkg/distributed/generatorrpc/execution_staging.go);
 //     engine.New, NewMultiGroup, ReplayScript and the shakeout reach the same
 //     walk through runtimeSecretValuesForScript, which also needs the template

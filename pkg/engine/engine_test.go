@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -35,9 +36,30 @@ type goalInitCancellationState struct {
 	stopOnce       sync.Once
 }
 
+type startupIsolationProtocol struct {
+	state *startupIsolationState
+	group string
+}
+
+type startupIsolationState struct {
+	failingInitStarted   chan struct{}
+	releaseFailingInit   chan struct{}
+	failingActionStarted chan struct{}
+	laterInitStarted     chan struct{}
+	laterActionStarted   chan struct{}
+	failingInitCalls     atomic.Int64
+	failingOnce          sync.Once
+	failingActionOnce    sync.Once
+	laterInitOnce        sync.Once
+	laterActionOnce      sync.Once
+	releaseOnce          sync.Once
+}
+
 var (
 	goalInitCancellationMu           sync.Mutex
 	goalInitCancellationStateCurrent *goalInitCancellationState
+	startupIsolationMu               sync.Mutex
+	startupIsolationStateCurrent     *startupIsolationState
 )
 
 var lifecycleInitActions atomic.Int64
@@ -136,6 +158,48 @@ func (p *goalInitCancellationProtocol) ExecuteStream(ctx context.Context, action
 func (*goalInitCancellationProtocol) Teardown(context.Context) error    { return nil }
 func (*goalInitCancellationProtocol) HealthCheck(context.Context) error { return nil }
 
+func (*startupIsolationProtocol) Name() string { return "startup-isolation-test" }
+func (p *startupIsolationProtocol) Init(ctx context.Context, config map[string]any) error {
+	if group, ok := config["group_name"].(string); ok {
+		p.group = group
+	}
+	if p.state == nil {
+		return nil
+	}
+	switch p.group {
+	case "startup-failure":
+		// The first configured VUser is healthy. The second one blocks and
+		// fails so the regression covers the whole configured group, not only
+		// a first-user startup probe.
+		if p.state.failingInitCalls.Add(1) == 1 {
+			return nil
+		}
+		p.state.failingOnce.Do(func() { close(p.state.failingInitStarted) })
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-p.state.releaseFailingInit:
+			return errors.New("injected startup failure")
+		}
+	case "must-not-start":
+		p.state.laterInitOnce.Do(func() { close(p.state.laterInitStarted) })
+	}
+	return nil
+}
+func (p *startupIsolationProtocol) Execute(_ context.Context, action *protocol.Action) (*protocol.Result, error) {
+	if p.state != nil {
+		switch p.group {
+		case "startup-failure":
+			p.state.failingActionOnce.Do(func() { close(p.state.failingActionStarted) })
+		case "must-not-start":
+			p.state.laterActionOnce.Do(func() { close(p.state.laterActionStarted) })
+		}
+	}
+	return &protocol.Result{ActionName: action.Name, Success: true, Duration: time.Millisecond}, nil
+}
+func (*startupIsolationProtocol) Teardown(context.Context) error    { return nil }
+func (*startupIsolationProtocol) HealthCheck(context.Context) error { return nil }
+
 func init() {
 	protocol.Register("stub", func() protocol.Protocol {
 		return &stubProtocol{}
@@ -150,6 +214,11 @@ func init() {
 		goalInitCancellationMu.Lock()
 		defer goalInitCancellationMu.Unlock()
 		return &goalInitCancellationProtocol{state: goalInitCancellationStateCurrent, index: -1}
+	})
+	protocol.Register("startup-isolation-test", func() protocol.Protocol {
+		startupIsolationMu.Lock()
+		defer startupIsolationMu.Unlock()
+		return &startupIsolationProtocol{state: startupIsolationStateCurrent}
 	})
 }
 
@@ -168,6 +237,29 @@ func installGoalInitCancellationState(t *testing.T) *goalInitCancellationState {
 			goalInitCancellationStateCurrent = nil
 		}
 		goalInitCancellationMu.Unlock()
+	})
+	return state
+}
+
+func installStartupIsolationState(t *testing.T) *startupIsolationState {
+	t.Helper()
+	state := &startupIsolationState{
+		failingInitStarted:   make(chan struct{}),
+		releaseFailingInit:   make(chan struct{}),
+		failingActionStarted: make(chan struct{}),
+		laterInitStarted:     make(chan struct{}),
+		laterActionStarted:   make(chan struct{}),
+	}
+	startupIsolationMu.Lock()
+	startupIsolationStateCurrent = state
+	startupIsolationMu.Unlock()
+	t.Cleanup(func() {
+		state.releaseOnce.Do(func() { close(state.releaseFailingInit) })
+		startupIsolationMu.Lock()
+		if startupIsolationStateCurrent == state {
+			startupIsolationStateCurrent = nil
+		}
+		startupIsolationMu.Unlock()
 	})
 	return state
 }
@@ -765,12 +857,56 @@ func TestEngineOpenGoalCancelsUnentitledProtocolInit(t *testing.T) {
 	}
 }
 
+func TestMultiGroupClosedGoalCancelsPreparedRampPeer(t *testing.T) {
+	script := &dsl.Script{
+		Name:     "multi-group-prepared-goal",
+		Protocol: "stub",
+		Config: dsl.ScriptConfig{RunLogic: dsl.RunLogicConfig{
+			Iterations:      1,
+			MaxTransactions: 1,
+		}},
+		Actions: []dsl.Action{{Name: "goal action", Type: "request", Target: "/"}},
+	}
+	mge, err := NewMultiGroup(MultiGroupConfig{
+		Groups: []GroupConfig{{
+			Name:   "closed",
+			Script: script,
+			VUsers: 2,
+			RampUp: 10 * time.Second,
+		}},
+		Duration: 5 * time.Second,
+	})
+	if err != nil {
+		t.Fatalf("NewMultiGroup: %v", err)
+	}
+
+	started := time.Now()
+	result, err := mge.Run(context.Background())
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if elapsed := time.Since(started); elapsed >= time.Second {
+		t.Fatalf("closed goal waited for the prepared peer's ramp deadline: elapsed=%s", elapsed)
+	}
+	if result.TotalTransactions != 1 {
+		t.Fatalf("total transactions = %d, want one", result.TotalTransactions)
+	}
+	if got := mge.activeVUserCountByGroup()["closed"]; got != 0 {
+		t.Fatalf("active VUsers after goal cleanup = %d, want 0", got)
+	}
+	mge.mu.Lock()
+	defer mge.mu.Unlock()
+	if len(mge.vuserCancels) != 0 || len(mge.vuserRunning) != 0 || len(mge.vuserIDsInUse) != 0 {
+		t.Fatalf("VUser state after goal cleanup = reserved %d / running %d / ids %d, want 0 / 0 / 0",
+			len(mge.vuserCancels), len(mge.vuserRunning), len(mge.vuserIDsInUse))
+	}
+}
+
 func TestMultiGroupGoalCancellationTreatsUnlaunchedProtocolInitAsGraceful(t *testing.T) {
 	tests := []struct {
 		name string
 		open bool
 	}{
-		{name: "closed"},
 		{name: "open", open: true},
 	}
 	for _, tc := range tests {
@@ -1029,7 +1165,7 @@ func TestMultiGroupNormallyStartedGroupCanPauseAtZeroAndResume(t *testing.T) {
 		t.Fatal("timed out waiting for engine readiness")
 	}
 	waitForActiveVUsers(t, mge, 1)
-	if err := mge.ScaleVUsers("buyers", 0); err != nil {
+	if err := scaleAfterInitialRamp(t, mge, "buyers", 0); err != nil {
 		t.Fatalf("ScaleVUsers to zero: %v", err)
 	}
 	waitForActiveVUsers(t, mge, 0)
@@ -1045,6 +1181,18 @@ func TestMultiGroupNormallyStartedGroupCanPauseAtZeroAndResume(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("engine did not stop after cancel")
+	}
+}
+
+func scaleAfterInitialRamp(t *testing.T, mge *MultiGroupEngine, group string, target int) error {
+	t.Helper()
+	deadline := time.Now().Add(time.Second)
+	for {
+		err := mge.ScaleVUsers(group, target)
+		if !errors.Is(err, ErrInitialRampInProgress) || time.Now().After(deadline) {
+			return err
+		}
+		time.Sleep(time.Millisecond)
 	}
 }
 
@@ -1090,6 +1238,60 @@ func TestMultiGroupRampDownIsProgressive(t *testing.T) {
 	}
 	if elapsed := time.Since(started); elapsed < 160*time.Millisecond {
 		t.Fatalf("ramp-down ended too early: %v", elapsed)
+	}
+}
+
+func TestMultiGroupPauseIsRejectedAfterNaturalRampDownStarts(t *testing.T) {
+	mge, err := NewMultiGroup(MultiGroupConfig{
+		Groups: []GroupConfig{{
+			Name: "buyers",
+			Script: &dsl.Script{
+				Name:     "pause-during-ramp-down",
+				Protocol: "stub",
+				Actions:  []dsl.Action{{Name: "main", Type: "request", Target: "/"}},
+			},
+			VUsers:   2,
+			RampDown: 200 * time.Millisecond,
+		}},
+		Duration: 40 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatalf("NewMultiGroup: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() {
+		_, runErr := mge.Run(ctx)
+		done <- runErr
+	}()
+	select {
+	case <-mge.Ready():
+	case <-time.After(time.Second):
+		t.Fatal("engine did not become ready")
+	}
+	mge.mu.Lock()
+	launchCtx := mge.launchCtx
+	mge.mu.Unlock()
+	select {
+	case <-launchCtx.Done():
+	case <-time.After(time.Second):
+		t.Fatal("natural duration did not start ramp-down")
+	}
+
+	if err := mge.Pause(); err == nil {
+		cancel()
+		t.Fatal("Pause succeeded after natural ramp-down started")
+	}
+	select {
+	case runErr := <-done:
+		if runErr != nil {
+			t.Fatalf("Run: %v", runErr)
+		}
+	case <-time.After(time.Second):
+		cancel()
+		t.Fatal("engine did not complete progressive ramp-down")
 	}
 }
 
@@ -1452,6 +1654,183 @@ func TestMultiGroupRunResultPopulatesCumulativeGroupCounters(t *testing.T) {
 	}
 	if got := result.Groups[1]; got.Name != "sellers" || got.TotalTransactions != 3 || got.TotalErrors != 0 {
 		t.Fatalf("sellers result = %#v", got)
+	}
+}
+
+func TestMultiGroupRampsClosedGroupsConcurrently(t *testing.T) {
+	groupScript := func(name string) *dsl.Script {
+		return &dsl.Script{
+			Name:     name,
+			Protocol: "stub",
+			Actions:  []dsl.Action{{Name: "transaction", Type: "request", Target: "/"}},
+		}
+	}
+	mge, err := NewMultiGroup(MultiGroupConfig{
+		Groups: []GroupConfig{
+			// Put the slow ramp first so the original serialized implementation
+			// cannot reach the fast group within the assertion window.
+			{Name: "buyers", Script: groupScript("buyers"), VUsers: 3, RampUp: 30 * time.Second},
+			{Name: "sellers", Script: groupScript("sellers"), VUsers: 3, RampUp: 300 * time.Millisecond},
+		},
+		Duration: 30 * time.Second,
+	})
+	if err != nil {
+		t.Fatalf("NewMultiGroup: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		_, runErr := mge.Run(ctx)
+		done <- runErr
+	}()
+
+	var stopOnce sync.Once
+	var stopMu sync.Mutex
+	var stopped bool
+	var stopErr error
+	stop := func() error {
+		stopOnce.Do(cancel)
+		stopMu.Lock()
+		defer stopMu.Unlock()
+		if stopped {
+			return stopErr
+		}
+		select {
+		case stopErr = <-done:
+			stopped = true
+		case <-time.After(2 * time.Second):
+			return errors.New("engine did not stop after cancellation")
+		}
+		return stopErr
+	}
+	t.Cleanup(func() {
+		if err := stop(); err != nil {
+			t.Errorf("cleanup multi-group ramp: %v", err)
+		}
+	})
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		counts := mge.activeVUserCountByGroup()
+		if counts["sellers"] == 3 {
+			if counts["buyers"] != 1 {
+				t.Fatalf("slow group active VUsers = %d, want 1 while fast group completed its ramp", counts["buyers"])
+			}
+			if err := stop(); err != nil {
+				t.Fatalf("stop ramped engine: %v", err)
+			}
+			mge.mu.Lock()
+			allocatedHandles := len(mge.vuserIDsInUse)
+			allocatedIdentities := len(mge.vuserIdentities)
+			mge.mu.Unlock()
+			if allocatedHandles != 0 || allocatedIdentities != 0 {
+				t.Fatalf("VUser identities after stop = handles:%d identities:%d, want 0/0", allocatedHandles, allocatedIdentities)
+			}
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+	counts := mge.activeVUserCountByGroup()
+	t.Fatalf("group VUsers = %v, want sellers fully ramped while buyers remains at 1", counts)
+}
+
+func TestMultiGroupStartupFailureDoesNotStartLaterGroup(t *testing.T) {
+	state := installStartupIsolationState(t)
+	mge, err := NewMultiGroup(MultiGroupConfig{
+		Groups: []GroupConfig{
+			{
+				Name:   "startup-failure",
+				Script: &dsl.Script{Name: "failing", Protocol: "startup-isolation-test", Actions: []dsl.Action{{Name: "main", Type: "request", Target: "/"}}},
+				VUsers: 2,
+				RampUp: 20 * time.Millisecond,
+			},
+			{
+				Name:         "must-not-start",
+				Script:       &dsl.Script{Name: "later", Protocol: "startup-isolation-test", Init: []dsl.Action{{Name: "setup", Type: "request", Target: "/setup"}}, Actions: []dsl.Action{{Name: "main", Type: "request", Target: "/"}}},
+				VUsers:       1,
+				InitStrategy: "at_once",
+			},
+		},
+		Duration: 5 * time.Second,
+	})
+	if err != nil {
+		t.Fatalf("NewMultiGroup: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	type runOutcome struct {
+		result *MultiGroupRunResult
+		err    error
+	}
+	done := make(chan runOutcome, 1)
+	go func() {
+		result, runErr := mge.Run(ctx)
+		done <- runOutcome{result: result, err: runErr}
+	}()
+
+	var waitMu sync.Mutex
+	var joined bool
+	var outcome runOutcome
+	waitRun := func() (runOutcome, error) {
+		waitMu.Lock()
+		defer waitMu.Unlock()
+		if joined {
+			return outcome, nil
+		}
+		select {
+		case outcome = <-done:
+			joined = true
+			return outcome, nil
+		case <-time.After(2 * time.Second):
+			return runOutcome{}, errors.New("engine did not finish after startup failure")
+		}
+	}
+	t.Cleanup(func() {
+		state.releaseOnce.Do(func() { close(state.releaseFailingInit) })
+		cancel()
+		if _, err := waitRun(); err != nil {
+			t.Errorf("cleanup startup isolation run: %v", err)
+		}
+	})
+
+	select {
+	case <-state.failingInitStarted:
+	case <-time.After(time.Second):
+		t.Fatal("failing group did not enter protocol initialization")
+	}
+	select {
+	case <-state.failingActionStarted:
+		t.Fatal("an earlier VUser executed before every configured VUser passed startup")
+	case <-state.laterInitStarted:
+		t.Fatal("later group initialized before the earlier group passed startup")
+	case <-state.laterActionStarted:
+		t.Fatal("later group executed setup before the earlier group passed startup")
+	case <-time.After(250 * time.Millisecond):
+	}
+
+	state.releaseOnce.Do(func() { close(state.releaseFailingInit) })
+	got, waitErr := waitRun()
+	if waitErr != nil {
+		t.Fatal(waitErr)
+	}
+	if got.result != nil || got.err == nil || !strings.Contains(got.err.Error(), "injected startup failure") {
+		t.Fatalf("Run outcome = (%#v, %v), want nil result with injected startup failure", got.result, got.err)
+	}
+	select {
+	case <-state.failingActionStarted:
+		t.Fatal("an earlier VUser executed despite a later configured VUser startup failure")
+	default:
+	}
+	select {
+	case <-state.laterInitStarted:
+		t.Fatal("later group initialized after the earlier startup failure")
+	default:
+	}
+	select {
+	case <-state.laterActionStarted:
+		t.Fatal("later group executed setup after the earlier startup failure")
+	default:
 	}
 }
 

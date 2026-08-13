@@ -151,6 +151,30 @@ describe("AuthGate", () => {
     expect(changed).toHaveBeenCalledOnce();
   });
 
+  it("returns a startup-invalidated local session to the persona login", async () => {
+    await act(async () => {
+      root.render(
+        <AuthGate
+          state={readyState({
+            enabled: true,
+            mode: "local",
+            authenticated: false,
+            session_status: "invalid",
+            logout_url: "/api/v1/auth/logout",
+            logout_csrf_token: "stale-session-csrf",
+          })}
+        >
+          <div data-testid="protected">Protected content</div>
+        </AuthGate>,
+      );
+    });
+
+    expect(container.textContent).toContain("Choose a test persona");
+    expect(container.textContent).toContain("dev/dev");
+    expect(container.textContent).toContain("Clear current local session");
+    expect(container.textContent).not.toContain("Protected content");
+  });
+
   it("keeps the local login form available and reports generic failures", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(JSON.stringify({ error: "invalid username or password" }), {

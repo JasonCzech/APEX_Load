@@ -367,8 +367,13 @@ func TestHandleConvertRecordingParameterizationPreservesCapturedPassword(t *test
 	if readResp.Code != http.StatusOK {
 		t.Fatalf("stored read status = %d body=%s", readResp.Code, readResp.Body.String())
 	}
-	if strings.Contains(readResp.Body.String(), "parameterized-captured-password") {
-		t.Fatalf("ordinary stored-script read disclosed parameterized password: %s", readResp.Body.String())
+	var read StoredScript
+	if err := json.Unmarshal(readResp.Body.Bytes(), &read); err != nil {
+		t.Fatal(err)
+	}
+	if read.Script == nil || len(read.Script.DataSources) != 1 ||
+		!strings.Contains(read.Script.DataSources[0].InlineData, "parameterized-captured-password") {
+		t.Fatalf("ordinary stored-script data-file view hid the captured password: %s", readResp.Body.String())
 	}
 }
 

@@ -454,7 +454,7 @@ func (s *Server) handleUpdateScript(w http.ResponseWriter, r *http.Request) {
 	}
 	s.recordAuditEvent(r, "script.update", "success", "script", updated.ID, updated.ProjectID, map[string]any{"name": disclosureSafeScriptName(updated.Name, updated.Script), "folder_id": updated.FolderID})
 
-	writeJSON(w, http.StatusOK, maskStoredScript(updated))
+	writeJSON(w, http.StatusOK, viewStoredScript(updated))
 }
 
 // handleDeleteScript handles DELETE /api/v1/scripts/{id}

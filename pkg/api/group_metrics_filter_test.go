@@ -38,6 +38,10 @@ func liveMetricsForGroupFilterTest() *LiveMetrics {
 		P95Ms:         450,
 		P99Ms:         700,
 		Resources:     &engine.SystemResources{CPUProcessPct: 55},
+		Transactions: map[string]*TxMetrics{
+			"CheckoutAction": {Name: "CheckoutAction", TPS: 4, Count: 5, Errors: 1},
+			"BrowseAction":   {Name: "BrowseAction", TPS: 3, Count: 3},
+		},
 		GroupMetrics: map[string]*GroupLiveMetrics{
 			"Checkout": {
 				Name:           "Checkout",
@@ -91,6 +95,9 @@ func TestFilterLiveMetricsForGroupsAggregatesSelectedPerformanceMetrics(t *testi
 	}
 	if len(filtered.GroupMetrics) != 1 || filtered.GroupMetrics["Checkout"] == nil {
 		t.Fatalf("selected groups = %#v, want only Checkout", filtered.GroupMetrics)
+	}
+	if filtered.Transactions != nil {
+		t.Fatalf("selected-group transactions = %#v, want omitted because transaction metrics are global", filtered.Transactions)
 	}
 	if filtered.Resources == nil || filtered.Resources.CPUProcessPct != 55 {
 		t.Fatalf("resources were not preserved: %#v", filtered.Resources)
@@ -155,6 +162,9 @@ func TestFilterLiveMetricsForGroupsHandlesEmptySelection(t *testing.T) {
 	}
 	if len(filtered.GroupMetrics) != 0 {
 		t.Fatalf("empty selection groups = %#v, want none", filtered.GroupMetrics)
+	}
+	if filtered.Transactions != nil {
+		t.Fatalf("empty selection transactions = %#v, want none", filtered.Transactions)
 	}
 	if filtered.Resources == nil || filtered.Resources.CPUProcessPct != 55 {
 		t.Fatalf("resources were not preserved: %#v", filtered.Resources)
@@ -225,7 +235,10 @@ func TestGroupMetricsHistoryCacheDropsNonResponseEvidence(t *testing.T) {
 	if filtered[0].ErrorEvidence != nil || filtered[0].GroupMetrics["Checkout"].DurationDigest != nil {
 		t.Fatal("response cache retained non-serialized evidence")
 	}
-	if len(original.ErrorEvidence) != 1 || original.GroupMetrics["Checkout"].DurationDigest == nil {
+	if filtered[0].Transactions != nil {
+		t.Fatalf("response cache retained global transactions: %#v", filtered[0].Transactions)
+	}
+	if len(original.ErrorEvidence) != 1 || original.GroupMetrics["Checkout"].DurationDigest == nil || len(original.Transactions) != 2 {
 		t.Fatal("cache compaction mutated canonical live history")
 	}
 }
@@ -260,8 +273,14 @@ func TestHandleGetMetricsAppliesGroupFilter(t *testing.T) {
 	if payload.Metrics == nil || payload.Metrics.ActiveVUsers != 12 || payload.Metrics.TPS != 4 {
 		t.Fatalf("filtered metrics = %#v, want Checkout-only aggregate", payload.Metrics)
 	}
+	if payload.Metrics.Transactions != nil {
+		t.Fatalf("filtered metrics transactions = %#v, want omitted global transaction metrics", payload.Metrics.Transactions)
+	}
 	if len(payload.History) != 1 || payload.History[0].ActiveVUsers != 12 {
 		t.Fatalf("filtered history = %#v, want Checkout-only history", payload.History)
+	}
+	if payload.History[0].Transactions != nil {
+		t.Fatalf("filtered history transactions = %#v, want omitted global transaction metrics", payload.History[0].Transactions)
 	}
 }
 

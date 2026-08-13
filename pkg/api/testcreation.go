@@ -2553,6 +2553,12 @@ func (tr *TestRunner) compileManagedTestGroupForModeWithRevisionLocked(index int
 			scriptCopy = *resolved
 		}
 	}
+	if stageDriven && dsl.CanonicalWorkloadModel(scriptCopy.Config.RunLogic.WorkloadModel) == "open" {
+		return TestGroup{}, engine.GroupConfig{}, fmt.Errorf(
+			"group[%d]: vuser-driven stages are not supported for open workload scripts; configure TPS pacing without VUser scale stages",
+			index,
+		)
+	}
 	if len(scriptCopy.Actions) == 0 {
 		if issues := validateStoredExecutionScript(&scriptCopy); len(issues) > 0 {
 			return TestGroup{}, engine.GroupConfig{}, fmt.Errorf("group[%d]: %s", index, strings.Join(issues, "; "))

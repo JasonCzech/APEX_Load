@@ -19,6 +19,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/internal/boundedtext"
 	"github.com/jasonczech/apexload/pkg/internal/diskspace"
 	"github.com/jasonczech/apexload/pkg/protocol"
+	"github.com/jasonczech/apexload/pkg/scrub"
 	"github.com/jasonczech/apexload/pkg/storage"
 	local "github.com/xitongsys/parquet-go-source/local"
 	"github.com/xitongsys/parquet-go/parquet"
@@ -53,25 +54,26 @@ type archiveManifest struct {
 }
 
 type archiveTransactionEvent struct {
-	Timestamp      time.Time               `json:"timestamp"`
-	TestID         string                  `json:"test_id"`
-	TestName       string                  `json:"test_name"`
-	Group          string                  `json:"group,omitempty"`
-	ActionName     string                  `json:"action_name,omitempty"`
-	DurationMs     float64                 `json:"duration_ms"`
-	DNSMs          float64                 `json:"dns_ms,omitempty"`
-	ConnectMs      float64                 `json:"connect_ms,omitempty"`
-	TLSMs          float64                 `json:"tls_ms,omitempty"`
-	TTFBMs         float64                 `json:"ttfb_ms,omitempty"`
-	BytesSent      int64                   `json:"bytes_sent,omitempty"`
-	BytesReceived  int64                   `json:"bytes_received,omitempty"`
-	StatusCode     int                     `json:"status_code,omitempty"`
-	Success        bool                    `json:"success"`
-	ErrorMessage   string                  `json:"error_message,omitempty"`
-	NetworkProfile string                  `json:"network_profile,omitempty"`
-	ClientMetrics  *protocol.ClientMetrics `json:"client_metrics,omitempty"`
-	Extractions    map[string]string       `json:"extractions,omitempty"`
-	Snapshot       *protocol.ErrorSnapshot `json:"snapshot,omitempty"`
+	Timestamp           time.Time               `json:"timestamp"`
+	TestID              string                  `json:"test_id"`
+	TestName            string                  `json:"test_name"`
+	Group               string                  `json:"group,omitempty"`
+	ActionName          string                  `json:"action_name,omitempty"`
+	BusinessTransaction bool                    `json:"business_transaction,omitempty"`
+	DurationMs          float64                 `json:"duration_ms"`
+	DNSMs               float64                 `json:"dns_ms,omitempty"`
+	ConnectMs           float64                 `json:"connect_ms,omitempty"`
+	TLSMs               float64                 `json:"tls_ms,omitempty"`
+	TTFBMs              float64                 `json:"ttfb_ms,omitempty"`
+	BytesSent           int64                   `json:"bytes_sent,omitempty"`
+	BytesReceived       int64                   `json:"bytes_received,omitempty"`
+	StatusCode          int                     `json:"status_code,omitempty"`
+	Success             bool                    `json:"success"`
+	ErrorMessage        string                  `json:"error_message,omitempty"`
+	NetworkProfile      string                  `json:"network_profile,omitempty"`
+	ClientMetrics       *protocol.ClientMetrics `json:"client_metrics,omitempty"`
+	Extractions         map[string]string       `json:"extractions,omitempty"`
+	Snapshot            *protocol.ErrorSnapshot `json:"snapshot,omitempty"`
 }
 
 type archiveResourceSample struct {
@@ -118,24 +120,132 @@ type archiveResourceSample struct {
 }
 
 type archiveIntervalSummary struct {
-	Timestamp       time.Time                              `json:"timestamp"`
-	TestID          string                                 `json:"test_id"`
-	TestName        string                                 `json:"test_name"`
-	ActiveVUsers    int64                                  `json:"active_vusers"`
-	TPS             float64                                `json:"tps"`
-	AvgResponseMs   float64                                `json:"avg_response_ms"`
-	ErrorPct        float64                                `json:"error_pct"`
-	TotalTx         int64                                  `json:"total_transactions"`
-	TotalErrors     int64                                  `json:"total_errors"`
-	P50Ms           float64                                `json:"p50_ms"`
-	P90Ms           float64                                `json:"p90_ms"`
-	P95Ms           float64                                `json:"p95_ms"`
-	P99Ms           float64                                `json:"p99_ms"`
-	DurationDigest  *engine.TDigestSnapshot                `json:"duration_digest,omitempty"`
-	Groups          map[string]*archiveGroupLiveMetrics    `json:"groups,omitempty"`
-	Browser         *archiveBrowserLiveMetrics             `json:"browser,omitempty"`
-	BrowserByDevice map[string]*archiveBrowserDeviceMetric `json:"browser_by_device,omitempty"`
-	Telemetry       *archiveTelemetryHealth                `json:"telemetry,omitempty"`
+	Timestamp       time.Time                                     `json:"timestamp"`
+	TestID          string                                        `json:"test_id"`
+	TestName        string                                        `json:"test_name"`
+	ActiveVUsers    int64                                         `json:"active_vusers"`
+	TPS             float64                                       `json:"tps"`
+	AvgResponseMs   float64                                       `json:"avg_response_ms"`
+	ErrorPct        float64                                       `json:"error_pct"`
+	TotalTx         int64                                         `json:"total_transactions"`
+	TotalErrors     int64                                         `json:"total_errors"`
+	P50Ms           float64                                       `json:"p50_ms"`
+	P90Ms           float64                                       `json:"p90_ms"`
+	P95Ms           float64                                       `json:"p95_ms"`
+	P99Ms           float64                                       `json:"p99_ms"`
+	DurationDigest  *engine.TDigestSnapshot                       `json:"duration_digest,omitempty"`
+	Groups          map[string]*archiveGroupLiveMetrics           `json:"groups,omitempty"`
+	Transactions    map[string]*archiveIntervalTransactionMetrics `json:"transactions,omitempty"`
+	Browser         *archiveBrowserLiveMetrics                    `json:"browser,omitempty"`
+	BrowserByDevice map[string]*archiveBrowserDeviceMetric        `json:"browser_by_device,omitempty"`
+	Telemetry       *archiveTelemetryHealth                       `json:"telemetry,omitempty"`
+}
+
+// archiveIntervalTransactionMetrics is the generator-side wire-compatible
+// projection of api.IntervalTransactionMetrics. Count includes all attempts,
+// Errors is a subset of Count, and TPS is the successful transaction rate.
+type archiveIntervalTransactionMetrics struct {
+	Name   string  `json:"name"`
+	TPS    float64 `json:"tps"`
+	Count  int64   `json:"count"`
+	Errors int64   `json:"errors"`
+	AvgMs  float64 `json:"avg_ms"`
+}
+
+const (
+	maxArchiveIntervalSummaryTransactions     = 512
+	archiveIntervalSummaryTransactionOverflow = "__other__"
+)
+
+func archiveIntervalTransactionName(name string) string {
+	if name = strings.TrimSpace(scrub.ValueLabel(name, scrub.Policy{})); name != "" {
+		return name
+	}
+	return "unnamed"
+}
+
+func archiveSummaryTransactionsFromBatch(values []*pb.MetricAggregate) map[string]*archiveIntervalTransactionMetrics {
+	if len(values) == 0 {
+		return nil
+	}
+	metrics := make(map[string]*archiveIntervalTransactionMetrics, len(values))
+	for _, value := range values {
+		if value == nil {
+			continue
+		}
+		name := archiveIntervalTransactionName(value.GetName())
+		mergeArchiveIntervalTransactionMetric(metrics, name, &archiveIntervalTransactionMetrics{
+			Name:   name,
+			TPS:    value.GetTps(),
+			Count:  value.GetCount(),
+			Errors: value.GetErrors(),
+			AvgMs:  value.GetAvgMs(),
+		})
+	}
+	return compactArchiveIntervalTransactions(metrics)
+}
+
+func mergeArchiveIntervalTransactionMetric(destination map[string]*archiveIntervalTransactionMetrics, name string, incoming *archiveIntervalTransactionMetrics) {
+	if destination == nil || incoming == nil {
+		return
+	}
+	name = archiveIntervalTransactionName(name)
+	current := destination[name]
+	if current == nil {
+		copy := *incoming
+		copy.Name = name
+		destination[name] = &copy
+		return
+	}
+	combinedCount := current.Count + incoming.Count
+	if combinedCount > 0 {
+		current.AvgMs = (current.AvgMs*float64(current.Count) + incoming.AvgMs*float64(incoming.Count)) / float64(combinedCount)
+	}
+	current.Name = name
+	current.TPS += incoming.TPS
+	current.Count = combinedCount
+	current.Errors += incoming.Errors
+}
+
+func compactArchiveIntervalTransactions(metrics map[string]*archiveIntervalTransactionMetrics) map[string]*archiveIntervalTransactionMetrics {
+	if len(metrics) == 0 {
+		return nil
+	}
+	keys := make([]string, 0, len(metrics))
+	for name, metric := range metrics {
+		if metric != nil && name != archiveIntervalSummaryTransactionOverflow {
+			keys = append(keys, name)
+		}
+	}
+	sort.Strings(keys)
+	overflow := metrics[archiveIntervalSummaryTransactionOverflow]
+	entryCount := len(keys)
+	if overflow != nil {
+		entryCount++
+	}
+	if entryCount <= maxArchiveIntervalSummaryTransactions {
+		if overflow != nil {
+			overflow.Name = archiveIntervalSummaryTransactionOverflow
+		}
+		return metrics
+	}
+
+	compacted := make(map[string]*archiveIntervalTransactionMetrics, maxArchiveIntervalSummaryTransactions)
+	keep := maxArchiveIntervalSummaryTransactions - 1
+	for index, name := range keys {
+		metric := metrics[name]
+		if index < keep {
+			copy := *metric
+			copy.Name = name
+			compacted[name] = &copy
+			continue
+		}
+		mergeArchiveIntervalTransactionMetric(compacted, archiveIntervalSummaryTransactionOverflow, metric)
+	}
+	if overflow != nil {
+		mergeArchiveIntervalTransactionMetric(compacted, archiveIntervalSummaryTransactionOverflow, overflow)
+	}
+	return compacted
 }
 
 type archiveGroupLiveMetrics struct {
@@ -408,26 +518,27 @@ func (f *generatorArchiveQuotaParquetFile) Create(name string) (source.ParquetFi
 }
 
 type parquetTransactionEvent struct {
-	TimestampUnixMs   int64   `parquet:"name=timestamp_unix_ms, type=INT64"`
-	TimestampRFC3339  string  `parquet:"name=timestamp_rfc3339, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
-	TestID            string  `parquet:"name=test_id, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
-	TestName          string  `parquet:"name=test_name, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
-	Group             string  `parquet:"name=group_name, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
-	ActionName        string  `parquet:"name=action_name, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
-	DurationMs        float64 `parquet:"name=duration_ms, type=DOUBLE"`
-	DNSMs             float64 `parquet:"name=dns_ms, type=DOUBLE"`
-	ConnectMs         float64 `parquet:"name=connect_ms, type=DOUBLE"`
-	TLSMs             float64 `parquet:"name=tls_ms, type=DOUBLE"`
-	TTFBMs            float64 `parquet:"name=ttfb_ms, type=DOUBLE"`
-	BytesSent         int64   `parquet:"name=bytes_sent, type=INT64"`
-	BytesReceived     int64   `parquet:"name=bytes_received, type=INT64"`
-	StatusCode        int64   `parquet:"name=status_code, type=INT64"`
-	Success           bool    `parquet:"name=success, type=BOOLEAN"`
-	ErrorMessage      string  `parquet:"name=error_message, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
-	NetworkProfile    string  `parquet:"name=network_profile, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
-	ClientMetricsJSON string  `parquet:"name=client_metrics_json, type=BYTE_ARRAY, convertedtype=UTF8"`
-	ExtractionsJSON   string  `parquet:"name=extractions_json, type=BYTE_ARRAY, convertedtype=UTF8"`
-	SnapshotJSON      string  `parquet:"name=snapshot_json, type=BYTE_ARRAY, convertedtype=UTF8"`
+	TimestampUnixMs     int64   `parquet:"name=timestamp_unix_ms, type=INT64"`
+	TimestampRFC3339    string  `parquet:"name=timestamp_rfc3339, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
+	TestID              string  `parquet:"name=test_id, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
+	TestName            string  `parquet:"name=test_name, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
+	Group               string  `parquet:"name=group_name, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
+	ActionName          string  `parquet:"name=action_name, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
+	BusinessTransaction bool    `parquet:"name=business_transaction, type=BOOLEAN"`
+	DurationMs          float64 `parquet:"name=duration_ms, type=DOUBLE"`
+	DNSMs               float64 `parquet:"name=dns_ms, type=DOUBLE"`
+	ConnectMs           float64 `parquet:"name=connect_ms, type=DOUBLE"`
+	TLSMs               float64 `parquet:"name=tls_ms, type=DOUBLE"`
+	TTFBMs              float64 `parquet:"name=ttfb_ms, type=DOUBLE"`
+	BytesSent           int64   `parquet:"name=bytes_sent, type=INT64"`
+	BytesReceived       int64   `parquet:"name=bytes_received, type=INT64"`
+	StatusCode          int64   `parquet:"name=status_code, type=INT64"`
+	Success             bool    `parquet:"name=success, type=BOOLEAN"`
+	ErrorMessage        string  `parquet:"name=error_message, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
+	NetworkProfile      string  `parquet:"name=network_profile, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
+	ClientMetricsJSON   string  `parquet:"name=client_metrics_json, type=BYTE_ARRAY, convertedtype=UTF8"`
+	ExtractionsJSON     string  `parquet:"name=extractions_json, type=BYTE_ARRAY, convertedtype=UTF8"`
+	SnapshotJSON        string  `parquet:"name=snapshot_json, type=BYTE_ARRAY, convertedtype=UTF8"`
 }
 
 type parquetResourceSample struct {
@@ -491,6 +602,7 @@ type parquetIntervalSummary struct {
 	P99Ms              float64 `parquet:"name=p99_ms, type=DOUBLE"`
 	DurationDigestJSON string  `parquet:"name=duration_digest_json, type=BYTE_ARRAY, convertedtype=UTF8"`
 	GroupsJSON         string  `parquet:"name=groups_json, type=BYTE_ARRAY, convertedtype=UTF8"`
+	TransactionsJSON   string  `parquet:"name=transactions_json, type=BYTE_ARRAY, convertedtype=UTF8"`
 	BrowserJSON        string  `parquet:"name=browser_json, type=BYTE_ARRAY, convertedtype=UTF8"`
 	BrowserDeviceJSON  string  `parquet:"name=browser_by_device_json, type=BYTE_ARRAY, convertedtype=UTF8"`
 	TelemetryJSON      string  `parquet:"name=telemetry_json, type=BYTE_ARRAY, convertedtype=UTF8"`
@@ -787,25 +899,26 @@ func (w *archiveRecorder) RecordResult(result *protocol.Result) error {
 		return w.recordErr
 	}
 	event := archiveTransactionEvent{
-		Timestamp:      result.StartTime,
-		TestID:         w.manifest.TestID,
-		TestName:       w.manifest.TestName,
-		Group:          truncateSnapshotField(result.Group, 512),
-		ActionName:     truncateSnapshotField(result.ActionName, 512),
-		DurationMs:     durationMillis(result.Duration),
-		DNSMs:          durationMillis(result.DNSTime),
-		ConnectMs:      durationMillis(result.ConnectTime),
-		TLSMs:          durationMillis(result.TLSTime),
-		TTFBMs:         durationMillis(result.TTFB),
-		BytesSent:      result.BytesSent,
-		BytesReceived:  result.BytesReceived,
-		StatusCode:     result.StatusCode,
-		Success:        result.Success,
-		ErrorMessage:   truncateSnapshotField(result.ErrorMessage, 16<<10),
-		NetworkProfile: truncateSnapshotField(result.NetworkProfile, 512),
-		ClientMetrics:  cloneArchiveClientMetrics(result.ClientMetrics),
-		Extractions:    boundedArchiveExtractions(result.Extractions),
-		Snapshot:       engine.BoundErrorSnapshot(result.Snapshot, 1<<20),
+		Timestamp:           result.StartTime,
+		TestID:              w.manifest.TestID,
+		TestName:            w.manifest.TestName,
+		Group:               truncateSnapshotField(result.Group, 512),
+		ActionName:          truncateSnapshotField(result.ActionName, 512),
+		BusinessTransaction: result.BusinessTransaction,
+		DurationMs:          durationMillis(result.Duration),
+		DNSMs:               durationMillis(result.DNSTime),
+		ConnectMs:           durationMillis(result.ConnectTime),
+		TLSMs:               durationMillis(result.TLSTime),
+		TTFBMs:              durationMillis(result.TTFB),
+		BytesSent:           result.BytesSent,
+		BytesReceived:       result.BytesReceived,
+		StatusCode:          result.StatusCode,
+		Success:             result.Success,
+		ErrorMessage:        truncateSnapshotField(result.ErrorMessage, 16<<10),
+		NetworkProfile:      truncateSnapshotField(result.NetworkProfile, 512),
+		ClientMetrics:       cloneArchiveClientMetrics(result.ClientMetrics),
+		Extractions:         boundedArchiveExtractions(result.Extractions),
+		Snapshot:            engine.BoundErrorSnapshot(result.Snapshot, 1<<20),
 	}
 	if err := w.txEncoder.Encode(event); err != nil {
 		w.recordErr = fmt.Errorf("record transaction: %w", err)
@@ -813,6 +926,13 @@ func (w *archiveRecorder) RecordResult(result *protocol.Result) error {
 	}
 	w.manifest.TransactionCount++
 	return nil
+}
+
+// RecordTransaction persists engine-synthesized business transactions. The
+// engine routes those only through TransactionSink; adapter-supplied business
+// transaction results continue through RecordResult and are not delivered here.
+func (w *archiveRecorder) RecordTransaction(result *protocol.Result) error {
+	return w.RecordResult(result)
 }
 
 func cloneArchiveClientMetrics(metrics *protocol.ClientMetrics) *protocol.ClientMetrics {
@@ -1266,26 +1386,27 @@ func toParquetTransactions(items []archiveTransactionEvent) []parquetTransaction
 	rows := make([]parquetTransactionEvent, 0, len(items))
 	for _, item := range items {
 		rows = append(rows, parquetTransactionEvent{
-			TimestampUnixMs:   item.Timestamp.UnixMilli(),
-			TimestampRFC3339:  item.Timestamp.Format(time.RFC3339Nano),
-			TestID:            item.TestID,
-			TestName:          item.TestName,
-			Group:             item.Group,
-			ActionName:        item.ActionName,
-			DurationMs:        item.DurationMs,
-			DNSMs:             item.DNSMs,
-			ConnectMs:         item.ConnectMs,
-			TLSMs:             item.TLSMs,
-			TTFBMs:            item.TTFBMs,
-			BytesSent:         item.BytesSent,
-			BytesReceived:     item.BytesReceived,
-			StatusCode:        int64(item.StatusCode),
-			Success:           item.Success,
-			ErrorMessage:      item.ErrorMessage,
-			NetworkProfile:    item.NetworkProfile,
-			ClientMetricsJSON: mustJSON(item.ClientMetrics),
-			ExtractionsJSON:   mustJSON(boundedArchiveExtractions(item.Extractions)),
-			SnapshotJSON:      mustJSON(engine.BoundErrorSnapshot(item.Snapshot, 1<<20)),
+			TimestampUnixMs:     item.Timestamp.UnixMilli(),
+			TimestampRFC3339:    item.Timestamp.Format(time.RFC3339Nano),
+			TestID:              item.TestID,
+			TestName:            item.TestName,
+			Group:               item.Group,
+			ActionName:          item.ActionName,
+			BusinessTransaction: item.BusinessTransaction,
+			DurationMs:          item.DurationMs,
+			DNSMs:               item.DNSMs,
+			ConnectMs:           item.ConnectMs,
+			TLSMs:               item.TLSMs,
+			TTFBMs:              item.TTFBMs,
+			BytesSent:           item.BytesSent,
+			BytesReceived:       item.BytesReceived,
+			StatusCode:          int64(item.StatusCode),
+			Success:             item.Success,
+			ErrorMessage:        item.ErrorMessage,
+			NetworkProfile:      item.NetworkProfile,
+			ClientMetricsJSON:   mustJSON(item.ClientMetrics),
+			ExtractionsJSON:     mustJSON(boundedArchiveExtractions(item.Extractions)),
+			SnapshotJSON:        mustJSON(engine.BoundErrorSnapshot(item.Snapshot, 1<<20)),
 		})
 	}
 	return rows
@@ -1361,6 +1482,7 @@ func toParquetSummaries(items []archiveIntervalSummary) []parquetIntervalSummary
 			P99Ms:              item.P99Ms,
 			DurationDigestJSON: mustJSON(item.DurationDigest),
 			GroupsJSON:         mustJSON(item.Groups),
+			TransactionsJSON:   mustJSON(item.Transactions),
 			BrowserJSON:        mustJSON(item.Browser),
 			BrowserDeviceJSON:  mustJSON(item.BrowserByDevice),
 			TelemetryJSON:      mustJSON(item.Telemetry),

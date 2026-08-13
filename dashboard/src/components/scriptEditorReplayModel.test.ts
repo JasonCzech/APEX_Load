@@ -14,6 +14,8 @@ import {
   formatConditionEvidence,
   formatDebugLeafSuffix,
   formatDebugLogEntry,
+  highlightDebugLogRaw,
+  tokenizeDebugLogRawLine,
   formatReplayDiagnosisCategory,
   hasStructuredReplaySnapshot,
   humanizeStepSegment,
@@ -163,6 +165,36 @@ describe('script editor replay model', () => {
     expect(formatDebugLogEntry(entry)).toContain('INFO request action[2] sent\nGET /orders')
     expect(formatReplayDiagnosisCategory('selector_not_found')).toBe('Selector Not Found')
     expect(formatReplayDiagnosisCategory()).toBe('Diagnosis')
+  })
+
+  it('tokenizes debugger protocol output without changing its text', () => {
+    const cases = [
+      ['GET /orders?customer=42 HTTP/1.1', ['method', 'plain', 'target', 'plain', 'number']],
+      ['HTTP/1.1 200 OK', ['plain', 'status-success', 'plain']],
+      ['HTTP/1.1 404 Not Found', ['plain', 'status-warning', 'plain']],
+      ['HTTP/2 503 Unavailable', ['plain', 'status-error', 'plain']],
+      ['Content-Type: application/json', ['header', 'punctuation', 'plain']],
+      ['{"order_id":42,"ready":true,"state":"created"}', ['punctuation', 'key', 'punctuation', 'number', 'punctuation', 'key', 'punctuation', 'literal', 'punctuation', 'key', 'punctuation', 'string', 'punctuation']],
+    ] as const
+
+    cases.forEach(([line, kinds]) => {
+      const tokens = tokenizeDebugLogRawLine(line)
+      expect(tokens.map(token => token.kind)).toEqual(kinds)
+      expect(tokens.map(token => token.text).join('')).toBe(line)
+    })
+  })
+
+  it('bounds semantic highlighting and reports content omitted from display', () => {
+    const raw = 'GET /orders HTTP/1.1\n{"order_id":42,"ready":true}\ntrailing-payload'
+    const result = highlightDebugLogRaw(raw, {
+      highlightChars: 36,
+      highlightTokens: 6,
+      renderChars: 54,
+    })
+
+    expect(result.tokens.length).toBeLessThanOrEqual(6)
+    expect(result.tokens.map(token => token.text).join('') + result.plainRemainder).toBe(raw.slice(0, 54))
+    expect(result.omittedCharCount).toBe(raw.length - 54)
   })
 
   it('appends new activity and replaces matching activity without reordering', () => {

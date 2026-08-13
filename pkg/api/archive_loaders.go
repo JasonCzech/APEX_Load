@@ -389,37 +389,98 @@ func loadArchiveIntervalSummariesForFiltersContext(ctx context.Context, record *
 		configuredGroups = manifest.Provenance.Groups
 	}
 	groupSet := selectedGroupNameSet(groupFilter.Names)
-	buckets := make([]archiveActionSummaryBucket, len(summaries))
-	durationQuantiles := make([]*archiveQuantileAccumulator, len(summaries))
-	if err := forEachArchiveTransactionContext(ctx, record, func(tx *TransactionEvent) error {
+	allBuckets := make([]archiveActionSummaryBucket, len(summaries))
+	businessBuckets := make([]archiveActionSummaryBucket, len(summaries))
+	allDurationQuantiles := make([]*archiveQuantileAccumulator, len(summaries))
+	businessDurationQuantiles := make([]*archiveQuantileAccumulator, len(summaries))
+	allTransactionSeriesBuckets := make([]map[string]*intervalTransactionAccumulator, len(summaries))
+	businessTransactionSeriesBuckets := make([]map[string]*intervalTransactionAccumulator, len(summaries))
+	transactionNames := make(map[string]struct{})
+	hasBusinessTransactions := false
+	transactionSeriesCells := 0
+	addTransactionSeries := func(series []map[string]*intervalTransactionAccumulator, index int, name string, tx *TransactionEvent) error {
+		if series[index] == nil {
+			series[index] = make(map[string]*intervalTransactionAccumulator)
+		}
+		metric := series[index][name]
+		if metric == nil {
+			if transactionSeriesCells >= maxArchiveReportAggregateCells {
+				return fmt.Errorf("archive summary exceeds %d transaction series cells", maxArchiveReportAggregateCells)
+			}
+			transactionSeriesCells++
+			metric = &intervalTransactionAccumulator{}
+			series[index][name] = metric
+		}
+		metric.count++
+		if !tx.Success {
+			metric.errors++
+		}
+		metric.totalDurationMs += tx.DurationMs
+		return nil
+	}
+	includeTransaction := func(tx *TransactionEvent) bool {
 		if groupFilter.Explicit {
 			if len(groupSet) == 0 {
-				return nil
+				return false
 			}
 			if _, ok := groupSet[tx.Group]; !ok {
-				return nil
+				return false
 			}
 		}
 		if action != "" && !strings.EqualFold(tx.ActionName, action) {
+			return false
+		}
+		return true
+	}
+	addSummaryEvidence := func(buckets []archiveActionSummaryBucket, quantiles []*archiveQuantileAccumulator, index int, tx *TransactionEvent) {
+		bucket := &buckets[index]
+		bucket.transactions++
+		bucket.totalDurationMs += tx.DurationMs
+		if !tx.Success {
+			bucket.errors++
+		}
+		if quantiles[index] == nil {
+			quantiles[index] = &archiveQuantileAccumulator{}
+		}
+		quantiles[index].Add(tx.DurationMs)
+	}
+	if err := forEachArchiveTransactionContext(ctx, record, func(tx *TransactionEvent) error {
+		if !includeTransaction(tx) {
 			return nil
 		}
 		index := archiveSummaryBucketIndex(summaries, tx.Timestamp)
 		if index < 0 {
 			return nil
 		}
-		bucket := &buckets[index]
-		bucket.transactions++
-		bucket.totalDurationMs += tx.DurationMs
-		if durationQuantiles[index] == nil {
-			durationQuantiles[index] = &archiveQuantileAccumulator{}
+		addSummaryEvidence(allBuckets, allDurationQuantiles, index, tx)
+		transactionName := intervalTransactionName(tx.ActionName)
+		if _, exists := transactionNames[transactionName]; !exists {
+			if len(transactionNames) >= maxArchiveAnalysisDimensions {
+				return fmt.Errorf("archive summary exceeds %d distinct transaction names", maxArchiveAnalysisDimensions)
+			}
+			transactionNames[transactionName] = struct{}{}
 		}
-		durationQuantiles[index].Add(tx.DurationMs)
-		if !tx.Success {
-			bucket.errors++
+		if err := addTransactionSeries(allTransactionSeriesBuckets, index, transactionName, tx); err != nil {
+			return err
+		}
+		if tx.BusinessTransaction {
+			hasBusinessTransactions = true
+			addSummaryEvidence(businessBuckets, businessDurationQuantiles, index, tx)
+			if err := addTransactionSeries(businessTransactionSeriesBuckets, index, transactionName, tx); err != nil {
+				return err
+			}
 		}
 		return nil
 	}); err != nil {
 		return nil, err
+	}
+	buckets := allBuckets
+	durationQuantiles := allDurationQuantiles
+	transactionSeriesBuckets := allTransactionSeriesBuckets
+	if hasBusinessTransactions {
+		buckets = businessBuckets
+		durationQuantiles = businessDurationQuantiles
+		transactionSeriesBuckets = businessTransactionSeriesBuckets
 	}
 
 	filtered := make([]IntervalSummaryRecord, 0, len(summaries))
@@ -438,8 +499,10 @@ func loadArchiveIntervalSummariesForFiltersContext(ctx context.Context, record *
 			TotalErrors:  cumulativeErrors,
 			Groups:       archiveSelectedSummaryGroups(summary.Groups, groupSet, groupFilter.Explicit),
 		}
+		windowSeconds := archiveSummaryBucketSeconds(summaries, index)
+		record.Transactions = intervalTransactionsFromAccumulators(transactionSeriesBuckets[index], windowSeconds)
 		if bucket.transactions > 0 {
-			record.TPS = float64(bucket.transactions) / archiveSummaryBucketSeconds(summaries, index)
+			record.TPS = float64(bucket.transactions) / windowSeconds
 			record.AvgResponseMs = bucket.totalDurationMs / float64(bucket.transactions)
 			record.ErrorPct = float64(bucket.errors) / float64(bucket.transactions) * 100
 			quantiles := durationQuantiles[index]
@@ -966,6 +1029,20 @@ func recordArchiveSample[T any](buckets []archiveSampleBucket[T], totalHint int,
 }
 
 func collectArchiveSamples[T any](buckets []archiveSampleBucket[T], maxItems int) []T {
+	candidates := collectArchiveSampleCandidates(buckets, maxItems)
+	indexes := make([]int, 0, len(candidates))
+	for index := range candidates {
+		indexes = append(indexes, index)
+	}
+	sort.Ints(indexes)
+	items := make([]T, 0, len(indexes))
+	for _, index := range indexes {
+		items = append(items, candidates[index])
+	}
+	return items
+}
+
+func collectArchiveSampleCandidates[T any](buckets []archiveSampleBucket[T], maxItems int) map[int]T {
 	candidates := make(map[int]T, maxItems)
 	for _, bucket := range buckets {
 		if bucket.first.set {
@@ -982,16 +1059,7 @@ func collectArchiveSamples[T any](buckets []archiveSampleBucket[T], maxItems int
 			}
 		}
 	}
-	indexes := make([]int, 0, len(candidates))
-	for index := range candidates {
-		indexes = append(indexes, index)
-	}
-	sort.Ints(indexes)
-	items := make([]T, 0, len(indexes))
-	for _, index := range indexes {
-		items = append(items, candidates[index])
-	}
-	return items
+	return candidates
 }
 
 func downsampleArchiveItems[T any](items []T, maxItems int, scoreFunctions ...func(*T) float64) ([]T, error) {
@@ -1054,6 +1122,194 @@ func readJSONLDownsampledFrom[T any](ctx context.Context, reader io.Reader, tota
 	return collectArchiveSamples(buckets, maxItems), matched, nil
 }
 
+func recordFirstFiniteIntervalTransactionIndexes(firstIndexByName map[string]int, item *IntervalSummaryRecord, index int) error {
+	if item == nil {
+		return nil
+	}
+	for name, metric := range item.Transactions {
+		if metric == nil || math.IsNaN(metric.TPS) || math.IsInf(metric.TPS, 0) || math.IsNaN(metric.AvgMs) || math.IsInf(metric.AvgMs, 0) {
+			continue
+		}
+		name = intervalTransactionName(firstNonEmpty(metric.Name, name))
+		if _, exists := firstIndexByName[name]; exists {
+			continue
+		}
+		if len(firstIndexByName) >= maxArchiveAnalysisDimensions {
+			return fmt.Errorf("archive summaries exceed %d distinct transaction names", maxArchiveAnalysisDimensions)
+		}
+		firstIndexByName[name] = index
+	}
+	return nil
+}
+
+func mandatoryIntervalSummaryIndexes(firstIndexByName map[string]int, maxItems int) map[int]struct{} {
+	mandatoryBudget := maxItems - 2
+	if mandatoryBudget <= 0 {
+		return map[int]struct{}{}
+	}
+	names := make([]string, 0, len(firstIndexByName))
+	for name := range firstIndexByName {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	mandatoryIndexes := make(map[int]struct{}, min(len(names), mandatoryBudget))
+	for _, name := range names {
+		index := firstIndexByName[name]
+		if _, exists := mandatoryIndexes[index]; exists {
+			continue
+		}
+		if len(mandatoryIndexes) >= mandatoryBudget {
+			break
+		}
+		mandatoryIndexes[index] = struct{}{}
+	}
+	return mandatoryIndexes
+}
+
+type intervalSummarySamplePlan struct {
+	totalHint        int
+	baseLimit        int
+	scores           []func(*IntervalSummaryRecord) float64
+	buckets          []archiveSampleBucket[IntervalSummaryRecord]
+	mandatoryIndexes map[int]struct{}
+	mandatoryItems   map[int]IntervalSummaryRecord
+}
+
+func newIntervalSummarySamplePlan(totalHint, maxItems int, firstIndexByName map[string]int) (*intervalSummarySamplePlan, error) {
+	if maxItems < 2 {
+		return nil, fmt.Errorf("sample limit must be at least 2")
+	}
+	mandatoryIndexes := mandatoryIntervalSummaryIndexes(firstIndexByName, maxItems)
+	baseLimit := maxItems - len(mandatoryIndexes)
+	scores, err := boundedArchiveScoreFunctions(baseLimit, archiveIntervalSummaryScores())
+	if err != nil {
+		return nil, err
+	}
+	if totalHint < 1 {
+		totalHint = maxItems
+	}
+	return &intervalSummarySamplePlan{
+		totalHint:        totalHint,
+		baseLimit:        baseLimit,
+		scores:           scores,
+		buckets:          newArchiveSampleBuckets[IntervalSummaryRecord](baseLimit, len(scores)),
+		mandatoryIndexes: mandatoryIndexes,
+		mandatoryItems:   make(map[int]IntervalSummaryRecord, len(mandatoryIndexes)),
+	}, nil
+}
+
+func (plan *intervalSummarySamplePlan) record(index int, item IntervalSummaryRecord) {
+	recordArchiveSample(plan.buckets, plan.totalHint, index, item, plan.scores)
+	if _, mandatory := plan.mandatoryIndexes[index]; mandatory {
+		plan.mandatoryItems[index] = item
+	}
+}
+
+func (plan *intervalSummarySamplePlan) items() []IntervalSummaryRecord {
+	candidates := collectArchiveSampleCandidates(plan.buckets, plan.baseLimit)
+	for mandatoryIndex, item := range plan.mandatoryItems {
+		candidates[mandatoryIndex] = item
+	}
+	indexes := make([]int, 0, len(candidates))
+	for candidateIndex := range candidates {
+		indexes = append(indexes, candidateIndex)
+	}
+	sort.Ints(indexes)
+	items := make([]IntervalSummaryRecord, 0, len(indexes))
+	for _, candidateIndex := range indexes {
+		items = append(items, candidates[candidateIndex])
+	}
+	return items
+}
+
+func downsampleIntervalSummaries(items []IntervalSummaryRecord, maxItems int) ([]IntervalSummaryRecord, error) {
+	if maxItems < 2 {
+		return nil, fmt.Errorf("sample limit must be at least 2")
+	}
+	firstIndexByName := make(map[string]int)
+	for index := range items {
+		if err := recordFirstFiniteIntervalTransactionIndexes(firstIndexByName, &items[index], index); err != nil {
+			return nil, err
+		}
+	}
+	if len(items) <= maxItems {
+		return append([]IntervalSummaryRecord(nil), items...), nil
+	}
+	plan, err := newIntervalSummarySamplePlan(len(items), maxItems, firstIndexByName)
+	if err != nil {
+		return nil, err
+	}
+	for index, item := range items {
+		plan.record(index, item)
+	}
+	return plan.items(), nil
+}
+
+// readIntervalSummariesDownsampledFrom reserves one sample for the first
+// finite occurrence of each bounded transaction name, then uses the remaining
+// budget for the ordinary temporal/extrema sampler. Without these mandatory
+// samples a low-volume transaction could disappear from the reloaded chart
+// entirely even though its interval metrics were durably archived.
+func readIntervalSummariesDownsampledFrom(ctx context.Context, file *os.File, totalHint, maxItems int) ([]IntervalSummaryRecord, int, error) {
+	if maxItems < 2 {
+		return nil, 0, fmt.Errorf("sample limit must be at least 2")
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	firstIndexByName := make(map[string]int)
+	firstScanner := newArchiveJSONLScanner(file)
+	firstBudget := newArchiveScanBudget(ctx, maxArchiveQueryRecords, maxArchiveQueryBytes)
+	total := 0
+	for firstScanner.Scan() {
+		if err := firstBudget.Observe(firstScanner.Bytes()); err != nil {
+			return nil, 0, err
+		}
+		var item IntervalSummaryRecord
+		if err := json.Unmarshal(firstScanner.Bytes(), &item); err != nil {
+			return nil, 0, err
+		}
+		sanitizeArchiveDecodedRecord(&item)
+		if err := recordFirstFiniteIntervalTransactionIndexes(firstIndexByName, &item, total); err != nil {
+			return nil, 0, err
+		}
+		total++
+	}
+	if err := firstScanner.Err(); err != nil {
+		return nil, 0, err
+	}
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
+		return nil, 0, err
+	}
+
+	if totalHint < 1 {
+		totalHint = max(total, maxItems)
+	}
+	plan, err := newIntervalSummarySamplePlan(totalHint, maxItems, firstIndexByName)
+	if err != nil {
+		return nil, 0, err
+	}
+	secondScanner := newArchiveJSONLScanner(file)
+	secondBudget := newArchiveScanBudget(ctx, maxArchiveQueryRecords, maxArchiveQueryBytes)
+	index := 0
+	for secondScanner.Scan() {
+		if err := secondBudget.Observe(secondScanner.Bytes()); err != nil {
+			return nil, 0, err
+		}
+		var item IntervalSummaryRecord
+		if err := json.Unmarshal(secondScanner.Bytes(), &item); err != nil {
+			return nil, 0, err
+		}
+		sanitizeArchiveDecodedRecord(&item)
+		plan.record(index, item)
+		index++
+	}
+	if err := secondScanner.Err(); err != nil {
+		return nil, 0, err
+	}
+	return plan.items(), index, nil
+}
+
 func archiveResourceSampleScores() []func(*ResourceSample) float64 {
 	return []func(*ResourceSample) float64{
 		// Safety-critical container signals are independent dimensions. Keeping
@@ -1081,10 +1337,37 @@ func archiveIntervalSummaryScores() []func(*IntervalSummaryRecord) float64 {
 		func(sample *IntervalSummaryRecord) float64 { return sample.ErrorPct },
 		func(sample *IntervalSummaryRecord) float64 { return float64(sample.TotalErrors) },
 		func(sample *IntervalSummaryRecord) float64 { return sample.TPS },
+		func(sample *IntervalSummaryRecord) float64 {
+			return archiveIntervalTransactionMax(sample, func(metric *IntervalTransactionMetrics) float64 { return metric.TPS })
+		},
+		func(sample *IntervalSummaryRecord) float64 {
+			return archiveIntervalTransactionMax(sample, func(metric *IntervalTransactionMetrics) float64 { return metric.AvgMs })
+		},
+		func(sample *IntervalSummaryRecord) float64 {
+			return archiveIntervalTransactionMax(sample, func(metric *IntervalTransactionMetrics) float64 {
+				if metric.Count <= 0 {
+					return 0
+				}
+				return float64(metric.Errors) / float64(metric.Count) * 100
+			})
+		},
 		func(sample *IntervalSummaryRecord) float64 { return math.Abs(sample.ThroughputGapPct) },
 		func(sample *IntervalSummaryRecord) float64 { return math.Max(sample.P99Ms, sample.AvgResponseMs) },
 		func(sample *IntervalSummaryRecord) float64 { return float64(sample.ActiveVUsers) },
 	}
+}
+
+func archiveIntervalTransactionMax(sample *IntervalSummaryRecord, value func(*IntervalTransactionMetrics) float64) float64 {
+	if sample == nil || value == nil {
+		return 0
+	}
+	var maximum float64
+	for _, metric := range sample.Transactions {
+		if metric != nil {
+			maximum = math.Max(maximum, value(metric))
+		}
+	}
+	return maximum
 }
 
 func loadArchiveResourceSamplesDownsampled(record *storage.RunArchiveRecord, limit int) ([]ResourceSample, int, error) {
@@ -1128,7 +1411,7 @@ func loadArchiveIntervalSummariesDownsampledContext(ctx context.Context, record 
 		return nil, 0, err
 	}
 	defer file.Close()
-	return readJSONLDownsampledFrom(ctx, file, int(manifest.IntervalSummaryCount), limit, archiveIntervalSummaryScores()...)
+	return readIntervalSummariesDownsampledFrom(ctx, file, int(manifest.IntervalSummaryCount), limit)
 }
 
 func loadArchiveIntervalSummariesForFiltersDownsampled(record *storage.RunArchiveRecord, limit int, action string, groupFilter groupFilterQuery) ([]IntervalSummaryRecord, int, error) {
@@ -1141,7 +1424,7 @@ func loadArchiveIntervalSummariesForFiltersDownsampledContext(ctx context.Contex
 		return nil, 0, err
 	}
 	total := len(summaries)
-	items, err := downsampleArchiveItems(summaries, limit, archiveIntervalSummaryScores()...)
+	items, err := downsampleIntervalSummaries(summaries, limit)
 	if err != nil {
 		return nil, 0, err
 	}

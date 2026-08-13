@@ -107,6 +107,12 @@ func filterLiveMetricsForGroups(live *LiveMetrics, filter groupFilterQuery) *Liv
 	}
 
 	out := *live
+	// Transaction metrics are aggregated globally by action name. The current
+	// live-metrics model does not retain a group+transaction dimension, so a
+	// selected-group response cannot safely attribute any transaction series to
+	// the selected groups. Omit the global series instead of returning metrics
+	// from groups the caller explicitly hid.
+	out.Transactions = nil
 	out.GroupMetrics = make(map[string]*GroupLiveMetrics)
 	if len(filter.Names) == 0 {
 		clearLivePerformanceMetrics(&out)
@@ -346,6 +352,7 @@ func cloneGroupLiveMetrics(metrics *GroupLiveMetrics) *GroupLiveMetrics {
 }
 
 func clearLivePerformanceMetrics(live *LiveMetrics) {
+	live.Transactions = nil
 	live.ActiveVUsers = 0
 	live.TPS = 0
 	live.TargetTPS = 0

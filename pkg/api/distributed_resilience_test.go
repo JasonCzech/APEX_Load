@@ -61,14 +61,17 @@ type stagedEvacuationFaultClient struct {
 
 type setupRecordingEvacuationClient struct {
 	*generatorrpc.Client
-	setupTimeout atomic.Int64
+	setupTimeout        atomic.Int64
+	durationMu          sync.Mutex
+	durationAdjustments []generatorrpc.DurationAdjustment
 }
 
 type terminalObservingEvacuationClient struct {
 	*generatorrpc.Client
-	runner *TestRunner
-	testID string
-	target string
+	runner   *TestRunner
+	testID   string
+	target   string
+	ackDelay time.Duration
 }
 
 func (c *terminalObservingEvacuationClient) StopTest(ctx context.Context, testID string, graceful bool) (generatorrpc.StopResult, error) {
@@ -84,7 +87,19 @@ func (c *terminalObservingEvacuationClient) StopTestAtGeneration(ctx context.Con
 	if err != nil {
 		return result, err
 	}
-	return result, c.waitForTerminalBatch(ctx)
+	if err := c.waitForTerminalBatch(ctx); err != nil {
+		return result, err
+	}
+	if c.ackDelay > 0 {
+		timer := time.NewTimer(c.ackDelay)
+		defer timer.Stop()
+		select {
+		case <-ctx.Done():
+			return result, ctx.Err()
+		case <-timer.C:
+		}
+	}
+	return result, nil
 }
 
 func (c *terminalObservingEvacuationClient) waitForTerminalBatch(ctx context.Context) error {
@@ -107,6 +122,19 @@ func (c *terminalObservingEvacuationClient) waitForTerminalBatch(ctx context.Con
 func (c *setupRecordingEvacuationClient) OpenMetricsStreamWithSetupTimeoutForTestGeneration(parent context.Context, timeout time.Duration, testID string, generation uint64) (*generatorrpc.MetricsStream, error) {
 	c.setupTimeout.Store(int64(timeout))
 	return c.Client.OpenMetricsStreamWithSetupTimeoutForTestGeneration(parent, timeout, testID, generation)
+}
+
+func (c *setupRecordingEvacuationClient) AdjustDuration(ctx context.Context, adjustment generatorrpc.DurationAdjustment) (generatorrpc.DurationResult, error) {
+	c.durationMu.Lock()
+	c.durationAdjustments = append(c.durationAdjustments, adjustment)
+	c.durationMu.Unlock()
+	return c.Client.AdjustDuration(ctx, adjustment)
+}
+
+func (c *setupRecordingEvacuationClient) recordedDurationAdjustments() []generatorrpc.DurationAdjustment {
+	c.durationMu.Lock()
+	defer c.durationMu.Unlock()
+	return append([]generatorrpc.DurationAdjustment(nil), c.durationAdjustments...)
 }
 
 func (c *stagedEvacuationFaultClient) AssignWork(ctx context.Context, assignment generatorrpc.Assignment) (generatorrpc.AssignmentResult, error) {
@@ -1378,6 +1406,7 @@ func TestDistributedEvacuationIgnoresSoleSourceTerminalUntilReplacementCommit(t 
 	t.Setenv("APEXLOAD_GENERATOR_ARCHIVE_MIN_FREE_BYTES", "1")
 	sourceClient, sourceService := newTestGeneratorRPCClient(t, "gen-a", 10)
 	replacementClient, replacementService := newTestGeneratorRPCClient(t, "gen-b", 10)
+	recordingReplacement := &setupRecordingEvacuationClient{Client: replacementClient}
 
 	const (
 		testID              = "run-source-terminal-race"
@@ -1433,12 +1462,15 @@ func TestDistributedEvacuationIgnoresSoleSourceTerminalUntilReplacementCommit(t 
 	go hub.Run()
 	t.Cleanup(hub.Stop)
 	runner := NewTestRunner(1, hub, nil)
-	source := &terminalObservingEvacuationClient{Client: sourceClient, runner: runner, testID: testID, target: "gen-a"}
+	source := &terminalObservingEvacuationClient{
+		Client: sourceClient, runner: runner, testID: testID, target: "gen-a",
+		ackDelay: 120 * time.Millisecond,
+	}
 	backend := newDistributedExecutionBackend([]string{"gen-a", "gen-b"}, 750*time.Millisecond, func(_ context.Context, target string) (generatorClient, error) {
 		if target != "gen-b" {
 			return nil, fmt.Errorf("unexpected evacuation dial target %q", target)
 		}
-		return replacementClient, nil
+		return recordingReplacement, nil
 	})
 	started := time.Now()
 	test := &ManagedTest{
@@ -1511,6 +1543,13 @@ func TestDistributedEvacuationIgnoresSoleSourceTerminalUntilReplacementCommit(t 
 	}
 	if got := replacementService.ActiveVUsers(); got != 2 {
 		t.Fatalf("replacement active VUsers = %d, want 2", got)
+	}
+	durationAdjustments := recordingReplacement.recordedDurationAdjustments()
+	if len(durationAdjustments) == 0 {
+		t.Fatal("replacement duration was not refreshed after the delayed source fence")
+	}
+	if got := durationAdjustments[len(durationAdjustments)-1].TargetDuration; got <= 0 || got >= time.Minute-50*time.Millisecond {
+		t.Fatalf("refreshed replacement logical duration = %s, want positive and shortened after the 120ms source fence", got)
 	}
 
 	cancel()

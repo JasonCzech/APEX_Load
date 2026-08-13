@@ -183,6 +183,19 @@ func Value(value string, policy Policy) string {
 	return cp.value(value)
 }
 
+// ValueLabel scrubs a stable, operator-facing identity label without applying
+// the blanket JWT/high-entropy token heuristic. Labels still receive all
+// structured credential detection and explicit policy rules. Callers that also
+// govern exact runtime values must apply those matchers before and after this
+// function.
+func ValueLabel(value string, policy Policy) string {
+	if value == "" {
+		return value
+	}
+	cp, _ := policy.compile()
+	return cp.valueLabel(value)
+}
+
 // ValueURL scrubs a URL string: sensitive query parameters and custom rules are
 // applied, but the blanket JWT/high-entropy heuristics are skipped because they
 // corrupt hostnames and content-hashed paths (see compiledPolicy.valueURL).
@@ -197,6 +210,14 @@ func ValueURL(value string, policy Policy) string {
 // value applies the built-in body/query token patterns and the policy's
 // pre-compiled custom rules to a string, reusing the compiled regexps.
 func (cp compiledPolicy) value(value string) string {
+	return cp.valueWithBareTokenHeuristics(value, true)
+}
+
+func (cp compiledPolicy) valueLabel(value string) string {
+	return cp.valueWithBareTokenHeuristics(value, false)
+}
+
+func (cp compiledPolicy) valueWithBareTokenHeuristics(value string, redactBare bool) string {
 	if value == "" {
 		return value
 	}
@@ -231,7 +252,9 @@ func (cp compiledPolicy) value(value string) string {
 	value = redactMultipartFields(value, SensitiveName)
 	value = opaqueDSNCredential.ReplaceAllString(value, "${1}"+Redacted+"${3}")
 	value = namedSecretText.ReplaceAllString(value, "${1}${2}${3}"+Redacted+"${5}")
-	value = redactBareTokens(value)
+	if redactBare {
+		value = redactBareTokens(value)
+	}
 	value = restoreURLs(value)
 	// Run custom rules against the restored whole value. A rule may deliberately
 	// include context immediately before an URL (for example

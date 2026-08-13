@@ -24,10 +24,16 @@ type gracefulBoundaryTestState struct {
 	firstStarted     chan struct{}
 	firstReturned    chan struct{}
 	releaseFirst     chan struct{}
+	allowFinalGoal   chan struct{}
+	finalGoalReached chan struct{}
 	actions          chan string
 	firstOnce        sync.Once
 	returnedOnce     sync.Once
+	goalOnce         sync.Once
+	actionCanceled   atomic.Bool
 	adapterTeardowns atomic.Int64
+	initCtxMu        sync.Mutex
+	initCtx          context.Context
 }
 
 type gracefulBoundaryTestProtocol struct {
@@ -35,6 +41,10 @@ type gracefulBoundaryTestProtocol struct {
 }
 
 type goalAfterInitBoundaryProtocol struct {
+	state *gracefulBoundaryTestState
+}
+
+type blockingFinalGoalProtocol struct {
 	state *gracefulBoundaryTestState
 }
 
@@ -62,7 +72,12 @@ func (*scaleInitFailureProtocol) Teardown(context.Context) error    { return nil
 func (*scaleInitFailureProtocol) HealthCheck(context.Context) error { return nil }
 
 func (*gracefulBoundaryTestProtocol) Name() string { return "graceful-boundary-test" }
-func (*gracefulBoundaryTestProtocol) Init(context.Context, map[string]any) error {
+func (p *gracefulBoundaryTestProtocol) Init(ctx context.Context, _ map[string]any) error {
+	if p.state != nil {
+		p.state.initCtxMu.Lock()
+		p.state.initCtx = ctx
+		p.state.initCtxMu.Unlock()
+	}
 	return nil
 }
 func (p *gracefulBoundaryTestProtocol) Execute(ctx context.Context, action *protocol.Action) (*protocol.Result, error) {
@@ -105,6 +120,48 @@ func (p *goalAfterInitBoundaryProtocol) Execute(ctx context.Context, action *pro
 func (*goalAfterInitBoundaryProtocol) Teardown(context.Context) error    { return nil }
 func (*goalAfterInitBoundaryProtocol) HealthCheck(context.Context) error { return nil }
 
+func (*blockingFinalGoalProtocol) Name() string { return "blocking-final-goal-test" }
+func (*blockingFinalGoalProtocol) Init(context.Context, map[string]any) error {
+	return nil
+}
+func (*blockingFinalGoalProtocol) Execute(context.Context, *protocol.Action) (*protocol.Result, error) {
+	panic("blocking final goal protocol requires ExecuteStream")
+}
+func (p *blockingFinalGoalProtocol) ExecuteStream(ctx context.Context, action *protocol.Action, emit func(*protocol.Result) error) (*protocol.Result, error) {
+	if p.state != nil {
+		p.state.firstOnce.Do(func() { close(p.state.firstStarted) })
+		select {
+		case <-p.state.allowFinalGoal:
+		case <-ctx.Done():
+			p.state.actionCanceled.Store(true)
+			return nil, ctx.Err()
+		}
+	}
+	if emit != nil {
+		if err := emit(&protocol.Result{
+			ActionName:          "final goal transaction",
+			BusinessTransaction: true,
+			Success:             true,
+			Duration:            time.Millisecond,
+		}); err != nil {
+			return nil, err
+		}
+	}
+	if p.state != nil {
+		p.state.goalOnce.Do(func() { close(p.state.finalGoalReached) })
+		select {
+		case <-p.state.releaseFirst:
+			p.state.returnedOnce.Do(func() { close(p.state.firstReturned) })
+		case <-ctx.Done():
+			p.state.actionCanceled.Store(true)
+			return nil, ctx.Err()
+		}
+	}
+	return &protocol.Result{ActionName: action.Name, Success: true, Duration: time.Millisecond}, nil
+}
+func (*blockingFinalGoalProtocol) Teardown(context.Context) error    { return nil }
+func (*blockingFinalGoalProtocol) HealthCheck(context.Context) error { return nil }
+
 func (*contextIgnoringLifecycleInitProtocol) Name() string {
 	return "context-ignoring-lifecycle-init-test"
 }
@@ -141,6 +198,11 @@ func init() {
 		defer gracefulBoundaryStateMu.Unlock()
 		return &goalAfterInitBoundaryProtocol{state: gracefulBoundaryState}
 	})
+	protocol.Register("blocking-final-goal-test", func() protocol.Protocol {
+		gracefulBoundaryStateMu.Lock()
+		defer gracefulBoundaryStateMu.Unlock()
+		return &blockingFinalGoalProtocol{state: gracefulBoundaryState}
+	})
 	protocol.Register("context-ignoring-lifecycle-init-test", func() protocol.Protocol {
 		gracefulBoundaryStateMu.Lock()
 		defer gracefulBoundaryStateMu.Unlock()
@@ -151,10 +213,12 @@ func init() {
 func installGracefulBoundaryState(t *testing.T) *gracefulBoundaryTestState {
 	t.Helper()
 	state := &gracefulBoundaryTestState{
-		firstStarted:  make(chan struct{}),
-		firstReturned: make(chan struct{}),
-		releaseFirst:  make(chan struct{}),
-		actions:       make(chan string, 16),
+		firstStarted:     make(chan struct{}),
+		firstReturned:    make(chan struct{}),
+		releaseFirst:     make(chan struct{}),
+		allowFinalGoal:   make(chan struct{}),
+		finalGoalReached: make(chan struct{}),
+		actions:          make(chan string, 16),
 	}
 	gracefulBoundaryStateMu.Lock()
 	gracefulBoundaryState = state
@@ -184,8 +248,15 @@ func boundaryActionNames(state *gracefulBoundaryTestState) []string {
 func TestAdjustDurationRetainsCompletedPauseCompensation(t *testing.T) {
 	ready := make(chan struct{})
 	close(ready)
+	loopCtx, loopCancel := context.WithCancel(context.Background())
+	defer loopCancel()
+	launchCtx, launchCancel := context.WithCancel(loopCtx)
+	defer launchCancel()
 	mge := &MultiGroupEngine{
 		baseCtx:            context.Background(),
+		loopCtx:            loopCtx,
+		launchCtx:          launchCtx,
+		launchOpen:         true,
 		pauseCh:            ready,
 		pauseChanged:       make(chan struct{}),
 		baseTargetDuration: time.Minute,
@@ -596,6 +667,12 @@ func TestMultiGroupAtOnceInitStopsAfterEarlierGroupGoal(t *testing.T) {
 		t.Fatalf("goal cancellation interrupted the current at-once action: %v", runErr)
 	case <-time.After(50 * time.Millisecond):
 	}
+	state.initCtxMu.Lock()
+	retainedInitCtx := state.initCtx
+	state.initCtxMu.Unlock()
+	if retainedInitCtx == nil || retainedInitCtx.Err() != nil {
+		t.Fatalf("at-once protocol Init context after peer goal = %v, want live until the entitled action drains", retainedInitCtx)
+	}
 	close(state.releaseFirst)
 	select {
 	case runErr := <-done:
@@ -683,6 +760,100 @@ func TestMultiGroupAtOnceDoesNotRunUserTeardownWhenAdapterInitReturnsAfterStop(t
 	}
 	if got := state.adapterTeardowns.Load(); got != 1 {
 		t.Fatalf("adapter teardown calls = %d, want exactly the initialized adapter cleanup", got)
+	}
+}
+
+func TestMultiGroupZeroStartScaleRejectsUntilAtOnceInitCompletes(t *testing.T) {
+	state := installGracefulBoundaryState(t)
+	var releaseOnce sync.Once
+	release := func() { releaseOnce.Do(func() { close(state.releaseFirst) }) }
+	t.Cleanup(release)
+
+	script := &dsl.Script{
+		Name:     "zero-start-at-once",
+		Protocol: "context-ignoring-lifecycle-init-test",
+		Config:   dsl.ScriptConfig{RunLogic: dsl.RunLogicConfig{Iterations: 1}},
+		Init:     []dsl.Action{{Name: "user init", Type: "request", Target: "/init"}},
+		Actions:  []dsl.Action{{Name: "main", Type: "request", Target: "/main"}},
+	}
+	mge, err := NewMultiGroup(MultiGroupConfig{
+		Groups: []GroupConfig{{
+			Name: "at-once", Script: script, VUsers: 0, AllowZeroVUsers: true, InitStrategy: "at_once",
+		}},
+		Duration: 5 * time.Second,
+	})
+	if err != nil {
+		t.Fatalf("NewMultiGroup: %v", err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	joined := false
+	go func() {
+		_, runErr := mge.Run(ctx)
+		done <- runErr
+	}()
+	t.Cleanup(func() {
+		release()
+		cancel()
+		if joined {
+			return
+		}
+		select {
+		case <-done:
+		case <-time.After(2 * time.Second):
+			t.Error("zero-start at-once run did not stop")
+		}
+	})
+
+	select {
+	case <-state.firstStarted:
+	case <-time.After(time.Second):
+		t.Fatal("at-once adapter did not enter shared Init")
+	}
+	started := time.Now()
+	if err := mge.ScaleVUsers("at-once", 1); !errors.Is(err, ErrInitialRampInProgress) {
+		t.Fatalf("scale during shared at-once Init = %v, want initial-ramp rejection", err)
+	}
+	if elapsed := time.Since(started); elapsed > 100*time.Millisecond {
+		t.Fatalf("scale rejection took %s, want prompt return", elapsed)
+	}
+	select {
+	case action := <-state.actions:
+		t.Fatalf("action %q ran before shared at-once Init completed", action)
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	release()
+	deadlineReady := time.Now().Add(time.Second)
+	for !mge.ScalingReady() && time.Now().Before(deadlineReady) {
+		time.Sleep(time.Millisecond)
+	}
+	if !mge.ScalingReady() {
+		t.Fatal("scaling did not become ready after shared at-once Init")
+	}
+	if err := mge.ScaleVUsers("at-once", 1); err != nil {
+		t.Fatalf("scale after shared at-once Init: %v", err)
+	}
+	seenMain := false
+	deadline := time.After(time.Second)
+	for !seenMain {
+		select {
+		case action := <-state.actions:
+			seenMain = action == "main"
+		case <-deadline:
+			t.Fatal("scaled VUser did not run after shared at-once Init")
+		}
+	}
+
+	cancel()
+	select {
+	case runErr := <-done:
+		joined = true
+		if runErr != nil {
+			t.Fatalf("Run: %v", runErr)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("zero-start at-once run did not stop after cancellation")
 	}
 }
 
@@ -815,6 +986,96 @@ func TestMultiGroupExactGoalCancelsUnentitledPeerPacing(t *testing.T) {
 	}
 }
 
+func TestMultiGroupRejectsScaleDownWhileFinalExactGoalActionDrains(t *testing.T) {
+	state := installGracefulBoundaryState(t)
+	var allowGoalOnce sync.Once
+	allowGoal := func() { allowGoalOnce.Do(func() { close(state.allowFinalGoal) }) }
+	defer allowGoal()
+	var releaseActionOnce sync.Once
+	releaseAction := func() { releaseActionOnce.Do(func() { close(state.releaseFirst) }) }
+	defer releaseAction()
+
+	script := &dsl.Script{
+		Name: "blocking-final-goal", Protocol: "blocking-final-goal-test",
+		Config: dsl.ScriptConfig{RunLogic: dsl.RunLogicConfig{
+			Iterations:      1,
+			MaxTransactions: 1,
+		}},
+		Actions: []dsl.Action{{
+			Name:     "final goal action",
+			Type:     "java_vuser_run",
+			Metadata: map[string]any{"emits_business_transactions": true},
+		}},
+	}
+	mge, err := NewMultiGroup(MultiGroupConfig{
+		Groups:   []GroupConfig{{Name: "goal", Script: script, VUsers: 1}},
+		Duration: 10 * time.Second,
+	})
+	if err != nil {
+		t.Fatalf("NewMultiGroup: %v", err)
+	}
+	done := make(chan error, 1)
+	go func() {
+		_, runErr := mge.Run(context.Background())
+		done <- runErr
+	}()
+	select {
+	case <-state.firstStarted:
+	case <-time.After(time.Second):
+		t.Fatal("final exact-goal action did not start")
+	}
+
+	deadline := time.Now().Add(time.Second)
+	for !mge.ScalingReady() {
+		select {
+		case runErr := <-done:
+			t.Fatalf("Run finished before scaling admission opened: %v", runErr)
+		default:
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("scaling admission did not open after the initial ramp")
+		}
+		time.Sleep(time.Millisecond)
+	}
+
+	// Let the streaming adapter emit the final reserved transaction. The goal
+	// cancellation closes loop/launch admission synchronously, but the action is
+	// still entitled to drain on its goal-immune per-VUser context.
+	allowGoal()
+	select {
+	case <-state.finalGoalReached:
+	case <-time.After(time.Second):
+		t.Fatal("final transaction did not satisfy the exact goal")
+	}
+	if mge.ScalingReady() {
+		t.Fatal("ScalingReady remained true after the exact goal closed launch admission")
+	}
+	if err := mge.ScaleVUsers("goal", 0); err == nil || !strings.Contains(err.Error(), "engine not running") {
+		t.Fatalf("ScaleVUsers after exact goal = %v, want engine not running", err)
+	}
+	if state.actionCanceled.Load() {
+		t.Fatal("rejected scale-down canceled the entitled final action")
+	}
+	select {
+	case runErr := <-done:
+		t.Fatalf("Run finished before the entitled final action drained: %v", runErr)
+	case <-time.After(50 * time.Millisecond):
+	}
+
+	releaseAction()
+	select {
+	case runErr := <-done:
+		if runErr != nil {
+			t.Fatalf("Run: %v", runErr)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("run did not finish after the entitled final action drained")
+	}
+	if state.actionCanceled.Load() {
+		t.Fatal("entitled final action observed cancellation")
+	}
+}
+
 func TestGracefulStopSkipsPostBaselineButNaturalCompletionRetainsIt(t *testing.T) {
 	t.Run("explicit graceful stop", func(t *testing.T) {
 		state := installGracefulBoundaryState(t)
@@ -840,7 +1101,7 @@ func TestGracefulStopSkipsPostBaselineButNaturalCompletionRetainsIt(t *testing.T
 		}
 		deadline := time.Now().Add(time.Second)
 		for {
-			if len(mge.activeVUserCountByGroup()) == 0 {
+			if mge.activeVUserCountByGroup()["group"] == 0 {
 				break
 			}
 			if time.Now().After(deadline) {
@@ -1149,7 +1410,7 @@ func TestScaleVUsersRollsBackWhenProtocolInitFails(t *testing.T) {
 	}
 
 	rejectScaleInit.Store(true)
-	if err := mge.ScaleVUsers("group", 2); err == nil || !strings.Contains(err.Error(), "injected init failure") {
+	if err := scaleAfterInitialRamp(t, mge, "group", 2); err == nil || !strings.Contains(err.Error(), "injected init failure") {
 		t.Fatalf("ScaleVUsers error = %v, want injected init failure", err)
 	}
 	rejectScaleInit.Store(false)
@@ -1283,5 +1544,41 @@ func TestVUserIDPoolReusesReleasedIDsAndStaysBounded(t *testing.T) {
 	got, err := mge.allocateVUserID()
 	if err != nil || got != 1 {
 		t.Fatalf("allocation after release = (%d, %v), want (1, nil)", got, err)
+	}
+}
+
+func TestGroupVUserIDPoolsAreIndependentAndReusable(t *testing.T) {
+	mge := &MultiGroupEngine{
+		groups: []GroupConfig{
+			{Name: "buyers", VUserIDSpan: 3},
+			{Name: "sellers", VUserIDSpan: 2},
+		},
+		vuserIDSpan: 10,
+	}
+	mge.mu.Lock()
+	mge.resetVUserIDStateLocked()
+	mge.mu.Unlock()
+
+	allocated := make(map[string][]vuserIdentity)
+	for group, count := range map[string]int{"buyers": 3, "sellers": 2} {
+		for wantLocal := 0; wantLocal < count; wantLocal++ {
+			identity, err := mge.allocateVUserIdentity(group)
+			if err != nil || identity.local != wantLocal {
+				t.Fatalf("%s allocation %d = (%#v, %v), want local %d", group, wantLocal, identity, err, wantLocal)
+			}
+			allocated[group] = append(allocated[group], identity)
+		}
+		if _, err := mge.allocateVUserIdentity(group); err == nil || !strings.Contains(err.Error(), "namespace exhausted") {
+			t.Fatalf("%s exhausted allocation error = %v", group, err)
+		}
+	}
+
+	released := allocated["buyers"][1]
+	mge.mu.Lock()
+	mge.releaseVUserIDLocked(released.handle)
+	mge.mu.Unlock()
+	reused, err := mge.allocateVUserIdentity("buyers")
+	if err != nil || reused.local != released.local {
+		t.Fatalf("buyers allocation after release = (%#v, %v), want local %d", reused, err, released.local)
 	}
 }

@@ -558,28 +558,25 @@ describe('ScriptRuntimeSettingsView run-evidence redaction', () => {
     return checkbox
   }
 
-  it('renders checked by default when the script carries no explicit value', () => {
+  it('renders unchecked by default when the script carries no explicit value', () => {
     renderLogSection({ level: 'standard' })
-    // Default-true semantics: an absent value must read as ON. `|| false` here would
-    // show redaction as disabled on every script that never set the field.
-    expect(redactionCheckbox().checked).toBe(true)
+    expect(redactionCheckbox().checked).toBe(false)
     expect(container.textContent).toContain('run logs, snapshots, reports, archives and debugger evidence')
     expect(container.textContent).toContain('Does not change the script itself')
   })
 
-  it('emits an explicit false when unchecked, keeping the rest of the log block', () => {
+  it('emits an explicit true when enabled, keeping the rest of the log block', () => {
     const onUpdateField = renderLogSection({ level: 'extended', on_error_only: true, extended_options: ['advanced_trace'] })
     act(() => redactionCheckbox().click())
     expect(onUpdateField).toHaveBeenCalledWith('config.log', {
       level: 'extended',
       on_error_only: true,
       extended_options: ['advanced_trace'],
-      redact_run_evidence: false,
+      redact_run_evidence: true,
     })
-    // Explicitly false, never undefined — undefined would fall back to the default ON.
     const written = onUpdateField.mock.calls[onUpdateField.mock.calls.length - 1][1]
     expect(Object.prototype.hasOwnProperty.call(written, 'redact_run_evidence')).toBe(true)
-    expect(written.redact_run_evidence).toBe(false)
+    expect(written.redact_run_evidence).toBe(true)
   })
 
   it('renders unchecked for an explicit false and re-enables redaction on click', () => {

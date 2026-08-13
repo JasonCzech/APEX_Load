@@ -407,7 +407,7 @@ and archives regardless of any other setting.
 
 Credentials that arrived *inside an imported script* are treated differently: the
 script keeps them literally so it stays runnable, and whether they are redacted from
-run output is a project setting (`log.redact_run_evidence`, on by default). Move them
+run output is a project setting (`log.redact_run_evidence`, off by default). Move them
 into project secrets when you want them genuinely protected.
 
 ## Validating And Replaying

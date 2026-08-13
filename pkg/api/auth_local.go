@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
@@ -24,6 +25,7 @@ const (
 	localSessionTTL              = 12 * time.Hour
 	localLoginRateLimitPerMinute = 10
 	localInvalidCredentials      = "invalid username or password"
+	localAuthStartupTimeout      = 10 * time.Second
 )
 
 type LocalLoginRequest struct {
@@ -36,23 +38,26 @@ type LocalLoginResponse struct {
 }
 
 type localSessionResolution struct {
-	User    *AuthenticatedUser
-	Session *storage.LocalAuthSession
-	Token   string
-	Status  string
+	User      *AuthenticatedUser
+	Session   *storage.LocalAuthSession
+	Token     string
+	TokenHash string
+	Status    string
 }
 
 type localAuthStore interface {
 	EnsureLocalAuthFixtures(fixtures []storage.LocalAuthFixture) error
 	GetLocalAuthCredential(username string) (*storage.LocalAuthCredential, error)
-	SaveLocalAuthSession(session *storage.LocalAuthSession) error
-	GetLocalAuthSessionByTokenHash(tokenHash string) (*storage.LocalAuthSession, error)
+	SaveLocalAuthSessionForGeneration(generation string, session *storage.LocalAuthSession) error
+	GetLocalAuthSessionByTokenHashForGeneration(generation, tokenHash string) (*storage.LocalAuthSession, error)
 	DeleteLocalAuthSessionByTokenHash(tokenHash string) error
 	DeleteExpiredLocalAuthSessions(cutoff time.Time) error
+	ActivateLocalAuthGenerationContext(ctx context.Context, generation string, activatedAt time.Time) (int64, error)
+	GetLocalAuthGeneration() (string, error)
 }
 
-func localSessionTokenHash(token string) string {
-	sum := sha256.Sum256([]byte(strings.TrimSpace(token)))
+func localSessionTokenHashForGeneration(generation, token string) string {
+	sum := sha256.Sum256([]byte(strings.TrimSpace(generation) + "\x00" + strings.TrimSpace(token)))
 	return hex.EncodeToString(sum[:])
 }
 
@@ -62,7 +67,7 @@ func localLogoutCSRFToken(token string) string {
 	return base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
 }
 
-func resolveLocalSession(r *http.Request, store storage.Store) localSessionResolution {
+func resolveLocalSession(r *http.Request, store storage.Store, expectedGeneration ...string) localSessionResolution {
 	localStore, ok := store.(localAuthStore)
 	if store == nil || !ok {
 		return localSessionResolution{Status: "unavailable"}
@@ -72,36 +77,56 @@ func resolveLocalSession(r *http.Request, store storage.Store) localSessionResol
 		return localSessionResolution{Status: "missing"}
 	}
 	token := strings.TrimSpace(cookie.Value)
-	session, err := localStore.GetLocalAuthSessionByTokenHash(localSessionTokenHash(token))
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return localSessionResolution{Token: token, Status: "invalid"}
-		}
+	generation, err := localStore.GetLocalAuthGeneration()
+	if err != nil || strings.TrimSpace(generation) == "" {
 		return localSessionResolution{Token: token, Status: "unavailable"}
 	}
+	if len(expectedGeneration) > 0 {
+		expected := strings.TrimSpace(expectedGeneration[0])
+		if expected == "" || subtle.ConstantTimeCompare([]byte(expected), []byte(generation)) != 1 {
+			// A superseded controller must never authenticate the replacement's
+			// session, but logout on that surface must remain idempotently able to
+			// clear its stale browser cookie or desktop capability binding. Hash
+			// against this controller's immutable generation so deletion cannot
+			// target a replacement-generation session.
+			tokenHash := ""
+			if expected != "" {
+				tokenHash = localSessionTokenHashForGeneration(expected, token)
+			}
+			return localSessionResolution{Token: token, TokenHash: tokenHash, Status: "invalid"}
+		}
+	}
+	tokenHash := localSessionTokenHashForGeneration(generation, token)
+	session, err := localStore.GetLocalAuthSessionByTokenHashForGeneration(generation, tokenHash)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return localSessionResolution{Token: token, TokenHash: tokenHash, Status: "invalid"}
+		}
+		return localSessionResolution{Token: token, TokenHash: tokenHash, Status: "unavailable"}
+	}
 	if !time.Now().UTC().Before(session.ExpiresAt.UTC()) {
-		return localSessionResolution{Session: session, Token: token, Status: "expired"}
+		return localSessionResolution{Session: session, Token: token, TokenHash: tokenHash, Status: "expired"}
 	}
 	user, err := store.GetUser(session.UserID)
 	if err != nil || user == nil {
-		return localSessionResolution{Session: session, Token: token, Status: "invalid"}
+		return localSessionResolution{Session: session, Token: token, TokenHash: tokenHash, Status: "invalid"}
 	}
 	if !user.Active {
-		return localSessionResolution{Session: session, Token: token, Status: "disabled"}
+		return localSessionResolution{Session: session, Token: token, TokenHash: tokenHash, Status: "disabled"}
 	}
 	if session.SessionEpoch < user.SessionEpoch {
-		return localSessionResolution{Session: session, Token: token, Status: "revoked"}
+		return localSessionResolution{Session: session, Token: token, TokenHash: tokenHash, Status: "revoked"}
 	}
 	resolved := authenticatedUserFromStoredUser(user)
 	resolved.SessionScoped = true
 	resolved.SessionEpoch = session.SessionEpoch
 	resolved.SessionExpiresAt = session.ExpiresAt.UTC()
 	resolved.LocalScopeBoundViewer = true
-	return localSessionResolution{User: resolved, Session: session, Token: token, Status: "active"}
+	return localSessionResolution{User: resolved, Session: session, Token: token, TokenHash: tokenHash, Status: "active"}
 }
 
-func authenticatedUserFromLocalSession(r *http.Request, store storage.Store) (*AuthenticatedUser, *storage.LocalAuthSession, error) {
-	resolution := resolveLocalSession(r, store)
+func authenticatedUserFromLocalSession(r *http.Request, store storage.Store, expectedGeneration ...string) (*AuthenticatedUser, *storage.LocalAuthSession, error) {
+	resolution := resolveLocalSession(r, store, expectedGeneration...)
 	if resolution.User == nil {
 		switch resolution.Status {
 		case "disabled":
@@ -156,6 +181,45 @@ func (s *Server) ensureLocalAuthFixtures() error {
 	return localStore.EnsureLocalAuthFixtures(fixtures)
 }
 
+func (s *Server) activateLocalAuthGenerationForStartupContext(ctx context.Context) (int64, error) {
+	if s == nil || s.store == nil {
+		return 0, fmt.Errorf("storage is not configured")
+	}
+	localStore, ok := s.store.(localAuthStore)
+	if !ok {
+		return 0, fmt.Errorf("storage backend does not support local test login")
+	}
+	raw := make([]byte, sha256.Size)
+	if _, err := rand.Read(raw); err != nil {
+		return 0, fmt.Errorf("generate local auth controller generation: %w", err)
+	}
+	generation := hex.EncodeToString(raw)
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	invalidated, err := localStore.ActivateLocalAuthGenerationContext(ctx, generation, time.Now().UTC())
+	if err != nil {
+		return 0, err
+	}
+	s.localAuthGenerationMu.Lock()
+	s.localAuthGeneration = generation
+	s.localAuthGenerationMu.Unlock()
+	return invalidated, nil
+}
+
+func (s *Server) activateLocalAuthGenerationForStartup() (int64, error) {
+	return s.activateLocalAuthGenerationForStartupContext(context.Background())
+}
+
+func (s *Server) activeLocalAuthGeneration() string {
+	if s == nil {
+		return ""
+	}
+	s.localAuthGenerationMu.RLock()
+	defer s.localAuthGenerationMu.RUnlock()
+	return s.localAuthGeneration
+}
+
 func (s *Server) allowLocalLoginAttempt(w http.ResponseWriter, r *http.Request, username string) bool {
 	if s == nil || s.cache == nil {
 		return true
@@ -193,6 +257,12 @@ func (s *Server) handleLocalLogin(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusServiceUnavailable, "local login storage is unavailable")
 		return
 	}
+	generation := s.activeLocalAuthGeneration()
+	currentGeneration, err := localStore.GetLocalAuthGeneration()
+	if err != nil || generation == "" || subtle.ConstantTimeCompare([]byte(generation), []byte(currentGeneration)) != 1 {
+		writeError(w, http.StatusServiceUnavailable, "local login is restarting; reload and try again")
+		return
+	}
 	var request LocalLoginRequest
 	if !decodeJSONBody(w, r, &request) {
 		return
@@ -227,9 +297,13 @@ func (s *Server) handleLocalLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	token := base64.RawURLEncoding.EncodeToString(raw)
 	now := time.Now().UTC()
-	session := &storage.LocalAuthSession{TokenHash: localSessionTokenHash(token), UserID: user.ID, SessionEpoch: user.SessionEpoch, CreatedAt: now, ExpiresAt: now.Add(localSessionTTL)}
+	session := &storage.LocalAuthSession{TokenHash: localSessionTokenHashForGeneration(generation, token), UserID: user.ID, SessionEpoch: user.SessionEpoch, CreatedAt: now, ExpiresAt: now.Add(localSessionTTL)}
 	_ = localStore.DeleteExpiredLocalAuthSessions(now)
-	if err := localStore.SaveLocalAuthSession(session); err != nil {
+	if err := localStore.SaveLocalAuthSessionForGeneration(generation, session); err != nil {
+		if errors.Is(err, storage.ErrLocalAuthGenerationChanged) {
+			writeError(w, http.StatusServiceUnavailable, "local login is restarting; reload and try again")
+			return
+		}
 		writeError(w, http.StatusInternalServerError, "failed to create local session")
 		return
 	}
@@ -264,7 +338,7 @@ func (s *Server) handleLocalLogout(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "local logout is not enabled")
 		return
 	}
-	resolution := resolveLocalSession(r, s.store)
+	resolution := resolveLocalSession(r, s.store, s.activeLocalAuthGeneration())
 	if resolution.Token == "" {
 		writeError(w, http.StatusUnauthorized, "authentication required")
 		return
@@ -280,7 +354,11 @@ func (s *Server) handleLocalLogout(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusForbidden, "invalid csrf token")
 		return
 	}
-	tokenHash := localSessionTokenHash(resolution.Token)
+	tokenHash := resolution.TokenHash
+	if tokenHash == "" {
+		writeError(w, http.StatusServiceUnavailable, "local login storage is unavailable")
+		return
+	}
 	if err := localStore.DeleteLocalAuthSessionByTokenHash(tokenHash); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to end local session")
 		return

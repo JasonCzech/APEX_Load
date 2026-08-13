@@ -425,6 +425,82 @@ http:
 	}
 }
 
+func TestBrunoSynchronizationDistinguishesOmittedAndNullFolderID(t *testing.T) {
+	server, store, _ := newBrunoImportAPITestServer(t)
+	folderID := "bruno-sync-folder"
+	if err := store.SaveFolder(&storage.Folder{
+		ID: folderID, ProjectID: brunoImportTestProject, Name: "Synchronized scripts", Category: "scripts",
+	}); err != nil {
+		t.Fatalf("SaveFolder: %v", err)
+	}
+	createInspection := inspectBrunoJSON(t, server, []byte(`info: {name: Folder sync, type: http}
+http: {method: GET, url: https://example.test/v1}
+`), "")
+	createResponse := commitBrunoImport(t, server, brunoCommitRequest{
+		ProjectID:       brunoImportTestProject,
+		ImportSessionID: createInspection.ImportSessionID,
+		Mode:            "create",
+		FolderID:        &folderID,
+	})
+	script := decodeCommittedBrunoScript(t, createResponse.Body.Bytes())
+
+	assertFolder := func(want *string) {
+		t.Helper()
+		stored, err := store.GetScript(script.ID)
+		if err != nil {
+			t.Fatalf("GetScript: %v", err)
+		}
+		if want == nil {
+			if stored.FolderID != nil {
+				t.Fatalf("folder_id = %q, want project root", *stored.FolderID)
+			}
+			return
+		}
+		if stored.FolderID == nil || *stored.FolderID != *want {
+			t.Fatalf("folder_id = %#v, want %q", stored.FolderID, *want)
+		}
+	}
+	assertFolder(&folderID)
+
+	synchronize := func(source []byte, includeNullFolder bool) {
+		t.Helper()
+		inspection := inspectBrunoJSON(t, server, source, script.ID)
+		current, err := store.GetScript(script.ID)
+		if err != nil {
+			t.Fatalf("GetScript before sync: %v", err)
+		}
+		active, err := store.GetActiveBrunoSourceRevision(script.ID, brunoImportTestProject)
+		if err != nil {
+			t.Fatalf("GetActiveBrunoSourceRevision: %v", err)
+		}
+		payload := map[string]any{
+			"project_id":                  brunoImportTestProject,
+			"import_session_id":           inspection.ImportSessionID,
+			"mode":                        "sync",
+			"sync_script_id":              script.ID,
+			"expected_updated_at":         current.UpdatedAt,
+			"expected_active_revision_id": active.ID,
+		}
+		if includeNullFolder {
+			payload["folder_id"] = nil
+		}
+		response := commitBrunoImportRawWithStatus(t, server, payload)
+		if response.Code != http.StatusCreated {
+			t.Fatalf("sync status = %d body=%s", response.Code, response.Body.String())
+		}
+	}
+
+	synchronize([]byte(`info: {name: Folder sync, type: http}
+http: {method: GET, url: https://example.test/v2}
+`), false)
+	assertFolder(&folderID)
+
+	synchronize([]byte(`info: {name: Folder sync, type: http}
+http: {method: GET, url: https://example.test/v3}
+`), true)
+	assertFolder(nil)
+}
+
 func TestBrunoImportMigratesRepeatedCredentialFieldsToDistinctBindings(t *testing.T) {
 	server, _, _ := newBrunoImportAPITestServer(t)
 	enableSourceSecretMigration(t, server)
@@ -744,6 +820,7 @@ http:
 	requirement := inspect.Result.SecretRequirements[0]
 	if !requirement.ExistingReference || requirement.SuggestedName != "API_TOKEN" ||
 		requirement.SourceValueAvailable || requirement.DestinationValuePreserved ||
+		requirement.PreservationUnavailableReason != brunoconvert.PreservationUnavailableReference ||
 		requirement.Value != "" {
 		t.Fatalf("existing reference requirement = %#v", requirement)
 	}
@@ -1108,6 +1185,60 @@ http:
 	}
 	if strings.Contains(response.Body.String(), "default-off-literal-token") {
 		t.Fatal("default-preservation response disclosed the source credential")
+	}
+}
+
+func TestSetBrunoDestinationPreservationEvidenceExplainsUnavailableCases(t *testing.T) {
+	tests := []struct {
+		name              string
+		requirement       brunoconvert.SecretRequirement
+		sourceRetained    bool
+		destinationMapped bool
+		wantPreserved     bool
+		wantReason        string
+	}{
+		{
+			name:              "exact value mapped",
+			sourceRetained:    true,
+			destinationMapped: true,
+			wantPreserved:     true,
+		},
+		{
+			name:              "source value unavailable",
+			destinationMapped: true,
+			wantReason:        brunoconvert.PreservationUnavailableSourceValue,
+		},
+		{
+			name: "existing governed reference",
+			requirement: brunoconvert.SecretRequirement{
+				ExistingReference: true,
+			},
+			sourceRetained:    true,
+			destinationMapped: true,
+			wantReason:        brunoconvert.PreservationUnavailableReference,
+		},
+		{
+			name:              "destination mapping incomplete",
+			sourceRetained:    true,
+			destinationMapped: false,
+			wantReason:        brunoconvert.PreservationUnavailableDestination,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			requirement := test.requirement
+			requirement.DestinationValuePreserved = !test.wantPreserved
+			requirement.PreservationUnavailableReason = "stale-reason"
+			setBrunoDestinationPreservationEvidence(
+				&requirement,
+				test.sourceRetained,
+				test.destinationMapped,
+			)
+			if requirement.DestinationValuePreserved != test.wantPreserved ||
+				requirement.PreservationUnavailableReason != test.wantReason {
+				t.Fatalf("preservation evidence = %#v", requirement)
+			}
+		})
 	}
 }
 
@@ -2645,6 +2776,19 @@ func commitBrunoImportWithStatus(t *testing.T, server *Server, request brunoComm
 		t.Fatal(err)
 	}
 	httpRequest := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/bruno/commit", bytes.NewReader(payload))
+	httpRequest.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	server.mux.ServeHTTP(response, httpRequest)
+	return response
+}
+
+func commitBrunoImportRawWithStatus(t *testing.T, server *Server, payload any) *httptest.ResponseRecorder {
+	t.Helper()
+	encoded, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	httpRequest := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/bruno/commit", bytes.NewReader(encoded))
 	httpRequest.Header.Set("Content-Type", "application/json")
 	response := httptest.NewRecorder()
 	server.mux.ServeHTTP(response, httpRequest)

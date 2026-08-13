@@ -24,7 +24,7 @@ func TestLocalDomainAdminInheritedHandlerPermissions(t *testing.T) {
 	}
 	request := httptest.NewRequest(http.MethodGet, "/api/v1/projects/"+storage.DefaultProjectID, nil)
 	request.AddCookie(cookie)
-	resolution, err := resolveRequestAuth(request, server.authSettingsForRequest(), server.store)
+	resolution, err := resolveRequestAuth(request, server.authSettingsForRequest(), server.store, server.activeLocalAuthGeneration())
 	if err != nil || resolution.User == nil {
 		t.Fatalf("resolve local domainadmin: user=%#v err=%v", resolution.User, err)
 	}
@@ -67,7 +67,7 @@ func TestLocalDomainAdminRepositoryBindingInheritsHandlerPermissions(t *testing.
 	}
 	request := httptest.NewRequest(http.MethodGet, "/api/v1/projects/"+storage.DefaultProjectID, nil)
 	request.AddCookie(cookie)
-	resolution, err := resolveRequestAuth(request, server.authSettingsForRequest(), server.store)
+	resolution, err := resolveRequestAuth(request, server.authSettingsForRequest(), server.store, server.activeLocalAuthGeneration())
 	if err != nil || resolution.User == nil {
 		t.Fatalf("resolve repository-bound domainadmin: user=%#v err=%v", resolution.User, err)
 	}

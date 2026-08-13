@@ -3,6 +3,8 @@ package generatorrpc
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"math"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -804,6 +806,111 @@ func TestServiceWithExecutionExposesArchiveArtifacts(t *testing.T) {
 	}
 	if err := metrics.CloseSend(); err != nil {
 		t.Fatalf("Metrics CloseSend: %v", err)
+	}
+}
+
+func TestMergeMetricsAggregateSetsBoundsDisjointGroupSeries(t *testing.T) {
+	makeAggregate := func(name string, count int64, avgMs float64) MetricAggregate {
+		digest := engine.NewTDigest(200)
+		for sample := int64(0); sample < count; sample++ {
+			digest.Add(avgMs * float64(time.Millisecond))
+		}
+		snapshot := digest.Snapshot()
+		return MetricAggregate{
+			Name:           name,
+			Count:          count,
+			AvgMs:          avgMs,
+			AvgDNSMs:       avgMs / 10,
+			BytesSent:      count * 2,
+			BytesReceived:  count * 3,
+			TPS:            float64(count),
+			DurationDigest: &snapshot,
+		}
+	}
+	buildSeries := func(start, end int, overflowCount int64, overflowAvgMs float64) []MetricAggregate {
+		series := make([]MetricAggregate, 0, end-start+2)
+		for index := start; index <= end; index++ {
+			series = append(series, makeAggregate(fmt.Sprintf("series-%03d", index), 1, float64(index+1)))
+		}
+		if overflowCount > 0 {
+			series = append(series, makeAggregate(metricOverflowSeries, overflowCount, overflowAvgMs))
+		}
+		return series
+	}
+
+	first := buildSeries(0, 199, 5, 1_000)
+	second := buildSeries(200, 399, 7, 2_000)
+	all := append(append([]MetricAggregate(nil), first...), second...)
+	merged := mergeMetricsAggregateSets(map[string]metricsAggregateSet{
+		"group-a": {Transactions: first, Dependencies: first, SOAP: first, NetworkProfiles: first},
+		"group-b": {Transactions: second, Dependencies: second, SOAP: second, NetworkProfiles: second},
+	})
+
+	assertBounded := func(label string, got []MetricAggregate) {
+		t.Helper()
+		if len(got) != maxTransactionWindowSeries {
+			t.Fatalf("%s series = %d, want global bound %d", label, len(got), maxTransactionWindowSeries)
+		}
+		byName := make(map[string]MetricAggregate, len(got))
+		var gotCount, gotBytesSent, gotBytesReceived, gotDigestCount int64
+		var gotTPS, gotWeightedAvg float64
+		for index, aggregate := range got {
+			if index > 0 && got[index-1].Name > aggregate.Name {
+				t.Fatalf("%s series order is not deterministic: %q before %q", label, got[index-1].Name, aggregate.Name)
+			}
+			byName[aggregate.Name] = aggregate
+			gotCount += aggregate.Count
+			gotTPS += aggregate.TPS
+			gotWeightedAvg += aggregate.AvgMs * float64(aggregate.Count)
+			gotBytesSent += aggregate.BytesSent
+			gotBytesReceived += aggregate.BytesReceived
+			if aggregate.DurationDigest == nil {
+				t.Fatalf("%s aggregate %q lost its complete duration digest", label, aggregate.Name)
+			}
+			gotDigestCount += aggregate.DurationDigest.Count
+		}
+
+		var wantCount, wantBytesSent, wantBytesReceived, wantDigestCount int64
+		var wantTPS, wantWeightedAvg float64
+		for _, aggregate := range all {
+			wantCount += aggregate.Count
+			wantTPS += aggregate.TPS
+			wantWeightedAvg += aggregate.AvgMs * float64(aggregate.Count)
+			wantBytesSent += aggregate.BytesSent
+			wantBytesReceived += aggregate.BytesReceived
+			wantDigestCount += aggregate.DurationDigest.Count
+		}
+		if gotCount != wantCount || gotTPS != wantTPS || gotBytesSent != wantBytesSent || gotBytesReceived != wantBytesReceived || gotDigestCount != wantDigestCount || math.Abs(gotWeightedAvg-wantWeightedAvg) > 1e-9 {
+			t.Fatalf("%s totals = count %d TPS %v weighted latency %v bytes %d/%d digest %d; want %d/%v/%v/%d/%d/%d", label, gotCount, gotTPS, gotWeightedAvg, gotBytesSent, gotBytesReceived, gotDigestCount, wantCount, wantTPS, wantWeightedAvg, wantBytesSent, wantBytesReceived, wantDigestCount)
+		}
+		if byName["series-000"].Count != 1 || byName["series-254"].Count != 1 {
+			t.Fatalf("%s did not retain the deterministic lexical prefix", label)
+		}
+		if _, exists := byName["series-255"]; exists {
+			t.Fatalf("%s retained series-255 instead of folding it into overflow", label)
+		}
+		overflow := byName[metricOverflowSeries]
+		if overflow.Count != 157 || overflow.TPS != 157 || overflow.DurationDigest == nil || overflow.DurationDigest.Count != 157 {
+			t.Fatalf("%s overflow = %#v, want existing 12 plus 145 omitted series exactly once", label, overflow)
+		}
+	}
+
+	assertBounded("transactions", merged.Transactions)
+	assertBounded("dependencies", merged.Dependencies)
+	assertBounded("SOAP", merged.SOAP)
+	assertBounded("network profiles", merged.NetworkProfiles)
+
+	boundary := mergeMetricsAggregateSets(map[string]metricsAggregateSet{
+		"group-a": {Transactions: buildSeries(0, 127, 0, 0)},
+		"group-b": {Transactions: buildSeries(128, 255, 0, 0)},
+	}).Transactions
+	if len(boundary) != maxTransactionWindowSeries || boundary[0].Name != metricOverflowSeries || boundary[0].Count != 1 {
+		t.Fatalf("exact-boundary series = %#v, want 255 exact names plus one overflow sample", boundary)
+	}
+	for _, aggregate := range boundary {
+		if aggregate.Name == "series-255" {
+			t.Fatal("exact-boundary lexical tail was not folded into overflow")
+		}
 	}
 }
 

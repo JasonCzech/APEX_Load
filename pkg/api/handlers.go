@@ -842,7 +842,7 @@ func (s *Server) handleCreateScript(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	s.recordAuditEvent(r, "script.create", "success", "script", stored.ID, stored.ProjectID, map[string]any{"name": disclosureSafeScriptName(stored.Name, stored.Script), "folder_id": stored.FolderID})
-	writeJSON(w, http.StatusCreated, maskStoredScript(stored))
+	writeJSON(w, http.StatusCreated, viewStoredScript(stored))
 }
 
 func (s *Server) handleListScripts(w http.ResponseWriter, r *http.Request) {
@@ -893,7 +893,7 @@ func (s *Server) handleGetScript(w http.ResponseWriter, r *http.Request) {
 	if !requireAuthorizedProjectMatch(w, r, script.ProjectID) {
 		return
 	}
-	writeJSON(w, http.StatusOK, maskStoredScript(script))
+	writeJSON(w, http.StatusOK, viewStoredScript(script))
 }
 
 func (s *Server) handleValidateScript(w http.ResponseWriter, r *http.Request) {
@@ -1049,7 +1049,11 @@ func (s *Server) handleScaleVUsers(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := s.runner.ScaleVUsersWithOptions(id, req.Group, targetVUsers, ScaleVUsersOptions{RampDuration: rampDuration}); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		status := http.StatusBadRequest
+		if errors.Is(err, engine.ErrInitialRampInProgress) || errors.Is(err, errTestLoadNotReady) || errors.Is(err, errDistributedTestActivating) {
+			status = http.StatusConflict
+		}
+		writeError(w, status, err.Error())
 		return
 	}
 	projectID := ""

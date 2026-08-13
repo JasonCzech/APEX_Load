@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"context"
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
@@ -13,6 +14,8 @@ import (
 )
 
 const localAuthFixturePostgresAdvisoryLock = `SELECT pg_advisory_xact_lock(7241801551050296672)`
+
+var ErrLocalAuthGenerationChanged = errors.New("local auth controller generation changed")
 
 func normalizeLocalUsername(value string) string {
 	return strings.ToLower(strings.TrimSpace(value))
@@ -177,6 +180,17 @@ func canonicalLocalSessionTokenHash(value string) (string, error) {
 	return value, nil
 }
 
+func canonicalLocalAuthGeneration(value string) (string, error) {
+	if len(value) != sha256.Size*2 {
+		return "", fmt.Errorf("local auth generation must be a canonical 256-bit hex value")
+	}
+	decoded, err := hex.DecodeString(value)
+	if err != nil || hex.EncodeToString(decoded) != value {
+		return "", fmt.Errorf("local auth generation must be a canonical 256-bit hex value")
+	}
+	return value, nil
+}
+
 func (s *SQLiteStore) SaveLocalAuthSession(session *LocalAuthSession) error {
 	if session == nil || strings.TrimSpace(session.UserID) == "" {
 		return fmt.Errorf("local auth session token hash and user id are required")
@@ -188,6 +202,47 @@ func (s *SQLiteStore) SaveLocalAuthSession(session *LocalAuthSession) error {
 	_, err = s.db.Exec(`INSERT INTO local_auth_sessions (token_hash, user_id, session_epoch, created_at, expires_at)
 		VALUES (?, ?, ?, ?, ?)`, tokenHash, session.UserID, session.SessionEpoch, session.CreatedAt, session.ExpiresAt)
 	return err
+}
+
+// SaveLocalAuthSessionForGeneration persists a session only while generation
+// is still the controller generation activated in local_auth_runtime. The
+// conditional no-op update is also the cross-dialect row lock: a concurrent
+// startup rotation either waits for this insert and deletes it, or wins first
+// and makes this save fail closed with ErrLocalAuthGenerationChanged.
+func (s *SQLiteStore) SaveLocalAuthSessionForGeneration(generation string, session *LocalAuthSession) error {
+	generation, err := canonicalLocalAuthGeneration(generation)
+	if err != nil {
+		return err
+	}
+	if session == nil || strings.TrimSpace(session.UserID) == "" {
+		return fmt.Errorf("local auth session token hash and user id are required")
+	}
+	tokenHash, err := canonicalLocalSessionTokenHash(session.TokenHash)
+	if err != nil {
+		return err
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	locked, err := tx.Exec(`UPDATE local_auth_runtime SET generation = generation
+		WHERE singleton_key = ? AND generation = ?`, "current", generation)
+	if err != nil {
+		return err
+	}
+	affected, err := locked.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected != 1 {
+		return ErrLocalAuthGenerationChanged
+	}
+	if _, err := tx.Exec(`INSERT INTO local_auth_sessions (token_hash, user_id, session_epoch, created_at, expires_at)
+		VALUES (?, ?, ?, ?, ?)`, tokenHash, session.UserID, session.SessionEpoch, session.CreatedAt, session.ExpiresAt); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (s *SQLiteStore) GetLocalAuthSessionByTokenHash(tokenHash string) (*LocalAuthSession, error) {
@@ -202,6 +257,24 @@ func (s *SQLiteStore) GetLocalAuthSessionByTokenHash(tokenHash string) (*LocalAu
 	return session, err
 }
 
+func (s *SQLiteStore) GetLocalAuthSessionByTokenHashForGeneration(generation, tokenHash string) (*LocalAuthSession, error) {
+	generation, err := canonicalLocalAuthGeneration(generation)
+	if err != nil {
+		return nil, err
+	}
+	tokenHash, err = canonicalLocalSessionTokenHash(tokenHash)
+	if err != nil {
+		return nil, err
+	}
+	session := &LocalAuthSession{}
+	err = s.db.QueryRow(`SELECT sessions.token_hash, sessions.user_id, sessions.session_epoch, sessions.created_at, sessions.expires_at
+		FROM local_auth_sessions AS sessions
+		JOIN local_auth_runtime AS runtime ON runtime.singleton_key = ? AND runtime.generation = ?
+		WHERE sessions.token_hash = ?`, "current", generation, tokenHash).Scan(
+		&session.TokenHash, &session.UserID, &session.SessionEpoch, &session.CreatedAt, &session.ExpiresAt)
+	return session, err
+}
+
 func (s *SQLiteStore) DeleteLocalAuthSessionByTokenHash(tokenHash string) error {
 	tokenHash, err := canonicalLocalSessionTokenHash(tokenHash)
 	if err != nil {
@@ -209,6 +282,61 @@ func (s *SQLiteStore) DeleteLocalAuthSessionByTokenHash(tokenHash string) error 
 	}
 	_, err = s.db.Exec(`DELETE FROM local_auth_sessions WHERE token_hash = ?`, tokenHash)
 	return err
+}
+
+// ActivateLocalAuthGeneration atomically advances the controller generation
+// and removes every session from the preceding application lifetime.
+func (s *SQLiteStore) ActivateLocalAuthGeneration(generation string, activatedAt time.Time) (int64, error) {
+	return s.ActivateLocalAuthGenerationContext(context.Background(), generation, activatedAt)
+}
+
+// ActivateLocalAuthGenerationContext is the cancelable startup form of
+// ActivateLocalAuthGeneration. Every potentially blocking database operation
+// observes ctx so controller shutdown cannot be held behind a database lock.
+func (s *SQLiteStore) ActivateLocalAuthGenerationContext(ctx context.Context, generation string, activatedAt time.Time) (int64, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	generation, err := canonicalLocalAuthGeneration(generation)
+	if err != nil {
+		return 0, err
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+	if lockQuery := localAuthFixtureSeedLockQuery(s.db.dialect); lockQuery != "" {
+		if _, err := tx.ExecContext(ctx, lockQuery); err != nil {
+			return 0, fmt.Errorf("lock local auth generation activation: %w", err)
+		}
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO local_auth_runtime (singleton_key, generation, activated_at)
+		VALUES (?, ?, ?)
+		ON CONFLICT(singleton_key) DO UPDATE SET generation = excluded.generation, activated_at = excluded.activated_at`,
+		"current", generation, activatedAt.UTC()); err != nil {
+		return 0, err
+	}
+	result, err := tx.ExecContext(ctx, `DELETE FROM local_auth_sessions`)
+	if err != nil {
+		return 0, err
+	}
+	deleted, err := result.RowsAffected()
+	if err != nil {
+		return 0, err
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
+	return deleted, nil
+}
+
+func (s *SQLiteStore) GetLocalAuthGeneration() (string, error) {
+	var generation string
+	if err := s.db.QueryRow(`SELECT generation FROM local_auth_runtime WHERE singleton_key = ?`, "current").Scan(&generation); err != nil {
+		return "", err
+	}
+	return canonicalLocalAuthGeneration(generation)
 }
 
 func (s *SQLiteStore) DeleteExpiredLocalAuthSessions(cutoff time.Time) error {

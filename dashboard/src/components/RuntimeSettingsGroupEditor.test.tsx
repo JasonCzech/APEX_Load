@@ -1075,7 +1075,7 @@ describe('RuntimeSettingsGroupEditor', () => {
     })
   })
 
-  it('shows run-evidence redaction as on by default and writes an explicit false when unchecked', () => {
+  it('shows run-evidence redaction as off by default and writes an explicit true when enabled', () => {
     const onChange = vi.fn()
     const groups: RuntimeEditorGroup[] = [{
       name: 'Checkout',
@@ -1101,15 +1101,13 @@ describe('RuntimeSettingsGroupEditor', () => {
       (label.textContent || '').includes('Redact credentials in run evidence'),
     ) as HTMLLabelElement
     const checkbox = redact.querySelector('input[type="checkbox"]') as HTMLInputElement
-    // No layer sets the field, so it reads as the default ON (`?? true`).
-    expect(checkbox.checked).toBe(true)
-    expect(redact.className).toContain('selected')
+    // No layer sets the field, so it reads as the default OFF.
+    expect(checkbox.checked).toBe(false)
+    expect(redact.className).not.toContain('selected')
 
     act(() => checkbox.dispatchEvent(new MouseEvent('click', { bubbles: true })))
     const last = onChange.mock.calls[onChange.mock.calls.length - 1]?.[1]
-    // Explicit false, materialized alongside the inherited siblings — not undefined,
-    // which would silently inherit the default ON again.
-    expect(last.log).toEqual({ on_error_only: true, redact_run_evidence: false })
+    expect(last.log).toEqual({ on_error_only: true, redact_run_evidence: true })
   })
 
   it('renders an inherited redact_run_evidence=false unchecked and can turn it back on', () => {

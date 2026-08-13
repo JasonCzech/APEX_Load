@@ -1,6 +1,10 @@
 package engine
 
 import (
+	"encoding/json"
+	"fmt"
+	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -221,6 +225,64 @@ func TestMetricsCollector_EmptyWindowSnapshotEmission(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestMetricsCollector_ActiveVUserTransitionsPublishZeroOnce(t *testing.T) {
+	const interval = 20 * time.Millisecond
+	mc := NewMetricsCollector(100)
+	var groupActive atomic.Int64
+	mc.SetGroupActiveVUsersProvider(func() map[string]int {
+		return map[string]int{"buyers": int(groupActive.Load())}
+	})
+	mc.Start(interval)
+	defer mc.Stop()
+
+	waitForGauge := func(after time.Time, want int64) MetricsSnapshot {
+		t.Helper()
+		deadline := time.Now().Add(time.Second)
+		for time.Now().Before(deadline) {
+			snapshot, ok := mc.LatestSnapshot()
+			if ok && snapshot.Timestamp.After(after) && snapshot.ActiveVUsers == want {
+				group := snapshot.ByGroup["buyers"]
+				if group != nil && group.ActiveVUsersReported && group.ActiveVUsers == want {
+					return snapshot
+				}
+			}
+			time.Sleep(time.Millisecond)
+		}
+		t.Fatalf("timed out waiting for active VUser gauge %d", want)
+		return MetricsSnapshot{}
+	}
+
+	groupActive.Store(2)
+	mc.SetActiveVUsers(2)
+	nonzero := waitForGauge(time.Time{}, 2)
+
+	// Scaling to zero is not necessarily terminal. Even with no transaction
+	// result in the window, publish an authoritative zero so downstream local and
+	// distributed projections cannot retain the previous nonzero gauge.
+	groupActive.Store(0)
+	mc.SetActiveVUsers(0)
+	zero := waitForGauge(nonzero.Timestamp, 0)
+
+	// A zero transition is emitted once, not on every idle tick. This retains the
+	// existing suppression of unbounded leading/trailing zero snapshots.
+	time.Sleep(4 * interval)
+	mc.snapshotsMu.RLock()
+	zeroSnapshots := 0
+	for _, snapshot := range mc.snapshots {
+		if !snapshot.Timestamp.Before(zero.Timestamp) && snapshot.ActiveVUsers == 0 {
+			zeroSnapshots++
+		}
+	}
+	mc.snapshotsMu.RUnlock()
+	if zeroSnapshots != 1 {
+		t.Fatalf("zero transition produced %d idle snapshots, want exactly 1", zeroSnapshots)
+	}
+
+	groupActive.Store(5)
+	mc.SetActiveVUsers(5)
+	waitForGauge(zero.Timestamp, 5)
 }
 
 // TestMetricsCollector_NonEmptyWindowUnaffected confirms a window that does
@@ -816,36 +878,103 @@ func assertWithinRange(t *testing.T, name string, got, lo, hi time.Duration) {
 
 func TestComputeSnapshotPerGroupActiveVUsers(t *testing.T) {
 	mc := NewMetricsCollector(100)
-	// Group C is active but produced no results in this window.
+	mc.SetGroupTargetTPS("C", 4)
+	// Group C is inactive and produced no results in this window. Its explicit
+	// zero must still be surfaced rather than treated as missing telemetry, and
+	// it must retain its configured throughput target and gap.
 	mc.SetGroupActiveVUsersProvider(func() map[string]int {
-		return map[string]int{"A": 7, "B": 3, "C": 5}
+		return map[string]int{"A": 7, "B": 3, "C": 0}
 	})
 	results := []*protocol.Result{
 		{BusinessTransaction: true, Success: true, Group: "A", Duration: 10 * time.Millisecond},
 		{BusinessTransaction: true, Success: true, Group: "B", Duration: 20 * time.Millisecond},
 	}
 	snap := mc.computeSnapshot(results, time.Second)
+	if snap.ActiveVUsers != 10 {
+		t.Fatalf("global active vusers = %d, want sum of authoritative group sample (10)", snap.ActiveVUsers)
+	}
 
-	if snap.ByGroup["A"] == nil || snap.ByGroup["A"].ActiveVUsers != 7 {
+	if snap.ByGroup["A"] == nil || snap.ByGroup["A"].ActiveVUsers != 7 || !snap.ByGroup["A"].ActiveVUsersReported {
 		t.Fatalf("group A active vusers = %#v, want 7", snap.ByGroup["A"])
 	}
-	if snap.ByGroup["B"] == nil || snap.ByGroup["B"].ActiveVUsers != 3 {
+	if snap.ByGroup["B"] == nil || snap.ByGroup["B"].ActiveVUsers != 3 || !snap.ByGroup["B"].ActiveVUsersReported {
 		t.Fatalf("group B active vusers = %#v, want 3", snap.ByGroup["B"])
 	}
-	// Active-but-resultless group is still surfaced so it is counted when selected.
-	if snap.ByGroup["C"] == nil || snap.ByGroup["C"].ActiveVUsers != 5 {
-		t.Fatalf("group C active vusers = %#v, want 5 (active with no results)", snap.ByGroup["C"])
+	if snap.ByGroup["C"] == nil || snap.ByGroup["C"].ActiveVUsers != 0 || !snap.ByGroup["C"].ActiveVUsersReported {
+		t.Fatalf("group C active vusers = %#v, want reported zero", snap.ByGroup["C"])
+	}
+	if snap.ByGroup["C"].TargetTPS != 4 {
+		t.Fatalf("group C target TPS = %v, want 4", snap.ByGroup["C"].TargetTPS)
+	}
+	if !snap.ByGroup["C"].ThroughputTargetMissed || snap.ByGroup["C"].ThroughputGapPct != 100 {
+		t.Fatalf("group C throughput gap = (%v, %v), want missed at 100%%",
+			snap.ByGroup["C"].ThroughputTargetMissed, snap.ByGroup["C"].ThroughputGapPct)
+	}
+}
+
+func TestComputeSnapshotAggregatesCollidingGroupActiveVUsers(t *testing.T) {
+	mc := NewMetricsCollector(10)
+	prefix := strings.Repeat("g", maxMetricLabelBytes)
+	mc.SetGroupActiveVUsersProvider(func() map[string]int {
+		return map[string]int{prefix + "-one": 2, prefix + "-two": 3}
+	})
+	snap := mc.computeSnapshot(nil, time.Second)
+	group := snap.ByGroup[prefix]
+	if group == nil || !group.ActiveVUsersReported || group.ActiveVUsers != 5 {
+		t.Fatalf("colliding group gauge = %#v, want reported aggregate 5", group)
+	}
+	if snap.ActiveVUsers != 5 {
+		t.Fatalf("global active vusers = %d, want 5", snap.ActiveVUsers)
+	}
+}
+
+func TestComputeSnapshotGlobalActiveVUsersIncludesGroupsBeyondDimensionLimit(t *testing.T) {
+	mc := NewMetricsCollector(10)
+	active := make(map[string]int, maxMetricDimensionEntries+1)
+	for i := 0; i < maxMetricDimensionEntries+1; i++ {
+		active[fmt.Sprintf("group-%04d", i)] = 1
+	}
+	mc.SetGroupActiveVUsersProvider(func() map[string]int { return active })
+
+	snap := mc.computeSnapshot(nil, time.Second)
+	if snap.ActiveVUsers != int64(len(active)) {
+		t.Fatalf("global active vusers = %d, want all %d provider entries", snap.ActiveVUsers, len(active))
+	}
+	if len(snap.ByGroup) != maxMetricDimensionEntries {
+		t.Fatalf("bounded group dimensions = %d, want %d", len(snap.ByGroup), maxMetricDimensionEntries)
 	}
 }
 
 func TestActiveVUserCountByGroup(t *testing.T) {
 	mge := &MultiGroupEngine{
-		groups:      []GroupConfig{{Name: "A"}, {Name: "B"}},
-		vuserGroups: map[int]string{1: "A", 2: "A", 3: "B"},
+		groups:       []GroupConfig{{Name: "A"}, {Name: "B"}, {Name: "C"}},
+		vuserGroups:  map[int]string{1: "A", 2: "A", 3: "B"},
+		vuserRunning: map[int]struct{}{1: {}, 2: {}, 3: {}},
 	}
 	counts := mge.activeVUserCountByGroup()
-	if counts["A"] != 2 || counts["B"] != 1 {
-		t.Fatalf("per-group active counts = %#v, want A:2 B:1", counts)
+	if counts["A"] != 2 || counts["B"] != 1 || counts["C"] != 0 {
+		t.Fatalf("per-group active counts = %#v, want A:2 B:1 C:0", counts)
+	}
+	if _, ok := counts["C"]; !ok {
+		t.Fatalf("inactive configured group missing from counts: %#v", counts)
+	}
+}
+
+func TestGroupMetricsReportedZeroSurvivesJSONRoundTrip(t *testing.T) {
+	original := MetricsSnapshot{ByGroup: map[string]*GroupMetrics{
+		"idle": {Name: "idle", ActiveVUsers: 0, ActiveVUsersReported: true},
+	}}
+	payload, err := json.Marshal(original)
+	if err != nil {
+		t.Fatalf("marshal snapshot: %v", err)
+	}
+	var restored MetricsSnapshot
+	if err := json.Unmarshal(payload, &restored); err != nil {
+		t.Fatalf("unmarshal snapshot: %v", err)
+	}
+	group := restored.ByGroup["idle"]
+	if group == nil || group.ActiveVUsers != 0 || !group.ActiveVUsersReported {
+		t.Fatalf("round-tripped idle group = %#v, want authoritative zero", group)
 	}
 }
 

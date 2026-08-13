@@ -142,6 +142,8 @@ func TestScaleVUsersRejectsUnboundedTargetBeforeSpawning(t *testing.T) {
 	var wg sync.WaitGroup
 	multi.baseCtx = ctx
 	multi.loopCtx = ctx
+	multi.launchCtx = ctx
+	multi.launchOpen = true
 	multi.wg = &wg
 	multi.controlsReady = true
 	multi.scalingOpen = true

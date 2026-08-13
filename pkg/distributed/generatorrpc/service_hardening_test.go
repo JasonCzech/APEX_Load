@@ -538,7 +538,7 @@ func TestAdjustDurationRollsBackEarlierEnginesWhenParticipantRejects(t *testing.
 	}
 }
 
-func TestAdjustVUsersRollsBackStaleEngineAfterGenerationChanges(t *testing.T) {
+func TestAdjustVUsersRejectsReservedScaleAfterGenerationChangesBeforeEngineReady(t *testing.T) {
 	service := newEpochTestService(t, filepath.Join(t.TempDir(), "epoch.json"))
 	if ack := claimEpoch(t, service, 1, time.Second); !ack.GetAccepted() {
 		t.Fatalf("initial epoch claim rejected: %s", ack.GetErrorMessage())
@@ -552,7 +552,7 @@ func TestAdjustVUsersRollsBackStaleEngineAfterGenerationChanges(t *testing.T) {
 		t.Fatalf("NewMultiGroup: %v", err)
 	}
 	detachedDone := make(chan struct{})
-	close(detachedDone)
+	var detachOnce sync.Once
 	service.mu.Lock()
 	service.executionEnabled = true
 	service.assignments["run"] = assignedTest{
@@ -564,7 +564,15 @@ func TestAdjustVUsersRollsBackStaleEngineAfterGenerationChanges(t *testing.T) {
 		activeGroups:        map[string]int32{"group": 1},
 	}
 	service.executions["run"] = map[string]*groupExecution{
-		"group": {groupName: "group", executionGeneration: 1, engine: mge, cancel: func() {}, done: detachedDone},
+		"group": {
+			groupName: "group", executionGeneration: 1, engine: mge,
+			cancel: func() { detachOnce.Do(func() { close(detachedDone) }) },
+			done:   detachedDone,
+			// A committed execution whose coordinated release is still in the
+			// future is hard-canceled by a generation fence; it cannot drain load
+			// that has not started yet.
+			startAt: time.Now().Add(time.Minute),
+		},
 	}
 	service.executions["run"]["group"].started.Store(true)
 	service.mu.Unlock()
@@ -597,30 +605,26 @@ func TestAdjustVUsersRollsBackStaleEngineAfterGenerationChanges(t *testing.T) {
 		t.Fatalf("replacement epoch claim rejected: %s", ack.GetErrorMessage())
 	}
 
-	runCtx, cancelRun := context.WithCancel(context.Background())
-	runDone := make(chan struct{})
-	go func() {
-		_, _ = mge.Run(runCtx)
-		close(runDone)
-	}()
 	select {
 	case got := <-result:
 		if status.Code(got.err) != codes.FailedPrecondition {
 			t.Fatalf("stale adjustment = (%#v, %v), want FailedPrecondition", got.ack, got.err)
 		}
 	case <-time.After(2 * time.Second):
-		cancelRun()
-		t.Fatal("stale adjustment did not finish after engine became ready")
+		t.Fatal("stale adjustment did not finish after the execution was fenced")
 	}
 	if got := mge.GetGroupVUsers()["group"]; got != 1 {
-		cancelRun()
-		t.Fatalf("stale engine VUsers after rejected adjustment = %d, want restored 1", got)
+		t.Fatalf("unready engine VUsers after rejected adjustment = %d, want unchanged 1", got)
 	}
-	cancelRun()
-	select {
-	case <-runDone:
-	case <-time.After(2 * time.Second):
-		t.Fatal("stale test engine did not stop")
+	service.mu.RLock()
+	_, assignmentExists := service.assignments["run"]
+	pending := service.lifecycleCoordinator.pendingControls["run"]
+	service.mu.RUnlock()
+	if assignmentExists {
+		t.Fatal("fenced generation retained its capacity reservation")
+	}
+	if pending != nil {
+		t.Fatal("fenced generation retained a pending scale control")
 	}
 }
 

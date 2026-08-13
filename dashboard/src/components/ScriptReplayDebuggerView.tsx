@@ -1,11 +1,13 @@
 import type * as React from 'react'
-import { useMemo } from 'react'
+import { memo, useMemo } from 'react'
 import type { ReactNode } from 'react'
+import { useVirtualizer, type VirtualItem } from '@tanstack/react-virtual'
 import CodeMirror from '@uiw/react-codemirror'
 import { json } from '@codemirror/lang-json'
 import type {
   BrowserReplayEvent,
   BrowserReplayReport,
+  ScriptDebugLogEntry,
   ScriptDebugLogLevel,
   ScriptDebugSession,
 } from '../types/replay'
@@ -30,8 +32,8 @@ import {
   debugBreakpointKey,
   formatConditionEvidence,
   formatDebugLeafSuffix,
-  formatDebugLogEntry,
   formatReplayDiagnosisCategory,
+  highlightDebugLogRaw,
   hasStructuredReplaySnapshot,
   humanizeStepSegment,
 } from './scriptEditorReplayModel'
@@ -65,6 +67,35 @@ import type {
 import type { useScriptReplayDebuggerController } from './useScriptReplayDebuggerController'
 
 const DEBUG_LOG_LEVELS: ScriptDebugLogLevel[] = ['error', 'warn', 'info', 'debug', 'trace']
+const DEBUG_LOG_VIRTUALIZE_THRESHOLD = 100
+
+const DebugConsoleLogEntry = memo(function DebugConsoleLogEntry({ entry }: { entry: ScriptDebugLogEntry }) {
+  const location = entry.phase ? `${entry.phase}[${entry.action_index ?? '-'}]` : null
+  const highlightedRaw = useMemo(() => highlightDebugLogRaw(entry.raw || ''), [entry.raw])
+  return (
+    <>
+      <span className="debug-log-summary">
+        <span className="debug-log-timestamp">[{formatReplayTime(entry.timestamp)}]</span>{' '}
+        <span className={`debug-log-level level-${entry.level}`}>{entry.level.toUpperCase()}</span>{' '}
+        <span className="debug-log-category">{entry.category}</span>
+        {location && <> <span className="debug-log-location">{location}</span></>}{' '}
+        <span className="debug-log-message">{entry.message}</span>
+      </span>
+      {entry.raw && (
+        <span className="debug-log-raw">
+          {'\n'}
+          {highlightedRaw.tokens.map((token, tokenIndex) => (
+            <span key={`${entry.id}-raw-${tokenIndex}`} className={`debug-log-token token-${token.kind}`}>{token.text}</span>
+          ))}
+          {highlightedRaw.plainRemainder && <span className="debug-log-unhighlighted">{highlightedRaw.plainRemainder}</span>}
+          {highlightedRaw.omittedCharCount > 0 && (
+            <span className="debug-log-omission">{`\n… ${highlightedRaw.omittedCharCount.toLocaleString()} characters omitted from display; use Copy or Download for complete output.`}</span>
+          )}
+        </span>
+      )}
+    </>
+  )
+})
 
 type ReplayActionEvent = BrowserReplayEvent
 type ReplayDebuggerApi = Pick<ReturnType<typeof useApi>, 'diagnoseScriptReplay' | 'diagnoseCorrelations'>
@@ -262,6 +293,17 @@ export function ScriptReplayDebuggerView({
     startDebuggerDrag,
     toggleDebugSequenceExpanded,
   } = controller
+  const virtualizeDebugLogs = debugFilteredLogs.length > DEBUG_LOG_VIRTUALIZE_THRESHOLD
+  const debugLogVirtualizer = useVirtualizer({
+    count: debugFilteredLogs.length,
+    enabled: virtualizeDebugLogs && debuggerBottomTab === 'console',
+    estimateSize: () => 46,
+    getScrollElement: () => debugRawOutputRef.current,
+    overscan: 12,
+  })
+  const debugLogsToRender: Array<{ entry: ScriptDebugLogEntry; virtualItem: VirtualItem | null }> = virtualizeDebugLogs
+    ? debugLogVirtualizer.getVirtualItems().map(virtualItem => ({ entry: debugFilteredLogs[virtualItem.index], virtualItem }))
+    : debugFilteredLogs.map(entry => ({ entry, virtualItem: null }))
   const isReplayPaused = browserReplaySession?.status === 'paused'
   const replayTerminal = Boolean(replayReport?.completed_at) &&
     !replaying &&
@@ -1298,29 +1340,37 @@ export function ScriptReplayDebuggerView({
                         <button type="button" className="btn btn-sm btn-ghost" onClick={() => { void exportGeneratedTextFile(debugRawOutputText || 'No raw output captured', `${sanitizeDownloadName(script.name, 'script')}-debug.log`) }}>Download</button>
                         <button type="button" className="btn btn-sm btn-ghost" onClick={() => setDebugRawClearedAt(browserReplaySession?.logs?.length || 0)}>Clear View</button>
                       </div>
-                      <div ref={debugRawOutputRef} className="debug-raw-output">
+                      <div ref={debugRawOutputRef} className={`debug-raw-output ${virtualizeDebugLogs ? 'virtualized' : ''}`}>
                         {debugFilteredLogs.length === 0 ? (
                           <span className="debug-log-empty">No raw output captured yet.</span>
                         ) : (
-                          debugFilteredLogs.map(entry => {
-                            const jumpPosition = entry.phase ? debugRowPositionByKey.get(debugBreakpointKey(entry.phase, entry.action_index ?? 0)) : undefined
-                            const canJump = jumpPosition != null && !!debugEvents[jumpPosition]
-                            return (
-                              <button
-                                key={entry.id}
-                                type="button"
-                                className={`debug-log-line level-${entry.level} ${canJump ? 'jumpable' : ''}`}
-                                disabled={!canJump}
-                                onClick={() => {
-                                  if (jumpPosition == null) return
-                                  setDebuggerTab('request')
-                                  setExpandedReplayEvent(jumpPosition)
-                                }}
-                              >
-                                {formatDebugLogEntry(entry)}
-                              </button>
-                            )
-                          })
+                          <div
+                            className={virtualizeDebugLogs ? 'debug-log-virtual-list' : 'debug-log-list'}
+                            style={virtualizeDebugLogs ? { height: `${debugLogVirtualizer.getTotalSize()}px` } : undefined}
+                          >
+                            {debugLogsToRender.map(({ entry, virtualItem }) => {
+                              const jumpPosition = entry.phase ? debugRowPositionByKey.get(debugBreakpointKey(entry.phase, entry.action_index ?? 0)) : undefined
+                              const canJump = jumpPosition != null && !!debugEvents[jumpPosition]
+                              return (
+                                <button
+                                  key={entry.id}
+                                  ref={virtualItem ? debugLogVirtualizer.measureElement : undefined}
+                                  data-index={virtualItem?.index}
+                                  type="button"
+                                  className={`debug-log-line level-${entry.level} ${canJump ? 'jumpable' : ''}`}
+                                  disabled={!canJump}
+                                  style={virtualItem ? { transform: `translateY(${virtualItem.start}px)` } : undefined}
+                                  onClick={() => {
+                                    if (jumpPosition == null) return
+                                    setDebuggerTab('request')
+                                    setExpandedReplayEvent(jumpPosition)
+                                  }}
+                                >
+                                  <DebugConsoleLogEntry entry={entry} />
+                                </button>
+                              )
+                            })}
+                          </div>
                         )}
                       </div>
                     </div>

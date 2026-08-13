@@ -853,10 +853,18 @@ func scrubSensitiveResultWithOptions(result *protocol.Result, config *RedactionC
 }
 
 // scrubSensitiveResultMetadata covers the scalar dimensions copied into live
-// metrics and generator archives. These fields bypass response/snapshot
-// evidence handling, so leaving them untouched would let a resolved secret in
-// a correlation header, dependency label, adapter label, or imported source
-// identifier survive an otherwise valid custom redaction policy.
+// metrics and generator archives. Business-transaction ActionName values,
+// Group, and SourceTransaction are stable identities: they avoid only the
+// generic JWT/high-entropy heuristic so metrics, debugger events, and reports
+// continue to join back to the configured script and group. Exact runtime
+// secrets, structured credential patterns, and explicit custom policies still
+// apply. Ordinary and parent action names remain fully scrubbed because
+// adapters can supply them dynamically.
+//
+// The remaining fields bypass response/snapshot evidence handling, so leaving
+// them untouched would let a resolved secret in a correlation header,
+// dependency label, adapter label, or imported source identifier survive an
+// otherwise valid custom redaction policy.
 //
 // One matcher governs both dimensions and evidence. The earlier two-config form
 // existed to keep HTTP cookie-jar snapshots out of stable metric labels; nothing
@@ -864,10 +872,14 @@ func scrubSensitiveResultWithOptions(result *protocol.Result, config *RedactionC
 // remaining material (platform secrets and sensitively NAMED extractions) is
 // suppressed uniformly.
 func scrubSensitiveResultMetadata(result *protocol.Result, config *RedactionConfig) {
-	result.ActionName = scrubSensitiveTextWithConfig(result.ActionName, config)
+	if result.BusinessTransaction {
+		result.ActionName = scrubSensitiveIdentityWithConfig(result.ActionName, config)
+	} else {
+		result.ActionName = scrubSensitiveTextWithConfig(result.ActionName, config)
+	}
 	result.SampleKind = scrubSensitiveTextWithConfig(result.SampleKind, config)
 	result.ParentActionName = scrubSensitiveTextWithConfig(result.ParentActionName, config)
-	result.Group = scrubSensitiveTextWithConfig(result.Group, config)
+	result.Group = scrubSensitiveIdentityWithConfig(result.Group, config)
 	result.Region = scrubSensitiveTextWithConfig(result.Region, config)
 	result.CorrelationID = scrubSensitiveTextWithConfig(result.CorrelationID, config)
 	result.NetworkProfile = scrubSensitiveTextWithConfig(result.NetworkProfile, config)
@@ -876,7 +888,7 @@ func scrubSensitiveResultMetadata(result *protocol.Result, config *RedactionConf
 	result.SourceStepID = scrubSensitiveTextWithConfig(result.SourceStepID, config)
 	result.SourceAction = scrubSensitiveTextWithConfig(result.SourceAction, config)
 	result.SourceActionName = scrubSensitiveTextWithConfig(result.SourceActionName, config)
-	result.SourceTransaction = scrubSensitiveTextWithConfig(result.SourceTransaction, config)
+	result.SourceTransaction = scrubSensitiveIdentityWithConfig(result.SourceTransaction, config)
 	result.SourceProfile = scrubSensitiveTextWithConfig(result.SourceProfile, config)
 	result.SourcePath = scrubSensitiveTextWithConfig(result.SourcePath, config)
 	result.SourceUID = scrubSensitiveTextWithConfig(result.SourceUID, config)
@@ -1093,6 +1105,27 @@ func scrubSensitiveTextWithConfig(value string, config *RedactionConfig) string 
 	// as :443/Services/... to be mistaken for credentials before the URL-aware
 	// layer could preserve their structure.
 	return scrub.Value(redacted, scrub.Policy{})
+}
+
+// scrubSensitiveIdentityWithConfig protects stable authored labels without
+// applying the blanket JWT/high-entropy heuristic that can rewrite legitimate
+// transaction and group names. Exact runtime values, structured credential/PII
+// patterns, and explicit custom rules remain mandatory.
+func scrubSensitiveIdentityWithConfig(value string, config *RedactionConfig) string {
+	if strings.TrimSpace(value) == "" {
+		return value
+	}
+	redacted := scrubRuntimeSecretText(value, config)
+	for _, pattern := range payloadRedactionPatterns {
+		redacted = pattern.re.ReplaceAllString(redacted, pattern.repl)
+	}
+	if config != nil {
+		for _, pattern := range config.compiled {
+			redacted = pattern.re.ReplaceAllString(redacted, pattern.repl)
+		}
+	}
+	redacted = scrubRuntimeSecretText(redacted, config)
+	return scrub.ValueLabel(redacted, scrub.Policy{})
 }
 
 func scrubStructurallyValidJWTs(value string) string {

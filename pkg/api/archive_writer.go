@@ -209,44 +209,45 @@ func (w *runArchiveWriter) RecordResult(result *protocol.Result) error {
 		return w.flushErr
 	}
 	event := TransactionEvent{
-		Timestamp:         result.StartTime,
-		TestID:            w.manifest.TestID,
-		TestName:          w.manifest.TestName,
-		Group:             result.Group,
-		Region:            firstNonEmpty(result.Region, w.region),
-		ActionName:        result.ActionName,
-		CorrelationID:     result.CorrelationID,
-		TraceID:           traceIDFromCorrelationID(result.CorrelationID),
-		SpanID:            spanIDFromCorrelationID(result.CorrelationID),
-		NetworkProfile:    result.NetworkProfile,
-		DependencyType:    result.DependencyType,
-		DependencyTarget:  result.DependencyTarget,
-		DurationMs:        durationMillis(result.Duration),
-		DNSMs:             durationMillis(result.DNSTime),
-		ConnectMs:         durationMillis(result.ConnectTime),
-		TLSMs:             durationMillis(result.TLSTime),
-		TTFBMs:            durationMillis(result.TTFB),
-		BytesSent:         result.BytesSent,
-		BytesReceived:     result.BytesReceived,
-		StatusCode:        result.StatusCode,
-		Success:           result.Success,
-		ErrorMessage:      result.ErrorMessage,
-		Extractions:       result.Extractions,
-		PageURL:           result.PageURL,
-		PageTitle:         result.PageTitle,
-		ConsoleEntries:    cloneProtocolConsoleEntries(result.ConsoleEntries),
-		NetworkEntries:    cloneProtocolNetworkEntries(result.NetworkEntries),
-		DOMSummary:        cloneProtocolDOMSummary(result.DOMSummary),
-		ClientMetrics:     result.ClientMetrics,
-		ServerTelemetry:   result.ServerTelemetry,
-		ProtocolEvidence:  cloneAnyMap(result.ProtocolEvidence),
-		Snapshot:          result.Snapshot,
-		SourceStepID:      result.SourceStepID,
-		SourceStepIndex:   result.SourceStepIndex,
-		SourceAction:      result.SourceAction,
-		SourceActionName:  result.SourceActionName,
-		SourceTransaction: result.SourceTransaction,
-		SourceProfile:     result.SourceProfile,
+		Timestamp:           result.StartTime,
+		TestID:              w.manifest.TestID,
+		TestName:            w.manifest.TestName,
+		Group:               result.Group,
+		Region:              firstNonEmpty(result.Region, w.region),
+		ActionName:          result.ActionName,
+		BusinessTransaction: result.BusinessTransaction,
+		CorrelationID:       result.CorrelationID,
+		TraceID:             traceIDFromCorrelationID(result.CorrelationID),
+		SpanID:              spanIDFromCorrelationID(result.CorrelationID),
+		NetworkProfile:      result.NetworkProfile,
+		DependencyType:      result.DependencyType,
+		DependencyTarget:    result.DependencyTarget,
+		DurationMs:          durationMillis(result.Duration),
+		DNSMs:               durationMillis(result.DNSTime),
+		ConnectMs:           durationMillis(result.ConnectTime),
+		TLSMs:               durationMillis(result.TLSTime),
+		TTFBMs:              durationMillis(result.TTFB),
+		BytesSent:           result.BytesSent,
+		BytesReceived:       result.BytesReceived,
+		StatusCode:          result.StatusCode,
+		Success:             result.Success,
+		ErrorMessage:        result.ErrorMessage,
+		Extractions:         result.Extractions,
+		PageURL:             result.PageURL,
+		PageTitle:           result.PageTitle,
+		ConsoleEntries:      cloneProtocolConsoleEntries(result.ConsoleEntries),
+		NetworkEntries:      cloneProtocolNetworkEntries(result.NetworkEntries),
+		DOMSummary:          cloneProtocolDOMSummary(result.DOMSummary),
+		ClientMetrics:       result.ClientMetrics,
+		ServerTelemetry:     result.ServerTelemetry,
+		ProtocolEvidence:    cloneAnyMap(result.ProtocolEvidence),
+		Snapshot:            result.Snapshot,
+		SourceStepID:        result.SourceStepID,
+		SourceStepIndex:     result.SourceStepIndex,
+		SourceAction:        result.SourceAction,
+		SourceActionName:    result.SourceActionName,
+		SourceTransaction:   result.SourceTransaction,
+		SourceProfile:       result.SourceProfile,
 	}
 	// Defense in depth for callers that record protocol results without going
 	// through the VUser projection seam. This also detaches nested evidence from
@@ -257,6 +258,14 @@ func (w *runArchiveWriter) RecordResult(result *protocol.Result) error {
 	}
 	w.manifest.TransactionCount++
 	return nil
+}
+
+// RecordTransaction persists synthetic business transactions emitted by the
+// engine's automatic/explicit transaction paths. Those paths do not call
+// RecordResult for the same logical transaction, while adapter-supplied business
+// transactions continue to arrive through RecordResult exactly once.
+func (w *runArchiveWriter) RecordTransaction(result *protocol.Result) error {
+	return w.RecordResult(result)
 }
 
 func (w *runArchiveWriter) RecordResourceSample(timestamp time.Time, activeVUsers int64, resources *engine.SystemResources) error {
@@ -351,6 +360,7 @@ func (w *runArchiveWriter) RecordIntervalSummary(live *LiveMetrics) error {
 		P95Ms:                  live.P95Ms,
 		P99Ms:                  live.P99Ms,
 		Groups:                 cloneGroupLiveMetricsMap(live.GroupMetrics),
+		Transactions:           intervalTransactionsFromLive(live.Transactions),
 		Browser:                cloneBrowserLiveMetrics(live.Browser),
 		BrowserByDevice:        cloneBrowserByDeviceMetrics(live.BrowserByDevice),
 		Telemetry:              cloneTelemetryHealth(live.Telemetry),

@@ -11,10 +11,13 @@ import {
   buildArtStdDevBandData,
   buildPrometheusCharts,
   buildSmoothedGraphData,
+  boundedChartItems,
+  chartConfigs,
   chartMetricLinePresentation,
   chartMetricKeys,
   chartMetricRows,
   chartMetricSummary,
+  chartMetricSummaries,
   chartStateForMonitorPreset,
   defaultHiddenChartIds,
   downsampleGraphData,
@@ -38,10 +41,12 @@ import {
   smoothingRadiusForGraphDensity,
   smoothedGraphMetricKey,
   smoothedMetricKeysForChart,
+  singletonTransactionMetricKeys,
   visibleMetricDomain,
   type ChartConfig,
 } from './testExecutionChartModel'
 import { routeLatencyDetailSeriesKey, routeLatencySeriesLabel } from './latencySeries'
+import { MAX_TRANSACTION_CHART_SERIES, transactionChartSeriesKey, transactionChartSeriesNames } from './transactionChartSeries'
 import { buildLoadImpactModel } from './loadImpactModel'
 
 describe('chartStateForMonitorPreset', () => {
@@ -201,6 +206,64 @@ describe('chartStateForMonitorPreset', () => {
       { key: 'p95', label: 'P95', color: 'var(--chart-2)', unit: 'ms', kind: 'percentile' },
       { key: 'p99', label: 'P99', color: 'var(--chart-4)', unit: 'ms', kind: 'percentile' },
     ])
+  })
+
+  it('builds simultaneous throughput, response-time, and error series for every transaction', () => {
+    const transactionNames = transactionChartSeriesNames([{
+      time: '10:00:00',
+      vusers: 4,
+      tps: 5,
+      avgMs: 100,
+      errorPct: 10,
+      p50: 80,
+      p90: 120,
+      p99: 180,
+      [transactionChartSeriesKey('Login / submit', 'tps')]: 2,
+      [transactionChartSeriesKey('Login / submit', 'avgMs')]: 90,
+      [transactionChartSeriesKey('Login / submit', 'errorPct')]: 0,
+      [transactionChartSeriesKey('Search', 'tps')]: 3,
+      [transactionChartSeriesKey('Search', 'avgMs')]: 110,
+      [transactionChartSeriesKey('Search', 'errorPct')]: 20,
+    }])
+
+    expect(transactionNames).toEqual(['Login / submit', 'Search'])
+    expect(chartMetricKeys(chartConfigs.find(chart => chart.id === 'tps')!, [], [], false, [], 'total', undefined, transactionNames)).toEqual([
+      'tps',
+      transactionChartSeriesKey('Login / submit', 'tps'),
+      transactionChartSeriesKey('Search', 'tps'),
+    ])
+    expect(chartMetricRows(chartConfigs.find(chart => chart.id === 'latency')!, [], [], ['#00a3ff', '#ffaa00'], false, [], 'total', undefined, transactionNames))
+      .toEqual(expect.arrayContaining([
+        expect.objectContaining({ key: transactionChartSeriesKey('Login / submit', 'avgMs'), label: 'Transaction · Login / submit' }),
+        expect.objectContaining({ key: transactionChartSeriesKey('Search', 'avgMs'), label: 'Transaction · Search' }),
+      ]))
+    expect(chartMetricRows(chartConfigs.find(chart => chart.id === 'errors')!, [], [], ['#00a3ff', '#ffaa00'], false, [], 'total', undefined, transactionNames))
+      .toEqual(expect.arrayContaining([
+        expect.objectContaining({ key: transactionChartSeriesKey('Login / submit', 'errorPct') }),
+        expect.objectContaining({ key: transactionChartSeriesKey('Search', 'errorPct') }),
+      ]))
+  })
+
+  it('keeps transaction presentation stable by name and distinct from group line styles', () => {
+    const tpsChart = chartConfigs.find(chart => chart.id === 'tps')!
+    const latencyChart = chartConfigs.find(chart => chart.id === 'latency')!
+    const groupColors = Array.from({ length: 6 }, (_, index) => `var(--chart-${index + 1})`)
+    const presentation = (chart: ChartConfig, transactionNames: string[]) => {
+      const row = chartMetricRows(chart, [], [], groupColors, false, [], 'total', undefined, transactionNames)
+        .find(candidate => candidate.label === 'Transaction · Bravo')!
+      return { color: row.color, strokeDasharray: row.strokeDasharray }
+    }
+
+    const bravoOnly = presentation(tpsChart, ['Bravo'])
+    expect(presentation(tpsChart, ['Alpha', 'Bravo', 'Zulu'])).toEqual(bravoOnly)
+    expect(presentation(latencyChart, ['Alpha', 'Bravo', 'Zulu'])).toEqual(bravoOnly)
+
+    const groupNames = Array.from({ length: 36 }, (_, index) => `Group ${index + 1}`)
+    const groupRows = chartMetricRows(tpsChart, groupNames, [], groupColors)
+      .filter(row => row.key.endsWith('_tps'))
+    expect(groupRows.some(row => (
+      row.color === bravoOnly.color && row.strokeDasharray === bravoOnly.strokeDasharray
+    ))).toBe(false)
   })
 
   it('classifies ART transaction and percentile line styles separately', () => {
@@ -399,6 +462,15 @@ describe('chartStateForMonitorPreset', () => {
       max: 4,
       samples: 2,
     })
+
+    expect(chartMetricSummaries([
+      { time: '10:00:00', vusers: 1, tps: 2, avgMs: 100, errorPct: 1, p50: 90, p90: 100, p99: 120 },
+      { time: '10:00:01', vusers: 2, tps: 4, avgMs: 120, errorPct: 3, p50: 100, p90: 120, p99: 140 },
+    ], ['tps', 'errorPct', 'missing'])).toEqual({
+      tps: { latest: 4, average: 3, min: 2, max: 4, samples: 2 },
+      errorPct: { latest: 3, average: 2, min: 1, max: 3, samples: 2 },
+      missing: { samples: 0 },
+    })
   })
 
   it('builds chart domains from only the currently visible metric keys', () => {
@@ -522,6 +594,80 @@ describe('chartStateForMonitorPreset', () => {
     expect(downsampled).toContain(data[700])
     expect(downsampleTargetPointsForGraphDensity()).toBe(420)
     expect(downsampleTargetPointsForGraphDensity({ chartWidth: 240, visibleMetricCount: 8 })).toBeGreaterThanOrEqual(180)
+  })
+
+  it('keeps bounded rare transaction samples through dense graph downsampling', () => {
+    const transactionKey = transactionChartSeriesKey('Rare checkout', 'tps')
+    const data: MetricsHistoryPoint[] = Array.from({ length: 1000 }, (_, index) => ({
+      time: `10:${String(Math.floor(index / 60)).padStart(2, '0')}:${String(index % 60).padStart(2, '0')}`,
+      vusers: 10,
+      tps: index,
+      avgMs: 100,
+      errorPct: 0,
+      p50: 90,
+      p90: 110,
+      p99: 150,
+      ...(index === 503 || index === 504 ? { [transactionKey]: 3 } : {}),
+    }))
+
+    const downsampled = downsampleGraphData(data, ['tps', transactionKey], 80)
+
+    expect(downsampled.length).toBeLessThanOrEqual(80)
+    expect(downsampled).toContain(data[503])
+    expect(downsampled).toContain(data[504])
+  })
+
+  it('retains one finite occurrence for all 512 supported transaction series beyond the nominal target', () => {
+    const transactionKeys = Array.from({ length: MAX_TRANSACTION_CHART_SERIES }, (_, index) => (
+      transactionChartSeriesKey(`Transaction ${String(index).padStart(3, '0')}`, 'tps')
+    ))
+    const data: MetricsHistoryPoint[] = Array.from({ length: transactionKeys.length + 2 }, (_, index) => ({
+      time: `sample-${index}`,
+      timestampMs: index * 1_000,
+      vusers: 10,
+      tps: 1,
+      avgMs: 100,
+      errorPct: 0,
+      p50: 90,
+      p90: 110,
+      p99: 150,
+    }))
+    transactionKeys.forEach((key, index) => {
+      data[index + 1][key] = 1
+    })
+
+    const downsampled = downsampleGraphData(data, ['tps', ...transactionKeys], 80)
+
+    expect(downsampled.length).toBeGreaterThan(80)
+    expect(downsampled.length).toBeLessThanOrEqual(MAX_TRANSACTION_CHART_SERIES + 2)
+    transactionKeys.forEach(key => {
+      expect(downsampled.some(point => Number.isFinite(point[key]))).toBe(true)
+    })
+    expect(singletonTransactionMetricKeys(downsampled, transactionKeys)).toEqual(new Set(transactionKeys))
+  })
+
+  it('caps transaction discovery and bounded presentation helpers deterministically', () => {
+    const point: MetricsHistoryPoint = {
+      time: '10:00:00',
+      vusers: 1,
+      tps: 1,
+      avgMs: 1,
+      errorPct: 0,
+      p50: 1,
+      p90: 1,
+      p99: 1,
+    }
+    Array.from({ length: MAX_TRANSACTION_CHART_SERIES + 20 }, (_, index) => `Transaction ${String(index).padStart(3, '0')}`)
+      .reverse()
+      .forEach(name => {
+        point[transactionChartSeriesKey(name, 'tps')] = 1
+      })
+
+    const names = transactionChartSeriesNames([point])
+    expect(names).toHaveLength(MAX_TRANSACTION_CHART_SERIES)
+    expect(names[0]).toBe('Transaction 000')
+    expect(names[names.length - 1]).toBe('Transaction 511')
+    expect(boundedChartItems(names, 12)).toEqual({ items: names.slice(0, 12), omitted: 500 })
   })
 
   it('selects graph metrics that are safe for display smoothing', () => {

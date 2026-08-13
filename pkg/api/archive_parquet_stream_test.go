@@ -61,3 +61,10 @@ func TestControllerStreamJSONLToParquetRejectsOversizedRecord(t *testing.T) {
 		t.Fatal("streamJSONLToParquet accepted an archive record above the memory-safety ceiling")
 	}
 }
+
+func TestToParquetTransactionsCarriesBusinessTransactionProvenance(t *testing.T) {
+	rows := toParquetTransactions([]TransactionEvent{{BusinessTransaction: true}})
+	if len(rows) != 1 || !rows[0].BusinessTransaction {
+		t.Fatalf("parquet transaction provenance = %#v", rows)
+	}
+}

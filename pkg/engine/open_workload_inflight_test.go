@@ -36,6 +36,33 @@ func TestRunArrivalSchedulerUsesAbsoluteActiveDeadlines(t *testing.T) {
 	}
 }
 
+func TestRunArrivalSchedulerCanPreserveSharedActiveOrigin(t *testing.T) {
+	active := 150 * time.Millisecond
+	dispatched := make([]int, 0, 2)
+	var slept time.Duration
+	runArrivalSchedulerFromOrigin(
+		context.Background(),
+		10,
+		2,
+		nil,
+		func(_ context.Context, delay time.Duration) bool {
+			slept += delay
+			active += delay
+			return true
+		},
+		func() time.Duration { return active },
+		true,
+		func(index int) { dispatched = append(dispatched, index) },
+		nil,
+	)
+	if !reflect.DeepEqual(dispatched, []int{0, 1}) {
+		t.Fatalf("shared-origin dispatches = %v, want overdue arrivals 0 and 1", dispatched)
+	}
+	if slept != 0 {
+		t.Fatalf("shared-origin scheduler slept %v before overdue arrivals", slept)
+	}
+}
+
 func TestRunArrivalSchedulerBoundsAndAccountsCatchUp(t *testing.T) {
 	activeReads := 0
 	dispatched := 0

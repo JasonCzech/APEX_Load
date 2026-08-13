@@ -1846,11 +1846,10 @@ export function ScriptRuntimeSettingsView({
                 onChange={e => updateField('config.log', { ...script.config.log, on_error_only: e.target.checked })} />
               <span>Extended log on error only</span>
             </label>
-            {/* Governs RUN OUTPUT only and defaults ON — read an absent value as
-                checked (`?? true`, never `|| false`). Turning it off never edits the
+            {/* Governs RUN OUTPUT only and defaults OFF. Turning it on never edits the
                 script; the stored script always keeps its literal credential values. */}
             <label className="checkbox-label">
-              <input type="checkbox" checked={script.config.log?.redact_run_evidence ?? true}
+              <input type="checkbox" checked={Boolean(script.config.log?.redact_run_evidence)}
                 onChange={e => updateField('config.log', { ...script.config.log, redact_run_evidence: e.target.checked })} />
               <span>Redact credentials in run evidence</span>
             </label>

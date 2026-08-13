@@ -322,6 +322,9 @@ func TestStageRemoteArchiveUsesControllerTerminalStateAndFinalManifestParity(t *
 		mergedSummary.Telemetry == nil || mergedSummary.Telemetry.WebsocketClients != 3 || mergedSummary.TelemetryStatus == nil || mergedSummary.TelemetryStatus.Status != "degraded" {
 		t.Fatalf("final summary lost nested generator evidence: %#v", mergedSummary)
 	}
+	if transaction := mergedSummary.Transactions["checkout"]; transaction == nil || transaction.TPS != 1 || transaction.Count != 1 || transaction.Errors != 0 || transaction.AvgMs != 50 {
+		t.Fatalf("final summary lost recomputed transaction series: %#v", mergedSummary.Transactions)
+	}
 	parquetFile, err := localParquet.NewLocalFileReader(filepath.Join(record.ArchivePath, manifest.IntervalSummariesParquetFile))
 	if err != nil {
 		t.Fatalf("open final summary parquet: %v", err)
@@ -341,7 +344,7 @@ func TestStageRemoteArchiveUsesControllerTerminalStateAndFinalManifestParity(t *
 	if err := parquetFile.Close(); err != nil {
 		t.Fatal(err)
 	}
-	if len(rows) != 1 || rows[0].TargetTPS != 2 || rows[0].GroupsJSON == "" || rows[0].BrowserJSON == "" ||
+	if len(rows) != 1 || rows[0].TargetTPS != 2 || rows[0].GroupsJSON == "" || rows[0].TransactionsJSON == "" || rows[0].BrowserJSON == "" ||
 		rows[0].BrowserDeviceJSON == "" || rows[0].TelemetryJSON == "" || rows[0].TelemetryStatusJSON == "" {
 		t.Fatalf("final staged summary parquet lost nested fields: %#v", rows)
 	}
@@ -360,7 +363,7 @@ func TestStageRemoteArchiveUsesControllerTerminalStateAndFinalManifestParity(t *
 	for index, name := range csvRows[0] {
 		csvValues[name] = csvRows[1][index]
 	}
-	for _, column := range []string{"groups_json", "browser_json", "browser_by_device_json", "telemetry_json", "telemetry_status_json"} {
+	for _, column := range []string{"groups_json", "transactions_json", "browser_json", "browser_by_device_json", "telemetry_json", "telemetry_status_json"} {
 		if csvValues[column] == "" {
 			t.Fatalf("final summary csv column %q is empty: %#v", column, csvValues)
 		}
@@ -1176,6 +1179,134 @@ func TestMergeRemoteArchiveIntervalSummariesKeepsUnevenOrdinalTimelineMonotonic(
 	}
 }
 
+func TestMergeRemoteArchiveIntervalSummariesUsesBusinessTransactionsOnlyForSeries(t *testing.T) {
+	root := t.TempDir()
+	base := time.Date(2026, 8, 12, 12, 0, 0, 0, time.UTC)
+	writeRecords := func(name string, records ...any) string {
+		t.Helper()
+		path := filepath.Join(root, name)
+		file, err := os.Create(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		encoder := json.NewEncoder(file)
+		for _, record := range records {
+			if err := encoder.Encode(record); err != nil {
+				_ = file.Close()
+				t.Fatal(err)
+			}
+		}
+		if err := file.Close(); err != nil {
+			t.Fatal(err)
+		}
+		return path
+	}
+	summariesPath := writeRecords("business-summaries.jsonl",
+		IntervalSummaryRecord{Timestamp: base.Add(time.Second), TestID: "business-series", TotalTx: 2, TPS: 2},
+		IntervalSummaryRecord{Timestamp: base.Add(2 * time.Second), TestID: "business-series", TotalTx: 3, TPS: 1},
+	)
+	transactionsPath := writeRecords("business-transactions.jsonl",
+		TransactionEvent{Timestamp: base.Add(400 * time.Millisecond), TestID: "business-series", ActionName: "HTTP request", DurationMs: 40, Success: true},
+		TransactionEvent{Timestamp: base.Add(600 * time.Millisecond), TestID: "business-series", ActionName: "Login", BusinessTransaction: true, DurationMs: 100, Success: true},
+		TransactionEvent{Timestamp: base.Add(1500 * time.Millisecond), TestID: "business-series", ActionName: "HTTP browse", DurationMs: 60, Success: true},
+	)
+	destination := filepath.Join(root, "business-merged.jsonl")
+	count, err := mergeRemoteArchiveIntervalSummaries(destination, []remoteArchiveBundle{{
+		target: "generator-a", summariesPath: summariesPath, transactionsPath: transactionsPath,
+		manifest: RunArchiveManifest{IntervalSummaryCount: 2, TransactionCount: 3},
+	}})
+	if err != nil {
+		t.Fatalf("mergeRemoteArchiveIntervalSummaries: %v", err)
+	}
+	if count != 2 {
+		t.Fatalf("summary count = %d, want 2", count)
+	}
+	file, err := os.Open(destination)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+	decoder := json.NewDecoder(file)
+	var first, second IntervalSummaryRecord
+	if err := decoder.Decode(&first); err != nil {
+		t.Fatal(err)
+	}
+	if err := decoder.Decode(&second); err != nil {
+		t.Fatal(err)
+	}
+	if first.TotalTx != 1 || second.TotalTx != 1 || first.AvgResponseMs != 100 {
+		t.Fatalf("business-provenance fleet totals = first %#v second %#v, want only the logical Login transaction", first, second)
+	}
+	if len(first.Transactions) != 1 || first.Transactions["Login"] == nil {
+		t.Fatalf("first transaction series = %#v, want only proven Login", first.Transactions)
+	}
+	if len(second.Transactions) != 0 {
+		t.Fatalf("second transaction series = %#v, want a gap without a proven business transaction", second.Transactions)
+	}
+}
+
+func TestMergeRemoteArchiveIntervalSummariesChoosesBusinessProvenancePerGenerator(t *testing.T) {
+	root := t.TempDir()
+	base := time.Date(2026, 8, 12, 13, 0, 0, 0, time.UTC)
+	writeRecords := func(name string, records ...any) string {
+		t.Helper()
+		path := filepath.Join(root, name)
+		file, err := os.Create(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		encoder := json.NewEncoder(file)
+		for _, record := range records {
+			if err := encoder.Encode(record); err != nil {
+				_ = file.Close()
+				t.Fatal(err)
+			}
+		}
+		if err := file.Close(); err != nil {
+			t.Fatal(err)
+		}
+		return path
+	}
+	newSummaries := writeRecords("new-summaries.jsonl", IntervalSummaryRecord{Timestamp: base.Add(time.Second), TestID: "mixed-generators", TotalTx: 1, TPS: 1})
+	legacySummaries := writeRecords("legacy-summaries.jsonl", IntervalSummaryRecord{Timestamp: base.Add(time.Second), TestID: "mixed-generators", TotalTx: 1, TPS: 1})
+	newTransactions := writeRecords("new-transactions.jsonl",
+		TransactionEvent{Timestamp: base.Add(400 * time.Millisecond), TestID: "mixed-generators", Group: "modern", ActionName: "HTTP request", DurationMs: 40, Success: true},
+		TransactionEvent{Timestamp: base.Add(600 * time.Millisecond), TestID: "mixed-generators", Group: "modern", ActionName: "Login", BusinessTransaction: true, DurationMs: 100, Success: true},
+	)
+	legacyTransactions := writeRecords("legacy-transactions.jsonl",
+		TransactionEvent{Timestamp: base.Add(500 * time.Millisecond), TestID: "mixed-generators", Group: "legacy", ActionName: "LegacyCheckout", DurationMs: 80, Success: true},
+	)
+	destination := filepath.Join(root, "mixed-merged.jsonl")
+	_, err := mergeRemoteArchiveIntervalSummaries(destination, []remoteArchiveBundle{
+		{target: "new", summariesPath: newSummaries, transactionsPath: newTransactions, manifest: RunArchiveManifest{IntervalSummaryCount: 1, TransactionCount: 2}},
+		{target: "legacy", summariesPath: legacySummaries, transactionsPath: legacyTransactions, manifest: RunArchiveManifest{IntervalSummaryCount: 1, TransactionCount: 1}},
+	})
+	if err != nil {
+		t.Fatalf("mergeRemoteArchiveIntervalSummaries: %v", err)
+	}
+	file, err := os.Open(destination)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+	var summary IntervalSummaryRecord
+	if err := json.NewDecoder(file).Decode(&summary); err != nil {
+		t.Fatal(err)
+	}
+	if len(summary.Transactions) != 2 || summary.Transactions["Login"] == nil || summary.Transactions["LegacyCheckout"] == nil || summary.Transactions["HTTP request"] != nil {
+		t.Fatalf("mixed-version fleet transaction series = %#v, want new proven Login plus legacy fallback", summary.Transactions)
+	}
+	if summary.TotalTx != 2 || summary.TotalErrors != 0 || summary.TPS != 2 || summary.AvgResponseMs != 90 {
+		t.Fatalf("mixed-version fleet metrics = %#v, want modern business plus legacy fallback without the modern action row", summary)
+	}
+	if modern := summary.Groups["modern"]; modern == nil || modern.Transactions != 1 || modern.Errors != 0 || modern.AvgResponseMs != 100 {
+		t.Fatalf("modern group metrics = %#v, want only logical Login", modern)
+	}
+	if legacy := summary.Groups["legacy"]; legacy == nil || legacy.Transactions != 1 || legacy.Errors != 0 || legacy.AvgResponseMs != 80 {
+		t.Fatalf("legacy group metrics = %#v, want ordinary-row fallback", legacy)
+	}
+}
+
 func TestMergeRemoteArchiveIntervalSummariesRejectsManifestCountMismatches(t *testing.T) {
 	t.Run("transactions", func(t *testing.T) {
 		root := t.TempDir()
@@ -1479,6 +1610,88 @@ func TestMergeRemoteArchiveIntervalSummariesRecomputesSkewedFleetPercentiles(t *
 	parquetRows := toParquetSummaries([]IntervalSummaryRecord{merged})
 	if len(parquetRows) != 1 || parquetRows[0].PercentileQuality != archivePercentileQualityRecomputed {
 		t.Fatalf("parquet percentile quality = %#v, want recomputation provenance preserved", parquetRows)
+	}
+}
+
+func TestMergeRemoteArchiveIntervalSummariesPreservesPerTransactionSourceWindows(t *testing.T) {
+	root := t.TempDir()
+	base := time.Date(2026, 8, 4, 12, 0, 0, 0, time.UTC)
+	writeSummary := func(name string, timestamp time.Time, tps float64) string {
+		t.Helper()
+		path := filepath.Join(root, name)
+		file, err := os.Create(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := json.NewEncoder(file).Encode(IntervalSummaryRecord{
+			Timestamp: timestamp, TestID: "heterogeneous-windows", TotalTx: 2, TPS: tps,
+		}); err != nil {
+			_ = file.Close()
+			t.Fatal(err)
+		}
+		if err := file.Close(); err != nil {
+			t.Fatal(err)
+		}
+		return path
+	}
+	writeTransactions := func(name string, timestamp time.Time, actions ...string) string {
+		t.Helper()
+		path := filepath.Join(root, name)
+		file, err := os.Create(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		encoder := json.NewEncoder(file)
+		for _, action := range actions {
+			if err := encoder.Encode(TransactionEvent{
+				Timestamp: timestamp, TestID: "heterogeneous-windows", ActionName: action, DurationMs: 100, Success: true,
+			}); err != nil {
+				_ = file.Close()
+				t.Fatal(err)
+			}
+		}
+		if err := file.Close(); err != nil {
+			t.Fatal(err)
+		}
+		return path
+	}
+
+	aSummary := writeSummary("a-summary.jsonl", base.Add(490*time.Millisecond), 2) // two successes over one second
+	bSummary := writeSummary("b-summary.jsonl", base.Add(510*time.Millisecond), 4) // two successes over half a second
+	aTransactions := writeTransactions("a-transactions.jsonl", base.Add(250*time.Millisecond), "Shared", "Search")
+	bTransactions := writeTransactions("b-transactions.jsonl", base.Add(300*time.Millisecond), "Shared", "Checkout")
+	destination := filepath.Join(root, "merged.jsonl")
+	count, err := mergeRemoteArchiveIntervalSummaries(destination, []remoteArchiveBundle{
+		{target: "a", summariesPath: aSummary, transactionsPath: aTransactions, manifest: RunArchiveManifest{IntervalSummaryCount: 1, TransactionCount: 2}},
+		{target: "b", summariesPath: bSummary, transactionsPath: bTransactions, manifest: RunArchiveManifest{IntervalSummaryCount: 1, TransactionCount: 2}},
+	})
+	if err != nil {
+		t.Fatalf("mergeRemoteArchiveIntervalSummaries: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("summary count = %d, want 1", count)
+	}
+	file, err := os.Open(destination)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+	var merged IntervalSummaryRecord
+	if err := json.NewDecoder(file).Decode(&merged); err != nil {
+		t.Fatal(err)
+	}
+	if merged.TPS != 6 {
+		t.Fatalf("fleet TPS = %v, want the additive source rate 6", merged.TPS)
+	}
+	shared, search, checkout := merged.Transactions["Shared"], merged.Transactions["Search"], merged.Transactions["Checkout"]
+	if shared == nil || shared.Count != 2 || shared.TPS != 3 {
+		t.Fatalf("Shared transaction = %#v, want count 2 and additive TPS 3", shared)
+	}
+	if search == nil || search.Count != 1 || search.TPS != 1 {
+		t.Fatalf("Search transaction = %#v, want source-A TPS 1", search)
+	}
+	if checkout == nil || checkout.Count != 1 || checkout.TPS != 2 {
+		t.Fatalf("Checkout transaction = %#v, want source-B TPS 2", checkout)
 	}
 }
 

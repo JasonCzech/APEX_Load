@@ -49,10 +49,63 @@ func aggregateDistributedMetricsBatches(testID string, batches map[string]genera
 		}
 		statsList = append(statsList, batch.Stats)
 		combined.Transactions = append(combined.Transactions, batch.Transactions...)
-		if batch.FleetMetrics != nil {
-			fleetMetrics = append(fleetMetrics, *batch.FleetMetrics)
+		windowSec := batchWindowSeconds(batch.WindowMs)
+
+		hasTransactionAggregates := false
+		batchTransactionMetrics := make([]generatorrpc.MetricAggregate, 0, len(batch.TransactionMetrics))
+		for _, aggregate := range batch.TransactionMetrics {
+			name := strings.TrimSpace(aggregate.Name)
+			if name == "" || aggregate.Count <= 0 {
+				continue
+			}
+			hasTransactionAggregates = true
+			aggregate.Name = name
+			aggregate.Errors = boundedMetricErrors(aggregate.Count, aggregate.Errors)
+			aggregate.TPS = resolvedAggregateTPS(aggregate, windowSec)
+			batchTransactionMetrics = append(batchTransactionMetrics, aggregate)
+			transactionMetrics = append(transactionMetrics, aggregate)
 		}
-		transactionMetrics = append(transactionMetrics, batch.TransactionMetrics...)
+
+		hasFleetAggregate := batch.FleetMetrics != nil && batch.FleetMetrics.Count > 0
+		hasDependencyAggregates := hasUsableMetricAggregateSeries(batch.DependencyMetrics)
+		hasSOAPAggregates := hasUsableMetricAggregateSeries(batch.SOAPMetrics)
+		hasGroupAggregates := hasUsableGroupMetricAggregateSeries(batch.Groups)
+		var rawFallback rawDistributedMetricFallbacks
+		if needsRawDistributedMetricFallback(batch, hasTransactionAggregates, hasDependencyAggregates, hasSOAPAggregates, hasGroupAggregates) {
+			rawFallback = buildRawDistributedMetricFallbacks(batch.Transactions, batch.WindowMs)
+		}
+		if hasFleetAggregate {
+			fleet := *batch.FleetMetrics
+			fleet.Errors = boundedMetricErrors(fleet.Count, fleet.Errors)
+			fleet.TPS = resolvedAggregateTPS(fleet, windowSec)
+			fleetMetrics = append(fleetMetrics, fleet)
+			fleetTPS += fleet.TPS
+		} else if hasTransactionAggregates {
+			fleet := mergeGeneratorMetricAggregates(batchTransactionMetrics)
+			if fleet != nil {
+				fleet.Name = "fleet"
+				fleetMetrics = append(fleetMetrics, *fleet)
+				fleetTPS += fleet.TPS
+			}
+		} else if rawFallback.Fleet != nil {
+			fleetMetrics = append(fleetMetrics, *rawFallback.Fleet)
+			fleetTPS += rawFallback.Fleet.TPS
+		}
+
+		// Raw transactions are retained alongside modern aggregates as bounded
+		// exemplars. Fall back only when the whole per-transaction aggregate
+		// capability is absent: high-cardinality modern senders intentionally fold
+		// excess names into [other], so name-by-name fallback would double count
+		// those exemplars and defeat the generator's series bound.
+		if !hasTransactionAggregates {
+			transactionMetrics = append(transactionMetrics, rawFallback.Transactions...)
+		}
+		if !hasDependencyAggregates {
+			dependencyMetrics = append(dependencyMetrics, rawFallback.Dependencies...)
+		}
+		if !hasSOAPAggregates {
+			soapMetrics = append(soapMetrics, rawFallback.SOAP...)
+		}
 		dependencyMetrics = append(dependencyMetrics, batch.DependencyMetrics...)
 		soapMetrics = append(soapMetrics, batch.SOAPMetrics...)
 		networkProfileMetrics = append(networkProfileMetrics, batch.NetworkProfileMetrics...)
@@ -60,41 +113,71 @@ func aggregateDistributedMetricsBatches(testID string, batches map[string]genera
 			browserMetrics = append(browserMetrics, batch.Browser)
 		}
 		browserDeviceMetrics = append(browserDeviceMetrics, batch.BrowserByDevice...)
-		windowSec := batchWindowSeconds(batch.WindowMs)
-		batchSuccess := 0.0
-		batchGroupSuccess := make(map[string]float64)
-		if batch.FleetMetrics != nil && batch.FleetMetrics.Count > 0 {
-			batchSuccess = float64(batch.FleetMetrics.Count - batch.FleetMetrics.Errors)
-			if batch.FleetMetrics.TPS > 0 {
-				fleetTPS += batch.FleetMetrics.TPS
-			} else {
-				fleetTPS += batchSuccess / windowSec
-			}
-		} else {
-			for _, tx := range batch.Transactions {
-				if tx.Success {
-					batchSuccess++
-					batchGroupSuccess[strings.TrimSpace(tx.Group)]++
-				}
-			}
-			fleetTPS += batchSuccess / windowSec
-		}
-		for groupName, success := range batchGroupSuccess {
-			groupTPS[groupName] += success / windowSec
-		}
+
+		soleBatchGroup := ""
+		multipleBatchGroups := false
 		for _, group := range batch.Groups {
-			if group.Name == "" {
+			name := strings.TrimSpace(group.Name)
+			if name == "" {
 				continue
 			}
-			groupsByName[group.Name] += group.ActiveVUsers
-			if group.Metrics != nil && group.Metrics.Count > 0 {
-				groupMetricsByName[group.Name] = append(groupMetricsByName[group.Name], *group.Metrics)
-				if group.Metrics.TPS > 0 {
-					groupTPS[group.Name] += group.Metrics.TPS
-				} else {
-					groupTPS[group.Name] += float64(group.Metrics.Count-group.Metrics.Errors) / windowSec
-				}
+			if soleBatchGroup == "" {
+				soleBatchGroup = name
+			} else if soleBatchGroup != name {
+				multipleBatchGroups = true
+				break
 			}
+		}
+		resolvedRawGroups := make(map[string][]generatorrpc.MetricAggregate, len(rawFallback.Groups))
+		if !hasGroupAggregates {
+			for rawName, aggregate := range rawFallback.Groups {
+				name := rawName
+				if name == "" && soleBatchGroup != "" && !multipleBatchGroups {
+					name = soleBatchGroup
+					aggregate.Name = name
+				}
+				resolvedRawGroups[name] = append(resolvedRawGroups[name], aggregate)
+			}
+		}
+		accountedGroups := make(map[string]struct{}, len(batch.Groups))
+		for _, group := range batch.Groups {
+			name := strings.TrimSpace(group.Name)
+			if name == "" {
+				continue
+			}
+			groupsByName[name] += group.ActiveVUsers
+			if group.Metrics != nil && group.Metrics.Count > 0 {
+				metrics := *group.Metrics
+				metrics.Name = name
+				metrics.Errors = boundedMetricErrors(metrics.Count, metrics.Errors)
+				metrics.TPS = resolvedAggregateTPS(metrics, windowSec)
+				groupMetricsByName[name] = append(groupMetricsByName[name], metrics)
+				groupTPS[name] += metrics.TPS
+				accountedGroups[name] = struct{}{}
+				continue
+			}
+			if rawGroups := resolvedRawGroups[name]; len(rawGroups) > 0 {
+				groupMetricsByName[name] = append(groupMetricsByName[name], rawGroups...)
+				for _, metrics := range rawGroups {
+					groupTPS[name] += metrics.TPS
+				}
+				accountedGroups[name] = struct{}{}
+			}
+		}
+		for name, rawGroups := range resolvedRawGroups {
+			if _, accounted := accountedGroups[name]; accounted {
+				continue
+			}
+			for _, metrics := range rawGroups {
+				groupTPS[name] += metrics.TPS
+			}
+			if name == "" {
+				continue
+			}
+			if _, exists := groupsByName[name]; !exists {
+				groupsByName[name] = 0
+			}
+			groupMetricsByName[name] = append(groupMetricsByName[name], rawGroups...)
 		}
 		if batch.Telemetry != nil {
 			if combined.Telemetry == nil {
@@ -158,6 +241,236 @@ func batchWindowSeconds(windowMs int64) float64 {
 		return 1.0
 	}
 	return float64(windowMs) / 1000.0
+}
+
+func hasUsableMetricAggregateSeries(values []generatorrpc.MetricAggregate) bool {
+	for _, value := range values {
+		if strings.TrimSpace(value.Name) != "" && value.Count > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+func hasUsableGroupMetricAggregateSeries(values []generatorrpc.GroupMetric) bool {
+	for _, value := range values {
+		if strings.TrimSpace(value.Name) != "" && value.Metrics != nil && value.Metrics.Count > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+func needsRawDistributedMetricFallback(batch generatorrpc.MetricsBatch, hasTransactions, hasDependencies, hasSOAP, hasGroups bool) bool {
+	if len(batch.Transactions) == 0 {
+		return false
+	}
+	if !hasTransactions {
+		return true
+	}
+	soleBatchGroup := ""
+	multipleBatchGroups := false
+	for _, group := range batch.Groups {
+		name := strings.TrimSpace(group.Name)
+		if name == "" {
+			continue
+		}
+		if soleBatchGroup == "" {
+			soleBatchGroup = name
+		} else if soleBatchGroup != name {
+			multipleBatchGroups = true
+			break
+		}
+	}
+	for _, transaction := range batch.Transactions {
+		if !hasDependencies && strings.TrimSpace(transaction.DependencyTarget) != "" {
+			return true
+		}
+		if !hasSOAP && strings.TrimSpace(transaction.SOAPOperation) != "" {
+			return true
+		}
+		if !hasGroups && (strings.TrimSpace(transaction.Group) != "" || (soleBatchGroup != "" && !multipleBatchGroups)) {
+			return true
+		}
+	}
+	return false
+}
+
+func boundedMetricErrors(count, errors int64) int64 {
+	if count <= 0 || errors <= 0 {
+		return 0
+	}
+	if errors >= count {
+		return count
+	}
+	return errors
+}
+
+// successfulMetricCount protects every rate/count projection from malformed or
+// mixed-version aggregates whose error count exceeds their attempt count.
+func successfulMetricCount(count, errors int64) int64 {
+	if count <= 0 {
+		return 0
+	}
+	return count - boundedMetricErrors(count, errors)
+}
+
+func resolvedAggregateTPS(aggregate generatorrpc.MetricAggregate, windowSec float64) float64 {
+	successes := successfulMetricCount(aggregate.Count, aggregate.Errors)
+	if successes == 0 {
+		return 0
+	}
+	if aggregate.TPS > 0 {
+		return aggregate.TPS
+	}
+	if windowSec <= 0 {
+		windowSec = 1
+	}
+	return float64(successes) / windowSec
+}
+
+type rawMetricAccumulator struct {
+	metric    generatorrpc.MetricAggregate
+	digest    *engine.TDigest
+	durations []float64
+}
+
+func newRawMetricAccumulator(name string) *rawMetricAccumulator {
+	return &rawMetricAccumulator{
+		metric: generatorrpc.MetricAggregate{Name: name},
+		digest: engine.NewTDigest(200),
+	}
+}
+
+func (a *rawMetricAccumulator) add(tx generatorrpc.TransactionMetric) {
+	if a == nil {
+		return
+	}
+	a.metric.Count++
+	if !tx.Success {
+		a.metric.Errors++
+	}
+	mergeStableTxMetadata(&a.metric.DependencyType, tx.DependencyType)
+	mergeStableTxMetadata(&a.metric.DependencyTarget, tx.DependencyTarget)
+	a.metric.AvgMs += tx.DurationMs
+	a.metric.AvgDNSMs += tx.DNSMs
+	a.metric.AvgConnectMs += tx.ConnectMs
+	a.metric.AvgTLSMs += tx.TLSMs
+	a.metric.AvgTTFBMs += tx.TTFBMs
+	a.metric.BytesSent += tx.BytesSent
+	a.metric.BytesReceived += tx.BytesReceived
+	a.durations = append(a.durations, tx.DurationMs)
+	a.digest.Add(tx.DurationMs * float64(time.Millisecond))
+}
+
+func (a *rawMetricAccumulator) finalize(windowSec float64) *generatorrpc.MetricAggregate {
+	if a == nil || a.metric.Count == 0 {
+		return nil
+	}
+	metric := a.metric
+	count := float64(metric.Count)
+	metric.AvgMs /= count
+	metric.AvgDNSMs /= count
+	metric.AvgConnectMs /= count
+	metric.AvgTLSMs /= count
+	metric.AvgTTFBMs /= count
+	metric.TPS = float64(successfulMetricCount(metric.Count, metric.Errors)) / windowSec
+	sort.Float64s(a.durations)
+	metric.P50Ms, metric.P90Ms, metric.P95Ms, metric.P99Ms = percentilesFromSorted(a.durations)
+	digestSnapshot := a.digest.Snapshot()
+	metric.DurationDigest = &digestSnapshot
+	return &metric
+}
+
+type rawDistributedMetricFallbacks struct {
+	Fleet        *generatorrpc.MetricAggregate
+	Transactions []generatorrpc.MetricAggregate
+	Dependencies []generatorrpc.MetricAggregate
+	SOAP         []generatorrpc.MetricAggregate
+	Groups       map[string]generatorrpc.MetricAggregate
+}
+
+const (
+	// Keep these aligned with generatorrpc's transaction-window series bound and
+	// overflow label so legacy fallback behaves like an aggregate-capable sender.
+	maxDistributedMetricSeries = 256
+	distributedOverflowSeries  = "[other]"
+)
+
+func boundedRawMetricAccumulator(values map[string]*rawMetricAccumulator, name string) *rawMetricAccumulator {
+	if accumulator := values[name]; accumulator != nil {
+		return accumulator
+	}
+	if len(values) >= maxDistributedMetricSeries-1 {
+		name = distributedOverflowSeries
+		if accumulator := values[name]; accumulator != nil {
+			return accumulator
+		}
+	}
+	accumulator := newRawMetricAccumulator(name)
+	values[name] = accumulator
+	return accumulator
+}
+
+// buildRawDistributedMetricFallbacks reconstructs aggregate evidence for a
+// legacy generator batch in one pass. Its output is authoritative only for a
+// component whose aggregate capability is absent from that batch.
+func buildRawDistributedMetricFallbacks(transactions []generatorrpc.TransactionMetric, windowMs int64) rawDistributedMetricFallbacks {
+	if len(transactions) == 0 {
+		return rawDistributedMetricFallbacks{}
+	}
+	fleet := newRawMetricAccumulator("fleet")
+	transactionsByName := make(map[string]*rawMetricAccumulator)
+	dependenciesByName := make(map[string]*rawMetricAccumulator)
+	soapByName := make(map[string]*rawMetricAccumulator)
+	groupsByName := make(map[string]*rawMetricAccumulator)
+	for _, tx := range transactions {
+		fleet.add(tx)
+		if name := strings.TrimSpace(tx.Name); name != "" {
+			boundedRawMetricAccumulator(transactionsByName, name).add(tx)
+		}
+		if target := strings.TrimSpace(tx.DependencyTarget); target != "" {
+			boundedRawMetricAccumulator(dependenciesByName, target).add(tx)
+		}
+		if operation := strings.TrimSpace(tx.SOAPOperation); operation != "" {
+			boundedRawMetricAccumulator(soapByName, operation).add(tx)
+		}
+		groupName := strings.TrimSpace(tx.Group)
+		boundedRawMetricAccumulator(groupsByName, groupName).add(tx)
+	}
+
+	windowSec := batchWindowSeconds(windowMs)
+	result := rawDistributedMetricFallbacks{
+		Fleet:  fleet.finalize(windowSec),
+		Groups: make(map[string]generatorrpc.MetricAggregate, len(groupsByName)),
+	}
+	result.Transactions = finalizeRawMetricAccumulatorSeries(transactionsByName, windowSec)
+	result.Dependencies = finalizeRawMetricAccumulatorSeries(dependenciesByName, windowSec)
+	result.SOAP = finalizeRawMetricAccumulatorSeries(soapByName, windowSec)
+	for name, accumulator := range groupsByName {
+		if aggregate := accumulator.finalize(windowSec); aggregate != nil {
+			result.Groups[name] = *aggregate
+		}
+	}
+	return result
+}
+
+func finalizeRawMetricAccumulatorSeries(values map[string]*rawMetricAccumulator, windowSec float64) []generatorrpc.MetricAggregate {
+	if len(values) == 0 {
+		return nil
+	}
+	names := make([]string, 0, len(values))
+	for name := range values {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	result := make([]generatorrpc.MetricAggregate, 0, len(names))
+	for _, name := range names {
+		if aggregate := values[name].finalize(windowSec); aggregate != nil {
+			result = append(result, *aggregate)
+		}
+	}
+	return result
 }
 
 func summarizeGeneratorBatchTransactions(transactions []generatorrpc.TransactionMetric, windowMs int64) (float64, float64, float64, float64) {
@@ -343,12 +656,21 @@ func buildLiveMetricsFromDistributedBatch(test *ManagedTest, batch generatorrpc.
 	}
 
 	names := make([]string, 0, len(durationsByName))
+	transactionTPS := make(map[string]float64, len(batch.TransactionMetrics))
+	for _, aggregate := range batch.TransactionMetrics {
+		transactionTPS[aggregate.Name] = aggregate.TPS
+	}
 	allDurations := make([]float64, 0, len(batch.Transactions))
 	for name, durations := range durationsByName {
 		names = append(names, name)
 		sort.Float64s(durations)
 		allDurations = append(allDurations, durations...)
 		finalizeDistributedTxMetrics(live.Transactions[name], durations)
+		if tps, ok := transactionTPS[name]; ok {
+			live.Transactions[name].TPS = tps
+		} else {
+			live.Transactions[name].TPS = float64(successfulMetricCount(live.Transactions[name].Count, live.Transactions[name].Errors)) / batchWindowSeconds(batch.WindowMs)
+		}
 	}
 	for dependencyTarget, durations := range durationsByDependencyTarget {
 		sort.Float64s(durations)
@@ -429,10 +751,10 @@ func applyDistributedAggregateMetrics(test *ManagedTest, live *LiveMetrics, batc
 		return false
 	}
 	fleet := batch.FleetMetrics
-	live.TotalErrors = fleet.Errors
-	live.TotalTx = fleet.Count - fleet.Errors
+	live.TotalErrors = boundedMetricErrors(fleet.Count, fleet.Errors)
+	live.TotalTx = successfulMetricCount(fleet.Count, fleet.Errors)
 	if fleet.Count > 0 {
-		live.ErrorPct = float64(fleet.Errors) / float64(fleet.Count) * 100
+		live.ErrorPct = float64(live.TotalErrors) / float64(fleet.Count) * 100
 	}
 	live.TPS = fleetTPS
 	if live.TPS == 0 {
@@ -499,8 +821,8 @@ func applyDistributedAggregateMetrics(test *ManagedTest, live *LiveMetrics, batc
 	for _, group := range batch.Groups {
 		groupLive := &GroupLiveMetrics{Name: group.Name, VUsers: int(group.ActiveVUsers)}
 		if group.Metrics != nil && group.Metrics.Count > 0 {
-			groupLive.Transactions = group.Metrics.Count - group.Metrics.Errors
-			groupLive.Errors = group.Metrics.Errors
+			groupLive.Transactions = successfulMetricCount(group.Metrics.Count, group.Metrics.Errors)
+			groupLive.Errors = boundedMetricErrors(group.Metrics.Count, group.Metrics.Errors)
 			groupLive.TPS = resolvedGroupTPS[group.Name]
 			if groupLive.TPS == 0 {
 				groupLive.TPS = group.Metrics.TPS
@@ -533,6 +855,13 @@ func applyDistributedAggregateMetrics(test *ManagedTest, live *LiveMetrics, batc
 
 	errorBreakdown := make(map[string]int64)
 	for _, tx := range batch.Transactions {
+		mergeDistributedAggregateTransactionDetails(metricForAggregateSeries(live.Transactions, tx.Name), tx)
+		if dependencyTarget := strings.TrimSpace(tx.DependencyTarget); dependencyTarget != "" {
+			mergeDistributedAggregateTransactionDetails(metricForAggregateSeries(live.DependencyHealth, dependencyTarget), tx)
+		}
+		if operation := strings.TrimSpace(tx.SOAPOperation); operation != "" {
+			mergeDistributedAggregateTransactionDetails(metricForAggregateSeries(live.SOAPOperations, operation), tx)
+		}
 		if tx.Success {
 			continue
 		}
@@ -546,8 +875,44 @@ func applyDistributedAggregateMetrics(test *ManagedTest, live *LiveMetrics, batc
 			}
 		}
 	}
+	for _, metricsByName := range []map[string]*TxMetrics{live.Transactions, live.DependencyHealth, live.SOAPOperations} {
+		for _, metrics := range metricsByName {
+			finalizeAPIServerTelemetrySummary(metrics.ServerTelemetry)
+		}
+	}
 	live.ErrorBreakdown = copyErrorClassCounts(errorBreakdown)
 	return true
+}
+
+func metricForAggregateSeries(values map[string]*TxMetrics, name string) *TxMetrics {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return nil
+	}
+	if metrics := values[name]; metrics != nil {
+		return metrics
+	}
+	return values[distributedOverflowSeries]
+}
+
+// mergeDistributedAggregateTransactionDetails enriches authoritative aggregate
+// counts/rates with diagnostic fields that exist only on retained raw samples.
+// It deliberately does not change count, error, latency, or TPS accumulators.
+func mergeDistributedAggregateTransactionDetails(metrics *TxMetrics, tx generatorrpc.TransactionMetric) {
+	if metrics == nil {
+		return
+	}
+	if !tx.Success {
+		metrics.LastErrorMessage = tx.ErrorMessage
+		metrics.LastStatusCode = int(tx.StatusCode)
+		if tx.StartTimeUnixMs > 0 {
+			metrics.LastErrorAt = time.UnixMilli(tx.StartTimeUnixMs)
+		} else {
+			metrics.LastErrorAt = time.Now()
+		}
+	}
+	mergeTransactionMetricMetadata(metrics, tx.DependencyType, tx.DependencyTarget, tx.CorrelationID)
+	mergeDistributedServerTelemetry(metrics, tx.ServerTelemetry)
 }
 
 func txMetricsFromAggregate(aggregate generatorrpc.MetricAggregate) *TxMetrics {
@@ -556,6 +921,7 @@ func txMetricsFromAggregate(aggregate generatorrpc.MetricAggregate) *TxMetrics {
 	}
 	return &TxMetrics{
 		Name:             aggregate.Name,
+		TPS:              aggregate.TPS,
 		DependencyType:   aggregate.DependencyType,
 		DependencyTarget: aggregate.DependencyTarget,
 		AvgDNSMs:         aggregate.AvgDNSMs,
@@ -935,19 +1301,42 @@ func mergeGeneratorMetricAggregateSeries(values []generatorrpc.MetricAggregate) 
 	byName := make(map[string][]generatorrpc.MetricAggregate)
 	for _, value := range values {
 		name := strings.TrimSpace(value.Name)
-		if name == "" {
+		if name == "" || value.Count <= 0 {
 			continue
 		}
 		byName[name] = append(byName[name], value)
 	}
+	if len(byName) == 0 {
+		return nil
+	}
+
 	names := make([]string, 0, len(byName))
 	for name := range byName {
-		names = append(names, name)
+		if name != distributedOverflowSeries {
+			names = append(names, name)
+		}
 	}
 	sort.Strings(names)
-	out := make([]generatorrpc.MetricAggregate, 0, len(names))
+	overflowValues := append([]generatorrpc.MetricAggregate(nil), byName[distributedOverflowSeries]...)
+	if len(names) > maxDistributedMetricSeries-1 {
+		for _, name := range names[maxDistributedMetricSeries-1:] {
+			overflowValues = append(overflowValues, byName[name]...)
+		}
+		names = names[:maxDistributedMetricSeries-1]
+	}
+	if len(overflowValues) > 0 {
+		names = append(names, distributedOverflowSeries)
+		sort.Strings(names)
+	}
+
+	out := make([]generatorrpc.MetricAggregate, 0, min(len(names), maxDistributedMetricSeries))
 	for _, name := range names {
-		if aggregate := mergeGeneratorMetricAggregates(byName[name]); aggregate != nil {
+		series := byName[name]
+		if name == distributedOverflowSeries {
+			series = overflowValues
+		}
+		if aggregate := mergeGeneratorMetricAggregates(series); aggregate != nil {
+			aggregate.Name = name
 			out = append(out, *aggregate)
 		}
 	}
@@ -958,8 +1347,13 @@ func mergeGeneratorMetricAggregates(values []generatorrpc.MetricAggregate) *gene
 	if len(values) == 0 {
 		return nil
 	}
+	if len(values) == 1 && values[0].Count > 0 {
+		copy := values[0]
+		return &copy
+	}
 	out := generatorrpc.MetricAggregate{}
 	var durationDigest *engine.TDigest
+	durationDigestComplete := true
 	var avgMsSum, dnsSum, connectSum, tlsSum, ttfbSum float64
 	for _, value := range values {
 		if value.Count == 0 {
@@ -981,11 +1375,13 @@ func mergeGeneratorMetricAggregates(values []generatorrpc.MetricAggregate) *gene
 		out.BytesSent += value.BytesSent
 		out.BytesReceived += value.BytesReceived
 		out.TPS += value.TPS
-		if value.DurationDigest != nil && value.DurationDigest.Count > 0 {
+		if value.DurationDigest != nil && value.DurationDigest.Count == value.Count {
 			if durationDigest == nil {
 				durationDigest = engine.NewTDigest(value.DurationDigest.Compression)
 			}
 			durationDigest.Merge(engine.NewTDigestFromSnapshot(*value.DurationDigest))
+		} else {
+			durationDigestComplete = false
 		}
 	}
 	if out.Count == 0 {
@@ -997,7 +1393,7 @@ func mergeGeneratorMetricAggregates(values []generatorrpc.MetricAggregate) *gene
 	out.AvgConnectMs = connectSum / divisor
 	out.AvgTLSMs = tlsSum / divisor
 	out.AvgTTFBMs = ttfbSum / divisor
-	if durationDigest != nil && durationDigest.Count() > 0 {
+	if durationDigestComplete && durationDigest != nil && durationDigest.Count() == out.Count {
 		out.P50Ms = durationDigest.Quantile(0.50) / float64(time.Millisecond)
 		out.P90Ms = durationDigest.Quantile(0.90) / float64(time.Millisecond)
 		out.P95Ms = durationDigest.Quantile(0.95) / float64(time.Millisecond)

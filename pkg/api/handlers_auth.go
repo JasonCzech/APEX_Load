@@ -404,7 +404,7 @@ func (s *Server) handleGetAuthStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if settings.Mode == authModeLocal {
-		sessionResolution := resolveLocalSession(r, s.store)
+		sessionResolution := resolveLocalSession(r, s.store, s.activeLocalAuthGeneration())
 		response.SessionStatus = sessionResolution.Status
 		if sessionResolution.Session != nil && !sessionResolution.Session.ExpiresAt.IsZero() {
 			response.SessionExpiresAt = sessionResolution.Session.ExpiresAt.UTC().Format(time.RFC3339)
@@ -457,7 +457,7 @@ func (s *Server) handleGetAuthStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resolution, err := resolveRequestAuth(r, settings, s.store)
+	resolution, err := resolveRequestAuth(r, settings, s.store, s.activeLocalAuthGeneration())
 	if err != nil {
 		writeJSON(w, http.StatusOK, response)
 		return
@@ -495,7 +495,7 @@ func (s *Server) handleGetAuthDiagnostics(w http.ResponseWriter, r *http.Request
 	// trusted headers, or API key). Bypass modes (dev/disabled) stay open for
 	// local development.
 	if !isAuthBypassMode(settings.Mode) {
-		resolution, err := resolveRequestAuth(r, settings, s.store)
+		resolution, err := resolveRequestAuth(r, settings, s.store, s.activeLocalAuthGeneration())
 		if err != nil {
 			writeError(w, http.StatusUnauthorized, err.Error())
 			return
@@ -691,7 +691,7 @@ func (s *Server) handleGetAuthEffectiveAccess(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	resolution, err := resolveRequestAuth(r, settings, s.store)
+	resolution, err := resolveRequestAuth(r, settings, s.store, s.activeLocalAuthGeneration())
 	if err != nil {
 		response.Resources = buildDeniedEffectiveAccess(authAccessMatrix)
 		writeJSON(w, http.StatusOK, response)

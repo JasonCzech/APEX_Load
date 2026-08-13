@@ -225,7 +225,7 @@ export interface LogConfig {
   extended_options?: string[]
   /**
    * redact_run_evidence governs RUN OUTPUT only — logs, snapshots, reports,
-   * archives and debugger evidence. Default true (read an absent value as ON).
+   * archives and debugger evidence. Default false (read an absent value as OFF).
    * It never alters the script: an imported script keeps its literal credential
    * values so it stays runnable. Platform-managed secrets ({{secret.NAME}}) are
    * redacted regardless of this flag.

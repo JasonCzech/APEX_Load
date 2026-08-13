@@ -191,7 +191,9 @@ export function mergeTimelineHistory(summaryHistory: MetricsHistoryPoint[], reso
     const existing = byTimestamp.get(point.timestampMs)
     byTimestamp.set(point.timestampMs, existing ? {
       ...existing,
-      vusers: existing.vusers || point.vusers,
+      // Preserve an explicitly observed zero-load interval. Resource samples
+      // fill a missing gauge only; they do not override the summary timeline.
+      vusers: existing.vusers ?? point.vusers,
       cpuProcess: point.cpuProcess,
       cpuFree: point.cpuFree,
       memProcess: point.memProcess,

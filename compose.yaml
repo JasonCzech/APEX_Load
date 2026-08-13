@@ -1,4 +1,27 @@
 services:
+  bruno-artifacts-init:
+    image: alpine:3.24@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b
+    user: "0:0"
+    restart: "no"
+    read_only: true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - FOWNER
+    security_opt:
+      - no-new-privileges:true
+    command:
+      - sh
+      - -ec
+      - >-
+        if [ "$(stat -c '%u:%g' /var/lib/apexload-bruno)" != "65532:65532" ]; then
+          chown -R 65532:65532 /var/lib/apexload-bruno;
+        fi;
+        chmod 0700 /var/lib/apexload-bruno
+    volumes:
+      - bruno-artifacts:/var/lib/apexload-bruno
+
   controller:
     build:
       context: .
@@ -50,7 +73,10 @@ services:
       retries: 5
       start_period: 20s
     depends_on:
-      - generator
+      bruno-artifacts-init:
+        condition: service_completed_successfully
+      generator:
+        condition: service_started
 
   generator:
     build:
@@ -103,6 +129,9 @@ services:
     volumes:
       - generator-data:/data
       - bruno-artifacts:/var/lib/apexload-bruno:ro
+    depends_on:
+      bruno-artifacts-init:
+        condition: service_completed_successfully
 
   bruno-runner:
     build:

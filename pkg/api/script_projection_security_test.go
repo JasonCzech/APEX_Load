@@ -188,6 +188,99 @@ func TestMaskScriptSecretsUsesImportedCredentialParameterProvenance(t *testing.T
 	}
 }
 
+func TestStoredScriptViewPreservesAuthoredDataFileValues(t *testing.T) {
+	const (
+		authPassword = "configuration-secret"
+		dataPassword = "data-file-secret"
+		assetSecret  = "asset-canary-value"
+	)
+	script := &dsl.Script{
+		ID: "inspect-data-file", Name: "Inspect data file", Version: "1", Protocol: "http",
+		ProjectID: "project-a",
+		Config: dsl.ScriptConfig{HTTP: dsl.HTTPConfig{
+			Auth: dsl.AuthConfig{Type: "basic", Password: authPassword},
+		}},
+		Parameters: []dsl.Parameter{{
+			Name: "Password", Type: "file", DataSource: "users", Column: "password",
+		}},
+		DataSources: []dsl.DataSource{
+			{
+				Name: "users", Type: "csv", Strategy: "sequential", FirstRowHeader: true,
+				InlineData: "username,password\nalice," + dataPassword + "\n",
+			},
+			{
+				Name: "password", Type: "file", FileName: "password.txt",
+				InlineData: assetSecret,
+			},
+		},
+	}
+	stored := &StoredScript{
+		ID: script.ID, Name: script.Name, ProjectID: script.ProjectID, Script: script,
+	}
+
+	view := viewStoredScript(stored)
+	if view == nil || view.Script == nil {
+		t.Fatal("stored-script view is nil")
+	}
+	if got := view.Script.DataSources[0].InlineData; got != script.DataSources[0].InlineData {
+		t.Fatalf("data-file view = %q, want authored contents %q", got, script.DataSources[0].InlineData)
+	}
+	if got := view.Script.Config.HTTP.Auth.Password; got != maskedScriptSecret {
+		t.Fatalf("unrelated configuration password = %q, want %q", got, maskedScriptSecret)
+	}
+	if got := view.Script.DataSources[1].InlineData; got != maskedScriptSecret {
+		t.Fatalf("file asset = %q, want disclosure-safe marker %q", got, maskedScriptSecret)
+	}
+	if got := script.DataSources[0].InlineData; !strings.Contains(got, dataPassword) {
+		t.Fatalf("view projection mutated stored data-file contents: %q", got)
+	}
+
+	// Non-authoring disclosure projections still fail closed. Run-output
+	// redaction is enforced separately by the engine and is unchanged here.
+	disclosure := maskScriptSecrets(script)
+	if disclosure == nil || strings.Contains(disclosure.DataSources[0].InlineData, dataPassword) ||
+		!strings.Contains(disclosure.DataSources[0].InlineData, maskedScriptSecret) {
+		t.Fatalf("disclosure projection exposed credential data: %#v", disclosure)
+	}
+}
+
+func TestStoredScriptListMasksDataFilesWhileDetailViewRevealsThem(t *testing.T) {
+	const dataPassword = "list-data-file-secret"
+	server := NewServer(ServerConfig{})
+	stored := seedLegacySecretScript(server, &dsl.Script{
+		ID: "list-data-file", Name: "List data file", Version: "1", Protocol: "http",
+		ProjectID: "project-a",
+		Parameters: []dsl.Parameter{{
+			Name: "Password", Type: "file", DataSource: "users", Column: "password",
+		}},
+		DataSources: []dsl.DataSource{{
+			Name: "users", Type: "csv", Strategy: "sequential", FirstRowHeader: true,
+			InlineData: "username,password\nalice," + dataPassword + "\n",
+		}},
+	})
+
+	listResponse := httptest.NewRecorder()
+	server.handleListScripts(
+		listResponse,
+		httptest.NewRequest(http.MethodGet, "/api/v1/scripts?project_id=project-a", nil),
+	)
+	if listResponse.Code != http.StatusOK {
+		t.Fatalf("list status = %d body=%s", listResponse.Code, listResponse.Body.String())
+	}
+	if strings.Contains(listResponse.Body.String(), dataPassword) ||
+		!strings.Contains(listResponse.Body.String(), maskedScriptSecret) {
+		t.Fatalf("script list did not keep data-file values masked: %s", listResponse.Body.String())
+	}
+
+	getRequest := httptest.NewRequest(http.MethodGet, "/api/v1/scripts/"+stored.ID, nil)
+	getRequest.SetPathValue("id", stored.ID)
+	getResponse := httptest.NewRecorder()
+	server.handleGetScript(getResponse, getRequest)
+	if getResponse.Code != http.StatusOK || !strings.Contains(getResponse.Body.String(), dataPassword) {
+		t.Fatalf("script detail did not reveal data-file value: status=%d body=%s", getResponse.Code, getResponse.Body.String())
+	}
+}
+
 func TestMaskScriptSecretsTreatsDevWebGatedSourceAsOpaque(t *testing.T) {
 	const canary = "devweb-opaque-source-canary-20d4"
 	script := &dsl.Script{

@@ -186,13 +186,25 @@ type authAuditRecorder interface {
 }
 
 type authMiddlewareOptions struct {
-	recorder authAuditRecorder
+	recorder            authAuditRecorder
+	localAuthGeneration func() string
 }
 
 type authMiddlewareOption func(*authMiddlewareOptions)
 
 func withAuthAuditRecorder(recorder authAuditRecorder) authMiddlewareOption {
 	return func(o *authMiddlewareOptions) { o.recorder = recorder }
+}
+
+func withLocalAuthGeneration(generation func() string) authMiddlewareOption {
+	return func(o *authMiddlewareOptions) { o.localAuthGeneration = generation }
+}
+
+func (o authMiddlewareOptions) resolveRequestAuth(r *http.Request, settings AuthSettings, store storage.Store) (authResolution, error) {
+	if o.localAuthGeneration == nil {
+		return resolveRequestAuth(r, settings, store)
+	}
+	return resolveRequestAuth(r, settings, store, o.localAuthGeneration())
 }
 
 func authMiddleware(settings func() AuthSettings, store storage.Store, coordination requestCoordinationStore, opts ...authMiddlewareOption) func(http.Handler) http.Handler {
@@ -238,7 +250,7 @@ func authMiddleware(settings func() AuthSettings, store storage.Store, coordinat
 				return
 			}
 
-			resolution, err := resolveRequestAuth(r, current, store)
+			resolution, err := options.resolveRequestAuth(r, current, store)
 			if err != nil {
 				recordDenial(r, authResolution{}, http.StatusUnauthorized, err.Error())
 				writeError(w, http.StatusUnauthorized, err.Error())
@@ -305,7 +317,7 @@ func projectScopedAuthMiddleware(settings func() AuthSettings, store storage.Sto
 				return
 			}
 
-			resolution, err := resolveRequestAuth(r, current, store)
+			resolution, err := options.resolveRequestAuth(r, current, store)
 			if err != nil {
 				recordDenial(r, authResolution{}, http.StatusUnauthorized, err.Error())
 				writeError(w, http.StatusUnauthorized, err.Error())

@@ -63,13 +63,13 @@ If `APEXLOAD_ENV=production|prod` or `APEXLOAD_REQUIRE_AUTH` enables production 
 APEX Load supports four auth modes:
 
 - `dev`: local development bypass. Do not use for shared environments.
-- `local`: non-production Local Test Login with database-backed personas and 12-hour sessions.
+- `local`: non-production Local Test Login with database-backed personas and sessions lasting up to 12 hours within the current controller process.
 - `trusted_headers`: an upstream gateway authenticates the user and forwards trusted identity headers.
 - `oidc`: APEX Load handles OIDC login, callback, signed session, and logout.
 
 For human users, OIDC, trusted headers, or Local Test Login prove identity, but APEX Load access is controlled by local user records and local role bindings. After bootstrap, an upstream-authenticated human principal must have an active local user whose `subject` matches the authenticated subject. Human effective roles come from `UserRoleBinding` rows, not from upstream role headers. Service accounts keep their existing key-based behavior.
 
-Local Test Login is selected in Settings and takes effect after restart. It seeds `admin/admin` (system administrator), `domainadmin/domainadmin` (Default Domain administrator), `user/user` (read-only default workspace), and `dev/dev` (default workspace editor). Changes to fixture active state and role bindings in Access are preserved. Passwords are stored only as bcrypt hashes, and browser session tokens are stored only as SHA-256 hashes. These fixed credentials are deliberately rejected under production posture.
+Local Test Login is selected in Settings and takes effect after restart. It seeds `admin/admin` (system administrator), `domainadmin/domainadmin` (Default Domain administrator), `user/user` (read-only default workspace), and `dev/dev` (default workspace editor). Changes to fixture active state and role bindings in Access are preserved. Passwords are stored only as bcrypt hashes, and browser session tokens are stored only as SHA-256 hashes. Every controller startup while Local Test Login is active invalidates existing local sessions, so a restarted application opens at the persona login instead of silently restoring the previous persona. Logging out any persona, including `dev`, clears the current session and returns to the same login. These fixed credentials are deliberately rejected under production posture.
 
 Service-account automation can authenticate with either header:
 

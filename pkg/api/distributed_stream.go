@@ -234,7 +234,9 @@ func (tr *TestRunner) startDistributedStageSchedulesAfterBaseline(ctx context.Co
 	if test == nil {
 		return
 	}
-	if preBaseline > 0 && !tr.waitTestActiveRuntime(ctx, test.ID, preBaseline) {
+	// StartedAt is a coordinated future barrier. A zero-baseline schedule still
+	// waits for that epoch so its first hold/ramp cannot run before load starts.
+	if !tr.waitTestActiveRuntime(ctx, test.ID, preBaseline) {
 		return
 	}
 	if !tr.waitTestRunning(ctx, test.ID) {
@@ -247,10 +249,11 @@ func (tr *TestRunner) startDistributedStageSchedulesAfterBaseline(ctx context.Co
 // since its coordinated StartedAt. Unlike a delay started after CommitWork ACKs,
 // this remains correct when activation is late, and it freezes across pauses.
 func (tr *TestRunner) waitTestActiveRuntime(ctx context.Context, testID string, required time.Duration) bool {
-	if required <= 0 {
-		return true
+	poll := executionClockPollInterval
+	if required > 0 {
+		poll = min(required, executionClockPollInterval)
 	}
-	ticker := time.NewTicker(min(required, executionClockPollInterval))
+	ticker := time.NewTicker(poll)
 	defer ticker.Stop()
 	for {
 		tr.mu.RLock()

@@ -35,6 +35,36 @@ var StaticFS embed.FS
 
 var dashboardAssetRefPattern = regexp.MustCompile(`(?:href|src)="/(assets/[^"]+\.(?:css|js))"`)
 
+// startupGateListener lets http.Server register its listener before startup
+// performs the irreversible Local Test Login generation rotation. Accept stays
+// closed until that rotation and the lifecycle publication commit together.
+type startupGateListener struct {
+	net.Listener
+	ready     chan struct{}
+	release   chan struct{}
+	readyOnce sync.Once
+	openOnce  sync.Once
+}
+
+func newStartupGateListener(listener net.Listener) *startupGateListener {
+	return &startupGateListener{Listener: listener, ready: make(chan struct{}), release: make(chan struct{})}
+}
+
+func (l *startupGateListener) Accept() (net.Conn, error) {
+	l.readyOnce.Do(func() { close(l.ready) })
+	<-l.release
+	return l.Listener.Accept()
+}
+
+func (l *startupGateListener) open() {
+	l.openOnce.Do(func() { close(l.release) })
+}
+
+func (l *startupGateListener) abort() {
+	_ = l.Listener.Close()
+	l.open()
+}
+
 type desktopBrowserBootstrap struct {
 	expiresAt   time.Time
 	capability  string
@@ -55,6 +85,8 @@ type Server struct {
 	authRuntimeMu             sync.RWMutex
 	startupAuthSettings       AuthSettings
 	startupAuthSettingsSet    bool
+	localAuthGenerationMu     sync.RWMutex
+	localAuthGeneration       string
 	settingsService           systemSettingsService
 	archiveService            archiveService
 	schedulingService         schedulingService
@@ -240,6 +272,8 @@ type Server struct {
 	boundAddr                         string
 	boundAddrMu                       sync.RWMutex
 	lifecycleMu                       sync.Mutex
+	startupContext                    context.Context
+	startupCancel                     context.CancelFunc
 	startupStarted                    bool
 	startupDone                       chan struct{}
 	startupDoneOnce                   sync.Once
@@ -447,6 +481,7 @@ func NewServer(cfg ServerConfig) *Server {
 	browserRecording.SetHARArtifactDir(runner.GetSystemSettings().ArchiveRetention.HARArtifactDir)
 
 	scheduler := newScenarioScheduler(runner)
+	startupCtx, startupCancel := context.WithCancel(context.Background())
 	s := &Server{
 		hub:                         hub,
 		runner:                      runner,
@@ -513,7 +548,9 @@ func NewServer(cfg ServerConfig) *Server {
 		metricsAddr:             strings.TrimSpace(cfg.MetricsAddr),
 		metricsToken:            strings.TrimSpace(cfg.MetricsToken),
 		archiveFinalizationWake: make(chan struct{}, 1),
+		startupContext:          startupCtx,
 		startupDone:             make(chan struct{}),
+		startupCancel:           startupCancel,
 		shutdownDone:            make(chan struct{}),
 		staticFS:                StaticFS,
 		tracing:                 cfg.TracingStatus,
@@ -688,7 +725,7 @@ func (s *Server) captureStartupAuthSettings() {
 func (s *Server) routes(allowedOrigins []string) {
 	cors := corsMiddleware(allowedOrigins, s.authSettingsForRequest)
 	log := loggingMiddleware
-	baseAuth := authMiddleware(s.authSettingsForRequest, s.store, s.cache, withAuthAuditRecorder(s))
+	baseAuth := authMiddleware(s.authSettingsForRequest, s.store, s.cache, withAuthAuditRecorder(s), withLocalAuthGeneration(s.activeLocalAuthGeneration))
 	auth := s.projectMutationCoordinatedAuth(baseAuth)
 	standardRouteMiddleware := apiRouteMiddlewareStack{cors: cors, log: log, auth: auth}
 	ciAuth := s.ciAuthMiddleware(baseAuth)
@@ -701,6 +738,7 @@ func (s *Server) routes(allowedOrigins []string) {
 		[]string{RoleViewer, RoleEditor, RoleProjectAdmin},
 		resolveRecorderListProjectID,
 		withAuthAuditRecorder(s),
+		withLocalAuthGeneration(s.activeLocalAuthGeneration),
 	))
 	recorderCreateAuth := s.projectMutationCoordinatedAuth(projectScopedAuthMiddleware(
 		s.authSettingsForRequest,
@@ -710,6 +748,7 @@ func (s *Server) routes(allowedOrigins []string) {
 		[]string{RoleEditor, RoleProjectAdmin},
 		resolveRecorderCreateProjectID,
 		withAuthAuditRecorder(s),
+		withLocalAuthGeneration(s.activeLocalAuthGeneration),
 	))
 	recorderSessionViewAuth := s.projectMutationCoordinatedAuth(projectScopedAuthMiddleware(
 		s.authSettingsForRequest,
@@ -719,6 +758,7 @@ func (s *Server) routes(allowedOrigins []string) {
 		[]string{RoleViewer, RoleEditor, RoleProjectAdmin},
 		resolveRecorderSessionProjectID(s.recorder),
 		withAuthAuditRecorder(s),
+		withLocalAuthGeneration(s.activeLocalAuthGeneration),
 	))
 	recorderSessionEditAuth := s.projectMutationCoordinatedAuth(projectScopedAuthMiddleware(
 		s.authSettingsForRequest,
@@ -728,6 +768,7 @@ func (s *Server) routes(allowedOrigins []string) {
 		[]string{RoleEditor, RoleProjectAdmin},
 		resolveRecorderSessionProjectID(s.recorder),
 		withAuthAuditRecorder(s),
+		withLocalAuthGeneration(s.activeLocalAuthGeneration),
 	))
 	browserReplaySessionViewAuth := s.projectMutationCoordinatedAuth(projectScopedAuthMiddleware(
 		s.authSettingsForRequest,
@@ -737,6 +778,7 @@ func (s *Server) routes(allowedOrigins []string) {
 		[]string{RoleViewer, RoleEditor, RoleProjectAdmin},
 		resolveBrowserReplaySessionProjectID(s.browserReplay),
 		withAuthAuditRecorder(s),
+		withLocalAuthGeneration(s.activeLocalAuthGeneration),
 	))
 	browserReplaySessionEditAuth := s.projectMutationCoordinatedAuth(projectScopedAuthMiddleware(
 		s.authSettingsForRequest,
@@ -746,6 +788,7 @@ func (s *Server) routes(allowedOrigins []string) {
 		[]string{RoleEditor, RoleProjectAdmin},
 		resolveBrowserReplaySessionProjectID(s.browserReplay),
 		withAuthAuditRecorder(s),
+		withLocalAuthGeneration(s.activeLocalAuthGeneration),
 	))
 	scriptDebugSessionViewAuth := s.projectMutationCoordinatedAuth(projectScopedAuthMiddleware(
 		s.authSettingsForRequest,
@@ -755,6 +798,7 @@ func (s *Server) routes(allowedOrigins []string) {
 		[]string{RoleViewer, RoleEditor, RoleProjectAdmin},
 		resolveScriptDebugSessionProjectID(s.scriptDebug),
 		withAuthAuditRecorder(s),
+		withLocalAuthGeneration(s.activeLocalAuthGeneration),
 	))
 	scriptDebugSessionEditAuth := s.projectMutationCoordinatedAuth(projectScopedAuthMiddleware(
 		s.authSettingsForRequest,
@@ -764,6 +808,7 @@ func (s *Server) routes(allowedOrigins []string) {
 		[]string{RoleEditor, RoleProjectAdmin},
 		resolveScriptDebugSessionProjectID(s.scriptDebug),
 		withAuthAuditRecorder(s),
+		withLocalAuthGeneration(s.activeLocalAuthGeneration),
 	))
 	browserRecordingCreateAuth := s.projectMutationCoordinatedAuth(projectScopedAuthMiddleware(
 		s.authSettingsForRequest,
@@ -773,6 +818,7 @@ func (s *Server) routes(allowedOrigins []string) {
 		[]string{RoleEditor, RoleProjectAdmin},
 		resolveRecorderCreateProjectID,
 		withAuthAuditRecorder(s),
+		withLocalAuthGeneration(s.activeLocalAuthGeneration),
 	))
 	browserRecordingSessionViewAuth := s.projectMutationCoordinatedAuth(projectScopedAuthMiddleware(
 		s.authSettingsForRequest,
@@ -782,6 +828,7 @@ func (s *Server) routes(allowedOrigins []string) {
 		[]string{RoleViewer, RoleEditor, RoleProjectAdmin},
 		resolveBrowserRecordingSessionProjectID(s.browserRecording),
 		withAuthAuditRecorder(s),
+		withLocalAuthGeneration(s.activeLocalAuthGeneration),
 	))
 	browserRecordingSessionEditAuth := s.projectMutationCoordinatedAuth(projectScopedAuthMiddleware(
 		s.authSettingsForRequest,
@@ -791,6 +838,7 @@ func (s *Server) routes(allowedOrigins []string) {
 		[]string{RoleEditor, RoleProjectAdmin},
 		resolveBrowserRecordingSessionProjectID(s.browserRecording),
 		withAuthAuditRecorder(s),
+		withLocalAuthGeneration(s.activeLocalAuthGeneration),
 	))
 
 	// Controller-native GitHub Actions discovery, authentication, and run API.
@@ -1390,7 +1438,8 @@ func (s *Server) enforceAuthPosture() error {
 }
 
 func (s *Server) Start() (startErr error) {
-	if err := s.beginServerStartup(); err != nil {
+	startupCtx, err := s.beginServerStartup()
+	if err != nil {
 		return err
 	}
 	// Start owns every component it launches. If any later bind or Serve step
@@ -1420,7 +1469,8 @@ func (s *Server) Start() (startErr error) {
 	if err := s.enforceAuthPosture(); err != nil {
 		return err
 	}
-	if normalizeAuthSettings(s.runner.GetSystemSettings().Auth).Mode == authModeLocal {
+	localAuthStartup := s.authSettingsForRequest().Mode == authModeLocal
+	if localAuthStartup {
 		if err := s.ensureLocalAuthFixtures(); err != nil {
 			return fmt.Errorf("initialize local test login: %w", err)
 		}
@@ -1473,10 +1523,58 @@ func (s *Server) Start() (startErr error) {
 		_ = listener.Close()
 		return http.ErrServerClosed
 	}
+	gate := newStartupGateListener(listener)
+	serveDone := make(chan error, 1)
+	go func() { serveDone <- s.httpServer.Serve(gate) }()
+	select {
+	case <-gate.ready:
+	case err := <-serveDone:
+		return err
+	}
+
+	// Rotate Local Test Login only after every configured listener has bound and
+	// http.Server has registered the API listener. Holding lifecycleMu makes the
+	// rotation and publication one boundary with Shutdown: either cancellation
+	// wins first and no sessions are touched, or this controller becomes the
+	// published generation before Shutdown can proceed.
+	// A replacement process that cannot start must not revoke sessions on a
+	// still-healthy controller sharing the same database. The durable generation
+	// also fences an overlapping old process from minting sessions accepted by
+	// this newly started controller.
+	s.lifecycleMu.Lock()
+	if s.shutdownStarted {
+		gate.abort()
+		s.lifecycleMu.Unlock()
+		<-serveDone
+		return http.ErrServerClosed
+	}
+	if _, ok := s.store.(localAuthStore); ok {
+		activationCtx, cancelActivation := context.WithTimeout(startupCtx, localAuthStartupTimeout)
+		invalidated, err := s.activateLocalAuthGenerationForStartupContext(activationCtx)
+		cancelActivation()
+		if err != nil {
+			gate.abort()
+			s.lifecycleMu.Unlock()
+			<-serveDone
+			// database/sql may surface a context-canceled transaction as
+			// sql.ErrTxDone rather than context.Canceled. The immutable parent
+			// context distinguishes Shutdown cancellation from this operation's
+			// own startup timeout without depending on the driver's error shape.
+			if startupCtx.Err() != nil {
+				return http.ErrServerClosed
+			}
+			return fmt.Errorf("activate local test login for startup: %w", err)
+		}
+		if invalidated > 0 {
+			slog.Info("invalidated local test login sessions for controller startup", "session_count", invalidated)
+		}
+	}
 	s.setBoundAddr(listener.Addr().String())
 	s.finishServerStartup()
 	slog.Info("apexload API server starting", "addr", s.httpServer.Addr, "bound_addr", s.BoundAddr())
-	if err := s.httpServer.Serve(listener); err != http.ErrServerClosed {
+	gate.open()
+	s.lifecycleMu.Unlock()
+	if err := <-serveDone; err != http.ErrServerClosed {
 		return err
 	}
 	return nil
@@ -1794,6 +1892,10 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	// startupCancel is immutable after construction and safe for concurrent use.
+	// Cancel before acquiring lifecycleMu so a generation activation blocked in
+	// storage releases the publication lock and lets this deadline be honored.
+	s.cancelServerStartup()
 	s.lifecycleMu.Lock()
 	if s.shutdownDone == nil {
 		s.shutdownDone = make(chan struct{})
@@ -1840,6 +1942,18 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	return err
 }
 
+func (s *Server) cancelServerStartup() {
+	if s == nil {
+		return
+	}
+	// NewServer initializes startupCancel immutably. Keep zero-value Servers
+	// useful for narrow unit tests without racing lazy initialization against
+	// Shutdown's pre-lock cancellation path.
+	if s.startupCancel != nil {
+		s.startupCancel()
+	}
+}
+
 func (s *Server) finishShutdown(err error) {
 	s.lifecycleMu.Lock()
 	s.shutdownErr = err
@@ -1847,9 +1961,9 @@ func (s *Server) finishShutdown(err error) {
 	s.lifecycleMu.Unlock()
 }
 
-func (s *Server) beginServerStartup() error {
+func (s *Server) beginServerStartup() (context.Context, error) {
 	if s == nil {
-		return http.ErrServerClosed
+		return nil, http.ErrServerClosed
 	}
 	s.lifecycleMu.Lock()
 	defer s.lifecycleMu.Unlock()
@@ -1860,13 +1974,16 @@ func (s *Server) beginServerStartup() error {
 		s.shutdownDone = make(chan struct{})
 	}
 	if s.shutdownStarted {
-		return http.ErrServerClosed
+		return nil, http.ErrServerClosed
 	}
 	if s.startupStarted {
-		return fmt.Errorf("API server startup already began")
+		return nil, fmt.Errorf("API server startup already began")
 	}
 	s.startupStarted = true
-	return nil
+	if s.startupContext == nil {
+		return context.Background(), nil
+	}
+	return s.startupContext, nil
 }
 
 func (s *Server) finishServerStartup() {

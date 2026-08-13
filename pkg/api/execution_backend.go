@@ -43,6 +43,14 @@ type scalableExecutionBackend interface {
 	ScaleVUsers(tr *TestRunner, test *ManagedTest, groupName string, targetVUsers int) error
 }
 
+// initialRampReadinessProbeExecutionBackend marks remote backends whose
+// configured target can become visible to the controller before the workers
+// are ready to accept runtime scaling. Stage clocks probe that same target
+// through ScaleVUsers and begin only after the backend admits it.
+type initialRampReadinessProbeExecutionBackend interface {
+	requiresInitialRampReadinessProbe()
+}
+
 type evacuatingExecutionBackend interface {
 	EvacuateGenerator(tr *TestRunner, test *ManagedTest, target string, dryRun bool, reason string) ([]GeneratorEvacuationImpact, error)
 }
@@ -455,6 +463,19 @@ func (sink combinedResultSink) RecordResult(result *protocol.Result) error {
 	return nil
 }
 
+func (sink combinedResultSink) RecordTransaction(result *protocol.Result) error {
+	for _, candidate := range sink {
+		transactionSink, ok := candidate.(engine.TransactionSink)
+		if !ok {
+			continue
+		}
+		if err := transactionSink.RecordTransaction(result); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 type liveErrorEvidenceSink struct {
 	runner *TestRunner
 	test   *ManagedTest
@@ -489,6 +510,16 @@ func (a *runArtifacts) recordLiveMetrics(test *ManagedTest, goalConfig *GoalConf
 	}
 	if err := a.recorder.RecordResourceSample(live.Timestamp, live.ActiveVUsers, live.Resources); err != nil {
 		slog.Warn("failed to record resource sample", "test_id", test.ID, "error", err)
+	}
+	a.recordSLAEvidence(goalConfig, live)
+}
+
+// recordSLAEvidence updates the run-level manifest inputs without writing an
+// interval. The terminal publisher uses it when the periodic broadcaster
+// already persisted the collector's final timestamp before the engine returned.
+func (a *runArtifacts) recordSLAEvidence(goalConfig *GoalConfig, live *LiveMetrics) {
+	if a == nil {
+		return
 	}
 	if live != nil {
 		a.slaEvaluated = a.slaEvaluated || ciSLAEvidenceComplete(goalConfig, live)

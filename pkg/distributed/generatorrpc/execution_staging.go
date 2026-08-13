@@ -608,7 +608,16 @@ func (coordinator *assignmentLifecycleCoordinator) commitStageLocked(service *Se
 	next.duration = plan.nextDuration
 	next.durationSeconds = plan.nextDurationSeconds
 	next.groups[request.GetGroupName()] += request.GetVuserCount()
-	next.activeGroups[request.GetGroupName()] += request.GetVuserCount()
+	if plan.executionEnabled {
+		// Configured assignment capacity is not live load. The execution engine
+		// publishes authoritative zero/ramping counts after commit; seeding this
+		// gauge with the target makes unstarted peer groups appear fully active.
+		next.activeGroups[request.GetGroupName()] = 0
+	} else {
+		// Preserve the legacy capacity-only service contract when no execution
+		// engine exists to publish live gauges.
+		next.activeGroups[request.GetGroupName()] += request.GetVuserCount()
+	}
 	next.groupAssignments[request.GetGroupName()] = plan.validated.fingerprint
 	next.groupSecretBundleIDs[request.GetGroupName()] = request.GetSecretBundleId()
 	next.groupScripts[request.GetGroupName()] = request.GetScriptId()

@@ -18,7 +18,7 @@ import (
 //
 // A pin retained from an import is script-sourced. It is never removed from the
 // script, and whether it is scrubbed out of the run's OUTPUT is the operator's
-// call through script.Config.Log.RedactRunEvidence (default: redact).
+// call through script.Config.Log.RedactRunEvidence (default: visible).
 //
 // A value the script merely REFERENCES through {{secret.NAME}} lives in the
 // project secret store. The operator does not have it, so it is redacted in BOTH

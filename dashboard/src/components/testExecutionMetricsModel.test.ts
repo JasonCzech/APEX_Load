@@ -14,6 +14,7 @@ import {
   summarizeExecutionChartData,
 } from './testExecutionMetricsModel'
 import { latencySeriesKeyForTarget, routeLatencyDetailSeriesKeyForTarget } from './latencySeries'
+import { transactionChartSeriesKey } from './transactionChartSeries'
 import type { MetricsHistoryPoint } from '../types'
 
 describe('testExecutionMetricsModel', () => {
@@ -33,6 +34,7 @@ describe('testExecutionMetricsModel', () => {
       transactions: {
         PublishOrder: {
           name: 'PublishOrder',
+          tps: 2.5,
           dependency_type: 'jms_queue',
           count: 3,
           errors: 0,
@@ -48,6 +50,7 @@ describe('testExecutionMetricsModel', () => {
         },
         RequestReply: {
           name: 'RequestReply',
+          tps: 1.5,
           dependency_type: 'jms_queue',
           count: 2,
           errors: 0,
@@ -132,6 +135,12 @@ describe('testExecutionMetricsModel', () => {
       Checkout_p95: 160,
       Checkout_p99: 220,
       Checkout_errorPct: 9.09,
+      [transactionChartSeriesKey('PublishOrder', 'tps')]: 2.5,
+      [transactionChartSeriesKey('PublishOrder', 'avgMs')]: 90,
+      [transactionChartSeriesKey('PublishOrder', 'errorPct')]: 0,
+      [transactionChartSeriesKey('RequestReply', 'tps')]: 1.5,
+      [transactionChartSeriesKey('RequestReply', 'avgMs')]: 110,
+      [transactionChartSeriesKey('RequestReply', 'errorPct')]: 0,
       [endpointKey]: 51,
       [dnsKey]: 2,
       [successRateKey]: 92,
@@ -274,6 +283,15 @@ describe('testExecutionMetricsModel', () => {
       p90_ms: 130,
       p95_ms: 155,
       p99_ms: 220,
+      transactions: {
+        PublishOrder: {
+          name: 'PublishOrder',
+          tps: 3.5,
+          count: 8,
+          errors: 2,
+          avg_ms: 175,
+        },
+      },
       latency: {
         targets: [{
           name: 'edge',
@@ -300,6 +318,9 @@ describe('testExecutionMetricsModel', () => {
       p90: 130,
       p95: 155,
       p99: 220,
+      [transactionChartSeriesKey('PublishOrder', 'tps')]: 3.5,
+      [transactionChartSeriesKey('PublishOrder', 'avgMs')]: 175,
+      [transactionChartSeriesKey('PublishOrder', 'errorPct')]: 25,
       [endpointKey]: 52,
       [ttfbKey]: 44,
     })
@@ -346,6 +367,41 @@ describe('testExecutionMetricsModel', () => {
       containerCPUThrottledSecondsRate: 0.5,
       tcpRetransmitsPerSec: 6,
     })
+  })
+
+  it('preserves an authoritative zero-load interval over a stale resource gauge', () => {
+    const timestampMs = Date.parse('2026-05-12T20:00:01.123Z')
+    const merged = mergeArchiveResourceHistory(
+      [{
+        time: '8:00:01 PM',
+        timestampMs,
+        vusers: 0,
+        tps: 0,
+        avgMs: 0,
+        errorPct: 0,
+        p50: 0,
+        p90: 0,
+        p95: 0,
+        p99: 0,
+      }],
+      [{
+        time: '8:00:01 PM',
+        timestampMs,
+        vusers: 8,
+        tps: Number.NaN,
+        avgMs: Number.NaN,
+        errorPct: Number.NaN,
+        p50: Number.NaN,
+        p90: Number.NaN,
+        p95: Number.NaN,
+        p99: Number.NaN,
+        cpuProcess: 11,
+      }],
+    )
+
+    expect(merged).toHaveLength(1)
+    expect(merged[0].vusers).toBe(0)
+    expect(merged[0].cpuProcess).toBe(11)
   })
 
   it('enriches completed chart data with archived resources before adding relative run time', () => {

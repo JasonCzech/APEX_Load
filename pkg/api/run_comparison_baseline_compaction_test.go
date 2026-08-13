@@ -98,8 +98,8 @@ func TestComparisonBaselineSurvivesTerminalCompactionOfTheBaselineRun(t *testing
 
 // TestComparisonBreakdownCaptureIsPromotionOnly proves a second compaction of
 // the same run cannot erase what the first captured. loadStoredTerminalTestSummary
-// re-compacts a terminal run after loading stored history, and stored history is
-// built from typed interval summaries that never carry a breakdown.
+// re-compacts a terminal run after loading stored history, and the retained
+// breakdown must survive that second pass.
 func TestComparisonBreakdownCaptureIsPromotionOnly(t *testing.T) {
 	completedAt := time.Date(2026, time.August, 7, 10, 0, 0, 0, time.UTC)
 	tail := &LiveMetrics{

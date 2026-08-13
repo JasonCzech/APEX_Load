@@ -15,6 +15,10 @@ const (
 
 	OutputModeCanonical      = "canonical"
 	OutputModeNativeRequests = "native_requests"
+
+	PreservationUnavailableSourceValue = "source_value_unavailable"
+	PreservationUnavailableReference   = "existing_secret_reference"
+	PreservationUnavailableDestination = "destination_mapping_incomplete"
 )
 
 type Limits struct {
@@ -167,6 +171,10 @@ type SecretRequirement struct {
 	// it proves this requirement's authored value can be restored into every
 	// affected destination occurrence without another operator input.
 	DestinationValuePreserved bool `json:"destination_value_preserved,omitempty"`
+	// PreservationUnavailableReason is a disclosure-safe explanation for why
+	// DestinationValuePreserved is false. It never identifies or includes the
+	// protected source value.
+	PreservationUnavailableReason string `json:"preservation_unavailable_reason,omitempty"`
 	// ExistingReference identifies a source {{secret.*}} reference that was
 	// already safe. It remains a configure-now-or-later requirement, but never
 	// participates in source-value migration.

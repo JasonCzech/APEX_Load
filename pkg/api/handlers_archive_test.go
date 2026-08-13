@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"reflect"
+	"sort"
 	"strconv"
 	"strings"
 	"testing"
@@ -998,8 +1000,14 @@ func TestLoadArchiveIntervalSummariesForActionAggregatesTransactions(t *testing.
 	if summaries[0].TotalTx != 1 || summaries[0].TotalErrors != 0 || summaries[0].TPS != 1 || summaries[0].AvgResponseMs != 100 || summaries[0].P95Ms != 100 {
 		t.Fatalf("first filtered bucket = %#v, want one successful checkout", summaries[0])
 	}
+	if checkout := summaries[0].Transactions["Checkout"]; checkout == nil || checkout.Count != 1 || checkout.Errors != 0 || checkout.TPS != 1 || checkout.AvgMs != 100 {
+		t.Fatalf("first filtered transaction series = %#v", summaries[0].Transactions)
+	}
 	if summaries[1].TotalTx != 2 || summaries[1].TotalErrors != 1 || summaries[1].TPS != 1 || summaries[1].AvgResponseMs != 300 || summaries[1].ErrorPct != 100 || summaries[1].P50Ms != 300 {
 		t.Fatalf("second filtered bucket = %#v, want one failed checkout and cumulative totals", summaries[1])
+	}
+	if checkout := summaries[1].Transactions["Checkout"]; checkout == nil || checkout.Count != 1 || checkout.Errors != 1 || checkout.TPS != 0 || checkout.AvgMs != 300 {
+		t.Fatalf("failed filtered transaction series = %#v", summaries[1].Transactions)
 	}
 	if summaries[2].TotalTx != 3 || summaries[2].TotalErrors != 1 || summaries[2].TPS != 1 || summaries[2].AvgResponseMs != 200 || summaries[2].P99Ms != 200 {
 		t.Fatalf("third filtered bucket = %#v, want final checkout cumulative totals", summaries[2])
@@ -1063,6 +1071,9 @@ func TestLoadArchiveIntervalSummariesForGroupsAggregatesTransactions(t *testing.
 	if summaries[1].ActiveVUsers != 5 || summaries[1].TotalTx != 2 || summaries[1].TotalErrors != 1 || summaries[1].ErrorPct != 100 {
 		t.Fatalf("second group bucket = %#v, want Checkout-only failed summary", summaries[1])
 	}
+	if len(summaries[1].Transactions) != 1 || summaries[1].Transactions["Checkout"] == nil {
+		t.Fatalf("group-filtered transaction series leaked another group: %#v", summaries[1].Transactions)
+	}
 
 	empty, _, err := loadArchiveIntervalSummaries(record, archivePage{Limit: 10}, "", groupFilterQuery{Explicit: true})
 	if err != nil {
@@ -1070,6 +1081,69 @@ func TestLoadArchiveIntervalSummariesForGroupsAggregatesTransactions(t *testing.
 	}
 	if empty[0].ActiveVUsers != 0 || empty[0].TotalTx != 0 || empty[1].TotalTx != 0 {
 		t.Fatalf("empty group filter = %#v, want zeroed performance summaries", empty)
+	}
+}
+
+func TestLoadArchiveIntervalSummariesTransactionSeriesUsesBusinessProvenanceWithLegacyFallback(t *testing.T) {
+	for _, testCase := range []struct {
+		name            string
+		markBusiness    bool
+		firstNames      []string
+		secondHasSeries bool
+		wantTotals      [2]int64
+	}{
+		{name: "proven business transactions win archive-wide", markBusiness: true, firstNames: []string{"Login"}, wantTotals: [2]int64{1, 1}},
+		{name: "legacy archives retain all-row series", firstNames: []string{"Login", "Search"}, secondHasSeries: true, wantTotals: [2]int64{2, 3}},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			archiveDir := t.TempDir()
+			start := time.Date(2026, 8, 12, 18, 0, 0, 0, time.UTC)
+			manifest := RunArchiveManifest{
+				TestID:                "transaction-provenance",
+				TestName:              "Transaction provenance",
+				TransactionsFile:      "transactions.jsonl",
+				IntervalSummariesFile: "interval_summaries.jsonl",
+			}
+			manifestPath := filepath.Join(archiveDir, runArchiveManifestFileName)
+			writeJSONL(t, manifestPath, manifest)
+			writeJSONL(t, filepath.Join(archiveDir, manifest.IntervalSummariesFile),
+				IntervalSummaryRecord{Timestamp: start.Add(time.Second), TestID: manifest.TestID},
+				IntervalSummaryRecord{Timestamp: start.Add(2 * time.Second), TestID: manifest.TestID},
+			)
+			writeJSONL(t, filepath.Join(archiveDir, manifest.TransactionsFile),
+				TransactionEvent{Timestamp: start.Add(400 * time.Millisecond), TestID: manifest.TestID, Group: "All", ActionName: "Search", DurationMs: 40, Success: true},
+				TransactionEvent{Timestamp: start.Add(600 * time.Millisecond), TestID: manifest.TestID, Group: "All", ActionName: "Login", BusinessTransaction: testCase.markBusiness, DurationMs: 100, Success: true},
+				TransactionEvent{Timestamp: start.Add(1500 * time.Millisecond), TestID: manifest.TestID, Group: "All", ActionName: "Browse", DurationMs: 60, Success: true},
+			)
+			record := &storage.RunArchiveRecord{TestID: manifest.TestID, ArchivePath: archiveDir, ManifestPath: manifestPath}
+
+			summaries, _, err := loadArchiveIntervalSummaries(record, archivePage{Limit: 10}, "", groupFilterQuery{Names: []string{"All"}, Explicit: true})
+			if err != nil {
+				t.Fatalf("loadArchiveIntervalSummaries returned error: %v", err)
+			}
+			if len(summaries) != 2 || summaries[0].TotalTx != testCase.wantTotals[0] || summaries[1].TotalTx != testCase.wantTotals[1] {
+				t.Fatalf("provenance-selected totals = %#v, want %v", summaries, testCase.wantTotals)
+			}
+			firstNames := make([]string, 0, len(summaries[0].Transactions))
+			for name := range summaries[0].Transactions {
+				firstNames = append(firstNames, name)
+			}
+			sort.Strings(firstNames)
+			if !reflect.DeepEqual(firstNames, testCase.firstNames) {
+				t.Fatalf("first transaction series = %#v, want %#v", firstNames, testCase.firstNames)
+			}
+			if got := len(summaries[1].Transactions) > 0; got != testCase.secondHasSeries {
+				t.Fatalf("second interval has transaction series = %v, want %v: %#v", got, testCase.secondHasSeries, summaries[1].Transactions)
+			}
+
+			actionSummaries, _, err := loadArchiveIntervalSummaries(record, archivePage{Limit: 10}, "Search", groupFilterQuery{Names: []string{"All"}, Explicit: true})
+			if err != nil {
+				t.Fatalf("loadArchiveIntervalSummaries for ordinary action returned error: %v", err)
+			}
+			if len(actionSummaries) != 2 || actionSummaries[0].TotalTx != 1 || actionSummaries[1].TotalTx != 1 || actionSummaries[0].Transactions["Search"] == nil {
+				t.Fatalf("ordinary action-specific fallback was hidden by an unrelated business transaction: %#v", actionSummaries)
+			}
+		})
 	}
 }
 

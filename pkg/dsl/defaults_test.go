@@ -37,4 +37,7 @@ func TestDefaultScriptConfig(t *testing.T) {
 	if c.Log.Level != "standard" {
 		t.Fatalf("log level default: %q", c.Log.Level)
 	}
+	if c.Log.RedactRunEvidence == nil || *c.Log.RedactRunEvidence {
+		t.Fatalf("default redact_run_evidence = %v, want explicit false", c.Log.RedactRunEvidence)
+	}
 }

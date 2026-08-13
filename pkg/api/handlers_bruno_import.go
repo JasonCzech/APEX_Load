@@ -265,8 +265,8 @@ func (s *Server) handleInspectBrunoImport(w http.ResponseWriter, r *http.Request
 		requirement := &result.SecretRequirements[index]
 		if requirement.Value != "" {
 			retainedSecretValues[requirement.ID] = true
-			requirement.DestinationValuePreserved = true
 		}
+		setBrunoDestinationPreservationEvidence(requirement, requirement.Value != "", true)
 	}
 	nativeMode := strings.EqualFold(strings.TrimSpace(input.Options.OutputMode), brunoconvert.OutputModeNativeRequests)
 	if nativeMode && strings.TrimSpace(syncScriptID) != "" {
@@ -301,8 +301,11 @@ func (s *Server) handleInspectBrunoImport(w http.ResponseWriter, r *http.Request
 		for requirementIndex := range result.Scripts[candidateIndex].SecretRequirements {
 			requirement := &result.Scripts[candidateIndex].SecretRequirements[requirementIndex]
 			requirement.SourceValueAvailable = secretAvailability[requirement.ID]
-			requirement.DestinationValuePreserved =
-				retainedSecretValues[requirement.ID] && targetedRequirementIDs[requirement.ID]
+			setBrunoDestinationPreservationEvidence(
+				requirement,
+				retainedSecretValues[requirement.ID],
+				targetedRequirementIDs[requirement.ID],
+			)
 			if !nativeRequirementSeen[requirement.ID] {
 				nativeRequirementPreserved[requirement.ID] = requirement.DestinationValuePreserved
 			} else {
@@ -316,8 +319,11 @@ func (s *Server) handleInspectBrunoImport(w http.ResponseWriter, r *http.Request
 	if nativeMode {
 		for index := range result.SecretRequirements {
 			requirement := &result.SecretRequirements[index]
-			requirement.DestinationValuePreserved =
-				nativeRequirementSeen[requirement.ID] && nativeRequirementPreserved[requirement.ID]
+			setBrunoDestinationPreservationEvidence(
+				requirement,
+				retainedSecretValues[requirement.ID],
+				nativeRequirementSeen[requirement.ID] && nativeRequirementPreserved[requirement.ID],
+			)
 		}
 	}
 	boundedValues, err := boundedBrunoImportSecretValues(result.SecretRequirements)
@@ -547,6 +553,28 @@ func (s *Server) handleInspectBrunoImport(w http.ResponseWriter, r *http.Request
 	})
 }
 
+func setBrunoDestinationPreservationEvidence(
+	requirement *brunoconvert.SecretRequirement,
+	sourceValueRetained bool,
+	destinationMapped bool,
+) {
+	if requirement == nil {
+		return
+	}
+	requirement.DestinationValuePreserved = false
+	requirement.PreservationUnavailableReason = ""
+	switch {
+	case requirement.ExistingReference:
+		requirement.PreservationUnavailableReason = brunoconvert.PreservationUnavailableReference
+	case !sourceValueRetained:
+		requirement.PreservationUnavailableReason = brunoconvert.PreservationUnavailableSourceValue
+	case !destinationMapped:
+		requirement.PreservationUnavailableReason = brunoconvert.PreservationUnavailableDestination
+	default:
+		requirement.DestinationValuePreserved = true
+	}
+}
+
 func publicBrunoNativeInspectResult(result *brunoconvert.Result) (*brunoconvert.Result, error) {
 	if result == nil {
 		return nil, errors.New("native Bruno inspection result is required")
@@ -684,14 +712,15 @@ func (s *Server) handleCommitBrunoImport(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
 		return
 	}
+	var fields map[string]json.RawMessage
+	if err := json.NewDecoder(r.Body).Decode(&fields); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+		return
+	}
+	_, folderIDProvided := fields["folder_id"]
 	request.ProjectID = normalizeProjectID(request.ProjectID)
 	mode := strings.ToLower(strings.TrimSpace(request.Mode))
 	if mode == "create_native_batch" {
-		var fields map[string]json.RawMessage
-		if err := json.NewDecoder(r.Body).Decode(&fields); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
-			return
-		}
 		s.handleCommitBrunoNativeImport(w, r, request, fields)
 		return
 	}
@@ -825,7 +854,7 @@ func (s *Server) handleCommitBrunoImport(w http.ResponseWriter, r *http.Request)
 		if script.ID == "" {
 			script.ID = uuid.NewString()
 		}
-		if request.FolderID != nil {
+		if folderIDProvided {
 			script.FolderID = cloneStringPtr(request.FolderID)
 		}
 		if strings.TrimSpace(request.Name) != "" {
@@ -836,7 +865,7 @@ func (s *Server) handleCommitBrunoImport(w http.ResponseWriter, r *http.Request)
 		script.ID = existing.ID
 		script.RefKey = existing.RefKey
 		script.CreatedAt = existing.CreatedAt
-		if request.FolderID != nil {
+		if folderIDProvided {
 			script.FolderID = cloneStringPtr(request.FolderID)
 		}
 		if strings.TrimSpace(request.Name) != "" {

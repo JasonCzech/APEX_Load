@@ -942,6 +942,12 @@ components:
           type: string
         path:
           type: string
+        preservation_unavailable_reason:
+          type: string
+          enum:
+            - source_value_unavailable
+            - existing_secret_reference
+            - destination_mapping_incomplete
         replacement:
           type: string
         source_value_available:
@@ -43799,6 +43805,9 @@ paths:
                                   description: 'Go type: ServerTelemetrySummary'
                                   additionalProperties: true
                                   nullable: true
+                                tps:
+                                  type: number
+                                  format: double
                               required:
                                 - avg_ms
                                 - count
@@ -43807,6 +43816,7 @@ paths:
                                 - p50_ms
                                 - p90_ms
                                 - p99_ms
+                                - tps
                               nullable: true
                           policy:
                             type: string
@@ -43878,6 +43888,9 @@ paths:
                                   description: 'Go type: ServerTelemetrySummary'
                                   additionalProperties: true
                                   nullable: true
+                                tps:
+                                  type: number
+                                  format: double
                               required:
                                 - avg_ms
                                 - count
@@ -43886,6 +43899,7 @@ paths:
                                 - p50_ms
                                 - p90_ms
                                 - p99_ms
+                                - tps
                               nullable: true
                         required:
                           - source_test_id
@@ -45026,6 +45040,9 @@ paths:
                                   description: 'Go type: ServerTelemetrySummary'
                                   additionalProperties: true
                                   nullable: true
+                                tps:
+                                  type: number
+                                  format: double
                               required:
                                 - avg_ms
                                 - count
@@ -45034,6 +45051,7 @@ paths:
                                 - p50_ms
                                 - p90_ms
                                 - p99_ms
+                                - tps
                               nullable: true
                           dependency_map:
                             type: object
@@ -45363,6 +45381,9 @@ paths:
                                   description: 'Go type: ServerTelemetrySummary'
                                   additionalProperties: true
                                   nullable: true
+                                tps:
+                                  type: number
+                                  format: double
                               required:
                                 - avg_ms
                                 - count
@@ -45371,6 +45392,7 @@ paths:
                                 - p50_ms
                                 - p90_ms
                                 - p99_ms
+                                - tps
                               nullable: true
                           p50_ms:
                             type: number
@@ -45595,6 +45617,9 @@ paths:
                                   description: 'Go type: ServerTelemetrySummary'
                                   additionalProperties: true
                                   nullable: true
+                                tps:
+                                  type: number
+                                  format: double
                               required:
                                 - avg_ms
                                 - count
@@ -45603,6 +45628,7 @@ paths:
                                 - p50_ms
                                 - p90_ms
                                 - p99_ms
+                                - tps
                               nullable: true
                           target_tps:
                             type: number
@@ -45780,6 +45806,9 @@ paths:
                                   description: 'Go type: ServerTelemetrySummary'
                                   additionalProperties: true
                                   nullable: true
+                                tps:
+                                  type: number
+                                  format: double
                               required:
                                 - avg_ms
                                 - count
@@ -45788,6 +45817,7 @@ paths:
                                 - p50_ms
                                 - p90_ms
                                 - p99_ms
+                                - tps
                               nullable: true
                         required:
                           - active_vusers
@@ -47075,6 +47105,9 @@ paths:
                                   description: 'Go type: ServerTelemetrySummary'
                                   additionalProperties: true
                                   nullable: true
+                                tps:
+                                  type: number
+                                  format: double
                               required:
                                 - avg_ms
                                 - count
@@ -47083,6 +47116,7 @@ paths:
                                 - p50_ms
                                 - p90_ms
                                 - p99_ms
+                                - tps
                               nullable: true
                           policy:
                             type: string
@@ -47154,6 +47188,9 @@ paths:
                                   description: 'Go type: ServerTelemetrySummary'
                                   additionalProperties: true
                                   nullable: true
+                                tps:
+                                  type: number
+                                  format: double
                               required:
                                 - avg_ms
                                 - count
@@ -47162,6 +47199,7 @@ paths:
                                 - p50_ms
                                 - p90_ms
                                 - p99_ms
+                                - tps
                               nullable: true
                         required:
                           - source_test_id
@@ -48302,6 +48340,9 @@ paths:
                                   description: 'Go type: ServerTelemetrySummary'
                                   additionalProperties: true
                                   nullable: true
+                                tps:
+                                  type: number
+                                  format: double
                               required:
                                 - avg_ms
                                 - count
@@ -48310,6 +48351,7 @@ paths:
                                 - p50_ms
                                 - p90_ms
                                 - p99_ms
+                                - tps
                               nullable: true
                           dependency_map:
                             type: object
@@ -48639,6 +48681,9 @@ paths:
                                   description: 'Go type: ServerTelemetrySummary'
                                   additionalProperties: true
                                   nullable: true
+                                tps:
+                                  type: number
+                                  format: double
                               required:
                                 - avg_ms
                                 - count
@@ -48647,6 +48692,7 @@ paths:
                                 - p50_ms
                                 - p90_ms
                                 - p99_ms
+                                - tps
                               nullable: true
                           p50_ms:
                             type: number
@@ -48871,6 +48917,9 @@ paths:
                                   description: 'Go type: ServerTelemetrySummary'
                                   additionalProperties: true
                                   nullable: true
+                                tps:
+                                  type: number
+                                  format: double
                               required:
                                 - avg_ms
                                 - count
@@ -48879,6 +48928,7 @@ paths:
                                 - p50_ms
                                 - p90_ms
                                 - p99_ms
+                                - tps
                               nullable: true
                           target_tps:
                             type: number
@@ -49056,6 +49106,9 @@ paths:
                                   description: 'Go type: ServerTelemetrySummary'
                                   additionalProperties: true
                                   nullable: true
+                                tps:
+                                  type: number
+                                  format: double
                               required:
                                 - avg_ms
                                 - count
@@ -49064,6 +49117,7 @@ paths:
                                 - p50_ms
                                 - p90_ms
                                 - p99_ms
+                                - tps
                               nullable: true
                         required:
                           - active_vusers
@@ -50348,6 +50402,9 @@ paths:
                                   description: 'Go type: ServerTelemetrySummary'
                                   additionalProperties: true
                                   nullable: true
+                                tps:
+                                  type: number
+                                  format: double
                               required:
                                 - avg_ms
                                 - count
@@ -50356,6 +50413,7 @@ paths:
                                 - p50_ms
                                 - p90_ms
                                 - p99_ms
+                                - tps
                               nullable: true
                           policy:
                             type: string
@@ -50427,6 +50485,9 @@ paths:
                                   description: 'Go type: ServerTelemetrySummary'
                                   additionalProperties: true
                                   nullable: true
+                                tps:
+                                  type: number
+                                  format: double
                               required:
                                 - avg_ms
                                 - count
@@ -50435,6 +50496,7 @@ paths:
                                 - p50_ms
                                 - p90_ms
                                 - p99_ms
+                                - tps
                               nullable: true
                         required:
                           - source_test_id
@@ -51575,6 +51637,9 @@ paths:
                                   description: 'Go type: ServerTelemetrySummary'
                                   additionalProperties: true
                                   nullable: true
+                                tps:
+                                  type: number
+                                  format: double
                               required:
                                 - avg_ms
                                 - count
@@ -51583,6 +51648,7 @@ paths:
                                 - p50_ms
                                 - p90_ms
                                 - p99_ms
+                                - tps
                               nullable: true
                           dependency_map:
                             type: object
@@ -51912,6 +51978,9 @@ paths:
                                   description: 'Go type: ServerTelemetrySummary'
                                   additionalProperties: true
                                   nullable: true
+                                tps:
+                                  type: number
+                                  format: double
                               required:
                                 - avg_ms
                                 - count
@@ -51920,6 +51989,7 @@ paths:
                                 - p50_ms
                                 - p90_ms
                                 - p99_ms
+                                - tps
                               nullable: true
                           p50_ms:
                             type: number
@@ -52144,6 +52214,9 @@ paths:
                                   description: 'Go type: ServerTelemetrySummary'
                                   additionalProperties: true
                                   nullable: true
+                                tps:
+                                  type: number
+                                  format: double
                               required:
                                 - avg_ms
                                 - count
@@ -52152,6 +52225,7 @@ paths:
                                 - p50_ms
                                 - p90_ms
                                 - p99_ms
+                                - tps
                               nullable: true
                           target_tps:
                             type: number
@@ -52329,6 +52403,9 @@ paths:
                                   description: 'Go type: ServerTelemetrySummary'
                                   additionalProperties: true
                                   nullable: true
+                                tps:
+                                  type: number
+                                  format: double
                               required:
                                 - avg_ms
                                 - count
@@ -52337,6 +52414,7 @@ paths:
                                 - p50_ms
                                 - p90_ms
                                 - p99_ms
+                                - tps
                               nullable: true
                         required:
                           - active_vusers
@@ -53633,6 +53711,9 @@ paths:
                                   description: 'Go type: ServerTelemetrySummary'
                                   additionalProperties: true
                                   nullable: true
+                                tps:
+                                  type: number
+                                  format: double
                               required:
                                 - avg_ms
                                 - count
@@ -53641,6 +53722,7 @@ paths:
                                 - p50_ms
                                 - p90_ms
                                 - p99_ms
+                                - tps
                               nullable: true
                           policy:
                             type: string
@@ -53712,6 +53794,9 @@ paths:
                                   description: 'Go type: ServerTelemetrySummary'
                                   additionalProperties: true
                                   nullable: true
+                                tps:
+                                  type: number
+                                  format: double
                               required:
                                 - avg_ms
                                 - count
@@ -53720,6 +53805,7 @@ paths:
                                 - p50_ms
                                 - p90_ms
                                 - p99_ms
+                                - tps
                               nullable: true
                         required:
                           - source_test_id
@@ -54860,6 +54946,9 @@ paths:
                                   description: 'Go type: ServerTelemetrySummary'
                                   additionalProperties: true
                                   nullable: true
+                                tps:
+                                  type: number
+                                  format: double
                               required:
                                 - avg_ms
                                 - count
@@ -54868,6 +54957,7 @@ paths:
                                 - p50_ms
                                 - p90_ms
                                 - p99_ms
+                                - tps
                               nullable: true
                           dependency_map:
                             type: object
@@ -55197,6 +55287,9 @@ paths:
                                   description: 'Go type: ServerTelemetrySummary'
                                   additionalProperties: true
                                   nullable: true
+                                tps:
+                                  type: number
+                                  format: double
                               required:
                                 - avg_ms
                                 - count
@@ -55205,6 +55298,7 @@ paths:
                                 - p50_ms
                                 - p90_ms
                                 - p99_ms
+                                - tps
                               nullable: true
                           p50_ms:
                             type: number
@@ -55429,6 +55523,9 @@ paths:
                                   description: 'Go type: ServerTelemetrySummary'
                                   additionalProperties: true
                                   nullable: true
+                                tps:
+                                  type: number
+                                  format: double
                               required:
                                 - avg_ms
                                 - count
@@ -55437,6 +55534,7 @@ paths:
                                 - p50_ms
                                 - p90_ms
                                 - p99_ms
+                                - tps
                               nullable: true
                           target_tps:
                             type: number
@@ -55614,6 +55712,9 @@ paths:
                                   description: 'Go type: ServerTelemetrySummary'
                                   additionalProperties: true
                                   nullable: true
+                                tps:
+                                  type: number
+                                  format: double
                               required:
                                 - avg_ms
                                 - count
@@ -55622,6 +55723,7 @@ paths:
                                 - p50_ms
                                 - p90_ms
                                 - p99_ms
+                                - tps
                               nullable: true
                         required:
                           - active_vusers
@@ -56918,6 +57020,9 @@ paths:
                                   description: 'Go type: ServerTelemetrySummary'
                                   additionalProperties: true
                                   nullable: true
+                                tps:
+                                  type: number
+                                  format: double
                               required:
                                 - avg_ms
                                 - count
@@ -56926,6 +57031,7 @@ paths:
                                 - p50_ms
                                 - p90_ms
                                 - p99_ms
+                                - tps
                               nullable: true
                           policy:
                             type: string
@@ -56997,6 +57103,9 @@ paths:
                                   description: 'Go type: ServerTelemetrySummary'
                                   additionalProperties: true
                                   nullable: true
+                                tps:
+                                  type: number
+                                  format: double
                               required:
                                 - avg_ms
                                 - count
@@ -57005,6 +57114,7 @@ paths:
                                 - p50_ms
                                 - p90_ms
                                 - p99_ms
+                                - tps
                               nullable: true
                         required:
                           - source_test_id
@@ -58145,6 +58255,9 @@ paths:
                                   description: 'Go type: ServerTelemetrySummary'
                                   additionalProperties: true
                                   nullable: true
+                                tps:
+                                  type: number
+                                  format: double
                               required:
                                 - avg_ms
                                 - count
@@ -58153,6 +58266,7 @@ paths:
                                 - p50_ms
                                 - p90_ms
                                 - p99_ms
+                                - tps
                               nullable: true
                           dependency_map:
                             type: object
@@ -58482,6 +58596,9 @@ paths:
                                   description: 'Go type: ServerTelemetrySummary'
                                   additionalProperties: true
                                   nullable: true
+                                tps:
+                                  type: number
+                                  format: double
                               required:
                                 - avg_ms
                                 - count
@@ -58490,6 +58607,7 @@ paths:
                                 - p50_ms
                                 - p90_ms
                                 - p99_ms
+                                - tps
                               nullable: true
                           p50_ms:
                             type: number
@@ -58714,6 +58832,9 @@ paths:
                                   description: 'Go type: ServerTelemetrySummary'
                                   additionalProperties: true
                                   nullable: true
+                                tps:
+                                  type: number
+                                  format: double
                               required:
                                 - avg_ms
                                 - count
@@ -58722,6 +58843,7 @@ paths:
                                 - p50_ms
                                 - p90_ms
                                 - p99_ms
+                                - tps
                               nullable: true
                           target_tps:
                             type: number
@@ -58899,6 +59021,9 @@ paths:
                                   description: 'Go type: ServerTelemetrySummary'
                                   additionalProperties: true
                                   nullable: true
+                                tps:
+                                  type: number
+                                  format: double
                               required:
                                 - avg_ms
                                 - count
@@ -58907,6 +59032,7 @@ paths:
                                 - p50_ms
                                 - p90_ms
                                 - p99_ms
+                                - tps
                               nullable: true
                         required:
                           - active_vusers
@@ -60203,6 +60329,9 @@ paths:
                                   description: 'Go type: ServerTelemetrySummary'
                                   additionalProperties: true
                                   nullable: true
+                                tps:
+                                  type: number
+                                  format: double
                               required:
                                 - avg_ms
                                 - count
@@ -60211,6 +60340,7 @@ paths:
                                 - p50_ms
                                 - p90_ms
                                 - p99_ms
+                                - tps
                               nullable: true
                           policy:
                             type: string
@@ -60282,6 +60412,9 @@ paths:
                                   description: 'Go type: ServerTelemetrySummary'
                                   additionalProperties: true
                                   nullable: true
+                                tps:
+                                  type: number
+                                  format: double
                               required:
                                 - avg_ms
                                 - count
@@ -60290,6 +60423,7 @@ paths:
                                 - p50_ms
                                 - p90_ms
                                 - p99_ms
+                                - tps
                               nullable: true
                         required:
                           - source_test_id
@@ -61430,6 +61564,9 @@ paths:
                                   description: 'Go type: ServerTelemetrySummary'
                                   additionalProperties: true
                                   nullable: true
+                                tps:
+                                  type: number
+                                  format: double
                               required:
                                 - avg_ms
                                 - count
@@ -61438,6 +61575,7 @@ paths:
                                 - p50_ms
                                 - p90_ms
                                 - p99_ms
+                                - tps
                               nullable: true
                           dependency_map:
                             type: object
@@ -61767,6 +61905,9 @@ paths:
                                   description: 'Go type: ServerTelemetrySummary'
                                   additionalProperties: true
                                   nullable: true
+                                tps:
+                                  type: number
+                                  format: double
                               required:
                                 - avg_ms
                                 - count
@@ -61775,6 +61916,7 @@ paths:
                                 - p50_ms
                                 - p90_ms
                                 - p99_ms
+                                - tps
                               nullable: true
                           p50_ms:
                             type: number
@@ -61999,6 +62141,9 @@ paths:
                                   description: 'Go type: ServerTelemetrySummary'
                                   additionalProperties: true
                                   nullable: true
+                                tps:
+                                  type: number
+                                  format: double
                               required:
                                 - avg_ms
                                 - count
@@ -62007,6 +62152,7 @@ paths:
                                 - p50_ms
                                 - p90_ms
                                 - p99_ms
+                                - tps
                               nullable: true
                           target_tps:
                             type: number
@@ -62184,6 +62330,9 @@ paths:
                                   description: 'Go type: ServerTelemetrySummary'
                                   additionalProperties: true
                                   nullable: true
+                                tps:
+                                  type: number
+                                  format: double
                               required:
                                 - avg_ms
                                 - count
@@ -62192,6 +62341,7 @@ paths:
                                 - p50_ms
                                 - p90_ms
                                 - p99_ms
+                                - tps
                               nullable: true
                         required:
                           - active_vusers
@@ -63488,6 +63638,9 @@ paths:
                                   description: 'Go type: ServerTelemetrySummary'
                                   additionalProperties: true
                                   nullable: true
+                                tps:
+                                  type: number
+                                  format: double
                               required:
                                 - avg_ms
                                 - count
@@ -63496,6 +63649,7 @@ paths:
                                 - p50_ms
                                 - p90_ms
                                 - p99_ms
+                                - tps
                               nullable: true
                           policy:
                             type: string
@@ -63567,6 +63721,9 @@ paths:
                                   description: 'Go type: ServerTelemetrySummary'
                                   additionalProperties: true
                                   nullable: true
+                                tps:
+                                  type: number
+                                  format: double
                               required:
                                 - avg_ms
                                 - count
@@ -63575,6 +63732,7 @@ paths:
                                 - p50_ms
                                 - p90_ms
                                 - p99_ms
+                                - tps
                               nullable: true
                         required:
                           - source_test_id
@@ -64715,6 +64873,9 @@ paths:
                                   description: 'Go type: ServerTelemetrySummary'
                                   additionalProperties: true
                                   nullable: true
+                                tps:
+                                  type: number
+                                  format: double
                               required:
                                 - avg_ms
                                 - count
@@ -64723,6 +64884,7 @@ paths:
                                 - p50_ms
                                 - p90_ms
                                 - p99_ms
+                                - tps
                               nullable: true
                           dependency_map:
                             type: object
@@ -65052,6 +65214,9 @@ paths:
                                   description: 'Go type: ServerTelemetrySummary'
                                   additionalProperties: true
                                   nullable: true
+                                tps:
+                                  type: number
+                                  format: double
                               required:
                                 - avg_ms
                                 - count
@@ -65060,6 +65225,7 @@ paths:
                                 - p50_ms
                                 - p90_ms
                                 - p99_ms
+                                - tps
                               nullable: true
                           p50_ms:
                             type: number
@@ -65284,6 +65450,9 @@ paths:
                                   description: 'Go type: ServerTelemetrySummary'
                                   additionalProperties: true
                                   nullable: true
+                                tps:
+                                  type: number
+                                  format: double
                               required:
                                 - avg_ms
                                 - count
@@ -65292,6 +65461,7 @@ paths:
                                 - p50_ms
                                 - p90_ms
                                 - p99_ms
+                                - tps
                               nullable: true
                           target_tps:
                             type: number
@@ -65469,6 +65639,9 @@ paths:
                                   description: 'Go type: ServerTelemetrySummary'
                                   additionalProperties: true
                                   nullable: true
+                                tps:
+                                  type: number
+                                  format: double
                               required:
                                 - avg_ms
                                 - count
@@ -65477,6 +65650,7 @@ paths:
                                 - p50_ms
                                 - p90_ms
                                 - p99_ms
+                                - tps
                               nullable: true
                         required:
                           - active_vusers
@@ -163135,6 +163309,9 @@ paths:
                               required:
                                 - samples
                               nullable: true
+                            tps:
+                              type: number
+                              format: double
                           required:
                             - avg_ms
                             - count
@@ -163143,6 +163320,7 @@ paths:
                             - p50_ms
                             - p90_ms
                             - p99_ms
+                            - tps
                           nullable: true
                       policy:
                         type: string
@@ -163351,6 +163529,9 @@ paths:
                               required:
                                 - samples
                               nullable: true
+                            tps:
+                              type: number
+                              format: double
                           required:
                             - avg_ms
                             - count
@@ -163359,6 +163540,7 @@ paths:
                             - p50_ms
                             - p90_ms
                             - p99_ms
+                            - tps
                           nullable: true
                     required:
                       - source_test_id
@@ -164284,6 +164466,9 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                              tps:
+                                type: number
+                                format: double
                             required:
                               - avg_ms
                               - count
@@ -164292,6 +164477,7 @@ paths:
                               - p50_ms
                               - p90_ms
                               - p99_ms
+                              - tps
                             nullable: true
                         dependency_map:
                           type: object
@@ -164617,6 +164803,9 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                              tps:
+                                type: number
+                                format: double
                             required:
                               - avg_ms
                               - count
@@ -164625,6 +164814,7 @@ paths:
                               - p50_ms
                               - p90_ms
                               - p99_ms
+                              - tps
                             nullable: true
                         p50_ms:
                           type: number
@@ -164848,6 +165038,9 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                              tps:
+                                type: number
+                                format: double
                             required:
                               - avg_ms
                               - count
@@ -164856,6 +165049,7 @@ paths:
                               - p50_ms
                               - p90_ms
                               - p99_ms
+                              - tps
                             nullable: true
                         target_tps:
                           type: number
@@ -165032,6 +165226,9 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                              tps:
+                                type: number
+                                format: double
                             required:
                               - avg_ms
                               - count
@@ -165040,6 +165237,7 @@ paths:
                               - p50_ms
                               - p90_ms
                               - p99_ms
+                              - tps
                             nullable: true
                       required:
                         - active_vusers
@@ -165427,6 +165625,9 @@ paths:
                               required:
                                 - samples
                               nullable: true
+                            tps:
+                              type: number
+                              format: double
                           required:
                             - avg_ms
                             - count
@@ -165435,6 +165636,7 @@ paths:
                             - p50_ms
                             - p90_ms
                             - p99_ms
+                            - tps
                           nullable: true
                       dependency_map:
                         type: object
@@ -166144,6 +166346,9 @@ paths:
                               required:
                                 - samples
                               nullable: true
+                            tps:
+                              type: number
+                              format: double
                           required:
                             - avg_ms
                             - count
@@ -166152,6 +166357,7 @@ paths:
                             - p50_ms
                             - p90_ms
                             - p99_ms
+                            - tps
                           nullable: true
                       p50_ms:
                         type: number
@@ -166513,6 +166719,9 @@ paths:
                               required:
                                 - samples
                               nullable: true
+                            tps:
+                              type: number
+                              format: double
                           required:
                             - avg_ms
                             - count
@@ -166521,6 +166730,7 @@ paths:
                             - p50_ms
                             - p90_ms
                             - p99_ms
+                            - tps
                           nullable: true
                       target_tps:
                         type: number
@@ -166835,6 +167045,9 @@ paths:
                               required:
                                 - samples
                               nullable: true
+                            tps:
+                              type: number
+                              format: double
                           required:
                             - avg_ms
                             - count
@@ -166843,6 +167056,7 @@ paths:
                             - p50_ms
                             - p90_ms
                             - p99_ms
+                            - tps
                           nullable: true
                     required:
                       - active_vusers
@@ -168313,6 +168527,9 @@ paths:
                               required:
                                 - samples
                               nullable: true
+                            tps:
+                              type: number
+                              format: double
                           required:
                             - avg_ms
                             - count
@@ -168321,6 +168538,7 @@ paths:
                             - p50_ms
                             - p90_ms
                             - p99_ms
+                            - tps
                           nullable: true
                       policy:
                         type: string
@@ -168529,6 +168747,9 @@ paths:
                               required:
                                 - samples
                               nullable: true
+                            tps:
+                              type: number
+                              format: double
                           required:
                             - avg_ms
                             - count
@@ -168537,6 +168758,7 @@ paths:
                             - p50_ms
                             - p90_ms
                             - p99_ms
+                            - tps
                           nullable: true
                     required:
                       - source_test_id
@@ -169462,6 +169684,9 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                              tps:
+                                type: number
+                                format: double
                             required:
                               - avg_ms
                               - count
@@ -169470,6 +169695,7 @@ paths:
                               - p50_ms
                               - p90_ms
                               - p99_ms
+                              - tps
                             nullable: true
                         dependency_map:
                           type: object
@@ -169795,6 +170021,9 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                              tps:
+                                type: number
+                                format: double
                             required:
                               - avg_ms
                               - count
@@ -169803,6 +170032,7 @@ paths:
                               - p50_ms
                               - p90_ms
                               - p99_ms
+                              - tps
                             nullable: true
                         p50_ms:
                           type: number
@@ -170026,6 +170256,9 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                              tps:
+                                type: number
+                                format: double
                             required:
                               - avg_ms
                               - count
@@ -170034,6 +170267,7 @@ paths:
                               - p50_ms
                               - p90_ms
                               - p99_ms
+                              - tps
                             nullable: true
                         target_tps:
                           type: number
@@ -170210,6 +170444,9 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                              tps:
+                                type: number
+                                format: double
                             required:
                               - avg_ms
                               - count
@@ -170218,6 +170455,7 @@ paths:
                               - p50_ms
                               - p90_ms
                               - p99_ms
+                              - tps
                             nullable: true
                       required:
                         - active_vusers
@@ -170605,6 +170843,9 @@ paths:
                               required:
                                 - samples
                               nullable: true
+                            tps:
+                              type: number
+                              format: double
                           required:
                             - avg_ms
                             - count
@@ -170613,6 +170854,7 @@ paths:
                             - p50_ms
                             - p90_ms
                             - p99_ms
+                            - tps
                           nullable: true
                       dependency_map:
                         type: object
@@ -171322,6 +171564,9 @@ paths:
                               required:
                                 - samples
                               nullable: true
+                            tps:
+                              type: number
+                              format: double
                           required:
                             - avg_ms
                             - count
@@ -171330,6 +171575,7 @@ paths:
                             - p50_ms
                             - p90_ms
                             - p99_ms
+                            - tps
                           nullable: true
                       p50_ms:
                         type: number
@@ -171691,6 +171937,9 @@ paths:
                               required:
                                 - samples
                               nullable: true
+                            tps:
+                              type: number
+                              format: double
                           required:
                             - avg_ms
                             - count
@@ -171699,6 +171948,7 @@ paths:
                             - p50_ms
                             - p90_ms
                             - p99_ms
+                            - tps
                           nullable: true
                       target_tps:
                         type: number
@@ -172013,6 +172263,9 @@ paths:
                               required:
                                 - samples
                               nullable: true
+                            tps:
+                              type: number
+                              format: double
                           required:
                             - avg_ms
                             - count
@@ -172021,6 +172274,7 @@ paths:
                             - p50_ms
                             - p90_ms
                             - p99_ms
+                            - tps
                           nullable: true
                     required:
                       - active_vusers
@@ -180429,6 +180683,9 @@ paths:
                               required:
                                 - samples
                               nullable: true
+                            tps:
+                              type: number
+                              format: double
                           required:
                             - avg_ms
                             - count
@@ -180437,6 +180694,7 @@ paths:
                             - p50_ms
                             - p90_ms
                             - p99_ms
+                            - tps
                           nullable: true
                       policy:
                         type: string
@@ -180645,6 +180903,9 @@ paths:
                               required:
                                 - samples
                               nullable: true
+                            tps:
+                              type: number
+                              format: double
                           required:
                             - avg_ms
                             - count
@@ -180653,6 +180914,7 @@ paths:
                             - p50_ms
                             - p90_ms
                             - p99_ms
+                            - tps
                           nullable: true
                     required:
                       - source_test_id
@@ -181578,6 +181840,9 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                              tps:
+                                type: number
+                                format: double
                             required:
                               - avg_ms
                               - count
@@ -181586,6 +181851,7 @@ paths:
                               - p50_ms
                               - p90_ms
                               - p99_ms
+                              - tps
                             nullable: true
                         dependency_map:
                           type: object
@@ -181911,6 +182177,9 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                              tps:
+                                type: number
+                                format: double
                             required:
                               - avg_ms
                               - count
@@ -181919,6 +182188,7 @@ paths:
                               - p50_ms
                               - p90_ms
                               - p99_ms
+                              - tps
                             nullable: true
                         p50_ms:
                           type: number
@@ -182142,6 +182412,9 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                              tps:
+                                type: number
+                                format: double
                             required:
                               - avg_ms
                               - count
@@ -182150,6 +182423,7 @@ paths:
                               - p50_ms
                               - p90_ms
                               - p99_ms
+                              - tps
                             nullable: true
                         target_tps:
                           type: number
@@ -182326,6 +182600,9 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                              tps:
+                                type: number
+                                format: double
                             required:
                               - avg_ms
                               - count
@@ -182334,6 +182611,7 @@ paths:
                               - p50_ms
                               - p90_ms
                               - p99_ms
+                              - tps
                             nullable: true
                       required:
                         - active_vusers
@@ -182721,6 +182999,9 @@ paths:
                               required:
                                 - samples
                               nullable: true
+                            tps:
+                              type: number
+                              format: double
                           required:
                             - avg_ms
                             - count
@@ -182729,6 +183010,7 @@ paths:
                             - p50_ms
                             - p90_ms
                             - p99_ms
+                            - tps
                           nullable: true
                       dependency_map:
                         type: object
@@ -183438,6 +183720,9 @@ paths:
                               required:
                                 - samples
                               nullable: true
+                            tps:
+                              type: number
+                              format: double
                           required:
                             - avg_ms
                             - count
@@ -183446,6 +183731,7 @@ paths:
                             - p50_ms
                             - p90_ms
                             - p99_ms
+                            - tps
                           nullable: true
                       p50_ms:
                         type: number
@@ -183807,6 +184093,9 @@ paths:
                               required:
                                 - samples
                               nullable: true
+                            tps:
+                              type: number
+                              format: double
                           required:
                             - avg_ms
                             - count
@@ -183815,6 +184104,7 @@ paths:
                             - p50_ms
                             - p90_ms
                             - p99_ms
+                            - tps
                           nullable: true
                       target_tps:
                         type: number
@@ -184129,6 +184419,9 @@ paths:
                               required:
                                 - samples
                               nullable: true
+                            tps:
+                              type: number
+                              format: double
                           required:
                             - avg_ms
                             - count
@@ -184137,6 +184430,7 @@ paths:
                             - p50_ms
                             - p90_ms
                             - p99_ms
+                            - tps
                           nullable: true
                     required:
                       - active_vusers
@@ -185551,6 +185845,9 @@ paths:
                               required:
                                 - samples
                               nullable: true
+                            tps:
+                              type: number
+                              format: double
                           required:
                             - avg_ms
                             - count
@@ -185559,6 +185856,7 @@ paths:
                             - p50_ms
                             - p90_ms
                             - p99_ms
+                            - tps
                           nullable: true
                       policy:
                         type: string
@@ -185767,6 +186065,9 @@ paths:
                               required:
                                 - samples
                               nullable: true
+                            tps:
+                              type: number
+                              format: double
                           required:
                             - avg_ms
                             - count
@@ -185775,6 +186076,7 @@ paths:
                             - p50_ms
                             - p90_ms
                             - p99_ms
+                            - tps
                           nullable: true
                     required:
                       - source_test_id
@@ -186700,6 +187002,9 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                              tps:
+                                type: number
+                                format: double
                             required:
                               - avg_ms
                               - count
@@ -186708,6 +187013,7 @@ paths:
                               - p50_ms
                               - p90_ms
                               - p99_ms
+                              - tps
                             nullable: true
                         dependency_map:
                           type: object
@@ -187033,6 +187339,9 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                              tps:
+                                type: number
+                                format: double
                             required:
                               - avg_ms
                               - count
@@ -187041,6 +187350,7 @@ paths:
                               - p50_ms
                               - p90_ms
                               - p99_ms
+                              - tps
                             nullable: true
                         p50_ms:
                           type: number
@@ -187264,6 +187574,9 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                              tps:
+                                type: number
+                                format: double
                             required:
                               - avg_ms
                               - count
@@ -187272,6 +187585,7 @@ paths:
                               - p50_ms
                               - p90_ms
                               - p99_ms
+                              - tps
                             nullable: true
                         target_tps:
                           type: number
@@ -187448,6 +187762,9 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                              tps:
+                                type: number
+                                format: double
                             required:
                               - avg_ms
                               - count
@@ -187456,6 +187773,7 @@ paths:
                               - p50_ms
                               - p90_ms
                               - p99_ms
+                              - tps
                             nullable: true
                       required:
                         - active_vusers
@@ -187843,6 +188161,9 @@ paths:
                               required:
                                 - samples
                               nullable: true
+                            tps:
+                              type: number
+                              format: double
                           required:
                             - avg_ms
                             - count
@@ -187851,6 +188172,7 @@ paths:
                             - p50_ms
                             - p90_ms
                             - p99_ms
+                            - tps
                           nullable: true
                       dependency_map:
                         type: object
@@ -188560,6 +188882,9 @@ paths:
                               required:
                                 - samples
                               nullable: true
+                            tps:
+                              type: number
+                              format: double
                           required:
                             - avg_ms
                             - count
@@ -188568,6 +188893,7 @@ paths:
                             - p50_ms
                             - p90_ms
                             - p99_ms
+                            - tps
                           nullable: true
                       p50_ms:
                         type: number
@@ -188929,6 +189255,9 @@ paths:
                               required:
                                 - samples
                               nullable: true
+                            tps:
+                              type: number
+                              format: double
                           required:
                             - avg_ms
                             - count
@@ -188937,6 +189266,7 @@ paths:
                             - p50_ms
                             - p90_ms
                             - p99_ms
+                            - tps
                           nullable: true
                       target_tps:
                         type: number
@@ -189251,6 +189581,9 @@ paths:
                               required:
                                 - samples
                               nullable: true
+                            tps:
+                              type: number
+                              format: double
                           required:
                             - avg_ms
                             - count
@@ -189259,6 +189592,7 @@ paths:
                             - p50_ms
                             - p90_ms
                             - p99_ms
+                            - tps
                           nullable: true
                     required:
                       - active_vusers

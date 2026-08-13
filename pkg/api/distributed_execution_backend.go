@@ -274,6 +274,8 @@ type distributedExecutionBackend struct {
 	runSupervisionRenew   time.Duration
 }
 
+func (*distributedExecutionBackend) requiresInitialRampReadinessProbe() {}
+
 // setOnIdentityRecorded registers a hook fired when a generator (re)connects.
 func (b *distributedExecutionBackend) setOnIdentityRecorded(hook func(generatorID string)) {
 	b.identityMu.Lock()
@@ -1841,6 +1843,9 @@ func (b *distributedExecutionBackend) ScaleVUsers(tr *TestRunner, test *ManagedT
 			TargetVUsers:        int32(targetVUsers),
 			RunSupervisionToken: runSupervisionToken,
 		})
+		if errors.Is(err, engine.ErrInitialRampInProgress) {
+			return fmt.Errorf("adjust remote vusers: %w", err)
+		}
 		if err != nil || !adjustment.Accepted {
 			forwardErr := err
 			if forwardErr != nil {
@@ -1960,10 +1965,12 @@ func (b *distributedExecutionBackend) ScaleVUsers(tr *TestRunner, test *ManagedT
 	var adjustErr error
 	for range nextShards {
 		result := <-adjustCh
-		if clients[result.shard.Target] != nil {
+		if clients[result.shard.Target] != nil && !errors.Is(result.err, engine.ErrInitialRampInProgress) {
 			// A transport error is ambiguous: the generator may have applied the
 			// adjustment before its response was lost. Compensate every dispatched
-			// RPC, not merely the requests whose acknowledgements arrived.
+			// RPC, not merely the requests whose acknowledgements arrived. A
+			// structured initial-ramp rejection is the exception: the generator
+			// guarantees that request was rejected before applying it.
 			attempted = append(attempted, result.shard)
 		}
 		if result.err != nil && adjustErr == nil {

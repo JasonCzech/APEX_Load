@@ -17,6 +17,8 @@ import (
 
 const maxMultiGroupRuntimeSecretRedactionBytes = 32 << 20
 
+var ErrInitialRampInProgress = errors.New("initial vuser ramp is still in progress")
+
 type GroupConfig struct {
 	Name   string
 	Script *dsl.Script
@@ -88,12 +90,15 @@ type MultiGroupEngine struct {
 	wg                     *sync.WaitGroup
 	vuserCancels           map[int]context.CancelFunc
 	vuserGroups            map[int]string
+	vuserRunning           map[int]struct{}
 	vuserStopping          map[int]bool
 	vuserChanged           chan struct{}
 	nextVUserID            int
 	freeVUserIDs           vuserIDHeap
 	vuserIDsInUse          map[int]struct{}
 	vuserIDSpan            int
+	groupVUserIDPools      map[string]*groupVUserIDPool
+	vuserIdentities        map[int]allocatedVUserIdentity
 	paused                 bool
 	pauseRequested         bool
 	pauseCh                chan struct{}
@@ -104,9 +109,12 @@ type MultiGroupEngine struct {
 	pauseCompensation      time.Duration
 	targetDuration         time.Duration
 	controlsReady          bool
+	initialRampInProgress  bool
 	stopVUsers             context.CancelFunc
 	baseCtx                context.Context
 	loopCtx                context.Context
+	launchCtx              context.Context
+	launchOpen             bool
 	arrivalCtx             context.Context
 	gracefulCtx            context.Context
 	arrivalStop            context.CancelFunc
@@ -139,6 +147,65 @@ type MultiGroupRunResult struct {
 }
 
 type vuserIDHeap []int
+
+// vuserIdentity separates the globally unique engine handle used by lifecycle
+// control maps from the group-local ordinal exposed to scripts, data providers,
+// source-IP pools, and protocol runtimes. Groups may ramp concurrently without
+// making those user-visible identities scheduler-dependent.
+type vuserIdentity struct {
+	handle int
+	local  int
+}
+
+type groupVUserIDPool struct {
+	next      int
+	allocated int
+	span      int
+	free      vuserIDHeap
+}
+
+type allocatedVUserIdentity struct {
+	groupName string
+	local     int
+}
+
+// preparedVUser owns a fully initialized closed-model protocol instance before
+// it becomes active. Multi-group startup prepares every configured closed VUser
+// before releasing any user actions, which preserves fail-fast ordering without
+// serializing the groups' ramp clocks. cleanupOnce transfers ownership exactly
+// once: either abortPreparedVUser tears the instance down before activation, or
+// the activated VUser goroutine does so after Run returns.
+type preparedVUser struct {
+	identity       vuserIdentity
+	group          GroupConfig
+	runtimeID      int
+	proto          protocol.Protocol
+	vuCtx          context.Context
+	cancelVUser    context.CancelFunc
+	cancelProtocol context.CancelFunc
+	shedCtx        context.Context
+	boundaryCtx    context.Context
+	wg             *sync.WaitGroup
+	cleanupOnce    sync.Once
+}
+
+type preparedClosedGroup struct {
+	group GroupConfig
+	users []*preparedVUser
+}
+
+type deferredClosedGroup struct {
+	group      GroupConfig
+	startIndex int
+}
+
+type openGroupStartupPlan struct {
+	group         GroupConfig
+	protoConfig   map[string]any
+	totalArrivals int
+	limiter       *inFlightLimiter
+	inFlightLimit int
+}
 
 func (h vuserIDHeap) Len() int           { return len(h) }
 func (h vuserIDHeap) Less(i, j int) bool { return h[i] < h[j] }
@@ -322,16 +389,11 @@ func NewMultiGroup(cfg MultiGroupConfig) (*MultiGroupEngine, error) {
 		metrics:               NewMetricsCollector(10000),
 		readyCh:               make(chan struct{}),
 		gracefulStopCh:        make(chan struct{}),
-		vuserIDSpan:           int(^uint(0) >> 1),
+		vuserIDSpan:           MaxEngineVUsers,
 		paused:                cfg.StartPaused,
 		pauseRequested:        cfg.StartPaused,
 		runtimePreflightValid: cfg.RuntimePreflightValidated,
 		vuserChanged:          make(chan struct{}),
-	}
-	for _, group := range cfg.Groups {
-		if group.VUserIDSpan > 0 && group.VUserIDSpan < mge.vuserIDSpan {
-			mge.vuserIDSpan = group.VUserIDSpan
-		}
 	}
 	mge.metrics.SetGroupActiveVUsersProvider(mge.activeVUserCountByGroup)
 	return mge, nil
@@ -343,19 +405,67 @@ func (mge *MultiGroupEngine) Ready() <-chan struct{} {
 	return mge.readyCh
 }
 
+// ScalingReady reports whether runtime VUser adjustments can be applied
+// without racing the configured startup target.
+func (mge *MultiGroupEngine) ScalingReady() bool {
+	if mge == nil {
+		return false
+	}
+	mge.mu.Lock()
+	defer mge.mu.Unlock()
+	return mge.scalingAdmissionOpenLocked()
+}
+
+// scalingAdmissionOpenLocked reports whether the run can still admit a scale
+// operation. baseCtx remains live while an exact execution goal drains its
+// entitled iteration, so it is not sufficient on its own: loopCtx/launchCtx
+// and launchOpen are the lifecycle fence that prevents scaling from shedding
+// or replacing that final in-flight work. The caller holds mge.mu.
+func (mge *MultiGroupEngine) scalingAdmissionOpenLocked() bool {
+	return mge.baseCtx != nil && mge.baseCtx.Err() == nil &&
+		mge.loopCtx != nil && mge.loopCtx.Err() == nil &&
+		mge.launchCtx != nil && mge.launchCtx.Err() == nil &&
+		mge.launchOpen && mge.controlsReady && mge.scalingOpen
+}
+
 // activeVUserCountByGroup returns the live active VUser count per group, derived
 // from the live vuser→group map. Safe to call concurrently with spawn/teardown.
 func (mge *MultiGroupEngine) activeVUserCountByGroup() map[string]int {
 	mge.mu.Lock()
 	defer mge.mu.Unlock()
 	counts := make(map[string]int, len(mge.groups))
-	for _, group := range mge.vuserGroups {
-		counts[group]++
+	for _, group := range mge.groups {
+		counts[group.Name] = 0
+	}
+	for id := range mge.vuserRunning {
+		if group, ok := mge.vuserGroups[id]; ok {
+			counts[group]++
+		}
 	}
 	return counts
 }
 
 func (mge *MultiGroupEngine) Run(ctx context.Context) (*MultiGroupRunResult, error) {
+	return mge.RunAt(ctx, time.Time{})
+}
+
+// RunAt starts the engine on an optional shared wall-clock epoch. Distributed
+// generators pass a future translated barrier. Closed protocol instances may
+// initialize during the commit lead time, but VUser actions and live gauges stay
+// fenced until the epoch; this setup phase lets peer generators align their
+// ramps without turning initialization latency into a launch burst. Local callers
+// use Run, which starts now.
+func (mge *MultiGroupEngine) RunAt(ctx context.Context, executionStart time.Time) (*MultiGroupRunResult, error) {
+	// Ready is both a successful control boundary and a terminal release for
+	// callers already waiting on a committed engine. Every return path—including
+	// preflight failure or a graceful stop latched before Run—must unblock it.
+	defer mge.readyOnce.Do(func() { close(mge.readyCh) })
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	runEnteredAt := time.Now()
+	coordinatedStart := !executionStart.IsZero()
+	futureCoordinatedStartAtEntry := coordinatedStart && executionStart.After(runEnteredAt)
 	if err := mge.importExecutionGateError("launch"); err != nil {
 		return nil, err
 	}
@@ -371,17 +481,26 @@ func (mge *MultiGroupEngine) Run(ctx context.Context) (*MultiGroupRunResult, err
 	defer mge.metrics.Stop()
 
 	var wg sync.WaitGroup
+	start := executionStart
+	if start.IsZero() {
+		start = time.Now()
+	} else {
+		// Re-anchor the wire timestamp onto this process's monotonic clock. The
+		// wall instant stays the same, while later ramp/duration subtraction is
+		// insulated from wall-clock corrections after commit.
+		now := time.Now()
+		start = now.Add(executionStart.Sub(now))
+	}
 
 	mge.mu.Lock()
 	mge.vuserCancels = make(map[int]context.CancelFunc)
 	mge.vuserGroups = make(map[int]string)
 	mge.vuserStopping = make(map[int]bool)
-	mge.nextVUserID = 0
-	mge.freeVUserIDs = nil
-	mge.vuserIDsInUse = make(map[int]struct{})
+	mge.resetVUserIDStateLocked()
 	mge.paused = mge.pauseRequested
+	startedPaused := mge.paused
 	if mge.paused {
-		mge.pauseStartTime = time.Now()
+		mge.pauseStartTime = start
 	} else {
 		mge.pauseStartTime = time.Time{}
 	}
@@ -392,16 +511,19 @@ func (mge *MultiGroupEngine) Run(ctx context.Context) (*MultiGroupRunResult, err
 	}
 	mge.pauseChanged = make(chan struct{})
 	mge.controlsReady = false
+	mge.initialRampInProgress = false
 	mge.baseTargetDuration = mge.duration
 	mge.targetDuration = mge.duration
 	mge.mockNamespace = newRuntimeMockNamespace()
 	mge.scalingOpen = false
 	mge.activeReserved = 0
 	mge.scaleGuard = mge.hasZeroCapableClosedGroup()
+	mge.runStartedAt = start
 
 	// Create a base context for VUsers that only cancels on hard stop/abort
 	baseCtx, baseCancel := context.WithCancel(ctx)
 	loopCtx, loopCancel := context.WithCancel(baseCtx)
+	launchCtx, launchCancel := context.WithCancel(loopCtx)
 	arrivalCtx, arrivalCancel := context.WithCancel(baseCtx)
 	gracefulCtx, gracefulCancel := context.WithCancel(baseCtx)
 	softStopAll := func() {
@@ -414,12 +536,15 @@ func (mge *MultiGroupEngine) Run(ctx context.Context) (*MultiGroupRunResult, err
 	}
 	mge.baseCtx = baseCtx
 	mge.loopCtx = loopCtx
+	mge.launchCtx = launchCtx
+	mge.launchOpen = true
 	mge.arrivalCtx = arrivalCtx
 	mge.gracefulCtx = gracefulCtx
 	mge.arrivalStop = arrivalCancel
 	mge.gracefulCancel = gracefulCancel
 	mge.cancel = baseCancel
 	mge.softStop = explicitGracefulStop
+	preRunGracefulStopRequested := mge.gracefulStopRequested
 	if mge.gracefulStopRequested {
 		// GracefulStop can race immediately after CommitWork marks an execution
 		// started but before this Run goroutine initializes its cancellation
@@ -457,6 +582,7 @@ func (mge *MultiGroupEngine) Run(ctx context.Context) (*MultiGroupRunResult, err
 
 	defer baseCancel()
 	defer loopCancel()
+	defer launchCancel()
 	defer arrivalCancel()
 	defer gracefulCancel()
 	defer func() {
@@ -467,14 +593,36 @@ func (mge *MultiGroupEngine) Run(ctx context.Context) (*MultiGroupRunResult, err
 		mge.mu.Unlock()
 	}()
 
-	start := time.Now()
-	mge.mu.Lock()
-	mge.runStartedAt = start
-	mge.mu.Unlock()
 	groupResults := make([]GroupResult, len(mge.groups))
+	for i := range mge.groups {
+		groupResults[i].Name = mge.groups[i].Name
+	}
+	// Resolve a RunAt call that reached this generator after its entire active
+	// window before starting the asynchronous deadline manager. This makes the
+	// zero-work outcome deterministic instead of racing a context cancellation.
+	mge.mu.Lock()
+	expiredBeforeBaseline := !mge.paused && mge.activeElapsedAtLocked(time.Now()) >= mge.preBaseline+mge.baseTargetDuration
+	if expiredBeforeBaseline {
+		mge.controlsReady = false
+		mge.scalingOpen = false
+		mge.initialRampInProgress = false
+		mge.launchOpen = false
+	}
+	mge.mu.Unlock()
+	if expiredBeforeBaseline {
+		launchCancel()
+		arrivalCancel()
+		baseCancel()
+		if futureCoordinatedStartAtEntry {
+			return nil, fmt.Errorf("coordinated startup preparation missed the complete execution window")
+		}
+		return &MultiGroupRunResult{Duration: nonNegativeElapsedSince(start), Groups: groupResults}, nil
+	}
 
 	// Background goroutine manages the steady-state deadline and then performs
-	// a real progressive ramp-down before the hard stop.
+	// a real progressive ramp-down before the hard stop. Baseline, ramp, and
+	// duration share the same active-time origin; slow startup consumes the
+	// configured post-baseline duration instead of extending the run forever.
 	go func() {
 		for {
 			mge.mu.Lock()
@@ -483,10 +631,30 @@ func (mge *MultiGroupEngine) Run(ctx context.Context) (*MultiGroupRunResult, err
 				return
 			}
 			paused := mge.paused
-			deadline := start.Add(mge.preBaseline + mge.targetDuration)
+			deadlineActive := mge.preBaseline + mge.baseTargetDuration
+			elapsedActive := mge.activeElapsedAtLocked(time.Now())
 			mge.mu.Unlock()
 
-			if !paused && time.Now().After(deadline) {
+			if !paused && elapsedActive >= deadlineActive {
+				// Close scaling admission before marking VUsers as stopping. A scale-up
+				// waiting for earlier retirements must not reopen load in the gap before
+				// the hard stop is published.
+				mge.mu.Lock()
+				// Pause/duration controls may have changed after the optimistic
+				// sample above. Revalidate and close admission under the same lock
+				// activation uses, making the deadline a true linearization point.
+				if mge.paused || mge.activeElapsedAtLocked(time.Now()) < mge.preBaseline+mge.baseTargetDuration {
+					mge.mu.Unlock()
+					continue
+				}
+				mge.scalingOpen = false
+				mge.controlsReady = false
+				mge.initialRampInProgress = false
+				mge.launchOpen = false
+				mge.mu.Unlock()
+				// Prevent a delayed ramp step from launching after rampDownVUsers
+				// snapshots the active set for progressive cancellation.
+				launchCancel()
 				arrivalCancel()
 				mge.rampDownVUsers()
 				baseCancel()
@@ -503,13 +671,51 @@ func (mge *MultiGroupEngine) Run(ctx context.Context) (*MultiGroupRunResult, err
 	// in-flight actions can drain. The pre-load baseline must observe that soft
 	// stop too; waiting on the caller context alone would strand the run in
 	// STOPPING until the entire baseline window elapsed.
-	if err := waitForBaselineWindow(loopCtx, mge.preBaseline); err != nil {
-		return nil, err
+	// With no pre-baseline window, a coordinated RunAt may initialize protocol
+	// instances before the future release barrier. That is the preparation phase:
+	// user actions remain fenced below until executionStart. A real pre-baseline
+	// intentionally remains traffic-free, so preparation begins only after that
+	// active-time window completes.
+	if mge.preBaseline > 0 && !mge.waitUntilActive(loopCtx, mge.preBaseline) {
+		if preRunGracefulStopRequested && errors.Is(loopCtx.Err(), context.Canceled) {
+			// Ready is also the terminal release for controls already waiting on a
+			// committed execution. A graceful stop may be latched before Run creates
+			// its contexts, so close this boundary even though no load is admitted.
+			mge.readyOnce.Do(func() { close(mge.readyCh) })
+			return &MultiGroupRunResult{}, nil
+		}
+		return nil, loopCtx.Err()
 	}
 	mge.mu.Lock()
+	if mge.activeElapsedAtLocked(time.Now()) >= mge.preBaseline+mge.baseTargetDuration || mge.launchCtx.Err() != nil {
+		mge.controlsReady = false
+		mge.scalingOpen = false
+		mge.initialRampInProgress = false
+		mge.launchOpen = false
+		mge.mu.Unlock()
+		launchCancel()
+		arrivalCancel()
+		baseCancel()
+		return &MultiGroupRunResult{Duration: nonNegativeElapsedSince(start), Groups: groupResults}, nil
+	}
 	loadReady := mge.baseCtx.Err() == nil && mge.loopCtx.Err() == nil
 	mge.controlsReady = loadReady
-	mge.scalingOpen = loadReady
+	mge.initialRampInProgress = loadReady
+	// Configured VUsers are prepared and released after this public readiness
+	// boundary. Scaling stays closed until that initial release is complete so a
+	// runtime adjustment cannot race a launcher holding the configured target.
+	mge.scalingOpen = false
+	allZeroClosed := loadReady
+	for _, group := range runGroups {
+		if group.VUsers != 0 || isOpenWorkload(group.Script) || groupLifecycleAtOnce(group) {
+			allZeroClosed = false
+			break
+		}
+	}
+	if allZeroClosed && mge.scaleGuard {
+		mge.initialRampInProgress = false
+		mge.scalingOpen = true
+	}
 	mge.mu.Unlock()
 	mge.readyOnce.Do(func() {
 		close(mge.readyCh)
@@ -522,13 +728,22 @@ func (mge *MultiGroupEngine) Run(ctx context.Context) (*MultiGroupRunResult, err
 
 	totalTargetTPS := 0.0
 	atOnceGroups := make([]GroupConfig, 0)
+	atOnceStartupGroups := make([]GroupConfig, 0)
+	atOnceGates := make(map[string]chan struct{})
+	var atOnceGroupsMu sync.Mutex
+	preparedGroups := make([]preparedClosedGroup, 0, len(runGroups))
+	deferredClosedGroups := make([]deferredClosedGroup, 0)
+	openPlans := make([]openGroupStartupPlan, 0, len(runGroups))
 	atOnceTeardownComplete := false
 	runAtOnceTeardown := func() {
 		if atOnceTeardownComplete {
 			return
 		}
 		atOnceTeardownComplete = true
-		for _, group := range atOnceGroups {
+		atOnceGroupsMu.Lock()
+		groups := append([]GroupConfig(nil), atOnceGroups...)
+		atOnceGroupsMu.Unlock()
+		for _, group := range groups {
 			protoConfig := buildGroupProtoConfig(group, "load")
 			protoConfig["group_name"] = group.Name
 			applyRuntimeMockNamespace(protoConfig, mge.mockNamespace)
@@ -540,7 +755,15 @@ func (mge *MultiGroupEngine) Run(ctx context.Context) (*MultiGroupRunResult, err
 	// Once a group begins init-at-once it owns a cleanup obligation, including
 	// partial init and failures while starting any later closed/open group.
 	defer runAtOnceTeardown()
-	openGroupErrors := make(chan error, len(runGroups))
+	groupStartupErrors := make(chan error, len(runGroups))
+	abortPreparedGroups := func() {
+		var prepared []*preparedVUser
+		for _, preparedGroup := range preparedGroups {
+			prepared = append(prepared, preparedGroup.users...)
+		}
+		mge.abortPreparedVUsers(prepared)
+	}
+	startupStopped := false
 groupLoop:
 	for gi, group := range runGroups {
 		if dsl.CanonicalPacingType(group.Script.Config.Pacing.Type) == "tps" && group.Script.Config.Pacing.TPS > 0 {
@@ -548,60 +771,353 @@ groupLoop:
 			totalTargetTPS += targetTPS
 			mge.metrics.SetGroupTargetTPS(group.Name, targetTPS)
 		}
-		groupResults[gi] = GroupResult{Name: group.Name}
+		groupResults[gi].Name = group.Name
 
 		protoConfig := buildGroupProtoConfig(group, "load")
 		protoConfig["group_name"] = group.Name
 		applyRuntimeMockNamespace(protoConfig, mge.mockNamespace)
 		if groupLifecycleAtOnce(group) {
-			// A replacement joining a paused distributed run must not execute
-			// init-once protocol traffic before the execution gate opens. Use the
-			// soft-stop context so a graceful stop can still release this wait.
-			if err := mge.WaitIfPaused(mge.loopCtx); err != nil {
-				break groupLoop
-			}
-			outcome := mge.runGroupLifecycleBlock(mge.baseCtx, mge.loopCtx, group, protoConfig, group.Script.Init, "init")
-			if outcome.completed || outcome.userWorkStarted {
-				atOnceGroups = append(atOnceGroups, group)
-			}
-			if outcome.err != nil {
-				baseCancel()
-				wg.Wait()
-				return nil, fmt.Errorf("group %q init-once failed: %w", group.Name, outcome.err)
-			}
-			if !outcome.completed {
-				break groupLoop
-			}
+			// Per-VUser protocol instances are admitted in the global closed-group
+			// startup barrier below. The shared user init block runs at the load
+			// epoch, alongside already-admitted peer groups, so an exact execution
+			// goal can still cooperatively stop a long or context-ignoring init-once
+			// adapter. This gate prevents the group's own main users from starting
+			// before that shared lifecycle succeeds.
+			atOnceStartupGroups = append(atOnceStartupGroups, group)
+			atOnceGates[group.Name] = make(chan struct{})
 		}
 		if isOpenWorkload(group.Script) {
 			arrivals, bounded := boundedArrivalLimit(group.Script, group.VUsers)
 			inFlightLimit := openWorkloadInFlightLimit(group.Script)
-			limiter := newInFlightLimiter(inFlightLimit)
-			wg.Add(1)
-			go func(group GroupConfig, protoConfig map[string]any, totalArrivals int, limiter *inFlightLimiter, inFlightLimit int) {
+			totalArrivals := 0
+			if bounded {
+				totalArrivals = arrivals
+			}
+			openPlans = append(openPlans, openGroupStartupPlan{
+				group:         group,
+				protoConfig:   protoConfig,
+				totalArrivals: totalArrivals,
+				limiter:       newInFlightLimiter(inFlightLimit),
+				inFlightLimit: inFlightLimit,
+			})
+			continue
+		}
+
+		if group.VUsers == 0 {
+			continue
+		}
+		if groupLifecycleAtOnce(group) {
+			// The shared lifecycle protocol must be allowed to observe execution-
+			// goal cancellation from an earlier group before any per-user adapter
+			// instances for this group are initialized. Admit these users lazily
+			// behind their init-once gate at the common load epoch.
+			deferredClosedGroups = append(deferredClosedGroups, deferredClosedGroup{group: group})
+			continue
+		}
+
+		preparedGroups = append(preparedGroups, preparedClosedGroup{group: group})
+		preparedGroup := &preparedGroups[len(preparedGroups)-1]
+		prepareCount := group.VUsers
+		if hasExactSingleExecutionGoal(group.Script.Config.RunLogic) && group.VUsers > 1 {
+			// Exact shared goals can stop the run before every configured VUser is
+			// entitled to launch. Admit the first user at the global barrier, then
+			// preserve lazy initialization for the remaining contenders so goal
+			// completion can cancel an Init that will never own work.
+			prepareCount = 1
+			deferredClosedGroups = append(deferredClosedGroups, deferredClosedGroup{group: group, startIndex: 1})
+		}
+		for i := 0; i < prepareCount; i++ {
+			if err := mge.WaitIfPaused(mge.loopCtx); err != nil {
+				startupStopped = true
+				break groupLoop
+			}
+			identity, err := mge.allocateVUserIdentity(group.Name)
+			if err != nil {
+				baseCancel()
+				abortPreparedGroups()
+				wg.Wait()
+				return nil, fmt.Errorf("group %q allocate vuser id: %w", group.Name, err)
+			}
+			prepared, err := mge.prepareVUser(identity, group, protoConfig, &wg, false)
+			if err != nil {
+				baseCancel()
+				abortPreparedGroups()
+				wg.Wait()
+				return nil, fmt.Errorf("group %q initialize vuser: %w", group.Name, err)
+			}
+			if prepared == nil {
+				startupStopped = true
+				break groupLoop
+			}
+			preparedGroup.users = append(preparedGroup.users, prepared)
+		}
+	}
+	if totalTargetTPS > 0 {
+		mge.metrics.SetTargetTPS(totalTargetTPS)
+	}
+
+	if startupStopped || mge.loopCtx.Err() != nil {
+		startupStopped = true
+		abortPreparedGroups()
+	} else if err := mge.WaitIfPaused(mge.loopCtx); err != nil {
+		startupStopped = true
+		abortPreparedGroups()
+	}
+	if !startupStopped && coordinatedStart {
+		// Runtime observation is part of coordinated preparation. It must finish
+		// before the release boundary; running it after the boundary charges its
+		// latency to ramp-up and can release several overdue steps at once.
+		if err := mge.RevalidateRuntime(mge.loopCtx); err != nil {
+			baseCancel()
+			abortPreparedGroups()
+			wg.Wait()
+			return nil, fmt.Errorf("revalidate runtime before coordinated execution barrier: %w", err)
+		}
+	}
+	// A zero-baseline coordinated run can use the controller-selected epoch only
+	// when every admission step finished before it. A deliberate pause shifts the
+	// active release boundary, so resume such runs on a fresh local epoch rather
+	// than treating the operator's pause as a startup failure. A real resource
+	// baseline is kept idle above and likewise starts its ramp after preparation.
+	coordinatedPreprepare := coordinatedStart && mge.preBaseline == 0
+	preparedBeforeCoordinatedEpoch := coordinatedPreprepare && time.Now().Before(start)
+	mge.mu.Lock()
+	coordinatedPauseDelayed := startedPaused || mge.paused || mge.pauseRequested || mge.pauseCompensation > 0
+	mge.mu.Unlock()
+	if coordinatedPreprepare && !coordinatedPauseDelayed && !preparedBeforeCoordinatedEpoch {
+		baseCancel()
+		abortPreparedGroups()
+		wg.Wait()
+		return nil, fmt.Errorf("coordinated startup preparation missed the execution barrier")
+	}
+
+	if !startupStopped {
+		mge.mu.Lock()
+		loadEpochActive := mge.activeElapsedAtLocked(time.Now())
+		if preparedBeforeCoordinatedEpoch {
+			// All protocol admission completed before the controller-selected
+			// barrier. Use its exact active-time origin so independently staged
+			// generators release the same ramp step together instead of rebasing
+			// each assignment to local scheduling jitter.
+			loadEpochActive = mge.preBaseline
+		}
+		closedLaunchers := 0
+		for _, preparedGroup := range preparedGroups {
+			if len(preparedGroup.users) > 0 {
+				closedLaunchers++
+			}
+		}
+		closedLaunchers += len(deferredClosedGroups)
+		mge.mu.Unlock()
+
+		var launcherWG sync.WaitGroup
+		startupTasks := closedLaunchers + len(atOnceStartupGroups)
+		launcherWG.Add(startupTasks)
+		wg.Add(closedLaunchers + len(openPlans) + len(atOnceStartupGroups))
+		for _, group := range atOnceStartupGroups {
+			group := group
+			gate := atOnceGates[group.Name]
+			go func() {
 				defer wg.Done()
+				defer launcherWG.Done()
+				if !mge.waitUntilActive(mge.launchCtx, loadEpochActive) {
+					return
+				}
+				// A replacement joining a paused distributed run must not execute
+				// init-once protocol traffic before the execution gate opens.
+				if err := mge.WaitIfPaused(mge.loopCtx); err != nil {
+					return
+				}
+				if mge.loopCtx.Err() != nil {
+					return
+				}
+				protoConfig := buildGroupProtoConfig(group, "load")
+				protoConfig["group_name"] = group.Name
+				applyRuntimeMockNamespace(protoConfig, mge.mockNamespace)
+				outcome := mge.runGroupLifecycleBlock(mge.baseCtx, mge.launchCtx, group, protoConfig, group.Script.Init, "init")
+				if outcome.completed || outcome.userWorkStarted {
+					atOnceGroupsMu.Lock()
+					atOnceGroups = append(atOnceGroups, group)
+					atOnceGroupsMu.Unlock()
+				}
+				if outcome.err != nil {
+					groupStartupErrors <- fmt.Errorf("group %q init-once failed: %w", group.Name, outcome.err)
+					mge.mu.Lock()
+					mge.controlsReady = false
+					mge.scalingOpen = false
+					mge.launchOpen = false
+					mge.mu.Unlock()
+					baseCancel()
+					return
+				}
+				if !outcome.completed {
+					return
+				}
+				close(gate)
+			}()
+		}
+		for _, preparedGroup := range preparedGroups {
+			preparedGroup := preparedGroup
+			if len(preparedGroup.users) == 0 {
+				continue
+			}
+			go func() {
+				defer wg.Done()
+				defer launcherWG.Done()
+				if gate := atOnceGates[preparedGroup.group.Name]; gate != nil {
+					select {
+					case <-mge.launchCtx.Done():
+						mge.abortPreparedVUsers(preparedGroup.users)
+						return
+					case <-gate:
+					}
+				}
+				rampDelay := time.Duration(0)
+				if preparedGroup.group.RampUp > 0 && len(preparedGroup.users) > 1 {
+					rampDelay = preparedGroup.group.RampUp / time.Duration(len(preparedGroup.users))
+				}
+				for index, prepared := range preparedGroup.users {
+					deadline := loadEpochActive + time.Duration(index)*rampDelay
+					if !mge.waitUntilActive(mge.launchCtx, deadline) {
+						mge.abortPreparedVUsers(preparedGroup.users[index:])
+						return
+					}
+					if err := mge.WaitIfPaused(mge.launchCtx); err != nil {
+						mge.abortPreparedVUsers(preparedGroup.users[index:])
+						return
+					}
+					if !mge.activatePreparedVUserWithAdmission(prepared, mge.launchCtx) {
+						mge.abortPreparedVUsers(preparedGroup.users[index+1:])
+						return
+					}
+				}
+			}()
+		}
+		for _, deferredGroup := range deferredClosedGroups {
+			deferredGroup := deferredGroup
+			go func() {
+				defer wg.Done()
+				defer launcherWG.Done()
+				group := deferredGroup.group
+				deferredEpoch := loadEpochActive
+				if gate := atOnceGates[group.Name]; gate != nil {
+					select {
+					case <-mge.launchCtx.Done():
+						return
+					case <-gate:
+					}
+					deferredEpoch = mge.ActiveElapsed()
+				}
+				// Lazy exceptions intentionally initialize after the global barrier.
+				// Anchor their own ramp to the point their prerequisite gate opens so
+				// slow shared initialization cannot turn elapsed deadlines into a
+				// burst of back-to-back users.
+				rampDelay := time.Duration(0)
+				if group.RampUp > 0 && group.VUsers > 1 {
+					rampDelay = group.RampUp / time.Duration(group.VUsers)
+				}
+				protoConfig := buildGroupProtoConfig(group, "load")
+				protoConfig["group_name"] = group.Name
+				applyRuntimeMockNamespace(protoConfig, mge.mockNamespace)
+				for index := deferredGroup.startIndex; index < group.VUsers; index++ {
+					step := index - deferredGroup.startIndex
+					if deferredGroup.startIndex > 0 {
+						step++
+					}
+					deadline := deferredEpoch + time.Duration(step)*rampDelay
+					if !mge.waitUntilActive(mge.launchCtx, deadline) {
+						return
+					}
+					if err := mge.WaitIfPaused(mge.launchCtx); err != nil {
+						return
+					}
+					identity, err := mge.allocateVUserIdentity(group.Name)
+					if err != nil {
+						groupStartupErrors <- fmt.Errorf("group %q allocate vuser id: %w", group.Name, err)
+						baseCancel()
+						return
+					}
+					launched, err := mge.spawnVUser(identity, group, protoConfig, &wg, false)
+					if err != nil {
+						groupStartupErrors <- fmt.Errorf("group %q initialize vuser: %w", group.Name, err)
+						baseCancel()
+						return
+					}
+					if !launched {
+						return
+					}
+				}
+			}()
+		}
+
+		for _, plan := range openPlans {
+			plan := plan
+			go func() {
+				defer wg.Done()
+				var epochOnce sync.Once
+				epochReady := false
+				waitForEpoch := func(ctx context.Context) error {
+					epochOnce.Do(func() {
+						epochReady = mge.waitUntilActive(ctx, loadEpochActive)
+					})
+					if !epochReady {
+						if err := ctx.Err(); err != nil {
+							return err
+						}
+						return context.Canceled
+					}
+					return mge.WaitIfPaused(ctx)
+				}
+				waitForPlan := waitForEpoch
+				preserveActiveOrigin := preparedBeforeCoordinatedEpoch
+				if gate := atOnceGates[plan.group.Name]; gate != nil {
+					// Start the scheduler clock at the shared load epoch, but keep
+					// dispatch behind successful init-once admission. When the gate
+					// opens, overdue arrivals are therefore handled by the scheduler's
+					// bounded catch-up/shedding policy instead of silently rebasing the
+					// group's clock and shortening its offered load.
+					waitForPlan = func(ctx context.Context) error {
+						if err := waitForEpoch(ctx); err != nil {
+							return err
+						}
+						select {
+						case <-ctx.Done():
+							return ctx.Err()
+						case <-gate:
+						}
+						return mge.WaitIfPaused(ctx)
+					}
+					preserveActiveOrigin = false
+				}
 				var initializedWorkers int64
 				var firstInitErr error
-				runArrivalScheduler(mge.arrivalCtx, group.Script.Config.Pacing.TPS, totalArrivals, mge.WaitIfPaused, mge.SleepActive, mge.ActiveElapsed, func(int) {
+				activeSinceEpoch := func() time.Duration {
+					elapsed := mge.ActiveElapsed() - loadEpochActive
+					if elapsed < 0 {
+						return 0
+					}
+					return elapsed
+				}
+				runArrivalSchedulerFromOrigin(mge.arrivalCtx, plan.group.Script.Config.Pacing.TPS, plan.totalArrivals, waitForPlan, mge.SleepActive, activeSinceEpoch, preserveActiveOrigin, func(int) {
 					// Shed the arrival when the in-flight set is saturated: the SUT
 					// cannot keep up, so dropping it protects the generator from
 					// unbounded goroutine growth instead of silently throttling to a
 					// closed model. The reserved slot is released by spawnOpenWorker
 					// on every exit path.
-					if !limiter.tryAcquire() {
+					if !plan.limiter.tryAcquire() {
 						mge.metrics.RecordSheddedArrival()
-						if limiter.shouldWarn() {
-							slog.Warn("open workload shedding arrivals: system under test cannot keep up; capping in-flight workers to protect the generator", "group", group.Name, "max_in_flight", inFlightLimit, "tps", group.Script.Config.Pacing.TPS)
+						if plan.limiter.shouldWarn() {
+							slog.Warn("open workload shedding arrivals: system under test cannot keep up; capping in-flight workers to protect the generator", "group", plan.group.Name, "max_in_flight", plan.inFlightLimit, "tps", plan.group.Script.Config.Pacing.TPS)
 						}
 						return
 					}
-					vuserID, err := mge.allocateVUserID()
+					identity, err := mge.allocateVUserIdentity(plan.group.Name)
 					if err != nil {
-						limiter.release()
+						plan.limiter.release()
 						mge.metrics.RecordSheddedArrival()
 						return
 					}
-					launched, err := mge.spawnOpenWorker(vuserID, group, protoConfig, &wg, limiter.release)
+					launched, err := mge.spawnOpenWorker(identity, plan.group, plan.protoConfig, &wg, plan.limiter.release)
 					if err != nil {
 						if firstInitErr == nil {
 							firstInitErr = err
@@ -612,72 +1128,38 @@ groupLoop:
 						initializedWorkers++
 					}
 				}, func(_ int, count int) {
-					limiter.recordShed(int64(count))
+					plan.limiter.recordShed(int64(count))
 					mge.metrics.RecordSheddedArrivals(int64(count))
-					if limiter.shouldWarn() {
-						slog.Warn("open workload shedding overdue arrivals: generator scheduler exceeded bounded catch-up burst", "group", group.Name, "shed", count, "max_catch_up_burst", maxOpenWorkloadCatchUpBurst, "tps", group.Script.Config.Pacing.TPS)
+					if plan.limiter.shouldWarn() {
+						slog.Warn("open workload shedding overdue arrivals: generator scheduler exceeded bounded catch-up burst", "group", plan.group.Name, "shed", count, "max_catch_up_burst", maxOpenWorkloadCatchUpBurst, "tps", plan.group.Script.Config.Pacing.TPS)
 					}
 				})
-				if shed := limiter.Shed(); shed > 0 {
-					slog.Warn("open workload shed arrivals over the run (offered TPS exceeded achievable throughput)", "group", group.Name, "shed", shed, "max_in_flight", inFlightLimit)
+				if shed := plan.limiter.Shed(); shed > 0 {
+					slog.Warn("open workload shed arrivals over the run (offered TPS exceeded achievable throughput)", "group", plan.group.Name, "shed", shed, "max_in_flight", plan.inFlightLimit)
 				}
 				if initializedWorkers == 0 && firstInitErr != nil {
-					openGroupErrors <- fmt.Errorf("group %q could not initialize any arrival worker: %w", group.Name, firstInitErr)
+					groupStartupErrors <- fmt.Errorf("group %q could not initialize any arrival worker: %w", plan.group.Name, firstInitErr)
 				}
-			}(group, protoConfig, func() int {
-				if bounded {
-					return arrivals
-				}
-				return 0
-			}(), limiter, inFlightLimit)
-			continue
+			}()
 		}
 
-		rampDelay := time.Duration(0)
-		if group.RampUp > 0 && group.VUsers > 1 {
-			rampDelay = group.RampUp / time.Duration(group.VUsers)
+		if startupTasks == 0 {
+			mge.finishInitialRamp()
+		} else {
+			go func() {
+				launcherWG.Wait()
+				mge.finishInitialRamp()
+			}()
 		}
-
-		for i := 0; i < group.VUsers; i++ {
-			if mge.loopCtx.Err() != nil {
-				break
-			}
-			if err := mge.WaitIfPaused(mge.loopCtx); err != nil {
-				break
-			}
-
-			if i > 0 && rampDelay > 0 && !mge.SleepActive(mge.loopCtx, rampDelay) {
-				break
-			}
-
-			vuserID, err := mge.allocateVUserID()
-			if err != nil {
-				baseCancel()
-				wg.Wait()
-				return nil, fmt.Errorf("group %q allocate vuser id: %w", group.Name, err)
-			}
-			launched, err := mge.spawnVUser(vuserID, group, protoConfig, &wg, false)
-			if err != nil {
-				baseCancel()
-				wg.Wait()
-				return nil, fmt.Errorf("group %q initialize vuser: %w", group.Name, err)
-			}
-			if !launched {
-				break
-			}
-		}
-	}
-	if totalTargetTPS > 0 {
-		mge.metrics.SetTargetTPS(totalTargetTPS)
 	}
 
 	wg.Wait()
-	close(openGroupErrors)
-	var openStartupErrors []error
-	for err := range openGroupErrors {
-		openStartupErrors = append(openStartupErrors, err)
+	close(groupStartupErrors)
+	var startupErrors []error
+	for err := range groupStartupErrors {
+		startupErrors = append(startupErrors, err)
 	}
-	if err := errors.Join(openStartupErrors...); err != nil {
+	if err := errors.Join(startupErrors...); err != nil {
 		baseCancel()
 		return nil, err
 	}
@@ -688,7 +1170,7 @@ groupLoop:
 	if err := waitForPostBaselineWindow(ctx, gracefulStopCh, mge.postBaseline); err != nil {
 		return nil, err
 	}
-	elapsed := time.Since(start)
+	elapsed := nonNegativeElapsedSince(start)
 	mge.metrics.Stop()
 	for index := range groupResults {
 		groupResults[index].TotalTransactions, groupResults[index].TotalErrors = mge.metrics.GroupRunTotals(groupResults[index].Name)
@@ -704,6 +1186,10 @@ groupLoop:
 		result.FinalSnapshot = snap
 	}
 	return result, nil
+}
+
+func nonNegativeElapsedSince(start time.Time) time.Duration {
+	return max(time.Since(start), time.Duration(0))
 }
 
 func (mge *MultiGroupEngine) preflightRuntimeAtStart(ctx context.Context) error {
@@ -968,6 +1454,7 @@ func (mge *MultiGroupEngine) signalVUserChangeLocked() {
 func (mge *MultiGroupEngine) unregisterVUserLocked(vuserID int) {
 	delete(mge.vuserCancels, vuserID)
 	delete(mge.vuserGroups, vuserID)
+	delete(mge.vuserRunning, vuserID)
 	delete(mge.vuserStopping, vuserID)
 	mge.releaseVUserIDLocked(vuserID)
 	mge.signalVUserChangeLocked()
@@ -1130,8 +1617,19 @@ func (mge *MultiGroupEngine) runGroupLifecycleBlock(actionCtx, boundaryCtx conte
 		return groupLifecycleBlockOutcome{err: err}
 	}
 	bindProtocolRuntimeRedaction(vuProto, func() *RedactionConfig { return group.RedactionConfig })
-	if err := callProtocolInit(boundaryCtx, vuProto, protoConfig, group.RedactionConfig); err != nil {
+	// Protocols may retain their Init context for session/lease keepers. Give the
+	// adapter an independent lifecycle and link action/boundary admission only
+	// while Init is in flight. A hard stop must interrupt Init promptly, but after
+	// successful admission the adapter context stays live through Teardown.
+	initCtx, cancelInit, detachInitAdmission := newProtocolLifecycleContext(
+		actionCtx,
+		actionCtx,
+		boundaryCtx,
+	)
+	if err := callProtocolInit(initCtx, vuProto, protoConfig, group.RedactionConfig); err != nil {
+		detachInitAdmission()
 		runProtocolTeardown(vuProto, func() *RedactionConfig { return group.RedactionConfig })
+		cancelInit()
 		if boundaryCtx.Err() != nil &&
 			(errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)) {
 			return groupLifecycleBlockOutcome{}
@@ -1139,6 +1637,8 @@ func (mge *MultiGroupEngine) runGroupLifecycleBlock(actionCtx, boundaryCtx conte
 		slog.Error("failed to init lifecycle protocol", "group", group.Name, "phase", phase, "err", err)
 		return groupLifecycleBlockOutcome{err: err}
 	}
+	detachInitAdmission()
+	defer cancelInit()
 	defer runProtocolTeardown(vuProto, func() *RedactionConfig { return group.RedactionConfig })
 	// Protocol adapters are allowed to ignore their Init context. Recheck the
 	// lifecycle boundary before creating any user-phase cleanup obligation.
@@ -1216,7 +1716,41 @@ func waitForPostBaselineWindow(ctx context.Context, gracefulStop <-chan struct{}
 	}
 }
 
-func (mge *MultiGroupEngine) spawnVUser(vuserID int, group GroupConfig, protoConfig map[string]any, wg *sync.WaitGroup, reserved bool) (bool, error) {
+// newProtocolLifecycleContext gives an initialized adapter a lifetime that is
+// independent from the VUser's execution contexts. Some adapters retain their
+// Init context for session/lease keepers; canceling that context on scale-down
+// or a natural deadline before protocol teardown can let the remote resource
+// expire while cleanup is waiting for a teardown slot.
+//
+// Admission contexts are linked only while Init is in flight. The caller must
+// detach those links immediately after Init returns successfully, then cancel
+// the lifecycle context only after protocol teardown completes.
+func newProtocolLifecycleContext(valuesCtx context.Context, admissionCtxs ...context.Context) (context.Context, context.CancelFunc, func()) {
+	if valuesCtx == nil {
+		valuesCtx = context.Background()
+	}
+	lifecycleCtx, cancelLifecycle := context.WithCancel(context.WithoutCancel(valuesCtx))
+	stopLinks := make([]func() bool, 0, len(admissionCtxs))
+	for _, admissionCtx := range admissionCtxs {
+		if admissionCtx == nil {
+			continue
+		}
+		stopLinks = append(stopLinks, context.AfterFunc(admissionCtx, cancelLifecycle))
+		// AfterFunc schedules its callback asynchronously for an already-cancelled
+		// context. Make cancellation visible to Init synchronously as well.
+		if admissionCtx.Err() != nil {
+			cancelLifecycle()
+		}
+	}
+	detachAdmission := func() {
+		for _, stop := range stopLinks {
+			stop()
+		}
+	}
+	return lifecycleCtx, cancelLifecycle, detachAdmission
+}
+
+func (mge *MultiGroupEngine) prepareVUser(identity vuserIdentity, group GroupConfig, protoConfig map[string]any, wg *sync.WaitGroup, reserved bool) (*preparedVUser, error) {
 	if !reserved {
 		mge.mu.Lock()
 		mge.activeReserved++
@@ -1227,6 +1761,17 @@ func (mge *MultiGroupEngine) spawnVUser(vuserID int, group GroupConfig, protoCon
 	if parentCtx == nil {
 		parentCtx = mge.baseCtx
 	}
+	if parentCtx == nil {
+		parentCtx = context.Background()
+	}
+	baseCtx := mge.baseCtx
+	if baseCtx == nil {
+		baseCtx = parentCtx
+	}
+	gracefulCtx := mge.gracefulCtx
+	if gracefulCtx == nil {
+		gracefulCtx = baseCtx
+	}
 	vuCtx, vuCancel := context.WithCancel(parentCtx)
 	// shedCtx interrupts the in-flight iteration body on scale/ramp-down and on
 	// hard stops. It is a child of baseCtx (NOT loopCtx, so NOT a descendant of
@@ -1235,69 +1780,111 @@ func (mge *MultiGroupEngine) spawnVUser(vuserID int, group GroupConfig, protoCon
 	// VUser that already claimed a goal reservation finishes its current
 	// iteration. cancelVUser sheds load promptly by cancelling BOTH shedCtx (the
 	// running iteration) and vuCtx (no further iterations).
-	shedCtx, shedCancel := context.WithCancel(mge.baseCtx)
+	shedCtx, shedCancel := context.WithCancel(baseCtx)
 	// Boundary cancellation is distinct from vuCtx. The shared goal limiter
 	// cancels loopCtx/vuCtx after exhaustion, but a VUser that already reserved an
 	// iteration is entitled to finish every action. Only explicit graceful stop,
 	// hard stop, or this VUser's scale/ramp-down cancellation ends that iteration
 	// at its next action boundary.
 	boundaryCtx, boundaryCancel := context.WithCancel(shedCtx)
-	stopGracefulLink := context.AfterFunc(mge.gracefulCtx, boundaryCancel)
+	stopGracefulLink := context.AfterFunc(gracefulCtx, boundaryCancel)
 	cancelVUser := func() {
 		stopGracefulLink()
 		boundaryCancel()
 		shedCancel()
 		vuCancel()
 	}
+	prepared := &preparedVUser{
+		identity:    identity,
+		group:       group,
+		runtimeID:   group.VUserIDOffset + identity.local,
+		vuCtx:       vuCtx,
+		cancelVUser: cancelVUser,
+		shedCtx:     shedCtx,
+		boundaryCtx: boundaryCtx,
+		wg:          wg,
+	}
 
+	// Publish the reservation before protocol initialization so cancellation,
+	// capacity accounting, and teardown can still find a VUser whose Init call is
+	// in flight. Live gauges deliberately key off vuserRunning instead, which is
+	// populated only after initialization succeeds and the VUser is activated.
 	mge.mu.Lock()
-	mge.vuserCancels[vuserID] = cancelVUser
-	mge.vuserGroups[vuserID] = group.Name
+	if !reserved && mge.launchCtx != nil && mge.launchCtx.Err() != nil {
+		mge.mu.Unlock()
+		mge.abortPreparedVUser(prepared)
+		return nil, nil
+	}
+	mge.vuserCancels[identity.handle] = cancelVUser
+	mge.vuserGroups[identity.handle] = group.Name
 	mge.signalVUserChangeLocked()
 	mge.mu.Unlock()
 
 	if vuCtx.Err() != nil {
-		cancelVUser()
-		mge.finishReservedVUser(vuserID, wg)
-		return false, nil
+		mge.abortPreparedVUser(prepared)
+		return nil, nil
 	}
-
-	runtimeVUserID := group.VUserIDOffset + vuserID
 	vuProto, err := protocol.Get(group.Script.Protocol)
 	if err != nil {
 		safeErr := scrubSensitiveError(err, group.RedactionConfig)
-		slog.Error("failed to create protocol", "group", group.Name, "vuser", runtimeVUserID, "err", safeErr)
-		cancelVUser()
-		mge.finishReservedVUser(vuserID, wg)
-		return false, safeErr
+		slog.Error("failed to create protocol", "group", group.Name, "vuser", prepared.runtimeID, "err", safeErr)
+		mge.abortPreparedVUser(prepared)
+		return nil, safeErr
 	}
+	prepared.proto = vuProto
 	bindProtocolRuntimeRedaction(vuProto, func() *RedactionConfig { return group.RedactionConfig })
-	if err := callProtocolInit(vuCtx, vuProto, vuserProtoConfig(protoConfig, runtimeVUserID), group.RedactionConfig); err != nil {
+	initCtx, cancelProtocol, detachInitAdmission := newProtocolLifecycleContext(
+		shedCtx,
+		vuCtx,
+		shedCtx,
+		mge.launchCtx,
+	)
+	prepared.cancelProtocol = cancelProtocol
+	err = callProtocolInit(initCtx, vuProto, vuserProtoConfig(protoConfig, prepared.runtimeID), group.RedactionConfig)
+	detachInitAdmission()
+	if err != nil {
 		safeErr := err
-		launchCancellation := vuCtx.Err() != nil &&
+		launchCancellation := (vuCtx.Err() != nil || (mge.launchCtx != nil && mge.launchCtx.Err() != nil)) &&
 			(errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded))
 		if !launchCancellation {
-			slog.Error("failed to init protocol", "group", group.Name, "vuser", runtimeVUserID, "err", safeErr)
+			slog.Error("failed to init protocol", "group", group.Name, "vuser", prepared.runtimeID, "err", safeErr)
 		}
-		cancelVUser()
-		runProtocolTeardown(vuProto, func() *RedactionConfig { return group.RedactionConfig })
-		mge.finishReservedVUser(vuserID, wg)
+		mge.abortPreparedVUser(prepared)
 		if launchCancellation {
-			return false, nil
+			return nil, nil
 		}
-		return false, safeErr
+		return nil, safeErr
 	}
-	if vuCtx.Err() != nil {
-		cancelVUser()
-		runProtocolTeardown(vuProto, func() *RedactionConfig { return group.RedactionConfig })
-		mge.finishReservedVUser(vuserID, wg)
-		return false, nil
+	if vuCtx.Err() != nil || (mge.launchCtx != nil && mge.launchCtx.Err() != nil) {
+		mge.abortPreparedVUser(prepared)
+		return nil, nil
+	}
+	return prepared, nil
+}
+
+func (mge *MultiGroupEngine) activatePreparedVUser(prepared *preparedVUser) bool {
+	return mge.activatePreparedVUserWithAdmission(prepared, nil)
+}
+
+func (mge *MultiGroupEngine) activatePreparedVUserWithAdmission(prepared *preparedVUser, admissionCtx context.Context) bool {
+	if prepared == nil {
+		return false
+	}
+	if prepared.vuCtx.Err() != nil || (admissionCtx != nil && admissionCtx.Err() != nil) {
+		mge.abortPreparedVUser(prepared)
+		return false
 	}
 
 	mge.mu.Lock()
-	activeVUsers := mge.activeVUserCount()
+	if !mge.launchOpen || prepared.vuCtx.Err() != nil || (admissionCtx != nil && admissionCtx.Err() != nil) {
+		mge.mu.Unlock()
+		mge.abortPreparedVUser(prepared)
+		return false
+	}
+	mge.markVUserRunningLocked(prepared.identity.handle)
+	mge.signalVUserChangeLocked()
+	mge.metrics.SetActiveVUsers(int64(mge.runningVUserCount()))
 	mge.mu.Unlock()
-	mge.metrics.SetActiveVUsers(int64(activeVUsers))
 
 	go func() {
 		var vu *VUser
@@ -1305,39 +1892,92 @@ func (mge *MultiGroupEngine) spawnVUser(vuserID int, group GroupConfig, protoCon
 			if vu != nil {
 				return vu.RedactionConfig
 			}
-			return group.RedactionConfig
+			return prepared.group.RedactionConfig
 		}
-		defer recoverVUserGoroutine(runtimeVUserID, redaction)
-		defer cancelVUser()
-		defer func() {
-			runProtocolTeardown(vuProto, redaction)
-			mge.finishReservedVUser(vuserID, wg)
-		}()
+		defer recoverVUserGoroutine(prepared.runtimeID, redaction)
+		defer mge.finishPreparedVUser(prepared, redaction)
 
 		vu = &VUser{
-			ID:                           runtimeVUserID,
-			TotalVUsers:                  group.VUsers,
-			Group:                        group.Name,
-			Proto:                        vuProto,
-			Script:                       group.Script,
+			ID:                           prepared.runtimeID,
+			TotalVUsers:                  prepared.group.VUsers,
+			Group:                        prepared.group.Name,
+			Proto:                        prepared.proto,
+			Script:                       prepared.group.Script,
 			Metrics:                      mge.metrics,
-			ResultSink:                   group.ResultSink,
-			RedactionConfig:              group.RedactionConfig,
-			importedCredentialInspection: group.importedCredentials,
-			SecretResolver:               group.SecretResolver,
+			ResultSink:                   prepared.group.ResultSink,
+			RedactionConfig:              prepared.group.RedactionConfig,
+			importedCredentialInspection: prepared.group.importedCredentials,
+			SecretResolver:               prepared.group.SecretResolver,
 			PauseControl:                 mge,
-			IterationRateLimiter:         group.rateLimiter,
-			Rendezvous:                   group.rendezvous,
-			ExecutionGoals:               group.executionGoals,
-			HardStopCtx:                  shedCtx,
-			ActionBoundaryCtx:            boundaryCtx,
-			DataProvider:                 group.dataProvider,
-			SkipInit:                     groupLifecycleAtOnce(group),
-			SkipTeardown:                 groupLifecycleAtOnce(group),
+			IterationRateLimiter:         prepared.group.rateLimiter,
+			Rendezvous:                   prepared.group.rendezvous,
+			ExecutionGoals:               prepared.group.executionGoals,
+			HardStopCtx:                  prepared.shedCtx,
+			ActionBoundaryCtx:            prepared.boundaryCtx,
+			DataProvider:                 prepared.group.dataProvider,
+			SkipInit:                     groupLifecycleAtOnce(prepared.group),
+			SkipTeardown:                 groupLifecycleAtOnce(prepared.group),
 		}
-		vu.Run(vuCtx)
+		vu.Run(prepared.vuCtx)
 	}()
-	return true, nil
+	return true
+}
+
+func (mge *MultiGroupEngine) finishPreparedVUser(prepared *preparedVUser, redaction func() *RedactionConfig) {
+	if prepared == nil {
+		return
+	}
+	prepared.cleanupOnce.Do(func() {
+		if prepared.proto != nil {
+			runProtocolTeardown(prepared.proto, redaction)
+		}
+		if prepared.cancelProtocol != nil {
+			prepared.cancelProtocol()
+		}
+		prepared.cancelVUser()
+		mge.finishReservedVUser(prepared.identity.handle, prepared.wg)
+	})
+}
+
+func (mge *MultiGroupEngine) abortPreparedVUser(prepared *preparedVUser) {
+	if prepared == nil {
+		return
+	}
+	mge.finishPreparedVUser(prepared, func() *RedactionConfig { return prepared.group.RedactionConfig })
+}
+
+func (mge *MultiGroupEngine) abortPreparedVUsers(prepared []*preparedVUser) {
+	work := make(chan *preparedVUser)
+	var cleanup sync.WaitGroup
+	workers := min(len(prepared), maxConcurrentProtocolTeardowns)
+	if workers == 0 {
+		return
+	}
+	cleanup.Add(workers)
+	for range workers {
+		go func() {
+			defer cleanup.Done()
+			for vuser := range work {
+				mge.abortPreparedVUser(vuser)
+			}
+		}()
+	}
+	for _, vuser := range prepared {
+		if vuser == nil {
+			continue
+		}
+		work <- vuser
+	}
+	close(work)
+	cleanup.Wait()
+}
+
+func (mge *MultiGroupEngine) spawnVUser(identity vuserIdentity, group GroupConfig, protoConfig map[string]any, wg *sync.WaitGroup, reserved bool) (bool, error) {
+	prepared, err := mge.prepareVUser(identity, group, protoConfig, wg, reserved)
+	if err != nil || prepared == nil {
+		return false, err
+	}
+	return mge.activatePreparedVUserWithAdmission(prepared, mge.launchCtx), nil
 }
 
 func (mge *MultiGroupEngine) finishReservedVUser(vuserID int, wg *sync.WaitGroup) {
@@ -1349,7 +1989,7 @@ func (mge *MultiGroupEngine) finishReservedVUser(vuserID int, wg *sync.WaitGroup
 	if mge.activeReserved == 0 && !mge.scaleGuard {
 		mge.scalingOpen = false
 	}
-	mge.metrics.SetActiveVUsers(int64(mge.activeVUserCount()))
+	mge.metrics.SetActiveVUsers(int64(mge.runningVUserCount()))
 	wg.Done()
 	mge.mu.Unlock()
 }
@@ -1366,9 +2006,23 @@ func (mge *MultiGroupEngine) rampDownVUsers() {
 	}
 	ids := make([]int, 0, len(mge.vuserCancels))
 	for id := range mge.vuserCancels {
-		ids = append(ids, id)
+		if _, running := mge.vuserRunning[id]; running {
+			ids = append(ids, id)
+		}
 	}
-	sort.Sort(sort.Reverse(sort.IntSlice(ids)))
+	sort.Slice(ids, func(i, j int) bool {
+		leftGroup := mge.vuserGroups[ids[i]]
+		rightGroup := mge.vuserGroups[ids[j]]
+		if leftGroup != rightGroup {
+			return leftGroup < rightGroup
+		}
+		left, leftOK := mge.vuserIdentities[ids[i]]
+		right, rightOK := mge.vuserIdentities[ids[j]]
+		if leftOK && rightOK && left.local != right.local {
+			return left.local > right.local
+		}
+		return ids[i] > ids[j]
+	})
 	for _, id := range ids {
 		group := ramps[mge.vuserGroups[id]]
 		if group != nil {
@@ -1377,6 +2031,24 @@ func (mge *MultiGroupEngine) rampDownVUsers() {
 		}
 	}
 	mge.mu.Unlock()
+	// Prepared-but-never-activated users are not part of the progressive
+	// ramp-down. Launch cancellation transfers their cleanup back to their
+	// launcher; wait for that cleanup before the hard stop so identities and
+	// protocol instances cannot survive Run.
+	deadline := time.Now().Add(time.Second)
+	for {
+		mge.mu.Lock()
+		pendingPrepared := len(mge.vuserCancels) - len(mge.vuserRunning)
+		changed := mge.vuserChanged
+		mge.mu.Unlock()
+		if pendingPrepared <= 0 || time.Now().After(deadline) {
+			break
+		}
+		select {
+		case <-changed:
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
 
 	var rampsWG sync.WaitGroup
 	for _, group := range ramps {
@@ -1419,10 +2091,122 @@ func sleepContext(ctx context.Context, delay time.Duration) bool {
 	}
 }
 
-// activeVUserCount returns the number of live VUsers. Callers MUST hold mge.mu;
-// the spawn/teardown paths mutate vuserCancels under that lock.
+// activeVUserCount returns the number of live VUser reservations. Callers MUST
+// hold mge.mu; the spawn/teardown paths mutate vuserCancels under that lock.
 func (mge *MultiGroupEngine) activeVUserCount() int {
 	return len(mge.vuserCancels)
+}
+
+// runningVUserCount returns the successfully initialized subset used by live
+// metrics. Callers MUST hold mge.mu.
+func (mge *MultiGroupEngine) runningVUserCount() int {
+	return len(mge.vuserRunning)
+}
+
+func (mge *MultiGroupEngine) markVUserRunningLocked(id int) {
+	if mge.vuserRunning == nil {
+		mge.vuserRunning = make(map[int]struct{})
+	}
+	mge.vuserRunning[id] = struct{}{}
+}
+
+func (mge *MultiGroupEngine) resetVUserIDStateLocked() {
+	mge.nextVUserID = 0
+	mge.freeVUserIDs = nil
+	mge.vuserIDsInUse = make(map[int]struct{})
+	mge.vuserIdentities = make(map[int]allocatedVUserIdentity)
+	mge.vuserRunning = make(map[int]struct{})
+	mge.groupVUserIDPools = make(map[string]*groupVUserIDPool, len(mge.groups))
+	for _, group := range mge.groups {
+		span := group.VUserIDSpan
+		if span <= 0 {
+			span = MaxEngineVUsers
+		}
+		mge.groupVUserIDPools[group.Name] = &groupVUserIDPool{span: span}
+	}
+}
+
+func (mge *MultiGroupEngine) allocateVUserIdentity(groupName string) (vuserIdentity, error) {
+	mge.mu.Lock()
+	defer mge.mu.Unlock()
+	return mge.allocateVUserIdentityLocked(groupName)
+}
+
+func (mge *MultiGroupEngine) allocateVUserIdentityLocked(groupName string) (vuserIdentity, error) {
+	pool := mge.groupVUserIDPools[groupName]
+	if pool == nil {
+		return vuserIdentity{}, fmt.Errorf("group %q has no vuser id pool", groupName)
+	}
+	handle, err := mge.allocateVUserIDLocked()
+	if err != nil {
+		return vuserIdentity{}, err
+	}
+
+	local := 0
+	switch {
+	case len(pool.free) > 0:
+		local = heap.Pop(&pool.free).(int)
+	case pool.next < pool.span:
+		local = pool.next
+		pool.next++
+	default:
+		mge.releaseVUserHandleLocked(handle)
+		return vuserIdentity{}, fmt.Errorf("group %q vuser id namespace exhausted (%d)", groupName, pool.span)
+	}
+	pool.allocated++
+	mge.vuserIdentities[handle] = allocatedVUserIdentity{groupName: groupName, local: local}
+	return vuserIdentity{handle: handle, local: local}, nil
+}
+
+func (mge *MultiGroupEngine) availableVUserIdentitiesLocked(groupName string) (int, error) {
+	pool := mge.groupVUserIDPools[groupName]
+	if pool == nil {
+		return 0, fmt.Errorf("group %q has no vuser id pool", groupName)
+	}
+	globalAvailable := mge.vuserIDSpan - len(mge.vuserIDsInUse)
+	groupAvailable := pool.span - pool.allocated
+	return min(globalAvailable, groupAvailable), nil
+}
+
+// waitForGroupRetirementsLocked keeps a scale-up from overtaking an earlier
+// asynchronous scale-down or rollback. The stopping VUsers still own their
+// group-local ordinals until teardown completes; allocating around them can
+// create sparse IDs that alias modulo-based unique data. The caller holds
+// mge.mu, and this helper returns with it held.
+func (mge *MultiGroupEngine) waitForGroupRetirementsLocked(groupName string) error {
+	for {
+		stopping := false
+		for id, isStopping := range mge.vuserStopping {
+			if isStopping && mge.vuserGroups[id] == groupName {
+				stopping = true
+				break
+			}
+		}
+		if !stopping {
+			return nil
+		}
+		changed := mge.vuserChanged
+		loopCtx := mge.loopCtx
+		launchCtx := mge.launchCtx
+		mge.mu.Unlock()
+		if loopCtx == nil {
+			mge.mu.Lock()
+			return fmt.Errorf("engine not running")
+		}
+		select {
+		case <-loopCtx.Done():
+			mge.mu.Lock()
+			return fmt.Errorf("engine stopped while waiting for group %q vusers to retire", groupName)
+		case <-launchCtx.Done():
+			mge.mu.Lock()
+			return fmt.Errorf("engine stopped while waiting for group %q vusers to retire", groupName)
+		case <-changed:
+			mge.mu.Lock()
+		}
+		if mge.baseCtx == nil || mge.baseCtx.Err() != nil || !mge.controlsReady || !mge.scalingOpen {
+			return fmt.Errorf("engine not running")
+		}
+	}
 }
 
 func (mge *MultiGroupEngine) allocateVUserID() (int, error) {
@@ -1450,6 +2234,19 @@ func (mge *MultiGroupEngine) allocateVUserIDLocked() (int, error) {
 }
 
 func (mge *MultiGroupEngine) releaseVUserIDLocked(id int) {
+	if identity, allocated := mge.vuserIdentities[id]; allocated {
+		if pool := mge.groupVUserIDPools[identity.groupName]; pool != nil {
+			if pool.allocated > 0 {
+				pool.allocated--
+			}
+			heap.Push(&pool.free, identity.local)
+		}
+		delete(mge.vuserIdentities, id)
+	}
+	mge.releaseVUserHandleLocked(id)
+}
+
+func (mge *MultiGroupEngine) releaseVUserHandleLocked(id int) {
 	if _, allocated := mge.vuserIDsInUse[id]; !allocated {
 		return
 	}
@@ -1457,7 +2254,7 @@ func (mge *MultiGroupEngine) releaseVUserIDLocked(id int) {
 	heap.Push(&mge.freeVUserIDs, id)
 }
 
-func (mge *MultiGroupEngine) spawnOpenWorker(vuserID int, group GroupConfig, protoConfig map[string]any, wg *sync.WaitGroup, release func()) (bool, error) {
+func (mge *MultiGroupEngine) spawnOpenWorker(identity vuserIdentity, group GroupConfig, protoConfig map[string]any, wg *sync.WaitGroup, release func()) (bool, error) {
 	// release returns the in-flight slot reserved by the caller; it must run
 	// exactly once across every exit path (including the early protocol
 	// failures below) so the limiter does not leak capacity.
@@ -1482,48 +2279,59 @@ func (mge *MultiGroupEngine) spawnOpenWorker(vuserID int, group GroupConfig, pro
 	}
 
 	mge.mu.Lock()
-	mge.vuserCancels[vuserID] = cancelVUser
-	mge.vuserGroups[vuserID] = group.Name
+	mge.vuserCancels[identity.handle] = cancelVUser
+	mge.vuserGroups[identity.handle] = group.Name
 	mge.signalVUserChangeLocked()
-	mge.metrics.SetActiveVUsers(int64(mge.activeVUserCount()))
 	mge.mu.Unlock()
 
 	if vuCtx.Err() != nil {
 		cancelVUser()
 		mge.mu.Lock()
-		mge.unregisterVUserLocked(vuserID)
-		mge.metrics.SetActiveVUsers(int64(mge.activeVUserCount()))
+		mge.unregisterVUserLocked(identity.handle)
+		mge.metrics.SetActiveVUsers(int64(mge.runningVUserCount()))
 		mge.mu.Unlock()
 		release()
 		return false, nil
 	}
 
-	runtimeVUserID := group.VUserIDOffset + vuserID
+	runtimeVUserID := group.VUserIDOffset + identity.local
 	vuProto, err := protocol.Get(group.Script.Protocol)
 	if err != nil {
 		safeErr := scrubSensitiveError(err, group.RedactionConfig)
 		slog.Error("failed to create protocol for open workload worker", "group", group.Name, "worker", runtimeVUserID, "err", safeErr)
 		cancelVUser()
 		mge.mu.Lock()
-		mge.unregisterVUserLocked(vuserID)
-		mge.metrics.SetActiveVUsers(int64(mge.activeVUserCount()))
+		mge.unregisterVUserLocked(identity.handle)
+		mge.metrics.SetActiveVUsers(int64(mge.runningVUserCount()))
 		mge.mu.Unlock()
 		release()
 		return false, safeErr
 	}
 	bindProtocolRuntimeRedaction(vuProto, func() *RedactionConfig { return group.RedactionConfig })
-	if err := callProtocolInit(vuCtx, vuProto, vuserProtoConfig(protoConfig, runtimeVUserID), group.RedactionConfig); err != nil {
+	initCtx, cancelProtocol, detachInitAdmission := newProtocolLifecycleContext(
+		shedCtx,
+		vuCtx,
+		shedCtx,
+		mge.launchCtx,
+	)
+	cleanupProtocol := func() {
+		runProtocolTeardown(vuProto, func() *RedactionConfig { return group.RedactionConfig })
+		cancelProtocol()
+	}
+	err = callProtocolInit(initCtx, vuProto, vuserProtoConfig(protoConfig, runtimeVUserID), group.RedactionConfig)
+	detachInitAdmission()
+	if err != nil {
 		safeErr := err
-		launchCancellation := vuCtx.Err() != nil &&
+		launchCancellation := (vuCtx.Err() != nil || (mge.launchCtx != nil && mge.launchCtx.Err() != nil)) &&
 			(errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded))
 		if !launchCancellation {
 			slog.Error("failed to init protocol for open workload worker", "group", group.Name, "worker", runtimeVUserID, "err", safeErr)
 		}
 		cancelVUser()
-		runProtocolTeardown(vuProto, func() *RedactionConfig { return group.RedactionConfig })
+		cleanupProtocol()
 		mge.mu.Lock()
-		mge.unregisterVUserLocked(vuserID)
-		mge.metrics.SetActiveVUsers(int64(mge.activeVUserCount()))
+		mge.unregisterVUserLocked(identity.handle)
+		mge.metrics.SetActiveVUsers(int64(mge.runningVUserCount()))
 		mge.mu.Unlock()
 		release()
 		if launchCancellation {
@@ -1533,14 +2341,41 @@ func (mge *MultiGroupEngine) spawnOpenWorker(vuserID int, group GroupConfig, pro
 	}
 	if vuCtx.Err() != nil {
 		cancelVUser()
-		runProtocolTeardown(vuProto, func() *RedactionConfig { return group.RedactionConfig })
+		cleanupProtocol()
 		mge.mu.Lock()
-		mge.unregisterVUserLocked(vuserID)
-		mge.metrics.SetActiveVUsers(int64(mge.activeVUserCount()))
+		mge.unregisterVUserLocked(identity.handle)
+		mge.metrics.SetActiveVUsers(int64(mge.runningVUserCount()))
 		mge.mu.Unlock()
 		release()
 		return false, nil
 	}
+	launchCtx := mge.launchCtx
+	if launchCtx != nil && launchCtx.Err() != nil {
+		cancelVUser()
+		cleanupProtocol()
+		mge.mu.Lock()
+		mge.unregisterVUserLocked(identity.handle)
+		mge.metrics.SetActiveVUsers(int64(mge.runningVUserCount()))
+		mge.mu.Unlock()
+		release()
+		return false, nil
+	}
+
+	mge.mu.Lock()
+	if !mge.launchOpen || (launchCtx != nil && launchCtx.Err() != nil) {
+		mge.mu.Unlock()
+		cancelVUser()
+		cleanupProtocol()
+		mge.mu.Lock()
+		mge.unregisterVUserLocked(identity.handle)
+		mge.metrics.SetActiveVUsers(int64(mge.runningVUserCount()))
+		mge.mu.Unlock()
+		release()
+		return false, nil
+	}
+	mge.markVUserRunningLocked(identity.handle)
+	mge.metrics.SetActiveVUsers(int64(mge.runningVUserCount()))
+	mge.mu.Unlock()
 
 	iterationScript := cloneSingleIterationScript(group.Script)
 	wg.Add(1)
@@ -1558,9 +2393,10 @@ func (mge *MultiGroupEngine) spawnOpenWorker(vuserID int, group GroupConfig, pro
 		defer cancelVUser()
 		defer func() {
 			runProtocolTeardown(vuProto, redaction)
+			cancelProtocol()
 			mge.mu.Lock()
-			mge.unregisterVUserLocked(vuserID)
-			mge.metrics.SetActiveVUsers(int64(mge.activeVUserCount()))
+			mge.unregisterVUserLocked(identity.handle)
+			mge.metrics.SetActiveVUsers(int64(mge.runningVUserCount()))
 			mge.mu.Unlock()
 		}()
 
@@ -1612,7 +2448,14 @@ func (mge *MultiGroupEngine) ScaleVUsers(groupName string, targetVUsers int) err
 		mge.mu.Unlock()
 		return fmt.Errorf("group not found: %s", groupName)
 	}
-	if mge.baseCtx == nil || mge.baseCtx.Err() != nil || mge.wg == nil || !mge.controlsReady || !mge.scalingOpen {
+	if mge.baseCtx != nil && mge.baseCtx.Err() == nil &&
+		mge.loopCtx != nil && mge.loopCtx.Err() == nil &&
+		mge.launchCtx != nil && mge.launchCtx.Err() == nil && mge.launchOpen &&
+		mge.wg != nil && mge.controlsReady && !mge.scalingOpen && mge.initialRampInProgress {
+		mge.mu.Unlock()
+		return ErrInitialRampInProgress
+	}
+	if mge.wg == nil || !mge.scalingAdmissionOpenLocked() {
 		mge.mu.Unlock()
 		return fmt.Errorf("engine not running")
 	}
@@ -1661,7 +2504,7 @@ func (mge *MultiGroupEngine) ScaleVUsers(groupName string, targetVUsers int) err
 	mge.mu.Lock()
 	defer mge.mu.Unlock()
 
-	if mge.baseCtx == nil || mge.baseCtx.Err() != nil || mge.wg == nil || !mge.controlsReady || !mge.scalingOpen {
+	if mge.wg == nil || !mge.scalingAdmissionOpenLocked() {
 		return fmt.Errorf("engine not running")
 	}
 
@@ -1687,18 +2530,22 @@ func (mge *MultiGroupEngine) ScaleVUsers(groupName string, targetVUsers int) err
 	if targetVUsers > 0 && group.VUserIDOffset > int(^uint(0)>>1)-targetVUsers {
 		return fmt.Errorf("target vusers overflow the configured vuser id offset")
 	}
-	if targetVUsers == 0 && !mge.scaleGuard {
-		// Keep Run's WaitGroup non-zero while the group is paused at zero so a
-		// later resume can safely Add VUsers. Installing the guard while at least
-		// one VUser is still reserved avoids Add racing a completed Wait.
-		mge.scaleGuard = true
-		mge.wg.Add(1)
-		go mge.holdScaleGuard(mge.loopCtx, mge.wg)
-	}
-
 	delta := targetVUsers - currentVUsers
 	if delta > 0 {
-		availableIDs := mge.vuserIDSpan - len(mge.vuserIDsInUse)
+		// A cancelled VUser remains the owner of its group-local runtime ID
+		// until its goroutine and protocol teardown finish. Do not allocate
+		// around that hole: doing so can expose sparse IDs (and duplicate
+		// modulo-selected unique data) on an immediate scale reversal.
+		if err := mge.waitForGroupRetirementsLocked(group.Name); err != nil {
+			return err
+		}
+		if group.Name != groupName || group.VUsers != currentVUsers {
+			return fmt.Errorf("group changed while waiting for retiring vusers")
+		}
+		availableIDs, err := mge.availableVUserIdentitiesLocked(group.Name)
+		if err != nil {
+			return err
+		}
 		if delta > availableIDs {
 			return fmt.Errorf("vuser id namespace has %d available ids, need %d", availableIDs, delta)
 		}
@@ -1735,7 +2582,7 @@ func (mge *MultiGroupEngine) ScaleVUsers(groupName string, targetVUsers int) err
 			}
 		}
 		for i := 0; i < delta; i++ {
-			vuserID, err := mge.allocateVUserIDLocked()
+			identity, err := mge.allocateVUserIdentityLocked(group.Name)
 			if err != nil {
 				rollbackScaleUp()
 				return err
@@ -1744,7 +2591,7 @@ func (mge *MultiGroupEngine) ScaleVUsers(groupName string, targetVUsers int) err
 			mge.wg.Add(1)
 
 			mge.mu.Unlock()
-			launched, spawnErr := mge.spawnVUser(vuserID, *group, protoConfig, mge.wg, true)
+			launched, spawnErr := mge.spawnVUser(identity, *group, protoConfig, mge.wg, true)
 			mge.mu.Lock()
 			if spawnErr != nil {
 				rollbackScaleUp()
@@ -1754,7 +2601,7 @@ func (mge *MultiGroupEngine) ScaleVUsers(groupName string, targetVUsers int) err
 				rollbackScaleUp()
 				return fmt.Errorf("initialize scaled vuser: execution stopped before the VUser launched")
 			}
-			spawnedIDs = append(spawnedIDs, vuserID)
+			spawnedIDs = append(spawnedIDs, identity.handle)
 		}
 	} else if delta < 0 {
 		toRemove := -delta
@@ -1764,13 +2611,28 @@ func (mge *MultiGroupEngine) ScaleVUsers(groupName string, targetVUsers int) err
 				ids = append(ids, id)
 			}
 		}
-		sort.Sort(sort.Reverse(sort.IntSlice(ids)))
+		sort.Slice(ids, func(i, j int) bool {
+			left, leftOK := mge.vuserIdentities[ids[i]]
+			right, rightOK := mge.vuserIdentities[ids[j]]
+			if leftOK && rightOK && left.local != right.local {
+				return left.local > right.local
+			}
+			return ids[i] > ids[j]
+		})
 		if len(ids) < toRemove {
 			group.VUsers = currentVUsers
 			if err := mge.reconcileJavaVuserCapacityLocked(); err != nil {
 				slog.Error("failed to reconcile java_vuser capacity after scale rollback", "group", groupName, "err", err)
 			}
 			return fmt.Errorf("group %q only has %d active vusers available to remove", groupName, len(ids))
+		}
+		if targetVUsers == 0 && !mge.scaleGuard {
+			// Keep Run's WaitGroup non-zero while the group is paused at zero so a
+			// later resume can safely Add VUsers. Install it only after validating
+			// the complete removal set; a rejected scale must not pin the engine.
+			mge.scaleGuard = true
+			mge.wg.Add(1)
+			go mge.holdScaleGuard(mge.loopCtx, mge.wg)
 		}
 		for _, id := range ids[:toRemove] {
 			mge.vuserStopping[id] = true
@@ -1792,7 +2654,7 @@ func (mge *MultiGroupEngine) AdjustDuration(newDuration time.Duration) error {
 }
 
 func (mge *MultiGroupEngine) adjustDurationLocked(newDuration time.Duration) error {
-	if mge.baseCtx == nil || mge.baseCtx.Err() != nil {
+	if mge.baseCtx == nil || mge.baseCtx.Err() != nil || mge.launchCtx == nil || mge.launchCtx.Err() != nil || !mge.launchOpen || !mge.controlsReady {
 		return fmt.Errorf("engine not running")
 	}
 
@@ -1839,7 +2701,7 @@ func (mge *MultiGroupEngine) Pause() error {
 		mge.paused = true
 		return nil
 	}
-	if mge.baseCtx.Err() != nil {
+	if mge.baseCtx.Err() != nil || (!mge.controlsReady && !mge.launchOpen) {
 		return fmt.Errorf("engine not running")
 	}
 	if mge.paused {
@@ -1849,7 +2711,14 @@ func (mge *MultiGroupEngine) Pause() error {
 
 	mge.pauseRequested = true
 	mge.paused = true
-	mge.pauseStartTime = time.Now()
+	now := time.Now()
+	mge.pauseStartTime = now
+	if mge.runStartedAt.After(now) {
+		// A coordinated execution may be prepared before its future barrier.
+		// Time paused before that barrier is not active run time and must not be
+		// subtracted again after Resume.
+		mge.pauseStartTime = mge.runStartedAt
+	}
 	mge.pauseCh = make(chan struct{}) // New channel blocks waiters
 	mge.notifyPauseChangedLocked()
 	for i := range mge.groups {
@@ -1875,12 +2744,18 @@ func (mge *MultiGroupEngine) Resume() error {
 		mge.paused = false
 		return nil
 	}
+	if mge.baseCtx.Err() != nil || (!mge.controlsReady && !mge.launchOpen) {
+		return fmt.Errorf("engine not running")
+	}
 	mge.pauseRequested = false
 	if !mge.paused {
 		return nil
 	}
 
 	pauseDuration := time.Since(mge.pauseStartTime)
+	if pauseDuration < 0 {
+		pauseDuration = 0
+	}
 	mge.paused = false
 	close(mge.pauseCh) // Closing unblocks all waiters
 	mge.notifyPauseChangedLocked()
@@ -1951,17 +2826,69 @@ func (mge *MultiGroupEngine) SleepActive(ctx context.Context, delay time.Duratio
 	return ctx.Err() == nil
 }
 
+// waitUntilActive waits for an absolute point on the engine's active-time
+// clock. Absolute deadlines keep every group aligned to the same load epoch even
+// if a launcher goroutine is scheduled late; SleepActive retains pause-aware
+// behavior for the remaining interval.
+func (mge *MultiGroupEngine) waitUntilActive(ctx context.Context, deadline time.Duration) bool {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	for {
+		mge.mu.Lock()
+		start := mge.runStartedAt
+		mge.mu.Unlock()
+		if !start.IsZero() {
+			if untilStart := time.Until(start); untilStart > 0 {
+				// ActiveElapsed deliberately clamps pre-start time to zero. Keep a
+				// zero-deadline launcher behind the wall-clock barrier as well, or
+				// prepared RunAt VUsers could activate before executionStart.
+				if !sleepContext(ctx, untilStart) {
+					return false
+				}
+				continue
+			}
+		}
+		remaining := deadline - mge.ActiveElapsed()
+		if remaining <= 0 {
+			return ctx.Err() == nil
+		}
+		if !mge.SleepActive(ctx, remaining) {
+			return false
+		}
+	}
+}
+
+func (mge *MultiGroupEngine) finishInitialRamp() {
+	mge.mu.Lock()
+	defer mge.mu.Unlock()
+	mge.initialRampInProgress = false
+	defer mge.signalVUserChangeLocked()
+	if mge.baseCtx == nil || mge.baseCtx.Err() != nil || mge.loopCtx == nil || mge.loopCtx.Err() != nil || !mge.controlsReady {
+		mge.scalingOpen = false
+		return
+	}
+	// The scale guard keeps a zero-capable group alive for future admission. A
+	// normal group may accept scaling only while at least one configured VUser is
+	// still reserved; otherwise Run's WaitGroup may already be completing.
+	mge.scalingOpen = mge.activeReserved > 0 || mge.scaleGuard
+}
+
 // ActiveElapsed returns elapsed execution time excluding completed and current
 // pauses. It gives interval pacing an active-time clock instead of wall time.
 func (mge *MultiGroupEngine) ActiveElapsed() time.Duration {
 	mge.mu.Lock()
 	defer mge.mu.Unlock()
+	return mge.activeElapsedAtLocked(time.Now())
+}
+
+func (mge *MultiGroupEngine) activeElapsedAtLocked(now time.Time) time.Duration {
 	if mge.runStartedAt.IsZero() {
 		return 0
 	}
-	elapsed := time.Since(mge.runStartedAt) - mge.pauseCompensation
+	elapsed := now.Sub(mge.runStartedAt) - mge.pauseCompensation
 	if mge.paused && !mge.pauseStartTime.IsZero() {
-		elapsed -= time.Since(mge.pauseStartTime)
+		elapsed -= now.Sub(mge.pauseStartTime)
 	}
 	if elapsed < 0 {
 		return 0
@@ -1991,6 +2918,13 @@ func (mge *MultiGroupEngine) WaitIfPaused(ctx context.Context) error {
 
 func (mge *MultiGroupEngine) Stop() {
 	mge.mu.Lock()
+	// Close launch/control admission under the same lock used by VUser
+	// activation. Cancelling the context after unlocking is still required to
+	// wake in-flight work, but must not leave a window where a new VUser can be
+	// published after Stop has linearized.
+	mge.launchOpen = false
+	mge.scalingOpen = false
+	mge.controlsReady = false
 	cancel := mge.cancel
 	mge.mu.Unlock()
 	if cancel != nil {
@@ -2012,6 +2946,8 @@ func (mge *MultiGroupEngine) GracefulStop() {
 	// a window where a control plan admitted before the fence can spawn VUsers
 	// after the fence has returned.
 	mge.scalingOpen = false
+	mge.controlsReady = false
+	mge.launchOpen = false
 	cancel := mge.softStop
 	mge.mu.Unlock()
 	if cancel != nil {

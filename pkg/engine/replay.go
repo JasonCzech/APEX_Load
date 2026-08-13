@@ -120,6 +120,8 @@ type ReplayDebugAction struct {
 	Iteration        *int     `json:"iteration,omitempty"`
 	IterationPath    []int    `json:"iteration_path,omitempty"`
 	LeafOrdinal      int      `json:"leaf_ordinal,omitempty"`
+
+	parentBusinessTransaction bool
 }
 
 const (
@@ -209,6 +211,8 @@ type ReplayActionEvent struct {
 	Iteration        *int     `json:"iteration,omitempty"`
 	IterationPath    []int    `json:"iteration_path,omitempty"`
 	LeafOrdinal      int      `json:"leaf_ordinal,omitempty"`
+
+	parentBusinessTransaction bool
 	// CorrelationEvidence exists only between protocol execution and the
 	// pre-scrub debug observer. It is cleared before any public replay boundary.
 	CorrelationEvidence *protocol.CorrelationEvidence `json:"-"`
@@ -328,6 +332,7 @@ func ReplayScript(ctx context.Context, script *dsl.Script, opts ReplayOptions) (
 	if scriptSourcedDropped {
 		warnScriptSourcedRedactionDropped("group", groupName, "script", script.Name)
 	}
+	groupName = scrubReplayGroupName(groupName, redactionConfig)
 
 	proto, err := protocol.Get(script.Protocol)
 	if err != nil {
@@ -546,16 +551,17 @@ func appendReplaySourceTransactionFinalizations(
 // within the (possibly nested) container tree. A plain top-level action is a unit
 // with no parent and an empty step path.
 type replayUnit struct {
-	action        dsl.Action
-	phase         string
-	actionIndex   int      // top-level action index (shared by all leaves under it)
-	parentName    string   // container action name ("" for a plain top-level action)
-	stepPath      []string // static path to this leaf, e.g. ["requests[42]"], ["loop[0]"]
-	iterationPath []int    // 1-based pass numbers, one per enclosing loop (outer→inner); nil outside loops
-	requestIndex  *int     // leaf ordinal within an http_sequence container; nil otherwise
-	requestCount  int      // sibling count within an http_sequence container; 0 otherwise
-	leafOrdinal   int      // 0-based execution order of this leaf within its top-level action
-	synthErr      error    // when set, emit a failed event instead of executing (e.g. parse error)
+	action                    dsl.Action
+	phase                     string
+	actionIndex               int      // top-level action index (shared by all leaves under it)
+	parentName                string   // container action name ("" for a plain top-level action)
+	parentBusinessTransaction bool     // true only when parentName identifies an http_sequence transaction
+	stepPath                  []string // static path to this leaf, e.g. ["requests[42]"], ["loop[0]"]
+	iterationPath             []int    // 1-based pass numbers, one per enclosing loop (outer→inner); nil outside loops
+	requestIndex              *int     // leaf ordinal within an http_sequence container; nil otherwise
+	requestCount              int      // sibling count within an http_sequence container; 0 otherwise
+	leafOrdinal               int      // 0-based execution order of this leaf within its top-level action
+	synthErr                  error    // when set, emit a failed event instead of executing (e.g. parse error)
 }
 
 func runReplayPhase(
@@ -680,7 +686,7 @@ func expandReplayAction(
 	case "http_sequence":
 		children, err := httpSequenceChildActions(action)
 		if err != nil {
-			unit := replayUnit{action: action, phase: phase, actionIndex: actionIndex, parentName: action.Name, stepPath: stepPath, iterationPath: iterationPath, synthErr: err}
+			unit := replayUnit{action: action, phase: phase, actionIndex: actionIndex, parentName: action.Name, parentBusinessTransaction: true, stepPath: stepPath, iterationPath: iterationPath, synthErr: err}
 			_, shouldContinue, abort := runReplayUnit(ctx, vu, unit, leafCounter, continueOnError, ignoreThinkTime, globalThinkCfg, report, onProgress, debugController)
 			flow, abort := leafReplayFlow(shouldContinue, abort)
 			// The live path represents a malformed sequence as a failed container
@@ -697,14 +703,15 @@ func expandReplayAction(
 			idx := childIndex
 			count := len(children)
 			unit := replayUnit{
-				action:        child,
-				phase:         phase,
-				actionIndex:   actionIndex,
-				parentName:    action.Name,
-				stepPath:      appendStepPath(stepPath, fmt.Sprintf("requests[%d]", childIndex)),
-				iterationPath: iterationPath,
-				requestIndex:  &idx,
-				requestCount:  count,
+				action:                    child,
+				phase:                     phase,
+				actionIndex:               actionIndex,
+				parentName:                action.Name,
+				parentBusinessTransaction: true,
+				stepPath:                  appendStepPath(stepPath, fmt.Sprintf("requests[%d]", childIndex)),
+				iterationPath:             iterationPath,
+				requestIndex:              &idx,
+				requestCount:              count,
 			}
 			_, shouldContinue, abort := runReplayUnit(ctx, vu, unit, leafCounter, continueOnError, ignoreThinkTime, globalThinkCfg, report, onProgress, debugController)
 			if abort {
@@ -1053,6 +1060,7 @@ func appendStepPath(base []string, seg string) []string {
 
 func applyReplayUnitIdentityDebug(action *ReplayDebugAction, unit replayUnit) {
 	action.ParentActionName = unit.parentName
+	action.parentBusinessTransaction = unit.parentBusinessTransaction
 	action.RequestCount = unit.requestCount
 	action.LeafOrdinal = unit.leafOrdinal
 	if unit.requestIndex != nil {
@@ -1071,6 +1079,7 @@ func applyReplayUnitIdentityDebug(action *ReplayDebugAction, unit replayUnit) {
 
 func applyReplayUnitIdentityEvent(event *ReplayActionEvent, unit replayUnit) {
 	event.ParentActionName = unit.parentName
+	event.parentBusinessTransaction = unit.parentBusinessTransaction
 	event.RequestCount = unit.requestCount
 	event.LeafOrdinal = unit.leafOrdinal
 	if unit.requestIndex != nil {
@@ -1984,7 +1993,15 @@ func scrubReplayActionEvent(event *ReplayActionEvent, config *RedactionConfig) {
 	if event == nil {
 		return
 	}
-	event.ActionName = scrubSensitiveTextWithConfig(event.ActionName, config)
+	// Transaction names are stable identity labels, not protocol evidence.
+	// Applying generic token-shape guesses can split one transaction into a
+	// second, redacted label. Exact secrets and explicit policy matches still
+	// redact; ordinary actions and non-transaction parents retain the full scrubber.
+	if replayActionHasTransactionIdentity(event.ActionType) {
+		event.ActionName = scrubSensitiveIdentityWithConfig(event.ActionName, config)
+	} else {
+		event.ActionName = scrubSensitiveTextWithConfig(event.ActionName, config)
+	}
 	event.ActionType = scrubSensitiveTextWithConfig(event.ActionType, config)
 	event.Method = scrubSensitiveTextWithConfig(event.Method, config)
 	event.ErrorMessage = scrubSensitiveTextWithConfig(event.ErrorMessage, config)
@@ -2009,9 +2026,13 @@ func scrubReplayActionEvent(event *ReplayActionEvent, config *RedactionConfig) {
 	event.SourceStepID = scrubSensitiveTextWithConfig(event.SourceStepID, config)
 	event.SourceAction = scrubSensitiveTextWithConfig(event.SourceAction, config)
 	event.SourceActionName = scrubSensitiveTextWithConfig(event.SourceActionName, config)
-	event.SourceTransaction = scrubSensitiveTextWithConfig(event.SourceTransaction, config)
+	event.SourceTransaction = scrubSensitiveIdentityWithConfig(event.SourceTransaction, config)
 	event.SourceProfile = scrubSensitiveTextWithConfig(event.SourceProfile, config)
-	event.ParentActionName = scrubSensitiveTextWithConfig(event.ParentActionName, config)
+	if event.parentBusinessTransaction {
+		event.ParentActionName = scrubSensitiveIdentityWithConfig(event.ParentActionName, config)
+	} else {
+		event.ParentActionName = scrubSensitiveTextWithConfig(event.ParentActionName, config)
+	}
 	for index := range event.StepPath {
 		event.StepPath[index] = scrubSensitiveTextWithConfig(event.StepPath[index], config)
 	}
@@ -2029,16 +2050,37 @@ func scrubReplayDebugAction(action *ReplayDebugAction, config *RedactionConfig) 
 	if action == nil {
 		return
 	}
-	action.ActionName = scrubSensitiveTextWithConfig(action.ActionName, config)
+	if replayActionHasTransactionIdentity(action.ActionType) {
+		action.ActionName = scrubSensitiveIdentityWithConfig(action.ActionName, config)
+	} else {
+		action.ActionName = scrubSensitiveTextWithConfig(action.ActionName, config)
+	}
 	action.ActionType = scrubSensitiveTextWithConfig(action.ActionType, config)
 	action.Method = scrubSensitiveTextWithConfig(action.Method, config)
 	action.Target = scrubSensitiveTextWithConfig(action.Target, config)
 	action.Selector = scrubSensitiveTextWithConfig(action.Selector, config)
 	action.SourceStepID = scrubSensitiveTextWithConfig(action.SourceStepID, config)
-	action.ParentActionName = scrubSensitiveTextWithConfig(action.ParentActionName, config)
+	if action.parentBusinessTransaction {
+		action.ParentActionName = scrubSensitiveIdentityWithConfig(action.ParentActionName, config)
+	} else {
+		action.ParentActionName = scrubSensitiveTextWithConfig(action.ParentActionName, config)
+	}
 	for index := range action.StepPath {
 		action.StepPath[index] = scrubSensitiveTextWithConfig(action.StepPath[index], config)
 	}
+}
+
+func replayActionHasTransactionIdentity(actionType string) bool {
+	switch dsl.CanonicalActionType(actionType) {
+	case "http_sequence", "source_transaction":
+		return true
+	default:
+		return false
+	}
+}
+
+func scrubReplayGroupName(groupName string, config *RedactionConfig) string {
+	return scrubSensitiveIdentityWithConfig(groupName, config)
 }
 
 func scrubReplayHeaders(action *protocol.Action, config *RedactionConfig) map[string]string {

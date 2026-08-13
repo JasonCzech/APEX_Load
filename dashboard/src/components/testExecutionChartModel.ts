@@ -8,6 +8,12 @@ import {
   routeLatencySeriesLabel,
 } from './latencySeries'
 import type { LoadImpactMetric, LoadImpactRow } from './loadImpactModel'
+import {
+  MAX_TRANSACTION_CHART_SERIES,
+  isTransactionChartSeriesKey,
+  transactionChartSeriesKey,
+  transactionChartSeriesPresentation,
+} from './transactionChartSeries'
 
 export type ChartDomain = ComponentProps<typeof YAxis>['domain']
 
@@ -67,6 +73,19 @@ export interface ChartMetricSummary {
   min?: number
   max?: number
   samples: number
+}
+
+export interface BoundedChartItems<T> {
+  items: T[]
+  omitted: number
+}
+
+export function boundedChartItems<T>(items: ReadonlyArray<T>, limit: number): BoundedChartItems<T> {
+  const boundedLimit = Number.isFinite(limit) ? Math.max(0, Math.floor(limit)) : 0
+  return {
+    items: items.slice(0, boundedLimit),
+    omitted: Math.max(0, items.length - boundedLimit),
+  }
 }
 
 const GROUP_LINE_DASH_PATTERNS = [undefined, '5 3', '2 3', '8 3 2 3', '1 3', '6 2 1 2'] as const
@@ -191,6 +210,8 @@ const MAX_GRAPH_SMOOTHING_RADIUS = 6
 const DEFAULT_DOWNSAMPLED_GRAPH_POINTS = 420
 const MIN_DOWNSAMPLED_GRAPH_POINTS = 180
 const MAX_DOWNSAMPLED_GRAPH_POINTS = 900
+export const MAX_CHART_LEGEND_ITEMS = 24
+export const MAX_CHART_TOOLTIP_ITEMS = 12
 const MIN_ART_STD_DEV_WINDOW = 5
 const MAX_ART_STD_DEV_WINDOW = 13
 const DEFAULT_GRAPH_CARD_WIDTH = 520
@@ -208,7 +229,7 @@ export const chartConfigs: ChartConfig[] = [
   { id: 'vusers', title: 'Virtual Users', type: 'area', dataKey: 'vusers', color: 'var(--chart-1)' },
   { id: 'tps', title: 'Transactions Per Second', type: 'line-multi', totalKey: 'tps' },
   { id: 'latency', title: 'Response Time (ms)', type: 'line-latency' },
-  { id: 'errors', title: 'Error Rate (%)', type: 'area', dataKey: 'errorPct', color: 'var(--chart-4)', domain: [0, 'auto'] },
+  { id: 'errors', title: 'Error Rate (%)', type: 'line-multi', totalKey: 'errorPct', color: 'var(--chart-4)', domain: [0, 'auto'] },
   {
     id: 'cpu',
     title: 'CPU Usage — Fleet (%)',
@@ -655,10 +676,11 @@ export function latestRouteLatencyValues(data: MetricsHistoryPoint[], keys = rou
   return values
 }
 
-function responseTimeMetricKeys(groupNames: string[]) {
+function responseTimeMetricKeys(groupNames: string[], transactionNames: string[] = []) {
   return [
     'avgMs',
     ...groupNames.map(name => `${name}_avgMs`),
+    ...transactionNames.map(name => transactionChartSeriesKey(name, 'avgMs')),
     'p50',
     'p90',
     'p95',
@@ -758,16 +780,6 @@ function numericGraphValue(point: MetricsHistoryPoint, key: string) {
   return undefined
 }
 
-function evenlySampleGraphData(data: MetricsHistoryPoint[], maxPoints: number) {
-  if (data.length <= maxPoints) return data
-  const lastIndex = data.length - 1
-  const indexes = new Set<number>()
-  for (let index = 0; index < maxPoints; index += 1) {
-    indexes.add(Math.round(index * lastIndex / Math.max(1, maxPoints - 1)))
-  }
-  return Array.from(indexes).sort((left, right) => left - right).map(index => data[index])
-}
-
 function metricRanges(data: MetricsHistoryPoint[], metricKeys: string[]) {
   const ranges = new Map<string, { min: number; max: number }>()
   metricKeys.forEach(key => {
@@ -800,23 +812,85 @@ function compositeGraphScore(point: MetricsHistoryPoint, metricKeys: string[], r
   return samples > 0 ? total / samples : undefined
 }
 
+function addEvenlySpacedIndexes(retainedIndexes: Set<number>, dataLength: number, target: number) {
+  const lastIndex = dataLength - 1
+  for (let index = 0; index < target && retainedIndexes.size < target; index += 1) {
+    retainedIndexes.add(Math.round(index * lastIndex / Math.max(1, target - 1)))
+  }
+}
+
+// Reserve bounded first/last samples for each visible transaction series before
+// composite downsampling. A low-volume transaction may not be a composite
+// extrema in its time bucket, but dropping every one of its samples would leave
+// a legend entry with no corresponding graph data.
+function transactionSampleIndexes(data: MetricsHistoryPoint[], metricKeys: string[], budget: number) {
+  const transactionKeys = Array.from(new Set(metricKeys.filter(isTransactionChartSeriesKey)))
+    .slice(0, MAX_TRANSACTION_CHART_SERIES)
+  if (transactionKeys.length === 0) return new Set<number>()
+
+  const samplesByKey = new Map<string, { first: number; last: number }>()
+  data.forEach((point, index) => {
+    transactionKeys.forEach(key => {
+      if (numericGraphValue(point, key) === undefined) return
+      const samples = samplesByKey.get(key)
+      if (samples) {
+        samples.last = index
+      } else {
+        samplesByKey.set(key, { first: index, last: index })
+      }
+    })
+  })
+
+  const indexes = new Set<number>()
+  // Every supported visible series gets one finite occurrence even when that
+  // makes the result exceed the nominal point target. The transaction series
+  // count is independently capped, so this remains bounded while avoiding a
+  // legend entry whose entire line was removed by downsampling.
+  transactionKeys.forEach(key => {
+    const samples = samplesByKey.get(key)
+    if (samples) indexes.add(samples.first)
+  })
+  const desiredSize = Math.max(indexes.size, Math.max(0, budget))
+  // Spend any remaining nominal budget on a second occurrence per series.
+  transactionKeys.forEach(key => {
+    const samples = samplesByKey.get(key)
+    if (indexes.size < desiredSize && samples && samples.last !== samples.first) indexes.add(samples.last)
+  })
+  return indexes
+}
+
 export function downsampleGraphData(data: MetricsHistoryPoint[], metricKeys: string[], maxPoints = DEFAULT_DOWNSAMPLED_GRAPH_POINTS) {
   const target = Math.max(3, Math.floor(maxPoints))
   if (data.length <= target) return data
-  if (target < 8) return evenlySampleGraphData(data, target)
 
   const uniqueMetricKeys = Array.from(new Set(metricKeys))
-  if (uniqueMetricKeys.length === 0) return evenlySampleGraphData(data, target)
+  const retainedIndexes = new Set<number>([0, data.length - 1])
+  if (target < 8 || uniqueMetricKeys.length === 0) {
+    transactionSampleIndexes(data, uniqueMetricKeys, Math.max(0, target - retainedIndexes.size))
+      .forEach(index => retainedIndexes.add(index))
+    addEvenlySpacedIndexes(retainedIndexes, data.length, target)
+    return Array.from(retainedIndexes).sort((left, right) => left - right).map(index => data[index])
+  }
 
   const ranges = metricRanges(data, uniqueMetricKeys)
-  if (ranges.size === 0) return evenlySampleGraphData(data, target)
+  if (ranges.size === 0) {
+    transactionSampleIndexes(data, uniqueMetricKeys, Math.max(0, target - retainedIndexes.size))
+      .forEach(index => retainedIndexes.add(index))
+    addEvenlySpacedIndexes(retainedIndexes, data.length, target)
+    return Array.from(retainedIndexes).sort((left, right) => left - right).map(index => data[index])
+  }
 
-  const retainedIndexes = new Set<number>([0, data.length - 1])
   // Always keep gap-boundary spacer rows so visible data gaps survive downsampling.
   for (let index = 0; index < data.length; index += 1) {
     if (data[index].isGapBoundary) retainedIndexes.add(index)
   }
-  const bucketCount = Math.max(1, Math.floor((target - 2) / 4))
+  transactionSampleIndexes(data, uniqueMetricKeys, Math.max(0, target - retainedIndexes.size))
+    .forEach(index => retainedIndexes.add(index))
+  const remainingCapacity = Math.max(0, target - retainedIndexes.size)
+  if (remainingCapacity === 0) {
+    return Array.from(retainedIndexes).sort((left, right) => left - right).map(index => data[index])
+  }
+  const bucketCount = Math.max(1, Math.floor(remainingCapacity / 4))
   const interiorPointCount = data.length - 2
 
   for (let bucket = 0; bucket < bucketCount; bucket += 1) {
@@ -842,11 +916,13 @@ export function downsampleGraphData(data: MetricsHistoryPoint[], metricKeys: str
       }
     }
 
-    retainedIndexes.add(start)
-    retainedIndexes.add(lowIndex)
-    retainedIndexes.add(highIndex)
-    retainedIndexes.add(endExclusive - 1)
+    for (const index of [start, lowIndex, highIndex, endExclusive - 1]) {
+      if (retainedIndexes.size >= target) break
+      retainedIndexes.add(index)
+    }
   }
+
+  addEvenlySpacedIndexes(retainedIndexes, data.length, target)
 
   return Array.from(retainedIndexes)
     .sort((left, right) => left - right)
@@ -1056,9 +1132,14 @@ export function buildArtStdDevBandData(
   })
 }
 
-export function responseTimeDataWithoutNetworkLatency(data: MetricsHistoryPoint[], latencyKeys: string[], groupNames: string[]) {
+export function responseTimeDataWithoutNetworkLatency(
+  data: MetricsHistoryPoint[],
+  latencyKeys: string[],
+  groupNames: string[],
+  transactionNames: string[] = [],
+) {
   if (latencyKeys.length === 0) return data
-  const responseKeys = responseTimeMetricKeys(groupNames)
+  const responseKeys = responseTimeMetricKeys(groupNames, transactionNames)
   return data.map(point => {
     const routeLatencyMs = averageRouteLatencyForPoint(point, latencyKeys)
     if (routeLatencyMs === undefined) return point
@@ -1131,6 +1212,7 @@ export function chartMetricKeys(
   overlayMetricKeys: OverlayMetricKey[] = [],
   routeLatencyMode: RouteLatencyMode = 'total',
   selectedRouteLatencyKey?: string,
+  transactionNames: string[] = [],
 ) {
   let keys: string[]
   if (isLoadImpactHeatmapChart(chart)) {
@@ -1156,16 +1238,25 @@ export function chartMetricKeys(
       keys = [
         chart.totalKey ?? 'tps',
         ...groupNames.map(name => `${name}_tps`),
+        ...transactionNames.map(name => transactionChartSeriesKey(name, 'tps')),
       ]
       break
     case 'latency':
       keys = [
         'avgMs',
         ...groupNames.map(name => `${name}_avgMs`),
+        ...transactionNames.map(name => transactionChartSeriesKey(name, 'avgMs')),
         'p50',
         'p90',
         'p95',
         'p99',
+      ]
+      break
+    case 'errors':
+      keys = [
+        chart.totalKey ?? 'errorPct',
+        ...groupNames.map(name => `${name}_errorPct`),
+        ...transactionNames.map(name => transactionChartSeriesKey(name, 'errorPct')),
       ]
       break
     case 'io':
@@ -1199,6 +1290,7 @@ export function chartMetricRows(
   overlayMetricKeys: OverlayMetricKey[] = [],
   routeLatencyMode: RouteLatencyMode = 'total',
   selectedRouteLatencyKey?: string,
+  transactionNames: string[] = [],
 ): ChartMetricRow[] {
   let rows: ChartMetricRow[]
   if (isLoadImpactHeatmapChart(chart)) {
@@ -1245,6 +1337,16 @@ export function chartMetricRows(
           color: groupColors[index % groupColors.length],
           strokeDasharray: groupSeriesDasharray(index, groupColors.length),
         })),
+        ...transactionNames.map(name => {
+          const presentation = transactionChartSeriesPresentation(name)
+          return {
+            key: transactionChartSeriesKey(name, 'tps'),
+            label: `Transaction · ${name}`,
+            color: presentation.color,
+            kind: 'transaction' as const,
+            strokeDasharray: presentation.strokeDasharray,
+          }
+        }),
       ]
       break
     case 'latency':
@@ -1258,6 +1360,17 @@ export function chartMetricRows(
           kind: 'transaction' as const,
           strokeDasharray: groupSeriesDasharray(index, groupColors.length),
         })),
+        ...transactionNames.map(name => {
+          const presentation = transactionChartSeriesPresentation(name)
+          return {
+            key: transactionChartSeriesKey(name, 'avgMs'),
+            label: `Transaction · ${name}`,
+            color: presentation.color,
+            unit: 'ms',
+            kind: 'transaction' as const,
+            strokeDasharray: presentation.strokeDasharray,
+          }
+        }),
         { key: 'p50', label: 'P50', color: 'var(--chart-5)', unit: 'ms', kind: 'percentile' },
         { key: 'p90', label: 'P90', color: 'var(--chart-3)', unit: 'ms', kind: 'percentile' },
         { key: 'p95', label: 'P95', color: 'var(--chart-2)', unit: 'ms', kind: 'percentile' },
@@ -1265,7 +1378,27 @@ export function chartMetricRows(
       ]
       break
     case 'errors':
-      rows = [{ key: chart.dataKey ?? 'errorPct', label: 'Error Rate', color: chart.color ?? 'var(--chart-4)', unit: '%' }]
+      rows = [
+        { key: chart.totalKey ?? 'errorPct', label: 'Total', color: 'var(--text-muted)', unit: '%' },
+        ...groupNames.map((name, index) => ({
+          key: `${name}_errorPct`,
+          label: name,
+          color: groupColors[index % groupColors.length],
+          unit: '%',
+          strokeDasharray: groupSeriesDasharray(index, groupColors.length),
+        })),
+        ...transactionNames.map(name => {
+          const presentation = transactionChartSeriesPresentation(name)
+          return {
+            key: transactionChartSeriesKey(name, 'errorPct'),
+            label: `Transaction · ${name}`,
+            color: presentation.color,
+            unit: '%',
+            kind: 'transaction' as const,
+            strokeDasharray: presentation.strokeDasharray,
+          }
+        }),
+      ]
       break
     case 'io':
       rows = [
@@ -1329,21 +1462,66 @@ export function chartMetricLinePresentation(row: ChartMetricRow): ChartMetricLin
 }
 
 export function chartMetricSummary(data: MetricsHistoryPoint[], key: string): ChartMetricSummary {
-  const values = data
-    .map(point => point[key])
-    .filter((value): value is number => typeof value === 'number' && Number.isFinite(value))
+  return chartMetricSummaries(data, [key])[key] ?? { samples: 0 }
+}
 
-  if (values.length === 0) {
-    return { samples: 0 }
-  }
+// Builds every measurement-table summary in one history traversal. This avoids
+// rescanning a 5k-point archive once per transaction series during each render.
+export function chartMetricSummaries(data: MetricsHistoryPoint[], keys: ReadonlyArray<string>): Record<string, ChartMetricSummary> {
+  const uniqueKeys = Array.from(new Set(keys))
+  const accumulators = new Map<string, { latest: number; total: number; min: number; max: number; samples: number }>()
 
-  return {
-    latest: values[values.length - 1],
-    average: values.reduce((sum, value) => sum + value, 0) / values.length,
-    min: Math.min(...values),
-    max: Math.max(...values),
-    samples: values.length,
+  data.forEach(point => {
+    uniqueKeys.forEach(key => {
+      const value = point[key]
+      if (typeof value !== 'number' || !Number.isFinite(value)) return
+      const current = accumulators.get(key)
+      if (current) {
+        current.latest = value
+        current.total += value
+        current.min = Math.min(current.min, value)
+        current.max = Math.max(current.max, value)
+        current.samples += 1
+      } else {
+        accumulators.set(key, { latest: value, total: value, min: value, max: value, samples: 1 })
+      }
+    })
+  })
+
+  return uniqueKeys.reduce<Record<string, ChartMetricSummary>>((summaries, key) => {
+    const accumulator = accumulators.get(key)
+    summaries[key] = accumulator
+      ? {
+          latest: accumulator.latest,
+          average: accumulator.total / accumulator.samples,
+          min: accumulator.min,
+          max: accumulator.max,
+          samples: accumulator.samples,
+        }
+      : { samples: 0 }
+    return summaries
+  }, {})
+}
+
+// Finds singleton transaction series in one pass and stops checking a series
+// once its second finite sample is seen.
+export function singletonTransactionMetricKeys(data: MetricsHistoryPoint[], metricKeys: ReadonlyArray<string>) {
+  const unresolved = new Set(Array.from(new Set(metricKeys.filter(isTransactionChartSeriesKey))).slice(0, MAX_TRANSACTION_CHART_SERIES))
+  const singletons = new Set<string>()
+  for (const point of data) {
+    if (unresolved.size === 0) break
+    for (const key of unresolved) {
+      const value = point[key]
+      if (typeof value !== 'number' || !Number.isFinite(value)) continue
+      if (singletons.has(key)) {
+        singletons.delete(key)
+        unresolved.delete(key)
+      } else {
+        singletons.add(key)
+      }
+    }
   }
+  return singletons
 }
 
 function roundDomainValue(value: number) {
@@ -1449,9 +1627,10 @@ export function graphCsvForChart(
   overlayMetricKeys: OverlayMetricKey[] = [],
   routeLatencyMode: RouteLatencyMode = 'total',
   selectedRouteLatencyKey?: string,
+  transactionNames: string[] = [],
 ) {
   const firstColumn = isLoadImpactChart(chart) || isLoadImpactPercentilesChart(chart) ? 'load' : 'time'
-  const keys = [firstColumn, ...chartMetricKeys(chart, groupNames, latencyKeys, includeVuserOverlay, overlayMetricKeys, routeLatencyMode, selectedRouteLatencyKey)]
+  const keys = [firstColumn, ...chartMetricKeys(chart, groupNames, latencyKeys, includeVuserOverlay, overlayMetricKeys, routeLatencyMode, selectedRouteLatencyKey, transactionNames)]
   const rows = [
     keys.map(escapeCsvCell).join(','),
     ...data.map(point => keys.map(key => escapeCsvCell(key === firstColumn ? point.time : point[key])).join(',')),

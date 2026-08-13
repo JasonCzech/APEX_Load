@@ -649,7 +649,7 @@ type LogConfig struct {
 	ExtendedOptions []string `json:"extended_options,omitempty"` // "parameter_substitution", "data_returned", "advanced_trace"
 	// RedactRunEvidence controls whether credential values that came from the
 	// script itself are redacted out of RUN OUTPUT — logs, snapshots, reports,
-	// archives and debugger evidence. Default true.
+	// archives and debugger evidence. Default false.
 	//
 	// It governs output only. The script is never altered: an imported script
 	// keeps its literal credentials so it stays runnable, which is why turning
@@ -661,7 +661,7 @@ type LogConfig struct {
 	// because the operator does not hold those. Name-based suppression
 	// (scrub.SensitiveName) and the generic JWT/high-entropy scrubbers are
 	// likewise unaffected.
-	RedactRunEvidence *bool `json:"redact_run_evidence,omitempty"` // default: true
+	RedactRunEvidence *bool `json:"redact_run_evidence,omitempty"` // default: false
 }
 
 // HTTPConfig holds all HTTP protocol runtime settings, modeled after

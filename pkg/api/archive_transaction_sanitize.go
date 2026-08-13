@@ -94,9 +94,17 @@ func sanitizeArchivedTransaction(item *TransactionEvent) {
 	}
 	policy := scrub.Policy{}
 	item.TestName = scrub.Value(item.TestName, policy)
-	item.Group = scrub.Value(item.Group, policy)
+	// Group and proven business-transaction names are stable identities used as
+	// report aggregation keys. ValueLabel skips only generic entropy/JWT guesses;
+	// structured credentials and policy rules still apply. Ordinary action names
+	// retain the full defense-in-depth scrub for direct and legacy archive input.
+	item.Group = scrub.ValueLabel(item.Group, policy)
 	item.Region = scrub.Value(item.Region, policy)
-	item.ActionName = scrub.Value(item.ActionName, policy)
+	if item.BusinessTransaction {
+		item.ActionName = scrub.ValueLabel(item.ActionName, policy)
+	} else {
+		item.ActionName = scrub.Value(item.ActionName, policy)
+	}
 	item.CorrelationID = scrub.Value(item.CorrelationID, policy)
 	item.TraceID = scrub.Value(item.TraceID, policy)
 	item.SpanID = scrub.Value(item.SpanID, policy)
@@ -119,7 +127,7 @@ func sanitizeArchivedTransaction(item *TransactionEvent) {
 	item.SourceStepID = scrub.Value(item.SourceStepID, policy)
 	item.SourceAction = scrub.Value(item.SourceAction, policy)
 	item.SourceActionName = scrub.Value(item.SourceActionName, policy)
-	item.SourceTransaction = scrub.Value(item.SourceTransaction, policy)
+	item.SourceTransaction = scrub.ValueLabel(item.SourceTransaction, policy)
 	item.SourceProfile = scrub.Value(item.SourceProfile, policy)
 	if item.ServerTelemetry != nil {
 		cloned := *item.ServerTelemetry

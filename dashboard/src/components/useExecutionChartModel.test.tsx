@@ -5,6 +5,7 @@ import { createRoot, Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import { MetricsHistoryPoint } from '../types'
+import { transactionChartSeriesKey } from './transactionChartSeries'
 import { useExecutionChartModel } from './useExecutionChartModel'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
@@ -38,6 +39,7 @@ function ChartHarness({
       <span data-testid="avg-latency">{model.summary?.avgLatency ?? 0}</span>
       <span data-testid="latest-cpu">{model.filteredData[model.filteredData.length - 1]?.cpuProcess ?? 'none'}</span>
       <span data-testid="latest-net">{model.filteredData[model.filteredData.length - 1]?.netSent ?? 'none'}</span>
+      <span data-testid="latest-transaction-tps">{model.filteredData[model.filteredData.length - 1]?.[transactionChartSeriesKey('Search', 'tps')] ?? 'none'}</span>
       <span data-testid="show-ref-area">{model.showRefArea ? 'yes' : 'no'}</span>
       <span data-testid="ref-left">{String(model.refAreaLeft)}</span>
       <span data-testid="ref-end">{String(model.refAreaEnd)}</span>
@@ -202,6 +204,7 @@ describe('useExecutionChartModel', () => {
               p50: 9999,
               p90: 9999,
               p99: 9999,
+              [transactionChartSeriesKey('Search', 'tps')]: 999,
             },
           ]}
           archiveSummaryHistory={[
@@ -216,6 +219,7 @@ describe('useExecutionChartModel', () => {
               p90: 170,
               p95: 190,
               p99: 240,
+              [transactionChartSeriesKey('Search', 'tps')]: 7,
             },
             {
               time: '8:00:01 PM',
@@ -228,6 +232,7 @@ describe('useExecutionChartModel', () => {
               p90: 180,
               p95: 200,
               p99: 250,
+              [transactionChartSeriesKey('Search', 'tps')]: 9,
             },
           ]}
           archiveResourceHistory={[
@@ -264,6 +269,7 @@ describe('useExecutionChartModel', () => {
     expect(readTestId('avg-tps')).toBe('25')
     expect(readTestId('avg-latency')).toBe('150')
     expect(readTestId('latest-cpu')).toBe('62')
+    expect(readTestId('latest-transaction-tps')).toBe('9')
   })
 
   it('tracks drag selection and applies custom zoom', async () => {

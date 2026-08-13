@@ -905,6 +905,34 @@ func maskStoredScript(stored *StoredScript) *StoredScript {
 	return masked
 }
 
+// viewStoredScript is the authenticated stored-script authoring projection.
+// Unlike import receipts and recorder conversion responses, this is the
+// surface used by the data-file editor after a script has been saved. Keep the
+// exact authored CSV/DAT bytes visible so an operator can verify the values
+// that will be supplied to a run. Runtime evidence has its own redaction
+// boundary and remains unaffected.
+func viewStoredScript(stored *StoredScript) *StoredScript {
+	view := maskStoredScript(stored)
+	if view == nil {
+		return nil
+	}
+	restoreStoredScriptDataFileContents(view.Script, stored.Script)
+	return view
+}
+
+func restoreStoredScriptDataFileContents(view, stored *dsl.Script) {
+	if view == nil || stored == nil || len(view.DataSources) != len(stored.DataSources) {
+		return
+	}
+	for index := range view.DataSources {
+		sourceType := strings.ToLower(strings.TrimSpace(stored.DataSources[index].Type))
+		if sourceType != "csv" && sourceType != "dat" {
+			continue
+		}
+		view.DataSources[index].InlineData = stored.DataSources[index].InlineData
+	}
+}
+
 // disclosureSafeScriptName projects a detached wrapper, filename, or audit
 // name using the executable script as the credential source. Import formats
 // commonly repeat a collection/request label outside the nested DSL object;

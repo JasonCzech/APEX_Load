@@ -30,11 +30,10 @@ func copyErrorClassCounts(in map[string]int64) map[string]int64 {
 }
 
 // groupActiveVUsers prefers the engine's live per-group active count so
-// group-scoped metrics follow the live ramp; it falls back to the configured
-// group size when the live count is unavailable (e.g. an engine that does not
-// report per-group counts).
+// group-scoped metrics follow the live ramp. ActiveVUsersReported distinguishes
+// an authoritative zero from an older snapshot that has no per-group gauge.
 func groupActiveVUsers(gm *engine.GroupMetrics, configured int) int {
-	if gm != nil && gm.ActiveVUsers > 0 {
+	if gm != nil && (gm.ActiveVUsersReported || gm.ActiveVUsers > 0) {
 		return int(gm.ActiveVUsers)
 	}
 	return configured
@@ -119,20 +118,20 @@ func buildLiveMetricsFromSnapshot(snap engine.MetricsSnapshot, groupVUsers map[s
 	}
 
 	for name, am := range snap.ByTransaction {
-		live.Transactions[name] = buildTxMetricsFromAction(name, am)
+		live.Transactions[name] = buildTxMetricsFromAction(name, am, snap.Window)
 	}
 
 	for name, am := range snap.ByDependencyTarget {
-		live.DependencyHealth[name] = buildTxMetricsFromAction(name, am)
+		live.DependencyHealth[name] = buildTxMetricsFromAction(name, am, snap.Window)
 	}
 	live.DependencyMap = buildLiveDependencyMap(live.DependencyHealth)
 
 	for name, am := range snap.BySOAPOperation {
-		live.SOAPOperations[name] = buildTxMetricsFromAction(name, am)
+		live.SOAPOperations[name] = buildTxMetricsFromAction(name, am, snap.Window)
 	}
 
 	for name, am := range snap.ByNetworkProfile {
-		live.NetworkProfiles[name] = buildTxMetricsFromAction(name, am)
+		live.NetworkProfiles[name] = buildTxMetricsFromAction(name, am, snap.Window)
 	}
 
 	for name, gm := range snap.ByGroup {
@@ -228,12 +227,21 @@ func txErrorPct(tx *TxMetrics) float64 {
 	return float64(tx.Errors) / float64(tx.Count) * 100
 }
 
-func buildTxMetricsFromAction(name string, am *engine.ActionMetrics) *TxMetrics {
+func buildTxMetricsFromAction(name string, am *engine.ActionMetrics, window time.Duration) *TxMetrics {
 	if am == nil {
 		return nil
 	}
+	successes := am.Count - am.Errors
+	if successes < 0 {
+		successes = 0
+	}
+	tps := 0.0
+	if window > 0 {
+		tps = float64(successes) / window.Seconds()
+	}
 	return &TxMetrics{
 		Name:             name,
+		TPS:              tps,
 		DependencyType:   am.DependencyType,
 		DependencyTarget: am.DependencyTarget,
 		LastErrorMessage: am.LastErrorMessage,
@@ -868,7 +876,11 @@ func (tr *TestRunner) groupVUsersSnapshot(test *ManagedTest) map[string]int {
 // lastPublishedSnapshot suppresses a duplicate when the periodic broadcaster
 // won the shutdown race and already emitted this exact collector window.
 func (tr *TestRunner) publishFinalLocalMetrics(test *ManagedTest, snap engine.MetricsSnapshot, lastPublishedSnapshot time.Time, groupVUsers map[string]int, artifacts *runArtifacts) bool {
-	if snap.Timestamp.IsZero() || (!lastPublishedSnapshot.IsZero() && !snap.Timestamp.After(lastPublishedSnapshot)) {
+	if snap.Timestamp.IsZero() {
+		return false
+	}
+	if !lastPublishedSnapshot.IsZero() && !snap.Timestamp.After(lastPublishedSnapshot) {
+		tr.reconcilePublishedFinalLocalMetrics(test, snap, lastPublishedSnapshot, groupVUsers, artifacts)
 		return false
 	}
 	live := buildLiveMetricsFromSnapshot(snap, groupVUsers)
@@ -878,7 +890,7 @@ func (tr *TestRunner) publishFinalLocalMetrics(test *ManagedTest, snap engine.Me
 			group.VUsers = 0
 		}
 	}
-	if update, ok := tr.evaluateGoalControllerLocked(test, live, groupVUsers); ok {
+	if update, ok := tr.evaluateTerminalGoalControllerLocked(test, live, groupVUsers); ok {
 		// Retain the terminal evaluation and breach evidence without attempting a
 		// late scale after MultiGroupEngine.Run has stopped accepting controls.
 		live.GoalStatus = update.Status
@@ -891,6 +903,62 @@ func (tr *TestRunner) publishFinalLocalMetrics(test *ManagedTest, snap engine.Me
 	return true
 }
 
+// reconcilePublishedFinalLocalMetrics closes the narrow shutdown race where
+// the periodic broadcaster observes the collector's final timestamp after
+// scaling admission has closed. That publication correctly skips live control,
+// but therefore has no GoalStatus. Re-evaluate only that already-installed
+// point and replace it copy-on-write; do not append another history/archive
+// interval or resource sample for the same collector window.
+func (tr *TestRunner) reconcilePublishedFinalLocalMetrics(test *ManagedTest, snap engine.MetricsSnapshot, lastPublishedSnapshot time.Time, groupVUsers map[string]int, artifacts *runArtifacts) {
+	if tr == nil || test == nil || lastPublishedSnapshot.IsZero() {
+		return
+	}
+
+	tr.mu.Lock()
+	current := cloneLiveMetrics(test.LiveMetrics)
+	if current == nil || current.GoalStatus != nil || !lastPublishedSnapshot.Equal(snap.Timestamp) ||
+		current.Telemetry == nil || !current.Telemetry.CollectedAt.Equal(lastPublishedSnapshot) {
+		tr.mu.Unlock()
+		return
+	}
+
+	current.ActiveVUsers = 0
+	for _, group := range current.GroupMetrics {
+		if group != nil {
+			group.VUsers = 0
+		}
+	}
+	update, ok := tr.evaluateGoalControllerSnapshotAssumingLocked(test, current, groupVUsers, false)
+	if !ok || update.Status == nil {
+		tr.mu.Unlock()
+		return
+	}
+	current.GoalStatus = update.Status
+
+	recordCISLAStateLocked(test, current)
+	replaceLiveMetricsLocked(test, current)
+	snapshot := buildRunLiveStateSnapshotLocked(test, time.Now())
+	testID := test.ID
+	testName := test.Name
+	projectID := normalizeProjectID(test.ProjectID)
+	goalConfig := cloneGoalConfig(test.GoalConfig)
+	published := cloneLiveMetrics(current)
+	tr.mu.Unlock()
+
+	artifacts.recordSLAEvidence(goalConfig, published)
+	tr.cacheRunSnapshot(snapshot)
+	if tr.hub != nil {
+		tr.hub.BroadcastScopedJSON(testID, projectID, map[string]any{
+			"type":       "metrics_update",
+			"test_id":    testID,
+			"project_id": projectID,
+			"test_name":  testName,
+			"timestamp":  published.Timestamp,
+			"data":       published,
+		})
+	}
+}
+
 // evaluateGoalControllerLocked applies runtime goal targets to live and, for
 // goal-oriented runs, evaluates the goal controller — all under tr.mu so the
 // reads of test.Groups/GoalConfig/GoalTargets/ScenarioMode and the goalControl
@@ -899,14 +967,33 @@ func (tr *TestRunner) publishFinalLocalMetrics(test *ManagedTest, snap engine.Me
 // must be applied AFTER the lock is released, since applyGoalControllerUpdate
 // re-locks internally and issues blocking scale calls.
 func (tr *TestRunner) evaluateGoalControllerLocked(test *ManagedTest, live *LiveMetrics, groupVUsers map[string]int) (goalControllerUpdate, bool) {
+	return tr.evaluateGoalControllerSnapshotLocked(test, live, groupVUsers, true)
+}
+
+// evaluateTerminalGoalControllerLocked evaluates the collector's final drained
+// window after the engine has quiesced. Runtime readiness is intentionally not
+// required here: a stopped engine is no longer scaling-ready, but its terminal
+// transaction window is still authoritative SLA evidence.
+func (tr *TestRunner) evaluateTerminalGoalControllerLocked(test *ManagedTest, live *LiveMetrics, groupVUsers map[string]int) (goalControllerUpdate, bool) {
+	return tr.evaluateGoalControllerSnapshotLocked(test, live, groupVUsers, false)
+}
+
+func (tr *TestRunner) evaluateGoalControllerSnapshotLocked(test *ManagedTest, live *LiveMetrics, groupVUsers map[string]int, requireLoadReady bool) (goalControllerUpdate, bool) {
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
+	return tr.evaluateGoalControllerSnapshotAssumingLocked(test, live, groupVUsers, requireLoadReady)
+}
+
+// evaluateGoalControllerSnapshotAssumingLocked contains the state-machine
+// evaluation for callers that already hold tr.mu (the terminal reconciliation
+// path needs evaluation and copy-on-write installation to be atomic).
+func (tr *TestRunner) evaluateGoalControllerSnapshotAssumingLocked(test *ManagedTest, live *LiveMetrics, groupVUsers map[string]int, requireLoadReady bool) (goalControllerUpdate, bool) {
 	applyRuntimeGoalTargetsToLiveMetrics(test, live)
 	if test.ScenarioMode == "goal_oriented" && test.GoalConfig != nil {
 		// Baseline snapshots are deliberately idle and paused snapshots do not
 		// represent controllable throughput. Neither may advance breach/cooldown
 		// state, accumulate error windows, or trigger an early scale.
-		if !tr.testLoadReadyLocked(test, time.Now().UTC()) {
+		if requireLoadReady && !tr.testLoadReadyLocked(test, time.Now().UTC()) {
 			return goalControllerUpdate{}, false
 		}
 		recordGoalErrorWindow(test.goalControl, "local", live.Timestamp, live.TotalErrors)

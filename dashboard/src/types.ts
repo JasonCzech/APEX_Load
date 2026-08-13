@@ -1116,9 +1116,18 @@ export interface IntervalSummaryRecord {
   p95_ms: number
   p99_ms: number
   groups?: Record<string, GroupLiveMetrics>
+  transactions?: Record<string, IntervalTransactionMetrics>
   browser?: BrowserLiveMetrics
   browser_by_device?: Record<string, BrowserDeviceLiveMetrics>
   latency?: NetworkLatency
+}
+
+export interface IntervalTransactionMetrics {
+  name: string
+  tps: number
+  count: number
+  errors: number
+  avg_ms: number
 }
 
 export interface ServerTelemetry {
@@ -2000,6 +2009,7 @@ export interface SystemResources {
 
 export interface TxMetrics {
   name: string
+  tps?: number
   dependency_type?: string
   dependency_target?: string
   last_error_message?: string

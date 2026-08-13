@@ -592,6 +592,34 @@ sourceFenced:
 			}, streamsByTarget, openedStreams, releaseTopology)
 		}
 	}
+	// Staging, stream attachment, and the lost-source fence can consume a
+	// material part (or all) of the duration sampled at evacuation entry. Refresh
+	// the active-time budget immediately before commit so a replacement never
+	// receives a stale full remainder and extends load past the fleet deadline.
+	tr.mu.RLock()
+	commitCurrent := tr.tests[testID] == test && distributedControlCommitCurrentLocked(tr, test, status, controlGeneration)
+	refreshedRemaining, _, _ := distributedEvacuationTiming(test, time.Now())
+	tr.mu.RUnlock()
+	if !commitCurrent {
+		closeUntouchedDialedClients(touchedTargets)
+		return impacts, b.failClosedUncertainEvacuationWithTopologyRelease(tr, test, &distributedEvacuationUncertainError{
+			testID:             testID,
+			participantClients: evacuationParticipantClients(runClientsByTarget, dialedClients, touchedTargets),
+			touchedTargets:     orderedTargetList(touchedTargets, b.configuredTargets()),
+			unreachableTargets: unreachableTargets,
+			err:                fmt.Errorf("generator evacuation became stale before replacement commit"),
+		}, streamsByTarget, openedStreams, releaseTopology)
+	}
+	if refreshedRemaining <= 0 {
+		closeUntouchedDialedClients(touchedTargets)
+		return impacts, b.failClosedUncertainEvacuationWithTopologyRelease(tr, test, &distributedEvacuationUncertainError{
+			testID:             testID,
+			participantClients: evacuationParticipantClients(runClientsByTarget, dialedClients, touchedTargets),
+			touchedTargets:     orderedTargetList(touchedTargets, b.configuredTargets()),
+			unreachableTargets: unreachableTargets,
+			err:                fmt.Errorf("steady-state duration expired before replacement commit"),
+		}, streamsByTarget, openedStreams, releaseTopology)
+	}
 	replacementStartAt := time.Now().Add(distributedCommitStartLead(b.timeout))
 	if err := b.commitDistributedWork(executionCtx, testID, executionGeneration, replacementStartAt, replacementClients, runSupervisionToken); err != nil {
 		uncertain := &distributedEvacuationUncertainError{
@@ -603,6 +631,38 @@ sourceFenced:
 		}
 		closeUntouchedDialedClients(touchedTargets)
 		return impacts, b.failClosedUncertainEvacuationWithTopologyRelease(tr, test, uncertain, streamsByTarget, openedStreams, releaseTopology)
+	}
+	if refreshedRemaining < remainingDuration {
+		// Duration control is intentionally after CommitWork: generators reject
+		// ordinary runtime controls while an assignment is still staged. The
+		// coordinated start barrier keeps replacement traffic fenced while this
+		// shortening is applied, and any failure remains a post-source-fence
+		// uncertainty that stops the exact-generation fleet before publication.
+		refreshedLogicalDuration := steadyElapsed + refreshedRemaining
+		for _, client := range replacementClients {
+			adjustCtx, cancel := context.WithTimeout(executionCtx, b.timeout)
+			result, adjustErr := client.AdjustDuration(adjustCtx, generatorrpc.DurationAdjustment{
+				TestID:                testID,
+				ExecutionGeneration:   executionGeneration,
+				TargetDuration:        refreshedLogicalDuration,
+				TargetDurationSeconds: int64(refreshedLogicalDuration / time.Second),
+				RunSupervisionToken:   runSupervisionToken,
+			})
+			cancel()
+			if adjustErr == nil && !result.Accepted {
+				adjustErr = fmt.Errorf("generator rejected duration adjustment")
+			}
+			if adjustErr != nil {
+				closeUntouchedDialedClients(touchedTargets)
+				return impacts, b.failClosedUncertainEvacuationWithTopologyRelease(tr, test, &distributedEvacuationUncertainError{
+					testID:             testID,
+					participantClients: evacuationParticipantClients(runClientsByTarget, dialedClients, touchedTargets),
+					touchedTargets:     orderedTargetList(touchedTargets, b.configuredTargets()),
+					unreachableTargets: unreachableTargets,
+					err:                fmt.Errorf("shorten committed replacement duration: %w", adjustErr),
+				}, streamsByTarget, openedStreams, releaseTopology)
+			}
+		}
 	}
 	tr.mu.Lock()
 	if !distributedControlCommitCurrentLocked(tr, test, status, controlGeneration) {

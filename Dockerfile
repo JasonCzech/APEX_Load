@@ -84,7 +84,7 @@ ENV PLAYWRIGHT_DRIVER_PATH=/opt/playwright-driver \
 	APEXLOAD_BROWSER_EXECUTABLE=/usr/bin/google-chrome \
 	APEXLOAD_ADDR=0.0.0.0:8080 \
 	HOME=/tmp
-RUN mkdir -p /data /tmp /opt/playwright-driver \
-	&& chown -R 65532:65532 /data /tmp
+RUN mkdir -p /data /tmp /opt/playwright-driver /var/lib/apexload-bruno \
+	&& chown -R 65532:65532 /data /tmp /var/lib/apexload-bruno
 USER 65532:65532
 ENTRYPOINT ["/usr/local/bin/app"]

@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -33,6 +34,9 @@ func newLocalAuthTestServer(t *testing.T, desktop bool) (*Server, *storage.SQLit
 	if err := server.ensureLocalAuthFixtures(); err != nil {
 		t.Fatalf("seed local auth: %v", err)
 	}
+	if _, err := server.activateLocalAuthGenerationForStartup(); err != nil {
+		t.Fatalf("activate local auth generation: %v", err)
+	}
 	return server, store
 }
 
@@ -50,6 +54,22 @@ func localLogin(t *testing.T, server *Server, username, password string) (*httpt
 		}
 	}
 	return rec, cookie
+}
+
+func waitForServerBoundAddr(t *testing.T, server *Server, started <-chan error) {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for !server.BoundAddrReady() {
+		select {
+		case err := <-started:
+			t.Fatalf("server stopped before binding: %v", err)
+		default:
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("server did not bind before timeout")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 }
 
 func TestLocalLoginPersonasAndNormalizedUsername(t *testing.T) {
@@ -91,6 +111,68 @@ func TestLocalLoginPersonasAndNormalizedUsername(t *testing.T) {
 			}
 			if test.scopeType == "project" && !containsString(status.User.ProjectRoles[test.scopeID], test.scopeRole) {
 				t.Fatalf("project roles = %#v", status.User.ProjectRoles)
+			}
+		})
+	}
+}
+
+func TestLocalLogoutReturnsEveryPersonaToLogin(t *testing.T) {
+	server, store := newLocalAuthTestServer(t, false)
+	for _, username := range []string{"admin", "domainadmin", "user", "dev"} {
+		t.Run(username, func(t *testing.T) {
+			login, cookie := localLogin(t, server, username, username)
+			if login.Code != http.StatusOK || cookie == nil {
+				t.Fatalf("login = %d cookie=%v body=%s", login.Code, cookie, login.Body.String())
+			}
+
+			meRequest := httptest.NewRequest(http.MethodGet, "/api/v1/auth/me", nil)
+			meRequest.AddCookie(cookie)
+			meResponse := httptest.NewRecorder()
+			server.mux.ServeHTTP(meResponse, meRequest)
+			var status AuthStatusResponse
+			if err := json.Unmarshal(meResponse.Body.Bytes(), &status); err != nil {
+				t.Fatal(err)
+			}
+			if !status.Authenticated || status.User == nil || status.User.Subject != "local:"+username || status.LogoutCSRF == "" {
+				t.Fatalf("auth status before logout = %#v", status)
+			}
+
+			tokenHash := localSessionTokenHashForGeneration(server.activeLocalAuthGeneration(), cookie.Value)
+			logoutRequest := httptest.NewRequest(http.MethodPost, "/api/v1/auth/logout", nil)
+			logoutRequest.AddCookie(cookie)
+			logoutRequest.Header.Set("X-APEXLoad-CSRF-Token", status.LogoutCSRF)
+			logoutResponse := httptest.NewRecorder()
+			server.mux.ServeHTTP(logoutResponse, logoutRequest)
+			if logoutResponse.Code != http.StatusOK {
+				t.Fatalf("logout = %d body=%s", logoutResponse.Code, logoutResponse.Body.String())
+			}
+			var logoutPayload AuthLogoutResponse
+			if err := json.Unmarshal(logoutResponse.Body.Bytes(), &logoutPayload); err != nil {
+				t.Fatal(err)
+			}
+			if logoutPayload.RedirectURL != "/" {
+				t.Fatalf("logout redirect = %q, want local landing page", logoutPayload.RedirectURL)
+			}
+			cleared := findResponseCookie(t, logoutResponse.Result().Cookies(), localSessionCookieName)
+			if cleared.Value != "" || cleared.MaxAge != -1 || cleared.Expires.After(time.Now()) || !cleared.HttpOnly || cleared.SameSite != http.SameSiteLaxMode {
+				t.Fatalf("logout cookie was not expired safely: %#v", cleared)
+			}
+			if _, err := store.GetLocalAuthSessionByTokenHash(tokenHash); !errors.Is(err, sql.ErrNoRows) {
+				t.Fatalf("persisted session after logout: %v", err)
+			}
+
+			// Replaying the original cookie must not restore the persona. This is
+			// stronger than relying on the browser to honor the Set-Cookie expiry.
+			afterRequest := httptest.NewRequest(http.MethodGet, "/api/v1/auth/me", nil)
+			afterRequest.AddCookie(cookie)
+			afterResponse := httptest.NewRecorder()
+			server.mux.ServeHTTP(afterResponse, afterRequest)
+			var after AuthStatusResponse
+			if err := json.Unmarshal(afterResponse.Body.Bytes(), &after); err != nil {
+				t.Fatal(err)
+			}
+			if after.Authenticated || after.User != nil || after.SessionStatus != "invalid" {
+				t.Fatalf("auth status after logout = %#v", after)
 			}
 		})
 	}
@@ -312,7 +394,7 @@ func TestLocalAuthModeTransitionTakesEffectOnlyAfterRestart(t *testing.T) {
 	}
 }
 
-func TestServerStartSeedsLocalAuthFixturesBeforeServing(t *testing.T) {
+func TestServerStartSeedsLocalAuthFixturesAndInvalidatesSessionsBeforeServing(t *testing.T) {
 	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "local-auth-start.db"))
 	if err != nil {
 		t.Fatal(err)
@@ -324,6 +406,25 @@ func TestServerStartSeedsLocalAuthFixturesBeforeServing(t *testing.T) {
 	settings.Auth.Mode = authModeLocal
 	if _, err := server.runner.UpdateSystemSettings(settings); err != nil {
 		t.Fatalf("persist local mode: %v", err)
+	}
+	// Model a browser cookie and durable session left by the previous process.
+	// Start must revoke it before publishing the newly restarted controller.
+	if err := server.ensureLocalAuthFixtures(); err != nil {
+		t.Fatalf("seed pre-restart local auth: %v", err)
+	}
+	if _, err := server.activateLocalAuthGenerationForStartup(); err != nil {
+		t.Fatalf("activate pre-restart local auth: %v", err)
+	}
+	const staleToken = "local-session-from-previous-controller"
+	staleHash := localSessionTokenHashForGeneration(server.activeLocalAuthGeneration(), staleToken)
+	now := time.Now().UTC()
+	if err := store.SaveLocalAuthSession(&storage.LocalAuthSession{
+		TokenHash: staleHash,
+		UserID:    "local-auth-dev",
+		CreatedAt: now.Add(-time.Minute),
+		ExpiresAt: now.Add(time.Hour),
+	}); err != nil {
+		t.Fatalf("save pre-restart session: %v", err)
 	}
 	started := make(chan error, 1)
 	go func() { started <- server.Start() }()
@@ -346,6 +447,23 @@ func TestServerStartSeedsLocalAuthFixturesBeforeServing(t *testing.T) {
 			t.Fatalf("fixture %q after Start = %#v, %v", username, credential, err)
 		}
 	}
+	if _, err := store.GetLocalAuthSessionByTokenHash(staleHash); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("pre-restart session survived startup: %v", err)
+	}
+	statusRequest := httptest.NewRequest(http.MethodGet, "/api/v1/auth/me", nil)
+	statusRequest.AddCookie(&http.Cookie{Name: localSessionCookieName, Value: staleToken})
+	statusResponse := httptest.NewRecorder()
+	server.mux.ServeHTTP(statusResponse, statusRequest)
+	if statusResponse.Code != http.StatusOK {
+		t.Fatalf("auth status after restart = %d body=%s", statusResponse.Code, statusResponse.Body.String())
+	}
+	var status AuthStatusResponse
+	if err := json.Unmarshal(statusResponse.Body.Bytes(), &status); err != nil {
+		t.Fatal(err)
+	}
+	if status.Authenticated || status.User != nil || status.SessionStatus != "invalid" {
+		t.Fatalf("stale pre-restart cookie remained authenticated: %#v", status)
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if err := server.Shutdown(ctx); err != nil {
@@ -353,6 +471,207 @@ func TestServerStartSeedsLocalAuthFixturesBeforeServing(t *testing.T) {
 	}
 	if err := <-started; err != nil {
 		t.Fatalf("Start returned after shutdown: %v", err)
+	}
+}
+
+func TestLocalAuthGenerationFencesAnOverlappingOldController(t *testing.T) {
+	oldServer, store := newLocalAuthTestServer(t, false)
+	login, oldCookie := localLogin(t, oldServer, "dev", "dev")
+	if login.Code != http.StatusOK || oldCookie == nil {
+		t.Fatalf("old-controller login = %d cookie=%v body=%s", login.Code, oldCookie, login.Body.String())
+	}
+	oldGeneration := oldServer.activeLocalAuthGeneration()
+
+	newServer := NewServer(ServerConfig{Store: store, Addr: "127.0.0.1:0", ProxyAddr: "127.0.0.1:0"})
+	newServer.captureStartupAuthSettings()
+	if err := newServer.ensureLocalAuthFixtures(); err != nil {
+		t.Fatalf("seed replacement fixtures: %v", err)
+	}
+	if _, err := newServer.activateLocalAuthGenerationForStartup(); err != nil {
+		t.Fatalf("activate replacement generation: %v", err)
+	}
+	if newServer.activeLocalAuthGeneration() == oldGeneration {
+		t.Fatal("replacement reused the old controller generation")
+	}
+
+	oldStatusRequest := httptest.NewRequest(http.MethodGet, "/api/v1/auth/me", nil)
+	oldStatusRequest.AddCookie(oldCookie)
+	oldStatusResponse := httptest.NewRecorder()
+	oldServer.mux.ServeHTTP(oldStatusResponse, oldStatusRequest)
+	var oldStatus AuthStatusResponse
+	if err := json.Unmarshal(oldStatusResponse.Body.Bytes(), &oldStatus); err != nil {
+		t.Fatal(err)
+	}
+	if oldStatus.Authenticated || oldStatus.SessionStatus != "invalid" || oldStatus.LogoutCSRF == "" {
+		t.Fatalf("old session after replacement activation = %#v", oldStatus)
+	}
+	staleLogout := httptest.NewRequest(http.MethodPost, "/api/v1/auth/logout", nil)
+	staleLogout.AddCookie(oldCookie)
+	staleLogout.Header.Set("X-APEXLoad-CSRF-Token", oldStatus.LogoutCSRF)
+	staleLogoutResponse := httptest.NewRecorder()
+	oldServer.mux.ServeHTTP(staleLogoutResponse, staleLogout)
+	if staleLogoutResponse.Code != http.StatusOK {
+		t.Fatalf("stale-generation logout = %d body=%s", staleLogoutResponse.Code, staleLogoutResponse.Body.String())
+	}
+	cleared := findResponseCookie(t, staleLogoutResponse.Result().Cookies(), localSessionCookieName)
+	if cleared.MaxAge != -1 || cleared.Value != "" {
+		t.Fatalf("stale-generation logout cookie = %#v", cleared)
+	}
+
+	staleLogin, staleCookie := localLogin(t, oldServer, "dev", "dev")
+	if staleLogin.Code != http.StatusServiceUnavailable || staleCookie != nil {
+		t.Fatalf("stale controller login = %d cookie=%v body=%s", staleLogin.Code, staleCookie, staleLogin.Body.String())
+	}
+	currentLogin, currentCookie := localLogin(t, newServer, "dev", "dev")
+	if currentLogin.Code != http.StatusOK || currentCookie == nil {
+		t.Fatalf("replacement login = %d cookie=%v body=%s", currentLogin.Code, currentCookie, currentLogin.Body.String())
+	}
+	replacementCookieOnOld := httptest.NewRequest(http.MethodGet, "/api/v1/auth/me", nil)
+	replacementCookieOnOld.AddCookie(currentCookie)
+	replacementCookieOnOldResponse := httptest.NewRecorder()
+	oldServer.mux.ServeHTTP(replacementCookieOnOldResponse, replacementCookieOnOld)
+	var crossControllerStatus AuthStatusResponse
+	if err := json.Unmarshal(replacementCookieOnOldResponse.Body.Bytes(), &crossControllerStatus); err != nil {
+		t.Fatal(err)
+	}
+	if crossControllerStatus.Authenticated || crossControllerStatus.SessionStatus != "invalid" {
+		t.Fatalf("replacement cookie authenticated on old controller: %#v", crossControllerStatus)
+	}
+	protectedRequest := httptest.NewRequest(http.MethodGet, "/api/v1/projects", nil)
+	protectedRequest.AddCookie(currentCookie)
+	protectedResponse := httptest.NewRecorder()
+	oldServer.mux.ServeHTTP(protectedResponse, protectedRequest)
+	if protectedResponse.Code != http.StatusUnauthorized {
+		t.Fatalf("replacement cookie on old protected route = %d body=%s", protectedResponse.Code, protectedResponse.Body.String())
+	}
+
+	websocketRequest := httptest.NewRequest(http.MethodGet, "/api/v1/ws?project_id="+storage.DefaultProjectID, nil)
+	websocketRequest.AddCookie(currentCookie)
+	newResolution := resolveLocalSession(websocketRequest, store, newServer.activeLocalAuthGeneration())
+	if newResolution.User == nil {
+		t.Fatalf("replacement session resolution = %#v", newResolution)
+	}
+	websocketRequest = withAuthenticatedContext(websocketRequest, authResolution{User: newResolution.User})
+	if oldServer.websocketAuthorizer(websocketRequest, storage.DefaultProjectID)() {
+		t.Fatal("replacement cookie authorized a new websocket on the old controller")
+	}
+}
+
+func TestSuccessfulNonLocalReplacementFencesOldLocalController(t *testing.T) {
+	oldServer, store := newLocalAuthTestServer(t, false)
+	login, cookie := localLogin(t, oldServer, "dev", "dev")
+	if login.Code != http.StatusOK || cookie == nil {
+		t.Fatalf("old-controller login = %d cookie=%v body=%s", login.Code, cookie, login.Body.String())
+	}
+	oldGeneration := oldServer.activeLocalAuthGeneration()
+
+	settings := oldServer.runner.GetSystemSettings()
+	settings.Auth.Mode = authModeTrustedHeaders
+	if _, err := oldServer.runner.UpdateSystemSettings(settings); err != nil {
+		t.Fatalf("persist trusted-header replacement mode: %v", err)
+	}
+	replacement := NewServer(ServerConfig{Store: store, Addr: "127.0.0.1:0", ProxyAddr: "127.0.0.1:0"})
+	started := make(chan error, 1)
+	go func() { started <- replacement.Start() }()
+	waitForServerBoundAddr(t, replacement, started)
+	if replacement.authSettingsForRequest().Mode != authModeTrustedHeaders {
+		t.Fatalf("replacement auth mode = %q, want trusted headers", replacement.authSettingsForRequest().Mode)
+	}
+	if current, err := store.GetLocalAuthGeneration(); err != nil || current == oldGeneration {
+		t.Fatalf("local generation after non-local replacement = (%q, %v), old %q", current, err, oldGeneration)
+	}
+
+	staleLogin, staleCookie := localLogin(t, oldServer, "dev", "dev")
+	if staleLogin.Code != http.StatusServiceUnavailable || staleCookie != nil {
+		t.Fatalf("old local login after non-local replacement = %d cookie=%v body=%s", staleLogin.Code, staleCookie, staleLogin.Body.String())
+	}
+	statusRequest := httptest.NewRequest(http.MethodGet, "/api/v1/auth/me", nil)
+	statusRequest.AddCookie(cookie)
+	statusResponse := httptest.NewRecorder()
+	oldServer.mux.ServeHTTP(statusResponse, statusRequest)
+	var status AuthStatusResponse
+	if err := json.Unmarshal(statusResponse.Body.Bytes(), &status); err != nil {
+		t.Fatal(err)
+	}
+	if status.Authenticated || status.SessionStatus != "invalid" {
+		t.Fatalf("old local session after non-local replacement = %#v", status)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := replacement.Shutdown(ctx); err != nil {
+		t.Fatalf("shutdown replacement: %v", err)
+	}
+	if err := <-started; err != nil {
+		t.Fatalf("replacement Start returned after shutdown: %v", err)
+	}
+}
+
+func TestFailedLocalAuthReplacementDoesNotInvalidateHealthyController(t *testing.T) {
+	healthy, store := newLocalAuthTestServer(t, false)
+	login, cookie := localLogin(t, healthy, "user", "user")
+	if login.Code != http.StatusOK || cookie == nil {
+		t.Fatalf("healthy-controller login = %d cookie=%v body=%s", login.Code, cookie, login.Body.String())
+	}
+	wantGeneration := healthy.activeLocalAuthGeneration()
+
+	occupied, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer occupied.Close()
+	replacement := NewServer(ServerConfig{Store: store, Addr: occupied.Addr().String(), ProxyAddr: "127.0.0.1:0"})
+	if err := replacement.Start(); err == nil {
+		t.Fatal("replacement unexpectedly started on an occupied address")
+	}
+	if got, err := store.GetLocalAuthGeneration(); err != nil || got != wantGeneration {
+		t.Fatalf("generation after failed replacement = (%q, %v), want %q", got, err, wantGeneration)
+	}
+
+	statusRequest := httptest.NewRequest(http.MethodGet, "/api/v1/auth/me", nil)
+	statusRequest.AddCookie(cookie)
+	statusResponse := httptest.NewRecorder()
+	healthy.mux.ServeHTTP(statusResponse, statusRequest)
+	var status AuthStatusResponse
+	if err := json.Unmarshal(statusResponse.Body.Bytes(), &status); err != nil {
+		t.Fatal(err)
+	}
+	if !status.Authenticated || status.SessionStatus != "active" || status.User == nil || status.User.Subject != "local:user" {
+		t.Fatalf("healthy session after failed replacement = %#v", status)
+	}
+}
+
+func TestCanceledLocalAuthReplacementDoesNotRotateGeneration(t *testing.T) {
+	healthy, store := newLocalAuthTestServer(t, false)
+	login, cookie := localLogin(t, healthy, "user", "user")
+	if login.Code != http.StatusOK || cookie == nil {
+		t.Fatalf("healthy-controller login = %d cookie=%v body=%s", login.Code, cookie, login.Body.String())
+	}
+	wantGeneration := healthy.activeLocalAuthGeneration()
+
+	replacement := NewServer(ServerConfig{Store: store, Addr: "127.0.0.1:0", ProxyAddr: "127.0.0.1:0"})
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := replacement.Shutdown(ctx); err != nil {
+		t.Fatalf("cancel replacement before startup: %v", err)
+	}
+	if err := replacement.Start(); !errors.Is(err, http.ErrServerClosed) {
+		t.Fatalf("canceled replacement Start error = %v, want http.ErrServerClosed", err)
+	}
+	if got, err := store.GetLocalAuthGeneration(); err != nil || got != wantGeneration {
+		t.Fatalf("generation after canceled replacement = (%q, %v), want %q", got, err, wantGeneration)
+	}
+
+	statusRequest := httptest.NewRequest(http.MethodGet, "/api/v1/auth/me", nil)
+	statusRequest.AddCookie(cookie)
+	statusResponse := httptest.NewRecorder()
+	healthy.mux.ServeHTTP(statusResponse, statusRequest)
+	var status AuthStatusResponse
+	if err := json.Unmarshal(statusResponse.Body.Bytes(), &status); err != nil {
+		t.Fatal(err)
+	}
+	if !status.Authenticated || status.SessionStatus != "active" {
+		t.Fatalf("healthy session after canceled replacement = %#v", status)
 	}
 }
 
@@ -541,7 +860,7 @@ func TestLocalSessionDisableRevocationExpiryAndLogoutCSRF(t *testing.T) {
 	}
 
 	_, cookie = localLogin(t, server, "user", "user")
-	hash := localSessionTokenHash(cookie.Value)
+	hash := localSessionTokenHashForGeneration(server.activeLocalAuthGeneration(), cookie.Value)
 	if err := store.DeleteLocalAuthSessionByTokenHash(hash); err != nil {
 		t.Fatal(err)
 	}
@@ -566,7 +885,7 @@ func TestLocalSessionDisableRevocationExpiryAndLogoutCSRF(t *testing.T) {
 	// The stale HttpOnly cookie must still receive a derived CSRF token and be
 	// clearable through the idempotent logout path.
 	_, cookie = localLogin(t, server, "user", "user")
-	if err := store.DeleteLocalAuthSessionByTokenHash(localSessionTokenHash(cookie.Value)); err != nil {
+	if err := store.DeleteLocalAuthSessionByTokenHash(localSessionTokenHashForGeneration(server.activeLocalAuthGeneration(), cookie.Value)); err != nil {
 		t.Fatal(err)
 	}
 	if got := me(); got.Authenticated || got.SessionStatus != "invalid" || got.LogoutCSRF == "" {
@@ -641,7 +960,7 @@ func TestDesktopLocalSessionIsCapabilityBoundAndRejectsAmbientCookie(t *testing.
 	if _, ok := server.desktopLocalSessionForCapability("desktop-test-capability"); ok {
 		t.Fatal("desktop capability retained its local session after logout")
 	}
-	if _, err := store.GetLocalAuthSessionByTokenHash(localSessionTokenHash(token)); !errors.Is(err, sql.ErrNoRows) {
+	if _, err := store.GetLocalAuthSessionByTokenHash(localSessionTokenHashForGeneration(server.activeLocalAuthGeneration(), token)); !errors.Is(err, sql.ErrNoRows) {
 		t.Fatalf("persisted session after desktop logout: %v", err)
 	}
 
@@ -661,5 +980,50 @@ func TestDesktopLocalSessionIsCapabilityBoundAndRejectsAmbientCookie(t *testing.
 	handler.ServeHTTP(reloginResponse, relogin)
 	if reloginResponse.Code != http.StatusOK || len(reloginResponse.Result().Cookies()) != 0 {
 		t.Fatalf("desktop re-login = %d cookies=%v body=%s", reloginResponse.Code, reloginResponse.Result().Cookies(), reloginResponse.Body.String())
+	}
+}
+
+func TestDesktopStaleGenerationLogoutClearsCapabilityBinding(t *testing.T) {
+	server, store := newLocalAuthTestServer(t, true)
+	handler := server.httpServer.Handler
+	body, _ := json.Marshal(LocalLoginRequest{Username: "dev", Password: "dev"})
+	login := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", bytes.NewReader(body))
+	login.Header.Set(desktopCapabilityHeader, "desktop-test-capability")
+	loginResponse := httptest.NewRecorder()
+	handler.ServeHTTP(loginResponse, login)
+	if loginResponse.Code != http.StatusOK {
+		t.Fatalf("desktop login = %d body=%s", loginResponse.Code, loginResponse.Body.String())
+	}
+	if _, ok := server.desktopLocalSessionForCapability("desktop-test-capability"); !ok {
+		t.Fatal("desktop capability did not retain the local session")
+	}
+
+	replacement := NewServer(ServerConfig{Store: store})
+	replacement.captureStartupAuthSettings()
+	if _, err := replacement.activateLocalAuthGenerationForStartup(); err != nil {
+		t.Fatalf("activate replacement generation: %v", err)
+	}
+	statusRequest := httptest.NewRequest(http.MethodGet, "/api/v1/auth/me", nil)
+	statusRequest.Header.Set(desktopCapabilityHeader, "desktop-test-capability")
+	statusResponse := httptest.NewRecorder()
+	handler.ServeHTTP(statusResponse, statusRequest)
+	var status AuthStatusResponse
+	if err := json.Unmarshal(statusResponse.Body.Bytes(), &status); err != nil {
+		t.Fatal(err)
+	}
+	if status.Authenticated || status.SessionStatus != "invalid" || status.LogoutCSRF == "" {
+		t.Fatalf("desktop stale-generation status = %#v", status)
+	}
+
+	logout := httptest.NewRequest(http.MethodPost, "/api/v1/auth/logout", nil)
+	logout.Header.Set(desktopCapabilityHeader, "desktop-test-capability")
+	logout.Header.Set("X-APEXLoad-CSRF-Token", status.LogoutCSRF)
+	logoutResponse := httptest.NewRecorder()
+	handler.ServeHTTP(logoutResponse, logout)
+	if logoutResponse.Code != http.StatusOK || len(logoutResponse.Result().Cookies()) != 0 {
+		t.Fatalf("desktop stale-generation logout = %d cookies=%v body=%s", logoutResponse.Code, logoutResponse.Result().Cookies(), logoutResponse.Body.String())
+	}
+	if _, ok := server.desktopLocalSessionForCapability("desktop-test-capability"); ok {
+		t.Fatal("desktop stale-generation logout retained the capability binding")
 	}
 }

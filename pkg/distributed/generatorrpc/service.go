@@ -1766,6 +1766,7 @@ func (s *Service) recordMetricsBatch(testID string, writer *archiveRecorder, bat
 		P99Ms:           quantileFromMetricAggregate(batch.FleetMetrics, batch.Transactions, 0.99),
 		DurationDigest:  tdigestSnapshotFromProto(batch.GetFleetMetrics().GetDurationDigest()),
 		Groups:          archiveSummaryGroupsFromBatch(batch),
+		Transactions:    archiveSummaryTransactionsFromBatch(batch.GetTransactionMetrics()),
 		Browser:         archiveSummaryBrowserFromBatch(batch),
 		BrowserByDevice: archiveSummaryBrowserDevicesFromBatch(batch),
 		Telemetry:       archiveSummaryTelemetryFromBatch(batch),
@@ -2921,19 +2922,42 @@ func mergeMetricAggregateSeries(values []MetricAggregate) []MetricAggregate {
 	byName := make(map[string][]MetricAggregate)
 	for _, value := range values {
 		name := strings.TrimSpace(value.Name)
-		if name == "" {
+		if name == "" || value.Count <= 0 {
 			continue
 		}
 		byName[name] = append(byName[name], value)
 	}
+	if len(byName) == 0 {
+		return nil
+	}
+
 	names := make([]string, 0, len(byName))
 	for name := range byName {
-		names = append(names, name)
+		if name != metricOverflowSeries {
+			names = append(names, name)
+		}
 	}
 	sort.Strings(names)
-	out := make([]MetricAggregate, 0, len(names))
+	overflowValues := append([]MetricAggregate(nil), byName[metricOverflowSeries]...)
+	if len(names) > maxTransactionWindowSeries-1 {
+		for _, name := range names[maxTransactionWindowSeries-1:] {
+			overflowValues = append(overflowValues, byName[name]...)
+		}
+		names = names[:maxTransactionWindowSeries-1]
+	}
+	if len(overflowValues) > 0 {
+		names = append(names, metricOverflowSeries)
+		sort.Strings(names)
+	}
+
+	out := make([]MetricAggregate, 0, min(len(names), maxTransactionWindowSeries))
 	for _, name := range names {
-		if aggregate := mergeMetricAggregates(byName[name]); aggregate != nil {
+		series := byName[name]
+		if name == metricOverflowSeries {
+			series = overflowValues
+		}
+		if aggregate := mergeMetricAggregates(series); aggregate != nil {
+			aggregate.Name = name
 			out = append(out, *aggregate)
 		}
 	}

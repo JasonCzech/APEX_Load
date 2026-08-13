@@ -905,7 +905,15 @@ func brunoOpenAPIComponentSchemas() map[string]oasSchema {
 				"context":                     {Type: "string"},
 				"source_value_available":      {Type: "boolean"},
 				"destination_value_preserved": {Type: "boolean"},
-				"existing_reference":          {Type: "boolean"},
+				"preservation_unavailable_reason": {
+					Type: "string",
+					Enum: []string{
+						"source_value_unavailable",
+						"existing_secret_reference",
+						"destination_mapping_incomplete",
+					},
+				},
+				"existing_reference": {Type: "boolean"},
 			},
 			Required: []string{"id", "path", "key", "suggested_name", "replacement", "context"},
 		},

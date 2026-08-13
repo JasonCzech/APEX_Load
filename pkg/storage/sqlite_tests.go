@@ -7,8 +7,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
+
+	"github.com/jasonczech/apexload/pkg/scrub"
 )
 
 func (s *SQLiteStore) SaveTest(test *TestRecord) error {
@@ -1647,6 +1650,10 @@ func (s *SQLiteStore) MoveTest(id string, folderID *string) error {
 func (s *SQLiteStore) SaveHistory(testID string, timestamp time.Time, metrics any) error {
 	record, err := intervalSummaryRecordFromMetrics(timestamp, metrics)
 	if err == nil {
+		transactionsJSON, err := marshalNullableJSON(record.Transactions)
+		if err != nil {
+			return err
+		}
 		browserJSON, err := marshalNullableJSON(record.Browser)
 		if err != nil {
 			return err
@@ -1678,11 +1685,11 @@ func (s *SQLiteStore) SaveHistory(testID string, timestamp time.Time, metrics an
 		_, err = s.db.Exec(`INSERT INTO test_interval_summaries (
 			test_id, schema_version, timestamp, active_vusers, tps, avg_response_ms, error_pct,
 			total_transactions, total_errors, p50_ms, p90_ms, p95_ms, p99_ms,
-			browser_json, browser_by_device_json, latency_json,
+			transactions_json, browser_json, browser_by_device_json, latency_json,
 			dropped_results, websocket_clients, websocket_dropped_messages, websocket_dropped_events,
 			generator_published_at, controller_received_at, collected_at, published_at,
 			generator_processing_lag_ms, transport_lag_ms, controller_fanout_lag_ms, sample_age_ms
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			testID,
 			record.SchemaVersion,
 			record.Timestamp,
@@ -1696,6 +1703,7 @@ func (s *SQLiteStore) SaveHistory(testID string, timestamp time.Time, metrics an
 			record.P90Ms,
 			record.P95Ms,
 			record.P99Ms,
+			transactionsJSON,
 			browserJSON,
 			browserByDeviceJSON,
 			latencyJSON,
@@ -1837,6 +1845,7 @@ func (s *SQLiteStore) getTypedHistoryLimit(testID string, limit int) ([]any, err
 		p90_ms,
 		p95_ms,
 		p99_ms,
+		transactions_json,
 		browser_json,
 		browser_by_device_json,
 		latency_json,
@@ -1871,6 +1880,7 @@ func (s *SQLiteStore) getTypedHistoryLimit(testID string, limit int) ([]any, err
 	history := make([]any, 0)
 	for rows.Next() {
 		var record IntervalSummaryRecord
+		var transactionsJSON sql.NullString
 		var browserJSON sql.NullString
 		var browserByDeviceJSON sql.NullString
 		var latencyJSON sql.NullString
@@ -1900,6 +1910,7 @@ func (s *SQLiteStore) getTypedHistoryLimit(testID string, limit int) ([]any, err
 			&record.P90Ms,
 			&record.P95Ms,
 			&record.P99Ms,
+			&transactionsJSON,
 			&browserJSON,
 			&browserByDeviceJSON,
 			&latencyJSON,
@@ -1919,6 +1930,11 @@ func (s *SQLiteStore) getTypedHistoryLimit(testID string, limit int) ([]any, err
 			return nil, err
 		}
 		record.SchemaVersion = normalizeTelemetrySchemaVersion(schemaVersion.String, intervalSummarySchemaVersionV1)
+		if transactionsJSON.Valid && strings.TrimSpace(transactionsJSON.String) != "" {
+			if err := json.Unmarshal([]byte(transactionsJSON.String), &record.Transactions); err != nil {
+				return nil, err
+			}
+		}
 		if browserJSON.Valid && strings.TrimSpace(browserJSON.String) != "" {
 			if err := json.Unmarshal([]byte(browserJSON.String), &record.Browser); err != nil {
 				return nil, err
@@ -2021,21 +2037,22 @@ func intervalSummaryRecordFromMetrics(timestamp time.Time, metrics any) (Interva
 		SampleAgeMs              float64   `json:"sample_age_ms,omitempty"`
 	}
 	type summaryEnvelope struct {
-		Timestamp       time.Time                         `json:"timestamp"`
-		ActiveVUsers    int64                             `json:"active_vusers"`
-		TPS             float64                           `json:"tps"`
-		AvgResponseMs   float64                           `json:"avg_response_ms"`
-		ErrorPct        float64                           `json:"error_pct"`
-		TotalTx         int64                             `json:"total_transactions"`
-		TotalErrors     int64                             `json:"total_errors"`
-		P50Ms           float64                           `json:"p50_ms"`
-		P90Ms           float64                           `json:"p90_ms"`
-		P95Ms           float64                           `json:"p95_ms"`
-		P99Ms           float64                           `json:"p99_ms"`
-		Browser         *browserEnvelope                  `json:"browser,omitempty"`
-		BrowserByDevice map[string]*browserDeviceEnvelope `json:"browser_by_device,omitempty"`
-		Latency         *NetworkLatencySummaryRecord      `json:"latency,omitempty"`
-		Telemetry       *telemetryEnvelope                `json:"telemetry,omitempty"`
+		Timestamp       time.Time                             `json:"timestamp"`
+		ActiveVUsers    int64                                 `json:"active_vusers"`
+		TPS             float64                               `json:"tps"`
+		AvgResponseMs   float64                               `json:"avg_response_ms"`
+		ErrorPct        float64                               `json:"error_pct"`
+		TotalTx         int64                                 `json:"total_transactions"`
+		TotalErrors     int64                                 `json:"total_errors"`
+		P50Ms           float64                               `json:"p50_ms"`
+		P90Ms           float64                               `json:"p90_ms"`
+		P95Ms           float64                               `json:"p95_ms"`
+		P99Ms           float64                               `json:"p99_ms"`
+		Transactions    map[string]*IntervalTransactionRecord `json:"transactions,omitempty"`
+		Browser         *browserEnvelope                      `json:"browser,omitempty"`
+		BrowserByDevice map[string]*browserDeviceEnvelope     `json:"browser_by_device,omitempty"`
+		Latency         *NetworkLatencySummaryRecord          `json:"latency,omitempty"`
+		Telemetry       *telemetryEnvelope                    `json:"telemetry,omitempty"`
 	}
 
 	payload, err := json.Marshal(metrics)
@@ -2059,6 +2076,7 @@ func intervalSummaryRecordFromMetrics(timestamp time.Time, metrics any) (Interva
 		P90Ms:         summary.P90Ms,
 		P95Ms:         summary.P95Ms,
 		P99Ms:         summary.P99Ms,
+		Transactions:  compactIntervalSummaryTransactions(summary.Transactions),
 	}
 	if summary.Browser != nil {
 		record.Browser = &BrowserMetricsSummaryRecord{
@@ -2123,6 +2141,90 @@ func intervalSummaryRecordFromMetrics(timestamp time.Time, metrics any) (Interva
 		record.SampleAgeMs = summary.Telemetry.SampleAgeMs
 	}
 	return record, nil
+}
+
+const (
+	maxPersistedIntervalSummaryTransactions = 512
+	intervalSummaryTransactionOverflow      = "__other__"
+)
+
+func compactIntervalSummaryTransactions(metrics map[string]*IntervalTransactionRecord) map[string]*IntervalTransactionRecord {
+	if len(metrics) == 0 {
+		return nil
+	}
+
+	merged := make(map[string]*IntervalTransactionRecord, len(metrics))
+	for fallbackName, metric := range metrics {
+		if metric == nil {
+			continue
+		}
+		name := strings.TrimSpace(metric.Name)
+		if name == "" {
+			name = fallbackName
+		}
+		name = persistedIntervalTransactionName(name)
+		mergeIntervalSummaryTransaction(merged, name, metric)
+	}
+	if len(merged) == 0 {
+		return nil
+	}
+
+	keys := make([]string, 0, len(merged))
+	for name := range merged {
+		if name != intervalSummaryTransactionOverflow {
+			keys = append(keys, name)
+		}
+	}
+	sort.Strings(keys)
+	overflow := merged[intervalSummaryTransactionOverflow]
+	entryCount := len(keys)
+	if overflow != nil {
+		entryCount++
+	}
+	if entryCount <= maxPersistedIntervalSummaryTransactions {
+		return merged
+	}
+
+	compacted := make(map[string]*IntervalTransactionRecord, maxPersistedIntervalSummaryTransactions)
+	keep := maxPersistedIntervalSummaryTransactions - 1
+	for index, name := range keys {
+		if index < keep {
+			mergeIntervalSummaryTransaction(compacted, name, merged[name])
+			continue
+		}
+		mergeIntervalSummaryTransaction(compacted, intervalSummaryTransactionOverflow, merged[name])
+	}
+	if overflow != nil {
+		mergeIntervalSummaryTransaction(compacted, intervalSummaryTransactionOverflow, overflow)
+	}
+	return compacted
+}
+
+func mergeIntervalSummaryTransaction(destination map[string]*IntervalTransactionRecord, name string, incoming *IntervalTransactionRecord) {
+	if destination == nil || incoming == nil {
+		return
+	}
+	current := destination[name]
+	if current == nil {
+		copy := *incoming
+		copy.Name = name
+		destination[name] = &copy
+		return
+	}
+	combinedCount := current.Count + incoming.Count
+	if combinedCount > 0 {
+		current.AvgMs = (current.AvgMs*float64(current.Count) + incoming.AvgMs*float64(incoming.Count)) / float64(combinedCount)
+	}
+	current.TPS += incoming.TPS
+	current.Count = combinedCount
+	current.Errors += incoming.Errors
+}
+
+func persistedIntervalTransactionName(name string) string {
+	if name = strings.TrimSpace(scrub.ValueLabel(name, scrub.Policy{})); name != "" {
+		return name
+	}
+	return "unnamed"
 }
 
 func marshalNullableJSON(value any) (any, error) {

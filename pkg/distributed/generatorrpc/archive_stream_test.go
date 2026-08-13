@@ -1,12 +1,15 @@
 package generatorrpc
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
 func TestStreamJSONLToParquetAcceptsLargeSnapshotRecord(t *testing.T) {
@@ -56,5 +59,78 @@ func TestStreamJSONLToParquetRejectsOversizedRecord(t *testing.T) {
 		return toParquetTransactions([]archiveTransactionEvent{item})[0]
 	}); err == nil {
 		t.Fatal("streamJSONLToParquet accepted an archive record above the memory-safety ceiling")
+	}
+}
+
+func TestToParquetTransactionsCarriesBusinessTransactionProvenance(t *testing.T) {
+	rows := toParquetTransactions([]archiveTransactionEvent{{BusinessTransaction: true}})
+	if len(rows) != 1 || !rows[0].BusinessTransaction {
+		t.Fatalf("parquet transaction provenance = %#v", rows)
+	}
+}
+
+func TestArchiveRecorderCarriesBusinessTransactionProvenance(t *testing.T) {
+	var output bytes.Buffer
+	recorder := &archiveRecorder{
+		manifest:  archiveManifest{TestID: "run-1", TestName: "Run 1"},
+		txEncoder: json.NewEncoder(&output),
+	}
+	if err := recorder.RecordResult(&protocol.Result{
+		ActionName:          "Checkout",
+		BusinessTransaction: true,
+		Success:             true,
+	}); err != nil {
+		t.Fatalf("RecordResult: %v", err)
+	}
+	var event archiveTransactionEvent
+	if err := json.Unmarshal(output.Bytes(), &event); err != nil {
+		t.Fatalf("decode transaction: %v", err)
+	}
+	if !event.BusinessTransaction || event.ActionName != "Checkout" {
+		t.Fatalf("archived transaction provenance = %#v", event)
+	}
+}
+
+func TestCombinedSinkArchivesSyntheticTransactionWithoutDuplicatingActionResult(t *testing.T) {
+	var output bytes.Buffer
+	recorder := &archiveRecorder{
+		manifest:  archiveManifest{TestID: "run-synthetic", TestName: "Synthetic"},
+		txEncoder: json.NewEncoder(&output),
+	}
+	transactions := &transactionBuffer{}
+	sink := combineSinks(transactions, recorder)
+	ordinary := &protocol.Result{ActionName: "HTTP request", Success: true, StartTime: time.Now()}
+	synthetic := &protocol.Result{ActionName: "Checkout flow", BusinessTransaction: true, Success: true, StartTime: time.Now()}
+	if err := sink.RecordResult(ordinary); err != nil {
+		t.Fatalf("RecordResult: %v", err)
+	}
+	transactionSink, ok := sink.(interface{ RecordTransaction(*protocol.Result) error })
+	if !ok {
+		t.Fatalf("combined sink %T does not forward synthetic transactions", sink)
+	}
+	if err := transactionSink.RecordTransaction(synthetic); err != nil {
+		t.Fatalf("RecordTransaction: %v", err)
+	}
+
+	decoder := json.NewDecoder(bytes.NewReader(output.Bytes()))
+	var events []archiveTransactionEvent
+	for decoder.More() {
+		var event archiveTransactionEvent
+		if err := decoder.Decode(&event); err != nil {
+			t.Fatalf("decode transaction: %v", err)
+		}
+		events = append(events, event)
+	}
+	if len(events) != 2 || recorder.manifest.TransactionCount != 2 {
+		t.Fatalf("archive events/count = %#v/%d, want one action plus one logical transaction", events, recorder.manifest.TransactionCount)
+	}
+	if events[0].ActionName != "HTTP request" || events[0].BusinessTransaction {
+		t.Fatalf("ordinary action event = %#v", events[0])
+	}
+	if events[1].ActionName != "Checkout flow" || !events[1].BusinessTransaction {
+		t.Fatalf("synthetic transaction event = %#v", events[1])
+	}
+	if drained := transactions.Drain(); len(drained) != 1 || drained[0].Name != "Checkout flow" {
+		t.Fatalf("live transaction buffer = %#v, want one synthetic transaction", drained)
 	}
 }

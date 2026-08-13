@@ -58,7 +58,7 @@ type optionalSchemaMigration struct {
 
 const (
 	intervalSummarySchemaVersionV1 = "apexload.interval-summary.v1"
-	intervalSummarySchemaVersion   = "apexload.interval-summary.v4"
+	intervalSummarySchemaVersion   = "apexload.interval-summary.v5"
 	archiveRecordSchemaVersion     = "apexload.archive.v1"
 	scriptRecordingSchemaVersion   = "apexload.recording.v2"
 )
@@ -134,6 +134,7 @@ type IntervalSummaryRecord struct {
 	P90Ms                    float64                                `json:"p90_ms"`
 	P95Ms                    float64                                `json:"p95_ms"`
 	P99Ms                    float64                                `json:"p99_ms"`
+	Transactions             map[string]*IntervalTransactionRecord  `json:"transactions,omitempty"`
 	Browser                  *BrowserMetricsSummaryRecord           `json:"browser,omitempty"`
 	BrowserByDevice          map[string]*BrowserDeviceMetricsRecord `json:"browser_by_device,omitempty"`
 	Latency                  *NetworkLatencySummaryRecord           `json:"latency,omitempty"`
@@ -149,6 +150,18 @@ type IntervalSummaryRecord struct {
 	TransportLagMs           float64                                `json:"transport_lag_ms,omitempty"`
 	ControllerFanoutLagMs    float64                                `json:"controller_fanout_lag_ms,omitempty"`
 	SampleAgeMs              float64                                `json:"sample_age_ms,omitempty"`
+}
+
+// IntervalTransactionRecord is the bounded, chart-focused transaction
+// breakdown stored with a live interval summary. Count is the number of
+// attempts, Errors is a subset of Count, and TPS is the successful transaction
+// rate for the interval.
+type IntervalTransactionRecord struct {
+	Name   string  `json:"name"`
+	TPS    float64 `json:"tps"`
+	Count  int64   `json:"count"`
+	Errors int64   `json:"errors"`
+	AvgMs  float64 `json:"avg_ms"`
 }
 
 // sqliteDSN adds pragmas for integrity and the controller's high-read,

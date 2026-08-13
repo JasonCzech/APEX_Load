@@ -164,6 +164,20 @@ func runArrivalScheduler(
 	dispatch func(arrivalIndex int),
 	shed func(firstArrivalIndex int, count int),
 ) {
+	runArrivalSchedulerFromOrigin(ctx, tps, totalArrivals, waitIfPaused, sleepActive, activeElapsed, false, dispatch, shed)
+}
+
+func runArrivalSchedulerFromOrigin(
+	ctx context.Context,
+	tps float64,
+	totalArrivals int,
+	waitIfPaused func(context.Context) error,
+	sleepActive func(context.Context, time.Duration) bool,
+	activeElapsed func() time.Duration,
+	preserveActiveOrigin bool,
+	dispatch func(arrivalIndex int),
+	shed func(firstArrivalIndex int, count int),
+) {
 	if tps <= 0 || math.IsNaN(tps) || math.IsInf(tps, 0) {
 		return
 	}
@@ -176,7 +190,10 @@ func runArrivalScheduler(
 	// pre-baseline plus any earlier group initialization. Anchor this scheduler
 	// to its own start so those phases cannot appear as overdue arrivals and
 	// trigger an artificial catch-up burst when the group starts.
-	activeOrigin := activeElapsed()
+	activeOrigin := time.Duration(0)
+	if !preserveActiveOrigin {
+		activeOrigin = activeElapsed()
+	}
 	schedulerElapsed := func() time.Duration {
 		elapsed := activeElapsed() - activeOrigin
 		if elapsed < 0 {

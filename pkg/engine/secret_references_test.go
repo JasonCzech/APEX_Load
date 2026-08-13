@@ -863,7 +863,7 @@ func TestReplayRedactsResolverBackedActionAuthCompositeEcho(t *testing.T) {
 		name string
 		auth *dsl.AuthConfig
 		// redactRunEvidence is nil for "the operator never touched the setting",
-		// which is the DEFAULT and reads as redacting. The three states are
+		// which is the DEFAULT and reads as visible. The three states are
 		// distinct on purpose: with a plain bool an omitted field silently meant
 		// "explicitly off", so "every configuration" was only ever one of them.
 		// The sibling URL-userinfo test uses the same tri-state.
@@ -895,10 +895,11 @@ func TestReplayRedactsResolverBackedActionAuthCompositeEcho(t *testing.T) {
 		auth:              &dsl.AuthConfig{Type: "basic", Username: "a", Password: "b"},
 		redactRunEvidence: &redactOn,
 	}, {
-		// The same literals with the setting unset take the default, which also
-		// redacts.
-		name: "script literal with run evidence redaction unset",
-		auth: &dsl.AuthConfig{Type: "basic", Username: "a", Password: "b"},
+		// The same literals with the setting unset take the visible-by-default
+		// behavior.
+		name:     "script literal with run evidence redaction unset",
+		auth:     &dsl.AuthConfig{Type: "basic", Username: "a", Password: "b"},
+		disclose: true,
 	}, {
 		name:              "script literal with run evidence redaction off",
 		auth:              &dsl.AuthConfig{Type: "basic", Username: "a", Password: "b"},
@@ -955,10 +956,10 @@ func TestReplayRedactsResolverBackedActionAuthCompositeEcho(t *testing.T) {
 // Both directions of the origin rule are asserted, as in the action-auth twin:
 // a composite built from the project secret store is not the operator's to read
 // and must be scrubbed in EVERY configuration, while one built from script
-// literals is scrubbed only while the operator leaves
-// script.Config.Log.RedactRunEvidence on — which is where an unset field leaves
-// it. One-character credentials keep the outcome a measurement of the exact-value
-// matcher rather than the entropy scrubber.
+// literals is scrubbed only when the operator turns
+// script.Config.Log.RedactRunEvidence on. One-character credentials keep the
+// outcome a measurement of the exact-value matcher rather than the entropy
+// scrubber.
 func TestReplayRedactsResolverBackedURLUserinfoCompositeEcho(t *testing.T) {
 	const encodedCredentials = "dXNyOmI=" // base64("usr:b")
 	resolver := SecretResolverFunc(func(name string) (string, bool) {
@@ -976,7 +977,7 @@ func TestReplayRedactsResolverBackedURLUserinfoCompositeEcho(t *testing.T) {
 	for _, testCase := range []struct {
 		name string
 		// redactRunEvidence is nil for "the operator never touched the setting",
-		// which is the DEFAULT and reads as redacting.
+		// which is the DEFAULT and reads as visible.
 		redactRunEvidence *bool
 		userinfo          string
 		disclose          bool
@@ -1004,11 +1005,12 @@ func TestReplayRedactsResolverBackedURLUserinfoCompositeEcho(t *testing.T) {
 		userinfo:          "usr:{{ secret.BASIC_PASSWORD }}",
 	}, {
 		// The default, and the state of an unset field: the operator asked for
-		// nothing, so their own credential is still scrubbed out of run output.
+		// nothing, so their own credential remains visible in run output.
 		// URL userinfo is an auth surface with no auth block, so it has to obey
 		// the setting exactly as dsl.Action.Auth does.
 		name:     "script literal with run evidence redaction unset",
 		userinfo: "usr:b",
+		disclose: true,
 	}, {
 		name:              "script literal with run evidence redaction on",
 		redactRunEvidence: &redactOn,

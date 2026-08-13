@@ -1744,6 +1744,8 @@
   border: 1px solid var(--border);
   border-radius: 8px;
   background: color-mix(in srgb, var(--bg-primary) 72%, transparent);
+  max-height: 112px;
+  overflow: auto;
 }
 
 .chart-series-legend-group {
@@ -1774,6 +1776,62 @@
   font-size: 11px;
   font-weight: 700;
   white-space: nowrap;
+}
+
+.chart-series-legend-overflow,
+.chart-tooltip-overflow {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.bounded-chart-tooltip {
+  min-width: 190px;
+  max-width: min(360px, 72vw);
+  padding: 8px 10px;
+  pointer-events: none;
+}
+
+.bounded-chart-tooltip-label {
+  margin-bottom: 5px;
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.bounded-chart-tooltip-items {
+  display: grid;
+  gap: 3px;
+  max-height: 210px;
+  overflow: auto;
+}
+
+.bounded-chart-tooltip-item {
+  display: grid;
+  grid-template-columns: 8px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 7px;
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+
+.bounded-chart-tooltip-swatch {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+
+.bounded-chart-tooltip-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bounded-chart-tooltip .chart-tooltip-overflow {
+  margin-top: 6px;
+  padding-top: 5px;
+  border-top: 1px solid var(--border);
 }
 
 .chart-series-swatch {
