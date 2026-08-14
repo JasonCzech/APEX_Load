@@ -373,6 +373,8 @@ var accessRequirementGolden = map[string]string{
 	"GET /api/v1/system/cloud-connections/sample-id":              "auth=false global=system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
 	"PUT /api/v1/system/cloud-connections/sample-id":              "auth=false global=system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=262144",
 	"DELETE /api/v1/system/cloud-connections/sample-id":           "auth=false global=system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"POST /api/v1/system/cloud-connections/sample-id/test":        "auth=false global=system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=65536",
+	"GET /api/v1/system/cloud-connections/sample-id/resources":    "auth=false global=system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
 	"POST /api/v1/system/execution-targets":                       "auth=false global=system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=262144",
 	"GET /api/v1/system/execution-targets":                        "auth=false global=system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
 	"GET /api/v1/system/execution-targets/sample-id":              "auth=false global=system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
@@ -380,6 +382,7 @@ var accessRequirementGolden = map[string]string{
 	"DELETE /api/v1/system/execution-targets/sample-id":           "auth=false global=system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
 	"POST /api/v1/system/execution-targets/sample-id/test":        "auth=false global=system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=65536",
 	"GET /api/v1/system/execution-targets/sample-id/capabilities": "auth=false global=system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/system/execution-targets/sample-id/capacity":     "auth=false global=system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
 	"PUT /api/v1/fleet/pools/sample-id/allocation":                "auth=false global=system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=262144",
 	"GET /api/v1/fleet/pools/sample-id/allocation/preflight":      "auth=false global=system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
 	// Fleet management (system-admin infra).

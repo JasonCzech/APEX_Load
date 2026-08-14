@@ -233,7 +233,20 @@ func TestExplicitJSONRequestContractsRemainTypedAndPreserveBodyOptionality(t *te
 			continue
 		}
 		schema := operation.RequestBody.Content["application/json"].Schema
-		if len(schema.Properties) == 0 {
+		// A discriminated union carries its fields on the oneOf branches rather
+		// than at the root, so it is typed even though the root has no
+		// properties. Every branch must still be typed, or the union would be a
+		// new way to smuggle an opaque body past this guard.
+		typed := len(schema.Properties) > 0
+		if len(schema.OneOf) > 0 {
+			typed = true
+			for index, variant := range schema.OneOf {
+				if len(variant.Properties) == 0 {
+					t.Errorf("explicit request route %s (%s) oneOf branch %d is opaque", route, override.requestType, index)
+				}
+			}
+		}
+		if !typed {
 			t.Errorf("explicit request route %s (%s) is opaque: %#v", route, override.requestType, schema)
 		}
 		if got, want := operation.RequestBody.Required, !override.requestOptional; got != want {

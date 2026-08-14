@@ -12700,7 +12700,7 @@ export interface operations {
     parameters?: never;
     requestBody: {
       content: {
-        "application/json": {
+        "application/json": ({
           "archive_mode"?: string;
           "aws_ecs_fargate"?: ({
             "assign_public_ip"?: string;
@@ -12711,6 +12711,36 @@ export interface operations {
             "subnets"?: Array<string>;
             "warm_service"?: string;
           }) | null;
+          "burst_owner"?: string;
+          "cloud_connection_id"?: string;
+          "cluster_connection_id"?: string;
+          "connectivity_mode"?: string;
+          "description"?: string;
+          "enrollment_token"?: (string) | null;
+          "enrollment_token_expires_at"?: (string) | null;
+          "id"?: string;
+          "kind"?: "aws_ecs_fargate";
+          "labels"?: Record<string, string>;
+          "name"?: string;
+          "region"?: string;
+          "runtime_profiles"?: Array<{
+            "architecture"?: string;
+            "capacity_type"?: string;
+            "cpu_millis"?: number;
+            "ephemeral_storage_gib"?: number;
+            "id"?: string;
+            "image_digest"?: string;
+            "memory_mib"?: number;
+            "name"?: string;
+            "protocols"?: Array<string>;
+            "sidecars"?: Array<string>;
+            "template_revision"?: string;
+          }>;
+          "standing_owner"?: string;
+          "status"?: string;
+          "updated_at"?: string;
+        } | {
+          "archive_mode"?: string;
           "azure_container_apps"?: ({
             "burst_job"?: string;
             "environment_name"?: string;
@@ -12726,7 +12756,104 @@ export interface operations {
           "enrollment_token"?: (string) | null;
           "enrollment_token_expires_at"?: (string) | null;
           "id"?: string;
-          "kind"?: string;
+          "kind"?: "azure_container_apps";
+          "labels"?: Record<string, string>;
+          "name"?: string;
+          "region"?: string;
+          "runtime_profiles"?: Array<{
+            "architecture"?: string;
+            "capacity_type"?: string;
+            "cpu_millis"?: number;
+            "ephemeral_storage_gib"?: number;
+            "id"?: string;
+            "image_digest"?: string;
+            "memory_mib"?: number;
+            "name"?: string;
+            "protocols"?: Array<string>;
+            "sidecars"?: Array<string>;
+            "template_revision"?: string;
+          }>;
+          "standing_owner"?: string;
+          "status"?: string;
+          "updated_at"?: string;
+        } | {
+          "archive_mode"?: string;
+          "azure_container_instances"?: ({
+            "container_group_template"?: string;
+            "expected_principal_id"?: string;
+            "location"?: string;
+            "resource_group"?: string;
+            "subnet_id"?: string;
+          }) | null;
+          "burst_owner"?: string;
+          "cloud_connection_id"?: string;
+          "cluster_connection_id"?: string;
+          "connectivity_mode"?: string;
+          "description"?: string;
+          "enrollment_token"?: (string) | null;
+          "enrollment_token_expires_at"?: (string) | null;
+          "id"?: string;
+          "kind"?: "azure_container_instances";
+          "labels"?: Record<string, string>;
+          "name"?: string;
+          "region"?: string;
+          "runtime_profiles"?: Array<{
+            "architecture"?: string;
+            "capacity_type"?: string;
+            "cpu_millis"?: number;
+            "ephemeral_storage_gib"?: number;
+            "id"?: string;
+            "image_digest"?: string;
+            "memory_mib"?: number;
+            "name"?: string;
+            "protocols"?: Array<string>;
+            "sidecars"?: Array<string>;
+            "template_revision"?: string;
+          }>;
+          "standing_owner"?: string;
+          "status"?: string;
+          "updated_at"?: string;
+        } | {
+          "archive_mode"?: string;
+          "burst_owner"?: string;
+          "cloud_connection_id"?: string;
+          "cluster_connection_id"?: string;
+          "connectivity_mode"?: string;
+          "description"?: string;
+          "enrollment_token"?: (string) | null;
+          "enrollment_token_expires_at"?: (string) | null;
+          "id"?: string;
+          "kind"?: "kubernetes";
+          "labels"?: Record<string, string>;
+          "name"?: string;
+          "region"?: string;
+          "runtime_profiles"?: Array<{
+            "architecture"?: string;
+            "capacity_type"?: string;
+            "cpu_millis"?: number;
+            "ephemeral_storage_gib"?: number;
+            "id"?: string;
+            "image_digest"?: string;
+            "memory_mib"?: number;
+            "name"?: string;
+            "protocols"?: Array<string>;
+            "sidecars"?: Array<string>;
+            "template_revision"?: string;
+          }>;
+          "standing_owner"?: string;
+          "status"?: string;
+          "updated_at"?: string;
+        } | {
+          "archive_mode"?: string;
+          "burst_owner"?: string;
+          "cloud_connection_id"?: string;
+          "cluster_connection_id"?: string;
+          "connectivity_mode"?: string;
+          "description"?: string;
+          "enrollment_token"?: (string) | null;
+          "enrollment_token_expires_at"?: (string) | null;
+          "id"?: string;
+          "kind"?: "static";
           "labels"?: Record<string, string>;
           "name"?: string;
           "region"?: string;
@@ -12749,7 +12876,7 @@ export interface operations {
           }) | null;
           "status"?: string;
           "updated_at"?: string;
-        };
+        });
       };
     };
     responses: {
@@ -12772,6 +12899,13 @@ export interface operations {
               "expected_principal_id"?: string;
               "resource_group": string;
               "warm_container_app"?: string;
+            }) | null;
+            "azure_container_instances"?: ({
+              "container_group_template": string;
+              "expected_principal_id"?: string;
+              "location"?: string;
+              "resource_group": string;
+              "subnet_id"?: string;
             }) | null;
             "burst_owner": string;
             "capabilities": {
@@ -25369,6 +25503,11 @@ export interface operations {
           "application/json": components["schemas"]["ErrorResponse"];
         };
       };
+      "429": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
       "503": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
@@ -27834,6 +27973,13 @@ export interface operations {
               "resource_group": string;
               "warm_container_app"?: string;
             }) | null;
+            "azure_container_instances"?: ({
+              "container_group_template": string;
+              "expected_principal_id"?: string;
+              "location"?: string;
+              "resource_group": string;
+              "subnet_id"?: string;
+            }) | null;
             "burst_owner": string;
             "capabilities": {
               "can_launch": boolean;
@@ -27908,6 +28054,60 @@ export interface operations {
       "200": {
         content: {
           "application/json": Record<string, unknown>;
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleGetExecutionTargetCapacity": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": {
+            "capabilities": {
+              "can_launch": boolean;
+              "can_reach_directly": boolean;
+              "can_scale": boolean;
+              "details"?: Record<string, string>;
+              "resource_shapes"?: Array<string>;
+              "supports_reverse": boolean;
+              "supports_spot": boolean;
+            };
+            "checked_at": string;
+            "configured_max": number;
+            "configured_warm_floor": number;
+            "execution_target_id": string;
+            "healthy_instances": number;
+            "kind": string;
+            "live_instances": number;
+            "message"?: string;
+            "pools": Array<{
+              "desired_size": number;
+              "fleet_pool_id": string;
+              "lifecycle_mode": string;
+              "max_size": number;
+              "name": string;
+              "warm_floor": number;
+            }>;
+          };
         };
       };
       "401": {
@@ -42557,6 +42757,61 @@ export interface operations {
         };
       };
       "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleListCloudConnectionResources": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": {
+            "cloud_connection_id": string;
+            "message"?: string;
+            "provider": string;
+            "resources": Array<{
+              "id": string;
+              "kind": string;
+              "location"?: string;
+              "name": string;
+            }>;
+            "scope"?: string;
+            "truncated"?: boolean;
+          };
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "502": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -72936,6 +73191,46 @@ export interface operations {
       };
     };
   };
+  "handleTestCloudConnection": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": {
+            "checked_at": string;
+            "cloud_connection_id": string;
+            "probes": Array<{
+              "message"?: string;
+              "ok": boolean;
+              "optional"?: boolean;
+              "probe": string;
+              "status_code"?: number;
+            }>;
+            "status": string;
+            "summary": string;
+          };
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
   "handleTestClusterConnection": {
     parameters: {
       "path": {
@@ -77135,7 +77430,7 @@ export interface operations {
     };
     requestBody: {
       content: {
-        "application/json": {
+        "application/json": ({
           "archive_mode"?: string;
           "aws_ecs_fargate"?: ({
             "assign_public_ip"?: string;
@@ -77146,6 +77441,36 @@ export interface operations {
             "subnets"?: Array<string>;
             "warm_service"?: string;
           }) | null;
+          "burst_owner"?: string;
+          "cloud_connection_id"?: string;
+          "cluster_connection_id"?: string;
+          "connectivity_mode"?: string;
+          "description"?: string;
+          "enrollment_token"?: (string) | null;
+          "enrollment_token_expires_at"?: (string) | null;
+          "id"?: string;
+          "kind"?: "aws_ecs_fargate";
+          "labels"?: Record<string, string>;
+          "name"?: string;
+          "region"?: string;
+          "runtime_profiles"?: Array<{
+            "architecture"?: string;
+            "capacity_type"?: string;
+            "cpu_millis"?: number;
+            "ephemeral_storage_gib"?: number;
+            "id"?: string;
+            "image_digest"?: string;
+            "memory_mib"?: number;
+            "name"?: string;
+            "protocols"?: Array<string>;
+            "sidecars"?: Array<string>;
+            "template_revision"?: string;
+          }>;
+          "standing_owner"?: string;
+          "status"?: string;
+          "updated_at"?: string;
+        } | {
+          "archive_mode"?: string;
           "azure_container_apps"?: ({
             "burst_job"?: string;
             "environment_name"?: string;
@@ -77161,7 +77486,104 @@ export interface operations {
           "enrollment_token"?: (string) | null;
           "enrollment_token_expires_at"?: (string) | null;
           "id"?: string;
-          "kind"?: string;
+          "kind"?: "azure_container_apps";
+          "labels"?: Record<string, string>;
+          "name"?: string;
+          "region"?: string;
+          "runtime_profiles"?: Array<{
+            "architecture"?: string;
+            "capacity_type"?: string;
+            "cpu_millis"?: number;
+            "ephemeral_storage_gib"?: number;
+            "id"?: string;
+            "image_digest"?: string;
+            "memory_mib"?: number;
+            "name"?: string;
+            "protocols"?: Array<string>;
+            "sidecars"?: Array<string>;
+            "template_revision"?: string;
+          }>;
+          "standing_owner"?: string;
+          "status"?: string;
+          "updated_at"?: string;
+        } | {
+          "archive_mode"?: string;
+          "azure_container_instances"?: ({
+            "container_group_template"?: string;
+            "expected_principal_id"?: string;
+            "location"?: string;
+            "resource_group"?: string;
+            "subnet_id"?: string;
+          }) | null;
+          "burst_owner"?: string;
+          "cloud_connection_id"?: string;
+          "cluster_connection_id"?: string;
+          "connectivity_mode"?: string;
+          "description"?: string;
+          "enrollment_token"?: (string) | null;
+          "enrollment_token_expires_at"?: (string) | null;
+          "id"?: string;
+          "kind"?: "azure_container_instances";
+          "labels"?: Record<string, string>;
+          "name"?: string;
+          "region"?: string;
+          "runtime_profiles"?: Array<{
+            "architecture"?: string;
+            "capacity_type"?: string;
+            "cpu_millis"?: number;
+            "ephemeral_storage_gib"?: number;
+            "id"?: string;
+            "image_digest"?: string;
+            "memory_mib"?: number;
+            "name"?: string;
+            "protocols"?: Array<string>;
+            "sidecars"?: Array<string>;
+            "template_revision"?: string;
+          }>;
+          "standing_owner"?: string;
+          "status"?: string;
+          "updated_at"?: string;
+        } | {
+          "archive_mode"?: string;
+          "burst_owner"?: string;
+          "cloud_connection_id"?: string;
+          "cluster_connection_id"?: string;
+          "connectivity_mode"?: string;
+          "description"?: string;
+          "enrollment_token"?: (string) | null;
+          "enrollment_token_expires_at"?: (string) | null;
+          "id"?: string;
+          "kind"?: "kubernetes";
+          "labels"?: Record<string, string>;
+          "name"?: string;
+          "region"?: string;
+          "runtime_profiles"?: Array<{
+            "architecture"?: string;
+            "capacity_type"?: string;
+            "cpu_millis"?: number;
+            "ephemeral_storage_gib"?: number;
+            "id"?: string;
+            "image_digest"?: string;
+            "memory_mib"?: number;
+            "name"?: string;
+            "protocols"?: Array<string>;
+            "sidecars"?: Array<string>;
+            "template_revision"?: string;
+          }>;
+          "standing_owner"?: string;
+          "status"?: string;
+          "updated_at"?: string;
+        } | {
+          "archive_mode"?: string;
+          "burst_owner"?: string;
+          "cloud_connection_id"?: string;
+          "cluster_connection_id"?: string;
+          "connectivity_mode"?: string;
+          "description"?: string;
+          "enrollment_token"?: (string) | null;
+          "enrollment_token_expires_at"?: (string) | null;
+          "id"?: string;
+          "kind"?: "static";
           "labels"?: Record<string, string>;
           "name"?: string;
           "region"?: string;
@@ -77184,7 +77606,7 @@ export interface operations {
           }) | null;
           "status"?: string;
           "updated_at"?: string;
-        };
+        });
       };
     };
     responses: {
@@ -77207,6 +77629,13 @@ export interface operations {
               "expected_principal_id"?: string;
               "resource_group": string;
               "warm_container_app"?: string;
+            }) | null;
+            "azure_container_instances"?: ({
+              "container_group_template": string;
+              "expected_principal_id"?: string;
+              "location"?: string;
+              "resource_group": string;
+              "subnet_id"?: string;
             }) | null;
             "burst_owner": string;
             "capabilities": {
@@ -86946,6 +87375,12 @@ export interface paths {
     "put": operations["handleUpdateCloudConnection"];
     "delete": operations["handleDeleteCloudConnection"];
   };
+  "/api/v1/system/cloud-connections/{id}/resources": {
+    "get": operations["handleListCloudConnectionResources"];
+  };
+  "/api/v1/system/cloud-connections/{id}/test": {
+    "post": operations["handleTestCloudConnection"];
+  };
   "/api/v1/system/clusters": {
     "get": operations["handleListClusterConnections"];
     "post": operations["handleCreateClusterConnection"];
@@ -87001,6 +87436,9 @@ export interface paths {
   };
   "/api/v1/system/execution-targets/{id}/capabilities": {
     "get": operations["handleGetExecutionTargetCapabilities"];
+  };
+  "/api/v1/system/execution-targets/{id}/capacity": {
+    "get": operations["handleGetExecutionTargetCapacity"];
   };
   "/api/v1/system/execution-targets/{id}/test": {
     "post": operations["handleTestExecutionTarget"];

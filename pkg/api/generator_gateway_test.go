@@ -221,3 +221,80 @@ func TestDynamicGeneratorModeInstallsDistributedRunBackendWithoutStaticTargets(t
 		t.Fatalf("initial target count = %d, want 0", got)
 	}
 }
+
+// The gateway is the only pre-auth credential-accepting route reachable without
+// a service account, so it carries its own budget: local login, OIDC login, and
+// the CI exchange are all rate limited and this must be too.
+func TestGeneratorGatewayRateLimitsEnrollmentAttempts(t *testing.T) {
+	t.Setenv("APEXLOAD_ENV", "development")
+	server, genericStore := newTimeslotServer(t)
+	store := genericStore.(*storage.SQLiteStore)
+	target := seedReverseExecutionTarget(t, store, strings.Repeat("v", 32))
+	server.reverseGenerators = generatorrpc.NewReverseRegistry()
+	server.cache = newMemoryCacheBackend(cacheRuntimeConfig{Backend: cacheBackendMemory})
+
+	attempt := func() int {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/generator-gateway/connect", nil)
+		req.Header.Set("Authorization", "Bearer "+strings.Repeat("x", 32))
+		req.Header.Set(generatorGatewayIDHeader, "generator-reverse-1")
+		req.Header.Set(generatorGatewayTargetHeader, target.ID)
+		rec := httptest.NewRecorder()
+		server.mux.ServeHTTP(rec, req)
+		return rec.Code
+	}
+
+	// A small budget keeps the test fast; the production default is sized for a
+	// whole pool reconnecting at once.
+	t.Setenv(reverseGatewayRateLimitEnvVar, "5")
+	// A wrong token still consumes budget; otherwise the limit would not bound
+	// unauthenticated churn, which is the entire point.
+	for i := 0; i < 5; i++ {
+		if code := attempt(); code != http.StatusUnauthorized {
+			t.Fatalf("attempt %d status = %d, want 401", i, code)
+		}
+	}
+	if code := attempt(); code != http.StatusTooManyRequests {
+		t.Fatalf("status after exhausting the budget = %d, want 429", code)
+	}
+}
+
+func TestGeneratorGatewayRateLimitIsScopedPerExecutionTarget(t *testing.T) {
+	t.Setenv(reverseGatewayRateLimitEnvVar, "5")
+	server := &Server{cache: newMemoryCacheBackend(cacheRuntimeConfig{Backend: cacheBackendMemory})}
+	exhaust := func(targetID string) {
+		for i := 0; i < 5; i++ {
+			req := httptest.NewRequest(http.MethodGet, "/api/v1/generator-gateway/connect", nil)
+			if !server.allowReverseGatewayAttempt(httptest.NewRecorder(), req, targetID) {
+				t.Fatalf("target %s was throttled at attempt %d", targetID, i)
+			}
+		}
+	}
+	exhaust("target-a")
+	// target-a is now exhausted; target-b must still have its full budget, so a
+	// noisy target cannot starve another target's generators.
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/generator-gateway/connect", nil)
+	if !server.allowReverseGatewayAttempt(httptest.NewRecorder(), req, "target-b") {
+		t.Fatal("a second execution target was throttled by the first target's budget")
+	}
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/generator-gateway/connect", nil)
+	if server.allowReverseGatewayAttempt(httptest.NewRecorder(), req, "target-a") {
+		t.Fatal("the exhausted execution target was not throttled")
+	}
+}
+
+// The default budget must clear the largest fleet an operator can reasonably
+// run, because a throttled reconnect turns a controller restart into an outage.
+func TestReverseGatewayRateLimitDefaultsAboveRealisticFleetSize(t *testing.T) {
+	t.Setenv(reverseGatewayRateLimitEnvVar, "")
+	if got := configuredReverseGatewayRatePerMinute(); got < 500 {
+		t.Fatalf("default budget = %d, too low for a whole pool reconnecting at once", got)
+	}
+	t.Setenv(reverseGatewayRateLimitEnvVar, "0")
+	if got := configuredReverseGatewayRatePerMinute(); got != 0 {
+		t.Fatalf("explicit 0 = %d, want the limit disabled", got)
+	}
+	t.Setenv(reverseGatewayRateLimitEnvVar, "not-a-number")
+	if got := configuredReverseGatewayRatePerMinute(); got != defaultReverseGatewayRatePerMinute {
+		t.Fatalf("malformed value = %d, want the default rather than an unlimited gateway", got)
+	}
+}

@@ -22,6 +22,12 @@ var computeAdministrationAPIRouteCatalog = apiRouteCatalog{
 			}),
 		newAuthenticatedAPIRoute(http.MethodDelete, "/api/v1/system/cloud-connections/{id}", "handleDeleteCloudConnection",
 			systemAdminAccess(), func(s *Server) http.Handler { return http.HandlerFunc(s.handleDeleteCloudConnection) }),
+		newAuthenticatedAPIRoute(http.MethodPost, "/api/v1/system/cloud-connections/{id}/test", "handleTestCloudConnection",
+			accessRequirement{GlobalRoles: []string{RoleSystemAdmin}, MaxBodyBytes: 65536}, func(s *Server) http.Handler {
+				return http.HandlerFunc(s.handleTestCloudConnection)
+			}),
+		newAuthenticatedAPIRoute(http.MethodGet, "/api/v1/system/cloud-connections/{id}/resources", "handleListCloudConnectionResources",
+			systemAdminAccess(), func(s *Server) http.Handler { return http.HandlerFunc(s.handleListCloudConnectionResources) }),
 
 		newAuthenticatedAPIRoute(http.MethodPost, "/api/v1/system/execution-targets", "handleCreateExecutionTarget",
 			accessRequirement{GlobalRoles: []string{RoleSystemAdmin}, MaxBodyBytes: 262144}, func(s *Server) http.Handler {
@@ -43,5 +49,7 @@ var computeAdministrationAPIRouteCatalog = apiRouteCatalog{
 			}),
 		newAuthenticatedAPIRoute(http.MethodGet, "/api/v1/system/execution-targets/{id}/capabilities", "handleGetExecutionTargetCapabilities",
 			systemAdminAccess(), func(s *Server) http.Handler { return http.HandlerFunc(s.handleGetExecutionTargetCapabilities) }),
+		newAuthenticatedAPIRoute(http.MethodGet, "/api/v1/system/execution-targets/{id}/capacity", "handleGetExecutionTargetCapacity",
+			systemAdminAccess(), func(s *Server) http.Handler { return http.HandlerFunc(s.handleGetExecutionTargetCapacity) }),
 	},
 }

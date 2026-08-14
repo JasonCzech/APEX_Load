@@ -39,6 +39,24 @@ resource "azurerm_subnet" "container_apps" {
   }
 }
 
+# Container Instances need their own delegation; a subnet delegated to
+# Microsoft.App/environments cannot also host container groups.
+resource "azurerm_subnet" "container_instances" {
+  count                = local.private_network_enabled && local.container_instances_enabled ? 1 : 0
+  name                 = "container-instances"
+  resource_group_name  = azurerm_resource_group.main.name
+  virtual_network_name = azurerm_virtual_network.main[0].name
+  address_prefixes     = var.container_instances_subnet_prefixes
+
+  delegation {
+    name = "Microsoft.ContainerInstance.containerGroups"
+    service_delegation {
+      name    = "Microsoft.ContainerInstance/containerGroups"
+      actions = ["Microsoft.Network/virtualNetworks/subnets/action"]
+    }
+  }
+}
+
 resource "azurerm_subnet" "private_endpoints" {
   count                = local.private_network_enabled ? 1 : 0
   name                 = "private-endpoints"

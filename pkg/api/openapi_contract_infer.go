@@ -255,9 +255,21 @@ var explicitRouteContractTypes = map[string]struct {
 		requestType:   "CloudConnectionRequest",
 		responseTypes: map[int]string{200: "CloudConnectionResponse"},
 	},
+	"POST /api/v1/system/cloud-connections/{id}/test": {
+		responseTypes:       map[int]string{200: "CloudConnectionTestResponse"},
+		responseDescription: "Validates a cloud credential against the live provider without requiring an execution target.",
+	},
+	"GET /api/v1/system/cloud-connections/{id}/resources": {
+		responseTypes:       map[int]string{200: "CloudResourceInventory"},
+		responseDescription: "Enumerates the provider resources an execution target can bind to.",
+	},
 	"POST /api/v1/system/execution-targets": {
 		requestType:   "ExecutionTargetRequest",
 		responseTypes: map[int]string{201: "storage.ExecutionTarget"},
+	},
+	"GET /api/v1/system/execution-targets/{id}/capacity": {
+		responseTypes:       map[int]string{200: "ExecutionTargetCapacityResponse"},
+		responseDescription: "Reports the target's configured capacity envelope and its live provider instance inventory.",
 	},
 	"PUT /api/v1/system/execution-targets/{id}": {
 		requestType:   "ExecutionTargetRequest",
@@ -359,6 +371,9 @@ func applyExplicitRouteContractTypes(route discoveredRoute, analysis *handlerCon
 			// empty section is the supported reset form.
 			schema.Required = nil
 		}
+		if override.requestType == "ExecutionTargetRequest" {
+			schema = executionTargetRequestUnion(schema)
+		}
 		// jsonRequest takes precedence over rawRequest in inferredRequestBody,
 		// so the octet-stream fallback disappears.
 		analysis.jsonRequest = true
@@ -376,6 +391,67 @@ func applyExplicitRouteContractTypes(route discoveredRoute, analysis *handlerCon
 		analysis.jsonResponse = true
 		analysis.responseSchemas[status] = schema
 	}
+}
+
+// executionTargetRequestUnion republishes the inferred ExecutionTargetRequest
+// as a tagged union keyed on `kind`.
+//
+// The Go struct carries every provider spec as a sibling optional pointer, so
+// the inferred schema says a caller may send `kind: azure_container_apps`
+// alongside an `aws_ecs_fargate` block — which Validate() rejects at runtime but
+// the published contract permitted. Each variant here pins `kind` to a single
+// enum value and requires that kind's own spec object, so the constraint the
+// server actually enforces is the one clients generate against.
+func executionTargetRequestUnion(base oasSchema) oasSchema {
+	specProperty := map[string]string{
+		"kubernetes":                "",
+		"azure_container_apps":      "azure_container_apps",
+		"azure_container_instances": "azure_container_instances",
+		"aws_ecs_fargate":           "aws_ecs_fargate",
+		"static":                    "static",
+	}
+	kinds := make([]string, 0, len(specProperty))
+	for kind := range specProperty {
+		kinds = append(kinds, kind)
+	}
+	sort.Strings(kinds)
+
+	variants := make([]oasSchema, 0, len(kinds))
+	for _, kind := range kinds {
+		variant := oasSchema{Type: base.Type, Properties: map[string]oasSchema{}}
+		for name, property := range base.Properties {
+			// Drop the other kinds' spec blocks so a variant describes exactly
+			// one provider shape.
+			if isExecutionTargetSpecProperty(specProperty, name) && name != specProperty[kind] {
+				continue
+			}
+			variant.Properties[name] = property
+		}
+		kindSchema := base.Properties["kind"]
+		kindSchema.Enum = []string{kind}
+		variant.Properties["kind"] = kindSchema
+		// No `required` is set: clearOpenAPISchemaRequired strips it from every
+		// request schema, oneOf branches included, because partial updates are
+		// the supported form. The enum-pinned `kind` is what selects the branch.
+		variant.Description = "Execution target of kind " + kind + "."
+		variants = append(variants, variant)
+	}
+	return oasSchema{
+		Description:   base.Description,
+		OneOf:         variants,
+		Discriminator: &oasDiscriminator{PropertyName: "kind"},
+	}
+}
+
+// isExecutionTargetSpecProperty reports whether a property name is one of the
+// provider spec blocks, i.e. a value in the kind->spec map rather than a key.
+func isExecutionTargetSpecProperty(specProperty map[string]string, name string) bool {
+	for _, spec := range specProperty {
+		if spec != "" && spec == name {
+			return true
+		}
+	}
+	return false
 }
 
 func explicitOpenAPITypeExpression(typeName string) ast.Expr {

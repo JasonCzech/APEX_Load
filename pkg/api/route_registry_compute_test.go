@@ -6,7 +6,7 @@ import (
 )
 
 func TestComputeRoutesAreSystemAdminOnly(t *testing.T) {
-	if got, want := len(computeAdministrationAPIRouteCatalog.Routes), 12; got != want {
+	if got, want := len(computeAdministrationAPIRouteCatalog.Routes), 15; got != want {
 		t.Fatalf("compute route count = %d, want %d", got, want)
 	}
 	for _, route := range computeAdministrationAPIRouteCatalog.Routes {
@@ -24,6 +24,8 @@ func TestComputeRoutesAreSystemAdminOnly(t *testing.T) {
 		http.MethodGet + " /api/v1/system/cloud-connections/{id}":                     true,
 		http.MethodPut + " /api/v1/system/cloud-connections/{id}":                     true,
 		http.MethodDelete + " /api/v1/system/cloud-connections/{id}":                  true,
+		http.MethodPost + " /api/v1/system/cloud-connections/{id}/test":               true,
+		http.MethodGet + " /api/v1/system/cloud-connections/{id}/resources":           true,
 		http.MethodPost + " /api/v1/system/execution-targets":                         true,
 		http.MethodGet + " /api/v1/system/execution-targets":                          true,
 		http.MethodGet + " /api/v1/system/execution-targets/{id}":                     true,
@@ -31,6 +33,7 @@ func TestComputeRoutesAreSystemAdminOnly(t *testing.T) {
 		http.MethodDelete + " /api/v1/system/execution-targets/{id}":                  true,
 		http.MethodPost + " /api/v1/system/execution-targets/{id}/test":               true,
 		http.MethodGet + " /api/v1/system/execution-targets/{id}/capabilities":         true,
+		http.MethodGet + " /api/v1/system/execution-targets/{id}/capacity":             true,
 	}
 	for _, route := range computeAdministrationAPIRouteCatalog.Routes {
 		delete(want, route.Method+" "+route.Path)

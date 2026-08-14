@@ -15,9 +15,10 @@ var (
 )
 
 type executionTargetSpecEnvelope struct {
-	AzureContainerApps *AzureContainerAppsTargetSpec `json:"azure_container_apps,omitempty"`
-	AWSECSFargate      *AWSECSFargateTargetSpec      `json:"aws_ecs_fargate,omitempty"`
-	Static             *StaticExecutionTargetSpec    `json:"static,omitempty"`
+	AzureContainerApps      *AzureContainerAppsTargetSpec      `json:"azure_container_apps,omitempty"`
+	AzureContainerInstances *AzureContainerInstancesTargetSpec `json:"azure_container_instances,omitempty"`
+	AWSECSFargate           *AWSECSFargateTargetSpec           `json:"aws_ecs_fargate,omitempty"`
+	Static                  *StaticExecutionTargetSpec         `json:"static,omitempty"`
 }
 
 func lockExecutionTargetTx(tx *storeTx, id string) (bool, error) {
@@ -31,9 +32,10 @@ func lockExecutionTargetTx(tx *storeTx, id string) (bool, error) {
 
 func marshalExecutionTargetSpec(target *ExecutionTarget) (string, error) {
 	encoded, err := json.Marshal(executionTargetSpecEnvelope{
-		AzureContainerApps: target.AzureContainerApps,
-		AWSECSFargate:      target.AWSECSFargate,
-		Static:             target.Static,
+		AzureContainerApps:      target.AzureContainerApps,
+		AzureContainerInstances: target.AzureContainerInstances,
+		AWSECSFargate:           target.AWSECSFargate,
+		Static:                  target.Static,
 	})
 	return string(encoded), err
 }
@@ -74,6 +76,7 @@ func scanExecutionTarget(row capacityRowScanner) (*ExecutionTarget, error) {
 		return nil, fmt.Errorf("decode execution target specification: %w", err)
 	}
 	target.AzureContainerApps = spec.AzureContainerApps
+	target.AzureContainerInstances = spec.AzureContainerInstances
 	target.AWSECSFargate = spec.AWSECSFargate
 	target.Static = spec.Static
 	if err := json.Unmarshal([]byte(profilesJSON), &target.RuntimeProfiles); err != nil {

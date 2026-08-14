@@ -29,6 +29,16 @@ export function executionTargetError(target: ExecutionTargetInput): string | nul
     if (!spec.warm_container_app?.trim() && !spec.burst_job?.trim()) return 'Configure a warm Container App, a burst Job, or both.'
     if (!spec.expected_principal_id?.trim()) return 'Expected managed-identity principal ID is required.'
   }
+  if (target.kind === 'azure_container_instances') {
+    const spec = target.azure_container_instances
+    if (!spec?.resource_group.trim() || !spec.container_group_template.trim()) return 'Resource group and container group template are required.'
+    if (!spec.expected_principal_id?.trim()) return 'Expected managed-identity principal ID is required.'
+    // Mirrors the server: a public container group would put the generator
+    // control port on the internet, and direct mode dials that port.
+    if (target.connectivity_mode === 'direct' && !spec.subnet_id?.trim()) {
+      return 'Direct connectivity requires a delegated subnet so the generator control port is not publicly reachable.'
+    }
+  }
   if (target.kind === 'aws_ecs_fargate') {
     const spec = target.aws_ecs_fargate
     if (!spec?.cluster.trim()) return 'ECS cluster is required.'

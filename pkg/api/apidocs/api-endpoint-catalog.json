@@ -4467,6 +4467,26 @@
     },
     {
       "method": "GET",
+      "path": "/api/v1/system/cloud-connections/{id}/resources",
+      "operationId": "handleListCloudConnectionResources",
+      "summary": "List Cloud Connection Resources",
+      "category": "System \u0026 Distribution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: SystemAdmin; service-account scope: system:read"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/system/cloud-connections/{id}/test",
+      "operationId": "handleTestCloudConnection",
+      "summary": "Test Cloud Connection",
+      "category": "System \u0026 Distribution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: SystemAdmin; service-account scope: settings:manage"
+    },
+    {
+      "method": "GET",
       "path": "/api/v1/system/clusters",
       "operationId": "handleListClusterConnections",
       "summary": "List Cluster Connections",
@@ -4700,6 +4720,16 @@
       "path": "/api/v1/system/execution-targets/{id}/capabilities",
       "operationId": "handleGetExecutionTargetCapabilities",
       "summary": "Get Execution Target Capabilities",
+      "category": "System \u0026 Distribution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: SystemAdmin; service-account scope: system:read"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/system/execution-targets/{id}/capacity",
+      "operationId": "handleGetExecutionTargetCapacity",
+      "summary": "Get Execution Target Capacity",
       "category": "System \u0026 Distribution",
       "public": false,
       "authenticated": true,

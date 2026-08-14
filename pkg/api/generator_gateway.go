@@ -1,9 +1,12 @@
 package api
 
 import (
+	"crypto/sha256"
 	"crypto/subtle"
+	"encoding/hex"
 	"fmt"
 	"net/http"
+	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -25,6 +28,18 @@ const (
 	reverseGeneratorDisconnectGrace = 30 * time.Second
 	reverseEnrollmentClockSkew      = 2 * time.Minute
 	reverseEnrollmentNonceTTL       = 5 * time.Minute
+	// A whole burst fleet legitimately dials from one NAT address at once, so
+	// this budget is sized for scale-out rather than for a login form. The
+	// worst realistic burst is every generator in a pool reconnecting together
+	// after a controller restart, so the default sits well above any supported
+	// pool size: throttling a recovering fleet would turn a restart into an
+	// outage. Enrollment tokens carry 32 bytes of entropy, so the budget exists
+	// to bound connection churn and database load, not to stop guessing.
+	//
+	// Keyed per peer AND per execution target so one noisy target cannot exhaust
+	// the budget another target's generators depend on.
+	defaultReverseGatewayRatePerMinute = 600
+	reverseGatewayRateLimitEnvVar      = "APEXLOAD_REVERSE_GATEWAY_RATE_LIMIT_PER_MINUTE"
 )
 
 type GeneratorGatewayConnectResponse struct {
@@ -42,6 +57,53 @@ var generatorGatewayUpgrader = websocket.Upgrader{
 	},
 }
 
+// configuredReverseGatewayRatePerMinute lets an operator tune the budget to
+// their largest fleet. Zero disables the limit.
+func configuredReverseGatewayRatePerMinute() int {
+	raw := strings.TrimSpace(os.Getenv(reverseGatewayRateLimitEnvVar))
+	if raw == "" {
+		return defaultReverseGatewayRatePerMinute
+	}
+	limit, err := strconv.Atoi(raw)
+	if err != nil || limit < 0 {
+		return defaultReverseGatewayRatePerMinute
+	}
+	return limit
+}
+
+// allowReverseGatewayAttempt bounds enrollment attempts per source address and
+// execution target. The target ID is hashed into the key rather than used raw:
+// it is attacker-supplied, and an unbounded value would let a caller mint
+// arbitrarily many distinct rate-limit keys.
+func (s *Server) allowReverseGatewayAttempt(w http.ResponseWriter, r *http.Request, targetID string) bool {
+	if s == nil || s.cache == nil {
+		return true
+	}
+	peer := "unknown"
+	if ip := requestSourceIP(r); ip != nil {
+		peer = ip.String()
+	}
+	keySum := sha256.Sum256([]byte(targetID))
+	key := "generator-gateway:" + peer + ":" + hex.EncodeToString(keySum[:8])
+	limit := configuredReverseGatewayRatePerMinute()
+	if limit <= 0 {
+		return true
+	}
+	allowed, remaining, err := s.cache.AllowRateLimit(r.Context(), key, limit, time.Minute)
+	if err != nil {
+		writeError(w, http.StatusServiceUnavailable, "generator gateway rate limit is unavailable")
+		return false
+	}
+	w.Header().Set("X-RateLimit-Limit", strconv.Itoa(limit))
+	w.Header().Set("X-RateLimit-Remaining", strconv.Itoa(remaining))
+	if !allowed {
+		writeError(w, http.StatusTooManyRequests, "generator gateway rate limit exceeded")
+		return false
+	}
+	return true
+}
+
+// OpenAPI-Responses: 429
 func (s *Server) handleGeneratorGatewayConnect(w http.ResponseWriter, r *http.Request) {
 	if s.executionTargetStore == nil || s.reverseGenerators == nil {
 		writeError(w, http.StatusServiceUnavailable, "reverse generator gateway is not configured")
@@ -55,6 +117,12 @@ func (s *Server) handleGeneratorGatewayConnect(w http.ResponseWriter, r *http.Re
 	targetID := strings.TrimSpace(r.Header.Get(generatorGatewayTargetHeader))
 	if generatorID == "" || targetID == "" {
 		writeError(w, http.StatusBadRequest, "generator and execution-target identities are required")
+		return
+	}
+	// Rate-limit before the store lookup so unauthenticated churn cannot drive
+	// database load or WebSocket upgrades, matching every other pre-auth
+	// credential-accepting route (local login, OIDC login, CI exchange).
+	if !s.allowReverseGatewayAttempt(w, r, targetID) {
 		return
 	}
 	target, err := s.executionTargetStore.GetExecutionTarget(targetID)

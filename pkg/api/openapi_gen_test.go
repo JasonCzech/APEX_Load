@@ -2025,3 +2025,69 @@ func TestGroupRuntimeSettingsOpenAPIRequestOmitsRejectedFields(t *testing.T) {
 		}
 	}
 }
+
+// The Go request struct carries every provider spec as a sibling optional
+// pointer, so without this the published contract permits `kind:
+// azure_container_apps` next to an `aws_ecs_fargate` block — a combination
+// Validate() rejects at runtime. Clients generate against the contract, so the
+// contract has to carry the tag.
+func TestExecutionTargetRequestIsADiscriminatedUnion(t *testing.T) {
+	data, err := GenerateOpenAPIYAML("server.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var spec struct {
+		Paths map[string]map[string]struct {
+			RequestBody struct {
+				Content map[string]struct {
+					Schema struct {
+						OneOf []struct {
+							Properties map[string]struct {
+								Enum []string `yaml:"enum"`
+							} `yaml:"properties"`
+						} `yaml:"oneOf"`
+						Discriminator struct {
+							PropertyName string `yaml:"propertyName"`
+						} `yaml:"discriminator"`
+					} `yaml:"schema"`
+				} `yaml:"content"`
+			} `yaml:"requestBody"`
+		} `yaml:"paths"`
+	}
+	if err := yaml.Unmarshal(data, &spec); err != nil {
+		t.Fatal(err)
+	}
+	schema := spec.Paths["/api/v1/system/execution-targets"]["post"].RequestBody.Content["application/json"].Schema
+	if schema.Discriminator.PropertyName != "kind" {
+		t.Fatalf("discriminator = %q, want kind", schema.Discriminator.PropertyName)
+	}
+	specBlocks := map[string]string{
+		"azure_container_apps":      "azure_container_apps",
+		"azure_container_instances": "azure_container_instances",
+		"aws_ecs_fargate":           "aws_ecs_fargate",
+		"static":                    "static",
+	}
+	seen := map[string]bool{}
+	for _, variant := range schema.OneOf {
+		kindEnum := variant.Properties["kind"].Enum
+		if len(kindEnum) != 1 {
+			t.Fatalf("variant kind enum = %v, want exactly one pinned kind", kindEnum)
+		}
+		kind := kindEnum[0]
+		seen[kind] = true
+		for otherKind, block := range specBlocks {
+			_, present := variant.Properties[block]
+			if otherKind == kind && !present {
+				t.Fatalf("variant %s is missing its own %s spec block", kind, block)
+			}
+			if otherKind != kind && present {
+				t.Fatalf("variant %s exposes another kind's %s spec block", kind, block)
+			}
+		}
+	}
+	for _, kind := range []string{"kubernetes", "azure_container_apps", "azure_container_instances", "aws_ecs_fargate", "static"} {
+		if !seen[kind] {
+			t.Fatalf("union is missing the %s variant", kind)
+		}
+	}
+}

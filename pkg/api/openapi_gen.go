@@ -153,6 +153,15 @@ type oasSchema struct {
 	Required             []string             `yaml:"required,omitempty"`
 	Nullable             bool                 `yaml:"nullable,omitempty"`
 	OneOf                []oasSchema          `yaml:"oneOf,omitempty"`
+	Discriminator        *oasDiscriminator    `yaml:"discriminator,omitempty"`
+}
+
+// oasDiscriminator names the property that selects a oneOf variant, so a
+// generated client can model a tagged union instead of a bag of mutually
+// exclusive optional objects.
+type oasDiscriminator struct {
+	PropertyName string            `yaml:"propertyName"`
+	Mapping      map[string]string `yaml:"mapping,omitempty"`
 }
 
 type inferredRouteContract struct {

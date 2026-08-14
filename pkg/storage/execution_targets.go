@@ -11,10 +11,11 @@ import (
 )
 
 const (
-	ExecutionTargetKubernetes         = "kubernetes"
-	ExecutionTargetAzureContainerApps = "azure_container_apps"
-	ExecutionTargetAWSECSFargate      = "aws_ecs_fargate"
-	ExecutionTargetStatic             = "static"
+	ExecutionTargetKubernetes              = "kubernetes"
+	ExecutionTargetAzureContainerApps      = "azure_container_apps"
+	ExecutionTargetAzureContainerInstances = "azure_container_instances"
+	ExecutionTargetAWSECSFargate           = "aws_ecs_fargate"
+	ExecutionTargetStatic                  = "static"
 
 	ConnectivityDirect  = "direct"
 	ConnectivityReverse = "reverse"
@@ -38,6 +39,27 @@ type AzureContainerAppsTargetSpec struct {
 	EnvironmentName     string `json:"environment_name"`
 	WarmContainerApp    string `json:"warm_container_app,omitempty"`
 	BurstJob            string `json:"burst_job,omitempty"`
+	ExpectedPrincipalID string `json:"expected_principal_id,omitempty"`
+}
+
+// AzureContainerInstancesTargetSpec describes an ACI container group template.
+//
+// ACI is burst-only by construction: a container group is one instance with its
+// own IP, created and deleted per run, with nothing to scale. That per-group IP
+// is the whole reason it exists beside Container Apps — it is the Azure option
+// the controller can dial directly, so an operator who cannot use the reverse
+// tunnel is not forced onto Kubernetes.
+type AzureContainerInstancesTargetSpec struct {
+	ResourceGroup string `json:"resource_group"`
+	// ContainerGroupTemplate names a pre-provisioned container group whose shape
+	// is cloned for each launch. Apex never invents a group definition; the
+	// operator owns image, identity, and network placement via Terraform.
+	ContainerGroupTemplate string `json:"container_group_template"`
+	// SubnetID places groups on a delegated VNet subnet so the controller can
+	// reach them privately. Empty means the group gets a public address, which
+	// is refused for direct connectivity in production.
+	SubnetID            string `json:"subnet_id,omitempty"`
+	Location            string `json:"location,omitempty"`
 	ExpectedPrincipalID string `json:"expected_principal_id,omitempty"`
 }
 
@@ -115,11 +137,12 @@ type ExecutionTarget struct {
 	PreviousEnrollmentTokenHash       string     `json:"-"`
 	PreviousEnrollmentTokenValidUntil *time.Time `json:"-"`
 
-	AzureContainerApps *AzureContainerAppsTargetSpec `json:"azure_container_apps,omitempty"`
-	AWSECSFargate      *AWSECSFargateTargetSpec      `json:"aws_ecs_fargate,omitempty"`
-	Static             *StaticExecutionTargetSpec    `json:"static,omitempty"`
-	RuntimeProfiles    []RuntimeProfile              `json:"runtime_profiles,omitempty"`
-	Capabilities       TargetCapabilities            `json:"capabilities"`
+	AzureContainerApps      *AzureContainerAppsTargetSpec      `json:"azure_container_apps,omitempty"`
+	AzureContainerInstances *AzureContainerInstancesTargetSpec `json:"azure_container_instances,omitempty"`
+	AWSECSFargate           *AWSECSFargateTargetSpec           `json:"aws_ecs_fargate,omitempty"`
+	Static                  *StaticExecutionTargetSpec         `json:"static,omitempty"`
+	RuntimeProfiles         []RuntimeProfile                   `json:"runtime_profiles,omitempty"`
+	Capabilities            TargetCapabilities                 `json:"capabilities"`
 
 	Status           string            `json:"status"`
 	LastCheckedAt    *time.Time        `json:"last_checked_at,omitempty"`
@@ -185,14 +208,14 @@ func (t *ExecutionTarget) Validate() error {
 		if strings.TrimSpace(t.ClusterConnectionID) == "" || strings.TrimSpace(t.CloudConnectionID) != "" {
 			return errors.New("kubernetes targets require exactly one cluster connection")
 		}
-		if t.AzureContainerApps != nil || t.AWSECSFargate != nil || t.Static != nil {
+		if t.AzureContainerApps != nil || t.AzureContainerInstances != nil || t.AWSECSFargate != nil || t.Static != nil {
 			return errors.New("kubernetes targets must not include a PaaS target specification")
 		}
 	case ExecutionTargetAzureContainerApps:
 		if strings.TrimSpace(t.CloudConnectionID) == "" || strings.TrimSpace(t.ClusterConnectionID) != "" {
 			return errors.New("azure container apps targets require exactly one cloud connection")
 		}
-		if t.AzureContainerApps == nil || t.AWSECSFargate != nil || t.Static != nil {
+		if t.AzureContainerApps == nil || t.AzureContainerInstances != nil || t.AWSECSFargate != nil || t.Static != nil {
 			return errors.New("azure container apps target specification is required")
 		}
 		spec := t.AzureContainerApps
@@ -205,11 +228,35 @@ func (t *ExecutionTarget) Validate() error {
 		if t.ConnectivityMode != ConnectivityReverse {
 			return errors.New("azure container apps and jobs require reverse connectivity because replicas have no stable per-instance ingress")
 		}
+	case ExecutionTargetAzureContainerInstances:
+		if strings.TrimSpace(t.CloudConnectionID) == "" || strings.TrimSpace(t.ClusterConnectionID) != "" {
+			return errors.New("azure container instances targets require exactly one cloud connection")
+		}
+		if t.AzureContainerInstances == nil || t.AzureContainerApps != nil || t.AWSECSFargate != nil || t.Static != nil {
+			return errors.New("azure container instances target specification is required")
+		}
+		spec := t.AzureContainerInstances
+		if strings.TrimSpace(spec.ResourceGroup) == "" || strings.TrimSpace(spec.ContainerGroupTemplate) == "" {
+			return errors.New("azure resource group and container group template are required")
+		}
+		// ARM requires a location on every container group. Catching it here
+		// turns an opaque provider 400 at first launch into a field error at
+		// save time, because nothing else exercises a launch before then.
+		if strings.TrimSpace(spec.Location) == "" && strings.TrimSpace(t.Region) == "" {
+			return errors.New("azure container instances require a location on the target specification or a region on the execution target")
+		}
+		// A public container group would put a generator's gRPC control port on
+		// the internet. Direct mode dials that port, so a delegated subnet is
+		// mandatory; reverse mode keeps working without one because the
+		// generator dials out.
+		if t.ConnectivityMode == ConnectivityDirect && strings.TrimSpace(spec.SubnetID) == "" {
+			return errors.New("azure container instances require a delegated subnet for direct connectivity so the generator control port is not publicly reachable")
+		}
 	case ExecutionTargetAWSECSFargate:
 		if strings.TrimSpace(t.CloudConnectionID) == "" || strings.TrimSpace(t.ClusterConnectionID) != "" {
 			return errors.New("aws ecs fargate targets require exactly one cloud connection")
 		}
-		if t.AWSECSFargate == nil || t.AzureContainerApps != nil || t.Static != nil {
+		if t.AWSECSFargate == nil || t.AzureContainerApps != nil || t.AzureContainerInstances != nil || t.Static != nil {
 			return errors.New("aws ecs fargate target specification is required")
 		}
 		spec := t.AWSECSFargate
@@ -229,7 +276,7 @@ func (t *ExecutionTarget) Validate() error {
 		if strings.TrimSpace(t.CloudConnectionID) != "" || strings.TrimSpace(t.ClusterConnectionID) != "" {
 			return errors.New("static targets must not reference a cloud or cluster connection")
 		}
-		if t.Static == nil || len(t.Static.Targets) == 0 || t.AzureContainerApps != nil || t.AWSECSFargate != nil {
+		if t.Static == nil || len(t.Static.Targets) == 0 || t.AzureContainerApps != nil || t.AzureContainerInstances != nil || t.AWSECSFargate != nil {
 			return errors.New("static targets require at least one address")
 		}
 	default:
@@ -343,6 +390,8 @@ func ProviderForExecutionTargetKind(kind string) (string, bool) {
 		return DeploymentProviderKubernetes, true
 	case ExecutionTargetAzureContainerApps:
 		return DeploymentProviderAzureContainerApps, true
+	case ExecutionTargetAzureContainerInstances:
+		return DeploymentProviderAzureContainerInstances, true
 	case ExecutionTargetAWSECSFargate:
 		return DeploymentProviderAWSECSFargate, true
 	case ExecutionTargetStatic:

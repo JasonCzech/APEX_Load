@@ -105,6 +105,23 @@ func (r *capacityBackendResolver) backendForTarget(ctx context.Context, target *
 			API:    &computeazure.RESTClient{Endpoint: endpoint, Credential: credential},
 			Target: target, SubscriptionID: connection.AzureSubscriptionID, ControllerID: r.controllerID,
 		}, nil
+	case storage.ExecutionTargetAzureContainerInstances:
+		connection, err := r.cloudConnection(target.CloudConnectionID, storage.CloudProviderAzure, maintenance)
+		if err != nil {
+			return nil, err
+		}
+		credential, err := r.azureCredential(ctx, connection)
+		if err != nil {
+			return nil, err
+		}
+		endpoint := map[string]string{
+			storage.AzureCloudUSGovernment: "https://management.usgovcloudapi.net",
+			storage.AzureCloudChina:        "https://management.chinacloudapi.cn",
+		}[connection.AzureCloud]
+		return &computeazure.InstancesBackend{
+			API:    &computeazure.RESTClient{Endpoint: endpoint, Credential: credential},
+			Target: target, SubscriptionID: connection.AzureSubscriptionID, ControllerID: r.controllerID,
+		}, nil
 	case storage.ExecutionTargetAWSECSFargate:
 		connection, err := r.cloudConnection(target.CloudConnectionID, storage.CloudProviderAWS, maintenance)
 		if err != nil {

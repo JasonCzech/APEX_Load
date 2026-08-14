@@ -186,3 +186,39 @@ run "external_aks" {
     error_message = "External/AKS must retain AKS for generators."
   }
 }
+
+run "container_apps_container_instances" {
+  command = plan
+
+  variables {
+    controller_compute = "container_apps"
+    generator_compute  = "container_instances"
+  }
+
+  assert {
+    condition     = !local.aks_enabled && local.container_apps_controller && local.container_instances_enabled && !local.container_apps_generators
+    error_message = "Container Apps/Container Instances must disable AKS and provision ACI generators instead of Container Apps generators."
+  }
+
+  # Direct connectivity is only safe on a delegated subnet, so the two must
+  # stay in lockstep: a public container group would expose the generator
+  # control port to the internet.
+  assert {
+    condition     = local.container_instances_direct == local.private_network_enabled
+    error_message = "Container Instances direct connectivity must track the delegated-subnet network mode."
+  }
+}
+
+run "external_container_instances" {
+  command = plan
+
+  variables {
+    controller_compute = "external"
+    generator_compute  = "container_instances"
+  }
+
+  assert {
+    condition     = !local.aks_enabled && local.container_instances_enabled
+    error_message = "external/Container Instances must disable AKS and still provision ACI generators."
+  }
+}

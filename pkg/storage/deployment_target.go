@@ -12,11 +12,12 @@ import (
 // existing rows, and it maps 1:1 onto ClusterConnection.Kind, which is the
 // thing a domain target actually constrains.
 const (
-	DeploymentProviderKubernetes         = "kubernetes"
-	DeploymentProviderAzureAKS           = "azure_aks"
-	DeploymentProviderAWSEKS             = "aws_eks"
-	DeploymentProviderAzureContainerApps = "azure_container_apps"
-	DeploymentProviderAWSECSFargate      = "aws_ecs_fargate"
+	DeploymentProviderKubernetes              = "kubernetes"
+	DeploymentProviderAzureAKS                = "azure_aks"
+	DeploymentProviderAWSEKS                  = "aws_eks"
+	DeploymentProviderAzureContainerApps      = "azure_container_apps"
+	DeploymentProviderAzureContainerInstances = "azure_container_instances"
+	DeploymentProviderAWSECSFargate           = "aws_ecs_fargate"
 
 	// Recognized so pre-existing fleet_pools.cloud_provider rows stay valid,
 	// but NOT selectable as a domain deployment target: no cluster kind maps to
@@ -64,6 +65,8 @@ func NormalizeCloudProvider(value string) string {
 		return DeploymentProviderAzureAKS
 	case "azure_container_apps", "container_apps":
 		return DeploymentProviderAzureContainerApps
+	case "azure_container_instances", "container_instances", "aci":
+		return DeploymentProviderAzureContainerInstances
 	case "aws", "eks", "aws_eks":
 		return DeploymentProviderAWSEKS
 	case "aws_ecs_fargate", "ecs_fargate", "fargate":
@@ -82,7 +85,7 @@ func NormalizeCloudProvider(value string) string {
 func IsSelectableDeploymentProvider(provider string) bool {
 	switch strings.TrimSpace(provider) {
 	case DeploymentProviderKubernetes, DeploymentProviderAzureAKS, DeploymentProviderAWSEKS,
-		DeploymentProviderAzureContainerApps, DeploymentProviderAWSECSFargate:
+		DeploymentProviderAzureContainerApps, DeploymentProviderAzureContainerInstances, DeploymentProviderAWSECSFargate:
 		return true
 	default:
 		return false
@@ -92,7 +95,7 @@ func IsSelectableDeploymentProvider(provider string) bool {
 // SelectableDeploymentProviders lists the choices a superuser may pick from.
 func SelectableDeploymentProviders() []string {
 	return []string{DeploymentProviderKubernetes, DeploymentProviderAzureAKS, DeploymentProviderAWSEKS,
-		DeploymentProviderAzureContainerApps, DeploymentProviderAWSECSFargate}
+		DeploymentProviderAzureContainerApps, DeploymentProviderAzureContainerInstances, DeploymentProviderAWSECSFargate}
 }
 
 // DomainDeploymentTarget is a superuser's per-domain deployment constraint: the

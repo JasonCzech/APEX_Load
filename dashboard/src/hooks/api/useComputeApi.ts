@@ -3,7 +3,10 @@ import { useCallback, useMemo } from 'react'
 import type {
   CloudConnection,
   CloudConnectionInput,
+  CloudConnectionTestResult,
+  CloudResourceInventory,
   ExecutionTarget,
+  ExecutionTargetCapacity,
   ExecutionTargetInput,
   ExecutionTargetTestResult,
 } from '../../types/compute'
@@ -18,6 +21,10 @@ export function useComputeApi() {
     request<CloudConnection>(`/system/cloud-connections/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(body) }), [])
   const deleteCloudConnection = useCallback((id: string) =>
     request<void>(`/system/cloud-connections/${encodeURIComponent(id)}`, { method: 'DELETE' }), [])
+  const testCloudConnection = useCallback((id: string) =>
+    request<CloudConnectionTestResult>(`/system/cloud-connections/${encodeURIComponent(id)}/test`, { method: 'POST' }), [])
+  const listCloudConnectionResources = useCallback((id: string) =>
+    request<CloudResourceInventory>(`/system/cloud-connections/${encodeURIComponent(id)}/resources`), [])
 
   const listExecutionTargets = useCallback(() =>
     request<{ execution_targets: ExecutionTarget[]; total: number }>('/system/execution-targets'), [])
@@ -29,19 +36,26 @@ export function useComputeApi() {
     request<void>(`/system/execution-targets/${encodeURIComponent(id)}`, { method: 'DELETE' }), [])
   const testExecutionTarget = useCallback((id: string) =>
     request<ExecutionTargetTestResult>(`/system/execution-targets/${encodeURIComponent(id)}/test`, { method: 'POST' }), [])
+  const getExecutionTargetCapacity = useCallback((id: string) =>
+    request<ExecutionTargetCapacity>(`/system/execution-targets/${encodeURIComponent(id)}/capacity`), [])
 
   return useMemo(() => ({
     listCloudConnections,
     createCloudConnection,
     updateCloudConnection,
     deleteCloudConnection,
+    testCloudConnection,
+    listCloudConnectionResources,
     listExecutionTargets,
     createExecutionTarget,
     updateExecutionTarget,
     deleteExecutionTarget,
     testExecutionTarget,
+    getExecutionTargetCapacity,
   }), [
     listCloudConnections, createCloudConnection, updateCloudConnection, deleteCloudConnection,
+    testCloudConnection, listCloudConnectionResources,
     listExecutionTargets, createExecutionTarget, updateExecutionTarget, deleteExecutionTarget, testExecutionTarget,
+    getExecutionTargetCapacity,
   ])
 }

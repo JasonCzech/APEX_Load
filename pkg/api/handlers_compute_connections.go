@@ -332,26 +332,27 @@ func writeCloudCredentialError(w http.ResponseWriter, err error) {
 // ExecutionTargetRequest excludes health and capabilities, which are derived
 // by the controller and cannot be asserted by a registration client.
 type ExecutionTargetRequest struct {
-	ID                       string                                `json:"id,omitempty"`
-	Name                     string                                `json:"name"`
-	Description              string                                `json:"description"`
-	Kind                     string                                `json:"kind"`
-	CloudConnectionID        string                                `json:"cloud_connection_id"`
-	ClusterConnectionID      string                                `json:"cluster_connection_id"`
-	Region                   string                                `json:"region"`
-	ConnectivityMode         string                                `json:"connectivity_mode"`
-	StandingOwner            string                                `json:"standing_owner"`
-	BurstOwner               string                                `json:"burst_owner"`
-	ArchiveMode              string                                `json:"archive_mode"`
-	EnrollmentToken          *string                               `json:"enrollment_token,omitempty"`
-	EnrollmentTokenExpiresAt *time.Time                            `json:"enrollment_token_expires_at,omitempty"`
-	AzureContainerApps       *storage.AzureContainerAppsTargetSpec `json:"azure_container_apps,omitempty"`
-	AWSECSFargate            *storage.AWSECSFargateTargetSpec      `json:"aws_ecs_fargate,omitempty"`
-	Static                   *storage.StaticExecutionTargetSpec    `json:"static,omitempty"`
-	RuntimeProfiles          []storage.RuntimeProfile              `json:"runtime_profiles,omitempty"`
-	Status                   string                                `json:"status"`
-	Labels                   map[string]string                     `json:"labels"`
-	UpdatedAt                time.Time                             `json:"updated_at"`
+	ID                       string                                     `json:"id,omitempty"`
+	Name                     string                                     `json:"name"`
+	Description              string                                     `json:"description"`
+	Kind                     string                                     `json:"kind"`
+	CloudConnectionID        string                                     `json:"cloud_connection_id"`
+	ClusterConnectionID      string                                     `json:"cluster_connection_id"`
+	Region                   string                                     `json:"region"`
+	ConnectivityMode         string                                     `json:"connectivity_mode"`
+	StandingOwner            string                                     `json:"standing_owner"`
+	BurstOwner               string                                     `json:"burst_owner"`
+	ArchiveMode              string                                     `json:"archive_mode"`
+	EnrollmentToken          *string                                    `json:"enrollment_token,omitempty"`
+	EnrollmentTokenExpiresAt *time.Time                                 `json:"enrollment_token_expires_at,omitempty"`
+	AzureContainerApps       *storage.AzureContainerAppsTargetSpec      `json:"azure_container_apps,omitempty"`
+	AzureContainerInstances  *storage.AzureContainerInstancesTargetSpec `json:"azure_container_instances,omitempty"`
+	AWSECSFargate            *storage.AWSECSFargateTargetSpec           `json:"aws_ecs_fargate,omitempty"`
+	Static                   *storage.StaticExecutionTargetSpec         `json:"static,omitempty"`
+	RuntimeProfiles          []storage.RuntimeProfile                   `json:"runtime_profiles,omitempty"`
+	Status                   string                                     `json:"status"`
+	Labels                   map[string]string                          `json:"labels"`
+	UpdatedAt                time.Time                                  `json:"updated_at"`
 }
 
 type ExecutionTargetTestResponse struct {
@@ -557,6 +558,7 @@ func applyExecutionTargetRequest(target *storage.ExecutionTarget, req ExecutionT
 		target.EnrollmentToken = strings.TrimSpace(*req.EnrollmentToken)
 	}
 	target.AzureContainerApps = req.AzureContainerApps
+	target.AzureContainerInstances = req.AzureContainerInstances
 	target.AWSECSFargate = req.AWSECSFargate
 	target.Static = req.Static
 	target.RuntimeProfiles = req.RuntimeProfiles
@@ -578,6 +580,15 @@ func configuredTargetCapabilities(target *storage.ExecutionTarget) storage.Targe
 			capabilities.CanLaunch = target.BurstOwner == storage.CapacityOwnerApex && target.AzureContainerApps.BurstJob != ""
 		}
 		capabilities.Details["capacity_model"] = "container_app_and_job"
+	case storage.ExecutionTargetAzureContainerInstances:
+		capabilities.SupportsReverse = true
+		if target.AzureContainerInstances != nil {
+			// A container group is one instance, so there is never standing
+			// capacity to scale; direct dialing needs a delegated subnet.
+			capabilities.CanLaunch = target.BurstOwner == storage.CapacityOwnerApex && target.AzureContainerInstances.ContainerGroupTemplate != ""
+			capabilities.CanReachDirectly = strings.TrimSpace(target.AzureContainerInstances.SubnetID) != ""
+		}
+		capabilities.Details["capacity_model"] = "container_group_per_instance"
 	case storage.ExecutionTargetAWSECSFargate:
 		capabilities.CanReachDirectly = true
 		capabilities.SupportsReverse = true
@@ -685,6 +696,8 @@ func providerIdentityProbe(target *storage.ExecutionTarget) ClusterProbe {
 	switch target.Kind {
 	case storage.ExecutionTargetAzureContainerApps:
 		configured = target.AzureContainerApps != nil && strings.TrimSpace(target.AzureContainerApps.ExpectedPrincipalID) != ""
+	case storage.ExecutionTargetAzureContainerInstances:
+		configured = target.AzureContainerInstances != nil && strings.TrimSpace(target.AzureContainerInstances.ExpectedPrincipalID) != ""
 	case storage.ExecutionTargetAWSECSFargate:
 		configured = target.AWSECSFargate != nil && strings.TrimSpace(target.AWSECSFargate.ExpectedTaskRoleARN) != ""
 	default:

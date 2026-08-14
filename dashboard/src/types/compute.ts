@@ -2,7 +2,7 @@ import type { ClusterProbe } from './cluster'
 
 export type CloudProvider = 'azure' | 'aws'
 export type CloudAuthMode = 'azure_identity' | 'azure_service_principal' | 'aws_ambient' | 'aws_assume_role' | 'aws_static_keys'
-export type ExecutionTargetKind = 'kubernetes' | 'azure_container_apps' | 'aws_ecs_fargate' | 'static'
+export type ExecutionTargetKind = 'kubernetes' | 'azure_container_apps' | 'azure_container_instances' | 'aws_ecs_fargate' | 'static'
 
 export interface CloudConnection {
   id: string
@@ -104,6 +104,13 @@ export interface ExecutionTarget {
     burst_job?: string
     expected_principal_id?: string
   }
+  azure_container_instances?: {
+    resource_group: string
+    container_group_template: string
+    subnet_id?: string
+    location?: string
+    expected_principal_id?: string
+  }
   aws_ecs_fargate?: {
     cluster: string
     warm_service?: string
@@ -134,6 +141,52 @@ export interface ExecutionTargetTestResult {
   probes: ClusterProbe[]
   capabilities: TargetCapabilities
   checked_at: string
+}
+
+export interface CloudConnectionTestResult {
+  cloud_connection_id: string
+  status: string
+  summary: string
+  probes: ClusterProbe[]
+  checked_at: string
+}
+
+export interface CloudResource {
+  kind: string
+  id: string
+  name: string
+  location?: string
+}
+
+export interface CloudResourceInventory {
+  cloud_connection_id: string
+  provider: CloudProvider
+  scope?: string
+  resources: CloudResource[]
+  truncated?: boolean
+  message?: string
+}
+
+export interface ExecutionTargetPoolCapacity {
+  fleet_pool_id: string
+  name: string
+  lifecycle_mode: string
+  warm_floor: number
+  max_size: number
+  desired_size: number
+}
+
+export interface ExecutionTargetCapacity {
+  execution_target_id: string
+  kind: ExecutionTargetKind
+  checked_at: string
+  capabilities: TargetCapabilities
+  pools: ExecutionTargetPoolCapacity[]
+  configured_warm_floor: number
+  configured_max: number
+  live_instances: number
+  healthy_instances: number
+  message?: string
 }
 
 export interface ComputeRegistrationManifest {

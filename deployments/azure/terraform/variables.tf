@@ -350,13 +350,19 @@ variable "controller_compute" {
 }
 
 variable "generator_compute" {
-  description = "Generator runtime. container_apps provisions a warm app plus a manual burst Job; external emits no generator compute."
+  description = "Generator runtime. container_apps provisions a warm app plus a manual burst Job; container_instances provisions a burst-only ACI template on a delegated subnet; external emits no generator compute."
   type        = string
   default     = "aks"
   validation {
-    condition     = contains(["aks", "container_apps", "external"], var.generator_compute)
-    error_message = "generator_compute must be aks, container_apps, or external."
+    condition     = contains(["aks", "container_apps", "container_instances", "external"], var.generator_compute)
+    error_message = "generator_compute must be aks, container_apps, container_instances, or external."
   }
+}
+
+variable "container_instances_subnet_prefixes" {
+  description = "Address prefixes for the delegated Container Instances subnet. Direct connectivity requires it; without a delegated subnet ACI groups receive public addresses."
+  type        = list(string)
+  default     = ["10.60.5.0/24"]
 }
 
 variable "controller_image" {

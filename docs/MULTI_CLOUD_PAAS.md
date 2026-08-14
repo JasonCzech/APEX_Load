@@ -4,6 +4,10 @@ APEX Load supports registered, provider-managed generator capacity alongside
 the existing Kubernetes and static-generator paths:
 
 - Azure Container Apps for warm capacity and Container Apps Jobs for burst.
+- Azure Container Instances for burst-only capacity the controller can dial
+  directly. A container group is a single instance with its own IP, so it holds
+  no warm floor; it exists for operators who need a directly addressable Azure
+  generator instead of the reverse tunnel.
 - AWS ECS Fargate services for warm capacity and `RunTask` for burst.
 - Azure Container Apps or ECS Fargate as a single-replica controller host.
 
@@ -35,6 +39,35 @@ to a different cloud.
 PaaS mutations are disabled unless `APEXLOAD_PAAS_COMPUTE_ENABLED=true`.
 Registration, validation, and capability discovery remain available while the
 feature is disabled.
+
+### Validating a credential before building on it
+
+`POST /api/v1/system/cloud-connections/{id}/test` performs a real provider round
+trip — an ARM token plus a subscription read on Azure, `GetCallerIdentity` on
+AWS — so a credential can be proven before any execution target depends on it.
+The AWS probe echoes the resolved caller ARN, because the dominant ECS failure
+is a valid credential whose principal lacks task permissions.
+
+`GET /api/v1/system/cloud-connections/{id}/resources` enumerates the provider
+resources a target binds to (Container Apps environments, ECS clusters), capped
+at 200 with a `truncated` flag. `GET /api/v1/system/execution-targets/{id}/capacity`
+reports the configured envelope of every bound pool alongside the live provider
+instance inventory, deduplicated by provider ID.
+
+Provider or permission failures on discovery return `502`, not `4xx`: the fix is
+in the cloud account, not the request.
+
+### Container Instances
+
+An ACI target names a pre-provisioned container group template whose shape is
+cloned per launch; APEX Load never invents a group definition. Group names are
+derived deterministically from the launch nonce, so a lost `PUT` response
+updates the existing group instead of creating a second one — the ACI equivalent
+of the ECS client token.
+
+Direct connectivity requires a delegated subnet. Without one the group receives
+a public address, which would put the generator's gRPC control port on the
+internet, so direct mode is refused and the generator must reverse-connect.
 
 ## Capacity lifecycle
 

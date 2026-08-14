@@ -31720,6 +31720,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        "429":
+          description: Too Many Requests
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         "503":
           description: Service Unavailable
           content:
@@ -161389,6 +161395,165 @@ paths:
       tags:
         - System
       x-handler: handleUpdateCloudConnection
+  /api/v1/system/cloud-connections/{id}/resources:
+    get:
+      summary: List Cloud Connection Resources
+      description: '**Access Control:** Requires authentication; global roles: SystemAdmin; service-account scope: system:read'
+      operationId: handleListCloudConnectionResources
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                description: Enumerates the provider resources an execution target can bind to.
+                properties:
+                  cloud_connection_id:
+                    type: string
+                  message:
+                    type: string
+                  provider:
+                    type: string
+                  resources:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        kind:
+                          type: string
+                        location:
+                          type: string
+                        name:
+                          type: string
+                      required:
+                        - id
+                        - kind
+                        - name
+                  scope:
+                    type: string
+                  truncated:
+                    type: boolean
+                required:
+                  - cloud_connection_id
+                  - provider
+                  - resources
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "409":
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "502":
+          description: Bad Gateway
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "503":
+          description: Service Unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: SystemAdmin; service-account scope: system:read'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - System
+      x-handler: handleListCloudConnectionResources
+  /api/v1/system/cloud-connections/{id}/test:
+    post:
+      summary: Test Cloud Connection
+      description: '**Access Control:** Requires authentication; global roles: SystemAdmin; service-account scope: settings:manage'
+      operationId: handleTestCloudConnection
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                description: Validates a cloud credential against the live provider without requiring an execution target.
+                properties:
+                  checked_at:
+                    type: string
+                    format: date-time
+                  cloud_connection_id:
+                    type: string
+                  probes:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        message:
+                          type: string
+                        ok:
+                          type: boolean
+                        optional:
+                          type: boolean
+                        probe:
+                          type: string
+                        status_code:
+                          type: integer
+                          format: int64
+                      required:
+                        - ok
+                        - probe
+                  status:
+                    type: string
+                  summary:
+                    type: string
+                required:
+                  - checked_at
+                  - cloud_connection_id
+                  - probes
+                  - status
+                  - summary
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: SystemAdmin; service-account scope: settings:manage'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - System
+      x-handler: handleTestCloudConnection
   /api/v1/system/clusters:
     get:
       summary: List Cluster Connections
@@ -163200,124 +163365,452 @@ paths:
         content:
           application/json:
             schema:
-              type: object
-              properties:
-                archive_mode:
-                  type: string
-                aws_ecs_fargate:
-                  type: object
+              oneOf:
+                - type: object
+                  description: Execution target of kind aws_ecs_fargate.
                   properties:
-                    assign_public_ip:
+                    archive_mode:
                       type: string
-                    burst_task_definition:
-                      type: string
-                    cluster:
-                      type: string
-                    expected_task_role_arn:
-                      type: string
-                    security_groups:
-                      type: array
-                      items:
-                        type: string
-                    subnets:
-                      type: array
-                      items:
-                        type: string
-                    warm_service:
-                      type: string
-                  nullable: true
-                azure_container_apps:
-                  type: object
-                  properties:
-                    burst_job:
-                      type: string
-                    environment_name:
-                      type: string
-                    expected_principal_id:
-                      type: string
-                    resource_group:
-                      type: string
-                    warm_container_app:
-                      type: string
-                  nullable: true
-                burst_owner:
-                  type: string
-                cloud_connection_id:
-                  type: string
-                cluster_connection_id:
-                  type: string
-                connectivity_mode:
-                  type: string
-                description:
-                  type: string
-                enrollment_token:
-                  type: string
-                  nullable: true
-                enrollment_token_expires_at:
-                  type: string
-                  format: date-time
-                  nullable: true
-                id:
-                  type: string
-                kind:
-                  type: string
-                labels:
-                  type: object
-                  additionalProperties:
-                    type: string
-                name:
-                  type: string
-                region:
-                  type: string
-                runtime_profiles:
-                  type: array
-                  items:
-                    type: object
-                    properties:
-                      architecture:
-                        type: string
-                      capacity_type:
-                        type: string
-                      cpu_millis:
-                        type: integer
-                        format: int64
-                      ephemeral_storage_gib:
-                        type: integer
-                        format: int64
-                      id:
-                        type: string
-                      image_digest:
-                        type: string
-                      memory_mib:
-                        type: integer
-                        format: int64
-                      name:
-                        type: string
-                      protocols:
-                        type: array
-                        items:
+                    aws_ecs_fargate:
+                      type: object
+                      properties:
+                        assign_public_ip:
                           type: string
-                      sidecars:
-                        type: array
-                        items:
+                        burst_task_definition:
                           type: string
-                      template_revision:
+                        cluster:
+                          type: string
+                        expected_task_role_arn:
+                          type: string
+                        security_groups:
+                          type: array
+                          items:
+                            type: string
+                        subnets:
+                          type: array
+                          items:
+                            type: string
+                        warm_service:
+                          type: string
+                      nullable: true
+                    burst_owner:
+                      type: string
+                    cloud_connection_id:
+                      type: string
+                    cluster_connection_id:
+                      type: string
+                    connectivity_mode:
+                      type: string
+                    description:
+                      type: string
+                    enrollment_token:
+                      type: string
+                      nullable: true
+                    enrollment_token_expires_at:
+                      type: string
+                      format: date-time
+                      nullable: true
+                    id:
+                      type: string
+                    kind:
+                      type: string
+                      enum:
+                        - aws_ecs_fargate
+                    labels:
+                      type: object
+                      additionalProperties:
                         type: string
-                standing_owner:
-                  type: string
-                static:
-                  type: object
-                  properties:
-                    targets:
+                    name:
+                      type: string
+                    region:
+                      type: string
+                    runtime_profiles:
                       type: array
                       items:
+                        type: object
+                        properties:
+                          architecture:
+                            type: string
+                          capacity_type:
+                            type: string
+                          cpu_millis:
+                            type: integer
+                            format: int64
+                          ephemeral_storage_gib:
+                            type: integer
+                            format: int64
+                          id:
+                            type: string
+                          image_digest:
+                            type: string
+                          memory_mib:
+                            type: integer
+                            format: int64
+                          name:
+                            type: string
+                          protocols:
+                            type: array
+                            items:
+                              type: string
+                          sidecars:
+                            type: array
+                            items:
+                              type: string
+                          template_revision:
+                            type: string
+                    standing_owner:
+                      type: string
+                    status:
+                      type: string
+                    updated_at:
+                      type: string
+                      format: date-time
+                - type: object
+                  description: Execution target of kind azure_container_apps.
+                  properties:
+                    archive_mode:
+                      type: string
+                    azure_container_apps:
+                      type: object
+                      properties:
+                        burst_job:
+                          type: string
+                        environment_name:
+                          type: string
+                        expected_principal_id:
+                          type: string
+                        resource_group:
+                          type: string
+                        warm_container_app:
+                          type: string
+                      nullable: true
+                    burst_owner:
+                      type: string
+                    cloud_connection_id:
+                      type: string
+                    cluster_connection_id:
+                      type: string
+                    connectivity_mode:
+                      type: string
+                    description:
+                      type: string
+                    enrollment_token:
+                      type: string
+                      nullable: true
+                    enrollment_token_expires_at:
+                      type: string
+                      format: date-time
+                      nullable: true
+                    id:
+                      type: string
+                    kind:
+                      type: string
+                      enum:
+                        - azure_container_apps
+                    labels:
+                      type: object
+                      additionalProperties:
                         type: string
-                  nullable: true
-                status:
-                  type: string
-                updated_at:
-                  type: string
-                  format: date-time
+                    name:
+                      type: string
+                    region:
+                      type: string
+                    runtime_profiles:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          architecture:
+                            type: string
+                          capacity_type:
+                            type: string
+                          cpu_millis:
+                            type: integer
+                            format: int64
+                          ephemeral_storage_gib:
+                            type: integer
+                            format: int64
+                          id:
+                            type: string
+                          image_digest:
+                            type: string
+                          memory_mib:
+                            type: integer
+                            format: int64
+                          name:
+                            type: string
+                          protocols:
+                            type: array
+                            items:
+                              type: string
+                          sidecars:
+                            type: array
+                            items:
+                              type: string
+                          template_revision:
+                            type: string
+                    standing_owner:
+                      type: string
+                    status:
+                      type: string
+                    updated_at:
+                      type: string
+                      format: date-time
+                - type: object
+                  description: Execution target of kind azure_container_instances.
+                  properties:
+                    archive_mode:
+                      type: string
+                    azure_container_instances:
+                      type: object
+                      properties:
+                        container_group_template:
+                          type: string
+                        expected_principal_id:
+                          type: string
+                        location:
+                          type: string
+                        resource_group:
+                          type: string
+                        subnet_id:
+                          type: string
+                      nullable: true
+                    burst_owner:
+                      type: string
+                    cloud_connection_id:
+                      type: string
+                    cluster_connection_id:
+                      type: string
+                    connectivity_mode:
+                      type: string
+                    description:
+                      type: string
+                    enrollment_token:
+                      type: string
+                      nullable: true
+                    enrollment_token_expires_at:
+                      type: string
+                      format: date-time
+                      nullable: true
+                    id:
+                      type: string
+                    kind:
+                      type: string
+                      enum:
+                        - azure_container_instances
+                    labels:
+                      type: object
+                      additionalProperties:
+                        type: string
+                    name:
+                      type: string
+                    region:
+                      type: string
+                    runtime_profiles:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          architecture:
+                            type: string
+                          capacity_type:
+                            type: string
+                          cpu_millis:
+                            type: integer
+                            format: int64
+                          ephemeral_storage_gib:
+                            type: integer
+                            format: int64
+                          id:
+                            type: string
+                          image_digest:
+                            type: string
+                          memory_mib:
+                            type: integer
+                            format: int64
+                          name:
+                            type: string
+                          protocols:
+                            type: array
+                            items:
+                              type: string
+                          sidecars:
+                            type: array
+                            items:
+                              type: string
+                          template_revision:
+                            type: string
+                    standing_owner:
+                      type: string
+                    status:
+                      type: string
+                    updated_at:
+                      type: string
+                      format: date-time
+                - type: object
+                  description: Execution target of kind kubernetes.
+                  properties:
+                    archive_mode:
+                      type: string
+                    burst_owner:
+                      type: string
+                    cloud_connection_id:
+                      type: string
+                    cluster_connection_id:
+                      type: string
+                    connectivity_mode:
+                      type: string
+                    description:
+                      type: string
+                    enrollment_token:
+                      type: string
+                      nullable: true
+                    enrollment_token_expires_at:
+                      type: string
+                      format: date-time
+                      nullable: true
+                    id:
+                      type: string
+                    kind:
+                      type: string
+                      enum:
+                        - kubernetes
+                    labels:
+                      type: object
+                      additionalProperties:
+                        type: string
+                    name:
+                      type: string
+                    region:
+                      type: string
+                    runtime_profiles:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          architecture:
+                            type: string
+                          capacity_type:
+                            type: string
+                          cpu_millis:
+                            type: integer
+                            format: int64
+                          ephemeral_storage_gib:
+                            type: integer
+                            format: int64
+                          id:
+                            type: string
+                          image_digest:
+                            type: string
+                          memory_mib:
+                            type: integer
+                            format: int64
+                          name:
+                            type: string
+                          protocols:
+                            type: array
+                            items:
+                              type: string
+                          sidecars:
+                            type: array
+                            items:
+                              type: string
+                          template_revision:
+                            type: string
+                    standing_owner:
+                      type: string
+                    status:
+                      type: string
+                    updated_at:
+                      type: string
+                      format: date-time
+                - type: object
+                  description: Execution target of kind static.
+                  properties:
+                    archive_mode:
+                      type: string
+                    burst_owner:
+                      type: string
+                    cloud_connection_id:
+                      type: string
+                    cluster_connection_id:
+                      type: string
+                    connectivity_mode:
+                      type: string
+                    description:
+                      type: string
+                    enrollment_token:
+                      type: string
+                      nullable: true
+                    enrollment_token_expires_at:
+                      type: string
+                      format: date-time
+                      nullable: true
+                    id:
+                      type: string
+                    kind:
+                      type: string
+                      enum:
+                        - static
+                    labels:
+                      type: object
+                      additionalProperties:
+                        type: string
+                    name:
+                      type: string
+                    region:
+                      type: string
+                    runtime_profiles:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          architecture:
+                            type: string
+                          capacity_type:
+                            type: string
+                          cpu_millis:
+                            type: integer
+                            format: int64
+                          ephemeral_storage_gib:
+                            type: integer
+                            format: int64
+                          id:
+                            type: string
+                          image_digest:
+                            type: string
+                          memory_mib:
+                            type: integer
+                            format: int64
+                          name:
+                            type: string
+                          protocols:
+                            type: array
+                            items:
+                              type: string
+                          sidecars:
+                            type: array
+                            items:
+                              type: string
+                          template_revision:
+                            type: string
+                    standing_owner:
+                      type: string
+                    static:
+                      type: object
+                      properties:
+                        targets:
+                          type: array
+                          items:
+                            type: string
+                      nullable: true
+                    status:
+                      type: string
+                    updated_at:
+                      type: string
+                      format: date-time
+              discriminator:
+                propertyName: kind
       responses:
         "201":
           description: Created
@@ -163367,6 +163860,23 @@ paths:
                         type: string
                     required:
                       - environment_name
+                      - resource_group
+                    nullable: true
+                  azure_container_instances:
+                    type: object
+                    properties:
+                      container_group_template:
+                        type: string
+                      expected_principal_id:
+                        type: string
+                      location:
+                        type: string
+                      resource_group:
+                        type: string
+                      subnet_id:
+                        type: string
+                    required:
+                      - container_group_template
                       - resource_group
                     nullable: true
                   burst_owner:
@@ -163633,6 +164143,23 @@ paths:
                       - environment_name
                       - resource_group
                     nullable: true
+                  azure_container_instances:
+                    type: object
+                    properties:
+                      container_group_template:
+                        type: string
+                      expected_principal_id:
+                        type: string
+                      location:
+                        type: string
+                      resource_group:
+                        type: string
+                      subnet_id:
+                        type: string
+                    required:
+                      - container_group_template
+                      - resource_group
+                    nullable: true
                   burst_owner:
                     type: string
                   capabilities:
@@ -163802,124 +164329,452 @@ paths:
         content:
           application/json:
             schema:
-              type: object
-              properties:
-                archive_mode:
-                  type: string
-                aws_ecs_fargate:
-                  type: object
+              oneOf:
+                - type: object
+                  description: Execution target of kind aws_ecs_fargate.
                   properties:
-                    assign_public_ip:
+                    archive_mode:
                       type: string
-                    burst_task_definition:
-                      type: string
-                    cluster:
-                      type: string
-                    expected_task_role_arn:
-                      type: string
-                    security_groups:
-                      type: array
-                      items:
-                        type: string
-                    subnets:
-                      type: array
-                      items:
-                        type: string
-                    warm_service:
-                      type: string
-                  nullable: true
-                azure_container_apps:
-                  type: object
-                  properties:
-                    burst_job:
-                      type: string
-                    environment_name:
-                      type: string
-                    expected_principal_id:
-                      type: string
-                    resource_group:
-                      type: string
-                    warm_container_app:
-                      type: string
-                  nullable: true
-                burst_owner:
-                  type: string
-                cloud_connection_id:
-                  type: string
-                cluster_connection_id:
-                  type: string
-                connectivity_mode:
-                  type: string
-                description:
-                  type: string
-                enrollment_token:
-                  type: string
-                  nullable: true
-                enrollment_token_expires_at:
-                  type: string
-                  format: date-time
-                  nullable: true
-                id:
-                  type: string
-                kind:
-                  type: string
-                labels:
-                  type: object
-                  additionalProperties:
-                    type: string
-                name:
-                  type: string
-                region:
-                  type: string
-                runtime_profiles:
-                  type: array
-                  items:
-                    type: object
-                    properties:
-                      architecture:
-                        type: string
-                      capacity_type:
-                        type: string
-                      cpu_millis:
-                        type: integer
-                        format: int64
-                      ephemeral_storage_gib:
-                        type: integer
-                        format: int64
-                      id:
-                        type: string
-                      image_digest:
-                        type: string
-                      memory_mib:
-                        type: integer
-                        format: int64
-                      name:
-                        type: string
-                      protocols:
-                        type: array
-                        items:
+                    aws_ecs_fargate:
+                      type: object
+                      properties:
+                        assign_public_ip:
                           type: string
-                      sidecars:
-                        type: array
-                        items:
+                        burst_task_definition:
                           type: string
-                      template_revision:
+                        cluster:
+                          type: string
+                        expected_task_role_arn:
+                          type: string
+                        security_groups:
+                          type: array
+                          items:
+                            type: string
+                        subnets:
+                          type: array
+                          items:
+                            type: string
+                        warm_service:
+                          type: string
+                      nullable: true
+                    burst_owner:
+                      type: string
+                    cloud_connection_id:
+                      type: string
+                    cluster_connection_id:
+                      type: string
+                    connectivity_mode:
+                      type: string
+                    description:
+                      type: string
+                    enrollment_token:
+                      type: string
+                      nullable: true
+                    enrollment_token_expires_at:
+                      type: string
+                      format: date-time
+                      nullable: true
+                    id:
+                      type: string
+                    kind:
+                      type: string
+                      enum:
+                        - aws_ecs_fargate
+                    labels:
+                      type: object
+                      additionalProperties:
                         type: string
-                standing_owner:
-                  type: string
-                static:
-                  type: object
-                  properties:
-                    targets:
+                    name:
+                      type: string
+                    region:
+                      type: string
+                    runtime_profiles:
                       type: array
                       items:
+                        type: object
+                        properties:
+                          architecture:
+                            type: string
+                          capacity_type:
+                            type: string
+                          cpu_millis:
+                            type: integer
+                            format: int64
+                          ephemeral_storage_gib:
+                            type: integer
+                            format: int64
+                          id:
+                            type: string
+                          image_digest:
+                            type: string
+                          memory_mib:
+                            type: integer
+                            format: int64
+                          name:
+                            type: string
+                          protocols:
+                            type: array
+                            items:
+                              type: string
+                          sidecars:
+                            type: array
+                            items:
+                              type: string
+                          template_revision:
+                            type: string
+                    standing_owner:
+                      type: string
+                    status:
+                      type: string
+                    updated_at:
+                      type: string
+                      format: date-time
+                - type: object
+                  description: Execution target of kind azure_container_apps.
+                  properties:
+                    archive_mode:
+                      type: string
+                    azure_container_apps:
+                      type: object
+                      properties:
+                        burst_job:
+                          type: string
+                        environment_name:
+                          type: string
+                        expected_principal_id:
+                          type: string
+                        resource_group:
+                          type: string
+                        warm_container_app:
+                          type: string
+                      nullable: true
+                    burst_owner:
+                      type: string
+                    cloud_connection_id:
+                      type: string
+                    cluster_connection_id:
+                      type: string
+                    connectivity_mode:
+                      type: string
+                    description:
+                      type: string
+                    enrollment_token:
+                      type: string
+                      nullable: true
+                    enrollment_token_expires_at:
+                      type: string
+                      format: date-time
+                      nullable: true
+                    id:
+                      type: string
+                    kind:
+                      type: string
+                      enum:
+                        - azure_container_apps
+                    labels:
+                      type: object
+                      additionalProperties:
                         type: string
-                  nullable: true
-                status:
-                  type: string
-                updated_at:
-                  type: string
-                  format: date-time
+                    name:
+                      type: string
+                    region:
+                      type: string
+                    runtime_profiles:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          architecture:
+                            type: string
+                          capacity_type:
+                            type: string
+                          cpu_millis:
+                            type: integer
+                            format: int64
+                          ephemeral_storage_gib:
+                            type: integer
+                            format: int64
+                          id:
+                            type: string
+                          image_digest:
+                            type: string
+                          memory_mib:
+                            type: integer
+                            format: int64
+                          name:
+                            type: string
+                          protocols:
+                            type: array
+                            items:
+                              type: string
+                          sidecars:
+                            type: array
+                            items:
+                              type: string
+                          template_revision:
+                            type: string
+                    standing_owner:
+                      type: string
+                    status:
+                      type: string
+                    updated_at:
+                      type: string
+                      format: date-time
+                - type: object
+                  description: Execution target of kind azure_container_instances.
+                  properties:
+                    archive_mode:
+                      type: string
+                    azure_container_instances:
+                      type: object
+                      properties:
+                        container_group_template:
+                          type: string
+                        expected_principal_id:
+                          type: string
+                        location:
+                          type: string
+                        resource_group:
+                          type: string
+                        subnet_id:
+                          type: string
+                      nullable: true
+                    burst_owner:
+                      type: string
+                    cloud_connection_id:
+                      type: string
+                    cluster_connection_id:
+                      type: string
+                    connectivity_mode:
+                      type: string
+                    description:
+                      type: string
+                    enrollment_token:
+                      type: string
+                      nullable: true
+                    enrollment_token_expires_at:
+                      type: string
+                      format: date-time
+                      nullable: true
+                    id:
+                      type: string
+                    kind:
+                      type: string
+                      enum:
+                        - azure_container_instances
+                    labels:
+                      type: object
+                      additionalProperties:
+                        type: string
+                    name:
+                      type: string
+                    region:
+                      type: string
+                    runtime_profiles:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          architecture:
+                            type: string
+                          capacity_type:
+                            type: string
+                          cpu_millis:
+                            type: integer
+                            format: int64
+                          ephemeral_storage_gib:
+                            type: integer
+                            format: int64
+                          id:
+                            type: string
+                          image_digest:
+                            type: string
+                          memory_mib:
+                            type: integer
+                            format: int64
+                          name:
+                            type: string
+                          protocols:
+                            type: array
+                            items:
+                              type: string
+                          sidecars:
+                            type: array
+                            items:
+                              type: string
+                          template_revision:
+                            type: string
+                    standing_owner:
+                      type: string
+                    status:
+                      type: string
+                    updated_at:
+                      type: string
+                      format: date-time
+                - type: object
+                  description: Execution target of kind kubernetes.
+                  properties:
+                    archive_mode:
+                      type: string
+                    burst_owner:
+                      type: string
+                    cloud_connection_id:
+                      type: string
+                    cluster_connection_id:
+                      type: string
+                    connectivity_mode:
+                      type: string
+                    description:
+                      type: string
+                    enrollment_token:
+                      type: string
+                      nullable: true
+                    enrollment_token_expires_at:
+                      type: string
+                      format: date-time
+                      nullable: true
+                    id:
+                      type: string
+                    kind:
+                      type: string
+                      enum:
+                        - kubernetes
+                    labels:
+                      type: object
+                      additionalProperties:
+                        type: string
+                    name:
+                      type: string
+                    region:
+                      type: string
+                    runtime_profiles:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          architecture:
+                            type: string
+                          capacity_type:
+                            type: string
+                          cpu_millis:
+                            type: integer
+                            format: int64
+                          ephemeral_storage_gib:
+                            type: integer
+                            format: int64
+                          id:
+                            type: string
+                          image_digest:
+                            type: string
+                          memory_mib:
+                            type: integer
+                            format: int64
+                          name:
+                            type: string
+                          protocols:
+                            type: array
+                            items:
+                              type: string
+                          sidecars:
+                            type: array
+                            items:
+                              type: string
+                          template_revision:
+                            type: string
+                    standing_owner:
+                      type: string
+                    status:
+                      type: string
+                    updated_at:
+                      type: string
+                      format: date-time
+                - type: object
+                  description: Execution target of kind static.
+                  properties:
+                    archive_mode:
+                      type: string
+                    burst_owner:
+                      type: string
+                    cloud_connection_id:
+                      type: string
+                    cluster_connection_id:
+                      type: string
+                    connectivity_mode:
+                      type: string
+                    description:
+                      type: string
+                    enrollment_token:
+                      type: string
+                      nullable: true
+                    enrollment_token_expires_at:
+                      type: string
+                      format: date-time
+                      nullable: true
+                    id:
+                      type: string
+                    kind:
+                      type: string
+                      enum:
+                        - static
+                    labels:
+                      type: object
+                      additionalProperties:
+                        type: string
+                    name:
+                      type: string
+                    region:
+                      type: string
+                    runtime_profiles:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          architecture:
+                            type: string
+                          capacity_type:
+                            type: string
+                          cpu_millis:
+                            type: integer
+                            format: int64
+                          ephemeral_storage_gib:
+                            type: integer
+                            format: int64
+                          id:
+                            type: string
+                          image_digest:
+                            type: string
+                          memory_mib:
+                            type: integer
+                            format: int64
+                          name:
+                            type: string
+                          protocols:
+                            type: array
+                            items:
+                              type: string
+                          sidecars:
+                            type: array
+                            items:
+                              type: string
+                          template_revision:
+                            type: string
+                    standing_owner:
+                      type: string
+                    static:
+                      type: object
+                      properties:
+                        targets:
+                          type: array
+                          items:
+                            type: string
+                      nullable: true
+                    status:
+                      type: string
+                    updated_at:
+                      type: string
+                      format: date-time
+              discriminator:
+                propertyName: kind
       responses:
         "200":
           description: OK
@@ -163969,6 +164824,23 @@ paths:
                         type: string
                     required:
                       - environment_name
+                      - resource_group
+                    nullable: true
+                  azure_container_instances:
+                    type: object
+                    properties:
+                      container_group_template:
+                        type: string
+                      expected_principal_id:
+                        type: string
+                      location:
+                        type: string
+                      resource_group:
+                        type: string
+                      subnet_id:
+                        type: string
+                    required:
+                      - container_group_template
                       - resource_group
                     nullable: true
                   burst_owner:
@@ -164179,6 +165051,129 @@ paths:
       tags:
         - System
       x-handler: handleGetExecutionTargetCapabilities
+  /api/v1/system/execution-targets/{id}/capacity:
+    get:
+      summary: Get Execution Target Capacity
+      description: '**Access Control:** Requires authentication; global roles: SystemAdmin; service-account scope: system:read'
+      operationId: handleGetExecutionTargetCapacity
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                description: Reports the target's configured capacity envelope and its live provider instance inventory.
+                properties:
+                  capabilities:
+                    type: object
+                    properties:
+                      can_launch:
+                        type: boolean
+                      can_reach_directly:
+                        type: boolean
+                      can_scale:
+                        type: boolean
+                      details:
+                        type: object
+                        additionalProperties:
+                          type: string
+                      resource_shapes:
+                        type: array
+                        items:
+                          type: string
+                      supports_reverse:
+                        type: boolean
+                      supports_spot:
+                        type: boolean
+                    required:
+                      - can_launch
+                      - can_reach_directly
+                      - can_scale
+                      - supports_reverse
+                      - supports_spot
+                  checked_at:
+                    type: string
+                    format: date-time
+                  configured_max:
+                    type: integer
+                    format: int64
+                  configured_warm_floor:
+                    type: integer
+                    format: int64
+                  execution_target_id:
+                    type: string
+                  healthy_instances:
+                    type: integer
+                    format: int64
+                  kind:
+                    type: string
+                  live_instances:
+                    type: integer
+                    format: int64
+                  message:
+                    type: string
+                  pools:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        desired_size:
+                          type: integer
+                          format: int64
+                        fleet_pool_id:
+                          type: string
+                        lifecycle_mode:
+                          type: string
+                        max_size:
+                          type: integer
+                          format: int64
+                        name:
+                          type: string
+                        warm_floor:
+                          type: integer
+                          format: int64
+                      required:
+                        - desired_size
+                        - fleet_pool_id
+                        - lifecycle_mode
+                        - max_size
+                        - name
+                        - warm_floor
+                required:
+                  - capabilities
+                  - checked_at
+                  - configured_max
+                  - configured_warm_floor
+                  - execution_target_id
+                  - healthy_instances
+                  - kind
+                  - live_instances
+                  - pools
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: SystemAdmin; service-account scope: system:read'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - System
+      x-handler: handleGetExecutionTargetCapacity
   /api/v1/system/execution-targets/{id}/test:
     post:
       summary: Test Execution Target
