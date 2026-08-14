@@ -163,3 +163,64 @@ variable "archive_retention_days" {
   type        = number
   default     = 0
 }
+
+variable "controller_compute" {
+  description = "Controller runtime. ecs_fargate provisions a single orchestrator/API service behind an ALB."
+  type        = string
+  default     = "eks"
+  validation {
+    condition     = contains(["eks", "ecs_fargate", "external"], var.controller_compute)
+    error_message = "controller_compute must be eks, ecs_fargate, or external."
+  }
+}
+
+variable "generator_compute" {
+  description = "Generator runtime. ecs_fargate provisions a warm service and a burst task definition."
+  type        = string
+  default     = "eks"
+  validation {
+    condition     = contains(["eks", "ecs_fargate", "external"], var.generator_compute)
+    error_message = "generator_compute must be eks, ecs_fargate, or external."
+  }
+}
+
+variable "ecs_generator_connectivity_mode" {
+  description = "Generator control-plane connectivity. auto uses reverse with an ECS controller and direct otherwise."
+  type        = string
+  default     = "auto"
+  validation {
+    condition     = contains(["auto", "direct", "reverse"], var.ecs_generator_connectivity_mode)
+    error_message = "ecs_generator_connectivity_mode must be auto, direct, or reverse."
+  }
+}
+
+variable "controller_image" {
+  description = "Immutable controller image reference for ECS."
+  type        = string
+  default     = ""
+}
+
+variable "generator_image" {
+  description = "Immutable generator image reference for ECS."
+  type        = string
+  default     = ""
+}
+
+variable "generator_gateway_token" {
+  description = "Target-scoped reverse enrollment token returned once by APEX Load registration."
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "ecs_alb_certificate_arn" {
+  description = "ACM certificate ARN for the ECS controller ALB. Required when controller_compute is ecs_fargate."
+  type        = string
+  default     = ""
+}
+
+variable "controller_public_url" {
+  description = "Public HTTPS controller URL whose hostname matches ecs_alb_certificate_arn."
+  type        = string
+  default     = ""
+}

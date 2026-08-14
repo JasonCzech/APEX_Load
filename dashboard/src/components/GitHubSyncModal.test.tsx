@@ -15,6 +15,9 @@ const secretApiMock = vi.hoisted(() => ({
   migrateImportSecrets: vi.fn(),
   discardImportSecretSession: vi.fn(),
   applyImportParameterization: vi.fn(),
+  listFolders: vi.fn(),
+  createFolder: vi.fn(),
+  getAuthEffectiveAccess: vi.fn(),
 }))
 
 vi.mock('../hooks/useApi', () => ({
@@ -156,7 +159,7 @@ describe('GitHubSyncModal (import)', () => {
   let fetchMock: MockInstance<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>
   let applyBody: Record<string, unknown> | null
   let createBody: Record<string, unknown> | null
-  let createResponse: Promise<Response> | null
+  let createResponse: Promise<Response> | (() => Promise<Response>) | null
   let bindingApplyResponse: Promise<Response> | null
   let importParameterization: Record<string, unknown> | undefined
   let importDraftResponse: Record<string, unknown>
@@ -212,6 +215,9 @@ describe('GitHubSyncModal (import)', () => {
     secretApiMock.migrateImportSecrets.mockResolvedValue({ project_id: 'team-a', secrets: [], count: 0 })
     secretApiMock.applyImportParameterization.mockReset()
     secretApiMock.applyImportParameterization.mockResolvedValue({ script: importedDraft, diffs: [], applied_count: 0 })
+    secretApiMock.listFolders.mockResolvedValue({ folders: [] })
+    secretApiMock.getAuthEffectiveAccess.mockResolvedValue({ resources: [] })
+    secretApiMock.createFolder.mockReset()
     fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
       const url = String(input)
       const method = init?.method || 'GET'
@@ -248,17 +254,21 @@ describe('GitHubSyncModal (import)', () => {
         if (bindingApplyResponse) return bindingApplyResponse
         return jsonResponse({ script: resolvedDraft, secret_binding_requirements: [] })
       }
-      if (url.endsWith('/scripts') && method === 'POST') {
+      if (url.includes('/scripts/import/commit-batch') && method === 'POST') {
         createBody = init?.body ? JSON.parse(String(init.body)) : null
+        if (typeof createResponse === 'function') return createResponse()
         if (createResponse) return createResponse
         return jsonResponse({
-          id: 'script-imported',
-          ref_key: 'S-2',
-          name: resolvedDraft.name,
-          protocol: resolvedDraft.protocol,
-          version: resolvedDraft.version,
-          project_id: 'team-a',
-          created_at: new Date().toISOString(),
+          scripts: [{
+            id: 'script-imported',
+            ref_key: 'S-2',
+            name: resolvedDraft.name,
+            protocol: resolvedDraft.protocol,
+            version: resolvedDraft.version,
+            project_id: 'team-a',
+            created_at: new Date().toISOString(),
+          }],
+          count: 1,
         })
       }
       return jsonResponse({})
@@ -308,7 +318,12 @@ describe('GitHubSyncModal (import)', () => {
       script: importedDraft,
       bindings: [{ requirement_id: 'binding-1', secret_name: 'LOGIN_TOKEN' }],
     })
-    expect(createBody).toEqual({ script: resolvedDraft, project_id: 'team-a' })
+    expect(createBody).toEqual(expect.objectContaining({
+      scripts: [resolvedDraft],
+      folder_id: null,
+      source_profile: 'github',
+      operation_id: expect.stringMatching(/^github-import-/),
+    }))
     expect(JSON.stringify(createBody)).not.toContain('[REDACTED]')
     expect(JSON.stringify(createBody)).toContain('{{secret.LOGIN_TOKEN}}')
     expect(onImported).toHaveBeenCalledWith({
@@ -360,7 +375,46 @@ describe('GitHubSyncModal (import)', () => {
     await flushPromises()
 
     expect(applyBody).toBeNull()
-    expect(createBody).toEqual({ script: preservedDraft, project_id: 'team-a' })
+    expect(createBody).toEqual(expect.objectContaining({
+      scripts: [preservedDraft],
+      folder_id: null,
+      source_profile: 'github',
+      operation_id: expect.stringMatching(/^github-import-/),
+    }))
+  })
+
+  it('shows existing script folders and commits to the selected destination', async () => {
+    secretApiMock.listFolders.mockResolvedValueOnce({
+      folders: [{ id: 'folder-imports', project_id: 'team-a', name: 'Imported scripts', category: 'scripts' }],
+    })
+    await act(async () => {
+      root.render(<GitHubSyncModal mode="import" config={config} projectId="team-a" onClose={() => {}} />)
+    })
+    await flushPromises()
+    await flushPromises()
+    await act(async () => { await new Promise(resolve => window.setTimeout(resolve, 0)) })
+
+    const destination = document.querySelector<HTMLSelectElement>('[aria-label="Destination folder for saved scripts"]')
+    expect(destination).not.toBeNull()
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value')?.set
+      setter?.call(destination, 'folder-imports')
+      destination?.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('[aria-label="Browse scripts/redacted.json"]')?.click()
+    })
+    await act(async () => { findButton('Import & Save')?.click() })
+    await flushPromises()
+    await flushPromises()
+    await act(async () => { findButton('Save with 1 secret to configure')?.click() })
+    await flushPromises()
+    await flushPromises()
+
+    expect(createBody).toEqual(expect.objectContaining({
+      folder_id: 'folder-imports',
+      source_profile: 'github',
+    }))
   })
 
   it('expires a preservation-marked GitHub draft and disables Save until it is re-imported', async () => {
@@ -508,7 +562,9 @@ describe('GitHubSyncModal (import)', () => {
       findButton('Import & Save')?.click()
       await Promise.resolve()
     })
-    const branchSelect = Array.from(container.querySelectorAll<HTMLSelectElement>('select'))[1]
+    const branchSelect = Array.from(container.querySelectorAll<HTMLLabelElement>('label'))
+      .find(label => label.querySelector('span')?.textContent === 'Branch')
+      ?.querySelector<HTMLSelectElement>('select')
     await act(async () => {
       if (branchSelect) {
         const setter = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value')?.set
@@ -670,7 +726,10 @@ describe('GitHubSyncModal (import)', () => {
       findButton('Save with 1 secret to configure')?.click()
     })
     await flushPromises()
-    expect(createBody).toEqual({ script: resolvedDraft, project_id: 'team-a' })
+    expect(createBody).toEqual(expect.objectContaining({
+      scripts: [resolvedDraft],
+      source_profile: 'github',
+    }))
 
     await act(async () => {
       findButton('Cancel')?.click()
@@ -679,13 +738,16 @@ describe('GitHubSyncModal (import)', () => {
 
     await act(async () => {
       resolveCreate(new Response(JSON.stringify({
-        id: 'script-imported-after-cancel',
-        ref_key: 'S-3',
-        name: resolvedDraft.name,
-        protocol: resolvedDraft.protocol,
-        version: resolvedDraft.version,
-        project_id: 'team-a',
-        created_at: new Date().toISOString(),
+        scripts: [{
+          id: 'script-imported-after-cancel',
+          ref_key: 'S-3',
+          name: resolvedDraft.name,
+          protocol: resolvedDraft.protocol,
+          version: resolvedDraft.version,
+          project_id: 'team-a',
+          created_at: new Date().toISOString(),
+        }],
+        count: 1,
       }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
       await createResponse
       await Promise.resolve()
@@ -698,6 +760,42 @@ describe('GitHubSyncModal (import)', () => {
       stayInImportReview: true,
     })
     expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('reuses the atomic operation and exact reviewed draft after a lost save response', async () => {
+    const onImported = vi.fn()
+    createResponse = () => Promise.reject(new Error('connection closed after commit'))
+    await act(async () => {
+      root.render(<GitHubSyncModal mode="import" config={config} projectId="team-a" onClose={() => {}} onImported={onImported} />)
+    })
+    await flushPromises()
+    await flushPromises()
+    await act(async () => { await new Promise(resolve => window.setTimeout(resolve, 0)) })
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('[aria-label="Browse scripts/redacted.json"]')?.click()
+    })
+    await act(async () => { findButton('Import & Save')?.click() })
+    await flushPromises()
+    await flushPromises()
+
+    await act(async () => { findButton('Save with 1 secret to configure')?.click() })
+    await flushPromises()
+    await flushPromises()
+    const firstOperationID = String(createBody?.operation_id || '')
+    expect(firstOperationID).toMatch(/^github-import-/)
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain('connection closed after commit')
+    expect(onImported).not.toHaveBeenCalled()
+
+    createResponse = null
+    await act(async () => { findButton('Save Script')?.click() })
+    await flushPromises()
+    await flushPromises()
+
+    expect(createBody?.operation_id).toBe(firstOperationID)
+    expect(createBody?.scripts).toEqual([resolvedDraft])
+    expect(onImported).toHaveBeenCalledWith({
+      scripts: [expect.objectContaining({ id: 'script-imported' })],
+    })
   })
 
   it('locks parameterization while credential bindings are being prepared for save', async () => {
@@ -766,7 +864,10 @@ describe('GitHubSyncModal (import)', () => {
     await flushPromises()
     await flushPromises()
 
-    expect(createBody).toEqual({ script: resolvedDraft, project_id: 'team-a' })
+    expect(createBody).toEqual(expect.objectContaining({
+      scripts: [resolvedDraft],
+      source_profile: 'github',
+    }))
     expect(onImported).toHaveBeenCalledWith({
       scripts: [expect.objectContaining({ id: 'script-imported' })],
     })

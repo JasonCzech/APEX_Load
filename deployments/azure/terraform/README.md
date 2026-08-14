@@ -1,14 +1,17 @@
 # APEX Load — Azure infrastructure (Terraform)
 
-Provisions everything APEX Load needs on Azure. The same Terraform stack serves both deployment topologies — AKS (controller + generators in cluster) and App Service (controller on App Service, generators in AKS).
+Provisions the Azure data platform and the selected APEX Load compute roles. Set
+`controller_compute` and `generator_compute` independently to `aks`,
+`container_apps`, or `external`; AKS is omitted when neither role selects it.
 
 | Resource | Purpose | Maps to |
 |---|---|---|
-| AKS cluster | Runs generators (always). Also runs the controller in the AKS topology. | `deployments/k8s/aks` |
+| AKS cluster | Optional controller and/or generator Kubernetes runtime. | `deployments/k8s/aks` |
+| Azure Container Apps + Jobs | Optional PaaS controller, warm generators, and burst generators. | `containerapps.tf` |
 | `loadgen` node pool | Dedicated autoscaling pool for generators (taint/label `apexload.io/...=generators`). | `generator-statefulset.yaml` nodeSelector |
 | ACR | Container images. Kubelet identity gets `AcrPull` — no pull secrets. | `kustomization.yaml` images |
 | PostgreSQL Flexible Server 16 | Enterprise persistence (`APEXLOAD_STORE=postgres`). Required for App Service topology (SQLite is unsafe on the CIFS `/home` share). | Secret `APEXLOAD_DATABASE_URL` / App Service app setting |
-| Azure Cache for Redis | Live-run state + WebSocket fanout for multi-replica or HA controller. | Secret `APEXLOAD_REDIS_URL` / App Service app setting |
+| Azure Managed Redis | Default live-run state + WebSocket fanout cache. Legacy Azure Cache remains an explicit migration bridge. | Secret `APEXLOAD_REDIS_URL` / controller environment |
 | Storage account + `apexload-archives` container | Run-evidence archives (`APEXLOAD_ARCHIVE_BACKEND=azure_blob`). Account keys disabled — workload identity / managed identity only. | ConfigMap `AZURE_STORAGE_ACCOUNT`, `APEXLOAD_ARCHIVE_CONTAINER` |
 | Key Vault (RBAC) | `{{secret.*}}` script secrets and gRPC TLS PEM blobs (App Service topology). | ConfigMap `APEXLOAD_AZURE_KEY_VAULT_URL`; App Service Key Vault references |
 | User-assigned identities + federated credentials | Split workload identities for `apexload-controller` and `apexload-generator`. Controller gets Blob + Key Vault secret-management access; generators retain read-only Key Vault access. | `serviceaccounts.yaml` client-id annotations; App Service system-assigned identity needs controller-equivalent roles |
@@ -27,6 +30,14 @@ terraform init \
 terraform plan
 terraform apply
 ```
+
+New deployments use Azure Managed Redis. Existing state that contains
+`azurerm_redis_cache.main` must first set
+`redis_service = "azure_cache_legacy"`. Then migrate application cache state
+(or schedule a cache-safe outage), switch to `managed_redis`, review the
+replacement plan, and apply. Redis contains live coordination state rather than
+durable run evidence, so do not switch while tests or provisioning operations
+are active.
 
 ## Wiring the outputs into the manifests
 

@@ -19,12 +19,12 @@ import (
 
 // FleetPoolAllocationRequest is the write shape for a pool's allocation.
 type FleetPoolAllocationRequest struct {
-	ClusterID     string               `json:"cluster_id"`
-	CPURequest    string               `json:"cpu_request"`
-	CPULimit      string               `json:"cpu_limit"`
-	MemoryRequest string               `json:"memory_request"`
-	MemoryLimit   string               `json:"memory_limit"`
-	NodePool      string               `json:"node_pool"`
+	ClusterID     string `json:"cluster_id"`
+	CPURequest    string `json:"cpu_request"`
+	CPULimit      string `json:"cpu_limit"`
+	MemoryRequest string `json:"memory_request"`
+	MemoryLimit   string `json:"memory_limit"`
+	NodePool      string `json:"node_pool"`
 	// NodePoolLabel is the node label key NodePool matches. Empty keeps the
 	// default "agentpool"; an EKS pool sends eks.amazonaws.com/nodegroup as
 	// reported by the cluster capacity response.

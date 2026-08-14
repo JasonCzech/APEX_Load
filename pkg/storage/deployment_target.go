@@ -12,9 +12,11 @@ import (
 // existing rows, and it maps 1:1 onto ClusterConnection.Kind, which is the
 // thing a domain target actually constrains.
 const (
-	DeploymentProviderKubernetes = "kubernetes"
-	DeploymentProviderAzureAKS   = "azure_aks"
-	DeploymentProviderAWSEKS     = "aws_eks"
+	DeploymentProviderKubernetes         = "kubernetes"
+	DeploymentProviderAzureAKS           = "azure_aks"
+	DeploymentProviderAWSEKS             = "aws_eks"
+	DeploymentProviderAzureContainerApps = "azure_container_apps"
+	DeploymentProviderAWSECSFargate      = "aws_ecs_fargate"
 
 	// Recognized so pre-existing fleet_pools.cloud_provider rows stay valid,
 	// but NOT selectable as a domain deployment target: no cluster kind maps to
@@ -60,8 +62,12 @@ func NormalizeCloudProvider(value string) string {
 		return DeploymentProviderKubernetes
 	case "azure", "aks", "azure_aks":
 		return DeploymentProviderAzureAKS
+	case "azure_container_apps", "container_apps":
+		return DeploymentProviderAzureContainerApps
 	case "aws", "eks", "aws_eks":
 		return DeploymentProviderAWSEKS
+	case "aws_ecs_fargate", "ecs_fargate", "fargate":
+		return DeploymentProviderAWSECSFargate
 	case "gcp", "gke", "gcp_gke":
 		return DeploymentProviderGCPGKE
 	case "static":
@@ -75,7 +81,8 @@ func NormalizeCloudProvider(value string) string {
 // domain's deployment target.
 func IsSelectableDeploymentProvider(provider string) bool {
 	switch strings.TrimSpace(provider) {
-	case DeploymentProviderKubernetes, DeploymentProviderAzureAKS, DeploymentProviderAWSEKS:
+	case DeploymentProviderKubernetes, DeploymentProviderAzureAKS, DeploymentProviderAWSEKS,
+		DeploymentProviderAzureContainerApps, DeploymentProviderAWSECSFargate:
 		return true
 	default:
 		return false
@@ -84,7 +91,8 @@ func IsSelectableDeploymentProvider(provider string) bool {
 
 // SelectableDeploymentProviders lists the choices a superuser may pick from.
 func SelectableDeploymentProviders() []string {
-	return []string{DeploymentProviderKubernetes, DeploymentProviderAzureAKS, DeploymentProviderAWSEKS}
+	return []string{DeploymentProviderKubernetes, DeploymentProviderAzureAKS, DeploymentProviderAWSEKS,
+		DeploymentProviderAzureContainerApps, DeploymentProviderAWSECSFargate}
 }
 
 // DomainDeploymentTarget is a superuser's per-domain deployment constraint: the
@@ -98,10 +106,15 @@ type DomainDeploymentTarget struct {
 	Provider string `json:"provider"`
 	// DefaultClusterID is applied to a new pool that names no cluster. Empty
 	// means the administrator must choose one per pool.
-	DefaultClusterID string    `json:"default_cluster_id,omitempty"`
-	UpdatedBySubject string    `json:"updated_by_subject,omitempty"`
-	CreatedAt        time.Time `json:"created_at"`
-	UpdatedAt        time.Time `json:"updated_at"`
+	DefaultClusterID string `json:"default_cluster_id,omitempty"`
+	// DefaultExecutionTargetID and AllowedExecutionTargetIDs are the normalized
+	// policy. Legacy provider/default_cluster_id remain projections until old
+	// clients have migrated.
+	DefaultExecutionTargetID  string    `json:"default_execution_target_id,omitempty"`
+	AllowedExecutionTargetIDs []string  `json:"allowed_execution_target_ids,omitempty"`
+	UpdatedBySubject          string    `json:"updated_by_subject,omitempty"`
+	CreatedAt                 time.Time `json:"created_at"`
+	UpdatedAt                 time.Time `json:"updated_at"`
 }
 
 func (t *DomainDeploymentTarget) Validate() error {
@@ -113,6 +126,18 @@ func (t *DomainDeploymentTarget) Validate() error {
 	}
 	if !IsSelectableDeploymentProvider(t.Provider) {
 		return fmt.Errorf("unsupported deployment provider %q", t.Provider)
+	}
+	if defaultID := strings.TrimSpace(t.DefaultExecutionTargetID); defaultID != "" {
+		allowed := false
+		for _, id := range t.AllowedExecutionTargetIDs {
+			if strings.TrimSpace(id) == defaultID {
+				allowed = true
+				break
+			}
+		}
+		if !allowed {
+			return errors.New("default execution target must be included in the allowed target list")
+		}
 	}
 	return nil
 }

@@ -3,8 +3,13 @@ package bruno
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
+	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/jasonczech/apexload/pkg/credential"
+	"github.com/jasonczech/apexload/pkg/engine"
 )
 
 func TestInspectNativePreservesAuthorizationSchemeWhileGoverningVariable(t *testing.T) {
@@ -1452,7 +1457,12 @@ http:
 		if len(candidate.SecretRequirements) != 1 {
 			t.Fatalf("%s requirements = %#v", candidate.SourcePath, candidate.SecretRequirements)
 		}
-		passwords[auth.Password] = candidate.SecretRequirements[0].Value
+		requirement := candidate.SecretRequirements[0]
+		if requirement.Path != "demo/shared/folder.yml" ||
+			!reflect.DeepEqual(requirement.AffectedPaths, []string{"demo/" + candidate.SourcePath}) {
+			t.Fatalf("%s inherited auth locations = path %q affected %#v", candidate.SourcePath, requirement.Path, requirement.AffectedPaths)
+		}
+		passwords[auth.Password] = requirement.Value
 	}
 	values := make(map[string]bool)
 	for _, value := range passwords {
@@ -1465,6 +1475,53 @@ http:
 	if bytes.Contains(sanitizedFolder, []byte("prefix-{{suffix}}")) ||
 		bytes.Contains(sanitizedFolder, []byte(`password: "{{passwordValue}}"`)) {
 		t.Fatalf("sanitized inherited auth retained credential templates:\n%s", sanitizedFolder)
+	}
+}
+
+func TestInspectNativeReportsInheritedComposedHeaderRequestPaths(t *testing.T) {
+	result, err := Inspect(Input{
+		Files: map[string][]byte{
+			"demo/opencollection.yml": []byte(`opencollection: 1.0.0
+info: {name: Scoped inherited header}
+`),
+			"demo/shared/folder.yml": []byte(`info: {name: Shared, type: folder, seq: 1}
+request:
+  variables:
+    - {name: tokenValue, value: "prefix-{{suffix}}"}
+  headers:
+    - {name: X-API-Key, value: "{{tokenValue}}"}
+`),
+			"demo/shared/a.yml": []byte(`info: {name: A, uid: scoped-header-a, type: http, seq: 1}
+variables:
+  - {name: suffix, value: alpha}
+http: {method: GET, url: https://example.test/a}
+`),
+			"demo/shared/b.yml": []byte(`info: {name: B, uid: scoped-header-b, type: http, seq: 2}
+variables:
+  - {name: suffix, value: beta}
+http: {method: GET, url: https://example.test/b}
+`),
+		},
+		Options: InspectOptions{OutputMode: OutputModeNativeRequests},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Scripts) != 2 || len(result.SecretRequirements) != 2 {
+		t.Fatalf("inherited header result = %#v", result)
+	}
+	for _, candidate := range result.Scripts {
+		if len(candidate.SecretRequirements) != 1 {
+			t.Fatalf("%s requirements = %#v", candidate.SourcePath, candidate.SecretRequirements)
+		}
+		requirement := candidate.SecretRequirements[0]
+		if requirement.Path != "demo/shared/folder.yml" ||
+			!reflect.DeepEqual(requirement.AffectedPaths, []string{"demo/" + candidate.SourcePath}) {
+			t.Fatalf("%s inherited header locations = path %q affected %#v", candidate.SourcePath, requirement.Path, requirement.AffectedPaths)
+		}
+		if got := candidate.Script.Actions[0].Headers["X-API-Key"]; got != requirement.Replacement {
+			t.Fatalf("%s inherited header = %q, want %q", candidate.SourcePath, got, requirement.Replacement)
+		}
 	}
 }
 
@@ -1564,6 +1621,1100 @@ http:
 		if bytes.Contains(sanitized, []byte("{{bodyValue}}")) {
 			t.Fatalf("sanitized %s retained usage:\n%s", candidate.SourcePath, sanitized)
 		}
+	}
+}
+
+func TestInspectNativeDescribesSharedUnresolvedXMLCredentials(t *testing.T) {
+	result, err := Inspect(Input{
+		Files: map[string][]byte{
+			"demo/opencollection.yml": []byte(`opencollection: 1.0.0
+info: {name: Shared unresolved XML credential}
+`),
+			"demo/a.yml": []byte(`info: {name: A, uid: unresolved-xml-a, type: http, seq: 1}
+http:
+  method: POST
+  url: https://example.test/a
+  body: {type: xml, data: '<Envelope><mh:authentication><mh:userName>{{partnerUserName}}</mh:userName><mh:userPassword>{{partnerPassword}}</mh:userPassword></mh:authentication></Envelope>'}
+`),
+			"demo/b.yml": []byte(`info: {name: B, uid: unresolved-xml-b, type: http, seq: 2}
+http:
+  method: POST
+  url: https://example.test/b
+  body: {type: xml, data: '<Envelope><mh:authentication><mh:userName>{{partnerUserName}}</mh:userName><mh:userPassword>{{partnerPassword}}</mh:userPassword></mh:authentication></Envelope>'}
+`),
+		},
+		Options: InspectOptions{OutputMode: OutputModeNativeRequests},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.SecretRequirements) != 2 {
+		t.Fatalf("shared unresolved requirements = %#v", result.SecretRequirements)
+	}
+	if len(result.MissingVariables) != 0 {
+		t.Fatalf("aggregate missing variables = %#v", result.MissingVariables)
+	}
+	wantPaths := []string{"demo/a.yml", "demo/b.yml"}
+	wantMetadata := map[string]struct {
+		namePrefix string
+		label      string
+		context    string
+	}{
+		"partnerPassword": {"PARTNER_PASSWORD_", "Partner password", "XML password element <mh:userPassword>"},
+		"partnerUserName": {"PARTNER_USERNAME_", "Partner username", "XML username element <mh:userName>"},
+	}
+	bindings := make(map[string]string, len(result.SecretRequirements))
+	for _, requirement := range result.SecretRequirements {
+		want, exists := wantMetadata[requirement.SourceVariable]
+		if !exists || !strings.HasPrefix(requirement.SuggestedName, want.namePrefix) ||
+			requirement.DisplayLabel != want.label ||
+			!requirement.UnresolvedSourceVariable ||
+			requirement.Context != want.context ||
+			requirement.Value != "" {
+			t.Fatalf("unresolved XML presentation metadata = %#v", requirement)
+		}
+		if !reflect.DeepEqual(requirement.AffectedPaths, wantPaths) {
+			t.Fatalf("affected paths = %#v, want %#v", requirement.AffectedPaths, wantPaths)
+		}
+		bindings[requirement.SourceVariable] = requirement.Replacement
+	}
+	for _, candidate := range result.Scripts {
+		if len(candidate.MissingVariables) != 0 || len(candidate.SecretRequirements) != 2 {
+			t.Fatalf("candidate %q requirements = %#v", candidate.SourcePath, candidate.SecretRequirements)
+		}
+		action := candidate.Script.Actions[0]
+		if blocker := action.Metadata["execution_blocker"]; blocker == "bruno_missing_variables" {
+			t.Fatalf("candidate %q retained missing-variable blocker: %#v", candidate.SourcePath, action.Metadata)
+		}
+		wantBody := "<Envelope><mh:authentication><mh:userName>" + bindings["partnerUserName"] +
+			"</mh:userName><mh:userPassword>" + bindings["partnerPassword"] +
+			"</mh:userPassword></mh:authentication></Envelope>"
+		if body := action.Body; body != wantBody {
+			t.Fatalf("candidate %q body = %q", candidate.SourcePath, body)
+		}
+	}
+}
+
+func TestInspectNativeKeepsNormalizationEquivalentUnresolvedVariablesDistinct(t *testing.T) {
+	const body = `<authentication><credential>{{clientId}}</credential><credential>{{client_id}}</credential><credential>{{ClientId}}</credential><credential>{{CLIENT-ID}}</credential></authentication>`
+	result, err := Inspect(Input{
+		Filename: "request.yml",
+		Content: []byte(`info: {name: Distinct unresolved credentials, uid: distinct-unresolved-credentials, type: http}
+http:
+  method: POST
+  url: https://example.test
+  body:
+    type: xml
+    data: '` + body + `'
+`),
+		Options: InspectOptions{OutputMode: OutputModeNativeRequests},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantVariables := map[string]bool{
+		"clientId":  false,
+		"client_id": false,
+		"ClientId":  false,
+		"CLIENT-ID": false,
+	}
+	if len(result.SecretRequirements) != len(wantVariables) || len(result.Scripts) != 1 {
+		t.Fatalf("normalization-equivalent requirements = %#v", result.SecretRequirements)
+	}
+	ids := make(map[string]struct{}, len(wantVariables))
+	names := make(map[string]struct{}, len(wantVariables))
+	replacements := make(map[string]struct{}, len(wantVariables))
+	for _, requirement := range result.SecretRequirements {
+		if _, exists := wantVariables[requirement.SourceVariable]; !exists ||
+			!requirement.UnresolvedSourceVariable ||
+			!strings.HasPrefix(requirement.SuggestedName, "CLIENT_ID_") {
+			t.Fatalf("distinct unresolved metadata = %#v", requirement)
+		}
+		wantVariables[requirement.SourceVariable] = true
+		ids[requirement.ID] = struct{}{}
+		names[requirement.SuggestedName] = struct{}{}
+		replacements[requirement.Replacement] = struct{}{}
+	}
+	for variable, found := range wantVariables {
+		if !found {
+			t.Errorf("requirement for %q was not retained", variable)
+		}
+	}
+	if len(ids) != len(wantVariables) || len(names) != len(wantVariables) ||
+		len(replacements) != len(wantVariables) {
+		t.Fatalf("distinct variables shared an identity or runtime binding: %#v", result.SecretRequirements)
+	}
+	candidate := result.Scripts[0]
+	if len(candidate.MissingVariables) != 0 ||
+		candidate.Script.Actions[0].Metadata["execution_blocker"] == "bruno_missing_variables" {
+		t.Fatalf("governed unresolved credentials remained blocked: %#v", candidate)
+	}
+	for replacement := range replacements {
+		if !strings.Contains(candidate.Script.Actions[0].Body, replacement) {
+			t.Errorf("candidate body does not use distinct binding %q: %s", replacement, candidate.Script.Actions[0].Body)
+		}
+	}
+}
+
+func TestInspectNativeKeepsNormalizationEquivalentUnresolvedAuthVariablesDistinct(t *testing.T) {
+	result, err := Inspect(Input{
+		Filename: "request.yml",
+		Content: []byte(`info: {name: Distinct unresolved auth, uid: distinct-unresolved-auth, type: http}
+http:
+  method: GET
+  url: https://example.test
+  auth:
+    type: basic
+    username: "{{env.client.id}}"
+    password: "{{env.client-id}}"
+`),
+		Options: InspectOptions{OutputMode: OutputModeNativeRequests},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Scripts) != 1 || len(result.SecretRequirements) != 2 {
+		t.Fatalf("normalization-equivalent auth requirements = %#v", result.SecretRequirements)
+	}
+	candidate := result.Scripts[0]
+	if len(candidate.MissingVariables) != 0 ||
+		candidate.Script.Actions[0].Metadata["execution_blocker"] == "bruno_missing_variables" {
+		t.Fatalf("governed unresolved auth remained blocked: %#v", candidate)
+	}
+	wantVariables := map[string]bool{"env.client.id": false, "env.client-id": false}
+	ids := make(map[string]struct{}, len(wantVariables))
+	names := make(map[string]struct{}, len(wantVariables))
+	for _, requirement := range result.SecretRequirements {
+		if _, exists := wantVariables[requirement.SourceVariable]; !exists ||
+			!requirement.UnresolvedSourceVariable || requirement.Value != "" {
+			t.Fatalf("distinct unresolved auth metadata = %#v", requirement)
+		}
+		wantVariables[requirement.SourceVariable] = true
+		ids[requirement.ID] = struct{}{}
+		names[requirement.SuggestedName] = struct{}{}
+	}
+	if !wantVariables["env.client.id"] || !wantVariables["env.client-id"] ||
+		len(ids) != len(wantVariables) || len(names) != len(wantVariables) {
+		t.Fatalf("distinct auth variables shared an identity or runtime binding: %#v", result.SecretRequirements)
+	}
+	auth := candidate.Script.Actions[0].Auth
+	if auth == nil || auth.Username == auth.Password ||
+		!strings.HasPrefix(auth.Username, "{{secret.ENV_CLIENT_ID_") ||
+		!strings.HasPrefix(auth.Password, "{{secret.ENV_CLIENT_ID_") {
+		t.Fatalf("distinct auth bindings = %#v", auth)
+	}
+}
+
+func TestInspectNativeKeepsNormalizationEquivalentUnresolvedHeaderVariablesDistinct(t *testing.T) {
+	result, err := Inspect(Input{
+		Filename: "request.yml",
+		Content: []byte(`info: {name: Distinct unresolved headers, uid: distinct-unresolved-headers, type: http}
+http:
+  method: GET
+  url: https://example.test
+  headers:
+    - {name: Authorization, value: "Bearer {{Token}}"}
+    - {name: Cookie, value: "session={{token}}"}
+`),
+		Options: InspectOptions{OutputMode: OutputModeNativeRequests},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Scripts) != 1 || len(result.SecretRequirements) != 2 {
+		t.Fatalf("normalization-equivalent header requirements = %#v", result.SecretRequirements)
+	}
+	candidate := result.Scripts[0]
+	if len(candidate.MissingVariables) != 0 ||
+		candidate.Script.Actions[0].Metadata["execution_blocker"] == "bruno_missing_variables" {
+		t.Fatalf("governed unresolved headers remained blocked: %#v", candidate)
+	}
+	wantVariables := map[string]bool{"Token": false, "token": false}
+	bindings := make(map[string]string, len(wantVariables))
+	for _, requirement := range result.SecretRequirements {
+		if _, exists := wantVariables[requirement.SourceVariable]; !exists ||
+			!requirement.UnresolvedSourceVariable || requirement.Value != "" {
+			t.Fatalf("distinct unresolved header metadata = %#v", requirement)
+		}
+		wantVariables[requirement.SourceVariable] = true
+		bindings[requirement.SourceVariable] = requirement.Replacement
+	}
+	if !wantVariables["Token"] || !wantVariables["token"] ||
+		bindings["Token"] == bindings["token"] {
+		t.Fatalf("distinct header variables shared a runtime binding: %#v", result.SecretRequirements)
+	}
+	headers := candidate.Script.Actions[0].Headers
+	if headers["Authorization"] != "Bearer "+bindings["Token"] ||
+		headers["Cookie"] != "session="+bindings["token"] {
+		t.Fatalf("distinct header bindings = %#v, requirements %#v", headers, result.SecretRequirements)
+	}
+}
+
+func TestInspectNativeKeepsNormalizationEquivalentUnresolvedJSONVariablesDistinct(t *testing.T) {
+	result, err := Inspect(Input{
+		Files: map[string][]byte{
+			"demo/opencollection.yml": []byte(`opencollection: 1.0.0
+info: {name: Distinct unresolved JSON credentials}
+`),
+			"demo/a.yml": []byte(`info: {name: A, uid: distinct-json-a, type: http, seq: 1}
+http:
+  method: POST
+  url: https://example.test/a
+  body: {type: json, data: '{"password":"{{env.client.id}}"}'}
+`),
+			"demo/b.yml": []byte(`info: {name: B, uid: distinct-json-b, type: http, seq: 2}
+http:
+  method: POST
+  url: https://example.test/b
+  body: {type: json, data: '{"password":"{{env.client-id}}"}'}
+`),
+		},
+		Options: InspectOptions{OutputMode: OutputModeNativeRequests},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Scripts) != 2 || len(result.SecretRequirements) != 2 {
+		t.Fatalf("normalization-equivalent JSON requirements = %#v", result.SecretRequirements)
+	}
+	wantVariables := map[string]bool{"env.client.id": false, "env.client-id": false}
+	bindings := make(map[string]string, len(wantVariables))
+	for _, requirement := range result.SecretRequirements {
+		if _, exists := wantVariables[requirement.SourceVariable]; !exists ||
+			!requirement.UnresolvedSourceVariable || requirement.Value != "" {
+			t.Fatalf("distinct unresolved JSON metadata = %#v", requirement)
+		}
+		wantVariables[requirement.SourceVariable] = true
+		bindings[requirement.SourceVariable] = requirement.Replacement
+	}
+	if !wantVariables["env.client.id"] || !wantVariables["env.client-id"] ||
+		bindings["env.client.id"] == bindings["env.client-id"] {
+		t.Fatalf("distinct JSON variables shared a runtime binding: %#v", result.SecretRequirements)
+	}
+	for _, candidate := range result.Scripts {
+		if len(candidate.MissingVariables) != 0 || len(candidate.SecretRequirements) != 1 ||
+			candidate.Script.Actions[0].Metadata["execution_blocker"] == "bruno_missing_variables" {
+			t.Fatalf("governed unresolved JSON candidate remained blocked: %#v", candidate)
+		}
+		requirement := candidate.SecretRequirements[0]
+		if !strings.Contains(candidate.Script.Actions[0].Body, requirement.Replacement) {
+			t.Fatalf("JSON body does not use candidate binding %q: %s", requirement.Replacement, candidate.Script.Actions[0].Body)
+		}
+	}
+}
+
+func TestInspectNativeKeepsNormalizationEquivalentNamespacedXMLVariablesDistinct(t *testing.T) {
+	result, err := Inspect(Input{
+		Filename: "request.yml",
+		Content: []byte(`info: {name: Distinct namespaced XML credentials, uid: distinct-namespaced-xml, type: http}
+http:
+  method: POST
+  url: https://example.test
+  body:
+    type: xml
+    data: '<authentication><password>{{env.client.id}}</password><password>{{env.client-id}}</password></authentication>'
+`),
+		Options: InspectOptions{OutputMode: OutputModeNativeRequests},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Scripts) != 1 || len(result.SecretRequirements) != 2 {
+		t.Fatalf("normalization-equivalent namespaced XML requirements = %#v", result.SecretRequirements)
+	}
+	wantVariables := map[string]bool{"env.client.id": false, "env.client-id": false}
+	bindings := make(map[string]string, len(wantVariables))
+	for _, requirement := range result.SecretRequirements {
+		if _, exists := wantVariables[requirement.SourceVariable]; !exists ||
+			!requirement.UnresolvedSourceVariable || requirement.Value != "" {
+			t.Fatalf("distinct namespaced XML metadata = %#v", requirement)
+		}
+		wantVariables[requirement.SourceVariable] = true
+		bindings[requirement.SourceVariable] = requirement.Replacement
+	}
+	candidate := result.Scripts[0]
+	if !wantVariables["env.client.id"] || !wantVariables["env.client-id"] ||
+		bindings["env.client.id"] == bindings["env.client-id"] ||
+		len(candidate.MissingVariables) != 0 ||
+		candidate.Script.Actions[0].Metadata["execution_blocker"] == "bruno_missing_variables" {
+		t.Fatalf("distinct namespaced XML variables shared a runtime binding: %#v", candidate)
+	}
+	body := candidate.Script.Actions[0].Body
+	if !strings.Contains(body, bindings["env.client.id"]) ||
+		!strings.Contains(body, bindings["env.client-id"]) {
+		t.Fatalf("XML body does not retain both namespaced bindings: %s", body)
+	}
+}
+
+func TestInspectNativeNamespacedCredentialSourceDoesNotReclassifyExistingSecret(t *testing.T) {
+	tests := []struct {
+		name     string
+		bodyType string
+		body     string
+	}{
+		{name: "JSON", bodyType: "json", body: `{"password":"{{secret.EXISTING_PASSWORD}}"}`},
+		{name: "XML", bodyType: "xml", body: `<authentication><password>{{secret.EXISTING_PASSWORD}}</password></authentication>`},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			result, err := Inspect(Input{
+				Filename: "request.yml",
+				Content: []byte(`info: {name: Existing governed credential, uid: existing-governed-credential, type: http}
+http:
+  method: POST
+  url: https://example.test
+  body:
+    type: ` + test.bodyType + `
+    data: '` + test.body + `'
+`),
+				Options: InspectOptions{OutputMode: OutputModeNativeRequests},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(result.SecretRequirements) != 1 {
+				t.Fatalf("existing secret requirements = %#v", result.SecretRequirements)
+			}
+			requirement := result.SecretRequirements[0]
+			if !requirement.ExistingReference || requirement.UnresolvedSourceVariable ||
+				requirement.SourceVariable != "" || requirement.SuggestedName != "EXISTING_PASSWORD" ||
+				requirement.Replacement != "{{secret.EXISTING_PASSWORD}}" {
+				t.Fatalf("existing secret was reclassified as an unresolved source variable: %#v", requirement)
+			}
+		})
+	}
+}
+
+func TestInspectNativeKeepsNormalizationEquivalentUnresolvedURLCredentialsDistinct(t *testing.T) {
+	result, err := Inspect(Input{
+		Filename: "request.yml",
+		Content: []byte(`info: {name: Distinct unresolved URL credentials, uid: distinct-unresolved-url, type: http}
+http:
+  method: GET
+  url: "https://example.test?password={{clientId}}&password={{client_id}}"
+`),
+		Options: InspectOptions{OutputMode: OutputModeNativeRequests},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Scripts) != 1 || len(result.SecretRequirements) != 2 {
+		t.Fatalf("normalization-equivalent URL requirements = %#v", result.SecretRequirements)
+	}
+	ids := make(map[string]struct{}, 2)
+	names := make(map[string]struct{}, 2)
+	wantVariables := map[string]string{
+		"clientId":  "Client ID",
+		"client_id": "Client ID",
+	}
+	for _, requirement := range result.SecretRequirements {
+		wantLabel, exists := wantVariables[requirement.SourceVariable]
+		if !exists || requirement.DisplayLabel != wantLabel ||
+			!requirement.UnresolvedSourceVariable || requirement.Value != "" {
+			t.Fatalf("unresolved URL source metadata = %#v", requirement)
+		}
+		ids[requirement.ID] = struct{}{}
+		names[requirement.SuggestedName] = struct{}{}
+	}
+	candidate := result.Scripts[0]
+	if len(ids) != 2 || len(names) != 2 || len(candidate.MissingVariables) != 0 ||
+		candidate.Script.Actions[0].Metadata["execution_blocker"] == "bruno_missing_variables" ||
+		strings.Count(candidate.Script.Actions[0].Target, "{{secret.") != 2 {
+		t.Fatalf("URL credential occurrences were not independently governed: %#v", candidate)
+	}
+}
+
+func TestInspectNativeReusesSharedUnresolvedURLSourceIdentity(t *testing.T) {
+	result, err := Inspect(Input{
+		Files: map[string][]byte{
+			"demo/opencollection.yml": []byte(`opencollection: 1.0.0
+info: {name: Shared unresolved URL credential}
+`),
+			"demo/a.yml": []byte(`info: {name: A, uid: shared-url-a, type: http, seq: 1}
+http:
+  method: GET
+  url: "https://example.test/a?password={{clientId}}"
+`),
+			"demo/b.yml": []byte(`info: {name: B, uid: shared-url-b, type: http, seq: 2}
+http:
+  method: GET
+  url: "https://example.test/b?password={{clientId}}"
+`),
+		},
+		Options: InspectOptions{OutputMode: OutputModeNativeRequests},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantPaths := []string{"demo/a.yml", "demo/b.yml"}
+	if len(result.Scripts) != 2 || len(result.SecretRequirements) != 1 {
+		t.Fatalf("shared URL requirements = %#v", result.SecretRequirements)
+	}
+	requirement := result.SecretRequirements[0]
+	if requirement.SourceVariable != "clientId" ||
+		requirement.DisplayLabel != "Client ID" ||
+		!requirement.UnresolvedSourceVariable || requirement.Value != "" ||
+		!reflect.DeepEqual(requirement.AffectedPaths, wantPaths) {
+		t.Fatalf("shared URL source metadata = %#v", requirement)
+	}
+	for _, candidate := range result.Scripts {
+		if len(candidate.SecretRequirements) != 1 ||
+			candidate.SecretRequirements[0].ID != requirement.ID ||
+			!strings.Contains(candidate.Script.Actions[0].Target, requirement.Replacement) ||
+			strings.Contains(candidate.Script.Actions[0].Target, "{{clientId}}") {
+			t.Fatalf("candidate did not reuse shared URL binding: %#v", candidate)
+		}
+	}
+}
+
+func TestInspectNativeDescribesExactCredentialSourcesAcrossAuthAndForm(t *testing.T) {
+	tests := []struct {
+		name        string
+		source      string
+		wantValue   string
+		wantContext string
+		unresolved  bool
+	}{
+		{
+			name: "resolved auth variable chain",
+			source: `info: {name: Auth source metadata, uid: auth-source-metadata, type: http}
+variables:
+  - {name: sourceCredential, value: imported-auth-value}
+  - {name: clientId, value: "{{sourceCredential}}"}
+http:
+  method: GET
+  url: https://example.test
+  auth:
+    type: bearer
+    token: "{{clientId}}"
+`,
+			wantValue:   "imported-auth-value",
+			wantContext: "Bruno HTTP auth token",
+		},
+		{
+			name: "unresolved form variable",
+			source: `info: {name: Form source metadata, uid: form-source-metadata, type: http}
+http:
+  method: POST
+  url: https://example.test
+  body:
+    type: form-urlencoded
+    data:
+      - {name: password, value: "{{clientId}}"}
+`,
+			wantContext: "Bruno form body credential password",
+			unresolved:  true,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			result, err := Inspect(Input{
+				Filename: "request.yml",
+				Content:  []byte(test.source),
+				Options:  InspectOptions{OutputMode: OutputModeNativeRequests},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(result.SecretRequirements) != 1 || len(result.Scripts) != 1 {
+				t.Fatalf("credential source requirements = %#v", result.SecretRequirements)
+			}
+			requirement := result.SecretRequirements[0]
+			if requirement.SourceVariable != "clientId" ||
+				requirement.DisplayLabel != "Client ID" ||
+				requirement.UnresolvedSourceVariable != test.unresolved ||
+				requirement.Value != test.wantValue ||
+				requirement.Context != test.wantContext ||
+				!reflect.DeepEqual(requirement.AffectedPaths, []string{"request.yml"}) {
+				t.Fatalf("credential source metadata = %#v", requirement)
+			}
+			candidate := result.Scripts[0]
+			if len(candidate.SecretRequirements) != 1 ||
+				candidate.SecretRequirements[0].ID != requirement.ID ||
+				len(candidate.MissingVariables) != 0 {
+				t.Fatalf("credential source candidate = %#v", candidate)
+			}
+		})
+	}
+}
+
+func TestNativeXMLCredentialContext(t *testing.T) {
+	tests := []struct {
+		name string
+		kind string
+		tag  string
+		want string
+	}{
+		{name: "username element", kind: "element", tag: "mh:userName", want: "XML username element <mh:userName>"},
+		{name: "partner password element", kind: "element", tag: "partnerPassword", want: "XML password element <partnerPassword>"},
+		{name: "password element with namespace", kind: "element", tag: "mh:userPassword", want: "XML password element <mh:userPassword>"},
+		{name: "token element", kind: "element", tag: "access_token", want: "XML token element <access_token>"},
+		{name: "API key element", kind: "element", tag: "api-key", want: "XML API key element <api-key>"},
+		{name: "attribute", kind: "attribute", tag: "mh:userName", want: "XML username attribute mh:userName"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := nativeXMLCredentialContext(test.kind, test.tag); got != test.want {
+				t.Fatalf("nativeXMLCredentialContext(%q, %q) = %q, want %q", test.kind, test.tag, got, test.want)
+			}
+		})
+	}
+}
+
+func TestNativeHeaderDisplayLabel(t *testing.T) {
+	tests := []struct {
+		header string
+		want   string
+	}{
+		{header: "X-CDF-AUTH-TOKEN", want: "X-CDF auth token"},
+		{header: "idpctx-ixp-dark-mode-session", want: "IDP context IXP dark mode session"},
+		{header: "idpctx-session-id", want: "IDP context session ID"},
+		{header: "X-API-Key", want: "X-API key"},
+		{header: "Cookie", want: "Cookie"},
+	}
+	for _, test := range tests {
+		t.Run(test.header, func(t *testing.T) {
+			if got := nativeHeaderDisplayLabel(test.header); got != test.want {
+				t.Fatalf("nativeHeaderDisplayLabel(%q) = %q, want %q", test.header, got, test.want)
+			}
+		})
+	}
+}
+
+func TestInspectNativeDescribesSuppliedCollectionHeaderCredentials(t *testing.T) {
+	result, err := Inspect(Input{
+		Files: map[string][]byte{
+			"CTA_Collection 6a/opencollection.yml": []byte(`opencollection: 1.0.0
+info: {name: CTA credential presentation}
+`),
+			"CTA_Collection 6a/CTA/InquireAccountProfile_312.yml": []byte(`info: {name: InquireAccountProfile_312, uid: inquire-account-profile-312, type: http, seq: 1}
+http:
+  method: POST
+  url: https://example.test/account
+  headers:
+    - {name: Content-Type, value: text/xml}
+    - {name: X-CDF-AUTH-TOKEN, value: "{{authToken}}"}
+    - {name: idp-trace-id, value: test-trace-id-for-account-profile}
+    - {name: idpctx-session-id, value: test-session-id-for-account-profile}
+    - {name: attcsitest, value: "{{attcsitest}}"}
+    - {name: cookie, value: test-cookie}
+`),
+			"CTA_Collection 6a/CTA/ActivateSubscriber_v302.yml": []byte(`info: {name: ActivateSubscriber_v302, uid: activate-subscriber-v302, type: http, seq: 2}
+http:
+  method: POST
+  url: https://example.test/activate
+  headers:
+    - {name: Content-Type, value: text/xml}
+    - {name: idpctx-feature-svc-fraud-check, value: "false"}
+    - {name: idpctx-feature-svc-relax-credit-check-requirement, value: "true"}
+    - {name: idpctx-session-id, value: test-session-id-for-activate-subscriber}
+    - {name: randomheadertest, value: harmless-test-value}
+    - {name: idpctx-user-type, value: test-user}
+    - {name: idpctx-partner-initiated-order, value: "true"}
+    - {name: idpctx-ixp-dark-mode-session, value: test-dark-mode-session-value}
+`),
+			"CTA_Collection 6a/CTA/InquireCPNIContactInformation_224.yml": []byte(`info: {name: InquireCPNIContactInformation_224, uid: inquire-cpni-contact-224, type: http, seq: 3}
+http:
+  method: POST
+  url: https://example.test/cpni
+  headers:
+    - {name: Content-Type, value: text/xml}
+    - {name: idp-trace-id, value: test-trace-id-for-cpni-contact}
+    - {name: idpctx-session-id, value: test-session-id-for-cpni-contact}
+    - {name: attcsitest, value: "{{attcsitest}}"}
+`),
+		},
+		Options: InspectOptions{OutputMode: OutputModeNativeRequests},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tests := []struct {
+		id             string
+		name           string
+		label          string
+		path           string
+		sourceVariable string
+		contextParts   []string
+		unresolved     bool
+		hasValue       bool
+	}{
+		{
+			id:             "a73758b339b71e1635eb25f9",
+			name:           "CTA_COLLECTION_6A_CTA_INQUIREACCOUNTPROFILE_312_HEADER_X_CDF_AUTH_TOKEN_84921F7A1055",
+			label:          "X-CDF auth token",
+			path:           "CTA_Collection 6a/CTA/InquireAccountProfile_312.yml",
+			sourceVariable: "authToken",
+			contextParts:   []string{`header "X-CDF-AUTH-TOKEN"`, "references {{authToken}}", "does not include a value", "configured destination value", "when this request runs"},
+			unresolved:     true,
+		},
+		{
+			id:           "6b6c3b23a33b3293c01a677d",
+			name:         "CTA_COLLECTION_6A_CTA_ACTIVATESUBSCRIBER_V302_HEADER_IDPCTX_IXP_DARK_MODE_SESSION_161E2747AD92",
+			label:        "IDP context IXP dark mode session",
+			path:         "CTA_Collection 6a/CTA/ActivateSubscriber_v302.yml",
+			contextParts: []string{`header "idpctx-ixp-dark-mode-session"`, "contains an imported value", "can be preserved"},
+			hasValue:     true,
+		},
+		{
+			id:           "887c23d56055c1804ec9137f",
+			name:         "CTA_COLLECTION_6A_CTA_INQUIRECPNICONTACTINFORMATION_224_HEADER_IDPCTX_SESSION_ID",
+			label:        "IDP context session ID",
+			path:         "CTA_Collection 6a/CTA/InquireCPNIContactInformation_224.yml",
+			contextParts: []string{`header "idpctx-session-id"`, "contains an imported value", "can be preserved"},
+			hasValue:     true,
+		},
+	}
+	requirementsByName := make(map[string]SecretRequirement, len(result.SecretRequirements))
+	for _, requirement := range result.SecretRequirements {
+		requirementsByName[requirement.SuggestedName] = requirement
+	}
+	for _, test := range tests {
+		t.Run(test.label, func(t *testing.T) {
+			requirement, exists := requirementsByName[test.name]
+			if !exists {
+				t.Fatalf("stable requirement %q not found in %#v", test.name, result.SecretRequirements)
+			}
+			if requirement.ID != test.id ||
+				requirement.DisplayLabel != test.label ||
+				requirement.Path != test.path ||
+				requirement.SourceVariable != test.sourceVariable ||
+				requirement.UnresolvedSourceVariable != test.unresolved ||
+				(requirement.Value != "") != test.hasValue ||
+				requirement.Replacement != "{{secret."+test.name+"}}" ||
+				!reflect.DeepEqual(requirement.AffectedPaths, []string{test.path}) {
+				t.Fatalf("descriptive header requirement = %#v", requirement)
+			}
+			for _, part := range test.contextParts {
+				if !strings.Contains(requirement.Context, part) {
+					t.Errorf("context %q does not contain %q", requirement.Context, part)
+				}
+			}
+			if strings.Contains(requirement.Context, "Configure the generated project secret") {
+				t.Errorf("context contains mutable destination instruction: %q", requirement.Context)
+			}
+		})
+	}
+}
+
+func TestInspectNativeTreatsPolicyHeaderRedactionSentinelAsUnrecoverable(t *testing.T) {
+	tests := []struct {
+		name    string
+		headers string
+	}{
+		{
+			name: "header list",
+			headers: `
+    - {name: idpctx-ixp-dark-mode-session, value: "[REDACTED]"}`,
+		},
+		{
+			name: "header map",
+			headers: `
+    idpctx-ixp-dark-mode-session: "[redacted]"`,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			result, err := Inspect(Input{
+				Filename: "request.yml",
+				Content: []byte(`info: {name: Redacted native header, uid: redacted-native-header, type: http}
+http:
+  method: GET
+  url: https://example.test
+  headers:` + test.headers + `
+`),
+				Options: InspectOptions{OutputMode: OutputModeNativeRequests},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(result.SecretRequirements) != 1 || len(result.Scripts) != 1 ||
+				len(result.Scripts[0].SecretRequirements) != 1 {
+				t.Fatalf("redacted policy header requirements = aggregate %#v candidate %#v", result.SecretRequirements, result.Scripts)
+			}
+			requirement := result.SecretRequirements[0]
+			candidateRequirement := result.Scripts[0].SecretRequirements[0]
+			for _, current := range []SecretRequirement{requirement, candidateRequirement} {
+				if current.Value != "" || current.SourceValueAvailable ||
+					current.DisplayLabel != "IDP context IXP dark mode session" ||
+					current.SourceVariable != "" || current.UnresolvedSourceVariable ||
+					!strings.Contains(current.Context, "has no recoverable imported value") ||
+					!strings.Contains(current.Context, "configured destination value is required") ||
+					strings.Contains(current.Context, "Configure the generated project secret") ||
+					!reflect.DeepEqual(current.AffectedPaths, []string{"request.yml"}) {
+					t.Errorf("redacted policy header requirement = %#v", current)
+				}
+			}
+			action := result.Scripts[0].Script.Actions[0]
+			if action.Headers["idpctx-ixp-dark-mode-session"] != requirement.Replacement {
+				t.Fatalf("redacted policy header action = %#v, requirement %#v", action.Headers, requirement)
+			}
+			sanitized := tarFile(t, result.SanitizedArchive, "request.yml")
+			if strings.Contains(strings.ToLower(string(sanitized)), "[redacted]") {
+				t.Fatalf("sanitized native header retained redaction sentinel:\n%s", sanitized)
+			}
+		})
+	}
+}
+
+func TestInspectNativeTreatsCredentialRedactionSentinelsAsUnrecoverable(t *testing.T) {
+	tests := []struct {
+		name   string
+		source string
+	}{
+		{
+			name: "literal JSON credential",
+			source: `info: {name: JSON sentinel, uid: json-sentinel, type: http}
+http:
+  method: POST
+  url: https://example.test
+  body:
+    type: json
+    data: '{"password":" [rEdAcTeD] "}'
+`,
+		},
+		{
+			name: "percent encoded URL credential",
+			source: `info: {name: URL sentinel, uid: url-sentinel, type: http}
+http:
+  method: GET
+  url: https://example.test?token=%5bReDaCtEd%5d
+`,
+		},
+		{
+			name: "multiply percent encoded URL credential",
+			source: `info: {name: Nested URL sentinel, uid: nested-url-sentinel, type: http}
+http:
+  method: GET
+  url: https://example.test?token=%25255BReDaCtEd%25255D
+`,
+		},
+		{
+			name: "malformed percent suffix URL credential",
+			source: `info: {name: Malformed URL sentinel, uid: malformed-url-sentinel, type: http}
+http:
+  method: GET
+  url: https://example.test?token=%5BReDaCtEd%5D%ZZ
+`,
+		},
+		{
+			name: "over-depth percent encoded URL credential",
+			source: `info: {name: Deep URL sentinel, uid: deep-url-sentinel, type: http}
+http:
+  method: GET
+  url: https://example.test?token=` + strings.Repeat("%25", 40) + `5BReDaCtEd%5D
+`,
+		},
+		{
+			name: "query parameter credential",
+			source: `info: {name: Query sentinel, uid: query-sentinel, type: http}
+http:
+  method: GET
+  url: https://example.test
+  params:
+    - {name: token, type: query, value: " [redacted] "}
+`,
+		},
+		{
+			name: "literal XML element credential",
+			source: `info: {name: XML sentinel, uid: xml-sentinel, type: http}
+http:
+  method: POST
+  url: https://example.test
+  body:
+    type: xml
+    data: '<root><password> [rEdAcTeD] </password></root>'
+`,
+		},
+		{
+			name: "literal XML attribute credential",
+			source: `info: {name: XML attribute sentinel, uid: xml-attribute-sentinel, type: http}
+http:
+  method: POST
+  url: https://example.test
+  body:
+    type: xml
+    data: '<root password="&#91;ReDaCtEd&#93;"/>'
+`,
+		},
+		{
+			name: "multiply escaped XML attribute credential",
+			source: `info: {name: Nested XML sentinel, uid: nested-xml-sentinel, type: http}
+http:
+  method: POST
+  url: https://example.test
+  body:
+    type: xml
+    data: '<root password="&amp;amp;#91;ReDaCtEd&amp;amp;#93;"/>'
+`,
+		},
+		{
+			name: "unsupported XML credential markup",
+			source: `info: {name: XML markup sentinel, uid: xml-markup-sentinel, type: http}
+http:
+  method: POST
+  url: https://example.test
+  body:
+    type: xml
+    data: '<root><!-- password=[REDACTED] --><value>kept</value></root>'
+`,
+		},
+		{
+			name: "resolved auth variable",
+			source: `info: {name: Auth sentinel, uid: auth-sentinel, type: http}
+variables:
+  - {name: neutralPart, value: " [redacted] "}
+http:
+  method: GET
+  url: https://example.test
+  auth: {type: basic, username: operator, password: "{{neutralPart}}"}
+`,
+		},
+		{
+			name: "composed auth variable",
+			source: `info: {name: Composed auth sentinel, uid: composed-auth-sentinel, type: http}
+variables:
+  - {name: neutralPart, value: "[redacted]"}
+http:
+  method: GET
+  url: https://example.test
+  auth: {type: basic, username: operator, password: "prefix-{{neutralPart}}"}
+`,
+		},
+		{
+			name: "authorization wrapper",
+			source: `info: {name: Authorization sentinel, uid: authorization-sentinel, type: http}
+http:
+  method: GET
+  url: https://example.test
+  headers:
+    - {name: Authorization, value: "Bearer [REDACTED]"}
+`,
+		},
+		{
+			name: "cookie wrapper",
+			source: `info: {name: Cookie sentinel, uid: cookie-sentinel, type: http}
+http:
+  method: GET
+  url: https://example.test
+  headers:
+    - {name: Cookie, value: "sid=[redacted]"}
+`,
+		},
+		{
+			name: "composed header variable",
+			source: `info: {name: Header sentinel, uid: header-sentinel, type: http}
+variables:
+  - {name: neutralPart, value: "[redacted]"}
+http:
+  method: GET
+  url: https://example.test
+  headers:
+    - {name: X-API-Key, value: "prefix-{{neutralPart}}"}
+`,
+		},
+		{
+			name: "composed form variable",
+			source: `info: {name: Form sentinel, uid: form-sentinel, type: http}
+variables:
+  - {name: neutralPart, value: "[redacted]"}
+http:
+  method: POST
+  url: https://example.test
+  body:
+    type: form-urlencoded
+    data:
+      - {name: password, value: "prefix-{{neutralPart}}"}
+`,
+		},
+		{
+			name: "composed JSON variable",
+			source: `info: {name: Composed JSON sentinel, uid: composed-json-sentinel, type: http}
+variables:
+  - {name: neutralPart, value: "[redacted]"}
+http:
+  method: POST
+  url: https://example.test
+  body:
+    type: json
+    data: '{"password":"prefix-{{neutralPart}}"}'
+`,
+		},
+		{
+			name: "composed URL variable",
+			source: `info: {name: Composed URL sentinel, uid: composed-url-sentinel, type: http}
+variables:
+  - {name: neutralPart, value: "[redacted]"}
+http:
+  method: GET
+  url: https://example.test?token=prefix-{{neutralPart}}
+`,
+		},
+		{
+			name: "XML escaped variable chain",
+			source: `info: {name: Composed XML sentinel, uid: composed-xml-sentinel, type: http}
+variables:
+  - {name: firstPart, value: "&#91;ReDaCtEd&#93;"}
+  - {name: neutralPart, value: "{{firstPart}}"}
+http:
+  method: POST
+  url: https://example.test
+  body:
+    type: xml
+    data: '<root><password>prefix-{{neutralPart}}</password></root>'
+`,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			result, err := Inspect(Input{
+				Filename: "request.yml",
+				Content:  []byte(test.source),
+				Options:  InspectOptions{OutputMode: OutputModeNativeRequests},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(result.SecretRequirements) == 0 || len(result.Scripts) != 1 ||
+				len(result.Scripts[0].SecretRequirements) == 0 {
+				t.Fatalf("sentinel requirements = aggregate %#v candidate %#v", result.SecretRequirements, result.Scripts)
+			}
+			unavailable := 0
+			for _, requirements := range [][]SecretRequirement{
+				result.SecretRequirements,
+				result.Scripts[0].SecretRequirements,
+			} {
+				for _, requirement := range requirements {
+					if containsBrunoCredentialRedactionSentinel(requirement.Value) {
+						t.Errorf("sentinel requirement retained sentinel material: %#v", requirement)
+					}
+					if requirement.Value == "" && !requirement.SourceValueAvailable {
+						unavailable++
+					}
+				}
+			}
+			if unavailable < 2 {
+				t.Fatalf("sentinel requirement was not unavailable in aggregate and candidate metadata: aggregate %#v candidate %#v", result.SecretRequirements, result.Scripts[0].SecretRequirements)
+			}
+			candidateJSON, err := json.Marshal(result.Scripts[0].Script)
+			if err != nil {
+				t.Fatal(err)
+			}
+			sanitized := tarFile(t, result.SanitizedArchive, "request.yml")
+			for artifactName, artifact := range map[string][]byte{
+				"candidate":        candidateJSON,
+				"sanitized source": sanitized,
+			} {
+				lower := strings.ToLower(string(artifact))
+				for _, sentinel := range []string{
+					"[redacted]", "%5bredacted%5d", "&#91;redacted&#93;", "&#x5b;redacted&#x5d;",
+				} {
+					if strings.Contains(lower, sentinel) {
+						t.Errorf("%s retained sentinel %q:\n%s", artifactName, sentinel, artifact)
+					}
+				}
+			}
+			if !bytes.Contains(candidateJSON, []byte("{{secret.")) {
+				t.Fatalf("candidate has no governed reference: %s", candidateJSON)
+			}
+		})
+	}
+}
+
+func TestNativeSourceVariableSecretNameIsStableAndBounded(t *testing.T) {
+	sourceVariable := "partner" + strings.Repeat("CredentialSegment", 32)
+	first := nativeSourceVariableSecretName(sourceVariable)
+	second := nativeSourceVariableSecretName(sourceVariable)
+	if first != second {
+		t.Fatalf("same raw variable produced %q and %q", first, second)
+	}
+	if len(first) > credential.MaxLogicalNameBytes {
+		t.Fatalf("logical secret name is %d bytes, max %d: %q", len(first), credential.MaxLogicalNameBytes, first)
+	}
+	if _, err := engine.NormalizeLogicalSecretName(first); err != nil {
+		t.Fatalf("logical secret name %q is not runtime-valid: %v", first, err)
+	}
+}
+
+func TestMergeNativeSecretRequirementsScalesHighCardinality(t *testing.T) {
+	const requirementCount = 20_000
+	merged := SecretRequirement{
+		ID:            "shared-requirement",
+		Path:          "requests/00000.yml",
+		SuggestedName: "SHARED_REQUIREMENT",
+		Value:         "shared-source-value",
+		AffectedPaths: []string{"requests/00000.yml"},
+		scrubTargets: []nativeSecretScrubTarget{{
+			Path:    "requests/00000.yml",
+			Pointer: "/variables/0/value",
+		}},
+	}
+	for index := requirementCount - 1; index > 0; index-- {
+		sourcePath := fmt.Sprintf("requests/%05d.yml", index)
+		merged = mergeNativeSecretRequirements(merged, SecretRequirement{
+			ID:            merged.ID,
+			Path:          sourcePath,
+			SuggestedName: merged.SuggestedName,
+			Value:         merged.Value,
+			AffectedPaths: []string{sourcePath},
+			scrubTargets: []nativeSecretScrubTarget{{
+				Path:    sourcePath,
+				Pointer: "/variables/0/value",
+			}},
+		})
+	}
+	if len(merged.affectedPathSet) != requirementCount ||
+		len(merged.scrubTargetSet) != requirementCount ||
+		len(merged.AffectedPaths) != requirementCount ||
+		len(merged.scrubTargets) != requirementCount {
+		t.Fatalf(
+			"high-cardinality merge sizes = paths %d/%d targets %d/%d",
+			len(merged.AffectedPaths), len(merged.affectedPathSet),
+			len(merged.scrubTargets), len(merged.scrubTargetSet),
+		)
+	}
+	finalized := finalizeNativeSecretRequirement(merged)
+	if finalized.affectedPathSet != nil || finalized.scrubTargetSet != nil {
+		t.Fatal("finalized requirement retained accumulator maps")
+	}
+	if len(finalized.AffectedPaths) != requirementCount ||
+		finalized.AffectedPaths[0] != "requests/00000.yml" ||
+		finalized.AffectedPaths[requirementCount-1] != "requests/19999.yml" {
+		t.Fatalf("finalized affected paths are not complete and sorted: first=%q last=%q count=%d",
+			finalized.AffectedPaths[0],
+			finalized.AffectedPaths[len(finalized.AffectedPaths)-1],
+			len(finalized.AffectedPaths),
+		)
+	}
+	for index := 1; index < len(finalized.scrubTargets); index++ {
+		if nativeSecretScrubTargetIdentity(finalized.scrubTargets[index-1]) >=
+			nativeSecretScrubTargetIdentity(finalized.scrubTargets[index]) {
+			t.Fatalf("finalized scrub targets are not deterministically sorted at %d", index)
+		}
+	}
+}
+
+func TestRegisterNativeGeneratedRequirementRejectsSameNameDifferentIdentity(t *testing.T) {
+	state := &nativeTemplateState{generatedReq: make(map[string]SecretRequirement)}
+	first := SecretRequirement{
+		ID:            "first-identity",
+		SuggestedName: "COLLIDING_DESTINATION",
+		Replacement:   "{{secret.COLLIDING_DESTINATION}}",
+		Path:          "first.yml",
+	}
+	second := first
+	second.ID = "second-identity"
+	second.Path = "second.yml"
+	registerNativeGeneratedRequirement(state, first)
+	registerNativeGeneratedRequirement(state, second)
+	if state.generatedErr == nil ||
+		!strings.Contains(state.generatedErr.Error(), "distinct credential requirements") {
+		t.Fatalf("same-name identity collision error = %v", state.generatedErr)
+	}
+	stored := state.generatedReq[first.SuggestedName]
+	if stored.ID != first.ID || len(stored.AffectedPaths) != 1 ||
+		stored.AffectedPaths[0] != first.Path {
+		t.Fatalf("collision mutated first registered requirement: %#v", stored)
 	}
 }
 

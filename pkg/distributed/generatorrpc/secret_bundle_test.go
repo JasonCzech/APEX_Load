@@ -280,6 +280,7 @@ func TestTransportSecurityAllowsSecretDeliveryOnlyWithAuthenticatedTLS(t *testin
 		{name: "server TLS only", security: TransportSecurity{TLS: true}},
 		{name: "TLS token", security: TransportSecurity{TLS: true, Token: true}, want: true},
 		{name: "mTLS", security: TransportSecurity{TLS: true, MutualTLS: true}, want: true},
+		{name: "authenticated reverse tunnel", security: TransportSecurity{AuthenticatedTunnel: true}, want: true},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

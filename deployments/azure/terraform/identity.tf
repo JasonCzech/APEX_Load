@@ -23,29 +23,32 @@ resource "azurerm_user_assigned_identity" "keda_scaler" {
 }
 
 resource "azurerm_federated_identity_credential" "controller" {
+  count               = var.controller_compute == "aks" ? 1 : 0
   name                = "${local.name}-controller"
   resource_group_name = azurerm_resource_group.main.name
   parent_id           = azurerm_user_assigned_identity.apexload.id
   audience            = ["api://AzureADTokenExchange"]
-  issuer              = azurerm_kubernetes_cluster.main.oidc_issuer_url
+  issuer              = azurerm_kubernetes_cluster.main[0].oidc_issuer_url
   subject             = "system:serviceaccount:${local.k8s_namespace}:${local.controller_service_account}"
 }
 
 resource "azurerm_federated_identity_credential" "generator" {
+  count               = var.generator_compute == "aks" ? 1 : 0
   name                = "${local.name}-generator"
   resource_group_name = azurerm_resource_group.main.name
   parent_id           = azurerm_user_assigned_identity.generator.id
   audience            = ["api://AzureADTokenExchange"]
-  issuer              = azurerm_kubernetes_cluster.main.oidc_issuer_url
+  issuer              = azurerm_kubernetes_cluster.main[0].oidc_issuer_url
   subject             = "system:serviceaccount:${local.k8s_namespace}:${local.generator_service_account}"
 }
 
 resource "azurerm_federated_identity_credential" "keda_scaler" {
+  count               = var.generator_compute == "aks" ? 1 : 0
   name                = "${local.name}-keda-scaler"
   resource_group_name = azurerm_resource_group.main.name
   parent_id           = azurerm_user_assigned_identity.keda_scaler.id
   audience            = ["api://AzureADTokenExchange"]
-  issuer              = azurerm_kubernetes_cluster.main.oidc_issuer_url
+  issuer              = azurerm_kubernetes_cluster.main[0].oidc_issuer_url
   subject             = "system:serviceaccount:${local.keda_operator_namespace}:${local.keda_operator_service_account}"
 }
 
@@ -71,7 +74,28 @@ resource "azurerm_role_assignment" "generator_keyvault" {
 }
 
 resource "azurerm_role_assignment" "keda_monitoring_reader" {
+  count                = var.generator_compute == "aks" ? 1 : 0
   scope                = azurerm_resource_group.main.id
   role_definition_name = "Monitoring Reader"
   principal_id         = azurerm_user_assigned_identity.keda_scaler.principal_id
+}
+
+moved {
+  from = azurerm_federated_identity_credential.controller
+  to   = azurerm_federated_identity_credential.controller[0]
+}
+
+moved {
+  from = azurerm_federated_identity_credential.generator
+  to   = azurerm_federated_identity_credential.generator[0]
+}
+
+moved {
+  from = azurerm_federated_identity_credential.keda_scaler
+  to   = azurerm_federated_identity_credential.keda_scaler[0]
+}
+
+moved {
+  from = azurerm_role_assignment.keda_monitoring_reader
+  to   = azurerm_role_assignment.keda_monitoring_reader[0]
 }

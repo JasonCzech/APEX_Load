@@ -3795,6 +3795,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
         <LibraryFederationControls
           kind="scenario"
           federation={scenarioFederation}
+          projectName={activeProject?.name}
           onConfigureRemotes={openRemoteSettings}
           summaryText={scenarioQuery.trim() || scenarioReleaseFilter !== 'all' ? `${sorted.length} matching scenario${sorted.length === 1 ? '' : 's'}` : 'Search by scenario, script, data pool, release, host, or browser profile.'}
           filterControls={(

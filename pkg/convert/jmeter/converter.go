@@ -16,8 +16,9 @@ import (
 	"github.com/jasonczech/apexload/pkg/convert/importreview"
 	"github.com/jasonczech/apexload/pkg/convert/requestimport"
 	"github.com/jasonczech/apexload/pkg/convert/sourceview"
-	"github.com/jasonczech/apexload/pkg/credential"
+	"github.com/jasonczech/apexload/pkg/convert/uniquify"
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/dslwalk"
 	httpprotocol "github.com/jasonczech/apexload/pkg/protocol/http"
 )
 
@@ -112,24 +113,26 @@ type treeNode struct {
 }
 
 type convertContext struct {
-	defaultProtocol  string
-	defaultDomain    string
-	defaultPort      string
-	defaultPath      string
-	effectiveBaseURL string
-	headers          dsl.HeaderList
-	variableScope    *jmeterVariableScope
-	provenVariables  map[string]struct{}
-	csvSources       []dsl.DataSource
-	timerMs          int
-	oneShotTimerMs   int
-	assertions       []dsl.Assertion
-	auths            []jmeterAuth
-	defaultAuthSeen  bool
-	requestReports   *[]requestimport.Report
-	credentialNames  *credentialpolicy.NameRegistry
-	importErr        *error
-	transaction      string
+	defaultProtocol        string
+	defaultDomain          string
+	defaultPort            string
+	defaultPath            string
+	effectiveBaseURL       string
+	headers                dsl.HeaderList
+	variableScope          *jmeterVariableScope
+	provenVariables        map[string]struct{}
+	actionNames            map[string]int
+	csvSources             []dsl.DataSource
+	timerMs                int
+	oneShotTimerMs         int
+	assertions             []dsl.Assertion
+	auths                  []jmeterAuth
+	defaultAuthSeen        bool
+	requestReports         *[]requestimport.Report
+	credentialNames        *credentialpolicy.NameRegistry
+	credentialRequirements []credentialpolicy.Requirement
+	importErr              *error
+	transaction            string
 	// scriptProtocol is the protocol resolved for the owning thread group from
 	// its sampler mix. Native sampler converters only emit executable actions
 	// when the script protocol matches; otherwise the sampler is review-gated.
@@ -178,6 +181,7 @@ func ConvertJMX(data []byte, opts ConvertOptions) (*ConvertResult, error) {
 	sourceMappings := make([]sourceview.Mapping, 0)
 	allRequirements := make([]credentialpolicy.Requirement, 0)
 	allFindings := make([]importreview.Finding, 0)
+	credentialNames := credentialpolicy.NewNameRegistry()
 	variableReview := newJMeterVariableReview()
 	type variableSet struct {
 		values map[string]string
@@ -241,6 +245,7 @@ func ConvertJMX(data []byte, opts ConvertOptions) (*ConvertResult, error) {
 	}
 
 	for i, tg := range threadGroups {
+		mappingStart := len(sourceMappings)
 		groupProtocol, heterogeneous := classifyThreadGroupProtocol(tg)
 		requestReports := make([]requestimport.Report, 0)
 		var importErr error
@@ -265,10 +270,11 @@ func ConvertJMX(data []byte, opts ConvertOptions) (*ConvertResult, error) {
 		ctx := convertContext{
 			variableScope:   variableScope,
 			provenVariables: make(map[string]struct{}),
+			actionNames:     make(map[string]int),
 			timerMs:         inheritedTimerMs[tg],
 			scriptProtocol:  groupProtocol,
 			requestReports:  &requestReports,
-			credentialNames: credentialpolicy.NewNameRegistry(),
+			credentialNames: credentialNames,
 			importErr:       &importErr,
 		}
 		threadName := attrOr(tg.Element, "testname", fmt.Sprintf("Thread Group %d", i+1))
@@ -355,6 +361,7 @@ func ConvertJMX(data []byte, opts ConvertOptions) (*ConvertResult, error) {
 			script.Config.HTTP.DefaultHeaders = nil
 		}
 		finalizeNativeProtocolScript(script, &ctx, &diagnostics, &sourceMappings, sourceFileName, threadName)
+		allRequirements = append(allRequirements, ctx.credentialRequirements...)
 		attachJMeterDynamicFunctionParameters(script, &diagnostics, &sourceMappings, sourceFileName)
 		if len(ctx.csvSources) > 0 {
 			script.DataSources = append(script.DataSources, ctx.csvSources...)
@@ -392,7 +399,11 @@ func ConvertJMX(data []byte, opts ConvertOptions) (*ConvertResult, error) {
 				diagnostics.Add(item.Severity, item.Element, item.Location, item.Detail)
 			}
 		}
+		rebaseJMeterBatchMappingPaths(sourceMappings[mappingStart:], len(result.Scripts))
 		result.Scripts = append(result.Scripts, script)
+	}
+	if len(result.Scripts) == 1 {
+		unbaseJMeterSingleScriptMappingPaths(sourceMappings)
 	}
 
 	for name := range unsupported {
@@ -428,6 +439,10 @@ func ConvertJMX(data []byte, opts ConvertOptions) (*ConvertResult, error) {
 		result.ScenarioDraft = buildScenarioDraft(threadGroups, result.Scripts)
 	}
 	SanitizeDisplayLabels(result.Scripts, result.ScenarioDraft)
+	for _, script := range result.Scripts {
+		uniquify.DeduplicateActionNames(script)
+	}
+	reconcileJMeterBatchSourceMappingNames(result.Scripts, sourceMappings)
 	result.Findings = importreview.NormalizeFindings(allFindings)
 	result.SecretRequirements = publicJMeterCredentialRequirements(allRequirements)
 	reviewContent, residualSourceRedacted := redactJMeterResidualSource(string(data))
@@ -455,6 +470,56 @@ func ConvertJMX(data []byte, opts ConvertOptions) (*ConvertResult, error) {
 	}
 	sanitizeJMeterResultReviewText(result)
 	return result, nil
+}
+
+func rebaseJMeterBatchMappingPaths(mappings []sourceview.Mapping, scriptIndex int) {
+	prefix := fmt.Sprintf("scripts[%d].", scriptIndex)
+	for index := range mappings {
+		path := strings.TrimSpace(mappings[index].TargetPath)
+		if path == "" || strings.HasPrefix(path, "scripts[") {
+			continue
+		}
+		mappings[index].TargetPath = prefix + path
+	}
+}
+
+func unbaseJMeterSingleScriptMappingPaths(mappings []sourceview.Mapping) {
+	const prefix = "scripts[0]."
+	for index := range mappings {
+		if strings.HasPrefix(mappings[index].TargetPath, prefix) {
+			mappings[index].TargetPath = strings.TrimPrefix(mappings[index].TargetPath, prefix)
+		}
+	}
+}
+
+func reconcileJMeterBatchSourceMappingNames(
+	scripts []*dsl.Script,
+	mappings []sourceview.Mapping,
+) {
+	if len(scripts) == 0 || len(mappings) == 0 {
+		return
+	}
+	namesByPath := make(map[string]string)
+	for scriptIndex, script := range scripts {
+		if script == nil {
+			continue
+		}
+		prefix := ""
+		if len(scripts) > 1 {
+			prefix = fmt.Sprintf("scripts[%d].", scriptIndex)
+		}
+		_ = dslwalk.Walk(script, func(ref dslwalk.SurfaceRef) error {
+			if ref.Action != nil {
+				namesByPath[prefix+ref.Path] = ref.Action.Name
+			}
+			return nil
+		})
+	}
+	for index := range mappings {
+		if name := namesByPath[strings.TrimSpace(mappings[index].TargetPath)]; name != "" {
+			mappings[index].TargetName = name
+		}
+	}
 }
 
 var jmeterDynamicParameterPattern = regexp.MustCompile(`\{\{param\.(jmeter_(?:(?:global_)?counter(?:_[A-Za-z0-9_]+)?|thread_num))\}\}`)
@@ -541,7 +606,7 @@ func jmeterJDBCCredentialSourceRetained(scripts []*dsl.Script) bool {
 			for _, property := range parseJMeterJDBCConnectionProperties(
 				source["connection_properties"],
 			) {
-				if credential.SensitiveName(property.Name) &&
+				if jmeterJDBCSensitivePropertyName(property.Name) &&
 					property.Value != "" {
 					return true
 				}
@@ -925,6 +990,19 @@ func applyJMeterScopeConfig(
 		}
 	case "JDBCDataSource":
 		if cfg, credentialRetained, ok := parseJMeterJDBCConnection(element); ok {
+			credentialUnavailable, projectionErr := projectJMeterJDBCUnavailableCredential(
+				cfg,
+				element,
+				ctx,
+				sourceFileName,
+				script.Name,
+			)
+			if projectionErr != nil {
+				if ctx.importErr != nil && *ctx.importErr == nil {
+					*ctx.importErr = projectionErr
+				}
+				return true
+			}
 			ctx.databaseConfig = cfg
 			// Keep the complete authored JDBC source record even when every
 			// property could be projected into the native DSN. Some JDBC driver
@@ -932,7 +1010,9 @@ func applyJMeterScopeConfig(
 			// exact source lets an operator repair the already-gated adapter without
 			// re-importing or re-entering a password.
 			preserveJMeterJDBCSource(script, element)
-			if credentialRetained {
+			if credentialUnavailable {
+				diagnostics.Add(diag.Blocker, "JMeter JDBCDataSource", jmeterElementLocation(element), "the JDBC source contains a disclosure placeholder instead of a recoverable credential; configure the generated database connection-string secret before replay")
+			} else if credentialRetained {
 				diagnostics.Add(diag.Warning, "JMeter JDBCDataSource", jmeterElementLocation(element), "database credentials were retained in the durable destination and will be masked on ordinary reads; review the imported connection before replay")
 			}
 		}

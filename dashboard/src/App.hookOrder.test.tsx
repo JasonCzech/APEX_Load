@@ -9,6 +9,15 @@ import { readAppHistoryIndex, withAppHistoryIndex } from './appRouting'
 import type { WailsDesktopBridge } from './desktop/desktopBridge'
 import { ApiProvider } from './hooks/useApi'
 
+const browserRecorderPanelPropsMock = vi.hoisted(() => vi.fn())
+
+vi.mock('./components/BrowserRecorderControlPanel', () => ({
+  default: (props: { sessionId: string; folderId?: string; standalone?: boolean }) => {
+    browserRecorderPanelPropsMock(props)
+    return <div data-testid="mock-browser-recorder-panel">Recorder panel</div>
+  },
+}))
+
 // Regression guard for a reported React Rules-of-Hooks violation:
 //   "React has detected a change in the order of Hooks called by AppShell …
 //    64. useMemo changed to useCallback"
@@ -417,6 +426,21 @@ describe('AppShell hook-order stability across navigation', () => {
     }
 
     expect(hookOrderErrors).toEqual([])
+  })
+
+  it('passes the companion route destination folder into the standalone recorder panel', async () => {
+    window.history.replaceState(null, '', '#/recorder-panel?session=brec-1&folderId=folder-9')
+    await act(async () => {
+      root.render(<ApiProvider><App /></ApiProvider>)
+    })
+    await flush()
+
+    expect(browserRecorderPanelPropsMock).toHaveBeenCalledWith(expect.objectContaining({
+      sessionId: 'brec-1',
+      folderId: 'folder-9',
+      standalone: true,
+    }))
+    expect(container.querySelector('[data-testid="mock-browser-recorder-panel"]')).not.toBeNull()
   })
 
   it('guards every sidebar workspace scope change before applying it', async () => {

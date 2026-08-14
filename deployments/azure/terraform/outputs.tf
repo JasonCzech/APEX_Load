@@ -6,11 +6,11 @@ output "resource_group_name" {
 }
 
 output "aks_cluster_name" {
-  value = azurerm_kubernetes_cluster.main.name
+  value = try(azurerm_kubernetes_cluster.main[0].name, null)
 }
 
 output "aks_oidc_issuer_url" {
-  value = azurerm_kubernetes_cluster.main.oidc_issuer_url
+  value = try(azurerm_kubernetes_cluster.main[0].oidc_issuer_url, null)
 }
 
 output "acr_login_server" {
@@ -54,7 +54,7 @@ output "apexload_database_url" {
 
 output "apexload_redis_url" {
   description = "APEXLOAD_REDIS_URL for the apexload-data-platform Secret (TLS port)."
-  value       = "rediss://:${azurerm_redis_cache.main.primary_access_key}@${azurerm_redis_cache.main.hostname}:${azurerm_redis_cache.main.ssl_port}/0"
+  value       = "rediss://:${local.redis_access_key}@${local.redis_hostname}:${local.redis_port}/0"
   sensitive   = true
 }
 
@@ -84,5 +84,5 @@ output "eventhubs_name" {
 }
 
 output "kubeconfig_command" {
-  value = "az aks get-credentials --resource-group ${azurerm_resource_group.main.name} --name ${azurerm_kubernetes_cluster.main.name}"
+  value = local.aks_enabled ? "az aks get-credentials --resource-group ${azurerm_resource_group.main.name} --name ${azurerm_kubernetes_cluster.main[0].name}" : null
 }

@@ -110,7 +110,7 @@ func (service *testRunnerExecutionPlanService) Validate(plan *storage.ExecutionP
 		// references and fail per-entry at materialization, but an existing
 		// scenario or data pool can never be attached across projects.
 		if service.store != nil {
-			_, scripts, err := service.store.GetScenario(entry.ScenarioID)
+			_, scripts, err := getPublishedImportScenario(service.store, entry.ScenarioID)
 			switch {
 			case err == nil:
 				scenarioProject, status, message := resolveProjectIDFromScenarioScripts(scripts, service.store)

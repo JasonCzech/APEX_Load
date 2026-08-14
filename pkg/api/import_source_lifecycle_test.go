@@ -157,8 +157,8 @@ func inspectProtectedPostmanSource(
 		importDraftProtectedTokenPrefix+inspection.ImportSessionID {
 		t.Fatalf("draft attestation token = %q, want candidate session %q", got, inspection.ImportSessionID)
 	}
-	if !strings.Contains(response.Body.String(), credential) {
-		t.Fatalf("authorized editable draft lost imported credential: %s", response.Body.String())
+	if strings.Contains(response.Body.String(), credential) || !strings.Contains(response.Body.String(), maskedScriptSecret) {
+		t.Fatalf("opaque draft disclosed or failed to mask imported credential: %s", response.Body.String())
 	}
 	return inspection
 }

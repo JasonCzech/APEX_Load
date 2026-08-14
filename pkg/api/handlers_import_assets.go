@@ -84,20 +84,27 @@ func (s *Server) handleUploadImportAsset(w http.ResponseWriter, r *http.Request)
 	if contentType == "" {
 		contentType = http.DetectContentType(data)
 	}
-	if err := fileasset.RegisterProjectRoot(s.importAssetDir); err != nil {
-		writeError(w, http.StatusInternalServerError, "invalid import asset store: "+err.Error())
-		return
-	}
-
 	sum := sha256.Sum256(data)
 	digest := hex.EncodeToString(sum[:])
-	path, err := storeImportAssetCapability(s.importAssetDir, projectID, importID, digest, data)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to store uploaded asset: "+err.Error())
-		return
+	storageRef := ""
+	if currentArchiveBackend().Backend != archiveBackendFilesystem && s.importAssets != nil {
+		storageRef, err = s.storeImportAssetObject(r.Context(), projectID, importID, digest, contentType, data)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to store uploaded asset: "+err.Error())
+			return
+		}
+	} else {
+		if err := fileasset.RegisterProjectRoot(s.importAssetDir); err != nil {
+			writeError(w, http.StatusInternalServerError, "invalid import asset store: "+err.Error())
+			return
+		}
+		path, storeErr := storeImportAssetCapability(s.importAssetDir, projectID, importID, digest, data)
+		if storeErr != nil {
+			writeError(w, http.StatusInternalServerError, "failed to store uploaded asset: "+storeErr.Error())
+			return
+		}
+		storageRef = (&url.URL{Scheme: "file", Path: path}).String()
 	}
-
-	storageRef := (&url.URL{Scheme: "file", Path: path}).String()
 	source := dsl.DataSource{
 		Name:        name,
 		Type:        "file",

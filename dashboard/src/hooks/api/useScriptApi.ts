@@ -45,7 +45,7 @@ export interface ScriptRecordingStatus {
   sensitivity?: string
   captured_at?: string
 }
-import { type ApplyParameterizationRequest, type ApplyParameterizationResponse, type ApplySecretBindingsRequest, type ApplySecretBindingsResponse, type AuthoringCapabilitiesResponse, type Parameterization, type AsyncAPIImportResult, type AsyncAPISupportMatrixResponse, type BrokerConfigImportResult, type BrokerConfigSupportMatrixResponse, type BrowserRecordingImportResult, type CommitAsyncAPIImportRequest, type CommitAsyncAPIImportResponse, type CommitOpenAPIImportRequest, type CommitOpenAPIImportResponse, type DevWebImportResult, type DevWebSupportMatrixResponse, type EventHubsCaptureImportResult, type EventHubsCaptureSupportMatrixResponse, type HARImportResult, type ImportAssetUploadResponse, type JavaClasspathAssetUploadResponse, type JMeterImportResult, type JMeterSupportMatrixResponse, type K6ImportResult, type K6SupportMatrixResponse, type EnterpriseArchiveImportResult, type EnterpriseArchiveSupportMatrixResponse, type OpenAPIImportResult, type OpenAPISupportMatrixResponse, type OracleEBusinessReviewRequest, type OracleEBusinessReviewResponse, type OracleEBusinessSupportMatrixResponse, type PostmanImportResult, type PostmanSupportMatrixResponse, type RAMLImportResult, type RAMLSupportMatrixResponse, type SalesforceImportResult, type SampleImportResult, type SaveJMeterImportRequest, type SaveJMeterImportResponse, type SavePostmanImportRequest, type SavePostmanImportResponse, type WSDLImportResult } from '../../types/scriptImports'
+import { type ApplyParameterizationRequest, type ApplyParameterizationResponse, type ApplySecretBindingsRequest, type ApplySecretBindingsResponse, type AuthoringCapabilitiesResponse, type Parameterization, type AsyncAPIImportResult, type AsyncAPISupportMatrixResponse, type BrokerConfigImportResult, type BrokerConfigSupportMatrixResponse, type BrowserRecordingImportResult, type CommitAsyncAPIImportBatchRequest, type CommitAsyncAPIImportBatchResponse, type CommitAsyncAPIImportRequest, type CommitAsyncAPIImportResponse, type CommitGenericImportBatchRequest, type CommitGenericImportBatchResponse, type CommitOpenAPIImportRequest, type CommitOpenAPIImportResponse, type DevWebImportResult, type DevWebSupportMatrixResponse, type EventHubsCaptureImportResult, type EventHubsCaptureSupportMatrixResponse, type HARImportResult, type ImportAssetUploadResponse, type JavaClasspathAssetUploadResponse, type JMeterImportResult, type JMeterSupportMatrixResponse, type K6ImportResult, type K6SupportMatrixResponse, type EnterpriseArchiveImportResult, type EnterpriseArchiveSupportMatrixResponse, type OpenAPIImportResult, type OpenAPISupportMatrixResponse, type OracleEBusinessReviewRequest, type OracleEBusinessReviewResponse, type OracleEBusinessSupportMatrixResponse, type PostmanImportResult, type PostmanSupportMatrixResponse, type RAMLImportResult, type RAMLSupportMatrixResponse, type SalesforceImportResult, type SampleImportResult, type SaveEnterpriseArchiveImportRequest, type SaveEnterpriseArchiveImportResponse, type SaveJMeterImportRequest, type SaveJMeterImportResponse, type SavePostmanImportRequest, type SavePostmanImportResponse, type WSDLImportResult } from '../../types/scriptImports'
 import { type JsonRequestBody } from '../../types/generated/openapi'
 import { ApiError, apiFetch, request } from '../apiClient'
 
@@ -807,6 +807,12 @@ export function useScriptApi() {
     [],
   )
 
+  const saveEnterpriseArchiveImport = useCallback(
+    (payload: SaveEnterpriseArchiveImportRequest) =>
+      request<SaveEnterpriseArchiveImportResponse>('/scripts/import/enterprise-script-archive/save', { method: 'POST', body: JSON.stringify(payload) }),
+    [],
+  )
+
   const savePostmanImport = useCallback(
     (payload: SavePostmanImportRequest) =>
       request<SavePostmanImportResponse>('/scripts/import/postman/save', { method: 'POST', body: JSON.stringify(payload) }),
@@ -822,6 +828,18 @@ export function useScriptApi() {
   const commitAsyncAPIImport = useCallback(
     (payload: CommitAsyncAPIImportRequest) =>
       request<CommitAsyncAPIImportResponse>('/scripts/import/asyncapi/commit', { method: 'POST', body: JSON.stringify(payload) }),
+    [],
+  )
+
+  const commitAsyncAPIImportBatch = useCallback(
+    (payload: CommitAsyncAPIImportBatchRequest) =>
+      request<CommitAsyncAPIImportBatchResponse>('/scripts/import/asyncapi/commit-batch', { method: 'POST', body: JSON.stringify(payload) }),
+    [],
+  )
+
+  const commitGenericImportBatch = useCallback(
+    (payload: CommitGenericImportBatchRequest) =>
+      request<CommitGenericImportBatchResponse>('/scripts/import/commit-batch', { method: 'POST', body: JSON.stringify(payload) }),
     [],
   )
 
@@ -1498,9 +1516,12 @@ export function useScriptApi() {
       getBrokerConfigSupportMatrix,
       getOracleEBusinessSupportMatrix,
       saveJMeterImport,
+      saveEnterpriseArchiveImport,
       savePostmanImport,
       commitOpenAPIImport,
       commitAsyncAPIImport,
+      commitAsyncAPIImportBatch,
+      commitGenericImportBatch,
       importSample,
       uploadImportAsset,
       uploadJavaClasspathJar,
@@ -1611,9 +1632,12 @@ export function useScriptApi() {
       getBrokerConfigSupportMatrix,
       getOracleEBusinessSupportMatrix,
       saveJMeterImport,
+      saveEnterpriseArchiveImport,
       savePostmanImport,
       commitOpenAPIImport,
       commitAsyncAPIImport,
+      commitAsyncAPIImportBatch,
+      commitGenericImportBatch,
       importSample,
       uploadImportAsset,
       uploadJavaClasspathJar,

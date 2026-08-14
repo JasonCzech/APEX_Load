@@ -56,6 +56,7 @@ interface Props {
   onNavigate?: (page: NavPage) => void
   activeApplication?: Application | null
   activeRelease?: Release | null
+  activeProjectName?: string
 }
 
 type SortField = 'source' | 'name' | 'status' | 'total_vusers' | 'groups' | 'started' | 'duration' | 'archive'
@@ -404,7 +405,7 @@ function comparisonTableDeltaClass(delta: number | undefined, metric: Comparison
   return delta > 0 ? 'text-danger' : 'text-success'
 }
 
-function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onOpenTestArchive, onNavigate, activeApplication, activeRelease }: Props) {
+function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onOpenTestArchive, onNavigate, activeApplication, activeRelease, activeProjectName }: Props) {
   const api = useApi()
   const [releaseFilter, setReleaseFilter] = useState(() => activeRelease?.id || 'all')
   const testListParams = useMemo(() => activeApplication?.id ? {
@@ -1843,6 +1844,7 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onOpenTe
           <LibraryFederationControls
             kind="result"
             federation={federation}
+            projectName={activeProjectName}
             onConfigureRemotes={openRemoteSettings}
             filterControls={(
               <>

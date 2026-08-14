@@ -972,10 +972,11 @@ func TestImportResponseIncludesProjectedMultiScriptSecretRequirements(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(encoded), "inline-password-a") ||
-		!strings.Contains(string(encoded), "inline-token-a") ||
-		!strings.Contains(string(encoded), "inline-password-b") {
-		t.Fatalf("authorized editable drafts lost imported credentials: %s", encoded)
+	if strings.Contains(string(encoded), "inline-password-a") ||
+		strings.Contains(string(encoded), "inline-token-a") ||
+		strings.Contains(string(encoded), "inline-password-b") ||
+		!strings.Contains(string(encoded), maskedScriptSecret) {
+		t.Fatalf("opaque drafts disclosed or failed to mask imported credentials: %s", encoded)
 	}
 	delete(response, "script")
 	delete(response, "scripts")

@@ -677,9 +677,9 @@ describe('MonitoringPage', () => {
 
     await clickMonitorTab('Fleet')
 
-    // Cluster connections precede pools, and allocation follows them: connect a
-    // cluster, place a pool on it, then allocate that pool's host resources.
-    expect(visibleMonitorCardIds()).toEqual(['capacity', 'generators', 'fleet-alerts', 'fleet-audit', 'fleet-clusters', 'fleet-pools', 'fleet-allocation', 'generator-metadata'])
+    // Normalized cloud identities and execution targets precede the legacy
+    // cluster registry, pools, and host allocation workflow.
+    expect(visibleMonitorCardIds()).toEqual(['capacity', 'generators', 'fleet-alerts', 'fleet-audit', 'compute-infrastructure', 'fleet-clusters', 'fleet-pools', 'fleet-allocation', 'generator-metadata'])
     expect(container.textContent).toContain('Generators')
     expect(container.textContent).toContain('Fleet Alerts')
     expect(container.textContent).toContain('No generator inventory was returned by the controller.')

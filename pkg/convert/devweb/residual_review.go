@@ -18,6 +18,12 @@ func devWebImportHasResidualBehavior(result *ConvertResult) bool {
 	if result.Stats.Skipped > 0 || len(result.Stats.UnsupportedCalls) > 0 {
 		return true
 	}
+	if result.Script.Metadata != nil && result.Script.Metadata.Import != nil &&
+		result.Script.Metadata.Import.Preserved != nil {
+		if reviewRequired, _ := result.Script.Metadata.Import.Preserved[devWebMetadataReviewRequiredKey].(bool); reviewRequired {
+			return true
+		}
+	}
 	for _, action := range result.Script.Actions {
 		if strings.EqualFold(strings.TrimSpace(action.Type), "review_required") {
 			return true

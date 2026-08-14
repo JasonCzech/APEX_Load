@@ -98,6 +98,7 @@ securitySchemes:
 			Severity string   `json:"severity"`
 			Items    []string `json:"items"`
 		} `json:"review_sections"`
+		Requirements []SecretBindingRequirement `json:"secret_binding_requirements"`
 	}
 	if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
 		t.Fatalf("json.Unmarshal returned error: %v", err)
@@ -156,6 +157,7 @@ baseUri: https://api.salesforce.com/einstein/ai-agent/v1/agents/0XxAGENT
 				} `json:"import"`
 			} `json:"metadata"`
 		} `json:"script"`
+		Requirements   []SecretBindingRequirement `json:"secret_binding_requirements"`
 		ReviewSections []struct {
 			Key string `json:"key"`
 		} `json:"review_sections"`
@@ -210,6 +212,7 @@ baseUri: https://api.salesforce.com/einstein/ai-agent/v1/agents/0XxAGENT
 			Key   string   `json:"key"`
 			Items []string `json:"items"`
 		} `json:"review_sections"`
+		Requirements []SecretBindingRequirement `json:"secret_binding_requirements"`
 	}
 
 	doImport := func(t *testing.T, url string) importedScript {
@@ -258,6 +261,19 @@ baseUri: https://api.salesforce.com/einstein/ai-agent/v1/agents/0XxAGENT
 	}
 	if transformed.Script.Metadata.Import.Preserved["agentforce_transform"] == nil {
 		t.Fatalf("preserved metadata missing agentforce_transform: %#v", transformed.Script.Metadata.Import.Preserved)
+	}
+	var clientSecret *SecretBindingRequirement
+	for index := range transformed.Requirements {
+		if transformed.Requirements[index].SuggestedName == "SALESFORCE_CLIENT_SECRET" {
+			clientSecret = &transformed.Requirements[index]
+			break
+		}
+	}
+	if clientSecret == nil || clientSecret.Label != "Salesforce client secret" ||
+		!strings.Contains(clientSecret.Context, "Agentforce") ||
+		!strings.HasPrefix(clientSecret.Path, "/init/") ||
+		clientSecret.SourceValueAvailable || clientSecret.DestinationValuePreserved {
+		t.Fatalf("Agentforce client-secret guidance = %#v", clientSecret)
 	}
 	streamRewritten := false
 	for _, action := range transformed.Script.Actions {

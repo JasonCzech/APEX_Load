@@ -1017,7 +1017,7 @@ export default function RuntimeSettingsGroupEditor({
               </label>
               {/* Defaults OFF: an absent value reads as unchecked. Governs run output only — the script keeps
                   its literal credential values either way. */}
-              <label className={`scenario-option-card ${Boolean(effectiveLog.redact_run_evidence) ? 'selected' : ''}`}>
+              <label className={`scenario-option-card ${effectiveLog.redact_run_evidence ? 'selected' : ''}`}>
                 <input type="checkbox" checked={Boolean(effectiveLog.redact_run_evidence)} onChange={event => patchLog({ redact_run_evidence: event.target.checked })} />
                 <div><strong>Redact credentials in run evidence</strong><span>Redacts credential values from run logs, snapshots, reports, archives and debugger evidence. Does not change the script itself.</span></div>
               </label>

@@ -1,4 +1,4 @@
-import { type MutableRefObject, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { type MutableRefObject, type ReactNode, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 
 import {
   type ImportReviewSection,
@@ -8,6 +8,7 @@ import {
   type SecretBindingSelection,
 } from '../types/scriptImports'
 import { type ScriptDefinition } from '../types/scripts'
+import { isSensitiveCredentialPreviewKey, normalizeCredentialPreviewName } from './credentialPreviewPolicy'
 import ParameterizationReview from './ParameterizationReview'
 import { importDraftExpiryStatus, protectedImportExpiryLabel } from './protectedImportSession'
 import SecretBindingReview, {
@@ -25,6 +26,272 @@ const severityRank: Record<string, number> = {
 }
 
 const PREVIEW_MAX_CHARS = 120000
+const PREVIEW_MAX_NODES = 5000
+const PREVIEW_MAX_ARRAY_ITEMS = 1000
+const PREVIEW_MAX_OBJECT_KEYS = 1000
+const PREVIEW_MAX_DEPTH = 24
+const PREVIEW_MAX_STRING_CHARS = 20000
+const PROTECTED_PREVIEW_VALUE = '[protected imported value]'
+
+const previewSemanticNameKeys = new Set([
+  'key', 'name', 'field', 'fieldname', 'label', 'header', 'headername', 'attributename', 'property',
+])
+const previewSemanticPayloadKeys = new Set([
+  'value', 'text', 'content', 'selector', 'xpath', 'regex', 'sourcesnippet', 'snippet', 'raw', 'source', 'arguments',
+  'attributes', 'selectorcandidates', 'objectdescriptor', 'objectdescriptors', 'steps', 'unsupportedfragments',
+])
+
+function isPreviewSemanticNameKey(key: string): boolean {
+  return previewSemanticNameKeys.has(normalizeCredentialPreviewName(key))
+}
+
+function isPreviewSemanticPayloadKey(key: string): boolean {
+  return previewSemanticPayloadKeys.has(normalizeCredentialPreviewName(key))
+}
+
+function previewObjectHasSensitiveSemanticName(candidate: Record<string, unknown>, keys: string[]): boolean {
+  for (const key of keys) {
+    if (!isPreviewSemanticNameKey(key)) continue
+    try {
+      const value = candidate[key]
+      if (typeof value === 'string' && isSensitiveCredentialPreviewKey(value)) return true
+    } catch {
+      // A throwing accessor cannot contribute a disclosure-safe semantic name.
+    }
+  }
+  return false
+}
+
+function safeCredentialReference(value: string): boolean {
+  const trimmed = value.trim()
+  return trimmed === ''
+    || /^\[redacted\]$/i.test(trimmed)
+    || trimmed === PROTECTED_PREVIEW_VALUE
+    || /^(?:bearer\s+|basic\s+)?\{\{secret\.[A-Za-z0-9_.-]{1,249}\}\}$/i.test(trimmed)
+}
+
+function decodeCredentialXMLName(value: string): string {
+  const predefined: Record<string, string> = {
+    amp: '&', apos: "'", gt: '>', lt: '<', quot: '"',
+  }
+  return value.replace(/&(?:#(x[0-9a-f]+|[0-9]+)|([a-z]+));/gi, (entity, numeric: string | undefined, named: string | undefined) => {
+    if (named) return predefined[named.toLowerCase()] ?? entity
+    if (!numeric) return entity
+    const radix = numeric[0]?.toLowerCase() === 'x' ? 16 : 10
+    const digits = radix === 16 ? numeric.slice(1) : numeric
+    const codePoint = Number.parseInt(digits, radix)
+    if (!Number.isSafeInteger(codePoint) || codePoint <= 0 || codePoint > 0x10ffff || (codePoint >= 0xd800 && codePoint <= 0xdfff)) {
+      return entity
+    }
+    return String.fromCodePoint(codePoint)
+  })
+}
+
+function redactPreviewHeaderLines(value: string): string {
+  return value.replace(
+    /^([\t ]*)([A-Za-z][A-Za-z0-9_.-]{0,255})([\t ]*:[\t ]*)([^\r\n]*)$/gm,
+    (line: string, indent: string, name: string, delimiter: string, rawValue: string) => {
+      if (!isSensitiveCredentialPreviewKey(name) || safeCredentialReference(rawValue)) return line
+      return `${indent}${name}${delimiter}${PROTECTED_PREVIEW_VALUE}`
+    },
+  )
+}
+
+function neutralizePreviewXMLOpaqueMarkup(value: string): string {
+  const characters = value.split('')
+  const blank = (start: number, end: number) => {
+    for (let index = start; index < end; index += 1) characters[index] = ' '
+  }
+  let cursor = 0
+  while (cursor < value.length) {
+    if (value.startsWith('<!--', cursor)) {
+      const end = value.indexOf('-->', cursor + 4)
+      const boundary = end < 0 ? value.length : end + 3
+      blank(cursor, boundary)
+      cursor = boundary
+      continue
+    }
+    if (value.startsWith('<![CDATA[', cursor)) {
+      const end = value.indexOf(']]>', cursor + 9)
+      const boundary = end < 0 ? value.length : end + 3
+      blank(cursor, boundary)
+      cursor = boundary
+      continue
+    }
+    if (value.startsWith('<?', cursor)) {
+      const end = value.indexOf('?>', cursor + 2)
+      const boundary = end < 0 ? value.length : end + 2
+      blank(cursor, boundary)
+      cursor = boundary
+      continue
+    }
+    if (value.startsWith('<!', cursor)) {
+      let quote = ''
+      let subsetDepth = 0
+      let end = cursor + 2
+      while (end < value.length) {
+        const character = value[end]
+        if (quote) {
+          if (character === quote) quote = ''
+        } else if (character === '"' || character === "'") {
+          quote = character
+        } else if (character === '[') {
+          subsetDepth += 1
+        } else if (character === ']' && subsetDepth > 0) {
+          subsetDepth -= 1
+        } else if (character === '>' && subsetDepth === 0) {
+          end += 1
+          break
+        }
+        end += 1
+      }
+      blank(cursor, end)
+      cursor = end
+      continue
+    }
+    cursor += 1
+  }
+  return characters.join('')
+}
+
+function redactPreviewXMLText(value: string): string {
+  const scanValue = neutralizePreviewXMLOpaqueMarkup(value)
+  const tagPattern = /<\s*(\/?)\s*([A-Za-z_][\w.-]*(?::[A-Za-z_][\w.-]*)?)\b(?:[^>"']|"[^"]*"|'[^']*')*>/g
+  const attributePattern = /\s+([A-Za-z_][\w.-]*(?::[A-Za-z_][\w.-]*)?)\s*=\s*("[^"]*"|'[^']*')/g
+  const semanticNameAttributes = new Set(['name', 'key', 'field', 'property'])
+  const semanticValueAttributes = new Set(['value', 'val', 'default', 'fixed'])
+  const stack: Array<{ name: string; contentStart: number; sensitive: boolean }> = []
+  const protectedRanges: Array<{ start: number; end: number }> = []
+  let match: RegExpExecArray | null
+  while ((match = tagPattern.exec(scanValue)) !== null) {
+    const token = value.slice(match.index, tagPattern.lastIndex)
+    const closing = match[1] === '/'
+    const qualifiedName = match[2]
+    if (!closing) {
+      const localName = qualifiedName.includes(':') ? qualifiedName.slice(qualifiedName.lastIndexOf(':') + 1) : qualifiedName
+      const attributes: Array<{ localName: string; value: string; start: number; end: number }> = []
+      attributePattern.lastIndex = 0
+      let attributeMatch: RegExpExecArray | null
+      while ((attributeMatch = attributePattern.exec(token)) !== null) {
+        const attributeName = attributeMatch[1]
+        const attributeLocalName = attributeName.includes(':') ? attributeName.slice(attributeName.lastIndexOf(':') + 1) : attributeName
+        const quotedValue = attributeMatch[2]
+        const quotedOffset = attributeMatch[0].lastIndexOf(quotedValue)
+        const start = match.index + attributeMatch.index + quotedOffset + 1
+        attributes.push({
+          localName: attributeLocalName,
+          value: quotedValue.slice(1, -1),
+          start,
+          end: start + quotedValue.length - 2,
+        })
+      }
+      const semanticCredential = attributes.some(attribute => (
+        semanticNameAttributes.has(attribute.localName.toLowerCase())
+        && isSensitiveCredentialPreviewKey(decodeCredentialXMLName(attribute.value))
+      ))
+      const elementSensitive = isSensitiveCredentialPreviewKey(localName) || semanticCredential
+      for (const attribute of attributes) {
+        const attributeSensitive = isSensitiveCredentialPreviewKey(attribute.localName)
+          || (elementSensitive && semanticValueAttributes.has(attribute.localName.toLowerCase()))
+        if (attributeSensitive && !safeCredentialReference(attribute.value)) {
+          protectedRanges.push({ start: attribute.start, end: attribute.end })
+        }
+      }
+      if (/\/\s*>$/.test(token)) continue
+      stack.push({
+        name: qualifiedName.toLowerCase(),
+        contentStart: tagPattern.lastIndex,
+        sensitive: elementSensitive,
+      })
+      continue
+    }
+    const normalizedName = qualifiedName.toLowerCase()
+    let openIndex = stack.length - 1
+    while (openIndex >= 0 && stack[openIndex].name !== normalizedName) openIndex -= 1
+    if (openIndex < 0) continue
+    for (let index = openIndex + 1; index < stack.length; index += 1) {
+      const discarded = stack[index]
+      if (discarded.sensitive) {
+        protectedRanges.push({ start: discarded.contentStart, end: value.length })
+      }
+    }
+    const open = stack[openIndex]
+    stack.length = openIndex
+    if (open.sensitive && match.index >= open.contentStart) {
+      protectedRanges.push({ start: open.contentStart, end: match.index })
+    }
+  }
+  for (const open of stack) {
+    if (open.sensitive && open.contentStart <= value.length) {
+      protectedRanges.push({ start: open.contentStart, end: value.length })
+    }
+  }
+  const partialTagStart = scanValue.lastIndexOf('<')
+  if (partialTagStart > scanValue.lastIndexOf('>')) {
+    const partialTag = value.slice(partialTagStart)
+    const nameMatch = /^<\s*([A-Za-z_][\w.-]*(?::[A-Za-z_][\w.-]*)?)/.exec(partialTag)
+    if (nameMatch) {
+      const qualifiedName = nameMatch[1]
+      const localName = qualifiedName.includes(':') ? qualifiedName.slice(qualifiedName.lastIndexOf(':') + 1) : qualifiedName
+      const semanticNamePattern = /\b(?:name|key|field|property)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/gi
+      let semanticCredential = false
+      let semanticMatch: RegExpExecArray | null
+      while ((semanticMatch = semanticNamePattern.exec(partialTag)) !== null) {
+        const semanticName = semanticMatch[1] ?? semanticMatch[2] ?? semanticMatch[3] ?? ''
+        if (isSensitiveCredentialPreviewKey(decodeCredentialXMLName(semanticName))) {
+          semanticCredential = true
+          break
+        }
+      }
+      if (isSensitiveCredentialPreviewKey(localName) || semanticCredential) {
+        protectedRanges.push({ start: partialTagStart, end: value.length })
+      }
+    }
+  }
+  if (protectedRanges.length === 0) return value
+  protectedRanges.sort((left, right) => left.start - right.start || right.end - left.end)
+  const merged: Array<{ start: number; end: number }> = []
+  for (const range of protectedRanges) {
+    const previous = merged[merged.length - 1]
+    if (previous && range.start <= previous.end) {
+      previous.end = Math.max(previous.end, range.end)
+    } else {
+      merged.push({ ...range })
+    }
+  }
+  let redacted = value
+  for (let index = merged.length - 1; index >= 0; index -= 1) {
+    const range = merged[index]
+    const content = redacted.slice(range.start, range.end)
+    if (safeCredentialReference(content)) continue
+    redacted = `${redacted.slice(0, range.start)}${PROTECTED_PREVIEW_VALUE}${redacted.slice(range.end)}`
+  }
+  return redacted
+}
+
+function redactPreviewText(value: string): string {
+  // Inspect XML semantics before generic assignment masking can obscure a
+  // credential-name attribute such as key="client_secret".
+  let safe = redactPreviewHeaderLines(redactPreviewXMLText(value))
+  safe = safe.replace(
+    /(["']?)([A-Za-z][A-Za-z0-9_.%[\]-]*)\1\s*([:=])\s*(\{\{secret\.[A-Za-z0-9_.-]{1,249}\}\}|"[^"]*"|'[^']*'|(?:bearer|basic)\s+[^\s,}&]+|[^\s,}&]+)/gi,
+    (match: string, quote: string, name: string, delimiter: string, rawValue: string) => {
+      if (!isSensitiveCredentialPreviewKey(name)) return match
+      const unquoted = rawValue.replace(/^(?:"([\s\S]*)"|'([\s\S]*)')$/, (_value, doubleQuoted, singleQuoted) => doubleQuoted ?? singleQuoted ?? '')
+      if (safeCredentialReference(unquoted)) return match
+      return `${quote}${name}${quote}${delimiter}${PROTECTED_PREVIEW_VALUE}`
+    },
+  )
+  safe = safe.replace(
+    /(["']?)((?:[a-z0-9]+[_-])*(?:authorization|password|passwd|passphrase|secret|client[_-]?secret|token|access[_-]?token|refresh[_-]?token|id[_-]?token|auth[_-]?token|api[_-]?key|apikey|private[_-]?key|session(?:[_-]?(?:id|token))?|sid|csrf(?:[_-]?token)?|xsrf(?:[_-]?token)?|cookie|dsn))\1\s*[:=]\s*(?!(?:"|')?\{\{secret\.)("[^"]*"|'[^']*'|[^\s,}&]+)/gi,
+    (_match, _quote: string, name: string) => `${name}=${PROTECTED_PREVIEW_VALUE}`,
+  )
+  safe = safe.replace(
+    /\b(bearer|basic)\s+(?!\{\{secret\.)[^\s,}&]+/gi,
+    (_match, scheme: string) => `${scheme} ${PROTECTED_PREVIEW_VALUE}`,
+  )
+  return safe
+}
 
 type CredentialAction = 'save' | 'edit'
 
@@ -37,9 +304,78 @@ interface CredentialActionRequest {
 }
 
 function previewJSON(value: unknown): { text: string; truncated: boolean } {
-  const text = JSON.stringify(value, null, 2)
+  const state = {
+    nodes: 0,
+    truncated: false,
+    seen: new WeakSet<object>(),
+  }
+  const visit = (candidate: unknown, depth: number, sensitiveAncestor = false): unknown => {
+    if (state.nodes >= PREVIEW_MAX_NODES || depth > PREVIEW_MAX_DEPTH) {
+      state.truncated = true
+      return '… preview limit reached …'
+    }
+    state.nodes += 1
+    if (typeof candidate === 'string') {
+      if (sensitiveAncestor && !safeCredentialReference(candidate)) return PROTECTED_PREVIEW_VALUE
+      const truncated = candidate.length > PREVIEW_MAX_STRING_CHARS
+      const boundedCandidate = truncated ? candidate.slice(0, PREVIEW_MAX_STRING_CHARS) : candidate
+      const safeCandidate = redactPreviewText(boundedCandidate)
+      if (!truncated && safeCandidate.length <= PREVIEW_MAX_STRING_CHARS) return safeCandidate
+      state.truncated = true
+      return `${safeCandidate.slice(0, PREVIEW_MAX_STRING_CHARS)}…`
+    }
+    if (candidate === null) return candidate
+    if (typeof candidate !== 'object') return sensitiveAncestor ? PROTECTED_PREVIEW_VALUE : candidate
+    if (state.seen.has(candidate)) {
+      state.truncated = true
+      return '[Circular]'
+    }
+    state.seen.add(candidate)
+    try {
+      const toJSON = (candidate as { toJSON?: unknown }).toJSON
+      if (typeof toJSON === 'function') {
+        const projected = toJSON.call(candidate)
+        if (projected !== candidate) return visit(projected, depth + 1, sensitiveAncestor)
+      }
+      if (Array.isArray(candidate)) {
+        const itemCount = Math.min(candidate.length, PREVIEW_MAX_ARRAY_ITEMS)
+        if (itemCount < candidate.length) state.truncated = true
+        const result: unknown[] = []
+        for (let index = 0; index < itemCount && state.nodes < PREVIEW_MAX_NODES; index += 1) {
+          result.push(visit(candidate[index], depth + 1, sensitiveAncestor))
+        }
+        if (result.length < candidate.length) result.push(`… ${candidate.length - result.length} more item(s) omitted …`)
+        return result
+      }
+      const keys = Object.keys(candidate)
+      const keyCount = Math.min(keys.length, PREVIEW_MAX_OBJECT_KEYS)
+      if (keyCount < keys.length) state.truncated = true
+      const result: Record<string, unknown> = {}
+      const sensitiveSemanticName = previewObjectHasSensitiveSemanticName(candidate as Record<string, unknown>, keys)
+      for (let index = 0; index < keyCount && state.nodes < PREVIEW_MAX_NODES; index += 1) {
+        const key = keys[index]
+        try {
+          const child = (candidate as Record<string, unknown>)[key]
+          const semanticNameKey = sensitiveSemanticName && isPreviewSemanticNameKey(key)
+          const childSensitive = (
+            sensitiveAncestor
+            || (!semanticNameKey && isSensitiveCredentialPreviewKey(key))
+            || (sensitiveSemanticName && isPreviewSemanticPayloadKey(key))
+          )
+          result[key] = visit(child, depth + 1, childSensitive)
+        } catch {
+          result[key] = '[Unable to preview value]'
+        }
+      }
+      if (Object.keys(result).length < keys.length) result['…'] = `${keys.length - Object.keys(result).length} more field(s) omitted`
+      return result
+    } finally {
+      state.seen.delete(candidate)
+    }
+  }
+  const text = JSON.stringify(visit(value, 0), null, 2) ?? String(value)
   if (text.length <= PREVIEW_MAX_CHARS) {
-    return { text, truncated: false }
+    return { text, truncated: state.truncated }
   }
   return {
     text: `${text.slice(0, PREVIEW_MAX_CHARS)}\n…`,
@@ -82,8 +418,10 @@ interface Props {
   onCredentialsPreparedChange?: (prepared: PreparedSecretBindings | null) => void
   saving?: boolean
   saveDisabled?: boolean
+  saveDisabledReason?: string
   reviewBusy?: boolean
   onReviewBusyChange?: (busy: boolean) => void
+  onCredentialActionStart?: (action: CredentialAction) => void
   saveLabel?: string
   editLabel?: string
   previewTitle?: string
@@ -122,8 +460,10 @@ export default function ScriptImportReview({
   onCredentialsPreparedChange,
   saving = false,
   saveDisabled = false,
+  saveDisabledReason,
   reviewBusy = false,
   onReviewBusyChange,
+  onCredentialActionStart,
   saveLabel = 'Save To Script Library',
   editLabel = 'Open In Visual Editor',
   previewTitle = 'Generated Script Preview',
@@ -143,16 +483,22 @@ export default function ScriptImportReview({
   const [parameterizationApplying, setParameterizationApplying] = useState(false)
   const [importDraftExpiryGeneration, setImportDraftExpiryGeneration] = useState(0)
   const [issueDialog, setIssueDialog] = useState<{ title: string; issues: IssueDetail[] } | null>(null)
+  const [configuredCredentialReviewIdentity, setConfiguredCredentialReviewIdentity] = useState('')
+  const saveDisabledReasonId = useId()
   const parameterizationApplyingRef = useRef(false)
   const credentialActionRequestRef = useRef<CredentialActionRequest | null>(null)
   const credentialActionRequestIdRef = useRef(0)
   const reviewIdentity = String(reviewGeneration)
+  const projectSecretsConfiguredForReview = configuredCredentialReviewIdentity === reviewIdentity
   const currentReviewIdentityRef = useRef(reviewIdentity)
   currentReviewIdentityRef.current = reviewIdentity
   const currentHasUnresolvedSecretBindingsRef = useRef(hasUnresolvedSecretBindings)
   currentHasUnresolvedSecretBindingsRef.current = hasUnresolvedSecretBindings
   const currentRemainingRequirementsPreserveValuesRef = useRef(allRemainingRequirementsPreserveValues)
   currentRemainingRequirementsPreserveValuesRef.current = allRemainingRequirementsPreserveValues
+  const visibleSaveDisabledReason = saveDisabled
+    ? saveDisabledReason?.trim() || 'Saving is unavailable for this reviewed import. Correct the required choices shown on this page and try again.'
+    : ''
   const defaultConfigureLaterCount = useMemo(
     () => new Set(secretBindingRequirements.filter(requirement => (
       requirement.destination_value_preserved !== true
@@ -201,6 +547,10 @@ export default function ScriptImportReview({
     reportInternalReviewBusy({ parameterization: applying })
   }, [reportInternalReviewBusy])
 
+  const handleProjectSecretsConfigured = useCallback((names: readonly string[]) => {
+    if (names.length > 0) setConfiguredCredentialReviewIdentity(reviewIdentity)
+  }, [reviewIdentity])
+
   useEffect(() => {
     const request = credentialActionRequestRef.current
     if (!request) return
@@ -232,6 +582,10 @@ export default function ScriptImportReview({
   useEffect(() => {
     handleParameterizationApplyingChange(false)
   }, [handleParameterizationApplyingChange, parameterization, reviewIdentity])
+
+  useEffect(() => {
+    setIssueDialog(null)
+  }, [reviewIdentity])
 
   useEffect(() => {
     const expiry = Date.parse(importDraftExpiresAt || '')
@@ -285,6 +639,9 @@ export default function ScriptImportReview({
       return
     }
     if (!onSecretBindingsApply || !bindingReviewRef.current || !credentialsValid || credentialActionRequestRef.current) return
+    // Give importers a synchronous boundary to freeze replace targets and
+    // operation identity before credential preparation performs any awaits.
+    onCredentialActionStart?.(action)
     const request: CredentialActionRequest = {
       id: ++credentialActionRequestIdRef.current,
       action,
@@ -351,14 +708,14 @@ export default function ScriptImportReview({
           id: `${section.key}-blocker-${index}`,
           severity: 'blocker' as const,
           title: section.title,
-          description: item,
-          source: section.summary || 'Import review',
+          description: redactPreviewText(item),
+          source: redactPreviewText(section.summary || 'Import review'),
         }))
       : [{
           id: `${section.key}-blocker`,
           severity: 'blocker' as const,
           title: section.title,
-          description: section.summary,
+          description: redactPreviewText(section.summary),
           source: 'Import review',
         }])
   const warningDetails: IssueDetail[] = [
@@ -369,24 +726,48 @@ export default function ScriptImportReview({
             id: `${section.key}-warning-${index}`,
             severity: 'warning' as const,
             title: section.title,
-            description: item,
-            source: section.summary || 'Import review',
+            description: redactPreviewText(item),
+            source: redactPreviewText(section.summary || 'Import review'),
           }))
         : [{
             id: `${section.key}-warning`,
             severity: 'warning' as const,
             title: section.title,
-            description: section.summary,
+            description: redactPreviewText(section.summary),
             source: 'Import review',
           }]),
     ...warnings.map((warning, index) => ({
       id: `import-warning-${index}`,
       severity: 'warning' as const,
       title: warningsTitle.replace(/\s*\(\d+\)\s*$/, ''),
-      description: warning,
+      description: redactPreviewText(warning),
       source: 'Import conversion',
     })),
   ]
+  const infoDetails: IssueDetail[] = sortedReviewSections
+    .filter(section => section.severity !== 'blocker' && section.severity !== 'warning')
+    .flatMap(section => section.items.length > 0
+      ? section.items.map((item, index) => ({
+          id: `${section.key}-info-${index}`,
+          severity: 'info' as const,
+          title: section.title,
+          description: redactPreviewText(item),
+          source: redactPreviewText(section.summary || 'Import review'),
+        }))
+      : [{
+          id: `${section.key}-info`,
+          severity: 'info' as const,
+          title: section.title,
+          description: redactPreviewText(section.summary),
+          source: 'Import review',
+        }])
+  const unsupportedDetails: IssueDetail[] = unsupportedElements.map((item, index) => ({
+    id: `unsupported-${index}`,
+    severity: 'warning' as const,
+    title: 'Unsupported element',
+    description: redactPreviewText(item),
+    source: 'Import conversion',
+  }))
   const protectedSessionLabel = protectedImportExpiryLabel(protectedImportSessionExpiresAt)
   const importDraftExpiry = importDraftExpiryStatus(importDraftExpiresAt)
   const importDraftExpired = importDraftExpiry?.expired === true
@@ -418,13 +799,22 @@ export default function ScriptImportReview({
               className="btn btn-primary"
               onClick={() => { void runAction('save') }}
               disabled={importDraftExpired || saving || saveDisabled || parameterizationApplying || reviewBusy || !credentialsValid || credentialHandlerUnavailable || credentialAction !== null}
-              title={importDraftExpired ? 'Re-run the import to obtain a fresh credential-preserving draft before saving.' : undefined}
+              aria-describedby={visibleSaveDisabledReason ? saveDisabledReasonId : undefined}
+              title={importDraftExpired
+                ? 'Re-run the import to obtain a fresh credential-preserving draft before saving.'
+                : visibleSaveDisabledReason || undefined}
             >
               {saving ? 'Saving...' : credentialAction === 'save' ? 'Preparing credentials...' : resolvedSaveLabel}
             </button>
           )}
         </div>
       </div>
+
+      {visibleSaveDisabledReason && (
+        <div id={saveDisabledReasonId} className="script-import-review-save-disabled-reason" role="status">
+          <strong>Why saving is unavailable:</strong> {visibleSaveDisabledReason}
+        </div>
+      )}
 
       {protectedSessionLabel && (
         <div className="script-import-review-session" role="status">
@@ -435,6 +825,13 @@ export default function ScriptImportReview({
       {importDraftExpiry && (
         <div className="script-import-review-session" role={importDraftExpiry.expired ? 'alert' : 'status'}>
           {importDraftExpiry.label}
+        </div>
+      )}
+
+      {projectSecretsConfiguredForReview && (
+        <div className="script-import-review-session script-import-review-credential-recovery" role="status">
+          Project-secret values configured during this review remain in Project Secrets independently of script saving.
+          {' '}If script saving fails, retrying this save reuses those configured values. Any atomic-save promise on this page applies to scripts, not external secret-store writes.
         </div>
       )}
 
@@ -452,6 +849,7 @@ export default function ScriptImportReview({
           onSourceSessionSettled={onSourceSecretSessionSettled}
           onApply={applySecretBindings}
           onPreparedChange={setPreparedSecrets}
+          onProjectSecretsConfigured={handleProjectSecretsConfigured}
           disabled={importDraftExpired || parameterizationApplying || reviewBusy}
         />
       )}
@@ -464,7 +862,7 @@ export default function ScriptImportReview({
 
       {children}
 
-      {(blockerDetails.length > 0 || warningDetails.length > 0) && (
+      {(blockerDetails.length > 0 || warningDetails.length > 0 || infoDetails.length > 0 || unsupportedDetails.length > 0) && (
         <div className="script-import-review-issue-summary" aria-label="Import issue summary">
           {blockerDetails.length > 0 && (
             <button
@@ -486,6 +884,26 @@ export default function ScriptImportReview({
               {warningDetails.length} warning{warningDetails.length === 1 ? '' : 's'}
             </button>
           )}
+          {infoDetails.length > 0 && (
+            <button
+              type="button"
+              className="script-health-token issue-pill-button"
+              aria-label={`View ${infoDetails.length} import review ${infoDetails.length === 1 ? 'detail' : 'details'}`}
+              onClick={() => setIssueDialog({ title: 'Import review details', issues: infoDetails })}
+            >
+              {infoDetails.length} review detail{infoDetails.length === 1 ? '' : 's'}
+            </button>
+          )}
+          {unsupportedDetails.length > 0 && (
+            <button
+              type="button"
+              className="script-health-token warning issue-pill-button"
+              aria-label={`View ${unsupportedDetails.length} unsupported import ${unsupportedDetails.length === 1 ? 'element' : 'elements'}`}
+              onClick={() => setIssueDialog({ title: 'Unsupported elements', issues: unsupportedDetails })}
+            >
+              {unsupportedDetails.length} unsupported
+            </button>
+          )}
         </div>
       )}
 
@@ -501,46 +919,6 @@ export default function ScriptImportReview({
             onParameterizationApplied(parameterizedScript, diffs, selectedIds, nextImportDraftExpiresAt)
           }}
         />
-      )}
-
-      {unsupportedElements.length > 0 && (
-        <div className="script-import-review-unsupported">
-          <h4>Unsupported Elements ({unsupportedElements.length})</h4>
-          <ul>
-            {unsupportedElements.map((item, index) => <li key={`${item}-${index}`}>{item}</li>)}
-          </ul>
-        </div>
-      )}
-
-      {sortedReviewSections.length > 0 && (
-        <div className="script-import-review-sections">
-          <h4>Import Review ({sortedReviewSections.length})</h4>
-          <div className="script-import-review-section-list">
-            {sortedReviewSections.map(section => (
-              <details key={section.key} className={`script-import-review-section severity-${section.severity || 'info'}`} open={section.severity === 'blocker' || section.severity === 'warning'}>
-                <summary>
-                  <span>{section.title}</span>
-                  <small>{section.severity}</small>
-                </summary>
-                {section.summary && <p>{section.summary}</p>}
-                {section.items.length > 0 && (
-                  <ul>
-                    {section.items.map((item, index) => <li key={`${section.key}-${index}`}>{item}</li>)}
-                  </ul>
-                )}
-              </details>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {warnings.length > 0 && (
-        <div className="script-import-review-warnings">
-          <h4>{warningsTitle}</h4>
-          <ul>
-            {warnings.map((warning, index) => <li key={index}>{warning}</li>)}
-          </ul>
-        </div>
       )}
 
       {showPreview && previewPane}

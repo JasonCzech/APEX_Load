@@ -34,6 +34,9 @@ const kindLabels: Record<string, string> = {
 }
 
 const kindOrder = ['correlation', 'data_param', 'secret']
+const SUGGESTION_PAGE_SIZE = 50
+const DIFF_PAGE_SIZE = 100
+const LOCATION_PREVIEW_LIMIT = 20
 
 function confidenceBand(confidence: number): 'high' | 'medium' | 'low' {
   if (confidence >= 0.8) return 'high'
@@ -77,6 +80,8 @@ export default function ParameterizationReview({ parameterization, script, scrip
   const [applying, setApplying] = useState(false)
   const [applied, setApplied] = useState(false)
   const [diffs, setDiffs] = useState<ParameterizationDiff[]>([])
+  const [suggestionPage, setSuggestionPage] = useState(0)
+  const [diffPage, setDiffPage] = useState(0)
   const [error, setError] = useState('')
   const [blockedReason, setBlockedReason] = useState('')
   const reviewIdentity = `${String(reviewGeneration)}\u0000${scriptName || ''}`
@@ -128,6 +133,8 @@ export default function ParameterizationReview({ parameterization, script, scrip
     onApplyingChangeRef.current?.(false)
     setApplied(false)
     setDiffs([])
+    setSuggestionPage(0)
+    setDiffPage(0)
     setError('')
     setBlockedReason('')
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -135,8 +142,12 @@ export default function ParameterizationReview({ parameterization, script, scrip
 
   if (suggestions.length === 0) return null
 
+  const suggestionPageCount = Math.max(1, Math.ceil(suggestions.length / SUGGESTION_PAGE_SIZE))
+  const safeSuggestionPage = Math.min(suggestionPage, suggestionPageCount - 1)
+  const suggestionPageStart = safeSuggestionPage * SUGGESTION_PAGE_SIZE
+  const visibleSuggestions = suggestions.slice(suggestionPageStart, suggestionPageStart + SUGGESTION_PAGE_SIZE)
   const grouped = kindOrder
-    .map(kind => ({ kind, items: suggestions.filter(s => s.kind === kind) }))
+    .map(kind => ({ kind, items: visibleSuggestions.filter(s => s.kind === kind) }))
     .filter(group => group.items.length > 0)
 
   const selectedIds = suggestions.filter(s => selected[s.id] && !s.pre_applied).map(s => s.id)
@@ -175,6 +186,7 @@ export default function ParameterizationReview({ parameterization, script, scrip
         return
       }
       setDiffs(response.diffs ?? [])
+      setDiffPage(0)
       setApplied(true)
       selfAppliedSourceIdentityRef.current = sourceIdentity
       window.setTimeout(() => {
@@ -215,6 +227,30 @@ export default function ParameterizationReview({ parameterization, script, scrip
       {error && <div className="paramize-review-error">{error}</div>}
       {blockedReason && <div className="paramize-review-blocked">{blockedReason}</div>}
 
+      {suggestions.length > SUGGESTION_PAGE_SIZE && (
+        <nav className="paramize-pagination" aria-label="Parameterization suggestion pages">
+          <button
+            type="button"
+            className="btn btn-secondary btn-sm"
+            disabled={disabled || applying || safeSuggestionPage === 0}
+            onClick={() => setSuggestionPage(page => Math.max(0, page - 1))}
+          >
+            Previous suggestions
+          </button>
+          <span role="status" aria-live="polite">
+            Showing {suggestionPageStart + 1}–{Math.min(suggestionPageStart + SUGGESTION_PAGE_SIZE, suggestions.length)} of {suggestions.length}
+          </span>
+          <button
+            type="button"
+            className="btn btn-secondary btn-sm"
+            disabled={disabled || applying || safeSuggestionPage >= suggestionPageCount - 1}
+            onClick={() => setSuggestionPage(page => Math.min(suggestionPageCount - 1, page + 1))}
+          >
+            Next suggestions
+          </button>
+        </nav>
+      )}
+
       {grouped.map(group => (
         <details key={group.kind} className={`paramize-group paramize-group-${group.kind}`} open>
           <summary>
@@ -248,7 +284,8 @@ export default function ParameterizationReview({ parameterization, script, scrip
                 <p className="paramize-rationale">{suggestion.rationale}</p>
                 {suggestion.locations && suggestion.locations.length > 0 && (
                   <p className="paramize-locations">
-                    {suggestion.locations.length} occurrence(s): {suggestion.locations.map(l => `${l.action_name || `${l.section}[${l.action_index}]`} (${l.field})`).join(', ')}
+                    {suggestion.locations.length} occurrence(s): {suggestion.locations.slice(0, LOCATION_PREVIEW_LIMIT).map(l => `${l.action_name || `${l.section}[${l.action_index}]`} (${l.field})`).join(', ')}
+                    {suggestion.locations.length > LOCATION_PREVIEW_LIMIT ? `, and ${suggestion.locations.length - LOCATION_PREVIEW_LIMIT} more` : ''}
                   </p>
                 )}
               </li>
@@ -260,9 +297,32 @@ export default function ParameterizationReview({ parameterization, script, scrip
       {applied && diffs.length > 0 && (
         <details className="paramize-diffs" open>
           <summary><span>Applied Changes</span><small>{diffs.length}</small></summary>
+          {diffs.length > DIFF_PAGE_SIZE && (
+            <nav className="paramize-pagination" aria-label="Applied parameterization change pages">
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                disabled={diffPage === 0}
+                onClick={() => setDiffPage(page => Math.max(0, page - 1))}
+              >
+                Previous changes
+              </button>
+              <span role="status" aria-live="polite">
+                Showing {diffPage * DIFF_PAGE_SIZE + 1}–{Math.min((diffPage + 1) * DIFF_PAGE_SIZE, diffs.length)} of {diffs.length}
+              </span>
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                disabled={(diffPage + 1) * DIFF_PAGE_SIZE >= diffs.length}
+                onClick={() => setDiffPage(page => Math.min(Math.ceil(diffs.length / DIFF_PAGE_SIZE) - 1, page + 1))}
+              >
+                Next changes
+              </button>
+            </nav>
+          )}
           <ul>
-            {diffs.map((diff, index) => (
-              <li key={`${diff.path}-${index}`}>
+            {diffs.slice(diffPage * DIFF_PAGE_SIZE, (diffPage + 1) * DIFF_PAGE_SIZE).map((diff, index) => (
+              <li key={`${diff.path}-${diffPage * DIFF_PAGE_SIZE + index}`}>
                 <code>{diff.path}</code> — {diff.kind.replace(/_/g, ' ')}
                 {diffDisplayValue(diff, suggestionsById, 'before') && <> : <code className="paramize-before">{diffDisplayValue(diff, suggestionsById, 'before')}</code></>}
                 {diffDisplayValue(diff, suggestionsById, 'after') && <> <span className="paramize-arrow" aria-hidden>→</span> <code className="paramize-after">{diffDisplayValue(diff, suggestionsById, 'after')}</code></>}

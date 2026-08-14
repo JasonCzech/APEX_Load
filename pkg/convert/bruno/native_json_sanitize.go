@@ -310,6 +310,7 @@ func rewriteNativeJSONCredentialValue(
 	if secretReference, ok := exactNativeSecretReference(value); ok {
 		return secretReference
 	}
+	sourceVariable, hasExactSourceVariable := exactNativeCredentialSourceReference(value)
 	beforeMissing := make(map[string]struct{}, len(state.missing))
 	for missing := range state.missing {
 		beforeMissing[missing] = struct{}{}
@@ -442,10 +443,28 @@ func rewriteNativeJSONCredentialValue(
 			)
 		}
 	} else {
-		requirement = nativeSecretRequirement(name+"_"+strconv.Itoa(occurrence), state.sourcePath, context)
+		if hasExactSourceVariable {
+			requirement = nativeUnresolvedSourceVariableSecretRequirement(
+				sourceVariable,
+				state.sourcePath,
+				context,
+			)
+		} else {
+			requirement = nativeSecretRequirement(name+"_"+strconv.Itoa(occurrence), state.sourcePath, context)
+		}
+	}
+	if hasExactSourceVariable {
+		requirement.DisplayLabel = nativeSourceVariableDisplayLabel(sourceVariable)
+		requirement.SourceVariable = sourceVariable
+		requirement.AffectedPaths = nativeSecretRequirementPaths(
+			append(requirement.AffectedPaths, state.sourcePath)...,
+		)
 	}
 	if complete && !brunoTemplatePattern.MatchString(resolved) {
-		requirement.Value = resolved
+		requirement.Value = recoverableBrunoCredentialValue(resolved)
+	}
+	if hasExactSourceVariable {
+		requirement.UnresolvedSourceVariable = requirement.Value == ""
 	}
 	registerNativeGeneratedRequirement(state, requirement)
 	return nativeCredentialProjectionReplacement(requirement)
@@ -599,7 +618,8 @@ func nativeJSONSecretRequirement(
 		SuggestedName: suggested,
 		Replacement:   "{{secret." + suggested + "}}",
 		Context:       "Bruno JSON body credential " + name,
-		Value:         value,
+		Value:         recoverableBrunoCredentialValue(value),
+		AffectedPaths: nativeSecretRequirementPaths(sourcePath),
 	}
 }
 

@@ -103,6 +103,46 @@ func TestDirectImportReceiptAbandonRequiresCurrentOwner(t *testing.T) {
 	}
 }
 
+func TestRecoverDirectImportReceiptRequiresExactDurableEvidence(t *testing.T) {
+	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "receipt-recovery.db"))
+	if err != nil {
+		t.Fatalf("create store: %v", err)
+	}
+	defer store.Close()
+	now := time.Now().UTC().Round(0)
+	claim, err := store.ClaimDirectImportReceipt(
+		DefaultProjectID, "browser_recorder", "operation-hash", "request-hash",
+		"lost-owner", now, time.Hour,
+	)
+	if err != nil {
+		t.Fatalf("claim receipt: %v", err)
+	}
+	if recovered, err := store.RecoverDirectImportReceipt(
+		claim.Receipt.ID, DefaultProjectID, "browser_recorder", "operation-hash", "wrong-request",
+		[]string{"script-1", "script-2"}, "", now.Add(time.Second),
+	); err != nil || recovered {
+		t.Fatalf("mismatched recovery = %t, %v; want false", recovered, err)
+	}
+	if recovered, err := store.RecoverDirectImportReceipt(
+		claim.Receipt.ID, DefaultProjectID, "browser_recorder", "operation-hash", "request-hash",
+		[]string{"script-1", "script-2"}, "", now.Add(2*time.Second),
+	); err != nil || !recovered {
+		t.Fatalf("exact recovery = %t, %v; want true", recovered, err)
+	}
+	if recovered, err := store.RecoverDirectImportReceipt(
+		claim.Receipt.ID, DefaultProjectID, "browser_recorder", "operation-hash", "request-hash",
+		[]string{"script-2", "script-1"}, "", now.Add(3*time.Second),
+	); err != nil || recovered {
+		t.Fatalf("reordered replay recovery = %t, %v; want false", recovered, err)
+	}
+	if recovered, err := store.RecoverDirectImportReceipt(
+		claim.Receipt.ID, DefaultProjectID, "browser_recorder", "operation-hash", "request-hash",
+		[]string{"script-1", "script-2"}, "", now.Add(4*time.Second),
+	); err != nil || !recovered {
+		t.Fatalf("idempotent exact recovery = %t, %v; want true", recovered, err)
+	}
+}
+
 func TestDirectImportReceiptReleasePreservesIdentityForImmediateRetry(t *testing.T) {
 	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "receipts.db"))
 	if err != nil {

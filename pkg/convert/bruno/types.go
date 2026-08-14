@@ -160,13 +160,19 @@ type Capabilities struct {
 }
 
 type SecretRequirement struct {
-	ID                   string `json:"id"`
-	Path                 string `json:"path"`
-	Key                  string `json:"key"`
-	SuggestedName        string `json:"suggested_name"`
-	Replacement          string `json:"replacement"`
-	Context              string `json:"context"`
-	SourceValueAvailable bool   `json:"source_value_available,omitempty"`
+	ID            string `json:"id"`
+	Path          string `json:"path"`
+	Key           string `json:"key"`
+	SuggestedName string `json:"suggested_name"`
+	Replacement   string `json:"replacement"`
+	Context       string `json:"context"`
+	// The presentation fields below are disclosure-safe metadata. They identify
+	// authored references and locations, never the protected values behind them.
+	DisplayLabel             string   `json:"display_label,omitempty"`
+	SourceVariable           string   `json:"source_variable,omitempty"`
+	UnresolvedSourceVariable bool     `json:"unresolved_source_variable,omitempty"`
+	AffectedPaths            []string `json:"affected_paths,omitempty"`
+	SourceValueAvailable     bool     `json:"source_value_available,omitempty"`
 	// DestinationValuePreserved is set only by the protected import API after
 	// it proves this requirement's authored value can be restored into every
 	// affected destination occurrence without another operator input.
@@ -185,7 +191,9 @@ type SecretRequirement struct {
 	// scrubTargets records every authored variable definition that contributed
 	// to a projected credential. It is importer-internal state: the targets are
 	// removed from the sanitized bundle but are never exposed or persisted.
-	scrubTargets []nativeSecretScrubTarget
+	scrubTargets    []nativeSecretScrubTarget
+	affectedPathSet map[string]struct{}
+	scrubTargetSet  map[string]struct{}
 }
 
 type SecurityFinding struct {

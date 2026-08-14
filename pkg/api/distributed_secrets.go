@@ -134,6 +134,12 @@ func validateDistributedSecretTarget(target string, snapshot generatorLoadSnapsh
 	if len(bundle) == 0 {
 		return nil
 	}
+	security := generatorrpc.TransportSecurityFromEnv()
+	if security.AuthenticatedTunnel {
+		if _, reverse := generatorrpc.ReverseGeneratorID(target); !reverse && !(security.TLS && (security.MutualTLS || security.Token)) {
+			return fmt.Errorf("generator %q is direct, but this controller's authenticated transport is configured only for reverse WSS tunnels", target)
+		}
+	}
 	if !snapshot.HeartbeatOK || !stringSliceContainsEqualFold(snapshot.CompatibleFeatures, generatorrpc.FeatureSecretBundleV1) {
 		return fmt.Errorf("generator %q cannot receive controller-managed secrets; upgrade the generator to advertise %s before starting this saved script", target, generatorrpc.FeatureSecretBundleV1)
 	}

@@ -605,13 +605,37 @@ func normalizeDataPoolBindingIntentWithLegacy(bindings []storage.ScenarioDataPoo
 func (tr *TestRunner) GetScenario(id string) (*StoredScenario, bool) {
 	tr.refreshScenariosForHARead()
 	tr.mu.RLock()
-	defer tr.mu.RUnlock()
 	id = tr.resolveRefKeyLocked(id)
 	scenario, ok := tr.scenarios[id]
 	if !ok {
+		tr.mu.RUnlock()
 		return nil, false
 	}
-	return tr.enrichScenarioSummaryLocked(scenario), true
+	snapshot := tr.enrichScenarioSummaryLocked(scenario)
+	tr.mu.RUnlock()
+	return tr.publishedScenarioSnapshot(snapshot)
+}
+
+// getScenarioForMutation deliberately preserves the cached updated_at value.
+// The aggregate CAS in UpdateScenario must observe and reject an HA write that
+// raced this replica's snapshot; public read revalidation would otherwise turn
+// that stale-but-real scenario into a misleading 404 before the CAS can return
+// its 409. Pending direct-import assets remain hidden.
+func (tr *TestRunner) getScenarioForMutation(id string) (*StoredScenario, bool) {
+	if tr == nil {
+		return nil, false
+	}
+	tr.mu.RLock()
+	id = tr.resolveRefKeyLocked(id)
+	snapshot := cloneStoredScenarioForReadLocked(tr.scenarios[id])
+	tr.mu.RUnlock()
+	if snapshot == nil {
+		return nil, false
+	}
+	if tr.importPublicationConfigured() && !tr.importAssetPublished("scenario", snapshot.ID) {
+		return nil, false
+	}
+	return snapshot, true
 }
 
 func (tr *TestRunner) refreshScenariosForHARead(force ...bool) {
@@ -670,19 +694,19 @@ func (tr *TestRunner) replaceScenarioDataPools(id string, bindings []storage.Sce
 func (tr *TestRunner) ListScenarios() []*StoredScenario {
 	tr.refreshScenariosForHARead()
 	tr.mu.RLock()
-	defer tr.mu.RUnlock()
 	selected := make([]*StoredScenario, 0, len(tr.scenarios))
 	for _, scenario := range tr.scenarios {
 		selected = append(selected, scenario)
 	}
-	return tr.enrichScenarioSummariesLocked(selected)
+	selected = tr.enrichScenarioSummariesLocked(selected)
+	tr.mu.RUnlock()
+	return tr.filterPublishedScenarios(selected)
 }
 
 func (tr *TestRunner) ListScenariosFiltered(projectID string) []*StoredScenario {
 	tr.refreshScenariosForHARead()
 	projectID = normalizeProjectID(projectID)
 	tr.mu.RLock()
-	defer tr.mu.RUnlock()
 	// Filter before enrichment: enrichment never changes ProjectID, so building
 	// a full summary for scenarios that are about to be discarded is pure waste.
 	selected := make([]*StoredScenario, 0, len(tr.scenarios))
@@ -692,7 +716,9 @@ func (tr *TestRunner) ListScenariosFiltered(projectID string) []*StoredScenario 
 		}
 		selected = append(selected, scenario)
 	}
-	return tr.enrichScenarioSummariesLocked(selected)
+	selected = tr.enrichScenarioSummariesLocked(selected)
+	tr.mu.RUnlock()
+	return tr.filterPublishedScenariosScoped(selected, projectID)
 }
 
 func (tr *TestRunner) DeleteScenario(id string) bool {

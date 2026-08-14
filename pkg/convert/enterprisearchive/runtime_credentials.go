@@ -94,7 +94,7 @@ func applyEnterpriseRuntimeBindings(
 		}
 	}
 
-	project := func(value, field, nameHint string) string {
+	project := func(value, field, nameHint, requestKey string) string {
 		if strings.TrimSpace(value) == "" {
 			return ""
 		}
@@ -102,6 +102,54 @@ func applyEnterpriseRuntimeBindings(
 		sourceCredential, hasSourceCredential := sourceValues[field]
 		if sourceCredential.nameHint != "" {
 			nameHint = sourceCredential.nameHint
+		}
+		sourceStatus := credentialpolicy.ClassifySourceCredentialValue(sourceCredential.value)
+		valueStatus := credentialpolicy.ClassifySourceCredentialValue(value)
+		if sourceStatus == credentialpolicy.SourceCredentialValueRedactedPlaceholder ||
+			sourceStatus == credentialpolicy.SourceCredentialValueUnsafeEncoding ||
+			valueStatus == credentialpolicy.SourceCredentialValueRedactedPlaceholder ||
+			valueStatus == credentialpolicy.SourceCredentialValueUnsafeEncoding {
+			// Runtime configuration snapshots frequently contain disclosure output
+			// rather than the original source credential. A placeholder is evidence
+			// that a value existed, never replayable credential material. Keep the
+			// field governed and unconfigured instead of restoring the sentinel into
+			// the executable draft.
+			unavailableValue := sourceCredential.value
+			if sourceStatus != credentialpolicy.SourceCredentialValueRedactedPlaceholder &&
+				sourceStatus != credentialpolicy.SourceCredentialValueUnsafeEncoding {
+				unavailableValue = value
+			}
+			source := sourceCredential.source
+			if strings.TrimSpace(source.Format) == "" {
+				source = credentialpolicy.SourceRef{
+					Format:  "enterprise_script_archive",
+					Pointer: field,
+					ItemID:  requestKey,
+				}
+			}
+			label, context := enterpriseUnavailableRuntimeCredentialPresentation(field)
+			requirement, replacement, err := credentialpolicy.NewRequirement(
+				credentialpolicy.RequirementSpec{
+					Key:      field,
+					Label:    label,
+					Context:  context,
+					NameHint: nameHint,
+					Source:   source,
+					Targets: []credentialpolicy.TargetRef{{
+						RequestKey: requestKey,
+						Field:      field,
+					}},
+					Value:    unavailableValue,
+					Mode:     credentialpolicy.Preserve,
+					Registry: registry,
+				},
+			)
+			if err == nil {
+				appendRequirement(requirement)
+				return replacement
+			}
+			result.Warnings = append(result.Warnings, "Unavailable source credential guidance could not be generated for "+field+"; configure the destination field before replay.")
+			return credential.Redacted
 		}
 
 		if _, existingReference := credential.ParseReference(value); existingReference {
@@ -132,6 +180,34 @@ func applyEnterpriseRuntimeBindings(
 		}
 		markEnterpriseCredentialPreservingImport(script)
 		candidateKey := fmt.Sprintf("enterprise:%d", scriptIndex)
+		if hasGeneratedDatabaseDSNMarker(script) {
+			requirement, replacement, err := credentialpolicy.NewRequirement(
+				credentialpolicy.RequirementSpec{
+					Key:      "database_dsn",
+					Label:    "Database connection string for " + script.Name,
+					Context:  "The enterprise database importer generated this connection-string placeholder because the source contained SQL actions but no complete executable database connection.",
+					NameHint: "DATABASE_DSN",
+					Source: credentialpolicy.SourceRef{
+						Format:  "enterprise_script_archive",
+						Path:    ctx.ProjectFileName,
+						Pointer: "/database/connection",
+						ItemID:  candidateKey,
+					},
+					Targets: []credentialpolicy.TargetRef{{
+						RequestKey: candidateKey,
+						Field:      "config.database.dsn",
+					}},
+					Mode:     credentialpolicy.SecretReference,
+					Registry: registry,
+				},
+			)
+			if err == nil {
+				script.Config.Database.DSN = replacement
+				appendRequirement(requirement)
+			} else {
+				result.Warnings = append(result.Warnings, "Database connection guidance could not be generated; configure config.database.dsn before replay.")
+			}
+		}
 		httpConfig := &script.Config.HTTP
 		authoredProxyMode := httpConfig.ProxyMode
 		authoredProxy := httpConfig.Proxy
@@ -231,21 +307,25 @@ func applyEnterpriseRuntimeBindings(
 			httpConfig.Proxy.Username,
 			"config.http.proxy.username",
 			enterpriseProxyUsernameSecretName,
+			candidateKey,
 		)
 		httpConfig.Proxy.Password = project(
 			httpConfig.Proxy.Password,
 			"config.http.proxy.password",
 			enterpriseProxyPasswordSecretName,
+			candidateKey,
 		)
 		httpConfig.Auth.Password = project(
 			httpConfig.Auth.Password,
 			"config.http.auth.password",
 			enterpriseHTTPAuthPasswordSecretName,
+			candidateKey,
 		)
 		httpConfig.Auth.Token = project(
 			httpConfig.Auth.Token,
 			"config.http.auth.token",
 			enterpriseHTTPAuthTokenSecretName,
+			candidateKey,
 		)
 		if enterpriseGlobalHTTPAuthInvalid(httpConfig.Auth) {
 			location := "config.http.auth"
@@ -291,6 +371,7 @@ func applyEnterpriseRuntimeBindings(
 				httpConfig.DefaultHeaders[name],
 				field,
 				"ENTERPRISE_DEFAULT_HEADER_"+credential.EnvKey(name),
+				candidateKey,
 			)
 		}
 
@@ -309,6 +390,7 @@ func applyEnterpriseRuntimeBindings(
 				script.Config.WebRuntime.AdditionalAttributes[name],
 				field,
 				"ENTERPRISE_RUNTIME_"+credential.EnvKey(name),
+				candidateKey,
 			)
 		}
 		mergeEnterpriseScriptCredentialTargets(
@@ -363,6 +445,29 @@ func applyEnterpriseRuntimeBindings(
 	for index := range requirements {
 		requirements[index].Value = ""
 	}
+}
+
+func enterpriseUnavailableRuntimeCredentialPresentation(field string) (string, string) {
+	label := "Enterprise runtime credential"
+	switch field {
+	case "config.http.proxy.username":
+		label = "HTTP proxy username"
+	case "config.http.proxy.password":
+		label = "HTTP proxy password"
+	case "config.http.auth.password":
+		label = "HTTP authentication password"
+	case "config.http.auth.token":
+		label = "HTTP authentication token"
+	default:
+		switch {
+		case strings.HasPrefix(field, "config.http.default_headers."):
+			label = "Credential-bearing default HTTP header"
+		case strings.HasPrefix(field, "config.web_runtime.additional_attributes."):
+			label = "Credential-bearing runtime attribute"
+		}
+	}
+	return label,
+		"The enterprise source contains a disclosure placeholder instead of the original " + strings.ToLower(label) + ". The imported value cannot be preserved; configure the generated project secret before replay."
 }
 
 func markEnterpriseCredentialPreservingImport(script *dsl.Script) {

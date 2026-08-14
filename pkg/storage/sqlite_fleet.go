@@ -47,26 +47,78 @@ func (s *SQLiteStore) SaveFleetPool(pool *FleetPool) error {
 	if pool.Status == "" {
 		pool.Status = "active"
 	}
+	normalizeFleetPoolPlacementDefaults(pool)
 	now := time.Now()
 	if pool.CreatedAt.IsZero() {
 		pool.CreatedAt = now
 	}
 	pool.UpdatedAt = now
-	_, err := s.db.Exec(`INSERT INTO fleet_pools (
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	lockResult, err := tx.Exec(`UPDATE fleet_pools SET updated_at = updated_at WHERE id = ?`, pool.ID)
+	if err != nil {
+		return err
+	}
+	existing, err := lockResult.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if existing == 1 {
+		var currentExecutionTargetID string
+		if err := tx.QueryRow(`SELECT COALESCE(execution_target_id, '') FROM fleet_pools WHERE id = ?`, pool.ID).Scan(&currentExecutionTargetID); err != nil {
+			return err
+		}
+		if strings.TrimSpace(currentExecutionTargetID) != strings.TrimSpace(pool.ExecutionTargetID) {
+			if err := requireFleetPoolCapacityReleasedTx(tx, pool.ID); err != nil {
+				return err
+			}
+			if strings.TrimSpace(pool.ExecutionTargetID) != "" {
+				targetLocked, err := lockExecutionTargetTx(tx, pool.ExecutionTargetID)
+				if err != nil {
+					return err
+				}
+				if !targetLocked {
+					return errors.New("execution target does not exist")
+				}
+			}
+		}
+	} else if strings.TrimSpace(pool.ExecutionTargetID) != "" {
+		targetLocked, err := lockExecutionTargetTx(tx, pool.ExecutionTargetID)
+		if err != nil {
+			return err
+		}
+		if !targetLocked {
+			return errors.New("execution target does not exist")
+		}
+	}
+	_, err = tx.Exec(`INSERT INTO fleet_pools (
 			id, name, description, cloud_provider, region, min_size, max_size, desired_size, status, tags_json,
-			cluster_id, allocation_json, domain_id, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			cluster_id, execution_target_id, allocation_json, domain_id, lifecycle_mode, warm_floor,
+			readiness_timeout_seconds, idle_grace_seconds, runtime_profile_id, capacity_admission, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 			name=excluded.name, description=excluded.description, cloud_provider=excluded.cloud_provider,
 			region=excluded.region, min_size=excluded.min_size, max_size=excluded.max_size,
 			desired_size=excluded.desired_size, status=excluded.status, tags_json=excluded.tags_json,
-			cluster_id=excluded.cluster_id, allocation_json=excluded.allocation_json,
-			domain_id=excluded.domain_id,
+			cluster_id=excluded.cluster_id, execution_target_id=excluded.execution_target_id,
+			allocation_json=excluded.allocation_json, domain_id=excluded.domain_id,
+			lifecycle_mode=excluded.lifecycle_mode, warm_floor=excluded.warm_floor,
+			readiness_timeout_seconds=excluded.readiness_timeout_seconds,
+			idle_grace_seconds=excluded.idle_grace_seconds, runtime_profile_id=excluded.runtime_profile_id,
+			capacity_admission=excluded.capacity_admission,
 			updated_at=excluded.updated_at`,
 		pool.ID, pool.Name, pool.Description, pool.CloudProvider, pool.Region, pool.MinSize, pool.MaxSize,
-		pool.DesiredSize, pool.Status, marshalTags(pool.Tags), pool.ClusterID, marshalAllocation(pool.Allocation),
-		pool.DomainID, pool.CreatedAt, pool.UpdatedAt)
-	return err
+		pool.DesiredSize, pool.Status, marshalTags(pool.Tags), pool.ClusterID, pool.ExecutionTargetID,
+		marshalAllocation(pool.Allocation), pool.DomainID, pool.LifecycleMode, pool.WarmFloor,
+		pool.ReadinessTimeoutSeconds, pool.IdleGraceSeconds, pool.RuntimeProfileID, pool.CapacityAdmission,
+		pool.CreatedAt, pool.UpdatedAt)
+	if err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // CreateFleetPoolWithMembers creates the pool and its initial membership in a
@@ -81,6 +133,7 @@ func (s *SQLiteStore) CreateFleetPoolWithMembers(pool *FleetPool, members []*Fle
 	if pool.Status == "" {
 		pool.Status = "active"
 	}
+	normalizeFleetPoolPlacementDefaults(pool)
 	now := time.Now()
 	if pool.CreatedAt.IsZero() {
 		pool.CreatedAt = now
@@ -91,12 +144,24 @@ func (s *SQLiteStore) CreateFleetPoolWithMembers(pool *FleetPool, members []*Fle
 		return err
 	}
 	defer tx.Rollback()
+	if strings.TrimSpace(pool.ExecutionTargetID) != "" {
+		locked, err := lockExecutionTargetTx(tx, pool.ExecutionTargetID)
+		if err != nil {
+			return err
+		}
+		if !locked {
+			return errors.New("execution target does not exist")
+		}
+	}
 	if _, err := tx.Exec(`INSERT INTO fleet_pools (
 		id, name, description, cloud_provider, region, min_size, max_size, desired_size, status, tags_json,
-		cluster_id, allocation_json, domain_id, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, pool.ID, pool.Name, pool.Description, pool.CloudProvider, pool.Region,
+		cluster_id, execution_target_id, allocation_json, domain_id, lifecycle_mode, warm_floor,
+		readiness_timeout_seconds, idle_grace_seconds, runtime_profile_id, capacity_admission, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, pool.ID, pool.Name, pool.Description, pool.CloudProvider, pool.Region,
 		pool.MinSize, pool.MaxSize, pool.DesiredSize, pool.Status, marshalTags(pool.Tags), pool.ClusterID,
-		marshalAllocation(pool.Allocation), pool.DomainID, pool.CreatedAt, pool.UpdatedAt); err != nil {
+		pool.ExecutionTargetID, marshalAllocation(pool.Allocation), pool.DomainID, pool.LifecycleMode, pool.WarmFloor,
+		pool.ReadinessTimeoutSeconds, pool.IdleGraceSeconds, pool.RuntimeProfileID, pool.CapacityAdmission,
+		pool.CreatedAt, pool.UpdatedAt); err != nil {
 		return err
 	}
 	if err := replaceFleetPoolMembersTx(tx, pool.ID, members); err != nil {
@@ -120,8 +185,8 @@ func (s *SQLiteStore) UpdateFleetPoolIfUnchanged(pool *FleetPool, members []*Fle
 	}
 	defer tx.Rollback()
 	var currentUpdatedAt time.Time
-	var currentUpdatedRaw string
-	if err := tx.QueryRow(`SELECT updated_at, CAST(updated_at AS TEXT) FROM fleet_pools WHERE id = ?`, pool.ID).Scan(&currentUpdatedAt, &currentUpdatedRaw); err != nil {
+	var currentUpdatedRaw, currentExecutionTargetID string
+	if err := tx.QueryRow(`SELECT updated_at, CAST(updated_at AS TEXT), COALESCE(execution_target_id, '') FROM fleet_pools WHERE id = ?`, pool.ID).Scan(&currentUpdatedAt, &currentUpdatedRaw, &currentExecutionTargetID); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return false, nil
 		}
@@ -130,14 +195,42 @@ func (s *SQLiteStore) UpdateFleetPoolIfUnchanged(pool *FleetPool, members []*Fle
 	if !currentUpdatedAt.Equal(expectedUpdatedAt) {
 		return false, nil
 	}
+	if strings.TrimSpace(currentExecutionTargetID) != strings.TrimSpace(pool.ExecutionTargetID) {
+		lockResult, err := tx.Exec(`UPDATE fleet_pools SET updated_at = updated_at WHERE id = ?`, pool.ID)
+		if err != nil {
+			return false, err
+		}
+		locked, err := lockResult.RowsAffected()
+		if err != nil {
+			return false, err
+		}
+		if locked != 1 {
+			return false, nil
+		}
+		if err := requireFleetPoolCapacityReleasedTx(tx, pool.ID); err != nil {
+			return false, err
+		}
+		if strings.TrimSpace(pool.ExecutionTargetID) != "" {
+			targetLocked, err := lockExecutionTargetTx(tx, pool.ExecutionTargetID)
+			if err != nil {
+				return false, err
+			}
+			if !targetLocked {
+				return false, errors.New("execution target does not exist")
+			}
+		}
+	}
 	pool.UpdatedAt = time.Now()
 	// domain_id MUST be in this SET list. This method writes exactly what it is
 	// given, so omitting the column would silently reset a constrained pool to
 	// unscoped on every unrelated edit — a silent widening of blast radius.
-	result, err := tx.Exec(`UPDATE fleet_pools SET name = ?, description = ?, cloud_provider = ?, region = ?, min_size = ?, max_size = ?, desired_size = ?, status = ?, tags_json = ?, cluster_id = ?, allocation_json = ?, domain_id = ?, updated_at = ?
+	normalizeFleetPoolPlacementDefaults(pool)
+	result, err := tx.Exec(`UPDATE fleet_pools SET name = ?, description = ?, cloud_provider = ?, region = ?, min_size = ?, max_size = ?, desired_size = ?, status = ?, tags_json = ?, cluster_id = ?, execution_target_id = ?, allocation_json = ?, domain_id = ?, lifecycle_mode = ?, warm_floor = ?, readiness_timeout_seconds = ?, idle_grace_seconds = ?, runtime_profile_id = ?, capacity_admission = ?, updated_at = ?
 		WHERE id = ? AND CAST(updated_at AS TEXT) = ?`, pool.Name, pool.Description, pool.CloudProvider, pool.Region, pool.MinSize, pool.MaxSize,
-		pool.DesiredSize, pool.Status, marshalTags(pool.Tags), pool.ClusterID, marshalAllocation(pool.Allocation),
-		pool.DomainID, pool.UpdatedAt, pool.ID, currentUpdatedRaw)
+		pool.DesiredSize, pool.Status, marshalTags(pool.Tags), pool.ClusterID, pool.ExecutionTargetID,
+		marshalAllocation(pool.Allocation), pool.DomainID, pool.LifecycleMode, pool.WarmFloor,
+		pool.ReadinessTimeoutSeconds, pool.IdleGraceSeconds, pool.RuntimeProfileID, pool.CapacityAdmission,
+		pool.UpdatedAt, pool.ID, currentUpdatedRaw)
 	if err != nil {
 		return false, err
 	}
@@ -172,7 +265,10 @@ func (s *SQLiteStore) UpdateFleetPoolDesiredSize(id string, desiredSize int, upd
 
 const fleetPoolSelect = `SELECT id, name, COALESCE(description, ''), cloud_provider, COALESCE(region, ''),
 	min_size, max_size, desired_size, COALESCE(status, 'active'), COALESCE(tags_json, ''),
-	COALESCE(cluster_id, ''), COALESCE(allocation_json, ''), COALESCE(domain_id, ''), created_at, updated_at
+	COALESCE(cluster_id, ''), COALESCE(execution_target_id, ''), COALESCE(allocation_json, ''),
+	COALESCE(domain_id, ''), COALESCE(lifecycle_mode, 'standing'), COALESCE(warm_floor, 0),
+	COALESCE(readiness_timeout_seconds, 300), COALESCE(idle_grace_seconds, 300),
+	COALESCE(runtime_profile_id, ''), COALESCE(capacity_admission, 'strict'), created_at, updated_at
 	FROM fleet_pools`
 
 func scanFleetPool(row capacityRowScanner) (*FleetPool, error) {
@@ -181,12 +277,32 @@ func scanFleetPool(row capacityRowScanner) (*FleetPool, error) {
 	var allocationJSON string
 	if err := row.Scan(&pool.ID, &pool.Name, &pool.Description, &pool.CloudProvider, &pool.Region,
 		&pool.MinSize, &pool.MaxSize, &pool.DesiredSize, &pool.Status, &tagsJSON,
-		&pool.ClusterID, &allocationJSON, &pool.DomainID, &pool.CreatedAt, &pool.UpdatedAt); err != nil {
+		&pool.ClusterID, &pool.ExecutionTargetID, &allocationJSON, &pool.DomainID,
+		&pool.LifecycleMode, &pool.WarmFloor, &pool.ReadinessTimeoutSeconds, &pool.IdleGraceSeconds,
+		&pool.RuntimeProfileID, &pool.CapacityAdmission, &pool.CreatedAt, &pool.UpdatedAt); err != nil {
 		return nil, err
 	}
 	pool.Tags = unmarshalTags(tagsJSON)
 	pool.Allocation = unmarshalAllocation(allocationJSON)
 	return &pool, nil
+}
+
+func normalizeFleetPoolPlacementDefaults(pool *FleetPool) {
+	if pool == nil {
+		return
+	}
+	if strings.TrimSpace(pool.LifecycleMode) == "" {
+		pool.LifecycleMode = FleetLifecycleStanding
+	}
+	if pool.ReadinessTimeoutSeconds <= 0 {
+		pool.ReadinessTimeoutSeconds = 300
+	}
+	if pool.IdleGraceSeconds <= 0 {
+		pool.IdleGraceSeconds = 300
+	}
+	if strings.TrimSpace(pool.CapacityAdmission) == "" {
+		pool.CapacityAdmission = CapacityAdmissionStrict
+	}
 }
 
 func (s *SQLiteStore) GetFleetPool(id string) (*FleetPool, error) {
@@ -269,13 +385,8 @@ func (s *SQLiteStore) DeleteFleetPool(id string) error {
 	if affected != 1 {
 		return sql.ErrNoRows
 	}
-	var activeRequests int
-	if err := tx.QueryRow(`SELECT COUNT(*) FROM provisioning_requests
-		WHERE fleet_pool_id = ? AND LOWER(TRIM(COALESCE(status, ''))) NOT IN ('success', 'failed', 'not_configured', 'cancelled', 'timed_out')`, id).Scan(&activeRequests); err != nil {
+	if err := requireFleetPoolCapacityReleasedTx(tx, id); err != nil {
 		return err
-	}
-	if activeRequests > 0 {
-		return ErrFleetPoolHasActiveProvisioning
 	}
 	if _, err := tx.Exec(`UPDATE generator_metadata SET fleet_pool_id = NULL, updated_at = ? WHERE fleet_pool_id = ?`, time.Now(), id); err != nil {
 		return err
@@ -287,6 +398,70 @@ func (s *SQLiteStore) DeleteFleetPool(id string) error {
 		return err
 	}
 	return tx.Commit()
+}
+
+// requireFleetPoolCapacityReleasedTx keeps the durable pool-to-provider binding
+// stable until every provider operation and billed instance is known to be
+// terminal. Callers must lock the pool row before invoking it.
+func requireFleetPoolCapacityReleasedTx(tx *storeTx, id string) error {
+	var activeRequests int
+	if err := tx.QueryRow(`SELECT COUNT(*) FROM provisioning_requests
+		WHERE fleet_pool_id = ? AND LOWER(TRIM(COALESCE(status, ''))) NOT IN ('success', 'failed', 'not_configured', 'cancelled', 'timed_out')`, id).Scan(&activeRequests); err != nil {
+		return err
+	}
+	if activeRequests > 0 {
+		return ErrFleetPoolHasActiveProvisioning
+	}
+	var standingCapacity int
+	if err := tx.QueryRow(`SELECT COUNT(*) FROM fleet_pools AS pool
+		JOIN execution_targets AS target ON target.id = pool.execution_target_id
+		WHERE pool.id = ?
+		  AND target.kind IN ('azure_container_apps', 'aws_ecs_fargate')
+		  AND COALESCE(target.standing_owner, 'apex') = 'apex'
+		  AND (
+			COALESCE(pool.desired_size, 0) > 0 OR COALESCE(pool.warm_floor, 0) > 0
+			OR COALESCE((
+				SELECT request.desired_count FROM provisioning_requests AS request
+				WHERE request.fleet_pool_id = pool.id
+				  AND request.execution_target_id = target.id
+				  AND LOWER(TRIM(COALESCE(request.status, ''))) = 'success'
+				  AND COALESCE(request.idempotency_key, '') NOT LIKE 'run-%'
+				ORDER BY request.updated_at DESC, request.id DESC LIMIT 1
+			), 0) > 0
+			OR EXISTS (
+				SELECT 1 FROM provisioning_requests AS failed
+				WHERE failed.fleet_pool_id = pool.id
+				  AND failed.execution_target_id = target.id
+				  AND COALESCE(failed.idempotency_key, '') NOT LIKE 'run-%'
+				  AND (
+					LOWER(COALESCE(failed.last_error, '')) LIKE '%provider cleanup failed%'
+					OR LOWER(COALESCE(failed.last_error, '')) LIKE '%provider cancellation failed%'
+				  )
+				  AND NOT EXISTS (
+					SELECT 1 FROM provisioning_requests AS cleared
+					WHERE cleared.fleet_pool_id = pool.id
+					  AND cleared.execution_target_id = target.id
+					  AND LOWER(TRIM(COALESCE(cleared.status, ''))) = 'success'
+					  AND COALESCE(cleared.idempotency_key, '') NOT LIKE 'run-%'
+					  AND cleared.desired_count = 0
+					  AND cleared.updated_at > failed.updated_at
+				  )
+			)
+		  )`, id).Scan(&standingCapacity); err != nil {
+		return err
+	}
+	if standingCapacity > 0 {
+		return ErrFleetPoolHasLiveCapacity
+	}
+	var liveCapacity int
+	if err := tx.QueryRow(`SELECT COUNT(*) FROM capacity_instance_intents
+		WHERE fleet_pool_id = ? AND LOWER(TRIM(COALESCE(state, ''))) != 'terminated'`, id).Scan(&liveCapacity); err != nil {
+		return err
+	}
+	if liveCapacity > 0 {
+		return ErrFleetPoolHasLiveCapacity
+	}
+	return nil
 }
 
 // SaveFleetPoolMembers replaces a pool's entire membership: it clears existing
@@ -610,15 +785,25 @@ func (s *SQLiteStore) SaveProvisioningRequest(req *ProvisioningRequest) error {
 	}
 	req.UpdatedAt = now
 	_, err := s.db.Exec(`INSERT INTO provisioning_requests (
-			id, revision, attempt_token, fleet_pool_id, project_id, status, desired_count, reason, requested_by_subject, created_at, updated_at, completed_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			id, revision, attempt_token, fleet_pool_id, project_id, status, desired_count,
+			execution_target_id, provider_operation_id, idempotency_key, observed_count, ready_count,
+			pending_count, draining_count, failed_count, deadline_at, last_error,
+			reason, requested_by_subject, created_at, updated_at, completed_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 			revision=excluded.revision, attempt_token=excluded.attempt_token,
 			fleet_pool_id=excluded.fleet_pool_id, project_id=excluded.project_id, status=excluded.status,
-			desired_count=excluded.desired_count, reason=excluded.reason,
+			desired_count=excluded.desired_count, execution_target_id=excluded.execution_target_id,
+			provider_operation_id=excluded.provider_operation_id, idempotency_key=excluded.idempotency_key,
+			observed_count=excluded.observed_count, ready_count=excluded.ready_count,
+			pending_count=excluded.pending_count, draining_count=excluded.draining_count,
+			failed_count=excluded.failed_count, deadline_at=excluded.deadline_at, last_error=excluded.last_error,
+			reason=excluded.reason,
 			requested_by_subject=excluded.requested_by_subject, updated_at=excluded.updated_at,
 			completed_at=excluded.completed_at`,
-		req.ID, req.Revision, req.AttemptToken, req.FleetPoolID, req.ProjectID, req.Status, req.DesiredCount, req.Reason,
+		req.ID, req.Revision, req.AttemptToken, req.FleetPoolID, req.ProjectID, req.Status, req.DesiredCount,
+		req.ExecutionTargetID, req.ProviderOperationID, req.IdempotencyKey, req.ObservedCount, req.ReadyCount,
+		req.PendingCount, req.DrainingCount, req.FailedCount, req.DeadlineAt, req.LastError, req.Reason,
 		req.RequestedBySubject, req.CreatedAt, req.UpdatedAt, req.CompletedAt)
 	return err
 }
@@ -660,16 +845,34 @@ func (s *SQLiteStore) CreateProvisioningRequestIfAbsent(req *ProvisioningRequest
 	if locked != 1 {
 		return false, sql.ErrNoRows
 	}
-	var poolStatus string
-	if err := tx.QueryRow(`SELECT COALESCE(status, 'active') FROM fleet_pools WHERE id = ?`, req.FleetPoolID).Scan(&poolStatus); err != nil {
+	var poolStatus, executionTargetID string
+	if err := tx.QueryRow(`SELECT COALESCE(status, 'active'), COALESCE(execution_target_id, '') FROM fleet_pools WHERE id = ?`, req.FleetPoolID).Scan(&poolStatus, &executionTargetID); err != nil {
 		return false, err
 	}
 	if status := strings.ToLower(strings.TrimSpace(poolStatus)); status != "" && status != "active" {
 		return false, ErrFleetPoolNotActive
 	}
-	result, err := tx.Exec(`INSERT INTO provisioning_requests (id, revision, attempt_token, fleet_pool_id, project_id, status, desired_count, reason, requested_by_subject, created_at, updated_at, completed_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO NOTHING`,
-		req.ID, req.Revision, req.AttemptToken, req.FleetPoolID, req.ProjectID, req.Status, req.DesiredCount, req.Reason,
+	if requestTargetID := strings.TrimSpace(req.ExecutionTargetID); requestTargetID != "" && requestTargetID != strings.TrimSpace(executionTargetID) {
+		return false, ErrFleetPoolPlacementChanged
+	}
+	// Provider mutations for a pool are serialized. Without this durable guard,
+	// two leaders/requests can race UpdateService or an ARM scale patch and one
+	// cancellation can roll back the other's successful desired count.
+	var activeRequests int
+	if err := tx.QueryRow(`SELECT COUNT(*) FROM provisioning_requests
+		WHERE fleet_pool_id = ? AND LOWER(TRIM(COALESCE(status, ''))) NOT IN ('success', 'failed', 'not_configured', 'cancelled', 'timed_out')`, req.FleetPoolID).Scan(&activeRequests); err != nil {
+		return false, err
+	}
+	if activeRequests > 0 {
+		return false, ErrFleetPoolHasActiveProvisioning
+	}
+	result, err := tx.Exec(`INSERT INTO provisioning_requests (id, revision, attempt_token, fleet_pool_id, project_id, status, desired_count,
+		execution_target_id, provider_operation_id, idempotency_key, observed_count, ready_count, pending_count,
+		draining_count, failed_count, deadline_at, last_error, reason, requested_by_subject, created_at, updated_at, completed_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO NOTHING`,
+		req.ID, req.Revision, req.AttemptToken, req.FleetPoolID, req.ProjectID, req.Status, req.DesiredCount,
+		req.ExecutionTargetID, req.ProviderOperationID, req.IdempotencyKey, req.ObservedCount, req.ReadyCount,
+		req.PendingCount, req.DrainingCount, req.FailedCount, req.DeadlineAt, req.LastError, req.Reason,
 		req.RequestedBySubject, req.CreatedAt, req.UpdatedAt, req.CompletedAt)
 	if err != nil {
 		return false, err
@@ -695,8 +898,14 @@ func (s *SQLiteStore) TransitionProvisioningRequest(req *ProvisioningRequest, ex
 		return false, fmt.Errorf("provisioning request revision must advance by one")
 	}
 	req.UpdatedAt = time.Now()
-	result, err := s.db.Exec(`UPDATE provisioning_requests SET revision=?, attempt_token=?, fleet_pool_id=?, project_id=?, status=?, desired_count=?, reason=?, requested_by_subject=?, updated_at=?, completed_at=? WHERE id=? AND COALESCE(revision, 1)=? AND COALESCE(attempt_token, '')=?`,
-		req.Revision, req.AttemptToken, req.FleetPoolID, req.ProjectID, req.Status, req.DesiredCount, req.Reason, req.RequestedBySubject, req.UpdatedAt, req.CompletedAt,
+	result, err := s.db.Exec(`UPDATE provisioning_requests SET revision=?, attempt_token=?, fleet_pool_id=?, project_id=?, status=?, desired_count=?,
+		execution_target_id=?, provider_operation_id=?, idempotency_key=?, observed_count=?, ready_count=?, pending_count=?,
+		draining_count=?, failed_count=?, deadline_at=?, last_error=?, reason=?, requested_by_subject=?, updated_at=?, completed_at=?
+		WHERE id=? AND COALESCE(revision, 1)=? AND COALESCE(attempt_token, '')=?`,
+		req.Revision, req.AttemptToken, req.FleetPoolID, req.ProjectID, req.Status, req.DesiredCount,
+		req.ExecutionTargetID, req.ProviderOperationID, req.IdempotencyKey, req.ObservedCount, req.ReadyCount,
+		req.PendingCount, req.DrainingCount, req.FailedCount, req.DeadlineAt, req.LastError,
+		req.Reason, req.RequestedBySubject, req.UpdatedAt, req.CompletedAt,
 		req.ID, expectedRevision, expectedAttemptToken)
 	if err != nil {
 		return false, err
@@ -709,12 +918,17 @@ func (s *SQLiteStore) TransitionProvisioningRequest(req *ProvisioningRequest, ex
 }
 
 const provisioningRequestSelect = `SELECT id, COALESCE(revision, 1), COALESCE(attempt_token, ''), fleet_pool_id, COALESCE(project_id, ''), COALESCE(status, 'pending'),
-	desired_count, COALESCE(reason, ''), COALESCE(requested_by_subject, ''), created_at, updated_at, completed_at
+	desired_count, COALESCE(execution_target_id, ''), COALESCE(provider_operation_id, ''), COALESCE(idempotency_key, ''),
+	COALESCE(observed_count, 0), COALESCE(ready_count, 0), COALESCE(pending_count, 0), COALESCE(draining_count, 0),
+	COALESCE(failed_count, 0), deadline_at, COALESCE(last_error, ''), COALESCE(reason, ''),
+	COALESCE(requested_by_subject, ''), created_at, updated_at, completed_at
 	FROM provisioning_requests`
 
 func scanProvisioningRequest(row capacityRowScanner) (*ProvisioningRequest, error) {
 	var req ProvisioningRequest
 	if err := row.Scan(&req.ID, &req.Revision, &req.AttemptToken, &req.FleetPoolID, &req.ProjectID, &req.Status, &req.DesiredCount,
+		&req.ExecutionTargetID, &req.ProviderOperationID, &req.IdempotencyKey, &req.ObservedCount, &req.ReadyCount,
+		&req.PendingCount, &req.DrainingCount, &req.FailedCount, &req.DeadlineAt, &req.LastError,
 		&req.Reason, &req.RequestedBySubject, &req.CreatedAt, &req.UpdatedAt, &req.CompletedAt); err != nil {
 		return nil, err
 	}

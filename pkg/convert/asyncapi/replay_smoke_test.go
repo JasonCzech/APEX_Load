@@ -402,6 +402,14 @@ operations:
 	if len(result.Scripts) != 2 {
 		t.Fatalf("scripts = %d, want Kafka + JMS split", len(result.Scripts))
 	}
+	seenNames := map[string]string{}
+	for _, script := range result.Scripts {
+		identity := strings.ToLower(strings.TrimSpace(script.Name))
+		if previous, duplicate := seenNames[identity]; duplicate {
+			t.Fatalf("split script names collide under batch save identity: %q and %q", previous, script.Name)
+		}
+		seenNames[identity] = script.Name
+	}
 
 	var kafkaScript, jmsScript bool
 	for _, script := range result.Scripts {

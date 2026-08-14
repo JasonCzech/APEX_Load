@@ -7,13 +7,16 @@ package api
 import (
 	"bytes"
 	"database/sql"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"mime"
 	"mime/multipart"
 	"net/http"
 	"strings"
 
+	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/recorder"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
@@ -203,7 +206,7 @@ func resolveScriptProjectID(r *http.Request, store storage.Store) (string, int, 
 	if store == nil {
 		return "", http.StatusServiceUnavailable, "script storage is not configured"
 	}
-	script, err := store.GetScript(r.PathValue("id"))
+	script, err := getPublishedImportScript(store, r.PathValue("id"))
 	if err != nil {
 		return "", http.StatusNotFound, "script not found"
 	}
@@ -262,7 +265,7 @@ func resolveGitHubCheckLinksProjectID(r *http.Request, store storage.Store) (str
 		projectID = normalizeProjectID(test.ProjectID)
 	}
 	if scriptID != "" {
-		script, err := store.GetScript(scriptID)
+		script, err := getPublishedImportScript(store, scriptID)
 		if err != nil || script == nil {
 			return "", http.StatusNotFound, "script not found"
 		}
@@ -516,7 +519,7 @@ func resolveRevisionCreateTestScriptProjectID(req CreateTestRequest, source *sto
 			if group.RevisionSourceGroupIndex != nil {
 				return "", http.StatusBadRequest, "revision_new_group cannot be combined with revision_source_group_index"
 			}
-			script, err := store.GetScript(strings.TrimSpace(group.ScriptID))
+			script, err := getPublishedImportScript(store, strings.TrimSpace(group.ScriptID))
 			if err != nil || script == nil {
 				return "", http.StatusNotFound, "script not found"
 			}
@@ -558,7 +561,7 @@ func resolveCreateTestScriptProjectID(req CreateTestRequest, store storage.Store
 	}
 	projectID := ""
 	for _, scriptID := range scriptIDs {
-		script, err := store.GetScript(scriptID)
+		script, err := getPublishedImportScript(store, scriptID)
 		if err != nil {
 			return "", http.StatusNotFound, "script not found"
 		}
@@ -602,7 +605,7 @@ func resolveScenarioProjectID(r *http.Request, store storage.Store) (string, int
 	if store == nil {
 		return "", http.StatusServiceUnavailable, "scenario storage is not configured"
 	}
-	_, scripts, err := store.GetScenario(r.PathValue("id"))
+	_, scripts, err := getPublishedImportScenario(store, r.PathValue("id"))
 	if err != nil {
 		return "", http.StatusNotFound, "scenario not found"
 	}
@@ -638,7 +641,7 @@ func resolveProjectIDFromScenarioScripts(scripts []storage.ScenarioScript, store
 		if strings.TrimSpace(scenarioScript.ScriptID) == "" {
 			continue
 		}
-		script, err := store.GetScript(scenarioScript.ScriptID)
+		script, err := getPublishedImportScript(store, scenarioScript.ScriptID)
 		if err != nil {
 			return "", http.StatusNotFound, "script not found"
 		}
@@ -840,7 +843,7 @@ func resolvePostmanSaveProjectID(r *http.Request, store storage.Store) (string, 
 		if store == nil {
 			return "", http.StatusServiceUnavailable, "script storage is not configured"
 		}
-		script, err := store.GetScript(targetID)
+		script, err := getPublishedImportScript(store, targetID)
 		if err != nil {
 			return "", http.StatusNotFound, "target script not found"
 		}
@@ -970,7 +973,7 @@ func resolveObjectRepositoryFromScriptProjectID(r *http.Request, store storage.S
 	if strings.TrimSpace(req.ScriptID) == "" {
 		return "", http.StatusBadRequest, "script_id is required"
 	}
-	script, err := store.GetScript(strings.TrimSpace(req.ScriptID))
+	script, err := getPublishedImportScript(store, strings.TrimSpace(req.ScriptID))
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return "", http.StatusNotFound, "script not found"
@@ -1009,7 +1012,7 @@ func resolveCorrelationRulesetFromScriptProjectID(r *http.Request, store storage
 	if strings.TrimSpace(req.ScriptID) == "" {
 		return "", http.StatusBadRequest, "script_id is required"
 	}
-	script, err := store.GetScript(strings.TrimSpace(req.ScriptID))
+	script, err := getPublishedImportScript(store, strings.TrimSpace(req.ScriptID))
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return "", http.StatusNotFound, "script not found"
@@ -1090,17 +1093,212 @@ func resolveRecorderSessionProjectID(rec *recorder.Recorder) requestProjectLooku
 	}
 }
 
-func resolveBrowserRecordingSessionProjectID(manager *BrowserRecordingManager) requestProjectLookup {
+func resolveBrowserRecordingSessionProjectID(server *Server) requestProjectLookup {
 	return func(r *http.Request) (string, int, string) {
+		if server == nil {
+			return "", http.StatusServiceUnavailable, "browser recorder is not configured"
+		}
+		var manager *BrowserRecordingManager
+		manager = server.browserRecording
 		if manager == nil {
 			return "", http.StatusServiceUnavailable, "browser recorder is not configured"
 		}
 		session, ok := manager.Get(r.PathValue("id"))
-		if !ok {
+		if ok {
+			return normalizeProjectID(session.ProjectID), 0, ""
+		}
+		// A successful browser-recording save can outlive the process-local
+		// recording manager. Permit only the exact save route to recover its
+		// project from the durable, receipt-bound scripts. Other recording
+		// controls still require the live capability and fail closed.
+		if r.Method != http.MethodPost || !strings.HasSuffix(r.URL.Path, "/convert") {
 			return "", http.StatusNotFound, "browser recording session not found"
 		}
-		return normalizeProjectID(session.ProjectID), 0, ""
+		recovery, err := server.loadDurableBrowserRecordingConversion(r.PathValue("id"))
+		if err != nil {
+			if errors.Is(err, errBrowserRecordingSaveFinalizing) {
+				return "", http.StatusConflict, "the saved browser recording is still finalizing; retry conversion"
+			}
+			return "", http.StatusInternalServerError, "failed to resolve saved browser recording: " + err.Error()
+		}
+		if recovery == nil {
+			return "", http.StatusNotFound, "browser recording session not found"
+		}
+		return recovery.ProjectID, 0, ""
 	}
+}
+
+type durableBrowserRecordingConversion struct {
+	ProjectID string
+	Scripts   []*dsl.Script
+}
+
+var errBrowserRecordingSaveFinalizing = errors.New("saved browser recording publication is still finalizing")
+
+// loadDurableBrowserRecordingConversion reads a keyed O(1) locator, then loads
+// exactly its bounded script IDs. This runs before project authorization, so a
+// bogus lost-session request must never scan/decode the project script library.
+func (s *Server) loadDurableBrowserRecordingConversion(recordingID string) (*durableBrowserRecordingConversion, error) {
+	if s == nil || s.store == nil || strings.TrimSpace(recordingID) == "" {
+		return nil, nil
+	}
+	locatorKey, err := s.browserRecordingSaveLocatorKey(recordingID)
+	if err != nil {
+		return nil, err
+	}
+	raw, err := s.store.GetSetting(locatorKey)
+	if err != nil {
+		return nil, fmt.Errorf("load saved browser recording locator: %w", err)
+	}
+	if strings.TrimSpace(raw) == "" {
+		return nil, nil
+	}
+	locator, err := s.decodeBrowserRecordingSaveLocator(raw)
+	if err != nil {
+		return nil, fmt.Errorf("saved browser recording locator is invalid: %w", err)
+	}
+	if locator.RecordingID != strings.TrimSpace(recordingID) {
+		return nil, errors.New("saved browser recording locator belongs to a different recording")
+	}
+	if len(locator.ScriptIDs) == 0 || len(locator.ScriptIDs) > maxBridgedBrowserImportScripts+1 {
+		return nil, errors.New("saved browser recording locator has an invalid script count")
+	}
+	if locator.State != browserRecordingSaveLocatorPublished {
+		if err := s.recoverStagedBrowserRecordingConversionsAtStartup(); err != nil {
+			if errors.Is(err, storage.ErrDirectImportReceiptBusy) {
+				return nil, errBrowserRecordingSaveFinalizing
+			}
+			return nil, fmt.Errorf("recover staged browser recording: %w", err)
+		}
+		current, err := s.store.GetSetting(locatorKey)
+		if err != nil {
+			return nil, fmt.Errorf("reload saved browser recording locator: %w", err)
+		}
+		if current != raw {
+			if strings.TrimSpace(current) == "" {
+				return nil, nil
+			}
+			return s.loadDurableBrowserRecordingConversion(recordingID)
+		}
+	}
+	ordered := make([]*dsl.Script, len(locator.ScriptIDs))
+	for index, scriptID := range locator.ScriptIDs {
+		script, loadErr := getPublishedImportScript(s.store, scriptID)
+		if loadErr != nil || script == nil {
+			if loadErr == nil {
+				loadErr = sql.ErrNoRows
+			}
+			if locator.State != browserRecordingSaveLocatorPublished && errors.Is(loadErr, sql.ErrNoRows) {
+				removed, cleanupErr := s.removeCompensatedBrowserRecordingSaveLocator(locatorKey, raw, locator)
+				if cleanupErr != nil {
+					return nil, fmt.Errorf("clean compensated browser recording locator: %w", cleanupErr)
+				}
+				if removed {
+					return nil, nil
+				}
+				return nil, errBrowserRecordingSaveFinalizing
+			}
+			return nil, fmt.Errorf("saved browser recording script %d is unavailable: %w", index+1, loadErr)
+		}
+		if normalizeProjectID(script.ProjectID) != locator.ProjectID {
+			return nil, errors.New("saved browser recording locator crosses project boundaries")
+		}
+		preserved := browserRecordingImportPreserved(script)
+		if browserRecordingPreservedString(preserved, browserRecordingSaveSessionIDKey) != locator.RecordingID ||
+			browserRecordingPreservedInt(preserved, browserRecordingSaveVersionKey) != browserRecordingSaveVersion ||
+			browserRecordingPreservedInt(preserved, browserRecordingSaveIndexKey) != index ||
+			browserRecordingPreservedInt(preserved, browserRecordingSaveCountKey) != len(locator.ScriptIDs) {
+			return nil, errors.New("saved browser recording script ordering does not match its locator")
+		}
+		if err := s.verifyBrowserRecordingSaveProvenance(script); err != nil {
+			return nil, fmt.Errorf("saved browser recording provenance is invalid: %w", err)
+		}
+		ordered[index] = script
+	}
+	if locator.State != browserRecordingSaveLocatorPublished {
+		return nil, errBrowserRecordingSaveFinalizing
+	}
+	return &durableBrowserRecordingConversion{ProjectID: locator.ProjectID, Scripts: ordered}, nil
+}
+
+// removeCompensatedBrowserRecordingSaveLocator recognizes only a signed
+// pre-publication locator whose complete, bounded script set is physically
+// absent. A staged script that is merely hidden by a live import claim keeps the
+// locator intact. The CAS is against the exact signed encoding so a concurrent
+// post-commit promotion wins safely and remains fail-closed.
+func (s *Server) removeCompensatedBrowserRecordingSaveLocator(
+	locatorKey string,
+	raw string,
+	locator *browserRecordingSaveLocator,
+) (bool, error) {
+	if s == nil || s.store == nil || locator == nil ||
+		locator.State == browserRecordingSaveLocatorPublished {
+		return false, nil
+	}
+	for _, scriptID := range locator.ScriptIDs {
+		script, err := s.store.GetScript(scriptID)
+		if err == nil && script != nil {
+			return false, nil
+		}
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return false, fmt.Errorf("inspect compensated script %q: %w", scriptID, err)
+		}
+	}
+	cas, ok := s.store.(settingsCompareAndSwapper)
+	if !ok {
+		return false, errors.New("durable browser recording locator requires atomic settings storage")
+	}
+	won, err := cas.CompareAndSwapSetting(locatorKey, raw, "")
+	if err != nil {
+		return false, err
+	}
+	if won {
+		return true, nil
+	}
+	current, err := s.store.GetSetting(locatorKey)
+	if err != nil {
+		return false, err
+	}
+	if strings.TrimSpace(current) == "" {
+		return true, nil
+	}
+	if _, err := s.decodeBrowserRecordingSaveLocator(current); err != nil {
+		return false, fmt.Errorf("browser recording locator changed to an invalid value: %w", err)
+	}
+	return false, errors.New("browser recording locator changed concurrently during compensation cleanup")
+}
+
+func browserRecordingImportPreserved(script *dsl.Script) map[string]any {
+	if script == nil || script.Metadata == nil || script.Metadata.Import == nil {
+		return nil
+	}
+	return script.Metadata.Import.Preserved
+}
+
+func browserRecordingPreservedString(preserved map[string]any, key string) string {
+	value, _ := preserved[key].(string)
+	return strings.TrimSpace(value)
+}
+
+func browserRecordingPreservedInt(preserved map[string]any, key string) int {
+	switch value := preserved[key].(type) {
+	case int:
+		return value
+	case int32:
+		return int(value)
+	case int64:
+		return int(value)
+	case float64:
+		if value == float64(int(value)) {
+			return int(value)
+		}
+	case json.Number:
+		parsed, err := value.Int64()
+		if err == nil {
+			return int(parsed)
+		}
+	}
+	return -1
 }
 
 func resolveBrowserReplaySessionProjectID(manager *BrowserReplayManager) requestProjectLookup {
@@ -1371,7 +1569,7 @@ func resolveAIAssistanceProjectID(r *http.Request, store storage.Store) (string,
 			return 0, ""
 		}
 		seenScripts[id] = struct{}{}
-		script, err := store.GetScript(id)
+		script, err := getPublishedImportScript(store, id)
 		if err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
 				return http.StatusNotFound, "script not found"
@@ -1427,7 +1625,7 @@ func resolveAIAssistanceProjectID(r *http.Request, store storage.Store) (string,
 		}
 	case "scenario":
 		if targetID != "" {
-			_, scripts, err := store.GetScenario(targetID)
+			_, scripts, err := getPublishedImportScenario(store, targetID)
 			if errors.Is(err, sql.ErrNoRows) {
 				return "", http.StatusNotFound, "scenario not found"
 			}

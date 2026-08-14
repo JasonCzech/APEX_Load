@@ -63,7 +63,7 @@ func (s *Server) handleUpdateScenario(w http.ResponseWriter, r *http.Request) {
 	}
 	actorType, actorSubject, actorDisplayName := s.resolveAuditActor(r)
 	req.creationActor = testCreationActor{Type: actorType, Subject: actorSubject, DisplayName: actorDisplayName}
-	existing, ok := s.runner.GetScenario(r.PathValue("id"))
+	existing, ok := s.runner.getScenarioForMutation(r.PathValue("id"))
 	if !ok || existing == nil {
 		writeError(w, http.StatusNotFound, "scenario not found")
 		return

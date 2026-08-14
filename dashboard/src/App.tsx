@@ -3021,7 +3021,7 @@ function AppShell({
         applicationValue={scopedApplicationContextValue}
       >
         <Suspense fallback={<div className="page-loading">Loading…</div>}>
-          <BrowserRecorderControlPanel sessionId={view.sessionId} standalone />
+          <BrowserRecorderControlPanel sessionId={view.sessionId} folderId={view.folderId} standalone />
         </Suspense>
       </ScopedAppContextProviders>
     );
@@ -3409,6 +3409,7 @@ function AppShell({
                   onNavigate={handleNavigate}
                   activeApplication={activeApplication}
                   activeRelease={activeRelease}
+                  activeProjectName={activeProject?.name}
                 />
               )}
               {!routeAssetScopeBlocked &&

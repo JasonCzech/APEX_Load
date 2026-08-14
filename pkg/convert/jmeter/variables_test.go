@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jasonczech/apexload/pkg/convert/credentialpolicy"
+	"github.com/jasonczech/apexload/pkg/convert/diag"
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
@@ -330,6 +332,57 @@ func TestConvertJMXPriorExtractorOverridesStaticArgumentProvenance(t *testing.T)
 	}
 	if _, blocked := action.Metadata["execution_blocker"]; blocked {
 		t.Fatalf("proven extractor reference was blocked: %#v", action.Metadata)
+	}
+}
+
+func TestResolveJMeterVariablesRejectsCaseCollidingDestinationNames(t *testing.T) {
+	definitions := map[string]jmeterVariableDefinition{
+		"Token":    {Value: "upper"},
+		"token":    {Value: "lower"},
+		"combined": {Value: "${Token}-suffix"},
+		"safe":     {Value: "ordinary"},
+	}
+	var diagnostics diag.Collector
+	resolution := resolveJMeterVariableDefinitions(definitions, &diagnostics)
+
+	for _, name := range []string{"Token", "token", "combined"} {
+		if _, invalid := resolution.invalid[name]; !invalid {
+			t.Errorf("binding %q was not invalidated", name)
+		}
+		if _, materialized := resolution.values[name]; materialized {
+			t.Errorf("ambiguous binding %q was materialized as %q", name, resolution.values[name])
+		}
+	}
+	if got := resolution.values["safe"]; got != "ordinary" {
+		t.Fatalf("unrelated binding = %q, want ordinary", got)
+	}
+	found := false
+	for _, item := range diagnostics.Items() {
+		if item.Element == "JMeter variable name collision" &&
+			strings.Contains(item.Detail, "Token, token") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("diagnostics = %#v, want case-collision explanation", diagnostics.Items())
+	}
+}
+
+func TestJMeterCredentialSourceRedactionFailsClosedAtWorkLimit(t *testing.T) {
+	const canary = "jmeter-redaction-work-canary"
+	projected, changed := redactJMeterCredentialValuesWithBudget(
+		"first\n"+canary+"\nlast",
+		[]credentialpolicy.Requirement{{Value: canary}},
+		nil,
+		1,
+	)
+	if !changed || strings.Contains(projected, canary) ||
+		!strings.Contains(projected, "WORK LIMIT EXCEEDED") {
+		t.Fatalf("bounded source projection = %q, changed=%v", projected, changed)
+	}
+	if strings.Count(projected, "\n") != 2 {
+		t.Fatalf("bounded source projection changed line coordinates: %q", projected)
 	}
 }
 

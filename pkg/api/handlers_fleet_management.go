@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jasonczech/apexload/pkg/compute"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
@@ -51,6 +52,10 @@ func (s *Server) handleCreateFleetPool(w http.ResponseWriter, r *http.Request) {
 	// domain-scoped pool DERIVES its provider (and may inherit the domain's
 	// default cluster) rather than having to restate it.
 	if status, err := s.validatePoolAgainstDomainTarget(&req); err != nil {
+		writeError(w, status, err.Error())
+		return
+	}
+	if status, err := s.validatePoolExecutionTarget(&req); err != nil {
 		writeError(w, status, err.Error())
 		return
 	}
@@ -132,8 +137,15 @@ func (s *Server) handleGetFleetPool(w http.ResponseWriter, r *http.Request) {
 // are distinguishable — which is what makes unscoping possible at all.
 type fleetPoolUpdateRequest struct {
 	storage.FleetPool
-	DomainID  *string `json:"domain_id,omitempty"`
-	ClusterID *string `json:"cluster_id,omitempty"`
+	DomainID                *string `json:"domain_id,omitempty"`
+	ClusterID               *string `json:"cluster_id,omitempty"`
+	ExecutionTargetID       *string `json:"execution_target_id,omitempty"`
+	LifecycleMode           *string `json:"lifecycle_mode,omitempty"`
+	WarmFloor               *int    `json:"warm_floor,omitempty"`
+	ReadinessTimeoutSeconds *int    `json:"readiness_timeout_seconds,omitempty"`
+	IdleGraceSeconds        *int    `json:"idle_grace_seconds,omitempty"`
+	RuntimeProfileID        *string `json:"runtime_profile_id,omitempty"`
+	CapacityAdmission       *string `json:"capacity_admission,omitempty"`
 }
 
 func (s *Server) handleUpdateFleetPool(w http.ResponseWriter, r *http.Request) {
@@ -180,11 +192,36 @@ func (s *Server) handleUpdateFleetPool(w http.ResponseWriter, r *http.Request) {
 	if req.ClusterID != nil {
 		existing.ClusterID = strings.TrimSpace(*req.ClusterID)
 	}
+	if req.ExecutionTargetID != nil {
+		existing.ExecutionTargetID = strings.TrimSpace(*req.ExecutionTargetID)
+	}
+	if req.LifecycleMode != nil {
+		existing.LifecycleMode = strings.TrimSpace(*req.LifecycleMode)
+	}
+	if req.WarmFloor != nil {
+		existing.WarmFloor = *req.WarmFloor
+	}
+	if req.ReadinessTimeoutSeconds != nil {
+		existing.ReadinessTimeoutSeconds = *req.ReadinessTimeoutSeconds
+	}
+	if req.IdleGraceSeconds != nil {
+		existing.IdleGraceSeconds = *req.IdleGraceSeconds
+	}
+	if req.RuntimeProfileID != nil {
+		existing.RuntimeProfileID = strings.TrimSpace(*req.RuntimeProfileID)
+	}
+	if req.CapacityAdmission != nil {
+		existing.CapacityAdmission = strings.TrimSpace(*req.CapacityAdmission)
+	}
 	if err := validateFleetPoolSizing(existing); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	if status, err := s.validatePoolAgainstDomainTarget(existing); err != nil {
+		writeError(w, status, err.Error())
+		return
+	}
+	if status, err := s.validatePoolExecutionTarget(existing); err != nil {
 		writeError(w, status, err.Error())
 		return
 	}
@@ -241,6 +278,10 @@ func (s *Server) handleDeleteFleetPool(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusConflict, "fleet pool has an active provisioning request")
 			return
 		}
+		if errors.Is(err, storage.ErrFleetPoolHasLiveCapacity) {
+			writeError(w, http.StatusConflict, "fleet pool still owns live cloud capacity; drain or terminate it before deleting the pool")
+			return
+		}
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -282,6 +323,20 @@ func validateFleetPoolSizing(pool *storage.FleetPool) error {
 	if pool.MaxSize > 0 && pool.DesiredSize > pool.MaxSize {
 		return errors.New("desired_size cannot exceed max_size")
 	}
+	if pool.WarmFloor < 0 || pool.ReadinessTimeoutSeconds < 0 || pool.IdleGraceSeconds < 0 {
+		return errors.New("warm_floor, readiness_timeout_seconds, and idle_grace_seconds must be nonnegative")
+	}
+	if pool.MaxSize > 0 && pool.WarmFloor > pool.MaxSize {
+		return errors.New("warm_floor cannot exceed max_size")
+	}
+	if pool.LifecycleMode != "" && pool.LifecycleMode != storage.FleetLifecycleStanding &&
+		pool.LifecycleMode != storage.FleetLifecycleOnDemand && pool.LifecycleMode != storage.FleetLifecycleWarmBurst {
+		return fmt.Errorf("unsupported lifecycle_mode %q", pool.LifecycleMode)
+	}
+	if pool.CapacityAdmission != "" && pool.CapacityAdmission != storage.CapacityAdmissionStrict &&
+		pool.CapacityAdmission != storage.CapacityAdmissionBestEffort {
+		return fmt.Errorf("unsupported capacity_admission %q", pool.CapacityAdmission)
+	}
 	return nil
 }
 
@@ -319,7 +374,10 @@ func effectiveProvisioningDesiredCount(pool *storage.FleetPool, desiredCount int
 	if pool == nil {
 		return 0, errors.New("fleet pool is required")
 	}
-	if desiredCount <= 0 {
+	if desiredCount < 0 {
+		return 0, errors.New("desired_count must not be negative")
+	}
+	if desiredCount == 0 && !isPaaSFleetPool(pool) {
 		return 0, errors.New("desired_count must be greater than zero")
 	}
 	if desiredCount < pool.MinSize {
@@ -329,6 +387,18 @@ func effectiveProvisioningDesiredCount(pool *storage.FleetPool, desiredCount int
 		return 0, fmt.Errorf("desired_count %d cannot exceed fleet pool max_size %d", desiredCount, pool.MaxSize)
 	}
 	return desiredCount, nil
+}
+
+func isPaaSFleetPool(pool *storage.FleetPool) bool {
+	if pool == nil || strings.TrimSpace(pool.ExecutionTargetID) == "" {
+		return false
+	}
+	switch storage.NormalizeCloudProvider(pool.CloudProvider) {
+	case storage.DeploymentProviderAzureContainerApps, storage.DeploymentProviderAWSECSFargate:
+		return true
+	default:
+		return false
+	}
 }
 
 func updateFleetPoolDesiredSize(store storage.Store, poolID string, desiredSize int) error {
@@ -684,6 +754,14 @@ func writeProvisioningCreateError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusNotFound, "fleet pool not found")
 	case errors.Is(err, storage.ErrFleetPoolNotActive):
 		writeError(w, http.StatusConflict, "fleet pool is not active")
+	case errors.Is(err, storage.ErrFleetPoolHasActiveProvisioning):
+		writeError(w, http.StatusConflict, "fleet pool already has an active provisioning request")
+	case errors.Is(err, storage.ErrFleetPoolPlacementChanged):
+		writeError(w, http.StatusConflict, "fleet pool execution target changed while provisioning was being prepared; reload and retry")
+	case errors.Is(err, compute.ErrOwnershipConflict):
+		writeError(w, http.StatusConflict, err.Error())
+	case errors.Is(err, compute.ErrUnsupportedOperation):
+		writeError(w, http.StatusConflict, err.Error())
 	default:
 		writeError(w, http.StatusBadRequest, err.Error())
 	}
@@ -734,8 +812,8 @@ func (s *Server) handleCreateProvisioningRequest(w http.ResponseWriter, r *http.
 		writeError(w, http.StatusBadRequest, "fleet_pool_id is required")
 		return
 	}
-	if req.DesiredCount <= 0 {
-		writeError(w, http.StatusBadRequest, "desired_count must be greater than zero")
+	if req.DesiredCount < 0 {
+		writeError(w, http.StatusBadRequest, "desired_count must not be negative")
 		return
 	}
 	pool, err := s.store.GetFleetPool(req.FleetPoolID)
@@ -763,6 +841,13 @@ func (s *Server) handleCreateProvisioningRequest(w http.ResponseWriter, r *http.
 	req.ProjectID = normalizeProjectID(req.ProjectID)
 	_, req.RequestedBySubject, _ = s.resolveAuditActor(r)
 	now := time.Now()
+
+	if handled, err := s.startAsyncCapacityProvisioning(w, r, pool, &req, now); handled {
+		if err != nil {
+			writeProvisioningCreateError(w, err)
+		}
+		return
+	}
 
 	// Resolve the pool's cluster before deciding whether a provisioner is
 	// available: a pool bound to a registered cluster scales there, while an
@@ -913,6 +998,67 @@ func (s *Server) handleGetProvisioningRequest(w http.ResponseWriter, r *http.Req
 	writeJSON(w, http.StatusOK, req)
 }
 
+type CapacityInstanceResponse struct {
+	ID                    string     `json:"id"`
+	ExecutionTargetID     string     `json:"execution_target_id"`
+	FleetPoolID           string     `json:"fleet_pool_id"`
+	TestID                string     `json:"test_id,omitempty"`
+	ProvisioningRequestID string     `json:"provisioning_request_id,omitempty"`
+	GeneratorID           string     `json:"generator_id"`
+	ProviderID            string     `json:"provider_id,omitempty"`
+	State                 string     `json:"state"`
+	ArchiveState          string     `json:"archive_state"`
+	CleanupDeadline       *time.Time `json:"cleanup_deadline,omitempty"`
+	CreatedAt             time.Time  `json:"created_at"`
+	UpdatedAt             time.Time  `json:"updated_at"`
+}
+
+type CapacityInstanceListResponse struct {
+	Instances []CapacityInstanceResponse `json:"instances"`
+	Total     int                        `json:"total"`
+}
+
+func (s *Server) handleListProvisioningRequestInstances(w http.ResponseWriter, r *http.Request) {
+	if s.store == nil {
+		writeError(w, http.StatusServiceUnavailable, "storage is not configured")
+		return
+	}
+	requestID := strings.TrimSpace(r.PathValue("id"))
+	request, err := s.store.GetProvisioningRequest(requestID)
+	if errors.Is(err, sql.ErrNoRows) {
+		writeError(w, http.StatusNotFound, "provisioning request not found")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to load provisioning request")
+		return
+	}
+	intentStore, ok := s.store.(storage.CapacityInstanceIntentStore)
+	if !ok {
+		writeError(w, http.StatusServiceUnavailable, "storage does not support capacity instance observations")
+		return
+	}
+	intents, err := intentStore.ListCapacityInstanceIntents(request.ExecutionTargetID, requestID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to list capacity instances")
+		return
+	}
+	instances := make([]CapacityInstanceResponse, 0, len(intents))
+	for _, intent := range intents {
+		if intent == nil {
+			continue
+		}
+		instances = append(instances, CapacityInstanceResponse{
+			ID: intent.ID, ExecutionTargetID: intent.ExecutionTargetID, FleetPoolID: intent.FleetPoolID,
+			TestID: intent.TestID, ProvisioningRequestID: intent.ProvisioningRequestID,
+			GeneratorID: intent.GeneratorID, ProviderID: intent.ProviderID, State: intent.State,
+			ArchiveState: intent.ArchiveState, CleanupDeadline: intent.CleanupDeadline,
+			CreatedAt: intent.CreatedAt, UpdatedAt: intent.UpdatedAt,
+		})
+	}
+	writeJSON(w, http.StatusOK, CapacityInstanceListResponse{Instances: instances, Total: len(instances)})
+}
+
 func (s *Server) handleCancelProvisioningRequest(w http.ResponseWriter, r *http.Request) {
 	if !s.requireExecutionLeader(w) {
 		return
@@ -938,19 +1084,68 @@ func (s *Server) handleCancelProvisioningRequest(w http.ResponseWriter, r *http.
 		writeError(w, http.StatusConflict, fmt.Sprintf("provisioning request is %s and cannot be cancelled", req.Status))
 		return
 	}
-	if s.fleetProvisioningAttemptActive(req.ID) {
+	isAsyncCapacity := strings.TrimSpace(req.ExecutionTargetID) != "" && s.capacityBackends != nil
+	if s.fleetProvisioningAttemptActive(req.ID) && !isAsyncCapacity {
 		writeError(w, http.StatusConflict, "provisioning request is currently applying an external scale and cannot be cancelled safely")
 		return
 	}
-	now := time.Now()
+	var asyncCancelBackend compute.Backend
+	var asyncCancelRequest compute.CapacityRequest
+	var asyncCancelIntents []*storage.CapacityInstanceIntent
+	if isAsyncCapacity {
+		pool, poolErr := s.store.GetFleetPool(req.FleetPoolID)
+		if poolErr != nil {
+			writeError(w, http.StatusInternalServerError, "failed to load fleet pool for cancellation")
+			return
+		}
+		backend, _, backendErr := s.capacityBackendForMaintenance(r.Context(), pool)
+		if backendErr != nil {
+			writeError(w, http.StatusBadGateway, "failed to resolve capacity backend: "+backendErr.Error())
+			return
+		}
+		asyncCancelBackend = backend
+		asyncCancelRequest = s.asyncCapacityRequest(pool, req)
+		if !isAutomaticRunCapacityRequest(req) {
+			applyStandingRollback(&asyncCancelRequest, pool, backend.Describe())
+		}
+		asyncCancelIntents, err = loadCapacityLaunchIntents(s.store, req.ID)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to load capacity intents for cancellation")
+			return
+		}
+	}
+	now := time.Now().UTC()
 	expectedRevision := req.Revision
 	expectedAttemptToken := req.AttemptToken
-	req.Status = "cancelled"
+	req.Status = "cancelling"
 	req.Revision++
 	req.AttemptToken = uuid.New().String()
-	req.CompletedAt = &now
 	if err := s.transitionProvisioningRequest(req, expectedRevision, expectedAttemptToken); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to cancel provisioning request")
+		return
+	}
+	// Changing the durable attempt token fences the old worker. Clear its local
+	// ownership entry explicitly; its deferred cleanup cannot clear a newer token.
+	s.endFleetProvisioningAttempt(req.ID, expectedAttemptToken)
+	if isAsyncCapacity {
+		if cancelErr := asyncCancelBackend.Cancel(r.Context(), asyncCancelRequest); cancelErr != nil {
+			expectedRevision, expectedAttemptToken = req.Revision, req.AttemptToken
+			req.Status = "failed"
+			req.LastError = "provider cancellation failed: " + cancelErr.Error()
+			req.Revision++
+			req.CompletedAt = &now
+			_ = s.transitionProvisioningRequest(req, expectedRevision, expectedAttemptToken)
+			writeError(w, http.StatusBadGateway, req.LastError)
+			return
+		}
+		s.markCapacityIntentsTerminated(asyncCancelIntents, storage.CapacityArchiveTerminal)
+	}
+	expectedRevision, expectedAttemptToken = req.Revision, req.AttemptToken
+	req.Status = "cancelled"
+	req.Revision++
+	req.CompletedAt = &now
+	if err := s.transitionProvisioningRequest(req, expectedRevision, expectedAttemptToken); err != nil {
+		writeError(w, http.StatusConflict, "capacity cancellation completed but the request state changed; the active leader will reconcile it")
 		return
 	}
 	s.saveProvisioningEvent(req.ID, "cancelled", "provisioning request cancelled by operator", now)
@@ -998,6 +1193,16 @@ func (s *Server) handleRetryProvisioningRequest(w http.ResponseWriter, r *http.R
 	effectiveDesiredCount, err := effectiveProvisioningDesiredCount(pool, req.DesiredCount)
 	if err != nil {
 		writeError(w, http.StatusConflict, err.Error())
+		return
+	}
+	req.DesiredCount = effectiveDesiredCount
+	if handled, asyncErr := s.restartAsyncCapacityProvisioning(req, pool); handled {
+		if asyncErr != nil {
+			writeError(w, http.StatusConflict, asyncErr.Error())
+			return
+		}
+		s.saveProvisioningEvent(req.ID, "retry", "asynchronous capacity retry requested", time.Now().UTC())
+		s.writeProvisioningRequestStatus(w, req.ID, http.StatusAccepted)
 		return
 	}
 	if s.fleetScaler != nil && s.fleetScaler.CanProvision() {
@@ -1093,7 +1298,7 @@ func (s *Server) executeProvisioningScale(ctx context.Context, req *storage.Prov
 // provisioning state when a controller lost execution leadership. The CAS
 // transition makes this safe when a takeover races with another worker.
 func (s *Server) reconcileProvisioningRequests(ctx context.Context) error {
-	if s.store == nil || s.fleetScaler == nil || !s.fleetScaler.CanProvision() || s.runner == nil || !s.runner.holdsExecutionLeadership() {
+	if s.store == nil || s.runner == nil || !s.runner.holdsExecutionLeadership() {
 		return nil
 	}
 	const pageSize = 250
@@ -1106,7 +1311,11 @@ func (s *Server) reconcileProvisioningRequests(ctx context.Context) error {
 			if ctx.Err() != nil {
 				return ctx.Err()
 			}
-			if req == nil || strings.ToLower(strings.TrimSpace(req.Status)) != "provisioning" || !s.runner.holdsExecutionLeadership() {
+			status := ""
+			if req != nil {
+				status = strings.ToLower(strings.TrimSpace(req.Status))
+			}
+			if req == nil || (status != "provisioning" && status != "waiting_ready") || !s.runner.holdsExecutionLeadership() {
 				continue
 			}
 			if s.fleetProvisioningAttemptActive(req.ID) {
@@ -1115,6 +1324,50 @@ func (s *Server) reconcileProvisioningRequests(ctx context.Context) error {
 			pool, err := s.store.GetFleetPool(req.FleetPoolID)
 			if err != nil {
 				slog.Warn("failed to load fleet pool during provisioning reconcile", "request_id", req.ID, "error", err)
+				continue
+			}
+			if req.ExecutionTargetID != "" && s.capacityBackends != nil {
+				backend, target, backendErr := s.capacityBackends.BackendForPool(ctx, pool)
+				if backendErr == nil && target.Kind != storage.ExecutionTargetKubernetes {
+					intents, intentErr := loadCapacityLaunchIntents(s.store, req.ID)
+					if intentErr != nil {
+						slog.Warn("failed to load capacity launch intents during recovery", "request_id", req.ID, "error", intentErr)
+						continue
+					}
+					expectedRevision, expectedToken := req.Revision, req.AttemptToken
+					req.Revision++
+					req.AttemptToken = uuid.NewString()
+					if !s.beginFleetProvisioningAttempt(req.ID, req.AttemptToken) {
+						continue
+					}
+					if err := s.transitionProvisioningRequest(req, expectedRevision, expectedToken); err != nil {
+						s.endFleetProvisioningAttempt(req.ID, req.AttemptToken)
+						continue
+					}
+					base := s.asyncCapacityRequest(pool, req)
+					if !isAutomaticRunCapacityRequest(req) {
+						applyStandingRollback(&base, pool, backend.Describe())
+					}
+					for _, intent := range intents {
+						if strings.TrimSpace(intent.TestID) != "" {
+							base.TestID = strings.TrimSpace(intent.TestID)
+							break
+						}
+					}
+					base.ConnectivityMode = target.ConnectivityMode
+					attachCapacityLaunchIntents(&base, intents)
+					if !s.launchBackground(func() { s.reconcileAsyncCapacityOperation(req.ID, pool, backend, base, intents) }) {
+						s.endFleetProvisioningAttempt(req.ID, req.AttemptToken)
+						return errors.New("controller is stopping and cannot recover capacity operations")
+					}
+					continue
+				}
+				if backendErr != nil {
+					slog.Warn("failed to resolve capacity backend during recovery", "request_id", req.ID, "error", backendErr)
+					continue
+				}
+			}
+			if s.fleetScaler == nil || !s.fleetScaler.CanProvision() {
 				continue
 			}
 			// Claim the recovery attempt before touching the external scaler.

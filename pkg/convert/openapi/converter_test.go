@@ -185,6 +185,81 @@ func TestConvertOpenAPIServerVariablesStyleExplodeAndOperationSecurity(t *testin
 	}
 }
 
+func TestConvertOpenAPISecuritySchemeNamesRetainRawIdentityAcrossNormalizationCollisions(t *testing.T) {
+	result, err := Convert(ImportRequest{Content: `{
+  "openapi":"3.0.3",
+  "info":{"title":"Colliding auth","version":"1"},
+  "servers":[{"url":"https://api.example.test"}],
+  "components":{"securitySchemes":{
+    "partner-auth":{"type":"http","scheme":"bearer"},
+    "partner_auth":{"type":"http","scheme":"bearer"}
+  }},
+  "paths":{
+    "/dash":{"get":{"operationId":"dash","security":[{"partner-auth":[]}],"responses":{"200":{}}}},
+    "/underscore":{"get":{"operationId":"underscore","security":[{"partner_auth":[]}],"responses":{"200":{}}}}
+  }
+}`})
+	if err != nil {
+		t.Fatalf("Convert returned error: %v", err)
+	}
+	dash := openAPIActionFull(result, "dash")
+	underscore := openAPIActionFull(result, "underscore")
+	if dash.Auth == nil || underscore.Auth == nil {
+		t.Fatalf("auth projections = %#v / %#v", dash.Auth, underscore.Auth)
+	}
+	if dash.Auth.Token == underscore.Auth.Token {
+		t.Fatalf("normalization-colliding raw security schemes shared %q", dash.Auth.Token)
+	}
+	if !strings.HasPrefix(dash.Auth.Token, "{{secret.OPENAPI_PARTNERAUTH_BEARER_TOKEN") ||
+		!strings.HasPrefix(underscore.Auth.Token, "{{secret.OPENAPI_PARTNERAUTH_BEARER_TOKEN") {
+		t.Fatalf("unexpected credential names = %q / %q", dash.Auth.Token, underscore.Auth.Token)
+	}
+	joined := strings.Join(result.Summary.OperationAuth, "\n")
+	for _, want := range []string{"GET /dash — partner-auth", "GET /underscore — partner_auth"} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("operation auth review = %q, want %q", joined, want)
+		}
+	}
+}
+
+func TestConvertOpenAPIOAuthSaveVariablesAndCredentialsDoNotCollide(t *testing.T) {
+	result, err := Convert(ImportRequest{Content: `{
+  "openapi":"3.0.3",
+  "info":{"title":"Colliding OAuth","version":"1"},
+  "servers":[{"url":"https://api.example.test"}],
+  "components":{"securitySchemes":{
+    "partner-oauth":{"type":"oauth2","flows":{"clientCredentials":{"tokenUrl":"/oauth/a","scopes":{}}}},
+    "partner_oauth":{"type":"oauth2","flows":{"clientCredentials":{"tokenUrl":"/oauth/b","scopes":{}}}}
+  }},
+  "paths":{
+    "/a":{"get":{"operationId":"oauthA","security":[{"partner-oauth":[]}],"responses":{"200":{}}}},
+    "/b":{"get":{"operationId":"oauthB","security":[{"partner_oauth":[]}],"responses":{"200":{}}}}
+  }
+}`})
+	if err != nil {
+		t.Fatalf("Convert returned error: %v", err)
+	}
+	if len(result.Script.Init) != 2 {
+		t.Fatalf("OAuth init actions = %d, want 2", len(result.Script.Init))
+	}
+	firstSave, _ := result.Script.Init[0].Params["save_as"].(string)
+	secondSave, _ := result.Script.Init[1].Params["save_as"].(string)
+	firstSecret, _ := result.Script.Init[0].Params["client_secret"].(string)
+	secondSecret, _ := result.Script.Init[1].Params["client_secret"].(string)
+	if firstSave == "" || secondSave == "" || firstSave == secondSave {
+		t.Fatalf("OAuth save_as values = %q / %q, want distinct", firstSave, secondSave)
+	}
+	if firstSecret == "" || secondSecret == "" || firstSecret == secondSecret {
+		t.Fatalf("OAuth client secret bindings = %q / %q, want distinct", firstSecret, secondSecret)
+	}
+	if got := openAPIActionFull(result, "oauthA").Auth.Token; got != "{{var."+firstSave+"}}" {
+		t.Fatalf("oauthA token = %q, want first init output", got)
+	}
+	if got := openAPIActionFull(result, "oauthB").Auth.Token; got != "{{var."+secondSave+"}}" {
+		t.Fatalf("oauthB token = %q, want second init output", got)
+	}
+}
+
 func TestConvertOpenAPI2XXWildcardUsesRangeAssertionAndSchema(t *testing.T) {
 	result, err := Convert(ImportRequest{
 		Content: `{
@@ -2168,8 +2243,10 @@ func TestConvertOpenAPIComposedCookieDoesNotDisableBodyCredentialPreservation(t 
 	if body["password"] != canary {
 		t.Fatalf("independent body credential was not preserved: %#v", body)
 	}
-	if requirements := result.ProtectedRequirements.Take(); requirements != nil {
-		t.Fatalf("preserved body credential unexpectedly requires rebinding: %#v", requirements)
+	if requirements := result.ProtectedRequirements.Take(); len(requirements) != 1 ||
+		requirements[0].SuggestedName != "OPENAPI_COOKIEAUTH_API_KEY" ||
+		requirements[0].SourceValueAvailable {
+		t.Fatalf("generated Cookie API key requirement = %#v", requirements)
 	}
 	if action.Metadata["execution_blocker"] != "import_review_required" {
 		t.Fatalf("missing-base-url review gate was not preserved: %#v", action.Metadata)
@@ -2205,6 +2282,49 @@ func TestConvertOpenAPIPreservesAuthoredComposedCredentialHeader(t *testing.T) {
 		t.Fatalf("preserved composed header unexpectedly requires rebinding: %#v", requirements)
 	}
 	assertOpenAPISourceReviewRedacted(t, result, canary)
+}
+
+func TestConvertOpenAPIRedactionSentinelsAreUnconfiguredRatherThanPreserved(t *testing.T) {
+	tests := []struct {
+		name  string
+		value string
+	}{
+		{name: "literal", value: "[REDACTED]"},
+		{name: "case varied", value: "[redacted]"},
+		{name: "percent encoded", value: "%5BREDACTED%5D"},
+		{name: "base64", value: "W1JFREFDVEVEXQ=="},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			result, err := Convert(ImportRequest{Content: `{
+  "openapi":"3.0.3",
+  "info":{"title":"Sentinel","version":"1"},
+  "servers":[{"url":"https://api.example.test"}],
+  "paths":{"/items":{"get":{
+    "operationId":"listItems",
+    "parameters":[{"name":"X-Api-Key","in":"header","schema":{"type":"string","example":"` + test.value + `"}}],
+    "responses":{"200":{}}
+  }}}
+}`})
+			if err != nil {
+				t.Fatalf("Convert returned error: %v", err)
+			}
+			action := openAPIActionFull(result, "listItems")
+			if got := action.Headers["X-Api-Key"]; !strings.HasPrefix(got, "{{secret.") {
+				t.Fatalf("sentinel destination = %q, want unconfigured secret reference", got)
+			}
+			requirements := result.ProtectedRequirements.Take()
+			if len(requirements) != 1 {
+				t.Fatalf("requirements = %#v", requirements)
+			}
+			if requirements[0].SourceValueAvailable || requirements[0].Value != "" {
+				t.Fatalf("sentinel was offered as a recoverable source value: %#v", requirements[0])
+			}
+			if action.Metadata["execution_blocker"] == nil {
+				t.Fatalf("sentinel action is not durably replay-blocked: %#v", action.Metadata)
+			}
+		})
+	}
 }
 
 func TestConvertOpenAPIPreservesSensitiveNonStringExampleAndJSONType(t *testing.T) {

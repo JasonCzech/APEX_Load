@@ -21,6 +21,8 @@ import (
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
+const jmeterImportSaveMaxScripts = 1000
+
 func (s *Server) handleImportJMeter(w http.ResponseWriter, r *http.Request) {
 	importReq, ok := readJMeterImportRequest(w, r)
 	if !ok {
@@ -293,6 +295,15 @@ func convertJMeterImportRequest(request *jmeterImportRequest) (*jmeter.ConvertRe
 			}
 			combined.ScenarioDraft.Groups = append(combined.ScenarioDraft.Groups, converted.ScenarioDraft.Groups...)
 		}
+	}
+	// ConvertJMX guarantees uniqueness inside one plan, but an archive may hold
+	// independent plans whose Thread Groups have the same authored name. Apply
+	// the disclosure-safe allocator once more across the assembled batch and
+	// rewrite scenario references before parameterization or save validation sees
+	// the result.
+	jmeter.SanitizeDisplayLabels(combined.Scripts, combined.ScenarioDraft)
+	if len(combined.Scripts) > 0 {
+		combined.Script = combined.Scripts[0]
 	}
 	if len(documents) == 1 {
 		combined.Summary.FileName = documents[0].FileName
@@ -611,20 +622,21 @@ func (s *Server) writeJMeterImportResponse(w http.ResponseWriter, r *http.Reques
 		result.Script, result.Scripts, "jmeter", nil, result.Warnings,
 	)
 	s.writeScriptImportResponseWithSourceSecrets(w, r, status, scriptImportResponseOptions{
-		Result:              result,
-		Scripts:             result.Scripts,
-		Script:              result.Script,
-		ScenarioDraft:       result.ScenarioDraft,
-		Warnings:            result.Warnings,
-		UnsupportedElements: unsupportedElements,
-		ReviewSections:      importDiagnosticReviewSections(result.Unsupported),
-		Assumptions:         result.Assumptions,
-		Stats:               result.Stats,
-		Summary:             result.Summary,
-		SourceReview:        result.SourceReview,
-		ProtocolCompat:      protocolCompat,
-		Parameterization:    buildMultiScriptParameterization(result.Scripts),
-		Preflight:           preflight,
+		Result:                 result,
+		Scripts:                result.Scripts,
+		Script:                 result.Script,
+		ScenarioDraft:          result.ScenarioDraft,
+		Warnings:               result.Warnings,
+		UnsupportedElements:    unsupportedElements,
+		ReviewSections:         importDiagnosticReviewSections(result.Unsupported),
+		Assumptions:            result.Assumptions,
+		Stats:                  result.Stats,
+		Summary:                result.Summary,
+		SourceReview:           result.SourceReview,
+		ProtocolCompat:         protocolCompat,
+		CredentialRequirements: result.SecretRequirements,
+		Parameterization:       buildMultiScriptParameterization(result.Scripts),
+		Preflight:              preflight,
 	})
 }
 
@@ -639,6 +651,18 @@ func (s *Server) handleSaveJMeterImport(w http.ResponseWriter, r *http.Request) 
 	}
 	if len(req.Scripts) == 0 {
 		writeError(w, http.StatusBadRequest, "at least one script is required")
+		return
+	}
+	if len(req.Scripts) > jmeterImportSaveMaxScripts {
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("JMeter import batch must contain at most %d scripts", jmeterImportSaveMaxScripts))
+		return
+	}
+	// Resolve the browser-authorized destination before replacing disclosure-safe
+	// drafts with their server-owned exact candidates. Otherwise the exact
+	// candidate's inspect-time folder silently wins over the operator's selection.
+	projectID, folderOverride, status, err := s.resolveJMeterBatchDestination(r, req.Scripts)
+	if err != nil {
+		writeError(w, status, err.Error())
 		return
 	}
 	previewOperationID, err := jmeterDirectImportOperationID(req.Scripts)
@@ -666,64 +690,15 @@ func (s *Server) handleSaveJMeterImport(w http.ResponseWriter, r *http.Request) 
 		_, actorSubject, _ := s.resolveAuditActor(r)
 		operationID = strings.TrimSpace(actorSubject) + "\x00" + operationID
 	}
-
-	// Prepare and validate the whole import before the first durable write. This
-	// dedicated, authorized import commit is the trust boundary for retaining the
-	// source's executable credentials: the operator already supplied those bytes,
-	// so replacing them with a secret reference here would make the destination
-	// script require needless re-entry. Ordinary reads and this response are still
-	// disclosure-safe projections.
-	preparedScripts := make([]*dsl.Script, 0, len(req.Scripts))
-	seenScriptNames := make(map[string]struct{}, len(req.Scripts))
-	for i := range req.Scripts {
-		script := req.Scripts[i]
-		safeScript, err := preparePersistentImportedLibraryScript(&script, nil, "jmeter")
-		if err != nil {
-			writeError(w, http.StatusBadRequest, "failed to prepare imported script: "+err.Error())
-			return
-		}
-		if issues := validateScript(safeScript); len(issues) > 0 {
-			writeError(w, http.StatusBadRequest, strings.Join(issues, "; "))
-			return
-		}
-		if strings.TrimSpace(safeScript.Version) == "" {
-			safeScript.Version = "1"
-		}
-		nameKey := strings.TrimSpace(safeScript.Name)
-		if _, duplicate := seenScriptNames[nameKey]; duplicate {
-			writeError(w, http.StatusBadRequest, "JMeter import contains duplicate script name: "+nameKey)
-			return
-		}
-		seenScriptNames[nameKey] = struct{}{}
-		preparedScripts = append(preparedScripts, safeScript)
+	// Fingerprint the disclosure-safe request (including its opaque one-shot
+	// capabilities and selected destination) before claiming those capabilities.
+	// A retry of a completed receipt can therefore replay even after the first
+	// request consumed every token.
+	requestScripts := make([]*dsl.Script, 0, len(req.Scripts))
+	for index := range req.Scripts {
+		requestScripts = append(requestScripts, &req.Scripts[index])
 	}
-	if req.ScenarioDraft != nil {
-		for index, group := range req.ScenarioDraft.Groups {
-			scriptName := strings.TrimSpace(group.ScriptName)
-			if scriptName == "" {
-				writeError(w, http.StatusBadRequest, fmt.Sprintf("scenario group %d is missing script_name", index+1))
-				return
-			}
-			if _, ok := seenScriptNames[scriptName]; !ok {
-				writeError(w, http.StatusBadRequest, fmt.Sprintf("scenario group %d references unknown imported script %q", index+1, scriptName))
-				return
-			}
-		}
-	}
-	// The executable request/auth fields remain byte-faithful, but a JMeter
-	// label can repeat one of those credentials. Project descriptive names only
-	// after resolving the caller's original script_name references, then carry
-	// the sanitized names into both durable scripts and the scenario.
-	jmeter.SanitizeDisplayLabels(preparedScripts, req.ScenarioDraft)
-
-	projectID := normalizeProjectID(preparedScripts[0].ProjectID)
-	for _, script := range preparedScripts {
-		if normalizeProjectID(script.ProjectID) != projectID {
-			writeError(w, http.StatusBadRequest, "JMeter scripts must belong to one project")
-			return
-		}
-	}
-	requestDigest, err := directJMeterImportRequestDigest(s, preparedScripts, req.ScenarioDraft)
+	requestDigest, err := directJMeterImportRequestDigest(s, requestScripts, req.ScenarioDraft)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to fingerprint JMeter import: "+err.Error())
 		return
@@ -746,6 +721,25 @@ func (s *Server) handleSaveJMeterImport(w http.ResponseWriter, r *http.Request) 
 		}
 		return
 	}
+	if receiptReplay {
+		storedScripts, storedScenario, loadErr := s.loadDirectImportReceiptAssets(attempt)
+		if loadErr != nil {
+			writeError(w, http.StatusConflict, "completed JMeter import receipt is inconsistent: "+loadErr.Error())
+			return
+		}
+		writeJSON(w, http.StatusCreated, savedJMeterImportResponse(storedScripts, storedScenario))
+		return
+	}
+	finished := false
+	assetsCommitted := false
+	var transaction *createImportTransaction
+	defer func() {
+		if !finished && !assetsCommitted {
+			if cleanupErr := attempt.rollback(transaction); cleanupErr != nil {
+				slog.Warn("failed to fully compensate JMeter import", "error", cleanupErr)
+			}
+		}
+	}()
 	assetIdentitySeed := ""
 	if attempt != nil && attempt.receipt != nil {
 		// The receipt ID is server-random and stable across retries. IDs never
@@ -757,83 +751,221 @@ func (s *Server) handleSaveJMeterImport(w http.ResponseWriter, r *http.Request) 
 		// is still a server-issued random value.
 		assetIdentitySeed = directImportOperationHash(projectID, "jmeter", operationID)
 	}
-	for index, script := range preparedScripts {
+	plannedScriptIDs := make([]string, len(requestScripts))
+	for index := range plannedScriptIDs {
 		if assetIdentitySeed != "" {
-			script.ID = deterministicDirectImportAssetID(assetIdentitySeed, "script", index)
+			plannedScriptIDs[index] = deterministicDirectImportAssetID(assetIdentitySeed, "script", index)
 		} else {
 			// Legacy clients that neither echo a preview operation ID nor supply
 			// Idempotency-Key retain create-another semantics.
-			script.ID = uuid.NewString()
+			plannedScriptIDs[index] = uuid.NewString()
 		}
+	}
+	plannedScenarioID := ""
+	if req.ScenarioDraft != nil && len(req.ScenarioDraft.Groups) > 0 {
+		if assetIdentitySeed != "" {
+			plannedScenarioID = deterministicDirectImportAssetID(assetIdentitySeed, "scenario", 0)
+		} else {
+			plannedScenarioID = uuid.NewString()
+		}
+	}
+
+	// A stale receipt may have been committed by another controller process
+	// immediately before that process lost the receipt-completion response. The
+	// browser capability is intentionally process-local, so recover receipt-bound
+	// deterministic assets before attempting to claim it. A newly-created receipt
+	// never enters this branch and therefore cannot use an expired capability to
+	// authorize a new write.
+	if attempt != nil && !attempt.created {
+		recoveryScripts := make([]*dsl.Script, len(requestScripts))
+		for index, script := range requestScripts {
+			recoveryScripts[index] = cloneScriptDefinition(script)
+			if recoveryScripts[index] == nil {
+				writeError(w, http.StatusBadRequest, fmt.Sprintf("script %d is invalid", index+1))
+				return
+			}
+			recoveryScripts[index].ID = plannedScriptIDs[index]
+			recoveryScripts[index].RefKey = ""
+		}
+		recoveryScenarioDraft := cloneJMeterScenarioDraft(req.ScenarioDraft)
+		jmeter.SanitizeDisplayLabels(recoveryScripts, recoveryScenarioDraft)
+		recoveryScenarioRequest, recoveryErr := buildJMeterScenarioRequest(
+			recoveryScripts,
+			recoveryScenarioDraft,
+		)
+		if recoveryErr != nil {
+			writeError(w, http.StatusBadRequest, recoveryErr.Error())
+			return
+		}
+		if recoverErr := s.recoverExpiredLibraryImportClaims(); recoverErr != nil {
+			writeError(w, http.StatusInternalServerError, "failed to recover prior JMeter import transaction: "+recoverErr.Error())
+			return
+		}
+		if renewErr := attempt.renew(); renewErr != nil {
+			writeError(w, http.StatusConflict, "JMeter import receipt ownership was lost; retry the save")
+			return
+		}
+		if fenceErr := s.fenceDirectImportAssetAdoption(
+			attempt,
+			projectID,
+			plannedScriptIDs,
+			plannedScenarioID,
+		); fenceErr != nil {
+			if errors.Is(fenceErr, errDirectImportAssetsClaimed) {
+				w.Header().Set("Retry-After", "2")
+				writeError(w, http.StatusConflict, "the prior JMeter import transaction is still finalizing; retry the save")
+			} else {
+				writeError(w, http.StatusInternalServerError, "failed to inspect prior JMeter import transaction: "+fenceErr.Error())
+			}
+			return
+		}
+		storedScripts, storedScenario, loadErr := s.loadDirectImportAssetsByIDs(
+			projectID,
+			plannedScriptIDs,
+			plannedScenarioID,
+		)
+		if loadErr == nil {
+			// Existing assets must remain receipt-bound on any verification error;
+			// rolling them back here would destroy a previously committed import.
+			assetsCommitted = true
+			if !recoveredJMeterImportIdentityMatches(
+				s,
+				storedScripts,
+				recoveryScripts,
+				storedScenario,
+				recoveryScenarioRequest,
+			) {
+				writeError(w, http.StatusConflict, "an asset from the prior JMeter import changed before recovery; use a new operation id")
+				return
+			}
+			if completeErr := attempt.complete(storedScripts, storedScenario); completeErr != nil {
+				writeError(w, http.StatusInternalServerError, "failed to reconcile JMeter import receipt: "+completeErr.Error())
+				return
+			}
+			finished = true
+			writeJSON(
+				w,
+				http.StatusCreated,
+				savedJMeterImportResponse(storedScripts, storedScenario),
+			)
+			return
+		}
+	}
+
+	claims := make([]*importDraftAttestationClaim, len(req.Scripts))
+	defer func() {
+		for _, claim := range claims {
+			if claim != nil {
+				s.releaseImportDraftAttestation(claim)
+			}
+		}
+	}()
+	for index := range req.Scripts {
+		script := &req.Scripts[index]
+		if importDraftAttestationToken(script) == "" {
+			fingerprint, fingerprintErr := fingerprintImportDraftCredentials(script)
+			if fingerprintErr != nil || fingerprint.HasRawCredentials ||
+				scriptHasUnavailableImportCredentialValues(script) {
+				writeError(w, http.StatusConflict, "JMeter import draft is missing its server capability; run the import again")
+				return
+			}
+			continue
+		}
+		claim, claimErr := s.claimImportDraftAttestation(r, script)
+		if claimErr != nil || claim == nil || claim.Script == nil ||
+			!strings.EqualFold(strings.TrimSpace(claim.Profile), "jmeter") {
+			if claim != nil {
+				s.releaseImportDraftAttestation(claim)
+			}
+			writeError(w, http.StatusConflict, "JMeter import draft is invalid or expired; run the import again")
+			return
+		}
+		draft := claim.Script
+		if err := bindDraftScriptProject(draft, projectID); err != nil {
+			s.releaseImportDraftAttestation(claim)
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("script %d: %v", index+1, err))
+			return
+		}
+		if status, err := s.applyProtectedImportFolderOverride(draft, folderOverride); err != nil {
+			s.releaseImportDraftAttestation(claim)
+			writeError(w, status, err.Error())
+			return
+		}
+		restored, replaceErr := replaceUnavailableImportCredentialValues(draft)
+		if replaceErr != nil {
+			s.releaseImportDraftAttestation(claim)
+			writeError(w, http.StatusBadRequest, replaceErr.Error())
+			return
+		}
+		req.Scripts[index] = *restored
+		claims[index] = claim
+	}
+
+	// Prepare and validate the whole import before the first durable write. This
+	// dedicated, authorized import commit is the trust boundary for retaining the
+	// source's executable credentials: the operator already supplied those bytes,
+	// so replacing them with a secret reference here would make the destination
+	// script require needless re-entry. Ordinary reads and this response are still
+	// disclosure-safe projections.
+	preparedScripts := make([]*dsl.Script, 0, len(req.Scripts))
+	for i := range req.Scripts {
+		script := req.Scripts[i]
+		safeScript, err := preparePersistentImportedLibraryScript(&script, nil, "jmeter")
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "failed to prepare imported script: "+err.Error())
+			return
+		}
+		if issues := validateScript(safeScript); len(issues) > 0 {
+			writeError(w, http.StatusBadRequest, strings.Join(issues, "; "))
+			return
+		}
+		if strings.TrimSpace(safeScript.Version) == "" {
+			safeScript.Version = "1"
+		}
+		preparedScripts = append(preparedScripts, safeScript)
+	}
+	// Allocate names across the complete batch before validating scenario
+	// references. Independent JMX entries commonly reuse names such as "Users";
+	// those are distinct scripts, not an invalid archive.
+	jmeter.SanitizeDisplayLabels(preparedScripts, req.ScenarioDraft)
+	seenScriptNames := make(map[string]struct{}, len(preparedScripts))
+	for _, safeScript := range preparedScripts {
+		nameKey := strings.TrimSpace(safeScript.Name)
+		identity := strings.ToLower(nameKey)
+		if _, duplicate := seenScriptNames[identity]; duplicate {
+			writeError(w, http.StatusBadRequest, "JMeter import contains duplicate script name: "+nameKey)
+			return
+		}
+		seenScriptNames[identity] = struct{}{}
+	}
+	if req.ScenarioDraft != nil {
+		for index, group := range req.ScenarioDraft.Groups {
+			scriptName := strings.TrimSpace(group.ScriptName)
+			if scriptName == "" {
+				writeError(w, http.StatusBadRequest, fmt.Sprintf("scenario group %d is missing script_name", index+1))
+				return
+			}
+			if _, ok := seenScriptNames[strings.ToLower(scriptName)]; !ok {
+				writeError(w, http.StatusBadRequest, fmt.Sprintf("scenario group %d references unknown imported script %q", index+1, scriptName))
+				return
+			}
+		}
+	}
+	for _, script := range preparedScripts {
+		if normalizeProjectID(script.ProjectID) != projectID {
+			writeError(w, http.StatusBadRequest, "JMeter scripts must belong to one project")
+			return
+		}
+	}
+	for index, script := range preparedScripts {
+		script.ID = plannedScriptIDs[index]
 		script.RefKey = ""
 	}
 
-	scriptIDsByName := make(map[string]string, len(preparedScripts))
-	scriptsByName := make(map[string]*dsl.Script, len(preparedScripts))
-	for _, safeScript := range preparedScripts {
-		name := strings.TrimSpace(safeScript.Name)
-		scriptIDsByName[name] = safeScript.ID
-		scriptsByName[name] = safeScript
-	}
-
-	var scenarioID string
-	var scenarioRequest *CreateScenarioRequest
-	if req.ScenarioDraft != nil && len(req.ScenarioDraft.Groups) > 0 {
-		groups := make([]CreateGroupEntry, 0, len(req.ScenarioDraft.Groups))
-		for index, group := range req.ScenarioDraft.Groups {
-			scriptName := strings.TrimSpace(group.ScriptName)
-			scriptID := scriptIDsByName[scriptName]
-			groupName := group.Name
-			if groupName == "" {
-				groupName = scriptsByName[scriptName].Name
-				if len(req.ScenarioDraft.Groups) > 1 {
-					groupName = fmt.Sprintf("%s (#%d)", groupName, index+1)
-				}
-			}
-			vusers := group.VUsers
-			if vusers == 0 {
-				vusers = 10
-			}
-			initialization := strings.ToLower(strings.TrimSpace(group.Initialization))
-			if initialization == "" {
-				initialization = "at_runtime"
-			}
-			groups = append(groups, CreateGroupEntry{
-				Name:         groupName,
-				ScriptID:     scriptID,
-				Role:         GroupRoleLoad,
-				VUsers:       vusers,
-				RampUp:       group.RampUp,
-				InitStrategy: initialization,
-			})
-		}
-		if len(groups) > 0 {
-			if assetIdentitySeed != "" {
-				scenarioID = deterministicDirectImportAssetID(assetIdentitySeed, "scenario", 0)
-			} else {
-				scenarioID = uuid.NewString()
-			}
-			request := CreateScenarioRequest{
-				Name:         firstNonEmpty(req.ScenarioDraft.Name, "Imported JMeter Scenario"),
-				Duration:     firstNonEmpty(req.ScenarioDraft.Duration, "5m"),
-				ScenarioMode: firstNonEmpty(req.ScenarioDraft.ScenarioMode, "vuser_driven"),
-				Groups:       groups,
-			}
-			scenarioRequest = &request
-		}
-	}
-
-	if receiptReplay {
-		storedScripts, storedScenario, loadErr := s.loadDirectImportReceiptAssets(attempt)
-		if loadErr != nil {
-			writeError(w, http.StatusConflict, "completed JMeter import receipt is inconsistent: "+loadErr.Error())
-			return
-		}
-		writeJSON(
-			w,
-			http.StatusCreated,
-			savedJMeterImportResponse(storedScripts, storedScenario),
-		)
+	scenarioID := plannedScenarioID
+	scenarioRequest, err := buildJMeterScenarioRequest(preparedScripts, req.ScenarioDraft)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
@@ -878,6 +1010,8 @@ func (s *Server) handleSaveJMeterImport(w http.ResponseWriter, r *http.Request) 
 				writeError(w, http.StatusInternalServerError, "failed to reconcile JMeter import receipt: "+completeErr.Error())
 				return
 			}
+			completeJMeterImportDraftClaims(s, claims)
+			finished = true
 			writeJSON(
 				w,
 				http.StatusCreated,
@@ -887,31 +1021,23 @@ func (s *Server) handleSaveJMeterImport(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 
-	transaction, err := newCreateImportTransaction(s, "jmeter", preparedScripts, scenarioID, scenarioRequest)
+	transaction, err = newCreateImportTransaction(s, "jmeter", preparedScripts, scenarioID, scenarioRequest)
 	if err != nil {
-		if attempt != nil {
-			if cleanupErr := attempt.rollback(nil); cleanupErr != nil {
-				slog.Warn("failed to release JMeter import receipt", "error", cleanupErr)
-			}
-		}
 		writeError(w, http.StatusInternalServerError, "failed to prepare imported assets: "+err.Error())
 		return
 	}
-	finished := false
-	assetsCommitted := false
-	defer func() {
-		if !finished && !assetsCommitted {
-			if cleanupErr := attempt.rollback(transaction); cleanupErr != nil {
-				slog.Warn("failed to fully compensate JMeter import", "error", cleanupErr)
-			}
-		}
-	}()
 
 	storedScripts := make([]*StoredScript, 0, len(preparedScripts))
-	for _, safeScript := range preparedScripts {
+	for index, safeScript := range preparedScripts {
 		if err := attempt.renew(); err != nil {
 			writeError(w, http.StatusConflict, "JMeter import receipt ownership was lost; retry the save")
 			return
+		}
+		if claims[index] != nil {
+			if err := s.assertImportDraftAttestationOwned(claims[index]); err != nil {
+				writeError(w, http.StatusConflict, "JMeter import draft lease was lost; retry the save")
+				return
+			}
 		}
 		stored, err := transaction.createImportedScript(safeScript, "jmeter")
 		if err != nil {
@@ -951,6 +1077,7 @@ func (s *Server) handleSaveJMeterImport(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 	}
+	completeJMeterImportDraftClaims(s, claims)
 	finished = true
 	writeJSON(
 		w,
@@ -967,5 +1094,199 @@ func savedJMeterImportResponse(
 		"scripts":  maskStoredScripts(storedScripts),
 		"scenario": storedScenario,
 		"count":    len(storedScripts),
+	}
+}
+
+func cloneJMeterScenarioDraft(draft *jmeter.ScenarioDraft) *jmeter.ScenarioDraft {
+	if draft == nil {
+		return nil
+	}
+	clone := *draft
+	clone.Groups = append([]jmeter.ScenarioDraftGroup(nil), draft.Groups...)
+	if draft.Metadata != nil {
+		clone.Metadata = make(map[string]interface{}, len(draft.Metadata))
+		for key, value := range draft.Metadata {
+			clone.Metadata[key] = value
+		}
+	}
+	return &clone
+}
+
+func buildJMeterScenarioRequest(
+	scripts []*dsl.Script,
+	draft *jmeter.ScenarioDraft,
+) (*CreateScenarioRequest, error) {
+	if draft == nil || len(draft.Groups) == 0 {
+		return nil, nil
+	}
+	scriptIDsByName := make(map[string]string, len(scripts))
+	scriptsByName := make(map[string]*dsl.Script, len(scripts))
+	for index, script := range scripts {
+		if script == nil {
+			return nil, fmt.Errorf("script %d is invalid", index+1)
+		}
+		identity := strings.ToLower(strings.TrimSpace(script.Name))
+		if identity == "" {
+			return nil, fmt.Errorf("script %d is missing its name", index+1)
+		}
+		if _, duplicate := scriptIDsByName[identity]; duplicate {
+			return nil, fmt.Errorf("JMeter import contains duplicate script name: %s", strings.TrimSpace(script.Name))
+		}
+		scriptIDsByName[identity] = strings.TrimSpace(script.ID)
+		scriptsByName[identity] = script
+	}
+
+	groups := make([]CreateGroupEntry, 0, len(draft.Groups))
+	for index, group := range draft.Groups {
+		scriptName := strings.TrimSpace(group.ScriptName)
+		if scriptName == "" {
+			return nil, fmt.Errorf("scenario group %d is missing script_name", index+1)
+		}
+		scriptIdentity := strings.ToLower(scriptName)
+		script := scriptsByName[scriptIdentity]
+		if script == nil {
+			return nil, fmt.Errorf("scenario group %d references unknown imported script %q", index+1, scriptName)
+		}
+		groupName := group.Name
+		if groupName == "" {
+			groupName = script.Name
+			if len(draft.Groups) > 1 {
+				groupName = fmt.Sprintf("%s (#%d)", groupName, index+1)
+			}
+		}
+		vusers := group.VUsers
+		if vusers == 0 {
+			vusers = 10
+		}
+		initialization := strings.ToLower(strings.TrimSpace(group.Initialization))
+		if initialization == "" {
+			initialization = "at_runtime"
+		}
+		groups = append(groups, CreateGroupEntry{
+			Name:         groupName,
+			ScriptID:     scriptIDsByName[scriptIdentity],
+			Role:         GroupRoleLoad,
+			VUsers:       vusers,
+			RampUp:       group.RampUp,
+			InitStrategy: initialization,
+		})
+	}
+	request := CreateScenarioRequest{
+		Name:         firstNonEmpty(draft.Name, "Imported JMeter Scenario"),
+		Duration:     firstNonEmpty(draft.Duration, "5m"),
+		ScenarioMode: firstNonEmpty(draft.ScenarioMode, "vuser_driven"),
+		Groups:       groups,
+	}
+	return &request, nil
+}
+
+func recoveredJMeterImportIdentityMatches(
+	s *Server,
+	storedScripts []*StoredScript,
+	requestedScripts []*dsl.Script,
+	storedScenario *StoredScenario,
+	scenarioRequest *CreateScenarioRequest,
+) bool {
+	if len(storedScripts) != len(requestedScripts) {
+		return false
+	}
+	for index, requested := range requestedScripts {
+		stored := storedScripts[index]
+		if stored == nil || stored.Script == nil || requested == nil ||
+			strings.TrimSpace(stored.ID) != strings.TrimSpace(requested.ID) ||
+			strings.TrimSpace(stored.Name) != strings.TrimSpace(requested.Name) ||
+			normalizeProjectID(stored.ProjectID) != normalizeProjectID(requested.ProjectID) ||
+			!optionalStringValuesEqual(stored.FolderID, requested.FolderID) ||
+			!strings.EqualFold(strings.TrimSpace(stored.Protocol), strings.TrimSpace(requested.Protocol)) ||
+			strings.TrimSpace(stored.Version) != firstNonEmpty(strings.TrimSpace(requested.Version), "1") ||
+			!isCredentialPreservingImport(stored.Script) ||
+			stored.Script.Metadata == nil || stored.Script.Metadata.Import == nil ||
+			!strings.EqualFold(strings.TrimSpace(stored.Script.Metadata.Import.Source), "jmeter") {
+			return false
+		}
+		normalizedRequested := cloneScriptDefinition(requested)
+		if normalizedRequested == nil {
+			return false
+		}
+		if strings.TrimSpace(normalizedRequested.Version) == "" {
+			normalizedRequested.Version = "1"
+		}
+		ensureCredentialPreservingImportMetadata(normalizedRequested, "jmeter")
+		storedDigest, storedErr := canonicalImportDraftStructureDigest(stored.Script)
+		requestedDigest, requestedErr := canonicalImportDraftStructureDigest(normalizedRequested)
+		if storedErr != nil || requestedErr != nil || storedDigest != requestedDigest {
+			return false
+		}
+	}
+	if scenarioRequest == nil {
+		return storedScenario == nil
+	}
+	if s == nil || storedScenario == nil {
+		return false
+	}
+	return s.libraryScenarioRequestRecoveryHash(
+		createScenarioRequestFromStored(storedScenario),
+	) == s.libraryScenarioRequestRecoveryHash(*scenarioRequest)
+}
+
+// resolveJMeterBatchDestination binds one project/folder destination across the
+// complete browser-visible batch. The returned folder override is always
+// non-nil: an empty value explicitly restores the project root after an opaque
+// server candidate is claimed.
+func (s *Server) resolveJMeterBatchDestination(
+	r *http.Request,
+	scripts []dsl.Script,
+) (string, *string, int, error) {
+	if len(scripts) == 0 {
+		return "", nil, http.StatusBadRequest, errors.New("at least one script is required")
+	}
+	projectID := normalizeProjectID(scripts[0].ProjectID)
+	if authorized, scoped := authorizedProjectFromRequest(r); scoped {
+		projectID = normalizeProjectID(authorized)
+	}
+	folderID := ""
+	if scripts[0].FolderID != nil {
+		folderID = strings.TrimSpace(*scripts[0].FolderID)
+	}
+	for index := range scripts {
+		if err := bindDraftScriptProject(&scripts[index], projectID); err != nil {
+			return "", nil, http.StatusBadRequest, fmt.Errorf("script %d: %w", index+1, err)
+		}
+		currentFolderID := ""
+		if scripts[index].FolderID != nil {
+			currentFolderID = strings.TrimSpace(*scripts[index].FolderID)
+		}
+		if currentFolderID != folderID {
+			return "", nil, http.StatusBadRequest, errors.New("JMeter scripts must use one destination folder")
+		}
+	}
+	if status, err := s.applyProtectedImportFolderOverride(&scripts[0], &folderID); err != nil {
+		return "", nil, status, err
+	}
+	// Canonicalize every visible draft before receipt fingerprinting so nil and
+	// empty root selections cannot create two operation identities.
+	for index := range scripts {
+		if folderID == "" {
+			scripts[index].FolderID = nil
+		} else {
+			scripts[index].FolderID = &folderID
+		}
+	}
+	return projectID, &folderID, 0, nil
+}
+
+func completeJMeterImportDraftClaims(s *Server, claims []*importDraftAttestationClaim) {
+	if s == nil {
+		return
+	}
+	for index, claim := range claims {
+		if claim == nil {
+			continue
+		}
+		if err := s.completeImportDraftAttestation(claim); err != nil {
+			slog.Warn("failed to finalize JMeter import draft capability", "error", err)
+			continue
+		}
+		claims[index] = nil
 	}
 }

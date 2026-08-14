@@ -21,6 +21,7 @@ const (
 	maxRetainedJavaJDBCConnections = 256
 	maxRetainedJavaJDBCValueBytes  = 64 << 10
 	maxRetainedJavaJDBCTotalBytes  = 2 << 20
+	generatedDatabaseDSNMarkerKey  = "generated_database_dsn_placeholder"
 )
 
 type retainedJavaJDBCConnection struct {
@@ -48,6 +49,12 @@ func ConvertDatabase(actions []*ParsedAction, opts ConvertOptions, detected Dete
 					MaxRows:        100,
 				},
 			},
+			Metadata: &dsl.ScriptMetadata{Import: &dsl.ImportMetadata{
+				Source: "enterprise_script_archive",
+				Preserved: map[string]any{
+					generatedDatabaseDSNMarkerKey: true,
+				},
+			}},
 			Actions: make([]dsl.Action, 0),
 		},
 	}
@@ -195,6 +202,9 @@ func ConvertDatabase(actions []*ParsedAction, opts ConvertOptions, detected Dete
 	if err := preserveJavaJDBCConnectionDrafts(result.Script, retainedDrafts); err != nil {
 		return nil, err
 	}
+	if jdbcConfigSet {
+		clearGeneratedDatabaseDSNMarker(result.Script)
+	}
 
 	if len(result.Script.Init)+len(result.Script.Actions)+len(result.Script.Teardown) == 0 {
 		result.Script = nil
@@ -251,6 +261,23 @@ func ConvertDatabase(actions []*ParsedAction, opts ConvertOptions, detected Dete
 		result.Warnings = append(result.Warnings, "Database DSN was imported as {{secret.database_dsn}}; replace it with a governed connection secret before replay.")
 	}
 	return result, nil
+}
+
+func clearGeneratedDatabaseDSNMarker(script *dsl.Script) {
+	if script == nil || script.Metadata == nil || script.Metadata.Import == nil ||
+		script.Metadata.Import.Preserved == nil {
+		return
+	}
+	delete(script.Metadata.Import.Preserved, generatedDatabaseDSNMarkerKey)
+}
+
+func hasGeneratedDatabaseDSNMarker(script *dsl.Script) bool {
+	if script == nil || script.Metadata == nil || script.Metadata.Import == nil ||
+		script.Metadata.Import.Preserved == nil {
+		return false
+	}
+	generated, _ := script.Metadata.Import.Preserved[generatedDatabaseDSNMarkerKey].(bool)
+	return generated
 }
 
 func appendDatabaseConnectionReviewPlaceholder(

@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jasonczech/apexload/pkg/convert/credentialpolicy"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/scriptdisclosure"
 )
@@ -432,6 +433,198 @@ thinkTime:
 	}
 	if action.Metadata["source_transaction"] != "Sign In" {
 		t.Fatalf("metadata = %#v, want source transaction", action.Metadata)
+	}
+}
+
+func TestConvertZipAllocatesCollisionSafeParameterAndDataSourceNames(t *testing.T) {
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	writeDevWebZipFile(t, zw, "AOS/main.js", `
+load.action("Action", async function() {
+  await new load.WebRequest({
+    url: `+"`https://api.example.test/${load.params.Token}/${load.params.token}`"+`,
+    method: "GET",
+  }).send();
+});`)
+	writeDevWebZipFile(t, zw, "AOS/parameters.yml", `
+parameters:
+- name: Token
+  type: csv
+  fileName: one/a-b.csv
+  columnName: value
+- name: token
+  type: csv
+  fileName: two/a_b.csv
+  columnName: value
+`)
+	writeDevWebZipFile(t, zw, "AOS/one/a-b.csv", "value\nupper\n")
+	writeDevWebZipFile(t, zw, "AOS/two/a_b.csv", "value\nlower\n")
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := ConvertZip(buf.Bytes(), ConvertOptions{})
+	if err != nil {
+		t.Fatalf("ConvertZip returned error: %v", err)
+	}
+	if len(result.Script.DataSources) != 2 ||
+		result.Script.DataSources[0].Name != "a_b" ||
+		result.Script.DataSources[1].Name != "a_b_2" {
+		t.Fatalf("data sources = %#v, want collision-safe source identities", result.Script.DataSources)
+	}
+	if len(result.Script.Parameters) != 2 ||
+		result.Script.Parameters[0].Name != "Token" ||
+		result.Script.Parameters[1].Name != "token_2" {
+		t.Fatalf("parameters = %#v, want case-fold-safe destination identities", result.Script.Parameters)
+	}
+	target := result.Script.Actions[0].Target
+	for _, reference := range []string{
+		"{{data.a_b.value}}",
+		"{{data.a_b_2.value}}",
+	} {
+		if !strings.Contains(target, reference) {
+			t.Fatalf("target = %q, missing source-identity reference %q", target, reference)
+		}
+	}
+	if issues := dsl.ValidateScriptIssues(result.Script); len(issues) != 0 {
+		t.Fatalf("collision-safe DevWeb script validation issues = %v", issues)
+	}
+}
+
+func TestConvertZipLeavesAmbiguousParameterDataFileUnresolved(t *testing.T) {
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	writeDevWebZipFile(t, zw, "AOS/main.js", `
+load.action("Action", async function() {
+  await new load.WebRequest({
+    url: `+"`https://api.example.test/${load.params.token}`"+`,
+    method: "GET",
+  }).send();
+});`)
+	writeDevWebZipFile(t, zw, "AOS/parameters.yml", `
+parameters:
+- name: token
+  type: csv
+  fileName: credentials.csv
+  columnName: value
+`)
+	writeDevWebZipFile(t, zw, "AOS/first/credentials.csv", "value\nfirst\n")
+	writeDevWebZipFile(t, zw, "AOS/second/credentials.csv", "value\nsecond\n")
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := ConvertZip(buf.Bytes(), ConvertOptions{})
+	if err != nil {
+		t.Fatalf("ConvertZip returned error: %v", err)
+	}
+	if len(result.Script.DataSources) != 0 || len(result.Script.Parameters) != 0 {
+		t.Fatalf("ambiguous archive file was bound: %#v / %#v", result.Script.DataSources, result.Script.Parameters)
+	}
+	action := result.Script.Actions[0]
+	if !strings.Contains(action.Target, "{{var.token}}") ||
+		action.Metadata["execution_blocker"] != "import_review_required" {
+		t.Fatalf("ambiguous source identity was not left as a blocked reference: %#v", action)
+	}
+	found := false
+	for _, item := range result.Unsupported {
+		if item.Element == "DevWeb parameter data file collision" &&
+			strings.Contains(item.Detail, "matches multiple archive files") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("diagnostics = %#v, want ambiguous data-file explanation", result.Unsupported)
+	}
+}
+
+func TestConvertZipPreservesProxyCredentialsButRedactsRuntimeSourceReview(t *testing.T) {
+	const (
+		proxyUsername = "devweb-proxy-user-canary-71c"
+		proxyPassword = "devweb-proxy-password-canary-29e"
+	)
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	writeDevWebZipFile(t, zw, "AOS/main.js", `
+load.action("Action", async function() {
+  await new load.WebRequest({url: "https://api.example.test/", method: "GET"}).send();
+});`)
+	writeDevWebZipFile(t, zw, "AOS/rts.yml", `
+proxy:
+  useProxy: true
+  proxyServer: http://proxy.example.test:8080
+  proxyUser: `+proxyUsername+`
+  proxyPassword: `+proxyPassword+`
+`)
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := ConvertZip(buf.Bytes(), ConvertOptions{})
+	if err != nil {
+		t.Fatalf("ConvertZip returned error: %v", err)
+	}
+	proxy := result.Script.Config.HTTP.Proxy
+	if proxy.Username != proxyUsername || proxy.Password != proxyPassword {
+		t.Fatalf("executable proxy credentials changed: %#v", proxy)
+	}
+	if requirements := result.ProtectedRequirements.Take(); len(requirements) != 0 {
+		t.Fatalf("available proxy credentials unexpectedly require re-entry: %#v", requirements)
+	}
+	review, err := json.Marshal(result.SourceReview)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, canary := range []string{proxyUsername, proxyPassword} {
+		if strings.Contains(string(review), canary) {
+			t.Fatalf("source review disclosed runtime credential %q: %s", canary, review)
+		}
+	}
+}
+
+func TestConvertZipTreatsRuntimeCredentialPlaceholderAsUnavailable(t *testing.T) {
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	writeDevWebZipFile(t, zw, "AOS/main.js", `
+load.action("Action", async function() {
+  await new load.WebRequest({url: "https://api.example.test/", method: "GET"}).send();
+});`)
+	writeDevWebZipFile(t, zw, "AOS/rts.yml", `
+proxy:
+  useProxy: true
+  proxyServer: http://proxy.example.test:8080
+  proxyUser: operator
+  proxyPassword: "%255BReDaCtEd%255D"
+`)
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := ConvertZip(buf.Bytes(), ConvertOptions{})
+	if err != nil {
+		t.Fatalf("ConvertZip returned error: %v", err)
+	}
+	password := result.Script.Config.HTTP.Proxy.Password
+	if !strings.HasPrefix(password, "{{secret.DEVWEB_PROXY_PASSWORD") {
+		t.Fatalf("runtime placeholder was retained as an executable password: %q", password)
+	}
+	requirements := result.ProtectedRequirements.Take()
+	if len(requirements) != 1 {
+		t.Fatalf("requirements = %#v, want one unavailable runtime credential", requirements)
+	}
+	requirement := requirements[0]
+	if requirement.Label != "DevWeb HTTP proxy password" ||
+		requirement.Context != "HTTP proxy password from rts.yml" ||
+		requirement.Source.Path != "AOS/rts.yml" ||
+		requirement.Source.Pointer != "/proxy/proxyPassword" ||
+		requirement.SourceValueAvailable || requirement.Value != "" ||
+		requirement.SourceValueStatus != credentialpolicy.SourceCredentialValueRedactedPlaceholder {
+		t.Fatalf("runtime credential requirement = %#v", requirement)
+	}
+	action := result.Script.Actions[0]
+	if action.Metadata["execution_blocker"] != "import_review_required" {
+		t.Fatalf("unavailable runtime credential did not gate execution: %#v", action.Metadata)
 	}
 }
 
@@ -1109,6 +1302,47 @@ func TestConvertPreservesStructuredCredentialBytesButBlocksMalformedAndDuplicate
 				}
 			}
 		})
+	}
+}
+
+func TestDevWebCredentialBodyReferenceProjectionFailsClosedAtWorkLimit(t *testing.T) {
+	body := `{"label":"{{data.accounts.displayName}}","password":"{{data.accounts.password}}"}`
+	recorded := make(map[string]struct{})
+	record := func(value string) {
+		for _, match := range devWebDataReferencePattern.FindAllStringSubmatch(value, -1) {
+			if len(match) == 3 {
+				recorded[match[1]+"."+match[2]] = struct{}{}
+			}
+		}
+	}
+
+	collectDevWebCredentialBodyDataReferencesWithBudget(
+		body,
+		"application/json",
+		record,
+		1,
+	)
+	for _, want := range []string{"accounts.displayName", "accounts.password"} {
+		if _, ok := recorded[want]; !ok {
+			t.Fatalf("bounded fallback did not conservatively protect %q: %#v", want, recorded)
+		}
+	}
+}
+
+func TestDevWebCredentialSourceRedactionFailsClosedAtWorkLimit(t *testing.T) {
+	const canary = "devweb-redaction-work-canary"
+	projected, changed := redactDevWebCredentialValuesWithBudget(
+		"first\nAuthorization: "+canary+"\nlast",
+		[]credentialpolicy.Requirement{{Value: canary}},
+		nil,
+		1,
+	)
+	if !changed || strings.Contains(projected, canary) ||
+		!strings.Contains(projected, "WORK LIMIT EXCEEDED") {
+		t.Fatalf("bounded source projection = %q, changed=%v", projected, changed)
+	}
+	if strings.Count(projected, "\n") != 2 {
+		t.Fatalf("bounded source projection changed line coordinates: %q", projected)
 	}
 }
 

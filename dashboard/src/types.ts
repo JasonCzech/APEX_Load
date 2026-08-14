@@ -102,6 +102,8 @@ export type {
   FleetPoolMember,
   FleetProjectSlotAccounting,
   FleetProvisioningEvent,
+  FleetProvisioningInstance,
+  FleetProvisioningInstanceListResponse,
   FleetProvisioningRequest,
   FleetProvisioningRequestListResponse,
   ProvisionerInfo,

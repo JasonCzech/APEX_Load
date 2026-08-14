@@ -91,15 +91,43 @@ func (s *Server) libraryCatalogPage(projectID string, kind string, offset int, l
 		limit = defaultLibraryCatalogPageSize
 	}
 
-	s.runner.refreshScriptsForHARead()
-	s.runner.refreshScenariosForHARead()
+	var scripts []*StoredScript
+	if kind == "" || kind == "script" {
+		s.runner.refreshScriptsForHARead()
+	}
+	var scenarios []*StoredScenario
+	if kind == "" || kind == "scenario" {
+		s.runner.refreshScenariosForHARead()
+	}
+	s.runner.mu.RLock()
+	if kind == "" || kind == "script" {
+		scripts = make([]*StoredScript, 0, len(s.runner.scripts))
+		for _, script := range s.runner.scripts {
+			if script == nil || isStoredCIScriptSnapshot(script) || (projectID != "" && normalizeProjectID(script.ProjectID) != projectID) {
+				continue
+			}
+			scripts = append(scripts, cloneStoredScriptForReadLocked(script))
+		}
+	}
+	if kind == "" || kind == "scenario" {
+		scenarios = make([]*StoredScenario, 0, len(s.runner.scenarios))
+		for _, scenario := range s.runner.scenarios {
+			if scenario == nil || (projectID != "" && normalizeProjectID(scenario.ProjectID) != projectID) {
+				continue
+			}
+			scenarios = append(scenarios, cloneStoredScenarioForReadLocked(scenario))
+		}
+	}
+	s.runner.mu.RUnlock()
+	scripts, scenarios = s.runner.filterPublishedLibraryAssets(scripts, scenarios, projectID, nil)
 	s.runner.refreshTestsForHARead()
 	s.runner.refreshReadMetadataForTestList()
 
 	selected, total := func() ([]libraryCatalogCandidate, int) {
-		s.runner.mu.RLock()
-		defer s.runner.mu.RUnlock()
-
+		if kind == "" || kind == "result" {
+			s.runner.mu.RLock()
+			defer s.runner.mu.RUnlock()
+		}
 		window := offset + limit
 		if window > maxLibraryCatalogOffset+maxLibraryCatalogPageSize {
 			window = maxLibraryCatalogOffset + maxLibraryCatalogPageSize
@@ -120,28 +148,24 @@ func (s *Server) libraryCatalogPage(projectID string, kind string, offset int, l
 				heap.Push(&candidates, candidate)
 			}
 		}
-		if kind == "" || kind == "script" {
-			for _, script := range s.runner.scripts {
-				if script == nil || script.Script == nil || normalizeProjectID(script.Script.ProjectID) != normalizeProjectID(script.ProjectID) || (projectID != "" && normalizeProjectID(script.ProjectID) != projectID) {
-					continue
-				}
-				retain(libraryCatalogCandidate{item: LibraryCatalogItem{
-					Kind: "script", ID: script.ID, Name: script.Name, ProjectID: script.ProjectID,
-					Protocol: script.Protocol, Version: script.Version, SourceInstanceID: s.controllerID,
-					SourceItemID: script.ID, UpdatedAt: script.CreatedAt,
-				}, script: script})
+		for _, script := range scripts {
+			if script == nil || script.Script == nil || normalizeProjectID(script.Script.ProjectID) != normalizeProjectID(script.ProjectID) {
+				continue
 			}
+			retain(libraryCatalogCandidate{item: LibraryCatalogItem{
+				Kind: "script", ID: script.ID, Name: script.Name, ProjectID: script.ProjectID,
+				Protocol: script.Protocol, Version: script.Version, SourceInstanceID: s.controllerID,
+				SourceItemID: script.ID, UpdatedAt: script.CreatedAt,
+			}, script: script})
 		}
-		if kind == "" || kind == "scenario" {
-			for _, scenario := range s.runner.scenarios {
-				if scenario == nil || (projectID != "" && scenario.ProjectID != projectID) {
-					continue
-				}
-				retain(libraryCatalogCandidate{item: LibraryCatalogItem{
-					Kind: "scenario", ID: scenario.ID, Name: scenario.Name, ProjectID: scenario.ProjectID,
-					SourceInstanceID: s.controllerID, SourceItemID: scenario.ID, UpdatedAt: scenario.UpdatedAt,
-				}, scenario: scenario})
+		for _, scenario := range scenarios {
+			if scenario == nil {
+				continue
 			}
+			retain(libraryCatalogCandidate{item: LibraryCatalogItem{
+				Kind: "scenario", ID: scenario.ID, Name: scenario.Name, ProjectID: scenario.ProjectID,
+				SourceInstanceID: s.controllerID, SourceItemID: scenario.ID, UpdatedAt: scenario.UpdatedAt,
+			}, scenario: scenario})
 		}
 		if kind == "" || kind == "result" {
 			for _, test := range s.runner.tests {

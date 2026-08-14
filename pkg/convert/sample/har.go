@@ -18,6 +18,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/andybalholm/brotli"
+	"github.com/jasonczech/apexload/pkg/convert/correlate"
 	"github.com/jasonczech/apexload/pkg/convert/diag"
 	"github.com/jasonczech/apexload/pkg/credential"
 	"github.com/jasonczech/apexload/pkg/dsl"
@@ -25,6 +26,36 @@ import (
 )
 
 const maxHARDecodedContentBytes = 10 << 20
+
+// HARCorrelationBaseline returns the same non-static, non-WebSocket exchanges
+// that HAR conversion consumes, projected as raw record-vs-replay
+// observations. The caller owns disclosure and persistence; this helper must
+// never be used in a public conversion response because the observations can
+// contain source credentials.
+func HARCorrelationBaseline(content string, includeStaticAssets bool) ([]correlate.Observation, error) {
+	var diagnostics diag.Collector
+	exchanges, _, _, _, err := parseHAR(content, includeStaticAssets, &diagnostics)
+	if err != nil {
+		return nil, err
+	}
+	observations := make([]correlate.Observation, 0, len(exchanges))
+	for index, exchange := range exchanges {
+		observation := correlate.Observation{
+			ID:                     index,
+			RequestURL:             exchange.URL,
+			RequestBody:            exchange.Body,
+			RequestBodyTransformed: exchange.BodyEncoding != "",
+			RequestHeaders:         correlationObservationHeaders(exchange.Headers, exchange.HeaderList),
+		}
+		if exchange.Response != nil {
+			observation.ResponseBody = exchange.Response.Body
+			observation.ResponseHeaders = correlationObservationHeaders(exchange.Response.Headers, exchange.Response.HeaderList)
+			observation.ResponseStatus = exchange.Response.Status
+		}
+		observations = append(observations, observation)
+	}
+	return observations, nil
+}
 
 func parseHAR(content string, includeStaticAssets bool, diagnostics *diag.Collector) ([]exchange, []string, int, int, error) {
 	var payload any

@@ -445,7 +445,11 @@ func TestRunTestPanicBackstopWaitsOutASlowDurableWrite(t *testing.T) {
 		runTestPanicRecoveryDurableWriteExtensions = previousExtensions
 	}()
 
-	store := &slowStatusPersistence{delay: 200 * time.Millisecond}
+	// Do not align completion exactly with a 50ms recovery deadline. At that
+	// boundary the write gauge can reach zero one scheduler tick before the
+	// terminalized channel closes, making this fixture test select ordering
+	// instead of the durable-write behavior it is intended to cover.
+	store := &slowStatusPersistence{delay: 225 * time.Millisecond}
 	backend := &panickingExecutionBackend{panicValue: "driver panic during a database failover"}
 	runner, test, _, cancel := newPanicBackstopRunner(t, backend)
 	defer cancel()

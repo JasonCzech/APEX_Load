@@ -63,8 +63,15 @@ func sealClusterCredential(ctx context.Context, wrapper keywrap.KeyWrapper, conn
 	if strings.TrimSpace(connectionID) == "" {
 		return "", "", errors.New("cluster connection id is required to seal a credential")
 	}
+	return sealCredentialEnvelope(ctx, wrapper, clusterCredentialAAD(connectionID, kind), "cluster credential", value)
+}
+
+func sealCredentialEnvelope(ctx context.Context, wrapper keywrap.KeyWrapper, aad []byte, subject, value string) (ciphertext string, wrappedKeyJSON string, err error) {
+	if wrapper == nil {
+		return "", "", errClusterCredentialEncryptionUnavailable
+	}
 	if len(value) == 0 || len(value) > maxClusterCredentialBytes {
-		return "", "", fmt.Errorf("cluster credential must contain 1-%d bytes", maxClusterCredentialBytes)
+		return "", "", fmt.Errorf("%s must contain 1-%d bytes", subject, maxClusterCredentialBytes)
 	}
 
 	dek := make([]byte, 32)
@@ -89,7 +96,6 @@ func sealClusterCredential(ctx context.Context, wrapper keywrap.KeyWrapper, conn
 	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
 		return "", "", err
 	}
-	aad := clusterCredentialAAD(connectionID, kind)
 	sealed := aead.Seal(nonce, nonce, []byte(value), aad)
 
 	wrapped, err := wrapper.WrapKey(ctx, dek, aad)
@@ -110,17 +116,23 @@ func openClusterCredential(ctx context.Context, wrapper keywrap.KeyWrapper, conn
 	if wrapper == nil {
 		return "", errClusterCredentialEncryptionUnavailable
 	}
+	return openCredentialEnvelope(ctx, wrapper, clusterCredentialAAD(connectionID, kind), "cluster credential", ciphertext, wrappedKeyJSON)
+}
+
+func openCredentialEnvelope(ctx context.Context, wrapper keywrap.KeyWrapper, aad []byte, subject, ciphertext, wrappedKeyJSON string) (string, error) {
+	if wrapper == nil {
+		return "", errClusterCredentialEncryptionUnavailable
+	}
 	if strings.TrimSpace(ciphertext) == "" || strings.TrimSpace(wrappedKeyJSON) == "" {
-		return "", errors.New("cluster connection has no stored credential")
+		return "", fmt.Errorf("%s is not stored", subject)
 	}
 	var wrapped keywrap.WrappedKey
 	if err := json.Unmarshal([]byte(wrappedKeyJSON), &wrapped); err != nil {
-		return "", fmt.Errorf("decode wrapped cluster credential key: %w", err)
+		return "", fmt.Errorf("decode wrapped %s key: %w", subject, err)
 	}
-	aad := clusterCredentialAAD(connectionID, kind)
 	dek, err := wrapper.UnwrapKey(ctx, wrapped, aad)
 	if err != nil {
-		return "", fmt.Errorf("unwrap cluster credential key: %w", err)
+		return "", fmt.Errorf("unwrap %s key: %w", subject, err)
 	}
 	defer func() {
 		for i := range dek {
@@ -130,7 +142,7 @@ func openClusterCredential(ctx context.Context, wrapper keywrap.KeyWrapper, conn
 
 	sealed, err := base64.RawStdEncoding.DecodeString(ciphertext)
 	if err != nil {
-		return "", fmt.Errorf("decode cluster credential ciphertext: %w", err)
+		return "", fmt.Errorf("decode %s ciphertext: %w", subject, err)
 	}
 	block, err := aes.NewCipher(dek)
 	if err != nil {
@@ -141,12 +153,12 @@ func openClusterCredential(ctx context.Context, wrapper keywrap.KeyWrapper, conn
 		return "", err
 	}
 	if len(sealed) < aead.NonceSize() {
-		return "", errors.New("cluster credential ciphertext is truncated")
+		return "", fmt.Errorf("%s ciphertext is truncated", subject)
 	}
 	nonce, body := sealed[:aead.NonceSize()], sealed[aead.NonceSize():]
 	plaintext, err := aead.Open(nil, nonce, body, aad)
 	if err != nil {
-		return "", fmt.Errorf("decrypt cluster credential: %w", err)
+		return "", fmt.Errorf("decrypt %s: %w", subject, err)
 	}
 	return string(plaintext), nil
 }

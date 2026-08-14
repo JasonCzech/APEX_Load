@@ -109,13 +109,31 @@ func main() {
 	if err != nil || generatorID == "" {
 		generatorID = "apexload-generator"
 	}
+	if configuredID := strings.TrimSpace(os.Getenv("APEXLOAD_GENERATOR_ID")); configuredID != "" {
+		generatorID = configuredID
+	}
 
-	listener, err := net.Listen("tcp", cfg.ListenAddr)
-	if err != nil {
-		slog.Error("failed to listen", "addr", cfg.ListenAddr, "err", err)
+	connectivityMode := strings.ToLower(strings.TrimSpace(os.Getenv(generatorConnectivityModeEnv)))
+	if connectivityMode == "" {
+		connectivityMode = "direct"
+	}
+	if connectivityMode != "direct" && connectivityMode != "reverse" && connectivityMode != "both" {
+		slog.Error("invalid generator connectivity mode", "mode", connectivityMode)
 		os.Exit(1)
 	}
-	defer listener.Close()
+	if strings.EqualFold(strings.TrimSpace(os.Getenv("APEXLOAD_GRPC_REVERSE_TUNNEL_SECURE")), "true") && connectivityMode != "reverse" {
+		slog.Error("APEXLOAD_GRPC_REVERSE_TUNNEL_SECURE is valid only with reverse-only connectivity")
+		os.Exit(1)
+	}
+	var listener net.Listener
+	if connectivityMode == "direct" || connectivityMode == "both" {
+		listener, err = net.Listen("tcp", cfg.ListenAddr)
+		if err != nil {
+			slog.Error("failed to listen", "addr", cfg.ListenAddr, "err", err)
+			os.Exit(1)
+		}
+		defer listener.Close()
+	}
 
 	serverOptions, err := generatorrpc.ServerOptionsFromEnv()
 	if err != nil {
@@ -173,15 +191,36 @@ func main() {
 	publishGeneratorHealth(controlService, healthServer)
 	go monitorGeneratorHealth(ctx, controlService, healthServer)
 
-	errCh := make(chan error, 2)
-	go func() {
-		errCh <- grpcServer.Serve(listener)
-	}()
+	errCh := make(chan error, 4)
+	if listener != nil {
+		go func() { errCh <- grpcServer.Serve(listener) }()
+	}
+	var reverseListener *generatorrpc.ConnListener
+	if connectivityMode == "reverse" || connectivityMode == "both" {
+		reverseListener = generatorrpc.NewConnListener(nil)
+		defer reverseListener.Close()
+		connector := reverseConnectorConfig{
+			URL: os.Getenv(controllerURLEnv), GeneratorID: generatorID,
+			ExecutionTargetID: os.Getenv(executionTargetIDEnv), EnrollmentToken: os.Getenv(gatewayTokenEnv),
+			Lifecycle: os.Getenv(generatorLifecycleEnv), LaunchNonce: os.Getenv(generatorLaunchNonceEnv),
+			Production: strings.EqualFold(strings.TrimSpace(appEnv), "production") || strings.EqualFold(strings.TrimSpace(appEnv), "prod"),
+		}
+		if err := connector.validate(); err != nil {
+			slog.Error("invalid reverse generator configuration", "err", err)
+			os.Exit(1)
+		}
+		go func() { errCh <- grpcServer.Serve(reverseListener) }()
+		go func() {
+			if err := runReverseGeneratorConnector(ctx, reverseListener, connector); err != nil && !errors.Is(err, context.Canceled) {
+				errCh <- err
+			}
+		}()
+	}
 	go func() {
 		errCh <- healthGRPCServer.Serve(healthListener)
 	}()
 
-	slog.Info("apexload generator starting", "addr", cfg.ListenAddr, "health_addr", healthAddr, "generator_id", generatorID, "max_vusers", cfg.MaxVUsers, "grpc_transport", security.String())
+	slog.Info("apexload generator starting", "addr", cfg.ListenAddr, "health_addr", healthAddr, "generator_id", generatorID, "max_vusers", cfg.MaxVUsers, "grpc_transport", security.String(), "connectivity_mode", connectivityMode)
 
 	waitForNaturalDrain := false
 	serverFailed := false

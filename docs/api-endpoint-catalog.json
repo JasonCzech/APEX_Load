@@ -1776,6 +1776,16 @@
       "access": "Requires authentication; global roles: SystemAdmin; service-account scope: write"
     },
     {
+      "method": "GET",
+      "path": "/api/v1/fleet/provision-requests/{id}/instances",
+      "operationId": "handleListProvisioningRequestInstances",
+      "summary": "List Provisioning Request Instances",
+      "category": "Operations \u0026 Observability",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: SystemAdmin; service-account scope: read"
+    },
+    {
       "method": "POST",
       "path": "/api/v1/fleet/provision-requests/{id}/retry",
       "operationId": "handleRetryProvisioningRequest",
@@ -1814,6 +1824,16 @@
       "public": false,
       "authenticated": true,
       "access": "Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: write"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/generator-gateway/connect",
+      "operationId": "handleGeneratorGatewayConnect",
+      "summary": "Generator Gateway Connect",
+      "category": "Generator Gateway",
+      "public": true,
+      "authenticated": false,
+      "access": "Public (no authentication required)"
     },
     {
       "method": "GET",
@@ -3586,6 +3606,16 @@
       "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: scripts:write"
     },
     {
+      "method": "POST",
+      "path": "/api/v1/scripts/import/asyncapi/commit-batch",
+      "operationId": "handleCommitAsyncAPIImportBatch",
+      "summary": "Commit AsyncAPI Import Batch",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: scripts:write"
+    },
+    {
       "method": "GET",
       "path": "/api/v1/scripts/import/asyncapi/support-matrix",
       "operationId": "handleAsyncAPISupportMatrix",
@@ -3657,6 +3687,16 @@
     },
     {
       "method": "POST",
+      "path": "/api/v1/scripts/import/commit-batch",
+      "operationId": "handleCommitGenericImportBatch",
+      "summary": "Commit Generic Import Batch",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: scripts:write"
+    },
+    {
+      "method": "POST",
       "path": "/api/v1/scripts/import/devweb",
       "operationId": "handleImportDevWeb",
       "summary": "Import Dev Web",
@@ -3680,6 +3720,16 @@
       "path": "/api/v1/scripts/import/enterprise-script-archive",
       "operationId": "handleImportEnterpriseArchive",
       "summary": "Import Enterprise Archive",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: scripts:write"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/scripts/import/enterprise-script-archive/save",
+      "operationId": "handleSaveEnterpriseArchiveImport",
+      "summary": "Save Enterprise Archive Import",
       "category": "Script Authoring",
       "public": false,
       "authenticated": true,
@@ -4367,6 +4417,56 @@
     },
     {
       "method": "GET",
+      "path": "/api/v1/system/cloud-connections",
+      "operationId": "handleListCloudConnections",
+      "summary": "List Cloud Connections",
+      "category": "System \u0026 Distribution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: SystemAdmin; service-account scope: system:read"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/system/cloud-connections",
+      "operationId": "handleCreateCloudConnection",
+      "summary": "Create Cloud Connection",
+      "category": "System \u0026 Distribution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: SystemAdmin; service-account scope: settings:manage"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/system/cloud-connections/{id}",
+      "operationId": "handleDeleteCloudConnection",
+      "summary": "Delete Cloud Connection",
+      "category": "System \u0026 Distribution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: SystemAdmin; service-account scope: settings:manage"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/system/cloud-connections/{id}",
+      "operationId": "handleGetCloudConnection",
+      "summary": "Get Cloud Connection",
+      "category": "System \u0026 Distribution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: SystemAdmin; service-account scope: system:read"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/system/cloud-connections/{id}",
+      "operationId": "handleUpdateCloudConnection",
+      "summary": "Update Cloud Connection",
+      "category": "System \u0026 Distribution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: SystemAdmin; service-account scope: settings:manage"
+    },
+    {
+      "method": "GET",
       "path": "/api/v1/system/clusters",
       "operationId": "handleListClusterConnections",
       "summary": "List Cluster Connections",
@@ -4544,6 +4644,76 @@
       "public": true,
       "authenticated": false,
       "access": "Public (no authentication required)"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/system/execution-targets",
+      "operationId": "handleListExecutionTargets",
+      "summary": "List Execution Targets",
+      "category": "System \u0026 Distribution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: SystemAdmin; service-account scope: system:read"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/system/execution-targets",
+      "operationId": "handleCreateExecutionTarget",
+      "summary": "Create Execution Target",
+      "category": "System \u0026 Distribution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: SystemAdmin; service-account scope: settings:manage"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/system/execution-targets/{id}",
+      "operationId": "handleDeleteExecutionTarget",
+      "summary": "Delete Execution Target",
+      "category": "System \u0026 Distribution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: SystemAdmin; service-account scope: settings:manage"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/system/execution-targets/{id}",
+      "operationId": "handleGetExecutionTarget",
+      "summary": "Get Execution Target",
+      "category": "System \u0026 Distribution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: SystemAdmin; service-account scope: system:read"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/system/execution-targets/{id}",
+      "operationId": "handleUpdateExecutionTarget",
+      "summary": "Update Execution Target",
+      "category": "System \u0026 Distribution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: SystemAdmin; service-account scope: settings:manage"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/system/execution-targets/{id}/capabilities",
+      "operationId": "handleGetExecutionTargetCapabilities",
+      "summary": "Get Execution Target Capabilities",
+      "category": "System \u0026 Distribution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: SystemAdmin; service-account scope: system:read"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/system/execution-targets/{id}/test",
+      "operationId": "handleTestExecutionTarget",
+      "summary": "Test Execution Target",
+      "category": "System \u0026 Distribution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: SystemAdmin; service-account scope: settings:manage"
     },
     {
       "method": "PATCH",

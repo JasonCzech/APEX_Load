@@ -28,15 +28,22 @@ const (
 var errImportDraftAttestationInvalid = errors.New("import draft attestation is invalid or expired")
 
 type importDraftAttestation struct {
-	Token                   string
-	Profile                 string
-	ProjectID               string
-	Actor                   string
-	Protocol                string
-	CredentialDigests       map[string]int
-	StructureDigest         string
-	ExecutionGraphDigest    string
-	FullDigest              string
+	Token                string
+	Profile              string
+	ProjectID            string
+	Actor                string
+	Protocol             string
+	CredentialDigests    map[string]int
+	StructureDigest      string
+	ExecutionGraphDigest string
+	FullDigest           string
+	// HasUnavailableCredentialValues records an exact source placeholder or
+	// unsafe encoding. It grants no literal-preservation authority; it only lets
+	// commit replace that unchanged slot with a governed reference.
+	HasUnavailableCredentialValues bool
+	// Script is the exact short-lived server-owned candidate. Responses carry
+	// only its disclosure projection plus Token.
+	Script                  *dsl.Script
 	RecordingSessionID      string
 	RecordingSnapshotDigest string
 	ExpiresAt               time.Time
@@ -54,6 +61,10 @@ type importDraftAttestationClaim struct {
 	// release/completion unless the commit service explicitly takes ownership
 	// for durable source retention.
 	RawSource []byte
+	// Script is the exact candidate reconciled with disclosure-safe edits from
+	// the submitted draft. Commit/mutation callers must use it instead of the
+	// browser-visible projection.
+	Script *dsl.Script
 	// RecordingSessionID is populated only when the submitted execution graph
 	// still matches a server-attested recording preview (or a server-owned
 	// transformation descended from it).
@@ -169,9 +180,20 @@ func (s *Server) attachImportDraftAttestationWithExpiry(
 	if recordingSessionID != "" && recordingSnapshotDigest == "" {
 		return time.Time{}, errors.New("recording preview snapshot digest is required")
 	}
-	if !fingerprint.HasRawCredentials && recordingSessionID == "" {
+	hasUnavailableCredentials := scriptHasUnavailableImportCredentialValues(script)
+	if hasUnavailableCredentials && fingerprint.FullDigest == "" {
+		fingerprint.FullDigest, err = fullImportDraftExecutionDigest(script)
+		if err != nil {
+			return time.Time{}, err
+		}
+	}
+	if !fingerprint.HasRawCredentials && !hasUnavailableCredentials && recordingSessionID == "" {
 		stripImportDraftAttestation(script)
 		return time.Time{}, nil
+	}
+	exactCandidate := cloneScriptDefinition(script)
+	if exactCandidate == nil {
+		return time.Time{}, errors.New("failed to clone import draft")
 	}
 	_, actor, _ := s.resolveAuditActor(r)
 	now := time.Now().UTC()
@@ -232,18 +254,20 @@ func (s *Server) attachImportDraftAttestationWithExpiry(
 	}
 
 	record := &importDraftAttestation{
-		Token:                   token,
-		Profile:                 profile,
-		ProjectID:               projectID,
-		Actor:                   actor,
-		Protocol:                strings.ToLower(strings.TrimSpace(script.Protocol)),
-		CredentialDigests:       fingerprint.CredentialDigests,
-		StructureDigest:         fingerprint.StructureDigest,
-		ExecutionGraphDigest:    fingerprint.ExecutionGraphDigest,
-		FullDigest:              fingerprint.FullDigest,
-		RecordingSessionID:      recordingSessionID,
-		RecordingSnapshotDigest: recordingSnapshotDigest,
-		ExpiresAt:               now.Add(importDraftAttestationTTL),
+		Token:                          token,
+		Profile:                        profile,
+		ProjectID:                      projectID,
+		Actor:                          actor,
+		Protocol:                       strings.ToLower(strings.TrimSpace(script.Protocol)),
+		CredentialDigests:              fingerprint.CredentialDigests,
+		StructureDigest:                fingerprint.StructureDigest,
+		ExecutionGraphDigest:           fingerprint.ExecutionGraphDigest,
+		FullDigest:                     fingerprint.FullDigest,
+		HasUnavailableCredentialValues: hasUnavailableCredentials,
+		Script:                         exactCandidate,
+		RecordingSessionID:             recordingSessionID,
+		RecordingSnapshotDigest:        recordingSnapshotDigest,
+		ExpiresAt:                      now.Add(importDraftAttestationTTL),
 	}
 
 	s.importDraftAttestationMu.Lock()
@@ -340,12 +364,26 @@ func (s *Server) claimImportDraftAttestation(
 		!strings.EqualFold(strings.TrimSpace(script.Metadata.Import.Source), record.Profile) {
 		return nil, errImportDraftAttestationInvalid
 	}
-	fingerprint, err := fingerprintImportDraftCredentials(script)
+	restored := cloneScriptDefinition(script)
+	if restored == nil || record.Script == nil ||
+		reconcileMaskedScriptSecrets(restored, record.Script) != nil {
+		return nil, errImportDraftAttestationInvalid
+	}
+	fingerprint, err := fingerprintImportDraftCredentials(restored)
 	if err != nil {
 		return nil, errImportDraftAttestationInvalid
 	}
-	credentialAllowed := fingerprint.HasRawCredentials &&
+	if record.HasUnavailableCredentialValues && fingerprint.FullDigest == "" {
+		fingerprint.FullDigest, err = fullImportDraftExecutionDigest(restored)
+		if err != nil {
+			return nil, errImportDraftAttestationInvalid
+		}
+	}
+	credentialAllowed := (fingerprint.HasRawCredentials || record.HasUnavailableCredentialValues) &&
 		importDraftFingerprintAllowed(record, fingerprint)
+	if record.HasUnavailableCredentialValues && !fingerprint.HasRawCredentials {
+		credentialAllowed = fingerprint.FullDigest != "" && fingerprint.FullDigest == record.FullDigest
+	}
 	lineageAllowed := record.RecordingSessionID != "" &&
 		record.ExecutionGraphDigest != "" &&
 		record.ExecutionGraphDigest == fingerprint.ExecutionGraphDigest
@@ -358,6 +396,7 @@ func (s *Server) claimImportDraftAttestation(
 		Profile:                       record.Profile,
 		AttestedExecutionGraphDigest:  record.ExecutionGraphDigest,
 		SubmittedExecutionGraphDigest: fingerprint.ExecutionGraphDigest,
+		Script:                        restored,
 	}
 	if lineageAllowed {
 		claim.RecordingSessionID = record.RecordingSessionID
@@ -401,22 +440,45 @@ func (s *Server) claimProtectedImportDraftAttestation(
 	if err != nil {
 		return nil, errImportDraftAttestationInvalid
 	}
-	submittedFingerprint, err := fingerprintImportDraftCredentials(script)
+	hasUnavailableCredentials := scriptHasUnavailableImportCredentialValues(candidate.Script)
+	if hasUnavailableCredentials && attestedFingerprint.FullDigest == "" {
+		attestedFingerprint.FullDigest, err = fullImportDraftExecutionDigest(candidate.Script)
+		if err != nil {
+			return nil, errImportDraftAttestationInvalid
+		}
+	}
+	restored := cloneScriptDefinition(script)
+	if restored == nil || reconcileMaskedScriptSecrets(restored, candidate.Script) != nil {
+		return nil, errImportDraftAttestationInvalid
+	}
+	submittedFingerprint, err := fingerprintImportDraftCredentials(restored)
 	if err != nil {
 		return nil, errImportDraftAttestationInvalid
+	}
+	if hasUnavailableCredentials && submittedFingerprint.FullDigest == "" {
+		submittedFingerprint.FullDigest, err = fullImportDraftExecutionDigest(restored)
+		if err != nil {
+			return nil, errImportDraftAttestationInvalid
+		}
 	}
 	recordingSessionID, recordingSnapshotDigest, lineageDigest := protectedImportDraftRecordingLineage(
 		candidate.Script,
 	)
 	record := &importDraftAttestation{
-		CredentialDigests:    attestedFingerprint.CredentialDigests,
-		StructureDigest:      attestedFingerprint.StructureDigest,
-		ExecutionGraphDigest: attestedFingerprint.ExecutionGraphDigest,
-		FullDigest:           attestedFingerprint.FullDigest,
+		CredentialDigests:              attestedFingerprint.CredentialDigests,
+		StructureDigest:                attestedFingerprint.StructureDigest,
+		ExecutionGraphDigest:           attestedFingerprint.ExecutionGraphDigest,
+		FullDigest:                     attestedFingerprint.FullDigest,
+		HasUnavailableCredentialValues: hasUnavailableCredentials,
 	}
-	credentialAllowed := attestedFingerprint.HasRawCredentials &&
-		submittedFingerprint.HasRawCredentials &&
+	credentialAllowed := (attestedFingerprint.HasRawCredentials || record.HasUnavailableCredentialValues) &&
+		(submittedFingerprint.HasRawCredentials || record.HasUnavailableCredentialValues) &&
 		importDraftFingerprintAllowed(record, submittedFingerprint)
+	if record.HasUnavailableCredentialValues && !attestedFingerprint.HasRawCredentials &&
+		!submittedFingerprint.HasRawCredentials {
+		credentialAllowed = submittedFingerprint.FullDigest != "" &&
+			submittedFingerprint.FullDigest == attestedFingerprint.FullDigest
+	}
 	lineageAllowed := recordingSessionID != "" &&
 		lineageDigest == attestedFingerprint.ExecutionGraphDigest &&
 		lineageDigest == submittedFingerprint.ExecutionGraphDigest
@@ -442,6 +504,7 @@ func (s *Server) claimProtectedImportDraftAttestation(
 		ProtectedClaim:                protectedClaim,
 		ProtectedLease:                lease,
 		RawSource:                     rawSource,
+		Script:                        restored,
 		AttestedExecutionGraphDigest:  attestedFingerprint.ExecutionGraphDigest,
 		SubmittedExecutionGraphDigest: submittedFingerprint.ExecutionGraphDigest,
 	}
@@ -522,6 +585,7 @@ func (s *Server) completeImportDraftAttestation(claim *importDraftAttestationCla
 	s.importDraftAttestationMu.Lock()
 	defer s.importDraftAttestationMu.Unlock()
 	if record := s.importDraftAttestations[claim.Token]; record != nil && record.Claimed {
+		record.Script = nil
 		delete(s.importDraftAttestations, claim.Token)
 	}
 	return nil
@@ -560,6 +624,9 @@ func (s *Server) discardImportDraftAttestation(r *http.Request, script *dsl.Scri
 		return
 	}
 	s.importDraftAttestationMu.Lock()
+	if record := s.importDraftAttestations[token]; record != nil {
+		record.Script = nil
+	}
 	delete(s.importDraftAttestations, token)
 	s.importDraftAttestationMu.Unlock()
 }
@@ -581,6 +648,9 @@ func importDraftProjectIDForRequest(r *http.Request, script *dsl.Script) string 
 func (s *Server) sweepImportDraftAttestationsLocked(now time.Time) {
 	for token, record := range s.importDraftAttestations {
 		if record == nil || !record.ExpiresAt.After(now) {
+			if record != nil {
+				record.Script = nil
+			}
 			delete(s.importDraftAttestations, token)
 		}
 	}
@@ -741,8 +811,16 @@ func opaqueImportSourceProjectionChanged(raw, projected any) bool {
 	case []any:
 		projectedValue, _ := projected.([]any)
 		for index, child := range rawValue {
-			if index >= len(projectedValue) ||
-				opaqueImportSourceProjectionChanged(child, projectedValue[index]) {
+			// Ordinary review/provenance arrays may be shortened by disclosure
+			// sanitization. That is not an opaque executable-source delta by itself.
+			// Continue into a missing child with nil so only a nested key explicitly
+			// recognized by isOpaqueImportSourcePayloadKey can authorize a full-draft
+			// attestation.
+			var projectedChild any
+			if index < len(projectedValue) {
+				projectedChild = projectedValue[index]
+			}
+			if opaqueImportSourceProjectionChanged(child, projectedChild) {
 				return true
 			}
 		}

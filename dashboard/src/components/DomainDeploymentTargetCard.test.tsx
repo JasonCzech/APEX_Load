@@ -8,6 +8,7 @@ import DomainDeploymentTargetCard from './DomainDeploymentTargetCard'
 import { conflictingPoolsFromError } from './deploymentTargetModel'
 import { ApiError } from '../hooks/apiClient'
 import type { ClusterConnection } from '../types/cluster'
+import type { ExecutionTarget } from '../types/compute'
 import type { DomainDeploymentTarget } from '../types/deploymentTarget'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
@@ -20,12 +21,14 @@ const deploymentTargetsApiMock = {
 }
 const clustersApiMock = { listClusters: vi.fn() }
 const fleetApiMock = { listFleetPools: vi.fn() }
+const computeApiMock = { listExecutionTargets: vi.fn() }
 
 vi.mock('../hooks/api/useDeploymentTargetsApi', () => ({
   useDeploymentTargetsApi: () => deploymentTargetsApiMock,
 }))
 vi.mock('../hooks/api/useClustersApi', () => ({ useClustersApi: () => clustersApiMock }))
 vi.mock('../hooks/api/useFleetApi', () => ({ useFleetApi: () => fleetApiMock }))
+vi.mock('../hooks/api/useComputeApi', () => ({ useComputeApi: () => computeApiMock }))
 
 let container: HTMLElement
 let root: Root
@@ -53,6 +56,29 @@ function target(overrides: Partial<DomainDeploymentTarget> = {}): DomainDeployme
     configured: false,
     scoped_pool_count: 0,
     ...overrides,
+  }
+}
+
+function executionTarget(id: string, kind: ExecutionTarget['kind']): ExecutionTarget {
+  return {
+    id,
+    name: `${id}-name`,
+    kind,
+    connectivity_mode: kind === 'kubernetes' ? 'direct' : 'reverse',
+    standing_owner: 'apex',
+    burst_owner: 'apex',
+    archive_mode: 'controller_pull',
+    enrollment_token_configured: false,
+    status: 'active',
+    capabilities: {
+      can_scale: true,
+      can_launch: true,
+      can_reach_directly: kind === 'kubernetes',
+      supports_reverse: kind !== 'kubernetes',
+      supports_spot: false,
+    },
+    created_at: '2026-08-06T00:00:00Z',
+    updated_at: '2026-08-06T00:00:00Z',
   }
 }
 
@@ -87,6 +113,7 @@ beforeEach(() => {
     total: 2,
   })
   fleetApiMock.listFleetPools.mockResolvedValue({ fleet_pools: [], count: 0 })
+  computeApiMock.listExecutionTargets.mockResolvedValue({ execution_targets: [], total: 0 })
 })
 
 afterEach(() => {
@@ -143,6 +170,29 @@ describe('DomainDeploymentTargetCard', () => {
     // A first write must NOT carry a concurrency token.
     const [, payload] = deploymentTargetsApiMock.updateDeploymentTarget.mock.calls[0]
     expect('updated_at' in payload).toBe(false)
+  })
+
+  it('offers only normalized execution targets allowed by the selected provider', async () => {
+    computeApiMock.listExecutionTargets.mockResolvedValue({
+      execution_targets: [
+        executionTarget('target-azure', 'azure_container_apps'),
+        executionTarget('target-aws', 'aws_ecs_fargate'),
+      ],
+      total: 2,
+    })
+    await render()
+
+    const providerSelect = container.querySelectorAll('select')[0] as HTMLSelectElement
+    await act(async () => {
+      providerSelect.value = 'aws_ecs_fargate'
+      providerSelect.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await flush()
+
+    const targetSelect = container.querySelectorAll('select')[2] as HTMLSelectElement
+    const options = Array.from(targetSelect.querySelectorAll('option')).map((option) => option.value)
+    expect(options).toContain('target-aws')
+    expect(options).not.toContain('target-azure')
   })
 
   it('blocks Save and lists the conflicts when a pool is bound to another cloud', async () => {

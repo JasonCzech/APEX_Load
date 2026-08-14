@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jasonczech/apexload/pkg/convert/requestimport"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/engine"
 	"github.com/jasonczech/apexload/pkg/importartifact"
@@ -62,7 +63,7 @@ func TestSharedImportCommitPreservesStructuredBodyCredentialsDurablyAndMasksResp
 	for _, test := range tests {
 		test := test
 		t.Run(test.name, func(t *testing.T) {
-			server := NewServer(ServerConfig{})
+			server := newStructuredBodyImportServer(t)
 			scriptID := "structured-" + strings.ReplaceAll(test.name, " ", "-")
 			script := &dsl.Script{
 				ID:        scriptID,
@@ -94,15 +95,16 @@ func TestSharedImportCommitPreservesStructuredBodyCredentialsDurablyAndMasksResp
 				}
 				disclosureBody = string(decoded)
 			}
-			if !strings.Contains(disclosureBody, maskedScriptSecret) {
-				t.Fatalf("stored-script response did not mask structured credential: %s", got)
+			if !strings.Contains(disclosureBody, maskedScriptSecret) &&
+				!strings.Contains(disclosureBody, "{{secret.") {
+				t.Fatalf("stored-script response did not replace the structured credential with a disclosure-safe value: %s", got)
 			}
 			for _, stable := range test.stable {
 				if !strings.Contains(got, stable) {
 					t.Fatalf("nonsensitive bytes %q changed: %s", stable, got)
 				}
 			}
-			persisted, ok := server.runner.GetScript(scriptID)
+			persisted, ok := server.runner.GetScript(result.StoredScript.ID)
 			if !ok || persisted == nil || persisted.Script == nil ||
 				persisted.Script.Actions[0].Body != test.body {
 				t.Fatalf("durable structured body did not retain exact imported bytes: %#v", persisted)
@@ -123,7 +125,7 @@ func TestSharedImportCommitPreservesStructuredBodyCredentialsDurablyAndMasksResp
 
 func TestSharedImportCommitPreservesRawAndFileSurfaces(t *testing.T) {
 	const rawBody = "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="
-	server := NewServer(ServerConfig{})
+	server := newStructuredBodyImportServer(t)
 	script := &dsl.Script{
 		ID:        "raw-file-surfaces",
 		Name:      "Raw and file surfaces",
@@ -197,7 +199,7 @@ func TestSharedImportCommitRetainsUnsafeStructuredCredentialsWithoutDisclosure(t
 	for _, test := range tests {
 		test := test
 		t.Run(test.name, func(t *testing.T) {
-			server := NewServer(ServerConfig{})
+			server := newStructuredBodyImportServer(t)
 			script := &dsl.Script{
 				ID:        "unsafe-" + strings.ReplaceAll(test.name, " ", "-"),
 				Name:      "Unsafe " + test.name,
@@ -221,7 +223,7 @@ func TestSharedImportCommitRetainsUnsafeStructuredCredentialsWithoutDisclosure(t
 			if got := result.StoredScript.Script.Actions[0].Body; got != maskedScriptSecret {
 				t.Fatalf("disclosure body = %q, want whole-body mask", got)
 			}
-			persisted, ok := server.runner.GetScript(script.ID)
+			persisted, ok := server.runner.GetScript(result.StoredScript.ID)
 			if !ok || persisted == nil || persisted.Script == nil {
 				t.Fatal("credential-bearing structured import was not persisted")
 			}
@@ -234,7 +236,7 @@ func TestSharedImportCommitRetainsUnsafeStructuredCredentialsWithoutDisclosure(t
 			}
 			blocker, _ := action.Metadata["execution_blocker"].(string)
 			if test.blocked {
-				if blocker != "import_review_required" {
+				if blocker != test.code {
 					t.Fatalf("malformed structured body blocker = %q", blocker)
 				}
 				encoded, err := json.Marshal(action.Metadata)
@@ -263,7 +265,7 @@ func TestSharedImportCommitRetainsUnsafeStructuredCredentialsWithoutDisclosure(t
 func TestSharedImportCommitPreservesXMLMixedCredentialContentWithRuntimeLocator(t *testing.T) {
 	const canary = "xml-mixed-canary-bc73"
 	body := `<root><password>prefix<token>` + canary + `</token>suffix</password><ordinary>keep</ordinary></root>`
-	server := NewServer(ServerConfig{})
+	server := newStructuredBodyImportServer(t)
 	script := &dsl.Script{
 		ID:        "xml-mixed-blocked",
 		Name:      "XML mixed blocked",
@@ -288,7 +290,7 @@ func TestSharedImportCommitPreservesXMLMixedCredentialContentWithRuntimeLocator(
 	if !strings.Contains(action.Body, "<ordinary>keep</ordinary>") {
 		t.Fatalf("nonsensitive XML bytes changed: %s", action.Body)
 	}
-	persisted, ok := server.runner.GetScript(script.ID)
+	persisted, ok := server.runner.GetScript(result.StoredScript.ID)
 	if !ok || persisted == nil || persisted.Script == nil {
 		t.Fatal("mixed XML import was not persisted")
 	}
@@ -500,7 +502,12 @@ func commitStructuredBodyScript(
 		StoredScript StoredScript    `json:"stored_script"`
 		Preflight    ReplayPreflight `json:"preflight"`
 	}
-	payload, err := json.Marshal(map[string]any{"script": script})
+	submitted, importSessionID := protectedStructuredImportCommitDraft(t, server, path, script)
+	payload, err := json.Marshal(map[string]any{
+		"script":            submitted,
+		"import_session_id": importSessionID,
+		"project_id":        submitted.ProjectID,
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -514,4 +521,153 @@ func commitStructuredBodyScript(
 		}
 	}
 	return result, resp
+}
+
+// protectedStructuredImportCommitDraft models the current public import
+// contract: inspection stores the exact executable candidate behind one opaque
+// protected session and returns only a disclosure-safe editable projection.
+func protectedStructuredImportCommitDraft(
+	t *testing.T,
+	server *Server,
+	path string,
+	script *dsl.Script,
+) (*dsl.Script, string) {
+	t.Helper()
+	exact := cloneScriptDefinition(script)
+	if exact == nil {
+		t.Fatal("clone import commit draft")
+	}
+	profile := structuredImportProfile(path)
+	if exact.Metadata == nil {
+		exact.Metadata = &dsl.ScriptMetadata{}
+	}
+	if exact.Metadata.Import == nil {
+		exact.Metadata.Import = &dsl.ImportMetadata{}
+	}
+	exact.Metadata.Import.Source = profile
+	if _, err := requestimport.ProjectScriptCredentials(
+		exact,
+		requestimport.ScriptCredentialProjectionOptions{
+			SourceProfile: profile,
+			CandidateKey:  profile + ":structured-body-fixture",
+			NamePrefix:    "STRUCTURED_BODY_FIXTURE",
+		},
+	); err != nil {
+		t.Fatalf("project %s converter credential provenance: %v", profile, err)
+	}
+	inspection := httptest.NewRequest(http.MethodPost, path, nil)
+	importSessionID, _, err := server.registerImportCandidateSession(
+		inspection,
+		profile,
+		exact,
+	)
+	if err != nil || strings.TrimSpace(importSessionID) == "" {
+		t.Fatalf("register protected %s import candidate: id=%q err=%v", profile, importSessionID, err)
+	}
+	reusesCandidate := attachImportCandidateDraftAttestation(
+		exact,
+		profile,
+		importSessionID,
+		nil,
+	)
+	response := server.newScriptImportResponseWithSourceSecrets(
+		inspection,
+		scriptImportResponseOptions{
+			Script:               exact,
+			SkipDraftAttestation: reusesCandidate,
+		},
+	)
+	submitted := decodeStructuredImportResponseDraft(t, response, profile)
+	fingerprint, err := fingerprintImportDraftCredentials(exact)
+	if err != nil {
+		t.Fatalf("fingerprint exact %s import draft: %v", profile, err)
+	}
+	needsDraftCapability := fingerprint.HasRawCredentials ||
+		scriptHasUnavailableImportCredentialValues(exact)
+	if needsDraftCapability && importDraftAttestationToken(submitted) == "" {
+		t.Fatalf("masked %s import draft omitted its save capability", profile)
+	}
+	return submitted, importSessionID
+}
+
+// attestedImportCommitDraft retains the legacy draft-only contract used by
+// the cross-route compatibility test: the exact candidate remains server-side
+// and the caller echoes the one-shot capability from the masked inspection.
+// Direct caller-authored credential bytes must never acquire importer trust
+// merely by posting to a commit route.
+func attestedImportCommitDraft(
+	t *testing.T,
+	server *Server,
+	path string,
+	script *dsl.Script,
+) *dsl.Script {
+	t.Helper()
+	exact := cloneScriptDefinition(script)
+	if exact == nil {
+		t.Fatal("clone import commit draft")
+	}
+	profile := structuredImportProfile(path)
+	if exact.Metadata == nil {
+		exact.Metadata = &dsl.ScriptMetadata{}
+	}
+	if exact.Metadata.Import == nil {
+		exact.Metadata.Import = &dsl.ImportMetadata{}
+	}
+	exact.Metadata.Import.Source = profile
+	inspection := httptest.NewRequest(http.MethodPost, path, nil)
+	response := server.newScriptImportResponseWithSourceSecrets(
+		inspection,
+		scriptImportResponseOptions{Script: exact},
+	)
+	submitted := decodeStructuredImportResponseDraft(t, response, profile)
+	if importDraftAttestationToken(submitted) == "" {
+		t.Fatalf("masked %s import draft omitted its save capability", profile)
+	}
+	return submitted
+}
+
+func decodeStructuredImportResponseDraft(
+	t *testing.T,
+	response map[string]any,
+	profile string,
+) *dsl.Script {
+	t.Helper()
+	if failed, _ := response[importDraftResponseFailureKey].(bool); failed {
+		t.Fatalf("inspect %s import draft: secure projection unavailable", profile)
+	}
+	projected, err := json.Marshal(response["script"])
+	if err != nil {
+		t.Fatalf("marshal masked %s import draft: %v", profile, err)
+	}
+	var submitted dsl.Script
+	if err := json.Unmarshal(projected, &submitted); err != nil {
+		t.Fatalf("decode masked %s import draft: %v", profile, err)
+	}
+	return &submitted
+}
+
+func structuredImportProfile(path string) string {
+	switch {
+	case strings.Contains(path, "/postman/"):
+		return "postman"
+	case strings.Contains(path, "/asyncapi/"):
+		return "asyncapi"
+	default:
+		return "openapi"
+	}
+}
+
+func newStructuredBodyImportServer(t *testing.T) *Server {
+	t.Helper()
+	wrapper, err := importartifact.NewLocalAESKeyWrapper(importartifact.LocalKeyOptions{
+		Key:   bytes.Repeat([]byte{0x71}, 32),
+		KeyID: "structured-body-import-test",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return NewServer(ServerConfig{
+		BrunoArtifactDir:     t.TempDir(),
+		BrunoArtifactWrapper: wrapper,
+	})
 }

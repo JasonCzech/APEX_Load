@@ -22,16 +22,19 @@ import (
 	"github.com/jasonczech/apexload/pkg/convert/sourceview"
 	"github.com/jasonczech/apexload/pkg/convert/srcparse"
 	"github.com/jasonczech/apexload/pkg/convert/tmpl"
+	"github.com/jasonczech/apexload/pkg/credential"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"golang.org/x/net/http/httpguts"
 )
 
 type ImportRequest struct {
-	Name               string         `json:"name,omitempty"`
-	ProjectID          string         `json:"project_id,omitempty"`
-	Content            string         `json:"content"`
-	EnvironmentContent string         `json:"environment_content,omitempty"`
-	Options            ConvertOptions `json:"options,omitempty"`
+	Name                string         `json:"name,omitempty"`
+	ProjectID           string         `json:"project_id,omitempty"`
+	Content             string         `json:"content"`
+	CollectionFileName  string         `json:"collection_file_name,omitempty"`
+	EnvironmentContent  string         `json:"environment_content,omitempty"`
+	EnvironmentFileName string         `json:"environment_file_name,omitempty"`
+	Options             ConvertOptions `json:"options,omitempty"`
 }
 
 type ConvertOptions struct {
@@ -73,11 +76,13 @@ type Correlation struct {
 }
 
 type ReviewSummary struct {
-	CollectionName string   `json:"collection_name,omitempty"`
-	BaseURL        string   `json:"base_url,omitempty"`
-	Variables      []string `json:"variables,omitempty"`
-	Requests       []string `json:"requests,omitempty"`
-	AuthSchemes    []string `json:"auth_schemes,omitempty"`
+	CollectionName  string   `json:"collection_name,omitempty"`
+	EnvironmentName string   `json:"environment_name,omitempty"`
+	SourceFiles     []string `json:"source_files,omitempty"`
+	BaseURL         string   `json:"base_url,omitempty"`
+	Variables       []string `json:"variables,omitempty"`
+	Requests        []string `json:"requests,omitempty"`
+	AuthSchemes     []string `json:"auth_schemes,omitempty"`
 }
 
 type ConvertResult struct {
@@ -294,6 +299,16 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	if err := srcparse.ValidateJSON([]byte(content), srcparse.Limits{}); err != nil {
 		return nil, fmt.Errorf("invalid Postman collection: %w", err)
 	}
+	environmentContent := strings.TrimSpace(req.EnvironmentContent)
+	if environmentContent != "" {
+		// Environment values participate in the same executable-variable
+		// resolution as collection values. Reject duplicate-key ambiguity at
+		// this boundary too, rather than letting encoding/json silently choose
+		// a different credential value than the source review appears to show.
+		if err := srcparse.ValidateJSON([]byte(environmentContent), srcparse.Limits{}); err != nil {
+			return nil, fmt.Errorf("invalid Postman environment: %w", err)
+		}
+	}
 	var col collection
 	if err := json.Unmarshal([]byte(content), &col); err != nil {
 		return nil, fmt.Errorf("invalid Postman collection: %w", err)
@@ -310,11 +325,36 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	}
 
 	var diagnostics diag.Collector
-	sourceFileName := "postman_collection.json"
+	sourceFileName := safePostmanSourceFileName(req.CollectionFileName, "postman_collection.json")
+	environmentFileName := ""
+	if strings.TrimSpace(req.EnvironmentContent) != "" {
+		environmentFileName = safePostmanSourceFileName(req.EnvironmentFileName, "postman_environment.json")
+		if environmentFileName == sourceFileName {
+			environmentFileName = "postman_environment.json"
+			if environmentFileName == sourceFileName {
+				environmentFileName = "environment_" + sourceFileName
+			}
+		}
+	}
 	sources := map[string]string{sourceFileName: content}
+	if environmentFileName != "" {
+		sources[environmentFileName] = req.EnvironmentContent
+	}
 	sourceMappings := make([]sourceview.Mapping, 0)
 	collectionVars := collectionVariables(col.Variable)
 	envVars := environmentVariables(req.EnvironmentContent, &diagnostics)
+	environmentName := postmanEnvironmentName(req.EnvironmentContent)
+	if environmentFileName != "" {
+		sourceMappings = append(sourceMappings, sourceview.Mapping{
+			SourceFile: environmentFileName,
+			StartLine:  1,
+			EndLine:    strings.Count(req.EnvironmentContent, "\n") + 1,
+			Function:   convertutil.FirstNonEmpty(environmentName, "Postman environment"),
+			TargetKind: "environment",
+			Status:     "converted",
+			Notes:      fmt.Sprintf("Selected Postman environment supplied %d enabled value(s) to collection variable resolution.", len(envVars)),
+		})
+	}
 	scopedVars := newPostmanScopedVariables(collectionVars, envVars)
 	sourceVars, effectiveLiteralAssignments := scopedVars.effectiveValues()
 	variableBindings := resolvePostmanVariableBindings(sourceVars, &diagnostics)
@@ -351,8 +391,11 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 				Source:           "postman",
 				SourceScriptName: col.Info.Name,
 				Preserved: map[string]any{
-					"collection_schema":  col.Info.Schema,
-					"environment_values": len(envVars),
+					"collection_schema":       col.Info.Schema,
+					"collection_source_file":  sourceFileName,
+					"environment_source_file": environmentFileName,
+					"environment_name":        environmentName,
+					"environment_values":      len(envVars),
 				},
 			}},
 		},
@@ -366,9 +409,11 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 			AuthSchemes:       authSchemes,
 		},
 		Summary: ReviewSummary{
-			CollectionName: col.Info.Name,
-			BaseURL:        baseURL,
-			AuthSchemes:    authSchemes,
+			CollectionName:  col.Info.Name,
+			EnvironmentName: environmentName,
+			SourceFiles:     postmanSourceFiles(sourceFileName, environmentFileName),
+			BaseURL:         baseURL,
+			AuthSchemes:     authSchemes,
 		},
 	}
 
@@ -384,16 +429,24 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	result.Summary.Variables = parameterNames(result.Script.Parameters)
 	reportUnsupportedPostmanAuth(col.Auth, &diagnostics, "collection")
 
-	sanitizeSensitive := convertutil.BoolOption(req.Options.SanitizeSensitive, true)
+	// The dashboard sends this option explicitly (and defaults it on). Preserve
+	// compatibility for API clients that predate the option and omit it.
+	sanitizeSensitive := convertutil.BoolOption(req.Options.SanitizeSensitive, false)
 	includeAssertions := convertutil.BoolOption(req.Options.IncludeAssertions, true)
 	requestPipeline := newPostmanRequestPipeline(
 		variableBindings.SourceValues,
 		sanitizeSensitive,
+		sourceFileName,
+		postmanSourceVariablePaths(collectionVars, envVars, sourceFileName, environmentFileName),
 		variableBindings.Dependencies,
 	)
 	chainItems := make([]postmanChainItem, 0, len(requests))
 	sourceLineIndex := sourceview.NewLineIndex(content)
 	eventSourceRedacted := false
+	eventSourceNames := make(map[string]struct{}, len(sources))
+	for name := range sources {
+		eventSourceNames[strings.ToLower(strings.TrimSpace(name))] = struct{}{}
+	}
 	for index, item := range requests {
 		scopedVars.clearLocal()
 		applyPostmanScopedEventAssignmentsForListen(scopedVars, item, "prerequest", &diagnostics)
@@ -412,7 +465,10 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 			}
 			scriptContent := strings.Join(ev.Script.Exec, "\n")
 			listenType := convertutil.FirstNonEmpty(ev.Listen, "script")
-			filename := fmt.Sprintf("%s_%s_%d.js", sanitizeName(item.Name), listenType, i)
+			filename := uniquePostmanReviewFileName(
+				fmt.Sprintf("%s_%s_%d.js", sanitizeName(item.Name), listenType, i),
+				eventSourceNames,
+			)
 			publicScript := disclosureSafePostmanEventSource(scriptContent)
 			sources[filename] = publicScript
 			eventSourceRedacted = eventSourceRedacted || publicScript != scriptContent
@@ -427,7 +483,7 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 			})
 		}
 
-		action, assets, actionWarnings, invalidMultipartMetadata := buildAction(index, item, col.Auth, baseURL, vars, includeAssertions, &diagnostics)
+		action, assets, actionWarnings, invalidMultipartMetadata := buildAction(index, item, col.Auth, baseURL, vars, includeAssertions, &diagnostics, requestPipeline.registry)
 		if action.Name == "" {
 			result.Stats.SkippedItems = append(result.Stats.SkippedItems, item.Name)
 			diagnostics.Add(diag.Warning, "Postman item skipped", postmanItemLocation(item), "request item could not be converted into an executable action")
@@ -507,6 +563,13 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 		return nil, fmt.Errorf("finalize Postman script: %w", err)
 	}
 	result.Script = finalization.Result.Script
+	if sanitizeSensitive && result.Script != nil && result.Script.Metadata != nil && result.Script.Metadata.Import != nil {
+		if result.Script.Metadata.Import.Preserved == nil {
+			result.Script.Metadata.Import.Preserved = make(map[string]any)
+		}
+		delete(result.Script.Metadata.Import.Preserved, dsl.ImportPreservedCredentialPolicyKey)
+		result.Script.Metadata.Import.Preserved["credential_projection"] = string(credentialpolicy.SecretReference)
+	}
 	result.Summary.BaseURL = result.Script.Config.BaseURL
 	result.finalization = finalization
 	protectedRequirements := finalization.takeProtectedRequirements()
@@ -527,6 +590,9 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	}
 	if variableBindings.OmitSourceReview {
 		sources[sourceFileName] = "// [POSTMAN SOURCE OMITTED: VARIABLE GRAPH REQUIRES REVIEW]"
+		if environmentFileName != "" {
+			sources[environmentFileName] = "// [POSTMAN ENVIRONMENT OMITTED: VARIABLE GRAPH REQUIRES REVIEW]"
+		}
 	}
 	protectedSourceRedacted := maskPostmanProtectedSourceValues(sources, protectedRequirements)
 	protectedSourceRedacted = requestPipeline.redactSourceReviewBodies(sources) ||
@@ -651,6 +717,91 @@ func environmentVariables(content string, diagnostics *diag.Collector) map[strin
 		diagnostics.Add(diag.Info, "Postman environment", convertutil.FirstNonEmpty(env.Name, "environment"), fmt.Sprintf("imported %d environment value(s)", len(out)))
 	}
 	return out
+}
+
+func postmanEnvironmentName(content string) string {
+	if strings.TrimSpace(content) == "" {
+		return ""
+	}
+	var env environmentFile
+	if err := json.Unmarshal([]byte(content), &env); err != nil {
+		return ""
+	}
+	return strings.TrimSpace(env.Name)
+}
+
+func safePostmanSourceFileName(raw, fallback string) string {
+	raw = strings.TrimSpace(strings.ReplaceAll(raw, "\\", "/"))
+	name := path.Base(raw)
+	if name == "" || name == "." || name == "/" {
+		name = fallback
+	}
+	// Source-review paths are identifiers, not filesystem destinations. Keep
+	// names readable while excluding control characters that can spoof rows.
+	name = strings.Map(func(r rune) rune {
+		if r < 0x20 || r == 0x7f {
+			return '_'
+		}
+		return r
+	}, name)
+	if strings.TrimSpace(name) == "" {
+		return fallback
+	}
+	return name
+}
+
+func postmanSourceFiles(collectionFile, environmentFile string) []string {
+	files := []string{collectionFile}
+	if strings.TrimSpace(environmentFile) != "" {
+		files = append(files, environmentFile)
+	}
+	return files
+}
+
+func postmanSourceVariablePaths(collectionValues, environmentValues map[string]string, collectionFile, environmentFile string) map[string]string {
+	paths := make(map[string]string, len(collectionValues)+len(environmentValues))
+	set := func(name, file string) {
+		if strings.TrimSpace(name) == "" || strings.TrimSpace(file) == "" {
+			return
+		}
+		paths[name] = file
+		if canonical := normalizeVariableName(name); canonical != "" {
+			paths[canonical] = file
+		}
+		if canonical := postmanVariableCanonicalName(name); canonical != "" {
+			paths[canonical] = file
+		}
+	}
+	for name := range collectionValues {
+		set(name, collectionFile)
+	}
+	// Environment values have higher Postman precedence, so overwrite an
+	// identically named collection origin with the selected environment file.
+	for name := range environmentValues {
+		set(name, environmentFile)
+	}
+	return paths
+}
+
+func uniquePostmanReviewFileName(raw string, used map[string]struct{}) string {
+	name := safePostmanSourceFileName(raw, "postman_event.js")
+	extension := path.Ext(name)
+	base := strings.TrimSuffix(name, extension)
+	if strings.TrimSpace(base) == "" {
+		base = "postman_event"
+	}
+	for suffix := 1; ; suffix++ {
+		candidate := name
+		if suffix > 1 {
+			candidate = fmt.Sprintf("%s_%d%s", base, suffix, extension)
+		}
+		identity := strings.ToLower(strings.TrimSpace(candidate))
+		if _, duplicate := used[identity]; duplicate {
+			continue
+		}
+		used[identity] = struct{}{}
+		return candidate
+	}
 }
 
 func postmanParameterDataSource(params []dsl.Parameter, excludedSets ...map[string]struct{}) ([]dsl.Parameter, []dsl.DataSource) {
@@ -1248,7 +1399,7 @@ func mergeParameters(existing []dsl.Parameter, extra []dsl.Parameter) []dsl.Para
 	return out
 }
 
-func buildAction(index int, item requestItem, collectionAuth *auth, baseURL string, vars postmanVariableLookup, includeAssertions bool, diagnostics *diag.Collector) (dsl.Action, []dsl.DataSource, []string, bool) {
+func buildAction(index int, item requestItem, collectionAuth *auth, baseURL string, vars postmanVariableLookup, includeAssertions bool, diagnostics *diag.Collector, credentialNames *credentialpolicy.NameRegistry) (dsl.Action, []dsl.DataSource, []string, bool) {
 	req := item.Request
 	location := postmanItemLocation(item)
 	method := strings.ToUpper(convertutil.FirstNonEmpty(req.Method, "GET"))
@@ -1302,7 +1453,16 @@ func buildAction(index int, item requestItem, collectionAuth *auth, baseURL stri
 	if inheritedAuth == nil {
 		inheritedAuth = collectionAuth
 	}
-	applyPostmanAuth(&action, req.Auth, inheritedAuth, vars, diagnostics, location)
+	applyPostmanAuth(
+		&action,
+		req.Auth,
+		inheritedAuth,
+		vars,
+		diagnostics,
+		location,
+		fmt.Sprintf("requests[%d]\x00%s", index, location),
+		credentialNames,
+	)
 	if len(action.Headers) == 0 {
 		action.Headers = nil
 	}
@@ -1753,7 +1913,7 @@ func reportUnsupportedPostmanAuth(value *auth, diagnostics *diag.Collector, loca
 	}
 }
 
-func applyPostmanAuth(action *dsl.Action, requestAuth *auth, collectionAuth *auth, vars postmanVariableLookup, diagnostics *diag.Collector, location string) {
+func applyPostmanAuth(action *dsl.Action, requestAuth *auth, collectionAuth *auth, vars postmanVariableLookup, diagnostics *diag.Collector, location string, authScope string, credentialNames *credentialpolicy.NameRegistry) {
 	explicitRequestAuth := requestAuth != nil && strings.TrimSpace(requestAuth.Type) != ""
 	if explicitRequestAuth && strings.EqualFold(strings.TrimSpace(requestAuth.Type), "noauth") {
 		action.Auth = &dsl.AuthConfig{Type: "noauth"}
@@ -1774,7 +1934,7 @@ func applyPostmanAuth(action *dsl.Action, requestAuth *auth, collectionAuth *aut
 	case "apikey":
 		applyPostmanAPIKey(action, effective, vars, diagnostics, location)
 	case "bearer", "basic", "digest", "oauth2":
-		cfg := postmanAuthConfig(effective, vars, diagnostics, location)
+		cfg := postmanAuthConfig(effective, vars, diagnostics, location, authScope, credentialNames)
 		if strings.TrimSpace(cfg.Type) != "" {
 			action.Auth = &cfg
 		}
@@ -1941,7 +2101,7 @@ func encodeQueryComponentPreservingTemplates(s string) string {
 	return b.String()
 }
 
-func postmanAuthConfig(value *auth, vars postmanVariableLookup, diagnostics *diag.Collector, location string) dsl.AuthConfig {
+func postmanAuthConfig(value *auth, vars postmanVariableLookup, diagnostics *diag.Collector, location string, authScope string, credentialNames *credentialpolicy.NameRegistry) dsl.AuthConfig {
 	if value == nil {
 		return dsl.AuthConfig{}
 	}
@@ -1950,18 +2110,18 @@ func postmanAuthConfig(value *auth, vars postmanVariableLookup, diagnostics *dia
 		return dsl.AuthConfig{}
 	case "bearer":
 		token, ok := authCredentialValuePresent(value.Bearer, "token", vars, diagnostics, location)
-		if !ok {
-			token = "{{env.API_TOKEN}}"
+		if !ok || token == "" {
+			token = missingPostmanAuthReference(credentialNames, authScope, location, "bearer", "token", diagnostics)
 		}
 		return dsl.AuthConfig{Type: "bearer", Token: token}
 	case "basic":
 		username, usernamePresent := authValuePresent(value.Basic, "username", vars, diagnostics, location)
-		if !usernamePresent {
-			username = "{{env.API_USERNAME}}"
+		if !usernamePresent || username == "" {
+			username = missingPostmanAuthReference(credentialNames, authScope, location, "basic", "username", diagnostics)
 		}
 		password, passwordPresent := authCredentialValuePresent(value.Basic, "password", vars, diagnostics, location)
-		if !passwordPresent {
-			password = "{{env.API_PASSWORD}}"
+		if !passwordPresent || password == "" {
+			password = missingPostmanAuthReference(credentialNames, authScope, location, "basic", "password", diagnostics)
 		}
 		return dsl.AuthConfig{
 			Type:     "basic",
@@ -1970,12 +2130,12 @@ func postmanAuthConfig(value *auth, vars postmanVariableLookup, diagnostics *dia
 		}
 	case "digest":
 		username, usernamePresent := authValuePresent(value.Digest, "username", vars, diagnostics, location)
-		if !usernamePresent {
-			username = "{{env.API_USERNAME}}"
+		if !usernamePresent || username == "" {
+			username = missingPostmanAuthReference(credentialNames, authScope, location, "digest", "username", diagnostics)
 		}
 		password, passwordPresent := authCredentialValuePresent(value.Digest, "password", vars, diagnostics, location)
-		if !passwordPresent {
-			password = "{{env.API_PASSWORD}}"
+		if !passwordPresent || password == "" {
+			password = missingPostmanAuthReference(credentialNames, authScope, location, "digest", "password", diagnostics)
 		}
 		return dsl.AuthConfig{
 			Type:     "digest",
@@ -1987,11 +2147,11 @@ func postmanAuthConfig(value *auth, vars postmanVariableLookup, diagnostics *dia
 			diagnostics.Add(diag.Warning, "Postman auth", location, "OAuth2 auth was represented as a bearer token placeholder; review token acquisition before replay")
 		}
 		token, ok := authCredentialValuePresent(value.OAuth2, "accessToken", vars, diagnostics, location)
-		if !ok {
+		if !ok || token == "" {
 			token, ok = authCredentialValuePresent(value.OAuth2, "access_token", vars, diagnostics, location)
 		}
-		if !ok {
-			token = "{{env.API_TOKEN}}"
+		if !ok || token == "" {
+			token = missingPostmanAuthReference(credentialNames, authScope, location, "oauth2", "access_token", diagnostics)
 		}
 		return dsl.AuthConfig{Type: "bearer", Token: token}
 	default:
@@ -2000,6 +2160,45 @@ func postmanAuthConfig(value *auth, vars postmanVariableLookup, diagnostics *dia
 		}
 		return dsl.AuthConfig{}
 	}
+}
+
+func missingPostmanAuthReference(
+	registry *credentialpolicy.NameRegistry,
+	authScope string,
+	location string,
+	authType string,
+	field string,
+	diagnostics *diag.Collector,
+) string {
+	if registry == nil {
+		registry = credentialpolicy.NewNameRegistry()
+	}
+	hint := strings.Join([]string{
+		"POSTMAN",
+		sanitizeName(location),
+		strings.ToUpper(strings.TrimSpace(authType)),
+		strings.ToUpper(strings.TrimSpace(field)),
+	}, "_")
+	name := registry.Allocate(
+		hint,
+		"postman-missing-auth\x00"+authScope+"\x00"+authType+"\x00"+field,
+	)
+	reference, err := credential.Reference(name)
+	if err != nil {
+		// NameRegistry only returns valid logical names. Keep a fail-closed
+		// fallback in case that contract changes rather than reviving an
+		// unresolved generic environment placeholder.
+		reference = "{{secret.POSTMAN_MISSING_AUTH}}"
+	}
+	if diagnostics != nil {
+		diagnostics.Add(
+			diag.Warning,
+			"Postman auth",
+			location,
+			fmt.Sprintf("%s auth has no %s value; configure secret %s before replay", authType, field, name),
+		)
+	}
+	return reference
 }
 
 func authValue(entries []keyValueEntry, key string, vars postmanVariableLookup, diagnostics *diag.Collector, location string) string {

@@ -48,6 +48,7 @@ var (
 	nativeJSOneLineStatus     = regexp.MustCompile(`^test\s*\(\s*(?:"(?:\\.|[^"])*"|'(?:\\.|[^'])*')\s*,\s*\(\s*\)\s*=>\s*expect\s*\(\s*res\.getStatus\(\)\s*\)\.to\.equal\(\s*([0-9]+)\s*\)\s*\)\s*;?\s*$`)
 	nativeTemplateNamePattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_.-]*$`)
 	nativeSOAPBodyPattern     = regexp.MustCompile(`(?is)<(?:[A-Za-z_][\w.-]*:)?Body\b[^>]*>\s*<(?:[A-Za-z_][\w.-]*:)?([A-Za-z_][\w.-]*)\b`)
+	nativeCamelCaseBoundary   = regexp.MustCompile(`([a-z0-9])([A-Z])`)
 )
 
 type nativeHeader struct {
@@ -117,6 +118,7 @@ const (
 	nativeTemplateBody
 	nativeTemplateAuthUsername
 	nativeTemplateAuthPassword
+	nativeTemplateAuthToken
 	nativeTemplateSensitiveHeader
 	nativeTemplateXMLCredential
 )
@@ -128,6 +130,7 @@ type nativeTemplateState struct {
 	parameterValues map[string]string
 	missing         map[string]struct{}
 	generatedReq    map[string]SecretRequirement
+	generatedErr    error
 	resolved        map[string]nativeVariableResolution
 	resolving       map[string]int
 	resolutionStack []string
@@ -338,6 +341,7 @@ func nativeRequestScripts(
 
 	candidates := make([]NativeScriptCandidate, 0, len(orderedItems))
 	aggregateRequirements := make(map[string]SecretRequirement)
+	aggregateRequirementIDsByName := make(map[string]string)
 	aggregateMissing := make(map[string]struct{})
 	seenFinding := make(map[string]struct{})
 	for _, finding := range findings {
@@ -415,7 +419,28 @@ func nativeRequestScripts(
 		}
 		conflicted := false
 		for _, requirement := range candidate.SecretRequirements {
+			normalizedName := strings.ToUpper(strings.TrimSpace(requirement.SuggestedName))
+			if existingID, exists := aggregateRequirementIDsByName[normalizedName]; exists &&
+				existingID != requirement.ID {
+				failures.add(fmt.Errorf(
+					"native credential requirements share destination binding %q",
+					requirement.SuggestedName,
+				))
+				conflicted = true
+				break
+			}
 			if existing, exists := aggregateRequirements[requirement.ID]; exists {
+				if existing.SourceVariable != "" && requirement.SourceVariable != "" &&
+					existing.SourceVariable != requirement.SourceVariable {
+					failures.add(fmt.Errorf(
+						"native credential requirement %q refers to distinct Bruno variables %q and %q",
+						requirement.SuggestedName,
+						existing.SourceVariable,
+						requirement.SourceVariable,
+					))
+					conflicted = true
+					break
+				}
 				if existing.Value != "" && requirement.Value != "" &&
 					existing.Value != requirement.Value {
 					failures.add(fmt.Errorf(
@@ -427,8 +452,10 @@ func nativeRequestScripts(
 				}
 				aggregateRequirements[requirement.ID] = mergeNativeSecretRequirements(existing, requirement)
 			} else {
+				initializeNativeSecretRequirementMergeState(&requirement)
 				aggregateRequirements[requirement.ID] = requirement
 			}
+			aggregateRequirementIDsByName[normalizedName] = requirement.ID
 		}
 		if conflicted {
 			continue
@@ -451,7 +478,10 @@ func nativeRequestScripts(
 
 	aggregateRequirementList := make([]SecretRequirement, 0, len(aggregateRequirements))
 	for _, requirement := range aggregateRequirements {
-		aggregateRequirementList = append(aggregateRequirementList, requirement)
+		aggregateRequirementList = append(
+			aggregateRequirementList,
+			finalizeNativeSecretRequirement(requirement),
+		)
 	}
 	sort.Slice(aggregateRequirementList, func(i, j int) bool {
 		if aggregateRequirementList[i].SuggestedName == aggregateRequirementList[j].SuggestedName {
@@ -1985,7 +2015,7 @@ func buildNativeCandidate(
 		config.Token = rewriteNativeAuthCredential(
 			config.Token,
 			"token",
-			nativeTemplateSensitiveHeader,
+			nativeTemplateAuthToken,
 			effective.Auth,
 			templateState,
 			sourceRequirements,
@@ -2001,6 +2031,13 @@ func buildNativeCandidate(
 				false,
 			))
 		}
+	}
+	if templateState.generatedErr != nil {
+		return NativeScriptCandidate{}, nil, fmt.Errorf(
+			"Bruno request %q generated conflicting credential bindings: %w",
+			item.Path,
+			templateState.generatedErr,
+		)
 	}
 
 	action := dsl.Action{
@@ -2222,6 +2259,7 @@ func buildNativeCandidate(
 		}
 	}
 	for _, requirement := range templateState.generatedReq {
+		requirement = finalizeNativeSecretRequirement(requirement)
 		projectionRequirementsByID[requirement.ID] = requirement
 	}
 	projectionRequirements := make([]SecretRequirement, 0, len(projectionRequirementsByID))
@@ -2252,11 +2290,15 @@ func buildNativeCandidate(
 			if _, seen := seenRequirements[requirement.ID]; seen {
 				continue
 			}
+			requirement = finalizeNativeSecretRequirement(requirement)
+			requirement.AffectedPaths = nativeSecretRequirementPaths(file.Path)
 			seenRequirements[requirement.ID] = struct{}{}
 			requirements = append(requirements, requirement)
 		}
 		if generated, exists := templateState.generatedReq[normalized]; exists {
+			generated = finalizeNativeSecretRequirement(generated)
 			if _, seen := seenRequirements[generated.ID]; !seen {
+				generated.AffectedPaths = nativeSecretRequirementPaths(file.Path)
 				seenRequirements[generated.ID] = struct{}{}
 				requirements = append(requirements, generated)
 			}
@@ -2440,7 +2482,7 @@ func rewriteNativeTemplates(value string, context nativeTemplateContext, context
 					}
 				}
 				if nativeTemplateRequiresSecret(expression, context, contextName) {
-					requirement := nativeSecretRequirement(
+					requirement := nativeUnresolvedSourceVariableSecretRequirement(
 						expression,
 						state.sourcePath,
 						nativeTemplateContextLabel(context, contextName),
@@ -2493,9 +2535,12 @@ func rewriteNativeTemplates(value string, context nativeTemplateContext, context
 					candidateScope,
 				)
 				requirement.scrubTargets = nativeVariableScrubTargets(resolution.Dependencies)
+				requirement.DisplayLabel = nativeSourceVariableDisplayLabel(expression)
+				requirement.SourceVariable = expression
 				if resolution.Complete && !strings.Contains(resolution.Value, "{{") {
-					requirement.Value = resolution.Value
+					requirement.Value = recoverableBrunoCredentialValue(resolution.Value)
 				}
+				requirement.UnresolvedSourceVariable = requirement.Value == ""
 				registerNativeGeneratedRequirement(state, requirement)
 				return nativeCredentialProjectionReplacement(requirement)
 			}
@@ -2511,7 +2556,11 @@ func rewriteNativeTemplates(value string, context nativeTemplateContext, context
 			return "{{param." + expression + "}}"
 		}
 		if nativeTemplateRequiresSecret(expression, context, contextName) {
-			requirement := nativeSecretRequirement(expression, state.sourcePath, nativeTemplateContextLabel(context, contextName))
+			requirement := nativeUnresolvedSourceVariableSecretRequirement(
+				expression,
+				state.sourcePath,
+				nativeTemplateContextLabel(context, contextName),
+			)
 			registerNativeGeneratedRequirement(state, requirement)
 			return nativeCredentialProjectionReplacement(requirement)
 		}
@@ -2606,8 +2655,9 @@ func rewriteNativeComposedSensitiveHeader(
 		)
 	}
 	if complete && !brunoTemplatePattern.MatchString(resolved) {
-		requirement.Value = resolved
+		requirement.Value = recoverableBrunoCredentialValue(resolved)
 	}
+	requirement = describeNativeHeaderSecretRequirement(requirement, name, value)
 	registerNativeGeneratedRequirement(state, requirement)
 	return nativeCredentialProjectionReplacement(requirement), complete
 }
@@ -2616,11 +2666,19 @@ func registerNativeGeneratedRequirement(
 	state *nativeTemplateState,
 	requirement SecretRequirement,
 ) {
+	requirement.Value = recoverableBrunoCredentialValue(requirement.Value)
 	key := strings.ToUpper(strings.TrimSpace(requirement.SuggestedName))
 	existing, exists := state.generatedReq[key]
 	if !exists {
-		requirement.scrubTargets = mergeNativeSecretScrubTargets(nil, requirement.scrubTargets)
+		initializeNativeSecretRequirementMergeState(&requirement)
 		state.generatedReq[key] = requirement
+		return
+	}
+	if existing.ID != requirement.ID {
+		state.generatedErr = fmt.Errorf(
+			"distinct credential requirements share destination binding %q",
+			requirement.SuggestedName,
+		)
 		return
 	}
 	state.generatedReq[key] = mergeNativeSecretRequirements(existing, requirement)
@@ -2630,7 +2688,11 @@ func mergeNativeSecretRequirements(
 	existing SecretRequirement,
 	additional SecretRequirement,
 ) SecretRequirement {
-	existing.scrubTargets = mergeNativeSecretScrubTargets(existing.scrubTargets, additional.scrubTargets)
+	existing.Value = recoverableBrunoCredentialValue(existing.Value)
+	additional.Value = recoverableBrunoCredentialValue(additional.Value)
+	initializeNativeSecretRequirementMergeState(&existing)
+	appendNativeSecretRequirementPaths(&existing, additional)
+	appendNativeSecretRequirementScrubTargets(&existing, additional.scrubTargets)
 	if existing.Value == "" {
 		existing.Value = additional.Value
 	} else if additional.Value != "" && existing.Value != additional.Value {
@@ -2641,27 +2703,97 @@ func mergeNativeSecretRequirements(
 	if existing.Context == "" {
 		existing.Context = additional.Context
 	}
+	if existing.DisplayLabel == "" {
+		existing.DisplayLabel = additional.DisplayLabel
+	}
+	if existing.SourceVariable == "" {
+		existing.SourceVariable = additional.SourceVariable
+	}
+	existing.UnresolvedSourceVariable = existing.UnresolvedSourceVariable || additional.UnresolvedSourceVariable
 	return existing
 }
 
-func mergeNativeSecretScrubTargets(
-	existing []nativeSecretScrubTarget,
-	additional []nativeSecretScrubTarget,
-) []nativeSecretScrubTarget {
-	out := append([]nativeSecretScrubTarget(nil), existing...)
-	seen := make(map[string]struct{}, len(existing)+len(additional))
-	for _, target := range existing {
-		seen[nativeSecretScrubTargetIdentity(target)] = struct{}{}
+func initializeNativeSecretRequirementMergeState(requirement *SecretRequirement) {
+	if requirement == nil {
+		return
 	}
-	for _, target := range additional {
-		identity := nativeSecretScrubTargetIdentity(target)
-		if _, duplicate := seen[identity]; duplicate {
+	if requirement.affectedPathSet == nil {
+		paths := requirement.AffectedPaths
+		if len(paths) == 0 && strings.TrimSpace(requirement.Path) != "" {
+			paths = []string{requirement.Path}
+		}
+		requirement.affectedPathSet = make(map[string]struct{}, len(paths))
+		requirement.AffectedPaths = requirement.AffectedPaths[:0]
+		for _, sourcePath := range paths {
+			sourcePath = strings.TrimSpace(sourcePath)
+			if sourcePath == "" {
+				continue
+			}
+			if _, duplicate := requirement.affectedPathSet[sourcePath]; duplicate {
+				continue
+			}
+			requirement.affectedPathSet[sourcePath] = struct{}{}
+			requirement.AffectedPaths = append(requirement.AffectedPaths, sourcePath)
+		}
+	}
+	if requirement.scrubTargetSet == nil {
+		requirement.scrubTargetSet = make(map[string]struct{}, len(requirement.scrubTargets))
+		targets := requirement.scrubTargets
+		requirement.scrubTargets = requirement.scrubTargets[:0]
+		appendNativeSecretRequirementScrubTargets(requirement, targets)
+	}
+}
+
+func appendNativeSecretRequirementPaths(
+	existing *SecretRequirement,
+	additional SecretRequirement,
+) {
+	paths := additional.AffectedPaths
+	if len(paths) == 0 && strings.TrimSpace(additional.Path) != "" {
+		paths = []string{additional.Path}
+	}
+	for _, sourcePath := range paths {
+		sourcePath = strings.TrimSpace(sourcePath)
+		if sourcePath == "" {
 			continue
 		}
-		seen[identity] = struct{}{}
-		out = append(out, target)
+		if _, duplicate := existing.affectedPathSet[sourcePath]; duplicate {
+			continue
+		}
+		existing.affectedPathSet[sourcePath] = struct{}{}
+		existing.AffectedPaths = append(existing.AffectedPaths, sourcePath)
 	}
-	return out
+}
+
+func appendNativeSecretRequirementScrubTargets(
+	requirement *SecretRequirement,
+	additional []nativeSecretScrubTarget,
+) {
+	for _, target := range additional {
+		identity := nativeSecretScrubTargetIdentity(target)
+		if _, duplicate := requirement.scrubTargetSet[identity]; duplicate {
+			continue
+		}
+		requirement.scrubTargetSet[identity] = struct{}{}
+		requirement.scrubTargets = append(requirement.scrubTargets, target)
+	}
+}
+
+func finalizeNativeSecretRequirement(requirement SecretRequirement) SecretRequirement {
+	requirement.Value = recoverableBrunoCredentialValue(requirement.Value)
+	paths := requirement.AffectedPaths
+	if len(paths) == 0 && strings.TrimSpace(requirement.Path) != "" {
+		paths = []string{requirement.Path}
+	}
+	requirement.AffectedPaths = nativeSecretRequirementPaths(paths...)
+	requirement.scrubTargets = append([]nativeSecretScrubTarget(nil), requirement.scrubTargets...)
+	sort.Slice(requirement.scrubTargets, func(i, j int) bool {
+		return nativeSecretScrubTargetIdentity(requirement.scrubTargets[i]) <
+			nativeSecretScrubTargetIdentity(requirement.scrubTargets[j])
+	})
+	requirement.affectedPathSet = nil
+	requirement.scrubTargetSet = nil
+	return requirement
 }
 
 func nativeSecretScrubTargetIdentity(target nativeSecretScrubTarget) string {
@@ -2731,8 +2863,9 @@ func nativeSourceSecretValue(
 		requirementID := strings.ToLower(match[1])
 		for _, requirements := range sourceRequirements {
 			for _, requirement := range requirements {
-				if strings.EqualFold(requirement.ID, requirementID) && requirement.Value != "" {
-					return requirement.Value, true
+				value := recoverableBrunoCredentialValue(requirement.Value)
+				if strings.EqualFold(requirement.ID, requirementID) && value != "" {
+					return value, true
 				}
 			}
 		}
@@ -2740,8 +2873,8 @@ func nativeSourceSecretValue(
 	}
 	name := strings.TrimSuffix(strings.TrimPrefix(canonical, "{{secret."), "}}")
 	for _, requirement := range sourceRequirements[strings.ToUpper(name)] {
-		if requirement.Value != "" {
-			return requirement.Value, true
+		if value := recoverableBrunoCredentialValue(requirement.Value); value != "" {
+			return value, true
 		}
 	}
 	return "", false
@@ -2919,6 +3052,7 @@ func exactNativeSecretReference(value string) (string, bool) {
 
 func nativeTemplateRequiresSecret(name string, context nativeTemplateContext, contextName string) bool {
 	if context == nativeTemplateAuthUsername || context == nativeTemplateAuthPassword ||
+		context == nativeTemplateAuthToken ||
 		context == nativeTemplateSensitiveHeader || context == nativeTemplateXMLCredential {
 		return true
 	}
@@ -2944,6 +3078,8 @@ func nativeTemplateContextLabel(context nativeTemplateContext, name string) stri
 		return "Bruno HTTP auth username"
 	case nativeTemplateAuthPassword:
 		return "Bruno HTTP auth password"
+	case nativeTemplateAuthToken:
+		return "Bruno HTTP auth token"
 	case nativeTemplateSensitiveHeader:
 		return "Bruno sensitive header " + name
 	case nativeTemplateXMLCredential:
@@ -2969,7 +3105,192 @@ func nativeSecretRequirement(rawName, sourcePath, context string) SecretRequirem
 		SuggestedName: name,
 		Replacement:   "{{secret." + name + "}}",
 		Context:       context,
+		AffectedPaths: nativeSecretRequirementPaths(sourcePath),
 	}
+}
+
+func nativeSourceVariableSecretName(sourceVariable string) string {
+	name := nativeCamelCaseBoundary.ReplaceAllString(strings.TrimSpace(sourceVariable), `${1}_${2}`)
+	name = strings.NewReplacer("-", "_", ".", "_").Replace(name)
+	name = strings.ReplaceAll(strings.ToUpper(name), "USER_NAME", "USERNAME")
+	// Bruno variable names are case-sensitive while APEX logical secret names
+	// are normalized. Always scope unresolved authored variables with their raw
+	// identity so names such as clientId and client_id cannot silently share a
+	// runtime secret. Repeated uses of the same raw name retain the same suffix.
+	identityHash := sha256.Sum256([]byte("bruno-native-unresolved-variable-name\x00" + sourceVariable))
+	// Keep the same 96-bit identity strength as requirement IDs. This name is
+	// also the generated-requirement map key, so a shorter, attacker-searchable
+	// suffix could merge two raw variables before the aggregate collision gate.
+	suffix := "_" + strings.ToUpper(hex.EncodeToString(identityHash[:12]))
+	if len(name)+len(suffix) > credential.MaxLogicalNameBytes {
+		name = strings.TrimRight(name[:credential.MaxLogicalNameBytes-len(suffix)], "_")
+	}
+	return name + suffix
+}
+
+func nativeSourceVariableDisplayLabel(sourceVariable string) string {
+	label := nativeCamelCaseBoundary.ReplaceAllString(strings.TrimSpace(sourceVariable), `${1} ${2}`)
+	label = strings.NewReplacer("-", " ", "_", " ", ".", " ").Replace(label)
+	words := strings.Fields(strings.ToLower(label))
+	if len(words) == 0 {
+		return "Credential"
+	}
+	for index, word := range words {
+		switch word {
+		case "id", "api", "url", "uri", "jwt", "csrf", "xsrf":
+			words[index] = strings.ToUpper(word)
+		}
+	}
+	label = strings.ReplaceAll(strings.Join(words, " "), "user name", "username")
+	runes := []rune(label)
+	runes[0] = unicode.ToUpper(runes[0])
+	return string(runes)
+}
+
+func nativeHeaderDisplayLabel(headerName string) string {
+	label := nativeCamelCaseBoundary.ReplaceAllString(strings.TrimSpace(headerName), `${1} ${2}`)
+	parts := strings.Fields(strings.NewReplacer("-", " ", "_", " ", ".", " ").Replace(label))
+	words := make([]string, 0, len(parts)+1)
+	for _, part := range parts {
+		switch strings.ToLower(part) {
+		case "idpctx":
+			words = append(words, "IDP", "context")
+		case "idp":
+			words = append(words, "IDP")
+		case "ixp":
+			words = append(words, "IXP")
+		case "cdf":
+			words = append(words, "CDF")
+		case "api":
+			words = append(words, "API")
+		case "csrf":
+			words = append(words, "CSRF")
+		case "xsrf":
+			words = append(words, "XSRF")
+		case "jwt":
+			words = append(words, "JWT")
+		case "oauth":
+			words = append(words, "OAuth")
+		case "id":
+			words = append(words, "ID")
+		case "x":
+			words = append(words, "X")
+		default:
+			words = append(words, strings.ToLower(part))
+		}
+	}
+	if len(words) == 0 {
+		return "Sensitive header"
+	}
+	if words[0] == "X" && len(words) > 1 && words[1] == strings.ToUpper(words[1]) {
+		words[0] += "-" + words[1]
+		words = append(words[:1], words[2:]...)
+	}
+	if words[0] == strings.ToLower(words[0]) {
+		runes := []rune(words[0])
+		runes[0] = unicode.ToUpper(runes[0])
+		words[0] = string(runes)
+	}
+	return strings.Join(words, " ")
+}
+
+func describeNativeHeaderSecretRequirement(
+	requirement SecretRequirement,
+	headerName, authoredValue string,
+) SecretRequirement {
+	headerName = strings.TrimSpace(headerName)
+	if headerName == "" {
+		return requirement
+	}
+	requirement.DisplayLabel = nativeHeaderDisplayLabel(headerName)
+	requirement.AffectedPaths = nativeSecretRequirementPaths(
+		append(requirement.AffectedPaths, requirement.Path)...,
+	)
+	if sourceVariable, exact := exactNativeCredentialSourceReference(authoredValue); exact {
+		requirement.SourceVariable = sourceVariable
+		requirement.UnresolvedSourceVariable = requirement.Value == ""
+		if requirement.Value == "" {
+			requirement.Context = fmt.Sprintf(
+				"Sensitive Bruno request header %q references {{%s}}, but the collection does not include a value for that source variable. A configured destination value is required when this request runs.",
+				headerName,
+				sourceVariable,
+			)
+		} else {
+			requirement.Context = fmt.Sprintf(
+				"Sensitive Bruno request header %q references {{%s}}. Its imported value can be preserved for this request.",
+				headerName,
+				sourceVariable,
+			)
+		}
+		return requirement
+	}
+	if requirement.Value != "" {
+		requirement.Context = fmt.Sprintf(
+			"Sensitive Bruno request header %q contains an imported value that can be preserved for this request.",
+			headerName,
+		)
+	} else {
+		requirement.Context = fmt.Sprintf(
+			"Sensitive Bruno request header %q has no recoverable imported value. A configured destination value is required when this request runs.",
+			headerName,
+		)
+	}
+	return requirement
+}
+
+func nativeUnresolvedSourceVariableSecretRequirement(
+	sourceVariable, sourcePath, context string,
+) SecretRequirement {
+	requirement := nativeSecretRequirement(
+		nativeSourceVariableSecretName(sourceVariable),
+		sourcePath,
+		context,
+	)
+	requirement.Key = sourceVariable
+	requirement.DisplayLabel = nativeSourceVariableDisplayLabel(sourceVariable)
+	requirement.SourceVariable = sourceVariable
+	requirement.UnresolvedSourceVariable = true
+	return requirement
+}
+
+func exactNativeCredentialSourceReference(value string) (string, bool) {
+	value = strings.TrimSpace(value)
+	match := brunoTemplatePattern.FindStringSubmatch(value)
+	if len(match) < 2 || match[0] != value {
+		return "", false
+	}
+	expression := strings.TrimSpace(match[1])
+	if expression == "" || strings.Contains(expression, "(") ||
+		!nativeTemplateNamePattern.MatchString(expression) {
+		return "", false
+	}
+	lower := strings.ToLower(expression)
+	// Namespaced runtime expressions are still authored source identities in a
+	// credential scalar. Preserve that identity when generating a project-secret
+	// binding. A valid secret.* reference was already returned by
+	// exactNativeSecretReference; do not reclassify one as an unresolved source.
+	if strings.HasPrefix(lower, "secret.") {
+		return "", false
+	}
+	return expression, true
+}
+
+func nativeSecretRequirementPaths(paths ...string) []string {
+	seen := make(map[string]struct{}, len(paths))
+	out := make([]string, 0, len(paths))
+	for _, sourcePath := range paths {
+		sourcePath = strings.TrimSpace(sourcePath)
+		if sourcePath == "" {
+			continue
+		}
+		if _, exists := seen[sourcePath]; exists {
+			continue
+		}
+		seen[sourcePath] = struct{}{}
+		out = append(out, sourcePath)
+	}
+	sort.Strings(out)
+	return out
 }
 
 func nativeComposedHeaderSecretRequirement(
@@ -2999,6 +3320,8 @@ func nativeComposedHeaderSecretRequirement(
 		SuggestedName: name,
 		Replacement:   "{{secret." + name + "}}",
 		Context:       context,
+		DisplayLabel:  nativeHeaderDisplayLabel(headerName),
+		AffectedPaths: nativeCandidateAffectedPaths(sourcePath, candidatePaths...),
 	}
 }
 
@@ -3030,6 +3353,7 @@ func nativeVariableSecretRequirement(
 		SuggestedName: name,
 		Replacement:   "{{secret." + name + "}}",
 		Context:       context,
+		AffectedPaths: nativeSecretRequirementPaths(fallbackPath),
 	}
 }
 
@@ -3057,7 +3381,16 @@ func nativeAuthSecretRequirement(
 		SuggestedName: name,
 		Replacement:   "{{secret." + name + "}}",
 		Context:       context,
+		AffectedPaths: nativeCandidateAffectedPaths(sourcePath, candidatePaths...),
 	}
+}
+
+func nativeCandidateAffectedPaths(sourcePath string, candidatePaths ...string) []string {
+	paths := nativeSecretRequirementPaths(candidatePaths...)
+	if len(paths) > 0 {
+		return paths
+	}
+	return nativeSecretRequirementPaths(sourcePath)
 }
 
 func nativeSensitiveBodyFieldName(name string) bool {
@@ -3085,6 +3418,7 @@ func nativeBodyFieldSecretRequirement(
 		SuggestedName: name,
 		Replacement:   "{{secret." + name + "}}",
 		Context:       "Bruno " + bodyKind + " body credential " + field,
+		AffectedPaths: nativeSecretRequirementPaths(sourcePath),
 	}
 }
 

@@ -293,6 +293,20 @@ func convertSourceWithContext(name string, sourceFileName string, content string
 		requirements = append(requirements, report.Requirements...)
 		result.Findings = append(result.Findings, report.Findings...)
 	}
+	runtimePath, _, _ := findDevWebCompanionFile(ctx.files, ctx.sourceFileName, "rts.yml")
+	runtimeRequirements, runtimeFindings, runtimeErr := projectDevWebRuntimeCredentials(
+		result.Script,
+		runtimePath,
+		credentialRegistry,
+	)
+	if runtimeErr != nil {
+		return nil, runtimeErr
+	}
+	if len(runtimeFindings) > 0 {
+		markDevWebMetadataReviewRequired(result)
+	}
+	requirements = append(requirements, runtimeRequirements...)
+	result.Findings = append(result.Findings, runtimeFindings...)
 	markDevWebCredentialPreservingImport(result.Script)
 	residualSource := devWebImportHasResidualBehavior(result)
 	if residualSource {
@@ -332,10 +346,16 @@ func convertSourceWithContext(name string, sourceFileName string, content string
 	// changing the executable destination script.
 	credentialDataBindings := devWebCredentialDataBindings(result.Script.Actions)
 	markDevWebCredentialDataBindings(result.Script, credentialDataBindings)
+	runtimeCredentialValues := devWebRuntimeCredentialReviewValues(result.Script)
 	reviewFiles := make(map[string]string, len(ctx.files))
 	redactedReviewFiles := make(map[string]struct{})
 	for name, fileContent := range ctx.files {
-		redacted, changed := redactDevWebCredentialValues(fileContent, requirements, result.Script.Actions)
+		redacted, changed := redactDevWebCredentialValuesWithAdditional(
+			fileContent,
+			requirements,
+			result.Script.Actions,
+			runtimeCredentialValues,
+		)
 		if dataRedacted, dataChanged := redactDevWebCredentialDataFile(
 			name,
 			redacted,

@@ -18,6 +18,8 @@ func TestDeploymentKindAndLabel(t *testing.T) {
 		{"wails desktop ignores environment", true, "kubernetes", "desktop", "Desktop"},
 		{"kubernetes", false, "kubernetes", "kubernetes", "Kubernetes"},
 		{"aks alias", false, "aks", "kubernetes", "Kubernetes"},
+		{"azure container apps", false, "azure_container_apps", "azure_container_apps", "Azure Container Apps"},
+		{"aws ecs fargate", false, "aws_ecs_fargate", "aws_ecs_fargate", "AWS ECS Fargate"},
 		{"docker", false, "docker", "docker", "Docker"},
 		{"container alias", false, "container", "docker", "Docker"},
 		{"local browser is a server (not local-server)", false, "local", "server", "Server"},

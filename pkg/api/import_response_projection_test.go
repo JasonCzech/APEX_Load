@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/jasonczech/apexload/pkg/convert/paramize"
@@ -109,14 +110,23 @@ func assertImportProjectionFixtureScripts(t *testing.T, label string, recovered 
 // wrapped value must be consumed verbatim rather than projected a second time.
 func TestImportParameterizationScriptsReusesPreProjectedTree(t *testing.T) {
 	scripts := []*dsl.Script{importProjectionFixtureScript(0), importProjectionFixtureScript(1)}
-	raw := credentialPreservingImportResponseValue(scripts)
-	projection := maskScriptResponseValue(raw)
+	raw := importResponseRawScriptValue(scripts)
+	projection := credentialPreservingImportResponseValue(scripts)
 
 	fromRaw := importParameterizationScripts(raw)
 	fromProjection := importParameterizationScripts(projectedImportScripts{value: projection})
 
 	assertImportProjectionFixtureScripts(t, "raw path", fromRaw)
 	assertImportProjectionFixtureScripts(t, "pre-projected path", fromProjection)
+	for _, script := range fromProjection {
+		if got := script.Metadata.Import.Preserved[dsl.ImportPreservedCredentialPolicyKey]; got != dsl.ImportPreservedCredentialPolicyPreserve {
+			t.Fatalf("pre-projected draft policy = %#v, want %q", got, dsl.ImportPreservedCredentialPolicyPreserve)
+		}
+		delete(script.Metadata.Import.Preserved, dsl.ImportPreservedCredentialPolicyKey)
+		if len(script.Metadata.Import.Preserved) == 0 {
+			script.Metadata.Import.Preserved = nil
+		}
+	}
 
 	rawJSON, err := json.Marshal(fromRaw)
 	if err != nil {
@@ -156,8 +166,8 @@ func TestImportParameterizationScriptsReusesPreProjectedTree(t *testing.T) {
 // open and lets the forgery through.
 func TestSanitizeImportParameterizationPreProjectedMatchesRaw(t *testing.T) {
 	scripts := []*dsl.Script{importProjectionFixtureScript(0), importProjectionFixtureScript(1)}
-	raw := credentialPreservingImportResponseValue(scripts)
-	projection := maskScriptResponseValue(raw)
+	raw := importResponseRawScriptValue(scripts)
+	projection := credentialPreservingImportResponseValue(scripts)
 
 	assertImportProjectionFixtureSuggestionsScoped(t, importProjectionFixtureParameterization(scripts))
 
@@ -210,8 +220,8 @@ func TestSanitizeImportParameterizationPreProjectedMatchesRaw(t *testing.T) {
 // mutate it.
 func TestNewScriptImportResponseDoesNotMutateSharedProjection(t *testing.T) {
 	scripts := []*dsl.Script{importProjectionFixtureScript(0)}
-	raw := credentialPreservingImportResponseValue(scripts)
-	projection := maskScriptResponseValue(raw)
+	raw := importResponseRawScriptValue(scripts)
+	projection := credentialPreservingImportResponseValue(scripts)
 	before, err := json.Marshal(projection)
 	if err != nil {
 		t.Fatalf("marshal projection: %v", err)
@@ -227,6 +237,40 @@ func TestNewScriptImportResponseDoesNotMutateSharedProjection(t *testing.T) {
 	}
 	if string(before) != string(after) {
 		t.Fatalf("shared projection was mutated:\nbefore = %s\n after = %s", before, after)
+	}
+}
+
+func TestCredentialPreservingImportResponseMasksNeutralLocatedCredential(t *testing.T) {
+	const secret = "neutral-import-code-7b82"
+	script := &dsl.Script{
+		Name: "Neutral credential", Version: "1", Protocol: "http",
+		Metadata: &dsl.ScriptMetadata{Import: &dsl.ImportMetadata{
+			Source: "openapi",
+			Preserved: map[string]any{
+				dsl.ImportPreservedCredentialPolicyKey: dsl.ImportPreservedCredentialPolicyPreserve,
+			},
+		}},
+		Actions: []dsl.Action{{
+			Name: "verify", Type: "request", Method: "POST", Target: "/verify",
+			HeaderList: dsl.HeaderList{{Name: "Content-Type", Value: "application/json"}},
+			Body:       `{"code":"` + secret + `"}`,
+			Metadata: map[string]any{
+				dsl.ImportPreservedCredentialTargetsMetadataKey: []map[string]any{{
+					"request_key": "openapi:verify",
+					"field":       "body.json",
+					"pointer":     "/code",
+				}},
+			},
+		}},
+	}
+
+	projected := credentialPreservingImportResponseValue(script)
+	payload, err := json.Marshal(projected)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(payload), secret) || !strings.Contains(string(payload), credential.Redacted) {
+		t.Fatalf("neutral located credential was disclosed or not represented as masked: %s", payload)
 	}
 }
 

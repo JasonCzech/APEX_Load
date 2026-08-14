@@ -1,0 +1,687 @@
+package api
+
+import (
+	"errors"
+	"fmt"
+	"log/slog"
+	"net/http"
+	"sort"
+	"strings"
+
+	"github.com/google/uuid"
+	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/storage"
+)
+
+const (
+	genericImportBatchProfile               = "script_import_batch"
+	genericImportBatchMaxScripts            = 1000
+	genericImportRecordingSessionIDMaxBytes = 256
+)
+
+// genericImportSourceProfileNormalization is the single wire-level allowlist
+// for this endpoint. OpenAPI generation reads the same map, so SDK guidance
+// cannot drift from server acceptance when a new importer is added.
+var genericImportSourceProfileNormalization = map[string]string{
+	"browser_recorder":      "browser_recorder",
+	"browser_recording_har": "browser_recording_har",
+	"broker_config":         "broker_config",
+	"curl":                  "curl",
+	"devweb":                "devweb",
+	"eventhubs_capture":     "eventhubs_capture",
+	"github":                "github",
+	"har":                   "har",
+	"k6":                    "k6",
+	"raml":                  "raml",
+	"raw_http":              "raw_http",
+	"recorder":              "recorder",
+	"recorder-export":       "recorder_export",
+	"recorder_export":       "recorder_export",
+	"rest_json":             "rest_json",
+	"salesforce":            "salesforce",
+	"sample":                "sample",
+	"sample-import":         "sample",
+	"truclient":             "truclient",
+	"wsdl":                  "wsdl",
+}
+
+type genericImportBatchCommitRequest struct {
+	Scripts                   []dsl.Script `json:"scripts"`
+	FolderID                  *string      `json:"folder_id,omitempty"`
+	OperationID               string       `json:"operation_id"`
+	SourceProfile             string       `json:"source_profile"`
+	SourceRecordingSessionIDs []string     `json:"source_recording_session_ids,omitempty"`
+}
+
+// OpenAPI-Responses: 201
+// handleCommitGenericImportBatch is the create-only persistence boundary for
+// importers that do not have format-specific replace semantics. It provides a
+// durable operation receipt, opaque credential restoration, and one atomic
+// script transaction, so retrying after a lost response cannot duplicate a
+// RAML/HAR/WSDL/recorder/DevWeb import.
+func (s *Server) handleCommitGenericImportBatch(w http.ResponseWriter, r *http.Request) {
+	var req genericImportBatchCommitRequest
+	if !decodeJSONBody(w, r, &req) {
+		return
+	}
+	if len(req.Scripts) == 0 {
+		writeError(w, http.StatusBadRequest, "at least one imported script is required")
+		return
+	}
+	if len(req.Scripts) > genericImportBatchMaxScripts {
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("import batch must contain at most %d scripts", genericImportBatchMaxScripts))
+		return
+	}
+	if len(req.SourceRecordingSessionIDs) != 0 && len(req.SourceRecordingSessionIDs) != len(req.Scripts) {
+		writeError(w, http.StatusBadRequest, "source_recording_session_ids must be omitted or contain one entry per script")
+		return
+	}
+	var sourceRecordingSessionIDs []string
+	if len(req.SourceRecordingSessionIDs) > 0 {
+		sourceRecordingSessionIDs = make([]string, len(req.SourceRecordingSessionIDs))
+		for index, raw := range req.SourceRecordingSessionIDs {
+			sessionID := strings.TrimSpace(raw)
+			if len(sessionID) > genericImportRecordingSessionIDMaxBytes {
+				writeError(w, http.StatusBadRequest, fmt.Sprintf("source recording session %d must be at most %d bytes", index+1, genericImportRecordingSessionIDMaxBytes))
+				return
+			}
+			sourceRecordingSessionIDs[index] = sessionID
+		}
+	}
+	operationID, err := validateDirectImportOperationID(req.OperationID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if operationID == "" {
+		writeError(w, http.StatusBadRequest, "operation_id is required")
+		return
+	}
+	requestedProfile := normalizeGenericImportSourceProfile(req.SourceProfile)
+	if requestedProfile == "" {
+		writeError(w, http.StatusBadRequest, "source_profile is not supported by the generic import batch")
+		return
+	}
+	if requestedProfile == "recorder" {
+		if len(sourceRecordingSessionIDs) != len(req.Scripts) {
+			writeError(w, http.StatusBadRequest, "proxy recorder saves require one source_recording_session_ids entry per script")
+			return
+		}
+		for index, sessionID := range sourceRecordingSessionIDs {
+			if sessionID == "" {
+				writeError(w, http.StatusBadRequest, fmt.Sprintf("proxy recorder script %d requires a source recording session", index+1))
+				return
+			}
+		}
+	} else {
+		for _, sessionID := range sourceRecordingSessionIDs {
+			if sessionID != "" {
+				writeError(w, http.StatusConflict, "source recording sessions are supported only by the proxy recorder save workflow")
+				return
+			}
+		}
+	}
+
+	projectID := normalizeProjectID(req.Scripts[0].ProjectID)
+	if authorized, scoped := authorizedProjectFromRequest(r); scoped {
+		projectID = normalizeProjectID(authorized)
+	}
+	requestScripts := make([]*dsl.Script, 0, len(req.Scripts))
+	requestedFolderIDs := make([]*string, len(req.Scripts))
+	for index := range req.Scripts {
+		draft := req.Scripts[index]
+		if err := bindDraftScriptProject(&draft, projectID); err != nil {
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("script %d: %v", index+1, err))
+			return
+		}
+		if status, err := s.applyProtectedImportFolderOverride(&draft, req.FolderID); err != nil {
+			writeError(w, status, err.Error())
+			return
+		}
+		requestedFolderIDs[index] = requestedImportFolderOverride(draft.FolderID, req.FolderID)
+		profile := genericImportDraftProfile(&draft, requestedProfile)
+		if !genericImportSourceProfilesCompatible(requestedProfile, profile) {
+			writeError(w, http.StatusConflict, fmt.Sprintf("imported script %d does not belong to this save workflow", index+1))
+			return
+		}
+		requestScripts = append(requestScripts, &draft)
+	}
+	requestDigest, err := s.directImportScriptsRequestDigest(requestScripts, map[string]any{
+		"profile":                      requestedProfile,
+		"folder":                       req.FolderID,
+		"source_recording_session_ids": sourceRecordingSessionIDs,
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to fingerprint import batch")
+		return
+	}
+	attempt, receiptReplay, err := s.claimDirectImportAttempt(
+		projectID, genericImportBatchProfile, operationID, requestDigest,
+	)
+	if err != nil {
+		switch {
+		case errors.Is(err, storage.ErrDirectImportReceiptBusy):
+			w.Header().Set("Retry-After", "2")
+			writeError(w, http.StatusConflict, "this import batch save is already in progress")
+		case errors.Is(err, storage.ErrDirectImportReceiptConflict):
+			writeError(w, http.StatusConflict, "operation_id was already used for a different import batch")
+		default:
+			writeError(w, http.StatusInternalServerError, "failed to reserve import batch")
+		}
+		return
+	}
+	if receiptReplay {
+		stored, _, loadErr := s.loadDirectImportReceiptAssets(attempt)
+		if loadErr != nil {
+			writeError(w, http.StatusConflict, "completed import batch receipt is inconsistent: "+loadErr.Error())
+			return
+		}
+		writeGenericImportBatchCommitResponse(w, stored)
+		return
+	}
+
+	finished := false
+	assetsCommitted := false
+	var transaction *createImportTransaction
+	defer func() {
+		if !finished && !assetsCommitted {
+			if cleanupErr := attempt.rollback(transaction); cleanupErr != nil {
+				slog.Warn("failed to fully compensate generic import batch", "error", cleanupErr)
+			}
+		}
+	}()
+	assetIdentitySeed := ""
+	if attempt != nil && attempt.receipt != nil {
+		assetIdentitySeed = attempt.receipt.ID
+	} else if operationID != "" {
+		assetIdentitySeed = directImportOperationHash(projectID, genericImportBatchProfile, operationID)
+	}
+	plannedIDs := make([]string, len(requestScripts))
+	for index := range plannedIDs {
+		if assetIdentitySeed == "" {
+			plannedIDs[index] = uuid.NewString()
+		} else {
+			plannedIDs[index] = deterministicDirectImportAssetID(assetIdentitySeed, "script", index)
+		}
+	}
+
+	// A stale receipt may come from another controller process that committed
+	// every deterministic asset before losing the receipt-completion response.
+	// Recover those receipt-bound IDs before touching ephemeral draft tokens: an
+	// in-memory credential attestation intentionally does not survive restart.
+	// This branch can only adopt existing assets for the exact durable request
+	// digest; it never authorizes a new create with an invalid token.
+	if attempt != nil && !attempt.created {
+		if recoverErr := s.recoverExpiredLibraryImportClaims(); recoverErr != nil {
+			writeError(w, http.StatusInternalServerError, "failed to recover prior import batch")
+			return
+		}
+		if renewErr := attempt.renew(); renewErr != nil {
+			writeError(w, http.StatusConflict, "import batch receipt ownership was lost; retry the save")
+			return
+		}
+		if fenceErr := s.fenceDirectImportAssetAdoption(attempt, projectID, plannedIDs, ""); fenceErr != nil {
+			w.Header().Set("Retry-After", "2")
+			writeError(w, http.StatusConflict, "the prior import batch is still finalizing; retry the save")
+			return
+		}
+		stored, _, loadErr := s.loadDirectImportAssetsByIDs(projectID, plannedIDs, "")
+		if loadErr == nil {
+			assetsCommitted = true
+			if !recoveredImportScriptBatchIdentityMatches(stored, requestScripts, func(script *dsl.Script) bool {
+				return genericImportSourceProfilesCompatible(requestedProfile, genericImportDraftProfile(script, ""))
+			}) {
+				writeError(w, http.StatusConflict, "a script from the prior import batch changed before recovery; use a new operation id")
+				return
+			}
+			// Prefer the already-bound baseline. If the first process committed
+			// scripts but not the sidecar, a still-live source can safely heal it
+			// using the exact durable script action graph.
+			if baselineErr := s.persistOrVerifyGenericImportBatchBaselines(stored, nil, sourceRecordingSessionIDs, true); baselineErr != nil {
+				recoveredBaselines := make([]*attestedRecordingBaseline, len(stored))
+				sourceUnavailable := false
+				for index, sessionID := range sourceRecordingSessionIDs {
+					if sessionID == "" {
+						continue
+					}
+					baseline, attestErr := s.attestRecordingBaselineCapture(projectID, stored[index].Script, sessionID)
+					if errors.Is(attestErr, errRecordingCaptureSourceNotFound) {
+						sourceUnavailable = true
+						continue
+					}
+					if attestErr != nil {
+						writeError(w, http.StatusConflict, fmt.Sprintf("script %d recording baseline could not be recovered from the source recording", index+1))
+						return
+					}
+					recoveredBaselines[index] = baseline
+				}
+				if baselineErr = s.persistOrVerifyGenericImportBatchBaselines(stored, recoveredBaselines, sourceRecordingSessionIDs, true); baselineErr != nil {
+					slog.Error("failed to recover generic import recording baseline", "error", baselineErr)
+					message := "The scripts are already committed, but their recording evidence is not finalized. Retry this save with the same operation_id."
+					if sourceUnavailable {
+						message = "The scripts are already committed, but their recording evidence is not finalized and the source recording is unavailable. Restore the source recording, then retry with the same operation_id."
+					}
+					writeError(w, http.StatusConflict, message)
+					return
+				}
+			}
+			if completeErr := attempt.complete(stored, nil); completeErr != nil {
+				writeError(w, http.StatusInternalServerError, "failed to reconcile import batch receipt")
+				return
+			}
+			finished = true
+			writeGenericImportBatchCommitResponse(w, stored)
+			return
+		}
+	}
+
+	claims := make([]*importDraftAttestationClaim, len(requestScripts))
+	defer func() {
+		for _, claim := range claims {
+			if claim != nil {
+				s.releaseImportDraftAttestation(claim)
+			}
+		}
+	}()
+	prepared := make([]*dsl.Script, 0, len(requestScripts))
+	profiles := make([]string, 0, len(requestScripts))
+	baselines := make([]*attestedRecordingBaseline, len(requestScripts))
+	baselineSourcesUnavailable := make([]bool, len(requestScripts))
+	for index, submitted := range requestScripts {
+		draft := cloneScriptDefinition(submitted)
+		if draft == nil {
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("script %d is invalid", index+1))
+			return
+		}
+		requestedName := draft.Name
+		profile := genericImportDraftProfile(draft, requestedProfile)
+		fingerprint, fingerprintErr := fingerprintImportDraftCredentials(draft)
+		if fingerprintErr != nil {
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("script %d credential state is invalid", index+1))
+			return
+		}
+		if token := importDraftAttestationToken(draft); token != "" {
+			claim, claimErr := s.claimImportDraftAttestation(r, draft)
+			if claimErr != nil || claim == nil || claim.Script == nil {
+				if claim != nil {
+					s.releaseImportDraftAttestation(claim)
+				}
+				writeError(w, http.StatusConflict, fmt.Sprintf("imported script %d draft is invalid or expired; run the conversion again", index+1))
+				return
+			}
+			profile = normalizeGenericImportSourceProfile(claim.Profile)
+			if !genericImportSourceProfilesCompatible(requestedProfile, profile) {
+				s.releaseImportDraftAttestation(claim)
+				writeError(w, http.StatusConflict, fmt.Sprintf("imported script %d does not belong to this save workflow", index+1))
+				return
+			}
+			claims[index] = claim
+			draft = claim.Script
+		} else if fingerprint.HasRawCredentials || scriptHasUnavailableImportCredentialValues(draft) {
+			writeError(w, http.StatusConflict, fmt.Sprintf("imported script %d is missing its server capability; run the conversion again", index+1))
+			return
+		}
+		draft.Name = requestedName
+		if err := bindDraftScriptProject(draft, projectID); err != nil {
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("script %d: %v", index+1, err))
+			return
+		}
+		if status, err := s.applyProtectedImportFolderOverride(draft, requestedFolderIDs[index]); err != nil {
+			writeError(w, status, err.Error())
+			return
+		}
+		draft, err = replaceUnavailableImportCredentialValues(draft)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("script %d: %v", index+1, err))
+			return
+		}
+		persistent, err := preparePersistentImportedLibraryScript(draft, nil, profile)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("script %d: %v", index+1, err))
+			return
+		}
+		if issues := validateStoredExecutionScript(persistent); len(issues) > 0 {
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("script %d: %s", index+1, strings.Join(issues, "; ")))
+			return
+		}
+		persistent.ID = plannedIDs[index]
+		persistent.RefKey = ""
+		if len(sourceRecordingSessionIDs) > 0 && sourceRecordingSessionIDs[index] != "" {
+			baseline, baselineErr := s.attestRecordingBaselineCapture(
+				projectID,
+				persistent,
+				sourceRecordingSessionIDs[index],
+				claims[index],
+			)
+			if baselineErr != nil {
+				// A stale receipt can represent a script and baseline that were both
+				// committed before the original response was lost. Proxy sessions are
+				// intentionally ephemeral, so allow recovery to verify that already-
+				// bound durable baseline instead of requiring the source session to
+				// survive a controller restart. A new attempt remains fail-closed.
+				if errors.Is(baselineErr, errRecordingCaptureSourceNotFound) && attempt != nil && !attempt.created {
+					baselineSourcesUnavailable[index] = true
+				} else {
+					status := http.StatusConflict
+					if errors.Is(baselineErr, errRecordingCaptureSourceNotFound) {
+						status = http.StatusNotFound
+					}
+					writeError(w, status, fmt.Sprintf("script %d recording baseline: %v", index+1, baselineErr))
+					return
+				}
+			}
+			baselines[index] = baseline
+		}
+		prepared = append(prepared, persistent)
+		profiles = append(profiles, profile)
+	}
+	allocateAtomicImportBatchScriptNames(prepared)
+
+	if attempt != nil && !attempt.created {
+		if recoverErr := s.recoverExpiredLibraryImportClaims(); recoverErr != nil {
+			writeError(w, http.StatusInternalServerError, "failed to recover prior import batch")
+			return
+		}
+		if renewErr := attempt.renew(); renewErr != nil {
+			writeError(w, http.StatusConflict, "import batch receipt ownership was lost; retry the save")
+			return
+		}
+		if fenceErr := s.fenceDirectImportAssetAdoption(attempt, projectID, plannedIDs, ""); fenceErr != nil {
+			w.Header().Set("Retry-After", "2")
+			writeError(w, http.StatusConflict, "the prior import batch is still finalizing; retry the save")
+			return
+		}
+		stored, _, loadErr := s.loadDirectImportAssetsByIDs(projectID, plannedIDs, "")
+		if loadErr == nil {
+			// The deterministic assets already exist, so never abandon their
+			// pending receipt on a subsequent verification error. Keeping the
+			// receipt recoverable prevents an orphaned batch and a later duplicate.
+			assetsCommitted = true
+			if !directImportPreparedAssetsMatch(s, stored, prepared, nil, nil) {
+				writeError(w, http.StatusConflict, "a script from the prior import batch changed before recovery; use a new operation id")
+				return
+			}
+			if baselineErr := s.persistOrVerifyGenericImportBatchBaselines(stored, baselines, sourceRecordingSessionIDs, true); baselineErr != nil {
+				slog.Error("failed to recover generic import recording baseline", "error", baselineErr)
+				message := "The scripts are already committed, but their recording evidence is not finalized. Retry this save with the same operation_id."
+				if anyTrue(baselineSourcesUnavailable) {
+					message = "The scripts are already committed, but their recording evidence is not finalized and the source recording is unavailable. Restore the source recording, then retry with the same operation_id."
+				}
+				writeError(w, http.StatusConflict, message)
+				return
+			}
+			if completeErr := attempt.complete(stored, nil); completeErr != nil {
+				writeError(w, http.StatusInternalServerError, "failed to reconcile import batch receipt")
+				return
+			}
+			completeGenericImportBatchDraftClaims(s, claims, stored)
+			finished = true
+			writeGenericImportBatchCommitResponse(w, stored)
+			return
+		}
+	}
+
+	transaction, err = newCreateImportTransaction(s, genericImportBatchProfile, prepared, "", nil)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to prepare import batch: "+err.Error())
+		return
+	}
+	stored := make([]*StoredScript, 0, len(prepared))
+	for index, script := range prepared {
+		if err := attempt.renew(); err != nil {
+			writeError(w, http.StatusConflict, "import batch receipt ownership was lost; retry the save")
+			return
+		}
+		if claims[index] != nil {
+			if err := s.assertImportDraftAttestationOwned(claims[index]); err != nil {
+				writeError(w, http.StatusConflict, "import draft lease was lost; retry the save")
+				return
+			}
+		}
+		created, createErr := transaction.createImportedScript(script, profiles[index])
+		if createErr != nil {
+			writeError(w, http.StatusInternalServerError, fmt.Sprintf("failed to save imported script %d: %v", index+1, createErr))
+			return
+		}
+		stored = append(stored, created)
+	}
+	if err := transaction.commit(); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to commit import batch: "+err.Error())
+		return
+	}
+	assetsCommitted = true
+	if err := s.persistOrVerifyGenericImportBatchBaselines(stored, baselines, sourceRecordingSessionIDs, false); err != nil {
+		slog.Error("failed to finalize generic import recording baseline", "error", err)
+		writeError(w, http.StatusConflict, "The scripts were committed, but their recording evidence could not be finalized. Retry this save with the same operation_id.")
+		return
+	}
+	if err := attempt.complete(stored, nil); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to finalize import batch receipt")
+		return
+	}
+	completeGenericImportBatchDraftClaims(s, claims, stored)
+	finished = true
+	writeGenericImportBatchCommitResponse(w, stored)
+}
+
+func genericImportDraftProfile(script *dsl.Script, fallback string) string {
+	if script != nil && script.Metadata != nil && script.Metadata.Import != nil {
+		if source := strings.TrimSpace(script.Metadata.Import.Source); source != "" {
+			return normalizeGenericImportSourceProfile(source)
+		}
+	}
+	return normalizeGenericImportSourceProfile(fallback)
+}
+
+func cloneOptionalString(value *string) *string {
+	if value == nil {
+		return nil
+	}
+	copy := *value
+	return &copy
+}
+
+// requestedImportFolderOverride snapshots the already-authorized destination
+// before an opaque draft capability restores the server-owned candidate. An
+// explicit empty folder means "library root" and must remain distinguishable
+// from an omitted override, whose embedded candidate folder is preserved.
+func requestedImportFolderOverride(canonicalFolder, explicitFolder *string) *string {
+	if explicitFolder != nil {
+		value := ""
+		if canonicalFolder != nil {
+			value = *canonicalFolder
+		}
+		return &value
+	}
+	return cloneOptionalString(canonicalFolder)
+}
+
+func recoveredImportScriptBatchIdentityMatches(
+	stored []*StoredScript,
+	requested []*dsl.Script,
+	profileAllowed func(*dsl.Script) bool,
+) bool {
+	if len(stored) != len(requested) {
+		return false
+	}
+	expected := make([]*dsl.Script, len(requested))
+	for index, script := range requested {
+		expected[index] = cloneScriptDefinition(script)
+		if expected[index] == nil {
+			return false
+		}
+	}
+	allocateAtomicImportBatchScriptNames(expected)
+	for index := range expected {
+		actual := stored[index]
+		if actual == nil || actual.Script == nil ||
+			actual.Name != expected[index].Name ||
+			normalizeProjectID(actual.ProjectID) != normalizeProjectID(expected[index].ProjectID) ||
+			!optionalStringValuesEqual(actual.FolderID, expected[index].FolderID) ||
+			(profileAllowed != nil && !profileAllowed(actual.Script)) ||
+			!equivalentCreateOnlyScript(
+				recoveredImportDisclosureIdentity(actual.Script),
+				recoveredImportDisclosureIdentity(expected[index]),
+			) {
+			return false
+		}
+	}
+	return true
+}
+
+// recoveredImportDisclosureIdentity compares every non-secret durable field,
+// including the action graph, without requiring the vanished exact credential
+// candidate. Import source aliases are validated separately by profileAllowed;
+// normalize that one field so an accepted wire alias cannot defeat recovery.
+func recoveredImportDisclosureIdentity(script *dsl.Script) *dsl.Script {
+	candidate := cloneScriptDefinition(script)
+	if candidate == nil {
+		return nil
+	}
+	projected := maskScriptSecrets(candidate)
+	if projected == nil {
+		return nil
+	}
+	stripImportDraftAttestation(projected)
+	stripProtectedImportSourceCommitFence(projected)
+	if err := sanitizePersistentImportReviewSurfaces(projected); err != nil {
+		return nil
+	}
+	if projected.Metadata != nil && projected.Metadata.Import != nil {
+		projected.Metadata.Import.Source = ""
+	}
+	return projected
+}
+
+func optionalStringValuesEqual(left, right *string) bool {
+	if left == nil || right == nil {
+		return left == nil && right == nil
+	}
+	return strings.TrimSpace(*left) == strings.TrimSpace(*right)
+}
+
+// genericImportSourceProfilesCompatible fences a draft to the converter
+// workflow that produced it. The only cross-profile relationships are
+// deliberate compound workflows: a browser recording can emit a browser
+// script plus an HTTP side-car, a HAR import can promote detected Salesforce
+// traffic, and the sample importer labels drafts with its selected wire format.
+func genericImportSourceProfilesCompatible(requested, actual string) bool {
+	requested = normalizeGenericImportSourceProfile(requested)
+	actual = normalizeGenericImportSourceProfile(actual)
+	if requested == "" || actual == "" {
+		return false
+	}
+	if requested == actual {
+		return true
+	}
+	switch requested {
+	case "browser_recorder":
+		return actual == "browser_recording_har"
+	case "har":
+		return actual == "salesforce"
+	case "sample":
+		switch actual {
+		case "raw_http", "curl", "rest_json", "har":
+			return true
+		default:
+			return false
+		}
+	default:
+		return false
+	}
+}
+
+func normalizeGenericImportSourceProfile(raw string) string {
+	profile := strings.ToLower(strings.TrimSpace(raw))
+	return genericImportSourceProfileNormalization[profile]
+}
+
+func genericImportSourceProfileWireValues() []string {
+	values := make([]string, 0, len(genericImportSourceProfileNormalization))
+	for value := range genericImportSourceProfileNormalization {
+		values = append(values, value)
+	}
+	sort.Strings(values)
+	return values
+}
+
+func (s *Server) persistOrVerifyGenericImportBatchBaselines(
+	stored []*StoredScript,
+	baselines []*attestedRecordingBaseline,
+	sessionIDs []string,
+	allowExisting bool,
+) error {
+	for index, sessionID := range sessionIDs {
+		if sessionID == "" {
+			continue
+		}
+		if index >= len(stored) || stored[index] == nil || stored[index].Script == nil {
+			return fmt.Errorf("recording baseline %d has no stored script", index+1)
+		}
+		var baseline *attestedRecordingBaseline
+		if index < len(baselines) {
+			baseline = baselines[index]
+		}
+		if baseline != nil {
+			if err := s.persistRecordedBaseline(
+				stored[index].ID,
+				baseline.source,
+				stored[index].Script,
+				baseline.observations,
+			); err != nil {
+				return fmt.Errorf("script %d: %w", index+1, err)
+			}
+		} else if !allowExisting {
+			return fmt.Errorf("script %d source recording could not be attested", index+1)
+		}
+		if s.store == nil {
+			return fmt.Errorf("script %d recording baseline storage is unavailable", index+1)
+		}
+		record, err := s.store.GetScriptRecording(stored[index].ID)
+		if err != nil {
+			return fmt.Errorf("verify script %d: %w", index+1, err)
+		}
+		expectedSource := "proxy_recording"
+		if baseline != nil {
+			expectedSource = baseline.source
+		}
+		if record == nil || record.Source != expectedSource ||
+			validateRecordingActionGraph(record, stored[index].Script) != nil {
+			return fmt.Errorf("script %d recording baseline was not durably bound", index+1)
+		}
+	}
+	return nil
+}
+
+func anyTrue(values []bool) bool {
+	for _, value := range values {
+		if value {
+			return true
+		}
+	}
+	return false
+}
+
+func completeGenericImportBatchDraftClaims(s *Server, claims []*importDraftAttestationClaim, stored []*StoredScript) {
+	for index, claim := range claims {
+		if claim == nil {
+			continue
+		}
+		if err := s.completeImportDraftAttestation(claim); err != nil {
+			scriptID := ""
+			if index < len(stored) && stored[index] != nil {
+				scriptID = stored[index].ID
+			}
+			slogImportAttestationCompletionFailure("generic import batch", scriptID, err)
+			continue
+		}
+		claims[index] = nil
+	}
+}
+
+func writeGenericImportBatchCommitResponse(w http.ResponseWriter, stored []*StoredScript) {
+	writeJSON(w, http.StatusCreated, map[string]any{
+		"scripts": maskStoredScripts(stored),
+		"count":   len(stored),
+	})
+}

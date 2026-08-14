@@ -112,20 +112,20 @@ type ClusterConnectionRequest struct {
 // ClusterConnectionResponse is the read shape: everything an administrator
 // needs, and nothing that could reconstruct a credential.
 type ClusterConnectionResponse struct {
-	ID                   string            `json:"id"`
-	Name                 string            `json:"name"`
-	Description          string            `json:"description,omitempty"`
-	Kind                 string            `json:"kind"`
-	APIServerURL         string            `json:"api_server_url,omitempty"`
-	Namespace            string            `json:"namespace"`
-	GeneratorSelector    string            `json:"generator_selector,omitempty"`
-	GeneratorStatefulSet string            `json:"generator_stateful_set,omitempty"`
-	GeneratorContainer   string            `json:"generator_container,omitempty"`
-	CACertificatePEM     string            `json:"ca_certificate_pem,omitempty"`
-	TLSMode              string            `json:"tls_mode"`
-	AuthMode             string            `json:"auth_mode"`
-	AzureTenantID        string            `json:"azure_tenant_id,omitempty"`
-	AzureClientID        string            `json:"azure_client_id,omitempty"`
+	ID                   string `json:"id"`
+	Name                 string `json:"name"`
+	Description          string `json:"description,omitempty"`
+	Kind                 string `json:"kind"`
+	APIServerURL         string `json:"api_server_url,omitempty"`
+	Namespace            string `json:"namespace"`
+	GeneratorSelector    string `json:"generator_selector,omitempty"`
+	GeneratorStatefulSet string `json:"generator_stateful_set,omitempty"`
+	GeneratorContainer   string `json:"generator_container,omitempty"`
+	CACertificatePEM     string `json:"ca_certificate_pem,omitempty"`
+	TLSMode              string `json:"tls_mode"`
+	AuthMode             string `json:"auth_mode"`
+	AzureTenantID        string `json:"azure_tenant_id,omitempty"`
+	AzureClientID        string `json:"azure_client_id,omitempty"`
 	// The AWS identifiers are returned for the same reason AzureClientID is:
 	// they are half a credential pair at most, an edit form must round-trip
 	// them, and AWS itself displays the access key ID. The secret access key
@@ -897,6 +897,10 @@ func writeClusterCredentialError(w http.ResponseWriter, err error) {
 }
 
 func writeClusterConnectionWriteError(w http.ResponseWriter, err error) {
+	if errors.Is(err, storage.ErrClusterConnectionKindImmutable) {
+		writeError(w, http.StatusConflict, "cluster connection kind is immutable; create a new connection and repoint its execution targets")
+		return
+	}
 	message := err.Error()
 	if strings.Contains(strings.ToLower(message), "unique") {
 		writeError(w, http.StatusConflict, "a cluster connection with that name already exists")

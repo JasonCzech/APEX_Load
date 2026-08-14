@@ -51,6 +51,7 @@ func rewriteNativeComposedCredential(
 	if secretReference, ok := exactNativeSecretReference(value); ok {
 		return secretReference, true
 	}
+	sourceVariable, hasExactSourceVariable := exactNativeCredentialSourceReference(value)
 	_, projectedRequirementAvailable := nativeSourceSecretValue(
 		requirement.Replacement,
 		sourceRequirements,
@@ -111,12 +112,52 @@ func rewriteNativeComposedCredential(
 			delete(state.missing, missing)
 		}
 	}
-	requirement.scrubTargets = append(
-		nativeVariableScrubTargets(dependencies),
-		usageTarget,
-	)
+	context := requirement.Context
+	if hasExactSourceVariable {
+		if len(dependencies) > 1 {
+			// A chain may resolve through request-local overrides even when its
+			// outer definition is inherited. Retain the usage requirement's
+			// candidate scope so distinct resolved values cannot share a binding.
+			requirement.Context = context
+			requirement.scrubTargets = append(
+				nativeVariableScrubTargets(dependencies),
+				usageTarget,
+			)
+		} else if len(dependencies) > 0 {
+			requirement = nativeVariableSecretRequirement(
+				dependencies[0],
+				state.sourcePath,
+				context,
+			)
+			requirement.scrubTargets = append(
+				nativeVariableScrubTargets(dependencies),
+				usageTarget,
+			)
+		} else {
+			requirement = nativeUnresolvedSourceVariableSecretRequirement(
+				sourceVariable,
+				state.sourcePath,
+				context,
+			)
+			requirement.scrubTargets = []nativeSecretScrubTarget{usageTarget}
+		}
+		requirement.DisplayLabel = nativeSourceVariableDisplayLabel(sourceVariable)
+		requirement.SourceVariable = sourceVariable
+		requirement.UnresolvedSourceVariable = requirement.Value == ""
+		requirement.AffectedPaths = nativeSecretRequirementPaths(
+			append(requirement.AffectedPaths, state.sourcePath)...,
+		)
+	} else {
+		requirement.scrubTargets = append(
+			nativeVariableScrubTargets(dependencies),
+			usageTarget,
+		)
+	}
 	if complete && !brunoTemplatePattern.MatchString(resolved) {
-		requirement.Value = resolved
+		requirement.Value = recoverableBrunoCredentialValue(resolved)
+		if hasExactSourceVariable {
+			requirement.UnresolvedSourceVariable = requirement.Value == ""
+		}
 	}
 	registerNativeGeneratedRequirement(state, requirement)
 	return nativeCredentialProjectionReplacement(requirement), complete

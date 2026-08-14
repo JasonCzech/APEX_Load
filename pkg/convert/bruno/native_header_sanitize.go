@@ -81,7 +81,8 @@ func sanitizeNativePolicyHeaders(
 					occurrence,
 					"Bruno sensitive header "+name,
 				)
-				requirement.Value = value
+				requirement.Value = recoverableBrunoCredentialValue(value)
+				requirement = describeNativeHeaderSecretRequirement(requirement, name, value)
 				if _, err := setNativeJSONPointerWithAliasPeers(
 					document,
 					file.nativeAliasGroups,
@@ -121,7 +122,8 @@ func sanitizeNativePolicyHeaders(
 					occurrence,
 					"Bruno sensitive header "+name,
 				)
-				requirement.Value = value
+				requirement.Value = recoverableBrunoCredentialValue(value)
+				requirement = describeNativeHeaderSecretRequirement(requirement, name, value)
 				if _, err := setNativeJSONPointerWithAliasPeers(
 					document,
 					file.nativeAliasGroups,

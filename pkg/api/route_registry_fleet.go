@@ -68,6 +68,9 @@ var fleetAdministrationAPIRouteCatalog = apiRouteCatalog{
 		newAuthenticatedAPIRoute(http.MethodGet, "/api/v1/fleet/provision-requests/{id}", "handleGetProvisioningRequest", systemAdminAccess(), func(s *Server) http.Handler {
 			return http.HandlerFunc(s.handleGetProvisioningRequest)
 		}),
+		newAuthenticatedAPIRoute(http.MethodGet, "/api/v1/fleet/provision-requests/{id}/instances", "handleListProvisioningRequestInstances", systemAdminAccess(), func(s *Server) http.Handler {
+			return http.HandlerFunc(s.handleListProvisioningRequestInstances)
+		}),
 		newAuthenticatedAPIRoute(http.MethodPost, "/api/v1/fleet/provision-requests/{id}/cancel", "handleCancelProvisioningRequest", systemAdminAccess(), func(s *Server) http.Handler {
 			return http.HandlerFunc(s.handleCancelProvisioningRequest)
 		}),

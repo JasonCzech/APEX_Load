@@ -1,7 +1,12 @@
 .sample-import {
   display: flex;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
   flex-direction: column;
   gap: 18px;
+  box-sizing: border-box;
+  container: sample-import / inline-size;
 }
 
 .sample-import-header {
@@ -25,12 +30,16 @@
 .sample-import-card,
 .sample-import-result {
   display: flex;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
   flex-direction: column;
   gap: 18px;
   padding: 20px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--bg-card);
+  box-sizing: border-box;
 }
 
 .sample-import-section-header,
@@ -319,7 +328,25 @@
   margin-bottom: 10px;
 }
 
+.sample-import-script-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.sample-import-script-pagination > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  text-align: center;
+}
+
 .sample-import-script-tab {
+  min-width: 0;
+  max-width: 100%;
   border: 1px solid var(--border);
   border-radius: 6px;
   background: var(--bg-secondary, transparent);
@@ -327,6 +354,9 @@
   padding: 6px 10px;
   font-size: 12px;
   cursor: pointer;
+  overflow-wrap: anywhere;
+  white-space: normal;
+  word-break: break-word;
 }
 
 .sample-import-script-tab.active {
@@ -686,6 +716,38 @@
 }
 
 @media (max-width: 720px) {
+  .sample-import-header,
+  .sample-import-section-header,
+  .sample-import-result-header {
+    flex-direction: column;
+  }
+}
+
+@container sample-import (max-width: 980px) {
+  .sample-import-grid.two-col,
+  .sample-import-grid.three-col,
+  .sample-import-stats-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .sample-import-span-2,
+  .sample-import-span-3 {
+    grid-column: auto;
+  }
+
+  .sample-import-assets-header,
+  .sample-import-asset-row,
+  .source-import-coverage-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .sample-import-asset-controls {
+    justify-content: flex-start;
+  }
+}
+
+@container sample-import (max-width: 720px) {
   .sample-import-header,
   .sample-import-section-header,
   .sample-import-result-header {

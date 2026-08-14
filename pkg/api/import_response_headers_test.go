@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
@@ -84,14 +85,50 @@ func TestImportResponseMarksPreservationPerCredentialOccurrence(t *testing.T) {
 	if !ok || len(requirements) != 2 {
 		t.Fatalf("requirements = %#v, want auth and proxy occurrences", response["secret_binding_requirements"])
 	}
-	states := make(map[string]bool, len(requirements))
+	byPath := make(map[string]SecretBindingRequirement, len(requirements))
 	for _, requirement := range requirements {
-		states[requirement.Path] = requirement.DestinationValuePreserved
+		byPath[requirement.Path] = requirement
 	}
-	if !states["/config/http/auth/password"] {
-		t.Fatalf("auth password state = %#v, want source value preserved", states)
+	if !byPath["/config/http/auth/password"].DestinationValuePreserved {
+		t.Fatalf("auth password state = %#v, want source value preserved", byPath)
 	}
-	if !states["/config/http/proxy/password"] {
-		t.Fatalf("proxy password state = %#v, exact authored value must remain preserved", states)
+	proxy := byPath["/config/http/proxy/password"]
+	if proxy.DestinationValuePreserved ||
+		proxy.PreservationUnavailableReason != "redacted_source_value" {
+		t.Fatalf("proxy password state = %#v, want unavailable redacted source", proxy)
+	}
+}
+
+func TestImportResponseDescribesOrderedSensitiveHeaderByName(t *testing.T) {
+	script := &dsl.Script{
+		Name: "descriptive header", Version: "1", Protocol: "http",
+		Config: dsl.ScriptConfig{BaseURL: "https://example.test"},
+		Actions: []dsl.Action{{
+			Name: "Inquire account profile", Type: "request", Method: http.MethodGet, Target: "/profile",
+			HeaderList: dsl.HeaderList{{Name: "X-CDF-Auth-Token", Value: maskedScriptSecret}},
+		}},
+	}
+	response := newScriptImportResponse(scriptImportResponseOptions{
+		Script: script, Scripts: []*dsl.Script{script},
+	})
+	requirements, ok := response["secret_binding_requirements"].([]SecretBindingRequirement)
+	if !ok || len(requirements) != 1 {
+		t.Fatalf("requirements = %#v, want one ordered-header credential", response["secret_binding_requirements"])
+	}
+	requirement := requirements[0]
+	if requirement.Label != "X-CDF-Auth-Token request header" {
+		t.Fatalf("label = %q", requirement.Label)
+	}
+	for _, want := range []string{"X-CDF-Auth-Token", "Inquire account profile", "when this request runs"} {
+		if !strings.Contains(requirement.Context, want) {
+			t.Fatalf("context = %q, want %q", requirement.Context, want)
+		}
+	}
+	if requirement.Path != "/actions/0/header_list/0/value" ||
+		len(requirement.AffectedPaths) != 1 || requirement.AffectedPaths[0] != requirement.Path {
+		t.Fatalf("location metadata = %#v", requirement)
+	}
+	if strings.Contains(requirement.Context, maskedScriptSecret) || strings.Contains(requirement.Label, maskedScriptSecret) {
+		t.Fatalf("presentation disclosed placeholder: %#v", requirement)
 	}
 }

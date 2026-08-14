@@ -271,8 +271,17 @@ func nativeURLSecretRequirement(
 		SuggestedName: suggested,
 		Replacement:   "{{secret." + suggested + "}}",
 		Context:       "Bruno URL component credential " + name,
-		Value:         value,
+		Value:         recoverableNativeURLCredentialValue(value),
+		AffectedPaths: nativeSecretRequirementPaths(sourcePath),
 	}
+}
+
+func recoverableNativeURLCredentialValue(value string) string {
+	decoded, stable := decodeBrunoCredentialValueToStable(value, url.QueryUnescape)
+	if !stable || containsBrunoCredentialRedactionSentinel(decoded) {
+		return ""
+	}
+	return recoverableBrunoCredentialValue(value)
 }
 
 func rewriteNativeURLTemplates(
@@ -366,6 +375,7 @@ func rewriteNativeComposedURLCredential(
 	if secretReference, ok := exactNativeSecretReference(value); ok {
 		return secretReference, true
 	}
+	sourceVariable, hasExactSourceVariable := exactNativeCredentialSourceReference(value)
 	requirement := nativeURLSecretRequirement(
 		state.sourcePath,
 		pointer,
@@ -433,12 +443,53 @@ func rewriteNativeComposedURLCredential(
 			delete(state.missing, missing)
 		}
 	}
-	requirement.scrubTargets = append(
-		nativeVariableScrubTargets(dependencies),
-		usageTarget,
-	)
+	context := "Bruno URL component credential " + name
+	if hasExactSourceVariable {
+		if len(dependencies) > 1 {
+			// A chained source may include request-local overrides. Keep the
+			// URL usage identity in that case so different resolved values do
+			// not collapse into one destination binding.
+			requirement.Context = context
+			requirement.scrubTargets = append(
+				nativeVariableScrubTargets(dependencies),
+				usageTarget,
+			)
+		} else if len(dependencies) > 0 {
+			requirement = nativeVariableSecretRequirement(
+				dependencies[0],
+				state.sourcePath,
+				context,
+			)
+			requirement.scrubTargets = append(
+				nativeVariableScrubTargets(dependencies),
+				usageTarget,
+			)
+		} else {
+			requirement = nativeUnresolvedSourceVariableSecretRequirement(
+				sourceVariable,
+				state.sourcePath,
+				context,
+			)
+			requirement.scrubTargets = []nativeSecretScrubTarget{usageTarget}
+		}
+		requirement.DisplayLabel = nativeSourceVariableDisplayLabel(sourceVariable)
+		requirement.SourceVariable = sourceVariable
+		requirement.UnresolvedSourceVariable = requirement.Value == ""
+		requirement.AffectedPaths = nativeSecretRequirementPaths(
+			append(requirement.AffectedPaths, state.sourcePath)...,
+		)
+	} else {
+		requirement.Context = context
+		requirement.scrubTargets = append(
+			nativeVariableScrubTargets(dependencies),
+			usageTarget,
+		)
+	}
 	if complete && !brunoTemplatePattern.MatchString(resolved) {
-		requirement.Value = resolved
+		requirement.Value = recoverableNativeURLCredentialValue(resolved)
+		if hasExactSourceVariable {
+			requirement.UnresolvedSourceVariable = requirement.Value == ""
+		}
 	}
 	registerNativeGeneratedRequirement(state, requirement)
 	return nativeCredentialProjectionReplacement(requirement), complete

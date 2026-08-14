@@ -24,7 +24,7 @@ func assertFoldedUnique(t *testing.T, names []string) {
 	t.Helper()
 	seen := map[string]string{}
 	for _, name := range names {
-		key := strings.ToLower(name)
+		key := strings.ToLower(strings.TrimSpace(name))
 		if prev, ok := seen[key]; ok {
 			t.Fatalf("names collide under case-fold: %q and %q both fold to %q (all: %v)", prev, name, key, names)
 		}
@@ -62,6 +62,11 @@ func TestDeduplicateActionNamesTopLevel(t *testing.T) {
 			name:  "already unique is untouched",
 			input: []string{"alpha", "beta", "gamma"},
 			want:  []string{"alpha", "beta", "gamma"},
+		},
+		{
+			name:  "surrounding whitespace uses dashboard identity",
+			input: []string{" Request ", "request", "REQUEST_2"},
+			want:  []string{" Request ", "request_2", "REQUEST_2_2"},
 		},
 	}
 
@@ -187,5 +192,43 @@ func TestDeduplicateActionNamesNilAndEmpty(t *testing.T) {
 	script := &dsl.Script{Actions: []dsl.Action{{Name: ""}, {Name: ""}}}
 	if renames := DeduplicateActionNames(script); len(renames) != 0 {
 		t.Fatalf("empty names renamed %v, want none", renames)
+	}
+}
+
+func TestDeduplicateScriptNamesUsesBatchSaveIdentity(t *testing.T) {
+	scripts := []*dsl.Script{
+		{Name: "Orders"},
+		{Name: "orders"},
+		{Name: "Orders_2"},
+		{Name: " ORDERS "},
+		nil,
+		{Name: ""},
+	}
+
+	renamed := DeduplicateScriptNames(scripts)
+	want := []string{"Orders", "orders_2", "Orders_2_2", "ORDERS_3"}
+	for i, name := range want {
+		if scripts[i].Name != name {
+			t.Fatalf("script %d name = %q, want %q", i, scripts[i].Name, name)
+		}
+	}
+	if len(renamed) != 3 {
+		t.Fatalf("renames = %#v, want three collisions renamed", renamed)
+	}
+
+	seen := map[string]string{}
+	for _, script := range scripts {
+		if script == nil || strings.TrimSpace(script.Name) == "" {
+			continue
+		}
+		key := strings.ToLower(strings.TrimSpace(script.Name))
+		if previous, duplicate := seen[key]; duplicate {
+			t.Fatalf("script names collide under batch save identity: %q and %q", previous, script.Name)
+		}
+		seen[key] = script.Name
+	}
+
+	if secondPass := DeduplicateScriptNames(scripts); len(secondPass) != 0 {
+		t.Fatalf("second pass renamed %#v, want idempotent batch allocation", secondPass)
 	}
 }

@@ -15,6 +15,7 @@ interface Props {
   // Optional validation: return an error message to reject the dropped file.
   validate?: (file: File) => string | null
   onError?: (message: string) => void
+  disabled?: boolean
 }
 
 // ImportDropzone is the shared drag-drop file picker for the import wizards,
@@ -25,9 +26,11 @@ interface Props {
 // drops (which carry real absolute paths via Wails OnFileDrop), reconstructing a
 // File for the existing upload path. In the browser it uses the standard
 // <input type=file> + HTML5 drag-drop.
-export default function ImportDropzone({ accept, file, onFile, dropHint, validate, onError }: Props) {
+export default function ImportDropzone({ accept, file, onFile, dropHint, validate, onError, disabled = false }: Props) {
   const inputRef = useRef<HTMLInputElement>(null)
   const zoneRef = useRef<HTMLDivElement>(null)
+  const disabledRef = useRef(disabled)
+  disabledRef.current = disabled
   const [dragOver, setDragOver] = useState(false)
   const [browserFallback, setBrowserFallback] = useState(false)
   // Stable callbacks — destructured so the native drop handler keeps its identity
@@ -38,6 +41,9 @@ export default function ImportDropzone({ accept, file, onFile, dropHint, validat
   const nativeDialogs = desktop && canUseNativeDialogs() && !browserFallback
 
   const acceptFile = useCallback((next?: File | null): boolean => {
+    // A native picker can resolve after a parent save has started. Read the
+    // current lock instead of the callback's render-time `disabled` value.
+    if (disabledRef.current) return false
     if (!next) return false
     if (validate) {
       const error = validate(next)
@@ -67,6 +73,7 @@ export default function ImportDropzone({ accept, file, onFile, dropHint, validat
   useDesktopFileDrop(zoneRef, handleNativePaths, desktop)
 
   const handleBrowse = useCallback(() => {
+    if (disabledRef.current) return
     if (nativeDialogs) {
       void pickFilesViaBridge(accept).then(files => {
         if (files.length > 0) {
@@ -87,6 +94,7 @@ export default function ImportDropzone({ accept, file, onFile, dropHint, validat
   const handleDrop = (event: DragEvent) => {
     event.preventDefault()
     setDragOver(false)
+    if (disabledRef.current) return
     // In the desktop shell, file drops arrive via the native OnFileDrop router
     // (dataTransfer carries no usable path); ignore the HTML5 drop there.
     if (desktop) return
@@ -105,24 +113,26 @@ export default function ImportDropzone({ accept, file, onFile, dropHint, validat
   return (
     <div
       ref={zoneRef}
-      className={`import-dropzone ${hostClassName} ${dragOver ? 'drag-over' : ''} ${file ? 'has-file' : ''}`}
+      className={`import-dropzone ${hostClassName} ${dragOver ? 'drag-over' : ''} ${file ? 'has-file' : ''} ${disabled ? 'disabled' : ''}`}
       style={dropTargetStyle}
-      onDragOver={event => { event.preventDefault(); setDragOver(true) }}
+      onDragOver={event => { event.preventDefault(); if (!disabled) setDragOver(true) }}
       onDragLeave={() => setDragOver(false)}
       onDrop={handleDrop}
       onClick={handleBrowse}
       role="button"
-      tabIndex={0}
+      tabIndex={disabled ? -1 : 0}
+      aria-disabled={disabled}
       // Named explicitly (as the JMeter/archive dropzones are) so the transient
       // drop-status text inside the zone cannot leak into its accessible name.
       aria-label={file ? `Selected file ${file.name}. Choose another file` : dropHint}
-      onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') handleBrowse() }}
+      onKeyDown={event => { if (!disabled && (event.key === 'Enter' || event.key === ' ')) handleBrowse() }}
     >
       <DropIngestOverlay phase={ingestPhase} label={ingestLabel} />
       <input
         ref={inputRef}
         type="file"
         accept={accept}
+        disabled={disabled}
         onClick={event => event.stopPropagation()}
         onChange={event => {
           acceptFile(event.target.files?.[0])
@@ -143,8 +153,10 @@ export default function ImportDropzone({ accept, file, onFile, dropHint, validat
           <button
             type="button"
             className="btn btn-sm btn-ghost"
+            disabled={disabled}
             onClick={event => {
               event.stopPropagation()
+              if (disabledRef.current) return
               onFile(null)
               if (inputRef.current) inputRef.current.value = ''
             }}

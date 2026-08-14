@@ -11,7 +11,7 @@
  * ClusterConnection.kind: in_cluster/generic → kubernetes, aks → azure_aks,
  * eks → aws_eks.
  */
-export type DeploymentProvider = 'kubernetes' | 'azure_aks' | 'aws_eks'
+export type DeploymentProvider = 'kubernetes' | 'azure_aks' | 'aws_eks' | 'azure_container_apps' | 'aws_ecs_fargate' | 'static'
 
 export interface DomainDeploymentTarget {
   domain_id: string
@@ -22,6 +22,9 @@ export interface DomainDeploymentTarget {
   provider?: DeploymentProvider
   default_cluster_id?: string
   default_cluster_name?: string
+  default_execution_target_id?: string
+  default_execution_target_name?: string
+  allowed_execution_target_ids?: string[]
   scoped_pool_count: number
   updated_by_subject?: string
   created_at?: string
@@ -33,6 +36,8 @@ export interface DomainDeploymentTarget {
 export interface DomainDeploymentTargetInput {
   provider: DeploymentProvider
   default_cluster_id?: string
+  default_execution_target_id?: string
+  allowed_execution_target_ids?: string[]
   updated_at?: string
 }
 

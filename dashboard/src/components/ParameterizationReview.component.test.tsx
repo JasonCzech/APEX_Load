@@ -425,4 +425,28 @@ describe('ParameterizationReview', () => {
     expect(container.textContent).toContain('group_a_var')
     expect(container.textContent).not.toContain('group_b_var')
   })
+
+  it('bounds high-cardinality suggestions and exposes keyboard-operable page controls', async () => {
+    render(buildParameterization(Array.from({ length: 125 }, (_unused, index) => suggestion({
+      id: `pz_${index}`,
+      var_name: `parameter_${index}`,
+    }))))
+
+    expect(container.querySelectorAll('.paramize-item')).toHaveLength(50)
+    expect(container.textContent).toContain('Showing 1–50 of 125')
+    expect(container.textContent).toContain('parameter_0')
+    expect(container.textContent).not.toContain('parameter_50')
+    const next = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent?.includes('Next suggestions'))!
+    await act(async () => {
+      next.focus()
+      next.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+      next.click()
+    })
+
+    expect(container.querySelectorAll('.paramize-item')).toHaveLength(50)
+    expect(container.textContent).toContain('Showing 51–100 of 125')
+    expect(container.textContent).toContain('parameter_50')
+    expect(container.textContent).not.toContain('parameter_0')
+  })
 })

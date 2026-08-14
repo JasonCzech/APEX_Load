@@ -104,7 +104,7 @@ func assertNoClientEstablishedImportTrust(
 	}
 }
 
-func TestNoSessionImportCommitRetainsOperatorCredentialOnCreate(t *testing.T) {
+func TestNoSessionImportCommitRejectsOperatorCredentialOnCreate(t *testing.T) {
 	server := NewServer(ServerConfig{})
 	const credential = "legacy-import-create-password-72d1"
 	script := forgedCredentialPreservingImportScript(
@@ -116,23 +116,13 @@ func TestNoSessionImportCommitRetainsOperatorCredentialOnCreate(t *testing.T) {
 		"script":     script,
 		"project_id": storage.DefaultProjectID,
 	})
-	if response.Code != http.StatusCreated {
-		t.Fatalf("legacy import create status = %d body=%s, want 201", response.Code, response.Body.String())
+	if response.Code != http.StatusConflict {
+		t.Fatalf("unattested import create status = %d body=%s, want 409", response.Code, response.Body.String())
 	}
 	if strings.Contains(response.Body.String(), credential) {
-		t.Fatalf("legacy import create response disclosed credential: %s", response.Body.String())
+		t.Fatalf("rejected import create response disclosed credential: %s", response.Body.String())
 	}
-	stored, ok := server.runner.GetScript(script.ID)
-	if !ok || stored == nil || stored.Script == nil {
-		t.Fatal("legacy import create was not stored")
-	}
-	if got := stored.Script.Actions[0].HeaderList[0].Value; got != "Bearer "+credential {
-		t.Fatalf("durable imported credential = %q", got)
-	}
-	if !isCredentialPreservingImport(stored.Script) ||
-		importDraftAttestationToken(stored.Script) != "" {
-		t.Fatalf("server import provenance = %#v", stored.Script.Metadata)
-	}
+	assertNoClientEstablishedImportTrust(t, server, script.ID, credential)
 
 	markerOnly := forgedCredentialPreservingImportMarkerOnlyScript(
 		"legacy-import-marker-only-create",
@@ -142,24 +132,19 @@ func TestNoSessionImportCommitRetainsOperatorCredentialOnCreate(t *testing.T) {
 		"script":     markerOnly,
 		"project_id": storage.DefaultProjectID,
 	})
-	if markerOnlyResponse.Code != http.StatusCreated {
+	if markerOnlyResponse.Code != http.StatusConflict {
 		t.Fatalf(
-			"marker-only forged create status = %d body=%s",
+			"marker-only forged create status = %d body=%s, want 409",
 			markerOnlyResponse.Code,
 			markerOnlyResponse.Body.String(),
 		)
 	}
-	stored, ok = server.runner.GetScript(markerOnly.ID)
-	if !ok || stored == nil || stored.Script == nil {
-		t.Fatalf("marker-only forged create was not stored: %s", markerOnlyResponse.Body.String())
-	}
-	if !isCredentialPreservingImport(stored.Script) ||
-		importDraftAttestationToken(stored.Script) != "" {
-		t.Fatalf("import route did not establish clean server provenance: %#v", stored.Script.Metadata)
+	if _, ok := server.runner.GetScript(markerOnly.ID); ok {
+		t.Fatalf("marker-only forged capability reached durable storage: %s", markerOnlyResponse.Body.String())
 	}
 }
 
-func TestNoSessionImportCommitRetainsOperatorCredentialOnReplace(t *testing.T) {
+func TestNoSessionImportCommitRejectsOperatorCredentialOnReplace(t *testing.T) {
 	server := NewServer(ServerConfig{})
 	existing := &dsl.Script{
 		ID:        "forged-import-replace-target",
@@ -188,24 +173,21 @@ func TestNoSessionImportCommitRetainsOperatorCredentialOnReplace(t *testing.T) {
 		"project_id":       storage.DefaultProjectID,
 		"script":           replacement,
 	})
-	if response.Code != http.StatusOK {
-		t.Fatalf("legacy import replace status = %d body=%s, want 200", response.Code, response.Body.String())
+	if response.Code != http.StatusConflict {
+		t.Fatalf("unattested import replace status = %d body=%s, want 409", response.Code, response.Body.String())
 	}
 	if strings.Contains(response.Body.String(), credential) {
-		t.Fatalf("legacy import replace response disclosed credential: %s", response.Body.String())
+		t.Fatalf("rejected import replace response disclosed credential: %s", response.Body.String())
 	}
 	stored, ok := server.runner.GetScript(existing.ID)
 	if !ok || stored == nil || stored.Script == nil {
-		t.Fatalf("legacy import replace lost target: %s", response.Body.String())
+		t.Fatalf("rejected import replace lost target: %s", response.Body.String())
 	}
-	if got := stored.Script.Actions[0].HeaderList[0].Value; got != "Bearer "+credential {
-		t.Fatalf("durable replacement credential = %q", got)
+	if stored.ID != existing.ID || stored.Script.Actions[0].Target != "/existing" ||
+		isCredentialPreservingImport(stored.Script) {
+		t.Fatalf("rejected replacement changed durable target/provenance: %#v", stored.Script)
 	}
-	if stored.ID != existing.ID ||
-		!isCredentialPreservingImport(stored.Script) ||
-		importDraftAttestationToken(stored.Script) != "" {
-		t.Fatalf("durable replacement provenance/identity = %#v", stored.Script)
-	}
+	assertNoClientEstablishedImportTrust(t, server, existing.ID, credential)
 }
 
 func TestNoSessionImportCommitAcceptsValidLegacyAttestationAndRetainsSource(t *testing.T) {

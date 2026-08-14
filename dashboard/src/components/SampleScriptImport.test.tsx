@@ -12,6 +12,7 @@ const apiMock = {
   importSample: vi.fn(),
   uploadImportAsset: vi.fn(),
   createScript: vi.fn(),
+  commitGenericImportBatch: vi.fn(),
   applySecretBindings: vi.fn(),
   discardImportSecretSession: vi.fn(),
 }
@@ -79,6 +80,13 @@ describe('SampleScriptImport', () => {
       protocol: script.protocol || 'http',
       version: script.version || '1.0.0',
       created_at: '2026-05-17T00:00:00Z',
+    }))
+    apiMock.commitGenericImportBatch.mockImplementation(async (payload: {
+      scripts: Array<{ name?: string; protocol?: string; version?: string; project_id?: string }>
+      folder_id?: string | null
+    }) => ({
+      scripts: [await apiMock.createScript(payload.scripts[0], payload.scripts[0]?.project_id, payload.folder_id ?? null)],
+      count: 1,
     }))
     apiMock.uploadImportAsset.mockResolvedValue({
       import_id: 'sample-import',
@@ -241,6 +249,37 @@ describe('SampleScriptImport', () => {
     }))
   })
 
+  it('reuses one atomic operation id after a sample save loses its response', async () => {
+    apiMock.commitGenericImportBatch
+      .mockRejectedValueOnce(new Error('sample batch response lost'))
+      .mockResolvedValueOnce({
+        scripts: [{ id: 'sample-reconciled', name: 'POST_v1_session', protocol: 'http', version: '1.0.0' }],
+        count: 1,
+      })
+    await act(async () => root.render(<SampleScriptImport projectId="project-1" />))
+    await act(async () => {
+      Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+        .find(button => button.textContent?.includes('Convert Sample'))?.click()
+    })
+    await flushPromises()
+
+    const save = () => Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent?.includes('Save To Script Library'))
+    await act(async () => save()?.click())
+    await flushPromises()
+    expect(container.textContent).toContain('sample batch response lost')
+    await act(async () => save()?.click())
+    await flushPromises()
+
+    expect(apiMock.commitGenericImportBatch).toHaveBeenCalledTimes(2)
+    expect(apiMock.commitGenericImportBatch.mock.calls[0][0]).toEqual(expect.objectContaining({
+      source_profile: 'sample',
+      operation_id: expect.any(String),
+    }))
+    expect(apiMock.commitGenericImportBatch.mock.calls[1][0].operation_id)
+      .toBe(apiMock.commitGenericImportBatch.mock.calls[0][0].operation_id)
+  })
+
   it('renders the Java over HTTP sample close action as a Back button', async () => {
     const onClose = vi.fn()
 
@@ -311,7 +350,18 @@ describe('SampleScriptImport', () => {
     expect(container.textContent).toContain('rest_json_request')
     expect(container.textContent).toContain('actions[0]')
     expect(container.textContent).toContain('session_id')
-    expect(container.textContent).toContain('no reusable correlation values were detected across the provided samples')
+    const warningDetails = container.querySelector<HTMLButtonElement>('button[aria-label="View 1 import warning detail"]')
+    expect(warningDetails).not.toBeNull()
+    await act(async () => {
+      warningDetails?.click()
+    })
+    expect(document.body.querySelector('[role="dialog"]')?.textContent)
+      .toContain('no reusable correlation values were detected across the provided samples')
+    await act(async () => {
+      Array.from(document.body.querySelectorAll<HTMLButtonElement>('[role="dialog"] button'))
+        .find(button => button.textContent?.trim() === 'Close')
+        ?.click()
+    })
 
     const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save To Script Library'))
     expect(saveButton).toBeDefined()
@@ -345,6 +395,11 @@ describe('SampleScriptImport', () => {
         pacing: { type: 'fixed_delay', delay_ms: 2500 },
       }),
     }), undefined, null)
+    expect(apiMock.commitGenericImportBatch).toHaveBeenCalledWith(expect.objectContaining({
+      source_profile: 'sample',
+      operation_id: expect.any(String),
+      scripts: [expect.objectContaining({ name: 'POST_v1_session' })],
+    }))
     expect(onImported).toHaveBeenCalledWith(expect.objectContaining({
       scripts: [expect.objectContaining({
         id: 'script-1',
@@ -771,7 +826,18 @@ describe('SampleScriptImport', () => {
       project_id: undefined,
       format: 'raw_http',
     }))
-    expect(container.textContent).toContain('Java-over-HTTP imports assume request and response payloads are already base64-encoded serialized Java bytes')
+    const warningDetails = container.querySelector<HTMLButtonElement>('button[aria-label^="View "][aria-label*=" import warning"]')
+    expect(warningDetails).not.toBeNull()
+    await act(async () => {
+      warningDetails?.click()
+    })
+    expect(document.body.querySelector('[role="dialog"]')?.textContent)
+      .toContain('Java-over-HTTP imports assume request and response payloads are already base64-encoded serialized Java bytes')
+    await act(async () => {
+      Array.from(document.body.querySelectorAll<HTMLButtonElement>('[role="dialog"] button'))
+        .find(button => button.textContent?.trim() === 'Close')
+        ?.click()
+    })
 
     const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save To Script Library'))
     expect(saveButton).toBeDefined()
@@ -888,7 +954,13 @@ describe('SampleScriptImport', () => {
     })
     await flushPromises()
 
-    expect(container.textContent).toContain('do not decode to a Java serialized object stream')
+    const warningDetails = container.querySelector<HTMLButtonElement>('button[aria-label^="View "][aria-label*=" import warning"]')
+    expect(warningDetails).not.toBeNull()
+    await act(async () => {
+      warningDetails?.click()
+    })
+    expect(document.body.querySelector('[role="dialog"]')?.textContent)
+      .toContain('do not decode to a Java serialized object stream')
   })
 
   it('passes the active project id into sample conversion previews', async () => {

@@ -544,7 +544,7 @@ func remoteRunCreateProjectFromStore(req CreateTestRequest, store storage.Store)
 			return nil
 		}
 		seenScripts[scriptID] = struct{}{}
-		script, err := store.GetScript(scriptID)
+		script, err := getPublishedImportScript(store, scriptID)
 		if err != nil || script == nil {
 			return fmt.Errorf("local script %s not found", scriptID)
 		}
@@ -552,7 +552,7 @@ func remoteRunCreateProjectFromStore(req CreateTestRequest, store storage.Store)
 		return nil
 	}
 	if strings.TrimSpace(req.ScenarioID) != "" {
-		_, scripts, err := store.GetScenario(strings.TrimSpace(req.ScenarioID))
+		_, scripts, err := getPublishedImportScenario(store, strings.TrimSpace(req.ScenarioID))
 		if err != nil {
 			return "", fmt.Errorf("local scenario not found")
 		}

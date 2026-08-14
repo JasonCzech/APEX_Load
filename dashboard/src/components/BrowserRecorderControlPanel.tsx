@@ -151,6 +151,8 @@ export interface BrowserRecorderControlPanelProps {
   onEdit?: (script: ScriptDefinition) => void
   /** Docked mode: remove the panel from the studio after the user is done. */
   onDismiss?: () => void
+  /** Reports nested save/review work so the parent can fence destination changes. */
+  onOperationBusyChange?: (busy: boolean) => void
 }
 
 export default function BrowserRecorderControlPanel({
@@ -160,8 +162,16 @@ export default function BrowserRecorderControlPanel({
   onImported,
   onEdit,
   onDismiss,
+  onOperationBusyChange,
 }: BrowserRecorderControlPanelProps) {
   const api = useApi()
+  const genericBatchSaveRef = useRef<{
+    source: RecorderImportResult | SalesforceImportResult
+    projectId?: string
+    folderId: string | null
+    profile: 'browser_recorder' | 'salesforce'
+    operationId: string
+  } | null>(null)
   const panelActiveRef = useRef(true)
   useEffect(() => {
     panelActiveRef.current = true
@@ -182,6 +192,11 @@ export default function BrowserRecorderControlPanel({
   const [importDraftExpiryGeneration, setImportDraftExpiryGeneration] = useState(0)
   const [savedScript, setSavedScript] = useState<StoredScript | null>(null)
   const [busy, setBusy] = useState(false)
+  const operationBusy = busy || previewParameterizationApplying || salesforceParameterizationApplying
+  useEffect(() => {
+    onOperationBusyChange?.(operationBusy)
+    return () => onOperationBusyChange?.(false)
+  }, [onOperationBusyChange, operationBusy])
   const [feedback, setFeedback] = useState('')
   const [feedbackType, setFeedbackType] = useState<'success' | 'error'>('success')
   const [navigateScheme, setNavigateScheme] = useState<HttpURLScheme>(DEFAULT_HTTP_URL_SCHEME)
@@ -233,6 +248,12 @@ export default function BrowserRecorderControlPanel({
   const salesforceReviewGenerationRef = useRef(0)
   const [previewReviewGeneration, setPreviewReviewGeneration] = useState(0)
   const [salesforceReviewGeneration, setSalesforceReviewGeneration] = useState(0)
+  const [previewConfiguredCredentialReviewIdentity, setPreviewConfiguredCredentialReviewIdentity] = useState('')
+  const [salesforceConfiguredCredentialReviewIdentity, setSalesforceConfiguredCredentialReviewIdentity] = useState('')
+  const previewCredentialReviewIdentity = `${previewReviewGeneration}:${sessionId}`
+  const salesforceCredentialReviewIdentity = `${salesforceReviewGeneration}:${sessionId}`
+  const previewProjectSecretsConfiguredForReview = previewConfiguredCredentialReviewIdentity === previewCredentialReviewIdentity
+  const salesforceProjectSecretsConfiguredForReview = salesforceConfiguredCredentialReviewIdentity === salesforceCredentialReviewIdentity
   const advancePreviewReviewGeneration = useCallback(() => {
     const next = previewReviewGenerationRef.current + 1
     previewReviewGenerationRef.current = next
@@ -756,6 +777,10 @@ export default function BrowserRecorderControlPanel({
     previewPreparedScriptsRef.current = importResultScripts(resolved)
   }
 
+  const handlePreviewProjectSecretsConfigured = useCallback((names: readonly string[]) => {
+    if (names.length > 0) setPreviewConfiguredCredentialReviewIdentity(previewCredentialReviewIdentity)
+  }, [previewCredentialReviewIdentity])
+
   const handleApplyPreviewParameterization = (scriptIndex: number) => (
     parameterizedScript: ScriptDefinition,
     _diffs: unknown[],
@@ -820,55 +845,46 @@ export default function BrowserRecorderControlPanel({
       : null
   }
 
-  // Direct createScript persistence for drafts the controller cannot attest to
-  // a headed-browser recording: bridge-mode saves (the remote controller never
-  // observed the local recording session) and Salesforce HAR drafts. These are
-  // intentionally saved without a source recording session id — createScript
-  // rejects headed-browser session ids by design.
-  const saveScriptsWithRollback = async (
+  // Bridge-mode and Salesforce drafts cannot use the local recording-session
+  // transaction, but they still use one remote create-only batch with a stable
+  // receipt. This prevents duplicate/partial scripts when a 201 is lost.
+  const saveScriptsAtomically = async (
     scripts: ScriptDefinition[],
+    profile: 'browser_recorder' | 'salesforce',
+    source: RecorderImportResult | SalesforceImportResult,
     assertCanPersist: () => void = () => {},
   ): Promise<StoredScript[]> => {
-    const created: StoredScript[] = []
-    try {
-      for (const script of scripts) {
-        assertCanPersist()
-        const stored = await api.createScript(script, session?.project_id, script.folder_id ?? folderId ?? null)
-        created.push(stored)
-      }
-    } catch (error: unknown) {
-      const cleanupResults = await Promise.allSettled(
-        [...created].reverse().map(stored => api.deleteScript(stored.id)),
-      )
-      const cleanupFailures = cleanupResults
-        .map((result, index) => result.status === 'rejected' ? created[created.length - 1 - index] : null)
-        .filter((stored): stored is StoredScript => stored !== null)
-      const saveError = error instanceof Error && error.message.trim()
-        ? error.message.trim()
-        : 'an unexpected error occurred'
-
-      if (cleanupFailures.length > 0) {
-        const retainedScripts = cleanupFailures.map(stored => {
-          const createdIndex = created.indexOf(stored)
-          return withFallbackPersistedScript(stored, scripts[createdIndex])
-        })
-        onImported?.({
-          scripts: retainedScripts,
-          stayInImportReview: true,
-        })
-        const remaining = cleanupFailures.map(stored => `“${stored.name}”`).join(', ')
-        throw new Error(
-          `Could not save all scripts: ${saveError}. Automatic cleanup failed for ${remaining}; delete ${cleanupFailures.length === 1 ? 'it' : 'them'} from the Script Library before retrying.`,
-        )
-      }
-
-      const cleanupSummary = created.length === 0
-        ? 'No scripts were created.'
-        : `${created.length === 1 ? 'The script created' : `All ${created.length} scripts created`} before the failure ${created.length === 1 ? 'was' : 'were'} removed, so no partial import remains.`
-      throw new Error(`Could not save all scripts: ${saveError}. ${cleanupSummary}`)
+    assertCanPersist()
+    const destinationFolderID = scripts[0]?.folder_id ?? folderId ?? null
+    if (scripts.some(script => (script.folder_id ?? folderId ?? null) !== destinationFolderID)) {
+      throw new Error('Atomic save requires every generated script to use the same destination folder.')
     }
-
-    return created.map((stored, index) => withFallbackPersistedScript(stored, scripts[index]))
+    const retained = genericBatchSaveRef.current
+    const operationId = retained
+      && retained.source === source
+      && retained.projectId === session?.project_id
+      && retained.folderId === destinationFolderID
+      && retained.profile === profile
+      ? retained.operationId
+      : `browser-import-${createReplaySessionId()}`
+    genericBatchSaveRef.current = {
+      source,
+      projectId: session?.project_id,
+      folderId: destinationFolderID,
+      profile,
+      operationId,
+    }
+    const response = await api.commitGenericImportBatch({
+      scripts,
+      folder_id: destinationFolderID,
+      operation_id: operationId,
+      source_profile: profile,
+    })
+    if (response.count !== scripts.length || response.scripts.length !== scripts.length) {
+      throw new Error('The atomic save did not return every script. Retry the same save to reconcile its result.')
+    }
+    genericBatchSaveRef.current = null
+    return response.scripts.map((stored, index) => withFallbackPersistedScript(stored, scripts[index]))
   }
 
   // Headed-browser drafts must be persisted through the server-side conversion
@@ -888,6 +904,7 @@ export default function BrowserRecorderControlPanel({
       .filter(selection => selection.selected_ids.length > 0)
     const converted = await api.convertBrowserRecording(sessionId, {
       ...convertRequest(),
+      folder_id: folderId ?? null,
       ...(previewSaveBindingsRef.current.length > 0
         ? { secret_bindings: previewSaveBindingsRef.current.map(binding => ({ ...binding })) }
         : {}),
@@ -973,7 +990,7 @@ export default function BrowserRecorderControlPanel({
           throw new Error('The remote controller did not attest every reviewed browser recording script')
         }
         if (importDraftHasExpired(remoteDraft)) throw new Error(IMPORT_DRAFT_EXPIRED_MESSAGE)
-        persisted = await saveScriptsWithRollback(remoteScripts, () => {
+        persisted = await saveScriptsAtomically(remoteScripts, 'browser_recorder', result, () => {
           if (!isCurrentSession()) throw new Error('The recording session changed while scripts were being saved.')
           if (importDraftHasExpired(remoteDraft)) throw new Error(IMPORT_DRAFT_EXPIRED_MESSAGE)
         })
@@ -1304,6 +1321,10 @@ export default function BrowserRecorderControlPanel({
     salesforcePreparedScriptsRef.current = importResultScripts(resolved)
   }
 
+  const handleSalesforceProjectSecretsConfigured = useCallback((names: readonly string[]) => {
+    if (names.length > 0) setSalesforceConfiguredCredentialReviewIdentity(salesforceCredentialReviewIdentity)
+  }, [salesforceCredentialReviewIdentity])
+
   const handleApplySalesforceParameterization = (
     parameterizedScript: ScriptDefinition,
     _diffs: unknown[],
@@ -1361,6 +1382,7 @@ export default function BrowserRecorderControlPanel({
   }
 
   const handleSaveSalesforceDraft = async () => {
+    if (!salesforceDraft) return
     if (importDraftHasExpired(salesforceDraft)) {
       showFeedback(IMPORT_DRAFT_EXPIRED_MESSAGE, 'error')
       return
@@ -1371,7 +1393,7 @@ export default function BrowserRecorderControlPanel({
       if (!scripts?.length) return
       if (!isCurrentSession()) return
       if (importDraftHasExpired(salesforceDraft)) throw new Error(IMPORT_DRAFT_EXPIRED_MESSAGE)
-      const persisted = await saveScriptsWithRollback(scripts, () => {
+      const persisted = await saveScriptsAtomically(scripts, 'salesforce', salesforceDraft, () => {
         if (!isCurrentSession()) throw new Error('The recording session changed while scripts were being saved.')
         if (importDraftHasExpired(salesforceDraft)) throw new Error(IMPORT_DRAFT_EXPIRED_MESSAGE)
       })
@@ -1795,7 +1817,7 @@ export default function BrowserRecorderControlPanel({
             <SecretBindingReview
               ref={previewCredentialReviewRef}
               requirements={previewSecretRequirements}
-              reviewGeneration={`${previewReviewGeneration}:${sessionId}`}
+              reviewGeneration={previewCredentialReviewIdentity}
               projectId={session.project_id}
               sourceSecretSessionId={preview?.source_secret_session_id}
               sourceSecretSessionExpiresAt={preview?.source_secret_session_expires_at}
@@ -1803,7 +1825,14 @@ export default function BrowserRecorderControlPanel({
               disabled={previewImportDraftExpiry?.expired || busy || previewParameterizationApplying}
               onApply={handleApplyPreviewSecretBindings}
               onPreparedChange={setPreviewPreparedSecrets}
+              onProjectSecretsConfigured={handlePreviewProjectSecretsConfigured}
             />
+          )}
+          {previewProjectSecretsConfiguredForReview && (
+            <div className="rec-feedback" role="status">
+              Project-secret values configured during this review remain in Project Secrets independently of script saving.
+              {' '}If script saving fails, retrying this save reuses those configured values. Any atomic-save promise on this page applies to scripts, not external secret-store writes.
+            </div>
           )}
           {previewParameterizationPanels.map(({ parameterization, script, scriptIndex }) => (
             <ParameterizationReview
@@ -1895,7 +1924,7 @@ export default function BrowserRecorderControlPanel({
                 <SecretBindingReview
                   ref={salesforceCredentialReviewRef}
                   requirements={salesforceSecretRequirements}
-                  reviewGeneration={`${salesforceReviewGeneration}:${sessionId}`}
+                  reviewGeneration={salesforceCredentialReviewIdentity}
                   projectId={session.project_id}
                   sourceSecretSessionId={salesforceDraft.source_secret_session_id}
                   sourceSecretSessionExpiresAt={salesforceDraft.source_secret_session_expires_at}
@@ -1903,7 +1932,14 @@ export default function BrowserRecorderControlPanel({
                   disabled={salesforceImportDraftExpiry?.expired || busy || salesforceParameterizationApplying}
                   onApply={handleApplySalesforceSecretBindings}
                   onPreparedChange={setSalesforcePreparedSecrets}
+                  onProjectSecretsConfigured={handleSalesforceProjectSecretsConfigured}
                 />
+              )}
+              {salesforceProjectSecretsConfiguredForReview && (
+                <div className="rec-feedback" role="status">
+                  Project-secret values configured during this review remain in Project Secrets independently of script saving.
+                  {' '}If script saving fails, retrying this save reuses those configured values. Any atomic-save promise on this page applies to scripts, not external secret-store writes.
+                </div>
               )}
               {salesforceDraft.parameterization && (salesforceDraft.parameterization.suggestions?.length || 0) > 0 && salesforceScript && (
                 <ParameterizationReview

@@ -370,7 +370,8 @@ func TestSharedImportCommitPreservesJSONBodyWireBytesAcrossLegacyRoutes(t *testi
 					Body: body,
 				}},
 			}
-			payload, err := json.Marshal(map[string]any{"script": script})
+			submitted := attestedImportCommitDraft(t, server, route.path, script)
+			payload, err := json.Marshal(map[string]any{"script": submitted})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -1328,6 +1329,7 @@ func TestProtectedImportFolderOverrideIsProjectScopedAndNonEnumerating(t *testin
 		projectID       = "protected-folder-project"
 		foreignProject  = "protected-folder-foreign-project"
 		localFolderID   = "protected-folder-local"
+		resultsFolderID = "protected-folder-results"
 		foreignFolderID = "protected-folder-foreign"
 	)
 	now := time.Now().UTC()
@@ -1341,6 +1343,7 @@ func TestProtectedImportFolderOverrideIsProjectScopedAndNonEnumerating(t *testin
 	}
 	for _, folder := range []*storage.Folder{
 		{ID: localFolderID, ProjectID: projectID, Name: "Local", Category: "scripts"},
+		{ID: resultsFolderID, ProjectID: projectID, Name: "Results", Category: "results"},
 		{ID: foreignFolderID, ProjectID: foreignProject, Name: "Foreign", Category: "scripts"},
 	} {
 		if err := store.SaveFolder(folder); err != nil {
@@ -1407,6 +1410,45 @@ func TestProtectedImportFolderOverrideIsProjectScopedAndNonEnumerating(t *testin
 	}
 	if foreign.Body.String() != missing.Body.String() {
 		t.Fatalf("folder existence leaked through response: foreign=%s missing=%s", foreign.Body.String(), missing.Body.String())
+	}
+	wrongCategory := commitToFolder(resultsFolderID)
+	if wrongCategory.Code != http.StatusConflict ||
+		!strings.Contains(wrongCategory.Body.String(), "script folder") {
+		t.Fatalf("wrong-category folder status = %d, want 409 body=%s", wrongCategory.Code, wrongCategory.Body.String())
+	}
+	candidateFolder := resultsFolderID
+	candidateWithWrongCategory := cloneScriptDefinition(candidate)
+	candidateWithWrongCategory.FolderID = &candidateFolder
+	wrongCategorySessionID, _, registerErr := server.registerImportCandidateSession(
+		inspection,
+		"postman",
+		candidateWithWrongCategory,
+	)
+	if registerErr != nil || wrongCategorySessionID == "" {
+		t.Fatalf("register wrong-category candidate: id=%q err=%v", wrongCategorySessionID, registerErr)
+	}
+	wrongCategoryBody, marshalErr := json.Marshal(map[string]any{
+		"import_session_id": wrongCategorySessionID,
+		"project_id":        projectID,
+	})
+	if marshalErr != nil {
+		t.Fatal(marshalErr)
+	}
+	wrongCategoryRequest := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/scripts/import/postman/save",
+		bytes.NewReader(wrongCategoryBody),
+	)
+	wrongCategoryRequest.Header.Set("Content-Type", "application/json")
+	wrongCategoryFromCandidate := httptest.NewRecorder()
+	server.mux.ServeHTTP(wrongCategoryFromCandidate, wrongCategoryRequest)
+	if wrongCategoryFromCandidate.Code != http.StatusConflict ||
+		!strings.Contains(wrongCategoryFromCandidate.Body.String(), "script folder") {
+		t.Fatalf(
+			"candidate wrong-category folder status = %d, want 409 body=%s",
+			wrongCategoryFromCandidate.Code,
+			wrongCategoryFromCandidate.Body.String(),
+		)
 	}
 	local := commitToFolder(localFolderID)
 	if local.Code != http.StatusCreated {

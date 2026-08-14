@@ -257,7 +257,8 @@ func (parser *jsonProjectionParser) parseValue(
 		if err != nil {
 			return err
 		}
-		if parser.options.Mode != Preserve {
+		if parser.options.Mode != Preserve ||
+			preserveRequiresCredentialReplacement(item) {
 			encoded, err := json.Marshal(projected)
 			if err != nil {
 				return errors.New("projected JSON string could not be encoded")

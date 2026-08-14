@@ -101,6 +101,163 @@ describe('ScriptImportReview', () => {
     expect(toJSON).toHaveBeenCalledTimes(1)
   })
 
+  it('never places imported credential values in the generated preview DOM', () => {
+    const credentialScript = {
+      ...script,
+      config: {
+        base_url: 'https://api.example.test',
+        http: {
+          auth: {
+            password: 'raw-password-should-not-render',
+            token: '{{secret.API_TOKEN}}',
+            session_id: 'raw-session-object',
+          },
+          headers: {
+            Authorization: 'Bearer raw-authorization-token',
+            'X-API-Key': 'raw-api-key-value',
+            'idpctx-session-id': 'raw-idpctx-session',
+            'X-CSRF-Token': 'raw-csrf-header',
+          },
+        },
+      },
+      actions: [{
+        ...script.actions[0],
+        body: 'password=body-password&safe=value&credentials[session_id]=raw-session-body {"csrf":"raw-csrf-body"} <mh:token>xml-token</mh:token> <auth:xsrfToken>raw-xsrf-xml</auth:xsrfToken>',
+      }],
+    } as ScriptDefinition
+
+    act(() => {
+      root.render(
+        <ScriptImportReview
+          title="Credential-safe preview"
+          script={credentialScript}
+        />,
+      )
+    })
+
+    const preview = container.querySelector('.script-import-review-preview')?.textContent || ''
+    expect(preview).not.toContain('raw-password-should-not-render')
+    expect(preview).not.toContain('raw-authorization-token')
+    expect(preview).not.toContain('raw-api-key-value')
+    expect(preview).not.toContain('raw-session-object')
+    expect(preview).not.toContain('raw-idpctx-session')
+    expect(preview).not.toContain('raw-csrf-header')
+    expect(preview).not.toContain('raw-session-body')
+    expect(preview).not.toContain('raw-csrf-body')
+    expect(preview).not.toContain('raw-xsrf-xml')
+    expect(preview).not.toContain('body-password')
+    expect(preview).not.toContain('xml-token')
+    expect(preview).toContain('[protected imported value]')
+    expect(preview).toContain('{{secret.API_TOKEN}}')
+  })
+
+  it('protects scalar descendants of credential wrappers while preserving logical secret references', () => {
+    act(() => {
+      root.render(
+        <ScriptImportReview
+          title="Credential wrapper preview"
+          script={script}
+          previewData={{
+            credentials: {
+              value: 'wrapper-value-canary',
+              nested: {
+                arbitraryCamel: 'nested-value-canary',
+                reference: '{{secret.team-api.session.key}}',
+                authorization: 'Bearer {{secret.team-api.token}}',
+                count: 42,
+              },
+              entries: ['array-value-canary', '{{secret.team-api.array-key}}'],
+            },
+            sessionId: 'camel-session-canary',
+            'idpctx-session-id': 'separator-session-canary',
+            csrfToken: 'camel-csrf-canary',
+            xsrf_token: 'separator-xsrf-canary',
+            harmless: 'visible-non-credential-value',
+          }}
+        />,
+      )
+    })
+
+    const preview = container.querySelector('.script-import-review-preview')?.textContent || ''
+    expect(preview).not.toContain('wrapper-value-canary')
+    expect(preview).not.toContain('nested-value-canary')
+    expect(preview).not.toContain('array-value-canary')
+    expect(preview).not.toContain('camel-session-canary')
+    expect(preview).not.toContain('separator-session-canary')
+    expect(preview).not.toContain('camel-csrf-canary')
+    expect(preview).not.toContain('separator-xsrf-canary')
+    expect(preview).toContain('{{secret.team-api.session.key}}')
+    expect(preview).toContain('Bearer {{secret.team-api.token}}')
+    expect(preview).toContain('{{secret.team-api.array-key}}')
+    expect(preview).toContain('visible-non-credential-value')
+  })
+
+  it('mirrors broad backend header governance without hiding non-sensitive header values', () => {
+    act(() => {
+      root.render(
+        <ScriptImportReview
+          title="Broad header policy preview"
+          script={script}
+          previewData={{
+            headers: {
+              'Subscription-Key': 'subscription-key-canary',
+              'X-Tenant-Key': 'tenant-key-canary',
+              'X-CustomToken': 'custom-token-canary',
+              'X-Auth': 'auth-canary',
+              'Content-Type': 'application/json; charset=utf-8',
+              'X-Monkey': 'visible-monkey-value',
+              'X-Request-ID': 'visible-request-id',
+            },
+            raw_transport: 'Authorization: Bearer x\nProxy-Authorization: Basic y\nAuthorization: Digest raw-digest-canary\nProxy-Authorization: Negotiate raw-negotiate-canary\nCookie: sid=abc; harmless=raw-cookie-canary\nX-Request-ID: visible-raw-request-id\n<credentials>xml-credential-canary</credentials>\n<authorization>xml-auth-canary</authorization>\n<session>xml-session-canary</session>\n<client:credentials>xml-qualified-canary</client:credentials>\n<Envelope><Body><credentials>xml-nested-canary</credentials></Body></Envelope>\n<password><!-- </password> -->xml-comment-canary</password>\n<password><![CDATA[ </password> ]]>xml-cdata-canary</password>\n<root><entry name="password" value="xml-semantic-value-canary"/><entry name="pass&#x77;ord" value="xml-entity-canary"/><property key="client_secret">xml-semantic-text-canary</property><password fixed="xml-sensitive-attribute-canary"/><entry name="display_name" value="visible-xml-attribute"/></root>\n<monkey>visible-xml-monkey</monkey>',
+            truncated_xml: '<password>xml-truncated-canary',
+            truncated_semantic_xml: '<entry name="pass&#x77;ord" value="xml-truncated-semantic-canary"',
+            mismatched_xml: '<root><password>xml-mismatched-canary</root>',
+            header_records: [
+              { name: 'Ocp-Apim-Subscription-Key', value: 'semantic-key-canary' },
+              { key: 'X-BuildToken', value: 'semantic-token-canary' },
+              { name: 'Content-Type', value: 'visible-semantic-content-type' },
+            ],
+          }}
+        />,
+      )
+    })
+
+    const preview = container.querySelector('.script-import-review-preview')?.textContent || ''
+    expect(preview).not.toContain('subscription-key-canary')
+    expect(preview).not.toContain('tenant-key-canary')
+    expect(preview).not.toContain('custom-token-canary')
+    expect(preview).not.toContain('auth-canary')
+    expect(preview).not.toContain('semantic-key-canary')
+    expect(preview).not.toContain('semantic-token-canary')
+    expect(preview).not.toContain('xml-credential-canary')
+    expect(preview).not.toContain('xml-auth-canary')
+    expect(preview).not.toContain('xml-session-canary')
+    expect(preview).not.toContain('xml-qualified-canary')
+    expect(preview).not.toContain('xml-nested-canary')
+    expect(preview).not.toContain('xml-semantic-value-canary')
+    expect(preview).not.toContain('xml-semantic-text-canary')
+    expect(preview).not.toContain('xml-sensitive-attribute-canary')
+    expect(preview).not.toContain('xml-entity-canary')
+    expect(preview).not.toContain('xml-comment-canary')
+    expect(preview).not.toContain('xml-cdata-canary')
+    expect(preview).not.toContain('xml-truncated-canary')
+    expect(preview).not.toContain('xml-truncated-semantic-canary')
+    expect(preview).not.toContain('xml-mismatched-canary')
+    expect(preview).not.toMatch(/Bearer x|Basic y/)
+    expect(preview).not.toContain('raw-digest-canary')
+    expect(preview).not.toContain('raw-negotiate-canary')
+    expect(preview).not.toContain('raw-cookie-canary')
+    expect(preview).toContain('Ocp-Apim-Subscription-Key')
+    expect(preview).toContain('X-BuildToken')
+    expect(preview).toContain('application/json; charset=utf-8')
+    expect(preview).toContain('visible-monkey-value')
+    expect(preview).toContain('visible-request-id')
+    expect(preview).toContain('visible-semantic-content-type')
+    expect(preview).toContain('visible-xml-monkey')
+    expect(preview).toContain('visible-xml-attribute')
+    expect(preview).toContain('visible-raw-request-id')
+  })
+
   it('renders unsupported elements and diagnostic review sections', () => {
     act(() => {
       root.render(
@@ -124,10 +281,11 @@ describe('ScriptImportReview', () => {
       )
     })
 
-    expect(container.textContent).toContain('Unsupported Elements (1)')
-    expect(container.textContent).toContain('schema reference external.yaml')
-    expect(container.textContent).toContain('Import Review (1)')
-    expect(container.textContent).toContain('Multipart file upload needs a governed file value.')
+    expect(container.textContent).toContain('1 warning')
+    expect(container.textContent).toContain('1 unsupported')
+    expect(container.textContent).not.toContain('schema reference external.yaml')
+    expect(container.textContent).not.toContain('Multipart file upload needs a governed file value.')
+    expect(container.querySelector('.script-import-review-section')).toBeNull()
 
     const warningButton = Array.from(container.querySelectorAll('button'))
       .find(button => button.textContent?.trim() === '1 warning') as HTMLButtonElement
@@ -135,6 +293,13 @@ describe('ScriptImportReview', () => {
     const dialog = document.body.querySelector('[role="dialog"]')
     expect(dialog?.textContent).toContain('Import Diagnostics')
     expect(dialog?.textContent).toContain('Multipart file upload needs a governed file value.')
+    act(() => {
+      ;(dialog?.querySelector('button') as HTMLButtonElement).click()
+    })
+    const unsupportedButton = Array.from(container.querySelectorAll('button'))
+      .find(button => button.textContent?.trim() === '1 unsupported') as HTMLButtonElement
+    act(() => unsupportedButton.click())
+    expect(document.body.querySelector('[role="dialog"]')?.textContent).toContain('schema reference external.yaml')
   })
 
   it('opens blocker and conversion-warning summaries independently', () => {
@@ -165,6 +330,76 @@ describe('ScriptImportReview', () => {
     })
     act(() => button('1 warning').click())
     expect(document.body.querySelector('[role="dialog"]')?.textContent).toContain('A generated placeholder needs review.')
+  })
+
+  it('pages ten thousand modal findings and resets the stale modal for a new review generation', () => {
+    const warnings = Array.from({ length: 10_000 }, (_, index) => `Finding ${String(index).padStart(5, '0')}`)
+    act(() => {
+      root.render(
+        <ScriptImportReview
+          reviewGeneration="large-finding-set"
+          title="Review Generated Script"
+          script={script}
+          warnings={warnings}
+        />,
+      )
+    })
+
+    const warningButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent?.trim() === '10000 warnings')!
+    act(() => warningButton.click())
+    let dialog = document.body.querySelector<HTMLElement>('[role="dialog"]')!
+    expect(dialog.querySelectorAll('.issue-details-item')).toHaveLength(100)
+    expect(dialog.textContent).toContain('Finding 00000')
+    expect(dialog.textContent).not.toContain('Finding 00100')
+    expect(dialog.querySelector('.issue-details-pagination')?.textContent)
+      .toContain('Showing 1–100 of 10000. Page 1 of 100.')
+
+    const next = Array.from(dialog.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent?.includes('Next 100'))!
+    act(() => next.click())
+    dialog = document.body.querySelector<HTMLElement>('[role="dialog"]')!
+    expect(dialog.querySelectorAll('.issue-details-item')).toHaveLength(100)
+    expect(dialog.textContent).toContain('Finding 00100')
+    expect(dialog.textContent).not.toContain('Finding 00000')
+
+    act(() => {
+      root.render(
+        <ScriptImportReview
+          reviewGeneration="replacement-review"
+          title="Replacement Review"
+          script={script}
+          warnings={['New finding']}
+        />,
+      )
+    })
+    expect(document.body.querySelector('[role="dialog"]')).toBeNull()
+  })
+
+  it('renders an explicit accessible reason whenever the owner disables saving', () => {
+    const onSave = vi.fn()
+    act(() => {
+      root.render(
+        <ScriptImportReview
+          reviewGeneration="disabled-reason"
+          title="Review Generated Script"
+          script={script}
+          saveDisabled
+          saveDisabledReason="Select an existing script to replace before saving."
+          onSave={onSave}
+        />,
+      )
+    })
+
+    const save = container.querySelector<HTMLButtonElement>('.script-import-review-actions .btn-primary')!
+    const describedBy = save.getAttribute('aria-describedby')
+    expect(save.disabled).toBe(true)
+    expect(save.title).toBe('Select an existing script to replace before saving.')
+    expect(describedBy).toBeTruthy()
+    expect(document.getElementById(describedBy!)?.textContent)
+      .toContain('Why saving is unavailable: Select an existing script to replace before saving.')
+    act(() => save.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    expect(onSave).not.toHaveBeenCalled()
   })
 
   it('uses theme-aware contrast for credential-preserving session notices', async () => {
@@ -229,6 +464,25 @@ describe('ScriptImportReview', () => {
     expect(preview?.textContent?.length).toBeLessThan(121000)
   })
 
+  it('bounds text scanning and fails closed when truncation splits a credential field', () => {
+    const prefix = 'x'.repeat(19_985)
+    act(() => {
+      root.render(
+        <ScriptImportReview
+          reviewGeneration="large-sensitive-string"
+          title="Review Generated Script"
+          script={script}
+          previewData={{ raw: `${prefix}\nAuthorization: raw-boundary-canary${'y'.repeat(1_000_000)}` }}
+        />,
+      )
+    })
+
+    const preview = container.querySelector('.script-import-review-preview pre')?.textContent || ''
+    expect(preview).not.toContain('raw-boundary-canary')
+    expect(preview.length).toBeLessThan(21_000)
+    expect(container.textContent).toContain('Preview truncated for browser performance')
+  })
+
   it('auto-applies safe references and allows values to be configured later', async () => {
     const onSave = vi.fn()
     const onEdit = vi.fn()
@@ -270,6 +524,76 @@ describe('ScriptImportReview', () => {
       await Promise.resolve()
     })
     expect(onSave).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps the durable project-secret recovery contract visible after a later script save failure', async () => {
+    const requirement = {
+      id: 'auth-header-with-value',
+      path: '/actions/0/headers/Authorization',
+      label: 'Create Order — Authorization header',
+      context: 'Bearer credential',
+      suggested_name: 'ORDER_API_TOKEN',
+      replacement: 'Bearer {{secret.ORDER_API_TOKEN}}',
+    }
+    const onSave = vi.fn()
+
+    function Harness() {
+      const [requirements, setRequirements] = useState([requirement])
+      const [saveError, setSaveError] = useState('')
+      return (
+        <>
+          <ScriptImportReview
+            reviewGeneration="durable-secret-retry"
+            title="Review Generated Script"
+            script={script}
+            projectId="project-1"
+            onSave={() => {
+              onSave()
+              setSaveError('The script save failed after credential preparation.')
+            }}
+            secretBindingRequirements={requirements}
+            onSecretBindingsApply={async () => setRequirements([])}
+          />
+          {saveError && <div role="alert">{saveError}</div>}
+        </>
+      )
+    }
+
+    await act(async () => {
+      root.render(<Harness />)
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    const valueInput = container.querySelector<HTMLInputElement>('.secret-binding-review input[type="password"]')!
+    act(() => {
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set
+      setter?.call(valueInput, 'write-only-order-token')
+      valueInput.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+
+    const firstSave = container.querySelector<HTMLButtonElement>('.script-import-review-actions .btn-primary')!
+    await act(async () => {
+      firstSave.click()
+      await Promise.resolve()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(apiMock.createProjectSecrets).toHaveBeenCalledTimes(1)
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain('script save failed')
+    const recovery = container.querySelector('.script-import-review-credential-recovery')
+    expect(recovery?.textContent).toContain('remain in Project Secrets independently of script saving')
+    expect(recovery?.textContent).toContain('retrying this save reuses those configured values')
+    expect(recovery?.textContent).toContain('atomic-save promise on this page applies to scripts')
+    expect(container.textContent).not.toContain('write-only-order-token')
+
+    const retrySave = container.querySelector<HTMLButtonElement>('.script-import-review-actions .btn-primary')!
+    await act(async () => {
+      retrySave.click()
+      await Promise.resolve()
+    })
+    expect(onSave).toHaveBeenCalledTimes(2)
+    expect(apiMock.createProjectSecrets).toHaveBeenCalledTimes(1)
   })
 
   it('keeps server-marked imported values runnable when Save or Edit selects no bindings', async () => {

@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,11 +12,14 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jasonczech/apexload/pkg/convert/correlate"
 	"github.com/jasonczech/apexload/pkg/convert/har"
 	"github.com/jasonczech/apexload/pkg/convert/paramize"
 	"github.com/jasonczech/apexload/pkg/convert/salesforce"
@@ -582,6 +586,10 @@ func (s *Server) writeBrowserRecordingControlResult(w http.ResponseWriter, sessi
 type browserRecordingConvertRequest struct {
 	Name           string `json:"name"`
 	MaxThinkTimeMs int    `json:"max_think_time_ms,omitempty"`
+	// FolderID is save-only. Every script produced by this one atomic
+	// conversion is validated against the recording project and placed in the
+	// same scripts-category destination.
+	FolderID *string `json:"folder_id,omitempty"`
 	// StartSeq/EndSeq trim conversion to an inclusive step window (0 = open).
 	StartSeq int `json:"start_seq,omitempty"`
 	EndSeq   int `json:"end_seq,omitempty"`
@@ -646,6 +654,29 @@ type browserRecordingParameterizationSelection struct {
 }
 
 const maxBridgedBrowserImportScripts = 64
+
+const (
+	browserRecordingSaveVersion    = 1
+	browserRecordingSaveVersionKey = "browser_recorder_save_version"
+	// "session_id" is intentionally avoided in the durable key name: generic
+	// metadata disclosure sanitization treats that spelling as a credential.
+	// This value is a non-secret UUID receipt correlation reference.
+	browserRecordingSaveSessionIDKey     = "browser_recorder_save_ref"
+	browserRecordingSaveIndexKey         = "browser_recorder_save_index"
+	browserRecordingSaveCountKey         = "browser_recorder_save_count"
+	browserRecordingSaveActorHashKey     = "browser_recorder_save_actor_hash"
+	browserRecordingSaveRoleKey          = "browser_recorder_save_role"
+	browserRecordingSaveProofKey         = "browser_recorder_save_proof"
+	browserRecordingSaveRoleBrowser      = "browser"
+	browserRecordingSaveRoleHTTP         = "http"
+	browserRecordingHARBaselineNeededKey = "browser_recorder_har_baseline_required"
+	browserRecordingSaveActorDomain      = "apexload:browser-recorder-save-actor:v1"
+	browserRecordingSaveProofDomain      = "apexload:browser-recorder-save-proof:v1"
+	browserRecordingSaveLocatorDomain    = "apexload:browser-recorder-save-locator:v1"
+	browserRecordingSaveLocatorKeyPrefix = "import.browser_recorder.locator.v1."
+	browserRecordingSaveLocatorStaged    = "staged"
+	browserRecordingSaveLocatorPublished = "published"
+)
 const maxBrowserRecordingParameterizationSelections = 4096
 
 // handleAttestBridgedBrowserRecordingImport is an authenticated,
@@ -958,6 +989,959 @@ func attachRecordingProvenance(script *dsl.Script, artifact *recbrowser.Session,
 	}
 }
 
+func stampBrowserRecordingSaveProvenance(
+	script *dsl.Script,
+	recordingID string,
+	index int,
+	count int,
+	actorHash string,
+	role string,
+	baselineRequired bool,
+) {
+	if script == nil {
+		return
+	}
+	if script.Metadata == nil {
+		script.Metadata = &dsl.ScriptMetadata{}
+	}
+	if script.Metadata.Import == nil {
+		script.Metadata.Import = &dsl.ImportMetadata{}
+	}
+	if script.Metadata.Import.Preserved == nil {
+		script.Metadata.Import.Preserved = make(map[string]any)
+	}
+	preserved := script.Metadata.Import.Preserved
+	preserved[browserRecordingSaveVersionKey] = browserRecordingSaveVersion
+	preserved[browserRecordingSaveSessionIDKey] = strings.TrimSpace(recordingID)
+	preserved[browserRecordingSaveIndexKey] = index
+	preserved[browserRecordingSaveCountKey] = count
+	preserved[browserRecordingSaveActorHashKey] = strings.TrimSpace(actorHash)
+	preserved[browserRecordingSaveRoleKey] = strings.TrimSpace(role)
+	preserved[browserRecordingHARBaselineNeededKey] = baselineRequired
+}
+
+func (s *Server) browserRecordingSaveActorFingerprint(recordingID, actorSubject string) (string, error) {
+	payload := struct {
+		RecordingID string `json:"recording_id"`
+		Actor       string `json:"actor"`
+	}{
+		RecordingID: strings.TrimSpace(recordingID),
+		Actor:       strings.TrimSpace(actorSubject),
+	}
+	key, err := s.directImportDigestKey()
+	if err != nil {
+		return "", err
+	}
+	if len(key) == 0 {
+		return hashCanonical(payload), nil
+	}
+	return directImportHMAC(key, browserRecordingSaveActorDomain, payload)
+}
+
+type browserRecordingSaveProvenanceProof struct {
+	Version          int    `json:"version"`
+	RecordingID      string `json:"recording_id"`
+	ScriptID         string `json:"script_id"`
+	ProjectID        string `json:"project_id"`
+	Index            int    `json:"index"`
+	Count            int    `json:"count"`
+	ActorHash        string `json:"actor_hash"`
+	Role             string `json:"role"`
+	BaselineRequired bool   `json:"baseline_required"`
+}
+
+func browserRecordingSaveProvenanceProofPayload(script *dsl.Script) (browserRecordingSaveProvenanceProof, error) {
+	preserved := browserRecordingImportPreserved(script)
+	if script == nil || preserved == nil {
+		return browserRecordingSaveProvenanceProof{}, errors.New("browser recording save provenance is missing")
+	}
+	baselineRequired, _ := preserved[browserRecordingHARBaselineNeededKey].(bool)
+	payload := browserRecordingSaveProvenanceProof{
+		Version:          browserRecordingPreservedInt(preserved, browserRecordingSaveVersionKey),
+		RecordingID:      browserRecordingPreservedString(preserved, browserRecordingSaveSessionIDKey),
+		ScriptID:         strings.TrimSpace(script.ID),
+		ProjectID:        normalizeProjectID(script.ProjectID),
+		Index:            browserRecordingPreservedInt(preserved, browserRecordingSaveIndexKey),
+		Count:            browserRecordingPreservedInt(preserved, browserRecordingSaveCountKey),
+		ActorHash:        browserRecordingPreservedString(preserved, browserRecordingSaveActorHashKey),
+		Role:             browserRecordingPreservedString(preserved, browserRecordingSaveRoleKey),
+		BaselineRequired: baselineRequired,
+	}
+	if payload.Version != browserRecordingSaveVersion || payload.RecordingID == "" || payload.ScriptID == "" ||
+		payload.ActorHash == "" || payload.Index < 0 || payload.Count <= 0 {
+		return browserRecordingSaveProvenanceProof{}, errors.New("browser recording save provenance is incomplete")
+	}
+	return payload, nil
+}
+
+func (s *Server) browserRecordingSaveProvenanceProof(script *dsl.Script) (string, error) {
+	payload, err := browserRecordingSaveProvenanceProofPayload(script)
+	if err != nil {
+		return "", err
+	}
+	key, err := s.directImportDigestKey()
+	if err != nil {
+		return "", err
+	}
+	if len(key) == 0 {
+		return hashCanonical(payload), nil
+	}
+	return directImportHMAC(key, browserRecordingSaveProofDomain, payload)
+}
+
+func (s *Server) verifyBrowserRecordingSaveProvenance(script *dsl.Script) error {
+	preserved := browserRecordingImportPreserved(script)
+	actual := browserRecordingPreservedString(preserved, browserRecordingSaveProofKey)
+	if actual == "" {
+		return errors.New("server proof is missing")
+	}
+	expected, err := s.browserRecordingSaveProvenanceProof(script)
+	if err != nil {
+		return err
+	}
+	if actual != expected {
+		return errors.New("server proof does not match the saved script")
+	}
+	return nil
+}
+
+type browserRecordingSaveLocator struct {
+	Version       int      `json:"version"`
+	RecordingID   string   `json:"recording_id"`
+	ProjectID     string   `json:"project_id"`
+	ScriptIDs     []string `json:"script_ids"`
+	ReceiptID     string   `json:"receipt_id,omitempty"`
+	OperationHash string   `json:"operation_hash,omitempty"`
+	RequestDigest string   `json:"request_digest,omitempty"`
+	// State makes the locator a two-phase publication marker. The staged value
+	// is durable before the claim commit; published is CAS-promoted only after
+	// every script becomes visible. Omitempty keeps previously written v1
+	// locators verifiable so compensated entries can still be cleared without
+	// treating an unsigned publication state as durable evidence.
+	State string `json:"state,omitempty"`
+	Proof string `json:"proof"`
+}
+
+func (s *Server) browserRecordingSaveLocatorKey(recordingID string) (string, error) {
+	key, err := s.directImportDigestKey()
+	if err != nil {
+		return "", err
+	}
+	recordingID = strings.TrimSpace(recordingID)
+	if recordingID == "" {
+		return "", errors.New("browser recording locator requires a recording id")
+	}
+	if len(key) == 0 {
+		return browserRecordingSaveLocatorKeyPrefix + directImportSHA256(recordingID), nil
+	}
+	hash, err := directImportHMAC(key, browserRecordingSaveLocatorDomain+":key", recordingID)
+	if err != nil {
+		return "", err
+	}
+	return browserRecordingSaveLocatorKeyPrefix + strings.TrimPrefix(hash, "hmac-sha256:"), nil
+}
+
+func (s *Server) browserRecordingSaveLocatorProof(locator browserRecordingSaveLocator) (string, error) {
+	locator.Proof = ""
+	key, err := s.directImportDigestKey()
+	if err != nil {
+		return "", err
+	}
+	if len(key) == 0 {
+		return hashCanonical(locator), nil
+	}
+	return directImportHMAC(key, browserRecordingSaveLocatorDomain+":proof", locator)
+}
+
+func (s *Server) encodeBrowserRecordingSaveLocator(
+	recordingID string,
+	projectID string,
+	scriptIDs []string,
+	attempts ...*directImportAttempt,
+) (string, error) {
+	return s.encodeBrowserRecordingSaveLocatorState(
+		recordingID,
+		projectID,
+		scriptIDs,
+		browserRecordingSaveLocatorStaged,
+		attempts...,
+	)
+}
+
+func (s *Server) encodeBrowserRecordingSaveLocatorState(
+	recordingID string,
+	projectID string,
+	scriptIDs []string,
+	state string,
+	attempts ...*directImportAttempt,
+) (string, error) {
+	locator := browserRecordingSaveLocator{
+		Version:     browserRecordingSaveVersion,
+		RecordingID: strings.TrimSpace(recordingID),
+		ProjectID:   normalizeProjectID(projectID),
+		ScriptIDs:   append([]string(nil), scriptIDs...),
+		State:       strings.TrimSpace(state),
+	}
+	if len(attempts) > 0 && attempts[0] != nil && attempts[0].receipt != nil {
+		locator.ReceiptID = strings.TrimSpace(attempts[0].receipt.ID)
+		locator.OperationHash = strings.TrimSpace(attempts[0].receipt.OperationKeyHash)
+		locator.RequestDigest = strings.TrimSpace(attempts[0].receipt.RequestSHA256)
+	}
+	return s.encodeBrowserRecordingSaveLocatorValue(locator)
+}
+
+func (s *Server) encodeBrowserRecordingSaveLocatorValue(locator browserRecordingSaveLocator) (string, error) {
+	if locator.RecordingID == "" || len(locator.ScriptIDs) == 0 ||
+		len(locator.ScriptIDs) > maxBridgedBrowserImportScripts+1 {
+		return "", errors.New("browser recording locator is incomplete")
+	}
+	if locator.State != browserRecordingSaveLocatorStaged &&
+		locator.State != browserRecordingSaveLocatorPublished {
+		return "", errors.New("browser recording locator has an invalid publication state")
+	}
+	receiptFields := 0
+	for _, value := range []string{locator.ReceiptID, locator.OperationHash, locator.RequestDigest} {
+		if strings.TrimSpace(value) != "" {
+			receiptFields++
+		}
+	}
+	if receiptFields != 0 && receiptFields != 3 {
+		return "", errors.New("browser recording locator has incomplete receipt evidence")
+	}
+	seen := make(map[string]struct{}, len(locator.ScriptIDs))
+	for _, scriptID := range locator.ScriptIDs {
+		scriptID = strings.TrimSpace(scriptID)
+		if scriptID == "" {
+			return "", errors.New("browser recording locator contains an empty script id")
+		}
+		if _, duplicate := seen[scriptID]; duplicate {
+			return "", errors.New("browser recording locator contains duplicate script ids")
+		}
+		seen[scriptID] = struct{}{}
+	}
+	proof, err := s.browserRecordingSaveLocatorProof(locator)
+	if err != nil {
+		return "", err
+	}
+	locator.Proof = proof
+	payload, err := json.Marshal(locator)
+	if err != nil {
+		return "", err
+	}
+	return string(payload), nil
+}
+
+func (s *Server) decodeBrowserRecordingSaveLocator(raw string) (*browserRecordingSaveLocator, error) {
+	var locator browserRecordingSaveLocator
+	decoder := json.NewDecoder(strings.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&locator); err != nil {
+		return nil, err
+	}
+	if locator.Version != browserRecordingSaveVersion || locator.RecordingID == "" || locator.ProjectID == "" ||
+		len(locator.ScriptIDs) == 0 || len(locator.ScriptIDs) > maxBridgedBrowserImportScripts+1 || locator.Proof == "" {
+		return nil, errors.New("browser recording locator is incomplete")
+	}
+	expected, err := s.browserRecordingSaveLocatorProof(locator)
+	if err != nil {
+		return nil, err
+	}
+	if expected != locator.Proof {
+		return nil, errors.New("browser recording locator proof does not match")
+	}
+	if locator.State != "" && locator.State != browserRecordingSaveLocatorStaged &&
+		locator.State != browserRecordingSaveLocatorPublished {
+		return nil, errors.New("browser recording locator has an invalid publication state")
+	}
+	receiptFields := 0
+	for _, value := range []string{locator.ReceiptID, locator.OperationHash, locator.RequestDigest} {
+		if strings.TrimSpace(value) != "" {
+			receiptFields++
+		}
+	}
+	if receiptFields != 0 && receiptFields != 3 {
+		return nil, errors.New("browser recording locator has incomplete receipt evidence")
+	}
+	seen := make(map[string]struct{}, len(locator.ScriptIDs))
+	for _, scriptID := range locator.ScriptIDs {
+		if strings.TrimSpace(scriptID) == "" {
+			return nil, errors.New("browser recording locator contains an empty script id")
+		}
+		if _, duplicate := seen[scriptID]; duplicate {
+			return nil, errors.New("browser recording locator contains duplicate script ids")
+		}
+		seen[scriptID] = struct{}{}
+	}
+	return &locator, nil
+}
+
+func (s *Server) persistBrowserRecordingSaveLocator(
+	recordingID string,
+	projectID string,
+	allStored []*StoredScript,
+	attempts ...*directImportAttempt,
+) error {
+	if s == nil || s.store == nil {
+		return nil
+	}
+	scriptIDs := make([]string, 0, len(allStored))
+	for _, stored := range allStored {
+		if stored == nil || strings.TrimSpace(stored.ID) == "" {
+			return errors.New("browser recording locator contains an empty stored script")
+		}
+		scriptIDs = append(scriptIDs, stored.ID)
+	}
+	locatorKey, err := s.browserRecordingSaveLocatorKey(recordingID)
+	if err != nil {
+		return err
+	}
+	encoded, err := s.encodeBrowserRecordingSaveLocator(recordingID, projectID, scriptIDs, attempts...)
+	if err != nil {
+		return err
+	}
+	published, err := s.encodeBrowserRecordingSaveLocatorState(
+		recordingID, projectID, scriptIDs, browserRecordingSaveLocatorPublished, attempts...,
+	)
+	if err != nil {
+		return err
+	}
+	cas, ok := s.store.(settingsCompareAndSwapper)
+	if !ok {
+		return errors.New("durable browser recording locator requires atomic settings storage")
+	}
+	existing, err := s.store.GetSetting(locatorKey)
+	if err != nil {
+		return err
+	}
+	if existing == encoded || existing == published {
+		return nil
+	}
+	if strings.TrimSpace(existing) != "" {
+		return errors.New("browser recording locator conflicts with an existing save")
+	}
+	won, err := cas.CompareAndSwapSetting(locatorKey, "", encoded)
+	if err != nil {
+		return err
+	}
+	if !won {
+		existing, err = s.store.GetSetting(locatorKey)
+		if err != nil {
+			return err
+		}
+		if existing != encoded && existing != published {
+			return errors.New("browser recording locator changed concurrently")
+		}
+	}
+	return nil
+}
+
+// publishBrowserRecordingSaveLocator closes the crash window between the
+// locator write and the direct-import claim commit. A concurrent stale-locator
+// cleanup can only CAS the staged encoding, while this method CAS-promotes it to
+// a distinct signed published encoding after the scripts become visible.
+func (s *Server) publishBrowserRecordingSaveLocator(
+	recordingID string,
+	projectID string,
+	allStored []*StoredScript,
+	attempts ...*directImportAttempt,
+) error {
+	if s == nil || s.store == nil {
+		return nil
+	}
+	scriptIDs := make([]string, 0, len(allStored))
+	for _, stored := range allStored {
+		if stored == nil || strings.TrimSpace(stored.ID) == "" {
+			return errors.New("browser recording locator contains an empty stored script")
+		}
+		scriptIDs = append(scriptIDs, stored.ID)
+	}
+	locatorKey, err := s.browserRecordingSaveLocatorKey(recordingID)
+	if err != nil {
+		return err
+	}
+	staged, err := s.encodeBrowserRecordingSaveLocatorState(
+		recordingID, projectID, scriptIDs, browserRecordingSaveLocatorStaged, attempts...,
+	)
+	if err != nil {
+		return err
+	}
+	published, err := s.encodeBrowserRecordingSaveLocatorState(
+		recordingID, projectID, scriptIDs, browserRecordingSaveLocatorPublished, attempts...,
+	)
+	if err != nil {
+		return err
+	}
+	return s.publishBrowserRecordingSaveLocatorEncoding(locatorKey, staged, published)
+}
+
+func (s *Server) publishBrowserRecordingSaveLocatorEncoding(locatorKey, staged, published string) error {
+	cas, ok := s.store.(settingsCompareAndSwapper)
+	if !ok {
+		return errors.New("durable browser recording locator requires atomic settings storage")
+	}
+	current, err := s.store.GetSetting(locatorKey)
+	if err != nil {
+		return err
+	}
+	if current == published {
+		return nil
+	}
+	if current != staged {
+		return errors.New("browser recording locator changed before publication")
+	}
+	won, err := cas.CompareAndSwapSetting(locatorKey, staged, published)
+	if err != nil {
+		return err
+	}
+	if won {
+		return nil
+	}
+	current, err = s.store.GetSetting(locatorKey)
+	if err != nil {
+		return err
+	}
+	if current != published {
+		return errors.New("browser recording locator changed concurrently during publication")
+	}
+	return nil
+}
+
+// recoverStagedBrowserRecordingConversionsAtStartup adopts only a complete,
+// authenticated save that reached the final pre-commit crash window: every
+// claimed script, required HAR baseline, signed locator, and receipt identity
+// must agree exactly. Incomplete or invalid groups are left for ordinary claim
+// compensation. A storage error is returned so construction can preserve the
+// hidden rows rather than destroy a potentially recoverable stopped recording.
+func (s *Server) recoverStagedBrowserRecordingConversionsAtStartup() error {
+	if s == nil || s.store == nil {
+		return nil
+	}
+	recoverer, ok := s.store.(storage.DirectImportReceiptRecoveryStore)
+	if !ok {
+		return nil
+	}
+	claims, err := s.loadLibraryImportClaims()
+	if err != nil {
+		return err
+	}
+	byOwner := make(map[string][]libraryImportClaim)
+	for _, claim := range claims {
+		if claim.RemoteID != "direct-import:browser-recording" {
+			continue
+		}
+		byOwner[claim.OwnerID] = append(byOwner[claim.OwnerID], claim)
+	}
+	for owner, owned := range byOwner {
+		if _, active := activeLibraryImportOwners.Load(owner); active {
+			continue
+		}
+		recoveryOwner := owner
+		takenOver := false
+		if s.haExecution && !browserRecordingClaimSetCommitted(owned) {
+			var takeoverErr error
+			recoveryOwner, owned, takeoverErr = s.takeExpiredBrowserRecordingClaims(owner, owned)
+			if takeoverErr != nil {
+				return fmt.Errorf("take over staged browser recording owner %s: %w", owner, takeoverErr)
+			}
+			if len(owned) == 0 {
+				continue
+			}
+			takenOver = true
+		}
+		recovered, recoverErr := s.recoverStagedBrowserRecordingOwner(recoverer, owned, takenOver)
+		if recoverErr != nil {
+			if takenOver {
+				recoverErr = errors.Join(recoverErr, s.expireLibraryImportClaims(recoveryOwner))
+			}
+			return fmt.Errorf("recover staged browser recording owner %s: %w", recoveryOwner, recoverErr)
+		}
+		if recovered {
+			if err := s.removeLibraryImportClaims(recoveryOwner); err != nil {
+				return fmt.Errorf("publish recovered browser recording claims: %w", err)
+			}
+		} else if takenOver {
+			// The expired transaction was incomplete or failed authentication.
+			// Expose only our fenced takeover owner to ordinary compensation.
+			if err := s.expireLibraryImportClaims(recoveryOwner); err != nil {
+				return fmt.Errorf("expire incomplete browser recording takeover: %w", err)
+			}
+			if err := s.recoverExpiredLibraryImportClaims(); err != nil {
+				return fmt.Errorf("compensate incomplete browser recording takeover: %w", err)
+			}
+		}
+	}
+	return nil
+}
+
+func browserRecordingClaimSetCommitted(claims []libraryImportClaim) bool {
+	if len(claims) == 0 {
+		return false
+	}
+	for _, claim := range claims {
+		if !claim.Committed {
+			return false
+		}
+	}
+	return true
+}
+
+// takeExpiredBrowserRecordingClaims establishes the same lease fence used by
+// generic HA recovery before adopting an uncommitted staged save. The CAS
+// changes the whole original owner set atomically; a live replica that renews
+// first wins, while a paused original owner cannot later commit after takeover.
+func (s *Server) takeExpiredBrowserRecordingClaims(
+	owner string,
+	expected []libraryImportClaim,
+) (string, []libraryImportClaim, error) {
+	owner = strings.TrimSpace(owner)
+	if owner == "" || len(expected) == 0 {
+		return "", nil, nil
+	}
+	expectedIdentities := make(map[string]struct{}, len(expected))
+	for _, claim := range expected {
+		expectedIdentities[claim.Identity] = struct{}{}
+	}
+	recoveryOwner := uuid.NewString()
+	var taken []libraryImportClaim
+	err := s.mutateLibraryImportClaims(func(claims *[]libraryImportClaim) (bool, error) {
+		taken = taken[:0]
+		now := time.Now().UTC()
+		indexes := make([]int, 0, len(expectedIdentities))
+		for index, claim := range *claims {
+			if claim.OwnerID == owner {
+				indexes = append(indexes, index)
+			}
+		}
+		if len(indexes) == 0 {
+			return false, nil
+		}
+		if len(indexes) != len(expectedIdentities) {
+			return false, errors.New("browser recording claim owner changed shape before takeover")
+		}
+		for _, index := range indexes {
+			claim := (*claims)[index]
+			if _, ok := expectedIdentities[claim.Identity]; !ok || claim.Committed ||
+				claim.RemoteID != "direct-import:browser-recording" || claim.ExpiresAt.After(now) {
+				return false, nil
+			}
+		}
+		for _, index := range indexes {
+			(*claims)[index].OwnerID = recoveryOwner
+			(*claims)[index].ExpiresAt = now.Add(libraryImportClaimTTL())
+			taken = append(taken, (*claims)[index])
+		}
+		return true, nil
+	})
+	if err != nil {
+		return "", nil, err
+	}
+	if len(taken) == 0 {
+		return "", nil, nil
+	}
+	return recoveryOwner, taken, nil
+}
+
+func (s *Server) recoverStagedBrowserRecordingOwner(
+	recoverer storage.DirectImportReceiptRecoveryStore,
+	claims []libraryImportClaim,
+	requireReceiptLeaseTakeover ...bool,
+) (bool, error) {
+	if len(claims) == 0 || len(claims) > maxBridgedBrowserImportScripts+1 {
+		return false, nil
+	}
+	sort.Slice(claims, func(i, j int) bool { return claims[i].Sequence < claims[j].Sequence })
+	stored := make([]*StoredScript, len(claims))
+	recordingID := ""
+	projectID := ""
+	for index, claim := range claims {
+		if claim.Kind != "script" || !claim.Prepared ||
+			claim.BeforeScript != nil || strings.TrimSpace(claim.LocalItemID) == "" ||
+			claim.Sequence != index {
+			return false, nil
+		}
+		script, err := s.store.GetScript(claim.LocalItemID)
+		if errors.Is(err, sql.ErrNoRows) || script == nil {
+			return false, nil
+		}
+		if err != nil {
+			return false, err
+		}
+		matches, err := s.libraryImportClaimScriptHashMatches(claim, script, claim.IntendedHash)
+		if err != nil {
+			return false, err
+		}
+		if !matches || normalizeProjectID(script.ProjectID) != normalizeProjectID(claim.ProjectID) {
+			return false, nil
+		}
+		preserved := browserRecordingImportPreserved(script)
+		currentRecordingID := browserRecordingPreservedString(preserved, browserRecordingSaveSessionIDKey)
+		if currentRecordingID == "" || browserRecordingPreservedInt(preserved, browserRecordingSaveVersionKey) != browserRecordingSaveVersion ||
+			browserRecordingPreservedInt(preserved, browserRecordingSaveIndexKey) != index ||
+			browserRecordingPreservedInt(preserved, browserRecordingSaveCountKey) != len(claims) {
+			return false, nil
+		}
+		if err := s.verifyBrowserRecordingSaveProvenance(script); err != nil {
+			return false, nil
+		}
+		if recordingID == "" {
+			recordingID = currentRecordingID
+			projectID = normalizeProjectID(script.ProjectID)
+		} else if recordingID != currentRecordingID || projectID != normalizeProjectID(script.ProjectID) {
+			return false, nil
+		}
+		stored[index] = &StoredScript{
+			ID: script.ID, RefKey: script.RefKey, Name: script.Name, Protocol: script.Protocol,
+			Version: script.Version, ProjectID: script.ProjectID, FolderID: script.FolderID,
+			CreatedAt: script.CreatedAt, Script: script,
+		}
+	}
+	locatorKey, err := s.browserRecordingSaveLocatorKey(recordingID)
+	if err != nil {
+		return false, err
+	}
+	raw, err := s.store.GetSetting(locatorKey)
+	if err != nil {
+		return false, err
+	}
+	if strings.TrimSpace(raw) == "" {
+		return false, nil
+	}
+	locator, err := s.decodeBrowserRecordingSaveLocator(raw)
+	if err != nil || locator.RecordingID != recordingID || locator.ProjectID != projectID ||
+		(locator.State != browserRecordingSaveLocatorStaged && locator.State != browserRecordingSaveLocatorPublished) ||
+		locator.ReceiptID == "" || locator.OperationHash == "" || locator.RequestDigest == "" {
+		return false, nil
+	}
+	scriptIDs := deterministicScriptIDsFromStored(stored)
+	if !slices.Equal(locator.ScriptIDs, scriptIDs) {
+		return false, nil
+	}
+	baselineValid, err := s.validatePersistedBrowserRecordingHARBaselineForAdoption(stored)
+	if err != nil {
+		return false, err
+	}
+	if !baselineValid {
+		return false, nil
+	}
+	var recovered bool
+	if len(requireReceiptLeaseTakeover) > 0 && requireReceiptLeaseTakeover[0] {
+		recovered, err = s.recoverBrowserRecordingReceiptAfterLease(locator, projectID, scriptIDs)
+	} else {
+		recovered, err = recoverer.RecoverDirectImportReceipt(
+			locator.ReceiptID,
+			projectID,
+			"browser_recorder",
+			locator.OperationHash,
+			locator.RequestDigest,
+			scriptIDs,
+			"",
+			time.Now().UTC(),
+		)
+	}
+	if err != nil {
+		return false, err
+	}
+	if !recovered {
+		return false, nil
+	}
+	if err := s.commitRecoveredBrowserRecordingClaims(claims); err != nil {
+		return false, err
+	}
+	if locator.State != browserRecordingSaveLocatorPublished {
+		publishedLocator := *locator
+		publishedLocator.State = browserRecordingSaveLocatorPublished
+		published, err := s.encodeBrowserRecordingSaveLocatorValue(publishedLocator)
+		if err != nil {
+			return false, err
+		}
+		if err := s.publishBrowserRecordingSaveLocatorEncoding(locatorKey, raw, published); err != nil {
+			return false, err
+		}
+	}
+	return true, nil
+}
+
+func (s *Server) commitRecoveredBrowserRecordingClaims(expected []libraryImportClaim) error {
+	if len(expected) == 0 {
+		return errors.New("recovered browser recording has no claim evidence")
+	}
+	owner := expected[0].OwnerID
+	expectedByIdentity := make(map[string]libraryImportClaim, len(expected))
+	for _, claim := range expected {
+		if claim.OwnerID != owner {
+			return errors.New("recovered browser recording claims have mixed owners")
+		}
+		expectedByIdentity[claim.Identity] = claim
+	}
+	return s.mutateLibraryImportClaims(func(claims *[]libraryImportClaim) (bool, error) {
+		indexes := make([]int, 0, len(expectedByIdentity))
+		for index, claim := range *claims {
+			if claim.OwnerID != owner {
+				continue
+			}
+			exact, ok := expectedByIdentity[claim.Identity]
+			if !ok || claim.MutationID != exact.MutationID ||
+				claim.LocalItemID != exact.LocalItemID || claim.IntendedHash != exact.IntendedHash ||
+				claim.Sequence != exact.Sequence || !claim.Prepared {
+				return false, errors.New("browser recording claims changed before recovered commit")
+			}
+			indexes = append(indexes, index)
+		}
+		if len(indexes) != len(expectedByIdentity) {
+			return false, errors.New("browser recording claim set changed before recovered commit")
+		}
+		changed := false
+		for _, index := range indexes {
+			if !(*claims)[index].Applied || !(*claims)[index].Committed {
+				(*claims)[index].Applied = true
+				(*claims)[index].Committed = true
+				changed = true
+			}
+		}
+		return changed, nil
+	})
+}
+
+// recoverBrowserRecordingReceiptAfterLease is the second HA takeover fence.
+// Claim expiry alone is insufficient because a paused original request may
+// still own the deliberately longer receipt lease and therefore may still
+// compensate its assets. Taking the exact pending receipt first makes that
+// original rollback lose ownership and skip destructive compensation.
+func (s *Server) recoverBrowserRecordingReceiptAfterLease(
+	locator *browserRecordingSaveLocator,
+	projectID string,
+	scriptIDs []string,
+) (bool, error) {
+	store, ok := s.store.(storage.DirectImportReceiptStore)
+	if !ok || locator == nil {
+		return false, errors.New("durable browser recording receipt takeover is unavailable")
+	}
+	ownerToken := uuid.NewString()
+	claim, err := store.ClaimDirectImportReceipt(
+		projectID,
+		"browser_recorder",
+		locator.OperationHash,
+		locator.RequestDigest,
+		ownerToken,
+		time.Now().UTC(),
+		directImportReceiptLease(),
+	)
+	if err != nil {
+		return false, err
+	}
+	if claim == nil || claim.Receipt == nil {
+		return false, errors.New("browser recording receipt takeover returned no receipt")
+	}
+	if claim.Receipt.ID != locator.ReceiptID {
+		if claim.Created {
+			_, _ = store.AbandonDirectImportReceipt(claim.Receipt.ID, ownerToken)
+		} else if releaser, ok := store.(storage.DirectImportReceiptReleaseStore); ok && !claim.Replay {
+			_, _ = releaser.ReleaseDirectImportReceipt(claim.Receipt.ID, ownerToken, time.Now().UTC())
+		}
+		return false, nil
+	}
+	if claim.Replay {
+		return claim.Receipt.State == storage.DirectImportReceiptComplete &&
+			claim.Receipt.ScenarioID == "" && slices.Equal(claim.Receipt.ScriptIDs, scriptIDs), nil
+	}
+	if claim.Created {
+		_, _ = store.AbandonDirectImportReceipt(claim.Receipt.ID, ownerToken)
+		return false, nil
+	}
+	attempt := &directImportAttempt{store: store, receipt: claim.Receipt, ownerToken: ownerToken}
+	stored := make([]*StoredScript, len(scriptIDs))
+	for index, id := range scriptIDs {
+		stored[index] = &StoredScript{ID: id}
+	}
+	if err := attempt.complete(stored, nil); err != nil {
+		return false, errors.Join(err, attempt.release())
+	}
+	return true, nil
+}
+
+func deterministicScriptIDsFromStored(stored []*StoredScript) []string {
+	ids := make([]string, len(stored))
+	for index, script := range stored {
+		if script != nil {
+			ids[index] = script.ID
+		}
+	}
+	return ids
+}
+
+// reconcileBrowserRecordingPublication closes the recorder's three durable
+// boundaries in one order on initial saves and every retry path: receipt,
+// signed locator, then retained terminal-claim cleanup. Each step is
+// idempotent. If receipt completion fails, release the pending owner so the
+// same stopped session can retry immediately rather than waiting a full lease.
+func (s *Server) reconcileBrowserRecordingPublication(
+	recordingID string,
+	projectID string,
+	allStored []*StoredScript,
+	attempt *directImportAttempt,
+	transaction *createImportTransaction,
+	completeReceipt bool,
+) error {
+	if err := s.persistBrowserRecordingSaveLocator(recordingID, projectID, allStored, attempt); err != nil {
+		if completeReceipt && attempt != nil {
+			return errors.Join(err, attempt.release())
+		}
+		return err
+	}
+	if completeReceipt && attempt != nil {
+		if err := attempt.complete(allStored, nil); err != nil {
+			return errors.Join(err, attempt.release())
+		}
+	}
+	if err := s.publishBrowserRecordingSaveLocator(recordingID, projectID, allStored, attempt); err != nil {
+		return err
+	}
+	if transaction != nil {
+		return transaction.cleanupCommittedClaims()
+	}
+	return s.cleanupPublishedBrowserRecordingClaims(recordingID, projectID, allStored)
+}
+
+// cleanupPublishedBrowserRecordingClaims removes only the exact committed
+// owner set authenticated by the published locator, per-script proofs, claim
+// digests, and durable receipt. It lets receipt-replay and stale-adoption paths
+// finish cleanup without retaining a process-local transaction handle.
+func (s *Server) cleanupPublishedBrowserRecordingClaims(
+	recordingID string,
+	projectID string,
+	allStored []*StoredScript,
+) error {
+	if s == nil || s.store == nil {
+		return nil
+	}
+	recoverer, ok := s.store.(storage.DirectImportReceiptRecoveryStore)
+	if !ok {
+		return nil
+	}
+	expectedIDs := deterministicScriptIDsFromStored(allStored)
+	for _, stored := range allStored {
+		if stored == nil || stored.Script == nil ||
+			browserRecordingPreservedString(
+				browserRecordingImportPreserved(stored.Script),
+				browserRecordingSaveSessionIDKey,
+			) != strings.TrimSpace(recordingID) {
+			return errors.New("published browser recording scripts do not match the recording id")
+		}
+	}
+	claims, err := s.loadLibraryImportClaims()
+	if err != nil {
+		return err
+	}
+	byOwner := make(map[string][]libraryImportClaim)
+	for _, claim := range claims {
+		if claim.RemoteID == "direct-import:browser-recording" &&
+			normalizeProjectID(claim.ProjectID) == normalizeProjectID(projectID) {
+			byOwner[claim.OwnerID] = append(byOwner[claim.OwnerID], claim)
+		}
+	}
+	matchingOwner := ""
+	var matching []libraryImportClaim
+	for owner, owned := range byOwner {
+		sort.Slice(owned, func(i, j int) bool { return owned[i].Sequence < owned[j].Sequence })
+		ids := make([]string, len(owned))
+		for index, claim := range owned {
+			ids[index] = claim.LocalItemID
+		}
+		if !slices.Equal(ids, expectedIDs) {
+			continue
+		}
+		if matchingOwner != "" {
+			return errors.New("multiple retained browser recording claim owners match the published save")
+		}
+		matchingOwner = owner
+		matching = owned
+	}
+	if matchingOwner == "" {
+		return nil
+	}
+	if !browserRecordingClaimSetCommitted(matching) {
+		return errors.New("published browser recording claims are not terminal")
+	}
+	recovered, err := s.recoverStagedBrowserRecordingOwner(recoverer, matching)
+	if err != nil {
+		return err
+	}
+	if !recovered {
+		return errors.New("published browser recording claims do not match their durable receipt")
+	}
+	return s.removeLibraryImportClaims(matchingOwner)
+}
+
+func (s *Server) removeBrowserRecordingSaveLocator(
+	recordingID string,
+	projectID string,
+	allStored []*StoredScript,
+	attempts ...*directImportAttempt,
+) error {
+	if s == nil || s.store == nil {
+		return nil
+	}
+	scriptIDs := make([]string, 0, len(allStored))
+	for _, stored := range allStored {
+		if stored != nil {
+			scriptIDs = append(scriptIDs, stored.ID)
+		}
+	}
+	locatorKey, err := s.browserRecordingSaveLocatorKey(recordingID)
+	if err != nil {
+		return err
+	}
+	encoded, err := s.encodeBrowserRecordingSaveLocator(recordingID, projectID, scriptIDs, attempts...)
+	if err != nil {
+		return err
+	}
+	cas, ok := s.store.(settingsCompareAndSwapper)
+	if !ok {
+		return errors.New("durable browser recording locator requires atomic settings storage")
+	}
+	won, err := cas.CompareAndSwapSetting(locatorKey, encoded, "")
+	if err != nil {
+		return err
+	}
+	if !won {
+		current, loadErr := s.store.GetSetting(locatorKey)
+		if loadErr != nil {
+			return loadErr
+		}
+		if current == encoded {
+			return errors.New("browser recording locator could not be cleared")
+		}
+	}
+	return nil
+}
+
+// rollbackBrowserRecordingSave clears the staged locator only after receipt-
+// fenced asset compensation completed definitively. An ownership-moved or
+// storage-ambiguous rollback leaves both the claim evidence and locator for the
+// winning owner/recovery healer; deleting only the locator would strand the
+// exact stopped save permanently.
+func (s *Server) rollbackBrowserRecordingSave(
+	attempt *directImportAttempt,
+	transaction *createImportTransaction,
+	recordingID string,
+	projectID string,
+	locatorStored []*StoredScript,
+	locatorPrepared bool,
+) error {
+	if err := attempt.rollback(transaction); err != nil {
+		return err
+	}
+	if !locatorPrepared {
+		return nil
+	}
+	return s.removeBrowserRecordingSaveLocator(
+		recordingID,
+		projectID,
+		locatorStored,
+		attempt,
+	)
+}
+
 func applyAutoParameterization(script *dsl.Script) {
 	if script == nil {
 		return
@@ -1066,20 +2050,6 @@ func (s *Server) handlePreviewBrowserRecordingConversion(w http.ResponseWriter, 
 
 func (s *Server) handleConvertBrowserRecording(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	artifact, info, ok := s.browserRecording.Artifact(id)
-	if !ok {
-		writeError(w, http.StatusNotFound, "browser recording session not found")
-		return
-	}
-	if artifact == nil {
-		writeError(w, http.StatusConflict, "browser recording has no captured session yet")
-		return
-	}
-	if info.Status != BrowserRecordingStopped {
-		writeError(w, http.StatusConflict, "stop the recording before saving the converted script")
-		return
-	}
-
 	var req browserRecordingConvertRequest
 	if !decodeOptionalJSONBody(w, r, &req) {
 		return
@@ -1094,6 +2064,20 @@ func (s *Server) handleConvertBrowserRecording(w http.ResponseWriter, r *http.Re
 		-1,
 	); err != nil {
 		writeError(w, http.StatusBadRequest, "browser recording parameterization selections are invalid: "+err.Error())
+		return
+	}
+
+	artifact, info, ok := s.browserRecording.Artifact(id)
+	if !ok {
+		s.handleRecoverBrowserRecordingConversion(w, r, id, req)
+		return
+	}
+	if artifact == nil {
+		writeError(w, http.StatusConflict, "browser recording has no captured session yet")
+		return
+	}
+	if info.Status != BrowserRecordingStopped {
+		writeError(w, http.StatusConflict, "stop the recording before saving the converted script")
 		return
 	}
 
@@ -1154,6 +2138,8 @@ func (s *Server) handleConvertBrowserRecording(w http.ResponseWriter, r *http.Re
 	warnings := append([]string(nil), result.Warnings...)
 	var httpScript *dsl.Script
 	var preparedHTTPScript *dsl.Script
+	var httpCorrelationBaseline []correlate.Observation
+	var httpCorrelationBaselineErr error
 	var httpWarnings []string
 	if req.AlsoCreateHTTPScript {
 		var err error
@@ -1196,8 +2182,22 @@ func (s *Server) handleConvertBrowserRecording(w http.ResponseWriter, r *http.Re
 					importedHTTPScript.Version = "1"
 				}
 				preparedHTTPScript = importedHTTPScript
+				httpCorrelationBaseline, httpCorrelationBaselineErr = har.CorrelationBaseline(artifact.HAR, false)
+				if httpCorrelationBaselineErr != nil {
+					warnings = append(warnings, "HTTP correlation baseline capture skipped: "+httpCorrelationBaselineErr.Error())
+					httpCorrelationBaseline = nil
+				}
 			}
 		}
+	}
+	if err := validateBrowserRecordingHARBaselinePreparation(
+		s.store != nil,
+		preparedHTTPScript != nil,
+		httpCorrelationBaseline,
+		httpCorrelationBaselineErr,
+	); err != nil {
+		writeError(w, http.StatusUnprocessableEntity, err.Error())
+		return
 	}
 	availableScriptCount := len(result.Scripts)
 	if httpScript != nil {
@@ -1233,12 +2233,59 @@ func (s *Server) handleConvertBrowserRecording(w http.ResponseWriter, r *http.Re
 		return
 	}
 	projectID := normalizeProjectID(info.ProjectID)
+	for index, script := range transactionScripts {
+		if err := bindDraftScriptProject(script, projectID); err != nil {
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("converted script %d: %v", index+1, err))
+			return
+		}
+		if status, err := s.applyProtectedImportFolderOverride(script, req.FolderID); err != nil {
+			writeError(w, status, err.Error())
+			return
+		}
+	}
 	_, actorSubject, _ := s.resolveAuditActor(r)
 	// One stopped recording is one durable conversion operation. The exact
 	// scripts and save options are fenced by the keyed request HMAC below; do
 	// not fold secret-binding names or other caller options into an
 	// independently observable operation identity.
 	operationID := strings.TrimSpace(actorSubject) + "\x00session:" + id
+	assetIdentitySeed := directImportOperationHash(projectID, "browser_recorder", operationID)
+	for index, script := range transactionScripts {
+		script.ID = deterministicDirectImportAssetID(assetIdentitySeed, "script", index)
+		script.RefKey = ""
+	}
+	actorHash, err := s.browserRecordingSaveActorFingerprint(id, actorSubject)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to bind browser recording save authority: "+err.Error())
+		return
+	}
+	for index, script := range transactionScripts {
+		role := browserRecordingSaveRoleBrowser
+		baselineRequired := false
+		if preparedHTTPScript != nil && index == len(transactionScripts)-1 {
+			role = browserRecordingSaveRoleHTTP
+			// A storage-free embedded runner has neither durable receipts nor a
+			// baseline store to reconcile after restart. Keep its established
+			// in-memory dual-script behavior; every durable save requires the
+			// baseline before its receipt can complete.
+			baselineRequired = s.store != nil && len(httpCorrelationBaseline) > 0
+		}
+		stampBrowserRecordingSaveProvenance(
+			script,
+			id,
+			index,
+			len(transactionScripts),
+			actorHash,
+			role,
+			baselineRequired,
+		)
+		proof, proofErr := s.browserRecordingSaveProvenanceProof(script)
+		if proofErr != nil {
+			writeError(w, http.StatusInternalServerError, "failed to attest browser recording save provenance: "+proofErr.Error())
+			return
+		}
+		script.Metadata.Import.Preserved[browserRecordingSaveProofKey] = proof
+	}
 	requestDigest, err := s.directImportScriptsRequestDigest(transactionScripts, req)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to fingerprint browser recording conversion: "+err.Error())
@@ -1262,15 +2309,6 @@ func (s *Server) handleConvertBrowserRecording(w http.ResponseWriter, r *http.Re
 		}
 		return
 	}
-	assetIdentitySeed := directImportOperationHash(projectID, "browser_recorder", operationID)
-	if attempt != nil && attempt.receipt != nil {
-		assetIdentitySeed = attempt.receipt.ID
-	}
-	for index, script := range transactionScripts {
-		script.ID = deterministicDirectImportAssetID(assetIdentitySeed, "script", index)
-		script.RefKey = ""
-	}
-
 	writeSavedConversion := func(
 		allStored []*StoredScript,
 		recordCompletion bool,
@@ -1297,6 +2335,16 @@ func (s *Server) handleConvertBrowserRecording(w http.ResponseWriter, r *http.Re
 		stored, _, loadErr := s.loadDirectImportReceiptAssets(attempt)
 		if loadErr != nil {
 			writeError(w, http.StatusConflict, "completed browser recording receipt is inconsistent: "+loadErr.Error())
+			return
+		}
+		if baselineErr := s.finalizeBrowserRecordingHARBaseline(stored, httpCorrelationBaseline); baselineErr != nil {
+			writeError(w, http.StatusConflict, "completed browser recording receipt is missing its HTTP correlation baseline: "+baselineErr.Error())
+			return
+		}
+		if publicationErr := s.reconcileBrowserRecordingPublication(
+			id, projectID, stored, attempt, nil, false,
+		); publicationErr != nil {
+			writeError(w, http.StatusInternalServerError, "failed to finish browser recording publication: "+publicationErr.Error())
 			return
 		}
 		writeSavedConversion(stored, false)
@@ -1333,8 +2381,14 @@ func (s *Server) handleConvertBrowserRecording(w http.ResponseWriter, r *http.Re
 		if loadErr == nil && storedScenario == nil && directImportPreparedAssetsMatch(
 			s, stored, transactionScripts, nil, nil,
 		) {
-			if completeErr := attempt.complete(stored, nil); completeErr != nil {
-				writeError(w, http.StatusInternalServerError, "failed to reconcile browser recording receipt: "+completeErr.Error())
+			if baselineErr := s.finalizeBrowserRecordingHARBaseline(stored, httpCorrelationBaseline); baselineErr != nil {
+				writeError(w, http.StatusInternalServerError, "failed to finalize browser recording HTTP baseline: "+baselineErr.Error())
+				return
+			}
+			if publicationErr := s.reconcileBrowserRecordingPublication(
+				id, projectID, stored, attempt, nil, true,
+			); publicationErr != nil {
+				writeError(w, http.StatusInternalServerError, "failed to reconcile browser recording publication: "+publicationErr.Error())
 				return
 			}
 			writeSavedConversion(stored, true)
@@ -1354,9 +2408,13 @@ func (s *Server) handleConvertBrowserRecording(w http.ResponseWriter, r *http.Re
 	}
 	finished := false
 	assetsCommitted := false
+	locatorPrepared := false
+	var locatorStored []*StoredScript
 	defer func() {
 		if !finished && !assetsCommitted {
-			if cleanupErr := attempt.rollback(transaction); cleanupErr != nil {
+			if cleanupErr := s.rollbackBrowserRecordingSave(
+				attempt, transaction, id, projectID, locatorStored, locatorPrepared,
+			); cleanupErr != nil {
 				slog.Warn("failed to fully compensate browser recording conversion", "recording_session_id", id, "error", cleanupErr)
 			}
 		}
@@ -1397,23 +2455,333 @@ func (s *Server) handleConvertBrowserRecording(w http.ResponseWriter, r *http.Re
 		writeError(w, http.StatusConflict, "browser recording receipt ownership was lost; retry conversion")
 		return
 	}
-	if err := transaction.commit(); err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to commit converted scripts: "+err.Error())
-		return
-	}
-	assetsCommitted = true
 	allStored := append([]*StoredScript(nil), storedScripts...)
 	if httpStored != nil {
 		allStored = append(allStored, httpStored)
 	}
-	if attempt != nil {
-		if err := attempt.complete(allStored, nil); err != nil {
-			writeError(w, http.StatusInternalServerError, "failed to finalize browser recording receipt: "+err.Error())
-			return
-		}
+	if baselineErr := s.finalizeBrowserRecordingHARBaseline(allStored, httpCorrelationBaseline); baselineErr != nil {
+		writeError(w, http.StatusInternalServerError, "failed to finalize browser recording HTTP baseline: "+baselineErr.Error())
+		return
+	}
+	// Write the O(1) restart locator while these rows are still hidden behind
+	// their durable import claims. A locator failure can then roll the whole
+	// transaction back without ever publishing an unrecoverable save.
+	if err := s.persistBrowserRecordingSaveLocator(id, projectID, allStored, attempt); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to prepare browser recording recovery locator: "+err.Error())
+		return
+	}
+	locatorPrepared = true
+	locatorStored = allStored
+	if err := transaction.commitRetainingClaims(); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to commit converted scripts: "+err.Error())
+		return
+	}
+	assetsCommitted = true
+	if err := s.reconcileBrowserRecordingPublication(
+		id, projectID, allStored, attempt, transaction, true,
+	); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to finalize browser recording publication: "+err.Error())
+		return
 	}
 	finished = true
 	writeSavedConversion(allStored, true)
+}
+
+func (s *Server) handleRecoverBrowserRecordingConversion(
+	w http.ResponseWriter,
+	r *http.Request,
+	recordingID string,
+	req browserRecordingConvertRequest,
+) {
+	recovery, err := s.loadDurableBrowserRecordingConversion(recordingID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to inspect saved browser recording: "+err.Error())
+		return
+	}
+	if recovery == nil {
+		writeError(w, http.StatusNotFound, "browser recording session not found; a new save requires the original stopped recording capability")
+		return
+	}
+	if req.ExpectedScriptCount > 0 && req.ExpectedScriptCount != len(recovery.Scripts) {
+		writeError(w, http.StatusConflict, fmt.Sprintf(
+			"saved browser recording contains %d script(s), not the %d reviewed script(s)",
+			len(recovery.Scripts),
+			req.ExpectedScriptCount,
+		))
+		return
+	}
+	_, actorSubject, _ := s.resolveAuditActor(r)
+	actorHash, err := s.browserRecordingSaveActorFingerprint(recordingID, actorSubject)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to verify browser recording save authority: "+err.Error())
+		return
+	}
+	hasHTTP := false
+	for index, script := range recovery.Scripts {
+		preserved := browserRecordingImportPreserved(script)
+		if browserRecordingPreservedString(preserved, browserRecordingSaveActorHashKey) != actorHash {
+			writeError(w, http.StatusNotFound, "browser recording session not found for the current operator")
+			return
+		}
+		role := browserRecordingPreservedString(preserved, browserRecordingSaveRoleKey)
+		switch role {
+		case browserRecordingSaveRoleBrowser:
+			if hasHTTP {
+				writeError(w, http.StatusConflict, "saved browser recording has invalid script role ordering")
+				return
+			}
+		case browserRecordingSaveRoleHTTP:
+			if hasHTTP || index != len(recovery.Scripts)-1 {
+				writeError(w, http.StatusConflict, "saved browser recording has invalid HTTP companion ordering")
+				return
+			}
+			hasHTTP = true
+		default:
+			writeError(w, http.StatusConflict, "saved browser recording has invalid script role metadata")
+			return
+		}
+	}
+	operationID := strings.TrimSpace(actorSubject) + "\x00session:" + strings.TrimSpace(recordingID)
+	requestDigest, err := s.directImportScriptsRequestDigest(recovery.Scripts, req)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to fingerprint saved browser recording: "+err.Error())
+		return
+	}
+	attempt, receiptReplay, err := s.claimDirectImportAttempt(
+		recovery.ProjectID,
+		"browser_recorder",
+		operationID,
+		requestDigest,
+	)
+	if err != nil {
+		switch {
+		case errors.Is(err, storage.ErrDirectImportReceiptBusy):
+			w.Header().Set("Retry-After", "2")
+			writeError(w, http.StatusConflict, "the prior browser recording save is still finalizing")
+		case errors.Is(err, storage.ErrDirectImportReceiptConflict):
+			writeError(w, http.StatusConflict, "browser recording save options changed after the original save")
+		default:
+			writeError(w, http.StatusInternalServerError, "failed to reserve saved browser recording recovery: "+err.Error())
+		}
+		return
+	}
+	if attempt == nil {
+		writeError(w, http.StatusConflict, "durable browser recording receipt recovery is unavailable")
+		return
+	}
+	if attempt.created {
+		if rollbackErr := attempt.rollback(nil); rollbackErr != nil {
+			writeError(w, http.StatusInternalServerError, "failed to reject an unrecognized browser recording save: "+rollbackErr.Error())
+			return
+		}
+		writeError(w, http.StatusNotFound, "browser recording session not found; no durable save receipt exists for this operation")
+		return
+	}
+
+	expectedIDs := deterministicScriptIDs(recovery.Scripts)
+	assetIdentitySeed := directImportOperationHash(recovery.ProjectID, "browser_recorder", operationID)
+	for index, expectedID := range expectedIDs {
+		if expectedID != deterministicDirectImportAssetID(assetIdentitySeed, "script", index) {
+			writeError(w, http.StatusConflict, "saved browser recording scripts do not belong to its durable receipt")
+			return
+		}
+	}
+	var stored []*StoredScript
+	if receiptReplay {
+		stored, _, err = s.loadDirectImportReceiptAssets(attempt)
+	} else {
+		if recoverErr := s.recoverExpiredLibraryImportClaims(); recoverErr != nil {
+			writeError(w, http.StatusInternalServerError, "failed to recover prior browser recording transaction: "+recoverErr.Error())
+			return
+		}
+		if renewErr := attempt.renew(); renewErr != nil {
+			writeError(w, http.StatusInternalServerError, "failed to renew browser recording receipt after recovery: "+renewErr.Error())
+			return
+		}
+		if fenceErr := s.fenceDirectImportAssetAdoption(attempt, recovery.ProjectID, expectedIDs, ""); fenceErr != nil {
+			if errors.Is(fenceErr, errDirectImportAssetsClaimed) {
+				w.Header().Set("Retry-After", "2")
+				writeError(w, http.StatusConflict, "the prior browser recording transaction is still finalizing; retry conversion")
+			} else {
+				writeError(w, http.StatusInternalServerError, "failed to inspect prior browser recording transaction: "+fenceErr.Error())
+			}
+			return
+		}
+		stored, _, err = s.loadDirectImportAssetsByIDs(recovery.ProjectID, expectedIDs, "")
+	}
+	if err != nil || !directImportPreparedAssetsMatch(s, stored, recovery.Scripts, nil, nil) {
+		if err == nil {
+			err = errors.New("saved scripts no longer match the original browser recording receipt")
+		}
+		writeError(w, http.StatusConflict, "saved browser recording receipt is inconsistent: "+err.Error())
+		return
+	}
+	if baselineErr := s.finalizeBrowserRecordingHARBaseline(stored, nil); baselineErr != nil {
+		writeError(w, http.StatusConflict, "saved browser recording HTTP baseline is incomplete: "+baselineErr.Error())
+		return
+	}
+	if publicationErr := s.reconcileBrowserRecordingPublication(
+		recordingID, recovery.ProjectID, stored, attempt, nil, !receiptReplay,
+	); publicationErr != nil {
+		writeError(w, http.StatusInternalServerError, "failed to reconcile browser recording publication: "+publicationErr.Error())
+		return
+	}
+	browserStored, httpStored := splitBrowserRecordingStoredScripts(stored, hasHTTP)
+	if len(browserStored) == 0 {
+		writeError(w, http.StatusConflict, "saved browser recording receipt contains no browser script")
+		return
+	}
+	browserScripts := make([]*dsl.Script, 0, len(browserStored))
+	for _, item := range browserStored {
+		browserScripts = append(browserScripts, item.Script)
+	}
+	result := &recbrowser.ConvertResult{
+		Script:  browserScripts[0],
+		Scripts: browserScripts,
+		Stats: recbrowser.ConvertStats{
+			ConvertedActions: len(browserScripts[0].Actions),
+			Scripts:          len(browserScripts),
+		},
+	}
+	var sourceHTTP *dsl.Script
+	if httpStored != nil {
+		sourceHTTP = httpStored.Script
+	}
+	s.writeSavedBrowserRecordingConversion(
+		w,
+		r,
+		recordingID,
+		result,
+		sourceHTTP,
+		nil,
+		browserStored,
+		httpStored,
+		!receiptReplay,
+	)
+}
+
+// validatePersistedBrowserRecordingHARBaselineForAdoption separates an
+// incomplete staged save from a storage outage. Incomplete or invalid baseline
+// evidence may be compensated by ordinary claim recovery; a read error must
+// preserve the claim fence so a later healthy startup can retry adoption.
+func (s *Server) validatePersistedBrowserRecordingHARBaselineForAdoption(
+	allStored []*StoredScript,
+) (bool, error) {
+	var httpStored *StoredScript
+	required := false
+	for _, stored := range allStored {
+		if stored == nil || stored.Script == nil {
+			continue
+		}
+		preserved := browserRecordingImportPreserved(stored.Script)
+		if browserRecordingPreservedString(preserved, browserRecordingSaveRoleKey) != browserRecordingSaveRoleHTTP {
+			continue
+		}
+		if httpStored != nil {
+			return false, nil
+		}
+		httpStored = stored
+		required, _ = preserved[browserRecordingHARBaselineNeededKey].(bool)
+	}
+	if !required {
+		return true, nil
+	}
+	if httpStored == nil || s == nil || s.store == nil {
+		return false, nil
+	}
+	record, err := s.store.GetScriptRecording(httpStored.ID)
+	if err != nil {
+		return false, err
+	}
+	if record == nil || record.Source != "browser_recording_har" || record.RequestCount <= 0 {
+		return false, nil
+	}
+	if err := validateRecordingActionGraph(record, httpStored.Script); err != nil {
+		return false, nil
+	}
+	return true, nil
+}
+
+// finalizeBrowserRecordingHARBaseline is a required precondition for receipt
+// completion whenever the saved HTTP companion says the stopped HAR produced
+// correlation observations. New writes call it before committing the durable
+// asset claims; stale reconciliation can repair it while the stopped artifact
+// remains available, and restart-only replay verifies it without pretending a
+// missing raw HAR can be reconstructed from the HTTP request script.
+func (s *Server) finalizeBrowserRecordingHARBaseline(
+	allStored []*StoredScript,
+	observations []correlate.Observation,
+) error {
+	var httpStored *StoredScript
+	required := false
+	for _, stored := range allStored {
+		if stored == nil || stored.Script == nil {
+			continue
+		}
+		preserved := browserRecordingImportPreserved(stored.Script)
+		if browserRecordingPreservedString(preserved, browserRecordingSaveRoleKey) != browserRecordingSaveRoleHTTP {
+			continue
+		}
+		if httpStored != nil {
+			return errors.New("multiple saved HTTP companions were found")
+		}
+		httpStored = stored
+		required, _ = preserved[browserRecordingHARBaselineNeededKey].(bool)
+	}
+	if !required {
+		return nil
+	}
+	if httpStored == nil || s.store == nil {
+		return errors.New("HTTP baseline storage is unavailable")
+	}
+	validateExisting := func() error {
+		record, loadErr := s.store.GetScriptRecording(httpStored.ID)
+		if loadErr != nil {
+			return loadErr
+		}
+		if record == nil || record.Source != "browser_recording_har" || record.RequestCount <= 0 {
+			return errors.New("HTTP baseline record is missing")
+		}
+		if validationErr := validateRecordingActionGraph(record, httpStored.Script); validationErr != nil {
+			return validationErr
+		}
+		return nil
+	}
+	if existingErr := validateExisting(); existingErr == nil {
+		return nil
+	} else if !errors.Is(existingErr, sql.ErrNoRows) && len(observations) == 0 {
+		return existingErr
+	}
+	if len(observations) == 0 {
+		return errors.New("the stopped HAR observations are no longer available")
+	}
+	if err := s.persistRecordedBaseline(
+		httpStored.ID,
+		"browser_recording_har",
+		httpStored.Script,
+		observations,
+	); err != nil {
+		return err
+	}
+	return validateExisting()
+}
+
+func validateBrowserRecordingHARBaselinePreparation(
+	durable bool,
+	hasHTTPCompanion bool,
+	observations []correlate.Observation,
+	derivationErr error,
+) error {
+	if !durable || !hasHTTPCompanion {
+		return nil
+	}
+	if derivationErr != nil {
+		return fmt.Errorf("HTTP correlation baseline could not be prepared: %w", derivationErr)
+	}
+	if len(observations) == 0 {
+		return errors.New("HTTP correlation baseline could not be prepared because the recorded HAR contains no persistable HTTP exchanges")
+	}
+	return nil
 }
 
 func splitBrowserRecordingStoredScripts(

@@ -83,16 +83,8 @@ func TestImportHeaderFidelityBytesAreMaskedAndReconciled(t *testing.T) {
 
 	response := credentialPreservingImportResponseValue(raw)
 	responseScript := decodeProjectedScript(t, response)
-	responseOccurrence := fidelityOccurrence(t, responseScript.Actions[0])
+	assertMaskedHeaderFidelityOccurrence(t, responseScript.Actions[0])
 	rawOccurrence := fidelityOccurrence(t, raw.Actions[0])
-	for _, key := range []string{
-		dsl.ImportHeaderFidelityPreservedNameBase64Key,
-		dsl.ImportHeaderFidelityPreservedValueBase64Key,
-	} {
-		if responseOccurrence[key] != rawOccurrence[key] {
-			t.Fatalf("editable import response changed durable %s", key)
-		}
-	}
 	reviewScript := decodeProjectedScript(t, sanitizeImportReviewEvidence(raw))
 	assertMaskedHeaderFidelityOccurrence(t, reviewScript.Actions[0])
 

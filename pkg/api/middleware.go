@@ -795,6 +795,13 @@ const (
 	harImportMaxBodyBytes               int64 = 50 << 20
 	jmeterImportMaxBodyBytes            int64 = 50 << 20
 	enterpriseArchiveImportMaxBodyBytes int64 = 100 << 20
+	// Commit payloads contain expanded JSON DSL rather than the compact source
+	// upload. Multi-plan archives can legitimately grow while XML/ZIP constructs
+	// are normalized, so their authenticated save routes need explicit limits
+	// above the ordinary 8 MiB CRUD envelope.
+	webAPIImportCommitMaxBodyBytes          int64 = 64 << 20
+	jmeterImportSaveMaxBodyBytes            int64 = 128 << 20
+	enterpriseArchiveImportSaveMaxBodyBytes int64 = 256 << 20
 	// defaultJavaClasspathUploadMaxBytes bounds a single user-uploaded Java
 	// Vuser classpath JAR (env-overridable at the handler via
 	// javaClasspathUploadMaxBytes). javaClasspathUploadMaxBodyBytes is the

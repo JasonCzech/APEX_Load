@@ -54,19 +54,21 @@ func (s *Server) handleImportDevWeb(w http.ResponseWriter, r *http.Request) {
 	protocolCompat := buildDevWebProtocolCompatReport(result)
 	persistProtocolCompatReport(result.Script, "devweb", protocolCompat)
 	preflight := buildAndAttachImportPreflight(result.Script, "devweb", issues, result.Warnings)
+	protectedRequirements := result.ProtectedRequirements.Take()
 
 	s.writeScriptImportResponseWithSourceSecrets(w, r, http.StatusOK, scriptImportResponseOptions{
-		Result:              result,
-		Script:              result.Script,
-		Warnings:            result.Warnings,
-		Assumptions:         result.Assumptions,
-		Stats:               result.Stats,
-		UnsupportedElements: result.Unsupported.Strings(),
-		ReviewSections:      importDiagnosticReviewSections(result.Unsupported),
-		SourceReview:        result.SourceReview,
-		ProtocolCompat:      protocolCompat,
-		Parameterization:    buildImportParameterization(result.Script, nil),
-		Preflight:           preflight,
+		Result:                result,
+		Script:                result.Script,
+		Warnings:              result.Warnings,
+		Assumptions:           result.Assumptions,
+		Stats:                 result.Stats,
+		UnsupportedElements:   result.Unsupported.Strings(),
+		ReviewSections:        importDiagnosticReviewSections(result.Unsupported),
+		SourceReview:          result.SourceReview,
+		ProtocolCompat:        protocolCompat,
+		Parameterization:      buildImportParameterization(result.Script, nil),
+		Preflight:             preflight,
+		ProtectedRequirements: protectedRequirements,
 	})
 }
 
@@ -95,16 +97,17 @@ func (s *Server) handleImportK6(w http.ResponseWriter, r *http.Request) {
 	}
 	preflight := buildAndAttachImportPreflight(result.Script, "k6", issues, result.Warnings)
 	s.writeScriptImportResponseWithSourceSecrets(w, r, http.StatusOK, scriptImportResponseOptions{
-		Result:              result,
-		Script:              result.Script,
-		Warnings:            result.Warnings,
-		Stats:               result.Stats,
-		Assumptions:         result.Assumptions,
-		UnsupportedElements: result.Unsupported.Strings(),
-		ReviewSections:      importDiagnosticReviewSections(result.Unsupported),
-		SourceReview:        result.SourceReview,
-		Parameterization:    buildImportParameterization(result.Script, nil),
-		Preflight:           preflight,
+		Result:                 result,
+		Script:                 result.Script,
+		Warnings:               result.Warnings,
+		Stats:                  result.Stats,
+		Assumptions:            result.Assumptions,
+		UnsupportedElements:    result.Unsupported.Strings(),
+		ReviewSections:         importDiagnosticReviewSections(result.Unsupported),
+		SourceReview:           result.SourceReview,
+		CredentialRequirements: result.SecretRequirements,
+		Parameterization:       buildImportParameterization(result.Script, nil),
+		Preflight:              preflight,
 		Summary: map[string]any{
 			"import_mode":    "constrained_http_subset",
 			"execution_mode": "apexload_http",

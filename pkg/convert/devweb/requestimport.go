@@ -226,6 +226,12 @@ var devWebDataReferencePattern = regexp.MustCompile(
 	`\{\{\s*data\.([A-Za-z0-9_-]+)\.([A-Za-z0-9_.-]+)\s*\}\}`,
 )
 
+// ProjectRequestBody parses a complete request body. Keep the aggregate work
+// bounded when a generated or adversarial body repeats many data references;
+// above this budget the review masks every referenced data column rather than
+// probing each occurrence independently.
+const maxDevWebCredentialBodyProjectionWork = 64 << 20
+
 // devWebCredentialDataBindings identifies runtime CSV columns consumed by a
 // credential-bearing request surface. The executable {{data.*}} references and
 // inline rows remain untouched; the result is used only to mask SourceReview.
@@ -352,8 +358,39 @@ func collectDevWebCredentialBodyDataReferences(
 	contentType string,
 	record func(string),
 ) {
-	occurrences := devWebDataReferencePattern.FindAllStringIndex(body, -1)
+	collectDevWebCredentialBodyDataReferencesWithBudget(
+		body,
+		contentType,
+		record,
+		maxDevWebCredentialBodyProjectionWork,
+	)
+}
+
+func collectDevWebCredentialBodyDataReferencesWithBudget(
+	body string,
+	contentType string,
+	record func(string),
+	maxProjectionWork int,
+) {
+	if strings.TrimSpace(body) == "" || record == nil {
+		return
+	}
+	maxProbes := 0
+	if maxProjectionWork > 0 {
+		maxProbes = maxProjectionWork / max(1, len(body))
+	}
+	if maxProbes < 1 {
+		// Fail closed: all references in a body that cannot be classified within
+		// the work budget are treated as credential-bound for source review.
+		record(body)
+		return
+	}
+	occurrences := devWebDataReferencePattern.FindAllStringIndex(body, maxProbes+1)
 	if len(occurrences) == 0 {
+		return
+	}
+	if len(occurrences) > maxProbes {
+		record(body)
 		return
 	}
 	for index, occurrence := range occurrences {
@@ -464,7 +501,55 @@ func redactDevWebCredentialValues(
 	requirements []credentialpolicy.Requirement,
 	actions []dsl.Action,
 ) (string, bool) {
-	values := make([]string, 0, len(requirements)+len(actions)*2)
+	return redactDevWebCredentialValuesWithAdditional(
+		content,
+		requirements,
+		actions,
+		nil,
+	)
+}
+
+func redactDevWebCredentialValuesWithAdditional(
+	content string,
+	requirements []credentialpolicy.Requirement,
+	actions []dsl.Action,
+	additionalValues []string,
+) (string, bool) {
+	return redactDevWebCredentialValuesWithBudgetAndAdditional(
+		content,
+		requirements,
+		actions,
+		additionalValues,
+		maxDevWebCredentialSourceRedactionWork,
+	)
+}
+
+const maxDevWebCredentialSourceRedactionWork = 256 << 20
+
+func redactDevWebCredentialValuesWithBudget(
+	content string,
+	requirements []credentialpolicy.Requirement,
+	actions []dsl.Action,
+	maxWork int64,
+) (string, bool) {
+	return redactDevWebCredentialValuesWithBudgetAndAdditional(
+		content,
+		requirements,
+		actions,
+		nil,
+		maxWork,
+	)
+}
+
+func redactDevWebCredentialValuesWithBudgetAndAdditional(
+	content string,
+	requirements []credentialpolicy.Requirement,
+	actions []dsl.Action,
+	additionalValues []string,
+	maxWork int64,
+) (string, bool) {
+	values := make([]string, 0, len(requirements)+len(actions)*2+len(additionalValues))
+	values = append(values, additionalValues...)
 	for _, requirement := range requirements {
 		if value := strings.TrimSpace(requirement.Value); value != "" {
 			values = append(values, value)
@@ -488,12 +573,29 @@ func redactDevWebCredentialValues(
 			values = append(values, action.Body)
 		}
 	}
+	seen := make(map[string]struct{}, len(values))
+	unique := make([]string, 0, len(values))
+	for _, value := range values {
+		if value == "" {
+			continue
+		}
+		if _, duplicate := seen[value]; duplicate {
+			continue
+		}
+		seen[value] = struct{}{}
+		unique = append(unique, value)
+	}
+	values = unique
 	sort.SliceStable(values, func(i, j int) bool {
 		if len(values[i]) == len(values[j]) {
 			return values[i] < values[j]
 		}
 		return len(values[i]) > len(values[j])
 	})
+	if !devWebCredentialRedactionWithinBudget(len(content), len(values), maxWork) {
+		return "// [DEVWEB SOURCE OMITTED: CREDENTIAL REDACTION WORK LIMIT EXCEEDED]" +
+			strings.Repeat("\n", strings.Count(content, "\n")), true
+	}
 	changed := false
 	for _, value := range values {
 		next := strings.ReplaceAll(content, value, credential.Redacted)
@@ -502,4 +604,18 @@ func redactDevWebCredentialValues(
 	}
 	content, quotedChanged := scrub.RedactQuotedValues(content, values)
 	return content, changed || quotedChanged
+}
+
+func devWebCredentialRedactionWithinBudget(
+	sourceBytes int,
+	valueCount int,
+	maxWork int64,
+) bool {
+	if valueCount <= 0 {
+		return true
+	}
+	if maxWork < 0 {
+		return false
+	}
+	return int64(sourceBytes) <= maxWork/int64(valueCount)
 }

@@ -7,6 +7,8 @@ import (
 	"reflect"
 	"sort"
 	"strings"
+
+	"github.com/jasonczech/apexload/pkg/convert/credentialpolicy"
 )
 
 // sourceSecretValuesForImportResponse maps disclosure-safe requirement IDs to
@@ -58,7 +60,7 @@ func sourceSecretValuesForImportNodes(rawValue, projectedValue any, requirements
 			continue
 		}
 		value := segments[requirement.Occurrence]
-		if value == "" {
+		if _, recoverable := credentialpolicy.RecoverableSourceCredentialValue(value); !recoverable {
 			continue
 		}
 		values[requirement.ID] = value

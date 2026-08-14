@@ -148,8 +148,8 @@ func TestDeploymentTargetLifecycleOverHTTP(t *testing.T) {
 	if list.Total != 1 || len(list.Targets) != 1 {
 		t.Fatalf("list = %+v, want exactly one target", list)
 	}
-	if len(list.SelectableProviders) != 3 {
-		t.Errorf("selectable_providers = %v, want the three selectable providers", list.SelectableProviders)
+	if len(list.SelectableProviders) != 5 {
+		t.Errorf("selectable_providers = %v, want Kubernetes, AKS, EKS, Container Apps, and ECS Fargate", list.SelectableProviders)
 	}
 
 	// Clearing is unconditional and leaves the domain unconstrained.

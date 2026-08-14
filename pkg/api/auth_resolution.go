@@ -571,6 +571,14 @@ var serviceAccountScopeRules = []serviceAccountScopeRule{
 	{method: http.MethodPut, prefix: "/api/v1/system/clusters", scope: "settings:manage"},
 	{method: http.MethodPatch, prefix: "/api/v1/system/clusters", scope: "settings:manage"},
 	{method: http.MethodDelete, prefix: "/api/v1/system/clusters", scope: "settings:manage"},
+	{method: http.MethodPost, prefix: "/api/v1/system/cloud-connections", scope: "settings:manage"},
+	{method: http.MethodPut, prefix: "/api/v1/system/cloud-connections", scope: "settings:manage"},
+	{method: http.MethodPatch, prefix: "/api/v1/system/cloud-connections", scope: "settings:manage"},
+	{method: http.MethodDelete, prefix: "/api/v1/system/cloud-connections", scope: "settings:manage"},
+	{method: http.MethodPost, prefix: "/api/v1/system/execution-targets", scope: "settings:manage"},
+	{method: http.MethodPut, prefix: "/api/v1/system/execution-targets", scope: "settings:manage"},
+	{method: http.MethodPatch, prefix: "/api/v1/system/execution-targets", scope: "settings:manage"},
+	{method: http.MethodDelete, prefix: "/api/v1/system/execution-targets", scope: "settings:manage"},
 	// A domain deployment target decides which cloud a tenant's generators run
 	// in, so the same reasoning applies: without these, the generic
 	// "/api/v1/system/" fallback below would let a read-scoped service account

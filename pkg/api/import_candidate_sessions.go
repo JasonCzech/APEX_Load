@@ -265,10 +265,10 @@ func marshalImportCandidateEnvelope(
 	seen := make(map[string]struct{}, len(requirements))
 	for index := range cloned {
 		requirement := cloned[index]
-		value := requirement.Value
+		value, recoverable := credentialpolicy.RecoverableSourceCredentialValue(requirement.Value)
 		cloned[index].Value = ""
 		requirement.Value = ""
-		if value == "" || requirement.ExistingReference {
+		if !recoverable || requirement.ExistingReference {
 			continue
 		}
 		id := strings.TrimSpace(requirement.ID)
@@ -299,7 +299,8 @@ func unmarshalImportCandidateEnvelope(payload []byte) (importCandidateEnvelope, 
 	for index := range envelope.CredentialRequirements {
 		protected := &envelope.CredentialRequirements[index]
 		id := strings.TrimSpace(protected.Requirement.ID)
-		if id == "" || protected.Value == "" || protected.Requirement.ExistingReference {
+		value, recoverable := credentialpolicy.RecoverableSourceCredentialValue(protected.Value)
+		if id == "" || !recoverable || protected.Requirement.ExistingReference {
 			clearCredentialRequirementValues(requirements)
 			return importCandidateEnvelope{}, nil, errors.New("protected credential requirement is invalid")
 		}
@@ -309,7 +310,7 @@ func unmarshalImportCandidateEnvelope(payload []byte) (importCandidateEnvelope, 
 		}
 		seen[id] = struct{}{}
 		requirement := protected.Requirement
-		requirement.Value = protected.Value
+		requirement.Value = value
 		requirement.SourceValueAvailable = true
 		requirement.Targets = append([]credentialpolicy.TargetRef(nil), requirement.Targets...)
 		requirements = append(requirements, requirement)

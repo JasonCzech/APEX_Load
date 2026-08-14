@@ -66,7 +66,7 @@ var frozenImportContractHashes = map[string]string{
 	"jmeter":   "4dc8ac1a0a6512eb5d6d32a6dfa2b3e1f9911457fa748b274307833f6f854162",
 	"k6":       "3f92bb0162d595533f7ada6cfcf49603ec6bc6d1c4a98fcaf147f4a003a669dd",
 	"openapi":  "5e2c943038817074188f11976ea67241a63c3509acfc9dbb204735856aba6ba3",
-	"postman":  "84bc234a9d609b99955696e58afa1f7f45f5d07a15dbe7c7fe092f5c36d01947",
+	"postman":  "f6391b42793e50b60a44f6b77e9a6086b81cf67f3c2b9edbcf9e271e831b34dd",
 	"raw_http": "9db5248a05074b18cf32f05634c12b826cf5c4974978c2e53e98feef886aad19",
 	"wsdl":     "06ccb7e2fc6fdd9c96cff016c486dfafc29816a9aea2b21de93f305f1f9badae",
 }
@@ -88,6 +88,9 @@ func TestFrozenImportContractsAreExactAndDeterministic(t *testing.T) {
 			}
 			if importer.name == "har" {
 				requireIntentionalDelta(t, "har_request_http_version_fidelity")
+			}
+			if importer.name == "postman" {
+				requireIntentionalDelta(t, "postman_source_file_provenance")
 			}
 			requireIntentionalDelta(t, "credential_preserving_import_marker")
 			if importer.name != "wsdl" {
@@ -568,6 +571,7 @@ func TestCredentialDispositionContractCharacterizesCurrentDeltas(t *testing.T) {
 var intentionalDeltaAllowlist = map[string]string{
 	"credential_preserving_import_marker":            "Finalized imported scripts carry a stable policy marker so persistence keeps operator-supplied executable credential values while read projections remain masked.",
 	"postman_http_credentials_use_shared_projection": "Postman HTTP headers, typed auth, and structured bodies now reach the source-neutral credential projector before any compatibility rewriting.",
+	"postman_source_file_provenance":                 "Postman results identify the collection and selected environment source files so credential guidance can name the exact contributing artifact.",
 	"jmeter_http_credentials_use_shared_projection":  "JMeter HTTP headers and bodies now use the source-neutral credential projector.",
 	"k6_http_credentials_use_shared_projection":      "Static k6 HTTP literals now use the source-neutral credential projector.",
 	"k6_map_headers_gain_deterministic_header_list":  "k6 object headers expose only last-wins map semantics; the shared finalizer now emits their deterministic ordered compatibility list.",

@@ -9,6 +9,12 @@ var (
 	// ErrFleetPoolHasActiveProvisioning prevents deleting the durable identity
 	// for a pool while an external scale attempt can still complete against it.
 	ErrFleetPoolHasActiveProvisioning = errors.New("fleet pool has an active provisioning request")
+	// ErrFleetPoolHasLiveCapacity keeps the pool identity available to the
+	// orphan reconciler until every externally billed instance is terminal.
+	ErrFleetPoolHasLiveCapacity = errors.New("fleet pool has live capacity instance intents")
+	// ErrFleetPoolPlacementChanged fences a provisioning request whose target
+	// was changed after the handler resolved its backend.
+	ErrFleetPoolPlacementChanged = errors.New("fleet pool execution target changed during provisioning")
 	// ErrFleetPoolNotActive prevents a stale preflight read from launching a new
 	// provisioning attempt after an administrator suspended the pool.
 	ErrFleetPoolNotActive = errors.New("fleet pool is not active")
@@ -16,6 +22,15 @@ var (
 	// at most one domain, so a generator in two pools could be claimed by two
 	// domains at once and the domain scoping would mean nothing.
 	ErrGeneratorAlreadyInPool = errors.New("generator already belongs to another fleet pool")
+)
+
+const (
+	FleetLifecycleStanding  = "standing"
+	FleetLifecycleOnDemand  = "on_demand"
+	FleetLifecycleWarmBurst = "warm_burst"
+
+	CapacityAdmissionStrict     = "strict"
+	CapacityAdmissionBestEffort = "best_effort"
 )
 
 // FleetPool is a named, cloud-managed group of load generators with sizing
@@ -37,11 +52,20 @@ type FleetPool struct {
 	// the controller's env-configured provisioner, which is what every pool
 	// created before the cluster registry uses.
 	ClusterID string `json:"cluster_id,omitempty"`
+	// ExecutionTargetID is the provider-neutral binding. ClusterID remains a
+	// compatibility projection while Kubernetes clients migrate.
+	ExecutionTargetID string `json:"execution_target_id,omitempty"`
 	// DomainID scopes the pool to a domain, which subjects it to that domain's
 	// deployment target. Empty means UNSCOPED: the constraint does not apply,
 	// which is what every pool created before domain targets carries and is why
 	// adding a target can never break an existing deployment.
-	DomainID string `json:"domain_id,omitempty"`
+	DomainID                string `json:"domain_id,omitempty"`
+	LifecycleMode           string `json:"lifecycle_mode,omitempty"`
+	WarmFloor               int    `json:"warm_floor,omitempty"`
+	ReadinessTimeoutSeconds int    `json:"readiness_timeout_seconds,omitempty"`
+	IdleGraceSeconds        int    `json:"idle_grace_seconds,omitempty"`
+	RuntimeProfileID        string `json:"runtime_profile_id,omitempty"`
+	CapacityAdmission       string `json:"capacity_admission,omitempty"`
 	// Allocation is the pod resource budget and node placement applied to this
 	// pool's generators. Nil means the workload's own manifest decides.
 	Allocation *PoolAllocation    `json:"allocation,omitempty"`
@@ -94,19 +118,29 @@ type GeneratorMetadataPatch struct {
 // or Kubernetes provisioner is wired, requests resolve to status "not_configured"
 // with an explanatory event rather than silently succeeding.
 type ProvisioningRequest struct {
-	ID                 string               `json:"id"`
-	Revision           int                  `json:"revision,omitempty"`
-	AttemptToken       string               `json:"-"`
-	FleetPoolID        string               `json:"fleet_pool_id"`
-	ProjectID          string               `json:"project_id,omitempty"`
-	Status             string               `json:"status"` // pending, accepted, scaling, waiting_ready, provisioning, success, failed, not_configured, cancelled, timed_out
-	DesiredCount       int                  `json:"desired_count"`
-	Reason             string               `json:"reason,omitempty"`
-	RequestedBySubject string               `json:"requested_by_subject,omitempty"`
-	Events             []*ProvisioningEvent `json:"events,omitempty"`
-	CreatedAt          time.Time            `json:"created_at"`
-	UpdatedAt          time.Time            `json:"updated_at"`
-	CompletedAt        *time.Time           `json:"completed_at,omitempty"`
+	ID                  string               `json:"id"`
+	Revision            int                  `json:"revision,omitempty"`
+	AttemptToken        string               `json:"-"`
+	FleetPoolID         string               `json:"fleet_pool_id"`
+	ProjectID           string               `json:"project_id,omitempty"`
+	Status              string               `json:"status"` // pending, accepted, scaling, waiting_ready, provisioning, success, failed, not_configured, cancelled, timed_out
+	DesiredCount        int                  `json:"desired_count"`
+	ExecutionTargetID   string               `json:"execution_target_id,omitempty"`
+	ProviderOperationID string               `json:"provider_operation_id,omitempty"`
+	IdempotencyKey      string               `json:"idempotency_key,omitempty"`
+	ObservedCount       int                  `json:"observed_count,omitempty"`
+	ReadyCount          int                  `json:"ready_count,omitempty"`
+	PendingCount        int                  `json:"pending_count,omitempty"`
+	DrainingCount       int                  `json:"draining_count,omitempty"`
+	FailedCount         int                  `json:"failed_count,omitempty"`
+	DeadlineAt          *time.Time           `json:"deadline_at,omitempty"`
+	LastError           string               `json:"last_error,omitempty"`
+	Reason              string               `json:"reason,omitempty"`
+	RequestedBySubject  string               `json:"requested_by_subject,omitempty"`
+	Events              []*ProvisioningEvent `json:"events,omitempty"`
+	CreatedAt           time.Time            `json:"created_at"`
+	UpdatedAt           time.Time            `json:"updated_at"`
+	CompletedAt         *time.Time           `json:"completed_at,omitempty"`
 }
 
 // ProvisioningEvent is one entry in a provisioning request's audit trail.

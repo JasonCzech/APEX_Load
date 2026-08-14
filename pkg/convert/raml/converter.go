@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/jasonczech/apexload/pkg/convert/convertutil"
+	"github.com/jasonczech/apexload/pkg/convert/credentialpolicy"
 	"github.com/jasonczech/apexload/pkg/convert/diag"
 	"github.com/jasonczech/apexload/pkg/convert/srcparse"
 	"github.com/jasonczech/apexload/pkg/dsl"
@@ -64,11 +65,12 @@ type applyOptions struct {
 }
 
 type ConvertResult struct {
-	Script      *dsl.Script      `json:"script"`
-	Warnings    []string         `json:"warnings,omitempty"`
-	Unsupported diag.Diagnostics `json:"unsupported,omitempty"`
-	Stats       ConvertStats     `json:"stats"`
-	Summary     ReviewSummary    `json:"summary"`
+	Script             *dsl.Script                    `json:"script"`
+	Warnings           []string                       `json:"warnings,omitempty"`
+	Unsupported        diag.Diagnostics               `json:"unsupported,omitempty"`
+	Stats              ConvertStats                   `json:"stats"`
+	Summary            ReviewSummary                  `json:"summary"`
+	SecretRequirements []credentialpolicy.Requirement `json:"secret_requirements,omitempty"`
 }
 
 var ramlMethods = map[string]bool{
@@ -151,7 +153,75 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	}
 	result.Script = script
 	result.Stats.ConvertedActions = len(script.Actions)
+	result.SecretRequirements, err = ramlGeneratedCredentialRequirements(
+		script,
+		"raml.yaml",
+	)
+	if err != nil {
+		return nil, fmt.Errorf("describe generated RAML credentials: %w", err)
+	}
 	return result, nil
+}
+
+func ramlGeneratedCredentialRequirements(
+	script *dsl.Script,
+	sourceFile string,
+) ([]credentialpolicy.Requirement, error) {
+	if script == nil {
+		return nil, nil
+	}
+	const reference = "{{secret.RAML_CLIENT_SECRET}}"
+	payload, err := json.Marshal(script)
+	if err != nil {
+		return nil, err
+	}
+	if !strings.Contains(string(payload), reference) {
+		return nil, nil
+	}
+	targets := make([]credentialpolicy.TargetRef, 0, len(script.Init)+len(script.Actions))
+	for index, action := range script.Init {
+		if value, _ := action.Params["client_secret"].(string); value == reference {
+			targets = append(targets, credentialpolicy.TargetRef{
+				RequestKey: action.Name,
+				Field:      fmt.Sprintf("init[%d].params.client_secret", index),
+			})
+		}
+	}
+	for index, action := range script.Actions {
+		for name, value := range action.Headers {
+			if strings.EqualFold(strings.TrimSpace(name), "client_secret") && value == reference {
+				targets = append(targets, credentialpolicy.TargetRef{
+					RequestKey: action.Name,
+					Field:      fmt.Sprintf("actions[%d].headers.client_secret", index),
+				})
+			}
+		}
+	}
+	if len(targets) == 0 {
+		return nil, fmt.Errorf("RAML client-secret reference has no target")
+	}
+	requirement, replacement, err := credentialpolicy.NewRequirement(
+		credentialpolicy.RequirementSpec{
+			Key:      "raml_client_secret",
+			Label:    "RAML client secret",
+			Context:  "OAuth 2.0 token acquisition or Anypoint Client ID Enforcement generated this client-secret placeholder. The RAML document describes the policy but does not contain a credential value.",
+			NameHint: "RAML_CLIENT_SECRET",
+			Source: credentialpolicy.SourceRef{
+				Format:  "raml",
+				Path:    sourceFile,
+				Pointer: "/securitySchemes",
+			},
+			Targets: targets,
+			Mode:    credentialpolicy.SecretReference,
+		},
+	)
+	if err != nil {
+		return nil, err
+	}
+	if replacement != reference {
+		return nil, fmt.Errorf("RAML client-secret name did not round-trip")
+	}
+	return []credentialpolicy.Requirement{requirement}, nil
 }
 
 var ramlBaseURIParameterPattern = regexp.MustCompile(`\{([A-Za-z_][A-Za-z0-9_.-]*)\}`)

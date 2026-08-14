@@ -60,7 +60,10 @@ import {
   credentialPreservingImportDraftRequiresSave,
   importDraftExpiryStatus,
 } from "./protectedImportSession";
-import { attachImportCorrelationSuggestions } from "./scriptEditorUtils";
+import {
+  attachImportCorrelationSuggestions,
+  createReplaySessionId,
+} from "./scriptEditorUtils";
 import { type ImportedSaveResult } from "./useScriptsAuthoringState";
 import {
   DEFAULT_MACOS_NETWORK_SERVICE,
@@ -487,8 +490,10 @@ function isWailsShell(): boolean {
   return isDesktopSurface();
 }
 
-function browserRecorderPanelURL(sessionId: string): string {
-  const fragment = `/recorder-panel?session=${encodeURIComponent(sessionId)}`;
+function browserRecorderPanelURL(sessionId: string, folderId?: string | null): string {
+  const params = new URLSearchParams({ session: sessionId });
+  if (folderId) params.set("folderId", folderId);
+  const fragment = `/recorder-panel?${params.toString()}`;
   if (typeof window === "undefined") return `#${fragment}`;
   const url = new URL(window.location.href);
   url.hash = fragment;
@@ -562,6 +567,7 @@ interface RecordingStudioProps {
   onImported?: (result: ImportedSaveResult) => void;
   onEdit?: (script: ScriptDefinition) => void;
   onClose?: () => void;
+  onOperationBusyChange?: (busy: boolean) => void;
 }
 
 export default function RecordingStudio({
@@ -570,6 +576,7 @@ export default function RecordingStudio({
   onImported,
   onEdit,
   onClose,
+  onOperationBusyChange,
 }: RecordingStudioProps) {
   const api = useApi();
   const studioActiveRef = useRef(true);
@@ -692,6 +699,16 @@ export default function RecordingStudio({
   const [convertedReviewGeneration, setConvertedReviewGeneration] = useState(0);
   const [salesforceReviewGeneration, setSalesforceReviewGeneration] =
     useState(0);
+  const [convertedConfiguredCredentialReviewIdentity, setConvertedConfiguredCredentialReviewIdentity] =
+    useState("");
+  const [salesforceConfiguredCredentialReviewIdentity, setSalesforceConfiguredCredentialReviewIdentity] =
+    useState("");
+  const convertedCredentialReviewIdentity = `${convertedReviewGeneration}:${activeProject?.id || ""}`;
+  const salesforceCredentialReviewIdentity = `${salesforceReviewGeneration}:${activeProject?.id || ""}`;
+  const convertedProjectSecretsConfiguredForReview =
+    convertedConfiguredCredentialReviewIdentity === convertedCredentialReviewIdentity;
+  const salesforceProjectSecretsConfiguredForReview =
+    salesforceConfiguredCredentialReviewIdentity === salesforceCredentialReviewIdentity;
   const advanceConvertedReviewGeneration = useCallback(() => {
     const next = convertedReviewGenerationRef.current + 1;
     convertedReviewGenerationRef.current = next;
@@ -732,9 +749,38 @@ export default function RecordingStudio({
   ] = useState(false);
   const convertedSaveInFlightRef = useRef(false);
   const salesforceSaveInFlightRef = useRef(false);
+  const convertedBatchSaveOperationRef = useRef<{
+    generation: number;
+    projectId?: string;
+    folderId: string | null;
+    recordingSessionId: string;
+    operationId: string;
+  } | null>(null);
+  const salesforceBatchSaveOperationRef = useRef<{
+    generation: number;
+    projectId?: string;
+    folderId: string | null;
+    operationId: string;
+  } | null>(null);
   const [convertedSaveInProgress, setConvertedSaveInProgress] = useState(false);
   const [salesforceSaveInProgress, setSalesforceSaveInProgress] =
     useState(false);
+  const [browserPanelOperationBusy, setBrowserPanelOperationBusy] =
+    useState(false);
+  const operationBusy =
+    convertTask.pending ||
+    salesforceTask.pending ||
+    convertedSaveInProgress ||
+    salesforceSaveInProgress ||
+    convertedParameterizationApplying ||
+    salesforceParameterizationApplying ||
+    convertedCredentialActionInProgress ||
+    salesforceCredentialActionInProgress ||
+    browserPanelOperationBusy;
+  useEffect(() => {
+    onOperationBusyChange?.(operationBusy);
+    return () => onOperationBusyChange?.(false);
+  }, [onOperationBusyChange, operationBusy]);
   const resetConvertTask = convertTask.reset;
   const resetSalesforceTask = salesforceTask.reset;
   const refreshInFlightRef = useRef<{
@@ -1234,6 +1280,7 @@ export default function RecordingStudio({
     resetConvertTask();
     resetSalesforceTask();
     convertedSourceRecordingSessionIDRef.current = null;
+    convertedBatchSaveOperationRef.current = null;
   }, [
     activeProject?.id,
     recorderRequestScope,
@@ -1431,7 +1478,7 @@ export default function RecordingStudio({
       if (refreshScopeRef.current !== sourceRecorderScope) return;
       const sessionId = res.session.id;
       setBrowserPanelSessionId(sessionId);
-      const panelURL = browserRecorderPanelURL(sessionId);
+      const panelURL = browserRecorderPanelURL(sessionId, folderId);
       if (!isWailsShell()) {
         try {
           await api.openBrowserRecordingControlPanel(sessionId, panelURL);
@@ -1658,6 +1705,7 @@ export default function RecordingStudio({
         setConvertedCredentialActionInProgress(false);
         convertedPreparedScriptRef.current = null;
         convertedSourceRecordingSessionIDRef.current = session.id;
+        convertedBatchSaveOperationRef.current = null;
         setConvertedPreparedSecrets(null);
         const result = await convertTask.run(
           async () => {
@@ -1872,6 +1920,17 @@ export default function RecordingStudio({
     });
   };
 
+  const handleConvertedProjectSecretsConfigured = useCallback(
+    (names: readonly string[]) => {
+      if (names.length > 0) {
+        setConvertedConfiguredCredentialReviewIdentity(
+          convertedCredentialReviewIdentity,
+        );
+      }
+    },
+    [convertedCredentialReviewIdentity],
+  );
+
   const handleApplyConvertedParameterization = (
     parameterizedScript: ScriptDefinition,
     _diffs: unknown[],
@@ -1999,12 +2058,43 @@ export default function RecordingStudio({
         );
         return;
       }
-      const savedScript = await api.createScript(
-        script,
-        sourceProjectId,
-        script.folder_id ?? folderId ?? null,
-        sourceRecordingSessionId,
-      );
+      if (!sourceRecordingSessionId) {
+        throw new Error(
+          "The source recording session is unavailable. Generate the recording preview again before saving.",
+        );
+      }
+      const destinationFolderId = script.folder_id ?? folderId ?? null;
+      const retained = convertedBatchSaveOperationRef.current;
+      const operationId = retained &&
+        retained.generation === sourceGeneration &&
+        retained.projectId === sourceProjectId &&
+        retained.folderId === destinationFolderId &&
+        retained.recordingSessionId === sourceRecordingSessionId
+        ? retained.operationId
+        : `recording-proxy-import-${createReplaySessionId()}`;
+      convertedBatchSaveOperationRef.current = {
+        generation: sourceGeneration,
+        projectId: sourceProjectId,
+        folderId: destinationFolderId,
+        recordingSessionId: sourceRecordingSessionId,
+        operationId,
+      };
+      const response = await api.commitGenericImportBatch({
+        scripts: [script],
+        folder_id: destinationFolderId,
+        operation_id: operationId,
+        source_profile: "recorder",
+        source_recording_session_ids: [sourceRecordingSessionId],
+      });
+      if (response.count !== 1 || response.scripts.length !== 1) {
+        throw new Error(
+          "The atomic recording import save did not return the stored script. Retry the same save to reconcile its result.",
+        );
+      }
+      if (convertedBatchSaveOperationRef.current?.operationId === operationId) {
+        convertedBatchSaveOperationRef.current = null;
+      }
+      const savedScript = response.scripts[0];
       const persistedScript = withFallbackPersistedScript(savedScript, script);
       onImported?.({
         scripts: [persistedScript],
@@ -2052,6 +2142,17 @@ export default function RecordingStudio({
       import_draft_expires_at: resolved.import_draft_expires_at,
     });
   };
+
+  const handleSalesforceProjectSecretsConfigured = useCallback(
+    (names: readonly string[]) => {
+      if (names.length > 0) {
+        setSalesforceConfiguredCredentialReviewIdentity(
+          salesforceCredentialReviewIdentity,
+        );
+      }
+    },
+    [salesforceCredentialReviewIdentity],
+  );
 
   const handleApplySalesforceParameterization = (
     parameterizedScript: ScriptDefinition,
@@ -2155,12 +2256,37 @@ export default function RecordingStudio({
       if (!script || !requestIsCurrent()) return;
       // The Salesforce-analyzed draft is not a verbatim conversion of the
       // recording, so it can never pass the server's provenance attestation —
-      // save it without claiming the recording session as its source.
-      const savedScript = await api.createScript(
-        script,
-        sourceProjectId,
-        script.folder_id ?? folderId ?? null,
-      );
+      // save it without claiming the recording session as its source. The
+      // stable batch receipt makes a lost successful response safe to retry.
+      const destinationFolderId = script.folder_id ?? folderId ?? null;
+      const retained = salesforceBatchSaveOperationRef.current;
+      const operationId = retained &&
+        retained.generation === sourceGeneration &&
+        retained.projectId === sourceProjectId &&
+        retained.folderId === destinationFolderId
+        ? retained.operationId
+        : `recording-salesforce-import-${createReplaySessionId()}`;
+      salesforceBatchSaveOperationRef.current = {
+        generation: sourceGeneration,
+        projectId: sourceProjectId,
+        folderId: destinationFolderId,
+        operationId,
+      };
+      const response = await api.commitGenericImportBatch({
+        scripts: [script],
+        folder_id: destinationFolderId,
+        operation_id: operationId,
+        source_profile: "salesforce",
+      });
+      if (response.count !== 1 || response.scripts.length !== 1) {
+        throw new Error(
+          "The atomic Salesforce import save did not return the stored script. Retry the same save to reconcile its result.",
+        );
+      }
+      if (salesforceBatchSaveOperationRef.current?.operationId === operationId) {
+        salesforceBatchSaveOperationRef.current = null;
+      }
+      const savedScript = response.scripts[0];
       onImported?.({
         scripts: [withFallbackPersistedScript(savedScript, script)],
         ...(!requestIsCurrent() ? { stayInImportReview: true } : {}),
@@ -2757,7 +2883,9 @@ export default function RecordingStudio({
               folderId={folderId}
               onImported={onImported}
               onEdit={onEdit}
+              onOperationBusyChange={setBrowserPanelOperationBusy}
               onDismiss={() => {
+                setBrowserPanelOperationBusy(false);
                 setBrowserPanelSessionId(null);
                 refresh();
               }}
@@ -3384,6 +3512,7 @@ export default function RecordingStudio({
                 resetConvertTask();
                 convertedPreparedScriptRef.current = null;
                 convertedSourceRecordingSessionIDRef.current = null;
+                convertedBatchSaveOperationRef.current = null;
                 setConvertedPreparedSecrets(null);
                 setParameterizeInputs(e.target.checked);
               }}
@@ -3701,7 +3830,7 @@ export default function RecordingStudio({
             <SecretBindingReview
               ref={convertedCredentialReviewRef}
               requirements={convertedSecretRequirements}
-              reviewGeneration={`${convertedReviewGeneration}:${activeProject?.id || ""}`}
+              reviewGeneration={convertedCredentialReviewIdentity}
               projectId={activeProject?.id}
               sourceSecretSessionId={convertResult.source_secret_session_id}
               sourceSecretSessionExpiresAt={
@@ -3717,7 +3846,14 @@ export default function RecordingStudio({
               }
               onApply={handleApplyConvertedSecretBindings}
               onPreparedChange={setConvertedPreparedSecrets}
+              onProjectSecretsConfigured={handleConvertedProjectSecretsConfigured}
             />
+          )}
+          {convertedProjectSecretsConfiguredForReview && (
+            <div className="rec-feedback" role="status">
+              Project-secret values configured during this review remain in Project Secrets independently of script saving.
+              {" "}If script saving fails, retrying this save reuses those configured values. Any atomic-save promise on this page applies to scripts, not external secret-store writes.
+            </div>
           )}
           {convertResult.parameterization &&
             (convertResult.parameterization.suggestions?.length || 0) > 0 &&
@@ -3863,7 +3999,7 @@ export default function RecordingStudio({
             <SecretBindingReview
               ref={salesforceCredentialReviewRef}
               requirements={salesforceSecretRequirements}
-              reviewGeneration={`${salesforceReviewGeneration}:${activeProject?.id || ""}`}
+              reviewGeneration={salesforceCredentialReviewIdentity}
               projectId={activeProject?.id}
               sourceSecretSessionId={salesforceResult.source_secret_session_id}
               sourceSecretSessionExpiresAt={
@@ -3879,7 +4015,14 @@ export default function RecordingStudio({
               }
               onApply={handleApplySalesforceSecretBindings}
               onPreparedChange={setSalesforcePreparedSecrets}
+              onProjectSecretsConfigured={handleSalesforceProjectSecretsConfigured}
             />
+          )}
+          {salesforceProjectSecretsConfiguredForReview && (
+            <div className="rec-feedback" role="status">
+              Project-secret values configured during this review remain in Project Secrets independently of script saving.
+              {" "}If script saving fails, retrying this save reuses those configured values. Any atomic-save promise on this page applies to scripts, not external secret-store writes.
+            </div>
           )}
           {salesforceResult.parameterization &&
             (salesforceResult.parameterization.suggestions?.length || 0) >

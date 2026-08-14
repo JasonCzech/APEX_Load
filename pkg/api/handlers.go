@@ -736,6 +736,16 @@ func (s *Server) handleCreateScript(w http.ResponseWriter, r *http.Request) {
 					s.releaseImportDraftAttestation(importAttestationClaim)
 				}
 			}()
+			if importAttestationClaim.Script == nil {
+				writeError(w, http.StatusConflict, "credential-preserving import draft is invalid or expired; run the import again")
+				return
+			}
+			script = importAttestationClaim.Script
+			script, err = replaceUnavailableImportCredentialValues(script)
+			if err != nil {
+				writeError(w, http.StatusBadRequest, err.Error())
+				return
+			}
 			script, err = preparePersistentImportedLibraryScript(
 				script,
 				nil,

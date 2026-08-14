@@ -51,6 +51,7 @@ const apiMock = {
   migrateImportSecrets: vi.fn(),
   discardImportSecretSession: vi.fn(),
   createScript: vi.fn(),
+  commitGenericImportBatch: vi.fn(),
   startRecording: vi.fn(),
   stopRecording: vi.fn(),
   pauseRecording: vi.fn(),
@@ -309,6 +310,28 @@ describe("RecordingStudio", () => {
         version: script.version || "1.0.0",
         created_at: "2026-05-17T00:00:00Z",
       }),
+    );
+    apiMock.commitGenericImportBatch.mockImplementation(
+      async (payload: {
+        scripts: Array<{ name?: string; protocol?: string; version?: string; project_id?: string }>;
+        folder_id?: string | null;
+        source_recording_session_ids?: string[];
+      }) => {
+        const sourceRecordingSessionId = payload.source_recording_session_ids?.[0];
+        const stored = sourceRecordingSessionId
+          ? await apiMock.createScript(
+              payload.scripts[0],
+              payload.scripts[0]?.project_id,
+              payload.folder_id ?? null,
+              sourceRecordingSessionId,
+            )
+          : await apiMock.createScript(
+              payload.scripts[0],
+              payload.scripts[0]?.project_id,
+              payload.folder_id ?? null,
+            );
+        return { scripts: [stored], count: 1 };
+      },
     );
     apiMock.startBrowserRecording.mockResolvedValue({
       session: {
@@ -1071,6 +1094,15 @@ describe("RecordingStudio", () => {
     await flushPromises();
 
     expect(apiMock.convertRecording).not.toHaveBeenCalled();
+    expect(apiMock.commitGenericImportBatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        scripts: [expect.objectContaining({ name: "Checkout Preview" })],
+        folder_id: null,
+        operation_id: expect.stringMatching(/^recording-proxy-import-/),
+        source_profile: "recorder",
+        source_recording_session_ids: ["rec-1"],
+      }),
+    );
     expect(onImported).toHaveBeenCalledWith(
       expect.objectContaining({
         scripts: [expect.objectContaining({ id: "script-1" })],
@@ -1344,6 +1376,119 @@ describe("RecordingStudio", () => {
       "rec-1",
     );
     expect(onImported).toHaveBeenCalled();
+  });
+
+  it("explains durable project-secret recovery and reuses the configured value on recorder save retry", async () => {
+    const maskedScript = {
+      name: "Credential Retry",
+      version: "1.0.0",
+      protocol: "http",
+      project_id: "proj-1",
+      config: { base_url: "https://shop.example.com" },
+      actions: [{
+        name: "Login",
+        type: "request",
+        method: "POST",
+        target: "/login",
+        headers: { Authorization: "Bearer [REDACTED]" },
+      }],
+    };
+    const safeScript = {
+      ...maskedScript,
+      actions: [{
+        ...maskedScript.actions[0],
+        headers: { Authorization: "Bearer {{secret.LOGIN_TOKEN}}" },
+      }],
+    };
+    apiMock.previewRecordingConversion.mockResolvedValueOnce({
+      script: maskedScript,
+      scripts: [maskedScript],
+      correlations: [],
+      warnings: [],
+      secret_binding_requirements: [{
+        id: "login-token",
+        path: "/actions/0/headers/Authorization",
+        occurrence: 0,
+        label: "Authorization credential",
+        context: "Login",
+        suggested_name: "LOGIN_TOKEN",
+        replacement: "Bearer {{secret.LOGIN_TOKEN}}",
+      }],
+    });
+    apiMock.applySecretBindings.mockResolvedValueOnce({
+      script: safeScript,
+      secret_binding_requirements: [],
+    });
+    apiMock.commitGenericImportBatch.mockRejectedValueOnce(
+      new Error("temporary recorder script-store failure"),
+    );
+
+    await act(async () => {
+      root.render(
+        <RecordingStudio
+          activeProject={{ id: "proj-1", name: "Web" } as any}
+          onImported={vi.fn()}
+        />,
+      );
+    });
+    await flushPromises();
+    await openProxyAdvanced(container);
+    const reviewButton = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent?.trim() === "Review Script",
+    );
+    await act(async () => {
+      reviewButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await flushPromises();
+
+    const valueInput = container.querySelector<HTMLInputElement>(
+      'input[aria-label="Secret value for LOGIN_TOKEN"]',
+    )!;
+    act(() => setInput(valueInput, "write-only-recorder-value"));
+    let saveButton = Array.from(
+      container.querySelectorAll<HTMLButtonElement>(".rec-result-actions button"),
+    ).find((button) => button.classList.contains("btn-primary"));
+    await act(async () => {
+      saveButton?.click();
+    });
+    await flushPromises();
+
+    expect(apiMock.createProjectSecrets).toHaveBeenCalledWith("proj-1", [{
+      name: "LOGIN_TOKEN",
+      value: "write-only-recorder-value",
+    }]);
+    expect(container.textContent).toContain(
+      "Project-secret values configured during this review remain in Project Secrets independently of script saving",
+    );
+    expect(container.textContent).toContain(
+      "retrying this save reuses those configured values",
+    );
+    expect(container.textContent).toContain(
+      "applies to scripts, not external secret-store writes",
+    );
+    expect(container.textContent).toContain("temporary recorder script-store failure");
+
+    saveButton = Array.from(
+      container.querySelectorAll<HTMLButtonElement>(".rec-result-actions button"),
+    ).find((button) => button.classList.contains("btn-primary"));
+    await act(async () => {
+      saveButton?.click();
+    });
+    await flushPromises();
+
+    expect(apiMock.createProjectSecrets).toHaveBeenCalledTimes(1);
+    expect(apiMock.createScript).toHaveBeenCalledTimes(1);
+    expect(apiMock.commitGenericImportBatch).toHaveBeenCalledTimes(2);
+    const firstOperationID = apiMock.commitGenericImportBatch.mock.calls[0][0]
+      .operation_id;
+    expect(apiMock.commitGenericImportBatch.mock.calls[1][0]).toEqual(
+      expect.objectContaining({
+        operation_id: firstOperationID,
+        source_profile: "recorder",
+        source_recording_session_ids: ["rec-1"],
+      }),
+    );
+    expect(container.textContent).toContain('Script "Credential Retry" created');
   });
 
   it("saves a preservation-marked recorder draft without masking its imported credential", async () => {
@@ -2133,6 +2278,13 @@ describe("RecordingStudio", () => {
       undefined,
       null,
     );
+    expect(apiMock.commitGenericImportBatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        scripts: [expect.objectContaining({ name: "Salesforce Capture HTTP" })],
+        source_profile: "salesforce",
+        operation_id: expect.any(String),
+      }),
+    );
     await act(async () => {
       resolveSave?.({
         id: "salesforce-script",
@@ -2654,6 +2806,7 @@ describe("RecordingStudio", () => {
       root.render(
         <RecordingStudio
           activeProject={{ id: "proj-1", name: "Web" } as any}
+          folderId="folder-9"
         />,
       );
     });
@@ -2691,6 +2844,7 @@ describe("RecordingStudio", () => {
       "brec-1",
       expect.stringContaining("#/recorder-panel?session=brec-1"),
     );
+    expect(apiMock.openBrowserRecordingControlPanel.mock.calls[0][1]).toContain("folderId=folder-9");
     expect(window.open).not.toHaveBeenCalled();
     expect(
       container.querySelector('[data-testid="browser-recorder-panel"]'),

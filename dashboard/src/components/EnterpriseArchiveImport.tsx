@@ -286,6 +286,85 @@ function getEnterpriseArchiveResultScripts(result: EnterpriseArchiveImportResult
   return result.script ? [result.script] : []
 }
 
+type EnterpriseArchiveScriptNameRegistry = Map<string, number>
+
+function normalizedEnterpriseArchiveScriptName(name: string): string {
+  return name.trim().toLowerCase()
+}
+
+function reserveEnterpriseArchiveScriptName(
+  name: string,
+  registry: EnterpriseArchiveScriptNameRegistry,
+): string {
+  const identity = normalizedEnterpriseArchiveScriptName(name)
+  if (!identity) return name
+  let count = registry.get(identity) || 0
+  if (count === 0) {
+    registry.set(identity, 1)
+    return name
+  }
+  for (;;) {
+    count += 1
+    const candidate = `${name}_${count}`
+    const candidateIdentity = normalizedEnterpriseArchiveScriptName(candidate)
+    if (!registry.has(candidateIdentity)) {
+      registry.set(identity, count)
+      registry.set(candidateIdentity, 1)
+      return candidate
+    }
+  }
+}
+
+/**
+ * The server converts one enterprise archive at a time, but the dashboard can
+ * commit several conversion results in one batch. Allocate names across that
+ * complete UI batch before credentials are scoped or scripts are saved so two
+ * archives with the same human name cannot become an ambiguous requirement or
+ * collide at the atomic save boundary.
+ */
+function uniquifyEnterpriseArchiveResultScriptNames(
+  result: EnterpriseArchiveImportResult,
+  registry: EnterpriseArchiveScriptNameRegistry,
+): EnterpriseArchiveImportResult {
+  const sourceScripts = getEnterpriseArchiveResultScripts(result)
+  if (sourceScripts.length === 0) return result
+  const scripts = sourceScripts.map(script => ({
+    ...script,
+    name: reserveEnterpriseArchiveScriptName(script.name || '', registry),
+  }))
+  const renamedByIndex = scripts.map((script, index) => ({
+    prior: sourceScripts[index]?.name || '',
+    current: script.name || '',
+  }))
+  const scriptNameForSideRecord = (scriptIndex?: number, scriptName?: string) => {
+    if (typeof scriptIndex === 'number' && renamedByIndex[scriptIndex]) {
+      return renamedByIndex[scriptIndex].current
+    }
+    if (!scriptName) return scriptName
+    return renamedByIndex.find(rename => rename.prior === scriptName)?.current || scriptName
+  }
+  return {
+    ...result,
+    scripts,
+    ...(result.script ? { script: scripts[0] } : {}),
+    ...(result.secret_binding_requirements ? {
+      secret_binding_requirements: result.secret_binding_requirements.map(requirement => ({
+        ...requirement,
+        script_name: scriptNameForSideRecord(requirement.script_index, requirement.script_name),
+      })),
+    } : {}),
+    ...(result.parameterization ? {
+      parameterization: {
+        ...result.parameterization,
+        suggestions: result.parameterization.suggestions.map(suggestion => ({
+          ...suggestion,
+          script_name: scriptNameForSideRecord(undefined, suggestion.script_name),
+        })),
+      },
+    } : {}),
+  }
+}
+
 function getEnterpriseArchiveReplayPreflight(
   script: ScriptDefinition | null,
   result: EnterpriseArchiveImportResult | null,
@@ -435,6 +514,7 @@ interface Props {
   onImported?: (result: ImportedSaveResult) => void
   onEdit?: (script: ScriptDefinition, focus?: DraftEditorFocus) => void
   onClose?: () => void
+  onOperationBusyChange?: (busy: boolean) => void
 }
 
 type ReviewMode = 'validation' | 'conversion'
@@ -462,6 +542,25 @@ interface EnterpriseArchiveImportQueueItem {
   reviewOptionsIdentity: string
   savedResultScripts: Record<number, StoredScript>
   sourceSecretProjectId: string
+}
+
+type EnterpriseArchiveAtomicSaveEntry = {
+  itemId: string
+  file: File
+  harFile: File | null
+  supplementalFiles: File[]
+  result: EnterpriseArchiveImportResult
+  scripts: ScriptDefinition[]
+}
+
+type RetainedEnterpriseArchiveAtomicSave = {
+  operationKey: string
+  operationId: string
+  projectId: string | undefined
+  folderId: string | null
+  optionsIdentity: string
+  entries: EnterpriseArchiveAtomicSaveEntry[]
+  scriptsToPersist: ScriptDefinition[]
 }
 
 type EnterpriseArchiveSupportMatrixSection = {
@@ -497,6 +596,15 @@ type ImportOptions = {
 }
 
 type RelaxableMigrationBlockStatus = 'partial' | 'compatibility_only' | 'non_applicable'
+
+let enterpriseArchiveSaveOperationSequence = 0
+
+function createEnterpriseArchiveSaveOperationID() {
+  const randomID = createReplaySessionId().trim()
+  if (randomID) return `enterprise-archive-${randomID}`
+  enterpriseArchiveSaveOperationSequence += 1
+  return `enterprise-archive-${Date.now().toString(36)}-${enterpriseArchiveSaveOperationSequence.toString(36)}`
+}
 
 const DEFAULT_IMPORT_OPTIONS: ImportOptions = {
   name: '',
@@ -775,7 +883,10 @@ const validationReviewTabs = [
 
 type ValidationReviewTab = typeof validationReviewTabs[number]['id']
 
-export default function EnterpriseArchiveImport({ initialFiles, projectId, folderId, onImported, onEdit, onClose }: Props) {
+const ENTERPRISE_QUEUE_PAGE_SIZE = 50
+const ENTERPRISE_RESULT_PAGE_SIZE = 50
+
+export default function EnterpriseArchiveImport({ initialFiles, projectId, folderId, onImported, onEdit, onClose, onOperationBusyChange }: Props) {
   const api = useApi()
   const apiRef = useRef(api)
   apiRef.current = api
@@ -789,6 +900,8 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
   const nativeDialogs = desktop && canUseNativeDialogs() && !browserPickerFallback
   const [importItems, setImportItems] = useState<EnterpriseArchiveImportQueueItem[]>([])
   const [selectedItemId, setSelectedItemId] = useState('')
+  const queueItemButtonRefs = useRef(new Map<string, HTMLButtonElement>())
+  const pendingQueueItemFocusRef = useRef<string | null>(null)
   // User-uploaded classpath JAR bindings, keyed by `${itemId}:${scriptIndex}` so
   // each imported Java script keeps its own attachments. Merged into the script
   // config at save time. A ref mirrors it for the async save handler.
@@ -814,11 +927,15 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
   const runtimeCoverageDialogRef = useRef<HTMLDivElement | null>(null)
   const runtimeCoverageCloseButtonRef = useRef<HTMLButtonElement | null>(null)
   const [reviewArtifactSaving, setReviewArtifactSaving] = useState(false)
+  const [reviewArtifactPersistenceInProgress, setReviewArtifactPersistenceInProgress] = useState(false)
   const [selectedResultScriptIndex, setSelectedResultScriptIndex] = useState(0)
+  const resultScriptButtonRefs = useRef(new Map<number, HTMLButtonElement>())
+  const pendingResultScriptFocusRef = useRef<number | null>(null)
   const [validationReviewTab, setValidationReviewTab] = useState<ValidationReviewTab>('overview')
   const credentialReviewRef = useRef<SecretBindingReviewHandle | null>(null)
   const editorActionInFlightRef = useRef(false)
   const [editorActionPreparing, setEditorActionPreparing] = useState(false)
+  const [internalReviewBusy, setInternalReviewBusy] = useState(false)
   type ImportSaveScope = {
     itemId: string
     generation: number
@@ -827,11 +944,47 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
     projectId: string | undefined
     optionsIdentity: string
     script: ScriptDefinition
+    operationKey?: string
+    operationId?: string
   }
   const scriptSaveInFlightRef = useRef<ImportSaveScope | null>(null)
   const reviewArtifactSaveInFlightRef = useRef<ImportSaveScope | null>(null)
+  const atomicSaveInFlightRef = useRef<{ operationKey: string; operationId: string } | null>(null)
+  const [atomicSaveInProgress, setAtomicSaveInProgress] = useState(false)
   const [scriptSaveInProgress, setScriptSaveInProgress] = useState(false)
+  const operationBusy = workingMode !== null
+    || reviewArtifactSaving
+    || reviewArtifactPersistenceInProgress
+    || editorActionPreparing
+    || internalReviewBusy
+    || scriptSaveInProgress
+    || atomicSaveInProgress
+  const sourceMutationLocked = reviewArtifactPersistenceInProgress || scriptSaveInProgress || atomicSaveInProgress
+  const sourceMutationLockedRef = useRef(sourceMutationLocked)
+  sourceMutationLockedRef.current = sourceMutationLocked
+  useEffect(() => {
+    onOperationBusyChange?.(operationBusy)
+    return () => onOperationBusyChange?.(false)
+  }, [onOperationBusyChange, operationBusy])
   const operationGenerationRef = useRef(0)
+  // Reuse the same server idempotency identity after a lost response. A retry
+  // must reconcile the original atomic save, never create another copy.
+  const saveOperationIDsRef = useRef(new Map<string, string>())
+  // Keep the exact post-conversion payload as well as its operation identity.
+  // Attestation tokens are one-shot server capabilities, so reconverting after
+  // an ambiguous response produces different tokens and therefore a different
+  // receipt digest. A retry must submit these same scripts unchanged.
+  const retainedAtomicSaveRef = useRef<RetainedEnterpriseArchiveAtomicSave | null>(null)
+  const clearRetainedAtomicSave = useCallback((itemIds?: readonly string[]) => {
+    const retained = retainedAtomicSaveRef.current
+    if (!retained) return
+    if (itemIds) {
+      const invalidatedIds = new Set(itemIds)
+      if (!retained.entries.some(entry => invalidatedIds.has(entry.itemId))) return
+    }
+    saveOperationIDsRef.current.delete(retained.operationKey)
+    retainedAtomicSaveRef.current = null
+  }, [])
   const itemRequestTokensRef = useRef<Map<string, number>>(new Map())
   const replayRequestTokensRef = useRef<Map<string, number>>(new Map())
   const replayNotFoundCountsRef = useRef<Map<string, number>>(new Map())
@@ -849,9 +1002,13 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
     () => importItems.find(item => item.id === selectedItemId) || importItems[0] || null,
     [importItems, selectedItemId],
   )
+  const selectedImportItemIndex = Math.max(0, importItems.findIndex(item => item.id === selectedItem?.id))
+  const queuePageStart = Math.floor(selectedImportItemIndex / ENTERPRISE_QUEUE_PAGE_SIZE) * ENTERPRISE_QUEUE_PAGE_SIZE
+  const visibleImportItems = importItems.slice(queuePageStart, queuePageStart + ENTERPRISE_QUEUE_PAGE_SIZE)
   const importItemsRef = useRef(importItems)
   importItemsRef.current = importItems
   const settledSourceSecretSelectionsRef = useRef(new Map<string, SecretBindingSelection[]>())
+  const credentialBatchReviewKeysRef = useRef(new Set<string>())
   const discardedSourceSecretSessionsRef = useRef(new Set<string>())
   const sourceSecretSessionDiscardsRef = useRef(new Map<string, Promise<void>>())
   const selectedItemIdRef = useRef(selectedItem?.id || '')
@@ -860,6 +1017,8 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
   selectedResultScriptIndexRef.current = selectedResultScriptIndex
   const reviewProjectIdRef = useRef(projectId)
   reviewProjectIdRef.current = projectId
+  const destinationFolderIdRef = useRef(folderId ?? null)
+  destinationFolderIdRef.current = folderId ?? null
   const optionsRef = useRef(options)
   optionsRef.current = options
   const sourceSecretSessionKey = useCallback(
@@ -928,27 +1087,45 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
       activeReviewArtifactSave &&
       (!itemIds || itemIds.includes(activeReviewArtifactSave.itemId)),
     )
-    if (invalidatesActiveReviewArtifactSave) {
-      reviewArtifactSaveInFlightRef.current = null
-    }
+    // Fencing a logical review does not cancel an authoring-session POST that
+    // already crossed the wire. Leave its physical ref intact until finally.
     return invalidatesActiveReviewArtifactSave
   }, [])
   const invalidateOperationScopes = useCallback((itemIds?: readonly string[]) => {
-    void discardQueuedSourceSecretSessions(importItemsRef.current, itemIds)
-    const activeScriptSave = scriptSaveInFlightRef.current
-    const invalidatesActiveScriptSave = Boolean(
-      activeScriptSave && (!itemIds || itemIds.includes(activeScriptSave.itemId)),
+    const activeAtomicSave = atomicSaveInFlightRef.current
+    const retainedAtomicSave = retainedAtomicSaveRef.current
+    const invalidatesActiveAtomicSave = Boolean(
+      activeAtomicSave
+      && retainedAtomicSave
+      && (!itemIds || retainedAtomicSave.entries.some(entry => itemIds.includes(entry.itemId))),
     )
-    const invalidatesActiveReviewArtifactSave = fenceOperationScopes(itemIds)
+    if (!invalidatesActiveAtomicSave) clearRetainedAtomicSave(itemIds)
+    void discardQueuedSourceSecretSessions(importItemsRef.current, itemIds)
+    fenceOperationScopes(itemIds)
     // A queue-item fence does not stop a running validate/convert batch, and
     // clearing workingMode would re-enable Validate so the operator could fence
     // their own batch from under it. Only a whole-surface fence resets it.
-    if (!itemIds) setWorkingMode(null)
-    if (!itemIds || invalidatesActiveScriptSave) setScriptSaveInProgress(false)
-    if (invalidatesActiveReviewArtifactSave) {
-      setReviewArtifactSaving(false)
+    if (!itemIds && !invalidatesActiveAtomicSave) setWorkingMode(null)
+    // Physical save flags remain raised until their corresponding promise
+    // settles, even when Back/project/source invalidates the visible review.
+    if (!itemIds) {
+      const protectedKeys = new Set([
+        activeAtomicSave?.operationKey,
+        scriptSaveInFlightRef.current?.operationKey,
+      ].filter((key): key is string => Boolean(key)))
+      for (const key of saveOperationIDsRef.current.keys()) {
+        if (!protectedKeys.has(key)) saveOperationIDsRef.current.delete(key)
+      }
+    } else {
+      const invalidatedIDs = new Set(itemIds)
+      for (const key of saveOperationIDsRef.current.keys()) {
+        const itemID = key.split('\u0000', 1)[0]
+        const protectedKey = activeAtomicSave?.operationKey === key
+          || scriptSaveInFlightRef.current?.operationKey === key
+        if (invalidatedIDs.has(itemID) && !protectedKey) saveOperationIDsRef.current.delete(key)
+      }
     }
-  }, [discardQueuedSourceSecretSessions, fenceOperationScopes])
+  }, [clearRetainedAtomicSave, discardQueuedSourceSecretSessions, fenceOperationScopes])
   useEffect(() => () => {
     // Back is not the only way this surface can disappear: project and route
     // transitions may unmount it directly. Fence the refs synchronously so an
@@ -983,6 +1160,13 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
       sourceSecretProjectId: '',
     })))
   }, [invalidateOperationScopes, projectId])
+  const previousFolderIdRef = useRef(folderId ?? null)
+  useEffect(() => {
+    const nextFolderId = folderId ?? null
+    if (previousFolderIdRef.current === nextFolderId) return
+    previousFolderIdRef.current = nextFolderId
+    if (!atomicSaveInFlightRef.current) clearRetainedAtomicSave()
+  }, [clearRetainedAtomicSave, folderId])
   const selectedHARFile = selectedItem?.harFile ?? null
   const selectedSupplementalFiles = selectedItem?.supplementalFiles || EMPTY_SUPPLEMENTAL_FILES
   const result = selectedItem?.result ?? null
@@ -1032,6 +1216,20 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
     ? Math.min(selectedResultScriptIndex, resultScripts.length - 1)
     : 0
   selectedResultScriptIndexRef.current = activeResultScriptIndex
+  const resultScriptPageStart = Math.floor(activeResultScriptIndex / ENTERPRISE_RESULT_PAGE_SIZE) * ENTERPRISE_RESULT_PAGE_SIZE
+  const visibleResultScripts = resultScripts.slice(resultScriptPageStart, resultScriptPageStart + ENTERPRISE_RESULT_PAGE_SIZE)
+  useEffect(() => {
+    const pendingItemID = pendingQueueItemFocusRef.current
+    if (!pendingItemID || pendingItemID !== selectedItem?.id) return
+    pendingQueueItemFocusRef.current = null
+    queueItemButtonRefs.current.get(pendingItemID)?.focus()
+  }, [selectedItem?.id])
+  useEffect(() => {
+    const pendingIndex = pendingResultScriptFocusRef.current
+    if (pendingIndex !== activeResultScriptIndex) return
+    pendingResultScriptFocusRef.current = null
+    resultScriptButtonRefs.current.get(pendingIndex)?.focus()
+  }, [activeResultScriptIndex])
   const replayScopeMatches = Boolean(selectedItem)
     && selectedItem.replayReviewGeneration === selectedItem.reviewGeneration
     && selectedItem.replayScriptIndex === activeResultScriptIndex
@@ -1067,6 +1265,32 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
   const secretBindingRequirements = importedScript
     ? secretBindingRequirementsForScript(archiveSecretBindingRequirements, activeResultScriptIndex, importedScript)
     : []
+  const credentialBatchReviewKey = `${selectedItem?.id || ''}:${selectedItem?.reviewGeneration ?? -1}`
+  if (
+    selectedItem
+    && resultScripts.length > 1
+    && archiveSecretBindingRequirements.some(requirement => requirement.destination_value_preserved !== true)
+  ) {
+    credentialBatchReviewKeysRef.current.add(credentialBatchReviewKey)
+  }
+  const pendingResultScriptIndices = resultScripts.flatMap((_script, index) => (
+    selectedItem && enterpriseArchiveResultScriptIsSaved(selectedItem, index) ? [] : [index]
+  ))
+  const selectedNeedsCredentialPreparation = secretBindingRequirements.some(
+    requirement => requirement.destination_value_preserved !== true,
+  )
+  const otherPendingCredentialRequirements = pendingResultScriptIndices
+    .filter(index => index !== activeResultScriptIndex)
+    .flatMap(index => secretBindingRequirementsForScript(
+      archiveSecretBindingRequirements,
+      index,
+      resultScripts[index],
+    ))
+    .filter(requirement => requirement.destination_value_preserved !== true)
+  const enterpriseCredentialBatchFlow = credentialBatchReviewKeysRef.current.has(credentialBatchReviewKey)
+    && pendingResultScriptIndices.length > 1
+  const enterprisePrepareSelectedForBatch = enterpriseCredentialBatchFlow
+    && otherPendingCredentialRequirements.length > 0
   const editRequiresCredentialPreservingSave = credentialPreservingImportDraftRequiresSave(
     result,
     importedScript,
@@ -1249,6 +1473,28 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
         || browserReplayInProgress
         || !reviewMatchesCurrentOptions
       )
+  const reviewSaveDisabled = reviewMode === 'validation'
+    ? (!selectedItemValidated || !reviewMatchesCurrentOptions || workingMode !== null || (saveBlockedByProtocolGate && (!reviewArtifact || reviewArtifactSaving)))
+    : (primarySaveDisabled || workingMode !== null)
+  const reviewSaveDisabledReason = !reviewSaveDisabled
+    ? undefined
+    : workingMode !== null
+      ? 'Wait for the current archive operation to finish before starting another save or conversion.'
+      : !reviewMatchesCurrentOptions
+        ? 'Conversion options changed after this review was generated. Validate the archive again to refresh the review.'
+        : reviewMode === 'validation' && !selectedItemValidated
+          ? 'The selected archive must pass validation before it can be converted.'
+          : saveBlockedByProtocolGate && reviewArtifactSaving
+            ? 'Wait for the protocol review artifact to finish saving.'
+            : saveBlockedByProtocolGate && !reviewArtifact
+              ? 'Generate the required protocol review artifact before saving this governed import.'
+              : selectedResultScriptSaved
+                ? 'This generated script has already been saved. Select an unsaved archive result to continue.'
+                : saveBlockedByMigrationPolicy
+                  ? 'Resolve the migration readiness blockers or relax the Migration Block Policy in Conversion Options before saving.'
+                  : replayValidationLoading || browserReplayInProgress
+                    ? 'Wait for the draft browser replay to finish before saving this script.'
+                    : 'Complete the required archive review choices before saving.'
   const saveActionLabel = saveBlockedByProtocolGate
     ? (reviewArtifactSaving
       ? (combinedJavaVuserApprovalReady ? 'Saving Combined Java Draft...' : 'Saving Review Artifact...')
@@ -1257,6 +1503,12 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
       ? (validatedFileCount > 1 ? `Convert ${validatedFileCount} Loadrunner Script Archives` : 'Convert Loadrunner Script Archive')
       : (selectedResultScriptSaved
       ? 'Saved to Script Library'
+      : enterprisePrepareSelectedForBatch
+        ? (selectedNeedsCredentialPreparation
+            ? `Prepare Credentials for Script ${activeResultScriptIndex + 1} of ${resultScripts.length}`
+            : 'Review Required Credentials Before Atomic Save')
+      : enterpriseCredentialBatchFlow
+        ? `Save Remaining ${pendingResultScriptIndices.length} Scripts Atomically`
       : (browserReplayInProgress
       ? 'Draft Browser Replay In Progress'
       : (saveRequiresBrowserReplay
@@ -1376,42 +1628,24 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
       return
     }
 
-    await discardQueuedSourceSecretSessions(nextItems)
     const allSavedScripts = collectSavedEnterpriseArchiveScripts(nextItems)
     if (allSavedScripts.length > 0 && onImported) {
+      // The durable script commit is the user-visible outcome. Publish it
+      // before best-effort source-session cleanup so navigation or a slow
+      // cleanup endpoint cannot hide a confirmed save from the library.
       onImported({
         scripts: allSavedScripts,
         ...(!requestIsCurrent() ? { stayInImportReview: true } : {}),
       })
+      void discardQueuedSourceSecretSessions(nextItems)
       return
     }
+    void discardQueuedSourceSecretSessions(nextItems)
     if (requestIsCurrent()) setNotice(completedNotice)
   }
 
-  const rollbackStaleCreatedScripts = async (scripts: readonly StoredScript[]) => {
-    const retained: StoredScript[] = []
-    for (const script of [...scripts].reverse()) {
-      if (!script.id) {
-        retained.push(script)
-        continue
-      }
-      try {
-        await api.deleteScript(script.id)
-      } catch {
-        // A committed script that could not be rolled back must be reported so
-        // the caller can refresh the library instead of losing track of it.
-        retained.push(script)
-      }
-    }
-    if (retained.length > 0) {
-      onImported?.({
-        scripts: retained.reverse(),
-        stayInImportReview: true,
-      })
-    }
-  }
-
   const replaceOptionsAndInvalidate = (nextOptions: ImportOptions) => {
+    if (sourceMutationLockedRef.current) return
     invalidateOperationScopes()
     optionsRef.current = nextOptions
     setOptions(nextOptions)
@@ -1822,6 +2056,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
   // Returns the number of archives actually queued, so drop handlers can tell
   // the drop animation whether the drop was accepted.
   const addFilesToQueue = useCallback((fileList?: FileList | File[] | null): number => {
+    if (sourceMutationLockedRef.current) return 0
     const incomingFiles = Array.from(fileList || [])
     if (incomingFiles.length === 0) return 0
 
@@ -1829,6 +2064,14 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
     if (zipFiles.length === 0) {
       setError('Please upload ZIP files containing enterprise script archive folders.')
       return 0
+    }
+
+    // A retained receipt retry describes the complete source batch that was
+    // converted. Adding another source changes that batch, so it must start a
+    // fresh operation rather than silently reconciling the old one.
+    const retainedItemIds = retainedAtomicSaveRef.current?.entries.map(entry => entry.itemId) || []
+    if (retainedItemIds.length > 0) {
+      invalidateOperationScopes(retainedItemIds)
     }
 
     const nextItems = zipFiles.map((nextFile) => {
@@ -1844,7 +2087,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
     setError(zipFiles.length === incomingFiles.length ? '' : `${incomingFiles.length - zipFiles.length} non-ZIP file${incomingFiles.length - zipFiles.length === 1 ? '' : 's'} skipped.`)
     setNotice('')
     return zipFiles.length
-  }, [])
+  }, [invalidateOperationScopes])
 
   useEffect(() => {
     if (initialFiles && initialFiles.length > 0) {
@@ -1872,6 +2115,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
   useDesktopFileDrop(dropzoneRef, handleNativeArchivePaths, desktop)
 
   const handleBrowseArchives = useCallback(() => {
+    if (sourceMutationLockedRef.current) return
     if (nativeDialogs) {
       void pickFilesViaBridge('.zip', true).then(files => {
         if (files.length > 0) {
@@ -1890,6 +2134,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
   }, [nativeDialogs, addFilesToQueue])
 
   const removeQueuedFile = (itemId: string) => {
+    if (sourceMutationLockedRef.current) return
     invalidateOperationScopes([itemId])
     const removingSelectedItem = selectedItemId === itemId
     const nextSelectedItem = removingSelectedItem
@@ -1904,6 +2149,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
   }
 
   const clearQueuedFiles = () => {
+    if (sourceMutationLockedRef.current) return
     invalidateOperationScopes()
     setImportItems([])
     setSelectedItemId('')
@@ -2009,7 +2255,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
       | Partial<EnterpriseArchiveImportQueueItem>
       | ((item: EnterpriseArchiveImportQueueItem) => Partial<EnterpriseArchiveImportQueueItem>),
   ) => {
-    if (!selectedItem) return
+    if (!selectedItem || sourceMutationLockedRef.current) return
     const itemId = selectedItem.id
     invalidateOperationScopes([itemId])
     setImportItems(items => items.map(item => item.id !== itemId ? item : {
@@ -2097,6 +2343,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
   ) => {
     const targetItems = importItems.filter(item => !itemIds || itemIds.includes(item.id))
     if (targetItems.length === 0) return
+    clearRetainedAtomicSave(targetItems.map(item => item.id))
     void discardQueuedSourceSecretSessions(targetItems)
     const operationGeneration = ++operationGenerationRef.current
     const sourceProjectId = reviewProjectIdRef.current
@@ -2119,6 +2366,11 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
     const runningStatus = mode === 'validate' ? 'validating' : 'converting'
     const completeStatus = mode === 'validate' ? 'validated' : 'converted'
     const targetIds = new Set(targetItems.map(item => item.id))
+    const scriptNameRegistry: EnterpriseArchiveScriptNameRegistry = new Map()
+    importItems
+      .filter(item => !targetIds.has(item.id))
+      .flatMap(item => getEnterpriseArchiveResultScripts(item.result))
+      .forEach(script => { reserveEnterpriseArchiveScriptName(script.name || '', scriptNameRegistry) })
 
     setWorkingMode(mode)
     setError('')
@@ -2154,7 +2406,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
     for (const item of targetItems) {
       if (!requestIsCurrent(item)) break
       try {
-        const res = await request(item.file, {
+        const rawResult = await request(item.file, {
           name: useNameOverride ? reviewOptions.name || undefined : undefined,
           project_id: sourceProjectId,
           base_url: reviewOptions.base_url || undefined,
@@ -2166,11 +2418,12 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
           ...(reviewOptions.salesforce_native ? { salesforce_native: true } : {}),
         })
         if (!requestIsCurrent(item)) {
-          if (sourceProjectId && res.source_secret_session_id) {
-            await discardSourceSecretSession(sourceProjectId, res.source_secret_session_id)
+          if (sourceProjectId && rawResult.source_secret_session_id) {
+            await discardSourceSecretSession(sourceProjectId, rawResult.source_secret_session_id)
           }
           continue
         }
+        const res = uniquifyEnterpriseArchiveResultScriptNames(rawResult, scriptNameRegistry)
         successCount += 1
         updateImportItem(item.id, {
           status: completeStatus,
@@ -2216,16 +2469,39 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
       setError('Conversion options changed after validation. Validate the queued archive again before converting it.')
       return
     }
-    void discardQueuedSourceSecretSessions(targetItems)
-    const operationGeneration = ++operationGenerationRef.current
     const sourceProjectId = reviewProjectIdRef.current
     const sourceOptionsIdentity = importOptionsIdentity(options)
+    const destinationFolderId = folderId ?? null
+    const retainedCandidate = retainedAtomicSaveRef.current
+    const retainedAtomicSave = retainedCandidate
+      && retainedCandidate.projectId === sourceProjectId
+      && retainedCandidate.folderId === destinationFolderId
+      && retainedCandidate.optionsIdentity === sourceOptionsIdentity
+      && retainedCandidate.entries.length === targetItems.length
+      && retainedCandidate.entries.every((entry, index) => {
+        const item = targetItems[index]
+        return item?.id === entry.itemId
+          && item.file === entry.file
+          && item.harFile === entry.harFile
+          && item.supplementalFiles === entry.supplementalFiles
+          && item.result === entry.result
+      })
+      ? retainedCandidate
+      : null
+    if (retainedCandidate && !retainedAtomicSave) {
+      clearRetainedAtomicSave()
+    }
+    if (!retainedAtomicSave) {
+      void discardQueuedSourceSecretSessions(targetItems)
+    }
+    const operationGeneration = ++operationGenerationRef.current
     const requestTokens = new Map(targetItems.map(item => [
       item.id,
       nextRequestToken(itemRequestTokensRef.current, item.id),
     ]))
     const operationIsCurrent = () => operationGenerationRef.current === operationGeneration
       && reviewProjectIdRef.current === sourceProjectId
+      && destinationFolderIdRef.current === destinationFolderId
       && importOptionsIdentity(optionsRef.current) === sourceOptionsIdentity
     const requestIsCurrent = (item: EnterpriseArchiveImportQueueItem) => {
       const current = importItemsRef.current.find(candidate => candidate.id === item.id)
@@ -2237,12 +2513,29 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
     }
 
     const targetIds = new Set(targetItems.map(item => item.id))
+    const scriptNameRegistry: EnterpriseArchiveScriptNameRegistry = new Map()
+    importItems
+      .filter(item => !targetIds.has(item.id))
+      .flatMap(item => getEnterpriseArchiveResultScripts(item.result))
+      .forEach(script => { reserveEnterpriseArchiveScriptName(script.name || '', scriptNameRegistry) })
     const useNameOverride = targetItems.length === 1
     const savedScripts: StoredScript[] = []
+    const readyAtomicSaves: Array<{
+      item: EnterpriseArchiveImportQueueItem
+      result: EnterpriseArchiveImportResult
+      scripts: ScriptDefinition[]
+    }> = retainedAtomicSave
+      ? retainedAtomicSave.entries.map((entry, index) => ({
+          item: targetItems[index],
+          result: entry.result,
+          scripts: entry.scripts,
+        }))
+      : []
     const conversionItemPatches = new Map<string, Partial<EnterpriseArchiveImportQueueItem>>()
     let successCount = 0
     let failureCount = 0
     let skippedCount = 0
+    let atomicSaveUnconfirmed = false
 
     setWorkingMode('convert')
     setError('')
@@ -2265,7 +2558,8 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
         }
       : item))
 
-    for (const item of targetItems) {
+    const conversionTargetItems = retainedAtomicSave ? [] : targetItems
+    for (const item of conversionTargetItems) {
       // A whole-operation fence (unmount, project switch, a newly started run)
       // abandons the batch, but a single fenced queue row must only skip its own
       // archive so the archives queued behind it still convert.
@@ -2275,7 +2569,6 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
         continue
       }
       let conversionResult: EnterpriseArchiveImportResult | null = null
-      const itemSavedScripts: StoredScript[] = []
       try {
         conversionResult = await api.importEnterpriseArchive(item.file, {
           name: useNameOverride ? options.name || undefined : undefined,
@@ -2295,6 +2588,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
           }
           continue
         }
+        conversionResult = uniquifyEnterpriseArchiveResultScriptNames(conversionResult, scriptNameRegistry)
         const scriptsToSave = getEnterpriseArchiveResultScripts(conversionResult)
         const conversionDetectedProtocol = conversionResult.detected_protocol ?? conversionResult.summary?.detected_protocol ?? null
         const conversionBlockedByProtocol = Boolean(conversionDetectedProtocol && conversionDetectedProtocol.import_mode !== 'executable')
@@ -2346,78 +2640,185 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
           continue
         }
 
-        // conversionRequiresBrowserReplay above holds every browser-protocol
-        // result in review and skips this loop, so nothing that reaches here is a
-        // browser import. The TrueClient promotion review is attached on the
-        // reviewed-save path instead, which is the only path that owns a replay
-        // session — this batch clears replayValidationSession before it starts,
-        // so attaching it here could only ever record "replay not run".
-        for (const script of scriptsToSave) {
-          if (!requestIsCurrent(item)) break
-          const savedScript = await api.createScript(script, sourceProjectId, folderId)
-          itemSavedScripts.push(withFallbackPersistedScript(savedScript, script))
-        }
-
-        if (!requestIsCurrent(item)) {
-          skippedCount += 1
-          await rollbackStaleCreatedScripts(itemSavedScripts)
-          if (sourceProjectId && conversionResult.source_secret_session_id) {
-            await discardSourceSecretSession(sourceProjectId, conversionResult.source_secret_session_id)
-          }
-          continue
-        }
-        if (sourceProjectId && conversionResult.source_secret_session_id) {
-          await discardSourceSecretSession(sourceProjectId, conversionResult.source_secret_session_id)
-        }
-        if (!requestIsCurrent(item)) {
-          skippedCount += 1
-          await rollbackStaleCreatedScripts(itemSavedScripts)
-          continue
-        }
-
-        savedScripts.push(...itemSavedScripts)
-        successCount += 1
+        // Hold every immediately-runnable lane until all queued archives have
+        // converted. One server transaction then saves the complete ready set;
+        // a later failure can no longer leave earlier archives in the library.
+        readyAtomicSaves.push({ item, result: conversionResult, scripts: scriptsToSave })
         const patch: Partial<EnterpriseArchiveImportQueueItem> = {
-          status: 'converted',
+          status: 'converting',
           result: conversionResult,
           reviewMode: 'conversion',
           reviewOptionsIdentity: sourceOptionsIdentity,
-          savedResultScripts: Object.fromEntries(itemSavedScripts.map((script, index) => [index, script])),
+          savedResultScripts: {},
           sourceSecretProjectId: sourceProjectId || '',
           error: '',
-          notice: `Converted and saved ${itemSavedScripts.length} script${itemSavedScripts.length === 1 ? '' : 's'} to the library.`,
+          notice: `Converted ${scriptsToSave.length} script${scriptsToSave.length === 1 ? '' : 's'}; waiting for the atomic batch save.`,
         }
         conversionItemPatches.set(item.id, patch)
         updateImportItem(item.id, patch)
       } catch (error: unknown) {
         if (!requestIsCurrent(item)) {
           skippedCount += 1
-          await rollbackStaleCreatedScripts(itemSavedScripts)
           if (sourceProjectId && conversionResult?.source_secret_session_id) {
             await discardSourceSecretSession(sourceProjectId, conversionResult.source_secret_session_id)
           }
           continue
         }
         failureCount += 1
-        if (itemSavedScripts.length > 0) {
-          savedScripts.push(...itemSavedScripts)
-        }
         const patch: Partial<EnterpriseArchiveImportQueueItem> = {
           status: 'failed',
           ...(conversionResult ? {
             result: conversionResult,
             reviewMode: 'conversion' as const,
             reviewOptionsIdentity: sourceOptionsIdentity,
-            savedResultScripts: Object.fromEntries(itemSavedScripts.map((script, index) => [index, script])),
+            savedResultScripts: {},
             sourceSecretProjectId: sourceProjectId || '',
           } : {}),
           error: getErrorMessage(error, 'Import failed'),
-          notice: itemSavedScripts.length > 0
-            ? `${itemSavedScripts.length} generated script${itemSavedScripts.length === 1 ? '' : 's'} saved before this archive failed. Review the remaining lanes before retrying.`
-            : '',
+          notice: '',
         }
         conversionItemPatches.set(item.id, patch)
         updateImportItem(item.id, patch)
+      }
+    }
+
+    const currentReadySaves = readyAtomicSaves.filter(({ item }) => requestIsCurrent(item))
+    skippedCount += readyAtomicSaves.length - currentReadySaves.length
+    if (operationIsCurrent() && currentReadySaves.length > 0) {
+      const operationKey = retainedAtomicSave?.operationKey ?? [
+          currentReadySaves[0].item.id,
+          sourceProjectId || '',
+          destinationFolderId || '',
+          sourceOptionsIdentity,
+          ...currentReadySaves.flatMap(({ item, scripts }) => [
+            item.id,
+            ...scripts.map(script => script.name || ''),
+          ]),
+        ].join('\u0000')
+      let operationID = retainedAtomicSave?.operationId ?? saveOperationIDsRef.current.get(operationKey)
+      if (!operationID) {
+        operationID = createEnterpriseArchiveSaveOperationID()
+        saveOperationIDsRef.current.set(operationKey, operationID)
+      }
+      const scriptsToPersist = retainedAtomicSave?.scriptsToPersist ?? currentReadySaves
+        .flatMap(entry => entry.scripts)
+        .map(script => sourceProjectId
+          ? { ...script, project_id: sourceProjectId }
+          : script)
+      // Publish the full retry scope before the request yields. Source/options
+      // are locked for the physical request, and route invalidation preserves
+      // this exact payload/identity until the promise settles.
+      retainedAtomicSaveRef.current = retainedAtomicSave ?? {
+        operationKey,
+        operationId: operationID,
+        projectId: sourceProjectId,
+        folderId: destinationFolderId,
+        optionsIdentity: sourceOptionsIdentity,
+        entries: currentReadySaves.map(entry => ({
+          itemId: entry.item.id,
+          file: entry.item.file,
+          harFile: entry.item.harFile,
+          supplementalFiles: entry.item.supplementalFiles,
+          result: entry.result,
+          scripts: entry.scripts,
+        })),
+        scriptsToPersist,
+      }
+      const atomicSaveScope = { operationKey, operationId: operationID }
+      atomicSaveInFlightRef.current = atomicSaveScope
+      setAtomicSaveInProgress(true)
+      try {
+        const save = () => api.saveEnterpriseArchiveImport({
+          scripts: scriptsToPersist,
+          folder_id: folderId ?? null,
+          operation_id: operationID,
+        })
+        let response
+        try {
+          response = await save()
+        } catch (saveError: unknown) {
+          // Reconcile an interrupted/5xx response once with the same operation
+          // identity. The server receipt either returns the committed batch or
+          // safely starts the whole transaction again.
+          if (saveError instanceof ApiError && saveError.status < 500) throw saveError
+          response = await save()
+        }
+        if (response.scripts.length !== scriptsToPersist.length) {
+          throw new Error(`Atomic save returned ${response.scripts.length} of ${scriptsToPersist.length} scripts.`)
+        }
+        if (!operationIsCurrent() || currentReadySaves.some(({ item }) => !requestIsCurrent(item))) {
+          saveOperationIDsRef.current.delete(operationKey)
+          if (retainedAtomicSaveRef.current?.operationId === operationID) {
+            retainedAtomicSaveRef.current = null
+          }
+          onImported?.({ scripts: response.scripts, stayInImportReview: true })
+          currentReadySaves.forEach(entry => {
+            if (sourceProjectId && entry.result.source_secret_session_id) {
+              void discardSourceSecretSession(sourceProjectId, entry.result.source_secret_session_id)
+            }
+          })
+          if (operationGenerationRef.current === operationGeneration) {
+            setWorkingMode(null)
+          }
+          return
+        }
+        let savedOffset = 0
+        for (const entry of currentReadySaves) {
+          const entryScripts = response.scripts
+            .slice(savedOffset, savedOffset + entry.scripts.length)
+            .map((script, index) => withFallbackPersistedScript(script, entry.scripts[index]))
+          savedOffset += entry.scripts.length
+          savedScripts.push(...entryScripts)
+          successCount += 1
+          const patch: Partial<EnterpriseArchiveImportQueueItem> = {
+            status: 'converted',
+            result: entry.result,
+            reviewMode: 'conversion',
+            reviewOptionsIdentity: sourceOptionsIdentity,
+            savedResultScripts: Object.fromEntries(entryScripts.map((script, index) => [index, script])),
+            sourceSecretProjectId: sourceProjectId || '',
+            error: '',
+            notice: `Converted and saved ${entryScripts.length} script${entryScripts.length === 1 ? '' : 's'} as part of one atomic batch.`,
+          }
+          conversionItemPatches.set(entry.item.id, patch)
+          updateImportItem(entry.item.id, patch)
+        }
+        saveOperationIDsRef.current.delete(operationKey)
+        if (retainedAtomicSaveRef.current?.operationId === operationID) {
+          retainedAtomicSaveRef.current = null
+        }
+      } catch (saveError: unknown) {
+        if (!operationIsCurrent() || currentReadySaves.some(({ item }) => !requestIsCurrent(item))) {
+          skippedCount += currentReadySaves.length
+        } else {
+          atomicSaveUnconfirmed = true
+          failureCount += currentReadySaves.length
+          for (const entry of currentReadySaves) {
+            const patch: Partial<EnterpriseArchiveImportQueueItem> = {
+              // Preserve a retry path that reuses operationID. If the response was
+              // lost after commit, running Convert again reconciles the receipt;
+              // it must not fall through to an unrelated one-script create.
+              status: 'validated',
+              result: entry.result,
+              reviewMode: 'validation',
+              reviewOptionsIdentity: sourceOptionsIdentity,
+              savedResultScripts: {},
+              sourceSecretProjectId: sourceProjectId || '',
+              error: getErrorMessage(saveError, 'Atomic batch save failed'),
+              notice: 'APEX could not confirm the atomic batch save. Choose Convert again to reconcile the same operation; no individual script save will be attempted.',
+            }
+            conversionItemPatches.set(entry.item.id, patch)
+            updateImportItem(entry.item.id, patch)
+          }
+        }
+      } finally {
+        if (atomicSaveInFlightRef.current === atomicSaveScope) {
+          atomicSaveInFlightRef.current = null
+          setAtomicSaveInProgress(false)
+          // Logical invalidation may have advanced the generation, but it did
+          // not cancel this POST. Lower the busy fence only now that it settled.
+          setWorkingMode(null)
+        }
       }
     }
 
@@ -2442,6 +2843,16 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
         () => operationGenerationRef.current === operationGeneration
           && reviewProjectIdRef.current === sourceProjectId,
       )
+      currentReadySaves.forEach(entry => {
+        if (sourceProjectId && entry.result.source_secret_session_id) {
+          void discardSourceSecretSession(sourceProjectId, entry.result.source_secret_session_id)
+        }
+      })
+      return
+    }
+
+    if (atomicSaveUnconfirmed) {
+      setNotice('APEX could not confirm the atomic batch save. Choose Convert again to reconcile the same operation; no individual script save will be attempted.')
       return
     }
 
@@ -2670,12 +3081,37 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
         }
       }
       setScriptSaveInProgress(true)
-      const savedScript = await api.createScript(scriptToSave, sourceProjectId, folderId)
+      const operationKey = [
+        sourceItemId,
+        String(sourceGeneration),
+        String(sourceScriptIndex),
+        sourceProjectId || '',
+        folderId || '',
+        sourceOptionsIdentity,
+      ].join('\u0000')
+      let operationID = saveOperationIDsRef.current.get(operationKey)
+      if (!operationID) {
+        operationID = createEnterpriseArchiveSaveOperationID()
+        saveOperationIDsRef.current.set(operationKey, operationID)
+      }
+      saveScope.operationKey = operationKey
+      saveScope.operationId = operationID
+      const response = await api.saveEnterpriseArchiveImport({
+        scripts: [sourceProjectId ? { ...scriptToSave, project_id: sourceProjectId } : scriptToSave],
+        folder_id: folderId ?? null,
+        operation_id: operationID,
+      })
+      const savedScript = response.scripts[0]
+      if (!savedScript || response.scripts.length !== 1) {
+        throw new Error('Atomic save did not return the generated script.')
+      }
       const persistedScript = withFallbackPersistedScript(savedScript, scriptToSave)
       if (!requestIsCurrent()) {
-        await rollbackStaleCreatedScripts([persistedScript])
+        onImported?.({ scripts: [persistedScript], stayInImportReview: true })
+        setNotice(`Saved ${persistedScript.name} before the import review changed. Refresh the script library before retrying this lane.`)
         return
       }
+      saveOperationIDsRef.current.delete(operationKey)
       const nextItems = importItemsRef.current.map(item => item.id !== sourceItemId
         ? item
         : {
@@ -2693,8 +3129,181 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
         `Saved ${persistedScript.name} to the script library.`,
         requestIsCurrent,
       )
+      const updatedSourceItem = nextItems.find(item => item.id === sourceItemId)
+      const sourceScriptCount = getEnterpriseArchiveResultScripts(updatedSourceItem?.result || null).length
+      const everySourceScriptSaved = sourceScriptCount > 0
+        && Array.from({ length: sourceScriptCount }, (_unused, index) => (
+          Boolean(updatedSourceItem?.savedResultScripts?.[index])
+        )).every(Boolean)
+      if (
+        everySourceScriptSaved
+        && sourceProjectId
+        && preparedReview.result?.source_secret_session_id
+      ) {
+        void discardSourceSecretSession(sourceProjectId, preparedReview.result.source_secret_session_id)
+      }
     } catch (error: unknown) {
       if (requestIsCurrent()) setError(getErrorMessage(error, 'Failed to save script'))
+    } finally {
+      if (scriptSaveInFlightRef.current === saveScope) {
+        scriptSaveInFlightRef.current = null
+        setScriptSaveInProgress(false)
+      }
+    }
+  }
+
+  const handleSaveCredentialBatch = async () => {
+    const preparedReview = latestPreparedReviewRef.current
+    const sourceItemId = preparedReview.itemId
+    const sourceGeneration = preparedReview.generation
+    const sourceProjectId = preparedReview.projectId
+    const sourceOptionsIdentity = preparedReview.optionsIdentity
+    const sourceResult = preparedReview.result
+    const sourceItem = importItemsRef.current.find(item => item.id === sourceItemId)
+    if (!sourceItem || !sourceResult || sourceItem.reviewGeneration !== sourceGeneration) return
+    const sourceScripts = getEnterpriseArchiveResultScripts(sourceResult)
+    const pendingIndices = sourceScripts.flatMap((_script, index) => (
+      enterpriseArchiveResultScriptIsSaved(sourceItem, index) ? [] : [index]
+    ))
+    if (pendingIndices.length <= 1) {
+      await handleSaveConverted()
+      return
+    }
+    const unresolvedRequirements = pendingIndices.flatMap(index => (
+      secretBindingRequirementsForScript(sourceResult.secret_binding_requirements, index, sourceScripts[index])
+        .filter(requirement => requirement.destination_value_preserved !== true)
+    ))
+    if (unresolvedRequirements.length > 0) {
+      setError(`Prepare the remaining ${unresolvedRequirements.length} credential ${unresolvedRequirements.length === 1 ? 'choice' : 'choices'} before the atomic script save.`)
+      return
+    }
+    if (saveBlockedByProtocolGate || saveBlockedByMigrationPolicy) {
+      setError('The atomic script save is unavailable until the active protocol and migration gates are resolved.')
+      return
+    }
+    if ((sourceResult.parameterization?.suggestions || []).length > 0) {
+      setError('Apply or dismiss the archive parameterization review before saving the generated scripts atomically.')
+      return
+    }
+    if (pendingIndices.some(index => isBrowserImport(sourceScripts[index]))) {
+      setError('Browser scripts require lane-specific replay evidence. Review and save each browser lane after replay validation.')
+      return
+    }
+
+    const sourceOperationGeneration = operationGenerationRef.current
+    const saveScope: NonNullable<typeof scriptSaveInFlightRef.current> = {
+      itemId: sourceItemId,
+      generation: sourceGeneration,
+      operationGeneration: sourceOperationGeneration,
+      scriptIndex: preparedReview.scriptIndex,
+      projectId: sourceProjectId,
+      optionsIdentity: sourceOptionsIdentity,
+      script: preparedReview.importedScript || sourceScripts[pendingIndices[0]],
+    }
+    if (scriptSaveInFlightRef.current) return
+    scriptSaveInFlightRef.current = saveScope
+    setScriptSaveInProgress(true)
+    setError('')
+
+    // Secret preparation mutates the review synchronously, before React can
+    // publish the updated queue item. Keep the queue ref aligned so the batch
+    // response is fenced against the exact credential-resolved draft.
+    const preparedItems = importItemsRef.current.map(item => item.id === sourceItemId
+      ? { ...item, result: sourceResult }
+      : item)
+    importItemsRef.current = preparedItems
+    setImportItems(preparedItems)
+    const requestOwnsSourceItem = () => {
+      const current = importItemsRef.current.find(item => item.id === sourceItemId)
+      return operationGenerationRef.current === sourceOperationGeneration
+        && reviewProjectIdRef.current === sourceProjectId
+        && current?.reviewGeneration === sourceGeneration
+        && current?.result === sourceResult
+        && current?.reviewOptionsIdentity === sourceOptionsIdentity
+        && importOptionsIdentity(optionsRef.current) === sourceOptionsIdentity
+    }
+
+    const scriptsToSave = pendingIndices.map(index => {
+      let script = sourceScripts[index]
+      if (javaClasspathUploadEnabled && script.config?.java_vuser?.classpath?.length) {
+        const savedClasspath = script.config.java_vuser.classpath
+        const classpathAssets = (classpathAssetsByKeyRef.current[`${sourceItemId}:${index}`] ?? [])
+          .filter(asset => savedClasspath.includes(asset.entry))
+        if (classpathAssets.length > 0) {
+          script = {
+            ...script,
+            config: {
+              ...script.config,
+              java_vuser: {
+                ...script.config.java_vuser,
+                classpath_assets: classpathAssets,
+              },
+            },
+          }
+        }
+      }
+      return sourceProjectId ? { ...script, project_id: sourceProjectId } : script
+    })
+    const operationKey = [
+      sourceItemId,
+      String(sourceGeneration),
+      'credential-batch',
+      sourceProjectId || '',
+      folderId || '',
+      sourceOptionsIdentity,
+      ...pendingIndices.map(index => String(index)),
+    ].join('\u0000')
+    let operationID = saveOperationIDsRef.current.get(operationKey)
+    if (!operationID) {
+      operationID = createEnterpriseArchiveSaveOperationID()
+      saveOperationIDsRef.current.set(operationKey, operationID)
+    }
+    saveScope.operationKey = operationKey
+    saveScope.operationId = operationID
+
+    try {
+      const response = await api.saveEnterpriseArchiveImport({
+        scripts: scriptsToSave,
+        folder_id: folderId ?? null,
+        operation_id: operationID,
+      })
+      if (response.scripts.length !== scriptsToSave.length) {
+        throw new Error(`Atomic save returned ${response.scripts.length} of ${scriptsToSave.length} scripts.`)
+      }
+      const persistedScripts = response.scripts.map((script, index) => (
+        withFallbackPersistedScript(script, scriptsToSave[index])
+      ))
+      if (!requestOwnsSourceItem()) {
+        onImported?.({ scripts: persistedScripts, stayInImportReview: true })
+        return
+      }
+      saveOperationIDsRef.current.delete(operationKey)
+      const savedResultScripts = { ...sourceItem.savedResultScripts }
+      pendingIndices.forEach((scriptIndex, index) => {
+        savedResultScripts[scriptIndex] = persistedScripts[index]
+      })
+      const nextItems = importItemsRef.current.map(item => item.id === sourceItemId
+        ? {
+            ...item,
+            result: sourceResult,
+            savedResultScripts,
+            notice: `Saved ${persistedScripts.length} generated scripts as one atomic batch.`,
+          }
+        : item)
+      await publishSavedEnterpriseArchiveScripts(
+        nextItems,
+        persistedScripts,
+        `Saved ${persistedScripts.length} generated scripts atomically. Continue with the remaining archives.`,
+        `Saved ${persistedScripts.length} generated scripts atomically.`,
+        requestOwnsSourceItem,
+      )
+      if (sourceProjectId && sourceResult.source_secret_session_id) {
+        void discardSourceSecretSession(sourceProjectId, sourceResult.source_secret_session_id)
+      }
+    } catch (error: unknown) {
+      if (requestOwnsSourceItem()) {
+        setError(`${getErrorMessage(error, 'Failed to save the generated script batch')} No script was reported complete; retrying reuses the same atomic save operation.`)
+      }
     } finally {
       if (scriptSaveInFlightRef.current === saveScope) {
         scriptSaveInFlightRef.current = null
@@ -2839,6 +3448,39 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
     })
   }
 
+  const handlePrepareEnterpriseCredentialsForBatch = () => {
+    const preparedReview = latestPreparedReviewRef.current
+    const preparedResult = preparedReview.result
+    const currentItem = importItemsRef.current.find(item => item.id === preparedReview.itemId)
+    if (!preparedResult || !currentItem) return
+    const scripts = getEnterpriseArchiveResultScripts(preparedResult)
+    const pendingIndices = scripts.flatMap((_script, index) => (
+      enterpriseArchiveResultScriptIsSaved(currentItem, index) ? [] : [index]
+    ))
+    const nextCredentialIndex = pendingIndices.find(index => (
+      index !== preparedReview.scriptIndex
+      && secretBindingRequirementsForScript(
+        preparedResult.secret_binding_requirements,
+        index,
+        scripts[index],
+      ).some(requirement => requirement.destination_value_preserved !== true)
+    ))
+    if (nextCredentialIndex !== undefined) {
+      selectEnterpriseResultScript(nextCredentialIndex, true)
+      return
+    }
+    const unresolvedCurrent = secretBindingRequirementsForScript(
+      preparedResult.secret_binding_requirements,
+      preparedReview.scriptIndex,
+      scripts[preparedReview.scriptIndex],
+    ).some(requirement => requirement.destination_value_preserved !== true)
+    if (unresolvedCurrent) {
+      setError('Finish the selected script credential choices before continuing to the atomic save.')
+      return
+    }
+    void handleSaveCredentialBatch()
+  }
+
   const handleParameterizationApplied = (
     parameterizedScript: ScriptDefinition,
     _diffs: unknown[],
@@ -2935,6 +3577,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
 
     reviewArtifactSaveInFlightRef.current = saveScope
     setReviewArtifactSaving(true)
+    setReviewArtifactPersistenceInProgress(true)
     setError('')
     try {
       const currentFidelityReport = currentResult?.fidelity_report ?? currentResult?.summary?.fidelity_report ?? null
@@ -2976,6 +3619,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
       if (reviewArtifactSaveInFlightRef.current === saveScope) {
         reviewArtifactSaveInFlightRef.current = null
         setReviewArtifactSaving(false)
+        setReviewArtifactPersistenceInProgress(false)
       }
     }
   }
@@ -2986,6 +3630,60 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
     if (started) {
       setBrowserReplayStartedNotice(wasStarted)
     }
+  }
+
+  const selectEnterpriseQueueItem = (itemID: string, focusButton = false) => {
+    if (!importItems.some(item => item.id === itemID)) return
+    if (focusButton) pendingQueueItemFocusRef.current = itemID
+    setSelectedItemId(itemID)
+    setError('')
+    setNotice('')
+  }
+
+  const handleEnterpriseQueueItemKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>, itemID: string) => {
+    const index = importItems.findIndex(item => item.id === itemID)
+    if (index < 0) return
+    let nextIndex: number | null = null
+    if (event.key === 'ArrowDown' || event.key === 'ArrowRight') nextIndex = Math.min(importItems.length - 1, index + 1)
+    if (event.key === 'ArrowUp' || event.key === 'ArrowLeft') nextIndex = Math.max(0, index - 1)
+    if (event.key === 'Home') nextIndex = 0
+    if (event.key === 'End') nextIndex = importItems.length - 1
+    if (nextIndex === null || nextIndex === index) return
+    event.preventDefault()
+    event.stopPropagation()
+    selectEnterpriseQueueItem(importItems[nextIndex].id, true)
+  }
+
+  const selectEnterpriseResultScript = (index: number, focusButton = false) => {
+    if (resultScripts.length === 0) return
+    const nextIndex = Math.max(0, Math.min(resultScripts.length - 1, index))
+    if (nextIndex === activeResultScriptIndex) return
+    if (selectedItem) {
+      nextRequestToken(replayRequestTokensRef.current, selectedItem.id)
+      updateImportItem(selectedItem.id, {
+        replayValidationLoading: false,
+        replayValidationError: '',
+        replayValidationWarnings: [],
+        replayValidationSession: null,
+        replayReviewGeneration: -1,
+        replayScriptIndex: -1,
+        replayProjectId: '',
+      })
+    }
+    if (focusButton) pendingResultScriptFocusRef.current = nextIndex
+    selectedResultScriptIndexRef.current = nextIndex
+    setSelectedResultScriptIndex(nextIndex)
+  }
+
+  const handleEnterpriseResultScriptKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>, index: number) => {
+    let nextIndex: number | null = null
+    if (event.key === 'ArrowDown' || event.key === 'ArrowRight') nextIndex = Math.min(resultScripts.length - 1, index + 1)
+    if (event.key === 'ArrowUp' || event.key === 'ArrowLeft') nextIndex = Math.max(0, index - 1)
+    if (event.key === 'Home') nextIndex = 0
+    if (event.key === 'End') nextIndex = resultScripts.length - 1
+    if (nextIndex === null || nextIndex === index) return
+    event.preventDefault()
+    selectEnterpriseResultScript(nextIndex, true)
   }
 
   return (
@@ -3004,22 +3702,23 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
       {/* Drop zone */}
       <div ref={dropzoneRef} className={`lr-dropzone ${ingestHostClass} ${dragOver ? 'drag-over' : ''} ${queuedFileCount > 0 ? 'has-file' : ''}`}
         style={desktop ? ({ '--wails-drop-target': 'drop' } as CSSProperties) : undefined}
-        onDragOver={e => { e.preventDefault(); setDragOver(true) }}
+        onDragOver={e => { e.preventDefault(); if (!sourceMutationLocked) setDragOver(true) }}
         onDragLeave={() => setDragOver(false)}
         onDrop={handleDrop}
-        onClick={handleBrowseArchives}
+        onClick={sourceMutationLocked ? undefined : handleBrowseArchives}
         role="button"
-        tabIndex={0}
+        tabIndex={sourceMutationLocked ? -1 : 0}
+        aria-disabled={sourceMutationLocked}
         aria-label={queuedFileCount > 0 ? `Add enterprise script archives. ${queuedFileCount} currently queued` : 'Choose one or more enterprise script archives'}
         onKeyDown={event => {
-          if (event.currentTarget !== event.target) return
+          if (sourceMutationLocked || event.currentTarget !== event.target) return
           if (event.key === 'Enter' || event.key === ' ') {
             event.preventDefault()
             handleBrowseArchives()
           }
         }}>
         <DropIngestOverlay phase={ingestPhase} label={ingestLabel} />
-        <input ref={fileRef} type="file" accept=".zip" multiple onClick={event => event.stopPropagation()} onChange={handleFileSelect} hidden />
+        <input ref={fileRef} type="file" accept=".zip" multiple disabled={sourceMutationLocked} onClick={event => event.stopPropagation()} onChange={handleFileSelect} hidden />
         {queuedFileCount > 0 ? (
           <div className="lr-file-queue">
             <div className="lr-file-info">
@@ -3028,48 +3727,73 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
                 <span className="lr-filename">{queuedFileCount} ZIP file{queuedFileCount === 1 ? '' : 's'} queued</span>
                 <span className="lr-filesize">Click to add more, or remove individual scripts below.</span>
               </div>
-              <button className="btn btn-sm btn-ghost" onClick={e => { e.stopPropagation(); clearQueuedFiles() }}>Clear All</button>
+              <button className="btn btn-sm btn-ghost" disabled={sourceMutationLocked} onClick={e => { e.stopPropagation(); clearQueuedFiles() }}>Clear All</button>
             </div>
-            <div className="lr-file-list" aria-label="Queued enterprise script archives">
-              {importItems.map(item => (
-                <div
-                  key={item.id}
-                  role="button"
-                  tabIndex={0}
-                  className={`lr-file-row ${item.status} ${selectedItem?.id === item.id ? 'active' : ''}`}
-                  aria-pressed={selectedItem?.id === item.id}
+            {importItems.length > ENTERPRISE_QUEUE_PAGE_SIZE && (
+              <nav className="lr-pagination" aria-label="Queued enterprise archive pages">
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  disabled={queuePageStart === 0}
                   onClick={event => {
                     event.stopPropagation()
-                    setSelectedItemId(item.id)
-                    setError('')
-                    setNotice('')
-                  }}
-                  onKeyDown={event => {
-                    if (event.key === 'Enter' || event.key === ' ') {
-                      event.preventDefault()
-                      event.stopPropagation()
-                      setSelectedItemId(item.id)
-                      setError('')
-                      setNotice('')
-                    }
+                    selectEnterpriseQueueItem(importItems[Math.max(0, queuePageStart - ENTERPRISE_QUEUE_PAGE_SIZE)].id, true)
                   }}
                 >
-                  <span className="lr-file-row-main">
-                    <strong>{item.file.name}</strong>
-                    <small className="lr-file-row-meta">
-                      {formatEnterpriseArchiveFileSize(item.file)} ·{' '}
-                      <span className={`lr-file-status-pill ${item.status}`}>
-                        {enterpriseArchiveImportStatusIsRunning(item.status) && <span className="lr-status-dot" aria-hidden="true" />}
-                        {enterpriseArchiveImportStatusLabel(item.status)}
-                      </span>
-                      {item.harFile ? ` · HAR: ${item.harFile.name}` : ''}
-                      {(item.supplementalFiles || []).length > 0 ? ` · Required files: ${(item.supplementalFiles || []).length}` : ''}
-                    </small>
-                    {item.error && <small className="lr-file-row-message" role="alert">{item.error}</small>}
-                  </span>
+                  Previous archives
+                </button>
+                <span role="status" aria-live="polite">Showing {queuePageStart + 1}–{Math.min(queuePageStart + ENTERPRISE_QUEUE_PAGE_SIZE, importItems.length)} of {importItems.length}</span>
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  disabled={queuePageStart + ENTERPRISE_QUEUE_PAGE_SIZE >= importItems.length}
+                  onClick={event => {
+                    event.stopPropagation()
+                    selectEnterpriseQueueItem(importItems[queuePageStart + ENTERPRISE_QUEUE_PAGE_SIZE].id, true)
+                  }}
+                >
+                  Next archives
+                </button>
+              </nav>
+            )}
+            <div className="lr-file-list" aria-label="Queued enterprise script archives">
+              {visibleImportItems.map(item => (
+                <div
+                  key={item.id}
+                  className={`lr-file-row ${item.status} ${selectedItem?.id === item.id ? 'active' : ''}`}
+                >
+                  <button
+                    ref={element => {
+                      if (element) queueItemButtonRefs.current.set(item.id, element)
+                      else queueItemButtonRefs.current.delete(item.id)
+                    }}
+                    type="button"
+                    className="lr-file-row-select"
+                    aria-pressed={selectedItem?.id === item.id}
+                    onClick={event => {
+                      event.stopPropagation()
+                      selectEnterpriseQueueItem(item.id)
+                    }}
+                    onKeyDown={event => handleEnterpriseQueueItemKeyDown(event, item.id)}
+                  >
+                    <span className="lr-file-row-main">
+                      <strong>{item.file.name}</strong>
+                      <small className="lr-file-row-meta">
+                        {formatEnterpriseArchiveFileSize(item.file)} ·{' '}
+                        <span className={`lr-file-status-pill ${item.status}`}>
+                          {enterpriseArchiveImportStatusIsRunning(item.status) && <span className="lr-status-dot" aria-hidden="true" />}
+                          {enterpriseArchiveImportStatusLabel(item.status)}
+                        </span>
+                        {item.harFile ? ` · HAR: ${item.harFile.name}` : ''}
+                        {(item.supplementalFiles || []).length > 0 ? ` · Required files: ${(item.supplementalFiles || []).length}` : ''}
+                      </small>
+                      {item.error && <small className="lr-file-row-message" role="alert">{item.error}</small>}
+                    </span>
+                  </button>
                   <button
                     type="button"
                     className="btn btn-sm btn-ghost lr-file-remove"
+                    disabled={sourceMutationLocked}
                     aria-label={`Remove ${item.file.name}`}
                     onClick={event => {
                       event.stopPropagation()
@@ -3104,21 +3828,21 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
           </div>
           <div className="lr-options-grid">
             <label><span>Script Name (optional)</span>
-              <input value={options.name} onChange={e => replaceOptionsAndInvalidate({ ...options, name: e.target.value })} placeholder="Auto-detected from .usr file" />
+              <input value={options.name} disabled={sourceMutationLocked} onChange={e => replaceOptionsAndInvalidate({ ...options, name: e.target.value })} placeholder="Auto-detected from .usr file" />
             </label>
             <label><span>Base URL Override (optional)</span>
-              <input value={options.base_url} onChange={e => replaceOptionsAndInvalidate({ ...options, base_url: e.target.value })} placeholder="Auto-detected from first URL" />
+              <input value={options.base_url} disabled={sourceMutationLocked} onChange={e => replaceOptionsAndInvalidate({ ...options, base_url: e.target.value })} placeholder="Auto-detected from first URL" />
             </label>
             <label className="lr-checkbox">
-              <input type="checkbox" checked={options.include_assertions} onChange={e => replaceOptionsAndInvalidate({ ...options, include_assertions: e.target.checked })} />
+              <input type="checkbox" checked={options.include_assertions} disabled={sourceMutationLocked} onChange={e => replaceOptionsAndInvalidate({ ...options, include_assertions: e.target.checked })} />
               <span>Add default status_code assertions</span>
             </label>
             <label className="lr-checkbox">
-              <input type="checkbox" checked={options.preserve_transactions} onChange={e => replaceOptionsAndInvalidate({ ...options, preserve_transactions: e.target.checked })} />
+              <input type="checkbox" checked={options.preserve_transactions} disabled={sourceMutationLocked} onChange={e => replaceOptionsAndInvalidate({ ...options, preserve_transactions: e.target.checked })} />
               <span>Preserve transaction names in generated actions</span>
             </label>
             <label className="lr-checkbox">
-              <input type="checkbox" checked={options.salesforce_native} onChange={e => replaceOptionsAndInvalidate({ ...options, salesforce_native: e.target.checked })} />
+              <input type="checkbox" checked={options.salesforce_native} disabled={sourceMutationLocked} onChange={e => replaceOptionsAndInvalidate({ ...options, salesforce_native: e.target.checked })} />
               <span>Build Salesforce native preview</span>
             </label>
             <div className="lr-policy-heading">
@@ -3126,15 +3850,15 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
               <span>These settings control which migration-readiness results prevent saving.</span>
             </div>
             <label className="lr-checkbox">
-              <input type="checkbox" checked={options.block_partial} onChange={e => replaceOptionsAndInvalidate({ ...options, block_partial: e.target.checked })} />
+              <input type="checkbox" checked={options.block_partial} disabled={sourceMutationLocked} onChange={e => replaceOptionsAndInvalidate({ ...options, block_partial: e.target.checked })} />
               <span>Treat partial runtime settings as blockers</span>
             </label>
             <label className="lr-checkbox">
-              <input type="checkbox" checked={options.block_compatibility_only} onChange={e => replaceOptionsAndInvalidate({ ...options, block_compatibility_only: e.target.checked })} />
+              <input type="checkbox" checked={options.block_compatibility_only} disabled={sourceMutationLocked} onChange={e => replaceOptionsAndInvalidate({ ...options, block_compatibility_only: e.target.checked })} />
               <span>Treat preserved-only runtime settings as blockers</span>
             </label>
             <label className="lr-checkbox">
-              <input type="checkbox" checked={options.block_non_applicable} onChange={e => replaceOptionsAndInvalidate({ ...options, block_non_applicable: e.target.checked })} />
+              <input type="checkbox" checked={options.block_non_applicable} disabled={sourceMutationLocked} onChange={e => replaceOptionsAndInvalidate({ ...options, block_non_applicable: e.target.checked })} />
               <span>Treat non-applicable runtime settings as blockers</span>
             </label>
           </div>
@@ -3153,7 +3877,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
           )}
           {hasCustomMigrationBlockPolicy(options) && (
             <div className="replay-panel-actions" style={actionWrapStyle}>
-              <button className="btn btn-secondary btn-sm" onClick={restoreRecommendedMigrationPolicy}>
+              <button className="btn btn-secondary btn-sm" disabled={sourceMutationLocked} onClick={restoreRecommendedMigrationPolicy}>
                 Restore Recommended Block Policy
               </button>
             </div>
@@ -3165,19 +3889,19 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
             <h3 className="lr-section-title">Validation / Conversion</h3>
             <p className="lr-subtitle">{queuedFileCount} ZIP file{queuedFileCount === 1 ? '' : 's'} queued</p>
           </div>
-          <input ref={harFileRef} type="file" accept=".har,.json,application/json" onChange={handleHARFileSelect} hidden />
-          <input ref={supplementalFileRef} type="file" accept=".java,.zip,.jar,.json,.txt" multiple onChange={handleSupplementalFileSelect} hidden />
+          <input ref={harFileRef} type="file" accept=".har,.json,application/json" disabled={sourceMutationLocked} onChange={handleHARFileSelect} hidden />
+          <input ref={supplementalFileRef} type="file" accept=".java,.zip,.jar,.json,.txt" multiple disabled={sourceMutationLocked} onChange={handleSupplementalFileSelect} hidden />
           <div className="lr-har-panel">
             <div>
               <h4>Salesforce HAR</h4>
               <p>{selectedHARFile ? selectedHARFile.name : 'No HAR attached to the selected script'}</p>
             </div>
             <div className="lr-har-actions">
-              <button type="button" className="btn btn-secondary btn-sm" onClick={() => harFileRef.current?.click()} disabled={!selectedItem}>
+              <button type="button" className="btn btn-secondary btn-sm" onClick={() => harFileRef.current?.click()} disabled={!selectedItem || sourceMutationLocked}>
                 {selectedHARFile ? 'Replace HAR' : 'Attach HAR'}
               </button>
               {selectedHARFile && (
-                <button type="button" className="btn btn-ghost btn-sm" onClick={clearSelectedHARFile}>
+                <button type="button" className="btn btn-ghost btn-sm" disabled={sourceMutationLocked} onClick={clearSelectedHARFile}>
                   Remove
                 </button>
               )}
@@ -3196,11 +3920,11 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
               )}
             </div>
             <div className="lr-required-files-actions">
-              <button type="button" className="btn btn-secondary btn-sm" onClick={() => supplementalFileRef.current?.click()} disabled={!selectedItem}>
+              <button type="button" className="btn btn-secondary btn-sm" onClick={() => supplementalFileRef.current?.click()} disabled={!selectedItem || sourceMutationLocked}>
                 Attach Required File(s)
               </button>
               {selectedSupplementalFiles.length > 0 && (
-                <button type="button" className="btn btn-ghost btn-sm" onClick={clearSelectedSupplementalFiles}>
+                <button type="button" className="btn btn-ghost btn-sm" disabled={sourceMutationLocked} onClick={clearSelectedSupplementalFiles}>
                   Clear
                 </button>
               )}
@@ -3233,6 +3957,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
                         <button
                           type="button"
                           className="btn btn-ghost btn-sm"
+                          disabled={sourceMutationLocked}
                           onClick={() => removeSelectedSupplementalFile(file.name)}
                         >
                           Remove
@@ -3246,10 +3971,10 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
             </div>
           )}
           <div className="lr-import-action-buttons">
-            <button className="btn btn-secondary btn-lg" onClick={() => runReview('validate')} disabled={queuedFileCount === 0 || workingMode !== null}>
+            <button className="btn btn-secondary btn-lg" onClick={() => runReview('validate')} disabled={queuedFileCount === 0 || operationBusy}>
               {workingMode === 'validate' ? <><span className="spinner" /> Validating...</> : validateButtonLabel}
             </button>
-            <button className="btn btn-primary btn-lg" onClick={() => convertValidatedItems()} disabled={!allQueuedArchivesValidated || !allValidatedReviewsMatchOptions || workingMode !== null}>
+            <button className="btn btn-primary btn-lg" onClick={() => convertValidatedItems()} disabled={!allQueuedArchivesValidated || !allValidatedReviewsMatchOptions || operationBusy}>
               {workingMode === 'convert' ? <><span className="spinner" /> Converting And Saving...</> : convertButtonLabel}
             </button>
           </div>
@@ -3451,30 +4176,43 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
                 <strong>Generated Scripts</strong>
                 <span>{resultScripts.length} scripts</span>
               </div>
+              {resultScripts.length > ENTERPRISE_RESULT_PAGE_SIZE && (
+                <nav className="lr-pagination" aria-label="Generated enterprise script pages">
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    disabled={resultScriptPageStart === 0}
+                    onClick={() => selectEnterpriseResultScript(Math.max(0, resultScriptPageStart - ENTERPRISE_RESULT_PAGE_SIZE), true)}
+                  >
+                    Previous scripts
+                  </button>
+                  <span role="status" aria-live="polite">Showing {resultScriptPageStart + 1}–{Math.min(resultScriptPageStart + ENTERPRISE_RESULT_PAGE_SIZE, resultScripts.length)} of {resultScripts.length}</span>
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    disabled={resultScriptPageStart + ENTERPRISE_RESULT_PAGE_SIZE >= resultScripts.length}
+                    onClick={() => selectEnterpriseResultScript(resultScriptPageStart + ENTERPRISE_RESULT_PAGE_SIZE, true)}
+                  >
+                    Next scripts
+                  </button>
+                </nav>
+              )}
               <div className="lr-output-list">
-                {resultScripts.map((script, index) => (
+                {visibleResultScripts.map((script, visibleIndex) => {
+                  const index = resultScriptPageStart + visibleIndex
+                  return (
                   <button
                     key={`${script.name || 'script'}:${script.protocol || 'unknown'}:${index}`}
+                    ref={element => {
+                      if (element) resultScriptButtonRefs.current.set(index, element)
+                      else resultScriptButtonRefs.current.delete(index)
+                    }}
                     type="button"
                     className={`lr-output-row ${index === activeResultScriptIndex ? 'active' : ''}`}
                     aria-pressed={index === activeResultScriptIndex}
                     aria-label={`Review generated script ${script.name || `Script ${index + 1}`}`}
-                    onClick={() => {
-                      if (index === activeResultScriptIndex) return
-                      if (selectedItem) {
-                        nextRequestToken(replayRequestTokensRef.current, selectedItem.id)
-                        updateImportItem(selectedItem.id, {
-                          replayValidationLoading: false,
-                          replayValidationError: '',
-                          replayValidationWarnings: [],
-                          replayValidationSession: null,
-                          replayReviewGeneration: -1,
-                          replayScriptIndex: -1,
-                          replayProjectId: '',
-                        })
-                      }
-                      setSelectedResultScriptIndex(index)
-                    }}
+                    onClick={() => selectEnterpriseResultScript(index)}
+                    onKeyDown={event => handleEnterpriseResultScriptKeyDown(event, index)}
                   >
                     <span className="lr-output-main">
                       <strong>{script.name || `Generated Script ${index + 1}`}</strong>
@@ -3484,7 +4222,8 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
                       </small>
                     </span>
                   </button>
-                ))}
+                  )
+                })}
               </div>
             </div>
           )}
@@ -3550,15 +4289,19 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
             credentialReviewRef={credentialReviewRef}
             saving={saveBlockedByProtocolGate ? reviewArtifactSaving : workingMode === 'convert' || scriptSaveInProgress}
             reviewBusy={!reviewMatchesCurrentOptions || editorActionPreparing || scriptSaveInProgress || selectedResultScriptSaved}
-            saveDisabled={reviewMode === 'validation'
-              ? (!selectedItemValidated || !reviewMatchesCurrentOptions || workingMode !== null || (saveBlockedByProtocolGate && (!reviewArtifact || reviewArtifactSaving)))
-              : (primarySaveDisabled || workingMode !== null)}
+            onReviewBusyChange={setInternalReviewBusy}
+            saveDisabled={reviewSaveDisabled}
+            saveDisabledReason={reviewSaveDisabledReason}
             saveLabel={saveActionLabel}
             onSave={saveBlockedByProtocolGate && reviewArtifact
               ? handleSaveReviewArtifact
               : reviewMode === 'validation' && selectedItem
                 ? () => convertValidatedItems(validatedItemIds)
-                : handleSaveConverted}
+                : enterprisePrepareSelectedForBatch
+                  ? handlePrepareEnterpriseCredentialsForBatch
+                  : enterpriseCredentialBatchFlow
+                    ? handleSaveCredentialBatch
+                    : handleSaveConverted}
             onEdit={importedEditorAvailable ? () => { openImportedScriptInEditor() } : undefined}
             editLabel={editRequiresCredentialPreservingSave ? 'Save And Open In Visual Editor' : undefined}
             previewTitle="DSL Preview"

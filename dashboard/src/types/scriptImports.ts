@@ -1,8 +1,9 @@
 import type { StoredScenario, StoredScript } from './storedContent'
 import { type ReplayPreflight, type ScriptDataSource, type SourceReview, type ScriptDefinition } from './scripts'
-import type { components as GeneratedOpenAPIComponents } from './generated/openapi'
+import type { components as GeneratedOpenAPIComponents, operations as GeneratedOpenAPIOperations } from './generated/openapi'
 
 type BrunoAPISchemas = GeneratedOpenAPIComponents['schemas']
+type GenericImportBatchSourceProfile = GeneratedOpenAPIOperations['handleCommitGenericImportBatch']['requestBody']['content']['application/json']['source_profile']
 
 export interface SupportMatrix {
   supported: string[]
@@ -139,6 +140,10 @@ export interface SecretBindingRequirement {
   context: string
   suggested_name: string
   replacement?: string
+  source_variable?: string
+  unresolved_source_variable?: boolean
+  affected_paths?: string[]
+  preservation_unavailable_description?: string
   script_index?: number
   script_id?: string
   script_name?: string
@@ -955,6 +960,17 @@ export interface SaveJMeterImportResponse {
   scenario?: StoredScenario
 }
 
+export interface SaveEnterpriseArchiveImportRequest {
+  scripts: ScriptDefinition[]
+  folder_id?: string | null
+  operation_id: string
+}
+
+export interface SaveEnterpriseArchiveImportResponse {
+  scripts: StoredScript[]
+  count: number
+}
+
 export interface SavePostmanImportRequest {
   script: ScriptDefinition
   import_session_id?: string
@@ -1011,6 +1027,30 @@ export interface CommitOpenAPIImportResponse {
 
 export type CommitAsyncAPIImportRequest = CommitOpenAPIImportRequest
 export type CommitAsyncAPIImportResponse = CommitOpenAPIImportResponse
+
+export interface CommitAsyncAPIImportBatchRequest {
+  scripts: ScriptDefinition[]
+  folder_id?: string | null
+  operation_id: string
+}
+
+export interface CommitAsyncAPIImportBatchResponse {
+  scripts: StoredScript[]
+  count: number
+}
+
+export interface CommitGenericImportBatchRequest {
+  scripts: ScriptDefinition[]
+  folder_id?: string | null
+  operation_id: string
+  source_profile: GenericImportBatchSourceProfile
+  source_recording_session_ids?: string[]
+}
+
+export interface CommitGenericImportBatchResponse {
+  scripts: StoredScript[]
+  count: number
+}
 
 export type BrunoCollectionItem = BrunoAPISchemas['BrunoCollectionItem']
 export type BrunoSecretRequirement = BrunoAPISchemas['BrunoSecretRequirement']

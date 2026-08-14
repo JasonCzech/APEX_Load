@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	pathpkg "path"
 	"sort"
 	"strconv"
 	"strings"
@@ -14,6 +15,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/convert/credentialpolicy"
 	"github.com/jasonczech/apexload/pkg/credential"
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/dslwalk"
 	"github.com/jasonczech/apexload/pkg/engine"
 )
 
@@ -32,12 +34,264 @@ type protectedImportCredentialLocation struct {
 // script so the existing SecretBindingReview apply route can validate stable
 // requirement IDs without receiving a source value.
 type protectedImportCredentialDescriptor struct {
-	ID            string                              `json:"id"`
-	Label         string                              `json:"label"`
-	Context       string                              `json:"context"`
-	SuggestedName string                              `json:"suggested_name"`
-	Replacement   string                              `json:"replacement"`
-	Locations     []protectedImportCredentialLocation `json:"locations"`
+	ID                                 string                              `json:"id"`
+	Label                              string                              `json:"label"`
+	Context                            string                              `json:"context"`
+	SuggestedName                      string                              `json:"suggested_name"`
+	Replacement                        string                              `json:"replacement"`
+	SourceVariable                     string                              `json:"source_variable,omitempty"`
+	UnresolvedSourceVariable           bool                                `json:"unresolved_source_variable,omitempty"`
+	AffectedPaths                      []string                            `json:"affected_paths,omitempty"`
+	PreservationUnavailableReason      string                              `json:"preservation_unavailable_reason,omitempty"`
+	PreservationUnavailableDescription string                              `json:"preservation_unavailable_description,omitempty"`
+	Locations                          []protectedImportCredentialLocation `json:"locations"`
+}
+
+// attachImportCredentialReview maps converter-authored requirements back to
+// the generated scripts and records the same tamper-evident binding metadata
+// used by protected value handoffs. Multi-script converters such as JMeter get
+// an explicit ScriptIndex, rather than silently presenting every requirement
+// as though it belonged to the first script.
+func attachImportCredentialReview(
+	scripts []*dsl.Script,
+	requirements []credentialpolicy.Requirement,
+) ([]SecretBindingRequirement, error) {
+	return attachImportCredentialReviewWithWork(scripts, requirements, nil)
+}
+
+type importCredentialReviewWork struct {
+	ScriptSerializations int
+	LocationScans        int
+}
+
+func attachImportCredentialReviewWithWork(
+	scripts []*dsl.Script,
+	requirements []credentialpolicy.Requirement,
+	work *importCredentialReviewWork,
+) ([]SecretBindingRequirement, error) {
+	if len(scripts) == 0 || len(requirements) == 0 {
+		return nil, nil
+	}
+	rawScripts := make([]any, len(scripts))
+	sourcePaths := make([][]string, len(scripts))
+	requestIdentities := make([][]string, len(scripts))
+	locationCache := make([]map[string][]protectedImportCredentialLocation, len(scripts))
+	for index, script := range scripts {
+		raw, err := scriptAsJSONValue(script)
+		if err != nil {
+			return nil, err
+		}
+		rawScripts[index] = raw
+		sourcePaths[index] = importCredentialScriptSourcePaths(script)
+		requestIdentities[index] = importCredentialScriptRequestIdentities(script)
+		locationCache[index] = make(map[string][]protectedImportCredentialLocation)
+		if work != nil {
+			work.ScriptSerializations++
+		}
+	}
+	locations := func(scriptIndex int, replacement string) []protectedImportCredentialLocation {
+		if cached, ok := locationCache[scriptIndex][replacement]; ok {
+			return cached
+		}
+		found := findProtectedImportCredentialLocations(rawScripts[scriptIndex], replacement)
+		locationCache[scriptIndex][replacement] = found
+		if work != nil {
+			work.LocationScans++
+		}
+		return found
+	}
+	allScripts := make([]int, len(scripts))
+	for index := range scripts {
+		allScripts[index] = index
+	}
+	byScript := make([][]credentialpolicy.Requirement, len(scripts))
+	for _, requirement := range requirements {
+		if requirement.ExistingReference {
+			continue
+		}
+		replacement := strings.TrimSpace(requirement.Replacement)
+		if replacement == "" {
+			continue
+		}
+		candidates := narrowImportCredentialScriptMatches(
+			requirement, allScripts, sourcePaths, requestIdentities,
+		)
+		matches := make([]int, 0, len(candidates))
+		for _, scriptIndex := range candidates {
+			if len(locations(scriptIndex, replacement)) > 0 {
+				matches = append(matches, scriptIndex)
+			}
+		}
+		if len(matches) == 0 {
+			return nil, errors.New("import credential target no longer matches the projected scripts")
+		}
+		if len(matches) != 1 {
+			return nil, errors.New("import credential target matches multiple generated scripts without unique source provenance")
+		}
+		byScript[matches[0]] = append(byScript[matches[0]], requirement)
+	}
+	public := make([]SecretBindingRequirement, 0, len(requirements))
+	for scriptIndex, scoped := range byScript {
+		if len(scoped) == 0 {
+			continue
+		}
+		locationsByReplacement := make(map[string][]protectedImportCredentialLocation, len(scoped))
+		for _, requirement := range scoped {
+			locationsByReplacement[strings.TrimSpace(requirement.Replacement)] =
+				locations(scriptIndex, strings.TrimSpace(requirement.Replacement))
+		}
+		review, err := attachProtectedImportCredentialReviewWithLocations(
+			scripts[scriptIndex], scoped, locationsByReplacement,
+		)
+		if err != nil {
+			return nil, err
+		}
+		for index := range review {
+			review[index].ScriptIndex = scriptIndex
+		}
+		public = append(public, review...)
+	}
+	sort.SliceStable(public, func(i, j int) bool {
+		if public[i].ScriptIndex != public[j].ScriptIndex {
+			return public[i].ScriptIndex < public[j].ScriptIndex
+		}
+		if public[i].ID != public[j].ID {
+			return public[i].ID < public[j].ID
+		}
+		return public[i].Path < public[j].Path
+	})
+	return public, nil
+}
+
+func narrowImportCredentialScriptMatches(
+	requirement credentialpolicy.Requirement,
+	matches []int,
+	sourcePaths [][]string,
+	requestIdentities [][]string,
+) []int {
+	if len(matches) <= 1 {
+		return matches
+	}
+	sourcePath := normalizeImportCredentialSourcePath(requirement.Source.Path)
+	if sourcePath != "" {
+		sourceMatches := make([]int, 0, len(matches))
+		hadScriptSource := false
+		for _, index := range matches {
+			paths := sourcePaths[index]
+			if len(paths) > 0 {
+				hadScriptSource = true
+			}
+			for _, candidate := range paths {
+				if candidate == sourcePath {
+					sourceMatches = append(sourceMatches, index)
+					break
+				}
+			}
+		}
+		if hadScriptSource {
+			if len(sourceMatches) <= 1 {
+				return sourceMatches
+			}
+			// Multi-lane converters commonly retain the same source file on every
+			// generated script. Keep refining by trusted request/script identity
+			// instead of treating source provenance as uniquely identifying.
+			matches = sourceMatches
+		}
+	}
+	requestKeys := make([]string, 0, len(requirement.Targets))
+	for _, target := range requirement.Targets {
+		if key := strings.ToLower(strings.TrimSpace(target.RequestKey)); key != "" {
+			requestKeys = append(requestKeys, key)
+		}
+	}
+	if len(requestKeys) == 0 {
+		return matches
+	}
+	targetMatches := make([]int, 0, len(matches))
+	for _, index := range matches {
+		if importCredentialRequestKeyMatchesIdentities(requestKeys, requestIdentities[index]) {
+			targetMatches = append(targetMatches, index)
+		}
+	}
+	if len(targetMatches) > 0 {
+		return targetMatches
+	}
+	return matches
+}
+
+func importCredentialScriptSourcePaths(script *dsl.Script) []string {
+	if script == nil || script.Metadata == nil || script.Metadata.Import == nil ||
+		script.Metadata.Import.Preserved == nil {
+		return nil
+	}
+	paths := make([]string, 0, 4)
+	appendPath := func(value string) {
+		value = normalizeImportCredentialSourcePath(value)
+		if value != "" {
+			paths = append(paths, value)
+		}
+	}
+	if entry, _ := script.Metadata.Import.Preserved["source_zip_entry"].(string); entry != "" {
+		appendPath(entry)
+	}
+	if rawReview, ok := script.Metadata.Import.Preserved["source_review"]; ok {
+		payload, err := json.Marshal(rawReview)
+		if err == nil {
+			var review struct {
+				SourceFiles []struct {
+					Path string `json:"path"`
+				} `json:"source_files"`
+				Mappings []struct {
+					SourceFile string `json:"source_file"`
+				} `json:"mappings"`
+			}
+			if json.Unmarshal(payload, &review) == nil {
+				for _, file := range review.SourceFiles {
+					appendPath(file.Path)
+				}
+				for _, mapping := range review.Mappings {
+					appendPath(mapping.SourceFile)
+				}
+			}
+		}
+	}
+	return uniqueSortedStrings(paths)
+}
+
+func normalizeImportCredentialSourcePath(value string) string {
+	value = strings.TrimSpace(strings.ReplaceAll(value, `\`, "/"))
+	if value == "" || value == "." {
+		return ""
+	}
+	return strings.TrimPrefix(pathpkg.Clean(value), "./")
+}
+
+func importCredentialScriptRequestIdentities(script *dsl.Script) []string {
+	if script == nil {
+		return nil
+	}
+	identities := []string{strings.ToLower(strings.TrimSpace(script.Name))}
+	_ = dslwalk.WalkActions(script, func(ref dslwalk.ActionRef) error {
+		if ref.Action != nil {
+			name := strings.ToLower(strings.TrimSpace(ref.Action.Name))
+			if name != "" {
+				identities = append(identities, name)
+			}
+		}
+		return nil
+	})
+	return uniqueSortedStrings(identities)
+}
+
+func importCredentialRequestKeyMatchesIdentities(keys, identities []string) bool {
+	for _, key := range keys {
+		for _, identity := range identities {
+			if identity != "" && (key == identity || strings.HasPrefix(key, identity+":")) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func attachProtectedImportCredentialReview(
@@ -51,12 +305,30 @@ func attachProtectedImportCredentialReview(
 	if err != nil {
 		return nil, err
 	}
+	locations := make(map[string][]protectedImportCredentialLocation, len(requirements))
+	for _, requirement := range requirements {
+		replacement := strings.TrimSpace(requirement.Replacement)
+		if replacement != "" {
+			locations[replacement] = findProtectedImportCredentialLocations(raw, replacement)
+		}
+	}
+	return attachProtectedImportCredentialReviewWithLocations(script, requirements, locations)
+}
+
+func attachProtectedImportCredentialReviewWithLocations(
+	script *dsl.Script,
+	requirements []credentialpolicy.Requirement,
+	locationsByReplacement map[string][]protectedImportCredentialLocation,
+) ([]SecretBindingRequirement, error) {
+	if script == nil || len(requirements) == 0 {
+		return nil, nil
+	}
 	descriptors := make([]protectedImportCredentialDescriptor, 0, len(requirements))
 	public := make([]SecretBindingRequirement, 0, len(requirements))
 	seenIDs := make(map[string]struct{}, len(requirements))
 	seenReplacements := make(map[string]string, len(requirements))
 	for _, requirement := range requirements {
-		if requirement.ExistingReference || strings.TrimSpace(requirement.Value) == "" {
+		if requirement.ExistingReference {
 			continue
 		}
 		id := strings.TrimSpace(requirement.ID)
@@ -71,7 +343,7 @@ func attachProtectedImportCredentialReview(
 		if priorID, duplicate := seenReplacements[replacement]; duplicate && priorID != id {
 			return nil, errors.New("protected import credential references must be independently bindable")
 		}
-		locations := findProtectedImportCredentialLocations(raw, replacement)
+		locations := append([]protectedImportCredentialLocation(nil), locationsByReplacement[replacement]...)
 		if len(locations) == 0 {
 			return nil, errors.New("protected import credential target no longer matches the projected script")
 		}
@@ -85,6 +357,7 @@ func attachProtectedImportCredentialReview(
 			Replacement:   replacement,
 			Locations:     locations,
 		}
+		descriptor.enrichSourceContext(requirement)
 		descriptors = append(descriptors, descriptor)
 		public = append(public, descriptor.publicRequirement(script, false))
 	}
@@ -109,20 +382,70 @@ func (descriptor protectedImportCredentialDescriptor) publicRequirement(
 		occurrence = descriptor.Locations[0].Occurrence
 	}
 	requirement := SecretBindingRequirement{
-		ID:                   descriptor.ID,
-		Path:                 path,
-		Occurrence:           occurrence,
-		Label:                descriptor.Label,
-		Context:              descriptor.Context,
-		SuggestedName:        descriptor.SuggestedName,
-		Replacement:          descriptor.Replacement,
-		SourceValueAvailable: sourceValueAvailable,
+		ID:                                 descriptor.ID,
+		Path:                               path,
+		Occurrence:                         occurrence,
+		Label:                              descriptor.Label,
+		Context:                            descriptor.Context,
+		SuggestedName:                      descriptor.SuggestedName,
+		Replacement:                        descriptor.Replacement,
+		SourceVariable:                     descriptor.SourceVariable,
+		UnresolvedSourceVariable:           descriptor.UnresolvedSourceVariable,
+		AffectedPaths:                      append([]string(nil), descriptor.AffectedPaths...),
+		PreservationUnavailableReason:      descriptor.PreservationUnavailableReason,
+		PreservationUnavailableDescription: descriptor.PreservationUnavailableDescription,
+		SourceValueAvailable:               sourceValueAvailable,
 	}
 	if script != nil {
 		requirement.ScriptID = script.ID
 		requirement.ScriptName = script.Name
 	}
 	return requirement
+}
+
+func (descriptor *protectedImportCredentialDescriptor) enrichSourceContext(
+	requirement credentialpolicy.Requirement,
+) {
+	if descriptor == nil {
+		return
+	}
+	variables := append([]string(nil), requirement.SourceVariableNames...)
+	sort.Strings(variables)
+	if len(variables) > 0 {
+		descriptor.SourceVariable = variables[0]
+	}
+	paths := make([]string, 0, len(requirement.Targets)+1)
+	if sourcePath := strings.TrimSpace(requirement.Source.Path); sourcePath != "" {
+		paths = append(paths, sourcePath)
+	}
+	for _, target := range requirement.Targets {
+		if requestKey := strings.TrimSpace(target.RequestKey); requestKey != "" {
+			paths = append(paths, requestKey)
+		}
+	}
+	for _, location := range descriptor.Locations {
+		if path := strings.TrimSpace(location.Path); path != "" {
+			paths = append(paths, path)
+		}
+	}
+	descriptor.AffectedPaths = uniqueSortedStrings(paths)
+	status := requirement.SourceValueStatus
+	if status == "" {
+		status = credentialpolicy.ClassifySourceCredentialValue(requirement.Value)
+	}
+	if status.Available() {
+		return
+	}
+	if len(variables) > 0 || strings.TrimSpace(requirement.DeferredSourceExpression) != "" {
+		descriptor.UnresolvedSourceVariable = true
+		descriptor.PreservationUnavailableReason = "unresolved_source_variable"
+		descriptor.PreservationUnavailableDescription = "The source variable could not be resolved to an imported credential value. Configure the destination secret before replay."
+		return
+	}
+	public := SecretBindingRequirement{}
+	setSecretBindingPreservationUnavailable(&public, status)
+	descriptor.PreservationUnavailableReason = public.PreservationUnavailableReason
+	descriptor.PreservationUnavailableDescription = public.PreservationUnavailableDescription
 }
 
 func mergeProtectedImportCredentialReview(
@@ -133,7 +456,32 @@ func mergeProtectedImportCredentialReview(
 		return
 	}
 	existing, _ := response["secret_binding_requirements"].([]SecretBindingRequirement)
-	merged := append(append([]SecretBindingRequirement(nil), existing...), requirements...)
+	authoritativeIDs := make(map[string]struct{}, len(requirements))
+	authoritativePaths := make(map[string]struct{}, len(requirements)*2)
+	for _, requirement := range requirements {
+		authoritativeIDs[requirement.ID] = struct{}{}
+		paths := append([]string{requirement.Path}, requirement.AffectedPaths...)
+		for _, path := range paths {
+			path = strings.TrimSpace(path)
+			if path != "" {
+				authoritativePaths[fmt.Sprintf("%d\x00%s", requirement.ScriptIndex, path)] = struct{}{}
+			}
+		}
+	}
+	merged := make([]SecretBindingRequirement, 0, len(existing)+len(requirements))
+	for _, requirement := range existing {
+		if _, duplicate := authoritativeIDs[requirement.ID]; duplicate {
+			continue
+		}
+		if _, superseded := authoritativePaths[fmt.Sprintf("%d\x00%s", requirement.ScriptIndex, requirement.Path)]; superseded {
+			// Converter-authored context is authoritative for this exact
+			// credential slot. Drop the generic [REDACTED] discovery card rather
+			// than showing two IDs for one selection.
+			continue
+		}
+		merged = append(merged, requirement)
+	}
+	merged = append(merged, requirements...)
 	sort.SliceStable(merged, func(i, j int) bool {
 		if merged[i].ID != merged[j].ID {
 			return merged[i].ID < merged[j].ID
@@ -166,8 +514,11 @@ func (s *Server) attachProtectedImportCredentialMigration(
 	}
 	values := make(map[string]string, len(public))
 	for _, requirement := range protected {
-		if _, ok := allowed[requirement.ID]; ok && requirement.Value != "" {
-			values[requirement.ID] = requirement.Value
+		if _, ok := allowed[requirement.ID]; ok {
+			value, recoverable := credentialpolicy.RecoverableSourceCredentialValue(requirement.Value)
+			if recoverable {
+				values[requirement.ID] = value
+			}
 		}
 	}
 	if len(values) == 0 {

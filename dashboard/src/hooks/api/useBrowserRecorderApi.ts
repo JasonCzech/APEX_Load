@@ -130,6 +130,9 @@ export type BrowserRecorderStartRequest = {
 
 export type BrowserRecorderConvertRequest = {
   name?: string
+  // Save-only destination applied by the server to every script created by
+  // the atomic conversion. Preview deliberately ignores folder placement.
+  folder_id?: string | null
   start_seq?: number
   end_seq?: number
   split_at_transactions?: boolean

@@ -18,11 +18,26 @@ func (tr *TestRunner) resolvePoolAssignmentLocked(assignment *GeneratorAssignmen
 	if tr.fleetStore == nil {
 		return nil, fmt.Errorf("fleet pool assignment requires storage")
 	}
-	if _, err := tr.fleetStore.GetFleetPool(poolID); err != nil {
+	pool, err := tr.fleetStore.GetFleetPool(poolID)
+	if err != nil {
 		return nil, fmt.Errorf("fleet pool %q not found", poolID)
 	}
 	targets := tr.poolMemberTargets(poolID)
 	if len(targets) == 0 {
+		if pool != nil && strings.TrimSpace(pool.ExecutionTargetID) != "" {
+			if targetsStore, ok := tr.fleetStore.(interface {
+				GetExecutionTarget(string) (*storage.ExecutionTarget, error)
+			}); ok {
+				target, targetErr := targetsStore.GetExecutionTarget(pool.ExecutionTargetID)
+				if targetErr == nil && target != nil && target.Kind != storage.ExecutionTargetKubernetes && target.Kind != storage.ExecutionTargetStatic {
+					out := *assignment
+					out.Mode = generatorAssignmentModeAuto
+					out.SelectedTargets = nil
+					out.PoolID = poolID
+					return &out, nil
+				}
+			}
+		}
 		return nil, fmt.Errorf("fleet pool %q has no generators", poolID)
 	}
 	out := *assignment

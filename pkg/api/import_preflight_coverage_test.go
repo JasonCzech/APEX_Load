@@ -7,6 +7,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/jasonczech/apexload/pkg/convert/jmeter"
@@ -318,13 +319,25 @@ func TestJMeterZIPConvertsEveryJMXInDeterministicPathOrder(t *testing.T) {
 	}
 	result, err := convertJMeterImportRequest(&jmeterImportRequest{
 		Documents: documents,
-		Opts:      jmeter.ConvertOptions{SidecarFiles: sidecars},
+		Opts:      jmeter.ConvertOptions{SidecarFiles: sidecars, ScenarioDraft: true},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(result.Scripts) != 2 {
 		t.Fatalf("scripts = %d, want 2", len(result.Scripts))
+	}
+	if result.Scripts[0].Name == result.Scripts[1].Name ||
+		strings.EqualFold(result.Scripts[0].Name, result.Scripts[1].Name) {
+		t.Fatalf("multi-JMX script names collide: %q and %q", result.Scripts[0].Name, result.Scripts[1].Name)
+	}
+	if result.ScenarioDraft == nil || len(result.ScenarioDraft.Groups) != 2 {
+		t.Fatalf("scenario draft = %#v, want two groups", result.ScenarioDraft)
+	}
+	for index, group := range result.ScenarioDraft.Groups {
+		if group.ScriptName != result.Scripts[index].Name {
+			t.Fatalf("scenario group %d script_name = %q, want %q", index, group.ScriptName, result.Scripts[index].Name)
+		}
 	}
 	for index, wantEntry := range []string{"a/first.jmx", "z/second.jmx"} {
 		metadata := result.Scripts[index].Metadata

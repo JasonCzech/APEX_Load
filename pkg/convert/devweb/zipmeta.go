@@ -4,6 +4,7 @@ package devweb
 
 import (
 	"fmt"
+	"path"
 	"path/filepath"
 	"strings"
 
@@ -12,6 +13,15 @@ import (
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"gopkg.in/yaml.v3"
 )
+
+const devWebMetadataReviewRequiredKey = "devweb_metadata_review_required"
+
+func markDevWebMetadataReviewRequired(result *ConvertResult) {
+	if result == nil || result.Script == nil {
+		return
+	}
+	ensureDevWebImportPreserved(result.Script)[devWebMetadataReviewRequiredKey] = true
+}
 
 func selectDevWebMainSource(files map[string]string) (string, string, string) {
 	if len(files) == 0 {
@@ -130,12 +140,29 @@ func ensureDevWebImportPreserved(script *dsl.Script) map[string]any {
 }
 
 func applyDevWebParameters(result *ConvertResult, ctx *convertContext, diagnostics *diag.Collector) {
-	parametersPath, content := findDevWebFile(ctx.files, "parameters.yml")
+	parametersPath, content, ambiguousCompanion := findDevWebCompanionFile(
+		ctx.files,
+		ctx.sourceFileName,
+		"parameters.yml",
+	)
+	if ambiguousCompanion {
+		markDevWebMetadataReviewRequired(result)
+		if diagnostics != nil {
+			diagnostics.Add(
+				diag.Warning,
+				"DevWeb parameters.yml",
+				ctx.sourceFileName,
+				"multiple parameters.yml files exist outside the selected script directory; parameter bindings were left unresolved rather than selecting a source file nondeterministically",
+			)
+		}
+		return
+	}
 	if strings.TrimSpace(content) == "" {
 		return
 	}
 	var parsed devWebParametersFile
 	if err := yaml.Unmarshal([]byte(content), &parsed); err != nil {
+		markDevWebMetadataReviewRequired(result)
 		if diagnostics != nil {
 			diagnostics.Add(diag.Warning, "DevWeb parameters.yml", parametersPath, "parameters.yml could not be parsed: "+err.Error())
 		}
@@ -143,15 +170,128 @@ func applyDevWebParameters(result *ConvertResult, ctx *convertContext, diagnosti
 	}
 	preserved := ensureDevWebImportPreserved(result.Script)
 	preserved["parameters_file"] = parametersPath
-	dsByFile := map[string]*dsl.DataSource{}
+	const maxDevWebParameterDefinitions = 10_000
+	if len(parsed.Parameters) > maxDevWebParameterDefinitions {
+		markDevWebMetadataReviewRequired(result)
+		preserved["parameters_limit_exceeded"] = true
+		if diagnostics != nil {
+			diagnostics.Add(
+				diag.Warning,
+				"DevWeb parameters.yml",
+				parametersPath,
+				fmt.Sprintf(
+					"parameters.yml declares %d parameter definitions, exceeding the bounded import limit of %d; parameter bindings were left unresolved",
+					len(parsed.Parameters),
+					maxDevWebParameterDefinitions,
+				),
+			)
+		}
+		return
+	}
+
+	sourceNameCounts := make(map[string]int, len(parsed.Parameters))
 	for _, param := range parsed.Parameters {
+		if strings.EqualFold(param.Type, "csv") && strings.TrimSpace(param.FileName) != "" {
+			sourceNameCounts[strings.TrimSpace(param.Name)]++
+		}
+	}
+	usedParameterNames := make(map[string]int, len(parsed.Parameters))
+	destinationParameterNames := make(map[int]string, len(parsed.Parameters))
+	destinationBySourceName := make(map[string]string, len(parsed.Parameters))
+	reportedDuplicateNames := make(map[string]struct{})
+	for index, param := range parsed.Parameters {
 		if !strings.EqualFold(param.Type, "csv") || strings.TrimSpace(param.FileName) == "" {
 			continue
 		}
-		sourceName := sanitizeName(strings.TrimSuffix(filepath.Base(param.FileName), filepath.Ext(param.FileName)))
-		ds := dsByFile[param.FileName]
-		if ds == nil {
-			inline := devWebInlineFile(ctx.files, param.FileName)
+		sourceName := strings.TrimSpace(param.Name)
+		if sourceName == "" {
+			markDevWebMetadataReviewRequired(result)
+			if diagnostics != nil {
+				diagnostics.Add(diag.Warning, "DevWeb parameter", parametersPath, "a CSV parameter without a name was ignored")
+			}
+			continue
+		}
+		if sourceNameCounts[sourceName] > 1 {
+			markDevWebMetadataReviewRequired(result)
+			if _, reported := reportedDuplicateNames[sourceName]; !reported && diagnostics != nil {
+				diagnostics.Add(
+					diag.Warning,
+					"DevWeb parameter name collision",
+					parametersPath,
+					fmt.Sprintf(
+						"parameter %q is declared more than once; its runtime binding was left unresolved rather than choosing one source value",
+						sourceName,
+					),
+				)
+			}
+			reportedDuplicateNames[sourceName] = struct{}{}
+			continue
+		}
+		destinationName := uniqueDevWebIdentifier(
+			sanitizeName(sourceName),
+			usedParameterNames,
+		)
+		destinationParameterNames[index] = destinationName
+		destinationBySourceName[sourceName] = destinationName
+		if destinationName != sourceName && diagnostics != nil {
+			diagnostics.Add(
+				diag.Info,
+				"DevWeb parameter destination name",
+				parametersPath,
+				fmt.Sprintf(
+					"source parameter %q is stored as destination parameter %q to avoid a case-insensitive name collision",
+					sourceName,
+					destinationName,
+				),
+			)
+		}
+	}
+
+	dsByFile := make(map[string]string, len(parsed.Parameters))
+	usedDataSourceNames := make(map[string]int, len(parsed.Parameters))
+	for index, param := range parsed.Parameters {
+		if !strings.EqualFold(param.Type, "csv") || strings.TrimSpace(param.FileName) == "" {
+			continue
+		}
+		destinationParameterName := destinationParameterNames[index]
+		if destinationParameterName == "" {
+			continue
+		}
+		inline, resolvedPath, found, ambiguous := devWebInlineFile(
+			ctx.files,
+			param.FileName,
+		)
+		if ambiguous {
+			markDevWebMetadataReviewRequired(result)
+			if diagnostics != nil {
+				diagnostics.Add(
+					diag.Warning,
+					"DevWeb parameter data file collision",
+					parametersPath,
+					fmt.Sprintf(
+						"parameter %q references %q, which matches multiple archive files; its binding was left unresolved",
+						strings.TrimSpace(param.Name),
+						param.FileName,
+					),
+				)
+			}
+			continue
+		}
+		fileIdentity := normalizeDevWebArchiveReference(param.FileName)
+		if found {
+			fileIdentity = normalizeDevWebArchiveReference(resolvedPath)
+		}
+		fileIdentity = strings.ToLower(fileIdentity)
+		sourceName := dsByFile[fileIdentity]
+		if sourceName == "" {
+			nameSource := param.FileName
+			if found {
+				nameSource = resolvedPath
+			}
+			sourceName = uniqueDevWebIdentifier(
+				sanitizeName(strings.TrimSuffix(filepath.Base(nameSource), filepath.Ext(nameSource))),
+				usedDataSourceNames,
+			)
 			dataSource := dsl.DataSource{
 				Name:           sourceName,
 				Type:           "csv",
@@ -160,7 +300,7 @@ func applyDevWebParameters(result *ConvertResult, ctx *convertContext, diagnosti
 				Delimiter:      ",",
 				FirstRowHeader: true,
 			}
-			if inline == "" {
+			if !found {
 				// Path is only meaningful when the rows were not inlined. The
 				// archive-relative name is not a resolvable file asset (those must
 				// be absolute and registered), so setting it alongside inline data
@@ -168,13 +308,13 @@ func applyDevWebParameters(result *ConvertResult, ctx *convertContext, diagnosti
 				// present.
 				dataSource.Path = param.FileName
 			}
-			dsByFile[param.FileName] = &dataSource
+			dsByFile[fileIdentity] = sourceName
 			result.Script.DataSources = append(result.Script.DataSources, dataSource)
 			result.Stats.DataSources++
 		}
 		column := convertutil.FirstNonEmpty(param.ColumnName, param.Name)
 		if column != "" {
-			ctx.parameterTemplates[param.Name] = fmt.Sprintf("{{data.%s.%s}}", sourceName, column)
+			ctx.parameterTemplates[strings.TrimSpace(param.Name)] = fmt.Sprintf("{{data.%s.%s}}", sourceName, column)
 		}
 		update, updateKnown := devWebParameterUpdate(param.NextValue)
 		if !updateKnown && diagnostics != nil {
@@ -188,13 +328,35 @@ func applyDevWebParameters(result *ConvertResult, ctx *convertContext, diagnosti
 				fmt.Sprintf("parameter %q declares onEnd %q, which has no APEX equivalent; using %s and requiring review",
 					param.Name, strings.TrimSpace(param.OnEnd), onExhaustion))
 		}
+		sameLineAs := devWebSameLineAs(param.NextRow)
+		if sameLineAs != "" {
+			mapped, ok := destinationBySourceName[sameLineAs]
+			if !ok {
+				markDevWebMetadataReviewRequired(result)
+				if diagnostics != nil {
+					diagnostics.Add(
+						diag.Warning,
+						"DevWeb parameter same-row binding",
+						parametersPath,
+						fmt.Sprintf(
+							"parameter %q refers to ambiguous or unknown same-row parameter %q; the same-row relationship was left unresolved",
+							strings.TrimSpace(param.Name),
+							sameLineAs,
+						),
+					)
+				}
+				sameLineAs = ""
+			} else {
+				sameLineAs = mapped
+			}
+		}
 		result.Script.Parameters = append(result.Script.Parameters, dsl.Parameter{
-			Name:         param.Name,
+			Name:         destinationParameterName,
 			Type:         "file",
 			Update:       update,
 			Selection:    devWebCSVStrategy(param.NextRow),
 			OnExhaustion: onExhaustion,
-			SameLineAs:   devWebSameLineAs(param.NextRow),
+			SameLineAs:   sameLineAs,
 			DataSource:   sourceName,
 			Column:       column,
 		})
@@ -205,12 +367,29 @@ func applyDevWebParameters(result *ConvertResult, ctx *convertContext, diagnosti
 }
 
 func applyDevWebRTS(result *ConvertResult, ctx *convertContext, diagnostics *diag.Collector) {
-	rtsPath, content := findDevWebFile(ctx.files, "rts.yml")
+	rtsPath, content, ambiguousCompanion := findDevWebCompanionFile(
+		ctx.files,
+		ctx.sourceFileName,
+		"rts.yml",
+	)
+	if ambiguousCompanion {
+		markDevWebMetadataReviewRequired(result)
+		if diagnostics != nil {
+			diagnostics.Add(
+				diag.Warning,
+				"DevWeb rts.yml",
+				ctx.sourceFileName,
+				"multiple rts.yml files exist outside the selected script directory; runtime settings were not imported rather than selecting a source file nondeterministically",
+			)
+		}
+		return
+	}
 	if strings.TrimSpace(content) == "" {
 		return
 	}
 	var raw map[string]any
 	if err := yaml.Unmarshal([]byte(content), &raw); err != nil {
+		markDevWebMetadataReviewRequired(result)
 		if diagnostics != nil {
 			diagnostics.Add(diag.Warning, "DevWeb rts.yml", rtsPath, "rts.yml could not be parsed: "+err.Error())
 		}
@@ -289,22 +468,109 @@ func applyDevWebRTS(result *ConvertResult, ctx *convertContext, diagnostics *dia
 	}
 }
 
-func findDevWebFile(files map[string]string, base string) (string, string) {
-	for name, content := range files {
+func findDevWebCompanionFile(
+	files map[string]string,
+	sourceFile string,
+	base string,
+) (string, string, bool) {
+	var names []string
+	for name := range files {
 		if strings.EqualFold(filepath.Base(name), base) {
-			return name, content
+			names = append(names, name)
 		}
 	}
-	return "", ""
+	sortStrings(names)
+	if len(names) == 0 {
+		return "", "", false
+	}
+	sourceDir := strings.ToLower(normalizeDevWebArchiveReference(path.Dir(sourceFile)))
+	var colocated []string
+	for _, name := range names {
+		if strings.ToLower(normalizeDevWebArchiveReference(path.Dir(name))) == sourceDir {
+			colocated = append(colocated, name)
+		}
+	}
+	if len(colocated) == 1 {
+		return colocated[0], files[colocated[0]], false
+	}
+	if len(colocated) > 1 || len(names) > 1 {
+		return "", "", true
+	}
+	return names[0], files[names[0]], false
 }
 
-func devWebInlineFile(files map[string]string, fileName string) string {
-	for name, content := range files {
-		if strings.EqualFold(filepath.Base(name), filepath.Base(fileName)) {
-			return content
+func devWebInlineFile(
+	files map[string]string,
+	fileName string,
+) (content string, resolvedPath string, found bool, ambiguous bool) {
+	declared := normalizeDevWebArchiveReference(fileName)
+	declaredBase := strings.ToLower(path.Base(declared))
+	names := make([]string, 0, len(files))
+	for name := range files {
+		names = append(names, name)
+	}
+	sortStrings(names)
+	match := func(predicate func(string) bool) []string {
+		var matches []string
+		for _, name := range names {
+			if predicate(normalizeDevWebArchiveReference(name)) {
+				matches = append(matches, name)
+			}
+		}
+		return matches
+	}
+	matchGroups := [][]string{
+		match(func(candidate string) bool { return strings.EqualFold(candidate, declared) }),
+		match(func(candidate string) bool {
+			return declared != "" && strings.HasSuffix(strings.ToLower(candidate), "/"+strings.ToLower(declared))
+		}),
+		match(func(candidate string) bool {
+			return declaredBase != "" && strings.ToLower(path.Base(candidate)) == declaredBase
+		}),
+	}
+	for _, matches := range matchGroups {
+		switch len(matches) {
+		case 0:
+			continue
+		case 1:
+			name := matches[0]
+			return files[name], name, true, false
+		default:
+			return "", "", false, true
 		}
 	}
-	return ""
+	return "", "", false, false
+}
+
+func normalizeDevWebArchiveReference(value string) string {
+	value = strings.TrimSpace(strings.ReplaceAll(value, "\\", "/"))
+	value = strings.TrimPrefix(path.Clean("/"+value), "/")
+	if value == "." {
+		return ""
+	}
+	return value
+}
+
+func uniqueDevWebIdentifier(base string, used map[string]int) string {
+	base = strings.TrimSpace(base)
+	if base == "" {
+		base = "devweb_value"
+	}
+	identity := strings.ToLower(base)
+	if used[identity] == 0 {
+		used[identity] = 1
+		return base
+	}
+	for suffix := used[identity] + 1; ; suffix++ {
+		candidate := fmt.Sprintf("%s_%d", base, suffix)
+		candidateIdentity := strings.ToLower(candidate)
+		if used[candidateIdentity] != 0 {
+			continue
+		}
+		used[identity] = suffix
+		used[candidateIdentity] = 1
+		return candidate
+	}
 }
 
 func setDevWebRuntimeAttribute(script *dsl.Script, key string, value string) {

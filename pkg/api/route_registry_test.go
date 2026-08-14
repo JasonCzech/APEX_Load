@@ -195,9 +195,9 @@ func TestAllSystemAPIRoutesUseModularCatalogs(t *testing.T) {
 			}
 		}
 	}
-	// 23 system routes, the 7 cluster-registry routes, and the 4
-	// domain deployment-target routes.
-	if got, want := len(modular), 34; got != want {
+	// 23 system routes, the 7 cluster-registry routes, 12 normalized compute
+	// routes, and the 4 domain deployment-target routes.
+	if got, want := len(modular), 46; got != want {
 		t.Fatalf("modular system route count = %d, want %d", got, want)
 	}
 
@@ -304,8 +304,8 @@ func TestSystemRouteCatalogPreservesAccessContracts(t *testing.T) {
 func TestCapacityAndFleetAPIRoutesUseModularCatalogs(t *testing.T) {
 	prefixCounts := map[string]int{
 		"/api/v1/capacity/": 9,
-		// 21 fleet routes plus the pool allocation PUT and preflight GET.
-		"/api/v1/fleet/": 23,
+		// 22 fleet routes plus the pool allocation PUT and preflight GET.
+		"/api/v1/fleet/": 24,
 	}
 
 	modular := make(map[string]apiRouteSpec)

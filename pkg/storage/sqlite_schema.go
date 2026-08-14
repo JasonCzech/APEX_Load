@@ -969,6 +969,82 @@ func schemaCreateTableStatements() []string {
 			created_at DATETIME NOT NULL,
 			updated_at DATETIME NOT NULL
 		)`,
+		// Cloud connections hold reusable provider control-plane identity while
+		// execution targets below name concrete placements. Keeping these rows
+		// separate prevents one credential envelope being copied for every warm
+		// app, burst job, ECS service, or task definition.
+		`CREATE TABLE IF NOT EXISTS cloud_connections (
+			id TEXT PRIMARY KEY,
+			name TEXT NOT NULL,
+			description TEXT,
+			provider TEXT NOT NULL,
+			auth_mode TEXT NOT NULL,
+			azure_cloud TEXT,
+			azure_tenant_id TEXT,
+			azure_subscription_id TEXT,
+			azure_resource_group TEXT,
+			azure_client_id TEXT,
+			aws_partition TEXT,
+			aws_account_id TEXT,
+			aws_region TEXT,
+			aws_access_key_id TEXT,
+			aws_role_arn TEXT,
+			client_secret_ciphertext TEXT,
+			client_secret_wrapped_key TEXT,
+			aws_secret_key_ciphertext TEXT,
+			aws_secret_key_wrapped_key TEXT,
+			aws_external_id_ciphertext TEXT,
+			aws_external_id_wrapped_key TEXT,
+			credential_env_var TEXT,
+			status TEXT NOT NULL DEFAULT 'active',
+			last_checked_at DATETIME,
+			last_check_status TEXT,
+			last_check_message TEXT,
+			labels_json TEXT,
+			created_at DATETIME NOT NULL,
+			updated_at DATETIME NOT NULL
+		)`,
+		`CREATE TABLE IF NOT EXISTS execution_targets (
+			id TEXT PRIMARY KEY,
+			name TEXT NOT NULL,
+			description TEXT,
+			kind TEXT NOT NULL,
+			cloud_connection_id TEXT REFERENCES cloud_connections(id),
+			cluster_connection_id TEXT REFERENCES cluster_connections(id),
+			region TEXT,
+			connectivity_mode TEXT NOT NULL DEFAULT 'direct',
+			standing_owner TEXT NOT NULL DEFAULT 'apex',
+			burst_owner TEXT NOT NULL DEFAULT 'disabled',
+			archive_mode TEXT NOT NULL DEFAULT 'controller_pull',
+			reverse_token_hash TEXT NOT NULL DEFAULT '',
+			reverse_token_expires_at TEXT,
+			reverse_previous_token_hash TEXT NOT NULL DEFAULT '',
+			reverse_previous_token_valid_until TEXT,
+			spec_json TEXT NOT NULL DEFAULT '',
+			runtime_profiles_json TEXT NOT NULL DEFAULT '[]',
+			capabilities_json TEXT NOT NULL DEFAULT '{}',
+			status TEXT NOT NULL DEFAULT 'active',
+			last_checked_at DATETIME,
+			last_check_status TEXT,
+			last_check_message TEXT,
+			labels_json TEXT,
+			created_at DATETIME NOT NULL,
+			updated_at DATETIME NOT NULL
+		)`,
+		`CREATE TABLE IF NOT EXISTS import_assets (
+			id TEXT PRIMARY KEY,
+			project_id TEXT NOT NULL REFERENCES projects(id),
+			import_id TEXT NOT NULL,
+			object_key TEXT NOT NULL,
+			sha256 TEXT NOT NULL,
+			size_bytes INTEGER NOT NULL,
+			content_type TEXT,
+			state TEXT NOT NULL,
+			last_error TEXT,
+			revision INTEGER NOT NULL DEFAULT 1,
+			created_at DATETIME NOT NULL,
+			updated_at DATETIME NOT NULL
+		)`,
 		// domain_deployment_targets is the superuser's per-domain deployment
 		// constraint: which cloud a domain's fleet pools may scale into, and
 		// the cluster connection new pools inherit.
@@ -988,10 +1064,16 @@ func schemaCreateTableStatements() []string {
 			domain_id TEXT PRIMARY KEY,
 			provider TEXT NOT NULL,
 			default_cluster_id TEXT REFERENCES cluster_connections(id),
+			default_execution_target_id TEXT REFERENCES execution_targets(id),
 			updated_by_subject TEXT NOT NULL DEFAULT '',
 			created_at DATETIME NOT NULL,
 			updated_at DATETIME NOT NULL,
 			FOREIGN KEY(domain_id) REFERENCES domains(id)
+		)`,
+		`CREATE TABLE IF NOT EXISTS domain_execution_target_allowlist (
+			domain_id TEXT NOT NULL REFERENCES domains(id),
+			execution_target_id TEXT NOT NULL REFERENCES execution_targets(id),
+			PRIMARY KEY(domain_id, execution_target_id)
 		)`,
 		`CREATE TABLE IF NOT EXISTS fleet_pools (
 			id TEXT PRIMARY KEY,
@@ -1005,8 +1087,15 @@ func schemaCreateTableStatements() []string {
 			status TEXT NOT NULL DEFAULT 'active',
 			tags_json TEXT,
 			cluster_id TEXT NOT NULL DEFAULT '',
+			execution_target_id TEXT NOT NULL DEFAULT '',
 			allocation_json TEXT NOT NULL DEFAULT '',
 			domain_id TEXT NOT NULL DEFAULT '',
+			lifecycle_mode TEXT NOT NULL DEFAULT 'standing',
+			warm_floor INTEGER NOT NULL DEFAULT 0,
+			readiness_timeout_seconds INTEGER NOT NULL DEFAULT 300,
+			idle_grace_seconds INTEGER NOT NULL DEFAULT 300,
+			runtime_profile_id TEXT NOT NULL DEFAULT '',
+			capacity_admission TEXT NOT NULL DEFAULT 'strict',
 			created_at DATETIME NOT NULL,
 			updated_at DATETIME NOT NULL
 		)`,
@@ -1039,6 +1128,16 @@ func schemaCreateTableStatements() []string {
 			project_id TEXT,
 			status TEXT NOT NULL DEFAULT 'pending',
 			desired_count INTEGER NOT NULL DEFAULT 0,
+			execution_target_id TEXT,
+			provider_operation_id TEXT,
+			idempotency_key TEXT,
+			observed_count INTEGER NOT NULL DEFAULT 0,
+			ready_count INTEGER NOT NULL DEFAULT 0,
+			pending_count INTEGER NOT NULL DEFAULT 0,
+			draining_count INTEGER NOT NULL DEFAULT 0,
+			failed_count INTEGER NOT NULL DEFAULT 0,
+			deadline_at DATETIME,
+			last_error TEXT,
 			reason TEXT,
 			requested_by_subject TEXT,
 			created_at DATETIME NOT NULL,
@@ -1051,6 +1150,23 @@ func schemaCreateTableStatements() []string {
 			event_type TEXT NOT NULL,
 			message TEXT,
 			timestamp DATETIME NOT NULL
+		)`,
+		`CREATE TABLE IF NOT EXISTS capacity_instance_intents (
+			id TEXT PRIMARY KEY,
+			execution_target_id TEXT NOT NULL,
+			fleet_pool_id TEXT NOT NULL,
+			test_id TEXT,
+			provisioning_request_id TEXT,
+			client_token TEXT NOT NULL,
+			launch_nonce TEXT NOT NULL,
+			generator_id TEXT NOT NULL,
+			provider_id TEXT,
+			state TEXT NOT NULL DEFAULT 'planned',
+			archive_state TEXT NOT NULL DEFAULT 'pending',
+			cleanup_deadline DATETIME,
+			created_at DATETIME NOT NULL,
+			updated_at DATETIME NOT NULL,
+			UNIQUE(execution_target_id, client_token)
 		)`,
 		`CREATE TABLE IF NOT EXISTS fleet_alert_acks (
 			id TEXT PRIMARY KEY,
@@ -1403,6 +1519,17 @@ func schemaColumnMigrations() []optionalSchemaMigration {
 		{name: "execution_plan_schedules.actor_display_name", query: `ALTER TABLE execution_plan_schedules ADD COLUMN actor_display_name TEXT NOT NULL DEFAULT ''`},
 		{name: "provisioning_requests.revision", query: `ALTER TABLE provisioning_requests ADD COLUMN revision INTEGER NOT NULL DEFAULT 1`},
 		{name: "provisioning_requests.attempt_token", query: `ALTER TABLE provisioning_requests ADD COLUMN attempt_token TEXT`},
+		{name: "provisioning_requests.execution_target_id", query: `ALTER TABLE provisioning_requests ADD COLUMN execution_target_id TEXT`},
+		{name: "provisioning_requests.provider_operation_id", query: `ALTER TABLE provisioning_requests ADD COLUMN provider_operation_id TEXT`},
+		{name: "provisioning_requests.idempotency_key", query: `ALTER TABLE provisioning_requests ADD COLUMN idempotency_key TEXT`},
+		{name: "provisioning_requests.observed_count", query: `ALTER TABLE provisioning_requests ADD COLUMN observed_count INTEGER NOT NULL DEFAULT 0`},
+		{name: "provisioning_requests.ready_count", query: `ALTER TABLE provisioning_requests ADD COLUMN ready_count INTEGER NOT NULL DEFAULT 0`},
+		{name: "provisioning_requests.pending_count", query: `ALTER TABLE provisioning_requests ADD COLUMN pending_count INTEGER NOT NULL DEFAULT 0`},
+		{name: "provisioning_requests.draining_count", query: `ALTER TABLE provisioning_requests ADD COLUMN draining_count INTEGER NOT NULL DEFAULT 0`},
+		{name: "provisioning_requests.failed_count", query: `ALTER TABLE provisioning_requests ADD COLUMN failed_count INTEGER NOT NULL DEFAULT 0`},
+		{name: "provisioning_requests.deadline_at", query: `ALTER TABLE provisioning_requests ADD COLUMN deadline_at DATETIME`},
+		{name: "provisioning_requests.last_error", query: `ALTER TABLE provisioning_requests ADD COLUMN last_error TEXT`},
+		{name: "capacity_instance_intents.generator_id", query: `ALTER TABLE capacity_instance_intents ADD COLUMN generator_id TEXT NOT NULL DEFAULT ''`},
 		{name: "protected_source_secret_sessions.claim_token", query: `ALTER TABLE protected_source_secret_sessions ADD COLUMN claim_token TEXT`},
 		{name: "protected_source_secret_sessions.claim_expires_at", query: `ALTER TABLE protected_source_secret_sessions ADD COLUMN claim_expires_at DATETIME`},
 		{name: "runtime_secret_provisioning_attempts.materialization_key", query: `ALTER TABLE runtime_secret_provisioning_attempts ADD COLUMN materialization_key TEXT NOT NULL DEFAULT ''`},
@@ -1420,7 +1547,14 @@ func schemaColumnMigrations() []optionalSchemaMigration {
 		// provisioner", which is exactly the behavior every pre-existing pool
 		// had. That default is what keeps the existing deployment path intact.
 		{name: "fleet_pools.cluster_id", query: `ALTER TABLE fleet_pools ADD COLUMN cluster_id TEXT NOT NULL DEFAULT ''`},
+		{name: "fleet_pools.execution_target_id", query: `ALTER TABLE fleet_pools ADD COLUMN execution_target_id TEXT NOT NULL DEFAULT ''`},
 		{name: "fleet_pools.allocation_json", query: `ALTER TABLE fleet_pools ADD COLUMN allocation_json TEXT NOT NULL DEFAULT ''`},
+		{name: "fleet_pools.lifecycle_mode", query: `ALTER TABLE fleet_pools ADD COLUMN lifecycle_mode TEXT NOT NULL DEFAULT 'standing'`},
+		{name: "fleet_pools.warm_floor", query: `ALTER TABLE fleet_pools ADD COLUMN warm_floor INTEGER NOT NULL DEFAULT 0`},
+		{name: "fleet_pools.readiness_timeout_seconds", query: `ALTER TABLE fleet_pools ADD COLUMN readiness_timeout_seconds INTEGER NOT NULL DEFAULT 300`},
+		{name: "fleet_pools.idle_grace_seconds", query: `ALTER TABLE fleet_pools ADD COLUMN idle_grace_seconds INTEGER NOT NULL DEFAULT 300`},
+		{name: "fleet_pools.runtime_profile_id", query: `ALTER TABLE fleet_pools ADD COLUMN runtime_profile_id TEXT NOT NULL DEFAULT ''`},
+		{name: "fleet_pools.capacity_admission", query: `ALTER TABLE fleet_pools ADD COLUMN capacity_admission TEXT NOT NULL DEFAULT 'strict'`},
 		// An empty domain_id means the pool is NOT domain-scoped: the per-domain
 		// deployment-target constraint simply does not apply to it. That is
 		// deliberately the value every pre-existing row gets, so a superuser
@@ -1437,6 +1571,11 @@ func schemaColumnMigrations() []optionalSchemaMigration {
 		// satisfies no reference. Integrity for a non-empty value is enforced
 		// on the write path instead.
 		{name: "fleet_pools.domain_id", query: `ALTER TABLE fleet_pools ADD COLUMN domain_id TEXT NOT NULL DEFAULT ''`},
+		{name: "domain_deployment_targets.default_execution_target_id", query: `ALTER TABLE domain_deployment_targets ADD COLUMN default_execution_target_id TEXT`},
+		{name: "execution_targets.reverse_token_hash", query: `ALTER TABLE execution_targets ADD COLUMN reverse_token_hash TEXT NOT NULL DEFAULT ''`},
+		{name: "execution_targets.reverse_token_expires_at", query: `ALTER TABLE execution_targets ADD COLUMN reverse_token_expires_at TEXT`},
+		{name: "execution_targets.reverse_previous_token_hash", query: `ALTER TABLE execution_targets ADD COLUMN reverse_previous_token_hash TEXT NOT NULL DEFAULT ''`},
+		{name: "execution_targets.reverse_previous_token_valid_until", query: `ALTER TABLE execution_targets ADD COLUMN reverse_previous_token_valid_until TEXT`},
 		// EKS support. Every column is TEXT so none of them needs a coordinated
 		// entry in rewriteSQL's boolean replacement list.
 		{name: "cluster_connections.aws_region", query: `ALTER TABLE cluster_connections ADD COLUMN aws_region TEXT`},
@@ -1469,6 +1608,7 @@ var dataPoolRowsPageIndex = schemaIndex{
 var schemaIndexes = []schemaIndex{
 	{`CREATE INDEX IF NOT EXISTS idx_local_auth_sessions_user ON local_auth_sessions(user_id)`, "idx_local_auth_sessions_user"},
 	{`CREATE INDEX IF NOT EXISTS idx_local_auth_sessions_expiry ON local_auth_sessions(expires_at)`, "idx_local_auth_sessions_expiry"},
+	{`CREATE INDEX IF NOT EXISTS idx_import_assets_project ON import_assets(project_id)`, "idx_import_assets_project"},
 	{`CREATE UNIQUE INDEX IF NOT EXISTS idx_releases_application_group ON releases(application_id, group_id) WHERE group_id IS NOT NULL AND group_id != ''`, "idx_releases_application_group"},
 	{`CREATE INDEX IF NOT EXISTS idx_releases_project_group_updated ON releases(project_id, group_id, updated_at DESC, id)`, "idx_releases_project_group_updated"},
 	{`CREATE UNIQUE INDEX IF NOT EXISTS idx_scripts_ref_key ON scripts(ref_key) WHERE ref_key IS NOT NULL AND ref_key != ''`, "idx_scripts_ref_key"},
@@ -1586,6 +1726,12 @@ func (s *SQLiteStore) init() error {
 	if err := s.applyOptionalSchemaMigrations(schemaColumnMigrations()); err != nil {
 		return err
 	}
+	if err := s.backfillKubernetesExecutionTargets(); err != nil {
+		return err
+	}
+	if err := s.backfillExecutionTargetEnrollmentExpiry(); err != nil {
+		return err
+	}
 	if err := s.ensurePostgresSchedulerLeaseGenerationBigint(); err != nil {
 		return err
 	}
@@ -1666,6 +1812,82 @@ func (s *SQLiteStore) init() error {
 		return err
 	}
 	return s.applyTimescaleDB()
+}
+
+func (s *SQLiteStore) backfillExecutionTargetEnrollmentExpiry() error {
+	expiresAt := time.Now().UTC().Add(DefaultExecutionTargetEnrollmentTTL).Format(time.RFC3339Nano)
+	if _, err := s.db.Exec(`UPDATE execution_targets SET reverse_token_expires_at = ?
+		WHERE TRIM(COALESCE(reverse_token_hash, '')) != '' AND TRIM(COALESCE(reverse_token_expires_at, '')) = ''`, expiresAt); err != nil {
+		return fmt.Errorf("backfill execution-target enrollment expiry: %w", err)
+	}
+	return nil
+}
+
+// backfillKubernetesExecutionTargets transactionally projects every legacy
+// cluster connection into the provider-neutral placement model, then binds
+// existing pools and domain defaults to that projection. Deterministic IDs and
+// ON CONFLICT make reopening a database after an interrupted migration safe.
+func (s *SQLiteStore) backfillKubernetesExecutionTargets() error {
+	type legacyCluster struct {
+		id, name, description, kind, region string
+		createdAt, updatedAt                time.Time
+	}
+	rows, err := s.db.Query(`SELECT id, name, COALESCE(description, ''), kind,
+		COALESCE(aws_region, ''), created_at, updated_at FROM cluster_connections ORDER BY id`)
+	if err != nil {
+		return fmt.Errorf("list legacy clusters for execution-target backfill: %w", err)
+	}
+	clusters := make([]legacyCluster, 0)
+	for rows.Next() {
+		var cluster legacyCluster
+		if err := rows.Scan(&cluster.id, &cluster.name, &cluster.description, &cluster.kind,
+			&cluster.region, &cluster.createdAt, &cluster.updatedAt); err != nil {
+			rows.Close()
+			return err
+		}
+		clusters = append(clusters, cluster)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return err
+	}
+	rows.Close()
+
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	capabilities := marshalJSONOrDefault(TargetCapabilities{CanScale: true, CanReachDirectly: true}, "{}")
+	for _, cluster := range clusters {
+		targetID := uuid.NewSHA1(uuid.NameSpaceURL, []byte("apexload:execution-target:kubernetes:"+cluster.id)).String()
+		if _, err := tx.Exec(`INSERT INTO execution_targets (
+			id, name, description, kind, cluster_connection_id, region, connectivity_mode,
+			standing_owner, burst_owner, archive_mode, spec_json, runtime_profiles_json,
+			capabilities_json, status, labels_json, created_at, updated_at)
+			VALUES (?, ?, ?, 'kubernetes', ?, ?, 'direct', 'apex', 'disabled', 'controller_pull', '{}', '[]', ?, 'active', '', ?, ?)
+			ON CONFLICT(id) DO NOTHING`, targetID, cluster.name, cluster.description, cluster.id,
+			cluster.region, capabilities, cluster.createdAt, cluster.updatedAt); err != nil {
+			return fmt.Errorf("backfill execution target for cluster %s: %w", cluster.id, err)
+		}
+	}
+	if _, err := tx.Exec(`UPDATE fleet_pools SET execution_target_id = (
+		SELECT id FROM execution_targets WHERE execution_targets.cluster_connection_id = fleet_pools.cluster_id
+	) WHERE TRIM(COALESCE(execution_target_id, '')) = '' AND TRIM(COALESCE(cluster_id, '')) != ''`); err != nil {
+		return fmt.Errorf("backfill fleet-pool execution targets: %w", err)
+	}
+	if _, err := tx.Exec(`UPDATE domain_deployment_targets SET default_execution_target_id = (
+		SELECT id FROM execution_targets WHERE execution_targets.cluster_connection_id = domain_deployment_targets.default_cluster_id
+	) WHERE default_execution_target_id IS NULL AND default_cluster_id IS NOT NULL`); err != nil {
+		return fmt.Errorf("backfill domain default execution targets: %w", err)
+	}
+	if _, err := tx.Exec(`INSERT INTO domain_execution_target_allowlist (domain_id, execution_target_id)
+		SELECT domain_id, default_execution_target_id FROM domain_deployment_targets
+		WHERE default_execution_target_id IS NOT NULL
+		ON CONFLICT(domain_id, execution_target_id) DO NOTHING`); err != nil {
+		return fmt.Errorf("backfill domain execution-target allowlists: %w", err)
+	}
+	return tx.Commit()
 }
 
 // backfillDataPoolRowPagingState initializes the O(1) cursor fence for

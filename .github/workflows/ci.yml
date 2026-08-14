@@ -718,9 +718,12 @@ jobs:
       - name: Validate Terraform
         run: |
           set -euo pipefail
-          terraform -chdir=deployments/azure/terraform fmt -check -diff
-          terraform -chdir=deployments/azure/terraform init -backend=false -input=false -lockfile=readonly
-          terraform -chdir=deployments/azure/terraform validate
+          for stack in deployments/azure/terraform deployments/aws/terraform; do
+            terraform -chdir="${stack}" fmt -check -diff
+            terraform -chdir="${stack}" init -backend=false -input=false -lockfile=readonly
+            terraform -chdir="${stack}" validate
+            terraform -chdir="${stack}" test
+          done
 
       - name: Install checksum-pinned custom resource schemas
         env:

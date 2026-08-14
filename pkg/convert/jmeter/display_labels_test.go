@@ -241,3 +241,28 @@ func TestSanitizeDisplayLabelsPreservesCredentialEqualToRedactionSentinel(t *tes
 		t.Fatalf("scenario script_name = %q, want %q", draft.Groups[0].ScriptName, script.Name)
 	}
 }
+
+func TestSanitizeDisplayLabelsAllocatesRepeatedNamesAndRewritesEveryScenarioLane(t *testing.T) {
+	scripts := []*dsl.Script{
+		{Name: "Users", Protocol: "http"},
+		{Name: "users", Protocol: "http"},
+		{Name: "Users", Protocol: "http"},
+	}
+	draft := &ScenarioDraft{Groups: []ScenarioDraftGroup{
+		{ScriptName: "Users"},
+		{ScriptName: "users"},
+		{ScriptName: "Users"},
+	}}
+
+	SanitizeDisplayLabels(scripts, draft)
+
+	wantNames := []string{"Users", "users_2", "Users_3"}
+	for index, want := range wantNames {
+		if scripts[index].Name != want {
+			t.Fatalf("script %d name = %q, want %q", index, scripts[index].Name, want)
+		}
+		if draft.Groups[index].ScriptName != want {
+			t.Fatalf("scenario group %d script_name = %q, want %q", index, draft.Groups[index].ScriptName, want)
+		}
+	}
+}

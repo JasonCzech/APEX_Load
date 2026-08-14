@@ -45,6 +45,7 @@ const apiMock = {
   createProjectSecrets: vi.fn(),
   migrateImportSecrets: vi.fn(),
   discardImportSecretSession: vi.fn(),
+  commitGenericImportBatch: vi.fn(),
   createScript: vi.fn(),
   updateScript: vi.fn(),
   deleteScript: vi.fn(),
@@ -258,6 +259,17 @@ describe('BrowserRecorderControlPanel', () => {
       created_at: '2026-05-12T20:10:00Z',
       script: { name: 'Checkout Flow', protocol: 'browser', actions: [] },
     })
+    apiMock.commitGenericImportBatch.mockImplementation(async ({ scripts }: { scripts: any[] }) => ({
+      count: scripts.length,
+      scripts: scripts.map((script, index) => ({
+        id: `script-remote-${index + 1}`,
+        name: script.name,
+        protocol: script.protocol,
+        version: '1',
+        created_at: '2026-05-12T20:10:00Z',
+        script: { ...script, actions: [] },
+      })),
+    }))
     apiMock.updateScript.mockImplementation(async (id: string, script: any) => ({
       id,
       name: script.name,
@@ -267,7 +279,14 @@ describe('BrowserRecorderControlPanel', () => {
     }))
     apiMock.deleteScript.mockResolvedValue({ deleted: 'script-remote-1' })
     apiMock.getProjectSecretStatuses.mockImplementation(async (_projectId: string, names: string[]) => ({
-      capabilities: { provider: 'database_encrypted', writable: true, create_supported: true },
+      project_id: _projectId,
+      capabilities: {
+        provider: 'database_encrypted',
+        writable: true,
+        create_supported: true,
+        replace_supported: true,
+        source_secret_migration_policy_enabled: true,
+      },
       secrets: names.map(name => ({ name, configured: false })),
     }))
     apiMock.createProjectSecrets.mockResolvedValue({ secrets: [], count: 0 })
@@ -691,7 +710,7 @@ describe('BrowserRecorderControlPanel', () => {
       applied_count: 1,
     })
 
-    await renderPanel()
+    await renderPanel({ folderId: 'browser-script-folder' })
     await clickButton('Preview Conversion')
     await flushPromises()
     expect(container.textContent).toContain('Parameterization Review — Checkout Flow (1)')
@@ -712,6 +731,7 @@ describe('BrowserRecorderControlPanel', () => {
     // the selected ID; no fallible post-commit update is needed.
     expect(apiMock.createScript).not.toHaveBeenCalled()
     expect(apiMock.convertBrowserRecording).toHaveBeenCalledWith('brec-1', expect.objectContaining({
+      folder_id: 'browser-script-folder',
       expected_script_count: 1,
       parameterization_selections: [{
         script_index: 0,
@@ -719,6 +739,42 @@ describe('BrowserRecorderControlPanel', () => {
       }],
     }))
     expect(apiMock.updateScript).not.toHaveBeenCalled()
+  })
+
+  it('reports nested save work through the composite busy callback', async () => {
+    const busyChanges = vi.fn()
+    let resolveSave!: (value: unknown) => void
+    apiMock.getBrowserRecording.mockResolvedValue({ session: stoppedSession })
+    apiMock.convertBrowserRecording.mockReturnValueOnce(new Promise(resolve => { resolveSave = resolve }))
+
+    await renderPanel({ onOperationBusyChange: busyChanges })
+    await clickButton('Preview Conversion')
+    await flushPromises()
+    busyChanges.mockClear()
+
+    act(() => {
+      const save = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+        .find(button => button.textContent?.includes('Save to Script Library'))!
+      save.click()
+    })
+    await vi.waitFor(() => expect(busyChanges).toHaveBeenCalledWith(true))
+
+    await act(async () => {
+      resolveSave({
+        script: {
+          id: 'saved-composite-busy',
+          name: 'Checkout Flow',
+          protocol: 'browser',
+          version: '1',
+          created_at: '2026-05-12T20:10:00Z',
+          script: { name: 'Checkout Flow', protocol: 'browser', actions: [] },
+        },
+        warnings: [],
+        stats: {},
+      })
+      await Promise.resolve()
+    })
+    await vi.waitFor(() => expect(busyChanges).toHaveBeenLastCalledWith(false))
   })
 
   it('scopes split-script parameterization and saves the updated target script', async () => {
@@ -1092,6 +1148,65 @@ describe('BrowserRecorderControlPanel', () => {
     expect(apiMock.createScript).not.toHaveBeenCalled()
   })
 
+  it('explains durable project-secret recovery and reuses the configured value on headed save retry', async () => {
+    const onImported = vi.fn()
+    const safeScript = {
+      ...credentialScript,
+      config: { http: { auth: { password: '{{secret.LOGIN_PASSWORD}}' } } },
+    }
+    apiMock.getBrowserRecording.mockResolvedValue({ session: { ...stoppedSession, project_id: 'project-1' } })
+    apiMock.previewBrowserRecordingConversion.mockResolvedValue(credentialPreviewResult())
+    apiMock.applySecretBindings.mockResolvedValueOnce({
+      script: safeScript,
+      secret_binding_requirements: [],
+    })
+    apiMock.convertBrowserRecording
+      .mockRejectedValueOnce(new Error('temporary headed script-store failure'))
+      .mockResolvedValueOnce({
+        script: {
+          id: 'script-retry',
+          name: 'Checkout Flow',
+          protocol: 'browser',
+          version: '1',
+          created_at: '2026-05-12T20:10:00Z',
+          script: safeScript,
+        },
+        warnings: [],
+        stats: {},
+      })
+
+    await renderPanel({ onImported })
+    await clickButton('Preview Conversion')
+    await flushPromises()
+
+    const valueInput = container.querySelector<HTMLInputElement>(
+      'input[aria-label="Secret value for LOGIN_PASSWORD"]',
+    )!
+    await setInputValue(valueInput, 'write-only-browser-value')
+    await clickButton('Save to Script Library')
+    await flushPromises()
+
+    expect(apiMock.createProjectSecrets).toHaveBeenCalledWith('project-1', [{
+      name: 'LOGIN_PASSWORD',
+      value: 'write-only-browser-value',
+    }])
+    expect(container.textContent).toContain(
+      'Project-secret values configured during this review remain in Project Secrets independently of script saving',
+    )
+    expect(container.textContent).toContain('retrying this save reuses those configured values')
+    expect(container.textContent).toContain('applies to scripts, not external secret-store writes')
+    expect(container.textContent).toContain('temporary headed script-store failure')
+
+    await clickButton('Save to Script Library')
+    await flushPromises()
+
+    expect(apiMock.createProjectSecrets).toHaveBeenCalledTimes(1)
+    expect(apiMock.convertBrowserRecording).toHaveBeenCalledTimes(2)
+    expect(onImported).toHaveBeenCalledWith({
+      scripts: [expect.objectContaining({ id: 'script-retry' })],
+    })
+  })
+
   it('applies credential references across every split conversion script', async () => {
     const first = { ...credentialScript, name: 'Checkout', actions: [{ name: 'Checkout', type: 'navigate', target: '/' }] }
     const second = { ...credentialScript, name: 'Logout', actions: [{ name: 'Logout', type: 'navigate', target: '/logout' }] }
@@ -1136,7 +1251,7 @@ describe('BrowserRecorderControlPanel', () => {
     expect(apiMock.createScript).not.toHaveBeenCalled()
   })
 
-  it('rolls back an earlier split bridge script when the next script fails to save', async () => {
+  it('submits split bridge scripts through one atomic batch and leaves no client-side cleanup path', async () => {
     const onImported = vi.fn()
     const first = { name: 'Checkout', protocol: 'browser', actions: [{ name: 'Checkout', type: 'navigate', target: '/' }] }
     const second = { name: 'Logout', protocol: 'browser', actions: [{ name: 'Logout', type: 'navigate', target: '/logout' }] }
@@ -1149,78 +1264,24 @@ describe('BrowserRecorderControlPanel', () => {
       stats: {},
       parameterization: { suggestions: [], summary: { total: 0 } },
     })
-    apiMock.createScript
-      .mockResolvedValueOnce({ id: 'saved-checkout', name: 'Checkout', protocol: 'browser', version: '1', created_at: '2026-05-12T20:10:00Z' })
-      .mockRejectedValueOnce(new Error('Logout could not be stored'))
-    apiMock.deleteScript.mockResolvedValueOnce({ deleted: 'saved-checkout' })
+    apiMock.commitGenericImportBatch.mockRejectedValueOnce(new Error('atomic batch rejected'))
 
     await renderPanel({ onImported })
     await clickButton('Save to Script Library')
     await flushPromises()
 
-    expect(apiMock.createScript).toHaveBeenCalledTimes(2)
-    // The headed-browser recording session id is never sent to createScript.
-    expect(apiMock.createScript).toHaveBeenNthCalledWith(1, first, 'project-1', null)
-    expect(apiMock.createScript).toHaveBeenNthCalledWith(2, second, 'project-1', null)
-    expect(apiMock.deleteScript).toHaveBeenCalledTimes(1)
-    expect(apiMock.deleteScript).toHaveBeenCalledWith('saved-checkout')
-    expect(onImported).not.toHaveBeenCalled()
-    expect(container.textContent).toContain('no partial import remains')
-    expect(container.textContent).not.toContain('saved to the script library')
-  })
-
-  it('stops a split bridge save after a session switch and rolls back the completed write', async () => {
-    const onImported = vi.fn()
-    const first = { name: 'Checkout', protocol: 'browser', actions: [{ name: 'Checkout', type: 'navigate', target: '/' }] }
-    const second = { name: 'Logout', protocol: 'browser', actions: [{ name: 'Logout', type: 'navigate', target: '/logout' }] }
-    const nextSession = { ...stoppedSession, id: 'brec-2', name: 'Second Recording' }
-    apiMock.browserRecorderBridge = { origin: 'http://127.0.0.1:49152', token: 'tok', session_id: 'ws-1' }
-    apiMock.getBrowserRecording
-      .mockResolvedValueOnce({ session: { ...stoppedSession, project_id: 'project-1' } })
-      .mockResolvedValueOnce({ session: { ...nextSession, project_id: 'project-1' } })
-    apiMock.previewBrowserRecordingConversion.mockResolvedValue({
-      script: first,
+    expect(apiMock.commitGenericImportBatch).toHaveBeenCalledWith(expect.objectContaining({
       scripts: [first, second],
-      warnings: [],
-      stats: {},
-      parameterization: { suggestions: [], summary: { total: 0 } },
-    })
-    let resolveFirstSave!: (value: unknown) => void
-    apiMock.createScript.mockReturnValueOnce(new Promise(resolve => {
-      resolveFirstSave = resolve
+      source_profile: 'browser_recorder',
+      operation_id: expect.stringMatching(/^browser-import-/),
     }))
-    apiMock.deleteScript.mockResolvedValueOnce({ deleted: 'saved-checkout' })
-
-    await renderPanel({ onImported })
-    await clickButton('Save to Script Library')
-    await flushPromises()
-    expect(apiMock.createScript).toHaveBeenCalledTimes(1)
-
-    await act(async () => {
-      root.render(<BrowserRecorderControlPanel sessionId="brec-2" onImported={onImported} />)
-    })
-    await flushPromises()
-    await act(async () => {
-      resolveFirstSave({
-        id: 'saved-checkout',
-        name: first.name,
-        protocol: first.protocol,
-        version: '1',
-        created_at: '2026-05-12T20:10:00Z',
-      })
-      await Promise.resolve()
-      await Promise.resolve()
-    })
-    await flushPromises()
-
-    expect(apiMock.createScript).toHaveBeenCalledTimes(1)
-    expect(apiMock.deleteScript).toHaveBeenCalledWith('saved-checkout')
+    expect(apiMock.createScript).not.toHaveBeenCalled()
+    expect(apiMock.deleteScript).not.toHaveBeenCalled()
     expect(onImported).not.toHaveBeenCalled()
-    expect(container.textContent).toContain('Second Recording')
+    expect(container.textContent).toContain('atomic batch rejected')
   })
 
-  it('identifies bridge scripts requiring manual cleanup when rollback fails', async () => {
-    const onImported = vi.fn()
+  it('reuses the bridge batch operation id after an ambiguous save failure', async () => {
     const first = { name: 'Checkout', protocol: 'browser', actions: [{ name: 'Checkout', type: 'navigate', target: '/' }] }
     const second = { name: 'Logout', protocol: 'browser', actions: [{ name: 'Logout', type: 'navigate', target: '/logout' }] }
     apiMock.browserRecorderBridge = { origin: 'http://127.0.0.1:49152', token: 'tok', session_id: 'ws-1' }
@@ -1232,22 +1293,26 @@ describe('BrowserRecorderControlPanel', () => {
       stats: {},
       parameterization: { suggestions: [], summary: { total: 0 } },
     })
-    apiMock.createScript
-      .mockResolvedValueOnce({ id: 'saved-checkout', name: 'Checkout', protocol: 'browser', version: '1', created_at: '2026-05-12T20:10:00Z' })
-      .mockRejectedValueOnce(new Error('Logout could not be stored'))
-    apiMock.deleteScript.mockRejectedValueOnce(new Error('delete denied'))
+    apiMock.commitGenericImportBatch
+      .mockRejectedValueOnce(new Error('connection reset after commit'))
+      .mockResolvedValueOnce({
+        count: 2,
+        scripts: [
+          { id: 'saved-checkout', name: first.name, protocol: first.protocol, script: first },
+          { id: 'saved-logout', name: second.name, protocol: second.protocol, script: second },
+        ],
+      })
 
-    await renderPanel({ onImported })
+    await renderPanel()
+    await clickButton('Save to Script Library')
+    await flushPromises()
+    const firstOperationID = apiMock.commitGenericImportBatch.mock.calls[0][0].operation_id
     await clickButton('Save to Script Library')
     await flushPromises()
 
-    expect(apiMock.deleteScript).toHaveBeenCalledWith('saved-checkout')
-    expect(onImported).toHaveBeenCalledWith({
-      scripts: [expect.objectContaining({ id: 'saved-checkout' })],
-      stayInImportReview: true,
-    })
-    expect(container.textContent).toContain('Automatic cleanup failed for “Checkout”')
-    expect(container.textContent).toContain('delete it from the Script Library before retrying')
+    expect(apiMock.commitGenericImportBatch).toHaveBeenCalledTimes(2)
+    expect(apiMock.commitGenericImportBatch.mock.calls[1][0].operation_id).toBe(firstOperationID)
+    expect(container.textContent).toContain('Saved 2 scripts')
   })
 
   it('prepares deferred credential references before opening the visual editor', async () => {
@@ -1606,11 +1671,11 @@ describe('BrowserRecorderControlPanel', () => {
     await clickButton('Save Salesforce HTTP Script')
     await flushPromises()
 
-    expect(apiMock.createScript).toHaveBeenCalledWith(
-      expect.objectContaining({ name: 'Checkout Flow Salesforce HTTP' }),
-      undefined,
-      'folder-9',
-    )
+    expect(apiMock.commitGenericImportBatch).toHaveBeenCalledWith(expect.objectContaining({
+      folder_id: 'folder-9',
+      source_profile: 'salesforce',
+      scripts: [expect.objectContaining({ name: 'Checkout Flow Salesforce HTTP' })],
+    }))
   })
 
   it('reviews Salesforce-family HAR traffic as a native HTTP draft', async () => {
@@ -1647,8 +1712,12 @@ describe('BrowserRecorderControlPanel', () => {
     await clickButton('Save Salesforce HTTP Script')
     await flushPromises()
 
-    expect(apiMock.createScript).toHaveBeenCalledWith(expect.objectContaining({ name: 'Checkout Flow Salesforce HTTP' }), undefined, null)
-    expect(onImported).toHaveBeenCalledWith({ scripts: [expect.objectContaining({ id: 'script-salesforce-1' })] })
+    expect(apiMock.commitGenericImportBatch).toHaveBeenCalledWith(expect.objectContaining({
+      folder_id: null,
+      source_profile: 'salesforce',
+      scripts: [expect.objectContaining({ name: 'Checkout Flow Salesforce HTTP' })],
+    }))
+    expect(onImported).toHaveBeenCalledWith({ scripts: [expect.objectContaining({ id: 'script-remote-1' })] })
   })
 
   it('uses the deferred credential flow for Salesforce drafts before edit and save', async () => {
@@ -1702,10 +1771,13 @@ describe('BrowserRecorderControlPanel', () => {
 
     await clickButton('Save Salesforce HTTP Script')
     await flushPromises()
-    expect(apiMock.createScript).toHaveBeenCalledWith(expect.objectContaining({
-      config: { http: { auth: { token: '{{secret.SALESFORCE_TOKEN}}' } } },
-    }), 'project-1', null)
-    expect(onImported).toHaveBeenCalledWith({ scripts: [expect.objectContaining({ id: 'saved-salesforce-login' })] })
+    expect(apiMock.commitGenericImportBatch).toHaveBeenCalledWith(expect.objectContaining({
+      source_profile: 'salesforce',
+      scripts: [expect.objectContaining({
+        config: { http: { auth: { token: '{{secret.SALESFORCE_TOKEN}}' } } },
+      })],
+    }))
+    expect(onImported).toHaveBeenCalledWith({ scripts: [expect.objectContaining({ id: 'script-remote-1' })] })
   })
 
   it('does not open a stale credential-bound Salesforce draft after the recording session changes', async () => {
@@ -2116,9 +2188,13 @@ describe('BrowserRecorderControlPanel', () => {
       stats: {},
       parameterization: { suggestions: [], summary: { total: 0 } },
     })
-    apiMock.createScript
-      .mockResolvedValueOnce({ id: 'remote-browser', name: 'Checkout Flow', protocol: 'browser', script: { name: 'Checkout Flow', protocol: 'browser', actions: [] } })
-      .mockResolvedValueOnce({ id: 'remote-http', name: 'Checkout Flow (HTTP)', protocol: 'http', script: { name: 'Checkout Flow (HTTP)', protocol: 'http', actions: [] } })
+    apiMock.commitGenericImportBatch.mockResolvedValueOnce({
+      count: 2,
+      scripts: [
+        { id: 'remote-browser', name: 'Checkout Flow', protocol: 'browser', script: { name: 'Checkout Flow', protocol: 'browser', actions: [] } },
+        { id: 'remote-http', name: 'Checkout Flow (HTTP)', protocol: 'http', script: { name: 'Checkout Flow (HTTP)', protocol: 'http', actions: [] } },
+      ],
+    })
 
     await renderPanel({ onImported })
     await clickButton('Save to Script Library')
@@ -2130,16 +2206,20 @@ describe('BrowserRecorderControlPanel', () => {
       [browserDraft, httpDraft],
       undefined,
     )
-    expect(apiMock.createScript).toHaveBeenCalledTimes(2)
+    expect(apiMock.createScript).not.toHaveBeenCalled()
     expect(apiMock.attestBridgedBrowserRecordingImport.mock.invocationCallOrder[0])
-      .toBeLessThan(apiMock.createScript.mock.invocationCallOrder[0])
-    // The remote controller never observed the local bridge recording, so the
-    // headed-browser session id must not accompany the createScript calls.
-    expect(apiMock.createScript).toHaveBeenNthCalledWith(1, expect.objectContaining({
-      name: 'Checkout Flow',
-      actions: [expect.objectContaining({ value: rawCredential })],
-    }), undefined, null)
-    expect(apiMock.createScript).toHaveBeenNthCalledWith(2, expect.objectContaining({ name: 'Checkout Flow (HTTP)' }), undefined, null)
+      .toBeLessThan(apiMock.commitGenericImportBatch.mock.invocationCallOrder[0])
+    expect(apiMock.commitGenericImportBatch).toHaveBeenCalledWith(expect.objectContaining({
+      source_profile: 'browser_recorder',
+      scripts: [
+        expect.objectContaining({
+          name: 'Checkout Flow',
+          actions: [expect.objectContaining({ value: rawCredential })],
+        }),
+        expect.objectContaining({ name: 'Checkout Flow (HTTP)' }),
+      ],
+      operation_id: expect.stringMatching(/^browser-import-/),
+    }))
     expect(onImported).toHaveBeenCalledWith({ scripts: [expect.objectContaining({ id: 'remote-browser' }), expect.objectContaining({ id: 'remote-http' })] })
     // Script-library response mocks model the controller's disclosure-safe
     // response; the raw credential only travels in the attested write.

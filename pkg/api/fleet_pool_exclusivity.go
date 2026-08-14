@@ -80,6 +80,18 @@ func writeFleetMembershipError(w http.ResponseWriter, err error, fallbackStatus 
 			"a generator in this request already belongs to another fleet pool; remove it from that pool first")
 		return
 	}
+	if errors.Is(err, storage.ErrFleetPoolHasActiveProvisioning) {
+		writeError(w, http.StatusConflict, "fleet pool has an active provisioning request; wait for it to finish before changing its execution target")
+		return
+	}
+	if errors.Is(err, storage.ErrFleetPoolPlacementChanged) {
+		writeError(w, http.StatusConflict, "fleet pool execution target changed while the operation was being prepared; reload and retry")
+		return
+	}
+	if errors.Is(err, storage.ErrFleetPoolHasLiveCapacity) {
+		writeError(w, http.StatusConflict, "fleet pool still owns live cloud capacity; scale it to zero before changing its execution target")
+		return
+	}
 	writeError(w, fallbackStatus, err.Error())
 }
 

@@ -9,12 +9,14 @@ interface Props {
   initialFiles?: File[] | null
   projectId?: string
   folderId?: string | null
+  onFolderChange?: (folderId: string) => void
   onImported?: (result: ImportedSaveResult) => void
   onEdit?: (script: ScriptDefinition, focus?: DraftEditorFocus) => void
   onClose?: () => void
+  onOperationBusyChange?: (busy: boolean) => void
 }
 
-export default function YAMLImportChooser({ initialFiles, projectId, folderId, onImported, onEdit, onClose }: Props) {
+export default function YAMLImportChooser({ initialFiles, projectId, folderId, onFolderChange, onImported, onEdit, onClose, onOperationBusyChange }: Props) {
   const [selection, setSelection] = useState<{
     source: File[] | null | undefined
     choice: 'bruno' | 'openapi' | null
@@ -27,10 +29,10 @@ export default function YAMLImportChooser({ initialFiles, projectId, folderId, o
     if (selection.source !== initialFiles) setSelection({ source: initialFiles, choice: null })
   }, [initialFiles, selection.source])
   if (choice === 'bruno') {
-    return <BrunoImport initialFiles={initialFiles} projectId={projectId} onImported={onImported} onClose={() => setChoice(null)} />
+    return <BrunoImport initialFiles={initialFiles} projectId={projectId} folderId={folderId} onFolderChange={onFolderChange} destinationFolderManagedExternally onImported={onImported} onClose={() => setChoice(null)} onOperationBusyChange={onOperationBusyChange} />
   }
   if (choice === 'openapi') {
-    return <ProtocolAssetImport kind="openapi" initialFile={initialFiles?.[0] || null} projectId={projectId} folderId={folderId} onImported={onImported} onEdit={onEdit} onClose={() => setChoice(null)} />
+    return <ProtocolAssetImport kind="openapi" initialFile={initialFiles?.[0] || null} projectId={projectId} folderId={folderId} onImported={onImported} onEdit={onEdit} onClose={() => setChoice(null)} onOperationBusyChange={onOperationBusyChange} />
   }
   return (
     <div className="bruno-import">

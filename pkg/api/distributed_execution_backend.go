@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -272,6 +273,8 @@ type distributedExecutionBackend struct {
 	requireRunSupervision bool
 	runSupervisionTTL     time.Duration
 	runSupervisionRenew   time.Duration
+	ensureRunCapacity     func(context.Context, *ManagedTest) error
+	releaseRunCapacity    func(*ManagedTest, bool)
 }
 
 func (*distributedExecutionBackend) requiresInitialRampReadinessProbe() {}
@@ -281,6 +284,11 @@ func (b *distributedExecutionBackend) setOnIdentityRecorded(hook func(generatorI
 	b.identityMu.Lock()
 	b.onIdentityRecorded = hook
 	b.identityMu.Unlock()
+}
+
+func (b *distributedExecutionBackend) setCapacityLifecycle(ensure func(context.Context, *ManagedTest) error, release func(*ManagedTest, bool)) {
+	b.ensureRunCapacity = ensure
+	b.releaseRunCapacity = release
 }
 
 func newDistributedExecutionBackend(targets []string, timeout time.Duration, dial generatorDial) *distributedExecutionBackend {
@@ -372,6 +380,42 @@ func (b *distributedExecutionBackend) SetTargets(targets []string) {
 			if b.idTargets[id] == target {
 				delete(b.idTargets, id)
 			}
+		}
+	}
+	b.identityMu.Unlock()
+}
+
+func (b *distributedExecutionBackend) AddTarget(target string) {
+	spec := parseGeneratorTargetSpec(target)
+	if spec.Address == "" {
+		return
+	}
+	b.targetsMu.Lock()
+	defer b.targetsMu.Unlock()
+	for _, current := range b.targets {
+		if current.Address == spec.Address {
+			return
+		}
+	}
+	b.targets = append(b.targets, spec)
+}
+
+func (b *distributedExecutionBackend) RemoveTarget(target string) {
+	target = strings.TrimSpace(target)
+	b.targetsMu.Lock()
+	filtered := b.targets[:0]
+	for _, current := range b.targets {
+		if current.Address != target {
+			filtered = append(filtered, current)
+		}
+	}
+	b.targets = filtered
+	b.targetsMu.Unlock()
+	b.identityMu.Lock()
+	if id := b.targetIDs[target]; id != "" {
+		delete(b.targetIDs, target)
+		if b.idTargets[id] == target {
+			delete(b.idTargets, id)
 		}
 	}
 	b.identityMu.Unlock()
@@ -835,6 +879,28 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 		tr.failTestBeforeRunAndLog(test, fmt.Sprintf("persist initial archive provenance: %v", persistInitialErr))
 		return
 	}
+	// Capacity is reconciled before any generator supervision lease is armed.
+	// Cloud cold-start latency therefore cannot consume the deadman TTL.
+	if b.ensureRunCapacity != nil {
+		capacityCtx, cancelCapacity := tr.executionOperationContext(context.Background())
+		capacityErr := b.ensureRunCapacity(capacityCtx, test)
+		cancelCapacity()
+		if capacityErr != nil {
+			tr.failTestBeforeRunAndLog(test, "generator capacity provisioning failed: "+capacityErr.Error())
+			return
+		}
+	}
+	var capacityConsumed atomic.Bool
+	if b.releaseRunCapacity != nil {
+		defer func() {
+			if !capacityConsumed.Load() {
+				// No generator accepted work, so there can be no generator-owned
+				// archive artifact. Release burst capacity immediately instead of
+				// waiting for the maximum-lifetime cost fence.
+				b.releaseRunCapacity(test, true)
+			}
+		}()
+	}
 	targetSpecs := tr.enrichGeneratorTargetSpecsWithLabels(b.configuredTargetSpecs())
 	if len(targetSpecs) == 0 {
 		tr.failTestBeforeRunAndLog(test, "no generator targets configured")
@@ -888,6 +954,7 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 	// has been joined.
 	var startedTargetsMu sync.Mutex
 	markStartedTarget := func(target string) {
+		capacityConsumed.Store(true)
 		startedTargetsMu.Lock()
 		startedTargets[target] = struct{}{}
 		startedTargetsMu.Unlock()

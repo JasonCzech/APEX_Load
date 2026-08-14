@@ -64,6 +64,10 @@ func (s *Server) deploymentKindAndLabel(environment string) (string, string) {
 	switch env {
 	case "kubernetes", "k8s", "aks", "eks", "gke":
 		return "kubernetes", "Kubernetes"
+	case "azure_container_apps", "azure-container-apps", "container_apps":
+		return "azure_container_apps", "Azure Container Apps"
+	case "aws_ecs_fargate", "aws-ecs-fargate", "ecs_fargate":
+		return "aws_ecs_fargate", "AWS ECS Fargate"
 	case "docker", "container":
 		return "docker", "Docker"
 	}

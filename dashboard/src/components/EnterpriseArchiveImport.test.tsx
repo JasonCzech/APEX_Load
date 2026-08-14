@@ -14,6 +14,7 @@ const apiMock = {
   importEnterpriseArchive: vi.fn(),
   validateEnterpriseArchiveImport: vi.fn(),
   createScript: vi.fn(),
+  saveEnterpriseArchiveImport: vi.fn(),
   deleteScript: vi.fn(),
   createAuthoringSession: vi.fn(),
   startDraftBrowserReplaySession: vi.fn(),
@@ -355,6 +356,15 @@ describe('EnterpriseArchiveImport', () => {
       created_at: '2026-05-17T00:00:00Z',
       script,
     }))
+    apiMock.saveEnterpriseArchiveImport.mockImplementation(async (payload: {
+      scripts: Array<{ name?: string; protocol?: string; version?: string; project_id?: string }>
+      folder_id?: string | null
+    }) => {
+      const scripts = await Promise.all(payload.scripts.map(script => (
+        apiMock.createScript(script, script.project_id, payload.folder_id ?? undefined)
+      )))
+      return { scripts, count: scripts.length }
+    })
     apiMock.deleteScript.mockResolvedValue({ deleted: 'saved-script' })
     apiMock.createAuthoringSession.mockResolvedValue({
       id: 'review-session',
@@ -476,6 +486,33 @@ describe('EnterpriseArchiveImport', () => {
     })
 
     expect(clickSpy).toHaveBeenCalledTimes(1)
+  })
+
+  it('paginates a high-cardinality archive queue with keyboard selection across pages', async () => {
+    const files = Array.from({ length: 51 }, (_unused, index) => (
+      new File(['zip'], `archive-${String(index + 1).padStart(2, '0')}.zip`, { type: 'application/zip' })
+    ))
+    await act(async () => root.render(<EnterpriseArchiveImport initialFiles={files} />))
+    await flushPromises()
+
+    expect(container.querySelectorAll('.lr-file-row')).toHaveLength(50)
+    expect(container.textContent).toContain('Showing 1–50 of 51')
+    const next = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent?.includes('Next archives'))!
+    await act(async () => next.click())
+    expect(container.querySelectorAll('.lr-file-row')).toHaveLength(1)
+    expect(container.textContent).toContain('archive-51.zip')
+    expect(container.textContent).toContain('Showing 51–51 of 51')
+
+    const selected = container.querySelector<HTMLButtonElement>('.lr-file-row-select')!
+    await act(async () => {
+      selected.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true }))
+    })
+    expect(container.querySelectorAll('.lr-file-row')).toHaveLength(50)
+    const active = Array.from(container.querySelectorAll<HTMLButtonElement>('.lr-file-row-select'))
+      .find(button => button.getAttribute('aria-pressed') === 'true')!
+    expect(active.textContent).toContain('archive-50.zip')
+    expect(document.activeElement).toBe(active)
   })
 
   it('layers import modal dialogs above the sticky app chrome', async () => {
@@ -722,7 +759,12 @@ describe('EnterpriseArchiveImport', () => {
     ])
     expect(conversionReviewTabs[0]?.getAttribute('aria-selected')).toBe('true')
     expect(container.textContent).toContain('Demo Enterprise Script Archive')
-    expect(container.textContent).toContain('manual review recommended')
+    const conversionWarningDetails = container.querySelector<HTMLButtonElement>('button[aria-label="View 1 import warning detail"]')
+    expect(conversionWarningDetails).not.toBeNull()
+    await clickButton(conversionWarningDetails!)
+    expect(document.body.querySelector('[role="dialog"]')?.textContent).toContain('manual review recommended')
+    await clickButton(Array.from(document.body.querySelectorAll<HTMLButtonElement>('[role="dialog"] button'))
+      .find(button => button.textContent?.trim() === 'Close')!)
     expect(container.textContent).toContain('Unsupported Source Functions (1)')
     expect(container.textContent).toContain('Import Review Sections (2)')
     expect(container.textContent).toContain('Repair Suggestions (2)')
@@ -997,9 +1039,12 @@ describe('EnterpriseArchiveImport', () => {
     const assertionOption = Array.from(container.querySelectorAll<HTMLLabelElement>('.lr-checkbox'))
       .find(label => label.textContent?.includes('Add default status_code assertions'))
       ?.querySelector<HTMLInputElement>('input')
+    expect(assertionOption?.disabled).toBe(true)
+    const reviewedAssertionOption = assertionOption?.checked
     await act(async () => {
       assertionOption?.click()
     })
+    expect(assertionOption?.checked).toBe(reviewedAssertionOption)
     await act(async () => {
       resolveSave?.({
         id: 'saved-redacted', name: resolvedScript.name, protocol: resolvedScript.protocol,
@@ -1008,10 +1053,99 @@ describe('EnterpriseArchiveImport', () => {
       await Promise.resolve()
       await Promise.resolve()
     })
-    expect(apiMock.deleteScript).toHaveBeenCalledWith('saved-redacted')
+    expect(apiMock.deleteScript).not.toHaveBeenCalled()
+    expect(container.textContent).toContain('Saved Redacted Enterprise Login to the script library')
   })
 
-  it('fences a sequential conversion batch when Back is clicked during the first save', async () => {
+  it('reuses a configured project secret when an atomic enterprise script save is retried', async () => {
+    const redactedScript = {
+      name: 'Enterprise Credential Retry',
+      version: '1.0.0',
+      protocol: 'http',
+      config: { base_url: 'https://api.example.test' },
+      actions: [{
+        name: 'Login',
+        type: 'request',
+        method: 'POST',
+        target: '/login',
+        body: 'password=[REDACTED]',
+      }],
+    }
+    const resolvedScript = {
+      ...redactedScript,
+      actions: [{
+        ...redactedScript.actions[0],
+        body: 'password={{secret.ENTERPRISE_LOGIN_PASSWORD}}',
+      }],
+    }
+    apiMock.importEnterpriseArchive.mockResolvedValueOnce(executableEnterpriseResult(redactedScript, {
+      secret_binding_requirements: [{
+        id: 'enterprise-login-password',
+        path: '/actions/0/body',
+        label: 'Login — Password',
+        context: 'Form credential used by the imported enterprise script.',
+        suggested_name: 'ENTERPRISE_LOGIN_PASSWORD',
+        script_index: 0,
+        script_name: redactedScript.name,
+      }],
+    }))
+    apiMock.applySecretBindings.mockResolvedValueOnce({
+      script: resolvedScript,
+      secret_binding_requirements: [],
+    })
+    apiMock.saveEnterpriseArchiveImport
+      .mockRejectedValueOnce(new Error('atomic enterprise script save unavailable'))
+      .mockResolvedValueOnce({
+        count: 1,
+        scripts: [{
+          id: 'saved-enterprise-retry',
+          name: resolvedScript.name,
+          protocol: resolvedScript.protocol,
+          version: resolvedScript.version,
+          created_at: '2026-05-17T00:00:00Z',
+          script: resolvedScript,
+        }],
+      })
+
+    await act(async () => root.render(<EnterpriseArchiveImport projectId="project-1" />))
+    await flushPromises()
+    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"][accept=".zip"]')!
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', {
+        configurable: true,
+        value: [new File(['zip-content'], 'credential-retry.zip', { type: 'application/zip' })],
+      })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await clickImportAction(container, 'Validate Only')
+    await clickButton(findButton(container, 'Convert Loadrunner Script Archive')!)
+
+    const valueInput = container.querySelector<HTMLInputElement>('input[aria-label="Secret value for ENTERPRISE_LOGIN_PASSWORD"]')!
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set
+      setter?.call(valueInput, 'write-only-enterprise-password')
+      valueInput.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    const firstSave = container.querySelector<HTMLButtonElement>('.script-import-review-actions .btn-primary')!
+    await clickButton(firstSave)
+
+    expect(apiMock.createProjectSecrets).toHaveBeenCalledTimes(1)
+    expect(apiMock.saveEnterpriseArchiveImport).toHaveBeenCalledTimes(1)
+    expect(container.textContent).toContain('atomic enterprise script save unavailable')
+    expect(container.textContent).toContain('remain in Project Secrets independently of script saving')
+    expect(container.textContent).toContain('retrying this save reuses those configured values')
+    expect(container.textContent).not.toContain('write-only-enterprise-password')
+    const firstOperationID = apiMock.saveEnterpriseArchiveImport.mock.calls[0][0].operation_id
+
+    const retry = container.querySelector<HTMLButtonElement>('.script-import-review-actions .btn-primary')!
+    await clickButton(retry)
+
+    expect(apiMock.saveEnterpriseArchiveImport).toHaveBeenCalledTimes(2)
+    expect(apiMock.saveEnterpriseArchiveImport.mock.calls[1][0].operation_id).toBe(firstOperationID)
+    expect(apiMock.createProjectSecrets).toHaveBeenCalledTimes(1)
+  })
+
+  it('reports the complete atomic batch when Back is clicked during its save', async () => {
     const onClose = vi.fn()
     const onImported = vi.fn()
     const first = {
@@ -1035,11 +1169,10 @@ describe('EnterpriseArchiveImport', () => {
     }
     apiMock.validateEnterpriseArchiveImport.mockResolvedValueOnce(result)
     apiMock.importEnterpriseArchive.mockResolvedValueOnce(result)
-    let resolveFirstSave!: (value: unknown) => void
-    apiMock.createScript.mockReturnValueOnce(new Promise(resolve => {
-      resolveFirstSave = resolve
+    let resolveBatchSave!: (value: unknown) => void
+    apiMock.saveEnterpriseArchiveImport.mockReturnValueOnce(new Promise(resolve => {
+      resolveBatchSave = resolve
     }))
-    apiMock.deleteScript.mockRejectedValueOnce(new Error('cleanup unavailable'))
 
     await act(async () => root.render(
       <EnterpriseArchiveImport
@@ -1063,30 +1196,157 @@ describe('EnterpriseArchiveImport', () => {
       await Promise.resolve()
       await Promise.resolve()
     })
-    expect(apiMock.createScript).toHaveBeenCalledTimes(1)
+    expect(apiMock.saveEnterpriseArchiveImport).toHaveBeenCalledTimes(1)
+    expect(apiMock.saveEnterpriseArchiveImport).toHaveBeenCalledWith(expect.objectContaining({
+      scripts: [
+        expect.objectContaining({ name: first.name }),
+        expect.objectContaining({ name: second.name }),
+      ],
+    }))
 
     await clickButton(findButton(container, 'Back')!)
     expect(onClose).toHaveBeenCalledTimes(1)
 
     await act(async () => {
-      resolveFirstSave({
-        id: 'first-after-back',
-        name: first.name,
-        protocol: first.protocol,
-        version: first.version,
-        created_at: '2026-05-17T00:00:00Z',
-        script: first,
+      resolveBatchSave({
+        scripts: [
+          {
+            id: 'first-after-back',
+            name: first.name,
+            protocol: first.protocol,
+            version: first.version,
+            created_at: '2026-05-17T00:00:00Z',
+            script: first,
+          },
+          {
+            id: 'second-after-back',
+            name: second.name,
+            protocol: second.protocol,
+            version: second.version,
+            created_at: '2026-05-17T00:00:00Z',
+            script: second,
+          },
+        ],
+        count: 2,
       })
       await Promise.resolve()
       await Promise.resolve()
     })
 
-    expect(apiMock.createScript).toHaveBeenCalledTimes(1)
-    expect(apiMock.deleteScript).toHaveBeenCalledWith('first-after-back')
+    expect(apiMock.saveEnterpriseArchiveImport).toHaveBeenCalledTimes(1)
+    expect(apiMock.deleteScript).not.toHaveBeenCalled()
     expect(onImported).toHaveBeenCalledWith({
-      scripts: [expect.objectContaining({ id: 'first-after-back' })],
+      scripts: [
+        expect.objectContaining({ id: 'first-after-back' }),
+        expect.objectContaining({ id: 'second-after-back' }),
+      ],
       stayInImportReview: true,
     })
+  })
+
+  it('publishes a confirmed batch before source-session cleanup and does so once across navigation', async () => {
+    const onImported = vi.fn()
+    const onClose = vi.fn()
+    const script = {
+      name: 'Committed Before Cleanup',
+      version: '1.0.0',
+      protocol: 'http',
+      config: { base_url: 'https://api.example.test' },
+      actions: [{ name: 'Request', type: 'request', method: 'GET', target: '/' }],
+    }
+    apiMock.validateEnterpriseArchiveImport.mockResolvedValueOnce(executableEnterpriseResult(script))
+    apiMock.importEnterpriseArchive.mockResolvedValueOnce(executableEnterpriseResult(script, {
+      source_secret_session_id: 'cleanup-after-commit',
+      source_secret_session_expires_at: '2099-01-01T00:00:00Z',
+    }))
+    apiMock.saveEnterpriseArchiveImport.mockResolvedValueOnce({
+      count: 1,
+      scripts: [{
+        id: 'committed-before-cleanup',
+        name: script.name,
+        protocol: script.protocol,
+        version: script.version,
+        created_at: '2026-05-17T00:00:00Z',
+        script,
+      }],
+    })
+    let resolveDiscard!: () => void
+    apiMock.discardImportSecretSession.mockReturnValue(new Promise<void>(resolve => {
+      resolveDiscard = resolve
+    }))
+
+    await act(async () => root.render(
+      <EnterpriseArchiveImport projectId="project-1" onImported={onImported} onClose={onClose} />,
+    ))
+    await flushPromises()
+    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"][accept=".zip"]')!
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', {
+        configurable: true,
+        value: [new File(['zip'], 'cleanup.zip', { type: 'application/zip' })],
+      })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await clickImportAction(container, 'Validate Only')
+    await clickButton(findButton(container, 'Convert Loadrunner Script Archive')!)
+    await flushPromises()
+
+    expect(apiMock.discardImportSecretSession).toHaveBeenCalledWith({
+      project_id: 'project-1',
+      source_secret_session_id: 'cleanup-after-commit',
+    })
+    expect(onImported).toHaveBeenCalledTimes(1)
+    expect(onImported).toHaveBeenCalledWith(expect.objectContaining({
+      scripts: [expect.objectContaining({ id: 'committed-before-cleanup' })],
+    }))
+
+    await clickButton(findButton(container, 'Back')!)
+    await act(async () => {
+      root.render(<EnterpriseArchiveImport projectId="project-2" onImported={onImported} onClose={onClose} />)
+      await Promise.resolve()
+    })
+    await act(async () => {
+      resolveDiscard()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(onClose).toHaveBeenCalledTimes(1)
+    expect(onImported).toHaveBeenCalledTimes(1)
+  })
+
+  it('allocates case-fold-safe script names across archives before the atomic batch save', async () => {
+    const files = [
+      new File(['alpha'], 'alpha.zip', { type: 'application/zip' }),
+      new File(['beta'], 'beta.zip', { type: 'application/zip' }),
+    ]
+    const resultFor = (file: File) => executableEnterpriseResult({
+      name: file.name === 'alpha.zip' ? 'Shared Human Name' : 'shared human name',
+      version: '1.0.0',
+      protocol: 'http',
+      config: { base_url: 'https://api.example.test' },
+      actions: [{ name: 'Request', type: 'request', method: 'GET', target: '/' }],
+    })
+    apiMock.validateEnterpriseArchiveImport.mockImplementation(async (file: File) => resultFor(file))
+    apiMock.importEnterpriseArchive.mockImplementation(async (file: File) => resultFor(file))
+
+    await act(async () => root.render(<EnterpriseArchiveImport projectId="project-1" />))
+    await flushPromises()
+    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"][accept=".zip"]')!
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', { configurable: true, value: files })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await clickImportAction(container, 'Validate 2 Scripts')
+    await clickButton(findButton(container, 'Convert 2 Loadrunner Script Archives')!)
+    await flushPromises()
+
+    expect(apiMock.saveEnterpriseArchiveImport).toHaveBeenCalledWith(expect.objectContaining({
+      scripts: [
+        expect.objectContaining({ name: 'Shared Human Name' }),
+        expect.objectContaining({ name: 'shared human name_2' }),
+      ],
+    }))
   })
 
   it('does not validate another queued archive after Back fences a pending validation', async () => {
@@ -1427,7 +1687,11 @@ describe('EnterpriseArchiveImport', () => {
     ])
     const migrate = container.querySelector<HTMLInputElement>('.credentials-source-migration input')!
     await act(async () => migrate.click())
-    await clickButton(findButton(container, 'Save with 0 secrets to configure') || findButton(container, 'Save')!)
+    const prepareFirstCredentialLane = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => (
+      button.textContent?.includes('Prepare Credentials') || button.textContent?.includes('Save Remaining 2 Scripts Atomically')
+    ))
+    expect(prepareFirstCredentialLane).toBeDefined()
+    await clickButton(prepareFirstCredentialLane!)
     await flushPromises()
     await flushPromises()
 
@@ -1472,7 +1736,11 @@ describe('EnterpriseArchiveImport', () => {
         }],
       },
     ))
-    await clickButton(findButton(container, 'Save with 1 secret to configure')!)
+    const prepareSecondCredentialLane = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => (
+      button.textContent?.includes('Save Remaining 2 Scripts Atomically') || button.textContent?.includes('Prepare Credentials')
+    ))
+    expect(prepareSecondCredentialLane).toBeDefined()
+    await clickButton(prepareSecondCredentialLane!)
     await flushPromises()
 
     expect(apiMock.applySecretBindings).toHaveBeenNthCalledWith(2, {
@@ -1483,6 +1751,72 @@ describe('EnterpriseArchiveImport', () => {
     expect(Array.from(container.querySelectorAll<HTMLInputElement>('.secret-binding-review input[type="text"]')).map(input => input.value)).toEqual([
       'CREDENTIAL_2',
     ])
+  })
+
+  it('prepares credentialed generated lanes before one atomic enterprise batch save', async () => {
+    const first = {
+      name: 'Credentialed Web', version: '1.0.0', protocol: 'http', config: { base_url: '' },
+      actions: [{ name: 'Login', type: 'request', method: 'POST', target: '/login', body: 'token=[REDACTED]' }],
+    }
+    const second = {
+      name: 'Credentialed Database', version: '1.0.0', protocol: 'database', config: { base_url: '', database: { dsn: '[REDACTED]' } },
+      actions: [{ name: 'Query', type: 'db_query', target: 'SELECT 1' }],
+    }
+    const resolvedFirst = { ...first, actions: [{ ...first.actions[0], body: 'token={{secret.WEB_TOKEN}}' }] }
+    const resolvedSecond = { ...second, config: { ...second.config, database: { dsn: '{{secret.DATABASE_DSN}}' } } }
+    apiMock.importEnterpriseArchive.mockResolvedValueOnce({
+      scripts: [first, second], script: first,
+      warnings: [], unsupported_elements: [], assumptions: [], review_sections: [], repair_suggestions: [],
+      summary: { project_file: 'credentialed.usr', migration_readiness: { score_pct: 100, blocked: false, summary: 'Ready', policy: { block_statuses: [] } } },
+      stats: { total_functions: 2, converted_actions: 2, extractors: 0, think_times: 0, transactions: 0, skipped: 0 },
+      source_secret_session_id: 'credentialed-archive-session',
+      source_secret_session_expires_at: '2099-01-01T00:00:00Z',
+      source_secret_migration_allowed: false,
+      secret_binding_requirements: [
+        { id: 'web-token', path: '/actions/0/body', label: 'Web token', context: 'Login token', suggested_name: 'WEB_TOKEN', script_index: 0, script_name: first.name },
+        { id: 'database-dsn', path: '/config/database/dsn', label: 'Database DSN', context: 'Database credential', suggested_name: 'DATABASE_DSN', script_index: 1, script_name: second.name },
+      ],
+    })
+    apiMock.applySecretBindings
+      .mockResolvedValueOnce({ script: resolvedFirst, secret_binding_requirements: [] })
+      .mockResolvedValueOnce({ script: resolvedSecond, secret_binding_requirements: [] })
+
+    await act(async () => root.render(<EnterpriseArchiveImport projectId="project-1" />))
+    await flushPromises()
+    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"][accept=".zip"]')!
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', { configurable: true, value: [new File(['zip'], 'credentialed.zip', { type: 'application/zip' })] })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await clickImportAction(container, 'Validate Only')
+    await clickButton(findButton(container, 'Convert Loadrunner Script Archive')!)
+
+    const prepareFirst = findButton(container, 'Prepare Credentials for Script 1 of 2')
+    expect(prepareFirst).toBeDefined()
+    await clickButton(prepareFirst!)
+    expect(apiMock.saveEnterpriseArchiveImport).not.toHaveBeenCalled()
+    expect(apiMock.discardImportSecretSession).not.toHaveBeenCalled()
+    expect(container.textContent).toContain('Credentialed Database')
+
+    const atomicSave = findButton(container, 'Save Remaining 2 Scripts Atomically')
+    expect(atomicSave).toBeDefined()
+    await clickButton(atomicSave!)
+    await flushPromises()
+
+    expect(apiMock.applySecretBindings).toHaveBeenCalledTimes(2)
+    expect(apiMock.saveEnterpriseArchiveImport).toHaveBeenCalledTimes(1)
+    expect(apiMock.saveEnterpriseArchiveImport).toHaveBeenCalledWith(expect.objectContaining({
+      operation_id: expect.stringMatching(/^enterprise-archive-/),
+      scripts: [
+        expect.objectContaining({ name: resolvedFirst.name, project_id: 'project-1' }),
+        expect.objectContaining({ name: resolvedSecond.name, project_id: 'project-1' }),
+      ],
+    }))
+    expect(apiMock.discardImportSecretSession).toHaveBeenCalledTimes(1)
+    expect(apiMock.discardImportSecretSession).toHaveBeenCalledWith({
+      project_id: 'project-1',
+      source_secret_session_id: 'credentialed-archive-session',
+    })
   })
 
   it('does not publish a late credential result after the selected generated script changes', async () => {
@@ -1507,7 +1841,7 @@ describe('EnterpriseArchiveImport', () => {
     })
     await clickImportAction(container, 'Validate Only')
     await clickButton(findButton(container, 'Convert Loadrunner Script Archive')!)
-    const save = findButton(container, 'Save with 1 secret to configure')!
+    const save = findButton(container, 'Save Remaining 2 Scripts Atomically with 1 secret to configure')!
     act(() => save.click())
     await flushPromises()
     expect(apiMock.applySecretBindings).toHaveBeenCalledTimes(1)
@@ -2040,16 +2374,18 @@ describe('EnterpriseArchiveImport', () => {
     const betaRow = Array.from(container.querySelectorAll<HTMLElement>('.lr-file-row'))
       .find(row => row.textContent?.includes('beta.zip'))
     expect(betaRow).toBeDefined()
+    const betaSelect = betaRow?.querySelector<HTMLButtonElement>('.lr-file-row-select')
     await act(async () => {
-      betaRow?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      betaSelect?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
     expect(findButton(container, 'Saving Review Artifact')).toBeUndefined()
     expect(findButton(container, 'Save Review Artifact')).toBeDefined()
 
     const alphaRow = Array.from(container.querySelectorAll<HTMLElement>('.lr-file-row'))
       .find(row => row.textContent?.includes('alpha.zip'))
+    const alphaSelect = alphaRow?.querySelector<HTMLButtonElement>('.lr-file-row-select')
     await act(async () => {
-      alphaRow?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      alphaSelect?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
     const removeUnrelated = container.querySelector('[aria-label="Remove beta.zip"]') as HTMLButtonElement
@@ -3211,6 +3547,67 @@ describe('EnterpriseArchiveImport', () => {
     expect(onImported.mock.calls[0][0].scripts).toHaveLength(2)
   })
 
+  it('reconciles an ambiguous atomic batch save with the same operation id', async () => {
+    const files = [
+      new File(['alpha'], 'alpha.zip', { type: 'application/zip' }),
+      new File(['gamma'], 'gamma.zip', { type: 'application/zip' }),
+    ]
+    apiMock.importEnterpriseArchive.mockImplementation(async (file: File) => executableEnterpriseResult({
+      name: file.name.replace(/\.zip$/i, ''),
+      version: '1.0.0',
+      protocol: 'http',
+      actions: [{ name: 'Homepage', type: 'request', method: 'GET', target: '/' }],
+      metadata: {
+        import: {
+          source: 'enterprise_script_archive',
+          preserved: { server_import_attestation_v1: `attestation-${file.name}` },
+        },
+      },
+    }))
+    apiMock.saveEnterpriseArchiveImport
+      .mockRejectedValueOnce(new ApiError('response interrupted', 500))
+      .mockRejectedValueOnce(new ApiError('receipt still finalizing', 500))
+      .mockResolvedValueOnce({
+        scripts: files.map((file, index) => ({
+          id: `saved-${index}`,
+          name: file.name.replace(/\.zip$/i, ''),
+          protocol: 'http',
+          version: '1.0.0',
+          created_at: '2026-05-17T00:00:00Z',
+        })),
+        count: 2,
+      })
+
+    await act(async () => root.render(<EnterpriseArchiveImport projectId="project-1" />))
+    await flushPromises()
+    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"][accept=".zip"]')!
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', { configurable: true, value: files })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await clickImportAction(container, 'Validate Only')
+    await clickButton(findButton(container, 'Convert 2 Loadrunner Script Archives')!)
+    await flushPromises()
+
+    expect(apiMock.saveEnterpriseArchiveImport).toHaveBeenCalledTimes(2)
+    expect(apiMock.importEnterpriseArchive).toHaveBeenCalledTimes(2)
+    const firstOperationID = apiMock.saveEnterpriseArchiveImport.mock.calls[0][0].operation_id
+    expect(firstOperationID).toMatch(/^enterprise-archive-/)
+    expect(apiMock.saveEnterpriseArchiveImport.mock.calls[1][0].operation_id).toBe(firstOperationID)
+    expect(apiMock.createScript).not.toHaveBeenCalled()
+    expect(container.textContent).toContain('Choose Convert again to reconcile the same operation')
+
+    await clickButton(findButton(container, 'Convert 2 Loadrunner Script Archives')!)
+    await flushPromises()
+
+    expect(apiMock.saveEnterpriseArchiveImport).toHaveBeenCalledTimes(3)
+    expect(apiMock.saveEnterpriseArchiveImport.mock.calls[2][0].operation_id).toBe(firstOperationID)
+    expect(apiMock.importEnterpriseArchive).toHaveBeenCalledTimes(2)
+    expect(apiMock.saveEnterpriseArchiveImport.mock.calls[2][0].scripts)
+      .toBe(apiMock.saveEnterpriseArchiveImport.mock.calls[0][0].scripts)
+    expect(container.textContent).toContain('Converted and saved 2 scripts to the library')
+  })
+
   it('keeps a mixed ready-and-review queue mounted while refreshing saved ready scripts', async () => {
     const onImported = vi.fn()
     const readyScript = {
@@ -3547,7 +3944,7 @@ describe('EnterpriseArchiveImport', () => {
     })
     await flushPromises()
 
-    expect(container.querySelector('[role="status"]')).toBeNull()
+    expect(container.querySelector('.script-import-review-save-disabled-reason')?.textContent).toContain('must pass validation')
     expect(container.textContent).toContain('Converted and saved 1 script to the library; 1 archive failed')
     expect(container.textContent).toContain('1 enterprise script archive failed during import review')
     expect(container.textContent).toContain('Unsupported archive layout')
@@ -3843,7 +4240,12 @@ describe('EnterpriseArchiveImport', () => {
       migration_block_statuses: ['blocked', 'compatibility_only'],
     })
     expect(container.textContent).toContain('Validation Review')
-    expect(container.textContent).toContain('validation review')
+    const validationWarningDetails = container.querySelector<HTMLButtonElement>('button[aria-label="View 1 import warning detail"]')
+    expect(validationWarningDetails).not.toBeNull()
+    await clickButton(validationWarningDetails!)
+    expect(document.body.querySelector('[role="dialog"]')?.textContent).toContain('validation review')
+    await clickButton(Array.from(document.body.querySelectorAll<HTMLButtonElement>('[role="dialog"] button'))
+      .find(button => button.textContent?.trim() === 'Close')!)
     expect(container.textContent).toContain('Unsupported Source Functions (1)')
     expect(container.querySelector('[aria-label="enterprise protocol import coverage"]')).toBeNull()
 

@@ -1414,7 +1414,7 @@ func TestBrunoRevisionPrivateKeySourceRestriction(t *testing.T) {
 	}
 }
 
-func TestBrunoImportReportsPartialSecretMigrationWithoutCompensatingCreates(t *testing.T) {
+func TestBrunoImportRollsBackPartialSecretMigrationAndRetries(t *testing.T) {
 	server, records, _ := newBrunoImportAPITestServer(t)
 	enableSourceSecretMigration(t, server)
 	const username = "bruno-partial-source-user-never-return"
@@ -1474,18 +1474,18 @@ http:
 		t.Fatal(err)
 	}
 	if payload.Code != "bruno_secret_migration_partial" || !payload.Partial || payload.ScriptCommitted ||
-		payload.MigratedCount != 1 || len(payload.Migrated) != 1 || payload.Migrated[0].Name != "BRUNO_PARTIAL_A" ||
-		strings.Join(payload.CommittedNames, ",") != "BRUNO_PARTIAL_A" || strings.Join(payload.RemainingNames, ",") != "BRUNO_PARTIAL_B" ||
+		payload.MigratedCount != 0 || len(payload.Migrated) != 0 || len(payload.CommittedNames) != 0 ||
+		strings.Join(payload.RemainingNames, ",") != "BRUNO_PARTIAL_A,BRUNO_PARTIAL_B" ||
 		payload.FailedName != "BRUNO_PARTIAL_B" || payload.Reason != "provider_error" || payload.ImportSessionConsumed ||
-		payload.SourceValuesCleared || !payload.ManualConfigurationRequired || !payload.CommittedSecretsRetained {
+		payload.SourceValuesCleared || !payload.ManualConfigurationRequired || payload.CommittedSecretsRetained {
 		t.Fatalf("partial migration payload = %+v body=%s", payload, response.Body.String())
 	}
 	if strings.Contains(response.Body.String(), username) || strings.Contains(response.Body.String(), password) {
 		t.Fatalf("partial migration response disclosed source values: %s", response.Body.String())
 	}
 	value, _, err := underlying.Get(context.Background(), brunoImportTestProject, "BRUNO_PARTIAL_A")
-	if err != nil || value != username {
-		t.Fatalf("committed partial value = %q, %v", value, err)
+	if !errors.Is(err, secretstore.ErrNotFound) {
+		t.Fatalf("rolled-back partial value = %q, %v", value, err)
 	}
 	if _, _, err := underlying.Get(context.Background(), brunoImportTestProject, "BRUNO_PARTIAL_B"); !errors.Is(err, secretstore.ErrNotFound) {
 		t.Fatalf("failed partial value lookup = %v, want not found", err)
@@ -1495,7 +1495,7 @@ http:
 	}
 	retry := commitBrunoImportWithStatus(t, server, request)
 	if retry.Code != http.StatusCreated || failing.createCalls < 3 {
-		t.Fatalf("retained partial migration retry = %d calls=%d body=%s", retry.Code, failing.createCalls, retry.Body.String())
+		t.Fatalf("rolled-back partial migration retry = %d calls=%d body=%s", retry.Code, failing.createCalls, retry.Body.String())
 	}
 	value, _, err = underlying.Get(context.Background(), brunoImportTestProject, "BRUNO_PARTIAL_A")
 	if err != nil || value != username {
@@ -1511,7 +1511,7 @@ http:
 	}
 }
 
-func TestBrunoImportReportsCommittedSecretsWhenScriptCommitFails(t *testing.T) {
+func TestBrunoImportRollsBackMigratedSecretsWhenScriptCommitFails(t *testing.T) {
 	server, records, _ := newBrunoImportAPITestServer(t)
 	enableSourceSecretMigration(t, server)
 	const username = "bruno-commit-source-user-never-return"
@@ -1556,35 +1556,22 @@ http:
 		t.Fatalf("script commit failure status = %d body=%s", response.Code, response.Body.String())
 	}
 	var payload struct {
-		Code                        string                 `json:"code"`
-		Partial                     bool                   `json:"partial"`
-		ScriptCommitted             bool                   `json:"script_committed"`
-		Migrated                    []secretstore.Metadata `json:"migrated"`
-		MigratedCount               int                    `json:"migrated_count"`
-		CommittedNames              []string               `json:"committed_names"`
-		RemainingNames              []string               `json:"remaining_names"`
-		Reason                      string                 `json:"reason"`
-		ImportSessionConsumed       bool                   `json:"import_session_consumed"`
-		SourceValuesCleared         bool                   `json:"source_values_cleared"`
-		ManualConfigurationRequired bool                   `json:"manual_configuration_required"`
-		CommittedSecretsRetained    bool                   `json:"committed_secrets_retained"`
+		Code            string `json:"code"`
+		Reason          string `json:"reason"`
+		SessionRetained bool   `json:"session_retained"`
 	}
 	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
 		t.Fatal(err)
 	}
-	if payload.Code != "bruno_import_commit_failed_after_secret_migration" || !payload.Partial || payload.ScriptCommitted ||
-		payload.MigratedCount != 2 || len(payload.Migrated) != 2 || strings.Join(payload.CommittedNames, ",") != "BRUNO_COMMIT_A,BRUNO_COMMIT_B" ||
-		len(payload.RemainingNames) != 0 || payload.Reason != "storage_error" || payload.ImportSessionConsumed ||
-		payload.SourceValuesCleared || payload.ManualConfigurationRequired || !payload.CommittedSecretsRetained {
-		t.Fatalf("script commit partial payload = %+v body=%s", payload, response.Body.String())
+	if payload.Code != "bruno_import_commit_failed" || payload.Reason != "storage_error" || !payload.SessionRetained {
+		t.Fatalf("script commit failure payload = %+v body=%s", payload, response.Body.String())
 	}
 	if strings.Contains(response.Body.String(), username) || strings.Contains(response.Body.String(), password) || strings.Contains(response.Body.String(), commitFailure) {
 		t.Fatalf("script commit failure response disclosed protected detail: %s", response.Body.String())
 	}
-	for name, expected := range map[string]string{"BRUNO_COMMIT_A": username, "BRUNO_COMMIT_B": password} {
-		value, _, err := server.projectSecretStore.Get(context.Background(), brunoImportTestProject, name)
-		if err != nil || value != expected {
-			t.Fatalf("committed secret %s = %q, %v", name, value, err)
+	for _, name := range []string{"BRUNO_COMMIT_A", "BRUNO_COMMIT_B"} {
+		if value, _, err := server.projectSecretStore.Get(context.Background(), brunoImportTestProject, name); !errors.Is(err, secretstore.ErrNotFound) {
+			t.Fatalf("rolled-back secret %s = %q, %v", name, value, err)
 		}
 	}
 	if _, err := records.GetScript(request.ScriptID); err == nil {
@@ -1594,10 +1581,9 @@ http:
 	if retry.Code != http.StatusInternalServerError {
 		t.Fatalf("retained script-commit retry status = %d body=%s", retry.Code, retry.Body.String())
 	}
-	for name, expected := range map[string]string{"BRUNO_COMMIT_A": username, "BRUNO_COMMIT_B": password} {
-		value, _, err := server.projectSecretStore.Get(context.Background(), brunoImportTestProject, name)
-		if err != nil || value != expected {
-			t.Fatalf("retry changed committed secret %s = %q, %v", name, value, err)
+	for _, name := range []string{"BRUNO_COMMIT_A", "BRUNO_COMMIT_B"} {
+		if value, _, err := server.projectSecretStore.Get(context.Background(), brunoImportTestProject, name); !errors.Is(err, secretstore.ErrNotFound) {
+			t.Fatalf("retry left orphan secret %s = %q, %v", name, value, err)
 		}
 	}
 	events, err := records.ListAuditEvents(storage.AuditEventFilter{ProjectID: brunoImportTestProject, Limit: 20})
@@ -1607,6 +1593,56 @@ http:
 	encodedEvents, _ := json.Marshal(events)
 	if strings.Contains(string(encodedEvents), username) || strings.Contains(string(encodedEvents), password) || strings.Contains(string(encodedEvents), commitFailure) {
 		t.Fatalf("script commit failure audit disclosed protected detail: %s", encodedEvents)
+	}
+}
+
+func TestBrunoImportRetainsMigratedSecretsWhenCommitStateIsUnknown(t *testing.T) {
+	server, records, _ := newBrunoImportAPITestServer(t)
+	enableSourceSecretMigration(t, server)
+	const password = "bruno-unknown-commit-password-never-return"
+	inspect := inspectBrunoJSON(t, server, []byte(`info: {name: Unknown commit, type: http}
+http:
+  method: GET
+  url: https://example.test
+  auth: {type: basic, username: operator, password: `+password+`}
+`), "")
+	bindings := make(map[string]string, len(inspect.Result.SecretRequirements))
+	for index, requirement := range inspect.Result.SecretRequirements {
+		bindings[requirement.ID] = fmt.Sprintf("BRUNO_UNKNOWN_%d", index+1)
+	}
+	brunoStore := any(records).(storage.BrunoImportStore)
+	server.store = &failingBrunoCommitStore{
+		Store: records, delegate: brunoStore,
+		err: errors.New("lost commit acknowledgement"), lookupErr: errors.New("receipt lookup unavailable"),
+	}
+	migrate := true
+	response := commitBrunoImportWithStatus(t, server, brunoCommitRequest{
+		ProjectID: brunoImportTestProject, ImportSessionID: inspect.ImportSessionID,
+		Mode: "create", ScriptID: "bruno-unknown-commit", SecretBindings: bindings, MigrateSecrets: &migrate,
+	})
+	if response.Code != http.StatusServiceUnavailable {
+		t.Fatalf("unknown commit status = %d body=%s", response.Code, response.Body.String())
+	}
+	var failure struct {
+		Code            string   `json:"code"`
+		CommitState     string   `json:"commit_state"`
+		CommittedNames  []string `json:"committed_names"`
+		SessionRetained bool     `json:"session_retained"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &failure); err != nil {
+		t.Fatal(err)
+	}
+	if failure.Code != "bruno_import_commit_state_unknown" || failure.CommitState != "unknown" ||
+		!failure.SessionRetained || len(failure.CommittedNames) != len(bindings) {
+		t.Fatalf("unknown commit payload = %#v body=%s", failure, response.Body.String())
+	}
+	if strings.Contains(response.Body.String(), password) || strings.Contains(response.Body.String(), "receipt lookup unavailable") {
+		t.Fatalf("unknown commit response disclosed protected detail: %s", response.Body.String())
+	}
+	for _, name := range bindings {
+		if _, _, err := server.projectSecretStore.Get(context.Background(), brunoImportTestProject, name); err != nil {
+			t.Fatalf("unknown commit removed retained secret %q: %v", name, err)
+		}
 	}
 }
 
@@ -1706,6 +1742,27 @@ func TestBoundedBrunoImportSecretValues(t *testing.T) {
 				t.Fatalf("error = %v, want substring %q", err, test.wantError)
 			}
 		})
+	}
+}
+
+func TestBoundedBrunoImportSecretValuesOmitsRedactionSentinels(t *testing.T) {
+	values, err := boundedBrunoImportSecretValues([]brunoconvert.SecretRequirement{
+		{ID: "exact", Value: " [rEdAcTeD] "},
+		{ID: "authorization", Value: "Bearer [REDACTED]"},
+		{ID: "cookie", Value: "sid=[redacted]"},
+		{ID: "percent", Value: "%5BReDaCtEd%5D"},
+		{ID: "nested-percent", Value: "%25255BReDaCtEd%25255D"},
+		{ID: "malformed-percent", Value: "%5BReDaCtEd%5D%ZZ"},
+		{ID: "xml", Value: "&#91;ReDaCtEd&#93;"},
+		{ID: "nested-xml", Value: "&amp;amp;#91;ReDaCtEd&amp;amp;#93;"},
+		{ID: "depth-cap", Value: strings.Repeat("%25", 40) + "5BReDaCtEd%5D"},
+		{ID: "usable", Value: "real-source-value"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(values) != 1 || values["usable"] != "real-source-value" {
+		t.Fatalf("bounded Bruno source values = %#v", values)
 	}
 }
 
@@ -2496,6 +2553,18 @@ func (s *blockingCreateSecretStore) List(ctx context.Context, projectID string) 
 func (s *blockingCreateSecretStore) Writable() bool   { return s.delegate.Writable() }
 func (s *blockingCreateSecretStore) Provider() string { return "blocking-" + s.delegate.Provider() }
 
+func (s *blockingCreateSecretStore) RollbackCreated(ctx context.Context, projectID, name, actor string) (bool, error) {
+	rollback, ok := s.delegate.(secretstore.CreatedValueRollbackStore)
+	if !ok {
+		return false, secretstore.ErrRollbackUnsupported
+	}
+	return rollback.RollbackCreated(ctx, projectID, name, actor)
+}
+
+func (s *blockingCreateSecretStore) CreatedValueRollbackSupported() bool {
+	return secretstore.SupportsCreatedValueRollback(s.delegate)
+}
+
 func (s *blockingCreateSecretStore) createNames() []string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -2504,8 +2573,9 @@ func (s *blockingCreateSecretStore) createNames() []string {
 
 type failingBrunoCommitStore struct {
 	storage.Store
-	delegate storage.BrunoImportStore
-	err      error
+	delegate  storage.BrunoImportStore
+	err       error
+	lookupErr error
 }
 
 func (s *failingBrunoCommitStore) CommitBrunoImport(*storage.BrunoImportCommit) (*storage.BrunoImportCommitResult, error) {
@@ -2517,6 +2587,9 @@ func (s *failingBrunoCommitStore) GetBrunoSourceArtifact(id string, projectID st
 }
 
 func (s *failingBrunoCommitStore) GetBrunoSourceRevision(id string, projectID string) (*storage.BrunoSourceRevision, error) {
+	if s.lookupErr != nil {
+		return nil, s.lookupErr
+	}
 	return s.delegate.GetBrunoSourceRevision(id, projectID)
 }
 
@@ -2584,6 +2657,12 @@ func (*brunoMigrationRaceStore) Replace(context.Context, string, string, string,
 func (*brunoMigrationRaceStore) List(context.Context, string) ([]secretstore.Metadata, error) {
 	return nil, nil
 }
+
+func (*brunoMigrationRaceStore) RollbackCreated(context.Context, string, string, string) (bool, error) {
+	return true, nil
+}
+
+func (*brunoMigrationRaceStore) CreatedValueRollbackSupported() bool { return true }
 
 func (*brunoMigrationRaceStore) Writable() bool   { return true }
 func (*brunoMigrationRaceStore) Provider() string { return "race-test" }

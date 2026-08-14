@@ -78,7 +78,15 @@ describe('OracleEBusinessReviewImport', () => {
       source_text: 'GET /OA_HTML/OA.jsp?page=checkout',
     }))
     expect(container.textContent).toContain('Checkout Review')
-    expect(container.textContent).toContain('Oracle E-Business Signals')
+    expect(container.textContent).not.toContain('ICX session identifiers detected.')
+    const reviewDetails = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Review details'))
+    expect(reviewDetails).toBeDefined()
+    await act(async () => {
+      reviewDetails?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(document.body.textContent).toContain('Oracle E-Business Signals')
+    expect(document.body.textContent).toContain('ICX session identifiers detected.')
+    expect(document.body.textContent).toContain('icx_ticket correlation candidate')
     expect(container.textContent).toContain('Confirm Oracle E-Business runtime settings before saving reusable assets.')
 
     // Review-only surface: there must be no save / save-to-library control.

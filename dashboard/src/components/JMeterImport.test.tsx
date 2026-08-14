@@ -161,7 +161,7 @@ describe('JMeterImport', () => {
     })
   })
 
-  it('publishes a completed batch save even when the JMeter review changes in flight', async () => {
+  it('locks source options until a deferred JMeter batch save settles', async () => {
     const onImported = vi.fn()
     let resolveSave!: (value: unknown) => void
     apiMock.saveJMeterImport.mockReturnValueOnce(new Promise(resolve => { resolveSave = resolve }))
@@ -187,9 +187,12 @@ describe('JMeterImport', () => {
         .find(button => button.textContent?.includes('Save Reviewed 1 Script'))?.click()
     })
     const includeAssertions = Array.from(container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]'))[0]
+    expect(includeAssertions.disabled).toBe(true)
+    const reviewedOption = includeAssertions.checked
     await act(async () => {
       includeAssertions?.click()
     })
+    expect(includeAssertions.checked).toBe(reviewedOption)
     await act(async () => {
       resolveSave({
         count: 1,
@@ -206,8 +209,55 @@ describe('JMeterImport', () => {
 
     expect(onImported).toHaveBeenCalledWith(expect.objectContaining({
       scripts: [expect.objectContaining({ id: 'jmeter-saved-after-change' })],
-      stayInImportReview: true,
     }))
+    expect(onImported.mock.calls[0]?.[0]).not.toHaveProperty('stayInImportReview')
+  })
+
+  it('reports a deferred batch save as busy until its persistence response settles', async () => {
+    const onOperationBusyChange = vi.fn()
+    let resolveSave!: (value: unknown) => void
+    apiMock.saveJMeterImport.mockReturnValueOnce(new Promise(resolve => { resolveSave = resolve }))
+    await act(async () => {
+      root.render(<JMeterImport projectId="project-1" onOperationBusyChange={onOperationBusyChange} />)
+    })
+    await flushPromises()
+    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"]')!
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', {
+        configurable: true,
+        value: [new File(['<jmeterTestPlan />'], 'deferred-save.jmx')],
+      })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await act(async () => {
+      Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+        .find(button => button.textContent?.includes('Validate Only'))?.click()
+    })
+    await flushPromises()
+    onOperationBusyChange.mockClear()
+
+    await act(async () => {
+      Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+        .find(button => button.textContent?.includes('Save Reviewed 1 Script'))?.click()
+      await Promise.resolve()
+    })
+    expect(onOperationBusyChange).toHaveBeenLastCalledWith(true)
+
+    await act(async () => {
+      resolveSave({
+        count: 1,
+        scripts: [{
+          id: 'jmeter-deferred-save',
+          name: 'Auth_Users',
+          protocol: 'http',
+          version: '1.0.0',
+          created_at: '2026-05-17T00:00:00Z',
+        }],
+      })
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(onOperationBusyChange).toHaveBeenLastCalledWith(false)
   })
 
   it('publishes a batch save completed after Back without navigating away from the next review', async () => {
@@ -659,6 +709,118 @@ describe('JMeterImport', () => {
     }))
   })
 
+  it('reuses a configured project secret when an atomic JMeter script save is retried', async () => {
+    const redactedScript = {
+      name: 'JMeter Credential Retry',
+      version: '1.0.0',
+      protocol: 'http',
+      config: { base_url: 'https://api.example.test' },
+      actions: [{
+        name: 'List Orders',
+        type: 'request',
+        method: 'GET',
+        target: '/orders',
+        headers: { Authorization: '[REDACTED]' },
+      }],
+    }
+    const resolvedScript = {
+      ...redactedScript,
+      actions: [{
+        ...redactedScript.actions[0],
+        headers: { Authorization: 'Bearer {{secret.JMETER_API_TOKEN}}' },
+      }],
+    }
+    apiMock.validateJMeterImport.mockResolvedValueOnce({
+      scripts: [redactedScript],
+      script: redactedScript,
+      warnings: [],
+      unsupported_elements: [],
+      assumptions: [],
+      review_sections: [],
+      repair_suggestions: [],
+      stats: {
+        thread_groups: 1,
+        samplers: 1,
+        total_samplers: 1,
+        skipped_samplers: 0,
+        converted_actions: 1,
+        headers: 1,
+        variables: 0,
+        csv_sources: 0,
+        assertions: 0,
+        timers: 0,
+        unsupported: 0,
+      },
+      summary: { file_name: 'credential-retry.jmx' },
+      secret_binding_requirements: [{
+        id: 'jmeter-api-token',
+        path: '/actions/0/headers/Authorization',
+        label: 'List Orders — Authorization header',
+        context: 'Bearer credential used by the imported JMeter request.',
+        suggested_name: 'JMETER_API_TOKEN',
+        script_index: 0,
+        script_name: redactedScript.name,
+      }],
+    })
+    apiMock.applySecretBindings.mockResolvedValueOnce({
+      script: resolvedScript,
+      secret_binding_requirements: [],
+    })
+    apiMock.saveJMeterImport
+      .mockRejectedValueOnce(new Error('atomic JMeter script save unavailable'))
+      .mockResolvedValueOnce({
+        count: 1,
+        scripts: [{
+          id: 'saved-jmeter-retry',
+          name: resolvedScript.name,
+          protocol: resolvedScript.protocol,
+          version: resolvedScript.version,
+          created_at: '2026-01-01T00:00:00Z',
+          script: resolvedScript,
+        }],
+      })
+
+    await act(async () => root.render(<JMeterImport projectId="project-1" />))
+    await flushPromises()
+    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"]')!
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', {
+        configurable: true,
+        value: [new File(['<jmeterTestPlan />'], 'credential-retry.jmx', { type: 'application/xml' })],
+      })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    const validate = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent?.includes('Validate Only'))!
+    await act(async () => validate.click())
+    await flushPromises()
+
+    const valueInput = container.querySelector<HTMLInputElement>('input[aria-label="Secret value for JMETER_API_TOKEN"]')!
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set
+      setter?.call(valueInput, 'write-only-jmeter-token')
+      valueInput.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    const save = container.querySelector<HTMLButtonElement>('.script-import-review-actions .btn-primary')!
+    await act(async () => save.click())
+    await flushPromises()
+    await flushPromises()
+
+    expect(apiMock.createProjectSecrets).toHaveBeenCalledTimes(1)
+    expect(apiMock.saveJMeterImport).toHaveBeenCalledTimes(1)
+    expect(container.textContent).toContain('atomic JMeter script save unavailable')
+    expect(container.textContent).toContain('remain in Project Secrets independently of script saving')
+    expect(container.textContent).toContain('retrying this save reuses those configured values')
+    expect(container.textContent).not.toContain('write-only-jmeter-token')
+
+    const retry = container.querySelector<HTMLButtonElement>('.script-import-review-actions .btn-primary')!
+    await act(async () => retry.click())
+    await flushPromises()
+
+    expect(apiMock.saveJMeterImport).toHaveBeenCalledTimes(2)
+    expect(apiMock.createProjectSecrets).toHaveBeenCalledTimes(1)
+  })
+
   it('uses script indexes for duplicate legacy names when parameterizing a multi-script review', async () => {
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined)
     const first = { name: 'Shared Override', version: '1.0.0', protocol: 'http', config: { base_url: '' }, actions: [{ name: 'First', type: 'request', method: 'GET', target: '/first' }] }
@@ -688,8 +850,11 @@ describe('JMeterImport', () => {
     await flushPromises()
 
     const applyButtons = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).filter(button => button.textContent?.includes('Apply Selected'))
-    expect(applyButtons).toHaveLength(2)
-    await act(async () => applyButtons[1].click())
+    expect(applyButtons).toHaveLength(1)
+    const nextScript = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Next script'))!
+    await act(async () => nextScript.click())
+    const secondApply = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Apply Selected'))!
+    await act(async () => secondApply.click())
     await flushPromises()
     const save = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Save Reviewed 2 Scripts'))!
     await act(async () => save.click())
@@ -746,7 +911,7 @@ describe('JMeterImport', () => {
     expect(apiMock.saveJMeterImport).not.toHaveBeenCalled()
   })
 
-  it('adds the active project id when saving reviewed scripts', async () => {
+  it('adds the active project and selected destination folder when saving reviewed scripts', async () => {
     apiMock.saveJMeterImport.mockResolvedValueOnce({
       count: 1,
       scripts: [
@@ -761,7 +926,7 @@ describe('JMeterImport', () => {
     })
 
     await act(async () => {
-      root.render(<JMeterImport projectId="project-1" />)
+      root.render(<JMeterImport projectId="project-1" folderId="folder-load-tests" />)
     })
 
     await flushPromises()
@@ -804,8 +969,34 @@ describe('JMeterImport', () => {
     })
 
     expect(apiMock.saveJMeterImport).toHaveBeenCalledWith(expect.objectContaining({
-      scripts: [expect.objectContaining({ project_id: 'project-1' })],
+      scripts: [expect.objectContaining({ project_id: 'project-1', folder_id: 'folder-load-tests' })],
     }))
+  })
+
+  it('accepts a multi-plan JMeter ZIP archive', async () => {
+    await act(async () => {
+      root.render(<JMeterImport projectId="project-1" />)
+    })
+    await flushPromises()
+
+    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"]')!
+    expect(fileInput.accept).toContain('.zip')
+    const archive = new File(['PK\u0003\u0004'], 'plans.zip', { type: 'application/zip' })
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', { configurable: true, value: [archive] })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    expect(container.textContent).toContain('plans.zip')
+
+    const validateButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent?.includes('Validate Only'))!
+    await act(async () => validateButton.click())
+    await flushPromises()
+
+    expect(apiMock.validateJMeterImport).toHaveBeenCalledWith(
+      archive,
+      expect.objectContaining({ project_id: 'project-1' }),
+    )
   })
 
   it('returns the first persisted script through the import save handoff', async () => {

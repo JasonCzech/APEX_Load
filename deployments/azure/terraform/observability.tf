@@ -8,8 +8,9 @@ resource "azurerm_log_analytics_workspace" "main" {
 }
 
 resource "azurerm_monitor_diagnostic_setting" "aks" {
+  count                      = local.aks_enabled ? 1 : 0
   name                       = "${local.name}-aks-diagnostics"
-  target_resource_id         = azurerm_kubernetes_cluster.main.id
+  target_resource_id         = azurerm_kubernetes_cluster.main[0].id
   log_analytics_workspace_id = azurerm_log_analytics_workspace.main.id
 
   dynamic "enabled_log" {
@@ -31,6 +32,11 @@ resource "azurerm_monitor_diagnostic_setting" "aks" {
   enabled_metric {
     category = "AllMetrics"
   }
+}
+
+moved {
+  from = azurerm_monitor_diagnostic_setting.aks
+  to   = azurerm_monitor_diagnostic_setting.aks[0]
 }
 
 resource "azurerm_monitor_diagnostic_setting" "acr" {
@@ -69,7 +75,7 @@ resource "azurerm_monitor_diagnostic_setting" "postgres" {
 
 resource "azurerm_monitor_diagnostic_setting" "redis" {
   name                       = "${local.name}-redis-diagnostics"
-  target_resource_id         = azurerm_redis_cache.main.id
+  target_resource_id         = local.redis_resource_id
   log_analytics_workspace_id = azurerm_log_analytics_workspace.main.id
 
   enabled_metric {

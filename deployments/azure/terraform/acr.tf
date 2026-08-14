@@ -9,8 +9,14 @@ resource "azurerm_container_registry" "main" {
 
 # Nodes pull images with the kubelet identity — no imagePullSecrets needed.
 resource "azurerm_role_assignment" "aks_acr_pull" {
+  count                            = local.aks_enabled ? 1 : 0
   scope                            = azurerm_container_registry.main.id
   role_definition_name             = "AcrPull"
-  principal_id                     = azurerm_kubernetes_cluster.main.kubelet_identity[0].object_id
+  principal_id                     = azurerm_kubernetes_cluster.main[0].kubelet_identity[0].object_id
   skip_service_principal_aad_check = true
+}
+
+moved {
+  from = azurerm_role_assignment.aks_acr_pull
+  to   = azurerm_role_assignment.aks_acr_pull[0]
 }

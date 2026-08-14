@@ -130,6 +130,36 @@ func resolveJMeterVariableDefinitions(
 	}
 
 	names := sortedJMeterDefinitionKeys(definitions)
+	caseFoldedNames := make(map[string][]string, len(names))
+	for _, name := range names {
+		identity := strings.ToLower(strings.TrimSpace(name))
+		caseFoldedNames[identity] = append(caseFoldedNames[identity], name)
+	}
+	identities := make([]string, 0, len(caseFoldedNames))
+	for identity := range caseFoldedNames {
+		identities = append(identities, identity)
+	}
+	sort.Strings(identities)
+	for _, identity := range identities {
+		collisions := caseFoldedNames[identity]
+		if len(collisions) < 2 {
+			continue
+		}
+		for _, name := range collisions {
+			resolution.invalid[name] = struct{}{}
+		}
+		if diagnostics != nil {
+			diagnostics.Add(
+				diag.Warning,
+				"JMeter variable name collision",
+				"Arguments",
+				fmt.Sprintf(
+					"source variables differ only by case (%s), but the destination runtime resolves variable names case-insensitively; these bindings and their dependents were left unresolved",
+					strings.Join(collisions, ", "),
+				),
+			)
+		}
+	}
 	nodes := make([]requestimport.BindingNode, 0, len(names))
 	remainingEdges := limits.MaxEdges
 	for _, name := range names {
@@ -188,6 +218,20 @@ func resolveJMeterVariableDefinitions(
 	}
 	for name := range reverse {
 		sort.Strings(reverse[name])
+	}
+	// Dependency analysis and destination-name collisions both invalidate any
+	// binding that consumes the ambiguous value. Propagate that closure before
+	// scheduling otherwise-ready definitions so none can be materialized from a
+	// case-sensitive JMeter identity the destination cannot preserve.
+	invalidQueue := sortedJMeterVariableSet(resolution.invalid)
+	for index := 0; index < len(invalidQueue); index++ {
+		for _, dependent := range reverse[invalidQueue[index]] {
+			if _, invalid := resolution.invalid[dependent]; invalid {
+				continue
+			}
+			resolution.invalid[dependent] = struct{}{}
+			invalidQueue = append(invalidQueue, dependent)
+		}
 	}
 	ready := make([]string, 0, len(names))
 	for _, name := range names {

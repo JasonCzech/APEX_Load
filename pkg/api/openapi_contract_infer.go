@@ -138,9 +138,28 @@ func inferRouteContracts(serverGoPath string, routes []discoveredRoute) (map[str
 		contract := inferredContractForAnalysis(route, analysis)
 		applySystemSettingsConcurrencyContract(route, &contract)
 		applyDataPoolImportExportContract(route, &contract)
+		applyGenericImportBatchContract(route, &contract)
 		contracts[route.Method+" "+route.Path] = contract
 	}
 	return contracts, nil
+}
+
+func applyGenericImportBatchContract(route discoveredRoute, contract *inferredRouteContract) {
+	if contract == nil || route.Method != http.MethodPost || route.Path != "/api/v1/scripts/import/commit-batch" || contract.RequestBody == nil {
+		return
+	}
+	mediaType, ok := contract.RequestBody.Content["application/json"]
+	if !ok {
+		return
+	}
+	profile, ok := mediaType.Schema.Properties["source_profile"]
+	if !ok {
+		return
+	}
+	profile.Enum = genericImportSourceProfileWireValues()
+	profile.Description = "Importer workflow that produced the drafts. Values are strictly fenced to compatible server-attested source profiles."
+	mediaType.Schema.Properties["source_profile"] = profile
+	contract.RequestBody.Content["application/json"] = mediaType
 }
 
 // openAPICrossPackageDirectories is deliberately bounded to the model packages
@@ -228,9 +247,32 @@ var explicitRouteContractTypes = map[string]struct {
 		requestType:   "ClusterConnectionRequest",
 		responseTypes: map[int]string{200: "ClusterConnectionResponse"},
 	},
+	"POST /api/v1/system/cloud-connections": {
+		requestType:   "CloudConnectionRequest",
+		responseTypes: map[int]string{201: "CloudConnectionResponse"},
+	},
+	"PUT /api/v1/system/cloud-connections/{id}": {
+		requestType:   "CloudConnectionRequest",
+		responseTypes: map[int]string{200: "CloudConnectionResponse"},
+	},
+	"POST /api/v1/system/execution-targets": {
+		requestType:   "ExecutionTargetRequest",
+		responseTypes: map[int]string{201: "storage.ExecutionTarget"},
+	},
+	"PUT /api/v1/system/execution-targets/{id}": {
+		requestType:   "ExecutionTargetRequest",
+		responseTypes: map[int]string{200: "storage.ExecutionTarget"},
+	},
+	"GET /api/v1/generator-gateway/connect": {
+		responseTypes:       map[int]string{http.StatusSwitchingProtocols: "GeneratorGatewayConnectResponse"},
+		responseDescription: "Upgrades an authenticated generator-originated WebSocket to the reverse gRPC transport.",
+	},
 	"PUT /api/v1/fleet/pools/{id}/allocation": {
 		requestType:   "FleetPoolAllocationRequest",
 		responseTypes: map[int]string{200: "FleetPoolAllocationResponse"},
+	},
+	"GET /api/v1/fleet/provision-requests/{id}/instances": {
+		responseTypes: map[int]string{200: "CapacityInstanceListResponse"},
 	},
 	"POST /api/v1/ci/runs/{id}/abort": {
 		requestType:     "ciAbortRequest",
@@ -1058,6 +1100,9 @@ func explicitRequestRequiredFields(method, path string, properties map[string]oa
 		"POST /api/v1/scripts/export/k6":                                                                {"script"},
 		"POST /api/v1/scripts/import/github":                                                            {"owner", "path", "repo"},
 		"POST /api/v1/scripts/import/sample":                                                            {"content", "format"},
+		"POST /api/v1/scripts/import/asyncapi/commit-batch":                                             {"operation_id", "scripts"},
+		"POST /api/v1/scripts/import/commit-batch":                                                      {"operation_id", "scripts", "source_profile"},
+		"POST /api/v1/scripts/import/enterprise-script-archive/save":                                    {"operation_id", "scripts"},
 		"POST /api/v1/scripts/secret-bindings/apply":                                                    {"script"},
 		"POST /api/v1/selectors/diagnose":                                                               {"steps"},
 		"POST /api/v1/system/deployment-lease/acquire":                                                  {"owner_id"},

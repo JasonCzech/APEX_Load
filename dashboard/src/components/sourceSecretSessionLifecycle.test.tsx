@@ -87,4 +87,16 @@ describe('useSourceSecretSessionLifecycle', () => {
 
     expect(discard).not.toHaveBeenCalled()
   })
+
+  it('settles a consumed session without discarding it again on unmount', async () => {
+    await act(async () => {
+      lifecycle.replace('conversion', 'project-1', 'consumed-session')
+      lifecycle.settle('conversion', 'project-1', 'consumed-session')
+      root.unmount()
+      mounted = false
+      await Promise.resolve()
+    })
+
+    expect(discard).not.toHaveBeenCalled()
+  })
 })

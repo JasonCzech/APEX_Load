@@ -17,6 +17,8 @@ import (
 
 const (
 	executionEpochStateDirEnv   = "APEXLOAD_GENERATOR_STATE_DIR"
+	generatorLifecycleEnv       = "APEXLOAD_GENERATOR_LIFECYCLE"
+	generatorLifecycleBurst     = "burst"
 	executionEpochStateVersion  = 3
 	maxExecutionEpochStateBytes = 4096
 	maxExecutionLeaseOwnerBytes = 512
@@ -80,7 +82,13 @@ func openExecutionEpochState(service *Service) (*executionEpochStateStore, uint6
 		name := sanitizeArchiveNamespace(service.generatorID) + ".execution-epoch.json"
 		return loadExecutionEpochState(&executionEpochStateStore{root: root, name: name, ownsRoot: true})
 	}
-	if isProductionEnvironment(os.Getenv("APEXLOAD_ENV")) {
+	// Burst generators are assigned a fresh, never-reused identity for every
+	// provider launch. There is therefore no replacement process that can
+	// inherit the same identity's stale generation high-water, and ephemeral
+	// Fargate/Container Apps Job storage cannot satisfy the durable-state
+	// contract. Keep standing production generators fail-closed.
+	burstLifecycle := strings.EqualFold(strings.TrimSpace(os.Getenv(generatorLifecycleEnv)), generatorLifecycleBurst)
+	if isProductionEnvironment(os.Getenv("APEXLOAD_ENV")) && !burstLifecycle {
 		return nil, 0, "", fmt.Errorf("%s is required in production and must be backed by storage that survives generator replacement", executionEpochStateDirEnv)
 	}
 	archiveNamespace, archiveNamespaceErr := service.archiveManager.namespaceSnapshot()

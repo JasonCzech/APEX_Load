@@ -176,19 +176,8 @@ func TestProjectSecretAPIRejectsRedactedSentinelForCreateAndRotation(t *testing.
 	sessionID, err := server.registerSourceSecretSession(sessionRequest, projectID, map[string]string{
 		"redacted-requirement": " [redacted] ",
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	migrate := secretAPIRequest(t, server, http.MethodPost, "/api/v1/scripts/import/secrets/migrate", map[string]any{
-		"project_id":               projectID,
-		"source_secret_session_id": sessionID,
-		"secrets": []map[string]string{{
-			"requirement_id": "redacted-requirement",
-			"secret_name":    "REDACTED_MIGRATION",
-		}},
-	})
-	if migrate.Code != http.StatusBadRequest {
-		t.Fatalf("migration sentinel status = %d body=%s", migrate.Code, migrate.Body.String())
+	if err == nil || sessionID != "" {
+		t.Fatalf("redaction sentinel session registration = %q, %v; want rejection", sessionID, err)
 	}
 	if _, _, err := managed.Get(context.Background(), projectID, "REDACTED_MIGRATION"); !errors.Is(err, secretstore.ErrNotFound) {
 		t.Fatalf("redacted migration persisted a configured value: %v", err)
@@ -256,6 +245,18 @@ func (s *failNthCreateSecretStore) List(ctx context.Context, projectID string) (
 
 func (s *failNthCreateSecretStore) Writable() bool   { return s.delegate.Writable() }
 func (s *failNthCreateSecretStore) Provider() string { return s.delegate.Provider() }
+
+func (s *failNthCreateSecretStore) RollbackCreated(ctx context.Context, projectID, name, actor string) (bool, error) {
+	rollback, ok := s.delegate.(secretstore.CreatedValueRollbackStore)
+	if !ok {
+		return false, secretstore.ErrRollbackUnsupported
+	}
+	return rollback.RollbackCreated(ctx, projectID, name, actor)
+}
+
+func (s *failNthCreateSecretStore) CreatedValueRollbackSupported() bool {
+	return secretstore.SupportsCreatedValueRollback(s.delegate)
+}
 
 type createUnsupportedSecretStore struct{ secretstore.Store }
 

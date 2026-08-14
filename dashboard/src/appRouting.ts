@@ -18,7 +18,7 @@ export type AppView = AppWorkspaceScope & (
   | { page: 'scripts'; mode?: 'list' | 'create' | 'edit' | 'import'; scriptId?: string }
   | { page: 'swagger' }
   | { page: 'repository-guide' }
-  | { page: 'recorder-panel'; sessionId: string }
+  | { page: 'recorder-panel'; sessionId: string; folderId?: string }
   | { page: 'test'; testId: string; tab?: TestWorkspaceTabID }
 )
 
@@ -228,10 +228,11 @@ export function parseAppViewFromHash(hash: string): AppView {
 
   if (page === 'recorder-panel') {
     const sessionId = params.get('session') || undefined
+    const folderId = params.get('folderId') || undefined
     // The compact recorder panel cannot function without a session. Recover to
     // the script library instead of leaving the normal application shell blank.
     return sessionId
-      ? { page: 'recorder-panel', sessionId, ...workspaceScope }
+      ? { page: 'recorder-panel', sessionId, ...(folderId ? { folderId } : {}), ...workspaceScope }
       : { page: 'scripts', ...workspaceScope }
   }
 
@@ -378,6 +379,7 @@ export function viewToLocationHash(view: AppView): string {
 
   if (view.page === 'recorder-panel') {
     const params = new URLSearchParams({ session: view.sessionId })
+    if (view.folderId) params.set('folderId', view.folderId)
     appendWorkspaceScope(params, view)
     return `#/recorder-panel?${params.toString()}`
   }

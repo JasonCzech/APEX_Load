@@ -60,8 +60,9 @@ func TestHandlePreviewRecordingConversionDoesNotStoreScript(t *testing.T) {
 		Script struct {
 			Name    string `json:"name"`
 			Actions []struct {
-				Name   string `json:"name"`
-				Target string `json:"target"`
+				Name    string            `json:"name"`
+				Target  string            `json:"target"`
+				Headers map[string]string `json:"headers"`
 			} `json:"actions"`
 		} `json:"script"`
 		SecretBindingRequirements []SecretBindingRequirement `json:"secret_binding_requirements"`
@@ -81,8 +82,9 @@ func TestHandlePreviewRecordingConversionDoesNotStoreScript(t *testing.T) {
 	if len(result.SecretBindingRequirements) == 0 {
 		t.Fatalf("preview secret requirements = %#v", result.SecretBindingRequirements)
 	}
-	if !strings.Contains(resp.Body.String(), "preview-secret") {
-		t.Fatalf("authorized import preview discarded recorded credential: %s", resp.Body.String())
+	if strings.Contains(resp.Body.String(), "preview-secret") ||
+		result.Script.Actions[0].Headers["Authorization"] != "Bearer "+maskedScriptSecret {
+		t.Fatalf("recording preview disclosed or failed to represent its protected credential: %s", resp.Body.String())
 	}
 	if got := len(server.runner.ListScripts()); got != 0 {
 		t.Fatalf("preview stored %d scripts, want 0", got)

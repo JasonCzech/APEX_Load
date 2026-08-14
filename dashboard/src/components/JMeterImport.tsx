@@ -23,12 +23,17 @@ import './EnterpriseArchiveImport.css'
 interface Props {
   initialFile?: File | null
   projectId?: string
+  folderId?: string | null
   onImported?: (result: ImportedSaveResult) => void
   onEdit?: (script: ScriptDefinition) => void
   onClose?: () => void
+  onOperationBusyChange?: (busy: boolean) => void
 }
 
 type ReviewMode = 'validation' | 'conversion'
+
+const JMETER_ASSET_PAGE_SIZE = 50
+const JMETER_EXTRACTOR_PAGE_SIZE = 100
 
 function getPrimaryScript(result: ImportResult | null): ScriptDefinition | null {
   return result?.script || result?.scripts?.[0] || null
@@ -51,7 +56,7 @@ function sourceReviewForJMeter(result?: ImportResult | null, script?: ScriptDefi
   return review
 }
 
-export default function JMeterImport({ initialFile, projectId, onImported, onEdit, onClose }: Props) {
+export default function JMeterImport({ initialFile, projectId, folderId, onImported, onEdit, onClose, onOperationBusyChange }: Props) {
   const api = useApi()
   const sourceSecretSessions = useSourceSecretSessionLifecycle(api.discardImportSecretSession)
   const fileRef = useRef<HTMLInputElement>(null)
@@ -63,6 +68,11 @@ export default function JMeterImport({ initialFile, projectId, onImported, onEdi
   const { phase: ingestPhase, label: ingestLabel, hostClassName: ingestHostClass, begin: beginIngest, succeed: succeedIngest, fail: failIngest } = useDropIngestFeedback()
   const [workingMode, setWorkingMode] = useState<'convert' | 'validate' | null>(null)
   const [saving, setSaving] = useState(false)
+  const saveInFlightRef = useRef<{
+    result: ImportResult
+    projectId: string | undefined
+    file: File | null
+  } | null>(null)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [supportMatrix, setSupportMatrix] = useState<SupportMatrix | null>(null)
@@ -86,18 +96,33 @@ export default function JMeterImport({ initialFile, projectId, onImported, onEdi
   const reviewProjectIdRef = useRef(projectId)
   reviewProjectIdRef.current = projectId
   const [parameterizationApplyingByScript, setParameterizationApplyingByScript] = useState<Record<string, boolean>>({})
+  const [parameterizationScriptIndex, setParameterizationScriptIndex] = useState(0)
+  const [assetPage, setAssetPage] = useState(0)
+  const [extractorPage, setExtractorPage] = useState(0)
   const parameterizationApplying = Object.values(parameterizationApplyingByScript).some(Boolean)
   const [credentialActionInProgress, setCredentialActionInProgress] = useState(false)
   const credentialReviewRef = useRef<SecretBindingReviewHandle | null>(null)
+  const operationBusy = workingMode !== null || saving || parameterizationApplying || credentialActionInProgress
+  const sourceMutationLocked = saving
+  const sourceMutationLockedRef = useRef(sourceMutationLocked)
+  sourceMutationLockedRef.current = sourceMutationLocked
+  useEffect(() => {
+    onOperationBusyChange?.(operationBusy)
+    return () => onOperationBusyChange?.(false)
+  }, [onOperationBusyChange, operationBusy])
   const invalidateReview = useCallback(() => {
     sourceSecretSessions.clear('review')
     advanceReviewGeneration()
     setWorkingMode(null)
-    setSaving(false)
+    // Invalidating the visible review does not cancel an HTTP save already in
+    // flight. Its physical fence stays raised until that promise settles.
     setResult(null)
     setReviewMode(null)
     setNotice('')
     setParameterizationApplyingByScript({})
+    setParameterizationScriptIndex(0)
+    setAssetPage(0)
+    setExtractorPage(0)
     setCredentialActionInProgress(false)
   }, [advanceReviewGeneration, sourceSecretSessions])
   useEffect(() => () => {
@@ -124,6 +149,17 @@ export default function JMeterImport({ initialFile, projectId, onImported, onEdi
   const primaryScript = getPrimaryScript(result)
   const sourceReview = sourceReviewForJMeter(result, primaryScript)
   const parameterization = result?.parameterization
+  const resultScripts = result?.scripts || []
+  const safeParameterizationScriptIndex = Math.min(parameterizationScriptIndex, Math.max(0, resultScripts.length - 1))
+  const parameterizationScript = resultScripts[safeParameterizationScriptIndex]
+  const assetPageCount = Math.max(1, Math.ceil(resultScripts.length / JMETER_ASSET_PAGE_SIZE))
+  const safeAssetPage = Math.min(assetPage, assetPageCount - 1)
+  const assetPageStart = safeAssetPage * JMETER_ASSET_PAGE_SIZE
+  const visibleAssets = resultScripts.slice(assetPageStart, assetPageStart + JMETER_ASSET_PAGE_SIZE)
+  const extractorPageCount = Math.max(1, Math.ceil(extractorSummary.length / JMETER_EXTRACTOR_PAGE_SIZE))
+  const safeExtractorPage = Math.min(extractorPage, extractorPageCount - 1)
+  const extractorPageStart = safeExtractorPage * JMETER_EXTRACTOR_PAGE_SIZE
+  const visibleExtractors = extractorSummary.slice(extractorPageStart, extractorPageStart + JMETER_EXTRACTOR_PAGE_SIZE)
   const editRequiresCredentialPreservingSave = credentialPreservingImportDraftRequiresSave(
     result,
     primaryScript,
@@ -158,9 +194,11 @@ export default function JMeterImport({ initialFile, projectId, onImported, onEdi
   }, [api])
 
   const acceptFile = useCallback((nextFile?: File): boolean => {
+    if (sourceMutationLockedRef.current) return false
     if (!nextFile) return false
-    if (!nextFile.name.toLowerCase().endsWith('.jmx')) {
-      setError('Please upload a JMeter .jmx test plan.')
+    const lowerName = nextFile.name.toLowerCase()
+    if (!lowerName.endsWith('.jmx') && !lowerName.endsWith('.zip')) {
+      setError('Please upload a JMeter .jmx test plan or a .zip archive containing JMX plans.')
       return false
     }
     invalidateReview()
@@ -180,7 +218,7 @@ export default function JMeterImport({ initialFile, projectId, onImported, onEdi
     beginIngest()
     void filesFromDroppedPaths(paths).then(files => {
       setDragOver(false)
-      const picked = files.find(next => next.name.toLowerCase().endsWith('.jmx')) || files[0]
+      const picked = files.find(next => /\.(?:jmx|zip)$/i.test(next.name)) || files[0]
       if (acceptFile(picked)) succeedIngest(`Added ${picked.name}`)
       else failIngest()
     }).catch(error => {
@@ -193,9 +231,10 @@ export default function JMeterImport({ initialFile, projectId, onImported, onEdi
   useDesktopFileDrop(dropzoneRef, handleNativeJMeterPaths, desktop)
 
   const handleBrowse = useCallback(() => {
+    if (sourceMutationLockedRef.current) return
     if (nativeDialogs) {
-      void pickFilesViaBridge('.jmx,.xml').then(files => {
-        acceptFile(files.find(next => next.name.toLowerCase().endsWith('.jmx')) || files[0])
+      void pickFilesViaBridge('.jmx,.xml,.zip').then(files => {
+        acceptFile(files.find(next => /\.(?:jmx|zip)$/i.test(next.name)) || files[0])
       }).catch(error => {
         setError(nativeFileReadErrorMessage(error))
         if (shouldUseBrowserFileFallback(error)) {
@@ -211,6 +250,7 @@ export default function JMeterImport({ initialFile, projectId, onImported, onEdi
   const handleDrop = (event: React.DragEvent) => {
     event.preventDefault()
     setDragOver(false)
+    if (sourceMutationLocked) return
     if (desktop) return
     const dropped = event.dataTransfer.files[0]
     if (!dropped) return
@@ -231,6 +271,9 @@ export default function JMeterImport({ initialFile, projectId, onImported, onEdi
     setError('')
     setNotice('')
     setResult(null)
+    setParameterizationScriptIndex(0)
+    setAssetPage(0)
+    setExtractorPage(0)
     try {
       const response = await api.importJMeter(file, {
         name: options.name || undefined,
@@ -269,6 +312,9 @@ export default function JMeterImport({ initialFile, projectId, onImported, onEdi
     setError('')
     setNotice('')
     setResult(null)
+    setParameterizationScriptIndex(0)
+    setAssetPage(0)
+    setExtractorPage(0)
     try {
       const response = await api.validateJMeterImport(file, {
         name: options.name || undefined,
@@ -302,7 +348,6 @@ export default function JMeterImport({ initialFile, projectId, onImported, onEdi
     importDraftExpiresAt?: string,
   ) => {
     advanceReviewGeneration()
-    setSaving(false)
     setResult(prev => {
       if (!prev) return prev
       const scripts = (prev.scripts || []).map((script, index) => (index === scriptIndex ? parameterizedScript : script))
@@ -318,7 +363,7 @@ export default function JMeterImport({ initialFile, projectId, onImported, onEdi
 
   const handleSaveConverted = async () => {
     const resultToSave = latestResultRef.current
-    if (!resultToSave?.scripts?.length) return
+    if (!resultToSave?.scripts?.length || saveInFlightRef.current) return
     const sourceGeneration = reviewGenerationRef.current
     const sourceProjectId = reviewProjectIdRef.current
     const sourceFile = selectedFileRef.current
@@ -326,11 +371,17 @@ export default function JMeterImport({ initialFile, projectId, onImported, onEdi
       && reviewProjectIdRef.current === sourceProjectId
       && selectedFileRef.current === sourceFile
       && latestResultRef.current === resultToSave
+    const saveScope = { result: resultToSave, projectId: sourceProjectId, file: sourceFile }
+    saveInFlightRef.current = saveScope
     setSaving(true)
     setError('')
     setNotice('')
     try {
-      const scripts = resultToSave.scripts.map(script => script.project_id ? script : { ...script, project_id: sourceProjectId })
+      const scripts = resultToSave.scripts.map(script => ({
+        ...script,
+        project_id: script.project_id || sourceProjectId,
+        folder_id: folderId ?? null,
+      }))
       const response = await api.saveJMeterImport({
         scripts,
         scenario_draft: resultToSave.scenario_draft,
@@ -349,7 +400,10 @@ export default function JMeterImport({ initialFile, projectId, onImported, onEdi
     } catch (error: unknown) {
       if (requestIsCurrent()) setError(getErrorMessage(error, 'Failed to save converted scripts'))
     } finally {
-      if (requestIsCurrent()) setSaving(false)
+      if (saveInFlightRef.current === saveScope) {
+        saveInFlightRef.current = null
+        setSaving(false)
+      }
     }
   }
 
@@ -445,7 +499,7 @@ export default function JMeterImport({ initialFile, projectId, onImported, onEdi
         <div>
           <h2>Import JMeter Test Plan</h2>
           <p className="lr-subtitle">
-            Upload a <code>.jmx</code> plan and convert HTTP thread groups into APEX Load reusable scripts. The importer preserves variables, CSV data sources, headers, timers, and review notes where possible.
+            Upload a <code>.jmx</code> plan or a ZIP containing multiple JMX plans and convert their thread groups into APEX Load reusable scripts. The importer preserves variables, CSV data sources, headers, timers, and review notes where possible.
           </p>
         </div>
         {onClose && <button type="button" className="btn btn-secondary" onClick={() => {
@@ -458,15 +512,16 @@ export default function JMeterImport({ initialFile, projectId, onImported, onEdi
         ref={dropzoneRef}
         className={`lr-dropzone ${ingestHostClass} ${dragOver ? 'drag-over' : ''} ${file ? 'has-file' : ''}`}
         style={desktop ? ({ '--wails-drop-target': 'drop' } as CSSProperties) : undefined}
-        onDragOver={event => { event.preventDefault(); setDragOver(true) }}
+        onDragOver={event => { event.preventDefault(); if (!sourceMutationLocked) setDragOver(true) }}
         onDragLeave={() => setDragOver(false)}
         onDrop={handleDrop}
-        onClick={handleBrowse}
+        onClick={sourceMutationLocked ? undefined : handleBrowse}
         role="button"
-        tabIndex={0}
+        tabIndex={sourceMutationLocked ? -1 : 0}
+        aria-disabled={sourceMutationLocked}
         aria-label={file ? `Selected JMeter plan ${file.name}. Choose another file` : 'Choose a JMeter test plan'}
         onKeyDown={event => {
-          if (event.currentTarget !== event.target) return
+          if (sourceMutationLocked || event.currentTarget !== event.target) return
           if (event.key === 'Enter' || event.key === ' ') {
             event.preventDefault()
             handleBrowse()
@@ -474,7 +529,7 @@ export default function JMeterImport({ initialFile, projectId, onImported, onEdi
         }}
       >
         <DropIngestOverlay phase={ingestPhase} label={ingestLabel} />
-        <input ref={fileRef} type="file" accept=".jmx,.xml" onClick={event => event.stopPropagation()} onChange={event => { acceptFile(event.target.files?.[0]); event.target.value = '' }} hidden />
+        <input ref={fileRef} type="file" accept=".jmx,.xml,.zip,application/zip" disabled={sourceMutationLocked} onClick={event => event.stopPropagation()} onChange={event => { acceptFile(event.target.files?.[0]); event.target.value = '' }} hidden />
         {file ? (
           <div className="lr-file-info">
             <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--success)" strokeWidth="2" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
@@ -482,12 +537,12 @@ export default function JMeterImport({ initialFile, projectId, onImported, onEdi
               <span className="lr-filename">{file.name}</span>
               <span className="lr-filesize">{(file.size / 1024).toFixed(1)} KB</span>
             </div>
-            <button className="btn btn-sm btn-ghost" onClick={event => { event.stopPropagation(); invalidateReview(); setFile(null); if (fileRef.current) fileRef.current.value = '' }}>Change</button>
+            <button className="btn btn-sm btn-ghost" disabled={sourceMutationLocked} onClick={event => { event.stopPropagation(); invalidateReview(); setFile(null); if (fileRef.current) fileRef.current.value = '' }}>Change</button>
           </div>
         ) : (
           <div className="lr-drop-content">
             <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="1.5" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-            <p>Drop a JMeter <code>.jmx</code> file here</p>
+            <p>Drop a JMeter <code>.jmx</code> file or multi-plan <code>.zip</code> archive here</p>
             <span className="lr-drop-hint">or click to browse</span>
           </div>
         )}
@@ -497,17 +552,17 @@ export default function JMeterImport({ initialFile, projectId, onImported, onEdi
         <h3 className="lr-section-title">Conversion Options</h3>
         <div className="lr-options-grid">
           <label><span>Script Name Override</span>
-            <input value={options.name} onChange={event => { invalidateReview(); setOptions(prev => ({ ...prev, name: event.target.value })) }} placeholder="Default: thread group name" />
+            <input value={options.name} disabled={sourceMutationLocked} onChange={event => { invalidateReview(); setOptions(prev => ({ ...prev, name: event.target.value })) }} placeholder="Default: thread group name" />
           </label>
           <label><span>Base URL Override</span>
-            <input value={options.base_url} onChange={event => { invalidateReview(); setOptions(prev => ({ ...prev, base_url: event.target.value })) }} placeholder="Default: HTTP Request Defaults or first sampler" />
+            <input value={options.base_url} disabled={sourceMutationLocked} onChange={event => { invalidateReview(); setOptions(prev => ({ ...prev, base_url: event.target.value })) }} placeholder="Default: HTTP Request Defaults or first sampler" />
           </label>
           <label className="lr-checkbox">
-            <input type="checkbox" checked={options.include_assertions} onChange={event => { invalidateReview(); setOptions(prev => ({ ...prev, include_assertions: event.target.checked })) }} />
+            <input type="checkbox" checked={options.include_assertions} disabled={sourceMutationLocked} onChange={event => { invalidateReview(); setOptions(prev => ({ ...prev, include_assertions: event.target.checked })) }} />
             <span>Add default status_code assertions</span>
           </label>
           <label className="lr-checkbox">
-            <input type="checkbox" checked={options.scenario_draft} onChange={event => { invalidateReview(); setOptions(prev => ({ ...prev, scenario_draft: event.target.checked })) }} />
+            <input type="checkbox" checked={options.scenario_draft} disabled={sourceMutationLocked} onChange={event => { invalidateReview(); setOptions(prev => ({ ...prev, scenario_draft: event.target.checked })) }} />
             <span>Generate scenario draft from thread groups</span>
           </label>
         </div>
@@ -590,10 +645,10 @@ export default function JMeterImport({ initialFile, projectId, onImported, onEdi
       )}
 
       <div className="replay-panel-actions">
-        <button className="btn btn-secondary btn-lg" onClick={handleValidate} disabled={!file || workingMode !== null}>
+        <button className="btn btn-secondary btn-lg" onClick={handleValidate} disabled={!file || workingMode !== null || saving}>
           {workingMode === 'validate' ? <><span className="spinner" /> Validating...</> : 'Validate Only'}
         </button>
-        <button className="btn btn-primary btn-lg" onClick={handleImport} disabled={!file || workingMode !== null}>
+        <button className="btn btn-primary btn-lg" onClick={handleImport} disabled={!file || workingMode !== null || saving}>
           {workingMode === 'convert' ? <><span className="spinner" /> Converting...</> : 'Convert JMeter Plan'}
         </button>
       </div>
@@ -654,25 +709,59 @@ export default function JMeterImport({ initialFile, projectId, onImported, onEdi
               </div>
             )}
 
-            {parameterization && parameterization.suggestions.length > 0 && (result.scripts || []).map((script, scriptIndex) => (
-              <ParameterizationReview
-                key={`paramize-${scriptIndex}-${script.name}`}
-                parameterization={parameterization}
-                script={script}
-                scriptName={script.name}
-                reviewGeneration={reviewScope}
-                disabled={saving || workingMode !== null || parameterizationApplying || credentialActionInProgress}
-                onApplyingChange={applying => setParameterizationApplyingByScript(current => ({ ...current, [scriptIndex]: applying }))}
-                onApplied={handleParameterizationApplied(scriptIndex)}
-              />
-            ))}
+            {parameterization && parameterization.suggestions.length > 0 && parameterizationScript && (
+              <>
+                {resultScripts.length > 1 && (
+                  <nav className="lr-pagination" aria-label="JMeter script parameterization selector">
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-sm"
+                      aria-label="Review parameterization for previous generated script"
+                      disabled={saving || workingMode !== null || parameterizationApplying || credentialActionInProgress || safeParameterizationScriptIndex === 0}
+                      onClick={() => setParameterizationScriptIndex(index => Math.max(0, index - 1))}
+                    >
+                      Previous script
+                    </button>
+                    <span role="status" aria-live="polite">
+                      Script {safeParameterizationScriptIndex + 1} of {resultScripts.length}: {parameterizationScript.name}
+                    </span>
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-sm"
+                      aria-label="Review parameterization for next generated script"
+                      disabled={saving || workingMode !== null || parameterizationApplying || credentialActionInProgress || safeParameterizationScriptIndex >= resultScripts.length - 1}
+                      onClick={() => setParameterizationScriptIndex(index => Math.min(resultScripts.length - 1, index + 1))}
+                    >
+                      Next script
+                    </button>
+                  </nav>
+                )}
+                <ParameterizationReview
+                  key={`paramize-${safeParameterizationScriptIndex}-${parameterizationScript.name}`}
+                  parameterization={parameterization}
+                  script={parameterizationScript}
+                  scriptName={parameterizationScript.name}
+                  reviewGeneration={reviewScope}
+                  disabled={saving || workingMode !== null || parameterizationApplying || credentialActionInProgress}
+                  onApplyingChange={applying => setParameterizationApplyingByScript(current => ({ ...current, [safeParameterizationScriptIndex]: applying }))}
+                  onApplied={handleParameterizationApplied(safeParameterizationScriptIndex)}
+                />
+              </>
+            )}
 
             {extractorSummary.length > 0 && (
               <div className="lr-warnings">
                 <h4>Captured Variables ({extractorSummary.length})</h4>
+                {extractorSummary.length > JMETER_EXTRACTOR_PAGE_SIZE && (
+                  <nav className="lr-pagination" aria-label="Captured variable pages">
+                    <button type="button" className="btn btn-secondary btn-sm" disabled={safeExtractorPage === 0} onClick={() => setExtractorPage(page => Math.max(0, page - 1))}>Previous variables</button>
+                    <span role="status" aria-live="polite">Showing {extractorPageStart + 1}–{Math.min(extractorPageStart + JMETER_EXTRACTOR_PAGE_SIZE, extractorSummary.length)} of {extractorSummary.length}</span>
+                    <button type="button" className="btn btn-secondary btn-sm" disabled={safeExtractorPage >= extractorPageCount - 1} onClick={() => setExtractorPage(page => Math.min(extractorPageCount - 1, page + 1))}>Next variables</button>
+                  </nav>
+                )}
                 <ul>
-                  {extractorSummary.map((extractor, index) => (
-                    <li key={`${extractor.scriptName}-${extractor.actionName}-${extractor.extractorName}-${index}`}>
+                  {visibleExtractors.map((extractor, index) => (
+                    <li key={`${extractor.scriptName}-${extractor.actionName}-${extractor.extractorName}-${extractorPageStart + index}`}>
                       <strong>{extractor.extractorName}</strong> via {extractor.extractorType} from {extractor.actionName} in {extractor.scriptName}
                     </li>
                   ))}
@@ -685,9 +774,16 @@ export default function JMeterImport({ initialFile, projectId, onImported, onEdi
                 <h4>Generated Assets</h4>
                 <span>{result.summary?.file_name || file?.name}</span>
               </div>
+              {resultScripts.length > JMETER_ASSET_PAGE_SIZE && (
+                <nav className="lr-pagination" aria-label="Generated JMeter asset pages">
+                  <button type="button" className="btn btn-secondary btn-sm" disabled={safeAssetPage === 0} onClick={() => setAssetPage(page => Math.max(0, page - 1))}>Previous assets</button>
+                  <span role="status" aria-live="polite">Showing {assetPageStart + 1}–{Math.min(assetPageStart + JMETER_ASSET_PAGE_SIZE, resultScripts.length)} of {resultScripts.length}</span>
+                  <button type="button" className="btn btn-secondary btn-sm" disabled={safeAssetPage >= assetPageCount - 1} onClick={() => setAssetPage(page => Math.min(assetPageCount - 1, page + 1))}>Next assets</button>
+                </nav>
+              )}
               <div className="lr-preserved-grid">
-                {(result.scripts || []).map((script: ScriptDefinition, scriptIndex) => (
-                  <div className="lr-preserved-card" key={`${scriptIndex}-${script.name}`}>
+                {visibleAssets.map((script: ScriptDefinition, scriptIndex) => (
+                  <div className="lr-preserved-card" key={`${assetPageStart + scriptIndex}-${script.name}`}>
                     <span className="lr-preserved-label">Script</span>
                     <strong>{script.name}</strong>
                     <small>{script.actions?.length || 0} actions / {script.data_sources?.length || 0} data sources / {script.actions?.reduce((count, action) => count + (action.extractors?.length || 0), 0) || 0} extractors</small>

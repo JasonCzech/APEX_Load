@@ -247,6 +247,18 @@ securitySchemes:
 	if len(result.Warnings) == 0 {
 		t.Fatalf("warnings = %#v, want client-credential warning", result.Warnings)
 	}
+	if len(result.SecretRequirements) != 1 {
+		t.Fatalf("secret requirements = %#v, want one grouped RAML client secret", result.SecretRequirements)
+	}
+	requirement := result.SecretRequirements[0]
+	if requirement.SuggestedName != "RAML_CLIENT_SECRET" ||
+		requirement.Replacement != "{{secret.RAML_CLIENT_SECRET}}" ||
+		requirement.SourceValueAvailable || requirement.Value != "" ||
+		requirement.Source.Format != "raml" || requirement.Source.Path != "raml.yaml" ||
+		len(requirement.Targets) != 1 || requirement.Targets[0].Field != "actions[0].headers.client_secret" ||
+		!strings.Contains(requirement.Context, "does not contain a credential value") {
+		t.Fatalf("RAML client-secret requirement lacks descriptive provenance: %#v", requirement)
+	}
 }
 
 func TestConvertRAMLResolvesIncludesFromFiles(t *testing.T) {

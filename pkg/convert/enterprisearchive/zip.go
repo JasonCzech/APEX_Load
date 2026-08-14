@@ -13,6 +13,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/convert/importreview"
 	"github.com/jasonczech/apexload/pkg/convert/requestimport"
 	"github.com/jasonczech/apexload/pkg/convert/trueclient"
+	"github.com/jasonczech/apexload/pkg/convert/uniquify"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/dslwalk"
 	"github.com/jasonczech/apexload/pkg/internal/archiveingest"
@@ -536,7 +537,18 @@ func finalizeEnterpriseArchiveImportResult(
 	applyBrowserEmulationRuntimeSettingsReview(result, ctx.RuntimeConfig)
 	parameterSections := make(map[string]map[string]map[string]string)
 	scripts := result.effectiveScripts()
+	// Multi-lane Java and other enterprise conversions can retain identical
+	// source display names. Allocate the complete result batch before creating
+	// credential targets so every binding points at one unambiguous script.
+	uniquify.DeduplicateScriptNames(scripts)
 	if len(scripts) > 0 {
+		parameterMergeStates := make(map[*dsl.Script]*parameterMergeState, len(scripts))
+		parameterCollisions := make(map[*dsl.Script][]parameterDefinitionCollision, len(scripts))
+		for _, script := range scripts {
+			if script != nil {
+				parameterMergeStates[script] = newParameterMergeState(script)
+			}
+		}
 		for _, parameterFileName := range ctx.ParameterFileNames {
 			content, ok := findFile(ctx.Files, parameterFileName)
 			if !ok {
@@ -547,11 +559,14 @@ func finalizeEnterpriseArchiveImportResult(
 				if script == nil {
 					continue
 				}
-				if len(parsed.Parameters) > 0 {
-					script.Parameters = append(script.Parameters, parsed.Parameters...)
-				}
-				if len(parsed.DataSources) > 0 {
-					script.DataSources = append(script.DataSources, parsed.DataSources...)
+				if len(parsed.Parameters) > 0 || len(parsed.DataSources) > 0 {
+					collisions := mergeParsedParameterFile(
+						script,
+						parsed,
+						parameterFileName,
+						parameterMergeStates[script],
+					)
+					parameterCollisions[script] = append(parameterCollisions[script], collisions...)
 				}
 			}
 			if len(parsed.Warnings) > 0 {
@@ -566,6 +581,7 @@ func finalizeEnterpriseArchiveImportResult(
 				continue
 			}
 			applyKnownParameterReferences(script)
+			applyParameterDefinitionCollisionGate(result, script, parameterCollisions[script])
 			applyParameterizedBaseURL(script)
 			removed := len(pruneUnusedWholeBodyExtractors(script))
 			if removed > 0 {
@@ -606,6 +622,102 @@ func finalizeEnterpriseArchiveImportResult(
 }
 
 const javaVMParameterExecutionBlocker = "java_vm_parameters_require_safe_replacement"
+
+const parameterDefinitionCollisionExecutionBlocker = "parameter_definition_collision_unresolved"
+
+func applyParameterDefinitionCollisionGate(
+	result *ConvertResult,
+	script *dsl.Script,
+	collisions []parameterDefinitionCollision,
+) {
+	if script == nil || len(collisions) == 0 {
+		return
+	}
+	for _, collision := range collisions {
+		detail := fmt.Sprintf(
+			"parameter %q has conflicting definitions in %s and %s; the later definition was retained as %q, but source references to the original name are ambiguous",
+			collision.Name,
+			collision.ExistingSource,
+			collision.ConflictingSource,
+			collision.AlternateName,
+		)
+		if result != nil {
+			result.Warnings = append(result.Warnings, detail+"; replay is blocked until one definition is selected and references are repaired")
+			appendSourceReviewMapping(result, SourceReviewMapping{
+				SourceFile:  collision.ConflictingSource,
+				Function:    "Parameter " + collision.Name,
+				TargetPath:  "parameters." + collision.AlternateName,
+				TargetName:  collision.AlternateName,
+				TargetKind:  "parameter",
+				Status:      "review_only",
+				SupportMode: string(SourceFunctionSupportReviewOnly),
+				Notes:       "A conflicting parameter definition was retained under a deterministic alternate name; replay is blocked until the intended definition is selected.",
+			})
+		}
+	}
+	// Apply one aggregate gate per action. Repeating every collision finding on
+	// every action is quadratic for a large multi-file parameter import and adds
+	// no execution-safety value; exact per-definition provenance remains in the
+	// warnings and source-review mappings above.
+	finding := importreview.Finding{
+		Code:       parameterDefinitionCollisionExecutionBlocker,
+		Severity:   diag.Blocker,
+		Element:    "LoadRunner parameters",
+		Detail:     parameterDefinitionCollisionSummary(collisions),
+		Location:   "parameters",
+		Source:     "enterprise_script_archive",
+		ReasonCode: parameterDefinitionCollisionExecutionBlocker,
+		SourceRef:  parameterDefinitionCollisionSourceSummary(collisions),
+		Resolution: "select_parameter_definition_and_remove_gate",
+		Gate:       importreview.GateExecution,
+	}
+	_ = dslwalk.WalkActions(script, func(ref dslwalk.ActionRef) error {
+		actionFinding := finding
+		actionFinding.ActionPath = ref.Path
+		importreview.ApplyToAction(ref.Action, []importreview.Finding{actionFinding})
+		return nil
+	})
+	if result != nil {
+		result.Warnings = uniqueSortedStrings(result.Warnings)
+	}
+}
+
+func parameterDefinitionCollisionSummary(collisions []parameterDefinitionCollision) string {
+	if len(collisions) == 0 {
+		return "LoadRunner parameter definitions require review."
+	}
+	const sampleLimit = 3
+	samples := make([]string, 0, min(len(collisions), sampleLimit))
+	for _, collision := range collisions[:min(len(collisions), sampleLimit)] {
+		samples = append(samples, fmt.Sprintf("%q retained as %q", collision.Name, collision.AlternateName))
+	}
+	detail := fmt.Sprintf(
+		"%d conflicting LoadRunner parameter definition(s) were retained under deterministic alternate names (%s)",
+		len(collisions),
+		strings.Join(samples, "; "),
+	)
+	if len(collisions) > sampleLimit {
+		detail += fmt.Sprintf("; %d additional conflict(s) are listed in Source Review", len(collisions)-sampleLimit)
+	}
+	return detail + ". Select the intended definitions and repair the original-name references before execution."
+}
+
+func parameterDefinitionCollisionSourceSummary(collisions []parameterDefinitionCollision) string {
+	if len(collisions) == 0 {
+		return "parameter files"
+	}
+	first := collisions[0].ConflictingSource
+	additional := make(map[string]struct{})
+	for _, collision := range collisions[1:] {
+		if collision.ConflictingSource != "" && collision.ConflictingSource != first {
+			additional[collision.ConflictingSource] = struct{}{}
+		}
+	}
+	if len(additional) == 0 {
+		return first
+	}
+	return fmt.Sprintf("%s (+%d parameter file(s); see Source Review)", first, len(additional))
+}
 
 const runtimeProfileSelectionReason = "runtime_profile_selection_unresolved"
 

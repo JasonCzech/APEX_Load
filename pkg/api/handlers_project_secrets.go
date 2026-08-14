@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jasonczech/apexload/pkg/convert/credentialpolicy"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/engine"
 	"github.com/jasonczech/apexload/pkg/scrub"
@@ -170,7 +171,7 @@ func (s *Server) discoverProjectSecretMetadata(ctx context.Context, projectID st
 		!strings.Contains(secretStoreProvider(s.projectSecretStore), "azure_key_vault") {
 		return true, nil
 	}
-	scripts, err := s.store.ListScripts(projectID, nil)
+	scripts, err := listPublishedImportScripts(s.store, projectID, nil)
 	if err != nil {
 		return false, err
 	}
@@ -532,6 +533,9 @@ func (s *Server) registerSourceSecretSession(r *http.Request, projectID string, 
 		id := strings.TrimSpace(rawID)
 		if id == "" || value == "" {
 			continue
+		}
+		if _, recoverable := credentialpolicy.RecoverableSourceCredentialValue(value); !recoverable {
+			return "", errors.New("source credential is unavailable or contains a disclosure placeholder")
 		}
 		if _, exists := copied[id]; !exists && len(copied) >= projectSecretMaxBatchItems {
 			return "", fmt.Errorf("source credentials exceed %d-entry session limit", projectSecretMaxBatchItems)
@@ -898,13 +902,18 @@ func (s *Server) consumeSourceSecretSession(r *http.Request, projectID, sessionI
 		if err != nil {
 			return nil, err
 		}
-		return &sourceSecretSession{
+		session := &sourceSecretSession{
 			ID:        protected.ID,
 			ProjectID: protected.ProjectID,
 			Actor:     protected.Actor,
 			Values:    protected.Values,
 			ExpiresAt: protected.ExpiresAt,
-		}, nil
+		}
+		if err := validateRecoverableSourceSecretSession(session); err != nil {
+			clearSourceSecretSession(session)
+			return nil, err
+		}
+		return session, nil
 	}
 	if s.haExecution {
 		return nil, errors.New("durable encrypted source secret sessions are unavailable for controller HA")
@@ -929,7 +938,23 @@ func (s *Server) consumeSourceSecretSession(r *http.Request, projectID, sessionI
 		session.Timer.Stop()
 		session.Timer = nil
 	}
+	if err := validateRecoverableSourceSecretSession(session); err != nil {
+		clearSourceSecretSession(session)
+		return nil, err
+	}
 	return session, nil
+}
+
+func validateRecoverableSourceSecretSession(session *sourceSecretSession) error {
+	if session == nil {
+		return errors.New("source secret session is invalid")
+	}
+	for _, value := range session.Values {
+		if _, recoverable := credentialpolicy.RecoverableSourceCredentialValue(value); !recoverable {
+			return errors.New("source secret session contains an unavailable credential value")
+		}
+	}
+	return nil
 }
 
 func (s *Server) discardSourceSecretSession(r *http.Request, projectID, sessionID string) (bool, error) {

@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/config"
+	"github.com/jasonczech/apexload/pkg/distributed/generatorrpc"
 	"github.com/jasonczech/apexload/pkg/fileasset"
 	"github.com/jasonczech/apexload/pkg/importartifact"
 	"github.com/jasonczech/apexload/pkg/importsession"
@@ -107,6 +108,7 @@ type Server struct {
 	browserInstall            *browserInstallState
 	recorder                  *recorder.Recorder
 	store                     storage.Store
+	importAssets              storage.ImportAssetStore
 	cache                     CacheBackend
 	controllerID              string
 	haExecution               bool
@@ -180,6 +182,15 @@ type Server struct {
 	collectorMetrics                  *collectorMetricStore
 	fleetScaler                       fleetPoolScaler
 	clusterStore                      storage.ClusterConnectionStore
+	cloudStore                        storage.CloudConnectionStore
+	executionTargetStore              storage.ExecutionTargetStore
+	capacityBackends                  capacityBackendPoolResolver
+	capacityHeartbeatProbe            func(string) bool
+	reverseGenerators                 *generatorrpc.ReverseRegistry
+	reverseTargetMu                   sync.RWMutex
+	reverseTargetSessions             map[string]map[string]struct{}
+	reverseEnrollmentMu               sync.Mutex
+	reverseEnrollmentNonces           map[string]time.Time
 	domainTargets                     storage.DomainDeploymentTargetStore
 	clusterClients                    *clusterClientCache
 	clusterScalers                    clusterScalerResolver
@@ -268,6 +279,7 @@ type Server struct {
 	ciRunCreates                      map[string]int
 	beforeCIRunMaterialize            func(CreateTestRequest)
 	afterCIRunMaterialize             func(*ManagedTest)
+	afterLibraryImportClaimsPersist   func()
 	bindScope                         string
 	boundAddr                         string
 	boundAddrMu                       sync.RWMutex
@@ -311,14 +323,21 @@ type ServerConfig struct {
 	// RecorderCACertPath and RecorderCAKeyPath locate the persistent interception
 	// CA. Desktop shells should place both below their private application-data
 	// directory so launch working directories cannot redirect CA persistence.
-	RecorderCACertPath           string
-	RecorderCAKeyPath            string
-	MaxConcurrent                int
-	AllowedOrigins               []string
-	Store                        storage.Store
-	Cache                        CacheBackend
-	LibraryCredentials           LibraryCredentialStore
-	GeneratorTargets             []string
+	RecorderCACertPath string
+	RecorderCAKeyPath  string
+	MaxConcurrent      int
+	AllowedOrigins     []string
+	Store              storage.Store
+	Cache              CacheBackend
+	LibraryCredentials LibraryCredentialStore
+	GeneratorTargets   []string
+	// EnableDynamicGenerators selects the distributed execution backend even
+	// when no static targets are configured. Reverse PaaS sessions then become
+	// live run targets as they authenticate with the gateway.
+	EnableDynamicGenerators bool
+	// PaaSComputeEnabled is an explicit operator opt-in for provider mutations.
+	// Registration, validation, and UX remain available while disabled.
+	PaaSComputeEnabled           bool
 	GeneratorTimeout             time.Duration
 	GeneratorRunSupervisionTTL   time.Duration
 	GeneratorRunSupervisionRenew time.Duration
@@ -426,7 +445,7 @@ func NewServer(cfg ServerConfig) *Server {
 	}
 	staticTargets, discoverySpecs := splitGeneratorTargets(cfg.GeneratorTargets)
 	var distributedBackend *distributedExecutionBackend
-	if len(staticTargets) > 0 || len(discoverySpecs) > 0 {
+	if cfg.EnableDynamicGenerators || len(staticTargets) > 0 || len(discoverySpecs) > 0 {
 		distributedBackend = newDistributedExecutionBackend(staticTargets, cfg.GeneratorTimeout, nil)
 		distributedBackend.enableRunSupervision(cfg.GeneratorRunSupervisionTTL, cfg.GeneratorRunSupervisionRenew)
 		distributedBackend.ApplyGeneratorDrainStates(loadGeneratorDrainStates(cfg.Store))
@@ -575,6 +594,9 @@ func NewServer(cfg ServerConfig) *Server {
 				} else {
 					ctx, cancel := leadership.operationContext(context.Background())
 					err := s.reconcileProvisioningRequests(ctx)
+					if err == nil {
+						err = s.reconcileOrphanedCapacity(ctx)
+					}
 					cancel()
 					if err == nil {
 						return
@@ -622,6 +644,15 @@ func NewServer(cfg ServerConfig) *Server {
 	if candidate, ok := cfg.Store.(storage.ClusterConnectionStore); ok {
 		s.clusterStore = candidate
 	}
+	if candidate, ok := cfg.Store.(storage.CloudConnectionStore); ok {
+		s.cloudStore = candidate
+	}
+	if candidate, ok := cfg.Store.(storage.ExecutionTargetStore); ok {
+		s.executionTargetStore = candidate
+	}
+	if candidate, ok := cfg.Store.(storage.ImportAssetStore); ok {
+		s.importAssets = candidate
+	}
 	// Per-domain deployment targets are another optional store capability, so
 	// older Store implementations and test doubles keep compiling.
 	if candidate, ok := cfg.Store.(storage.DomainDeploymentTargetStore); ok {
@@ -640,6 +671,12 @@ func NewServer(cfg ServerConfig) *Server {
 		quotaChecker:  s,
 		domainTargets: s.domainTargets,
 	}
+	s.capacityBackends = &capacityBackendResolver{
+		enabled: cfg.PaaSComputeEnabled, targets: s.executionTargetStore, clouds: s.cloudStore, controllerID: s.controllerID, server: s,
+	}
+	s.reverseGenerators = generatorrpc.DefaultReverseRegistry
+	s.reverseTargetSessions = make(map[string]map[string]struct{})
+	s.configureImportAssetObjectStore()
 
 	// Apply a persisted metadata cordon to the live drain state when a generator
 	// (re)connects, so a cordon issued while the generator was offline takes effect.
@@ -647,12 +684,28 @@ func NewServer(cfg ServerConfig) *Server {
 		distributedBackend.setOnIdentityRecorded(func(generatorID string) {
 			s.applyMetadataCordonOnReconnect(distributedBackend, generatorID)
 		})
+		distributedBackend.setCapacityLifecycle(s.ensureRunCapacity, s.releaseRunCapacity)
 	}
 
 	// Feed replay selector self-heals back to the bound object repository.
 	s.browserReplay.setCompletionHook(s.persistSelfHealToRepository)
 	s.scriptDebug.setCompletionHook(s.persistSelfHealToRepository)
 	runner.setTerminalObserver(s.handleCIRunTerminal)
+
+	// Recover browser-recording publication before this Server can be observed.
+	// Any replica may adopt terminal committed claims; HA replicas take an
+	// uncommitted staged set only after atomically winning its expired lease.
+	// Other single-controller direct imports can be compensated immediately,
+	// while HA retains their ordinary lease fence and publication snapshot.
+	if err := s.recoverStagedBrowserRecordingConversionsAtStartup(); err != nil {
+		// Do not compensate anything when adoption inspection itself failed: the
+		// durable claim fence keeps those rows hidden until a later healthy startup
+		// can distinguish a complete browser save from an incomplete transaction.
+		slog.Warn("failed to recover staged browser recording during construction; preserving import claims", "error", err)
+	} else if err := s.recoverAbandonedDirectImportsAtStartup(); err != nil {
+		slog.Warn("failed to recover abandoned direct import during construction", "error", err)
+	}
+	runner.setImportPublicationSnapshot(s.store, s.pendingDirectImportAssets)
 
 	s.loadLibraryState()
 	s.routes(cfg.AllowedOrigins)
@@ -826,7 +879,7 @@ func (s *Server) routes(allowedOrigins []string) {
 		s.cache,
 		[]string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
 		[]string{RoleViewer, RoleEditor, RoleProjectAdmin},
-		resolveBrowserRecordingSessionProjectID(s.browserRecording),
+		resolveBrowserRecordingSessionProjectID(s),
 		withAuthAuditRecorder(s),
 		withLocalAuthGeneration(s.activeLocalAuthGeneration),
 	))
@@ -836,7 +889,7 @@ func (s *Server) routes(allowedOrigins []string) {
 		s.cache,
 		[]string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
 		[]string{RoleEditor, RoleProjectAdmin},
-		resolveBrowserRecordingSessionProjectID(s.browserRecording),
+		resolveBrowserRecordingSessionProjectID(s),
 		withAuthAuditRecorder(s),
 		withLocalAuthGeneration(s.activeLocalAuthGeneration),
 	))
@@ -1049,6 +1102,8 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.mux.Handle("GET /api/v1/scripts/{id}/download", cors(log(auth(http.HandlerFunc(s.handleDownloadScript)))))
 	s.mux.Handle("GET /api/v1/scripts/{id}/runtime-settings/report", cors(log(auth(http.HandlerFunc(s.handleGetScriptRuntimeSettingsReport)))))
 	s.mux.Handle("POST /api/v1/scripts/import/enterprise-script-archive", cors(log(auth(http.HandlerFunc(s.handleImportEnterpriseArchive)))))
+	s.mux.Handle("POST /api/v1/scripts/import/enterprise-script-archive/save", cors(log(auth(http.HandlerFunc(s.handleSaveEnterpriseArchiveImport)))))
+	s.mux.Handle("POST /api/v1/scripts/import/commit-batch", cors(log(auth(http.HandlerFunc(s.handleCommitGenericImportBatch)))))
 	s.mux.Handle("POST /api/v1/scripts/import/enterprise-script-archive/validate", cors(log(auth(http.HandlerFunc(s.handleValidateEnterpriseArchiveImport)))))
 	s.mux.Handle("GET /api/v1/scripts/import/enterprise-script-archive/support-matrix", cors(log(auth(http.HandlerFunc(s.handleEnterpriseArchiveSupportMatrix)))))
 	s.mux.Handle("POST /api/v1/scripts/import/jmeter", cors(log(auth(http.HandlerFunc(s.handleImportJMeter)))))
@@ -1087,6 +1142,7 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.mux.Handle("POST /api/v1/scripts/import/wsdl", cors(log(auth(http.HandlerFunc(s.handleImportWSDL)))))
 	s.mux.Handle("POST /api/v1/scripts/import/asyncapi", cors(log(auth(http.HandlerFunc(s.handleImportAsyncAPI)))))
 	s.mux.Handle("POST /api/v1/scripts/import/asyncapi/commit", cors(log(auth(http.HandlerFunc(s.handleCommitAsyncAPIImport)))))
+	s.mux.Handle("POST /api/v1/scripts/import/asyncapi/commit-batch", cors(log(auth(http.HandlerFunc(s.handleCommitAsyncAPIImportBatch)))))
 	s.mux.Handle("GET /api/v1/scripts/import/asyncapi/support-matrix", cors(log(auth(http.HandlerFunc(s.handleAsyncAPISupportMatrix)))))
 	s.mux.Handle("POST /api/v1/scripts/import/eventhubs-capture", cors(log(auth(http.HandlerFunc(s.handleImportEventHubsCapture)))))
 	s.mux.Handle("GET /api/v1/scripts/import/eventhubs-capture/support-matrix", cors(log(auth(http.HandlerFunc(s.handleEventHubsCaptureSupportMatrix)))))
@@ -1204,6 +1260,7 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.mux.Handle("GET /api/v1/auth/audit-events/export", cors(log(auth(http.HandlerFunc(s.handleExportAuditEvents)))))
 	s.registerAPIRouteCatalog(documentationAPIRouteCatalog, standardRouteMiddleware)
 	s.registerAPIRouteCatalog(systemFoundationAPIRouteCatalog, standardRouteMiddleware)
+	s.registerAPIRouteCatalog(generatorGatewayAPIRouteCatalog, standardRouteMiddleware)
 	s.mux.Handle("GET /api/v1/downloads/recording-agent/latest", cors(log(auth(http.HandlerFunc(s.handleDownloadRecordingAgent)))))
 	s.mux.Handle("GET /api/v1/downloads/recording-agent/latest/checksum", cors(log(auth(http.HandlerFunc(s.handleRecordingAgentChecksum)))))
 	s.mux.Handle("GET /api/v1/downloads/desktop/latest", cors(log(auth(http.HandlerFunc(s.handleDownloadDesktopApp)))))
@@ -1289,6 +1346,7 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.registerAPIRouteCatalog(fleetAdministrationAPIRouteCatalog, standardRouteMiddleware)
 	// Cluster registry: Kubernetes/AKS connections and pool host allocation.
 	s.registerAPIRouteCatalog(clusterAdministrationAPIRouteCatalog, standardRouteMiddleware)
+	s.registerAPIRouteCatalog(computeAdministrationAPIRouteCatalog, standardRouteMiddleware)
 	s.registerAPIRouteCatalog(domainDeploymentTargetAPIRouteCatalog, standardRouteMiddleware)
 	// WebSocket — no CORS wrapper (handled by upgrade check)
 	s.mux.Handle("GET /api/v1/ws", log(auth(http.HandlerFunc(s.handleWebSocket))))

@@ -13,8 +13,21 @@ import (
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
-func TestHandleImportJMeterSanitizesCredentialBearingResponseLabels(t *testing.T) {
-	const password = "jmeter-response-label-canary-14c8"
+type jmeterCredentialLabelPreview struct {
+	Scripts       []dsl.Script          `json:"scripts"`
+	ScenarioDraft *jmeter.ScenarioDraft `json:"scenario_draft"`
+	Result        struct {
+		Scripts       []dsl.Script          `json:"scripts"`
+		ScenarioDraft *jmeter.ScenarioDraft `json:"scenario_draft"`
+	} `json:"result"`
+}
+
+func inspectJMeterCredentialLabelPreview(
+	t *testing.T,
+	server *Server,
+	password string,
+) jmeterCredentialLabelPreview {
+	t.Helper()
 	jmx := fmt.Sprintf(`<jmeterTestPlan version="1.2"><hashTree>
   <TestPlan testname="Plan"/><hashTree>
     <ThreadGroup testname="Users %s">
@@ -37,7 +50,6 @@ func TestHandleImportJMeterSanitizesCredentialBearingResponseLabels(t *testing.T
   </hashTree>
 </hashTree></jmeterTestPlan>`, password, password, password)
 
-	server := NewServer(ServerConfig{})
 	req := httptest.NewRequest(
 		http.MethodPost,
 		"/api/v1/scripts/import/jmeter?filename=labels.jmx&scenario_draft=true",
@@ -49,67 +61,42 @@ func TestHandleImportJMeterSanitizesCredentialBearingResponseLabels(t *testing.T
 	if resp.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
 	}
-
-	var result struct {
-		Scripts       []dsl.Script          `json:"scripts"`
-		ScenarioDraft *jmeter.ScenarioDraft `json:"scenario_draft"`
-		Result        struct {
-			Scripts       []dsl.Script          `json:"scripts"`
-			ScenarioDraft *jmeter.ScenarioDraft `json:"scenario_draft"`
-		} `json:"result"`
+	if strings.Contains(resp.Body.String(), password) {
+		t.Fatalf("JMeter preview disclosed credential-bearing source labels or values: %s", resp.Body.String())
 	}
+
+	var result jmeterCredentialLabelPreview
 	if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
 		t.Fatalf("json.Unmarshal() error = %v", err)
 	}
+	return result
+}
+
+func TestHandleImportJMeterSanitizesCredentialBearingResponseLabels(t *testing.T) {
+	const password = "jmeter-response-label-canary-14c8"
+	server := NewServer(ServerConfig{})
+	result := inspectJMeterCredentialLabelPreview(t, server, password)
 	assertJMeterResponseLabelsSanitized(t, result.Scripts, result.ScenarioDraft, password)
 	assertJMeterResponseLabelsSanitized(t, result.Result.Scripts, result.Result.ScenarioDraft, password)
-	if result.Scripts[0].Config.HTTP.Auth.Password != password {
-		t.Fatalf("editable import draft did not retain exact password: %#v", result.Scripts[0].Config.HTTP.Auth)
+	if result.Scripts[0].Config.HTTP.Auth.Password != maskedScriptSecret ||
+		importDraftAttestationToken(&result.Scripts[0]) == "" {
+		t.Fatalf("editable import draft was not masked and attested: %#v", result.Scripts[0])
 	}
 }
 
 func TestHandleSaveJMeterImportSanitizesDurableScenarioLabels(t *testing.T) {
 	const password = "jmeter-durable-label-canary-98b6"
-	originalScriptName := "Users " + password
+	server := NewServer(ServerConfig{})
+	preview := inspectJMeterCredentialLabelPreview(t, server, password)
 	payload := map[string]any{
-		"scripts": []dsl.Script{{
-			Name:      originalScriptName,
-			Version:   "1.0.0",
-			Protocol:  "http",
-			ProjectID: "default",
-			Config: dsl.ScriptConfig{
-				BaseURL: "https://api.example.com",
-				HTTP: dsl.HTTPConfig{Auth: dsl.AuthConfig{
-					Type:     "basic",
-					Username: "operator",
-					Password: password,
-				}},
-			},
-			Actions: []dsl.Action{{
-				Name:   "Request " + password,
-				Type:   "GET",
-				Method: "GET",
-				Target: "/home",
-			}},
-		}},
-		"scenario_draft": jmeter.ScenarioDraft{
-			Name:         "Scenario " + password,
-			Duration:     "1m",
-			ScenarioMode: "vuser_driven",
-			Groups: []jmeter.ScenarioDraftGroup{{
-				Name:           "Group " + password,
-				ScriptName:     originalScriptName,
-				VUsers:         2,
-				Initialization: "at_runtime",
-			}},
-		},
+		"scripts":        preview.Scripts,
+		"scenario_draft": preview.ScenarioDraft,
 	}
 	body, err := json.Marshal(payload)
 	if err != nil {
 		t.Fatalf("json.Marshal() error = %v", err)
 	}
 
-	server := NewServer(ServerConfig{})
 	req := httptest.NewRequest(
 		http.MethodPost,
 		"/api/v1/scripts/import/jmeter/save",

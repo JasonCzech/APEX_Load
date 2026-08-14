@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/xml"
 	"fmt"
+	"html"
 	"io"
 	"path"
 	"sort"
@@ -124,12 +125,33 @@ func rewriteNativeXMLCredentials(
 
 	trustedTemplates := map[string]struct{}{credential.Redacted: {}}
 	var requirements []SecretRequirement
+	var rewritten strings.Builder
+	rewritten.Grow(len(body))
 	cursor := 0
+	occurrences := make(map[string]int)
 	for _, span := range spans {
 		if span.start < cursor || span.end < span.start || span.end > len(body) {
 			return "", nil, false, errorsNativeXMLOverlappingSpans()
 		}
+		rewritten.WriteString(body[cursor:span.start])
 		cursor = span.end
+		identity := span.kind + "\x00" + strings.ToLower(span.name)
+		occurrences[identity]++
+		value := body[span.start:span.end]
+		if nativeXMLCredentialValueContainsSentinel(value) {
+			requirement := nativeXMLSecretRequirement(
+				sourcePath,
+				bodyPointer,
+				span.kind,
+				span.name,
+				occurrences[identity],
+				value,
+			)
+			rewritten.WriteString(nativeCredentialProjectionReplacement(requirement))
+			requirements = append(requirements, requirement)
+			continue
+		}
+		rewritten.WriteString(value)
 		// Every credential-bearing scalar in an authored XML body is retained
 		// exactly as written.
 		//
@@ -144,11 +166,12 @@ func rewriteNativeXMLCredentials(
 		// fail-closed pass below from swapping the surrounding body for a
 		// placeholder: that fallback exists for credential material with no safe
 		// scalar offset, not for values this scanner already located.
-		if trimmed := strings.TrimSpace(body[span.start:span.end]); trimmed != "" {
+		if trimmed := strings.TrimSpace(value); trimmed != "" {
 			trustedTemplates[trimmed] = struct{}{}
 		}
 	}
-	projectedBody := body
+	rewritten.WriteString(body[cursor:])
+	projectedBody := rewritten.String()
 
 	// The Bruno-specific scanner owns stable requirement identities for ordinary
 	// XML scalars. Run the shared projector as a second, fail-closed pass for
@@ -265,6 +288,7 @@ func rewriteNativeXMLCredentialValue(
 		// exact scalar; externalizing it stays an explicit operator action.
 		return value
 	}
+	sourceVariable, hasExactSourceVariable := exactNativeCredentialSourceReference(value)
 	beforeMissing := make(map[string]struct{}, len(state.missing))
 	for missing := range state.missing {
 		beforeMissing[missing] = struct{}{}
@@ -353,7 +377,7 @@ func rewriteNativeXMLCredentialValue(
 		}
 	}
 
-	context := nativeTemplateContextLabel(nativeTemplateXMLCredential, name)
+	context := nativeXMLCredentialContext(kind, name)
 	var requirement SecretRequirement
 	if composedCredential || len(dependencies) > 1 {
 		requirement = usageRequirement
@@ -383,17 +407,54 @@ func rewriteNativeXMLCredentialValue(
 			},
 		)
 	} else {
-		requirement = nativeSecretRequirement(
-			name+"_"+strconv.Itoa(occurrence),
-			state.sourcePath,
-			context,
+		if hasExactSourceVariable {
+			requirement = nativeUnresolvedSourceVariableSecretRequirement(
+				sourceVariable,
+				state.sourcePath,
+				context,
+			)
+		} else {
+			requirement = nativeSecretRequirement(
+				name+"_"+strconv.Itoa(occurrence),
+				state.sourcePath,
+				context,
+			)
+		}
+	}
+	if hasExactSourceVariable {
+		requirement.DisplayLabel = nativeSourceVariableDisplayLabel(sourceVariable)
+		requirement.SourceVariable = sourceVariable
+		requirement.AffectedPaths = nativeSecretRequirementPaths(
+			append(requirement.AffectedPaths, state.sourcePath)...,
 		)
 	}
 	if complete && !brunoTemplatePattern.MatchString(resolved) {
-		requirement.Value = resolved
+		requirement.Value = recoverableNativeXMLCredentialValue(resolved)
+	}
+	if hasExactSourceVariable {
+		requirement.UnresolvedSourceVariable = requirement.Value == ""
 	}
 	registerNativeGeneratedRequirement(state, requirement)
 	return nativeCredentialProjectionReplacement(requirement)
+}
+
+func nativeXMLCredentialContext(kind, name string) string {
+	role := "credential"
+	normalized := strings.ToLower(strings.NewReplacer("-", "", "_", "", ".", "").Replace(nativeXMLLocalName(name)))
+	switch {
+	case strings.Contains(normalized, "username"):
+		role = "username"
+	case strings.Contains(normalized, "password") || strings.Contains(normalized, "passwd"):
+		role = "password"
+	case strings.Contains(normalized, "token"):
+		role = "token"
+	case strings.Contains(normalized, "apikey"):
+		role = "API key"
+	}
+	if kind == "element" {
+		return "XML " + role + " element <" + name + ">"
+	}
+	return "XML " + role + " " + kind + " " + name
 }
 
 func setNativeXMLCredentialValue(
@@ -732,8 +793,23 @@ func nativeXMLSecretRequirement(
 		SuggestedName: suggested,
 		Replacement:   "{{secret." + suggested + "}}",
 		Context:       "Bruno XML body " + kind + " " + name,
-		Value:         value,
+		Value:         recoverableNativeXMLCredentialValue(value),
+		AffectedPaths: nativeSecretRequirementPaths(sourcePath),
 	}
+}
+
+func recoverableNativeXMLCredentialValue(value string) string {
+	if nativeXMLCredentialValueContainsSentinel(value) {
+		return ""
+	}
+	return value
+}
+
+func nativeXMLCredentialValueContainsSentinel(value string) bool {
+	decoded, stable := decodeBrunoCredentialValueToStable(value, func(current string) (string, error) {
+		return html.UnescapeString(current), nil
+	})
+	return !stable || containsBrunoCredentialRedactionSentinel(decoded)
 }
 
 func nativeXMLLocalName(name string) string {

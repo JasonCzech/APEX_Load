@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from '../hooks/apiClient'
 import { type SecretBindingRequirement, type SecretBindingSelection } from '../types/scriptImports'
 import SecretBindingReview, { type SecretBindingReviewHandle } from './SecretBindingReview'
+import { createProjectSecretsInBatches } from './secretBindingBatches'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -44,6 +45,11 @@ function setInput(input: HTMLInputElement, value: string) {
   const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set
   setter?.call(input, value)
   input.dispatchEvent(new Event('input', { bubbles: true }))
+}
+
+function toggleDetails(details: HTMLDetailsElement, open: boolean) {
+  details.open = open
+  details.dispatchEvent(new Event('toggle'))
 }
 
 describe('SecretBindingReview', () => {
@@ -258,6 +264,392 @@ describe('SecretBindingReview', () => {
     expect(container.querySelectorAll('.secret-binding-review-preservation-reasons small')).toHaveLength(2)
     expect(container.textContent).toContain('source did not provide one exact recoverable value')
     expect(container.textContent).toContain('could not prove it can restore every generated destination occurrence')
+  })
+
+  it('explains an unresolved source variable and summarizes every affected request file', () => {
+    act(() => {
+      root.render(
+        <SecretBindingReview
+          requirements={[{
+            id: 'partner-username',
+            path: 'CTA/first.yml',
+            label: 'Partner username',
+            context: 'XML username element <mh:userName>',
+            suggested_name: 'PARTNER_USERNAME',
+            replacement: '{{secret.PARTNER_USERNAME}}',
+            source_variable: 'partnerUserName',
+            unresolved_source_variable: true,
+            affected_paths: ['CTA/first.yml', 'CTA/second.yml', 'CTA/third.yml'],
+            source_value_available: false,
+            destination_value_preserved: false,
+            preservation_unavailable_reason: 'source_value_unavailable',
+          }]}
+          onApply={vi.fn()}
+        />,
+      )
+    })
+
+    expect(container.querySelector('.secret-binding-review-label-row strong')?.textContent).toBe('Partner username')
+    expect(container.querySelector('.secret-binding-review-location > p')?.textContent)
+      .toBe('XML username element <mh:userName>')
+    expect(container.querySelector('.secret-binding-review-source code')?.textContent).toBe('{{partnerUserName}}')
+    expect(container.querySelector('.secret-binding-review-source small')?.textContent)
+      .toContain('APEX mapped this authored source variable to a governed project-secret reference')
+    expect(container.querySelector('.secret-binding-review-source small')?.textContent)
+      .not.toContain('does not include its value')
+    expect(container.querySelector('.script-health-token')?.textContent).toBe('Value needed before run')
+    expect(container.querySelector('.secret-binding-review-reuse-badge')?.textContent).toBe('3 locations')
+    expect(container.querySelector('.credentials-location-details summary')?.textContent)
+      .toBe('View 3 affected request files')
+    expect(container.querySelector('.credentials-location-scroll-region')).toBeNull()
+    expect(container.querySelectorAll('.credentials-location-list li')).toHaveLength(0)
+    const details = container.querySelector<HTMLDetailsElement>('.credentials-location-details')!
+    act(() => toggleDetails(details, true))
+    const affectedPathRegion = container.querySelector<HTMLElement>('.credentials-location-scroll-region')
+    expect(affectedPathRegion?.getAttribute('role')).toBe('region')
+    expect(affectedPathRegion?.getAttribute('aria-labelledby')).toBe(
+      container.querySelector('.credentials-location-details summary')?.id,
+    )
+    expect(affectedPathRegion?.getAttribute('aria-describedby')).toBe(
+      container.querySelector('.credentials-location-page-status')?.id,
+    )
+    expect(affectedPathRegion?.tabIndex).toBe(0)
+    expect(container.querySelector('.credentials-location-page-status')?.textContent)
+      .toBe('Showing 1–3 of 3 affected request files. Page 1 of 1.')
+    expect(Array.from(container.querySelectorAll('.credentials-location-list code')).map(node => node.textContent))
+      .toEqual(['CTA/first.yml', 'CTA/second.yml', 'CTA/third.yml'])
+    expect(container.querySelector('.secret-binding-review-preservation-reasons')?.textContent)
+      .toContain('No value for {{partnerUserName}} was included in the imported collection')
+    expect(container.textContent?.match(/No value for \{\{partnerUserName\}\}/g)).toHaveLength(1)
+  })
+
+  it('lazily pages 10,000 affected paths while keeping the mounted DOM bounded', () => {
+    const affectedPaths = Array.from(
+      { length: 10_000 },
+      (_, index) => `CTA/request-${String(index).padStart(5, '0')}.yml`,
+    )
+    act(() => {
+      root.render(
+        <SecretBindingReview
+          requirements={[{
+            ...requirements[0],
+            affected_paths: affectedPaths,
+          }]}
+          onApply={vi.fn()}
+        />,
+      )
+    })
+
+    const details = container.querySelector<HTMLDetailsElement>('.credentials-location-details')!
+    const summary = details.querySelector<HTMLElement>('summary')!
+    expect(summary.textContent).toBe('View 10000 affected request files')
+    expect(details.open).toBe(false)
+    expect(container.querySelector('.credentials-location-scroll-region')).toBeNull()
+    expect(container.querySelectorAll('.credentials-location-list li')).toHaveLength(0)
+
+    act(() => toggleDetails(details, true))
+    const firstPageNodes = Array.from(container.querySelectorAll<HTMLLIElement>('.credentials-location-list li'))
+    expect(firstPageNodes).toHaveLength(100)
+    expect(firstPageNodes[0].textContent).toBe('CTA/request-00000.yml')
+    expect(firstPageNodes[99].textContent).toBe('CTA/request-00099.yml')
+    expect(container.querySelector('.credentials-location-page-status')?.textContent)
+      .toBe('Showing 1–100 of 10000 affected request files. Page 1 of 100.')
+    const region = container.querySelector<HTMLElement>('.credentials-location-scroll-region')!
+    expect(region.getAttribute('role')).toBe('region')
+    expect(region.tabIndex).toBe(0)
+    expect(region.getAttribute('aria-labelledby')).toBe(summary.id)
+    expect(region.querySelector('ul')?.getAttribute('aria-label'))
+      .toBe('Affected request files, items 1 through 100 of 10000')
+    const previousButton = Array.from(region.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent?.includes('Previous'))!
+    const nextButton = Array.from(region.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent?.includes('Next'))!
+    expect(region.querySelector('.credentials-location-pagination')?.getAttribute('role')).toBe('group')
+    expect(region.querySelector('.credentials-location-pagination')?.getAttribute('aria-label'))
+      .toBe('Affected request files pages')
+    expect(previousButton.disabled).toBe(true)
+    expect(nextButton.disabled).toBe(false)
+
+    act(() => nextButton.click())
+    const secondPageNodes = Array.from(container.querySelectorAll<HTMLLIElement>('.credentials-location-list li'))
+    expect(secondPageNodes).toHaveLength(100)
+    expect(secondPageNodes[0].textContent).toBe('CTA/request-00100.yml')
+    expect(secondPageNodes[99].textContent).toBe('CTA/request-00199.yml')
+    expect(container.querySelector('.credentials-location-page-status')?.textContent)
+      .toBe('Showing 101–200 of 10000 affected request files. Page 2 of 100.')
+
+    const firstVisibleNode = secondPageNodes[0]
+    act(() => setInput(container.querySelector<HTMLInputElement>('input[type="text"]')!, 'RENAMED_TOKEN'))
+    expect(container.querySelectorAll('.credentials-location-list li')).toHaveLength(100)
+    expect(container.querySelector('.credentials-location-list li')).toBe(firstVisibleNode)
+
+    act(() => toggleDetails(details, false))
+    expect(container.querySelector('.credentials-location-scroll-region')).toBeNull()
+    expect(container.querySelectorAll('.credentials-location-list li')).toHaveLength(0)
+    act(() => toggleDetails(details, true))
+    expect(container.querySelector('.credentials-location-list li')?.textContent).toBe('CTA/request-00000.yml')
+  })
+
+  it('groups ten thousand duplicate suggestions in linear suffix order, batches probes, and renders one page', async () => {
+    const manyRequirements = Array.from({ length: 10_000 }, (_, index): SecretBindingRequirement => {
+      const suffix = String(index).padStart(5, '0')
+      return {
+        id: `credential-${suffix}`,
+        path: `CTA/request-${suffix}.yml`,
+        label: `Credential ${suffix}`,
+        context: 'Sensitive request header',
+        suggested_name: 'SHARED_TOKEN',
+        replacement: '{{secret.SHARED_TOKEN}}',
+        script_index: index,
+        script_name: `Generated script ${suffix}`,
+      }
+    })
+    apiMock.getProjectSecretStatuses.mockImplementation(async (_projectId: string, names: string[]) => {
+      if (names.length > 256) throw new Error('status batch exceeded server limit')
+      return {
+        project_id: 'project-1',
+        capabilities: {
+          provider: 'database',
+          writable: true,
+          create_supported: true,
+          replace_supported: true,
+          source_secret_migration_policy_enabled: false,
+        },
+        secrets: names.map(name => ({ name, configured: false, provider: 'database', writable: true })),
+      }
+    })
+
+    await act(async () => {
+      root.render(
+        <SecretBindingReview
+          projectId="project-1"
+          requirements={manyRequirements}
+          onApply={vi.fn()}
+        />,
+      )
+      await new Promise(resolve => window.setTimeout(resolve, 0))
+    })
+
+    const probeCalls = apiMock.getProjectSecretStatuses.mock.calls
+    expect(probeCalls).toHaveLength(Math.ceil(manyRequirements.length / 256))
+    expect(probeCalls.every(([, names]) => names.length > 0 && names.length <= 256)).toBe(true)
+    expect(new Set(probeCalls.flatMap(([, names]) => names))).toHaveLength(manyRequirements.length)
+    expect(container.querySelectorAll('.secret-binding-review-item')).toHaveLength(100)
+    expect(container.querySelectorAll<HTMLInputElement>('input[type="text"]')).toHaveLength(100)
+    expect(container.querySelector<HTMLInputElement>('input[type="text"]')?.value).toBe('SHARED_TOKEN')
+    const pagination = container.querySelector<HTMLElement>('.secret-binding-review-pagination')!
+    expect(pagination.getAttribute('aria-label')).toBe('Credential review pages')
+    expect(pagination.textContent).toContain('Showing credentials 1–100 of 10000. Page 1 of 100.')
+    expect(pagination.querySelector('[role="group"]')?.getAttribute('aria-label')).toBe('Credential page controls')
+
+    const nextButton = Array.from(pagination.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent?.includes('Next'))!
+    act(() => nextButton.click())
+    expect(container.querySelectorAll('.secret-binding-review-item')).toHaveLength(100)
+    expect(container.querySelector<HTMLInputElement>('input[type="text"]')?.value).toBe('SHARED_TOKEN_101')
+    expect(pagination.textContent).toContain('Showing credentials 101–200 of 10000. Page 2 of 100.')
+  })
+
+  it('rechecks more than 256 credential names in bounded batches before commit', async () => {
+    const batchedRequirements = Array.from({ length: 300 }, (_, index): SecretBindingRequirement => ({
+      id: `credential-${index}`,
+      path: `CTA/request-${index}.yml`,
+      label: `Credential ${index}`,
+      context: 'Sensitive request header',
+      suggested_name: `TOKEN_${index}`,
+      replacement: `{{secret.TOKEN_${index}}}`,
+    }))
+    apiMock.getProjectSecretStatuses.mockImplementation(async (_projectId: string, names: string[]) => {
+      if (names.length > 256) throw new Error('status batch exceeded server limit')
+      return {
+        project_id: 'project-1',
+        capabilities: {
+          provider: 'database',
+          writable: true,
+          create_supported: true,
+          replace_supported: true,
+          source_secret_migration_policy_enabled: false,
+        },
+        secrets: names.map(name => ({ name, configured: false, provider: 'database', writable: true })),
+      }
+    })
+    const reviewRef = { current: null as SecretBindingReviewHandle | null }
+    const onApply = vi.fn().mockResolvedValue(undefined)
+    await act(async () => {
+      root.render(
+        <SecretBindingReview
+          ref={reviewRef}
+          projectId="project-1"
+          requirements={batchedRequirements}
+          onApply={onApply}
+        />,
+      )
+      await new Promise(resolve => window.setTimeout(resolve, 0))
+    })
+    apiMock.getProjectSecretStatuses.mockClear()
+
+    await act(async () => {
+      expect(await reviewRef.current?.commit()).toBe(true)
+    })
+
+    expect(apiMock.getProjectSecretStatuses).toHaveBeenCalledTimes(2)
+    expect(apiMock.getProjectSecretStatuses.mock.calls.every(([, names]) => names.length <= 256)).toBe(true)
+    expect(onApply).toHaveBeenCalledTimes(1)
+    expect(onApply.mock.calls[0][0]).toHaveLength(300)
+  })
+
+  it('writes more than 256 manually entered values in bounded create batches', async () => {
+    const writes = Array.from({ length: 513 }, (_, index) => ({
+      name: `MANUAL_TOKEN_${index}`,
+      value: `write-only-${index}`,
+    }))
+    const createSecrets = vi.fn(async (_projectId: string, secrets: Array<{ name: string; value: string }>) => {
+      if (secrets.length > 256) throw new Error('write batch exceeded server limit')
+      return { project_id: 'project-1', secrets: [], count: secrets.length }
+    })
+    const committedNames: string[] = []
+
+    expect(await createProjectSecretsInBatches(
+      createSecrets,
+      'project-1',
+      writes,
+      names => committedNames.push(...names),
+    )).toBe(true)
+
+    expect(createSecrets).toHaveBeenCalledTimes(3)
+    expect(createSecrets.mock.calls.map(([, secrets]) => secrets.length)).toEqual([256, 256, 1])
+    expect(createSecrets.mock.calls.flatMap(([, secrets]) => secrets)).toEqual(writes)
+    expect(committedNames).toEqual(writes.map(write => write.name))
+  })
+
+  it('fails closed when batched status responses disagree about store capabilities', async () => {
+    const requirementsAcrossBatches = Array.from({ length: 300 }, (_, index): SecretBindingRequirement => ({
+      id: `capability-${index}`,
+      path: `/actions/${index}/headers/Authorization`,
+      label: `Credential ${index}`,
+      context: 'Sensitive request header',
+      suggested_name: `CAPABILITY_TOKEN_${index}`,
+      replacement: `{{secret.CAPABILITY_TOKEN_${index}}}`,
+    }))
+    let responseIndex = 0
+    apiMock.getProjectSecretStatuses.mockImplementation(async (_projectId: string, names: string[]) => {
+      const index = responseIndex
+      responseIndex += 1
+      return {
+        project_id: 'project-1',
+        capabilities: {
+          provider: index === 0 ? 'database' : 'key-vault',
+          writable: true,
+          create_supported: true,
+          replace_supported: true,
+          source_secret_migration_policy_enabled: false,
+        },
+        secrets: names.map(name => ({ name, configured: false })),
+      }
+    })
+
+    await act(async () => {
+      root.render(
+        <SecretBindingReview
+          projectId="project-1"
+          requirements={requirementsAcrossBatches}
+          onApply={vi.fn()}
+        />,
+      )
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(container.querySelector('.credentials-card-summary')?.textContent).toContain('read-only')
+    expect(Array.from(container.querySelectorAll<HTMLInputElement>('input[type="password"]'))
+      .every(input => input.disabled)).toBe(true)
+    expect(apiMock.createProjectSecrets).not.toHaveBeenCalled()
+  })
+
+  it('recognizes that an unresolved imported variable already has a configured project secret', async () => {
+    apiMock.getProjectSecretStatuses.mockImplementation(async (_projectId: string, names: string[]) => ({
+      project_id: 'project-1',
+      capabilities: {
+        provider: 'database',
+        writable: true,
+        create_supported: true,
+        replace_supported: true,
+        source_secret_migration_policy_enabled: false,
+      },
+      secrets: names.map(name => ({ name, configured: true, provider: 'database', writable: true })),
+    }))
+    await act(async () => {
+      root.render(
+        <SecretBindingReview
+          projectId="project-1"
+          requirements={[{
+            id: 'partner-username',
+            path: 'CTA/request.yml',
+            label: 'Partner username',
+            context: 'XML username element <mh:userName>',
+            suggested_name: 'PARTNER_USERNAME',
+            replacement: '{{secret.PARTNER_USERNAME}}',
+            source_variable: 'partnerUserName',
+            unresolved_source_variable: true,
+            source_value_available: false,
+            destination_value_preserved: false,
+            preservation_unavailable_reason: 'source_value_unavailable',
+          }]}
+          onApply={vi.fn()}
+        />,
+      )
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(container.querySelector('.script-health-token')?.textContent).toBe('Configured')
+    const sourceGuidance = container.querySelector('.secret-binding-review-source small')?.textContent || ''
+    const preservationGuidance = container.querySelector('.secret-binding-review-preservation-reasons')?.textContent || ''
+    expect(sourceGuidance).toContain('APEX mapped this authored source variable to a governed project-secret reference')
+    expect(sourceGuidance).not.toContain('selected project secret is already configured')
+    expect(preservationGuidance).toContain('selected project secret is already configured')
+    expect(sourceGuidance).not.toContain('Enter the value now')
+    expect(preservationGuidance).not.toContain('configure it in Project Secrets')
+    expect(container.textContent?.match(/selected project secret is already configured/g)).toHaveLength(1)
+  })
+
+  it('recognizes that a value for an unresolved imported variable will be created during import', async () => {
+    await act(async () => {
+      root.render(
+        <SecretBindingReview
+          projectId="project-1"
+          requirements={[{
+            id: 'partner-password',
+            path: 'CTA/request.yml',
+            label: 'Partner password',
+            context: 'XML password element <mh:userPassword>',
+            suggested_name: 'PARTNER_PASSWORD',
+            replacement: '{{secret.PARTNER_PASSWORD}}',
+            source_variable: 'partnerPassword',
+            unresolved_source_variable: true,
+            source_value_available: false,
+            destination_value_preserved: false,
+            preservation_unavailable_reason: 'source_value_unavailable',
+          }]}
+          onApply={vi.fn()}
+        />,
+      )
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    const valueInput = container.querySelector<HTMLInputElement>('input[type="password"]')!
+    expect(valueInput.disabled).toBe(false)
+    act(() => setInput(valueInput, 'write-only-value'))
+
+    expect(container.querySelector('.script-health-token')?.textContent).toBe('Will be created')
+    const sourceGuidance = container.querySelector('.secret-binding-review-source small')?.textContent || ''
+    const preservationGuidance = container.querySelector('.secret-binding-review-preservation-reasons')?.textContent || ''
+    expect(sourceGuidance).toContain('APEX mapped this authored source variable to a governed project-secret reference')
+    expect(sourceGuidance).not.toContain('will be stored in Project Secrets during import')
+    expect(preservationGuidance).toContain('will be stored in Project Secrets during import')
+    expect(sourceGuidance).not.toContain('configure it in Project Secrets')
+    expect(preservationGuidance).not.toContain('configure it in Project Secrets')
+    expect(container.textContent?.match(/will be stored in Project Secrets during import/g)).toHaveLength(1)
   })
 
   it('fails closed when refreshed server evidence withdraws destination preservation', () => {
@@ -599,6 +991,7 @@ describe('SecretBindingReview', () => {
       ))
       .mockResolvedValueOnce({ project_id: 'project-1', secrets: [], count: 1 })
     const onApply = vi.fn().mockResolvedValue(undefined)
+    const onProjectSecretsConfigured = vi.fn()
     const reviewRef = { current: null as SecretBindingReviewHandle | null }
     await act(async () => {
       root.render(
@@ -609,6 +1002,7 @@ describe('SecretBindingReview', () => {
           sourceSecretSessionId="retained-session"
           sourceMigrationAllowed
           onApply={onApply}
+          onProjectSecretsConfigured={onProjectSecretsConfigured}
         />,
       )
       await Promise.resolve()
@@ -626,12 +1020,14 @@ describe('SecretBindingReview', () => {
     expect(container.textContent).toContain('protected import session was retained')
     expect(container.textContent).toContain('Retained credentials: FIRST_TOKEN')
     expect(onApply).not.toHaveBeenCalled()
+    expect(onProjectSecretsConfigured).toHaveBeenCalledWith(['FIRST_TOKEN'])
 
     await act(async () => {
       expect(await reviewRef.current?.commit()).toBe(true)
     })
     expect(apiMock.migrateImportSecrets).toHaveBeenCalledTimes(2)
     expect(onApply).toHaveBeenCalledTimes(1)
+    expect(onProjectSecretsConfigured).toHaveBeenLastCalledWith(['ORDER_API_TOKEN'])
   })
 
   it('emits only non-sensitive preparation metadata and clears values after success', async () => {
@@ -670,6 +1066,143 @@ describe('SecretBindingReview', () => {
     }])
     expect(valueInput.value).toBe('')
     expect(JSON.stringify(onPreparedChange.mock.calls)).not.toContain('never-leave-the-card')
+  })
+
+  it('emits the operator-edited destination name and live configured guidance without values', async () => {
+    apiMock.getProjectSecretStatuses.mockImplementation(async (_projectId: string, names: string[]) => ({
+      project_id: 'project-1',
+      capabilities: {
+        provider: 'database',
+        writable: true,
+        create_supported: true,
+      },
+      secrets: names.map(name => ({
+        name,
+        configured: name === 'RENAMED_TOKEN',
+        provider: 'database',
+        writable: true,
+      })),
+    }))
+    const onRequirementDestinationStateChange = vi.fn()
+    await act(async () => {
+      root.render(
+        <SecretBindingReview
+          projectId="project-1"
+          requirements={[requirements[0]]}
+          onApply={vi.fn()}
+          onRequirementDestinationStateChange={onRequirementDestinationStateChange}
+        />,
+      )
+      await Promise.resolve()
+    })
+
+    act(() => setInput(container.querySelector<HTMLInputElement>('input[type="text"]')!, 'RENAMED_TOKEN'))
+    await act(async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(onRequirementDestinationStateChange).toHaveBeenLastCalledWith({
+      'authorization-header': {
+        usesProjectSecret: true,
+        secretName: 'RENAMED_TOKEN',
+        guidance: 'The selected project secret is already configured and will be used when the imported scripts run.',
+      },
+    })
+    expect(JSON.stringify(onRequirementDestinationStateChange.mock.calls)).not.toContain('never-leave-the-card')
+  })
+
+  it('never includes a write-only credential value in lifted destination state', async () => {
+    const onRequirementDestinationStateChange = vi.fn()
+    await act(async () => {
+      root.render(
+        <SecretBindingReview
+          projectId="project-1"
+          requirements={[requirements[0]]}
+          onApply={vi.fn()}
+          onRequirementDestinationStateChange={onRequirementDestinationStateChange}
+        />,
+      )
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    act(() => setInput(
+      container.querySelector<HTMLInputElement>('input[type="password"]')!,
+      'never-leave-destination-card',
+    ))
+
+    expect(onRequirementDestinationStateChange).toHaveBeenLastCalledWith({
+      'authorization-header': {
+        usesProjectSecret: true,
+        secretName: 'ORDER_API_TOKEN',
+        guidance: 'A value will be stored in Project Secrets during import.',
+      },
+    })
+    expect(JSON.stringify(onRequirementDestinationStateChange.mock.calls))
+      .not.toContain('never-leave-destination-card')
+  })
+
+  it('reports a confirmed credential write as configured when binding application fails', async () => {
+    const onRequirementDestinationStateChange = vi.fn()
+    const reviewRef = { current: null as SecretBindingReviewHandle | null }
+    const onApply = vi.fn().mockRejectedValue(new Error('temporary binding failure'))
+    await act(async () => {
+      root.render(
+        <SecretBindingReview
+          ref={reviewRef}
+          projectId="project-1"
+          requirements={[requirements[0]]}
+          onApply={onApply}
+          onRequirementDestinationStateChange={onRequirementDestinationStateChange}
+        />,
+      )
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    act(() => setInput(
+      container.querySelector<HTMLInputElement>('input[type="password"]')!,
+      'write-before-apply-failure',
+    ))
+
+    await act(async () => {
+      expect(await reviewRef.current?.commit()).toBe(false)
+    })
+
+    expect(apiMock.createProjectSecrets).toHaveBeenCalledWith('project-1', [{
+      name: 'ORDER_API_TOKEN',
+      value: 'write-before-apply-failure',
+    }])
+    expect(container.textContent).toContain('temporary binding failure')
+    expect(onRequirementDestinationStateChange).toHaveBeenLastCalledWith({
+      'authorization-header': {
+        usesProjectSecret: true,
+        secretName: 'ORDER_API_TOKEN',
+        guidance: 'The selected project secret is already configured and will be used when the imported scripts run.',
+      },
+    })
+
+    await act(async () => {
+      root.render(
+        <SecretBindingReview
+          ref={reviewRef}
+          projectId="project-2"
+          requirements={[requirements[0]]}
+          onApply={vi.fn()}
+          onRequirementDestinationStateChange={onRequirementDestinationStateChange}
+        />,
+      )
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(container.querySelector('.script-health-token')?.textContent).toBe('Configure later')
+    expect(onRequirementDestinationStateChange).toHaveBeenLastCalledWith({
+      'authorization-header': {
+        usesProjectSecret: true,
+        secretName: 'ORDER_API_TOKEN',
+        guidance: 'Enter the value now or configure it in Project Secrets before running the imported scripts.',
+      },
+    })
   })
 
   it('preserves write-only edits across same-scope review generations', async () => {
@@ -842,6 +1375,77 @@ describe('SecretBindingReview', () => {
     expect(onApply).not.toHaveBeenCalled()
   })
 
+  it('does not leak a completed in-flight write into a different project scope', async () => {
+    let resolveCreate: ((value: unknown) => void) | undefined
+    apiMock.createProjectSecrets.mockReturnValueOnce(new Promise(resolve => {
+      resolveCreate = resolve
+    }))
+    const onApply = vi.fn().mockResolvedValue(undefined)
+    const onRequirementDestinationStateChange = vi.fn()
+    const reviewRef = { current: null as SecretBindingReviewHandle | null }
+    await act(async () => {
+      root.render(
+        <SecretBindingReview
+          ref={reviewRef}
+          reviewGeneration="generation-a"
+          projectId="project-1"
+          requirements={[requirements[0]]}
+          onApply={onApply}
+          onRequirementDestinationStateChange={onRequirementDestinationStateChange}
+        />,
+      )
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    act(() => setInput(
+      container.querySelector<HTMLInputElement>('input[type="password"]')!,
+      'project-one-only-value',
+    ))
+
+    let commitResult: boolean | undefined
+    act(() => {
+      void reviewRef.current?.commit().then(result => { commitResult = result })
+    })
+    await act(async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(apiMock.createProjectSecrets).toHaveBeenCalledWith('project-1', [{
+      name: 'ORDER_API_TOKEN',
+      value: 'project-one-only-value',
+    }])
+
+    await act(async () => {
+      root.render(
+        <SecretBindingReview
+          ref={reviewRef}
+          reviewGeneration="generation-b"
+          projectId="project-2"
+          requirements={[requirements[0]]}
+          onApply={vi.fn()}
+          onRequirementDestinationStateChange={onRequirementDestinationStateChange}
+        />,
+      )
+      await Promise.resolve()
+    })
+    await act(async () => {
+      resolveCreate?.({ project_id: 'project-1', secrets: [], count: 1 })
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(commitResult).toBe(false)
+    expect(onApply).not.toHaveBeenCalled()
+    expect(container.querySelector('.script-health-token')?.textContent).toBe('Configure later')
+    expect(onRequirementDestinationStateChange).toHaveBeenLastCalledWith({
+      'authorization-header': {
+        usesProjectSecret: true,
+        secretName: 'ORDER_API_TOKEN',
+        guidance: 'Enter the value now or configure it in Project Secrets before running the imported scripts.',
+      },
+    })
+  })
+
   it('groups duplicate references and creates an optional value before applying bindings', async () => {
     const onApply = vi.fn().mockResolvedValue(undefined)
     await act(async () => {
@@ -860,6 +1464,8 @@ describe('SecretBindingReview', () => {
 
     expect(container.textContent).toContain('Credentials (1)')
     expect(container.textContent).toContain('2 locations')
+    expect(container.querySelector('.credentials-location-details summary')?.textContent)
+      .toBe('View 2 affected locations')
     const valueInput = container.querySelector<HTMLInputElement>('input[type="password"]')!
     act(() => setInput(valueInput, 'secret-value'))
     const applyButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
@@ -888,6 +1494,8 @@ describe('SecretBindingReview', () => {
     })
 
     expect(container.textContent).toContain('Credentials (2)')
+    expect(Array.from(container.querySelectorAll('.secret-binding-review-script strong')).map(node => node.textContent))
+      .toEqual(['Script A', 'Script B'])
     expect(Array.from(container.querySelectorAll<HTMLInputElement>('input[type="text"]')).map(input => input.value)).toEqual([
       'ORDER_API_TOKEN',
       'ORDER_API_TOKEN_2',
@@ -1431,7 +2039,10 @@ describe('SecretBindingReview', () => {
     act(() => container.querySelector<HTMLInputElement>('.credentials-source-migration input')?.click())
     const applyButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
       .find(button => button.textContent?.includes('Continue with credentials'))
-    act(() => applyButton?.click())
+    await act(async () => {
+      applyButton?.click()
+      await vi.waitFor(() => expect(apiMock.migrateImportSecrets).toHaveBeenCalledTimes(1))
+    })
 
     await act(async () => {
       root.render(

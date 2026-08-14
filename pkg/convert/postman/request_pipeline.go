@@ -31,21 +31,28 @@ type postmanFinalization struct {
 }
 
 type postmanRequestPipeline struct {
-	sanitizeSensitive  bool
-	registry           *credentialpolicy.NameRegistry
-	provenVariables    map[string]struct{}
-	sourceVariables    map[string]credentialpolicy.SourceVariable
-	sourceDependencies map[string][]string
-	sourceReviewNames  map[string]struct{}
-	sourceReviewBodies map[string]string
-	reports            []requestimport.Report
+	sanitizeSensitive   bool
+	sourceFileName      string
+	sourceVariablePaths map[string]string
+	registry            *credentialpolicy.NameRegistry
+	provenVariables     map[string]struct{}
+	sourceVariables     map[string]credentialpolicy.SourceVariable
+	sourceDependencies  map[string][]string
+	sourceReviewNames   map[string]struct{}
+	sourceReviewBodies  map[string]string
+	reports             []requestimport.Report
 }
 
 func newPostmanRequestPipeline(
 	variables map[string]string,
 	sanitizeSensitive bool,
+	sourceFileName string,
+	sourceVariablePaths map[string]string,
 	dependencySets ...map[string][]string,
 ) *postmanRequestPipeline {
+	if strings.TrimSpace(sourceFileName) == "" {
+		sourceFileName = "postman_collection.json"
+	}
 	keys := make([]string, 0, len(variables))
 	for name := range variables {
 		keys = append(keys, name)
@@ -61,24 +68,36 @@ func newPostmanRequestPipeline(
 			Value: variables[sourceName],
 			Source: credentialpolicy.SourceRef{
 				Format:  "postman",
-				Path:    "postman_collection.json",
-				Pointer: "/variables/" + name,
+				Path:    postmanSourceVariablePath(sourceVariablePaths, sourceName, name, sourceFileName),
+				Pointer: "/variables/" + normalizeVariableName(sourceName),
 			},
 		}
 	}
 	pipeline := &postmanRequestPipeline{
-		sanitizeSensitive:  sanitizeSensitive,
-		registry:           credentialpolicy.NewNameRegistry(),
-		provenVariables:    make(map[string]struct{}),
-		sourceVariables:    sourceVariables,
-		sourceReviewNames:  make(map[string]struct{}),
-		sourceReviewBodies: make(map[string]string),
-		reports:            make([]requestimport.Report, 0),
+		sanitizeSensitive:   sanitizeSensitive,
+		sourceFileName:      sourceFileName,
+		sourceVariablePaths: clonePostmanStringMap(sourceVariablePaths),
+		registry:            credentialpolicy.NewNameRegistry(),
+		provenVariables:     make(map[string]struct{}),
+		sourceVariables:     sourceVariables,
+		sourceReviewNames:   make(map[string]struct{}),
+		sourceReviewBodies:  make(map[string]string),
+		reports:             make([]requestimport.Report, 0),
 	}
 	if len(dependencySets) > 0 {
 		pipeline.sourceDependencies = make(map[string][]string, len(dependencySets[0]))
 		for name, dependencies := range dependencySets[0] {
-			pipeline.sourceDependencies[normalizeVariableName(name)] = append([]string(nil), dependencies...)
+			canonicalName := normalizeVariableName(name)
+			if canonicalName == "" {
+				continue
+			}
+			canonicalDependencies := make([]string, 0, len(dependencies))
+			for _, dependency := range dependencies {
+				if canonical := normalizeVariableName(dependency); canonical != "" {
+					canonicalDependencies = append(canonicalDependencies, canonical)
+				}
+			}
+			pipeline.sourceDependencies[canonicalName] = uniqueSortedPostmanVariables(canonicalDependencies)
 		}
 	}
 	return pipeline
@@ -88,7 +107,13 @@ func (pipeline *postmanRequestPipeline) updateSourceVariables(variables map[stri
 	if pipeline == nil {
 		return
 	}
-	updated := newPostmanRequestPipeline(variables, pipeline.sanitizeSensitive, dependencies)
+	updated := newPostmanRequestPipeline(
+		variables,
+		pipeline.sanitizeSensitive,
+		pipeline.sourceFileName,
+		pipeline.sourceVariablePaths,
+		dependencies,
+	)
 	pipeline.sourceVariables = updated.sourceVariables
 	pipeline.sourceDependencies = updated.sourceDependencies
 }
@@ -102,8 +127,8 @@ func (pipeline *postmanRequestPipeline) FinalizeAction(
 	if pipeline == nil {
 		return dsl.Action{}, fmt.Errorf("Postman request pipeline is required")
 	}
-	request := postmanEffectiveRequest(index, item, source)
-	pipeline.collectSourceReviewCredentialEvidence(item)
+	request := postmanEffectiveRequest(index, item, source, pipeline.sourceFileName, pipeline.sourceVariables)
+	pipeline.collectSourceReviewCredentialEvidence(item, pipeline.sourceVariables)
 	if request.Body.Kind == requestimport.BodyMultipart {
 		multipart, err := parsePostmanMultipart(
 			request.Body.Payload,
@@ -128,6 +153,12 @@ func (pipeline *postmanRequestPipeline) FinalizeAction(
 		}
 	}
 	mode := credentialpolicy.Preserve
+	if pipeline.sanitizeSensitive {
+		// "Scrub sensitive fields" is an executable-draft policy, not merely a
+		// presentation hint. Keep the raw value only in the protected one-shot
+		// requirement handoff and put a governed secret reference in the script.
+		mode = credentialpolicy.SecretReference
+	}
 	projectorVariables := clonePostmanVariableSet(pipeline.provenVariables)
 	sheltered := shelterPostmanTemplates(&request, pipeline.provenVariables, pipeline.sourceVariables)
 	projected, report, err := requestimport.FinalizeAction(request, requestimport.FinalizeOptions{
@@ -191,7 +222,11 @@ func (pipeline *postmanRequestPipeline) consumedSourceVariableNames() []string {
 	}
 	sort.Strings(queue)
 	for index := 0; index < len(queue); index++ {
-		for _, dependency := range pipeline.sourceDependencies[queue[index]] {
+		dependencies, _ := postmanDependenciesByRuntimeName(
+			pipeline.sourceDependencies,
+			queue[index],
+		)
+		for _, dependency := range dependencies {
 			dependency = normalizeVariableName(dependency)
 			if dependency == "" {
 				continue
@@ -211,18 +246,52 @@ func (pipeline *postmanRequestPipeline) consumedSourceVariableNames() []string {
 	return names
 }
 
-func (pipeline *postmanRequestPipeline) collectSourceReviewCredentialEvidence(item requestItem) {
+func (pipeline *postmanRequestPipeline) collectSourceReviewCredentialEvidence(
+	item requestItem,
+	sourceVariables map[string]credentialpolicy.SourceVariable,
+) {
 	if pipeline == nil {
 		return
+	}
+	seenSourceVariables := make(map[string]struct{})
+	recordSourceVariable := func(name string) {
+		name = normalizeVariableName(name)
+		if name == "" {
+			return
+		}
+		queue := []string{name}
+		for index := 0; index < len(queue); index++ {
+			current := normalizeVariableName(queue[index])
+			if current == "" {
+				continue
+			}
+			identity := postmanVariableCanonicalName(current)
+			if _, visited := seenSourceVariables[identity]; visited {
+				continue
+			}
+			seenSourceVariables[identity] = struct{}{}
+			pipeline.sourceReviewNames[current] = struct{}{}
+			// Source variables can change between requests through Postman
+			// scope assignments. Retain every credential-bearing value at the
+			// source-time action boundary; the final variable snapshot alone is
+			// insufficient to mask an earlier value from public review.
+			if _, variable, ok := postmanSourceVariableByRuntimeName(sourceVariables, current); ok &&
+				strings.TrimSpace(variable.Value) != "" {
+				pipeline.sourceReviewBodies[variable.Value] = scrub.Redacted
+			}
+			dependencies, _ := postmanDependenciesByRuntimeName(
+				pipeline.sourceDependencies,
+				current,
+			)
+			queue = append(queue, dependencies...)
+		}
 	}
 	recordReferences := func(value string) {
 		for _, match := range variablePattern.FindAllStringSubmatch(value, -1) {
 			if len(match) != 2 {
 				continue
 			}
-			if name := normalizeVariableName(match[1]); name != "" {
-				pipeline.sourceReviewNames[name] = struct{}{}
-			}
+			recordSourceVariable(match[1])
 		}
 	}
 	for _, header := range item.Request.Header {
@@ -262,7 +331,7 @@ func (pipeline *postmanRequestPipeline) collectSourceReviewCredentialEvidence(it
 			continue
 		}
 		name := normalizeVariableName(match[1])
-		sourceVariable, ok := pipeline.sourceVariables[name]
+		_, sourceVariable, ok := postmanSourceVariableByRuntimeName(sourceVariables, name)
 		if !ok {
 			continue
 		}
@@ -562,18 +631,29 @@ func disclosureSafePostmanRequirements(input []credentialpolicy.Requirement) []c
 	return out
 }
 
-func postmanEffectiveRequest(index int, item requestItem, action dsl.Action) requestimport.EffectiveRequest {
+func postmanEffectiveRequest(index int, item requestItem, action dsl.Action, sourceFileName string, sourceVariables map[string]credentialpolicy.SourceVariable) requestimport.EffectiveRequest {
+	if strings.TrimSpace(sourceFileName) == "" {
+		sourceFileName = "postman_collection.json"
+	}
 	headers := make(requestimport.HeaderList, 0, len(action.HeaderList))
+	headerOccurrences := make(map[string]int)
 	for headerIndex, header := range action.HeaderList {
+		source := requestimport.SourceRef{
+			Format:  "postman",
+			Path:    sourceFileName,
+			Pointer: fmt.Sprintf("/requests/%d/headers/%d", index, headerIndex),
+			ItemID:  item.Name,
+		}
+		key := strings.ToLower(strings.TrimSpace(header.Name))
+		occurrence := headerOccurrences[key]
+		headerOccurrences[key] = occurrence + 1
+		if expression, ok := postmanAuthoredHeaderExpression(item.Request.Header, header.Name, occurrence); ok {
+			source = postmanSourceVariableExpressionRef(expression, sourceVariables, source)
+		}
 		headers = append(headers, requestimport.Header{
-			Name:  header.Name,
-			Value: header.Value,
-			Source: requestimport.SourceRef{
-				Format:  "postman",
-				Path:    "postman_collection.json",
-				Pointer: fmt.Sprintf("/requests/%d/headers/%d", index, headerIndex),
-				ItemID:  item.Name,
-			},
+			Name:   header.Name,
+			Value:  header.Value,
+			Source: source,
 		})
 	}
 	if len(headers) == 0 && len(action.Headers) > 0 {
@@ -581,7 +661,7 @@ func postmanEffectiveRequest(index int, item requestItem, action dsl.Action) req
 	}
 	source := requestimport.SourceRef{
 		Format:  "postman",
-		Path:    "postman_collection.json",
+		Path:    sourceFileName,
 		Pointer: fmt.Sprintf("/requests/%d", index),
 		ItemID:  item.Name,
 	}
@@ -605,6 +685,143 @@ func postmanEffectiveRequest(index int, item requestItem, action dsl.Action) req
 		Metadata: action.Metadata,
 		Source:   source,
 	}
+}
+
+func postmanAuthoredHeaderExpression(headers []header, name string, occurrence int) (string, bool) {
+	seen := 0
+	for _, header := range headers {
+		if header.Disabled || !strings.EqualFold(strings.TrimSpace(header.Key), strings.TrimSpace(name)) {
+			continue
+		}
+		if seen == occurrence {
+			return header.Value, true
+		}
+		seen++
+	}
+	return "", false
+}
+
+func postmanSourceVariableExpressionRef(expression string, variables map[string]credentialpolicy.SourceVariable, fallback requestimport.SourceRef) requestimport.SourceRef {
+	matches := variablePattern.FindAllStringSubmatch(expression, -1)
+	if len(matches) == 0 {
+		return fallback
+	}
+	var selected credentialpolicy.SourceRef
+	for _, match := range matches {
+		if len(match) != 2 {
+			return fallback
+		}
+		_, variable, ok := postmanSourceVariableByRuntimeName(variables, match[1])
+		if !ok || strings.TrimSpace(variable.Source.Path) == "" {
+			return fallback
+		}
+		if selected.Path == "" {
+			selected = variable.Source
+			continue
+		}
+		if selected.Format != variable.Source.Format ||
+			selected.Path != variable.Source.Path ||
+			selected.Pointer != variable.Source.Pointer {
+			return fallback
+		}
+	}
+	if selected.Path == "" {
+		return fallback
+	}
+	selected.ItemID = fallback.ItemID
+	return requestimport.SourceRef(selected)
+}
+
+func postmanSourceVariableByRuntimeName(
+	variables map[string]credentialpolicy.SourceVariable,
+	name string,
+) (string, credentialpolicy.SourceVariable, bool) {
+	if len(variables) == 0 {
+		return "", credentialpolicy.SourceVariable{}, false
+	}
+	if normalized := normalizeVariableName(name); normalized != "" {
+		if variable, exists := variables[normalized]; exists {
+			return normalized, variable, true
+		}
+	}
+	identity := postmanVariableCanonicalName(name)
+	if identity == "" {
+		return "", credentialpolicy.SourceVariable{}, false
+	}
+	var (
+		matchedName     string
+		matchedVariable credentialpolicy.SourceVariable
+		matches         int
+	)
+	for candidate, variable := range variables {
+		if postmanVariableCanonicalName(candidate) != identity {
+			continue
+		}
+		matchedName = candidate
+		matchedVariable = variable
+		matches++
+	}
+	if matches != 1 {
+		// Destination bindings are case-insensitive and normalize punctuation.
+		// Never select one of multiple source definitions for credential
+		// provenance, even though the normal binding resolver removes collisions
+		// before this helper is reached.
+		return "", credentialpolicy.SourceVariable{}, false
+	}
+	return matchedName, matchedVariable, true
+}
+
+func postmanDependenciesByRuntimeName(
+	dependencies map[string][]string,
+	name string,
+) ([]string, bool) {
+	if len(dependencies) == 0 {
+		return nil, false
+	}
+	if normalized := normalizeVariableName(name); normalized != "" {
+		if values, exists := dependencies[normalized]; exists {
+			return values, true
+		}
+	}
+	identity := postmanVariableCanonicalName(name)
+	if identity == "" {
+		return nil, false
+	}
+	var (
+		matched []string
+		matches int
+	)
+	for candidate, values := range dependencies {
+		if postmanVariableCanonicalName(candidate) != identity {
+			continue
+		}
+		matched = values
+		matches++
+	}
+	if matches != 1 {
+		return nil, false
+	}
+	return matched, true
+}
+
+func postmanSourceVariablePath(paths map[string]string, sourceName, normalizedName, fallback string) string {
+	for _, name := range []string{sourceName, normalizedName, postmanVariableCanonicalName(sourceName)} {
+		if value := strings.TrimSpace(paths[name]); value != "" {
+			return value
+		}
+	}
+	return fallback
+}
+
+func clonePostmanStringMap(input map[string]string) map[string]string {
+	if len(input) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(input))
+	for key, value := range input {
+		out[key] = value
+	}
+	return out
 }
 
 func postmanBodyKind(source *body, action dsl.Action) requestimport.BodyKind {
@@ -749,7 +966,7 @@ func postmanCredentialTemplateIsSafeToPreserve(
 			if _, dynamic := provenVariables[match[1]]; dynamic {
 				continue
 			}
-			if _, sourceLiteral := sourceVariables[match[1]]; sourceLiteral {
+			if _, _, sourceLiteral := postmanSourceVariableByRuntimeName(sourceVariables, match[1]); sourceLiteral {
 				return false
 			}
 		}
@@ -976,7 +1193,7 @@ func maskPostmanSourceVariableValues(
 	values := make([]string, 0, len(names))
 	seen := make(map[string]struct{}, len(names))
 	for _, name := range names {
-		sourceVariable, ok := variables[name]
+		_, sourceVariable, ok := postmanSourceVariableByRuntimeName(variables, name)
 		if !ok || strings.TrimSpace(sourceVariable.Value) == "" {
 			continue
 		}
@@ -989,11 +1206,25 @@ func maskPostmanSourceVariableValues(
 	return maskPostmanLiteralSourceValues(sources, values)
 }
 
+const maxPostmanLiteralRedactionWork = 256 << 20
+
 func maskPostmanLiteralSourceValues(sources map[string]string, values []string) bool {
+	return maskPostmanLiteralSourceValuesWithBudget(
+		sources,
+		values,
+		maxPostmanLiteralRedactionWork,
+	)
+}
+
+func maskPostmanLiteralSourceValuesWithBudget(
+	sources map[string]string,
+	values []string,
+	maxWork int64,
+) bool {
 	if len(sources) == 0 || len(values) == 0 {
 		return false
 	}
-	nonempty := values[:0]
+	nonempty := make([]string, 0, len(values))
 	seen := make(map[string]struct{}, len(values))
 	for _, value := range values {
 		if strings.TrimSpace(value) == "" {
@@ -1012,6 +1243,21 @@ func maskPostmanLiteralSourceValues(sources map[string]string, values []string) 
 		}
 		return len(values[left]) > len(values[right])
 	})
+	if len(values) == 0 {
+		return false
+	}
+	if !postmanLiteralRedactionWithinBudget(sources, len(values), maxWork) {
+		changed := false
+		for name, source := range sources {
+			omitted := "// [POSTMAN SOURCE OMITTED: CREDENTIAL REDACTION WORK LIMIT EXCEEDED]" +
+				strings.Repeat("\n", strings.Count(source, "\n"))
+			if omitted != source {
+				sources[name] = omitted
+				changed = true
+			}
+		}
+		return changed
+	}
 	changed := false
 	for name, source := range sources {
 		redacted := source
@@ -1025,6 +1271,29 @@ func maskPostmanLiteralSourceValues(sources map[string]string, values []string) 
 		}
 	}
 	return changed
+}
+
+func postmanLiteralRedactionWithinBudget(
+	sources map[string]string,
+	valueCount int,
+	maxWork int64,
+) bool {
+	if valueCount <= 0 {
+		return true
+	}
+	if maxWork < 0 {
+		return false
+	}
+	patterns := int64(valueCount)
+	remaining := maxWork
+	for _, source := range sources {
+		bytes := int64(len(source))
+		if bytes > remaining/patterns {
+			return false
+		}
+		remaining -= bytes * patterns
+	}
+	return true
 }
 
 func markPostmanSourceReviewRedacted(review *sourceview.Review) {

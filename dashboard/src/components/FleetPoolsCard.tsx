@@ -1,15 +1,17 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 
 import { useClustersApi } from '../hooks/api/useClustersApi'
+import { useComputeApi } from '../hooks/api/useComputeApi'
 import { useDeploymentTargetsApi } from '../hooks/api/useDeploymentTargetsApi'
 import { useFleetApi } from '../hooks/api/useFleetApi'
 import { useRepositoryApi } from '../hooks/api/useRepositoryApi'
 import { ApiError } from '../hooks/apiClient'
 import { useNavigationGuard, useNavigationGuardRunner, type NavigationGuard } from '../hooks/NavigationGuardProvider'
 import { useModalDialog } from '../hooks/useModalDialog'
-import { FleetGeneratorMetadata, FleetPool, FleetProvisioningRequest, ProvisionerInfo } from '../types'
+import { FleetGeneratorMetadata, FleetPool, FleetProvisioningInstance, FleetProvisioningRequest, ProvisionerInfo } from '../types'
 import ConfirmDestructiveModal from './ConfirmDestructiveModal'
 import type { ClusterConnection } from '../types/cluster'
+import type { ExecutionTarget } from '../types/compute'
 import type { DeploymentProvider, DomainDeploymentTarget } from '../types/deploymentTarget'
 import { clustersForProvider, providerLabel } from './deploymentTargetModel'
 import { listAllFleetPools, listAllGeneratorMetadata, runtimePoolMemberCount } from './fleetCatalogModel'
@@ -70,11 +72,17 @@ type PoolDraft = {
   cloud_provider: string
   domain_id: string
   cluster_id: string
+  execution_target_id: string
   region: string
   min_size: number
   max_size: number
   desired_size: number
   status: string
+  lifecycle_mode: '' | 'standing' | 'on_demand' | 'warm_burst'
+  warm_floor: number
+  readiness_timeout_seconds: number
+  idle_grace_seconds: number
+  capacity_admission: 'strict' | 'best_effort'
   baseline: string
 }
 
@@ -84,11 +92,17 @@ function emptyDraft(): PoolDraft {
     cloud_provider: 'kubernetes',
     domain_id: '',
     cluster_id: '',
+    execution_target_id: '',
     region: '',
     min_size: 0,
     max_size: 0,
     desired_size: 0,
     status: 'active',
+    lifecycle_mode: '' as const,
+    warm_floor: 0,
+    readiness_timeout_seconds: 300,
+    idle_grace_seconds: 300,
+    capacity_admission: 'strict' as const,
   }
   return { ...draft, baseline: JSON.stringify(draft) }
 }
@@ -100,11 +114,17 @@ function poolDraftSnapshot(draft: Omit<PoolDraft, 'baseline'>): string {
     cloud_provider: draft.cloud_provider,
     domain_id: draft.domain_id,
     cluster_id: draft.cluster_id,
+    execution_target_id: draft.execution_target_id,
     region: draft.region,
     min_size: draft.min_size,
     max_size: draft.max_size,
     desired_size: draft.desired_size,
     status: draft.status,
+    lifecycle_mode: draft.lifecycle_mode,
+    warm_floor: draft.warm_floor,
+    readiness_timeout_seconds: draft.readiness_timeout_seconds,
+    idle_grace_seconds: draft.idle_grace_seconds,
+    capacity_admission: draft.capacity_admission,
   })
 }
 
@@ -120,10 +140,14 @@ function poolSizingError(draft: PoolDraft | null): string | null {
 }
 
 function provisionCountError(pool: FleetPool, count: number, memberCount: number): string | null {
-  if (!Number.isInteger(count) || count <= 0) {
-    return 'Desired generator count must be a positive whole number.'
-  }
-  const minimum = Math.max(1, pool.min_size ?? 0)
+  const canScaleToZero = Boolean(pool.execution_target_id)
+    && ['azure_container_apps', 'aws_ecs_fargate'].includes(pool.cloud_provider)
+  if (!Number.isInteger(count) || count < 0 || (count === 0 && !canScaleToZero)) {
+    return canScaleToZero
+      ? 'Desired generator count must be a nonnegative whole number.'
+      : 'Desired generator count must be a positive whole number.'
+	}
+  const minimum = Math.max(canScaleToZero ? 0 : 1, pool.min_size ?? 0)
   if (count < minimum) {
     return `Desired generator count cannot be lower than this pool's minimum of ${minimum}.`
   }
@@ -131,7 +155,7 @@ function provisionCountError(pool: FleetPool, count: number, memberCount: number
   if (maximum > 0 && count > maximum) {
     return `Desired generator count cannot exceed this pool's maximum of ${maximum}.`
   }
-  if (memberCount < count) {
+  if (!pool.execution_target_id && memberCount < count) {
     return `This pool has ${memberCount} associated runtime target${memberCount === 1 ? '' : 's'}. Add generator metadata with a target and this pool before requesting ${count} replicas.`
   }
   return null
@@ -152,6 +176,7 @@ function snapshotCaughtUp(
 export default function FleetPoolsCard({ canManage = false }: Props) {
   const api = useFleetApi()
   const clustersApi = useClustersApi()
+  const computeApi = useComputeApi()
   const deploymentTargetsApi = useDeploymentTargetsApi()
   const repositoryApi = useRepositoryApi()
   const { runGuarded } = useNavigationGuardRunner()
@@ -164,8 +189,10 @@ export default function FleetPoolsCard({ canManage = false }: Props) {
   const [provisionFor, setProvisionFor] = useState<{ pool: FleetPool; count: number; baselineCount: number } | null>(null)
   const [provisionResult, setProvisionResult] = useState<FleetProvisioningRequest | null>(null)
   const [provisionRequests, setProvisionRequests] = useState<FleetProvisioningRequest[]>([])
+  const [provisionInstances, setProvisionInstances] = useState<FleetProvisioningInstance[]>([])
   const [provisioner, setProvisioner] = useState<ProvisionerInfo | null>(null)
   const [clusters, setClusters] = useState<ClusterConnection[]>([])
+  const [executionTargets, setExecutionTargets] = useState<ExecutionTarget[]>([])
   const [deploymentTargets, setDeploymentTargets] = useState<DomainDeploymentTarget[]>([])
   const [domains, setDomains] = useState<{ id: string; name: string }[]>([])
   const [busy, setBusy] = useState(false)
@@ -207,6 +234,19 @@ export default function FleetPoolsCard({ canManage = false }: Props) {
     initialFocusRef: draftNameRef,
     onClose: busy ? undefined : closeDraft,
   })
+
+  useEffect(() => {
+    const requestID = provisionResult?.id
+    if (!requestID) {
+      setProvisionInstances([])
+      return
+    }
+    let active = true
+    void api.listProvisionRequestInstances(requestID)
+      .then(result => { if (active) setProvisionInstances(result.instances || []) })
+      .catch(() => { if (active) setProvisionInstances([]) })
+    return () => { active = false }
+  }, [api, provisionResult?.id])
   useModalDialog({
     dialogRef: provisionDialogRef,
     enabled: Boolean(provisionFor),
@@ -324,18 +364,21 @@ export default function FleetPoolsCard({ canManage = false }: Props) {
     let cancelled = false
     void (async () => {
       try {
-        const [clusterList, targetList, domainList] = await Promise.all([
+        const [clusterList, executionTargetList, targetList, domainList] = await Promise.all([
           clustersApi.listClusters(),
+          computeApi.listExecutionTargets(),
           deploymentTargetsApi.listDeploymentTargets(),
           repositoryApi.listDomains(),
         ])
         if (cancelled) return
         setClusters(clusterList.clusters ?? [])
+        setExecutionTargets(executionTargetList.execution_targets ?? [])
         setDeploymentTargets(targetList.targets ?? [])
         setDomains((domainList.domains ?? []).map(domain => ({ id: domain.id, name: domain.name })))
       } catch {
         if (!cancelled) {
           setClusters([])
+          setExecutionTargets([])
           setDeploymentTargets([])
           setDomains([])
         }
@@ -344,7 +387,7 @@ export default function FleetPoolsCard({ canManage = false }: Props) {
     return () => {
       cancelled = true
     }
-  }, [clustersApi, deploymentTargetsApi, repositoryApi])
+  }, [clustersApi, computeApi, deploymentTargetsApi, repositoryApi])
 
   // The constraint that applies to the pool being edited, if any.
   const draftTarget = useMemo(() => {
@@ -361,6 +404,17 @@ export default function FleetPoolsCard({ canManage = false }: Props) {
     () => clustersForProvider(clusters, draftProvider),
     [clusters, draftProvider],
   )
+
+  const eligibleExecutionTargets = useMemo(() => {
+    const allowed = new Set(draftTarget?.allowed_execution_target_ids || [])
+    return executionTargets.filter(target => {
+      if (allowed.size > 0 && !allowed.has(target.id)) return false
+      if (!draftProvider) return true
+      if (draftProvider.startsWith('azure')) return target.kind === 'azure_container_apps' || target.kind === 'kubernetes'
+      if (draftProvider.startsWith('aws')) return target.kind === 'aws_ecs_fargate' || target.kind === 'kubernetes'
+      return target.kind === 'kubernetes'
+    })
+  }, [draftProvider, draftTarget?.allowed_execution_target_ids, executionTargets])
 
   // Every domain, not only the constrained ones. Listing just the domains that
   // have a target would (a) force an admin to configure a constraint before a
@@ -400,11 +454,17 @@ export default function FleetPoolsCard({ canManage = false }: Props) {
       cloud_provider: draft.cloud_provider.trim(),
       domain_id: draft.domain_id.trim(),
       cluster_id: draft.cluster_id.trim(),
+      execution_target_id: draft.execution_target_id.trim(),
       region: draft.region.trim() || undefined,
       min_size: draft.min_size,
       max_size: draft.max_size,
       desired_size: draft.desired_size,
       status: draft.status,
+      lifecycle_mode: draft.lifecycle_mode || undefined,
+      warm_floor: draft.warm_floor,
+      readiness_timeout_seconds: draft.readiness_timeout_seconds,
+      idle_grace_seconds: draft.idle_grace_seconds,
+      capacity_admission: draft.capacity_admission,
     }
     try {
       const committed = draft.id
@@ -581,9 +641,11 @@ export default function FleetPoolsCard({ canManage = false }: Props) {
                 <div className="pp-row-meta">
                   <span>{pool.cloud_provider}</span>
                   {pool.region ? <span>{pool.region}</span> : null}
+                  {pool.lifecycle_mode ? <span>{pool.lifecycle_mode.replace('_', ' ')}</span> : null}
+                  {pool.execution_target_id ? <span>target {pool.execution_target_id}</span> : null}
                   <span>size {pool.desired_size ?? 0} ({pool.min_size ?? 0}–{pool.max_size ?? 0})</span>
                   <span>{memberCount} runtime member{memberCount === 1 ? '' : 's'}</span>
-                  {memberCount < initialProvisionCount ? <span>associate {initialProvisionCount - memberCount} more target{initialProvisionCount - memberCount === 1 ? '' : 's'} before provisioning</span> : null}
+                  {!pool.execution_target_id && memberCount < initialProvisionCount ? <span>associate {initialProvisionCount - memberCount} more target{initialProvisionCount - memberCount === 1 ? '' : 's'} before provisioning</span> : null}
                 </div>
               </div>
               {canManage && (
@@ -596,7 +658,7 @@ export default function FleetPoolsCard({ canManage = false }: Props) {
                     className="btn btn-ghost btn-sm"
                     disabled={busy}
                     onClick={() => {
-                      const next = { id: pool.id, name: pool.name, cloud_provider: pool.cloud_provider, domain_id: pool.domain_id || '', cluster_id: pool.cluster_id || '', region: pool.region || '', min_size: pool.min_size ?? 0, max_size: pool.max_size ?? 0, desired_size: pool.desired_size ?? 0, status: pool.status }
+                      const next = { id: pool.id, name: pool.name, cloud_provider: pool.cloud_provider, domain_id: pool.domain_id || '', cluster_id: pool.cluster_id || '', execution_target_id: pool.execution_target_id || '', region: pool.region || '', min_size: pool.min_size ?? 0, max_size: pool.max_size ?? 0, desired_size: pool.desired_size ?? 0, status: pool.status, lifecycle_mode: pool.lifecycle_mode || 'standing', warm_floor: pool.warm_floor ?? 0, readiness_timeout_seconds: pool.readiness_timeout_seconds ?? 300, idle_grace_seconds: pool.idle_grace_seconds ?? 300, capacity_admission: pool.capacity_admission || 'strict' }
                       setDraft({ ...next, baseline: poolDraftSnapshot(next) })
                     }}
                   >
@@ -634,6 +696,10 @@ export default function FleetPoolsCard({ canManage = false }: Props) {
                     <div className="pp-row-meta">
                       <span>pool {request.fleet_pool_id}</span>
                       <span>desired {request.desired_count}</span>
+                      <span>ready {request.ready_count ?? 0} / observed {request.observed_count ?? 0}</span>
+                      {(request.pending_count ?? 0) > 0 ? <span>pending {request.pending_count}</span> : null}
+                      {(request.draining_count ?? 0) > 0 ? <span>draining {request.draining_count}</span> : null}
+                      {(request.failed_count ?? 0) > 0 ? <span>failed {request.failed_count}</span> : null}
                       {request.project_id ? <span>project {request.project_id}</span> : null}
                       {latest ? <span>{latest.event_type}{latest.message ? `: ${latest.message}` : ''}</span> : null}
                     </div>
@@ -716,6 +782,7 @@ export default function FleetPoolsCard({ canManage = false }: Props) {
                           // Adopt the domain's default cluster, and drop a
                           // binding the new domain would refuse anyway.
                           cluster_id: target ? (target.default_cluster_id ?? '') : d.cluster_id,
+                          execution_target_id: target ? (target.default_execution_target_id ?? '') : d.execution_target_id,
                           cloud_provider: target?.provider ?? d.cloud_provider,
                         }
                       })
@@ -730,7 +797,21 @@ export default function FleetPoolsCard({ canManage = false }: Props) {
                   </select>
                 </label>
                 <label className="pp-field">
-                  <span>Cluster connection</span>
+                  <span>Execution target</span>
+                  <select
+                    value={draft.execution_target_id}
+                    disabled={busy}
+                    data-testid="pool-execution-target"
+                    onChange={e => setDraft(d => (d ? { ...d, execution_target_id: e.target.value, cluster_id: e.target.value ? '' : d.cluster_id } : d))}
+                  >
+                    <option value="">Legacy cluster/controller placement</option>
+                    {eligibleExecutionTargets.map(target => <option key={target.id} value={target.id}>{target.name} — {target.kind}</option>)}
+                  </select>
+                </label>
+              </div>
+              {!draft.execution_target_id ? <div className="pp-field-row">
+                <label className="pp-field">
+                  <span>Legacy cluster connection</span>
                   <select
                     value={draft.cluster_id}
                     disabled={busy}
@@ -747,7 +828,7 @@ export default function FleetPoolsCard({ canManage = false }: Props) {
                     ))}
                   </select>
                 </label>
-              </div>
+              </div> : null}
               <div className="pp-field-row">
                 <label className="pp-field">
                   <span>Region</span>
@@ -775,6 +856,15 @@ export default function FleetPoolsCard({ canManage = false }: Props) {
                   <span>Max size</span>
                   <input type="number" min={0} step={1} disabled={busy} value={draft.max_size} onChange={e => setDraft(d => (d ? { ...d, max_size: Number(e.target.value) } : d))} />
                 </label>
+              </div>
+              <div className="pp-field-row">
+                <label className="pp-field"><span>Capacity lifecycle</span><select value={draft.lifecycle_mode} disabled={busy} onChange={e => setDraft(d => d ? { ...d, lifecycle_mode: e.target.value as PoolDraft['lifecycle_mode'] } : d)}><option value="">Target default</option><option value="standing">Standing</option><option value="warm_burst">Warm floor + burst</option><option value="on_demand">On demand</option></select></label>
+                <label className="pp-field"><span>Warm floor</span><input type="number" min={0} step={1} value={draft.warm_floor} disabled={busy || draft.lifecycle_mode === 'standing'} onChange={e => setDraft(d => d ? { ...d, warm_floor: Number(e.target.value) } : d)} /></label>
+                <label className="pp-field"><span>Admission</span><select value={draft.capacity_admission} disabled={busy} onChange={e => setDraft(d => d ? { ...d, capacity_admission: e.target.value as PoolDraft['capacity_admission'] } : d)}><option value="strict">Require all requested capacity</option><option value="best_effort">Proceed with partial capacity</option></select></label>
+              </div>
+              <div className="pp-field-row">
+                <label className="pp-field"><span>Readiness timeout (seconds)</span><input type="number" min={1} step={1} value={draft.readiness_timeout_seconds} disabled={busy} onChange={e => setDraft(d => d ? { ...d, readiness_timeout_seconds: Number(e.target.value) } : d)} /></label>
+                <label className="pp-field"><span>Idle grace (seconds)</span><input type="number" min={0} step={1} value={draft.idle_grace_seconds} disabled={busy} onChange={e => setDraft(d => d ? { ...d, idle_grace_seconds: Number(e.target.value) } : d)} /></label>
               </div>
               {sizingError ? <div className="pp-error" role="alert">{sizingError}</div> : null}
             </div>
@@ -807,7 +897,9 @@ export default function FleetPoolsCard({ canManage = false }: Props) {
                 <input
                   ref={provisionCountRef}
                   type="number"
-                  min={Math.max(1, provisionFor.pool.min_size ?? 0)}
+                  min={Boolean(provisionFor.pool.execution_target_id) && ['azure_container_apps', 'aws_ecs_fargate'].includes(provisionFor.pool.cloud_provider)
+                    ? Math.max(0, provisionFor.pool.min_size ?? 0)
+                    : Math.max(1, provisionFor.pool.min_size ?? 0)}
                   max={(provisionFor.pool.max_size ?? 0) > 0 ? provisionFor.pool.max_size : undefined}
                   step={1}
                   disabled={busy}
@@ -817,7 +909,7 @@ export default function FleetPoolsCard({ canManage = false }: Props) {
               </label>
               {provisionValidationError ? <div className="pp-error" role="alert">{provisionValidationError}</div> : null}
               {provisioner?.can_provision ? (
-                <p className="pp-muted">Scales the pool&rsquo;s generator workload via the <code>{provisioner.name}</code> provisioner. Provisioning only succeeds for runtime targets already associated with this pool.</p>
+                <p className="pp-muted">Reconciles requested capacity through <code>{provisioner.name}</code>. PaaS targets launch registered templates asynchronously; Kubernetes retains its existing member-aware behavior.</p>
               ) : (
                 <p className="pp-muted">Provisioning resolves to <code>not_configured</code> until a cloud/Kubernetes provider is wired.</p>
               )}
@@ -869,6 +961,14 @@ export default function FleetPoolsCard({ canManage = false }: Props) {
                   </div>
                 ))}
               </div>
+              {provisionInstances.length > 0 ? <div className="pp-section">
+                <div className="pp-section-header"><span>Provider instances</span><span className="pp-muted">{provisionInstances.length}</span></div>
+                <div className="pp-list">{provisionInstances.map(instance => <div className="pp-row" key={instance.id}>
+                  <div className="pp-row-main"><div className="pp-row-title"><span className="cell-mono">{instance.generator_id}</span><span className={provisionStatusPill(instance.state)}>{instance.state}</span></div>
+                    <div className="pp-row-meta">{instance.provider_id ? <span>{instance.provider_id}</span> : <span>provider identity pending</span>}<span>archive {instance.archive_state}</span></div>
+                  </div>
+                </div>)}</div>
+              </div> : null}
             </div>
             <div className="pp-modal-actions">
               <button ref={resultDoneRef} type="button" className="btn btn-primary" onClick={closeResult} disabled={busy}>Done</button>

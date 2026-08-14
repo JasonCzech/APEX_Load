@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"reflect"
 	"sort"
 	"strings"
 	"sync"
@@ -276,6 +277,649 @@ http:
 			t.Fatalf("unresolved requirement = %#v", requirement)
 		}
 	}
+}
+
+func TestBrunoNativeInspectTreatsPolicyHeaderRedactionSentinelAsUnavailable(t *testing.T) {
+	tests := []struct {
+		name    string
+		headers string
+	}{
+		{
+			name: "header list",
+			headers: `
+    - {name: idpctx-ixp-dark-mode-session, value: "[REDACTED]"}`,
+		},
+		{
+			name: "header map",
+			headers: `
+    idpctx-ixp-dark-mode-session: "[redacted]"`,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			server, _, _ := newBrunoImportAPITestServer(t)
+			inspection, responseBody := inspectBrunoNativeFilesWithBody(
+				t,
+				server,
+				brunoImportTestProject,
+				[]brunoInspectJSONFile{
+					{
+						Path:    "demo/opencollection.yml",
+						Content: "opencollection: 1.0.0\ninfo: {name: Redacted native header}\n",
+					},
+					{
+						Path: "demo/request.yml",
+						Content: `info: {name: Redacted native header, uid: redacted-native-header, type: http}
+http:
+  method: GET
+  url: https://example.test
+  headers:` + test.headers + `
+`,
+					},
+				},
+			)
+			if strings.Contains(strings.ToLower(string(responseBody)), "[redacted]") {
+				t.Fatalf("native inspect response disclosed the redaction sentinel: %s", responseBody)
+			}
+			if len(inspection.Result.SecretRequirements) != 1 ||
+				len(inspection.Result.Scripts) != 1 ||
+				len(inspection.Result.Scripts[0].SecretRequirements) != 1 {
+				t.Fatalf("redacted native requirements = aggregate %#v candidates %#v", inspection.Result.SecretRequirements, inspection.Result.Scripts)
+			}
+			for _, requirement := range []brunoconvert.SecretRequirement{
+				inspection.Result.SecretRequirements[0],
+				inspection.Result.Scripts[0].SecretRequirements[0],
+			} {
+				if requirement.Value != "" || requirement.SourceValueAvailable ||
+					requirement.DestinationValuePreserved ||
+					requirement.PreservationUnavailableReason != brunoconvert.PreservationUnavailableSourceValue ||
+					!strings.Contains(requirement.Context, "has no recoverable imported value") {
+					t.Errorf("redacted native requirement = %#v", requirement)
+				}
+			}
+
+			session, err := server.loadBrunoImportSession(
+				httptest.NewRequest(http.MethodGet, "/", nil),
+				inspection.ImportSessionID,
+				brunoImportTestProject,
+			)
+			if err != nil {
+				t.Fatalf("load redacted native session: %v", err)
+			}
+			if len(session.Result.SecretRequirements) != 1 ||
+				session.Result.SecretRequirements[0].Value != "" {
+				t.Fatalf("protected session retained redaction sentinel: %#v", session.Result.SecretRequirements)
+			}
+		})
+	}
+}
+
+func TestBrunoNativeInspectTreatsCredentialRedactionSentinelsAsUnavailable(t *testing.T) {
+	tests := []struct {
+		name    string
+		request string
+	}{
+		{
+			name: "JSON credential",
+			request: `info: {name: JSON sentinel, uid: json-sentinel, type: http}
+http:
+  method: POST
+  url: https://example.test
+  body: {type: json, data: '{"password":" [rEdAcTeD] "}'}
+`,
+		},
+		{
+			name: "percent encoded URL credential",
+			request: `info: {name: URL sentinel, uid: url-sentinel, type: http}
+http:
+  method: GET
+  url: https://example.test?token=%5bReDaCtEd%5d
+`,
+		},
+		{
+			name: "XML credential",
+			request: `info: {name: XML sentinel, uid: xml-sentinel, type: http}
+http:
+  method: POST
+  url: https://example.test
+  body: {type: xml, data: '<root><password>&#91;ReDaCtEd&#93;</password></root>'}
+`,
+		},
+		{
+			name: "Authorization wrapper",
+			request: `info: {name: Authorization sentinel, uid: authorization-sentinel, type: http}
+http:
+  method: GET
+  url: https://example.test
+  headers: [{name: Authorization, value: "Bearer [REDACTED]"}]
+`,
+		},
+		{
+			name: "Cookie wrapper",
+			request: `info: {name: Cookie sentinel, uid: cookie-sentinel, type: http}
+http:
+  method: GET
+  url: https://example.test
+  headers: [{name: Cookie, value: "sid=[redacted]"}]
+`,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			server, _, _ := newBrunoImportAPITestServer(t)
+			inspection, responseBody := inspectBrunoNativeFilesWithBody(
+				t,
+				server,
+				brunoImportTestProject,
+				[]brunoInspectJSONFile{
+					{
+						Path:    "demo/opencollection.yml",
+						Content: "opencollection: 1.0.0\ninfo: {name: Sentinel collection}\n",
+					},
+					{Path: "demo/request.yml", Content: test.request},
+				},
+			)
+			for _, sentinel := range []string{
+				"[redacted]", "%5bredacted%5d", "&#91;redacted&#93;", "&#x5b;redacted&#x5d;",
+			} {
+				if strings.Contains(strings.ToLower(string(responseBody)), sentinel) {
+					t.Fatalf("native inspect response disclosed sentinel %q: %s", sentinel, responseBody)
+				}
+			}
+			if len(inspection.Result.SecretRequirements) != 1 ||
+				len(inspection.Result.Scripts) != 1 ||
+				len(inspection.Result.Scripts[0].SecretRequirements) != 1 {
+				t.Fatalf("sentinel requirements = aggregate %#v candidates %#v", inspection.Result.SecretRequirements, inspection.Result.Scripts)
+			}
+			for _, requirement := range []brunoconvert.SecretRequirement{
+				inspection.Result.SecretRequirements[0],
+				inspection.Result.Scripts[0].SecretRequirements[0],
+			} {
+				if requirement.Value != "" || requirement.SourceValueAvailable ||
+					requirement.DestinationValuePreserved ||
+					requirement.PreservationUnavailableReason != brunoconvert.PreservationUnavailableSourceValue {
+					t.Errorf("sentinel requirement = %#v", requirement)
+				}
+			}
+
+			session, err := server.loadBrunoImportSession(
+				httptest.NewRequest(http.MethodGet, "/", nil),
+				inspection.ImportSessionID,
+				brunoImportTestProject,
+			)
+			if err != nil {
+				t.Fatalf("load sentinel session: %v", err)
+			}
+			if len(session.Result.SecretRequirements) != 1 ||
+				session.Result.SecretRequirements[0].Value != "" {
+				t.Fatalf("protected session retained sentinel: %#v", session.Result.SecretRequirements)
+			}
+			candidate, err := json.Marshal(session.Result.Scripts[0].Script)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if strings.Contains(strings.ToLower(string(candidate)), "redacted") ||
+				!bytes.Contains(candidate, []byte("{{secret.")) {
+				t.Fatalf("candidate did not retain only a governed reference: %s", candidate)
+			}
+		})
+	}
+}
+
+func TestBrunoNativePersistedSentinelReloadCommitsOnlyGovernedReference(t *testing.T) {
+	server, store, _ := newBrunoImportAPITestServer(t)
+	inspection := inspectBrunoNativeFiles(t, server, brunoImportTestProject, []brunoInspectJSONFile{
+		{
+			Path:    "demo/opencollection.yml",
+			Content: "opencollection: 1.0.0\ninfo: {name: Reloaded sentinel}\n",
+		},
+		{
+			Path: "demo/request.yml",
+			Content: `info: {name: Reloaded sentinel, uid: reloaded-sentinel, type: http}
+http:
+  method: POST
+  url: https://example.test
+  body: {type: xml, data: '<root><password>&#91;ReDaCtEd&#93;</password></root>'}
+`,
+		},
+	})
+	if len(inspection.Result.SecretRequirements) != 1 {
+		t.Fatalf("sentinel requirements = %#v", inspection.Result.SecretRequirements)
+	}
+
+	rewriteBrunoImportSessionForTest(t, server, inspection.ImportSessionID, func(session *brunoImportSession) {
+		if len(session.Result.SecretRequirements) != 1 {
+			t.Fatalf("protected sentinel requirements = %#v", session.Result.SecretRequirements)
+		}
+		// Simulate a pre-fix or internally tampered retained-value envelope. The
+		// persistence boundary must omit this unusable value.
+		session.Result.SecretRequirements[0].Value = "  [rEdAcTeD]  "
+	})
+	server.brunoImportMu.Lock()
+	for _, session := range server.brunoImportSessions {
+		if session != nil && session.Timer != nil {
+			session.Timer.Stop()
+			session.Timer = nil
+		}
+	}
+	server.brunoImportSessions = make(map[string]*brunoImportSession)
+	server.brunoImportMu.Unlock()
+
+	reloaded, err := server.loadBrunoImportSession(
+		httptest.NewRequest(http.MethodGet, "/", nil),
+		inspection.ImportSessionID,
+		brunoImportTestProject,
+	)
+	if err != nil {
+		t.Fatalf("reload sentinel session: %v", err)
+	}
+	if len(reloaded.Result.SecretRequirements) != 1 ||
+		reloaded.Result.SecretRequirements[0].Value != "" {
+		t.Fatalf("reloaded session retained sentinel: %#v", reloaded.Result.SecretRequirements)
+	}
+
+	folderID := saveBrunoNativeScriptFolder(t, store, brunoImportTestProject, "folder-reloaded-sentinel")
+	acknowledged := make([]string, 0)
+	for _, diagnostic := range inspection.Result.Scripts[0].Diagnostics {
+		if diagnostic.AcknowledgementRequired {
+			acknowledged = append(acknowledged, diagnostic.ID)
+		}
+	}
+	response := commitBrunoImportWithStatus(t, server, brunoCommitRequest{
+		ProjectID:       brunoImportTestProject,
+		ImportSessionID: inspection.ImportSessionID,
+		Mode:            "create_native_batch",
+		FolderID:        &folderID,
+		SecretBindings: map[string]string{
+			inspection.Result.SecretRequirements[0].ID: inspection.Result.SecretRequirements[0].SuggestedName,
+		},
+		AcknowledgedFindingIDs: acknowledged,
+	})
+	if response.Code != http.StatusCreated {
+		t.Fatalf("reloaded sentinel commit status = %d body=%s", response.Code, response.Body.String())
+	}
+	if strings.Contains(strings.ToLower(response.Body.String()), "redacted") {
+		t.Fatalf("reloaded sentinel commit response leaked sentinel: %s", response.Body.String())
+	}
+	scripts, err := store.ListScripts(brunoImportTestProject, &folderID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(scripts) != 1 || len(scripts[0].Actions) != 1 ||
+		strings.Contains(strings.ToLower(scripts[0].Actions[0].Body), "redacted") ||
+		!strings.Contains(scripts[0].Actions[0].Body, "{{secret.") {
+		t.Fatalf("committed sentinel destination = %#v", scripts)
+	}
+}
+
+func TestDecodePersistedBrunoImportSessionDropsSentinelCredentials(t *testing.T) {
+	for _, value := range []string{
+		" [rEdAcTeD] ",
+		"Bearer [REDACTED]",
+		"sid=[redacted]",
+		"%5BReDaCtEd%5D",
+		"%25255BReDaCtEd%25255D",
+		"%5BReDaCtEd%5D%ZZ",
+		"&#91;ReDaCtEd&#93;",
+		"&amp;amp;#91;ReDaCtEd&amp;amp;#93;",
+		strings.Repeat("%25", 40) + "5BReDaCtEd%5D",
+		"&#x5B;ReDaCtEd&#x5D;",
+	} {
+		t.Run(value, func(t *testing.T) {
+			const sessionID = "persisted-sentinel-session"
+			payload, err := json.Marshal(persistedBrunoImportSession{
+				ID:        sessionID,
+				ProjectID: brunoImportTestProject,
+				Result: &brunoconvert.Result{SecretRequirements: []brunoconvert.SecretRequirement{{
+					ID:                        "sentinel-requirement",
+					SuggestedName:             "SENTINEL_REQUIREMENT",
+					Replacement:               "{{secret.SENTINEL_REQUIREMENT}}",
+					SourceValueAvailable:      true,
+					DestinationValuePreserved: true,
+				}}},
+				SecretValues: map[string]string{"sentinel-requirement": value},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			session, err := decodePersistedBrunoImportSession(sessionID, payload)
+			if err != nil {
+				t.Fatal(err)
+			}
+			requirement := session.Result.SecretRequirements[0]
+			if requirement.Value != "" || requirement.SourceValueAvailable ||
+				requirement.DestinationValuePreserved ||
+				requirement.PreservationUnavailableReason != brunoconvert.PreservationUnavailableSourceValue {
+				t.Fatalf("decoded sentinel requirement = %#v", requirement)
+			}
+		})
+	}
+}
+
+func TestBrunoNativeInspectExposesSafeUnresolvedXMLCredentialContext(t *testing.T) {
+	server, _, _ := newBrunoImportAPITestServer(t)
+	inspection := inspectBrunoNativeFiles(t, server, brunoImportTestProject, []brunoInspectJSONFile{
+		{
+			Path:    "demo/opencollection.yml",
+			Content: "opencollection: 1.0.0\ninfo: {name: Unresolved XML credential}\n",
+		},
+		{
+			Path: "demo/first.yml",
+			Content: `info: {name: First, uid: unresolved-xml-first, type: http, seq: 1}
+http:
+  method: POST
+  url: https://example.test/first
+  body: {type: xml, data: '<Envelope><mh:authentication><mh:userName>{{partnerUserName}}</mh:userName></mh:authentication></Envelope>'}
+`,
+		},
+		{
+			Path: "demo/second.yml",
+			Content: `info: {name: Second, uid: unresolved-xml-second, type: http, seq: 2}
+http:
+  method: POST
+  url: https://example.test/second
+  body: {type: xml, data: '<Envelope><mh:authentication><mh:userName>{{partnerUserName}}</mh:userName></mh:authentication></Envelope>'}
+`,
+		},
+	})
+	if len(inspection.Result.SecretRequirements) != 1 {
+		t.Fatalf("secret requirements = %#v", inspection.Result.SecretRequirements)
+	}
+	requirement := inspection.Result.SecretRequirements[0]
+	if !strings.HasPrefix(requirement.SuggestedName, "PARTNER_USERNAME_") ||
+		requirement.Replacement != "{{secret."+requirement.SuggestedName+"}}" ||
+		requirement.DisplayLabel != "Partner username" ||
+		requirement.SourceVariable != "partnerUserName" ||
+		!requirement.UnresolvedSourceVariable ||
+		requirement.Context != "XML username element <mh:userName>" ||
+		requirement.SourceValueAvailable || requirement.DestinationValuePreserved ||
+		requirement.PreservationUnavailableReason != brunoconvert.PreservationUnavailableSourceValue ||
+		requirement.Value != "" {
+		t.Fatalf("unresolved XML requirement = %#v", requirement)
+	}
+	wantPaths := []string{"demo/first.yml", "demo/second.yml"}
+	if !reflect.DeepEqual(requirement.AffectedPaths, wantPaths) {
+		t.Fatalf("affected paths = %#v, want %#v", requirement.AffectedPaths, wantPaths)
+	}
+	wantCandidatePaths := []string{"first.yml", "second.yml"}
+	if len(inspection.Result.MissingVariables) != 0 {
+		t.Fatalf("result missing variables = %#v, want none", inspection.Result.MissingVariables)
+	}
+	if len(inspection.Result.Scripts) != len(wantCandidatePaths) {
+		t.Fatalf("native candidates = %#v, want %d", inspection.Result.Scripts, len(wantCandidatePaths))
+	}
+	for index, candidate := range inspection.Result.Scripts {
+		if candidate.SourcePath != wantCandidatePaths[index] {
+			t.Fatalf("candidate %d source path = %q, want %q", index, candidate.SourcePath, wantCandidatePaths[index])
+		}
+		if len(candidate.MissingVariables) != 0 {
+			t.Fatalf("candidate %q missing variables = %#v, want none", candidate.SourcePath, candidate.MissingVariables)
+		}
+		if len(candidate.SecretRequirements) != 1 {
+			t.Fatalf("candidate %q secret requirements = %#v, want one", candidate.SourcePath, candidate.SecretRequirements)
+		}
+		candidateRequirement := candidate.SecretRequirements[0]
+		if candidateRequirement.ID != requirement.ID ||
+			candidateRequirement.SuggestedName != requirement.SuggestedName ||
+			candidateRequirement.Replacement != requirement.Replacement ||
+			candidateRequirement.DisplayLabel != "Partner username" ||
+			candidateRequirement.SourceVariable != "partnerUserName" ||
+			!candidateRequirement.UnresolvedSourceVariable ||
+			candidateRequirement.Context != "XML username element <mh:userName>" ||
+			candidateRequirement.SourceValueAvailable || candidateRequirement.DestinationValuePreserved ||
+			candidateRequirement.PreservationUnavailableReason != brunoconvert.PreservationUnavailableSourceValue ||
+			candidateRequirement.Value != "" {
+			t.Fatalf("candidate %q unresolved XML requirement = %#v", candidate.SourcePath, candidateRequirement)
+		}
+		if candidateRequirement.Path != wantPaths[index] ||
+			!reflect.DeepEqual(candidateRequirement.AffectedPaths, []string{wantPaths[index]}) {
+			t.Fatalf(
+				"candidate %q requirement locations = path %q affected %#v, want candidate-only path",
+				candidate.SourcePath,
+				candidateRequirement.Path,
+				candidateRequirement.AffectedPaths,
+			)
+		}
+		if candidate.Script == nil {
+			t.Fatalf("candidate %q script is nil", candidate.SourcePath)
+		}
+		for actionIndex, action := range candidate.Script.Actions {
+			if action.Metadata["execution_blocker"] == "bruno_missing_variables" {
+				t.Fatalf(
+					"candidate %q action %d retained missing-variable blocker: %#v",
+					candidate.SourcePath,
+					actionIndex,
+					action.Metadata,
+				)
+			}
+		}
+	}
+}
+
+func TestBrunoNativeInspectExposesSuppliedHeaderCredentialMetadata(t *testing.T) {
+	const (
+		activateSessionValue = "test-session-id-for-activate-subscriber"
+		darkModeSessionValue = "test-dark-mode-session-value"
+		cpniSessionValue     = "test-session-id-for-cpni-contact"
+	)
+	server, _, _ := newBrunoImportAPITestServer(t)
+	inspection, responseBody := inspectBrunoNativeFilesWithBody(t, server, brunoImportTestProject, []brunoInspectJSONFile{
+		{
+			Path:    "CTA_Collection 6a/opencollection.yml",
+			Content: "opencollection: 1.0.0\ninfo: {name: CTA credential presentation}\n",
+		},
+		{
+			Path: "CTA_Collection 6a/CTA/InquireAccountProfile_312.yml",
+			Content: `info: {name: InquireAccountProfile_312, uid: inquire-account-profile-312, type: http, seq: 1}
+http:
+  method: POST
+  url: https://example.test/account
+  headers:
+    - {name: Content-Type, value: text/xml}
+    - {name: X-CDF-AUTH-TOKEN, value: "{{authToken}}"}
+`,
+		},
+		{
+			Path: "CTA_Collection 6a/CTA/ActivateSubscriber_v302.yml",
+			Content: `info: {name: ActivateSubscriber_v302, uid: activate-subscriber-v302, type: http, seq: 2}
+http:
+  method: POST
+  url: https://example.test/activate
+  headers:
+    - {name: Content-Type, value: text/xml}
+    - {name: idpctx-feature-svc-fraud-check, value: "false"}
+    - {name: idpctx-feature-svc-relax-credit-check-requirement, value: "true"}
+    - {name: idpctx-session-id, value: ` + activateSessionValue + `}
+    - {name: randomheadertest, value: harmless-test-value}
+    - {name: idpctx-user-type, value: test-user}
+    - {name: idpctx-partner-initiated-order, value: "true"}
+    - {name: idpctx-ixp-dark-mode-session, value: ` + darkModeSessionValue + `}
+`,
+		},
+		{
+			Path: "CTA_Collection 6a/CTA/InquireCPNIContactInformation_224.yml",
+			Content: `info: {name: InquireCPNIContactInformation_224, uid: inquire-cpni-contact-224, type: http, seq: 3}
+http:
+  method: POST
+  url: https://example.test/cpni
+  headers:
+    - {name: Content-Type, value: text/xml}
+    - {name: idp-trace-id, value: test-trace-id-for-cpni-contact}
+    - {name: idpctx-session-id, value: ` + cpniSessionValue + `}
+`,
+		},
+	})
+	for _, protectedValue := range []string{
+		activateSessionValue,
+		darkModeSessionValue,
+		cpniSessionValue,
+	} {
+		if bytes.Contains(responseBody, []byte(protectedValue)) {
+			t.Fatalf("native inspect response disclosed a supplied header credential")
+		}
+	}
+
+	tests := []struct {
+		name                 string
+		label                string
+		path                 string
+		candidateSourcePath  string
+		sourceVariable       string
+		contextParts         []string
+		unresolved           bool
+		destinationPreserved bool
+		preservationReason   string
+	}{
+		{
+			name:                "CTA_COLLECTION_6A_CTA_INQUIREACCOUNTPROFILE_312_HEADER_X_CDF_AUTH_TOKEN_84921F7A1055",
+			label:               "X-CDF auth token",
+			path:                "CTA_Collection 6a/CTA/InquireAccountProfile_312.yml",
+			candidateSourcePath: "CTA/InquireAccountProfile_312.yml",
+			sourceVariable:      "authToken",
+			contextParts:        []string{`header "X-CDF-AUTH-TOKEN"`, "references {{authToken}}", "does not include a value", "configured destination value", "when this request runs"},
+			unresolved:          true,
+			preservationReason:  brunoconvert.PreservationUnavailableSourceValue,
+		},
+		{
+			name:                 "CTA_COLLECTION_6A_CTA_ACTIVATESUBSCRIBER_V302_HEADER_IDPCTX_IXP_DARK_MODE_SESSION_161E2747AD92",
+			label:                "IDP context IXP dark mode session",
+			path:                 "CTA_Collection 6a/CTA/ActivateSubscriber_v302.yml",
+			candidateSourcePath:  "CTA/ActivateSubscriber_v302.yml",
+			contextParts:         []string{`header "idpctx-ixp-dark-mode-session"`, "contains an imported value", "can be preserved"},
+			destinationPreserved: true,
+		},
+		{
+			name:                 "CTA_COLLECTION_6A_CTA_INQUIRECPNICONTACTINFORMATION_224_HEADER_IDPCTX_SESSION_ID",
+			label:                "IDP context session ID",
+			path:                 "CTA_Collection 6a/CTA/InquireCPNIContactInformation_224.yml",
+			candidateSourcePath:  "CTA/InquireCPNIContactInformation_224.yml",
+			contextParts:         []string{`header "idpctx-session-id"`, "contains an imported value", "can be preserved"},
+			destinationPreserved: true,
+		},
+	}
+
+	aggregateByName := make(map[string]brunoconvert.SecretRequirement, len(inspection.Result.SecretRequirements))
+	for _, requirement := range inspection.Result.SecretRequirements {
+		aggregateByName[requirement.SuggestedName] = requirement
+	}
+	candidatesByPath := make(map[string]brunoconvert.NativeScriptCandidate, len(inspection.Result.Scripts))
+	for _, candidate := range inspection.Result.Scripts {
+		candidatesByPath[candidate.SourcePath] = candidate
+	}
+	for _, test := range tests {
+		t.Run(test.label, func(t *testing.T) {
+			aggregate, exists := aggregateByName[test.name]
+			if !exists {
+				t.Fatalf("aggregate requirement %q not found in %#v", test.name, inspection.Result.SecretRequirements)
+			}
+			assertBrunoNativeHeaderCredentialMetadata(
+				t,
+				aggregate,
+				test.name,
+				test.label,
+				test.path,
+				test.sourceVariable,
+				test.contextParts,
+				test.unresolved,
+				test.destinationPreserved,
+				test.preservationReason,
+			)
+
+			candidate, exists := candidatesByPath[test.candidateSourcePath]
+			if !exists {
+				t.Fatalf("candidate %q not found in %#v", test.candidateSourcePath, inspection.Result.Scripts)
+			}
+			if len(candidate.MissingVariables) != 0 {
+				t.Fatalf("candidate %q missing variables = %#v, want none", candidate.SourcePath, candidate.MissingVariables)
+			}
+			var candidateRequirement *brunoconvert.SecretRequirement
+			for index := range candidate.SecretRequirements {
+				if candidate.SecretRequirements[index].SuggestedName == test.name {
+					candidateRequirement = &candidate.SecretRequirements[index]
+					break
+				}
+			}
+			if candidateRequirement == nil {
+				t.Fatalf("candidate %q requirement %q not found in %#v", candidate.SourcePath, test.name, candidate.SecretRequirements)
+			}
+			if candidateRequirement.ID != aggregate.ID {
+				t.Fatalf("candidate requirement id = %q, aggregate id = %q", candidateRequirement.ID, aggregate.ID)
+			}
+			assertBrunoNativeHeaderCredentialMetadata(
+				t,
+				*candidateRequirement,
+				test.name,
+				test.label,
+				test.path,
+				test.sourceVariable,
+				test.contextParts,
+				test.unresolved,
+				test.destinationPreserved,
+				test.preservationReason,
+			)
+			if candidate.Script == nil {
+				t.Fatalf("candidate %q script is nil", candidate.SourcePath)
+			}
+			for actionIndex, action := range candidate.Script.Actions {
+				if brunoNativeMetadataHasBlocker(action.Metadata, "bruno_missing_variables") {
+					t.Fatalf("candidate %q action %d retained missing-variable blocker: %#v", candidate.SourcePath, actionIndex, action.Metadata)
+				}
+			}
+		})
+	}
+}
+
+func assertBrunoNativeHeaderCredentialMetadata(
+	t *testing.T,
+	requirement brunoconvert.SecretRequirement,
+	name, label, sourcePath, sourceVariable string,
+	contextParts []string,
+	unresolved, destinationPreserved bool,
+	preservationReason string,
+) {
+	t.Helper()
+	if requirement.SuggestedName != name ||
+		requirement.Replacement != "{{secret."+name+"}}" ||
+		requirement.DisplayLabel != label ||
+		requirement.Path != sourcePath ||
+		requirement.SourceVariable != sourceVariable ||
+		requirement.UnresolvedSourceVariable != unresolved ||
+		requirement.SourceValueAvailable ||
+		requirement.DestinationValuePreserved != destinationPreserved ||
+		requirement.PreservationUnavailableReason != preservationReason ||
+		requirement.Value != "" ||
+		!reflect.DeepEqual(requirement.AffectedPaths, []string{sourcePath}) {
+		t.Fatalf("header credential metadata = %#v", requirement)
+	}
+	for _, part := range contextParts {
+		if !strings.Contains(requirement.Context, part) {
+			t.Errorf("context %q does not contain %q", requirement.Context, part)
+		}
+	}
+}
+
+func brunoNativeMetadataHasBlocker(metadata map[string]any, want string) bool {
+	if metadata == nil {
+		return false
+	}
+	if blocker, _ := metadata["execution_blocker"].(string); blocker == want {
+		return true
+	}
+	switch blockers := metadata["execution_blockers"].(type) {
+	case []string:
+		for _, blocker := range blockers {
+			if blocker == want {
+				return true
+			}
+		}
+	case []any:
+		for _, raw := range blockers {
+			if blocker, _ := raw.(string); blocker == want {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func TestBrunoNativeBatchKeepsSourceArtifactsWithoutReferenceChecker(t *testing.T) {
@@ -856,7 +1500,7 @@ http: {method: GET, url: "https://example.test/{{tenant}}"}
 	}
 }
 
-func TestBrunoNativeBatchReportsPartialSecretMigrationAndRetries(t *testing.T) {
+func TestBrunoNativeBatchRollsBackPartialSecretMigrationAndRetries(t *testing.T) {
 	server, store, _ := newBrunoImportAPITestServer(t)
 	enableSourceSecretMigration(t, server)
 	const username = "native-partial-user-never-return"
@@ -922,9 +1566,8 @@ http:
 		t.Fatal(err)
 	}
 	if partial.Code != "bruno_secret_migration_partial" || partial.ScriptCommitted ||
-		partial.MigratedCount != 1 ||
-		strings.Join(partial.CommittedNames, ",") != "BRUNO_NATIVE_PARTIAL_A" ||
-		strings.Join(partial.RemainingNames, ",") != "BRUNO_NATIVE_PARTIAL_B" ||
+		partial.MigratedCount != 0 || len(partial.CommittedNames) != 0 ||
+		strings.Join(partial.RemainingNames, ",") != "BRUNO_NATIVE_PARTIAL_A,BRUNO_NATIVE_PARTIAL_B" ||
 		partial.ImportSessionConsumed || !partial.SessionRetained || !partial.ManualRetrySafe ||
 		partial.IdempotencySessionID != inspection.ImportSessionID {
 		t.Fatalf("partial native migration = %#v body=%s", partial, response.Body.String())
@@ -935,8 +1578,8 @@ http:
 	if scripts, err := store.ListScripts(brunoImportTestProject, nil); err != nil || len(scripts) != 0 {
 		t.Fatalf("scripts after partial migration = %#v, err=%v", scripts, err)
 	}
-	if value, _, err := underlyingSecrets.Get(context.Background(), brunoImportTestProject, "BRUNO_NATIVE_PARTIAL_A"); err != nil || value != username {
-		t.Fatalf("retained native secret = %q, err=%v", value, err)
+	if value, _, err := underlyingSecrets.Get(context.Background(), brunoImportTestProject, "BRUNO_NATIVE_PARTIAL_A"); !errors.Is(err, secretstore.ErrNotFound) {
+		t.Fatalf("rolled-back native secret = %q, err=%v", value, err)
 	}
 
 	retry := commitBrunoImportWithStatus(t, server, request)
@@ -945,7 +1588,7 @@ http:
 	}
 }
 
-func TestBrunoNativeBatchReportsRetainedSecretsWhenDatabaseCommitFails(t *testing.T) {
+func TestBrunoNativeBatchRollsBackSecretsWhenDatabaseCommitDefinitelyFails(t *testing.T) {
 	server, store, _ := newBrunoImportAPITestServer(t)
 	enableSourceSecretMigration(t, server)
 	const password = "native-db-failure-secret-never-return"
@@ -1008,8 +1651,7 @@ http:
 		t.Fatal(err)
 	}
 	if partial.Code != "bruno_native_commit_failed_after_secret_migration" ||
-		partial.ScriptCommitted ||
-		strings.Join(partial.CommittedNames, ",") != strings.Join(expectedNames, ",") ||
+		partial.ScriptCommitted || len(partial.CommittedNames) != 0 ||
 		partial.ImportSessionConsumed {
 		t.Fatalf("native DB failure payload = %#v body=%s", partial, response.Body.String())
 	}
@@ -1025,6 +1667,11 @@ http:
 	plannedID := inspection.Result.Scripts[0].PlannedScriptID
 	if _, cached := server.runner.GetScript(plannedID); cached {
 		t.Fatal("failed native batch refreshed the runner cache")
+	}
+	for _, name := range expectedNames {
+		if value, _, err := server.projectSecretStore.Get(context.Background(), brunoImportTestProject, name); !errors.Is(err, secretstore.ErrNotFound) {
+			t.Fatalf("definite native commit failure left secret %s = %q, %v", name, value, err)
+		}
 	}
 
 	server.store = store
@@ -1245,6 +1892,17 @@ func inspectBrunoNativeFiles(
 	files []brunoInspectJSONFile,
 ) brunoInspectResponse {
 	t.Helper()
+	inspected, _ := inspectBrunoNativeFilesWithBody(t, server, projectID, files)
+	return inspected
+}
+
+func inspectBrunoNativeFilesWithBody(
+	t *testing.T,
+	server *Server,
+	projectID string,
+	files []brunoInspectJSONFile,
+) (brunoInspectResponse, []byte) {
+	t.Helper()
 	payload, err := json.Marshal(brunoInspectJSONRequest{
 		ProjectID: projectID,
 		Files:     files,
@@ -1270,7 +1928,7 @@ func inspectBrunoNativeFiles(
 	if err := json.Unmarshal(response.Body.Bytes(), &inspected); err != nil {
 		t.Fatalf("decode native inspection: %v", err)
 	}
-	return inspected
+	return inspected, append([]byte(nil), response.Body.Bytes()...)
 }
 
 func orderedBrunoNativeFiles() []brunoInspectJSONFile {

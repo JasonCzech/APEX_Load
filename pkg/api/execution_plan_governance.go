@@ -9,8 +9,10 @@ package api
 
 import (
 	"crypto/sha256"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -28,7 +30,7 @@ func (tr *TestRunner) executionPlanAggregatePeak(plan *storage.ExecutionPlan) in
 		if !entry.IsEnabled() {
 			continue
 		}
-		scenario, ok := tr.GetScenario(entry.ScenarioID)
+		scenario, ok := tr.executionPlanGovernanceScenario(entry.ScenarioID)
 		if !ok {
 			continue
 		}
@@ -42,6 +44,49 @@ func (tr *TestRunner) executionPlanAggregatePeak(plan *storage.ExecutionPlan) in
 		}
 	}
 	return peak
+}
+
+// executionPlanGovernanceScenario never converts a stale cache entry into a
+// zero-VUser estimate. When publication revalidation detects a changed durable
+// scenario, governance reads the current durable load model; a legacy
+// in-memory-only scenario remains supported when no durable row exists.
+func (tr *TestRunner) executionPlanGovernanceScenario(id string) (*StoredScenario, bool) {
+	if tr == nil {
+		return nil, false
+	}
+	if scenario, ok := tr.GetScenario(id); ok {
+		return scenario, true
+	}
+	tr.mu.RLock()
+	id = tr.resolveRefKeyLocked(id)
+	cached := cloneStoredScenarioForReadLocked(tr.scenarios[id])
+	tr.mu.RUnlock()
+	if cached == nil {
+		return nil, false
+	}
+	if tr.importPublicationConfigured() && !tr.importAssetPublished("scenario", cached.ID) {
+		return nil, false
+	}
+	if tr.scenarioStore == nil {
+		return cached, true
+	}
+	current, scripts, err := tr.scenarioStore.GetScenario(cached.ID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return cached, true
+	}
+	if err != nil || current == nil {
+		return nil, false
+	}
+	refs := make([]ScenarioScriptRef, 0, len(scripts))
+	for _, script := range scripts {
+		refs = append(refs, ScenarioScriptRef{VUsers: script.VUsers, Stages: cloneLoadStages(script.Stages)})
+	}
+	return &StoredScenario{
+		ID:           current.ID,
+		ScenarioMode: normalizeScenarioMode(current.ScenarioMode),
+		GoalConfig:   decodeStoredGoalConfig(current.GoalConfig),
+		Scripts:      refs,
+	}, true
 }
 
 func scenarioPeakVUsers(scenario *StoredScenario) int {

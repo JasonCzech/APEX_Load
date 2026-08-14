@@ -53,6 +53,11 @@ const (
 // administrator never chose.
 var ErrClusterConnectionReferenced = errors.New("cluster connection is referenced by fleet pools")
 
+// ErrClusterConnectionKindImmutable prevents an edit from silently changing
+// the provider semantics of every normalized execution target derived from the
+// connection. Create a new connection and repoint dependents instead.
+var ErrClusterConnectionKindImmutable = errors.New("cluster connection kind is immutable")
+
 // ClusterConnection is an administrator-registered Kubernetes control plane the
 // controller can drive. Credentials are never stored in plaintext: the AAD
 // client secret and static service-account token are held as keywrap envelopes

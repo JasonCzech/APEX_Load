@@ -54,6 +54,7 @@ const (
 	grpcTLSCAEnvVar         = "APEXLOAD_GRPC_TLS_CA"
 	grpcTLSServerNameEnvVar = "APEXLOAD_GRPC_TLS_SERVER_NAME"
 	grpcAuthTokenEnvVar     = "APEXLOAD_GRPC_AUTH_TOKEN"
+	grpcReverseTunnelSecure = "APEXLOAD_GRPC_REVERSE_TUNNEL_SECURE"
 
 	grpcAuthorizationHeader     = "authorization"
 	grpcBearerPrefix            = "Bearer "
@@ -116,18 +117,19 @@ func loadTransportEnv() transportEnv {
 // TransportSecurity describes the effective channel posture for startup
 // logging and production-posture warnings.
 type TransportSecurity struct {
-	TLS       bool
-	MutualTLS bool
-	Token     bool
+	TLS                 bool
+	MutualTLS           bool
+	Token               bool
+	AuthenticatedTunnel bool
 }
 
-func (t TransportSecurity) Insecure() bool { return !t.TLS && !t.Token }
+func (t TransportSecurity) Insecure() bool { return !t.TLS && !t.Token && !t.AuthenticatedTunnel }
 
 // AllowsSecretDelivery reports whether the channel encrypts assignment
 // credentials and authenticates the controller. Plaintext token transport and
 // unauthenticated server-only TLS are intentionally insufficient.
 func (t TransportSecurity) AllowsSecretDelivery() bool {
-	return t.TLS && (t.MutualTLS || t.Token)
+	return t.AuthenticatedTunnel || (t.TLS && (t.MutualTLS || t.Token))
 }
 
 // productionEnv is the canonical APEXLOAD_ENV value that arms the fail-closed posture.
@@ -142,7 +144,7 @@ func (t TransportSecurity) MustRefuseInsecure(env string) bool {
 	if !isProductionEnvironment(env) {
 		return false
 	}
-	return !t.TLS || (!t.MutualTLS && !t.Token)
+	return !t.AuthenticatedTunnel && (!t.TLS || (!t.MutualTLS && !t.Token))
 }
 
 func isProductionEnvironment(env string) bool {
@@ -156,7 +158,9 @@ func isProductionEnvironment(env string) bool {
 
 func (t TransportSecurity) String() string {
 	parts := make([]string, 0, 3)
-	if t.MutualTLS {
+	if t.AuthenticatedTunnel {
+		parts = append(parts, "authenticated-wss-tunnel")
+	} else if t.MutualTLS {
 		parts = append(parts, "mtls")
 	} else if t.TLS {
 		parts = append(parts, "tls")
@@ -176,9 +180,19 @@ func (t TransportSecurity) String() string {
 func TransportSecurityFromEnv() TransportSecurity {
 	env := loadTransportEnv()
 	return TransportSecurity{
-		TLS:       env.CertFile != "" || env.CAFile != "",
-		MutualTLS: env.CertFile != "" && env.CAFile != "",
-		Token:     env.Token != "",
+		TLS:                 env.CertFile != "" || env.CAFile != "",
+		MutualTLS:           env.CertFile != "" && env.CAFile != "",
+		Token:               env.Token != "",
+		AuthenticatedTunnel: envEnabled(grpcReverseTunnelSecure),
+	}
+}
+
+func envEnabled(name string) bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv(name))) {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
 	}
 }
 
@@ -190,7 +204,7 @@ func (e transportEnv) validate() error {
 }
 
 func validateProductionTokenStrength(env string, security TransportSecurity, token string) error {
-	if !isProductionEnvironment(env) || security.MutualTLS || !security.Token {
+	if !isProductionEnvironment(env) || security.MutualTLS || security.AuthenticatedTunnel || !security.Token {
 		return nil
 	}
 	if len(token) < minProductionAuthTokenBytes {
@@ -259,7 +273,10 @@ func ServerOptionsFromEnv() ([]grpc.ServerOption, error) {
 	if env.CAFile != "" && env.CertFile == "" {
 		return nil, fmt.Errorf("%s requires a server certificate (%s/%s)", grpcTLSCAEnvVar, grpcTLSCertEnvVar, grpcTLSKeyEnvVar)
 	}
-	security := TransportSecurity{TLS: env.CertFile != "", MutualTLS: env.CertFile != "" && env.CAFile != "", Token: env.Token != ""}
+	security := TransportSecurityFromEnv()
+	if security.AuthenticatedTunnel && !strings.EqualFold(strings.TrimSpace(os.Getenv("APEXLOAD_GENERATOR_CONNECTIVITY_MODE")), "reverse") {
+		return nil, fmt.Errorf("%s is valid only for reverse-only generators", grpcReverseTunnelSecure)
+	}
 	if security.MustRefuseInsecure(os.Getenv("APEXLOAD_ENV")) {
 		return nil, fmt.Errorf("production gRPC server requires mTLS or TLS plus %s; configured %s", grpcAuthTokenEnvVar, security.String())
 	}
@@ -315,13 +332,17 @@ func ServerOptionsFromEnv() ([]grpc.ServerOption, error) {
 // DialOptionsFromEnv builds the controller-side dial options matching the
 // generator's ServerOptionsFromEnv posture.
 func DialOptionsFromEnv() ([]grpc.DialOption, error) {
+	return dialOptionsFromEnv(false)
+}
+
+func dialOptionsFromEnv(allowAuthenticatedTunnel bool) ([]grpc.DialOption, error) {
 	env := loadTransportEnv()
 	if err := env.validate(); err != nil {
 		return nil, err
 	}
 
 	useTLS := env.CAFile != "" || env.CertFile != ""
-	security := TransportSecurity{TLS: useTLS, MutualTLS: env.CertFile != "" && env.CAFile != "", Token: env.Token != ""}
+	security := TransportSecurity{TLS: useTLS, MutualTLS: env.CertFile != "" && env.CAFile != "", Token: env.Token != "", AuthenticatedTunnel: allowAuthenticatedTunnel && envEnabled(grpcReverseTunnelSecure)}
 	if security.MustRefuseInsecure(os.Getenv("APEXLOAD_ENV")) {
 		return nil, fmt.Errorf("production gRPC client requires mTLS or verified TLS plus %s; configured %s", grpcAuthTokenEnvVar, security.String())
 	}

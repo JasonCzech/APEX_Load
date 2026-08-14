@@ -47,11 +47,11 @@ type Toleration struct {
 // Quantities are Kubernetes quantity strings ("500m", "4Gi") rather than
 // numbers, so what the operator typed round-trips unchanged.
 type PoolAllocation struct {
-	CPURequest    string            `json:"cpu_request,omitempty"`
-	CPULimit      string            `json:"cpu_limit,omitempty"`
-	MemoryRequest string            `json:"memory_request,omitempty"`
-	MemoryLimit   string            `json:"memory_limit,omitempty"`
-	NodePool      string            `json:"node_pool,omitempty"`
+	CPURequest    string `json:"cpu_request,omitempty"`
+	CPULimit      string `json:"cpu_limit,omitempty"`
+	MemoryRequest string `json:"memory_request,omitempty"`
+	MemoryLimit   string `json:"memory_limit,omitempty"`
+	NodePool      string `json:"node_pool,omitempty"`
 	// NodePoolLabel is the label KEY that NodePool is matched against. Empty
 	// means NodeSelectorAgentPool, which is what every allocation written
 	// before EKS support carries — so existing pools are byte-identical.

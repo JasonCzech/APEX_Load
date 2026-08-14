@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"reflect"
 	"strings"
@@ -10,7 +11,9 @@ import (
 	"github.com/jasonczech/apexload/pkg/convert/credentialpolicy"
 	"github.com/jasonczech/apexload/pkg/convert/paramize"
 	"github.com/jasonczech/apexload/pkg/convert/sourceview"
+	"github.com/jasonczech/apexload/pkg/credential"
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/engine"
 	"github.com/jasonczech/apexload/pkg/scrub"
 )
 
@@ -39,6 +42,17 @@ type scriptImportResponseOptions struct {
 	// are attached to an encrypted source-secret migration session when one is
 	// available and are never serialized into the response.
 	ProtectedRequirements []credentialpolicy.Requirement
+	// CredentialRequirements carries value-free converter-authored descriptors
+	// into the standardized SecretBindingReview contract. Unlike generic
+	// sentinel discovery, these preserve source-variable and target context even
+	// when the converter already emitted a {{secret.*}} reference.
+	CredentialRequirements []credentialpolicy.Requirement
+	// PreparedCredentialReview is used by handlers that must register a
+	// server-owned candidate after credential descriptors have been attached.
+	// CredentialReviewPrepared distinguishes an intentionally empty review from
+	// the ordinary build-it-here path.
+	PreparedCredentialReview []SecretBindingRequirement
+	CredentialReviewPrepared bool
 	// SkipDraftAttestation is reserved for import endpoints that have already
 	// committed the server-owned conversion before building their response.
 	// Those responses replace the editable draft with a masked StoredScript, so
@@ -81,26 +95,27 @@ type scriptImportRepairSuggestion struct {
 }
 
 func newScriptImportResponse(opts scriptImportResponseOptions) map[string]any {
-	// Import routes are project-authorized authoring boundaries. Preserve the
-	// executable destination script exactly as converted so an operator who
-	// already supplied a password does not lose it or have to enter it again.
-	// Stored-script reads and heterogeneous review/result payloads continue to
-	// use maskScriptResponseValue below; only the editable destination draft is
-	// returned intact here.
+	// The exact executable candidate stays server-owned behind its opaque import
+	// capability. Browser-visible drafts are always disclosure projections; the
+	// capability restores unchanged credential slots during a mutation/commit.
+	exactScripts := importResponseRawScriptValue(opts.Scripts)
+	exactScript := importResponseRawScriptValue(opts.Script)
 	scripts := credentialPreservingImportResponseValue(opts.Scripts)
 	script := credentialPreservingImportResponseValue(opts.Script)
 	if isNilImportValue(scripts) {
 		if !isNilImportValue(opts.Script) {
+			exactScripts = []any{exactScript}
 			scripts = []any{script}
 		} else {
+			exactScripts = []any{}
 			scripts = []any{}
 		}
 	}
 	// Credential requirements are optional migration/rebinding affordances for
-	// a credential-preserving import draft. Discover them from the independent
-	// disclosure projection while returning the editable executable draft
-	// unchanged to the already-authorized importing operator.
-	projectedScripts := maskScriptResponseValue(scripts)
+	// a credential-preserving import draft. Discover them from the disclosure
+	// projection while consulting the exact server-owned candidate only to report
+	// whether a source value is available for an opaque destination migration.
+	projectedScripts := scripts
 	// Projecting the script tree is the dominant cost of this builder: it
 	// marshals/unmarshals the whole tree and then re-projects every script node
 	// through the typed dsl.Script boundary. The parameterization trust pass
@@ -112,16 +127,16 @@ func newScriptImportResponse(opts scriptImportResponseOptions) map[string]any {
 	secretBindingRequirements := secretBindingRequirementsForImportScripts(projectedScripts)
 	secretBindingRequirements = annotateSecretBindingDestinationValues(
 		secretBindingRequirements,
-		scripts,
+		exactScripts,
 		projectedScripts,
 	)
-	if !hasScriptJSONNode(scripts) && !isNilImportValue(script) {
-		rawScripts := []any{script}
-		projectedScripts = maskScriptResponseValue(rawScripts)
+	if !hasScriptJSONNode(exactScripts) && !isNilImportValue(exactScript) {
+		exactFallback := []any{exactScript}
+		projectedScripts = []any{script}
 		secretBindingRequirements = secretBindingRequirementsForImportScripts(projectedScripts)
 		secretBindingRequirements = annotateSecretBindingDestinationValues(
 			secretBindingRequirements,
-			rawScripts,
+			exactFallback,
 			projectedScripts,
 		)
 	}
@@ -197,50 +212,150 @@ func newScriptImportResponse(opts scriptImportResponseOptions) map[string]any {
 	return response
 }
 
-func credentialPreservingImportResponseValue(value any) any {
-	raw := importResponseRawScriptValue(value)
-	markCredentialPreservingImportJSON(raw)
-	return sanitizeCredentialPreservingImportScriptNodes(raw)
+func copyImportDraftCapabilities(raw, projected any) {
+	switch rawValue := raw.(type) {
+	case map[string]any:
+		projectedValue, _ := projected.(map[string]any)
+		if projectedValue == nil {
+			return
+		}
+		if isScriptJSONObject(rawValue) {
+			copyImportDraftCapabilityFromScriptMap(rawValue, projectedValue)
+			return
+		}
+		for key, child := range rawValue {
+			copyImportDraftCapabilities(child, projectedValue[key])
+		}
+	case []any:
+		projectedValue, _ := projected.([]any)
+		for index, child := range rawValue {
+			if index < len(projectedValue) {
+				copyImportDraftCapabilities(child, projectedValue[index])
+			}
+		}
+	}
 }
 
-// sanitizeCredentialPreservingImportScriptNodes keeps executable destination
-// fields byte-faithful while applying the independent disclosure boundary for
-// metadata.import.preserved review evidence and explicit review-only actions.
-func sanitizeCredentialPreservingImportScriptNodes(value any) any {
-	switch typed := value.(type) {
-	case map[string]any:
-		if isScriptJSONObject(typed) {
-			payload, err := json.Marshal(typed)
-			if err != nil {
-				return nil
-			}
-			var script dsl.Script
-			if err := json.Unmarshal(payload, &script); err != nil {
-				return nil
-			}
-			if err := sanitizePersistentImportReviewSurfaces(&script); err != nil {
-				return nil
-			}
-			projected, err := scriptAsJSONValue(&script)
-			if err != nil {
-				return nil
-			}
-			return projected
-		}
-		out := make(map[string]any, len(typed))
-		for key, child := range typed {
-			out[key] = sanitizeCredentialPreservingImportScriptNodes(child)
-		}
-		return out
-	case []any:
-		out := make([]any, len(typed))
-		for index, child := range typed {
-			out[index] = sanitizeCredentialPreservingImportScriptNodes(child)
-		}
-		return out
-	default:
-		return value
+func copyImportDraftCapabilityFromScriptMap(raw, projected map[string]any) {
+	rawMetadata, _ := raw["metadata"].(map[string]any)
+	rawImport, _ := rawMetadata["import"].(map[string]any)
+	rawPreserved, _ := rawImport["preserved"].(map[string]any)
+	token, _ := rawPreserved[importDraftAttestationMetadataKey].(string)
+	rawProtectedDescriptors := rawPreserved[protectedImportCredentialMetadataKey]
+	if strings.TrimSpace(token) == "" && rawProtectedDescriptors == nil {
+		return
 	}
+	metadata, _ := projected["metadata"].(map[string]any)
+	if metadata == nil {
+		metadata = make(map[string]any)
+		projected["metadata"] = metadata
+	}
+	importMetadata, _ := metadata["import"].(map[string]any)
+	if importMetadata == nil {
+		importMetadata = make(map[string]any)
+		metadata["import"] = importMetadata
+	}
+	preserved, _ := importMetadata["preserved"].(map[string]any)
+	if preserved == nil {
+		preserved = make(map[string]any)
+		importMetadata["preserved"] = preserved
+	}
+	if strings.TrimSpace(token) != "" {
+		preserved[importDraftAttestationMetadataKey] = token
+	}
+	// Header names such as X-API-Key are intentionally classified as sensitive
+	// by the general script disclosure projection. A protected descriptor's
+	// location, however, is a JSON pointer rather than a credential value. Keep
+	// the projected labels/context fail-closed while restoring only the validated
+	// structural locations so a browser can return the draft to the binding API
+	// without turning those pointers into stale `/[REDACTED]` paths.
+	copyProtectedImportCredentialLocations(
+		rawProtectedDescriptors,
+		preserved[protectedImportCredentialMetadataKey],
+	)
+}
+
+func copyProtectedImportCredentialLocations(raw, projected any) {
+	rawDescriptors, ok := raw.([]any)
+	if !ok {
+		return
+	}
+	projectedDescriptors, ok := projected.([]any)
+	if !ok {
+		return
+	}
+	rawByID := make(map[string][]any, len(rawDescriptors))
+	for _, rawDescriptor := range rawDescriptors {
+		descriptor, ok := rawDescriptor.(map[string]any)
+		if !ok {
+			continue
+		}
+		id, _ := descriptor["id"].(string)
+		locations, ok := descriptor["locations"].([]any)
+		if strings.TrimSpace(id) == "" || !ok || !validProtectedImportCredentialLocationValues(locations) {
+			continue
+		}
+		rawByID[id] = locations
+	}
+	for _, projectedDescriptor := range projectedDescriptors {
+		descriptor, ok := projectedDescriptor.(map[string]any)
+		if !ok {
+			continue
+		}
+		id, _ := descriptor["id"].(string)
+		if locations, exists := rawByID[id]; exists {
+			descriptor["locations"] = locations
+		}
+	}
+}
+
+func validProtectedImportCredentialLocationValues(locations []any) bool {
+	if len(locations) == 0 {
+		return false
+	}
+	for _, value := range locations {
+		location, ok := value.(map[string]any)
+		if !ok {
+			return false
+		}
+		path, _ := location["path"].(string)
+		encoding, _ := location["encoding"].(string)
+		occurrence, _ := location["occurrence"].(float64)
+		if !strings.HasPrefix(path, "/") || occurrence < 0 || occurrence != float64(int(occurrence)) ||
+			(encoding != "" && encoding != "base64") {
+			return false
+		}
+	}
+	return true
+}
+
+func maskImportDraftForResponse(script *dsl.Script) *dsl.Script {
+	masked := maskScriptSecrets(script)
+	if masked == nil {
+		return nil
+	}
+	if token := importDraftAttestationToken(script); token != "" {
+		profile := "import"
+		if script.Metadata != nil && script.Metadata.Import != nil {
+			profile = firstNonEmpty(strings.TrimSpace(script.Metadata.Import.Source), profile)
+		}
+		ensureScriptImportPreserved(masked, profile)[importDraftAttestationMetadataKey] = token
+	}
+	return masked
+}
+
+func credentialPreservingImportResponseValue(value any) any {
+	exact := importResponseRawScriptValue(value)
+	// Project the exact candidate before publishing it. Existing importer-owned
+	// credential locators remain active during this pass so neutral field names
+	// (for example a JSON `code`) are still masked; source-neutral URL handling
+	// keeps noncredential locators such as OAuth token_url intact.
+	projected := maskScriptResponseValue(exact)
+	markCredentialPreservingImportJSON(projected)
+	// The projection strips capabilities by design. Only the opaque attestation
+	// token is copied back; exact source values remain exclusively server-owned.
+	copyImportDraftCapabilities(exact, projected)
+	return projected
 }
 
 func markCredentialPreservingImportJSON(value any) {
@@ -546,15 +661,29 @@ func sanitizeImportCorrelationFields(value any, insideCorrelation bool) any {
 func (s *Server) newScriptImportResponseWithSourceSecrets(r *http.Request, opts scriptImportResponseOptions) map[string]any {
 	protectedRequirements := opts.ProtectedRequirements
 	defer clearCredentialRequirementValues(protectedRequirements)
+	scriptsForCredentialReview := uniqueImportDraftScripts(importDraftScriptPointers(opts.Script, opts.Scripts))
+	// Protected requirements are authoritative when the converter supplied the
+	// same stable requirement through both channels, but they are not the whole
+	// review. A draft can contain an exact protected source value and additional
+	// generated/value-free credentials that still need configuration guidance.
+	credentialRequirements := mergeImportCredentialRequirementSets(protectedRequirements, opts.CredentialRequirements)
+	defer clearCredentialRequirementValues(credentialRequirements)
 
-	var protectedCredentialReview []SecretBindingRequirement
-	if len(protectedRequirements) > 0 {
-		script, ok := opts.Script.(*dsl.Script)
-		if !ok || script == nil {
+	protectedCredentialReview := append([]SecretBindingRequirement(nil), opts.PreparedCredentialReview...)
+	if !opts.CredentialReviewPrepared {
+		credentialRequirements = mergeReferencedImportCredentialRequirements(
+			scriptsForCredentialReview,
+			credentialRequirements,
+		)
+		defer clearCredentialRequirementValues(credentialRequirements)
+	}
+	if !opts.CredentialReviewPrepared && len(credentialRequirements) > 0 {
+		scripts := scriptsForCredentialReview
+		if len(scripts) == 0 {
 			opts.Warnings = append(opts.Warnings, "Protected credential bindings could not be prepared; the generated secret references remain available for manual configuration.")
 		} else {
 			var err error
-			protectedCredentialReview, err = attachProtectedImportCredentialReview(script, protectedRequirements)
+			protectedCredentialReview, err = attachImportCredentialReview(scripts, credentialRequirements)
 			if err != nil {
 				opts.Warnings = append(opts.Warnings, "Protected credential bindings could not be prepared; the generated secret references remain available for manual configuration.")
 			}
@@ -598,11 +727,12 @@ func (s *Server) newScriptImportResponseWithSourceSecrets(r *http.Request, opts 
 	protectedStoreAvailable := s.protectedSourceSessions != nil && s.protectedSourceSessions.Available()
 	if protectedStoreAvailable {
 		for _, requirement := range protectedRequirements {
-			if _, public := protectedIDs[requirement.ID]; public && requirement.Value != "" {
+			value, recoverable := credentialpolicy.RecoverableSourceCredentialValue(requirement.Value)
+			if _, public := protectedIDs[requirement.ID]; public && recoverable {
 				if values == nil {
 					values = make(map[string]string, len(protectedCredentialReview))
 				}
-				values[requirement.ID] = requirement.Value
+				values[requirement.ID] = value
 			}
 		}
 	}
@@ -626,6 +756,253 @@ func (s *Server) newScriptImportResponseWithSourceSecrets(r *http.Request, opts 
 	response["source_secret_session_expires_at"] = time.Now().UTC().Add(sourceSecretSessionTTL)
 	response["source_secret_migration_allowed"] = true
 	return response
+}
+
+// mergeImportCredentialRequirementSets keeps protected requirements first so
+// their in-memory value/status fields win, while retaining independently
+// generated value-free requirements. Stable IDs are source/target-derived and
+// therefore provide the correct cross-channel deduplication key.
+func mergeImportCredentialRequirementSets(
+	authoritative []credentialpolicy.Requirement,
+	supplemental []credentialpolicy.Requirement,
+) []credentialpolicy.Requirement {
+	merged := credentialpolicy.CloneRequirements(authoritative)
+	seen := make(map[string]struct{}, len(authoritative)+len(supplemental))
+	for _, requirement := range authoritative {
+		if id := strings.TrimSpace(requirement.ID); id != "" {
+			seen[id] = struct{}{}
+		}
+	}
+	for _, requirement := range credentialpolicy.CloneRequirements(supplemental) {
+		id := strings.TrimSpace(requirement.ID)
+		if id != "" {
+			if _, duplicate := seen[id]; duplicate {
+				continue
+			}
+			seen[id] = struct{}{}
+		}
+		merged = append(merged, requirement)
+	}
+	return merged
+}
+
+func prepareImportCredentialReview(
+	scripts []*dsl.Script,
+	protected []credentialpolicy.Requirement,
+	supplemental []credentialpolicy.Requirement,
+) ([]SecretBindingRequirement, error) {
+	requirements := mergeImportCredentialRequirementSets(protected, supplemental)
+	requirements = mergeReferencedImportCredentialRequirements(scripts, requirements)
+	defer clearCredentialRequirementValues(requirements)
+	if len(requirements) == 0 {
+		return nil, nil
+	}
+	return attachImportCredentialReview(scripts, requirements)
+}
+
+// mergeReferencedImportCredentialRequirements fills the standardized review
+// gap for converters that intentionally generate a project-secret reference
+// (OpenAPI auth, WSDL unavailable schema values, AsyncAPI live broker auth,
+// and similar) but omit ExistingReference requirements from their finalizer.
+// These value-free descriptors are configuration guidance, never source-value
+// migration authority.
+func mergeReferencedImportCredentialRequirements(
+	scripts []*dsl.Script,
+	converter []credentialpolicy.Requirement,
+) []credentialpolicy.Requirement {
+	merged := credentialpolicy.CloneRequirements(converter)
+	type scriptCredentialIndex struct {
+		raw               any
+		names             []string
+		sourcePaths       []string
+		requestIdentities []string
+	}
+	indexed := make([]scriptCredentialIndex, len(scripts))
+	sourcePaths := make([][]string, len(scripts))
+	requestIdentities := make([][]string, len(scripts))
+	allScripts := make([]int, len(scripts))
+	for scriptIndex, script := range scripts {
+		allScripts[scriptIndex] = scriptIndex
+		if script == nil {
+			continue
+		}
+		indexed[scriptIndex].names, _ = engine.ReferencedSecretNames(script)
+		indexed[scriptIndex].raw, _ = scriptAsJSONValue(script)
+		indexed[scriptIndex].sourcePaths = importCredentialScriptSourcePaths(script)
+		indexed[scriptIndex].requestIdentities = importCredentialScriptRequestIdentities(script)
+		sourcePaths[scriptIndex] = indexed[scriptIndex].sourcePaths
+		requestIdentities[scriptIndex] = indexed[scriptIndex].requestIdentities
+	}
+	covered := make(map[string]struct{})
+	scopedRequirements := make([]credentialpolicy.Requirement, 0, len(merged))
+	for _, requirement := range merged {
+		if requirement.ExistingReference {
+			// Authored references are configuration needs, not evidence that a
+			// converter-authored requirement will be attached to this script.
+			scopedRequirements = append(scopedRequirements, requirement)
+			continue
+		}
+		replacement := strings.TrimSpace(requirement.Replacement)
+		if replacement == "" {
+			scopedRequirements = append(scopedRequirements, requirement)
+			continue
+		}
+		candidates := narrowImportCredentialScriptMatches(
+			requirement, allScripts, sourcePaths, requestIdentities,
+		)
+		matches := make([]int, 0, len(candidates))
+		for _, scriptIndex := range candidates {
+			if scriptIndex < 0 || scriptIndex >= len(indexed) || indexed[scriptIndex].raw == nil ||
+				len(findProtectedImportCredentialLocations(indexed[scriptIndex].raw, replacement)) == 0 {
+				continue
+			}
+			matches = append(matches, scriptIndex)
+		}
+		// A value-free requirement may intentionally describe one shared project
+		// secret used by several generated scripts. Scope it into stable per-script
+		// descriptors so applying one batch cannot attach the same unscoped ID to
+		// every unrelated draft that happens to use the same logical name.
+		if len(matches) > 1 && strings.TrimSpace(requirement.Value) == "" && !requirement.SourceValueAvailable {
+			for _, scriptIndex := range matches {
+				scoped := scopeValueFreeImportCredentialRequirement(
+					requirement, scripts[scriptIndex], scriptIndex, sourcePaths,
+				)
+				scopedRequirements = append(scopedRequirements, scoped)
+				for _, name := range indexed[scriptIndex].names {
+					reference, refErr := credential.Reference(name)
+					if refErr == nil && strings.Contains(replacement, reference) {
+						covered[fmt.Sprintf("%d\x00%s", scriptIndex, name)] = struct{}{}
+					}
+				}
+			}
+			continue
+		}
+		scopedRequirements = append(scopedRequirements, requirement)
+		if len(matches) == 1 {
+			scriptIndex := matches[0]
+			for _, name := range indexed[scriptIndex].names {
+				reference, refErr := credential.Reference(name)
+				if refErr == nil && strings.Contains(replacement, reference) {
+					covered[fmt.Sprintf("%d\x00%s", scriptIndex, name)] = struct{}{}
+				}
+			}
+		}
+	}
+	merged = scopedRequirements
+	for scriptIndex, script := range scripts {
+		if script == nil {
+			continue
+		}
+		names := indexed[scriptIndex].names
+		rawScript := indexed[scriptIndex].raw
+		sourceProfile := "import"
+		if script.Metadata != nil && script.Metadata.Import != nil {
+			sourceProfile = firstNonEmpty(strings.TrimSpace(script.Metadata.Import.Source), sourceProfile)
+		}
+		sourcePath := ""
+		if paths := importCredentialScriptSourcePaths(script); len(paths) > 0 {
+			sourcePath = paths[0]
+		}
+		for _, name := range names {
+			key := fmt.Sprintf("%d\x00%s", scriptIndex, name)
+			if _, exists := covered[key]; exists {
+				continue
+			}
+			reference, err := credential.Reference(name)
+			if err != nil {
+				continue
+			}
+			if len(findProtectedImportCredentialLocations(rawScript, reference)) == 0 {
+				// Some runtime fields carry a bare logical name rather than a
+				// portable template. Their converter must provide a typed descriptor;
+				// do not invent a location that the binding endpoint cannot apply.
+				continue
+			}
+			source := credentialpolicy.SourceRef{Format: sourceProfile, Path: sourcePath}
+			targets := []credentialpolicy.TargetRef{{RequestKey: script.Name, Field: "project_secret_reference"}}
+			label, purpose := generatedImportSecretPresentation(name, sourceProfile)
+			merged = append(merged, credentialpolicy.Requirement{
+				ID:                credentialpolicy.StableID(source, targets, fmt.Sprintf("%s:%d", name, scriptIndex)),
+				Key:               name,
+				Label:             label,
+				Context:           purpose,
+				SuggestedName:     name,
+				Replacement:       reference,
+				Source:            source,
+				Targets:           targets,
+				SourceValueStatus: credentialpolicy.SourceCredentialValueMissing,
+			})
+		}
+	}
+	return merged
+}
+
+func scopeValueFreeImportCredentialRequirement(
+	requirement credentialpolicy.Requirement,
+	script *dsl.Script,
+	scriptIndex int,
+	allSourcePaths [][]string,
+) credentialpolicy.Requirement {
+	scoped := credentialpolicy.CloneRequirements([]credentialpolicy.Requirement{requirement})[0]
+	scriptName := ""
+	if script != nil {
+		scriptName = strings.TrimSpace(script.Name)
+	}
+	field := "project_secret_reference"
+	if len(requirement.Targets) > 0 && strings.TrimSpace(requirement.Targets[0].Field) != "" {
+		field = strings.TrimSpace(requirement.Targets[0].Field)
+	}
+	// Source path wins before request identity in the shared matcher. Retain it
+	// only when it uniquely identifies this script; otherwise the script name is
+	// the unambiguous target discriminator.
+	path := normalizeImportCredentialSourcePath(requirement.Source.Path)
+	if path != "" {
+		matches := 0
+		for _, paths := range allSourcePaths {
+			for _, candidate := range paths {
+				if candidate == path {
+					matches++
+					break
+				}
+			}
+		}
+		if matches != 1 {
+			scoped.Source.Path = ""
+		}
+	}
+	scoped.Targets = []credentialpolicy.TargetRef{{RequestKey: scriptName, Field: field}}
+	scoped.ID = credentialpolicy.StableID(
+		scoped.Source,
+		scoped.Targets,
+		fmt.Sprintf("%s:script:%d", firstNonEmpty(scoped.Key, scoped.SuggestedName), scriptIndex),
+	)
+	return scoped
+}
+
+func generatedImportSecretPresentation(name, sourceProfile string) (string, string) {
+	switch strings.ToUpper(strings.TrimSpace(name)) {
+	case "SALESFORCE_CLIENT_SECRET":
+		return "Salesforce client secret", "The Agentforce replay transform generated an OAuth token-acquisition step that uses project secret SALESFORCE_CLIENT_SECRET. Configure the Salesforce connected-app client secret before live replay."
+	default:
+		return humanizeSecretLabel(name) + " project secret",
+			fmt.Sprintf("The imported %s draft references project secret %s. Configure it before live replay.", sourceProfile, name)
+	}
+}
+
+func uniqueImportDraftScripts(scripts []*dsl.Script) []*dsl.Script {
+	result := make([]*dsl.Script, 0, len(scripts))
+	seen := make(map[*dsl.Script]struct{}, len(scripts))
+	for _, script := range scripts {
+		if script == nil {
+			continue
+		}
+		if _, duplicate := seen[script]; duplicate {
+			continue
+		}
+		seen[script] = struct{}{}
+		result = append(result, script)
+	}
+	return result
 }
 
 // writeScriptImportResponse writes an import response that may contain an

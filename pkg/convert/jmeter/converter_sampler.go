@@ -117,6 +117,7 @@ func convertHTTPSampler(node *treeNode, ctx *convertContext, opts ConvertOptions
 		}
 		action.Metadata["transaction"] = ctx.transaction
 	}
+	action.Name = allocateJMeterActionName(ctx, action.Name)
 	if extractors, extractorWarnings := parseSamplerExtractors(node, diagnostics); len(extractors) > 0 {
 		action.Extractors = extractors
 		warnings = append(warnings, extractorWarnings...)
@@ -159,6 +160,34 @@ func convertHTTPSampler(node *treeNode, ctx *convertContext, opts ConvertOptions
 		}
 	}
 	return &finalized, warnings, nil
+}
+
+func allocateJMeterActionName(ctx *convertContext, raw string) string {
+	base := strings.TrimSpace(raw)
+	if base == "" {
+		base = "JMeter Action"
+	}
+	if ctx == nil {
+		return base
+	}
+	if ctx.actionNames == nil {
+		ctx.actionNames = make(map[string]int)
+	}
+	identity := strings.ToLower(base)
+	if ctx.actionNames[identity] == 0 {
+		ctx.actionNames[identity] = 1
+		return base
+	}
+	for suffix := ctx.actionNames[identity] + 1; ; suffix++ {
+		candidate := fmt.Sprintf("%s_%d", base, suffix)
+		candidateIdentity := strings.ToLower(strings.TrimSpace(candidate))
+		if ctx.actionNames[candidateIdentity] != 0 {
+			continue
+		}
+		ctx.actionNames[identity] = suffix
+		ctx.actionNames[candidateIdentity] = 1
+		return candidate
+	}
 }
 
 func setJMeterHeaderSummary(headers map[string]string, name string, value string) {

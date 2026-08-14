@@ -423,6 +423,22 @@ operations:
 	if result.Script.Config.Kafka.SecurityProtocol != "sasl_ssl" {
 		t.Fatalf("security_protocol = %q, want sasl_ssl", result.Script.Config.Kafka.SecurityProtocol)
 	}
+	if result.Script.Config.Kafka.SASLPasswordSecret != "{{secret.EVENTHUBS_CONNECTION_STRING}}" {
+		t.Fatalf("sasl_password_secret = %q, want canonical generated reference", result.Script.Config.Kafka.SASLPasswordSecret)
+	}
+	if len(result.SecretRequirements) != 1 {
+		t.Fatalf("secret requirements = %#v, want Event Hubs connection-string guidance", result.SecretRequirements)
+	}
+	requirement := result.SecretRequirements[0]
+	if requirement.SuggestedName != "EVENTHUBS_CONNECTION_STRING" ||
+		requirement.Replacement != result.Script.Config.Kafka.SASLPasswordSecret ||
+		requirement.SourceValueAvailable || requirement.Value != "" ||
+		requirement.SourceValueStatus != "missing" ||
+		requirement.Source.Format != "asyncapi" || requirement.Source.Path != "asyncapi.yaml" ||
+		len(requirement.Targets) != 1 || requirement.Targets[0].Field != "config.kafka.sasl_password_secret" ||
+		!strings.Contains(requirement.Context, "does not contain") {
+		t.Fatalf("Event Hubs credential requirement lacks descriptive provenance: %#v", requirement)
+	}
 	found := false
 	for _, w := range result.Warnings {
 		if strings.Contains(w, "Event Hubs") {

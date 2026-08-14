@@ -13,6 +13,24 @@ import (
 	"sync"
 )
 
+type StorageRefOpener func(ref string, maxBytes int64) (io.ReadCloser, error)
+
+var (
+	storageRefOpenerMu sync.RWMutex
+	storageRefOpeners  = map[string]StorageRefOpener{}
+)
+
+func RegisterStorageRefOpener(scheme string, opener StorageRefOpener) error {
+	scheme = strings.ToLower(strings.TrimSpace(scheme))
+	if scheme == "" || scheme == "file" || opener == nil {
+		return fmt.Errorf("non-file storage_ref scheme and opener are required")
+	}
+	storageRefOpenerMu.Lock()
+	storageRefOpeners[scheme] = opener
+	storageRefOpenerMu.Unlock()
+	return nil
+}
+
 const (
 	MaxBytes           int64 = 50 << 20
 	MaxCredentialBytes int64 = 4 << 20
@@ -79,7 +97,27 @@ func ProjectAssetDir(root, projectID string) (string, error) {
 	return filepath.Join(normalized, "projects", namespace), nil
 }
 
+func ProjectAssetNamespace(projectID string) (string, error) {
+	return projectAssetNamespace(projectID)
+}
+
 func ValidateStorageRef(ref string) (string, error) {
+	if parsed, err := url.Parse(strings.TrimSpace(ref)); err == nil && parsed.Scheme != "" && parsed.Scheme != "file" {
+		scheme := strings.ToLower(parsed.Scheme)
+		storageRefOpenerMu.RLock()
+		_, registered := storageRefOpeners[scheme]
+		storageRefOpenerMu.RUnlock()
+		// asset:// is a durable, built-in reference type. Validation must not
+		// depend on whether this process is the controller that registered the
+		// object-store opener (generators and offline validators do not).
+		if scheme != "asset" && !registered {
+			return "", fmt.Errorf("unsupported storage_ref scheme %q", parsed.Scheme)
+		}
+		if parsed.Host == "" || strings.Trim(parsed.Path, "/") == "" {
+			return "", fmt.Errorf("%s storage_ref requires project namespace and asset id", parsed.Scheme)
+		}
+		return ref, nil
+	}
 	path, err := storageRefPath(ref)
 	if err != nil {
 		return "", err
@@ -90,6 +128,19 @@ func ValidateStorageRef(ref string) (string, error) {
 // ValidateStorageRefForProject validates a file:// reference and, when the file
 // lives below a project-scoped root, verifies that it belongs to projectID.
 func ValidateStorageRefForProject(ref, projectID string) (string, error) {
+	if parsed, err := url.Parse(strings.TrimSpace(ref)); err == nil && parsed.Scheme == "asset" {
+		if _, err := ValidateStorageRef(ref); err != nil {
+			return "", err
+		}
+		namespace, err := projectAssetNamespace(projectID)
+		if err != nil {
+			return "", err
+		}
+		if parsed.Host != namespace {
+			return "", fmt.Errorf("asset storage_ref does not belong to project %q", projectID)
+		}
+		return ref, nil
+	}
 	path, err := storageRefPath(ref)
 	if err != nil {
 		return "", err
@@ -239,16 +290,20 @@ func OpenPathLimited(path string, maxBytes int64) (io.ReadCloser, error) {
 }
 
 func OpenStorageRef(ref string) (io.ReadCloser, error) {
-	path, err := storageRefPath(ref)
-	if err != nil {
-		return nil, err
-	}
-	return OpenPath(path)
+	return OpenStorageRefLimited(ref, MaxBytes)
 }
 
-// OpenStorageRefLimited resolves a file:// storage_ref and opens it with a
-// caller-supplied maximum size (see OpenPathLimited).
 func OpenStorageRefLimited(ref string, maxBytes int64) (io.ReadCloser, error) {
+	parsed, parseErr := url.Parse(strings.TrimSpace(ref))
+	if parseErr == nil && parsed.Scheme != "" && parsed.Scheme != "file" {
+		storageRefOpenerMu.RLock()
+		opener := storageRefOpeners[strings.ToLower(parsed.Scheme)]
+		storageRefOpenerMu.RUnlock()
+		if opener == nil {
+			return nil, fmt.Errorf("unsupported storage_ref scheme %q", parsed.Scheme)
+		}
+		return opener(ref, maxBytes)
+	}
 	path, err := storageRefPath(ref)
 	if err != nil {
 		return nil, err

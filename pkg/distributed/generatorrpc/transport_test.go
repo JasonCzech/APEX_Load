@@ -358,6 +358,28 @@ func TestTransport_MustRefuseInsecure(t *testing.T) {
 	}
 }
 
+func TestReverseTunnelSecurityIsScopedToReverseServerAndDial(t *testing.T) {
+	for _, key := range []string{grpcTLSCertEnvVar, grpcTLSKeyEnvVar, grpcTLSCAEnvVar, grpcTLSServerNameEnvVar, grpcAuthTokenEnvVar} {
+		t.Setenv(key, "")
+	}
+	t.Setenv("APEXLOAD_ENV", "production")
+	t.Setenv(grpcReverseTunnelSecure, "true")
+	t.Setenv("APEXLOAD_GENERATOR_CONNECTIVITY_MODE", "reverse")
+	if _, err := ServerOptionsFromEnv(); err != nil {
+		t.Fatalf("reverse-only tunnel server options: %v", err)
+	}
+	if _, err := dialOptionsFromEnv(true); err != nil {
+		t.Fatalf("reverse tunnel dial options: %v", err)
+	}
+	if _, err := dialOptionsFromEnv(false); err == nil {
+		t.Fatal("direct dial inherited reverse tunnel security")
+	}
+	t.Setenv("APEXLOAD_GENERATOR_CONNECTIVITY_MODE", "both")
+	if _, err := ServerOptionsFromEnv(); err == nil {
+		t.Fatal("dual-mode server inherited reverse-only tunnel security")
+	}
+}
+
 func TestTransportProductionConfigurationFailsClosed(t *testing.T) {
 	clearTransportEnv(t)
 	t.Setenv("APEXLOAD_ENV", " PROD ")

@@ -118,7 +118,39 @@ func maskScriptSecrets(script *dsl.Script) *dsl.Script {
 	}
 	restoreBrunoNativeCompactProvenance(projectedScript, script)
 	restoreProjectedJavaVuserApprovalEvidence(projectedScript, script)
+	restoreProjectedBoundedNonSecretHeaders(projectedScript, script)
 	return projectedScript
+}
+
+func restoreProjectedBoundedNonSecretHeaders(projected, source *dsl.Script) {
+	if projected == nil || source == nil {
+		return
+	}
+	allowed := make(map[string]string)
+	if err := dslwalk.Walk(source, func(ref dslwalk.SurfaceRef) error {
+		if ref.Action == nil {
+			return nil
+		}
+		for name, value := range ref.Action.Headers {
+			if isBoundedNonSecretHeaderValue(name, value) {
+				allowed[ref.Path+"\x00"+strings.ToLower(strings.TrimSpace(name))] = strings.TrimSpace(value)
+			}
+		}
+		return nil
+	}); err != nil || len(allowed) == 0 {
+		return
+	}
+	_ = dslwalk.Walk(projected, func(ref dslwalk.SurfaceRef) error {
+		if ref.Action == nil {
+			return nil
+		}
+		for name := range ref.Action.Headers {
+			if value, ok := allowed[ref.Path+"\x00"+strings.ToLower(strings.TrimSpace(name))]; ok {
+				ref.Action.Headers[name] = value
+			}
+		}
+		return nil
+	})
 }
 
 // maskImportHeaderFidelityBytes projects the exact, inert source bytes retained
@@ -1360,6 +1392,9 @@ func projectHeaderValue(name string, value any) any {
 	if !ok {
 		return projectScriptNode(value, scriptProjectionContext{key: name, opaqueMap: true})
 	}
+	if isBoundedNonSecretHeaderValue(name, text) {
+		return strings.TrimSpace(text)
+	}
 	if (scrub.Policy{}).SensitiveHeader(name) || isSensitiveScriptKey(name) {
 		if isPortableTemplateBinding(text) {
 			return text
@@ -1372,9 +1407,32 @@ func projectHeaderValue(name string, value any) any {
 	return scrubScriptText(text, false)
 }
 
+func isBoundedNonSecretHeaderValue(name, value string) bool {
+	switch normalizeScriptFieldName(name) {
+	case "xsessionendreason":
+		// Agentforce defines this as a lifecycle reason enum, not a session
+		// identifier or credential. Preserve only the converter-authored value;
+		// arbitrary values under this otherwise sensitive-looking header remain
+		// disclosure-projected.
+		return strings.EqualFold(strings.TrimSpace(value), "UserRequest")
+	default:
+		return false
+	}
+}
+
 func projectScriptString(value string, ctx scriptProjectionContext) string {
 	if value == "" || isPortableTemplateBinding(value) {
 		return value
+	}
+	if ctx.metadata && normalizeScriptFieldName(ctx.key) == "authmode" {
+		switch strings.ToLower(strings.TrimSpace(value)) {
+		case "anonymous", "blocked", "configured", "basic", "none":
+			// Bounded server-authored authentication mode enums are review
+			// locators, not credential material. Preserving only known enum values
+			// avoids creating a bogus secret requirement while retaining the
+			// fail-closed behavior for arbitrary metadata under this key.
+			return value
+		}
 	}
 	if ctx.metadata && isPortableImportProvenanceIdentifierKey(ctx.key) {
 		return scrub.ValueURL(value, scrub.Policy{})
@@ -1801,7 +1859,7 @@ func isNamedSecretReference(value string) bool {
 
 func isScriptURLKey(key string) bool {
 	switch normalizeScriptFieldName(key) {
-	case "baseurl", "url", "brokerurl", "schemaregistryurl", "server", "origin", "target", "address":
+	case "baseurl", "url", "tokenurl", "brokerurl", "schemaregistryurl", "server", "origin", "target", "address":
 		return true
 	default:
 		return false

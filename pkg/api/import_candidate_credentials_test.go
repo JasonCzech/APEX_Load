@@ -141,12 +141,12 @@ func TestOpenAPIAndPostmanCredentialValuesRemainRunnableThroughProtectedCommit(t
 			if strings.TrimSpace(inspection.ImportSessionID) == "" {
 				t.Fatal("inspection did not create a protected import session")
 			}
-			// The inspection route is the authenticated authoring handoff. Its
-			// editable destination script must remain executable without asking
-			// the importing operator to enter the same password again.
-			assertScriptContainsProtectedImportValue(t, &inspection.Script, value)
-			// Review/result sidecars remain disclosure-safe even though the
-			// editable script is intentionally credential-bearing.
+			// The browser-visible draft is always a disclosure projection. The
+			// encrypted candidate asserted below must retain the exact credential
+			// so commit remains executable without asking the operator to enter it
+			// again.
+			assertScriptOmitsProtectedImportValue(t, &inspection.Script, value)
+			// Review/result sidecars remain disclosure-safe as well.
 			if bytes.Contains(inspection.Result, []byte(value)) ||
 				bytes.Contains(inspection.SourceReview, []byte(value)) {
 				t.Fatal("inspection review evidence disclosed an imported credential")
@@ -288,7 +288,14 @@ func TestProtectedOpenAPICredentialValueMigratesWithoutDisclosure(t *testing.T) 
 		!payload.Requirements[0].SourceValueAvailable {
 		t.Fatalf("protected migration metadata = %#v", payload)
 	}
-	assertScriptContainsProtectedImportValue(t, &payload.Script, value)
+	assertScriptOmitsProtectedImportValue(t, &payload.Script, value)
+	projectedScript, err := json.Marshal(payload.Script)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(projectedScript, []byte(maskedScriptSecret)) {
+		t.Fatalf("protected OpenAPI preview omitted its masked credential: %s", projectedScript)
+	}
 	if bytes.Contains(payload.Result, []byte(value)) ||
 		bytes.Contains(payload.SourceReview, []byte(value)) {
 		t.Fatal("inspection review evidence disclosed a migratable OpenAPI credential")

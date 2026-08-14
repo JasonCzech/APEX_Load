@@ -166,15 +166,38 @@ variable "postgres_admin_login" {
 }
 
 variable "redis_sku" {
-  description = "Azure Cache for Redis tier: Basic, Standard, or Premium. Standard+ recommended for HA fanout."
+  description = "Legacy Azure Cache for Redis tier, used only when redis_service=azure_cache_legacy."
   type        = string
   default     = "Standard"
 }
 
 variable "redis_capacity" {
-  description = "Azure Cache for Redis capacity (0-6 for C-family)."
+  description = "Legacy Azure Cache for Redis capacity, used only when redis_service=azure_cache_legacy."
   type        = number
   default     = 1
+}
+
+variable "redis_service" {
+  description = "Redis service for new deployments. Azure Cache is retained only as an explicit migration bridge."
+  type        = string
+  default     = "managed_redis"
+
+  validation {
+    condition     = contains(["managed_redis", "azure_cache_legacy"], var.redis_service)
+    error_message = "redis_service must be managed_redis or azure_cache_legacy."
+  }
+}
+
+variable "managed_redis_sku" {
+  description = "Azure Managed Redis SKU used for new deployments."
+  type        = string
+  default     = "Balanced_B1"
+}
+
+variable "managed_redis_private_dns_zone_name" {
+  description = "Private DNS zone for Azure Managed Redis private endpoints."
+  type        = string
+  default     = "privatelink.redis.azure.net"
 }
 
 variable "acr_sku" {
@@ -260,6 +283,12 @@ variable "private_endpoint_subnet_prefixes" {
   default     = ["10.42.8.0/24"]
 }
 
+variable "container_apps_subnet_prefixes" {
+  description = "Dedicated infrastructure subnet for the Container Apps environment when network_mode=private."
+  type        = list(string)
+  default     = ["10.42.12.0/23"]
+}
+
 variable "private_dns_zone_names" {
   description = "Private DNS zone names used by Azure private endpoints."
   type = object({
@@ -308,4 +337,49 @@ variable "tags" {
   description = "Extra tags merged onto every resource."
   type        = map(string)
   default     = {}
+}
+
+variable "controller_compute" {
+  description = "Controller runtime. AKS is omitted when neither controller nor generators select it."
+  type        = string
+  default     = "aks"
+  validation {
+    condition     = contains(["aks", "container_apps", "external"], var.controller_compute)
+    error_message = "controller_compute must be aks, container_apps, or external."
+  }
+}
+
+variable "generator_compute" {
+  description = "Generator runtime. container_apps provisions a warm app plus a manual burst Job; external emits no generator compute."
+  type        = string
+  default     = "aks"
+  validation {
+    condition     = contains(["aks", "container_apps", "external"], var.generator_compute)
+    error_message = "generator_compute must be aks, container_apps, or external."
+  }
+}
+
+variable "controller_image" {
+  description = "Immutable controller image reference used by Container Apps."
+  type        = string
+  default     = ""
+}
+
+variable "generator_image" {
+  description = "Immutable generator image reference used by the warm app and burst Job."
+  type        = string
+  default     = ""
+}
+
+variable "controller_public_url" {
+  description = "Externally reachable HTTPS controller origin used by reverse generators. Leave empty until ingress DNS is known and then re-apply."
+  type        = string
+  default     = ""
+}
+
+variable "generator_gateway_token" {
+  description = "Target-scoped reverse enrollment token returned once by APEX Load registration. Store in Terraform state through an encrypted remote backend."
+  type        = string
+  default     = ""
+  sensitive   = true
 }

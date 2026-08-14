@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -64,6 +65,17 @@ type DirectImportReceiptStore interface {
 // safely retain ownership until their ordinary lease expires.
 type DirectImportReceiptReleaseStore interface {
 	ReleaseDirectImportReceipt(id, ownerToken string, now time.Time) (bool, error)
+}
+
+// DirectImportReceiptRecoveryStore is an internal crash-recovery extension.
+// It may complete a pending receipt without its lost process-local owner token,
+// but only when every durable identity/digest and the ordered asset IDs match.
+// Callers must independently authenticate and validate those assets before use.
+type DirectImportReceiptRecoveryStore interface {
+	RecoverDirectImportReceipt(
+		id, projectID, sourceProfile, operationKeyHash, requestSHA256 string,
+		scriptIDs []string, scenarioID string, now time.Time,
+	) (bool, error)
 }
 
 func (s *SQLiteStore) ClaimDirectImportReceipt(
@@ -228,6 +240,93 @@ func (s *SQLiteStore) CompleteDirectImportReceipt(
 	}
 	rows, err := result.RowsAffected()
 	return rows == 1, err
+}
+
+func (s *SQLiteStore) RecoverDirectImportReceipt(
+	id, projectID, sourceProfile, operationKeyHash, requestSHA256 string,
+	scriptIDs []string,
+	scenarioID string,
+	now time.Time,
+) (_ bool, resultErr error) {
+	id = strings.TrimSpace(id)
+	projectID = normalizeProjectID(strings.TrimSpace(projectID))
+	sourceProfile = strings.TrimSpace(sourceProfile)
+	operationKeyHash = strings.TrimSpace(operationKeyHash)
+	requestSHA256 = strings.TrimSpace(requestSHA256)
+	if id == "" || sourceProfile == "" || operationKeyHash == "" || requestSHA256 == "" || len(scriptIDs) == 0 {
+		return false, errors.New("direct import receipt recovery requires exact receipt identity and script ids")
+	}
+	copiedIDs := make([]string, len(scriptIDs))
+	seen := make(map[string]struct{}, len(scriptIDs))
+	for index, scriptID := range scriptIDs {
+		scriptID = strings.TrimSpace(scriptID)
+		if scriptID == "" {
+			return false, errors.New("direct import receipt recovery contains an empty script id")
+		}
+		if _, duplicate := seen[scriptID]; duplicate {
+			return false, errors.New("direct import receipt recovery contains duplicate script ids")
+		}
+		seen[scriptID] = struct{}{}
+		copiedIDs[index] = scriptID
+	}
+	idsJSON, err := json.Marshal(copiedIDs)
+	if err != nil {
+		return false, fmt.Errorf("marshal recovered direct import script ids: %w", err)
+	}
+	var scenario any
+	if trimmed := strings.TrimSpace(scenarioID); trimmed != "" {
+		scenario = trimmed
+	}
+	now = now.UTC()
+	tx, err := s.db.Begin()
+	if err != nil {
+		return false, fmt.Errorf("begin direct import receipt recovery: %w", err)
+	}
+	defer func() {
+		if resultErr != nil {
+			_ = tx.Rollback()
+		}
+	}()
+	result, err := tx.Exec(`UPDATE direct_import_receipts
+		SET state = ?, owner_token = '', lease_expires_at = NULL,
+			script_ids_json = ?, scenario_id = ?, updated_at = ?
+		WHERE id = ? AND project_id = ? AND source_profile = ? AND
+			operation_key_hash = ? AND request_sha256 = ? AND state = ?`,
+		DirectImportReceiptComplete, string(idsJSON), scenario, now,
+		id, projectID, sourceProfile, operationKeyHash, requestSHA256,
+		DirectImportReceiptPending)
+	if err != nil {
+		return false, fmt.Errorf("recover direct import receipt: %w", err)
+	}
+	updated, err := result.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("inspect direct import receipt recovery: %w", err)
+	}
+	if updated == 1 {
+		if err := tx.Commit(); err != nil {
+			return false, fmt.Errorf("commit direct import receipt recovery: %w", err)
+		}
+		return true, nil
+	}
+	receipt, err := scanDirectImportReceipt(tx.QueryRow(`SELECT
+		id, project_id, source_profile, operation_key_hash, request_sha256,
+		state, owner_token, lease_expires_at, script_ids_json, scenario_id,
+		created_at, updated_at
+		FROM direct_import_receipts WHERE id = ?`, id))
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("load direct import receipt after recovery miss: %w", err)
+	}
+	exact := receipt.State == DirectImportReceiptComplete &&
+		receipt.ProjectID == projectID && receipt.SourceProfile == sourceProfile &&
+		receipt.OperationKeyHash == operationKeyHash && receipt.RequestSHA256 == requestSHA256 &&
+		receipt.ScenarioID == strings.TrimSpace(scenarioID) && slices.Equal(receipt.ScriptIDs, copiedIDs)
+	if err := tx.Commit(); err != nil {
+		return false, fmt.Errorf("commit direct import receipt recovery inspection: %w", err)
+	}
+	return exact, nil
 }
 
 // ReleaseDirectImportReceipt relinquishes a pending receipt without deleting

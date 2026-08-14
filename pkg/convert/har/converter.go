@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/jasonczech/apexload/pkg/convert/convertutil"
+	"github.com/jasonczech/apexload/pkg/convert/correlate"
 	"github.com/jasonczech/apexload/pkg/convert/credentialpolicy"
 	"github.com/jasonczech/apexload/pkg/convert/diag"
 	"github.com/jasonczech/apexload/pkg/convert/sample"
@@ -58,6 +59,16 @@ type ConvertResult struct {
 	// ProtectedRequirements transfers the sample adapter's source values to
 	// HAR API workflows without placing them in the public conversion payload.
 	ProtectedRequirements credentialpolicy.ProtectedRequirements `json:"-"`
+}
+
+// CorrelationBaseline parses an imported HAR with the same filtering and
+// transport decoding used by Convert, but keeps the raw request/response
+// observations for the server's encrypted correlation-baseline store.
+func CorrelationBaseline(data []byte, includeStaticAssets bool) ([]correlate.Observation, error) {
+	if len(data) == 0 || strings.TrimSpace(string(data)) == "" {
+		return nil, fmt.Errorf("HAR content is required")
+	}
+	return sample.HARCorrelationBaseline(string(data), includeStaticAssets)
 }
 
 func Convert(data []byte, opts ConvertOptions) (*ConvertResult, error) {

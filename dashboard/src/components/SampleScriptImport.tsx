@@ -22,7 +22,7 @@ import { useDesktopFileDrop } from '../desktop/useDesktopFileDrop'
 import DropIngestOverlay from './DropIngestOverlay'
 import { describeAccepted, describeReading, useDropIngestFeedback } from './dropIngestFeedback'
 import { createJavaHttpDraft } from './scriptDraftFactories'
-import { attachImportCorrelationSuggestions } from './scriptEditorUtils'
+import { attachImportCorrelationSuggestions, createReplaySessionId } from './scriptEditorUtils'
 import ScriptImportReview from './ScriptImportReview'
 import { type SecretBindingReviewHandle } from './SecretBindingReview'
 import SourceMappingReview from './SourceMappingReview'
@@ -76,6 +76,7 @@ interface Props {
   onEdit?: (script: ScriptDefinition) => void
   onClose?: () => void
   preset?: SampleImportPreset
+  onOperationBusyChange?: (busy: boolean) => void
 }
 
 const formatHelp: Record<SampleFormat, string> = {
@@ -414,7 +415,7 @@ function inferSampleFormatFromFile(file: File | undefined, fallback: SampleForma
   return fallback
 }
 
-export default function SampleScriptImport({ initialFiles, projectId, folderId, onImported, onEdit, onClose, preset: initialPreset = 'default' }: Props) {
+export default function SampleScriptImport({ initialFiles, projectId, folderId, onImported, onEdit, onClose, preset: initialPreset = 'default', onOperationBusyChange }: Props) {
   const api = useApi()
   const sourceSecretSessions = useSourceSecretSessionLifecycle(api.discardImportSecretSession)
   const primaryFileRef = useRef<HTMLInputElement>(null)
@@ -446,6 +447,7 @@ export default function SampleScriptImport({ initialFiles, projectId, folderId, 
   const [options, dispatchOptions] = useReducer(sampleImportOptionsReducer, initialOptions)
   const [assetUploads, setAssetUploads] = useState<AssetUploadState>({})
   const credentialReviewRef = useRef<SecretBindingReviewHandle | null>(null)
+  const [internalReviewBusy, setInternalReviewBusy] = useState(false)
   const desktop = isDesktopSurface()
   const [browserPickerFallback, setBrowserPickerFallback] = useState(false)
   const nativeDialogs = desktop && canUseNativeDialogs() && !browserPickerFallback
@@ -453,6 +455,12 @@ export default function SampleScriptImport({ initialFiles, projectId, folderId, 
   const result = convertTask.value
   const latestResultRef = useRef<SampleImportResult | null>(result)
   latestResultRef.current = result
+  const genericBatchSaveOperationRef = useRef<{
+    result: SampleImportResult
+    projectId?: string
+    folderId: string | null
+    operationId: string
+  } | null>(null)
   const reviewGenerationRef = useRef(0)
   const [reviewGeneration, setReviewGeneration] = useState(0)
   const advanceReviewGeneration = useCallback(() => {
@@ -494,6 +502,11 @@ export default function SampleScriptImport({ initialFiles, projectId, folderId, 
   const error = messageError || convertTask.error || saveTask.error
   const converting = convertTask.pending
   const saving = saveTask.pending
+  const operationBusy = converting || saving || internalReviewBusy
+  useEffect(() => {
+    onOperationBusyChange?.(operationBusy)
+    return () => onOperationBusyChange?.(false)
+  }, [onOperationBusyChange, operationBusy])
   const availableFormats = availableFormatsByPreset[preset]
   const isJavaHttpPreset = preset === 'java-http'
   const reviewedScript = result?.script || result?.scripts?.[0] || null
@@ -835,7 +848,33 @@ export default function SampleScriptImport({ initialFiles, projectId, folderId, 
     setMessageError('')
     try {
       const savedScript = await saveTask.run(async () => {
-        return api.createScript(scriptToSave, sourceProjectId, scriptToSave.folder_id ?? folderId ?? null)
+        const destinationFolderId = scriptToSave.folder_id ?? folderId ?? null
+        const retained = genericBatchSaveOperationRef.current
+        const operationId = retained
+          && retained.result === sourceResult
+          && retained.projectId === sourceProjectId
+          && retained.folderId === destinationFolderId
+          ? retained.operationId
+          : `sample-import-${createReplaySessionId()}`
+        genericBatchSaveOperationRef.current = {
+          result: sourceResult!,
+          projectId: sourceProjectId,
+          folderId: destinationFolderId,
+          operationId,
+        }
+        const response = await api.commitGenericImportBatch({
+          scripts: [scriptToSave],
+          folder_id: destinationFolderId,
+          operation_id: operationId,
+          source_profile: 'sample',
+        })
+        if (response.count !== 1 || response.scripts.length !== 1) {
+          throw new Error('The atomic sample import save did not return the stored script. Retry the same save to reconcile its result.')
+        }
+        if (genericBatchSaveOperationRef.current?.operationId === operationId) {
+          genericBatchSaveOperationRef.current = null
+        }
+        return response.scripts[0]
       })
       onImported?.({
         scripts: [withFallbackPersistedScript(savedScript, scriptToSave)],
@@ -1200,7 +1239,11 @@ export default function SampleScriptImport({ initialFiles, projectId, folderId, 
             importDraftExpiresAt={result.import_draft_expires_at}
             credentialReviewRef={credentialReviewRef}
             saving={saving}
+            onReviewBusyChange={setInternalReviewBusy}
             saveDisabled={hasMissingFileAssets}
+            saveDisabledReason={hasMissingFileAssets
+              ? 'Upload every missing imported file asset before saving this script.'
+              : undefined}
             onSave={handleSave}
             onEdit={onEdit ? handleEdit : undefined}
             editLabel={editRequiresCredentialPreservingSave ? 'Save And Open In Visual Editor' : undefined}

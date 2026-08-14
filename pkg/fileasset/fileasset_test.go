@@ -1,11 +1,43 @@
 package fileasset
 
 import (
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 )
+
+func TestAssetStorageRefValidationDoesNotDependOnRuntimeOpener(t *testing.T) {
+	namespace, err := ProjectAssetNamespace("project-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ref := "asset://" + namespace + "/asset-1"
+	if got, err := ValidateStorageRefForProject(ref, "project-a"); err != nil || got != ref {
+		t.Fatalf("owner validation = %q, %v", got, err)
+	}
+	if _, err := ValidateStorageRefForProject(ref, "project-b"); err == nil || !strings.Contains(err.Error(), "does not belong") {
+		t.Fatalf("foreign project error = %v, want ownership rejection", err)
+	}
+	if _, err := OpenStorageRef(ref); err == nil || !strings.Contains(err.Error(), "unsupported") {
+		t.Fatalf("open without runtime resolver error = %v", err)
+	}
+	if err := RegisterStorageRefOpener("asset", func(string, int64) (io.ReadCloser, error) {
+		return io.NopCloser(strings.NewReader("payload")), nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	reader, err := OpenStorageRef(ref)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+	data, err := io.ReadAll(reader)
+	if err != nil || string(data) != "payload" {
+		t.Fatalf("resolved data = %q, %v", data, err)
+	}
+}
 
 func TestOpenPathRejectsSymlinkEscape(t *testing.T) {
 	root := t.TempDir()

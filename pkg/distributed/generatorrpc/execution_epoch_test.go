@@ -685,6 +685,7 @@ func TestExecutionEpochPostCommitFenceCleanupOutlivesClaimCancellation(t *testin
 
 func TestExecutionEpochProductionRequiresExplicitDurableStateDirectory(t *testing.T) {
 	t.Setenv("APEXLOAD_ENV", "production")
+	t.Setenv(generatorLifecycleEnv, "standing")
 	t.Setenv(executionEpochStateDirEnv, "")
 	t.Setenv("APEXLOAD_ARCHIVE_DIR", t.TempDir())
 	service := NewService("production-state-test", 10)
@@ -700,6 +701,27 @@ func TestExecutionEpochProductionRequiresExplicitDurableStateDirectory(t *testin
 	}
 	if _, err := service.ClaimExecutionEpoch(context.Background(), &pb.ExecutionEpochClaim{ExecutionGeneration: 1, LeaseTtlMilliseconds: 1000, ExecutionLeaseOwnerId: "controller/1"}); status.Code(err) != codes.FailedPrecondition {
 		t.Fatalf("production claim without durable state error = %v, want FailedPrecondition", err)
+	}
+}
+
+func TestExecutionEpochProductionBurstUsesEphemeralIdentityState(t *testing.T) {
+	t.Setenv("APEXLOAD_ENV", "production")
+	t.Setenv(generatorLifecycleEnv, " BuRsT ")
+	t.Setenv(executionEpochStateDirEnv, "")
+	t.Setenv("APEXLOAD_ARCHIVE_DIR", t.TempDir())
+	service := NewService("fresh-burst-generator-id", 10)
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		if err := service.Shutdown(ctx); err != nil {
+			t.Errorf("Shutdown: %v", err)
+		}
+	})
+	if err := service.ReadinessError(); err != nil {
+		t.Fatalf("production burst service rejected ephemeral epoch state: %v", err)
+	}
+	if _, err := service.ClaimExecutionEpoch(context.Background(), &pb.ExecutionEpochClaim{ExecutionGeneration: 1, LeaseTtlMilliseconds: 1000, ExecutionLeaseOwnerId: "controller/1"}); err != nil {
+		t.Fatalf("production burst claim: %v", err)
 	}
 }
 

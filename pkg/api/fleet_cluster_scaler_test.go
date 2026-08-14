@@ -83,6 +83,29 @@ func TestUnboundPoolKeepsTheEnvConfiguredScaler(t *testing.T) {
 	}
 }
 
+func TestUnboundPoolFallbackIsResolvedAtCallTime(t *testing.T) {
+	var current fleetPoolScaler = unconfiguredFleetScaler{}
+	resolver := &registryFleetScalerResolver{fallback: func() fleetPoolScaler { return current }}
+	pool := &storage.FleetPool{ID: "pool-legacy"}
+
+	first, err := resolver.ScalerForPool(context.Background(), pool)
+	if err != nil {
+		t.Fatalf("first ScalerForPool: %v", err)
+	}
+	if first.CanProvision() {
+		t.Fatal("first fallback unexpectedly provisions")
+	}
+
+	current = ownerConflictFleetScaler{owner: "keda"}
+	second, err := resolver.ScalerForPool(context.Background(), pool)
+	if err != nil {
+		t.Fatalf("second ScalerForPool: %v", err)
+	}
+	if second.Describe().Name != "keda" {
+		t.Fatalf("fallback name = %q, want reassigned live fallback keda", second.Describe().Name)
+	}
+}
+
 // TestUnknownClusterFailsClosedWithoutTouchingKubernetes pins the safety
 // property: a pool naming a cluster we cannot load must never silently fall
 // back to the controller's own cluster.

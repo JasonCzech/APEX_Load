@@ -146,6 +146,8 @@ describe('appRouting', () => {
       page: 'recorder-panel',
       sessionId: 'brec/1',
     })
+    expect(viewToLocationHash({ page: 'recorder-panel', sessionId: 'brec/1', folderId: 'folder/9' })).toBe('#/recorder-panel?session=brec%2F1&folderId=folder%2F9')
+    expect(parseAppViewFromHash('#/recorder-panel?session=brec-1&folderId=folder-9')).toEqual({ page: 'recorder-panel', sessionId: 'brec-1', folderId: 'folder-9' })
     expect(parseAppViewFromHash('#/recorder-panel')).toEqual({ page: 'scripts' })
   })
 

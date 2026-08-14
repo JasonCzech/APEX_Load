@@ -139,38 +139,61 @@ func TestJMeterSaveLostResponseRetryReturnsSameDurableAssets(t *testing.T) {
 		operationID = "jmeter-preview-operation-6dcd59de"
 		canary      = "jmeter-idempotency-password-canary"
 	)
-	payload := map[string]any{
-		"scripts": []map[string]any{{
-			"name":           "Idempotent_JMeter",
-			"version":        "1.0.0",
-			"protocol":       "http",
-			"generated_by":   "jmeter-import",
-			"generated_from": "jmeter",
-			"metadata": map[string]any{"import": map[string]any{
-				"source": "jmeter",
-				"preserved": map[string]any{
+	attestedBody := func(credential, target string) []byte {
+		t.Helper()
+		source := &dsl.Script{
+			Name:          "Idempotent_JMeter",
+			Version:       "1.0.0",
+			Protocol:      "http",
+			ProjectID:     storage.DefaultProjectID,
+			GeneratedBy:   "jmeter-import",
+			GeneratedFrom: "jmeter",
+			Config:        dsl.ScriptConfig{BaseURL: "https://api.example.test"},
+			Metadata: &dsl.ScriptMetadata{Import: &dsl.ImportMetadata{
+				Source: "jmeter",
+				Preserved: map[string]any{
 					jmeterDirectImportOperationKey: operationID,
 				},
 			}},
-			"config": map[string]any{"base_url": "https://api.example.test"},
-			"actions": []map[string]any{{
-				"name": "Request", "type": "request", "method": "GET", "target": "/one",
-				"headers": map[string]string{"Authorization": "Bearer " + canary},
+			Actions: []dsl.Action{{
+				Name: "Request", Type: "request", Method: http.MethodGet, Target: target,
+				Headers: map[string]string{"Authorization": "Bearer " + credential},
 			}},
-		}},
-		"scenario_draft": map[string]any{
-			"name": "Idempotent JMeter Scenario", "duration": "2m",
-			"scenario_mode": "vuser_driven",
-			"groups": []map[string]any{{
-				"name": "Users", "script_name": "Idempotent_JMeter",
-				"vusers": 3, "initialization": "at_runtime",
-			}},
-		},
+		}
+		preview := server.newScriptImportResponseWithSourceSecrets(
+			httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/jmeter", nil),
+			scriptImportResponseOptions{Script: source, Scripts: []*dsl.Script{source}},
+		)
+		maskedScripts, ok := preview["scripts"].([]any)
+		if !ok || len(maskedScripts) != 1 {
+			t.Fatalf("JMeter preview scripts = %#v", preview["scripts"])
+		}
+		maskedJSON, marshalErr := json.Marshal(maskedScripts[0])
+		if marshalErr != nil {
+			t.Fatal(marshalErr)
+		}
+		if bytes.Contains(maskedJSON, []byte(credential)) ||
+			!bytes.Contains(maskedJSON, []byte(maskedScriptSecret)) {
+			t.Fatalf("JMeter idempotency preview disclosed or failed to mask credential: %s", maskedJSON)
+		}
+		payload := map[string]any{
+			"scripts": maskedScripts,
+			"scenario_draft": map[string]any{
+				"name": "Idempotent JMeter Scenario", "duration": "2m",
+				"scenario_mode": "vuser_driven",
+				"groups": []map[string]any{{
+					"name": "Users", "script_name": "Idempotent_JMeter",
+					"vusers": 3, "initialization": "at_runtime",
+				}},
+			},
+		}
+		body, marshalErr := json.Marshal(payload)
+		if marshalErr != nil {
+			t.Fatal(marshalErr)
+		}
+		return body
 	}
-	body, err := json.Marshal(payload)
-	if err != nil {
-		t.Fatal(err)
-	}
+	body := attestedBody(canary, "/one")
 	first := postJSON(t, server, "/api/v1/scripts/import/jmeter/save", body, "")
 	if first.Code != http.StatusCreated {
 		t.Fatalf("first save status = %d body=%s", first.Code, first.Body.String())
@@ -210,12 +233,7 @@ func TestJMeterSaveLostResponseRetryReturnsSameDurableAssets(t *testing.T) {
 		t.Fatalf("destination script did not retain imported credential: %#v", stored)
 	}
 
-	changedCredential := bytes.Replace(
-		body,
-		[]byte(canary),
-		[]byte("different-jmeter-idempotency-password"),
-		1,
-	)
+	changedCredential := attestedBody("different-jmeter-idempotency-password", "/one")
 	credentialConflict := postJSON(
 		t,
 		server,
@@ -241,7 +259,7 @@ func TestJMeterSaveLostResponseRetryReturnsSameDurableAssets(t *testing.T) {
 		t.Fatalf("credential conflict changed the first destination script: %#v", stored)
 	}
 
-	changed := bytes.Replace(body, []byte(`"/one"`), []byte(`"/two"`), 1)
+	changed := attestedBody(canary, "/two")
 	conflict := postJSON(t, server, "/api/v1/scripts/import/jmeter/save", changed, "")
 	if conflict.Code != http.StatusConflict {
 		t.Fatalf("changed request with same operation id status = %d, want 409 body=%s",
@@ -940,6 +958,172 @@ func TestJMeterRetryHealsAssetsCommittedBeforeReceiptCompletion(t *testing.T) {
 	}
 }
 
+func TestJMeterRetryHealsCredentialedAssetsAcrossServerRestart(t *testing.T) {
+	base, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "jmeter-restart.db"))
+	if err != nil {
+		t.Fatalf("create store: %v", err)
+	}
+	defer base.Close()
+	store := &failOnceDirectImportReceiptStore{
+		SQLiteStore:  base,
+		failComplete: true,
+	}
+	firstServer := NewServer(ServerConfig{Store: store})
+	const credential = "jmeter-restart-exact-password"
+	body := jmeterRestartAttestedSaveBody(
+		t,
+		firstServer,
+		"jmeter-restart-operation-60c92e9f",
+		credential,
+	)
+
+	first := postJSON(t, firstServer, "/api/v1/scripts/import/jmeter/save", body, "")
+	if first.Code != http.StatusInternalServerError {
+		t.Fatalf("injected completion failure status = %d, want 500 body=%s",
+			first.Code, first.Body.String())
+	}
+	firstScripts := firstServer.runner.ListScripts()
+	if len(firstScripts) != 1 || len(firstServer.runner.ListScenarios()) != 1 {
+		t.Fatalf("first process durable assets = %d scripts/%d scenarios, want 1/1",
+			len(firstScripts), len(firstServer.runner.ListScenarios()))
+	}
+	committedID := firstScripts[0].ID
+	committedScenarioID := firstServer.runner.ListScenarios()[0].ID
+
+	// The preview capability lives only in the first process. Recovery must use
+	// the stale durable receipt and its deterministic assets, not require that
+	// ephemeral token to survive controller restart.
+	restarted := NewServer(ServerConfig{Store: store})
+	retry := postJSON(t, restarted, "/api/v1/scripts/import/jmeter/save", body, "")
+	if retry.Code != http.StatusCreated {
+		t.Fatalf("restart recovery status = %d, want 201 body=%s",
+			retry.Code, retry.Body.String())
+	}
+	if strings.Contains(retry.Body.String(), credential) {
+		t.Fatal("restart recovery response disclosed the imported credential")
+	}
+	var recovered struct {
+		Scripts  []StoredScript  `json:"scripts"`
+		Scenario *StoredScenario `json:"scenario"`
+	}
+	if err := json.Unmarshal(retry.Body.Bytes(), &recovered); err != nil {
+		t.Fatal(err)
+	}
+	if len(recovered.Scripts) != 1 || recovered.Scripts[0].ID != committedID ||
+		recovered.Scenario == nil || recovered.Scenario.ID != committedScenarioID {
+		t.Fatalf("restart recovery changed deterministic assets: %#v", recovered)
+	}
+	if got := len(restarted.runner.ListScripts()); got != 1 {
+		t.Fatalf("restart recovery stored %d scripts, want 1", got)
+	}
+	if got := len(restarted.runner.ListScenarios()); got != 1 {
+		t.Fatalf("restart recovery stored %d scenarios, want 1", got)
+	}
+	exact, ok := restarted.runner.GetScript(committedID)
+	if !ok || exact == nil || exact.Script == nil ||
+		exact.Script.Actions[0].Headers["Authorization"] != "Bearer "+credential {
+		t.Fatalf("restart recovery did not retain exact durable credential: %#v", exact)
+	}
+}
+
+func TestJMeterRestartDoesNotUseLostCapabilityForNewAttempt(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "jmeter-lost-capability.db"))
+	if err != nil {
+		t.Fatalf("create store: %v", err)
+	}
+	defer store.Close()
+	previewServer := NewServer(ServerConfig{Store: store})
+	body := jmeterRestartAttestedSaveBody(
+		t,
+		previewServer,
+		"jmeter-new-attempt-operation-13c77c28",
+		"jmeter-new-attempt-password",
+	)
+
+	// No save was attempted by the preview process, so the restarted server must
+	// create a fresh receipt. The lost process-local token grants no authority to
+	// create either deterministic asset under that new receipt.
+	restarted := NewServer(ServerConfig{Store: store})
+	response := postJSON(t, restarted, "/api/v1/scripts/import/jmeter/save", body, "")
+	if response.Code != http.StatusConflict {
+		t.Fatalf("lost-capability new attempt status = %d, want 409 body=%s",
+			response.Code, response.Body.String())
+	}
+	if !strings.Contains(strings.ToLower(response.Body.String()), "invalid or expired") {
+		t.Fatalf("lost-capability error lacks capability guidance: %s", response.Body.String())
+	}
+	if got := len(restarted.runner.ListScripts()); got != 0 {
+		t.Fatalf("lost capability created %d scripts, want 0", got)
+	}
+	if got := len(restarted.runner.ListScenarios()); got != 0 {
+		t.Fatalf("lost capability created %d scenarios, want 0", got)
+	}
+}
+
+func TestJMeterRestartRecoveryRejectsChangedCommittedAsset(t *testing.T) {
+	base, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "jmeter-restart-change.db"))
+	if err != nil {
+		t.Fatalf("create store: %v", err)
+	}
+	defer base.Close()
+	store := &failOnceDirectImportReceiptStore{
+		SQLiteStore:  base,
+		failComplete: true,
+	}
+	firstServer := NewServer(ServerConfig{Store: store})
+	body := jmeterRestartAttestedSaveBody(
+		t,
+		firstServer,
+		"jmeter-restart-change-operation-755f42ab",
+		"jmeter-restart-change-password",
+	)
+	first := postJSON(t, firstServer, "/api/v1/scripts/import/jmeter/save", body, "")
+	if first.Code != http.StatusInternalServerError {
+		t.Fatalf("injected completion failure status = %d, want 500 body=%s",
+			first.Code, first.Body.String())
+	}
+	committed := firstServer.runner.ListScripts()
+	if len(committed) != 1 || committed[0].Script == nil {
+		t.Fatalf("committed scripts = %#v, want one", committed)
+	}
+	changed := cloneScriptDefinition(committed[0].Script)
+	changed.Name = "Operator edit after committed JMeter import"
+	actionDigest, digestErr := scriptCorrelationActionGraphDigest(committed[0].Script)
+	if digestErr != nil {
+		t.Fatalf("fingerprint committed script: %v", digestErr)
+	}
+	if _, updated, updateErr := firstServer.runner.UpdateScriptDurableInProjectIfUnchanged(
+		committed[0].ID,
+		changed,
+		storage.DefaultProjectID,
+		committed[0].Script.UpdatedAt,
+		actionDigest,
+	); updateErr != nil || !updated {
+		t.Fatalf("edit committed script: updated=%v err=%v", updated, updateErr)
+	}
+
+	restarted := NewServer(ServerConfig{Store: store})
+	retry := postJSON(t, restarted, "/api/v1/scripts/import/jmeter/save", body, "")
+	if retry.Code != http.StatusConflict {
+		t.Fatalf("changed-asset restart recovery status = %d, want 409 body=%s",
+			retry.Code, retry.Body.String())
+	}
+	if !strings.Contains(strings.ToLower(retry.Body.String()), "changed before recovery") {
+		t.Fatalf("changed-asset recovery error lacks conflict guidance: %s", retry.Body.String())
+	}
+	current, ok := restarted.runner.GetScript(committed[0].ID)
+	if !ok || current == nil || current.Script == nil ||
+		current.Script.Name != "Operator edit after committed JMeter import" {
+		t.Fatalf("recovery rolled back or replaced the later edit: %#v", current)
+	}
+	if got := len(restarted.runner.ListScripts()); got != 1 {
+		t.Fatalf("changed-asset recovery left %d scripts, want 1", got)
+	}
+	if got := len(restarted.runner.ListScenarios()); got != 1 {
+		t.Fatalf("changed-asset recovery left %d scenarios, want 1", got)
+	}
+}
+
 func TestBrowserRecordingLostResponseRetryReturnsSameDurableScript(t *testing.T) {
 	server, store := newAuditTestServer(t)
 	defer store.Close()
@@ -1153,6 +1337,66 @@ func scriptContainsExactActionValue(script *dsl.Script, value string) bool {
 		return nil
 	})
 	return found
+}
+
+func jmeterRestartAttestedSaveBody(
+	t *testing.T,
+	server *Server,
+	operationID,
+	credential string,
+) []byte {
+	t.Helper()
+	source := &dsl.Script{
+		Name:          "Restart_JMeter",
+		Version:       "1",
+		Protocol:      "http",
+		ProjectID:     storage.DefaultProjectID,
+		GeneratedBy:   "jmeter-import",
+		GeneratedFrom: "jmeter",
+		Config:        dsl.ScriptConfig{BaseURL: "https://restart.example.test"},
+		Metadata: &dsl.ScriptMetadata{Import: &dsl.ImportMetadata{
+			Source: "jmeter",
+			Preserved: map[string]any{
+				jmeterDirectImportOperationKey: operationID,
+			},
+		}},
+		Actions: []dsl.Action{{
+			Name: "Request", Type: "request", Method: http.MethodGet, Target: "/restart",
+			Headers: map[string]string{"Authorization": "Bearer " + credential},
+		}},
+	}
+	preview := server.newScriptImportResponseWithSourceSecrets(
+		httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/jmeter", nil),
+		scriptImportResponseOptions{Script: source, Scripts: []*dsl.Script{source}},
+	)
+	maskedScripts, ok := preview["scripts"].([]any)
+	if !ok || len(maskedScripts) != 1 {
+		t.Fatalf("JMeter restart preview scripts = %#v", preview["scripts"])
+	}
+	maskedJSON, err := json.Marshal(maskedScripts[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(maskedJSON, []byte(credential)) ||
+		!bytes.Contains(maskedJSON, []byte(maskedScriptSecret)) {
+		t.Fatalf("JMeter restart preview disclosed or failed to mask credential: %s", maskedJSON)
+	}
+	payload := map[string]any{
+		"scripts": maskedScripts,
+		"scenario_draft": map[string]any{
+			"name": "Restart JMeter Scenario", "duration": "3m",
+			"scenario_mode": "vuser_driven",
+			"groups": []map[string]any{{
+				"name": "Restart Users", "script_name": "Restart_JMeter",
+				"vusers": 2, "initialization": "at_runtime",
+			}},
+		},
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return body
 }
 
 func postJSON(t *testing.T, server *Server, path string, body []byte, idempotencyKey string) *httptest.ResponseRecorder {

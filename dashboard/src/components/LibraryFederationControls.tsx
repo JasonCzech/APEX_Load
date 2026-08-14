@@ -20,12 +20,13 @@ function credentialsLabel(ready: boolean) {
 type LibraryFederationControlsProps = {
   kind: LibraryKind
   federation: UseLibraryFederationResult
+  projectName?: string
   filterControls?: ReactNode
   onConfigureRemotes?: () => void
   summaryText?: string
 }
 
-export default function LibraryFederationControls({ kind, federation, filterControls, onConfigureRemotes, summaryText }: LibraryFederationControlsProps) {
+export default function LibraryFederationControls({ kind, federation, projectName, filterControls, onConfigureRemotes, summaryText }: LibraryFederationControlsProps) {
   const {
     remotes,
     selectedRemoteId,
@@ -33,7 +34,6 @@ export default function LibraryFederationControls({ kind, federation, filterCont
     sourceFilter,
     setSourceFilter,
     projectMapping,
-    setProjectMapping,
     includeDependencies,
     setIncludeDependencies,
     loading,
@@ -97,12 +97,20 @@ export default function LibraryFederationControls({ kind, federation, filterCont
         </label>
         <label className="project-redaction-rule-field">
           <span>Project Mapping</span>
-          <input className="settings-input" value={projectMapping} onChange={event => setProjectMapping(event.target.value)} placeholder="local or host project id" />
+          <input
+            className="settings-input"
+            value={projectName?.trim() || projectMapping}
+            readOnly
+            title={projectMapping ? `Project ID: ${projectMapping}` : undefined}
+            placeholder="No project selected"
+          />
         </label>
-        <label className="library-federation-checkbox">
-          <input type="checkbox" checked={includeDependencies} onChange={event => setIncludeDependencies(event.target.checked)} />
-          <span>Include dependencies</span>
-        </label>
+        {kind === 'scenario' && (
+          <label className="library-federation-checkbox">
+            <input type="checkbox" checked={includeDependencies} onChange={event => setIncludeDependencies(event.target.checked)} />
+            <span>Include referenced scripts</span>
+          </label>
+        )}
         <button className="btn btn-secondary" type="button" onClick={() => void refreshCatalogs()} disabled={loading}>
           Refresh
         </button>

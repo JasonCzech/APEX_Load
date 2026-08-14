@@ -1692,6 +1692,13 @@ func TestRequestBodyLimitsUseSmallDefaultAndExplicitImportEnvelopes(t *testing.T
 		{name: "ordinary settings mutation", method: http.MethodPut, path: "/api/v1/system/settings", want: defaultMaxRequestBodyBytes},
 		{name: "library bundle import", method: http.MethodPost, path: "/api/v1/library/import", want: libraryBundleImportMaxBodyBytes},
 		{name: "library archive import", method: http.MethodPost, path: "/api/v1/library/import/archive", want: libraryArchiveImportMaxBodyBytes},
+		{name: "enterprise archive batch save", method: http.MethodPost, path: "/api/v1/scripts/import/enterprise-script-archive/save", want: enterpriseArchiveImportSaveMaxBodyBytes},
+		{name: "JMeter batch save", method: http.MethodPost, path: "/api/v1/scripts/import/jmeter/save", want: jmeterImportSaveMaxBodyBytes},
+		{name: "AsyncAPI commit", method: http.MethodPost, path: "/api/v1/scripts/import/asyncapi/commit", want: webAPIImportCommitMaxBodyBytes},
+		{name: "AsyncAPI batch commit", method: http.MethodPost, path: "/api/v1/scripts/import/asyncapi/commit-batch", want: webAPIImportCommitMaxBodyBytes},
+		{name: "generic import batch commit", method: http.MethodPost, path: "/api/v1/scripts/import/commit-batch", want: webAPIImportCommitMaxBodyBytes},
+		{name: "OpenAPI commit", method: http.MethodPost, path: "/api/v1/scripts/import/openapi/commit", want: webAPIImportCommitMaxBodyBytes},
+		{name: "Postman save", method: http.MethodPost, path: "/api/v1/scripts/import/postman/save", want: webAPIImportCommitMaxBodyBytes},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

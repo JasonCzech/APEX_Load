@@ -1,4 +1,4 @@
-import { Fragment, useState } from 'react'
+import { Fragment, lazy, Suspense, useState } from 'react'
 
 import { AuthoringHealthInput, GitHubScriptStatus, StoredScript, TestSummary } from '../types'
 import type { ScriptValidationResponse } from '../types/scripts'
@@ -9,8 +9,10 @@ import { SortIndicator } from './SortIndicator'
 import { ScriptLibrarySortField, ScriptRunSortField } from './useScriptsLibraryModel'
 import ReferenceKeyBadge from './ReferenceKeyBadge'
 import { isAddressableScriptId } from './scriptIdentity'
-import IssueDetailsDialog, { type IssueDetail } from './IssueDetailsDialog'
+import type { IssueDetail } from './IssueDetailsDialog'
 import { scriptContainsSecretReferences } from './scriptSecretReferenceModel'
+
+const IssueDetailsDialog = lazy(() => import('./IssueDetailsDialog'))
 
 export interface ScriptLibraryFederation {
   sourceFilter: LibrarySourceFilter
@@ -704,11 +706,13 @@ export default function ScriptsLibraryTable({
         </tbody>
       </table>
       {issueDialog && (
-        <IssueDetailsDialog
-          title={issueDialog.title}
-          issues={issueDialog.issues}
-          onClose={() => setIssueDialog(null)}
-        />
+        <Suspense fallback={null}>
+          <IssueDetailsDialog
+            title={issueDialog.title}
+            issues={issueDialog.issues}
+            onClose={() => setIssueDialog(null)}
+          />
+        </Suspense>
       )}
     </div>
   )

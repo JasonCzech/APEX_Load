@@ -127,6 +127,9 @@ resource "aws_vpc_endpoint" "interface" {
     "ecr.api",
     "ecr.dkr",
     "logs",
+    "ecs",
+    "ecs-agent",
+    "ecs-telemetry",
   ])
 
   vpc_id              = aws_vpc.main.id

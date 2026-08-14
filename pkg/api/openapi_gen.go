@@ -903,6 +903,10 @@ func brunoOpenAPIComponentSchemas() map[string]oasSchema {
 				"suggested_name":              {Type: "string"},
 				"replacement":                 {Type: "string"},
 				"context":                     {Type: "string"},
+				"display_label":               {Type: "string"},
+				"source_variable":             {Type: "string"},
+				"unresolved_source_variable":  {Type: "boolean"},
+				"affected_paths":              {Type: "array", Items: &oasSchema{Type: "string"}},
 				"source_value_available":      {Type: "boolean"},
 				"destination_value_preserved": {Type: "boolean"},
 				"preservation_unavailable_reason": {

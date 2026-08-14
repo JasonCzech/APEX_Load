@@ -1,11 +1,12 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { useCorrelationRulesetApi } from '../hooks/api/useCorrelationRulesetApi'
 import { ApiError } from '../hooks/apiClient'
 import { useNavigationGuard, type NavigationGuard } from '../hooks/NavigationGuardProvider'
 import { CorrelationRuleset, CorrelationRulesetApplyResponse } from '../types'
-import ConfirmDestructiveModal from './ConfirmDestructiveModal'
 import './parityPanels.css'
+
+const ConfirmDestructiveModal = lazy(() => import('./ConfirmDestructiveModal'))
 
 interface Props {
   projectId?: string
@@ -400,28 +401,30 @@ export default function CorrelationRulesetPanel({ projectId, canManage = false }
       </div>
 
       {deleteTarget && (
-        <ConfirmDestructiveModal
-          title="Delete correlation ruleset"
-          description={`This permanently deletes “${deleteTarget.name}” and its ${deleteTarget.rules?.length || 0} rules.`}
-          target={deleteTarget.name}
-          targetLabel="Ruleset"
-          confirmLabel="Delete ruleset"
-          loading={busy}
-          error={error}
-          onCancel={() => setDeleteTarget(null)}
-          onConfirm={() => {
-            const target = deleteTarget
-            void runAction(
-              () => api.deleteCorrelationRuleset(target.id),
-              () => {
-                deletedRulesetIdsRef.current.add(target.id)
-                committedRulesetsRef.current.delete(target.id)
-                setRulesets(current => current.filter(ruleset => ruleset.id !== target.id))
-                setDeleteTarget(null)
-              },
-            )
-          }}
-        />
+        <Suspense fallback={null}>
+          <ConfirmDestructiveModal
+            title="Delete correlation ruleset"
+            description={`This permanently deletes “${deleteTarget.name}” and its ${deleteTarget.rules?.length || 0} rules.`}
+            target={deleteTarget.name}
+            targetLabel="Ruleset"
+            confirmLabel="Delete ruleset"
+            loading={busy}
+            error={error}
+            onCancel={() => setDeleteTarget(null)}
+            onConfirm={() => {
+              const target = deleteTarget
+              void runAction(
+                () => api.deleteCorrelationRuleset(target.id),
+                () => {
+                  deletedRulesetIdsRef.current.add(target.id)
+                  committedRulesetsRef.current.delete(target.id)
+                  setRulesets(current => current.filter(ruleset => ruleset.id !== target.id))
+                  setDeleteTarget(null)
+                },
+              )
+            }}
+          />
+        </Suspense>
       )}
     </div>
   )

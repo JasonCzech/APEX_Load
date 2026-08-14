@@ -37,6 +37,7 @@ describe('ImportDropzone', () => {
           dropHint={props.dropHint ?? 'Drop a file here'}
           validate={props.validate}
           onError={props.onError}
+          disabled={props.disabled}
         />,
       )
     })
@@ -113,5 +114,39 @@ describe('ImportDropzone', () => {
 
     await act(async () => { zone.click() })
     expect(open).toHaveBeenCalledTimes(1)
+  })
+
+  it('rejects a native picker result when the dropzone becomes disabled while the picker is open', async () => {
+    let resolveOpen!: (path: string) => void
+    const open = vi.fn(() => new Promise<string>(resolve => { resolveOpen = resolve }))
+    const read = vi.fn().mockResolvedValue('e30=')
+    ;(window as BridgeWindow).go = { main: { App: { OpenFileDialogNative: open, ReadFileBase64: read } } }
+    const onFile = vi.fn()
+
+    render({ onFile })
+    const zone = container.querySelector<HTMLElement>('.import-dropzone')!
+    act(() => zone.click())
+    expect(open).toHaveBeenCalledTimes(1)
+
+    act(() => {
+      root.render(
+        <ImportDropzone
+          accept=".json"
+          file={null}
+          onFile={onFile}
+          dropHint="Drop a file here"
+          disabled
+        />,
+      )
+    })
+    await act(async () => {
+      resolveOpen('/tmp/late.json')
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(read).toHaveBeenCalledWith('/tmp/late.json')
+    expect(onFile).not.toHaveBeenCalled()
+    expect(zone.getAttribute('aria-disabled')).toBe('true')
   })
 })

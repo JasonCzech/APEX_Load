@@ -101,7 +101,11 @@ func (s *Server) handleApplyImportParameterization(w http.ResponseWriter, r *htt
 
 	applyTarget := safeScript
 	if mutationClaim != nil {
-		applyTarget = req.Script
+		if mutationClaim.Script == nil {
+			writeError(w, http.StatusConflict, "credential-preserving import draft is invalid or expired; run the import again")
+			return
+		}
+		applyTarget = mutationClaim.Script
 	}
 	applied, diffs, err := paramize.ApplySuggestions(applyTarget, trusted.Suggestions, selected)
 	if err != nil {
@@ -136,7 +140,7 @@ func (s *Server) handleApplyImportParameterization(w http.ResponseWriter, r *htt
 			return
 		}
 		mutationClaim = nil
-		responseScript = applied
+		responseScript = maskImportDraftForResponse(applied)
 		if !expiresAt.IsZero() {
 			importDraftExpiresAt = &expiresAt
 		}

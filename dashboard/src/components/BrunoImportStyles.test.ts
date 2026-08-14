@@ -35,6 +35,7 @@ describe('Bruno import responsive layout', () => {
     const label = cssRule(css, '.secret-binding-review-label-row > strong')
     const choice = cssRule(css, '.secret-binding-review-choice')
     const reference = cssRule(css, '.secret-binding-review-reference')
+    const pathScrollFocus = cssRule(css, '.credentials-location-scroll-region:focus-visible')
 
     expect(review).toContain('max-width: 100%;')
     expect(review).toContain('container-name: secret-binding-review;')
@@ -45,6 +46,20 @@ describe('Bruno import responsive layout', () => {
     expect(choice).toContain('min-width: 0;')
     expect(choice).toContain('max-width: 100%;')
     expect(reference).toContain('overflow-wrap: anywhere;')
+    expect(pathScrollFocus).toContain('outline: 2px solid var(--accent);')
     expect(css).toContain('@container secret-binding-review (max-width: 720px)')
+  })
+
+  it('wraps long secret identifiers inside the native Review dialog', async () => {
+    const css = await readStylesheet(new URL('./BrunoImport.css', import.meta.url))
+    const identifiers = cssRule(css, [
+      '.bruno-native-review-section li,',
+      '.bruno-native-review-section li strong,',
+      '.bruno-native-review-section li span,',
+      '.bruno-native-review-section li code',
+    ].join('\n'))
+
+    expect(identifiers).toContain('min-width: 0;')
+    expect(identifiers).toContain('overflow-wrap: anywhere;')
   })
 })

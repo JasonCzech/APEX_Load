@@ -1,6 +1,8 @@
 package api
 
 import (
+	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -23,6 +25,11 @@ import (
 type DomainDeploymentTargetRequest struct {
 	Provider         string `json:"provider"`
 	DefaultClusterID string `json:"default_cluster_id"`
+	// Presence-aware normalized fields let older cluster-only clients retain
+	// a policy they do not understand while new clients may explicitly clear
+	// or replace the default and allowlist.
+	DefaultExecutionTargetID  *string   `json:"default_execution_target_id,omitempty"`
+	AllowedExecutionTargetIDs *[]string `json:"allowed_execution_target_ids,omitempty"`
 	// UpdatedAt is the optimistic-concurrency token, echoed from a prior read.
 	// It must be zero (or omitted) when configuring a domain for the first
 	// time, so a stale client cannot clobber a target someone else just made.
@@ -33,16 +40,19 @@ type DomainDeploymentTargetRequest struct {
 // returns 200 with Configured=false rather than 404: "no constraint" is a
 // normal state, and a 404 would make the dashboard render it as an error.
 type DomainDeploymentTargetResponse struct {
-	DomainID           string    `json:"domain_id"`
-	DomainName         string    `json:"domain_name,omitempty"`
-	Configured         bool      `json:"configured"`
-	Provider           string    `json:"provider,omitempty"`
-	DefaultClusterID   string    `json:"default_cluster_id,omitempty"`
-	DefaultClusterName string    `json:"default_cluster_name,omitempty"`
-	ScopedPoolCount    int       `json:"scoped_pool_count"`
-	UpdatedBySubject   string    `json:"updated_by_subject,omitempty"`
-	CreatedAt          time.Time `json:"created_at,omitempty"`
-	UpdatedAt          time.Time `json:"updated_at,omitempty"`
+	DomainID                   string    `json:"domain_id"`
+	DomainName                 string    `json:"domain_name,omitempty"`
+	Configured                 bool      `json:"configured"`
+	Provider                   string    `json:"provider,omitempty"`
+	DefaultClusterID           string    `json:"default_cluster_id,omitempty"`
+	DefaultClusterName         string    `json:"default_cluster_name,omitempty"`
+	DefaultExecutionTargetID   string    `json:"default_execution_target_id,omitempty"`
+	DefaultExecutionTargetName string    `json:"default_execution_target_name,omitempty"`
+	AllowedExecutionTargetIDs  []string  `json:"allowed_execution_target_ids,omitempty"`
+	ScopedPoolCount            int       `json:"scoped_pool_count"`
+	UpdatedBySubject           string    `json:"updated_by_subject,omitempty"`
+	CreatedAt                  time.Time `json:"created_at,omitempty"`
+	UpdatedAt                  time.Time `json:"updated_at,omitempty"`
 }
 
 // DomainDeploymentTargetListResponse is the collection shape, plus the
@@ -55,12 +65,14 @@ type DomainDeploymentTargetListResponse struct {
 
 // ConflictingFleetPool names a pool that a proposed target would invalidate.
 type ConflictingFleetPool struct {
-	PoolID      string `json:"pool_id"`
-	PoolName    string `json:"pool_name"`
-	ClusterID   string `json:"cluster_id,omitempty"`
-	ClusterName string `json:"cluster_name,omitempty"`
-	Provider    string `json:"provider,omitempty"`
-	Reason      string `json:"reason"`
+	PoolID              string `json:"pool_id"`
+	PoolName            string `json:"pool_name"`
+	ClusterID           string `json:"cluster_id,omitempty"`
+	ClusterName         string `json:"cluster_name,omitempty"`
+	ExecutionTargetID   string `json:"execution_target_id,omitempty"`
+	ExecutionTargetName string `json:"execution_target_name,omitempty"`
+	Provider            string `json:"provider,omitempty"`
+	Reason              string `json:"reason"`
 }
 
 // DomainDeploymentTargetConflictResponse is the 409 body on a retarget.
@@ -94,12 +106,19 @@ func (s *Server) domainDeploymentTargetResponse(targets storage.DomainDeployment
 	response.Configured = true
 	response.Provider = target.Provider
 	response.DefaultClusterID = target.DefaultClusterID
+	response.DefaultExecutionTargetID = target.DefaultExecutionTargetID
+	response.AllowedExecutionTargetIDs = append([]string(nil), target.AllowedExecutionTargetIDs...)
 	response.UpdatedBySubject = target.UpdatedBySubject
 	response.CreatedAt = target.CreatedAt
 	response.UpdatedAt = target.UpdatedAt
 	if clusters, ok := s.store.(storage.ClusterConnectionStore); ok && target.DefaultClusterID != "" {
 		if conn, err := clusters.GetClusterConnection(target.DefaultClusterID); err == nil && conn != nil {
 			response.DefaultClusterName = conn.Name
+		}
+	}
+	if executionTargets, ok := s.store.(storage.ExecutionTargetStore); ok && target.DefaultExecutionTargetID != "" {
+		if executionTarget, err := executionTargets.GetExecutionTarget(target.DefaultExecutionTargetID); err == nil && executionTarget != nil {
+			response.DefaultExecutionTargetName = executionTarget.Name
 		}
 	}
 	return response
@@ -158,15 +177,39 @@ func (s *Server) handleUpdateDomainDeploymentTarget(w http.ResponseWriter, r *ht
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
-	provider := strings.TrimSpace(req.Provider)
-	if !storage.IsSelectableDeploymentProvider(provider) {
-		writeError(w, http.StatusBadRequest,
-			"provider must be one of "+strings.Join(storage.SelectableDeploymentProviders(), ", "))
+	current, err := targets.GetDomainDeploymentTarget(domainID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "could not load the current domain deployment target")
 		return
 	}
-
+	provider := strings.TrimSpace(req.Provider)
 	clusterID := strings.TrimSpace(req.DefaultClusterID)
-	if clusterID != "" {
+	defaultExecutionTargetID := ""
+	allowedExecutionTargetIDs := []string(nil)
+	normalizedRequest := req.DefaultExecutionTargetID != nil || req.AllowedExecutionTargetIDs != nil
+	if normalizedRequest {
+		if req.DefaultExecutionTargetID != nil {
+			defaultExecutionTargetID = strings.TrimSpace(*req.DefaultExecutionTargetID)
+		}
+		if req.AllowedExecutionTargetIDs != nil {
+			allowedExecutionTargetIDs = uniqueTrimmedStrings(*req.AllowedExecutionTargetIDs)
+		}
+		if defaultExecutionTargetID != "" && req.AllowedExecutionTargetIDs == nil && current != nil {
+			allowedExecutionTargetIDs = append([]string(nil), current.AllowedExecutionTargetIDs...)
+		}
+		if defaultExecutionTargetID != "" && len(allowedExecutionTargetIDs) == 0 {
+			allowedExecutionTargetIDs = []string{defaultExecutionTargetID}
+		}
+		resolvedProvider, projectedCluster, status, resolveErr := s.validateExecutionTargetPolicy(defaultExecutionTargetID, allowedExecutionTargetIDs)
+		if resolveErr != nil {
+			writeError(w, status, resolveErr.Error())
+			return
+		}
+		if resolvedProvider != "" {
+			provider = resolvedProvider
+		}
+		clusterID = projectedCluster
+	} else if clusterID != "" {
 		clusters, supported := s.store.(storage.ClusterConnectionStore)
 		if !supported {
 			writeError(w, http.StatusServiceUnavailable, "this controller's storage backend does not support cluster connections")
@@ -184,13 +227,32 @@ func (s *Server) handleUpdateDomainDeploymentTarget(w http.ResponseWriter, r *ht
 				"the default cluster is "+firstNonEmpty(connProvider, conn.Kind)+", which does not match the selected provider "+provider)
 			return
 		}
+		if executionTarget, found := s.executionTargetForCluster(clusterID); found {
+			defaultExecutionTargetID = executionTarget.ID
+			allowedExecutionTargetIDs = []string{executionTarget.ID}
+		}
+	} else if current != nil && current.DefaultExecutionTargetID != "" && current.Provider == provider {
+		// A cluster-only client cannot represent a PaaS target. Preserve the
+		// normalized policy on an unrelated legacy edit instead of clearing it.
+		defaultExecutionTargetID = current.DefaultExecutionTargetID
+		allowedExecutionTargetIDs = append([]string(nil), current.AllowedExecutionTargetIDs...)
+	}
+	if !storage.IsSelectableDeploymentProvider(provider) {
+		writeError(w, http.StatusBadRequest,
+			"provider must be one of "+strings.Join(storage.SelectableDeploymentProviders(), ", "))
+		return
 	}
 
 	// Refuse a retarget that would strand existing pools. Allowing it would
 	// leave every conflicting pool failing closed at its next scale, which the
 	// administrator would discover during an incident rather than now, while
 	// the pool list is still in front of them.
-	conflicts, err := s.conflictingPoolsForProvider(domainID, provider)
+	var conflicts []ConflictingFleetPool
+	if len(allowedExecutionTargetIDs) > 0 {
+		conflicts, err = s.conflictingPoolsForExecutionTargets(domainID, allowedExecutionTargetIDs)
+	} else {
+		conflicts, err = s.conflictingPoolsForProvider(domainID, provider)
+	}
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "could not check the domain's fleet pools")
 		return
@@ -204,10 +266,12 @@ func (s *Server) handleUpdateDomainDeploymentTarget(w http.ResponseWriter, r *ht
 
 	_, subject, _ := s.resolveAuditActor(r)
 	target := &storage.DomainDeploymentTarget{
-		DomainID:         domainID,
-		Provider:         provider,
-		DefaultClusterID: clusterID,
-		UpdatedBySubject: subject,
+		DomainID:                  domainID,
+		Provider:                  provider,
+		DefaultClusterID:          clusterID,
+		DefaultExecutionTargetID:  defaultExecutionTargetID,
+		AllowedExecutionTargetIDs: allowedExecutionTargetIDs,
+		UpdatedBySubject:          subject,
 	}
 	saved, err := targets.UpsertDomainDeploymentTargetIfUnchanged(target, req.UpdatedAt)
 	if err != nil {
@@ -221,6 +285,8 @@ func (s *Server) handleUpdateDomainDeploymentTarget(w http.ResponseWriter, r *ht
 	}
 	s.recordAuditEvent(r, "domain.deployment_target.update", "success", "domain", domainID, "", map[string]any{
 		"provider": provider, "default_cluster_id": clusterID,
+		"default_execution_target_id":  defaultExecutionTargetID,
+		"allowed_execution_target_ids": allowedExecutionTargetIDs,
 	})
 	writeJSON(w, http.StatusOK, s.domainDeploymentTargetResponse(targets, domainID, target))
 }
@@ -240,4 +306,68 @@ func (s *Server) handleDeleteDomainDeploymentTarget(w http.ResponseWriter, r *ht
 	}
 	s.recordAuditEvent(r, "domain.deployment_target.delete", "success", "domain", domainID, "", nil)
 	writeJSON(w, http.StatusOK, s.domainDeploymentTargetResponse(targets, domainID, nil))
+}
+
+func uniqueTrimmedStrings(values []string) []string {
+	seen := make(map[string]struct{}, len(values))
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		if _, duplicate := seen[value]; duplicate {
+			continue
+		}
+		seen[value] = struct{}{}
+		result = append(result, value)
+	}
+	return result
+}
+
+func (s *Server) executionTargetForCluster(clusterID string) (*storage.ExecutionTarget, bool) {
+	store, ok := s.store.(storage.ExecutionTargetStore)
+	if !ok {
+		return nil, false
+	}
+	targets, err := store.ListExecutionTargets()
+	if err != nil {
+		return nil, false
+	}
+	for _, target := range targets {
+		if target.Kind == storage.ExecutionTargetKubernetes && target.ClusterConnectionID == clusterID {
+			return target, true
+		}
+	}
+	return nil, false
+}
+
+func (s *Server) validateExecutionTargetPolicy(defaultID string, allowedIDs []string) (provider, projectedCluster string, status int, err error) {
+	store, ok := s.store.(storage.ExecutionTargetStore)
+	if !ok {
+		return "", "", http.StatusServiceUnavailable, errors.New("this controller's storage backend does not support execution targets")
+	}
+	allowed := make(map[string]*storage.ExecutionTarget, len(allowedIDs))
+	for _, id := range allowedIDs {
+		target, loadErr := store.GetExecutionTarget(id)
+		if loadErr != nil || target == nil {
+			return "", "", http.StatusBadRequest, fmt.Errorf("allowed execution target %q could not be loaded", id)
+		}
+		allowed[id] = target
+	}
+	if defaultID == "" {
+		return "", "", http.StatusOK, nil
+	}
+	defaultTarget, permitted := allowed[defaultID]
+	if !permitted {
+		return "", "", http.StatusBadRequest, errors.New("the default execution target must appear in allowed_execution_target_ids")
+	}
+	provider, known := storage.ProviderForExecutionTargetKind(defaultTarget.Kind)
+	if !known {
+		return "", "", http.StatusBadRequest, fmt.Errorf("default execution target kind %q has no deployment provider", defaultTarget.Kind)
+	}
+	if defaultTarget.Kind == storage.ExecutionTargetKubernetes {
+		projectedCluster = defaultTarget.ClusterConnectionID
+	}
+	return provider, projectedCluster, http.StatusOK, nil
 }

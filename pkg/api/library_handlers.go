@@ -767,7 +767,7 @@ func (s *Server) handleLibraryRemotePush(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	bundle, err := s.buildLibraryBundle(req.Kind, req.ID, localProjectID, true)
+	bundle, err := s.buildLibraryBundle(req.Kind, req.ID, localProjectID, req.IncludeDependencies)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return

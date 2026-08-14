@@ -8,7 +8,7 @@ resource "azurerm_virtual_network" "main" {
 }
 
 resource "azurerm_subnet" "aks_system" {
-  count                = local.private_network_enabled ? 1 : 0
+  count                = local.private_network_enabled && local.aks_enabled ? 1 : 0
   name                 = "aks-system"
   resource_group_name  = azurerm_resource_group.main.name
   virtual_network_name = azurerm_virtual_network.main[0].name
@@ -16,11 +16,27 @@ resource "azurerm_subnet" "aks_system" {
 }
 
 resource "azurerm_subnet" "aks_generators" {
-  count                = local.private_network_enabled ? 1 : 0
+  count                = local.private_network_enabled && var.generator_compute == "aks" ? 1 : 0
   name                 = "aks-generators"
   resource_group_name  = azurerm_resource_group.main.name
   virtual_network_name = azurerm_virtual_network.main[0].name
   address_prefixes     = var.aks_generator_subnet_prefixes
+}
+
+resource "azurerm_subnet" "container_apps" {
+  count                = local.private_network_enabled && local.container_apps_enabled ? 1 : 0
+  name                 = "container-apps"
+  resource_group_name  = azurerm_resource_group.main.name
+  virtual_network_name = azurerm_virtual_network.main[0].name
+  address_prefixes     = var.container_apps_subnet_prefixes
+
+  delegation {
+    name = "Microsoft.App.environments"
+    service_delegation {
+      name    = "Microsoft.App/environments"
+      actions = ["Microsoft.Network/virtualNetworks/subnets/join/action"]
+    }
+  }
 }
 
 resource "azurerm_subnet" "private_endpoints" {
@@ -40,7 +56,7 @@ resource "azurerm_private_dns_zone" "postgres" {
 
 resource "azurerm_private_dns_zone" "redis" {
   count               = local.private_network_enabled ? 1 : 0
-  name                = var.private_dns_zone_names.redis
+  name                = local.redis_private_dns_zone_name
   resource_group_name = azurerm_resource_group.main.name
   tags                = local.tags
 }
@@ -130,8 +146,8 @@ resource "azurerm_private_endpoint" "redis" {
 
   private_service_connection {
     name                           = "${local.name}-redis"
-    private_connection_resource_id = azurerm_redis_cache.main.id
-    subresource_names              = ["redisCache"]
+    private_connection_resource_id = local.redis_resource_id
+    subresource_names              = [local.redis_private_endpoint_group]
     is_manual_connection           = false
   }
 

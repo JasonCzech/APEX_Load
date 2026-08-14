@@ -13,6 +13,7 @@ import { formatThresholdAlertSummary, type ThresholdAlertEntry } from '../thresh
 import ConfirmDestructiveModal, { type DestructiveConfirmation } from './ConfirmDestructiveModal'
 import MonitoringCollectorsCard from './MonitoringCollectorsCard'
 import ClustersCard from './ClustersCard'
+import ComputeInfrastructureCard from './ComputeInfrastructureCard'
 import FleetPoolsCard from './FleetPoolsCard'
 import PoolAllocationCard from './PoolAllocationCard'
 import FleetGeneratorsCard from './FleetGeneratorsCard'
@@ -43,9 +44,9 @@ const EMPTY_FLEET_ALERTS: FleetAlert[] = []
 
 const MONITOR_CATEGORIES = [
   { id: 'overview', label: 'Overview', cardIds: ['system-health', 'threshold-alerts', 'production-readiness'] },
-  // Clusters come before pools: you connect a cluster, then place a pool on it,
-  // then allocate that pool's host resources.
-  { id: 'fleet', label: 'Fleet', cardIds: ['capacity', 'generators', 'fleet-alerts', 'fleet-audit', 'fleet-clusters', 'fleet-pools', 'fleet-allocation', 'generator-metadata'] },
+  // Cloud connections and execution targets are the normalized path; the
+  // cluster registry remains available unchanged for Kubernetes deployments.
+  { id: 'fleet', label: 'Fleet', cardIds: ['capacity', 'generators', 'fleet-alerts', 'fleet-audit', 'compute-infrastructure', 'fleet-clusters', 'fleet-pools', 'fleet-allocation', 'generator-metadata'] },
   { id: 'telemetry', label: 'Telemetry', cardIds: ['telemetry-diagnostics', 'apm-integrations', 'monitor-packs', 'collectors'] },
   { id: 'schedules', label: 'Schedules', cardIds: ['run-calendar'] },
 ] as const
@@ -1693,8 +1694,19 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
       content: <MonitoringCollectorsCard projectId={activeProject?.id} canManage={canManageSystem} />,
     },
     {
+      id: 'compute-infrastructure',
+      title: 'Cloud Connections & Execution Targets',
+      icon: (
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M7 18h10a4 4 0 0 0 .7-7.9A6 6 0 0 0 6.2 8.3 4.5 4.5 0 0 0 7 18Z" />
+          <path d="M9 14h6M12 11v6" />
+        </svg>
+      ),
+      content: <ComputeInfrastructureCard canManage={canManageSystem} />,
+    },
+    {
       id: 'fleet-clusters',
-      title: 'Cluster Connections',
+      title: 'Kubernetes Cluster Connections',
       icon: (
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <circle cx="12" cy="12" r="3" />

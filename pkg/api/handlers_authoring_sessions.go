@@ -191,6 +191,17 @@ func (s *Server) handleCreateAuthoringSession(w http.ResponseWriter, r *http.Req
 					s.releaseImportDraftAttestation(importAttestationClaim)
 				}
 			}()
+			if importAttestationClaim.Script == nil {
+				writeError(w, http.StatusConflict, "credential-preserving import draft is invalid or expired; run the import again")
+				return
+			}
+			req.Draft = *importAttestationClaim.Script
+			safeCandidate, replaceErr := replaceUnavailableImportCredentialValues(&req.Draft)
+			if replaceErr != nil {
+				writeError(w, http.StatusBadRequest, replaceErr.Error())
+				return
+			}
+			req.Draft = *safeCandidate
 		} else {
 			s.discardImportDraftAttestation(r, &req.Draft)
 		}

@@ -64,7 +64,10 @@ func SanitizeDisplayLabels(scripts []*dsl.Script, draft *ScenarioDraft) {
 		*ref.value = safeJMeterDisplayLabel(projectedLabels[index], ref.fallback)
 	}
 
-	safeNamesByOriginal := make(map[string]string, len(scripts))
+	// Keep every allocation for a repeated authored name. Multi-JMX archives can
+	// legitimately contain the same Thread Group name in independent plans; a
+	// scalar map would make every scenario group point at the last allocation.
+	safeNamesByOriginal := make(map[string][]string, len(scripts))
 	usedNames := make(map[string]struct{}, len(scripts))
 
 	for index, script := range scripts {
@@ -76,7 +79,7 @@ func SanitizeDisplayLabels(scripts []*dsl.Script, draft *ScenarioDraft) {
 		safeName = uniqueJMeterDisplayLabel(safeName, usedNames)
 		script.Name = safeName
 		if originalName != "" {
-			safeNamesByOriginal[originalName] = safeName
+			safeNamesByOriginal[originalName] = append(safeNamesByOriginal[originalName], safeName)
 		}
 	}
 	sanitizeJMeterActionReviewMetadata(scripts)
@@ -84,13 +87,15 @@ func SanitizeDisplayLabels(scripts []*dsl.Script, draft *ScenarioDraft) {
 	if draft == nil {
 		return
 	}
+	consumedNames := make(map[string]int, len(safeNamesByOriginal))
 	for index := range draft.Groups {
 		group := &draft.Groups[index]
 		originalScriptName := strings.TrimSpace(group.ScriptName)
-		if safeName := safeNamesByOriginal[originalScriptName]; safeName != "" {
-			group.ScriptName = safeName
-		} else if index < len(originalNames) && scripts[index] != nil {
-			group.ScriptName = scripts[index].Name
+		allocations := safeNamesByOriginal[originalScriptName]
+		allocationIndex := consumedNames[originalScriptName]
+		if allocationIndex < len(allocations) {
+			group.ScriptName = allocations[allocationIndex]
+			consumedNames[originalScriptName] = allocationIndex + 1
 		}
 	}
 }
@@ -227,16 +232,18 @@ func safeJMeterDisplayLabel(label string, fallback string) string {
 }
 
 func uniqueJMeterDisplayLabel(label string, used map[string]struct{}) string {
-	if _, exists := used[label]; !exists {
-		used[label] = struct{}{}
+	identity := strings.ToLower(strings.TrimSpace(label))
+	if _, exists := used[identity]; !exists {
+		used[identity] = struct{}{}
 		return label
 	}
 	for suffix := 2; ; suffix++ {
 		candidate := fmt.Sprintf("%s_%d", label, suffix)
-		if _, exists := used[candidate]; exists {
+		candidateIdentity := strings.ToLower(strings.TrimSpace(candidate))
+		if _, exists := used[candidateIdentity]; exists {
 			continue
 		}
-		used[candidate] = struct{}{}
+		used[candidateIdentity] = struct{}{}
 		return candidate
 	}
 }

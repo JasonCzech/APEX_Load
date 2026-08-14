@@ -43,6 +43,15 @@ async function flush() {
   await act(async () => { await Promise.resolve(); await Promise.resolve() })
 }
 
+async function waitForDestructiveDialog() {
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    const dialog = container.querySelector<HTMLElement>('[role="dialog"]')
+    if (dialog) return dialog
+    await act(async () => { await new Promise(resolve => window.setTimeout(resolve, 0)) })
+  }
+  return container.querySelector<HTMLElement>('[role="dialog"]')
+}
+
 function ruleset(overrides: Partial<CorrelationRuleset>): CorrelationRuleset {
   return {
     id: 'r1', project_id: 'proj-a', name: 'Checkout correlations', source: 'script:s1',
@@ -326,6 +335,7 @@ describe('CorrelationRulesetPanel', () => {
     await flush()
 
     await act(async () => findButton('Delete')?.click())
+    await waitForDestructiveDialog()
     const reason = container.querySelector<HTMLInputElement>('input[placeholder="Operational reason"]')
     const confirmation = container.querySelector<HTMLInputElement>('input[placeholder="Checkout correlations"]')
     const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
@@ -373,6 +383,7 @@ describe('CorrelationRulesetPanel', () => {
     await act(async () => root.render(<CorrelationRulesetPanel projectId="proj-a" canManage />))
     await flush()
     await act(async () => findButton('Delete')?.click())
+    await waitForDestructiveDialog()
     const reason = container.querySelector<HTMLInputElement>('input[placeholder="Operational reason"]')
     const confirmation = container.querySelector<HTMLInputElement>('input[placeholder="Checkout correlations"]')
     const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set

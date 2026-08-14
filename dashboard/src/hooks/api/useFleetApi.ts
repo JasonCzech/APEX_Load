@@ -6,6 +6,7 @@ import {
   FleetPool,
   FleetPoolListResponse,
   FleetProvisioningRequest,
+  FleetProvisioningInstanceListResponse,
   FleetProvisioningRequestListResponse,
   ProvisionerInfo,
 } from '../../types/fleet'
@@ -38,6 +39,11 @@ export type GeneratorLifecycleResponse = {
   target?: string
   drain_state: string
   cordoned: boolean
+}
+
+export type GeneratorEvacuationResponse = GeneratorLifecycleResponse & {
+  evacuated_tests?: string[]
+  replacement_targets?: string[]
 }
 
 export function useFleetApi() {
@@ -99,6 +105,17 @@ export function useFleetApi() {
     [],
   )
 
+  const evacuateGenerator = useCallback(
+    (generatorId: string, options?: ApiCallOptions) =>
+      request<GeneratorEvacuationResponse>(`/fleet/generators/${generatorId}/evacuate`, withCallOptions({ method: 'POST' }, options)),
+    [],
+  )
+
+  const listLoadZones = useCallback(
+    (options?: ApiCallOptions) => request<{ load_zones: Array<{ region?: string; zone?: string; generators?: number }> }>('/fleet/load-zones', withCallOptions(undefined, options)),
+    [],
+  )
+
   const createProvisionRequest = useCallback(
     (body: { fleet_pool_id: string; desired_count: number; reason?: string; project_id?: string }, options?: ApiCallOptions) =>
       request<FleetProvisioningRequest>('/fleet/provision-requests', withCallOptions({
@@ -116,6 +133,11 @@ export function useFleetApi() {
 
   const getProvisionRequest = useCallback(
     (id: string, options?: ApiCallOptions) => request<FleetProvisioningRequest>(`/fleet/provision-requests/${id}`, withCallOptions(undefined, options)),
+    [],
+  )
+
+  const listProvisionRequestInstances = useCallback(
+    (id: string, options?: ApiCallOptions) => request<FleetProvisioningInstanceListResponse>(`/fleet/provision-requests/${id}/instances`, withCallOptions(undefined, options)),
     [],
   )
 
@@ -145,13 +167,16 @@ export function useFleetApi() {
       cordonGenerator,
       uncordonGenerator,
       drainGenerator,
+      evacuateGenerator,
+      listLoadZones,
       createProvisionRequest,
       listProvisionRequests,
       getProvisionRequest,
+      listProvisionRequestInstances,
       cancelProvisionRequest,
       retryProvisionRequest,
       getProvisioner,
     }),
-    [listFleetPools, getFleetPool, createFleetPool, updateFleetPool, deleteFleetPool, listGeneratorMetadata, patchGeneratorMetadata, cordonGenerator, uncordonGenerator, drainGenerator, createProvisionRequest, listProvisionRequests, getProvisionRequest, cancelProvisionRequest, retryProvisionRequest, getProvisioner],
+    [listFleetPools, getFleetPool, createFleetPool, updateFleetPool, deleteFleetPool, listGeneratorMetadata, patchGeneratorMetadata, cordonGenerator, uncordonGenerator, drainGenerator, evacuateGenerator, listLoadZones, createProvisionRequest, listProvisionRequests, getProvisionRequest, listProvisionRequestInstances, cancelProvisionRequest, retryProvisionRequest, getProvisioner],
   )
 }

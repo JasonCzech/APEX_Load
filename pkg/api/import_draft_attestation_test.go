@@ -47,8 +47,8 @@ func TestLegacyImportSaveAttestationPreservesCredentialWithoutReentry(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !bytes.Contains(inspectionJSON, []byte(canary)) {
-		t.Fatalf("editable inspection draft lost imported credential: %s", inspectionJSON)
+	if bytes.Contains(inspectionJSON, []byte(canary)) || !bytes.Contains(inspectionJSON, []byte(maskedScriptSecret)) {
+		t.Fatalf("opaque inspection draft disclosed or failed to mask imported credential: %s", inspectionJSON)
 	}
 	reviewJSON, err := json.Marshal(response["result"])
 	if err != nil {
@@ -462,7 +462,20 @@ func TestPartialSecretBindingPreservesUnselectedImportedCredential(t *testing.T)
 		"/actions/0/header_list/0/value",
 		0,
 	)
-	originalToken := importDraftAttestationToken(script)
+	projectedJSON, err := json.Marshal(inspection["script"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	var submitted dsl.Script
+	if err := json.Unmarshal(projectedJSON, &submitted); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(projectedJSON), headerCredential) ||
+		strings.Contains(string(projectedJSON), authCredential) ||
+		submitted.Config.HTTP.Auth.Password != maskedScriptSecret {
+		t.Fatalf("partial-binding preview was not disclosure-safe: %s", projectedJSON)
+	}
+	originalToken := importDraftAttestationToken(&submitted)
 	if originalToken == "" {
 		t.Fatal("inspection did not issue an import-draft attestation")
 	}
@@ -472,7 +485,7 @@ func TestPartialSecretBindingPreservesUnselectedImportedCredential(t *testing.T)
 		server,
 		"/api/v1/scripts/secret-bindings/apply",
 		map[string]any{
-			"script": script,
+			"script": &submitted,
 			"bindings": []map[string]string{{
 				"requirement_id": header.ID,
 				"secret_name":    "IMPORTED_HEADER",
@@ -499,8 +512,11 @@ func TestPartialSecretBindingPreservesUnselectedImportedCredential(t *testing.T)
 	if got := payload.Script.Actions[0].HeaderList[0].Value; got != "Bearer {{secret.IMPORTED_HEADER}}" {
 		t.Fatalf("selected header = %q", got)
 	}
-	if got := payload.Script.Config.HTTP.Auth.Password; got != authCredential {
-		t.Fatalf("unselected auth password = %q, want exact retained value", got)
+	if got := payload.Script.Config.HTTP.Auth.Password; got != maskedScriptSecret {
+		t.Fatalf("unselected auth password projection = %q, want masked value", got)
+	}
+	if strings.Contains(applied.Body.String(), authCredential) {
+		t.Fatalf("partial binding response disclosed unselected credential: %s", applied.Body.String())
 	}
 	if len(payload.Requirements) != 1 ||
 		!payload.Requirements[0].DestinationValuePreserved {

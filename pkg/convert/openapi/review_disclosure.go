@@ -48,6 +48,7 @@ func sanitizeOpenAPIResultReviewText(result *ConvertResult) {
 	appendOpenAPIStringRefs(&refs, result.Summary.AuthSchemes)
 	appendOpenAPIStringRefs(&refs, result.Summary.DataColumns)
 	appendOpenAPIStringRefs(&refs, result.Summary.OperationNames)
+	appendOpenAPIStringRefs(&refs, result.Summary.OperationAuth)
 
 	if result.SourceReview != nil {
 		for index := range result.SourceReview.SourceFiles {

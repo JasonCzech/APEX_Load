@@ -12,8 +12,27 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/compute"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
+
+func TestWriteProvisioningCreateErrorPreservesComputeConflicts(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		err  error
+	}{
+		{name: "ownership", err: fmt.Errorf("external owner: %w", compute.ErrOwnershipConflict)},
+		{name: "unsupported", err: fmt.Errorf("target shape: %w", compute.ErrUnsupportedOperation)},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			response := httptest.NewRecorder()
+			writeProvisioningCreateError(response, test.err)
+			if response.Code != http.StatusConflict {
+				t.Fatalf("status = %d, want %d; body=%s", response.Code, http.StatusConflict, response.Body.String())
+			}
+		})
+	}
+}
 
 // fakeFleetScaler injects a can-provision scaler without a real cluster.
 type fakeFleetScaler struct {
@@ -245,6 +264,40 @@ func TestActiveProvisioningCannotBeCancelledOrLoseItsPool(t *testing.T) {
 	updated, err := store.GetFleetPool(pool.ID)
 	if err != nil || updated.DesiredSize != 3 {
 		t.Fatalf("completed pool = %#v, %v; want desired size 3", updated, err)
+	}
+}
+
+func TestDeleteFleetPoolReportsLiveCapacityConflict(t *testing.T) {
+	server, store := newTimeslotServer(t)
+	create := timeslotRequest(t, server, http.MethodPost, "/api/v1/fleet/pools",
+		map[string]any{"name": "live-cloud-capacity", "cloud_provider": "aws"})
+	if create.Code != http.StatusCreated {
+		t.Fatalf("create pool = %d body=%s", create.Code, create.Body.String())
+	}
+	var pool storage.FleetPool
+	if err := json.Unmarshal(create.Body.Bytes(), &pool); err != nil {
+		t.Fatal(err)
+	}
+	intentStore, ok := store.(storage.CapacityInstanceIntentStore)
+	if !ok {
+		t.Fatal("test store does not support capacity instance intents")
+	}
+	if err := intentStore.CreateCapacityInstanceIntent(&storage.CapacityInstanceIntent{
+		ID: "intent-live-handler", ExecutionTargetID: "target-live-handler", FleetPoolID: pool.ID,
+		ClientToken: "token-live-handler", LaunchNonce: "nonce-live-handler", GeneratorID: "generator-live-handler",
+	}); err != nil {
+		t.Fatalf("CreateCapacityInstanceIntent: %v", err)
+	}
+
+	deleted := timeslotRequest(t, server, http.MethodDelete, "/api/v1/fleet/pools/"+pool.ID, nil)
+	if deleted.Code != http.StatusConflict {
+		t.Fatalf("delete live pool = %d body=%s, want 409", deleted.Code, deleted.Body.String())
+	}
+	if !strings.Contains(deleted.Body.String(), "drain or terminate") {
+		t.Fatalf("delete conflict = %s, want actionable drain guidance", deleted.Body.String())
+	}
+	if _, err := store.GetFleetPool(pool.ID); err != nil {
+		t.Fatalf("conflicting delete removed pool: %v", err)
 	}
 }
 

@@ -1040,13 +1040,18 @@ func equivalentCreateOnlyScript(existing, candidate *dsl.Script) bool {
 func (tr *TestRunner) GetScript(id string) (*StoredScript, bool) {
 	tr.refreshScriptsForHARead()
 	tr.mu.RLock()
-	defer tr.mu.RUnlock()
 	id = tr.resolveRefKeyLocked(id)
 	s, ok := tr.scripts[id]
 	if ok && isStoredCIScriptSnapshot(s) {
+		tr.mu.RUnlock()
 		return nil, false
 	}
-	return cloneStoredScriptForReadLocked(s), ok
+	snapshot := cloneStoredScriptForReadLocked(s)
+	tr.mu.RUnlock()
+	if !ok {
+		return nil, false
+	}
+	return tr.publishedScriptSnapshot(snapshot)
 }
 
 func (tr *TestRunner) refreshScriptsForHARead(force ...bool) {
@@ -1075,6 +1080,20 @@ func (tr *TestRunner) refreshScriptsForHARead(force ...bool) {
 // retries use it to return an already-promoted script without writing the old
 // session draft back over edits made after approval on another HA replica.
 func (tr *TestRunner) GetScriptDurable(id string) (*StoredScript, bool, error) {
+	stored, ok, err := tr.getScriptDurableIncludingPending(id)
+	if err != nil || !ok {
+		return stored, ok, err
+	}
+	if _, visible := tr.publishedScriptSnapshot(stored); !visible {
+		return nil, false, sql.ErrNoRows
+	}
+	return stored, true, nil
+}
+
+// getScriptDurableIncludingPending is reserved for import recovery. Public
+// durable reads use GetScriptDurable, which applies the batch publication
+// fence after loading the row.
+func (tr *TestRunner) getScriptDurableIncludingPending(id string) (*StoredScript, bool, error) {
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
 	id = tr.resolveRefKeyLocked(id)
@@ -1120,6 +1139,9 @@ func (tr *TestRunner) ReplayScript(id string, opts engine.ReplayOptions) (*engin
 	}
 	script := cloneScriptDefinition(stored.Script)
 	tr.mu.RUnlock()
+	if _, visible := tr.publishedScriptSnapshot(&StoredScript{ID: id, Script: script}); !visible {
+		return nil, fmt.Errorf("script not found")
+	}
 	return tr.replayScriptDefinitionContext(
 		context.Background(),
 		script,
@@ -1172,7 +1194,6 @@ func (tr *TestRunner) replayScriptDefinitionContext(
 func (tr *TestRunner) ListScripts() []*StoredScript {
 	tr.refreshScriptsForHARead()
 	tr.mu.RLock()
-	defer tr.mu.RUnlock()
 	out := make([]*StoredScript, 0, len(tr.scripts))
 	for _, s := range tr.scripts {
 		if isStoredCIScriptSnapshot(s) {
@@ -1180,14 +1201,14 @@ func (tr *TestRunner) ListScripts() []*StoredScript {
 		}
 		out = append(out, cloneStoredScriptForReadLocked(s))
 	}
-	return out
+	tr.mu.RUnlock()
+	return tr.filterPublishedScripts(out)
 }
 
 func (tr *TestRunner) ListScriptsFiltered(projectID string, folderID *string) []*StoredScript {
 	tr.refreshScriptsForHARead()
 	projectID = normalizeProjectID(projectID)
 	tr.mu.RLock()
-	defer tr.mu.RUnlock()
 	out := make([]*StoredScript, 0, len(tr.scripts))
 	for _, s := range tr.scripts {
 		if isStoredCIScriptSnapshot(s) {
@@ -1207,7 +1228,8 @@ func (tr *TestRunner) ListScriptsFiltered(projectID string, folderID *string) []
 		}
 		out = append(out, tr.enrichScriptSummaryLocked(s))
 	}
-	return out
+	tr.mu.RUnlock()
+	return tr.filterPublishedScriptsScoped(out, projectID, folderID)
 }
 
 func (tr *TestRunner) MoveScript(id string, folderID *string) bool {
@@ -1621,7 +1643,6 @@ func (tr *TestRunner) DeleteScriptDurableInProject(id string, expectedProjectID 
 func (tr *TestRunner) ListScriptsWithUsage() []*StoredScript {
 	tr.refreshScriptsForHARead()
 	tr.mu.RLock()
-	defer tr.mu.RUnlock()
 	out := make([]*StoredScript, 0, len(tr.scripts))
 	for _, script := range tr.scripts {
 		if isStoredCIScriptSnapshot(script) {
@@ -1629,7 +1650,8 @@ func (tr *TestRunner) ListScriptsWithUsage() []*StoredScript {
 		}
 		out = append(out, tr.enrichScriptSummaryLocked(script))
 	}
-	return out
+	tr.mu.RUnlock()
+	return tr.filterPublishedScripts(out)
 }
 
 func (tr *TestRunner) enrichScriptSummaryLocked(script *StoredScript) *StoredScript {

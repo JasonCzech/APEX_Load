@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { act } from 'react'
+import { act, useState } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -10,6 +10,7 @@ import { storedZipFixture } from '../test/zipFixture'
 import BrunoImport from './BrunoImport'
 import { brunoDestinationFolderOptions } from './brunoFolderOptions'
 import { nativeReviewGuidance } from './brunoNativeReviewGuidance'
+import { aggregateBrunoSecretRequirements } from './brunoSecretRequirements'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -68,6 +69,37 @@ describe('nativeReviewGuidance', () => {
       impact: 'APEX preserved the request as an incomplete draft but cannot guarantee behavior equivalent to the Bruno source. Replay remains blocked to prevent misleading test results.',
       resolution: 'Review the finding, translate or correct the unsupported behavior, verify the result, and then remove the script’s review gate.',
     })
+  })
+})
+
+describe('aggregateBrunoSecretRequirements', () => {
+  it('aggregates a high-cardinality shared credential in one deterministic result', () => {
+    const requirementCount = 10_000
+    const requirements = Array.from({ length: requirementCount }, (_, index) => {
+      const path = `CTA/request-${String(index).padStart(5, '0')}.yml`
+      return {
+        id: 'shared-partner-username',
+        path,
+        key: 'partnerUserName',
+        suggested_name: 'PARTNER_USERNAME',
+        display_label: 'Partner username',
+        source_variable: 'partnerUserName',
+        unresolved_source_variable: true,
+        affected_paths: [path],
+        context: 'XML username element <mh:userName>',
+        replacement: '{{secret.PARTNER_USERNAME}}',
+        source_value_available: false,
+        destination_value_preserved: false,
+        preservation_unavailable_reason: 'source_value_unavailable' as const,
+      }
+    })
+
+    const aggregated = aggregateBrunoSecretRequirements(requirements)
+
+    expect(aggregated).toHaveLength(1)
+    expect(aggregated[0].affected_paths).toHaveLength(requirementCount)
+    expect(aggregated[0].affected_paths?.[0]).toBe('CTA/request-00000.yml')
+    expect(aggregated[0].affected_paths?.[requirementCount - 1]).toBe('CTA/request-09999.yml')
   })
 })
 
@@ -397,6 +429,30 @@ describe('BrunoImport', () => {
     vi.clearAllMocks()
   })
 
+  it('uses the shell-owned destination without rendering or loading a second folder control', async () => {
+    const file = new File(['version: 1'], 'ambiguous.yml', { type: 'application/yaml' })
+    await act(async () => {
+      root.render(
+        <BrunoImport
+          initialFiles={[file]}
+          projectId="project-1"
+          folderId="folder-1"
+          onFolderChange={vi.fn()}
+          destinationFolderManagedExternally
+        />,
+      )
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    const destinationLabels = Array.from(container.querySelectorAll('label'))
+      .filter(label => label.querySelector('span')?.textContent === 'Destination folder')
+    expect(destinationLabels).toHaveLength(0)
+    expect(container.querySelector('.bruno-folder-create')).toBeNull()
+    expect(apiMock.listFolders).not.toHaveBeenCalled()
+    expect(apiMock.getAuthEffectiveAccess).not.toHaveBeenCalled()
+  })
+
   it('expires and disables a protected Bruno commit while credential review is visible', async () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2030-01-01T00:00:00Z'))
@@ -637,6 +693,553 @@ describe('BrunoImport', () => {
       .find(button => button.textContent?.includes('Save 1 native script'))
     expect(saveButton?.disabled).toBe(false)
     expect(saveButton?.textContent).toContain('with 1 secret to configure')
+  })
+
+  it('presents one shared unresolved XML variable with every affected native request', async () => {
+    const file = new File(['version: 1'], 'opencollection.yml', { type: 'application/yaml' })
+    const inspection = nativeInspectionFixture()
+    for (const [index, candidate] of inspection.result.scripts.entries()) {
+      ;(candidate as typeof candidate & { secret_requirements: unknown[] }).secret_requirements = [{
+        id: 'shared-partner-username',
+        path: `CTA/${index === 0 ? 'first' : 'second'}.yml`,
+        key: 'partnerUserName',
+        suggested_name: 'PARTNER_USERNAME',
+        display_label: 'Partner username',
+        source_variable: 'partnerUserName',
+        unresolved_source_variable: true,
+        affected_paths: [`CTA/${index === 0 ? 'first' : 'second'}.yml`],
+        context: 'XML username element <mh:userName>',
+        replacement: '{{secret.PARTNER_USERNAME}}',
+        source_value_available: false,
+        destination_value_preserved: false,
+        preservation_unavailable_reason: 'source_value_unavailable',
+      }]
+    }
+    apiMock.inspectBrunoImport.mockResolvedValueOnce(inspection)
+
+    await act(async () => {
+      root.render(<BrunoImport initialFiles={[file]} projectId="project-1" />)
+      await Promise.resolve()
+    })
+    const inspectButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent?.includes('Inspect source'))
+    await act(async () => {
+      inspectButton?.click()
+      await Promise.resolve()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(container.querySelectorAll('.secret-binding-review-item')).toHaveLength(1)
+    expect(container.querySelector('.secret-binding-review-label-row strong')?.textContent).toBe('Partner username')
+    expect(container.querySelector('.secret-binding-review-source code')?.textContent).toBe('{{partnerUserName}}')
+    expect(container.querySelector('.credentials-location-details summary')?.textContent)
+      .toBe('View 2 affected request files')
+    expect(container.querySelectorAll('.credentials-location-list code')).toHaveLength(0)
+    await act(async () => {
+      const details = container.querySelector<HTMLDetailsElement>('.credentials-location-details')!
+      details.open = true
+      details.dispatchEvent(new Event('toggle'))
+    })
+    expect(Array.from(container.querySelectorAll('.credentials-location-list code')).map(node => node.textContent))
+      .toEqual(['CTA/first.yml', 'CTA/second.yml'])
+  })
+
+  it('presents path-derived sensitive-header secrets by header origin and runtime purpose', async () => {
+    const file = new File(['version: 1'], 'opencollection.yml', { type: 'application/yaml' })
+    const inspection = nativeInspectionFixture()
+    const examples = [
+      {
+        id: 'a73758b339b71e1635eb25f9',
+        path: 'CTA_Collection 6a/CTA/InquireAccountProfile_312.yml',
+        header: 'X-CDF-AUTH-TOKEN',
+        displayLabel: 'X-CDF auth token',
+        suggestedName: 'CTA_COLLECTION_6A_CTA_INQUIREACCOUNTPROFILE_312_HEADER_X_CDF_AUTH_TOKEN_84921F7A1055',
+        context: 'Sensitive Bruno request header "X-CDF-AUTH-TOKEN" references {{authToken}}, but the collection does not include a value for that source variable. A configured destination value is required when this request runs.',
+        sourceVariable: 'authToken',
+        sourceValueAvailable: false,
+        destinationValuePreserved: false,
+        preservationUnavailableReason: 'source_value_unavailable',
+      },
+      {
+        id: '6b6c3b23a33b3293c01a677d',
+        path: 'CTA_Collection 6a/CTA/ActivateSubscriber_v302.yml',
+        header: 'idpctx-ixp-dark-mode-session',
+        displayLabel: 'IDP context IXP dark mode session',
+        suggestedName: 'CTA_COLLECTION_6A_CTA_ACTIVATESUBSCRIBER_V302_HEADER_IDPCTX_IXP_DARK_MODE_SESSION_161E2747AD92',
+        context: 'Sensitive Bruno request header "idpctx-ixp-dark-mode-session" contains an imported value that can be preserved for this request.',
+        sourceVariable: '',
+        sourceValueAvailable: true,
+        destinationValuePreserved: true,
+        preservationUnavailableReason: undefined,
+      },
+      {
+        id: '887c23d56055c1804ec9137f',
+        path: 'CTA_Collection 6a/CTA/InquireCPNIContactInformation_224.yml',
+        header: 'idpctx-session-id',
+        displayLabel: 'IDP context session ID',
+        suggestedName: 'CTA_COLLECTION_6A_CTA_INQUIRECPNICONTACTINFORMATION_224_HEADER_IDPCTX_SESSION_ID',
+        context: 'Sensitive Bruno request header "idpctx-session-id" contains an imported value that can be preserved for this request.',
+        sourceVariable: '',
+        sourceValueAvailable: true,
+        destinationValuePreserved: true,
+        preservationUnavailableReason: undefined,
+      },
+    ]
+    apiMock.getProjectSecretStatuses.mockImplementation(async (_projectId: string, names: string[]) => ({
+      project_id: 'project-1',
+      capabilities: {
+        provider: 'encrypted_database',
+        writable: true,
+        create_supported: true,
+        replace_supported: true,
+        source_secret_migration_policy_enabled: true,
+      },
+      secrets: names.map(name => ({
+        name,
+        configured: name === examples[0].suggestedName,
+        provider: 'encrypted_database',
+        writable: true,
+      })),
+    }))
+    ;(inspection.result.scripts[0] as typeof inspection.result.scripts[0] & { secret_requirements: unknown[] }).secret_requirements = examples.map(example => ({
+      id: example.id,
+      path: example.path,
+      key: `native-header:/http/headers/${example.header}`,
+      suggested_name: example.suggestedName,
+      display_label: example.displayLabel,
+      source_variable: example.sourceVariable || undefined,
+      unresolved_source_variable: example.sourceValueAvailable === false,
+      context: example.context,
+      replacement: `{{secret.${example.suggestedName}}}`,
+      affected_paths: [example.path],
+      source_value_available: example.sourceValueAvailable,
+      destination_value_preserved: example.destinationValuePreserved,
+      preservation_unavailable_reason: example.preservationUnavailableReason,
+    }))
+    ;(inspection.result.scripts[1] as typeof inspection.result.scripts[1] & { secret_requirements: unknown[] }).secret_requirements = []
+    apiMock.inspectBrunoImport.mockResolvedValueOnce(inspection)
+
+    await act(async () => {
+      root.render(<BrunoImport initialFiles={[file]} projectId="project-1" />)
+      await Promise.resolve()
+    })
+    const inspectButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent?.includes('Inspect source'))
+    await act(async () => {
+      inspectButton?.click()
+      await Promise.resolve()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    const cardLabels = Array.from(container.querySelectorAll('.secret-binding-review-label-row strong'))
+      .map(node => node.textContent)
+    expect(cardLabels).toEqual(examples.map(example => example.displayLabel))
+    const cardContexts = Array.from(container.querySelectorAll('.secret-binding-review-location > p'))
+      .map(node => node.textContent)
+    expect(cardContexts[0]).toBe(
+      'Origin: Bruno sensitive request header "X-CDF-AUTH-TOKEN". Runtime purpose: Supplies the credential value sent in the X-CDF-AUTH-TOKEN HTTP header when this request runs.',
+    )
+    expect(cardContexts[0]).not.toContain('does not include a value')
+    expect(container.querySelector('.secret-binding-review-preservation-reasons')?.textContent)
+      .toContain('Sensitive Bruno request header "X-CDF-AUTH-TOKEN" references {{authToken}}, but the collection does not include a value for that source variable.')
+    expect(container.querySelector('.secret-binding-review-preservation-reasons')?.textContent)
+      .toContain('A configured destination value is required when this request runs.')
+    expect(container.querySelector('.secret-binding-review-preservation-reasons')?.textContent)
+      .toContain('The selected project secret is already configured and will be used when the imported scripts run.')
+    expect(container.textContent).not.toContain('Configure the generated project secret before running this request.')
+    expect(container.textContent?.match(/does not include a value for that source variable/g)).toHaveLength(1)
+    examples.slice(1).forEach(example => {
+      expect(cardContexts).toContain(`${example.context} Runtime purpose: Supplies the credential value sent in the ${example.header} HTTP header when this request runs.`)
+      expect(container.textContent?.match(new RegExp(example.context.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')))
+        .toHaveLength(1)
+    })
+    examples.forEach(example => {
+      expect(container.textContent).toContain(`{{secret.${example.suggestedName}}}`)
+    })
+
+    const reviewButton = container.querySelector<HTMLButtonElement>('.bruno-native-review-button')
+    await act(async () => {
+      reviewButton?.click()
+      await new Promise(resolve => window.setTimeout(resolve, 0))
+    })
+    const secretsSection = Array.from(document.body.querySelectorAll<HTMLElement>('.bruno-native-review-section'))
+      .find(section => section.querySelector('h4')?.textContent === 'Secrets')
+    const modalLabels = Array.from(secretsSection?.querySelectorAll('li > strong') || []).map(node => node.textContent)
+    expect(modalLabels).toEqual(examples.map(example => example.displayLabel))
+    examples.forEach((example, index) => {
+      expect(secretsSection?.textContent).toContain(`Import context: ${example.context}`)
+      expect(secretsSection?.textContent)
+        .toContain(`Runtime purpose: Supplies the credential value sent in the ${example.header} HTTP header when this request runs.`)
+      expect(secretsSection?.textContent)
+        .toContain(`${index === 0 ? 'Project secret reference' : 'Optional project-secret suggestion'}: {{secret.${example.suggestedName}}}`)
+    })
+    expect(secretsSection?.textContent.match(/does not include a value for that source variable/g)).toHaveLength(1)
+    expect(secretsSection?.textContent).not.toContain('No value for {{authToken}} was included in the collection')
+    expect(secretsSection?.textContent)
+      .toContain('Current destination: The selected project secret is already configured and will be used when the imported scripts run.')
+    expect(secretsSection?.textContent).not.toContain('Configure the generated project secret')
+  })
+
+  it('shows an operator-renamed configured secret in Review instead of the importer suggestion', async () => {
+    const file = new File(['version: 1'], 'opencollection.yml', { type: 'application/yaml' })
+    const inspection = nativeInspectionFixture()
+    const candidate = inspection.result.scripts[0]
+    inspection.result.scripts = [candidate]
+    inspection.result.fidelity.executable_items = 1
+    ;(candidate as typeof candidate & { secret_requirements: unknown[] }).secret_requirements = [{
+      id: 'renamed-header-token',
+      path: 'CTA/first.yml',
+      key: 'native-header:/http/headers/X-CDF-AUTH-TOKEN',
+      suggested_name: 'SUGGESTED_TOKEN',
+      display_label: 'X-CDF auth token',
+      source_variable: 'authToken',
+      unresolved_source_variable: true,
+      context: 'Sensitive Bruno request header "X-CDF-AUTH-TOKEN" references {{authToken}}, but the collection does not include a value for that source variable. A configured destination value is required when this request runs.',
+      replacement: '{{secret.SUGGESTED_TOKEN}}',
+      source_value_available: false,
+      destination_value_preserved: false,
+      preservation_unavailable_reason: 'source_value_unavailable',
+    }]
+    apiMock.getProjectSecretStatuses.mockImplementation(async (_projectId: string, names: string[]) => ({
+      project_id: 'project-1',
+      capabilities: {
+        provider: 'encrypted_database',
+        writable: true,
+        create_supported: true,
+      },
+      secrets: names.map(name => ({
+        name,
+        configured: name === 'RENAMED_TOKEN',
+        provider: 'encrypted_database',
+        writable: true,
+      })),
+    }))
+    apiMock.inspectBrunoImport.mockResolvedValueOnce(inspection)
+
+    await act(async () => {
+      root.render(<BrunoImport initialFiles={[file]} projectId="project-1" />)
+      await Promise.resolve()
+    })
+    const inspectButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent?.includes('Inspect source'))
+    await act(async () => {
+      inspectButton?.click()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    act(() => setInput(container.querySelector<HTMLInputElement>('.secret-binding-review-control input[type="text"]')!, 'RENAMED_TOKEN'))
+    await act(async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('.bruno-native-review-button')?.click()
+      await Promise.resolve()
+    })
+
+    const dialog = document.body.querySelector<HTMLElement>('.bruno-native-review-dialog')
+    expect(dialog?.textContent).toContain('Project secret reference: {{secret.RENAMED_TOKEN}}')
+    expect(dialog?.textContent).not.toContain('{{secret.SUGGESTED_TOKEN}}')
+    expect(dialog?.textContent)
+      .toContain('Current destination: The selected project secret is already configured and will be used when the imported scripts run.')
+  })
+
+  it('explains durable credential recovery and reuses the collision-safe secret on script-save retry', async () => {
+    const file = new File(['version: 1'], 'opencollection.yml', { type: 'application/yaml' })
+    const inspection = nativeInspectionFixture()
+    const candidate = inspection.result.scripts[0]
+    inspection.result.scripts = [candidate]
+    inspection.result.fidelity.executable_items = 1
+    ;(candidate as typeof candidate & { secret_requirements: unknown[] }).secret_requirements = [{
+      id: 'collision-header-token',
+      path: 'CTA/first.yml',
+      key: 'native-header:/http/headers/X-CDF-AUTH-TOKEN',
+      suggested_name: 'COLLIDING_TOKEN',
+      display_label: 'X-CDF auth token',
+      source_variable: 'authToken',
+      unresolved_source_variable: true,
+      context: 'Sensitive Bruno request header "X-CDF-AUTH-TOKEN" references {{authToken}}, but the collection does not include a value for that source variable. A configured destination value is required when this request runs.',
+      replacement: '{{secret.COLLIDING_TOKEN}}',
+      source_value_available: false,
+      destination_value_preserved: false,
+      preservation_unavailable_reason: 'source_value_unavailable',
+    }]
+    apiMock.getProjectSecretStatuses.mockImplementation(async (_projectId: string, names: string[]) => ({
+      project_id: 'project-1',
+      capabilities: {
+        provider: 'encrypted_database',
+        writable: true,
+        create_supported: true,
+      },
+      secrets: names.map(name => ({
+        name,
+        configured: name === 'COLLIDING_TOKEN',
+        provider: 'encrypted_database',
+        writable: true,
+      })),
+    }))
+    apiMock.inspectBrunoImport.mockResolvedValueOnce(inspection)
+    apiMock.commitBrunoImport
+      .mockRejectedValueOnce(new Error('temporary script-store failure'))
+      .mockResolvedValueOnce({
+        batch_id: 'batch-retry',
+        created: true,
+        count: 1,
+        idempotent_replay: false,
+        _http_status: 201,
+        scripts: [{
+          ...candidate.script,
+          id: candidate.planned_script_id,
+          ref_key: 'SCR-RETRY',
+          folder_id: 'folder-1',
+          created_at: '2026-07-16T19:00:00Z',
+        }],
+      })
+
+    await act(async () => {
+      root.render(<BrunoImport initialFiles={[file]} projectId="project-1" folderId="folder-1" />)
+      await Promise.resolve()
+    })
+    const inspectButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent?.includes('Inspect source'))
+    await act(async () => {
+      inspectButton?.click()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    const valueInput = container.querySelector<HTMLInputElement>('.secret-binding-review-control input[type="password"]')!
+    act(() => setInput(valueInput, 'write-only-value'))
+    const saveButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent?.includes('Save 1 native script'))
+    await act(async () => {
+      saveButton?.click()
+      await new Promise(resolve => window.setTimeout(resolve, 0))
+      await new Promise(resolve => window.setTimeout(resolve, 0))
+    })
+
+    expect(apiMock.createProjectSecrets).toHaveBeenCalledWith('project-1', [{
+      name: 'COLLIDING_TOKEN_2',
+      value: 'write-only-value',
+    }])
+    expect(container.textContent).toContain('temporary script-store failure')
+    expect(container.textContent).toContain('Project-secret values configured during this review remain in Project Secrets independently of script saving')
+    expect(container.textContent).toContain('retrying this save reuses those configured values')
+    expect(container.textContent).toContain('applies to scripts, not external secret-store writes')
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('.bruno-native-review-button')?.click()
+      await Promise.resolve()
+    })
+    const dialog = document.body.querySelector<HTMLElement>('.bruno-native-review-dialog')
+    expect(dialog?.textContent).toContain('Project secret reference: {{secret.COLLIDING_TOKEN_2}}')
+    expect(dialog?.textContent).not.toContain('{{secret.COLLIDING_TOKEN}}')
+    expect(dialog?.textContent)
+      .toContain('Current destination: The selected project secret is already configured and will be used when the imported scripts run.')
+
+    await act(async () => {
+      saveButton?.click()
+      await new Promise(resolve => window.setTimeout(resolve, 0))
+      await new Promise(resolve => window.setTimeout(resolve, 0))
+    })
+    expect(apiMock.createProjectSecrets).toHaveBeenCalledTimes(1)
+    expect(apiMock.commitBrunoImport).toHaveBeenCalledTimes(2)
+    expect(container.textContent).toContain('1 native APEX script saved atomically')
+  })
+
+  it('keeps shared credential state out of an unselected candidate preview', async () => {
+    const file = new File(['version: 1'], 'opencollection.yml', { type: 'application/yaml' })
+    const inspection = nativeInspectionFixture()
+    for (const candidate of inspection.result.scripts) {
+      ;(candidate as typeof candidate & { secret_requirements: unknown[] }).secret_requirements = [{
+        id: 'shared-header-token',
+        path: candidate.source_path,
+        key: 'native-header:/http/headers/X-CDF-AUTH-TOKEN',
+        suggested_name: 'SHARED_TOKEN',
+        display_label: 'X-CDF auth token',
+        source_variable: 'authToken',
+        unresolved_source_variable: true,
+        context: 'Sensitive Bruno request header "X-CDF-AUTH-TOKEN" references {{authToken}}, but the collection does not include a value for that source variable. A configured destination value is required when this request runs.',
+        replacement: '{{secret.SHARED_TOKEN}}',
+        source_value_available: false,
+        destination_value_preserved: false,
+        preservation_unavailable_reason: 'source_value_unavailable',
+      }]
+    }
+    apiMock.inspectBrunoImport.mockResolvedValueOnce(inspection)
+
+    await act(async () => {
+      root.render(<BrunoImport initialFiles={[file]} projectId="project-1" />)
+      await Promise.resolve()
+    })
+    const inspectButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent?.includes('Inspect source'))
+    await act(async () => {
+      inspectButton?.click()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    const candidateRows = Array.from(container.querySelectorAll<HTMLTableRowElement>('.bruno-native-table tbody tr'))
+    await act(async () => {
+      candidateRows[1].querySelector<HTMLInputElement>('input[type="checkbox"]')?.click()
+      await Promise.resolve()
+    })
+    act(() => setInput(container.querySelector<HTMLInputElement>('.secret-binding-review-control input[type="text"]')!, 'SELECTED_ONLY_TOKEN'))
+    await act(async () => {
+      await Promise.resolve()
+      candidateRows[1].querySelector<HTMLButtonElement>('.bruno-native-review-button')?.click()
+      await Promise.resolve()
+    })
+
+    const dialog = document.body.querySelector<HTMLElement>('.bruno-native-review-dialog')
+    expect(document.getElementById(dialog?.getAttribute('aria-labelledby') || '')?.textContent)
+      .toContain('Preview detected script')
+    expect(dialog?.textContent).toContain('Preview only — not selected for import.')
+    expect(dialog?.textContent).toContain('Detected project-secret suggestion: {{secret.SHARED_TOKEN}}')
+    expect(dialog?.textContent).not.toContain('SELECTED_ONLY_TOKEN')
+    expect(dialog?.textContent).not.toContain('Current destination:')
+  })
+
+  it('paginates 10,000 native candidates while keeping the table DOM bounded and selection global', async () => {
+    const candidateCount = 10_000
+    const file = new File(['version: 1'], 'opencollection.yml', { type: 'application/yaml' })
+    const inspection = nativeInspectionFixture()
+    const template = inspection.result.scripts[0]
+    const candidates = Array.from({ length: candidateCount }, (_, index) => {
+      const ordinal = String(index).padStart(5, '0')
+      return {
+        ...template,
+        candidate_id: `candidate-${ordinal}`,
+        planned_script_id: `planned-${ordinal}`,
+        source_path: `CTA/request-${ordinal}.yml`,
+        source_uid: `request-${ordinal}`,
+        sequence: index + 1,
+        script: {
+          ...template.script,
+          name: `API ${ordinal}`,
+          actions: template.script.actions.map(action => ({ ...action, name: `API ${ordinal}` })),
+        },
+        diagnostics: [],
+        missing_variables: [],
+        secret_requirements: [],
+      }
+    })
+    inspection.result.scripts = candidates as unknown as typeof inspection.result.scripts
+    inspection.result.fidelity.executable_items = candidateCount
+    apiMock.inspectBrunoImport.mockResolvedValueOnce(inspection)
+
+    await act(async () => {
+      root.render(<BrunoImport initialFiles={[file]} projectId="project-1" />)
+      await Promise.resolve()
+    })
+    const inspectButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent?.includes('Inspect source'))
+    await act(async () => {
+      inspectButton?.click()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    const firstPageRows = Array.from(container.querySelectorAll<HTMLTableRowElement>('.bruno-native-table tbody tr'))
+    expect(firstPageRows).toHaveLength(100)
+    expect(firstPageRows[0].textContent).toContain('CTA/request-00000.yml')
+    expect(firstPageRows[99].textContent).toContain('CTA/request-00099.yml')
+    const pagination = container.querySelector<HTMLElement>('.bruno-native-table-pagination')!
+    expect(pagination.getAttribute('aria-label')).toBe('Native scripts table pages')
+    expect(pagination.textContent).toContain('Showing 1–100 of 10000 scripts. Page 1 of 100.')
+    expect(pagination.querySelector('[role="group"]')?.getAttribute('aria-label'))
+      .toBe('Native scripts page controls')
+    const nextButton = Array.from(pagination.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent?.includes('Next'))!
+    await act(async () => nextButton.click())
+
+    const secondPageRows = Array.from(container.querySelectorAll<HTMLTableRowElement>('.bruno-native-table tbody tr'))
+    expect(secondPageRows).toHaveLength(100)
+    expect(secondPageRows[0].textContent).toContain('CTA/request-00100.yml')
+    expect(secondPageRows[99].textContent).toContain('CTA/request-00199.yml')
+    expect(pagination.textContent).toContain('Showing 101–200 of 10000 scripts. Page 2 of 100.')
+    await act(async () => {
+      secondPageRows[0].querySelector<HTMLInputElement>('input[type="checkbox"]')?.click()
+      await Promise.resolve()
+    })
+    expect(container.querySelectorAll('.bruno-native-table tbody tr')).toHaveLength(100)
+    expect(container.querySelector('.bruno-select-all input')?.getAttribute('aria-checked')).toBe('mixed')
+    expect(Array.from(container.querySelectorAll('.bruno-native-table tbody tr'))[0]
+      .querySelector<HTMLInputElement>('input[type="checkbox"]')?.checked).toBe(false)
+    expect(container.querySelectorAll<HTMLInputElement>('.bruno-native-table tbody input[type="checkbox"]:checked'))
+      .toHaveLength(99)
+  })
+
+  it('paginates 10,000 review findings and bounds both cards and save-blocker details', async () => {
+    const findingCount = 10_000
+    const file = new File(['version: 1'], 'opencollection.yml', { type: 'application/yaml' })
+    const inspection = nativeInspectionFixture()
+    const template = inspection.result.scripts[0]
+    const candidates = Array.from({ length: findingCount }, (_, index) => {
+      const ordinal = String(index).padStart(5, '0')
+      return {
+        ...template,
+        candidate_id: `candidate-${ordinal}`,
+        planned_script_id: `planned-${ordinal}`,
+        source_path: `CTA/request-${ordinal}.yml`,
+        source_uid: `request-${ordinal}`,
+        sequence: index + 1,
+        script: {
+          ...template.script,
+          name: `API ${ordinal}`,
+          actions: template.script.actions.map(action => ({ ...action, name: `API ${ordinal}` })),
+        },
+        diagnostics: [{
+          id: `finding-${ordinal}`,
+          code: 'bruno_javascript_review_required',
+          severity: 'warning',
+          message: `Translate unsupported JavaScript ${ordinal}.`,
+          acknowledgement_required: true,
+        }],
+        missing_variables: [],
+        secret_requirements: [],
+      }
+    })
+    inspection.result.scripts = candidates as unknown as typeof inspection.result.scripts
+    inspection.result.fidelity.executable_items = findingCount
+    apiMock.inspectBrunoImport.mockResolvedValueOnce(inspection)
+
+    await act(async () => {
+      root.render(<BrunoImport initialFiles={[file]} projectId="project-1" />)
+      await Promise.resolve()
+    })
+    const inspectButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent?.includes('Inspect source'))
+    await act(async () => {
+      inspectButton?.click()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    let cards = Array.from(container.querySelectorAll<HTMLElement>('.bruno-native-acknowledgement-card'))
+    expect(cards).toHaveLength(100)
+    expect(cards[0].textContent).toContain('CTA/request-00000.yml')
+    expect(cards[99].textContent).toContain('CTA/request-00099.yml')
+    const findingPagination = container.querySelector<HTMLElement>(
+      'nav[aria-label="Review-gated conversion pages"]',
+    )!
+    expect(findingPagination.textContent).toContain('Showing findings 1–100 of 10000. Page 1 of 100.')
+    expect(findingPagination.querySelector('[role="group"]')?.getAttribute('aria-label'))
+      .toBe('Review finding page controls')
+    const blockerItems = Array.from(container.querySelectorAll('#bruno-save-blockers li'))
+    expect(blockerItems.filter(item => item.textContent?.startsWith('Review CTA/'))).toHaveLength(10)
+    expect(blockerItems.length).toBeLessThanOrEqual(12)
+    expect(container.querySelector('#bruno-save-blockers')?.textContent)
+      .toContain('9990 additional review-gated conversion findings require acknowledgement')
+
+    const nextButton = Array.from(findingPagination.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent?.includes('Next'))!
+    act(() => nextButton.click())
+    cards = Array.from(container.querySelectorAll<HTMLElement>('.bruno-native-acknowledgement-card'))
+    expect(cards).toHaveLength(100)
+    expect(cards[0].textContent).toContain('CTA/request-00100.yml')
+    expect(cards[99].textContent).toContain('CTA/request-00199.yml')
+    expect(findingPagination.textContent).toContain('Showing findings 101–200 of 10000. Page 2 of 100.')
   })
 
   it('submits a binding when the operator explicitly chooses an existing project secret', async () => {
@@ -993,7 +1596,9 @@ describe('BrunoImport', () => {
     await act(async () => {
       await new Promise(resolve => window.setTimeout(resolve, 0))
     })
-    let dialog = container.querySelector<HTMLElement>('[role="dialog"]')
+    let dialog = document.body.querySelector<HTMLElement>('[role="dialog"]')
+    expect(container.querySelector('[role="dialog"]')).toBeNull()
+    expect(dialog?.parentElement?.parentElement).toBe(document.body)
     expect(dialog?.getAttribute('aria-modal')).toBe('true')
     expect(dialog?.parentElement?.getAttribute('role')).toBe('presentation')
     expect(dialog?.parentElement?.hasAttribute('tabindex')).toBe(false)
@@ -1009,7 +1614,7 @@ describe('BrunoImport', () => {
     const closeButton = Array.from(dialog?.querySelectorAll<HTMLButtonElement>('button') || [])
       .find(button => button.textContent === 'Close')
     await act(async () => closeButton?.click())
-    expect(container.querySelector('[role="dialog"]')).toBeNull()
+    expect(document.body.querySelector('[role="dialog"]')).toBeNull()
     expect(document.activeElement).toBe(reviewButtons[0])
 
     await act(async () => {
@@ -1019,14 +1624,14 @@ describe('BrunoImport', () => {
     await act(async () => {
       await new Promise(resolve => window.setTimeout(resolve, 0))
     })
-    dialog = container.querySelector<HTMLElement>('[role="dialog"]')
+    dialog = document.body.querySelector<HTMLElement>('[role="dialog"]')
     expect(dialog?.textContent).toContain('CTA/second.yml')
     expect(dialog?.textContent).toContain('Diagnostics')
     expect(dialog?.textContent).toContain('Translate unsupported response JavaScript.')
     await act(async () => {
       document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
     })
-    expect(container.querySelector('[role="dialog"]')).toBeNull()
+    expect(document.body.querySelector('[role="dialog"]')).toBeNull()
     expect(document.activeElement).toBe(reviewButtons[1])
 
     await act(async () => {
@@ -1034,13 +1639,60 @@ describe('BrunoImport', () => {
       reviewButtons[0].click()
       await new Promise(resolve => window.setTimeout(resolve, 0))
     })
-    dialog = container.querySelector<HTMLElement>('[role="dialog"]')
+    dialog = document.body.querySelector<HTMLElement>('[role="dialog"]')
     const backdrop = dialog?.parentElement
     await act(async () => dialog?.click())
-    expect(container.querySelector('[role="dialog"]')).toBe(dialog)
+    expect(document.body.querySelector('[role="dialog"]')).toBe(dialog)
     await act(async () => backdrop?.click())
-    expect(container.querySelector('[role="dialog"]')).toBeNull()
+    expect(document.body.querySelector('[role="dialog"]')).toBeNull()
     expect(document.activeElement).toBe(reviewButtons[0])
+  })
+
+  it('explains unresolved source credentials in the per-script Review modal', async () => {
+    const inspection = nativeInspectionFixture()
+    ;(inspection.result.scripts[0] as typeof inspection.result.scripts[0] & { secret_requirements: unknown[] }).secret_requirements = [{
+      id: 'partner-username',
+      path: 'CTA/first.yml',
+      key: 'partnerUserName',
+      suggested_name: 'PARTNER_USERNAME',
+      display_label: 'Partner username',
+      source_variable: 'partnerUserName',
+      unresolved_source_variable: true,
+      context: 'XML username element <mh:userName>',
+      replacement: '{{secret.PARTNER_USERNAME}}',
+      source_value_available: false,
+      destination_value_preserved: false,
+      preservation_unavailable_reason: 'source_value_unavailable',
+    }]
+    apiMock.inspectBrunoImport.mockResolvedValueOnce(inspection)
+    const file = new File(['version: 1'], 'opencollection.yml', { type: 'application/yaml' })
+
+    await act(async () => {
+      root.render(<BrunoImport initialFiles={[file]} projectId="project-1" />)
+      await Promise.resolve()
+    })
+    const inspectButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent?.includes('Inspect source'))
+    await act(async () => {
+      inspectButton?.click()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    const reviewButton = container.querySelector<HTMLButtonElement>('.bruno-native-review-button')
+    await act(async () => {
+      reviewButton?.click()
+      await new Promise(resolve => window.setTimeout(resolve, 0))
+    })
+
+    const dialog = document.body.querySelector<HTMLElement>('[role="dialog"]')
+    const secretsSection = Array.from(dialog?.querySelectorAll<HTMLElement>('.bruno-native-review-section') || [])
+      .find(section => section.querySelector('h4')?.textContent === 'Secrets')
+    expect(secretsSection?.querySelector('strong')?.textContent).toBe('Partner username')
+    expect(secretsSection?.textContent).toContain('Source variable: {{partnerUserName}}')
+    expect(secretsSection?.textContent).toContain('Project secret reference: {{secret.PARTNER_USERNAME}}')
+    expect(secretsSection?.textContent)
+      .toContain('No value for {{partnerUserName}} was included in the collection, so there is no imported value to preserve.')
+    expect(secretsSection?.textContent).toContain('execution requires a configured value for that project secret')
   })
 
   it('detects native mode from standalone OpenCollection request content', async () => {
@@ -1114,6 +1766,79 @@ describe('BrunoImport', () => {
     expect(destination?.disabled).toBe(false)
     expect(destination?.value).toBe('folder-cta')
     expect(container.textContent).toContain('Created and selected script folder “CTA Collection 6a”.')
+  })
+
+  it('blocks inspect, save, and destination changes while a replacement folder is being created', async () => {
+    const inspection = nativeInspectionFixture()
+    const candidate = inspection.result.scripts[0]
+    inspection.result.scripts = [candidate]
+    inspection.result.fidelity.executable_items = 1
+    apiMock.inspectBrunoImport.mockResolvedValueOnce(inspection)
+    let resolveFolder!: (folder: Folder) => void
+    apiMock.createFolder.mockReturnValueOnce(new Promise<Folder>(resolve => {
+      resolveFolder = resolve
+    }))
+    const file = new File(['version: 1'], 'opencollection.yml', { type: 'application/yaml' })
+
+    function Harness() {
+      const [folderId, setFolderId] = useState('folder-1')
+      return (
+        <BrunoImport
+          initialFiles={[file]}
+          projectId="project-1"
+          folderId={folderId}
+          onFolderChange={setFolderId}
+        />
+      )
+    }
+
+    await act(async () => {
+      root.render(<Harness />)
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    const inspectButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent?.includes('Inspect source'))!
+    await act(async () => {
+      inspectButton.click()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    const destination = Array.from(container.querySelectorAll<HTMLSelectElement>('select'))
+      .find(select => select.parentElement?.textContent?.includes('Destination folder'))!
+    const saveButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent?.includes('Save 1 native script'))!
+    expect(saveButton.disabled).toBe(false)
+
+    const createButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent?.includes('Create and select folder'))!
+    await act(async () => {
+      createButton.click()
+      await Promise.resolve()
+    })
+
+    expect(destination.disabled).toBe(true)
+    expect(inspectButton.disabled).toBe(true)
+    expect(saveButton.disabled).toBe(true)
+    expect(container.textContent).toContain('Wait for destination folder creation to finish')
+    expect(apiMock.commitBrunoImport).not.toHaveBeenCalled()
+
+    await act(async () => {
+      resolveFolder({
+        id: 'folder-replacement',
+        project_id: 'project-1',
+        parent_id: null,
+        name: 'Imported Bruno APIs',
+        category: 'scripts',
+        created_at: '2026-07-16T19:00:00Z',
+        updated_at: '2026-07-16T19:00:00Z',
+      })
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(destination.disabled).toBe(false)
+    expect(destination.value).toBe('folder-replacement')
+    expect(saveButton.disabled).toBe(false)
   })
 
   it('explains that a project administrator must create the missing destination when folder management is denied', async () => {
@@ -1744,6 +2469,53 @@ describe('BrunoImport', () => {
     })
     expect(container.textContent).not.toContain('folder service unavailable')
     expect(container.textContent).toContain('Imported APIs')
+  })
+
+  it('clears and blocks a native save when a restored destination folder is stale', async () => {
+    const onFolderChange = vi.fn()
+    apiMock.listFolders.mockResolvedValueOnce({ folders: [], count: 0 })
+    apiMock.inspectBrunoImport.mockResolvedValueOnce(nativeInspectionFixture())
+    const file = new File(['version: 1'], 'opencollection.yml', { type: 'application/yaml' })
+
+    await act(async () => {
+      root.render(
+        <BrunoImport
+          initialFiles={[file]}
+          projectId="project-1"
+          folderId="removed-folder"
+          onFolderChange={onFolderChange}
+        />,
+      )
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(onFolderChange).toHaveBeenCalledWith('')
+    expect(container.textContent).toContain('previously selected destination folder no longer exists')
+
+    await act(async () => {
+      root.render(
+        <BrunoImport
+          initialFiles={[file]}
+          projectId="project-1"
+          folderId=""
+          onFolderChange={onFolderChange}
+        />,
+      )
+    })
+    const inspect = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent?.includes('Inspect source'))!
+    await act(async () => {
+      inspect.click()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(container.querySelector('#bruno-save-blockers')?.textContent).toMatch(/Select an existing destination folder|Create and select a destination folder|No destination folder is available/)
+    const save = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent?.includes('Save 2 native scripts'))
+    expect(save?.disabled).toBe(true)
+    expect(apiMock.commitBrunoImport).not.toHaveBeenCalled()
   })
 
   it('persists selected parameterization and an explicitly selected deferred secret binding', async () => {

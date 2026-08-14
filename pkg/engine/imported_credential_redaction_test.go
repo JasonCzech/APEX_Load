@@ -549,6 +549,43 @@ func TestImportedCredentialValuesDereferencesExecutableURLSurfaces(t *testing.T)
 	}
 }
 
+func TestImportedCredentialValuesTreatsOAuthTokenURLAsLocator(t *testing.T) {
+	const (
+		password = "oauth-url-password-8cf2"
+		token    = "oauth-query-token-417a"
+	)
+	tokenURL := "https://oauth-user:" + password + "@auth.example.test/token?access_token=" + token + "&region=us"
+	script := &dsl.Script{
+		Protocol: "http",
+		Metadata: &dsl.ScriptMetadata{Import: &dsl.ImportMetadata{
+			Source: "raml",
+			Preserved: map[string]any{
+				dsl.ImportPreservedCredentialPolicyKey: dsl.ImportPreservedCredentialPolicyPreserve,
+			},
+		}},
+		Init: []dsl.Action{{
+			Name: "OAuth token", Type: "http_oauth2_token",
+			Params: map[string]any{
+				"token_url":     tokenURL,
+				"client_secret": "{{secret.RAML_CLIENT_SECRET}}",
+			},
+		}},
+	}
+
+	values, err := ImportedCredentialValuesForDisclosure(script)
+	if err != nil {
+		t.Fatalf("ImportedCredentialValuesForDisclosure: %v", err)
+	}
+	if containsExactString(values, tokenURL) {
+		t.Fatalf("OAuth endpoint locator was classified as a credential: %#v", values)
+	}
+	for _, want := range []string{password, token} {
+		if !containsExactString(values, want) {
+			t.Fatalf("embedded OAuth URL credential %q missing from %#v", want, values)
+		}
+	}
+}
+
 func TestImportedCredentialValuesIncludesMarkedBrowserActionValues(t *testing.T) {
 	const (
 		fillSecret   = "captured-fill-secret-7319"

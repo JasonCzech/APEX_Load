@@ -22,6 +22,7 @@ const fleetApiMock = {
   createProvisionRequest: vi.fn(),
   listProvisionRequests: vi.fn(),
   getProvisionRequest: vi.fn(),
+  listProvisionRequestInstances: vi.fn(),
   cancelProvisionRequest: vi.fn(),
   retryProvisionRequest: vi.fn(),
   getProvisioner: vi.fn().mockResolvedValue(null),
@@ -39,6 +40,7 @@ beforeEach(() => {
   document.body.appendChild(container)
   root = createRoot(container)
   fleetApiMock.listProvisionRequests.mockResolvedValue({ provisioning_requests: [], count: 0 })
+  fleetApiMock.listProvisionRequestInstances.mockResolvedValue({ instances: [], total: 0 })
   fleetApiMock.getProvisioner.mockResolvedValue(null)
   fleetApiMock.listGeneratorMetadata.mockResolvedValue({ generators: [], count: 0 })
 })
@@ -111,11 +113,14 @@ describe('FleetPoolsCard', () => {
     })
     await flushFocus()
 
-    const dialog = container.querySelector<HTMLElement>('[role="dialog"]')
-    const name = container.querySelector<HTMLInputElement>('input[placeholder="e.g. east-http"]')
+	const dialog = container.querySelector<HTMLElement>('[role="dialog"]')
+	const name = container.querySelector<HTMLInputElement>('input[placeholder="e.g. east-http"]')
+	const lifecycle = Array.from(container.querySelectorAll<HTMLSelectElement>('select')).find(select => select.parentElement?.textContent?.includes('Capacity lifecycle'))
     expect(dialog?.getAttribute('aria-modal')).toBe('true')
     expect(document.getElementById(dialog?.getAttribute('aria-labelledby') || '')?.textContent).toBe('New Pool')
-    expect(document.activeElement).toBe(name)
+	expect(document.activeElement).toBe(name)
+	expect(lifecycle?.value).toBe('')
+	expect(lifecycle?.selectedOptions[0]?.textContent).toBe('Target default')
 
     await act(async () => {
       document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
@@ -224,6 +229,13 @@ describe('FleetPoolsCard', () => {
       created_at: '',
       updated_at: '',
     })
+    fleetApiMock.listProvisionRequestInstances.mockResolvedValue({
+      instances: [{
+        id: 'intent-1', execution_target_id: 'target-1', fleet_pool_id: 'pool-1', provisioning_request_id: 'req-1',
+        generator_id: 'generator-1', provider_id: 'task-1', state: 'ready', archive_state: 'pending', created_at: '', updated_at: '',
+      }],
+      total: 1,
+    })
     await act(async () => {
       root.render(<FleetPoolsCard canManage />)
     })
@@ -242,6 +254,9 @@ describe('FleetPoolsCard', () => {
     expect(fleetApiMock.createProvisionRequest).toHaveBeenCalledWith({ fleet_pool_id: 'pool-1', desired_count: 4 })
     expect(container.textContent).toContain('not_configured')
     expect(container.textContent).toContain('provider_unconfigured')
+    expect(fleetApiMock.listProvisionRequestInstances).toHaveBeenCalledWith('req-1')
+    expect(container.textContent).toContain('Provider instances')
+    expect(container.textContent).toContain('task-1')
   })
 
   it('blocks fresh-pool provisioning until runtime targets are associated', async () => {
@@ -304,6 +319,32 @@ describe('FleetPoolsCard', () => {
     await flush()
 
     expect(fleetApiMock.createProvisionRequest).toHaveBeenCalledWith({ fleet_pool_id: 'pool-1', desired_count: 4 })
+  })
+
+  it('allows a normalized PaaS pool to request scale-to-zero', async () => {
+    fleetApiMock.listFleetPools.mockResolvedValue({
+      fleet_pools: [pool({ cloud_provider: 'aws_ecs_fargate', execution_target_id: 'target-ecs', min_size: 0, desired_size: 1 })],
+      count: 1,
+    })
+    fleetApiMock.createProvisionRequest.mockResolvedValue({
+      id: 'req-zero', fleet_pool_id: 'pool-1', status: 'provisioning', desired_count: 0, created_at: '', updated_at: '', events: [],
+    })
+    await act(async () => root.render(<FleetPoolsCard canManage />))
+    await flush()
+
+    const provision = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Provision')
+    await act(async () => provision?.click())
+    const input = container.querySelector<HTMLInputElement>('input[type="number"][min="0"]')
+    expect(input?.min).toBe('0')
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+      setter?.call(input, '0')
+      input?.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    const request = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Request provisioning')
+    expect(request?.disabled).toBe(false)
+    await act(async () => request?.click())
+    expect(fleetApiMock.createProvisionRequest).toHaveBeenCalledWith({ fleet_pool_id: 'pool-1', desired_count: 0 })
   })
 
   it('rejects impossible pool sizes before calling the API', async () => {

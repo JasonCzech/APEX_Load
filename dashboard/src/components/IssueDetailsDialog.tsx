@@ -1,4 +1,4 @@
-import { useId, useRef } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 
 import { useModalDialog } from '../hooks/useModalDialog'
@@ -23,12 +23,21 @@ interface Props {
   onClose: () => void
 }
 
+const ISSUE_PAGE_SIZE = 100
+
 export default function IssueDetailsDialog({ title, issues, onClose }: Props) {
   const dialogRef = useRef<HTMLDivElement | null>(null)
   const closeRef = useRef<HTMLButtonElement | null>(null)
   const titleId = useId()
   const descriptionId = useId()
+  const pageStatusId = useId()
+  const [page, setPage] = useState(0)
   useModalDialog({ dialogRef, initialFocusRef: closeRef, onClose })
+  useEffect(() => setPage(0), [issues, title])
+  const pageCount = Math.max(1, Math.ceil(issues.length / ISSUE_PAGE_SIZE))
+  const safePage = Math.min(page, pageCount - 1)
+  const pageStart = safePage * ISSUE_PAGE_SIZE
+  const visibleIssues = issues.slice(pageStart, pageStart + ISSUE_PAGE_SIZE)
 
   return createPortal((
     <div className="modal-overlay issue-details-overlay" {...dialogBackdropProps(onClose, `Close ${title}`)}>
@@ -51,8 +60,14 @@ export default function IssueDetailsDialog({ title, issues, onClose }: Props) {
             Close
           </button>
         </div>
-        <div className="issue-details-list">
-          {issues.map(issue => {
+        <div
+          className="issue-details-list"
+          role="region"
+          aria-label={`${title}, items ${issues.length === 0 ? 0 : pageStart + 1} through ${pageStart + visibleIssues.length} of ${issues.length}`}
+          aria-describedby={pageStatusId}
+          tabIndex={0}
+        >
+          {visibleIssues.map(issue => {
             const content = (
               <>
                 <span className={`issue-details-severity ${issue.severity}`}>{issue.severity}</span>
@@ -81,6 +96,33 @@ export default function IssueDetailsDialog({ title, issues, onClose }: Props) {
             )
           })}
         </div>
+        <nav className="issue-details-pagination" aria-label={`${title} pages`}>
+          <span id={pageStatusId} aria-live="polite">
+            {issues.length === 0
+              ? 'No issues to display.'
+              : `Showing ${pageStart + 1}–${pageStart + visibleIssues.length} of ${issues.length}. Page ${safePage + 1} of ${pageCount}.`}
+          </span>
+          {pageCount > 1 && (
+            <div role="group" aria-label="Issue page controls">
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                disabled={safePage === 0}
+                onClick={() => setPage(Math.max(0, safePage - 1))}
+              >
+                Previous {ISSUE_PAGE_SIZE}
+              </button>
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                disabled={safePage >= pageCount - 1}
+                onClick={() => setPage(Math.min(pageCount - 1, safePage + 1))}
+              >
+                Next {ISSUE_PAGE_SIZE}
+              </button>
+            </div>
+          )}
+        </nav>
       </div>
     </div>
   ), document.body)

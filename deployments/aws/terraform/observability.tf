@@ -2,11 +2,17 @@
 # service. Declaring it here means retention and encryption are governed rather
 # than defaulting to "never expire, AWS-managed key".
 resource "aws_cloudwatch_log_group" "cluster" {
+  count             = local.eks_enabled ? 1 : 0
   name              = "/aws/eks/${local.name}/cluster"
   retention_in_days = 90
   kms_key_id        = aws_kms_key.storage.arn
 
   tags = local.tags
+}
+
+moved {
+  from = aws_cloudwatch_log_group.cluster
+  to   = aws_cloudwatch_log_group.cluster[0]
 }
 
 resource "aws_cloudwatch_log_group" "application" {

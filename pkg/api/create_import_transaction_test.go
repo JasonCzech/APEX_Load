@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -16,6 +17,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/engine"
 	recbrowser "github.com/jasonczech/apexload/pkg/recorder/browser"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
@@ -29,6 +31,52 @@ type mutateJMeterScriptBeforeScenarioFailureStore struct {
 
 	mu       sync.Mutex
 	scriptID string
+}
+
+type importPublicationListCountingStore struct {
+	*libraryAtomicForwardingStore
+	mu          sync.Mutex
+	listScripts int
+}
+
+type directImportClaimWriteCountingStore struct {
+	*libraryAtomicForwardingStore
+	mu          sync.Mutex
+	claimWrites int
+}
+
+func (s *directImportClaimWriteCountingStore) CompareAndSwapSetting(key, expectedValue, nextValue string) (bool, error) {
+	if key == libraryImportClaimsSettingKey {
+		s.mu.Lock()
+		s.claimWrites++
+		s.mu.Unlock()
+	}
+	return s.libraryAtomicForwardingStore.CompareAndSwapSetting(key, expectedValue, nextValue)
+}
+
+func (s *directImportClaimWriteCountingStore) writes() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.claimWrites
+}
+
+func (s *importPublicationListCountingStore) ListScripts(projectID string, folderID *string) ([]*dsl.Script, error) {
+	s.mu.Lock()
+	s.listScripts++
+	s.mu.Unlock()
+	return s.libraryAtomicForwardingStore.ListScripts(projectID, folderID)
+}
+
+func (s *importPublicationListCountingStore) resetListScripts() {
+	s.mu.Lock()
+	s.listScripts = 0
+	s.mu.Unlock()
+}
+
+func (s *importPublicationListCountingStore) scriptListCalls() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.listScripts
 }
 
 func (s *mutateJMeterScriptBeforeScenarioFailureStore) CreateScriptIfAbsent(script *dsl.Script) (bool, error) {
@@ -264,6 +312,504 @@ func TestCreateImportTransactionRecoversScriptAndScenarioAfterCrash(t *testing.T
 	}
 	if len(claims) != 0 {
 		t.Fatalf("recovered transaction claims remain: %#v", claims)
+	}
+}
+
+func TestCreateImportTransactionPublishesBatchOnlyAfterCommit(t *testing.T) {
+	base, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "direct-import-publication.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer base.Close()
+
+	server := NewServer(ServerConfig{Store: base})
+	first := libraryTestScript(uuid.NewString(), "First staged script", storage.DefaultProjectID, "/first")
+	second := libraryTestScript(uuid.NewString(), "Second staged script", storage.DefaultProjectID, "/second")
+	scenarioID := uuid.NewString()
+	scenarioRequest := CreateScenarioRequest{
+		Name: "Staged scenario", Duration: "1m", ScenarioMode: "vuser_driven",
+		Groups: []CreateGroupEntry{
+			{Name: "First", ScriptID: first.ID, Role: GroupRoleLoad, VUsers: 1, InitStrategy: "at_runtime"},
+			{Name: "Second", ScriptID: second.ID, Role: GroupRoleLoad, VUsers: 1, InitStrategy: "at_runtime"},
+		},
+	}
+	transaction, err := newCreateImportTransaction(
+		server,
+		"publication-test",
+		[]*dsl.Script{first, second},
+		scenarioID,
+		&scenarioRequest,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer transaction.rollback()
+
+	if _, err := transaction.createScript(first); err != nil {
+		t.Fatal(err)
+	}
+	// The row is durable for recovery, but no user-facing runner operation may
+	// observe it while the rest of the batch is absent.
+	if _, err := base.GetScript(first.ID); err != nil {
+		t.Fatalf("staged durable script missing: %v", err)
+	}
+	if _, err := getPublishedImportScript(base, first.ID); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("published durable lookup exposed staged script: %v", err)
+	}
+	if scripts, err := listPublishedImportScripts(base, storage.DefaultProjectID, nil); err != nil || len(scripts) != 0 {
+		t.Fatalf("published durable listing = %#v, %v; want empty", scripts, err)
+	}
+	if _, ok := server.runner.GetScript(first.ID); ok {
+		t.Fatal("GetScript published the first staged script")
+	}
+	if scripts := server.runner.ListScripts(); len(scripts) != 0 {
+		t.Fatalf("ListScripts published a partial batch: %#v", scripts)
+	}
+	if items, total := server.libraryCatalogPage(storage.DefaultProjectID, "script", 0, 10); len(items) != 0 || total != 0 {
+		t.Fatalf("library catalog published a staged script: items=%#v total=%d", items, total)
+	}
+	if _, err := server.runner.ReplayScript(first.ID, engine.ReplayOptions{}); err == nil || !strings.Contains(err.Error(), "script not found") {
+		t.Fatalf("ReplayScript error = %v, want unpublished script not found", err)
+	}
+	if _, err := server.runner.CreateTest(CreateTestRequest{
+		Name: "must not compile staged script", Duration: "1m",
+		Groups: []CreateGroupEntry{{Name: "Users", ScriptID: first.ID, VUsers: 1}},
+	}); err == nil || !strings.Contains(err.Error(), "script not found") {
+		t.Fatalf("CreateTest error = %v, want staged script rejected", err)
+	}
+
+	// A second controller constructed while the owner heartbeat is live must not
+	// steal the transaction, and its boot-loaded cache must apply the same fence.
+	observer := NewServer(ServerConfig{Store: base})
+	if _, ok := observer.runner.GetScript(first.ID); ok {
+		t.Fatal("replacement reader published a live staged script")
+	}
+
+	const readers = 8
+	errCh := make(chan error, readers)
+	start := make(chan struct{})
+	var readersWG sync.WaitGroup
+	for reader := 0; reader < readers; reader++ {
+		readersWG.Add(1)
+		go func() {
+			defer readersWG.Done()
+			<-start
+			for attempt := 0; attempt < 25; attempt++ {
+				if err := observer.runner.reloadStoredScripts(); err != nil {
+					errCh <- err
+					return
+				}
+				if _, ok := observer.runner.GetScript(first.ID); ok {
+					errCh <- errors.New("concurrent GetScript published a staged asset")
+					return
+				}
+				if scripts := observer.runner.ListScripts(); len(scripts) != 0 {
+					errCh <- fmt.Errorf("concurrent ListScripts published %d staged assets", len(scripts))
+					return
+				}
+			}
+		}()
+	}
+	close(start)
+	if _, err := transaction.createScript(second); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := transaction.createScenario(scenarioID, scenarioRequest); err != nil {
+		t.Fatal(err)
+	}
+	readersWG.Wait()
+	close(errCh)
+	for err := range errCh {
+		t.Error(err)
+	}
+	if _, ok := server.runner.GetScenario(scenarioID); ok {
+		t.Fatal("GetScenario published a staged scenario")
+	}
+	if scenarios := server.runner.ListScenarios(); len(scenarios) != 0 {
+		t.Fatalf("ListScenarios published a staged scenario: %#v", scenarios)
+	}
+	if items, total := server.libraryCatalogPage(storage.DefaultProjectID, "scenario", 0, 10); len(items) != 0 || total != 0 {
+		t.Fatalf("library catalog published a staged scenario: items=%#v total=%d", items, total)
+	}
+
+	if err := transaction.commit(); err != nil {
+		t.Fatal(err)
+	}
+	if err := observer.runner.reloadStoredScripts(); err != nil {
+		t.Fatal(err)
+	}
+	if err := observer.runner.reloadStoredScenarios(); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{first.ID, second.ID} {
+		if _, ok := observer.runner.GetScript(id); !ok {
+			t.Fatalf("committed script %s is not published", id)
+		}
+		if _, err := getPublishedImportScript(base, id); err != nil {
+			t.Fatalf("committed durable script %s is not published: %v", id, err)
+		}
+	}
+	if scripts := observer.runner.ListScripts(); len(scripts) != 2 {
+		t.Fatalf("committed script count = %d, want 2", len(scripts))
+	}
+	if _, ok := observer.runner.GetScenario(scenarioID); !ok {
+		t.Fatal("committed scenario is not published")
+	}
+}
+
+func TestDirectImportClaimCheckpointsUseConstantDurableWrites(t *testing.T) {
+	base, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "direct-import-bulk-claims.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer base.Close()
+	store := &directImportClaimWriteCountingStore{
+		libraryAtomicForwardingStore: &libraryAtomicForwardingStore{Store: base},
+	}
+	server := NewServer(ServerConfig{Store: store})
+	const itemCount = 1000
+	scripts := make([]*dsl.Script, 0, itemCount)
+	for index := 0; index < itemCount; index++ {
+		scripts = append(scripts, libraryTestScript(
+			fmt.Sprintf("bulk-claim-%04d", index),
+			fmt.Sprintf("Bulk claim %04d", index),
+			storage.DefaultProjectID,
+			fmt.Sprintf("/bulk/%04d", index),
+		))
+	}
+	transaction, err := newCreateImportTransaction(server, "bulk-claim-test", scripts, "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, script := range scripts {
+		if _, err := transaction.createScript(script); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := transaction.commit(); err != nil {
+		t.Fatal(err)
+	}
+	// Acquire, bulk prepare, bulk applied, terminal commit, and best-effort
+	// cleanup are the only claim-setting writes. This bound is independent of N.
+	if writes := store.writes(); writes > 5 {
+		t.Fatalf("1000-item direct import used %d durable claim writes, want <= 5", writes)
+	}
+}
+
+func TestCreateImportTransactionCannotCommitReservedSubset(t *testing.T) {
+	base, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "direct-import-partial-commit.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer base.Close()
+	server := NewServer(ServerConfig{Store: base})
+	first := libraryTestScript(uuid.NewString(), "Applied", storage.DefaultProjectID, "/applied")
+	second := libraryTestScript(uuid.NewString(), "Reserved only", storage.DefaultProjectID, "/reserved")
+	transaction, err := newCreateImportTransaction(server, "partial-commit", []*dsl.Script{first, second}, "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := transaction.createScript(first); err != nil {
+		t.Fatal(err)
+	}
+	if err := transaction.commit(); err == nil || !strings.Contains(err.Error(), "1 of 2 reserved assets were applied") {
+		t.Fatalf("partial commit error = %v", err)
+	}
+	if _, ok := server.runner.GetScript(first.ID); ok {
+		t.Fatal("failed partial commit published its applied prefix")
+	}
+	claims, err := server.loadLibraryImportClaims()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(claims) != 2 || claims[0].Committed || claims[1].Committed {
+		t.Fatalf("partial commit terminalized claims: %#v", claims)
+	}
+	if err := transaction.rollback(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := base.GetScript(first.ID); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("partial commit rollback left applied script: %v", err)
+	}
+}
+
+func TestLibraryCatalogPaginatesAndCountsOnlyPublishedAssets(t *testing.T) {
+	base, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "direct-import-catalog-page.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer base.Close()
+	server := NewServer(ServerConfig{Store: base})
+	published := libraryTestScript(uuid.NewString(), "Zulu published", storage.DefaultProjectID, "/published")
+	if _, err := server.runner.StoreScriptDurable(published); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	if err := base.SaveProject(&storage.Project{ID: "foreign-project", Name: "Foreign", CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	foreign := libraryTestScript(uuid.NewString(), "Aardvark foreign", "foreign-project", "/foreign")
+	if _, err := server.runner.StoreScriptDurable(foreign); err != nil {
+		t.Fatal(err)
+	}
+	staged := libraryTestScript(uuid.NewString(), "Alpha staged", storage.DefaultProjectID, "/staged")
+	transaction, err := newCreateImportTransaction(server, "catalog-page", []*dsl.Script{staged}, "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer transaction.rollback()
+	if _, err := transaction.createScript(staged); err != nil {
+		t.Fatal(err)
+	}
+	page, total := server.libraryCatalogPage(storage.DefaultProjectID, "script", 0, 1)
+	if total != 1 || len(page) != 1 || page[0].ID != published.ID {
+		t.Fatalf("catalog page/total included staged asset: page=%#v total=%d", page, total)
+	}
+	page, total = server.libraryCatalogPage(storage.DefaultProjectID, "script", 1, 1)
+	if total != 1 || len(page) != 0 {
+		t.Fatalf("catalog offset counted staged asset: page=%#v total=%d", page, total)
+	}
+}
+
+func TestBrowserDirectImportRetainsCommittedClaimsUntilExplicitCleanup(t *testing.T) {
+	base, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "browser-retained-claims.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer base.Close()
+	server := NewServer(ServerConfig{Store: base})
+	script := libraryTestScript(uuid.NewString(), "Browser retained", storage.DefaultProjectID, "/browser")
+	transaction, err := newCreateImportTransaction(server, "browser-recording", []*dsl.Script{script}, "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := transaction.createScript(script); err != nil {
+		t.Fatal(err)
+	}
+	if err := transaction.commitRetainingClaims(); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := server.runner.GetScript(script.ID); !ok {
+		t.Fatal("durably committed retained claim did not publish its script")
+	}
+	claims, err := server.loadLibraryImportClaims()
+	if err != nil || len(claims) != 1 || !claims[0].Committed {
+		t.Fatalf("retained terminal claims = %#v, %v", claims, err)
+	}
+	if err := server.recoverExpiredLibraryImportClaims(); err != nil {
+		t.Fatal(err)
+	}
+	claims, err = server.loadLibraryImportClaims()
+	if err != nil || len(claims) != 1 || !claims[0].Committed {
+		t.Fatalf("generic recovery removed browser adoption evidence: %#v, %v", claims, err)
+	}
+	if err := transaction.cleanupCommittedClaims(); err != nil {
+		t.Fatal(err)
+	}
+	if err := transaction.cleanupCommittedClaims(); err != nil {
+		t.Fatalf("idempotent committed cleanup: %v", err)
+	}
+	claims, err = server.loadLibraryImportClaims()
+	if err != nil || len(claims) != 0 {
+		t.Fatalf("explicit committed cleanup left claims: %#v, %v", claims, err)
+	}
+}
+
+func TestUnrelatedClaimAcquisitionPreservesCommittedBrowserPublicationEvidence(t *testing.T) {
+	base, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "browser-retained-claims-unrelated.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer base.Close()
+	server := NewServer(ServerConfig{Store: base})
+	browserScript := libraryTestScript(uuid.NewString(), "Browser retained", storage.DefaultProjectID, "/browser")
+	transaction, err := newCreateImportTransaction(server, "browser-recording", []*dsl.Script{browserScript}, "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := transaction.createScript(browserScript); err != nil {
+		t.Fatal(err)
+	}
+	if err := transaction.commitRetainingClaims(); err != nil {
+		t.Fatal(err)
+	}
+
+	unrelatedItem := LibraryBundleItem{
+		Kind: "script", SourceInstanceID: "unrelated-source", SourceItemID: "unrelated-script",
+		ProjectID: storage.DefaultProjectID, ContentHash: "sha256:unrelated-claim",
+	}
+	unrelated, err := server.acquireLibraryImportClaims(
+		LibraryBundle{Items: []LibraryBundleItem{unrelatedItem}},
+		"direct-import:unrelated",
+		storage.DefaultProjectID,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	claims, err := server.loadLibraryImportClaims()
+	if err != nil {
+		t.Fatal(err)
+	}
+	retainedBrowser := 0
+	unrelatedActive := 0
+	for _, claim := range claims {
+		switch {
+		case claim.RemoteID == "direct-import:browser-recording" && claim.Committed:
+			retainedBrowser++
+		case claim.OwnerID == unrelated.owner && !claim.Committed:
+			unrelatedActive++
+		}
+	}
+	if retainedBrowser != 1 || unrelatedActive != 1 || len(claims) != 2 {
+		t.Fatalf("claims after unrelated acquisition = %#v, want retained browser evidence plus unrelated owner", claims)
+	}
+
+	if err := unrelated.abandon(); err != nil {
+		t.Fatal(err)
+	}
+	if err := server.recoverExpiredLibraryImportClaims(); err != nil {
+		t.Fatal(err)
+	}
+	if err := transaction.cleanupCommittedClaims(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestCreateImportTransactionRecoversImmediatelyOnSingleControllerRestart(t *testing.T) {
+	base, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "direct-import-immediate-restart.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer base.Close()
+
+	firstServer := NewServer(ServerConfig{Store: base})
+	script := libraryTestScript(uuid.NewString(), "Crash-visible script", storage.DefaultProjectID, "/crash-visible")
+	scenarioID := uuid.NewString()
+	scenarioRequest := CreateScenarioRequest{
+		Name: "Crash-visible scenario", Duration: "1m", ScenarioMode: "vuser_driven",
+		Groups: []CreateGroupEntry{{Name: "Users", ScriptID: script.ID, Role: GroupRoleLoad, VUsers: 1, InitStrategy: "at_runtime"}},
+	}
+	transaction, err := newCreateImportTransaction(
+		firstServer,
+		"immediate-restart-test",
+		[]*dsl.Script{script},
+		scenarioID,
+		&scenarioRequest,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := transaction.createScript(script); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := transaction.createScenario(scenarioID, scenarioRequest); err != nil {
+		t.Fatal(err)
+	}
+
+	// Simulate process loss without waiting for the normal claim TTL. The new
+	// single-controller instance has no live owner registration and reconciles
+	// the abandoned batch during construction, before it can serve a read.
+	transaction.stopClaimHeartbeat()
+	transaction.closeWithoutAssetCompensation()
+	replacement := NewServer(ServerConfig{Store: base})
+	if _, err := base.GetScript(script.ID); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("staged script survived immediate restart recovery: %v", err)
+	}
+	if _, _, err := base.GetScenario(scenarioID); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("staged scenario survived immediate restart recovery: %v", err)
+	}
+	if _, ok := replacement.runner.GetScript(script.ID); ok {
+		t.Fatal("replacement runner published the recovered script")
+	}
+	if _, ok := replacement.runner.GetScenario(scenarioID); ok {
+		t.Fatal("replacement runner published the recovered scenario")
+	}
+	claims, err := replacement.loadLibraryImportClaims()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(claims) != 0 {
+		t.Fatalf("immediate restart left claims: %#v", claims)
+	}
+}
+
+func TestCreateImportTransactionRollbackCannotPublishStaleReadSnapshot(t *testing.T) {
+	base, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "direct-import-rollback-read-race.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer base.Close()
+
+	server := NewServer(ServerConfig{Store: base})
+	script := libraryTestScript(uuid.NewString(), "Rollback race script", storage.DefaultProjectID, "/rollback-race")
+	transaction, err := newCreateImportTransaction(server, "rollback-read-race", []*dsl.Script{script}, "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := transaction.createScript(script); err != nil {
+		t.Fatal(err)
+	}
+
+	snapshotRead := make(chan struct{})
+	continueRead := make(chan struct{})
+	var once sync.Once
+	server.runner.afterImportPublicationSnapshot = func() {
+		once.Do(func() {
+			close(snapshotRead)
+			<-continueRead
+		})
+	}
+	readResult := make(chan bool, 1)
+	go func() {
+		_, ok := server.runner.GetScript(script.ID)
+		readResult <- ok
+	}()
+	select {
+	case <-snapshotRead:
+	case <-time.After(2 * time.Second):
+		t.Fatal("reader did not reach publication barrier")
+	}
+	if err := transaction.rollback(); err != nil {
+		t.Fatal(err)
+	}
+	close(continueRead)
+	select {
+	case visible := <-readResult:
+		if visible {
+			t.Fatal("reader returned a stale script snapshot after rollback removed the row and claim")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("reader remained blocked after rollback")
+	}
+	if _, err := base.GetScript(script.ID); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("rollback left durable script: %v", err)
+	}
+}
+
+func TestImportPublicationListRevalidationUsesBoundedStoreScans(t *testing.T) {
+	base, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "direct-import-list-scan.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer base.Close()
+	store := &importPublicationListCountingStore{
+		libraryAtomicForwardingStore: &libraryAtomicForwardingStore{Store: base},
+	}
+	for index := 0; index < 64; index++ {
+		script := libraryTestScript(uuid.NewString(), fmt.Sprintf("Published %d", index), storage.DefaultProjectID, fmt.Sprintf("/%d", index))
+		if err := base.SaveScript(script); err != nil {
+			t.Fatal(err)
+		}
+	}
+	server := NewServer(ServerConfig{Store: store})
+	store.resetListScripts()
+	if got := len(server.runner.ListScripts()); got != 64 {
+		t.Fatalf("published script count = %d, want 64", got)
+	}
+	// One scan revalidates the full snapshot; a per-candidate Get/List loop would
+	// make this grow with library size and regress 100k-script installations.
+	if calls := store.scriptListCalls(); calls != 1 {
+		t.Fatalf("ListScripts storage calls = %d, want exactly 1", calls)
 	}
 }
 

@@ -35,12 +35,7 @@ func TestImportMultipartFidelityBytesAreMaskedAttestedAndReconciled(t *testing.T
 
 	response := credentialPreservingImportResponseValue(raw)
 	responseScript := decodeProjectedScript(t, response)
-	assertMultipartFidelityBytesEqual(
-		t,
-		responseScript.Actions[0],
-		raw.Actions[0],
-		"editable import response",
-	)
+	assertMaskedMultipartFidelityOccurrence(t, responseScript.Actions[0])
 	reviewScript := decodeProjectedScript(t, sanitizeImportReviewEvidence(raw))
 	assertMaskedMultipartFidelityOccurrence(t, reviewScript.Actions[0])
 

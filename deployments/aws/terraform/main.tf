@@ -1,5 +1,6 @@
 locals {
-  name = var.name_prefix
+  name        = var.name_prefix
+  eks_enabled = var.controller_compute == "eks" || var.generator_compute == "eks"
 
   tags = {
     Application = "apexload"

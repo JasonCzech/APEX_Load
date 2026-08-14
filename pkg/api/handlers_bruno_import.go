@@ -26,6 +26,7 @@ import (
 
 	"github.com/google/uuid"
 	brunoconvert "github.com/jasonczech/apexload/pkg/convert/bruno"
+	"github.com/jasonczech/apexload/pkg/convert/credentialpolicy"
 	"github.com/jasonczech/apexload/pkg/convert/paramize"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/engine"
@@ -261,9 +262,10 @@ func (s *Server) handleInspectBrunoImport(w http.ResponseWriter, r *http.Request
 	// latter as a disclosure-safe boolean before the protected payload is
 	// cleared from the in-memory lifecycle copy.
 	retainedSecretValues := make(map[string]bool, len(result.SecretRequirements))
+	normalizeBrunoImportResultCredentialValues(result)
 	for index := range result.SecretRequirements {
 		requirement := &result.SecretRequirements[index]
-		if requirement.Value != "" {
+		if brunoImportCredentialValueUsable(requirement.Value) {
 			retainedSecretValues[requirement.ID] = true
 		}
 		setBrunoDestinationPreservationEvidence(requirement, requirement.Value != "", true)
@@ -285,7 +287,7 @@ func (s *Server) handleInspectBrunoImport(w http.ResponseWriter, r *http.Request
 		// separately when (and only when) migration is explicitly requested.
 		result.SecretRequirements[index].SourceValueAvailable =
 			migrationAuthorized && migrationValuesValid &&
-				result.SecretRequirements[index].Value != ""
+				brunoImportCredentialValueUsable(result.SecretRequirements[index].Value)
 	}
 	secretAvailability := make(map[string]bool, len(result.SecretRequirements))
 	for _, requirement := range result.SecretRequirements {
@@ -779,7 +781,7 @@ func (s *Server) handleCommitBrunoImport(w http.ResponseWriter, r *http.Request)
 	var existing *dsl.Script
 	var activeRevision *storage.BrunoSourceRevision
 	if mode == "sync" {
-		existing, err = s.store.GetScript(targetID)
+		existing, err = getPublishedImportScript(s.store, targetID)
 		if err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
 				writeError(w, http.StatusNotFound, "Bruno synchronization target script not found")
@@ -900,6 +902,10 @@ func (s *Server) handleCommitBrunoImport(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusServiceUnavailable, "no atomic create-only project secret provider is configured")
 		return
 	}
+	if migrationNeeded && !secretstore.SupportsCreatedValueRollback(s.projectSecretStore) {
+		writeError(w, http.StatusServiceUnavailable, "the project secret provider cannot safely roll back a failed import; configure the encrypted project secret store or preserve the imported values")
+		return
+	}
 	// Claim the encrypted one-shot session before any source credential write or
 	// durable identifier allocation. Concurrent requests may both complete the
 	// read-only checks above, but only one is allowed to cross this boundary.
@@ -988,6 +994,7 @@ func (s *Server) handleCommitBrunoImport(w http.ResponseWriter, r *http.Request)
 		}
 	}
 	_, actorSubject, _ := s.resolveAuditActor(r)
+	migrationActor := importSecretMigrationActor("bruno", session.ID)
 	if err := claimLease.assertOwned(); err != nil {
 		_, restoreErr := restoreClaimedSession()
 		writeError(w, http.StatusConflict, errors.Join(err, restoreErr).Error())
@@ -999,7 +1006,7 @@ func (s *Server) handleCommitBrunoImport(w http.ResponseWriter, r *http.Request)
 		request.SecretBindings,
 		existing,
 		request.ProjectID,
-		actorSubject,
+		migrationActor,
 		migrateSecrets,
 		brunoSecretMigrationWindow{StartedAt: session.CreatedAt, ExpiresAt: session.ExpiresAt},
 		claimLease.assertOwned,
@@ -1007,6 +1014,17 @@ func (s *Server) handleCommitBrunoImport(w http.ResponseWriter, r *http.Request)
 	if err != nil {
 		var partial *brunoSecretMigrationPartialError
 		if errors.As(err, &partial) {
+			attemptedMigrations := append([]secretstore.Metadata(nil), partial.Migrated...)
+			retainedMigrations, rollbackErr := s.rollbackCreatedImportSecrets(
+				r, request.ProjectID, migrationActor, partial.Migrated, "migration_failed",
+			)
+			partial.RemainingNames = remainingImportSecretMigrationNames(
+				partial.RemainingNames, attemptedMigrations, retainedMigrations,
+			)
+			partial.Migrated = retainedMigrations
+			if rollbackErr != nil {
+				partial.Cause = errors.Join(partial.Cause, rollbackErr)
+			}
 			sessionRetained, restoreErr := restoreClaimedSession()
 			reason := projectSecretErrorReason(partial.Cause)
 			if restoreErr != nil {
@@ -1030,7 +1048,7 @@ func (s *Server) handleCommitBrunoImport(w http.ResponseWriter, r *http.Request)
 				reason,
 				len(partial.RemainingNames) > 0,
 				sessionRetained,
-				"The committed names remain configured. Correct the provider failure or bind the remaining names, then retry this import session.",
+				"Any value still listed under migrated was not safely rolled back. Correct the provider failure or bind the remaining names, then retry this import session.",
 			)
 			return
 		}
@@ -1066,6 +1084,13 @@ func (s *Server) handleCommitBrunoImport(w http.ResponseWriter, r *http.Request)
 		})
 		return
 	}
+	rollbackMigrations := func(trigger string) error {
+		retained, rollbackErr := s.rollbackCreatedImportSecrets(
+			r, request.ProjectID, migrationActor, migrations, trigger,
+		)
+		migrations = retained
+		return rollbackErr
+	}
 	script.Config.Bruno.SecretBindings = secretBindings
 	// Bruno commits intentionally combine the library row, encrypted source
 	// artifacts, and revision record in one storage transaction, so they cannot
@@ -1073,6 +1098,8 @@ func (s *Server) handleCommitBrunoImport(w http.ResponseWriter, r *http.Request)
 	// boundary before handing the canonical script to that transactional store.
 	safeScript, err := preparePersistentImportedLibraryScript(script, existing, "bruno")
 	if err != nil {
+		rollbackErr := rollbackMigrations("script_validation_failed")
+		err = errors.Join(err, rollbackErr)
 		sessionRetained, restoreErr := restoreClaimedSession()
 		if len(migrations) > 0 {
 			s.recordAuditEvent(r, "script.import.bruno."+mode, "failure", "bruno_import_session", session.ID, request.ProjectID, map[string]any{
@@ -1093,7 +1120,7 @@ func (s *Server) handleCommitBrunoImport(w http.ResponseWriter, r *http.Request)
 				"secret_bindings_required",
 				false,
 				sessionRetained,
-				"Correct the validation issue and retry this import session; already migrated logical names remain configured.",
+				"Any value still listed under migrated was not safely rolled back. Correct the validation issue and retry this import session.",
 			)
 			return
 		}
@@ -1156,6 +1183,8 @@ func (s *Server) handleCommitBrunoImport(w http.ResponseWriter, r *http.Request)
 		},
 	}
 	if err := claimLease.assertOwned(); err != nil {
+		rollbackErr := rollbackMigrations("session_claim_lost")
+		err = errors.Join(err, rollbackErr)
 		sessionRetained, restoreErr := restoreClaimedSession()
 		if len(migrations) > 0 {
 			writeBrunoSecretPartialFailure(
@@ -1163,7 +1192,7 @@ func (s *Server) handleCommitBrunoImport(w http.ResponseWriter, r *http.Request)
 				"Bruno import session claim was lost after source credentials were migrated",
 				request.ProjectID, session.ID, migrations, nil, "", "session_claim_lost",
 				false, sessionRetained,
-				"Retry the import session only when session_retained=true; migrated logical names remain configured.",
+				"Any value still listed under migrated was not safely rolled back. Retry only when session_retained=true.",
 			)
 			return
 		}
@@ -1172,6 +1201,43 @@ func (s *Server) handleCommitBrunoImport(w http.ResponseWriter, r *http.Request)
 	}
 	commitResult, err := brunoStore.CommitBrunoImport(commit)
 	if err != nil {
+		// A database/provider can lose the commit acknowledgement after making the
+		// transaction durable. Reconcile by the immutable revision ID before any
+		// compensating secret deletion. On an unavailable lookup the only safe
+		// action is to retain both the secrets and retryable session.
+		reconciledRevision, reconcileErr := brunoStore.GetBrunoSourceRevision(session.RevisionID, request.ProjectID)
+		switch {
+		case reconcileErr == nil && reconciledRevision != nil &&
+			reconciledRevision.ScriptID == script.ID && reconciledRevision.CanonicalScript != nil:
+			commitResult = &storage.BrunoImportCommitResult{
+				Script: reconciledRevision.CanonicalScript, Revision: reconciledRevision, Created: mode == "create",
+			}
+			err = nil
+		case !errors.Is(reconcileErr, sql.ErrNoRows):
+			sessionRetained, restoreErr := restoreClaimedSession()
+			committedNames := make([]string, 0, len(migrations))
+			for _, metadata := range migrations {
+				committedNames = append(committedNames, metadata.Name)
+			}
+			sort.Strings(committedNames)
+			s.recordAuditEvent(r, "script.import.bruno."+mode, "failure", "bruno_import_session", session.ID, request.ProjectID, map[string]any{
+				"stage": "script_commit", "reason": "commit_state_unknown", "commit_state": "unknown",
+				"secrets_migrated": len(migrations), "session_retained": sessionRetained,
+			})
+			writeJSON(w, http.StatusServiceUnavailable, map[string]any{
+				"error": "Bruno script commit state could not be confirmed. Newly migrated secrets were retained to avoid deleting credentials that a committed script may reference.",
+				"code":  "bruno_import_commit_state_unknown", "commit_state": "unknown", "script_committed": "unknown",
+				"session_retained": sessionRetained, "manual_retry_safe": sessionRetained,
+				"idempotency_session_id": session.ID, "committed_names": committedNames,
+				"secret_migrations": migrations, "source_values_retained": sessionRetained,
+				"source_values_disclosed": false, "session_restore_failed": restoreErr != nil,
+			})
+			return
+		}
+	}
+	if err != nil {
+		rollbackErr := rollbackMigrations("script_commit_failed")
+		err = errors.Join(err, rollbackErr)
 		// Validation has completed, but the transactional commit failed. Restore
 		// the encrypted one-shot session so optimistic conflicts and transient DB
 		// failures can be corrected without a full source re-upload.
@@ -1199,17 +1265,33 @@ func (s *Server) handleCommitBrunoImport(w http.ResponseWriter, r *http.Request)
 				reason,
 				false,
 				sessionRetained,
-				"Retry this import session; already migrated logical names remain configured.",
+				"Any value still listed under migrated was not safely rolled back. Retry this retained import session after correcting the commit failure.",
 			)
 			return
 		}
+		reason := brunoCommitErrorReason(err)
+		s.recordAuditEvent(r, "script.import.bruno."+mode, "failure", "bruno_import_session", session.ID, request.ProjectID, map[string]any{
+			"stage":                         "script_commit",
+			"reason":                        reason,
+			"secrets_migrated":              0,
+			"secret_migrations_rolled_back": true,
+		})
 		switch {
 		case errors.Is(err, storage.ErrBrunoImportConcurrentChange):
-			writeError(w, http.StatusConflict, err.Error())
+			writeJSON(w, http.StatusConflict, map[string]any{
+				"error": "Bruno script changed before the import could be committed; newly migrated secrets were rolled back",
+				"code":  "bruno_import_concurrent_change", "reason": reason, "session_retained": sessionRetained,
+			})
 		case errors.Is(err, storage.ErrBrunoRevisionNotFound):
-			writeError(w, http.StatusNotFound, err.Error())
+			writeJSON(w, http.StatusNotFound, map[string]any{
+				"error": "The selected Bruno source revision is no longer available; newly migrated secrets were rolled back",
+				"code":  "bruno_import_revision_not_found", "reason": reason, "session_retained": sessionRetained,
+			})
 		default:
-			writeError(w, http.StatusInternalServerError, err.Error())
+			writeJSON(w, http.StatusInternalServerError, map[string]any{
+				"error": "Bruno script commit failed; newly migrated secrets were rolled back",
+				"code":  "bruno_import_commit_failed", "reason": reason, "session_retained": sessionRetained,
+			})
 		}
 		return
 	}
@@ -1584,6 +1666,10 @@ func (s *Server) handleCommitBrunoNativeImport(
 		writeError(w, http.StatusServiceUnavailable, "no atomic create-only project secret provider is configured")
 		return
 	}
+	if migrationNeeded && !secretstore.SupportsCreatedValueRollback(s.projectSecretStore) {
+		writeError(w, http.StatusServiceUnavailable, "the project secret provider cannot safely roll back a failed import; configure the encrypted project secret store or preserve the imported values")
+		return
+	}
 
 	claimedSession, artifactObjects, claimActor, claimToken, err := s.claimBrunoImportSession(
 		r, request.ImportSessionID, request.ProjectID,
@@ -1667,14 +1753,26 @@ func (s *Server) handleCommitBrunoNativeImport(
 		writeError(w, http.StatusConflict, errors.Join(err, restoreErr).Error())
 		return
 	}
+	migrationActor := importSecretMigrationActor("bruno-native", session.ID)
 	secretBindings, missing, migrations, migrationConflicts, err := s.bindOrMigrateBrunoImportSecrets(
-		r, requirements, request.SecretBindings, nil, request.ProjectID, actorSubject, migrateSecrets,
+		r, requirements, request.SecretBindings, nil, request.ProjectID, migrationActor, migrateSecrets,
 		brunoSecretMigrationWindow{StartedAt: session.CreatedAt, ExpiresAt: session.ExpiresAt},
 		claimLease.assertOwned,
 	)
 	if err != nil {
 		var partial *brunoSecretMigrationPartialError
 		if errors.As(err, &partial) {
+			attemptedMigrations := append([]secretstore.Metadata(nil), partial.Migrated...)
+			retainedMigrations, rollbackErr := s.rollbackCreatedImportSecrets(
+				r, request.ProjectID, migrationActor, partial.Migrated, "migration_failed",
+			)
+			partial.RemainingNames = remainingImportSecretMigrationNames(
+				partial.RemainingNames, attemptedMigrations, retainedMigrations,
+			)
+			partial.Migrated = retainedMigrations
+			if rollbackErr != nil {
+				partial.Cause = errors.Join(partial.Cause, rollbackErr)
+			}
 			sessionRetained, restoreErr := restoreClaimedSession()
 			reason := projectSecretErrorReason(partial.Cause)
 			if restoreErr != nil {
@@ -1685,7 +1783,7 @@ func (s *Server) handleCommitBrunoNativeImport(
 				"Bruno source credential migration partially completed", request.ProjectID, session.ID,
 				partial.Migrated, partial.RemainingNames, partial.FailedName, reason,
 				len(partial.RemainingNames) > 0, sessionRetained,
-				"The committed names remain configured. Correct the provider failure or bind the remaining names, then retry this import session.",
+				"Any value still listed under migrated was not safely rolled back. Correct the provider failure or bind the remaining names, then retry this import session.",
 			)
 			return
 		}
@@ -1713,8 +1811,16 @@ func (s *Server) handleCommitBrunoNativeImport(
 		})
 		return
 	}
+	rollbackMigrations := func(trigger string) error {
+		retained, rollbackErr := s.rollbackCreatedImportSecrets(
+			r, request.ProjectID, migrationActor, migrations, trigger,
+		)
+		migrations = retained
+		return rollbackErr
+	}
 
 	failAfterSecretMigration := func(status int, code string, message string, cause error, reason string) {
+		cause = errors.Join(cause, rollbackMigrations(reason))
 		sessionRetained, restoreErr := restoreClaimedSession()
 		if restoreErr != nil {
 			cause = errors.Join(cause, fmt.Errorf("restore Bruno import session: %w", restoreErr))
@@ -1723,7 +1829,7 @@ func (s *Server) handleCommitBrunoNativeImport(
 			writeBrunoSecretPartialFailure(
 				w, status, code, message, request.ProjectID, session.ID, migrations, nil, "", reason,
 				false, sessionRetained,
-				"Correct the failure and retry this import session; migrated logical names remain configured.",
+				"Any value still listed under migrated was not safely rolled back. Correct the failure and retry this retained import session.",
 			)
 			return
 		}
@@ -2443,14 +2549,14 @@ func planBrunoNativeSecretBindings(
 			return nil, nil, fmt.Errorf("native Bruno secret requirement %q has no suggested name", requirement.ID)
 		}
 		name := grouped[suggested]
-		if name == "" && migrate && requirement.Value != "" {
+		if name == "" && migrate && brunoImportCredentialValueUsable(requirement.Value) {
 			name = suggested
 		}
 		if name == "" && requirement.ExistingReference {
 			name = suggested
 		}
 		if name == "" {
-			if requirement.Value != "" {
+			if brunoImportCredentialValueUsable(requirement.Value) {
 				replacements[requirementID] = requirement.Value
 			}
 			// Existing governed references and unresolved source expressions
@@ -2683,7 +2789,7 @@ func (s *Server) handleGetBrunoImportSource(w http.ResponseWriter, r *http.Reque
 		writeError(w, http.StatusServiceUnavailable, "Bruno revision storage is not configured")
 		return
 	}
-	script, err := s.store.GetScript(r.PathValue("id"))
+	script, err := getPublishedImportScript(s.store, r.PathValue("id"))
 	if err != nil {
 		writeError(w, http.StatusNotFound, "script not found")
 		return
@@ -2804,7 +2910,7 @@ func (s *Server) handleListBrunoImportRevisions(w http.ResponseWriter, r *http.R
 		writeError(w, http.StatusServiceUnavailable, "Bruno revision storage is not configured")
 		return
 	}
-	script, err := s.store.GetScript(r.PathValue("id"))
+	script, err := getPublishedImportScript(s.store, r.PathValue("id"))
 	if err != nil {
 		writeError(w, http.StatusNotFound, "script not found")
 		return
@@ -2827,7 +2933,7 @@ func (s *Server) handleRollbackBrunoImport(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusServiceUnavailable, "Bruno revision storage is not configured")
 		return
 	}
-	script, err := s.store.GetScript(r.PathValue("id"))
+	script, err := getPublishedImportScript(s.store, r.PathValue("id"))
 	if err != nil {
 		writeError(w, http.StatusNotFound, "script not found")
 		return
@@ -2936,7 +3042,7 @@ func (s *Server) handlePreviewBrunoProjection(w http.ResponseWriter, r *http.Req
 		writeError(w, http.StatusServiceUnavailable, "Bruno revision storage is not configured")
 		return
 	}
-	script, err := s.store.GetScript(r.PathValue("id"))
+	script, err := getPublishedImportScript(s.store, r.PathValue("id"))
 	if err != nil {
 		writeError(w, http.StatusNotFound, "script not found")
 		return
@@ -3735,6 +3841,7 @@ func (s *Server) persistBrunoImportSession(ctx context.Context, session *brunoIm
 	if session == nil || session.Result == nil {
 		return errors.New("Bruno import session is required")
 	}
+	normalizeBrunoImportResultCredentialValues(session.Result)
 	objects, err := s.brunoArtifactStore()
 	if err != nil {
 		return err
@@ -3789,7 +3896,7 @@ func boundedBrunoImportSecretValues(requirements []brunoconvert.SecretRequiremen
 	values := make(map[string]string)
 	total := 0
 	for _, requirement := range requirements {
-		if requirement.Value == "" {
+		if !brunoImportCredentialValueUsable(requirement.Value) {
 			continue
 		}
 		id := strings.TrimSpace(requirement.ID)
@@ -3834,7 +3941,7 @@ func validateBrunoMigrationSecretValues(
 	values := make(map[string]string)
 	total := 0
 	for _, requirement := range requirements {
-		if requirement.Value == "" {
+		if !brunoImportCredentialValueUsable(requirement.Value) {
 			continue
 		}
 		id := strings.TrimSpace(requirement.ID)
@@ -4028,6 +4135,7 @@ func decodePersistedBrunoImportSession(id string, payload []byte) (*brunoImportS
 			return session, fmt.Errorf("persisted Bruno source credential requirement %q is unknown", requirementID)
 		}
 	}
+	normalizeBrunoImportResultCredentialValues(envelope.Result)
 	return session, nil
 }
 
@@ -4176,7 +4284,7 @@ func clearStringMap(values map[string]string) {
 }
 
 func (s *Server) previewBrunoSynchronization(scriptID, projectID string, result *brunoconvert.Result) (*brunoSyncPreview, error) {
-	existing, err := s.store.GetScript(strings.TrimSpace(scriptID))
+	existing, err := getPublishedImportScript(s.store, strings.TrimSpace(scriptID))
 	if err != nil {
 		return nil, err
 	}
@@ -4280,11 +4388,54 @@ func mergeBrunoSynchronization(existing, imported *dsl.Script) *dsl.Script {
 
 func brunoRequirementsHaveSourceValues(requirements []brunoconvert.SecretRequirement) bool {
 	for _, requirement := range requirements {
-		if requirement.Value != "" {
+		if brunoImportCredentialValueUsable(requirement.Value) {
 			return true
 		}
 	}
 	return false
+}
+
+func brunoImportCredentialValueUsable(value string) bool {
+	_, usable := credentialpolicy.RecoverableSourceCredentialValue(value)
+	return usable
+}
+
+func normalizeBrunoImportCredentialValues(requirements []brunoconvert.SecretRequirement) {
+	for index := range requirements {
+		requirement := &requirements[index]
+		if requirement.Value == "" || brunoImportCredentialValueUsable(requirement.Value) {
+			continue
+		}
+		requirement.Value = ""
+		requirement.SourceValueAvailable = false
+		requirement.DestinationValuePreserved = false
+		requirement.PreservationUnavailableReason = brunoconvert.PreservationUnavailableSourceValue
+	}
+}
+
+func normalizeBrunoImportResultCredentialValues(result *brunoconvert.Result) {
+	if result == nil {
+		return
+	}
+	unavailable := make(map[string]struct{})
+	for _, requirement := range result.SecretRequirements {
+		if requirement.Value != "" && !brunoImportCredentialValueUsable(requirement.Value) {
+			unavailable[requirement.ID] = struct{}{}
+		}
+	}
+	normalizeBrunoImportCredentialValues(result.SecretRequirements)
+	for index := range result.Scripts {
+		normalizeBrunoImportCredentialValues(result.Scripts[index].SecretRequirements)
+		for requirementIndex := range result.Scripts[index].SecretRequirements {
+			requirement := &result.Scripts[index].SecretRequirements[requirementIndex]
+			if _, sourceUnavailable := unavailable[requirement.ID]; !sourceUnavailable {
+				continue
+			}
+			requirement.SourceValueAvailable = false
+			requirement.DestinationValuePreserved = false
+			requirement.PreservationUnavailableReason = brunoconvert.PreservationUnavailableSourceValue
+		}
+	}
 }
 
 func (s *Server) authorizeBrunoSourceSecretMigration(
@@ -4326,7 +4477,7 @@ func brunoCanonicalPreservesSourceCredentials(
 	}
 	preserved := false
 	for _, requirement := range requirements {
-		if requirement.Value == "" {
+		if !brunoImportCredentialValueUsable(requirement.Value) {
 			continue
 		}
 		suggested := strings.TrimSpace(requirement.SuggestedName)
@@ -4345,7 +4496,7 @@ func brunoSecretMatchesRetainedMigration(
 	actor string,
 	window brunoSecretMigrationWindow,
 ) bool {
-	if sourceValue == "" ||
+	if !brunoImportCredentialValueUsable(sourceValue) ||
 		strings.TrimSpace(metadata.CreatedBy) == "" ||
 		strings.TrimSpace(metadata.CreatedBy) != strings.TrimSpace(actor) ||
 		metadata.CreatedAt.IsZero() ||
@@ -4408,7 +4559,7 @@ func (s *Server) bindOrMigrateBrunoImportSecrets(
 				requestedExplicitly = true
 			}
 		}
-		if !requestedExplicitly && !migrate && requirement.Value != "" {
+		if !requestedExplicitly && !migrate && brunoImportCredentialValueUsable(requirement.Value) {
 			// The protected source value is already part of the imported
 			// destination. Do not silently bind it to an unrelated configured
 			// secret with the same suggested name, and do not require the
@@ -4453,7 +4604,7 @@ func (s *Server) bindOrMigrateBrunoImportSecrets(
 		// Automatically selected existing names otherwise conflict unless
 		// provider metadata proves this protected session created the equal value.
 		explicitExistingBindingApproved := requestedExplicitly && explicitExistingBinding
-		if canMigrate && requirement.Value != "" && !explicitExistingBindingApproved {
+		if canMigrate && brunoImportCredentialValueUsable(requirement.Value) && !explicitExistingBindingApproved {
 			existingValue, existingMetadata, getErr := store.Get(probeCtx, projectID, name)
 			switch {
 			case getErr == nil:

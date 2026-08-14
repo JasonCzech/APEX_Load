@@ -18,6 +18,7 @@ import (
 	"strings"
 	"unicode"
 
+	"github.com/jasonczech/apexload/pkg/convert/credentialpolicy"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/dslwalk"
 	"github.com/jasonczech/apexload/pkg/engine"
@@ -39,17 +40,22 @@ var (
 // executable script field. Path is an RFC 6901 JSON Pointer to the containing
 // string; Occurrence distinguishes multiple sentinels in that same string.
 type SecretBindingRequirement struct {
-	ID                   string `json:"id"`
-	Path                 string `json:"path"`
-	Occurrence           int    `json:"occurrence"`
-	Label                string `json:"label"`
-	Context              string `json:"context"`
-	SuggestedName        string `json:"suggested_name"`
-	Replacement          string `json:"replacement,omitempty"`
-	ScriptIndex          int    `json:"script_index"`
-	ScriptID             string `json:"script_id,omitempty"`
-	ScriptName           string `json:"script_name,omitempty"`
-	SourceValueAvailable bool   `json:"source_value_available,omitempty"`
+	ID                                 string   `json:"id"`
+	Path                               string   `json:"path"`
+	Occurrence                         int      `json:"occurrence"`
+	Label                              string   `json:"label"`
+	Context                            string   `json:"context"`
+	SuggestedName                      string   `json:"suggested_name"`
+	Replacement                        string   `json:"replacement,omitempty"`
+	ScriptIndex                        int      `json:"script_index"`
+	ScriptID                           string   `json:"script_id,omitempty"`
+	ScriptName                         string   `json:"script_name,omitempty"`
+	SourceVariable                     string   `json:"source_variable,omitempty"`
+	UnresolvedSourceVariable           bool     `json:"unresolved_source_variable,omitempty"`
+	AffectedPaths                      []string `json:"affected_paths,omitempty"`
+	PreservationUnavailableReason      string   `json:"preservation_unavailable_reason,omitempty"`
+	PreservationUnavailableDescription string   `json:"preservation_unavailable_description,omitempty"`
+	SourceValueAvailable               bool     `json:"source_value_available,omitempty"`
 	// DestinationValuePreserved is server-derived occurrence evidence. It means
 	// the editable destination candidate still contains the imported executable
 	// value at this exact requirement path; it is independent of whether an
@@ -71,6 +77,7 @@ type applySecretBindingsRequest struct {
 type redactionTraversalContext struct {
 	actionName string
 	actionType string
+	headerName string
 }
 
 type internalSecretBindingRequirement struct {
@@ -295,13 +302,14 @@ func discoverRedactedValues(value any, path string, ctx redactionTraversalContex
 				ID:            secretBindingRequirementID(scriptIndex, scriptID, scriptName, path, occurrence, typed, ctx),
 				Path:          path,
 				Occurrence:    occurrence,
-				Label:         secretBindingLabel(path),
+				Label:         secretBindingLabel(path, ctx),
 				Context:       secretBindingContext(path, ctx),
 				SuggestedName: suggested,
 				Replacement:   replacement,
 				ScriptIndex:   scriptIndex,
 				ScriptID:      scriptID,
 				ScriptName:    scriptName,
+				AffectedPaths: []string{path},
 			}, sourceValue: typed})
 		}
 	}
@@ -342,6 +350,14 @@ func isJavaVMParameterJSONPath(path string) bool {
 }
 
 func redactionContextForMap(value map[string]any, path string, prior redactionTraversalContext) redactionTraversalContext {
+	if isHeaderListEntryJSONPath(path) {
+		headerName, _ := value["name"].(string)
+		if headerName = strings.TrimSpace(headerName); headerName != "" &&
+			!strings.Contains(headerName, maskedScriptSecret) {
+			prior.headerName = headerName
+		}
+		return prior
+	}
 	if !isActionObjectJSONPath(path) {
 		return prior
 	}
@@ -357,6 +373,19 @@ func redactionContextForMap(value map[string]any, path string, prior redactionTr
 		actionType = prior.actionType
 	}
 	return redactionTraversalContext{actionName: actionName, actionType: actionType}
+}
+
+func isHeaderListEntryJSONPath(path string) bool {
+	tokens, err := splitJSONPointer(path)
+	if err != nil || len(tokens) < 2 || !isDecimalToken(tokens[len(tokens)-1]) {
+		return false
+	}
+	switch normalizeScriptFieldName(tokens[len(tokens)-2]) {
+	case "headerlist", "defaultheaderlist":
+		return true
+	default:
+		return false
+	}
 }
 
 func isActionObjectJSONPath(path string) bool {
@@ -468,7 +497,7 @@ func secretBindingRequirementID(scriptIndex int, scriptID, scriptName, path stri
 	digest := sha256.New()
 	for _, part := range []string{
 		strconv.Itoa(scriptIndex), scriptID, scriptName, path, strconv.Itoa(occurrence),
-		sourceValue, ctx.actionName, ctx.actionType,
+		sourceValue, ctx.actionName, ctx.actionType, ctx.headerName,
 	} {
 		_, _ = fmt.Fprintf(digest, "%d:", len(part))
 		_, _ = digest.Write([]byte(part))
@@ -500,7 +529,10 @@ func splitJSONPointer(path string) ([]string, error) {
 	return result, nil
 }
 
-func secretBindingLabel(path string) string {
+func secretBindingLabel(path string, ctx redactionTraversalContext) string {
+	if headerName := strings.TrimSpace(ctx.headerName); headerName != "" {
+		return headerName + " request header"
+	}
 	tokens, _ := splitJSONPointer(path)
 	if len(tokens) == 0 {
 		return "Secret value"
@@ -535,6 +567,12 @@ func humanizeSecretLabel(value string) string {
 }
 
 func secretBindingContext(path string, ctx redactionTraversalContext) string {
+	if headerName := strings.TrimSpace(ctx.headerName); headerName != "" {
+		if name := strings.TrimSpace(ctx.actionName); name != "" && !strings.Contains(name, maskedScriptSecret) {
+			return fmt.Sprintf("Sensitive request header %q on action %q. Supplies the credential value sent in the %s HTTP header when this request runs.", headerName, name, headerName)
+		}
+		return fmt.Sprintf("Sensitive request header %q. Supplies the credential value sent in the %s HTTP header when this request runs.", headerName, headerName)
+	}
 	if name := strings.TrimSpace(ctx.actionName); name != "" && !strings.Contains(name, maskedScriptSecret) {
 		return fmt.Sprintf("Action %q", name)
 	}
@@ -1243,13 +1281,124 @@ func annotateSecretBindingDestinationValues(
 			continue
 		}
 		sourceValue := values[requirement.Occurrence]
-		// Every non-empty authored occurrence remains in the exact
-		// credential-preserving candidate, including a password whose literal
-		// bytes happen to equal the disclosure sentinel. Portable {{secret.*}}
-		// references are not projected into requirements at all.
-		requirement.DestinationValuePreserved = sourceValue != ""
+		status := credentialpolicy.ClassifySourceCredentialValue(sourceValue)
+		requirement.DestinationValuePreserved = status.Available()
+		if !status.Available() {
+			setSecretBindingPreservationUnavailable(requirement, status)
+		}
 	}
 	return requirements
+}
+
+// replaceUnavailableImportCredentialValues removes disclosure placeholders
+// from the exact server-owned candidate before an opaque draft capability is
+// issued. The placeholder is replaced with the same deterministic governed
+// reference offered by review; it is never retained as executable auth data.
+func replaceUnavailableImportCredentialValues(script *dsl.Script) (*dsl.Script, error) {
+	if script == nil {
+		return nil, errors.New("script is required")
+	}
+	working := cloneScriptDefinition(script)
+	if working == nil {
+		return nil, errors.New("failed to clone import script")
+	}
+	projected := maskScriptSecrets(working)
+	if projected == nil {
+		return nil, errors.New("failed to project import script")
+	}
+	rawRoot, err := scriptAsJSONValue(working)
+	if err != nil {
+		return nil, err
+	}
+	projectedRoot, err := scriptAsJSONValue(projected)
+	if err != nil {
+		return nil, err
+	}
+	requirements := discoverSecretBindingRequirementsValue(projectedRoot, 0)
+	bindings := make([]secretBindingSelection, 0)
+	for _, requirement := range requirements {
+		rawValue, rawOK := jsonPointerString(rawRoot, requirement.Path)
+		projectedValue, projectedOK := jsonPointerString(projectedRoot, requirement.Path)
+		if !rawOK || !projectedOK {
+			continue
+		}
+		values, aligned := extractProjectedRedactions(rawValue, projectedValue)
+		if !aligned || requirement.Occurrence < 0 || requirement.Occurrence >= len(values) {
+			continue
+		}
+		value := values[requirement.Occurrence]
+		status := credentialpolicy.ClassifySourceCredentialValue(value)
+		if status == credentialpolicy.SourceCredentialValueRedactedPlaceholder ||
+			status == credentialpolicy.SourceCredentialValueUnsafeEncoding {
+			bindings = append(bindings, secretBindingSelection{
+				RequirementID: requirement.ID,
+				SecretName:    requirement.SuggestedName,
+			})
+		}
+	}
+	if len(bindings) == 0 {
+		return working, nil
+	}
+	resolved, _, err := applyPreservedRedactedSecretBindings(working, 0, bindings)
+	if err != nil {
+		return nil, fmt.Errorf("replace unavailable imported credential: %w", err)
+	}
+	return resolved, nil
+}
+
+// scriptHasUnavailableImportCredentialValues distinguishes an authored source
+// placeholder from an ordinary disclosure projection. Such a draft still needs
+// a one-shot server capability even though it contains no recoverable raw
+// credential: the capability authorizes replacing the exact placeholder with
+// a governed reference during mutation or commit.
+func scriptHasUnavailableImportCredentialValues(script *dsl.Script) bool {
+	if script == nil {
+		return false
+	}
+	projected := maskScriptSecrets(script)
+	if projected == nil {
+		return true
+	}
+	rawValue, err := scriptAsJSONValue(script)
+	if err != nil {
+		return true
+	}
+	projectedValue, err := scriptAsJSONValue(projected)
+	if err != nil {
+		return true
+	}
+	requirements := secretBindingRequirementsForImportScripts([]any{projectedValue})
+	requirements = annotateSecretBindingDestinationValues(
+		requirements,
+		[]any{rawValue},
+		[]any{projectedValue},
+	)
+	for _, requirement := range requirements {
+		if requirement.PreservationUnavailableReason != "" {
+			return true
+		}
+	}
+	return false
+}
+
+func setSecretBindingPreservationUnavailable(
+	requirement *SecretBindingRequirement,
+	status credentialpolicy.SourceCredentialValueStatus,
+) {
+	if requirement == nil {
+		return
+	}
+	switch status {
+	case credentialpolicy.SourceCredentialValueRedactedPlaceholder:
+		requirement.PreservationUnavailableReason = "redacted_source_value"
+		requirement.PreservationUnavailableDescription = "The source contains a redaction placeholder rather than the original credential. Configure the destination secret before replay."
+	case credentialpolicy.SourceCredentialValueUnsafeEncoding:
+		requirement.PreservationUnavailableReason = "unsafe_source_encoding"
+		requirement.PreservationUnavailableDescription = "The source credential uses an ambiguous or over-depth encoding and cannot be preserved safely. Configure the destination secret before replay."
+	case credentialpolicy.SourceCredentialValueMissing:
+		requirement.PreservationUnavailableReason = "source_value_unavailable"
+		requirement.PreservationUnavailableDescription = "The source does not contain a recoverable credential value. Configure the destination secret before replay."
+	}
 }
 
 func hasScriptJSONNode(value any) bool {
@@ -1306,10 +1455,16 @@ func (s *Server) handleApplyScriptSecretBindings(w http.ResponseWriter, r *http.
 		}()
 	}
 	resolver := applySecretBindings
+	mutationTarget := req.Script
 	if mutationClaim != nil {
 		resolver = applyCredentialPreservingSecretBindings
+		if mutationClaim.Script == nil {
+			writeError(w, http.StatusConflict, "credential-preserving import draft is invalid or expired; run the import again")
+			return
+		}
+		mutationTarget = mutationClaim.Script
 	}
-	resolved, remaining, err := resolver(req.Script, req.ScriptIndex, req.Bindings)
+	resolved, remaining, err := resolver(mutationTarget, req.ScriptIndex, req.Bindings)
 	if err != nil {
 		var stale *staleSecretBindingRequirementsError
 		if errors.As(err, &stale) {
@@ -1343,7 +1498,7 @@ func (s *Server) handleApplyScriptSecretBindings(w http.ResponseWriter, r *http.
 		}
 	}
 	response := map[string]any{
-		"script":                      resolved,
+		"script":                      maskImportDraftForResponse(resolved),
 		"secret_binding_requirements": remaining,
 	}
 	if expiresAt != nil {

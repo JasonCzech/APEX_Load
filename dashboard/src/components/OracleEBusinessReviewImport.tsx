@@ -4,12 +4,14 @@ import { useAsyncTask } from '../hooks/useAsyncTask'
 import { useApi } from '../hooks/useApi'
 import { type OracleEBusinessReviewResponse } from '../types/scriptImports'
 import { getErrorMessage } from '../utils/errorUtils'
+import IssueDetailsDialog, { type IssueDetail, type IssueDetailSeverity } from './IssueDetailsDialog'
 import './SampleScriptImport.css'
 import './ScriptImportReview.css'
 
 interface Props {
   projectId?: string
   onClose?: () => void
+  onOperationBusyChange?: (busy: boolean) => void
 }
 
 const packageOptions = [
@@ -20,7 +22,7 @@ const packageOptions = [
   { value: 'web_http_html', label: 'Generic Web HTTP/HTML' },
 ]
 
-export default function OracleEBusinessReviewImport({ projectId, onClose }: Props) {
+export default function OracleEBusinessReviewImport({ projectId, onClose, onOperationBusyChange }: Props) {
   const api = useApi()
   const reviewTask = useAsyncTask<OracleEBusinessReviewResponse>()
   const [name, setName] = useState('')
@@ -29,6 +31,12 @@ export default function OracleEBusinessReviewImport({ projectId, onClose }: Prop
   const [files, setFiles] = useState<Array<{ name: string; content: string }>>([])
   const [supportNotes, setSupportNotes] = useState<string[]>([])
   const [messageError, setMessageError] = useState('')
+  const [reviewDetailsOpen, setReviewDetailsOpen] = useState(false)
+
+  useEffect(() => {
+    onOperationBusyChange?.(reviewTask.pending)
+    return () => onOperationBusyChange?.(false)
+  }, [onOperationBusyChange, reviewTask.pending])
 
   useEffect(() => {
     let cancelled = false
@@ -70,6 +78,19 @@ export default function OracleEBusinessReviewImport({ projectId, onClose }: Prop
   }
 
   const review = reviewTask.value
+  const reviewIssues: IssueDetail[] = (review?.review_sections || []).flatMap(section => {
+    const severity = ['blocker', 'error', 'warning', 'info'].includes(section.severity || '')
+      ? section.severity as IssueDetailSeverity
+      : 'info'
+    const items = section.items?.length ? section.items : [section.summary || 'Review this source finding.']
+    return items.map((item, index) => ({
+      id: `${section.key}-${index}`,
+      severity,
+      title: section.title,
+      description: item,
+      source: section.summary && section.summary !== item ? section.summary : undefined,
+    }))
+  })
 
   return (
     <div className="sample-import">
@@ -162,18 +183,10 @@ export default function OracleEBusinessReviewImport({ projectId, onClose }: Prop
             {review.review_sections?.length ? (
               <div className="script-import-review-sections">
                 <h4>Review Sections ({review.review_sections.length})</h4>
-                <div className="script-import-review-section-list">
-                  {review.review_sections.map(section => (
-                    <details key={section.key} className={`script-import-review-section severity-${section.severity || 'info'}`} open={section.severity !== 'info'}>
-                      <summary>
-                        <span>{section.title}</span>
-                        <small>{section.severity}</small>
-                      </summary>
-                      {section.summary && <p>{section.summary}</p>}
-                      {section.items?.length ? <ul>{section.items.map((item, index) => <li key={`${section.key}-${index}`}>{item}</li>)}</ul> : null}
-                    </details>
-                  ))}
-                </div>
+                <p className="setting-desc">Open the focused review window for source signals, context, and required follow-up.</p>
+                <button className="btn btn-secondary" type="button" onClick={() => setReviewDetailsOpen(true)}>
+                  Review details ({reviewIssues.length})
+                </button>
               </div>
             ) : null}
             {review.next_actions?.length ? (
@@ -184,6 +197,13 @@ export default function OracleEBusinessReviewImport({ projectId, onClose }: Prop
             ) : null}
           </div>
         </div>
+      )}
+      {reviewDetailsOpen && (
+        <IssueDetailsDialog
+          title="Oracle E-Business review details"
+          issues={reviewIssues}
+          onClose={() => setReviewDetailsOpen(false)}
+        />
       )}
     </div>
   )

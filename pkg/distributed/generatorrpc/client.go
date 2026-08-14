@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"strings"
 	"sync"
 	"time"
@@ -468,13 +469,21 @@ type MetricsStream struct {
 func Dial(ctx context.Context, target string, opts ...grpc.DialOption) (*Client, error) {
 	// Transport security (TLS/mTLS/bearer token) comes from the APEXLOAD_GRPC_*
 	// env contract; plaintext without a token is the unconfigured fallback.
-	dialOptions, err := DialOptionsFromEnv()
+	generatorID, reverse := ReverseGeneratorID(target)
+	dialOptions, err := dialOptionsFromEnv(reverse)
 	if err != nil {
 		return nil, fmt.Errorf("generator transport config: %w", err)
 	}
+	dialTarget := target
+	if reverse {
+		dialTarget = "passthrough:///reverse-" + generatorID
+		dialOptions = append(dialOptions, grpc.WithContextDialer(func(dialCtx context.Context, _ string) (net.Conn, error) {
+			return DefaultReverseRegistry.Dial(dialCtx, generatorID)
+		}))
+	}
 	dialOptions = append(dialOptions, opts...)
 
-	conn, err := grpc.DialContext(ctx, target, dialOptions...)
+	conn, err := grpc.DialContext(ctx, dialTarget, dialOptions...)
 	if err != nil {
 		return nil, err
 	}

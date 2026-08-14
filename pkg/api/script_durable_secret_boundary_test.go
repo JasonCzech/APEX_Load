@@ -226,8 +226,17 @@ func TestImportedRecordedResourceURLIsPreservedDurablyAndMaskedOnRead(t *testing
 		t.Fatal(err)
 	}
 	editableURLs := stringSliceValue(editableScript.Metadata.Import.Preserved["recorded_resource_urls"])
-	if len(editableURLs) != 1 || editableURLs[0] != rawURL {
-		t.Fatalf("editable import draft changed recorded resource URL: %#v", editableURLs)
+	if len(editableURLs) != 1 || editableURLs[0] == rawURL {
+		t.Fatalf("editable import draft exposed the exact recorded resource URL: %#v", editableURLs)
+	}
+	for _, credential := range []string{username, password, token} {
+		if strings.Contains(editableURLs[0], credential) {
+			t.Fatalf("editable import draft leaked %q: %#v", credential, editableURLs)
+		}
+	}
+	if !strings.Contains(editableURLs[0], "variant=modern") ||
+		!strings.Contains(editableURLs[0], maskedScriptSecret) {
+		t.Fatalf("editable import draft lost safe URL structure: %#v", editableURLs)
 	}
 
 	masked := maskScriptSecrets(durable)

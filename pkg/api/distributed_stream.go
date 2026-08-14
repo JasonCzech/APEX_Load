@@ -1560,7 +1560,13 @@ func (b *distributedExecutionBackend) completeDistributedTestRun(tr *TestRunner,
 		if archiveRecord != nil {
 			tr.persistAndAttachRunArchiveUnderFence(test, archiveRecord)
 		}
+		tr.mu.RLock()
+		archiveTerminal := archiveRecord != nil && test.Archive != nil
+		tr.mu.RUnlock()
 		unlockArchiveCommit()
+		if b.releaseRunCapacity != nil {
+			b.releaseRunCapacity(test, archiveTerminal)
+		}
 		return
 	}
 	unlockArchiveCommit := tr.lockArchiveCommitFence(test.ID)
@@ -1615,6 +1621,12 @@ func (b *distributedExecutionBackend) completeDistributedTestRun(tr *TestRunner,
 		slog.Error("distributed terminal transition remains retryable after bounded persistence retries", "test_id", test.ID, "status", finalStatus, "error", err)
 	}
 	unlockArchiveCommit()
+	if b.releaseRunCapacity != nil {
+		tr.mu.RLock()
+		archiveTerminal := archiveRecord != nil && test.Archive != nil
+		tr.mu.RUnlock()
+		b.releaseRunCapacity(test, archiveTerminal)
+	}
 }
 
 func (tr *TestRunner) persistAndAttachRunArchive(test *ManagedTest, archiveRecord *storage.RunArchiveRecord) {

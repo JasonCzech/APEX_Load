@@ -1,5 +1,6 @@
 resource "aws_iam_role" "cluster" {
-  name = "${local.name}-eks-cluster"
+  count = local.eks_enabled ? 1 : 0
+  name  = "${local.name}-eks-cluster"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -14,13 +15,15 @@ resource "aws_iam_role" "cluster" {
 }
 
 resource "aws_iam_role_policy_attachment" "cluster" {
-  role       = aws_iam_role.cluster.name
+  count      = local.eks_enabled ? 1 : 0
+  role       = aws_iam_role.cluster[0].name
   policy_arn = "arn:${data.aws_partition.current.partition}:iam::aws:policy/AmazonEKSClusterPolicy"
 }
 
 resource "aws_eks_cluster" "main" {
+  count    = local.eks_enabled ? 1 : 0
   name     = local.name
-  role_arn = aws_iam_role.cluster.arn
+  role_arn = aws_iam_role.cluster[0].arn
   version  = var.kubernetes_version
 
   vpc_config {
@@ -40,7 +43,7 @@ resource "aws_eks_cluster" "main" {
 
   enabled_cluster_log_types = ["api", "audit", "authenticator", "controllerManager", "scheduler"]
 
-  depends_on = [aws_iam_role_policy_attachment.cluster]
+  depends_on = [aws_iam_role_policy_attachment.cluster[0]]
 
   tags = local.tags
 }
@@ -49,13 +52,15 @@ resource "aws_eks_cluster" "main" {
 # account token be exchanged for AWS credentials, so no static key ever has to
 # be stored for the controller's own identity.
 data "tls_certificate" "cluster_oidc" {
-  url = aws_eks_cluster.main.identity[0].oidc[0].issuer
+  count = local.eks_enabled ? 1 : 0
+  url   = aws_eks_cluster.main[0].identity[0].oidc[0].issuer
 }
 
 resource "aws_iam_openid_connect_provider" "cluster" {
-  url             = aws_eks_cluster.main.identity[0].oidc[0].issuer
+  count           = local.eks_enabled ? 1 : 0
+  url             = aws_eks_cluster.main[0].identity[0].oidc[0].issuer
   client_id_list  = ["sts.amazonaws.com"]
-  thumbprint_list = [data.tls_certificate.cluster_oidc.certificates[0].sha1_fingerprint]
+  thumbprint_list = [data.tls_certificate.cluster_oidc[0].certificates[0].sha1_fingerprint]
 
   tags = local.tags
 }
@@ -63,7 +68,8 @@ resource "aws_iam_openid_connect_provider" "cluster" {
 # --- Node groups ---
 
 resource "aws_iam_role" "node" {
-  name = "${local.name}-eks-node"
+  count = local.eks_enabled ? 1 : 0
+  name  = "${local.name}-eks-node"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -78,20 +84,21 @@ resource "aws_iam_role" "node" {
 }
 
 resource "aws_iam_role_policy_attachment" "node" {
-  for_each = toset([
+  for_each = local.eks_enabled ? toset([
     "AmazonEKSWorkerNodePolicy",
     "AmazonEKS_CNI_Policy",
     "AmazonEC2ContainerRegistryReadOnly",
-  ])
+  ]) : toset([])
 
-  role       = aws_iam_role.node.name
+  role       = aws_iam_role.node[0].name
   policy_arn = "arn:${data.aws_partition.current.partition}:iam::aws:policy/${each.value}"
 }
 
 resource "aws_eks_node_group" "controller" {
-  cluster_name    = aws_eks_cluster.main.name
+  count           = var.controller_compute == "eks" ? 1 : 0
+  cluster_name    = aws_eks_cluster.main[0].name
   node_group_name = "controller"
-  node_role_arn   = aws_iam_role.node.arn
+  node_role_arn   = aws_iam_role.node[0].arn
   subnet_ids      = aws_subnet.private[*].id
   instance_types  = [var.controller_node_instance_type]
 
@@ -119,9 +126,10 @@ resource "aws_eks_node_group" "controller" {
 # eks.amazonaws.com/nodegroup label, and it is exactly the value an
 # administrator selects in the allocation editor.
 resource "aws_eks_node_group" "generator" {
-  cluster_name    = aws_eks_cluster.main.name
+  count           = var.generator_compute == "eks" ? 1 : 0
+  cluster_name    = aws_eks_cluster.main[0].name
   node_group_name = "generator"
-  node_role_arn   = aws_iam_role.node.arn
+  node_role_arn   = aws_iam_role.node[0].arn
   subnet_ids      = aws_subnet.private[*].id
   instance_types  = [var.generator_node_instance_type]
 
@@ -168,4 +176,44 @@ resource "aws_eks_node_group" "generator" {
   depends_on = [aws_iam_role_policy_attachment.node]
 
   tags = merge(local.tags, { Name = "${local.name}-generator" })
+}
+
+moved {
+  from = aws_iam_role.cluster
+  to   = aws_iam_role.cluster[0]
+}
+
+moved {
+  from = aws_iam_role_policy_attachment.cluster
+  to   = aws_iam_role_policy_attachment.cluster[0]
+}
+
+moved {
+  from = aws_eks_cluster.main
+  to   = aws_eks_cluster.main[0]
+}
+
+moved {
+  from = data.tls_certificate.cluster_oidc
+  to   = data.tls_certificate.cluster_oidc[0]
+}
+
+moved {
+  from = aws_iam_openid_connect_provider.cluster
+  to   = aws_iam_openid_connect_provider.cluster[0]
+}
+
+moved {
+  from = aws_iam_role.node
+  to   = aws_iam_role.node[0]
+}
+
+moved {
+  from = aws_eks_node_group.controller
+  to   = aws_eks_node_group.controller[0]
+}
+
+moved {
+  from = aws_eks_node_group.generator
+  to   = aws_eks_node_group.generator[0]
 }

@@ -1,8 +1,7 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { ApplicationRepository, AuthoringCorrelationPreviewRequest, AuthoringCorrelationPreviewResponse, AuthoringSession, DashboardAuthEffectiveAccessResource, GitHubConfigResponse, GitHubPushResponse, GitHubScriptStatus, StoredScript } from '../types'
 import { useApi } from '../hooks/useApi'
 import { useGitHubApi } from '../hooks/api/useGitHubApi'
-import GitHubSyncModal from './GitHubSyncModal'
 import { useProject } from '../hooks/useProject'
 import { isEffectiveOperationAllowed } from '../utils/authAccessUtils'
 import AuthoringSessionsPanel from './AuthoringSessionsPanel'
@@ -32,6 +31,8 @@ import {
 } from './scriptSecretStatusRequest'
 import { requiredScriptSecrets } from './scriptSecretReferenceModel'
 import { loadGitHubScriptStatuses } from './scriptGitHubStatusModel'
+
+const GitHubSyncModal = lazy(() => import('./GitHubSyncModal'))
 
 interface Props {
   applicationRepository?: ApplicationRepository | null
@@ -936,6 +937,7 @@ export default function ScriptsPage({ applicationRepository, initialMode = 'list
           <LibraryFederationControls
             kind="script"
             federation={federation}
+            projectName={activeProject?.name}
             onConfigureRemotes={openRemoteSettings}
             summaryText={libraryQuery.trim() || releaseFilter !== 'all' ? `${sortedScripts.length} matching script${sortedScripts.length === 1 ? '' : 's'}` : 'Search by script, protocol, health, or release.'}
             filterControls={(
@@ -1018,23 +1020,27 @@ export default function ScriptsPage({ applicationRepository, initialMode = 'list
         </div>
       </div>
       {githubPushScript && githubConfig && (
-        <GitHubSyncModal
-          mode="push"
-          config={githubConfig}
-          script={githubPushScript}
-          projectId={activeProject?.id}
-          onClose={() => setGithubPushScript(null)}
-          onPushed={handleGithubPushed}
-        />
+        <Suspense fallback={null}>
+          <GitHubSyncModal
+            mode="push"
+            config={githubConfig}
+            script={githubPushScript}
+            projectId={activeProject?.id}
+            onClose={() => setGithubPushScript(null)}
+            onPushed={handleGithubPushed}
+          />
+        </Suspense>
       )}
       {githubImportOpen && githubConfig && (
-        <GitHubSyncModal
-          mode="import"
-          config={githubConfig}
-          projectId={activeProject?.id}
-          onClose={() => setGithubImportOpen(false)}
-          onImported={handleGithubImported}
-        />
+        <Suspense fallback={null}>
+          <GitHubSyncModal
+            mode="import"
+            config={githubConfig}
+            projectId={activeProject?.id}
+            onClose={() => setGithubImportOpen(false)}
+            onImported={handleGithubImported}
+          />
+        </Suspense>
       )}
       </ScriptsAuthoringShell>
     </>

@@ -12,17 +12,17 @@ output "aws_region" {
 
 output "eks_cluster_name" {
   description = "aws_cluster_name on the EKS cluster connection registered in APEX Load."
-  value       = aws_eks_cluster.main.name
+  value       = try(aws_eks_cluster.main[0].name, null)
 }
 
 output "eks_cluster_endpoint" {
   description = "api_server_url on the EKS cluster connection."
-  value       = aws_eks_cluster.main.endpoint
+  value       = try(aws_eks_cluster.main[0].endpoint, null)
 }
 
 output "eks_oidc_issuer_url" {
   description = "OIDC issuer backing IRSA for the controller and generator service accounts."
-  value       = aws_eks_cluster.main.identity[0].oidc[0].issuer
+  value       = try(aws_eks_cluster.main[0].identity[0].oidc[0].issuer, null)
 }
 
 output "ecr_controller_repository_url" {
@@ -52,22 +52,22 @@ output "storage_kms_key_arn" {
 
 output "controller_irsa_role_arn" {
   description = "eks.amazonaws.com/role-arn annotation on the controller service account."
-  value       = aws_iam_role.controller.arn
+  value       = try(aws_iam_role.controller[0].arn, null)
 }
 
 output "generator_irsa_role_arn" {
   description = "eks.amazonaws.com/role-arn annotation on the generator service account."
-  value       = aws_iam_role.generator.arn
+  value       = try(aws_iam_role.generator[0].arn, null)
 }
 
 output "efs_file_system_id" {
   description = "ReadWriteMany filesystem for the eks-ha overlay's import-assets PVC. Referenced by the efs-sc StorageClass; unused by the single-controller deployment."
-  value       = aws_efs_file_system.import_assets.id
+  value       = try(aws_efs_file_system.import_assets[0].id, null)
 }
 
 output "generator_node_group_name" {
   description = "The value NodeRef.AgentPool() reports from the eks.amazonaws.com/nodegroup label, and the node pool an allocation pins to."
-  value       = aws_eks_node_group.generator.node_group_name
+  value       = try(aws_eks_node_group.generator[0].node_group_name, null)
 }
 
 output "database_url_secret_arn" {

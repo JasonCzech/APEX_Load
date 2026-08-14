@@ -125,8 +125,9 @@ func (s *SQLiteStore) UpdateClusterConnectionIfUnchanged(conn *ClusterConnection
 
 	var currentUpdatedAt time.Time
 	var currentUpdatedRaw string
-	if err := tx.QueryRow(`SELECT updated_at, CAST(updated_at AS TEXT) FROM cluster_connections WHERE id = ?`, conn.ID).
-		Scan(&currentUpdatedAt, &currentUpdatedRaw); err != nil {
+	var currentKind string
+	if err := tx.QueryRow(`SELECT updated_at, CAST(updated_at AS TEXT), kind FROM cluster_connections WHERE id = ?`, conn.ID).
+		Scan(&currentUpdatedAt, &currentUpdatedRaw, &currentKind); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return false, nil
 		}
@@ -134,6 +135,9 @@ func (s *SQLiteStore) UpdateClusterConnectionIfUnchanged(conn *ClusterConnection
 	}
 	if !currentUpdatedAt.Equal(expectedUpdatedAt) {
 		return false, nil
+	}
+	if currentKind != conn.Kind {
+		return false, ErrClusterConnectionKindImmutable
 	}
 	conn.UpdatedAt = time.Now()
 	result, err := tx.Exec(`UPDATE cluster_connections SET
@@ -235,6 +239,22 @@ func (s *SQLiteStore) DeleteClusterConnectionIfUnreferenced(id string) (bool, er
 	}
 	if referencing > 0 {
 		return false, nil
+	}
+	// Every legacy cluster has a normalized execution-target projection. It is
+	// safe to remove that projection with the cluster only when no normalized
+	// pool or domain policy references it.
+	if err := tx.QueryRow(`SELECT COUNT(*) FROM execution_targets et WHERE et.cluster_connection_id = ? AND (
+		EXISTS (SELECT 1 FROM fleet_pools fp WHERE fp.execution_target_id = et.id) OR
+		EXISTS (SELECT 1 FROM domain_deployment_targets dt WHERE dt.default_execution_target_id = et.id) OR
+		EXISTS (SELECT 1 FROM domain_execution_target_allowlist da WHERE da.execution_target_id = et.id)
+	)`, id).Scan(&referencing); err != nil {
+		return false, err
+	}
+	if referencing > 0 {
+		return false, nil
+	}
+	if _, err := tx.Exec(`DELETE FROM execution_targets WHERE cluster_connection_id = ?`, id); err != nil {
+		return false, err
 	}
 	result, err := tx.Exec(`DELETE FROM cluster_connections WHERE id = ?`, id)
 	if err != nil {

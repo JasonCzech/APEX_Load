@@ -15,6 +15,7 @@
 # The single-controller (non-HA) deployment does not use this at all.
 
 resource "aws_security_group" "efs" {
+  count       = local.eks_enabled ? 1 : 0
   name        = "${local.name}-efs"
   description = "APEX Load EFS for the HA import-assets volume"
   vpc_id      = aws_vpc.main.id
@@ -31,6 +32,7 @@ resource "aws_security_group" "efs" {
 }
 
 resource "aws_efs_file_system" "import_assets" {
+  count          = local.eks_enabled ? 1 : 0
   creation_token = "${local.name}-import-assets"
   encrypted      = true
   kms_key_id     = aws_kms_key.storage.arn
@@ -50,15 +52,16 @@ resource "aws_efs_file_system" "import_assets" {
 # nodes in that subnet cannot mount the filesystem at all — which presents as a
 # pod that starts fine in one AZ and hangs in another.
 resource "aws_efs_mount_target" "import_assets" {
-  count = length(var.availability_zones)
+  count = local.eks_enabled ? length(var.availability_zones) : 0
 
-  file_system_id  = aws_efs_file_system.import_assets.id
+  file_system_id  = aws_efs_file_system.import_assets[0].id
   subnet_id       = aws_subnet.private[count.index].id
-  security_groups = [aws_security_group.efs.id]
+  security_groups = [aws_security_group.efs[0].id]
 }
 
 resource "aws_efs_file_system_policy" "import_assets" {
-  file_system_id = aws_efs_file_system.import_assets.id
+  count          = local.eks_enabled ? 1 : 0
+  file_system_id = aws_efs_file_system.import_assets[0].id
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -69,10 +72,25 @@ resource "aws_efs_file_system_policy" "import_assets" {
       # narrower form: refuse everything not over TLS.
       Principal = { AWS = "*" }
       Action    = "*"
-      Resource  = aws_efs_file_system.import_assets.arn
+      Resource  = aws_efs_file_system.import_assets[0].arn
       Condition = {
         Bool = { "aws:SecureTransport" = "false" }
       }
     }]
   })
+}
+
+moved {
+  from = aws_security_group.efs
+  to   = aws_security_group.efs[0]
+}
+
+moved {
+  from = aws_efs_file_system.import_assets
+  to   = aws_efs_file_system.import_assets[0]
+}
+
+moved {
+  from = aws_efs_file_system_policy.import_assets
+  to   = aws_efs_file_system_policy.import_assets[0]
 }

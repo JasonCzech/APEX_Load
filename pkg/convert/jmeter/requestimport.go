@@ -497,57 +497,96 @@ func redactJMeterCredentialValues(
 	requirements []credentialpolicy.Requirement,
 	review *jmeterVariableReview,
 ) (string, bool) {
+	return redactJMeterCredentialValuesWithBudget(
+		content,
+		requirements,
+		review,
+		maxJMeterCredentialSourceRedactionWork,
+	)
+}
+
+const maxJMeterCredentialSourceRedactionWork = 256 << 20
+
+func redactJMeterCredentialValuesWithBudget(
+	content string,
+	requirements []credentialpolicy.Requirement,
+	review *jmeterVariableReview,
+	maxWork int64,
+) (string, bool) {
 	values := make([]string, 0, len(requirements))
 	for _, requirement := range requirements {
 		if value := strings.TrimSpace(requirement.Value); value != "" {
 			values = append(values, value)
 		}
 	}
+	values = uniqueJMeterStrings(values)
 	sort.SliceStable(values, func(i, j int) bool {
 		if len(values[i]) == len(values[j]) {
 			return values[i] < values[j]
 		}
 		return len(values[i]) > len(values[j])
 	})
+
+	if review != nil && review.omitSource {
+		return omittedJMeterCredentialSource(
+			content,
+			"VARIABLE GRAPH EXCEEDED SAFE ANALYSIS LIMITS",
+		), true
+	}
+	names := make(map[string]struct{})
+	if review != nil {
+		for _, requirement := range requirements {
+			for _, name := range requirement.SourceVariableNames {
+				if strings.TrimSpace(name) != "" {
+					names[name] = struct{}{}
+				}
+			}
+		}
+		queue := sortedJMeterVariableSet(names)
+		for index := 0; index < len(queue); index++ {
+			for dependency := range review.dependencies[queue[index]] {
+				if _, exists := names[dependency]; exists {
+					continue
+				}
+				names[dependency] = struct{}{}
+				queue = append(queue, dependency)
+			}
+		}
+	}
+	variableValues := make(map[string]struct{})
+	if review != nil {
+		for name := range names {
+			for value := range review.valuesByName[name] {
+				variableValues[value] = struct{}{}
+			}
+		}
+		for value := range review.invalidValues {
+			variableValues[value] = struct{}{}
+		}
+	}
+	// Literal replacement and decoded-XML verification each scan source text.
+	// Variable masking can perform up to three literal scans, followed by the
+	// same decoded verification. Bound their aggregate work and omit the public
+	// source when safe review would otherwise become quadratic in batch size.
+	valueScans := 2*len(values) + 4*len(variableValues)
+	if !jmeterCredentialRedactionWithinBudget(len(content), valueScans, maxWork) {
+		return omittedJMeterCredentialSource(
+			content,
+			"CREDENTIAL REDACTION WORK LIMIT EXCEEDED",
+		), true
+	}
 	for _, value := range values {
 		content = strings.ReplaceAll(content, value, credential.Redacted)
 	}
 
 	if review == nil {
 		if jmeterXMLContainsDecodedValue(content, values) {
-			return "<!-- [JMETER SOURCE OMITTED: ENCODED CREDENTIAL VALUE REQUIRES PROTECTED BINDING] -->", true
+			return omittedJMeterCredentialSource(
+				content,
+				"ENCODED CREDENTIAL VALUE REQUIRES PROTECTED BINDING",
+			), true
 		}
 		return content, len(values) > 0
-	}
-	if review.omitSource {
-		return "// [JMETER SOURCE OMITTED: VARIABLE GRAPH EXCEEDED SAFE ANALYSIS LIMITS]", true
-	}
-	names := make(map[string]struct{})
-	for _, requirement := range requirements {
-		for _, name := range requirement.SourceVariableNames {
-			if strings.TrimSpace(name) != "" {
-				names[name] = struct{}{}
-			}
-		}
-	}
-	queue := sortedJMeterVariableSet(names)
-	for index := 0; index < len(queue); index++ {
-		for dependency := range review.dependencies[queue[index]] {
-			if _, exists := names[dependency]; exists {
-				continue
-			}
-			names[dependency] = struct{}{}
-			queue = append(queue, dependency)
-		}
-	}
-	variableValues := make(map[string]struct{})
-	for name := range names {
-		for value := range review.valuesByName[name] {
-			variableValues[value] = struct{}{}
-		}
-	}
-	for value := range review.invalidValues {
-		variableValues[value] = struct{}{}
 	}
 	beforeVariables := content
 	for _, value := range sortedJMeterValuesByLength(variableValues) {
@@ -558,9 +597,31 @@ func redactJMeterCredentialValues(
 		decodedValues = append(decodedValues, value)
 	}
 	if jmeterXMLContainsDecodedValue(content, decodedValues) {
-		return "<!-- [JMETER SOURCE OMITTED: ENCODED CREDENTIAL VALUE REQUIRES PROTECTED BINDING] -->", true
+		return omittedJMeterCredentialSource(
+			content,
+			"ENCODED CREDENTIAL VALUE REQUIRES PROTECTED BINDING",
+		), true
 	}
 	return content, len(values) > 0 || content != beforeVariables
+}
+
+func jmeterCredentialRedactionWithinBudget(
+	sourceBytes int,
+	valueScans int,
+	maxWork int64,
+) bool {
+	if valueScans <= 0 {
+		return true
+	}
+	if maxWork < 0 {
+		return false
+	}
+	return int64(sourceBytes) <= maxWork/int64(valueScans)
+}
+
+func omittedJMeterCredentialSource(content string, reason string) string {
+	return "<!-- [JMETER SOURCE OMITTED: " + reason + "] -->" +
+		strings.Repeat("\n", strings.Count(content, "\n"))
 }
 
 func jmeterXMLContainsDecodedValue(content string, protected []string) bool {

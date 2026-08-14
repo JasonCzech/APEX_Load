@@ -197,8 +197,10 @@ func TestConvertProjectsBaseURLCredentialFromRelativeOAuthTokenURL(t *testing.T)
 	if err != nil {
 		t.Fatalf("Convert returned error: %v", err)
 	}
-	if requirements := result.ProtectedRequirements.Take(); requirements != nil {
-		t.Fatalf("preserved OAuth base credential unexpectedly requires rebinding: %#v", requirements)
+	if requirements := result.ProtectedRequirements.Take(); len(requirements) != 1 ||
+		requirements[0].SuggestedName != "OPENAPI_OAUTH_CLIENT_SECRET" ||
+		requirements[0].SourceValueAvailable {
+		t.Fatalf("generated OAuth client-secret requirement = %#v", requirements)
 	}
 	if len(result.Script.Init) != 1 {
 		t.Fatalf("init = %#v", result.Script.Init)

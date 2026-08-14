@@ -190,7 +190,7 @@ func identityRole(field string, prop schema) (string, bool) {
 	}
 }
 
-func applyOperationChaining(script *dsl.Script, built []builtOperation, res resolver) []Correlation {
+func applyOperationChaining(script *dsl.Script, built []builtOperation, res resolver, columns columnRegistry) []Correlation {
 	if script == nil {
 		return nil
 	}
@@ -204,7 +204,7 @@ func applyOperationChaining(script *dsl.Script, built []builtOperation, res reso
 			if !strings.EqualFold(param.In, "path") || strings.TrimSpace(param.Name) == "" {
 				continue
 			}
-			column := sanitizeColumnName(param.Name)
+			column := columns.destination(strings.TrimSpace(param.Name))
 			resource := resourceForParam(consumer.RawPath, param.Name)
 			match, confidence := bestProducerMatch(built[:i], resource, param.Name)
 			if match == nil || confidence < 0.8 {
@@ -378,7 +378,8 @@ func xmlForSchema(s schema, res resolver, location string, columns columnRegistr
 }
 
 func writeXMLValue(b *strings.Builder, name string, s schema, columns columnRegistry) {
-	sensitive := schemaCredentialField(name, s)
+	sourceName := name
+	sensitive := schemaCredentialField(sourceName, s)
 	name = xmlElementName(name, s)
 	if len(s.Properties) == 0 && s.Type != "object" {
 		b.WriteString("<" + name + ">")
@@ -389,8 +390,7 @@ func writeXMLValue(b *strings.Builder, name string, s schema, columns columnRegi
 			}
 			b.WriteString(xmlEscape(value))
 		} else {
-			column := sanitizeColumnName(name)
-			columns.add(column, s)
+			column := columns.add(sourceName, s)
 			b.WriteString(xmlEscape("{{data.openapi." + column + "}}"))
 		}
 		b.WriteString("</" + name + ">")
@@ -408,8 +408,7 @@ func writeXMLValue(b *strings.Builder, name string, s schema, columns columnRegi
 					value = authored
 				}
 			} else {
-				column := sanitizeColumnName(propName)
-				columns.add(column, prop)
+				column := columns.add(propName, prop)
 				value = "{{data.openapi." + column + "}}"
 			}
 			attrs = append(attrs, xmlElementName(propName, prop)+`="`+xmlEscape(value)+`"`)

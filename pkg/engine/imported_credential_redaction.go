@@ -704,6 +704,15 @@ func (collector *importedCredentialCollector) collectSensitiveTree(value any, ke
 	case map[string]any:
 		nextHeaderMap := headerMap || strings.Contains(strings.ToLower(key), "header")
 		for childKey, child := range typed {
+			// token_url is an OAuth endpoint locator, not a credential scalar.
+			// Preserve the URL itself while still registering any governed
+			// userinfo or sensitive query values embedded in it.
+			if strings.EqualFold(strings.TrimSpace(childKey), "token_url") {
+				if scalar, ok := child.(string); ok {
+					collector.collectURL(scalar, nil)
+				}
+				continue
+			}
 			sensitive := credential.SensitiveName(childKey) ||
 				(nextHeaderMap && credential.SensitiveHeader(childKey))
 			if scalar, ok := child.(string); ok && sensitive {

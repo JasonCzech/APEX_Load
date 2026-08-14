@@ -709,6 +709,13 @@ func (tr *TestRunner) buildManagedTestFromSnapshot(req CreateTestRequest, id, st
 	tr.mu.RLock()
 	snapshot, req, revision := tr.managedTestBuildSnapshotLocked(req)
 	tr.mu.RUnlock()
+	// Read the durable publication fence after capturing the content snapshot.
+	// A direct-import claim precedes every asset write, so a concurrent partial
+	// batch cannot be compiled into a runnable test through either explicit
+	// groups or a just-created scenario.
+	if err := tr.validateManagedTestImportPublication(snapshot, req); err != nil {
+		return nil, snapshot, revision, err
+	}
 
 	if !req.projectQuotaEvidence.loaded {
 		req.projectQuotaEvidence = snapshot.loadCreateTestProjectQuotaEvidence(req)

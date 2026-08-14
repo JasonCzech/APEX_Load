@@ -86,6 +86,15 @@ describe('ScriptsLibraryTable federation', () => {
     return Array.from(container.querySelectorAll('button')).find(button => button.textContent?.trim() === label) as HTMLButtonElement | undefined
   }
 
+  async function waitForIssueDialog() {
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      const dialog = document.body.querySelector<HTMLElement>('[role="dialog"]')
+      if (dialog) return dialog
+      await act(async () => { await new Promise(resolve => window.setTimeout(resolve, 0)) })
+    }
+    return document.body.querySelector<HTMLElement>('[role="dialog"]')
+  }
+
   it('surfaces blocking health inputs ahead of passing validation in expanded details', async () => {
     const blockedScript = {
       ...script,
@@ -124,14 +133,14 @@ describe('ScriptsLibraryTable federation', () => {
     const blockerButton = findButton('1 blocker')
     expect(blockerButton?.getAttribute('aria-label')).toContain('Imported Upgrade')
     await act(async () => { blockerButton?.click() })
-    expect(document.body.querySelector('[role="dialog"]')?.textContent).toContain('Data-source fit checks found missing columns')
+    expect((await waitForIssueDialog())?.textContent).toContain('Data-source fit checks found missing columns')
 
     await act(async () => {
       ;(document.body.querySelector('[role="dialog"] button') as HTMLButtonElement).click()
     })
     const warningButton = findButton('1 warning')
     await act(async () => { warningButton?.click() })
-    expect(document.body.querySelector('[role="dialog"]')?.textContent).toContain('Runtime parity has partial')
+    expect((await waitForIssueDialog())?.textContent).toContain('Runtime parity has partial')
   })
 
   it('shows linked-run load failures with Retry instead of an empty-catalog message', async () => {
@@ -190,7 +199,7 @@ describe('ScriptsLibraryTable federation', () => {
 
     await act(async () => { findButton('1 blocker')?.click() })
     expect(onValidateScriptDetails).toHaveBeenCalledWith(blockedScript.id)
-    const dialogText = document.body.querySelector('[role="dialog"]')?.textContent || ''
+    const dialogText = (await waitForIssueDialog())?.textContent || ''
     expect(dialogText).toContain('Validation issue 1')
     expect(dialogText).toContain('file asset path must be absolute')
     expect(dialogText).not.toContain('Script has validation issues that block save or replay.')

@@ -47,7 +47,7 @@ func TestExtractProjectedRedactions(t *testing.T) {
 	}
 }
 
-func TestSourceSecretValuesRetainSentinelLikeCredentials(t *testing.T) {
+func TestSourceSecretValuesRejectSentinelLikeCredentials(t *testing.T) {
 	credentialValue := "prefix" + maskedScriptSecret + "suffix"
 	raw := &dsl.Script{
 		Name: "Sentinel source", Protocol: "http", ProjectID: "project-a",
@@ -68,8 +68,8 @@ func TestSourceSecretValuesRetainSentinelLikeCredentials(t *testing.T) {
 		importResponseRawScriptValue(projected),
 		requirements,
 	)
-	if got := values[requirements[0].ID]; got != credentialValue {
-		t.Fatalf("source credential = %q, want exact sentinel-like value", got)
+	if got := values[requirements[0].ID]; got != "" || len(values) != 0 {
+		t.Fatalf("source credential = %q (%#v), want unavailable sentinel-like value", got, values)
 	}
 }
 
@@ -222,7 +222,7 @@ func TestSourceSecretProjectUsesAuthorizedImportScopeWhenDraftOmitsProject(t *te
 	}
 }
 
-func TestSourceSecretValuesPreserveLiteralRedactionSentinelCredential(t *testing.T) {
+func TestSourceSecretValuesRejectLiteralRedactionSentinelCredential(t *testing.T) {
 	script := &dsl.Script{
 		Name:      "Already redacted",
 		Protocol:  "http",
@@ -241,17 +241,16 @@ func TestSourceSecretValuesPreserveLiteralRedactionSentinelCredential(t *testing
 		scriptImportResponseOptions{Script: script},
 		requirements,
 	)
-	if len(values) != 1 {
-		t.Fatalf("literal sentinel credential values = %#v, want one exact value", values)
+	if len(values) != 0 {
+		t.Fatalf("literal sentinel credential values = %#v, want none", values)
 	}
-	for _, value := range values {
-		if value != maskedScriptSecret {
-			t.Fatalf("literal sentinel credential = %q, want %q", value, maskedScriptSecret)
-		}
+	if len(requirements) != 1 || requirements[0].DestinationValuePreserved ||
+		requirements[0].PreservationUnavailableReason != "redacted_source_value" {
+		t.Fatalf("literal sentinel requirement = %#v, want explicit unavailable reason", requirements)
 	}
 }
 
-func TestImportResponseSourceSecretSessionIsPolicyGatedAndKeepsEditableCredential(t *testing.T) {
+func TestImportResponseSourceSecretSessionIsPolicyGatedAndKeepsOpaqueCredential(t *testing.T) {
 	server, _, _, projectID := newProjectSecretAPIServer(t)
 	script := &dsl.Script{
 		Name:      "Protected import",
@@ -294,8 +293,8 @@ func TestImportResponseSourceSecretSessionIsPolicyGatedAndKeepsEditableCredentia
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(encodedScript), "must-never-reach-the-browser") {
-		t.Fatalf("editable import draft lost the operator-supplied credential: %s", encodedScript)
+	if strings.Contains(string(encodedScript), "must-never-reach-the-browser") || !strings.Contains(string(encodedScript), maskedScriptSecret) {
+		t.Fatalf("opaque import draft disclosed or failed to mask the credential: %s", encodedScript)
 	}
 	encodedRequirements, err := json.Marshal(requirements)
 	if err != nil {
@@ -336,8 +335,8 @@ func TestUploadedImportSourceSecretMigratesServerSideWithoutReentry(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(encodedScript), "uploaded-source-password") {
-		t.Fatalf("editable import response lost source value: %s", encodedScript)
+	if strings.Contains(string(encodedScript), "uploaded-source-password") || !strings.Contains(string(encodedScript), maskedScriptSecret) {
+		t.Fatalf("opaque import response disclosed or failed to mask source value: %s", encodedScript)
 	}
 	encodedRequirements, err := json.Marshal(requirements)
 	if err != nil {

@@ -15,6 +15,7 @@ var (
 )
 
 const domainDeploymentTargetSelect = `SELECT domain_id, provider, COALESCE(default_cluster_id, ''),
+	COALESCE(default_execution_target_id, ''),
 	COALESCE(updated_by_subject, ''), created_at, updated_at
 	FROM domain_deployment_targets`
 
@@ -22,7 +23,7 @@ const domainDeploymentTargetSelect = `SELECT domain_id, provider, COALESCE(defau
 // cannot drift (the fleetPoolSelect/scanFleetPool convention).
 func scanDomainDeploymentTarget(row capacityRowScanner) (*DomainDeploymentTarget, error) {
 	var target DomainDeploymentTarget
-	if err := row.Scan(&target.DomainID, &target.Provider, &target.DefaultClusterID,
+	if err := row.Scan(&target.DomainID, &target.Provider, &target.DefaultClusterID, &target.DefaultExecutionTargetID,
 		&target.UpdatedBySubject, &target.CreatedAt, &target.UpdatedAt); err != nil {
 		return nil, err
 	}
@@ -41,6 +42,11 @@ func (s *SQLiteStore) GetDomainDeploymentTarget(domainID string) (*DomainDeploym
 	if err != nil {
 		return nil, err
 	}
+	allowed, err := s.listAllowedExecutionTargetIDs(target.DomainID)
+	if err != nil {
+		return nil, err
+	}
+	target.AllowedExecutionTargetIDs = allowed
 	return target, nil
 }
 
@@ -49,7 +55,6 @@ func (s *SQLiteStore) ListDomainDeploymentTargets() ([]*DomainDeploymentTarget, 
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
 	targets := make([]*DomainDeploymentTarget, 0)
 	for rows.Next() {
 		target, err := scanDomainDeploymentTarget(rows)
@@ -58,7 +63,36 @@ func (s *SQLiteStore) ListDomainDeploymentTargets() ([]*DomainDeploymentTarget, 
 		}
 		targets = append(targets, target)
 	}
-	return targets, rows.Err()
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return nil, err
+	}
+	rows.Close()
+	for _, target := range targets {
+		allowed, err := s.listAllowedExecutionTargetIDs(target.DomainID)
+		if err != nil {
+			return nil, err
+		}
+		target.AllowedExecutionTargetIDs = allowed
+	}
+	return targets, nil
+}
+
+func (s *SQLiteStore) listAllowedExecutionTargetIDs(domainID string) ([]string, error) {
+	rows, err := s.db.Query(`SELECT execution_target_id FROM domain_execution_target_allowlist WHERE domain_id = ? ORDER BY execution_target_id`, strings.TrimSpace(domainID))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	ids := make([]string, 0)
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
 }
 
 // UpsertDomainDeploymentTargetIfUnchanged writes the target under an
@@ -99,10 +133,13 @@ func (s *SQLiteStore) UpsertDomainDeploymentTargetIfUnchanged(target *DomainDepl
 		now := time.Now()
 		target.CreatedAt, target.UpdatedAt = now, now
 		if _, err := tx.Exec(`INSERT INTO domain_deployment_targets (
-				domain_id, provider, default_cluster_id, updated_by_subject, created_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?)`,
+				domain_id, provider, default_cluster_id, default_execution_target_id, updated_by_subject, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?)`,
 			target.DomainID, target.Provider, nullableClusterID(target.DefaultClusterID),
-			target.UpdatedBySubject, target.CreatedAt, target.UpdatedAt); err != nil {
+			nullableExecutionTargetID(target.DefaultExecutionTargetID), target.UpdatedBySubject, target.CreatedAt, target.UpdatedAt); err != nil {
+			return false, err
+		}
+		if err := replaceAllowedExecutionTargetsTx(tx, target.DomainID, target.AllowedExecutionTargetIDs); err != nil {
 			return false, err
 		}
 		return true, tx.Commit()
@@ -115,9 +152,9 @@ func (s *SQLiteStore) UpsertDomainDeploymentTargetIfUnchanged(target *DomainDepl
 	}
 	target.UpdatedAt = time.Now()
 	result, err := tx.Exec(`UPDATE domain_deployment_targets SET
-			provider = ?, default_cluster_id = ?, updated_by_subject = ?, updated_at = ?
+			provider = ?, default_cluster_id = ?, default_execution_target_id = ?, updated_by_subject = ?, updated_at = ?
 		WHERE domain_id = ? AND CAST(updated_at AS TEXT) = ?`,
-		target.Provider, nullableClusterID(target.DefaultClusterID), target.UpdatedBySubject,
+		target.Provider, nullableClusterID(target.DefaultClusterID), nullableExecutionTargetID(target.DefaultExecutionTargetID), target.UpdatedBySubject,
 		target.UpdatedAt, target.DomainID, currentUpdatedRaw)
 	if err != nil {
 		return false, err
@@ -126,11 +163,14 @@ func (s *SQLiteStore) UpsertDomainDeploymentTargetIfUnchanged(target *DomainDepl
 	if err != nil || affected != 1 {
 		return false, err
 	}
+	if err := replaceAllowedExecutionTargetsTx(tx, target.DomainID, target.AllowedExecutionTargetIDs); err != nil {
+		return false, err
+	}
 	target.CreatedAt = currentCreatedAt
 	return true, tx.Commit()
 }
 
-// nullableClusterID keeps default_cluster_id NULL rather than '' so the
+// nullableClusterID keeps default_cluster_id NULL rather than ” so the
 // foreign key is satisfiable. SQLite runs with foreign_keys=ON, and an empty
 // string references no cluster_connections row.
 func nullableClusterID(value string) any {
@@ -140,12 +180,50 @@ func nullableClusterID(value string) any {
 	return strings.TrimSpace(value)
 }
 
+func nullableExecutionTargetID(value string) any {
+	if strings.TrimSpace(value) == "" {
+		return nil
+	}
+	return strings.TrimSpace(value)
+}
+
+func replaceAllowedExecutionTargetsTx(tx *storeTx, domainID string, targetIDs []string) error {
+	if _, err := tx.Exec(`DELETE FROM domain_execution_target_allowlist WHERE domain_id = ?`, strings.TrimSpace(domainID)); err != nil {
+		return err
+	}
+	seen := make(map[string]struct{}, len(targetIDs))
+	for _, rawID := range targetIDs {
+		id := strings.TrimSpace(rawID)
+		if id == "" {
+			continue
+		}
+		if _, exists := seen[id]; exists {
+			continue
+		}
+		seen[id] = struct{}{}
+		if _, err := tx.Exec(`INSERT INTO domain_execution_target_allowlist (domain_id, execution_target_id) VALUES (?, ?)`, domainID, id); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // DeleteDomainDeploymentTarget removes the constraint. Deleting is always
 // allowed: removing a constraint can only widen what a pool may do, so it can
 // never put an existing pool into a conflicting state.
 func (s *SQLiteStore) DeleteDomainDeploymentTarget(domainID string) error {
-	_, err := s.db.Exec(`DELETE FROM domain_deployment_targets WHERE domain_id = ?`, strings.TrimSpace(domainID))
-	return err
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec(`DELETE FROM domain_execution_target_allowlist WHERE domain_id = ?`, strings.TrimSpace(domainID)); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM domain_deployment_targets WHERE domain_id = ?`, strings.TrimSpace(domainID)); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // ListFleetPoolsForDomain backs the conflict report shown when a superuser

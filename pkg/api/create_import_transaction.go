@@ -24,6 +24,7 @@ type createImportTransaction struct {
 	projectID        string
 	sourceInstanceID string
 	items            map[string]LibraryBundleItem
+	applied          map[string]LibraryBundleItem
 	mutationStarted  bool
 	closed           bool
 }
@@ -122,12 +123,11 @@ func newCreateImportTransaction(server *Server, source string, scripts []*dsl.Sc
 	}
 	tx := &createImportTransaction{
 		server: server, claims: claims, journal: newLibraryImportJournal(server),
-		remoteID: remoteID, projectID: projectID, sourceInstanceID: sourceInstanceID, items: items,
+		remoteID: remoteID, projectID: projectID, sourceInstanceID: sourceInstanceID,
+		items: items, applied: make(map[string]LibraryBundleItem, len(items)),
 	}
-	for _, item := range bundle.Items {
-		if err := claims.prepare(item, item.SourceItemID, nil, nil, nil, nil, false, false, ""); err != nil {
-			return nil, errors.Join(fmt.Errorf("prepare durable import transaction: %w", err), tx.rollback())
-		}
+	if err := claims.prepareDirectCreates(bundle.Items); err != nil {
+		return nil, errors.Join(fmt.Errorf("prepare durable import transaction: %w", err), tx.rollback())
 	}
 	return tx, nil
 }
@@ -190,9 +190,7 @@ func (tx *createImportTransaction) createScriptWithImportProfile(
 	if created {
 		tx.journal.recordScript(nil, stored, tx.remoteID, tx.projectID, item.Kind, item.SourceInstanceID, item.SourceItemID, nil, nil)
 	}
-	if err := tx.claims.markApplied(item, false); err != nil {
-		return stored, fmt.Errorf("checkpoint imported script %s: %w", stored.ID, err)
-	}
+	tx.recordApplied(item)
 	return stored, nil
 }
 
@@ -224,22 +222,79 @@ func (tx *createImportTransaction) createScenario(id string, request CreateScena
 	if created {
 		tx.journal.recordScenario(nil, stored, tx.remoteID, tx.projectID, item.Kind, item.SourceInstanceID, item.SourceItemID, nil, nil)
 	}
-	if err := tx.claims.markApplied(item, false); err != nil {
-		return stored, fmt.Errorf("checkpoint imported scenario %s: %w", stored.ID, err)
-	}
+	tx.recordApplied(item)
 	return stored, nil
 }
 
+func (tx *createImportTransaction) recordApplied(item LibraryBundleItem) {
+	if tx == nil {
+		return
+	}
+	if tx.applied == nil {
+		tx.applied = make(map[string]LibraryBundleItem)
+	}
+	tx.applied[createImportItemKey(item.Kind, item.SourceItemID)] = item
+}
+
+func (tx *createImportTransaction) appliedItems() []LibraryBundleItem {
+	if tx == nil || len(tx.applied) == 0 {
+		return nil
+	}
+	items := make([]LibraryBundleItem, 0, len(tx.applied))
+	for _, item := range tx.applied {
+		items = append(items, item)
+	}
+	return items
+}
+
+func (tx *createImportTransaction) validateAllItemsApplied() error {
+	if tx == nil {
+		return fmt.Errorf("import transaction is required")
+	}
+	if len(tx.applied) != len(tx.items) {
+		return fmt.Errorf("cannot commit direct import: %d of %d reserved assets were applied", len(tx.applied), len(tx.items))
+	}
+	for key := range tx.items {
+		if _, ok := tx.applied[key]; !ok {
+			return fmt.Errorf("cannot commit direct import: reserved asset %q was not applied", key)
+		}
+	}
+	return nil
+}
+
 func (tx *createImportTransaction) commit() error {
+	if err := tx.commitRetainingClaims(); err != nil {
+		return err
+	}
+	// Cleanup is best effort after the durable terminal marker. Retained claims
+	// are safe publication evidence and generic recovery removes them later.
+	_ = tx.cleanupCommittedClaims()
+	return nil
+}
+
+func (tx *createImportTransaction) commitRetainingClaims() error {
 	if tx == nil || tx.closed {
 		return fmt.Errorf("import transaction is not active")
 	}
-	if err := tx.claims.complete(); err != nil {
+	if err := tx.validateAllItemsApplied(); err != nil {
+		return err
+	}
+	if err := tx.claims.markDirectCreatesApplied(tx.appliedItems()); err != nil {
+		return fmt.Errorf("checkpoint durable import transaction: %w", err)
+	}
+	if err := tx.claims.markCommittedRetainingClaims(); err != nil {
 		return fmt.Errorf("commit durable import transaction: %w", err)
 	}
 	tx.closed = true
 	tx.journal.undo = nil
 	return nil
+}
+
+func (tx *createImportTransaction) cleanupCommittedClaims() error {
+	if tx == nil || tx.claims == nil {
+		return nil
+	}
+	return tx.claims.cleanupCommittedClaims()
 }
 
 func (tx *createImportTransaction) rollback() error {
@@ -310,5 +365,8 @@ func (tx *createImportTransaction) closeWithoutAssetCompensation() {
 	tx.closed = true
 	if tx.journal != nil {
 		tx.journal.undo = nil
+	}
+	if tx.claims != nil {
+		activeLibraryImportOwners.Delete(tx.claims.owner)
 	}
 }

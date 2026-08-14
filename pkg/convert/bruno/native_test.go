@@ -629,8 +629,10 @@ settings: {followRedirects: false, timeout: 50}
 		}
 	}
 	if action.Auth == nil || action.Auth.Type != "basic" ||
-		action.Auth.Username != "{{secret.USERNAME}}" ||
-		action.Auth.Password != "{{secret.PASSWORD}}" {
+		!strings.HasPrefix(action.Auth.Username, "{{secret.USERNAME_") ||
+		!strings.HasSuffix(action.Auth.Username, "}}") ||
+		!strings.HasPrefix(action.Auth.Password, "{{secret.PASSWORD_") ||
+		!strings.HasSuffix(action.Auth.Password, "}}") {
 		t.Fatalf("Basic auth = %#v", action.Auth)
 	}
 	if action.MaxRedirects == nil || *action.MaxRedirects != 0 || action.TimeoutMs != 50 {
@@ -1497,7 +1499,8 @@ http:
 		t.Fatalf("nearest inherited auth = %#v in %#v", inheritedAuth, inherited)
 	}
 	for _, requirement := range inherited.SecretRequirements {
-		if requirement.Path != "demo/outer/inner/folder.yaml" {
+		if requirement.Path != "demo/outer/inner/folder.yaml" ||
+			strings.Join(requirement.AffectedPaths, ",") != "demo/outer/inner/inherit.yml" {
 			t.Fatalf("shadowed ancestor auth created executable requirement: %#v", inherited.SecretRequirements)
 		}
 	}
@@ -1506,6 +1509,48 @@ http:
 		noAuth.Script.Actions[0].Auth != nil ||
 		len(noAuth.SecretRequirements) != 0 {
 		t.Fatalf("request noauth = %#v", noAuth)
+	}
+}
+
+func TestInspectNativeInheritedComposedCredentialsReportRequestAsAffected(t *testing.T) {
+	result, err := Inspect(Input{
+		Files: map[string][]byte{
+			"demo/opencollection.yml": []byte(`info: {name: Demo}
+`),
+			"demo/requests/folder.yml": []byte(`info: {name: Requests}
+request:
+  headers:
+    - {name: X-API-Key, value: "prefix-{{folderToken}}"}
+  auth:
+    type: basic
+    username: "user-{{folderUser}}"
+    password: "pass-{{folderPassword}}"
+`),
+			"demo/requests/request.yml": []byte(`info: {name: Request, uid: inherited-composed, type: http}
+http:
+  method: GET
+  url: https://example.test
+  auth: inherit
+`),
+		},
+		Options: InspectOptions{OutputMode: OutputModeNativeRequests},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Scripts) != 1 || len(result.Scripts[0].SecretRequirements) != 3 {
+		t.Fatalf("inherited composed credentials = %#v", result.Scripts)
+	}
+	candidate := result.Scripts[0]
+	if len(candidate.MissingVariables) != 0 ||
+		candidate.Script.Actions[0].Metadata["execution_blocker"] == "bruno_missing_variables" {
+		t.Fatalf("inherited governed credentials remained blocked: %#v", candidate)
+	}
+	for _, requirement := range candidate.SecretRequirements {
+		if requirement.Path != "demo/requests/folder.yml" ||
+			strings.Join(requirement.AffectedPaths, ",") != "demo/requests/request.yml" {
+			t.Errorf("inherited requirement reports definition rather than request: %#v", requirement)
+		}
 	}
 }
 

@@ -41,11 +41,13 @@ type wsdlImportRequest struct {
 }
 
 type postmanImportRequest struct {
-	Data            []byte
-	EnvironmentData []byte
-	ProjectID       string
-	Name            string
-	Opts            postman.ConvertOptions
+	Data                []byte
+	CollectionFileName  string
+	EnvironmentData     []byte
+	EnvironmentFileName string
+	ProjectID           string
+	Name                string
+	Opts                postman.ConvertOptions
 }
 
 type asyncAPIImportRequest struct {
@@ -91,20 +93,7 @@ func (s *Server) handleImportOpenAPI(w http.ResponseWriter, r *http.Request) {
 	if result.Script != nil {
 		result.Script.ProjectID = normalizeProjectID(importReq.ProjectID)
 	}
-	protectedCredentialReview, protectedReviewErr := attachProtectedImportCredentialReview(
-		result.Script,
-		protectedRequirements,
-	)
-	if protectedReviewErr != nil {
-		result.Warnings = append(result.Warnings, "Protected credential bindings could not be prepared; the generated secret references remain available for manual configuration.")
-	}
 	attachSourceReviewToScript(result.Script, "openapi", importReq.Name, result.SourceReview)
-	issues := validateScript(result.Script)
-	preflight := buildReplayPreflight(result.Script, nil, issues, result.Warnings)
-	attachImportReplayPreflight(result.Script, "openapi", preflight)
-	if len(issues) > 0 {
-		result.Warnings = append(result.Warnings, issues...)
-	}
 	reviewSections := appendImportDiagnosticReviewSections(buildOpenAPIReviewSections(result), result.Unsupported)
 	if muleReview := mulesoft.Analyze(result.Script); muleReview.Detected {
 		if result.Script != nil {
@@ -113,6 +102,21 @@ func (s *Server) handleImportOpenAPI(w http.ResponseWriter, r *http.Request) {
 		reviewSections = append(reviewSections, mulesoftReviewSection(muleReview))
 	}
 	reviewSections = attachAgentforceReview(result.Script, "openapi", reviewSections, agentforceTransformRequested(r))
+	// Agentforce transformation mutates executable actions and can add governed
+	// secret references. Validate and build replay guidance from that final draft,
+	// not the pre-transform script.
+	issues := validateScript(result.Script)
+	preflight := buildReplayPreflight(result.Script, nil, issues, result.Warnings)
+	attachImportReplayPreflight(result.Script, "openapi", preflight)
+	if len(issues) > 0 {
+		result.Warnings = append(result.Warnings, issues...)
+	}
+	preparedCredentialReview, credentialReviewErr := prepareImportCredentialReview(
+		[]*dsl.Script{result.Script}, protectedRequirements, nil,
+	)
+	if credentialReviewErr != nil {
+		result.Warnings = append(result.Warnings, "Protected credential bindings could not be prepared; the generated secret references remain available for manual configuration.")
+	}
 	sessionID, expiresAt, sessionErr := s.registerImportCandidateSessionWithRequirements(
 		r,
 		"openapi",
@@ -127,30 +131,23 @@ func (s *Server) handleImportOpenAPI(w http.ResponseWriter, r *http.Request) {
 		sessionErr,
 	)
 	response := s.newScriptImportResponseWithSourceSecrets(r, scriptImportResponseOptions{
-		Result:               result,
-		Script:               result.Script,
-		Warnings:             result.Warnings,
-		Stats:                result.Stats,
-		Summary:              result.Summary,
-		UnsupportedElements:  result.Unsupported.Strings(),
-		Correlations:         result.Correlations,
-		ReviewSections:       reviewSections,
-		SourceReview:         result.SourceReview,
-		Parameterization:     buildImportParameterization(result.Script, openAPICorrelationsToPreApplied(result.Correlations)),
-		Preflight:            preflight,
-		SkipDraftAttestation: reusesCandidateForDraftAttestation,
+		Result:                   result,
+		Script:                   result.Script,
+		Warnings:                 result.Warnings,
+		Stats:                    result.Stats,
+		Summary:                  result.Summary,
+		UnsupportedElements:      result.Unsupported.Strings(),
+		Correlations:             result.Correlations,
+		ReviewSections:           reviewSections,
+		SourceReview:             result.SourceReview,
+		Parameterization:         buildImportParameterization(result.Script, openAPICorrelationsToPreApplied(result.Correlations)),
+		Preflight:                preflight,
+		ProtectedRequirements:    protectedRequirements,
+		PreparedCredentialReview: preparedCredentialReview,
+		CredentialReviewPrepared: true,
+		SkipDraftAttestation:     reusesCandidateForDraftAttestation,
 	})
 	addImportCandidateSession(response, sessionID, expiresAt, sessionErr)
-	if sessionErr == nil && strings.TrimSpace(sessionID) != "" {
-		protectedCredentialReview = s.attachProtectedImportCredentialMigration(
-			r,
-			response,
-			result.Script.ProjectID,
-			protectedRequirements,
-			protectedCredentialReview,
-		)
-	}
-	mergeProtectedImportCredentialReview(response, protectedCredentialReview)
 	writeScriptImportResponse(w, http.StatusOK, response)
 }
 
@@ -255,12 +252,6 @@ func (s *Server) handleImportRAML(w http.ResponseWriter, r *http.Request) {
 		result.Script.ProjectID = normalizeProjectID(importReq.ProjectID)
 	}
 	attachSourceReviewToScript(result.Script, "raml", importReq.Name, nil)
-	issues := validateScript(result.Script)
-	if len(issues) > 0 {
-		result.Warnings = append(result.Warnings, issues...)
-	}
-	preflight := buildAndAttachImportPreflight(result.Script, "raml", issues, result.Warnings)
-
 	reviewSections := []scriptImportReviewSection{{
 		Key:      "raml_import",
 		Title:    "RAML Import Review",
@@ -284,17 +275,23 @@ func (s *Server) handleImportRAML(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	reviewSections = attachAgentforceReview(result.Script, "raml", reviewSections, agentforceTransformRequested(r))
+	issues := validateScript(result.Script)
+	if len(issues) > 0 {
+		result.Warnings = append(result.Warnings, issues...)
+	}
+	preflight := buildAndAttachImportPreflight(result.Script, "raml", issues, result.Warnings)
 
 	s.writeScriptImportResponseWithSourceSecrets(w, r, http.StatusOK, scriptImportResponseOptions{
-		Result:              result,
-		Script:              result.Script,
-		Warnings:            result.Warnings,
-		Stats:               result.Stats,
-		Summary:             result.Summary,
-		UnsupportedElements: result.Unsupported.Strings(),
-		ReviewSections:      reviewSections,
-		Parameterization:    buildImportParameterization(result.Script, nil),
-		Preflight:           preflight,
+		Result:                 result,
+		Script:                 result.Script,
+		Warnings:               result.Warnings,
+		Stats:                  result.Stats,
+		Summary:                result.Summary,
+		UnsupportedElements:    result.Unsupported.Strings(),
+		ReviewSections:         reviewSections,
+		CredentialRequirements: result.SecretRequirements,
+		Parameterization:       buildImportParameterization(result.Script, nil),
+		Preflight:              preflight,
 	})
 }
 
@@ -497,16 +494,17 @@ func (s *Server) handleImportWSDL(w http.ResponseWriter, r *http.Request) {
 	}
 	preflight := buildAndAttachImportPreflight(result.Script, "wsdl", issues, result.Warnings)
 	s.writeScriptImportResponseWithSourceSecrets(w, r, http.StatusOK, scriptImportResponseOptions{
-		Result:              result,
-		Script:              result.Script,
-		Warnings:            result.Warnings,
-		Stats:               result.Stats,
-		Summary:             result.Summary,
-		UnsupportedElements: result.Unsupported.Strings(),
-		ReviewSections:      appendImportDiagnosticReviewSections(buildWSDLReviewSections(result), result.Unsupported),
-		SourceReview:        result.SourceReview,
-		Parameterization:    buildImportParameterization(result.Script, nil),
-		Preflight:           preflight,
+		Result:                 result,
+		Script:                 result.Script,
+		Warnings:               result.Warnings,
+		Stats:                  result.Stats,
+		Summary:                result.Summary,
+		UnsupportedElements:    result.Unsupported.Strings(),
+		ReviewSections:         appendImportDiagnosticReviewSections(buildWSDLReviewSections(result), result.Unsupported),
+		SourceReview:           result.SourceReview,
+		CredentialRequirements: result.SecretRequirements,
+		Parameterization:       buildImportParameterization(result.Script, nil),
+		Preflight:              preflight,
 	})
 }
 
@@ -516,11 +514,13 @@ func (s *Server) handleImportPostman(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	result, err := postman.Convert(postman.ImportRequest{
-		Name:               importReq.Name,
-		ProjectID:          importReq.ProjectID,
-		Content:            string(importReq.Data),
-		EnvironmentContent: string(importReq.EnvironmentData),
-		Options:            importReq.Opts,
+		Name:                importReq.Name,
+		ProjectID:           importReq.ProjectID,
+		Content:             string(importReq.Data),
+		CollectionFileName:  importReq.CollectionFileName,
+		EnvironmentContent:  string(importReq.EnvironmentData),
+		EnvironmentFileName: importReq.EnvironmentFileName,
+		Options:             importReq.Opts,
 	})
 	if err != nil {
 		writeError(w, http.StatusUnprocessableEntity, "conversion failed: "+err.Error())
@@ -539,20 +539,7 @@ func (s *Server) writePostmanImportResponse(w http.ResponseWriter, r *http.Reque
 	if result.Script != nil {
 		result.Script.ProjectID = normalizeProjectID(importReq.ProjectID)
 	}
-	protectedCredentialReview, protectedReviewErr := attachProtectedImportCredentialReview(
-		result.Script,
-		protectedRequirements,
-	)
-	if protectedReviewErr != nil {
-		result.Warnings = append(result.Warnings, "Protected credential bindings could not be prepared; the generated secret references remain available for manual configuration.")
-	}
 	attachSourceReviewToScript(result.Script, "postman", importReq.Name, result.SourceReview)
-	issues := validateScript(result.Script)
-	preflight := buildReplayPreflight(result.Script, nil, issues, result.Warnings)
-	attachImportReplayPreflight(result.Script, "postman", preflight)
-	if len(issues) > 0 {
-		result.Warnings = append(result.Warnings, issues...)
-	}
 	reviewSections := appendImportDiagnosticReviewSections(buildPostmanReviewSections(result), result.Unsupported)
 	if muleReview := mulesoft.Analyze(result.Script); muleReview.Detected {
 		if result.Script != nil {
@@ -561,12 +548,31 @@ func (s *Server) writePostmanImportResponse(w http.ResponseWriter, r *http.Reque
 		reviewSections = append(reviewSections, mulesoftReviewSection(muleReview))
 	}
 	reviewSections = attachAgentforceReview(result.Script, "postman", reviewSections, agentforceTransform)
+	issues := validateScript(result.Script)
+	preflight := buildReplayPreflight(result.Script, nil, issues, result.Warnings)
+	attachImportReplayPreflight(result.Script, "postman", preflight)
+	if len(issues) > 0 {
+		result.Warnings = append(result.Warnings, issues...)
+	}
+	preparedCredentialReview, credentialReviewErr := prepareImportCredentialReview(
+		[]*dsl.Script{result.Script}, protectedRequirements, nil,
+	)
+	if credentialReviewErr != nil {
+		result.Warnings = append(result.Warnings, "Protected credential bindings could not be prepared; the generated secret references remain available for manual configuration.")
+	}
+	protectedSource := postman.BuildProtectedSourceBundle(
+		importReq.CollectionFileName,
+		importReq.Data,
+		importReq.EnvironmentFileName,
+		importReq.EnvironmentData,
+	)
+	defer clear(protectedSource)
 	sessionID, expiresAt, sessionErr := s.registerImportCandidateSessionWithRequirements(
 		r,
 		"postman",
 		result.Script,
 		protectedRequirements,
-		importCandidateSource{Bytes: importReq.Data, Format: "postman"},
+		importCandidateSource{Bytes: protectedSource, Format: "postman"},
 	)
 	reusesCandidateForDraftAttestation := attachImportCandidateDraftAttestation(
 		result.Script,
@@ -575,30 +581,23 @@ func (s *Server) writePostmanImportResponse(w http.ResponseWriter, r *http.Reque
 		sessionErr,
 	)
 	response := s.newScriptImportResponseWithSourceSecrets(r, scriptImportResponseOptions{
-		Result:               result,
-		Script:               result.Script,
-		Warnings:             result.Warnings,
-		Stats:                result.Stats,
-		Summary:              result.Summary,
-		UnsupportedElements:  result.Unsupported.Strings(),
-		ReviewSections:       reviewSections,
-		SourceReview:         result.SourceReview,
-		Correlations:         result.Correlations,
-		Parameterization:     buildImportParameterization(result.Script, postmanCorrelationsToPreApplied(result.Correlations)),
-		Preflight:            preflight,
-		SkipDraftAttestation: reusesCandidateForDraftAttestation,
+		Result:                   result,
+		Script:                   result.Script,
+		Warnings:                 result.Warnings,
+		Stats:                    result.Stats,
+		Summary:                  result.Summary,
+		UnsupportedElements:      result.Unsupported.Strings(),
+		ReviewSections:           reviewSections,
+		SourceReview:             result.SourceReview,
+		Correlations:             result.Correlations,
+		Parameterization:         buildImportParameterization(result.Script, postmanCorrelationsToPreApplied(result.Correlations)),
+		Preflight:                preflight,
+		ProtectedRequirements:    protectedRequirements,
+		PreparedCredentialReview: preparedCredentialReview,
+		CredentialReviewPrepared: true,
+		SkipDraftAttestation:     reusesCandidateForDraftAttestation,
 	})
 	addImportCandidateSession(response, sessionID, expiresAt, sessionErr)
-	if sessionErr == nil && strings.TrimSpace(sessionID) != "" {
-		protectedCredentialReview = s.attachProtectedImportCredentialMigration(
-			r,
-			response,
-			result.Script.ProjectID,
-			protectedRequirements,
-			protectedCredentialReview,
-		)
-	}
-	mergeProtectedImportCredentialReview(response, protectedCredentialReview)
 	writeScriptImportResponse(w, http.StatusOK, response)
 }
 
@@ -679,17 +678,18 @@ func (s *Server) handleImportAsyncAPI(w http.ResponseWriter, r *http.Request) {
 		result.Warnings = append(result.Warnings, issues...)
 	}
 	s.writeScriptImportResponseWithSourceSecrets(w, r, http.StatusOK, scriptImportResponseOptions{
-		Result:              result,
-		Scripts:             result.Scripts,
-		Script:              result.Script,
-		Warnings:            result.Warnings,
-		Stats:               result.Stats,
-		Summary:             result.Summary,
-		UnsupportedElements: result.Unsupported.Strings(),
-		ReviewSections:      appendImportDiagnosticReviewSections(buildAsyncAPIReviewSections(result), result.Unsupported),
-		SourceReview:        result.SourceReview,
-		Parameterization:    buildMultiScriptParameterization(result.Scripts),
-		Preflight:           preflight,
+		Result:                 result,
+		Scripts:                result.Scripts,
+		Script:                 result.Script,
+		Warnings:               result.Warnings,
+		Stats:                  result.Stats,
+		Summary:                result.Summary,
+		UnsupportedElements:    result.Unsupported.Strings(),
+		ReviewSections:         appendImportDiagnosticReviewSections(buildAsyncAPIReviewSections(result), result.Unsupported),
+		SourceReview:           result.SourceReview,
+		CredentialRequirements: result.SecretRequirements,
+		Parameterization:       buildMultiScriptParameterization(result.Scripts),
+		Preflight:              preflight,
 	})
 }
 
@@ -1334,29 +1334,40 @@ func readPostmanImportRequest(w http.ResponseWriter, r *http.Request) (*postmanI
 		}
 		if strings.TrimSpace(req.Content) == "" && strings.Contains(string(data), `"item"`) {
 			return &postmanImportRequest{
-				Data:      data,
-				ProjectID: r.URL.Query().Get("project_id"),
-				Name:      r.URL.Query().Get("name"),
-				Opts:      postmanConvertOptionsFromValue(r.URL.Query().Get),
+				Data:               data,
+				CollectionFileName: filepath.Base(r.URL.Query().Get("filename")),
+				ProjectID:          r.URL.Query().Get("project_id"),
+				Name:               r.URL.Query().Get("name"),
+				Opts:               postmanConvertOptionsFromValue(r.URL.Query().Get),
 			}, true
 		}
-		return &postmanImportRequest{Data: []byte(req.Content), EnvironmentData: []byte(req.EnvironmentContent), ProjectID: jsonImportProjectID(r, req.ProjectID), Name: req.Name, Opts: req.Options}, true
+		return &postmanImportRequest{
+			Data:                []byte(req.Content),
+			CollectionFileName:  req.CollectionFileName,
+			EnvironmentData:     []byte(req.EnvironmentContent),
+			EnvironmentFileName: req.EnvironmentFileName,
+			ProjectID:           jsonImportProjectID(r, req.ProjectID),
+			Name:                req.Name,
+			Opts:                req.Options,
+		}, true
 	}
 	if strings.HasPrefix(contentType, "multipart/form-data") {
 		data, filename, ok := readImportMultipartFile(w, r, webAPIImportMaxBodyBytes)
 		if !ok {
 			return nil, false
 		}
-		environmentData, ok := readPostmanEnvironmentMultipartFile(w, r)
+		environmentData, environmentFilename, ok := readPostmanEnvironmentMultipartFile(w, r)
 		if !ok {
 			return nil, false
 		}
 		return &postmanImportRequest{
-			Data:            data,
-			EnvironmentData: environmentData,
-			ProjectID:       authorizedImportProjectID(r),
-			Name:            strings.TrimSuffix(filename, filepath.Ext(filename)),
-			Opts:            postmanConvertOptionsFromValue(r.FormValue),
+			Data:                data,
+			CollectionFileName:  filepath.Base(filename),
+			EnvironmentData:     environmentData,
+			EnvironmentFileName: environmentFilename,
+			ProjectID:           authorizedImportProjectID(r),
+			Name:                strings.TrimSuffix(filename, filepath.Ext(filename)),
+			Opts:                postmanConvertOptionsFromValue(r.FormValue),
 		}, true
 	}
 	data, ok := readImportBody(w, r)
@@ -1365,10 +1376,11 @@ func readPostmanImportRequest(w http.ResponseWriter, r *http.Request) (*postmanI
 	}
 	filename := r.URL.Query().Get("filename")
 	return &postmanImportRequest{
-		Data:      data,
-		ProjectID: r.URL.Query().Get("project_id"),
-		Name:      strings.TrimSuffix(filepath.Base(filename), filepath.Ext(filename)),
-		Opts:      postmanConvertOptionsFromValue(r.URL.Query().Get),
+		Data:               data,
+		CollectionFileName: filepath.Base(filename),
+		ProjectID:          r.URL.Query().Get("project_id"),
+		Name:               strings.TrimSuffix(filepath.Base(filename), filepath.Ext(filename)),
+		Opts:               postmanConvertOptionsFromValue(r.URL.Query().Get),
 	}, true
 }
 
@@ -1397,9 +1409,9 @@ func postmanConvertOptionsFromValue(value func(string) string) postman.ConvertOp
 	return opts
 }
 
-func readPostmanEnvironmentMultipartFile(w http.ResponseWriter, r *http.Request) ([]byte, bool) {
+func readPostmanEnvironmentMultipartFile(w http.ResponseWriter, r *http.Request) ([]byte, string, bool) {
 	if r == nil || r.MultipartForm == nil {
-		return nil, true
+		return nil, "", true
 	}
 	for _, field := range []string{"environment", "environment_file"} {
 		headers := r.MultipartForm.File[field]
@@ -1409,17 +1421,17 @@ func readPostmanEnvironmentMultipartFile(w http.ResponseWriter, r *http.Request)
 		file, err := headers[0].Open()
 		if err != nil {
 			writeError(w, http.StatusBadRequest, "failed to open uploaded Postman environment: "+err.Error())
-			return nil, false
+			return nil, "", false
 		}
 		defer file.Close()
 		data, err := io.ReadAll(file)
 		if err != nil {
 			writeError(w, http.StatusBadRequest, "failed to read uploaded Postman environment: "+err.Error())
-			return nil, false
+			return nil, "", false
 		}
-		return data, true
+		return data, filepath.Base(headers[0].Filename), true
 	}
-	return nil, true
+	return nil, "", true
 }
 
 func buildOpenAPIReviewSections(result *openapi.ConvertResult) []scriptImportReviewSection {
@@ -1435,13 +1447,17 @@ func buildOpenAPIReviewSections(result *openapi.ConvertResult) []scriptImportRev
 			Items:    result.Summary.OperationNames,
 		},
 	}
-	if len(result.Summary.AuthSchemes) > 0 {
+	if len(result.Summary.AuthSchemes) > 0 || len(result.Summary.OperationAuth) > 0 {
+		items := result.Summary.OperationAuth
+		if len(items) == 0 {
+			items = result.Summary.AuthSchemes
+		}
 		sections = append(sections, scriptImportReviewSection{
 			Key:      "openapi_auth",
 			Title:    "Authentication Review",
 			Severity: "warning",
-			Summary:  "Auth placeholders were inferred from the OpenAPI security schemes.",
-			Items:    result.Summary.AuthSchemes,
+			Summary:  "Each secured operation is listed with the exact OpenAPI security scheme it uses. Configure the generated secret or environment bindings before replay.",
+			Items:    items,
 		})
 	}
 	if len(result.Summary.DataColumns) > 0 {
@@ -1546,6 +1562,19 @@ func buildPostmanReviewSections(result *postman.ConvertResult) []scriptImportRev
 			Summary:  "Converted Postman requests into HTTP actions for replay review.",
 			Items:    result.Summary.Requests,
 		},
+	}
+	if len(result.Summary.SourceFiles) > 0 {
+		summary := "The converted script was derived from the uploaded Postman collection."
+		if result.Summary.EnvironmentName != "" || len(result.Summary.SourceFiles) > 1 {
+			summary = "The collection and selected Postman environment are treated as one protected source bundle; environment values take precedence during variable resolution."
+		}
+		sections = append(sections, scriptImportReviewSection{
+			Key:      "postman_source_provenance",
+			Title:    "Source Provenance",
+			Severity: "info",
+			Summary:  summary,
+			Items:    append([]string(nil), result.Summary.SourceFiles...),
+		})
 	}
 	if len(result.Summary.Variables) > 0 {
 		sections = append(sections, scriptImportReviewSection{

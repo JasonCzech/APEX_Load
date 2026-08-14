@@ -198,11 +198,23 @@ func TestImportParameterizationPreservesAttestedCredentialsAndRotatesCapability(
 	if failed, _ := inspection[importDraftResponseFailureKey].(bool); failed {
 		t.Fatal("failed to secure test import draft")
 	}
-	originalToken := importDraftAttestationToken(script)
+	projectedPayload, err := json.Marshal(inspection["script"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	var submitted dsl.Script
+	if err := json.Unmarshal(projectedPayload, &submitted); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(projectedPayload), headerCredential) ||
+		strings.Contains(string(projectedPayload), bodyCredential) {
+		t.Fatalf("inspection disclosed imported credentials: %s", projectedPayload)
+	}
+	originalToken := importDraftAttestationToken(&submitted)
 	if originalToken == "" {
 		t.Fatal("inspection did not issue an import-draft attestation")
 	}
-	suggestions := buildImportParameterization(script, nil)
+	suggestions := buildImportParameterization(&submitted, nil)
 	var selectedID string
 	for _, suggestion := range suggestions.Suggestions {
 		if suggestion.Kind == paramize.KindDataParam &&
@@ -219,7 +231,7 @@ func TestImportParameterizationPreservesAttestedCredentialsAndRotatesCapability(
 		t,
 		server,
 		importParameterizeApplyRequest{
-			Script:      script,
+			Script:      &submitted,
 			SelectedIDs: []string{selectedID},
 		},
 	)
@@ -232,11 +244,16 @@ func TestImportParameterizationPreservesAttestedCredentialsAndRotatesCapability(
 	if applied.Script == nil {
 		t.Fatal("parameterization returned no script")
 	}
-	if got := applied.Script.Actions[0].Headers["Authorization"]; got != "Bearer "+headerCredential {
-		t.Fatalf("parameterized header credential = %q", got)
+	if got := applied.Script.Actions[0].Headers["Authorization"]; got != "Bearer "+maskedScriptSecret {
+		t.Fatalf("parameterized header projection = %q", got)
 	}
-	if !strings.Contains(applied.Script.Actions[0].Body, bodyCredential) {
-		t.Fatalf("parameterized body lost credential: %s", applied.Script.Actions[0].Body)
+	if strings.Contains(applied.Script.Actions[0].Body, bodyCredential) ||
+		!strings.Contains(applied.Script.Actions[0].Body, maskedScriptSecret) {
+		t.Fatalf("parameterized body was not disclosure-safe: %s", applied.Script.Actions[0].Body)
+	}
+	if strings.Contains(response.Body.String(), headerCredential) ||
+		strings.Contains(response.Body.String(), bodyCredential) {
+		t.Fatalf("parameterization response disclosed imported credentials: %s", response.Body.String())
 	}
 	if !strings.Contains(applied.Script.Actions[1].Target, "{{var.customer_id}}") {
 		t.Fatalf("selected parameterization was not applied: %s", applied.Script.Actions[1].Target)
@@ -354,9 +371,10 @@ func TestImportResponsesIncludeParameterization(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(encoded), "tok123") ||
-		!strings.Contains(string(encoded), "hunter2") {
-		t.Fatalf("authorized editable import draft lost source credentials: %s", encoded)
+	if strings.Contains(string(encoded), "tok123") ||
+		strings.Contains(string(encoded), "hunter2") ||
+		!strings.Contains(string(encoded), maskedScriptSecret) {
+		t.Fatalf("opaque import draft disclosed or failed to mask source credentials: %s", encoded)
 	}
 	delete(response, "script")
 	delete(response, "scripts")
@@ -441,8 +459,8 @@ func TestImportParameterizationDropsMisclassifiedCredentialSuggestion(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(encoded), "credential-never-on-wire") {
-		t.Fatalf("authorized editable import draft lost its source credential: %s", encoded)
+	if strings.Contains(string(encoded), "credential-never-on-wire") || !strings.Contains(string(encoded), maskedScriptSecret) {
+		t.Fatalf("opaque import draft disclosed or failed to mask its source credential: %s", encoded)
 	}
 	delete(response, "script")
 	delete(response, "scripts")
@@ -484,6 +502,7 @@ func TestRecorderImportIncludesParameterization(t *testing.T) {
 
 	var decoded struct {
 		Parameterization paramize.Result `json:"parameterization"`
+		Script           dsl.Script      `json:"script"`
 	}
 	if err := json.Unmarshal(resp.Body.Bytes(), &decoded); err != nil {
 		t.Fatalf("json.Unmarshal: %v", err)
@@ -506,8 +525,19 @@ func TestRecorderImportIncludesParameterization(t *testing.T) {
 	if kinds[paramize.KindSecret] != 0 {
 		t.Errorf("secret suggestions must be represented by guided binding requirements, got %+v", decoded.Parameterization.Suggestions)
 	}
-	if !strings.Contains(resp.Body.String(), "hunter2") {
-		t.Fatalf("authorized recorder import draft discarded captured credential: %s", resp.Body.String())
+	if strings.Contains(resp.Body.String(), "hunter2") ||
+		importDraftAttestationToken(&decoded.Script) == "" {
+		t.Fatalf("recorder import disclosed or failed to attest its captured credential: %s", resp.Body.String())
+	}
+	maskedPasswordFill := false
+	for _, action := range decoded.Script.Actions {
+		if action.Selector == "#login_password" && action.Value == maskedScriptSecret {
+			maskedPasswordFill = true
+			break
+		}
+	}
+	if !maskedPasswordFill {
+		t.Fatalf("recorder import omitted its masked password fill: %#v", decoded.Script.Actions)
 	}
 	var response map[string]any
 	if err := json.Unmarshal(resp.Body.Bytes(), &response); err != nil {

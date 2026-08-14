@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+
+	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
 func TestConvertRedactsCredentialEquivalentsFromReviewSurfacesOnly(t *testing.T) {
@@ -66,5 +68,31 @@ func TestConvertRedactsCredentialEquivalentsFromReviewSurfacesOnly(t *testing.T)
 	}
 	if strings.Contains(string(payload), canary) {
 		t.Fatalf("review surfaces disclosed retained credential: %s", payload)
+	}
+}
+
+func TestSanitizeOpenAPIResultReviewTextCoversOperationAuthSummary(t *testing.T) {
+	const credentialCanary = "operation-auth-summary-credential-canary"
+	result := &ConvertResult{
+		Script: &dsl.Script{
+			Name:     "review",
+			Protocol: "http",
+			Actions: []dsl.Action{{
+				Name:    "request",
+				Type:    "request",
+				Method:  "GET",
+				Target:  "/",
+				Headers: map[string]string{"Authorization": "Bearer " + credentialCanary},
+			}},
+		},
+		Summary: ReviewSummary{
+			OperationAuth: []string{"GET / — " + credentialCanary},
+		},
+	}
+
+	sanitizeOpenAPIResultReviewText(result)
+
+	if strings.Contains(result.Summary.OperationAuth[0], credentialCanary) {
+		t.Fatalf("operation auth summary disclosed executable credential: %q", result.Summary.OperationAuth[0])
 	}
 }

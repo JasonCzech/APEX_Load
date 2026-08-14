@@ -46,7 +46,6 @@
   background: var(--bg-surface, var(--bg-secondary));
   color: var(--text-primary);
   text-align: left;
-  cursor: pointer;
 }
 .lr-file-row:hover,
 .lr-file-row.active {
@@ -59,6 +58,21 @@
 }
 .lr-file-row.failed {
   border-color: color-mix(in srgb, var(--danger) 45%, var(--border));
+}
+.lr-file-row-select {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.lr-file-row-select:disabled {
+  cursor: wait;
+  opacity: 0.72;
 }
 .lr-file-row-main {
   display: flex;
@@ -458,6 +472,23 @@
 .lr-warnings { padding: 14px 20px; border-bottom: 1px solid var(--border); }
 .lr-warnings h4 { font-size: 13px; color: var(--warning); margin: 0 0 8px 0; }
 .lr-warnings ul { margin: 0; padding-left: 18px; font-size: 12px; color: var(--text-secondary); line-height: 1.8; max-height: 160px; overflow-y: auto; }
+
+.lr-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+  padding: 8px 20px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.lr-pagination > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  text-align: center;
+}
 .lr-review-row {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));

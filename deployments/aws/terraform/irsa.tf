@@ -8,18 +8,19 @@
 # scripts read.
 
 locals {
-  oidc_provider_url = replace(aws_iam_openid_connect_provider.cluster.url, "https://", "")
+  oidc_provider_url = local.eks_enabled ? replace(aws_iam_openid_connect_provider.cluster[0].url, "https://", "") : ""
   secret_prefix     = "${local.name}/project-secrets"
 }
 
 data "aws_iam_policy_document" "controller_assume_role" {
+  count = var.controller_compute == "eks" ? 1 : 0
   statement {
     effect  = "Allow"
     actions = ["sts:AssumeRoleWithWebIdentity"]
 
     principals {
       type        = "Federated"
-      identifiers = [aws_iam_openid_connect_provider.cluster.arn]
+      identifiers = [aws_iam_openid_connect_provider.cluster[0].arn]
     }
 
     # Scoped to one namespace AND one service account. A wildcard here would let
@@ -39,13 +40,14 @@ data "aws_iam_policy_document" "controller_assume_role" {
 }
 
 data "aws_iam_policy_document" "generator_assume_role" {
+  count = var.generator_compute == "eks" ? 1 : 0
   statement {
     effect  = "Allow"
     actions = ["sts:AssumeRoleWithWebIdentity"]
 
     principals {
       type        = "Federated"
-      identifiers = [aws_iam_openid_connect_provider.cluster.arn]
+      identifiers = [aws_iam_openid_connect_provider.cluster[0].arn]
     }
 
     condition {
@@ -63,14 +65,16 @@ data "aws_iam_policy_document" "generator_assume_role" {
 }
 
 resource "aws_iam_role" "controller" {
+  count              = var.controller_compute == "eks" ? 1 : 0
   name               = "${local.name}-controller"
-  assume_role_policy = data.aws_iam_policy_document.controller_assume_role.json
+  assume_role_policy = data.aws_iam_policy_document.controller_assume_role[0].json
   tags               = local.tags
 }
 
 resource "aws_iam_role" "generator" {
+  count              = var.generator_compute == "eks" ? 1 : 0
   name               = "${local.name}-generator"
-  assume_role_policy = data.aws_iam_policy_document.generator_assume_role.json
+  assume_role_policy = data.aws_iam_policy_document.generator_assume_role[0].json
   tags               = local.tags
 }
 
@@ -128,8 +132,9 @@ data "aws_iam_policy_document" "controller" {
 }
 
 resource "aws_iam_role_policy" "controller" {
+  count  = var.controller_compute == "eks" ? 1 : 0
   name   = "${local.name}-controller"
-  role   = aws_iam_role.controller.id
+  role   = aws_iam_role.controller[0].id
   policy = data.aws_iam_policy_document.controller.json
 }
 
@@ -162,8 +167,9 @@ data "aws_iam_policy_document" "generator" {
 }
 
 resource "aws_iam_role_policy" "generator" {
+  count  = var.generator_compute == "eks" ? 1 : 0
   name   = "${local.name}-generator"
-  role   = aws_iam_role.generator.id
+  role   = aws_iam_role.generator[0].id
   policy = data.aws_iam_policy_document.generator.json
 }
 
@@ -189,8 +195,9 @@ resource "aws_iam_role_policy" "generator" {
 # cluster driving this one. A controller running inside this cluster registers
 # it as kind `in_cluster` and authorizes through its ServiceAccount instead.
 resource "aws_eks_access_entry" "controller" {
-  cluster_name  = aws_eks_cluster.main.name
-  principal_arn = aws_iam_role.controller.arn
+  count         = var.controller_compute == "eks" ? 1 : 0
+  cluster_name  = aws_eks_cluster.main[0].name
+  principal_arn = aws_iam_role.controller[0].arn
   type          = "STANDARD"
 
   # Binding RBAC to a stable group rather than to the principal's default
@@ -199,4 +206,39 @@ resource "aws_eks_access_entry" "controller" {
   kubernetes_groups = ["apexload-controllers"]
 
   tags = local.tags
+}
+
+moved {
+  from = data.aws_iam_policy_document.controller_assume_role
+  to   = data.aws_iam_policy_document.controller_assume_role[0]
+}
+
+moved {
+  from = data.aws_iam_policy_document.generator_assume_role
+  to   = data.aws_iam_policy_document.generator_assume_role[0]
+}
+
+moved {
+  from = aws_iam_role.controller
+  to   = aws_iam_role.controller[0]
+}
+
+moved {
+  from = aws_iam_role.generator
+  to   = aws_iam_role.generator[0]
+}
+
+moved {
+  from = aws_iam_role_policy.controller
+  to   = aws_iam_role_policy.controller[0]
+}
+
+moved {
+  from = aws_iam_role_policy.generator
+  to   = aws_iam_role_policy.generator[0]
+}
+
+moved {
+  from = aws_eks_access_entry.controller
+  to   = aws_eks_access_entry.controller[0]
 }

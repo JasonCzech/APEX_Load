@@ -325,6 +325,18 @@ type TestRunner struct {
 	notifier                                    *notificationDispatcher
 	notifications                               atomic.Value
 	routeCache                                  map[string]latencyRouteCacheEntry
+	// importPublicationSnapshot is installed by Server after construction. It
+	// reads the durable direct-import journal and returns assets that have been
+	// created but whose containing batch has not committed. Keeping the callback
+	// off the storage interfaces lets create-only persistence continue to use raw
+	// rows for recovery while every user-visible runner read fails closed.
+	importPublicationMu       sync.RWMutex
+	importPublicationSnapshot func() (map[string]struct{}, error)
+	importPublicationStore    storage.Store
+	// afterImportPublicationSnapshot is a deterministic test barrier used to
+	// prove that rollback between the claim read and asset revalidation cannot
+	// publish a stale pre-rollback snapshot.
+	afterImportPublicationSnapshot func()
 
 	// Reference-key state. envCode, script/scenario counters, and the index are
 	// guarded by mu. Run sequences use a shared dedicated allocator so request

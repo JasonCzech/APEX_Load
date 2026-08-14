@@ -169,7 +169,7 @@ func TestEnterpriseImportResponseRedactsRecordedResourceURLCredentials(t *testin
 	}
 }
 
-func TestPostmanImportKeepsEditableCredentialButMasksReviewCopies(t *testing.T) {
+func TestPostmanImportMasksOpaqueCredentialAndReviewCopies(t *testing.T) {
 	server := NewServer(ServerConfig{})
 	const secret = "v9Q!"
 	payload := map[string]any{
@@ -209,8 +209,8 @@ func TestPostmanImportKeepsEditableCredentialButMasksReviewCopies(t *testing.T) 
 	editableActions, _ := editable["actions"].([]any)
 	editableAction, _ := editableActions[0].(map[string]any)
 	editableHeaders, _ := editableAction["headers"].(map[string]any)
-	if got := editableHeaders["X-Auth-Token"]; got != secret {
-		t.Fatalf("editable destination header = %#v, want source bytes", got)
+	if got := editableHeaders["X-Auth-Token"]; got != maskedScriptSecret {
+		t.Fatalf("opaque destination header = %#v, want masked value", got)
 	}
 
 	result, _ := envelope["result"].(map[string]any)

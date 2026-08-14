@@ -100,6 +100,10 @@ type Requirement struct {
 	// materializing this credential value. Import adapters use it to remove the
 	// corresponding raw parameter/data-set values from public drafts.
 	SourceVariableNames []string `json:"-"`
+	// SourceValueStatus records why protected source bytes are unavailable. It
+	// is carried only through trusted importer/server boundaries; the API maps it
+	// to a disclosure-safe explanation for the review UI.
+	SourceValueStatus SourceCredentialValueStatus `json:"-"`
 }
 
 // RequirementSpec is the trusted input to NewRequirement.
@@ -157,6 +161,14 @@ func NewRequirement(spec RequirementSpec) (Requirement, string, error) {
 		return Requirement{}, "", fmt.Errorf("invalid suggested credential name %q", suggested)
 	}
 
+	valueStatus := ClassifySourceCredentialValue(spec.Value)
+	// Redact is a disclosure-only projection. Keep its established neutral
+	// sentinel so a read/export remains a faithful projection of the exact
+	// source bytes; only executable import modes must replace a source sentinel
+	// with a governed reference.
+	forceReference := spec.Mode != Redact && !spec.ExistingReference &&
+		(valueStatus == SourceCredentialValueRedactedPlaceholder ||
+			valueStatus == SourceCredentialValueUnsafeEncoding)
 	replacement := ""
 	projected := spec.Value
 	if spec.ExistingReference {
@@ -178,6 +190,13 @@ func NewRequirement(spec RequirementSpec) (Requirement, string, error) {
 			projected = replacement
 		}
 	}
+	if forceReference {
+		replacement, err = credential.Reference(suggested)
+		if err != nil {
+			return Requirement{}, "", err
+		}
+		projected = replacement
+	}
 
 	requirement := Requirement{
 		ID:                   StableID(spec.Source, targets, spec.Key),
@@ -188,12 +207,13 @@ func NewRequirement(spec RequirementSpec) (Requirement, string, error) {
 		Replacement:          replacement,
 		Source:               normalizeSource(spec.Source),
 		Targets:              targets,
-		SourceValueAvailable: !spec.ExistingReference && spec.Value != "",
+		SourceValueAvailable: !spec.ExistingReference && valueStatus.Available(),
 		ExistingReference:    spec.ExistingReference,
 		Value:                spec.Value,
 		SourceVariableNames:  normalizeSourceVariableNames(spec.SourceVariableNames),
+		SourceValueStatus:    valueStatus,
 	}
-	if requirement.ExistingReference {
+	if requirement.ExistingReference || !valueStatus.Available() {
 		requirement.Value = ""
 		requirement.SourceValueAvailable = false
 	}

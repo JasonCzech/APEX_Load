@@ -465,13 +465,13 @@ func resolveLibraryTransferRequestProjectID(req LibraryTransferRequest, path str
 	var actualProjectID string
 	switch normalizeLibraryKind(req.Kind) {
 	case "script":
-		script, err := store.GetScript(lookupID)
+		script, err := getPublishedImportScript(store, lookupID)
 		if err != nil {
 			return "", http.StatusNotFound, "script not found"
 		}
 		actualProjectID = normalizeProjectID(script.ProjectID)
 	case "scenario":
-		_, scripts, err := store.GetScenario(lookupID)
+		_, scripts, err := getPublishedImportScenario(store, lookupID)
 		if err != nil {
 			return "", http.StatusNotFound, "scenario not found"
 		}

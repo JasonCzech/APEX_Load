@@ -41,6 +41,9 @@ func main() {
 
 func runController() (runErr error) {
 	loadLocalDotEnv()
+	if err := validatePaaSControllerConfig(os.Getenv); err != nil {
+		return err
+	}
 	if applied, value, err := applyTLSCompatibilityDefaults(os.Getenv, os.Setenv); err != nil {
 		slog.Warn("failed to apply TLS compatibility defaults", "err", err)
 	} else if applied {
@@ -150,6 +153,8 @@ func runController() (runErr error) {
 		MaxConcurrent:                10,
 		Store:                        store,
 		GeneratorTargets:             generatorTargets,
+		EnableDynamicGenerators:      dynamicGeneratorsEnabled(os.Getenv),
+		PaaSComputeEnabled:           envIsTruthy(os.Getenv("APEXLOAD_PAAS_COMPUTE_ENABLED")),
 		GeneratorTimeout:             generatorTimeout,
 		GeneratorRunSupervisionTTL:   runSupervisionTTL,
 		GeneratorRunSupervisionRenew: runSupervisionRenew,
@@ -196,6 +201,57 @@ func runController() (runErr error) {
 		runErr = errors.Join(runErr, fmt.Errorf("controller background workers did not stop within 30s"))
 	}
 	return runErr
+}
+
+func dynamicGeneratorsEnabled(getenv func(string) string) bool {
+	if getenv == nil {
+		getenv = os.Getenv
+	}
+	if envIsTruthy(getenv("APEXLOAD_DYNAMIC_GENERATORS")) {
+		return true
+	}
+	switch strings.ToLower(strings.TrimSpace(getenv("APEXLOAD_ENVIRONMENT"))) {
+	case "azure_container_apps", "aws_ecs_fargate":
+		return true
+	default:
+		return false
+	}
+}
+
+func validatePaaSControllerConfig(getenv func(string) string) error {
+	if getenv == nil {
+		getenv = os.Getenv
+	}
+	deployment := strings.ToLower(strings.TrimSpace(getenv("APEXLOAD_ENVIRONMENT")))
+	if deployment != "azure_container_apps" && deployment != "aws_ecs_fargate" {
+		return nil
+	}
+	if envIsTruthy(getenv("APEXLOAD_CONTROLLER_HA")) {
+		return fmt.Errorf("APEXLOAD_CONTROLLER_HA is not supported for %s; the initial PaaS release requires one orchestrator/gateway replica", deployment)
+	}
+	role := strings.ToLower(strings.TrimSpace(getenv("APEXLOAD_CONTROLLER_ROLE")))
+	if role != "" && role != "all" {
+		return fmt.Errorf("APEXLOAD_CONTROLLER_ROLE=%s is not available for %s yet; use all with a single replica", role, deployment)
+	}
+	storeBackend := strings.ToLower(strings.TrimSpace(getenv("APEXLOAD_STORE")))
+	if storeBackend != storage.StoreBackendPostgres && storeBackend != "postgresql" {
+		return fmt.Errorf("%s requires APEXLOAD_STORE=postgres", deployment)
+	}
+	if strings.TrimSpace(getenv("APEXLOAD_DATABASE_URL")) == "" {
+		return fmt.Errorf("%s requires APEXLOAD_DATABASE_URL", deployment)
+	}
+	if strings.TrimSpace(getenv("APEXLOAD_REDIS_URL")) == "" {
+		return fmt.Errorf("%s requires APEXLOAD_REDIS_URL", deployment)
+	}
+	cacheBackend := strings.ToLower(strings.TrimSpace(getenv("APEXLOAD_CACHE_BACKEND")))
+	if cacheBackend != "redis" && cacheBackend != "valkey" {
+		return fmt.Errorf("%s requires APEXLOAD_CACHE_BACKEND=redis or valkey", deployment)
+	}
+	archiveBackend := strings.ToLower(strings.TrimSpace(getenv("APEXLOAD_ARCHIVE_BACKEND")))
+	if archiveBackend != "s3" && archiveBackend != "azure_blob" && archiveBackend != "gcs" {
+		return fmt.Errorf("%s requires APEXLOAD_ARCHIVE_BACKEND=s3, azure_blob, or gcs so archives and import assets survive controller replacement", deployment)
+	}
+	return nil
 }
 
 type controllerLifecycle interface {
@@ -284,7 +340,17 @@ func serveController(ctx context.Context, server controllerLifecycle, shutdownTi
 }
 
 func validateGeneratorTransportStartup(targets []string, appEnv string, security generatorrpc.TransportSecurity) error {
-	if len(targets) == 0 || !security.MustRefuseInsecure(appEnv) {
+	if len(targets) == 0 {
+		return nil
+	}
+	if security.AuthenticatedTunnel && !(security.TLS && (security.MutualTLS || security.Token)) {
+		for _, target := range targets {
+			if _, reverse := generatorrpc.ReverseGeneratorID(target); !reverse {
+				return fmt.Errorf("authenticated WSS tunnel security applies only to reverse generator targets; direct target %q requires gRPC mTLS or verified TLS plus %s", target, "APEXLOAD_GRPC_AUTH_TOKEN")
+			}
+		}
+	}
+	if !security.MustRefuseInsecure(appEnv) {
 		return nil
 	}
 	return fmt.Errorf("production distributed execution requires mTLS or verified TLS plus %s; configured %s", "APEXLOAD_GRPC_AUTH_TOKEN", security.String())
@@ -444,6 +510,12 @@ func importAssetDirFromEnv() (string, error) {
 		return dir, nil
 	}
 	if strings.EqualFold(strings.TrimSpace(os.Getenv("APEXLOAD_ENV")), "production") {
+		switch strings.ToLower(strings.TrimSpace(os.Getenv("APEXLOAD_ARCHIVE_BACKEND"))) {
+		case "s3", "azure_blob", "gcs":
+			// Import assets share the configured object backend and retain their
+			// metadata/CAS state in PostgreSQL; no RWX filesystem is required.
+			return "", nil
+		}
 		return "", fmt.Errorf("APEXLOAD_IMPORT_ASSET_DIR is required in production; import assets must not use the temporary default")
 	}
 	return "", nil

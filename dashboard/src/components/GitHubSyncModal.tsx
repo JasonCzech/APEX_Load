@@ -19,7 +19,9 @@ import {
 import { ScriptDefinition } from '../types/scripts'
 import { getErrorMessage } from '../utils/errorUtils'
 import ParameterizationReview from './ParameterizationReview'
+import ImportDestinationFolder from './ImportDestinationFolder'
 import { importDraftExpiryStatus } from './protectedImportSession'
+import { createReplaySessionId } from './scriptEditorUtils'
 import SecretBindingReview, {
   type PreparedSecretBindings,
   type SecretBindingReviewHandle,
@@ -67,6 +69,8 @@ export default function GitHubSyncModal({ mode, config, script, projectId, onClo
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
+  const [destinationFolderId, setDestinationFolderId] = useState('')
+  const [destinationOperationBusy, setDestinationOperationBusy] = useState(false)
 
   // Import-only browse state.
   const [browsePath, setBrowsePath] = useState('')
@@ -89,6 +93,13 @@ export default function GitHubSyncModal({ mode, config, script, projectId, onClo
   const secretBindingReviewRef = useRef<SecretBindingReviewHandle | null>(null)
   const importDraftRef = useRef<ScriptDefinition | null>(null)
   const importDraftGenerationRef = useRef(0)
+  const importSaveOperationRef = useRef<{
+    generation: number
+    projectId?: string
+    draft: ScriptDefinition
+    folderId: string
+    operationId: string
+  } | null>(null)
   const modalOpenRef = useRef(true)
   const [importDraftGeneration, setImportDraftGeneration] = useState(0)
   const advanceImportDraftGeneration = useCallback(() => {
@@ -149,6 +160,7 @@ export default function GitHubSyncModal({ mode, config, script, projectId, onClo
     clearImportReview()
     setLoading(false)
     setError('')
+    setNotice('')
   }, [advanceImportDraftGeneration, clearImportReview, sourceSecretSessions])
 
   useEffect(() => {
@@ -287,8 +299,37 @@ export default function GitHubSyncModal({ mode, config, script, projectId, onClo
     targetProjectId: string | undefined,
     requestIsCurrent: () => boolean,
   ) {
-    const saved = await scriptApi.createScript(draft, targetProjectId)
-    // createScript is the persistence commit point. If the modal is cancelled
+    const sourceGeneration = importDraftGenerationRef.current
+    const retained = importSaveOperationRef.current
+    const targetFolderId = destinationFolderId
+    const operationId = retained
+      && retained.generation === sourceGeneration
+      && retained.projectId === targetProjectId
+      && retained.draft === draft
+      && retained.folderId === targetFolderId
+      ? retained.operationId
+      : `github-import-${createReplaySessionId()}`
+    importSaveOperationRef.current = {
+      generation: sourceGeneration,
+      projectId: targetProjectId,
+      draft,
+      folderId: targetFolderId,
+      operationId,
+    }
+    const response = await scriptApi.commitGenericImportBatch({
+      scripts: [draft],
+      folder_id: targetFolderId || null,
+      operation_id: operationId,
+      source_profile: 'github',
+    })
+    if (response.count !== 1 || response.scripts.length !== 1) {
+      throw new Error('The atomic GitHub import save did not return the stored script. Retry the same save to reconcile its result.')
+    }
+    if (importSaveOperationRef.current?.operationId === operationId) {
+      importSaveOperationRef.current = null
+    }
+    const saved = response.scripts[0]
+    // The atomic batch response is the persistence commit point. If the modal is cancelled
     // or its source changes while that request is in flight, still publish the
     // returned script so the caller can track and refresh the created record.
     // Silently dropping this response leaves a real script orphaned in the
@@ -302,6 +343,7 @@ export default function GitHubSyncModal({ mode, config, script, projectId, onClo
   }
 
   async function doImport() {
+    if (destinationOperationBusy) return
     if (!selectedRepo || !path.trim()) {
       setError('Select a script file to import.')
       return
@@ -355,6 +397,13 @@ export default function GitHubSyncModal({ mode, config, script, projectId, onClo
         setSourceSecretMigrationAllowed(result.source_secret_migration_allowed === true)
         return
       }
+      // Keep the exact server-issued draft mounted until the atomic save is
+      // acknowledged. If the response is lost, Save Script can replay the same
+      // operation and attestation instead of fetching a new, conflicting draft.
+      setImportDraft(draft)
+      importDraftRef.current = draft
+      setImportSecretBindingRequirements([])
+      setImportParameterization(null)
       await saveImportDraft(draft, sourceProjectId, requestIsCurrent)
     } catch (err) {
       if (requestIsCurrent()) setError(getErrorMessage(err, 'Import failed'))
@@ -364,7 +413,7 @@ export default function GitHubSyncModal({ mode, config, script, projectId, onClo
   }
 
   async function doSaveReviewedImport() {
-    if (!importDraft) return
+    if (!importDraft || destinationOperationBusy) return
     if (importDraftExpiry?.expired) {
       setError('This credential-preserving GitHub import draft has expired. Re-import the script before saving.')
       return
@@ -459,6 +508,16 @@ export default function GitHubSyncModal({ mode, config, script, projectId, onClo
             </select>
           </label>
 
+          {mode === 'import' && (
+            <ImportDestinationFolder
+              projectId={projectId}
+              value={destinationFolderId}
+              onChange={setDestinationFolderId}
+              disabled={loading || parameterizationApplying}
+              onOperationBusyChange={setDestinationOperationBusy}
+            />
+          )}
+
           <label className="project-redaction-rule-field">
             <span>Branch</span>
             <select
@@ -514,6 +573,10 @@ export default function GitHubSyncModal({ mode, config, script, projectId, onClo
                   disabled={loading || parameterizationApplying || importDraftExpiry?.expired === true}
                   onApply={doApplySecretBindings}
                   onPreparedChange={setImportPreparedSecrets}
+                  onProjectSecretsConfigured={names => {
+                    if (names.length === 0) return
+                    setNotice('Project-secret values configured during this review remain in Project Secrets independently of script saving. If script saving fails, retrying this save reuses those configured values. Atomicity applies to the script save, not external secret-store writes.')
+                  }}
                 />
               )}
               {importParameterization && (
@@ -593,7 +656,7 @@ export default function GitHubSyncModal({ mode, config, script, projectId, onClo
                 className="btn btn-primary"
                 type="button"
                 onClick={() => void doSaveReviewedImport()}
-                disabled={importDraftExpiry?.expired === true || loading || parameterizationApplying || importPreparedSecrets?.valid === false}
+                disabled={destinationOperationBusy || importDraftExpiry?.expired === true || loading || parameterizationApplying || importPreparedSecrets?.valid === false}
               >
                 {loading
                   ? 'Saving…'
@@ -602,7 +665,7 @@ export default function GitHubSyncModal({ mode, config, script, projectId, onClo
                     : 'Save Script'}
               </button>
             ) : (
-              <button className="btn btn-primary" type="button" onClick={() => void doImport()} disabled={loading || !path.trim()}>
+              <button className="btn btn-primary" type="button" onClick={() => void doImport()} disabled={destinationOperationBusy || loading || !path.trim()}>
                 {loading ? 'Importing…' : 'Import & Save'}
               </button>
             )}

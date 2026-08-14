@@ -130,6 +130,23 @@ func (result *Result) Merge(other Result) {
 	result.Disposition = worseDisposition(result.Disposition, other.Disposition)
 }
 
+// preserveRequiresCredentialReplacement distinguishes ordinary Preserve-mode
+// credentials (whose exact authored bytes intentionally remain executable)
+// from disclosure placeholders or encodings that cannot supply credential
+// material. Byte-preserving structured writers must still apply the generated
+// secret reference for the latter; otherwise their sidecar would claim the
+// source is unavailable while the executable payload retained [REDACTED].
+func preserveRequiresCredentialReplacement(result Result) bool {
+	for _, requirement := range result.Requirements {
+		switch requirement.SourceValueStatus {
+		case SourceCredentialValueRedactedPlaceholder,
+			SourceCredentialValueUnsafeEncoding:
+			return true
+		}
+	}
+	return false
+}
+
 // HeaderOccurrence is one ordered HTTP header. Duplicate names and authored
 // casing are intentionally retained.
 type HeaderOccurrence struct {
@@ -433,6 +450,29 @@ func projectSensitiveScalar(value, name string, source SourceRef, target TargetR
 	target.Occurrence = occurrence
 	sourceExpression := value
 	value, sourceVariableNames := MaterializeSourceVariables(value, options)
+	valueStatus := ClassifySourceCredentialValue(value)
+	if valueStatus == SourceCredentialValueRedactedPlaceholder ||
+		valueStatus == SourceCredentialValueUnsafeEncoding {
+		requirement, projected, err := NewRequirement(RequirementSpec{
+			Key:                 name,
+			Label:               name,
+			Context:             target.Field,
+			NameHint:            firstNonEmpty(options.NamePrefix, options.RequestKey) + "_" + name,
+			Source:              source,
+			Targets:             []TargetRef{target},
+			Value:               value,
+			SourceVariableNames: sourceVariableNames,
+			Mode:                options.Mode,
+			Registry:            options.Registry,
+		})
+		if err != nil {
+			return "", Result{}, err
+		}
+		result := exactResult()
+		result.Requirements = append(result.Requirements, requirement)
+		result.Merge(blocked(source, "import_credential_source_unavailable"))
+		return projected, result, nil
+	}
 	if _, trusted := options.TrustedWholeValues[strings.TrimSpace(value)]; trusted {
 		result := exactResult()
 		if options.Mode == Preserve {
@@ -2240,7 +2280,8 @@ func scanXML(payload []byte, options Options) ([]byte, Result, error) {
 						return nil, Result{}, err
 					}
 					values++
-					if options.Mode != Preserve {
+					if options.Mode != Preserve ||
+						preserveRequiresCredentialReplacement(item) {
 						replacements = append(replacements, replacement{start: start, end: end, value: []byte(projected)})
 					}
 					result.Merge(item)
@@ -2338,7 +2379,8 @@ func scanXML(payload []byte, options Options) ([]byte, Result, error) {
 				return nil, Result{}, err
 			}
 			values++
-			if options.Mode != Preserve {
+			if options.Mode != Preserve ||
+				preserveRequiresCredentialReplacement(item) {
 				replacements = append(replacements, replacement{start: attr.valueStart, end: attr.valueEnd, value: []byte(projected)})
 			}
 			result.Merge(item)

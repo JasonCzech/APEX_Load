@@ -98,6 +98,21 @@ export function useSourceSecretSessionLifecycle(discardRequest: DiscardSourceSec
     sessions.forEach(session => { void discard(session) })
   }, [discard])
 
+  const settle = useCallback((
+    lane: string,
+    projectId: string | undefined,
+    sessionId: string | undefined,
+  ) => {
+    if (!projectId || !sessionId) return
+    const active = activeByLaneRef.current.get(lane)
+    if (!active || sessionKey(active) !== sessionKey({ projectId, sessionId })) return
+    // A successful migration/discard has already consumed this one-shot
+    // server session. Remove only the local owner; calling the discard API a
+    // second time would turn a successful settlement into a noisy 404 retry.
+    activeByLaneRef.current.delete(lane)
+    discardedRef.current.add(sessionKey(active))
+  }, [])
+
   useEffect(() => () => {
     const sessions = Array.from(activeByLaneRef.current.values())
     activeByLaneRef.current.clear()
@@ -105,7 +120,7 @@ export function useSourceSecretSessionLifecycle(discardRequest: DiscardSourceSec
   }, [discard])
 
   return useMemo(
-    () => ({ clear, discardUnaccepted, replace }),
-    [clear, discardUnaccepted, replace],
+    () => ({ clear, discardUnaccepted, replace, settle }),
+    [clear, discardUnaccepted, replace, settle],
   )
 }

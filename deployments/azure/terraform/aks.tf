@@ -1,4 +1,5 @@
 resource "azurerm_kubernetes_cluster" "main" {
+  count               = local.aks_enabled ? 1 : 0
   name                = "${local.name}-aks"
   resource_group_name = azurerm_resource_group.main.name
   location            = azurerm_resource_group.main.location
@@ -69,8 +70,9 @@ resource "azurerm_kubernetes_cluster" "main" {
 # matches the nodeSelector/toleration in generator-statefulset.yaml, so load
 # generation never competes with the controller or system pods.
 resource "azurerm_kubernetes_cluster_node_pool" "generators" {
+  count                 = var.generator_compute == "aks" ? 1 : 0
   name                  = "loadgen"
-  kubernetes_cluster_id = azurerm_kubernetes_cluster.main.id
+  kubernetes_cluster_id = azurerm_kubernetes_cluster.main[0].id
   vm_size               = var.generator_node_vm_size
   auto_scaling_enabled  = true
   min_count             = var.generator_node_min_count
@@ -100,8 +102,18 @@ resource "azurerm_kubernetes_cluster_node_pool" "generators" {
 }
 
 resource "azurerm_role_assignment" "current_user_aks_cluster_admin" {
-  count                = var.aks_grant_current_user_cluster_admin ? 1 : 0
-  scope                = azurerm_kubernetes_cluster.main.id
+  count                = local.aks_enabled && var.aks_grant_current_user_cluster_admin ? 1 : 0
+  scope                = azurerm_kubernetes_cluster.main[0].id
   role_definition_name = "Azure Kubernetes Service RBAC Cluster Admin"
   principal_id         = data.azurerm_client_config.current.object_id
+}
+
+moved {
+  from = azurerm_kubernetes_cluster.main
+  to   = azurerm_kubernetes_cluster.main[0]
+}
+
+moved {
+  from = azurerm_kubernetes_cluster_node_pool.generators
+  to   = azurerm_kubernetes_cluster_node_pool.generators[0]
 }

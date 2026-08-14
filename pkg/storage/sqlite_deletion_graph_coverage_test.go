@@ -33,7 +33,7 @@ var manuallyDeletedProjectTables = stringSet(
 	"scenario_schedule_approvals", "scenario_schedule_occurrences", "scenario_schedules",
 	"scenario_scripts", "script_recordings", "scripts", "shared_data_pool_rows",
 	"shared_data_pools", "test_history", "test_interval_summaries", "test_notes", "tests",
-	"usage_accounting_snapshots",
+	"usage_accounting_snapshots", "import_assets",
 )
 
 // Cleanup jobs and audit history intentionally outlive their owner. The former
@@ -41,7 +41,7 @@ var manuallyDeletedProjectTables = stringSet(
 // evidence. A declaration here is therefore a reviewed retention decision, not
 // an omission from deleteProjectGraphTx.
 var retainedAfterProjectDeletionTables = stringSet(
-	"archive_cleanup_jobs", "archive_version_cleanup_jobs", "audit_events", "replay_session_leases",
+	"archive_cleanup_jobs", "archive_version_cleanup_jobs", "audit_events", "capacity_instance_intents", "replay_session_leases",
 )
 
 // Test deletion either removes these rows or clears their test reference in
@@ -56,7 +56,7 @@ var manuallyHandledTestTables = stringSet(
 )
 
 var retainedAfterTestDeletionTables = stringSet(
-	"archive_cleanup_jobs", "archive_version_cleanup_jobs",
+	"archive_cleanup_jobs", "archive_version_cleanup_jobs", "capacity_instance_intents",
 )
 
 var detachedFromTestTables = stringSet(

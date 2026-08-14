@@ -16,9 +16,11 @@ import (
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/convert/convertutil"
+	"github.com/jasonczech/apexload/pkg/convert/credentialpolicy"
 	"github.com/jasonczech/apexload/pkg/convert/diag"
 	"github.com/jasonczech/apexload/pkg/convert/sourceview"
 	"github.com/jasonczech/apexload/pkg/convert/srcparse"
+	"github.com/jasonczech/apexload/pkg/convert/uniquify"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"gopkg.in/yaml.v3"
 )
@@ -75,13 +77,14 @@ type ReviewSummary struct {
 
 // ConvertResult is the converter output.
 type ConvertResult struct {
-	Script       *dsl.Script        `json:"script"`
-	Scripts      []*dsl.Script      `json:"scripts,omitempty"`
-	Warnings     []string           `json:"warnings,omitempty"`
-	Unsupported  diag.Diagnostics   `json:"unsupported,omitempty"`
-	Stats        ConvertStats       `json:"stats"`
-	Summary      ReviewSummary      `json:"summary"`
-	SourceReview *sourceview.Review `json:"source_review,omitempty"`
+	Script             *dsl.Script                    `json:"script"`
+	Scripts            []*dsl.Script                  `json:"scripts,omitempty"`
+	Warnings           []string                       `json:"warnings,omitempty"`
+	Unsupported        diag.Diagnostics               `json:"unsupported,omitempty"`
+	Stats              ConvertStats                   `json:"stats"`
+	Summary            ReviewSummary                  `json:"summary"`
+	SourceReview       *sourceview.Review             `json:"source_review,omitempty"`
+	SecretRequirements []credentialpolicy.Requirement `json:"secret_requirements,omitempty"`
 }
 
 // --- AsyncAPI document model (2.x + 3.x) ---
@@ -408,6 +411,7 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 		result.Scripts = append(result.Scripts, script)
 	}
 	if len(result.Scripts) > 0 {
+		uniquify.DeduplicateScriptNames(result.Scripts)
 		result.Script = result.Scripts[0]
 	} else {
 		result.Script = buildScriptForOps(scriptName, defaultTarget, nil, req.Options, brokers, kafkaProfile, securityProtocol, kafkaSASLMechanism, jmsBroker, mock, false)
@@ -433,6 +437,14 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	if hasTarget(ops, targetKafka) && len(brokers) == 0 {
 		result.Warnings = append(result.Warnings, "no Kafka brokers were derived from servers; set config.kafka.brokers before running against a real cluster")
 	}
+	generatedRequirements, requirementErr := asyncAPIGeneratedCredentialRequirements(
+		result.Scripts,
+		sourceFile,
+	)
+	if requirementErr != nil {
+		return nil, fmt.Errorf("describe generated AsyncAPI credentials: %w", requirementErr)
+	}
+	result.SecretRequirements = generatedRequirements
 
 	result.Unsupported = diagnostics.Items()
 	result.SourceReview = sourceview.Build(map[string]string{sourceFile: content}, mappings)
@@ -497,7 +509,7 @@ func buildScriptForOps(scriptName string, target opTarget, ops []kafkaOp, opts C
 		if kafkaProfile == "eventhubs" {
 			cfg.Kafka.SASLMechanism = "plain"
 			cfg.Kafka.SASLUsername = "$ConnectionString"
-			cfg.Kafka.SASLPasswordSecret = "eventhubs_connection_string"
+			cfg.Kafka.SASLPasswordSecret = "{{secret.EVENTHUBS_CONNECTION_STRING}}"
 		} else if kafkaSASLMechanism != "" {
 			cfg.Kafka.SASLMechanism = kafkaSASLMechanism
 			if cfg.Kafka.SecurityProtocol == "" || cfg.Kafka.SecurityProtocol == "plaintext" {

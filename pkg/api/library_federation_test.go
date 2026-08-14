@@ -201,6 +201,82 @@ func TestLibraryRemotePullAndPushScriptBetweenControllers(t *testing.T) {
 	}
 }
 
+func TestLibraryRemotePushScenarioHonorsIncludeDependencies(t *testing.T) {
+	t.Setenv(remoteOutboundAllowPrivateHostsEnv, "1")
+
+	for _, testCase := range []struct {
+		name                string
+		includeDependencies bool
+		wantStatus          int
+		wantBundleItems     int
+		wantHostScripts     int
+		wantHostScenarios   int
+	}{
+		{
+			name:                "includes referenced scripts",
+			includeDependencies: true,
+			wantStatus:          http.StatusOK,
+			wantBundleItems:     2,
+			wantHostScripts:     1,
+			wantHostScenarios:   1,
+		},
+		{
+			name:                "scenario only",
+			includeDependencies: false,
+			wantStatus:          http.StatusConflict,
+			wantBundleItems:     1,
+			wantHostScripts:     0,
+			wantHostScenarios:   0,
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			host := NewServer(ServerConfig{})
+			local := NewServer(ServerConfig{})
+			localScript := local.runner.StoreScript(libraryTestScript("scenario-script", "Scenario Script", "team-project", "/scenario"))
+			localScenario, err := local.runner.StoreScenario(CreateScenarioRequest{
+				Name:     "Scenario Transfer",
+				Duration: "1m",
+				Groups: []CreateGroupEntry{{
+					Name:     "load",
+					ScriptID: localScript.ID,
+					VUsers:   1,
+				}},
+			})
+			if err != nil {
+				t.Fatalf("StoreScenario: %v", err)
+			}
+
+			hostHTTP := httptest.NewServer(host.mux)
+			defer hostHTTP.Close()
+			remote := createLibraryRemoteForTest(t, local, hostHTTP.URL, "team-project")
+			pushBody := marshalLibraryTestJSON(t, LibraryTransferRequest{
+				Kind:                "scenario",
+				ID:                  localScenario.ID,
+				IncludeDependencies: testCase.includeDependencies,
+			})
+			pushResp := httptest.NewRecorder()
+			local.mux.ServeHTTP(pushResp, httptest.NewRequest(http.MethodPost, "/api/v1/library/remotes/"+remote.ID+"/push", bytes.NewReader(pushBody)))
+			if pushResp.Code != testCase.wantStatus {
+				t.Fatalf("push status = %d body=%s, want %d", pushResp.Code, pushResp.Body.String(), testCase.wantStatus)
+			}
+
+			var pushed LibraryRemoteTransferResponse
+			if err := json.NewDecoder(pushResp.Body).Decode(&pushed); err != nil {
+				t.Fatalf("decode push: %v", err)
+			}
+			if pushed.Bundle == nil || len(pushed.Bundle.Items) != testCase.wantBundleItems {
+				t.Fatalf("pushed bundle items = %#v, want %d", pushed.Bundle, testCase.wantBundleItems)
+			}
+			if got := len(host.runner.ListScriptsFiltered("team-project", nil)); got != testCase.wantHostScripts {
+				t.Fatalf("host scripts = %d, want %d", got, testCase.wantHostScripts)
+			}
+			if got := len(host.runner.ListScenariosFiltered("team-project")); got != testCase.wantHostScenarios {
+				t.Fatalf("host scenarios = %d, want %d", got, testCase.wantHostScenarios)
+			}
+		})
+	}
+}
+
 func TestLibraryRemoteJSONHonorsConfiguredTimeout(t *testing.T) {
 	t.Setenv("APEXLOAD_LIBRARY_REMOTE_JSON_TIMEOUT", "10ms")
 	t.Setenv(remoteOutboundAllowPrivateHostsEnv, "1") // loopback target; test the timeout, not the SSRF guard

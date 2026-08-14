@@ -82,9 +82,17 @@ export interface FleetPool {
   /** Registered cluster connection this pool scales in; empty means the
    *  controller's env-configured provisioner. */
   cluster_id?: string
+  /** Provider-neutral placement. PaaS pools do not need pre-associated runtime members. */
+  execution_target_id?: string
   /** The domain this pool is scoped to. Empty/absent means UNSCOPED: the
    *  domain deployment-target constraint does not apply to it. */
   domain_id?: string
+  lifecycle_mode?: 'standing' | 'on_demand' | 'warm_burst'
+  warm_floor?: number
+  readiness_timeout_seconds?: number
+  idle_grace_seconds?: number
+  runtime_profile_id?: string
+  capacity_admission?: 'strict' | 'best_effort'
   /** Host-resource budget and node placement for this pool's generator pods. */
   allocation?: PoolAllocation
   created_at: string
@@ -133,6 +141,16 @@ export interface FleetProvisioningRequest {
   project_id?: string
   status: string
   desired_count: number
+  execution_target_id?: string
+  provider_operation_id?: string
+  idempotency_key?: string
+  observed_count?: number
+  ready_count?: number
+  pending_count?: number
+  draining_count?: number
+  failed_count?: number
+  deadline_at?: string
+  last_error?: string
   reason?: string
   requested_by_subject?: string
   events?: FleetProvisioningEvent[]
@@ -146,4 +164,24 @@ export interface FleetProvisioningRequestListResponse {
   count: number
   limit?: number
   offset?: number
+}
+
+export interface FleetProvisioningInstance {
+  id: string
+  execution_target_id: string
+  fleet_pool_id: string
+  test_id?: string
+  provisioning_request_id?: string
+  generator_id: string
+  provider_id?: string
+  state: string
+  archive_state: string
+  cleanup_deadline?: string
+  created_at: string
+  updated_at: string
+}
+
+export interface FleetProvisioningInstanceListResponse {
+  instances: FleetProvisioningInstance[]
+  total: number
 }

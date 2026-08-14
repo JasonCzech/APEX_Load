@@ -372,6 +372,53 @@ func TestEnterpriseCredentialProjectionRequirementValuesRemainJSONExcluded(t *te
 	}
 }
 
+func TestEnterpriseRuntimeBindingsNeverRestoreDisclosurePlaceholderAsCredential(t *testing.T) {
+	for _, value := range []string{
+		credential.Redacted,
+		"Bearer [redacted]",
+		"%5BREDACTED%5D",
+		"W1JFREFDVEVEXQ==",
+	} {
+		t.Run(value, func(t *testing.T) {
+			script := &dsl.Script{
+				Name:     "runtime-sentinel",
+				Protocol: "http",
+				Config: dsl.ScriptConfig{HTTP: dsl.HTTPConfig{
+					Auth: dsl.AuthConfig{Type: "basic", Password: value},
+				}},
+				Actions: []dsl.Action{{
+					Name: "request", Type: "request", Method: "GET", Target: "https://example.test",
+				}},
+			}
+			result := &ConvertResult{Script: script}
+			applyEnterpriseRuntimeBindings(
+				result,
+				[]*dsl.Script{script},
+				archiveFinalizationContext{RuntimeConfig: &RuntimeConfig{AuthPass: value}},
+			)
+
+			password := script.Config.HTTP.Auth.Password
+			if name, ok := credential.ParseReference(password); !ok || name != enterpriseHTTPAuthPasswordSecretName {
+				t.Fatalf("password = %q, want unconfigured governed reference", password)
+			}
+			requirements := result.ProtectedRequirements.Take()
+			if len(requirements) != 1 {
+				t.Fatalf("requirements = %#v, want unavailable-value guidance", requirements)
+			}
+			requirement := requirements[0]
+			if requirement.Value != "" || requirement.SourceValueAvailable ||
+				requirement.SourceValueStatus != credentialpolicy.SourceCredentialValueRedactedPlaceholder ||
+				requirement.Label != "HTTP authentication password" ||
+				!strings.Contains(requirement.Context, "disclosure placeholder") ||
+				!strings.Contains(requirement.Context, "cannot be preserved") ||
+				len(requirement.Targets) != 1 ||
+				requirement.Targets[0].Field != "config.http.auth.password" {
+				t.Fatalf("unavailable runtime credential lacks descriptive reason/provenance: %#v", requirement)
+			}
+		})
+	}
+}
+
 func TestEnterpriseMalformedBase64BodyRetainsExactSourceInValidBlockedDraft(t *testing.T) {
 	t.Parallel()
 	result := &ConvertResult{Script: &dsl.Script{

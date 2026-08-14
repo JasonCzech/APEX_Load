@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useClustersApi } from '../hooks/api/useClustersApi'
 import { useDeploymentTargetsApi } from '../hooks/api/useDeploymentTargetsApi'
 import { useFleetApi } from '../hooks/api/useFleetApi'
+import { useComputeApi } from '../hooks/api/useComputeApi'
 import type { ClusterConnection } from '../types/cluster'
 import type {
   ConflictingFleetPool,
@@ -10,6 +11,7 @@ import type {
   DomainDeploymentTarget,
 } from '../types/deploymentTarget'
 import type { FleetPool } from '../types/fleet'
+import type { ExecutionTarget } from '../types/compute'
 import {
   DeploymentTargetDraft,
   SELECTABLE_DEPLOYMENT_PROVIDERS,
@@ -20,6 +22,7 @@ import {
   deploymentTargetDraftFrom,
   deploymentTargetPayload,
   providerLabel,
+  providerForExecutionTargetKind,
 } from './deploymentTargetModel'
 
 interface Props {
@@ -40,10 +43,12 @@ export default function DomainDeploymentTargetCard({ domainId, domainName, canMa
   const api = useDeploymentTargetsApi()
   const clustersApi = useClustersApi()
   const fleetApi = useFleetApi()
+  const computeApi = useComputeApi()
 
   const [target, setTarget] = useState<DomainDeploymentTarget | null>(null)
   const [clusters, setClusters] = useState<ClusterConnection[]>([])
   const [pools, setPools] = useState<FleetPool[]>([])
+  const [executionTargets, setExecutionTargets] = useState<ExecutionTarget[]>([])
   const [draft, setDraft] = useState<DeploymentTargetDraft | null>(null)
   const [status, setStatus] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -54,20 +59,22 @@ export default function DomainDeploymentTargetCard({ domainId, domainName, canMa
     if (!domainId) return
     setError(null)
     try {
-      const [loadedTarget, clusterList, poolList] = await Promise.all([
+      const [loadedTarget, clusterList, executionTargetList, poolList] = await Promise.all([
         api.getDeploymentTarget(domainId),
         clustersApi.listClusters(),
+        computeApi.listExecutionTargets(),
         fleetApi.listFleetPools(),
       ])
       setTarget(loadedTarget)
       setDraft(deploymentTargetDraftFrom(loadedTarget))
       setClusters(clusterList.clusters ?? [])
+      setExecutionTargets(executionTargetList.execution_targets ?? [])
       setPools((poolList.fleet_pools ?? []).filter((pool) => (pool.domain_id ?? '') === domainId))
       setServerConflicts([])
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : 'Could not load the deployment target.')
     }
-  }, [api, clustersApi, fleetApi, domainId])
+  }, [api, clustersApi, computeApi, fleetApi, domainId])
 
   useEffect(() => {
     void load()
@@ -78,8 +85,8 @@ export default function DomainDeploymentTargetCard({ domainId, domainName, canMa
   // Conflicts computed locally so Save can be disabled before the round trip.
   // The server check remains authoritative.
   const localConflicts = useMemo(
-    () => (provider ? conflictingPools(pools, clusters, provider) : []),
-    [pools, clusters, provider],
+    () => (provider ? conflictingPools(pools, clusters, provider, executionTargets, draft?.allowedTargetIds || []) : []),
+    [pools, clusters, provider, executionTargets, draft?.allowedTargetIds],
   )
   const conflicts = serverConflicts.length > 0 ? serverConflicts : localConflicts
 
@@ -88,7 +95,12 @@ export default function DomainDeploymentTargetCard({ domainId, domainName, canMa
     [clusters, provider],
   )
 
-  const validationError = draft ? deploymentTargetDraftError(draft, clusters) : null
+  const eligibleExecutionTargets = useMemo(
+    () => executionTargets.filter(candidate => providerForExecutionTargetKind(candidate.kind) === provider),
+    [executionTargets, provider],
+  )
+
+  const validationError = draft ? deploymentTargetDraftError(draft, clusters, executionTargets) : null
   const canSave = canManage && !busy && draft !== null && !validationError && conflicts.length === 0
 
   const save = useCallback(async () => {
@@ -169,6 +181,8 @@ export default function DomainDeploymentTargetCard({ domainId, domainName, canMa
               // A default cluster from the previous provider would be
               // immediately invalid, so drop it on a provider change.
               defaultClusterId: '',
+              defaultExecutionTargetId: '',
+              allowedTargetIds: [],
             })
           }
         >
@@ -196,6 +210,23 @@ export default function DomainDeploymentTargetCard({ domainId, domainName, canMa
           ))}
         </select>
       </label>
+
+      <label className="pp-field">
+        <span>Default execution target for new pools</span>
+        <select value={draft.defaultExecutionTargetId} disabled={!canManage || busy || draft.provider === ''} onChange={(e) => {
+          const id = e.target.value
+          const allowed = draft.allowedTargetIds || []
+          setDraft({ ...draft, defaultExecutionTargetId: id, allowedTargetIds: id && !allowed.includes(id) ? [...allowed, id] : allowed })
+        }}>
+          <option value="">No normalized target — choose per pool</option>
+          {eligibleExecutionTargets.map(candidate => <option key={candidate.id} value={candidate.id}>{candidate.name}</option>)}
+        </select>
+      </label>
+
+      {eligibleExecutionTargets.length > 0 ? <fieldset className="pp-field">
+        <legend>Allowed execution targets</legend>
+        {eligibleExecutionTargets.map(candidate => { const allowed = draft.allowedTargetIds || []; return <label key={candidate.id}><input type="checkbox" checked={allowed.includes(candidate.id)} disabled={!canManage || busy || draft.defaultExecutionTargetId === candidate.id} onChange={(e) => setDraft({ ...draft, allowedTargetIds: e.target.checked ? [...allowed, candidate.id] : allowed.filter(id => id !== candidate.id) })} /> {candidate.name}</label> })}
+      </fieldset> : null}
 
       <div className="pp-muted">
         {pools.length === 0

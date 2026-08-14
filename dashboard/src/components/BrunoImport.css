@@ -343,6 +343,27 @@
   color: var(--text-primary);
 }
 
+.bruno-native-table-pagination {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 10px;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.bruno-native-table-pagination > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.bruno-native-table-pagination .btn {
+  width: auto;
+}
+
 .bruno-native-review-button {
   min-width: 84px;
   color: var(--accent);
@@ -399,6 +420,21 @@
   overflow: auto;
 }
 
+.bruno-native-review-selection-note {
+  display: grid;
+  gap: 3px;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--warning) 45%, var(--border));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--warning) 9%, var(--bg-primary));
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.bruno-native-review-selection-note strong {
+  color: var(--text-primary);
+}
+
 .bruno-native-review-summary {
   display: grid;
   grid-template-columns: minmax(90px, 0.18fr) minmax(0, 1fr) minmax(80px, 0.15fr);
@@ -450,6 +486,14 @@
   display: grid;
   gap: 7px;
   padding-left: 20px;
+}
+
+.bruno-native-review-section li,
+.bruno-native-review-section li strong,
+.bruno-native-review-section li span,
+.bruno-native-review-section li code {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .bruno-native-review-section li span {

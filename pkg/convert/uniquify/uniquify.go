@@ -55,6 +55,53 @@ func DeduplicateActionNames(script *dsl.Script) []Rename {
 	return renames
 }
 
+// DeduplicateScriptNames makes the human-visible names in a converted script
+// batch unique under the same trim-and-case-fold identity used by import save
+// handlers. The first occurrence keeps its source name; later occurrences get
+// deterministic _N suffixes. Nil scripts and empty names are left for the
+// normal validator.
+//
+// A converter that emits more than one script must run this before it creates
+// credential targets or scenario references, so those side records bind to the
+// final, unambiguous script names.
+func DeduplicateScriptNames(scripts []*dsl.Script) []Rename {
+	seen := make(map[string]int, len(scripts))
+	var renames []Rename
+	for _, script := range scripts {
+		if script == nil || strings.TrimSpace(script.Name) == "" {
+			continue
+		}
+		original := script.Name
+		unique := uniqueScriptName(original, seen)
+		if unique == original {
+			continue
+		}
+		script.Name = unique
+		renames = append(renames, Rename{OldName: original, NewName: unique})
+	}
+	return renames
+}
+
+func uniqueScriptName(name string, seen map[string]int) string {
+	base := strings.TrimSpace(name)
+	key := strings.ToLower(base)
+	count := seen[key]
+	if count == 0 {
+		seen[key] = 1
+		return name
+	}
+	for {
+		count++
+		candidate := fmt.Sprintf("%s_%d", base, count)
+		candidateKey := strings.ToLower(strings.TrimSpace(candidate))
+		if seen[candidateKey] == 0 {
+			seen[key] = count
+			seen[candidateKey] = 1
+			return candidate
+		}
+	}
+}
+
 // dedupeActionList uniquifies the names of actions against the shared seen
 // registry, then recurses into each action's nested scopes with a fresh
 // per-container registry.
@@ -130,7 +177,8 @@ func applyRename(name *string, seen map[string]int, renames *[]Rename) {
 // candidate so a generated suffix never collides with an existing literal
 // "..._N" (the cascade hole the old per-branch dedup left open).
 func uniqueName(name string, seen map[string]int) string {
-	key := strings.ToLower(name)
+	base := strings.TrimSpace(name)
+	key := strings.ToLower(base)
 	count := seen[key]
 	if count == 0 {
 		seen[key] = 1
@@ -138,8 +186,8 @@ func uniqueName(name string, seen map[string]int) string {
 	}
 	for {
 		count++
-		candidate := fmt.Sprintf("%s_%d", name, count)
-		candidateKey := strings.ToLower(candidate)
+		candidate := fmt.Sprintf("%s_%d", base, count)
+		candidateKey := strings.ToLower(strings.TrimSpace(candidate))
 		if seen[candidateKey] == 0 {
 			seen[key] = count
 			seen[candidateKey] = 1

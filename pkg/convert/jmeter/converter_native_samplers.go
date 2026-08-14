@@ -15,6 +15,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/jasonczech/apexload/pkg/convert/credentialpolicy"
 	"github.com/jasonczech/apexload/pkg/convert/diag"
 	"github.com/jasonczech/apexload/pkg/convert/sourceview"
 	"github.com/jasonczech/apexload/pkg/credential"
@@ -235,7 +236,7 @@ func parseJMeterJDBCConnection(element *xmlNode) (*dsl.DatabaseConfig, bool, boo
 		credentialRetained = credentialRetained || hasJDBCInlineCredentials(trimmed)
 	}
 	for _, property := range properties {
-		if credential.SensitiveName(property.Name) &&
+		if jmeterJDBCSensitivePropertyName(property.Name) &&
 			strings.TrimSpace(property.Value) != "" {
 			credentialRetained = true
 		}
@@ -466,8 +467,144 @@ var (
 	jdbcCredPropRe = regexp.MustCompile(`(?i)([;&?](?:password|pwd)=)([^;&]*)`)
 	// jdbcOracleCredRe matches Oracle thin/oci inline credentials of the form
 	// jdbc:oracle:<drivertype>:user/password@... (the user/pass precede the '@').
-	jdbcOracleCredRe = regexp.MustCompile(`(?i)^(jdbc:oracle:[a-z]+:)([^/@:][^/@]*)/([^@]*)(@)`)
+	jdbcOracleCredRe         = regexp.MustCompile(`(?i)^((?:jdbc:)?oracle:[a-z]+:)([^/@:][^/@]*)/([^@]*)(@)`)
+	jdbcCredentialPropertyRe = regexp.MustCompile(`(?i)(?:^|[;&?])([^=;&?]+)=([^;&]*)`)
 )
+
+func jmeterJDBCSensitivePropertyName(name string) bool {
+	return credential.SensitiveName(name) || credential.SensitiveXMLName(name)
+}
+
+func projectJMeterJDBCUnavailableCredential(
+	cfg *dsl.DatabaseConfig,
+	element *xmlNode,
+	ctx *convertContext,
+	sourceFileName string,
+	scriptName string,
+) (bool, error) {
+	if cfg == nil || ctx == nil {
+		return false, nil
+	}
+	value, status, unavailable := jmeterJDBCUnavailableCredential(cfg.DSN, element)
+	if !unavailable {
+		return false, nil
+	}
+	requirement, replacement, err := credentialpolicy.NewRequirement(
+		credentialpolicy.RequirementSpec{
+			Key:      "jdbc_connection_string",
+			Label:    "JMeter JDBC connection string for " + scriptName,
+			Context:  "The imported JDBC connection contains a disclosure placeholder instead of recoverable credential material. Configure the complete destination connection string before replay.",
+			NameHint: "JMETER_" + credential.EnvKey(scriptName) + "_JDBC_DSN",
+			Source: credentialpolicy.SourceRef{
+				Format:  "jmeter",
+				Path:    sourceFileName,
+				Pointer: jmeterElementLocation(element),
+				ItemID:  scriptName,
+			},
+			Targets: []credentialpolicy.TargetRef{{
+				RequestKey: scriptName,
+				Field:      "config.database.dsn",
+			}},
+			Value:    value,
+			Mode:     credentialpolicy.SecretReference,
+			Registry: ctx.credentialNames,
+		},
+	)
+	if err != nil {
+		return false, fmt.Errorf("project JMeter JDBC credential: %w", err)
+	}
+	requirement.SourceValueStatus = status
+	cfg.DSN = replacement
+	ctx.credentialRequirements = append(ctx.credentialRequirements, requirement)
+	return true, nil
+}
+
+func jmeterJDBCUnavailableCredential(dsn string, element *xmlNode) (
+	string,
+	credentialpolicy.SourceCredentialValueStatus,
+	bool,
+) {
+	values := jmeterJDBCCredentialValues(dsn)
+	if element != nil {
+		// Inspect authored fields as well as the effective DSN. JMeter ignores a
+		// standalone password when username is empty, and some JDBC properties
+		// cannot be represented by database/sql. A disclosure sentinel in either
+		// place is still unavailable connection material and must not disappear
+		// merely because the native translation omitted that source field.
+		for _, name := range []string{"dbUrl", "username", "password"} {
+			if value, ok := authoredJMeterProperty(element, name); ok {
+				values = append(values, value)
+			}
+		}
+		connectionProperties, _ := authoredJMeterProperty(element, "connectionProperties")
+		for _, property := range parseJMeterJDBCConnectionProperties(connectionProperties) {
+			if jmeterJDBCCredentialPropertyName(property.Name) {
+				values = append(values, property.Value)
+			}
+		}
+	}
+	for _, value := range values {
+		status := credentialpolicy.ClassifySourceCredentialValue(value)
+		if status == credentialpolicy.SourceCredentialValueRedactedPlaceholder ||
+			status == credentialpolicy.SourceCredentialValueUnsafeEncoding {
+			return value, status, true
+		}
+	}
+	return "", credentialpolicy.SourceCredentialValueAvailable, false
+}
+
+func jmeterJDBCCredentialPropertyName(name string) bool {
+	switch strings.ToLower(strings.TrimSpace(name)) {
+	case "user", "username":
+		return true
+	default:
+		return jmeterJDBCSensitivePropertyName(name)
+	}
+}
+
+func jmeterJDBCCredentialValues(dsn string) []string {
+	values := make([]string, 0, 8)
+	appendValue := func(value string) {
+		if strings.TrimSpace(value) != "" {
+			values = append(values, value)
+		}
+	}
+	for _, match := range jdbcCredentialPropertyRe.FindAllStringSubmatch(dsn, -1) {
+		if len(match) == 3 && jmeterJDBCCredentialPropertyName(match[1]) {
+			appendValue(match[2])
+		}
+	}
+	if match := jdbcOracleCredRe.FindStringSubmatch(dsn); len(match) == 5 {
+		appendValue(match[2])
+		appendValue(match[3])
+	}
+	if marker := strings.Index(dsn, "@tcp("); marker > 0 {
+		credentials := dsn[:marker]
+		if separator := strings.IndexByte(credentials, ':'); separator >= 0 {
+			appendValue(credentials[:separator])
+			appendValue(credentials[separator+1:])
+		} else {
+			appendValue(credentials)
+		}
+	}
+	if scheme := strings.Index(dsn, "://"); scheme >= 0 {
+		rest := dsn[scheme+3:]
+		authority := rest
+		if end := strings.IndexAny(authority, "/?;"); end >= 0 {
+			authority = authority[:end]
+		}
+		if at := strings.LastIndexByte(authority, '@'); at >= 0 {
+			userinfo := authority[:at]
+			if separator := strings.IndexByte(userinfo, ':'); separator >= 0 {
+				appendValue(userinfo[:separator])
+				appendValue(userinfo[separator+1:])
+			} else {
+				appendValue(userinfo)
+			}
+		}
+	}
+	return values
+}
 
 // hasJDBCInlineCredentials detects connection-property, Oracle thin, and URL
 // userinfo credential forms without changing any source bytes.

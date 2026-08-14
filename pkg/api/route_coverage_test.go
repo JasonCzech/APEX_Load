@@ -42,7 +42,12 @@ var intentionallyPublicAPIRoutes = map[string]bool{
 	// Local browser recording pairs before an authenticated bridge session
 	// exists; the handler requires a high-entropy, expiring token and applies
 	// per-client lockout to failed attempts.
-	"POST /api/v1/bridge/pair":                          true,
+	"POST /api/v1/bridge/pair": true,
+	// The reverse generator gateway is anonymous only at the HTTP middleware
+	// layer: its handler requires a write-only, target-scoped enrollment token
+	// and, for burst workers, the persisted one-time launch identity before the
+	// WebSocket upgrade. Browser Origins are refused as a separate CSRF guard.
+	"GET /api/v1/generator-gateway/connect":             true,
 	"POST /api/v1/integrations/github/webhook":          true,
 	"POST /api/v1/monitoring/collectors/{id}/heartbeat": true,
 }

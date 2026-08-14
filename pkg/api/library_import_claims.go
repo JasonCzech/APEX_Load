@@ -28,6 +28,12 @@ const (
 var (
 	libraryImportClaimsMu     sync.Mutex
 	memoryLibraryImportClaims = make(map[*Server][]libraryImportClaim)
+	// activeLibraryImportOwners distinguishes an in-process concurrent server
+	// from a replacement controller in single-active mode. Durable claims cannot
+	// carry a useful process-liveness proof across a crash; an empty process-local
+	// registry on restart is that proof. HA mode deliberately never uses it to
+	// take over another replica's live work.
+	activeLibraryImportOwners sync.Map
 	errLibraryImportClaimBusy = errors.New("library import identity is already being mutated")
 )
 
@@ -126,34 +132,6 @@ func (s *Server) acquireLibraryImportClaims(bundle LibraryBundle, remoteID, proj
 			MutationID: uuid.NewString(), IntendedHash: strings.TrimSpace(item.ContentHash), CreatedAt: now, ExpiresAt: now.Add(ttl),
 		})
 	}
-	err := s.mutateLibraryImportClaims(func(existing *[]libraryImportClaim) (bool, error) {
-		active := make(map[string]libraryImportClaim, len(*existing))
-		for _, claim := range *existing {
-			if claim.Committed {
-				continue
-			}
-			active[claim.Identity] = claim
-		}
-		for _, claim := range claims {
-			if prior, found := active[claim.Identity]; found {
-				return false, fmt.Errorf("%w: %s %s is held until %s", errLibraryImportClaimBusy, claim.Kind, claim.SourceItemID, prior.ExpiresAt.UTC().Format(time.RFC3339))
-			}
-		}
-		if len(active)+len(claims) > maxLibraryImportClaims {
-			return false, fmt.Errorf("library import claim limit of %d reached", maxLibraryImportClaims)
-		}
-		retained := (*existing)[:0]
-		for _, claim := range *existing {
-			if !claim.Committed {
-				retained = append(retained, claim)
-			}
-		}
-		*existing = append(retained, claims...)
-		return true, nil
-	})
-	if err != nil {
-		return nil, err
-	}
 	handle := &libraryImportClaimHandle{
 		server: s, owner: owner, ttl: ttl, stop: make(chan struct{}), done: make(chan struct{}),
 		claims: make(map[string]libraryImportClaim, len(claims)), identity: make(map[string]string, len(claims)),
@@ -162,6 +140,48 @@ func (s *Server) acquireLibraryImportClaims(bundle LibraryBundle, remoteID, proj
 		handle.claims[claim.Identity] = claim
 		handle.identity[claim.Kind+"\x00"+claim.SourceInstanceID+"\x00"+claim.SourceItemID] = claim.Identity
 	}
+	// Register process-local liveness before making the claims durable. A second
+	// Server in the same process can run startup recovery as soon as the settings
+	// CAS commits; registering afterward leaves a kill window in which it can
+	// mistake this live owner for a crashed process. Registration does not take the
+	// durable-claims mutex, so this ordering also avoids a lock inversion with
+	// startup recovery. A failed claim write removes the speculative registration.
+	activeLibraryImportOwners.Store(owner, handle)
+	claimed := false
+	defer func() {
+		if !claimed {
+			activeLibraryImportOwners.Delete(owner)
+		}
+	}()
+	err := s.mutateLibraryImportClaims(func(existing *[]libraryImportClaim) (bool, error) {
+		active := make(map[string]libraryImportClaim, len(*existing))
+		retained := make([]libraryImportClaim, 0, len(*existing)+len(claims))
+		for _, claim := range *existing {
+			if !claim.Committed {
+				active[claim.Identity] = claim
+			}
+			if !claim.Committed || isRetainedBrowserDirectImportClaim(claim) {
+				retained = append(retained, claim)
+			}
+		}
+		for _, claim := range claims {
+			if prior, found := active[claim.Identity]; found {
+				return false, fmt.Errorf("%w: %s %s is held until %s", errLibraryImportClaimBusy, claim.Kind, claim.SourceItemID, prior.ExpiresAt.UTC().Format(time.RFC3339))
+			}
+		}
+		if len(retained)+len(claims) > maxLibraryImportClaims {
+			return false, fmt.Errorf("library import claim limit of %d reached", maxLibraryImportClaims)
+		}
+		*existing = append(retained, claims...)
+		return true, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	if s.afterLibraryImportClaimsPersist != nil {
+		s.afterLibraryImportClaimsPersist()
+	}
+	claimed = true
 	go handle.heartbeat()
 	return handle, nil
 }
@@ -220,6 +240,23 @@ func (h *libraryImportClaimHandle) prepare(item LibraryBundleItem, localItemID s
 	})
 }
 
+// prepareDirectCreates durably publishes every create-only recovery intent in
+// one claim CAS before the first asset write. Direct imports know all local IDs
+// and intended hashes up front and have no before-images, so per-item rewrites
+// add quadratic serialization cost without adding a recovery boundary.
+func (h *libraryImportClaimHandle) prepareDirectCreates(items []LibraryBundleItem) error {
+	updates := make(map[string]func(*libraryImportClaim), len(items))
+	for _, item := range items {
+		identity := h.key(item)
+		localItemID := strings.TrimSpace(item.SourceItemID)
+		updates[identity] = func(claim *libraryImportClaim) {
+			claim.LocalItemID = localItemID
+			claim.Prepared = true
+		}
+	}
+	return h.updateMany(updates)
+}
+
 func (h *libraryImportClaimHandle) markApplied(item LibraryBundleItem, archiveActivated bool) error {
 	if h == nil || h.server == nil {
 		return nil
@@ -230,29 +267,57 @@ func (h *libraryImportClaimHandle) markApplied(item LibraryBundleItem, archiveAc
 	})
 }
 
+// markDirectCreatesApplied checkpoints all assets that reached their durable
+// create boundary in one write immediately before the terminal commit marker.
+// Recovery does not rely on Applied for scripts or scenarios: every intent is
+// Prepared before mutation and reconciliation inspects the fenced asset row.
+func (h *libraryImportClaimHandle) markDirectCreatesApplied(items []LibraryBundleItem) error {
+	updates := make(map[string]func(*libraryImportClaim), len(items))
+	for _, item := range items {
+		identity := h.key(item)
+		updates[identity] = func(claim *libraryImportClaim) {
+			claim.Applied = true
+			claim.ArchiveActivated = false
+		}
+	}
+	return h.updateMany(updates)
+}
+
 func (h *libraryImportClaimHandle) update(identity string, mutate func(*libraryImportClaim)) error {
-	if strings.TrimSpace(identity) == "" {
-		return fmt.Errorf("library import claim identity is missing")
+	return h.updateMany(map[string]func(*libraryImportClaim){identity: mutate})
+}
+
+func (h *libraryImportClaimHandle) updateMany(updates map[string]func(*libraryImportClaim)) error {
+	if h == nil || h.server == nil || len(updates) == 0 {
+		return nil
+	}
+	for identity, mutate := range updates {
+		if strings.TrimSpace(identity) == "" {
+			return fmt.Errorf("library import claim identity is missing")
+		}
+		if mutate == nil {
+			return fmt.Errorf("library import claim %s update is missing", identity)
+		}
 	}
 	now := time.Now().UTC()
 	expectedClaims := h.claimCount()
 	err := h.server.mutateLibraryImportClaims(func(claims *[]libraryImportClaim) (bool, error) {
 		owned := 0
-		var target *libraryImportClaim
+		matched := 0
 		for index := range *claims {
 			claim := &(*claims)[index]
 			if claim.OwnerID != h.owner || claim.Committed {
 				continue
 			}
 			owned++
-			if claim.Identity == identity {
-				target = claim
+			if mutate, ok := updates[claim.Identity]; ok {
+				mutate(claim)
+				matched++
 			}
 		}
-		if owned != expectedClaims || target == nil {
-			return false, h.ownerFenceError(identity)
+		if owned != expectedClaims || matched != len(updates) {
+			return false, h.ownerFenceError("")
 		}
-		mutate(target)
 		for index := range *claims {
 			claim := &(*claims)[index]
 			if claim.OwnerID == h.owner && !claim.Committed {
@@ -269,7 +334,7 @@ func (h *libraryImportClaimHandle) update(identity string, mutate func(*libraryI
 	}
 	h.mu.Lock()
 	for key, claim := range h.claims {
-		if key == identity {
+		if mutate, ok := updates[key]; ok {
 			mutate(&claim)
 		}
 		claim.ExpiresAt = now.Add(h.ttl)
@@ -337,10 +402,25 @@ func (h *libraryImportClaimHandle) stopHeartbeat() {
 // complete is the durable commit/abort marker. Once Committed is persisted,
 // restart reconciliation may remove the records but must never compensate.
 func (h *libraryImportClaimHandle) complete() error {
+	if err := h.markCommittedRetainingClaims(); err != nil {
+		return err
+	}
+	// Cleanup remains best effort after the durable terminal marker. Existing
+	// importers must not treat a cleanup-only failure as an uncommitted batch.
+	_ = h.cleanupCommittedClaims()
+	return nil
+}
+
+// markCommittedRetainingClaims makes the whole batch visible while retaining
+// its durable terminal evidence. Callers with another publication boundary
+// (for example a browser-recording locator and receipt) can finish that boundary
+// before removing the claims. Startup recovery must never compensate this state.
+func (h *libraryImportClaimHandle) markCommittedRetainingClaims() error {
 	if h == nil || h.server == nil || strings.TrimSpace(h.owner) == "" {
 		return nil
 	}
 	h.stopHeartbeat()
+	defer activeLibraryImportOwners.Delete(h.owner)
 	expectedClaims := h.claimCount()
 	if err := h.server.mutateLibraryImportClaims(func(claims *[]libraryImportClaim) (bool, error) {
 		owned := 0
@@ -357,10 +437,43 @@ func (h *libraryImportClaimHandle) complete() error {
 	}); err != nil {
 		return err
 	}
-	// Cleanup is best effort after the durable terminal marker.
-	if err := h.server.removeLibraryImportClaims(h.owner); err != nil {
-		slog.Warn("committed library import claims remain for cleanup", "owner_id", h.owner, "error", err)
+	return nil
+}
+
+// cleanupCommittedClaims is intentionally idempotent: adoption may remove the
+// retained terminal evidence before an original request resumes cleanup.
+func (h *libraryImportClaimHandle) cleanupCommittedClaims() error {
+	if h == nil || h.server == nil || strings.TrimSpace(h.owner) == "" {
+		return nil
 	}
+	expectedClaims := h.claimCount()
+	err := h.server.mutateLibraryImportClaims(func(claims *[]libraryImportClaim) (bool, error) {
+		owned := 0
+		filtered := (*claims)[:0]
+		for _, claim := range *claims {
+			if claim.OwnerID != h.owner {
+				filtered = append(filtered, claim)
+				continue
+			}
+			owned++
+			if !claim.Committed {
+				return false, h.ownerFenceError(claim.Identity)
+			}
+		}
+		if owned == 0 {
+			return false, nil
+		}
+		if owned != expectedClaims {
+			return false, h.ownerFenceError("")
+		}
+		*claims = filtered
+		return true, nil
+	})
+	if err != nil {
+		slog.Warn("committed library import claims remain for cleanup", "owner_id", h.owner, "error", err)
+		return err
+	}
+	activeLibraryImportOwners.Delete(h.owner)
 	return nil
 }
 
@@ -371,6 +484,11 @@ func (h *libraryImportClaimHandle) abandon() error {
 	if h == nil || h.server == nil || strings.TrimSpace(h.owner) == "" {
 		return nil
 	}
+	// Every caller, including federated library-import aborts, must stop being
+	// considered process-live even when the durable expiry write fails. Keeping a
+	// stopped owner registered prevents immediate direct-import recovery and leaks
+	// the handle for the lifetime of the process.
+	defer activeLibraryImportOwners.Delete(h.owner)
 	h.stopHeartbeat()
 	now := time.Now().UTC()
 	expectedClaims := h.claimCount()
@@ -578,6 +696,186 @@ func (s *Server) loadLibraryImportClaims() ([]libraryImportClaim, error) {
 	return decodeLibraryImportClaims(raw)
 }
 
+func pendingDirectImportAssetsFromClaims(claims []libraryImportClaim) map[string]struct{} {
+	pending := make(map[string]struct{})
+	for _, claim := range claims {
+		if claim.Committed || !claim.Prepared || strings.TrimSpace(claim.LocalItemID) == "" ||
+			!strings.HasPrefix(strings.TrimSpace(claim.RemoteID), "direct-import:") {
+			continue
+		}
+		pending[importPublicationAssetKey(claim.Kind, claim.LocalItemID)] = struct{}{}
+	}
+	return pending
+}
+
+func (s *Server) pendingDirectImportAssets() (map[string]struct{}, error) {
+	claims, err := s.loadLibraryImportClaims()
+	if err != nil {
+		return nil, err
+	}
+	return pendingDirectImportAssetsFromClaims(claims), nil
+}
+
+// getPublishedImportScript is for user-facing durable lookups that run before
+// a TestRunner handler (most notably project authorization resolvers). Internal
+// import commit/recovery code intentionally continues to use Store.GetScript so
+// it can adopt or compensate an unpublished row.
+func getPublishedImportScript(store storage.Store, id string) (*dsl.Script, error) {
+	if store == nil {
+		return nil, sql.ErrNoRows
+	}
+	script, err := store.GetScript(strings.TrimSpace(id))
+	if err != nil || script == nil {
+		return script, err
+	}
+	raw, err := store.GetSetting(libraryImportClaimsSettingKey)
+	if err != nil {
+		return nil, fmt.Errorf("read direct-import publication state: %w", err)
+	}
+	claims, err := decodeLibraryImportClaims(raw)
+	if err != nil {
+		return nil, err
+	}
+	if importPublicationContains(pendingDirectImportAssetsFromClaims(claims), "script", script.ID) {
+		return nil, sql.ErrNoRows
+	}
+	current, err := store.GetScript(script.ID)
+	if err != nil || current == nil || !current.UpdatedAt.Equal(script.UpdatedAt) {
+		if err != nil {
+			return nil, err
+		}
+		return nil, sql.ErrNoRows
+	}
+	return script, nil
+}
+
+func listPublishedImportScripts(store storage.Store, projectID string, folderID *string) ([]*dsl.Script, error) {
+	if store == nil {
+		return nil, nil
+	}
+	scripts, err := store.ListScripts(projectID, folderID)
+	if err != nil {
+		return nil, err
+	}
+	raw, err := store.GetSetting(libraryImportClaimsSettingKey)
+	if err != nil {
+		return nil, fmt.Errorf("read direct-import publication state: %w", err)
+	}
+	claims, err := decodeLibraryImportClaims(raw)
+	if err != nil {
+		return nil, err
+	}
+	pending := pendingDirectImportAssetsFromClaims(claims)
+	currentScripts, err := store.ListScripts(projectID, folderID)
+	if err != nil {
+		return nil, err
+	}
+	candidateVersions := make(map[string]time.Time, len(scripts))
+	for _, script := range scripts {
+		if script == nil || strings.TrimSpace(script.ID) == "" {
+			return nil, nil
+		}
+		if _, duplicate := candidateVersions[script.ID]; duplicate {
+			return nil, nil
+		}
+		candidateVersions[script.ID] = script.UpdatedAt
+	}
+	currentVersions := make(map[string]time.Time, len(currentScripts))
+	for _, script := range currentScripts {
+		if script == nil || strings.TrimSpace(script.ID) == "" {
+			return nil, nil
+		}
+		if _, duplicate := currentVersions[script.ID]; duplicate {
+			return nil, nil
+		}
+		currentVersions[script.ID] = script.UpdatedAt
+	}
+	if len(candidateVersions) != len(currentVersions) {
+		return nil, nil
+	}
+	for id, updatedAt := range candidateVersions {
+		currentUpdatedAt, found := currentVersions[id]
+		if !found || !currentUpdatedAt.Equal(updatedAt) {
+			return nil, nil
+		}
+	}
+	visible := scripts[:0]
+	for _, script := range scripts {
+		if script == nil || importPublicationContains(pending, "script", script.ID) {
+			continue
+		}
+		if !currentVersions[script.ID].Equal(script.UpdatedAt) {
+			continue
+		}
+		visible = append(visible, script)
+	}
+	return visible, nil
+}
+
+func getPublishedImportScenario(store storage.Store, id string) (*storage.Scenario, []storage.ScenarioScript, error) {
+	if store == nil {
+		return nil, nil, sql.ErrNoRows
+	}
+	scenario, scripts, err := store.GetScenario(strings.TrimSpace(id))
+	if err != nil || scenario == nil {
+		return scenario, scripts, err
+	}
+	raw, err := store.GetSetting(libraryImportClaimsSettingKey)
+	if err != nil {
+		return nil, nil, fmt.Errorf("read direct-import publication state: %w", err)
+	}
+	claims, err := decodeLibraryImportClaims(raw)
+	if err != nil {
+		return nil, nil, err
+	}
+	if importPublicationContains(pendingDirectImportAssetsFromClaims(claims), "scenario", scenario.ID) {
+		return nil, nil, sql.ErrNoRows
+	}
+	current, _, err := store.GetScenario(scenario.ID)
+	if err != nil || current == nil || !current.UpdatedAt.Equal(scenario.UpdatedAt) {
+		if err != nil {
+			return nil, nil, err
+		}
+		return nil, nil, sql.ErrNoRows
+	}
+	return scenario, scripts, nil
+}
+
+// recoverAbandonedDirectImportsAtStartup provides immediate single-controller
+// crash recovery without stealing work from a live in-process server. In HA,
+// another process may legitimately own every unexpired claim, so normal lease
+// expiry remains the takeover fence while the publication filter keeps partial
+// assets invisible.
+func (s *Server) recoverAbandonedDirectImportsAtStartup() error {
+	if s == nil || s.store == nil || s.haExecution {
+		return nil
+	}
+	now := time.Now().UTC()
+	err := s.mutateLibraryImportClaims(func(claims *[]libraryImportClaim) (bool, error) {
+		abandonedOwners := make(map[string]struct{})
+		for _, claim := range *claims {
+			if claim.Committed || !strings.HasPrefix(strings.TrimSpace(claim.RemoteID), "direct-import:") {
+				continue
+			}
+			if _, active := activeLibraryImportOwners.Load(claim.OwnerID); !active {
+				abandonedOwners[claim.OwnerID] = struct{}{}
+			}
+		}
+		changed := false
+		for index := range *claims {
+			if _, abandoned := abandonedOwners[(*claims)[index].OwnerID]; abandoned && !(*claims)[index].Committed {
+				(*claims)[index].ExpiresAt = now
+				changed = true
+			}
+		}
+		return changed, nil
+	})
+	if err != nil {
+		return err
+	}
+	return s.recoverExpiredLibraryImportClaims()
+}
+
 // recoverExpiredLibraryImportClaims takes over one expired transaction at a
 // time. A CAS lease prevents two replacement replicas from compensating it.
 func (s *Server) recoverExpiredLibraryImportClaims() error {
@@ -592,7 +890,7 @@ func (s *Server) recoverExpiredLibraryImportClaims() error {
 			taken = taken[:0]
 			cleanedCommitted = false
 			for index := range *claims {
-				if (*claims)[index].Committed {
+				if (*claims)[index].Committed && !isRetainedBrowserDirectImportClaim((*claims)[index]) {
 					owner := (*claims)[index].OwnerID
 					filtered := (*claims)[:0]
 					for _, claim := range *claims {
@@ -607,7 +905,7 @@ func (s *Server) recoverExpiredLibraryImportClaims() error {
 			}
 			owner := ""
 			for _, claim := range *claims {
-				if !claim.ExpiresAt.After(now) {
+				if !claim.Committed && !claim.ExpiresAt.After(now) {
 					owner = claim.OwnerID
 					break
 				}
@@ -649,6 +947,11 @@ func (s *Server) recoverExpiredLibraryImportClaims() error {
 	}
 }
 
+func isRetainedBrowserDirectImportClaim(claim libraryImportClaim) bool {
+	remoteID := strings.TrimSpace(claim.RemoteID)
+	return remoteID == "direct-import:browser-recording"
+}
+
 func (s *Server) refreshLibraryImportAssetsForRecovery(claims []libraryImportClaim) error {
 	if s == nil || s.runner == nil {
 		return fmt.Errorf("library import recovery requires a test runner")
@@ -681,7 +984,7 @@ func (s *Server) libraryRecoveryScript(id string) (*StoredScript, bool, error) {
 	if s == nil || s.runner == nil {
 		return nil, false, fmt.Errorf("library import recovery requires a test runner")
 	}
-	current, exists, err := s.runner.GetScriptDurable(id)
+	current, exists, err := s.runner.getScriptDurableIncludingPending(id)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, false, nil
 	}
@@ -745,7 +1048,7 @@ func (s *Server) libraryScenarioRequestRecoveryHash(req CreateScenarioRequest) s
 		group.RuntimeSettings = maskRuntimeSettings(group.RuntimeSettings)
 		protocol := ""
 		if s != nil && s.runner != nil {
-			if script, exists := s.runner.GetScript(group.ScriptID); exists && script != nil {
+			if script, exists := s.runner.getScriptIncludingPending(group.ScriptID); exists && script != nil {
 				protocol = script.Protocol
 			}
 		}

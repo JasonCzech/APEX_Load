@@ -254,8 +254,9 @@ func TestSanitizedACMEArchivePreservesSafeBodyAndRuntimeProfile(t *testing.T) {
 		}
 	}
 	if editablePasswordSource == nil ||
-		!strings.Contains(editablePasswordSource.InlineData, "synthetic-value") {
-		t.Fatalf("editable enterprise destination lost imported password bytes: %#v", editableScript.DataSources)
+		strings.Contains(editablePasswordSource.InlineData, "synthetic-value") ||
+		!strings.Contains(editablePasswordSource.InlineData, maskedScriptSecret) {
+		t.Fatalf("editable enterprise destination was not disclosure-safe: %#v", editableScript.DataSources)
 	}
 	var reviewResult struct {
 		Script dsl.Script `json:"script"`

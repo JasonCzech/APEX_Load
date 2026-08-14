@@ -27,6 +27,8 @@ const apiMock = {
   validatePostmanImport: vi.fn(),
   commitOpenAPIImport: vi.fn(),
   commitAsyncAPIImport: vi.fn(),
+  commitAsyncAPIImportBatch: vi.fn(),
+  commitGenericImportBatch: vi.fn(),
   savePostmanImport: vi.fn(),
   importWSDL: vi.fn(),
   importAsyncAPI: vi.fn(),
@@ -155,6 +157,19 @@ describe('ProtocolAssetImport', () => {
         actions: [],
       },
     })
+    apiMock.commitGenericImportBatch.mockImplementation(async ({ scripts }: { scripts: any[] }) => ({
+      count: scripts.length,
+      scripts: scripts.map((script, index) => ({
+        id: `script-saved-${index + 1}`,
+        name: script.name,
+        protocol: script.protocol,
+        version: '1.0',
+        project_id: script.project_id,
+        folder_id: script.folder_id,
+        created_at: '2026-01-01T00:00:00Z',
+        script,
+      })),
+    }))
     const postmanResult = {
       import_session_id: 'postman-session-1',
       expires_at: '2099-07-26T12:30:00Z',
@@ -728,6 +743,18 @@ describe('ProtocolAssetImport', () => {
       },
       replaced: false,
     })
+    apiMock.commitAsyncAPIImportBatch.mockImplementation(async ({ scripts }: { scripts: Array<{ name: string; protocol: string; version: string }> }) => ({
+      scripts: scripts.map((script, index) => ({
+        id: `script-asyncapi-batch-${index + 1}`,
+        name: script.name,
+        protocol: script.protocol,
+        version: script.version,
+        project_id: 'project-1',
+        created_at: '2026-01-01T00:00:00Z',
+        script,
+      })),
+      count: scripts.length,
+    }))
   })
 
   afterEach(async () => {
@@ -812,10 +839,21 @@ describe('ProtocolAssetImport', () => {
 
     expect(apiMock.importOpenAPI).toHaveBeenCalledWith(file, expect.objectContaining({ project_id: 'project-1' }))
     expect(container.textContent).toContain('Review Generated Script')
-    expect(container.textContent).toContain('Unsupported Elements (1)')
-    expect(container.textContent).toContain('schema reference external.yaml')
-    expect(container.textContent).toContain('Import Review (1)')
-    expect(container.textContent).toContain('file bytes must be supplied before replay')
+    expect(container.textContent).toContain('1 unsupported')
+    expect(container.textContent).not.toContain('schema reference external.yaml')
+    expect(container.textContent).toContain('1 warning')
+    expect(container.textContent).not.toContain('file bytes must be supplied before replay')
+    const warningDetails = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent?.trim() === '1 warning')!
+    await act(async () => warningDetails.click())
+    expect(document.body.querySelector('[role="dialog"]')?.textContent).toContain('file bytes must be supplied before replay')
+    await act(async () => {
+      ;(document.body.querySelector('[role="dialog"] button') as HTMLButtonElement).click()
+    })
+    const unsupportedDetails = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent?.trim() === '1 unsupported')!
+    await act(async () => unsupportedDetails.click())
+    expect(document.body.querySelector('[role="dialog"]')?.textContent).toContain('schema reference external.yaml')
     expect(container.textContent).toContain('Needs attention')
     expect(container.textContent).toContain('Data source readiness')
     expect(container.textContent).toContain('missing file bytes')
@@ -1221,6 +1259,118 @@ describe('ProtocolAssetImport', () => {
     }))
   })
 
+  it.each([
+    { kind: 'openapi' as const, convertLabel: 'Convert OpenAPI', fileName: 'target.yaml' },
+    { kind: 'postman' as const, convertLabel: 'Convert Postman Collection', fileName: 'target.json' },
+  ])('freezes the $kind replace target before deferred credential preparation', async ({ kind, convertLabel, fileName }) => {
+    const reviewedScript = {
+      name: `Protected ${kind} target`,
+      version: '1.0.0',
+      protocol: 'http',
+      config: { base_url: 'https://api.example.test' },
+      actions: [{
+        name: 'Request', type: 'request', method: 'GET', target: '/',
+        headers: { Authorization: 'Bearer {{secret.API_TOKEN}}' },
+      }],
+    }
+    const importResult = {
+      import_session_id: `${kind}-target-session`,
+      expires_at: '2099-07-26T12:30:00Z',
+      scripts: [],
+      script: reviewedScript,
+      warnings: [], unsupported_elements: [], assumptions: [], review_sections: [], repair_suggestions: [], correlations: [],
+      stats: { format: kind, converted_actions: 1 },
+      summary: {},
+      secret_binding_requirements: [{
+        id: `${kind}-target-token`,
+        path: '/actions/0/headers/Authorization',
+        label: 'Authorization',
+        context: 'Bearer credential',
+        suggested_name: 'API_TOKEN',
+        replacement: '{{secret.API_TOKEN}}',
+      }],
+    }
+    const existingScripts = ['target-a', 'target-b'].map((id, index) => ({
+      id,
+      name: `Target ${index === 0 ? 'A' : 'B'}`,
+      protocol: 'http',
+      version: '1.0.0',
+      project_id: 'project-1',
+      created_at: '2026-01-01T00:00:00Z',
+      script: { ...reviewedScript, name: `Target ${index === 0 ? 'A' : 'B'}` },
+    }))
+    apiMock.listScripts.mockResolvedValueOnce({ scripts: existingScripts, count: existingScripts.length })
+    if (kind === 'openapi') apiMock.importOpenAPI.mockResolvedValueOnce(importResult)
+    else apiMock.importPostman.mockResolvedValueOnce(importResult)
+
+    let resolveBindings!: (value: unknown) => void
+    apiMock.applySecretBindings.mockReturnValueOnce(new Promise(resolve => { resolveBindings = resolve }))
+    const storedResponse = {
+      stored_script: {
+        id: `${kind}-saved-target-a`,
+        name: reviewedScript.name,
+        protocol: reviewedScript.protocol,
+        version: reviewedScript.version,
+        project_id: 'project-1',
+        created_at: '2026-01-01T00:00:00Z',
+        script: reviewedScript,
+      },
+    }
+    if (kind === 'openapi') apiMock.commitOpenAPIImport.mockResolvedValueOnce(storedResponse)
+    else apiMock.savePostmanImport.mockResolvedValueOnce(storedResponse)
+
+    await act(async () => root.render(<ProtocolAssetImport kind={kind} projectId="project-1" />))
+    await flushPromises()
+    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"]')!
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', { configurable: true, value: [new File(['{}'], fileName)] })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await act(async () => {
+      Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes(convertLabel))?.click()
+    })
+    await flushPromises()
+
+    const modeSelect = Array.from(container.querySelectorAll<HTMLSelectElement>('select'))
+      .find(select => select.closest('label')?.textContent?.includes('Mode'))!
+    await act(async () => {
+      modeSelect.value = 'replace'
+      modeSelect.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    const targetSelect = Array.from(container.querySelectorAll<HTMLSelectElement>('select'))
+      .find(select => select.closest('label')?.querySelector('span')?.textContent === 'Script')!
+    await act(async () => {
+      targetSelect.value = 'target-a'
+      targetSelect.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    const save = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent?.includes('Replace Script with 1 secret to configure'))!
+    act(() => save.click())
+    await flushPromises()
+    expect(apiMock.applySecretBindings).toHaveBeenCalledTimes(1)
+    expect(targetSelect.disabled).toBe(true)
+
+    // Challenge the state machine directly: even if an external DOM driver
+    // dispatches a change while disabled, the deferred save remains bound to A.
+    await act(async () => {
+      targetSelect.disabled = false
+      targetSelect.value = 'target-b'
+      targetSelect.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await act(async () => {
+      resolveBindings({ script: reviewedScript, secret_binding_requirements: [] })
+      await Promise.resolve()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    const saveMock = kind === 'openapi' ? apiMock.commitOpenAPIImport : apiMock.savePostmanImport
+    expect(saveMock).toHaveBeenCalledWith(expect.objectContaining({
+      mode: 'replace',
+      target_script_id: 'target-a',
+    }))
+  })
+
   it('does not retry an unavailable OpenAPI protected session through the legacy create path', async () => {
     apiMock.commitOpenAPIImport.mockRejectedValueOnce(Object.assign(
       new Error('import session not found or expired'),
@@ -1534,6 +1684,14 @@ describe('ProtocolAssetImport', () => {
       modeSelect.dispatchEvent(new Event('change', { bubbles: true }))
     })
 
+    const disabledReplace = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent?.includes('Replace Script'))!
+    expect(disabledReplace.disabled).toBe(true)
+    const disabledReasonId = disabledReplace.getAttribute('aria-describedby')
+    expect(disabledReasonId).toBeTruthy()
+    expect(document.getElementById(disabledReasonId!)?.textContent)
+      .toContain('Select the existing script that this OpenAPI import should replace')
+
     const scriptSelect = Array.from(container.querySelectorAll('select')).find(select => select.closest('label')?.textContent?.includes('Script')) as HTMLSelectElement | undefined
     const replaceModeSelect = Array.from(container.querySelectorAll('select')).find(select => select.closest('label')?.textContent?.includes('Replace Mode')) as HTMLSelectElement | undefined
     expect(scriptSelect).toBeDefined()
@@ -1545,6 +1703,7 @@ describe('ProtocolAssetImport', () => {
       replaceModeSelect.value = 'merge_by_operation_id'
       replaceModeSelect.dispatchEvent(new Event('change', { bubbles: true }))
     })
+    expect(container.querySelector('.script-import-review-save-disabled-reason')).toBeNull()
 
     const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Replace Script'))
     expect(saveButton).toBeDefined()
@@ -1915,9 +2074,11 @@ describe('ProtocolAssetImport', () => {
       script: resolvedJMSScript,
       secret_binding_requirements: [],
     })
-    apiMock.commitAsyncAPIImport
+    apiMock.commitAsyncAPIImportBatch
+      .mockRejectedValueOnce(new Error('atomic script save unavailable'))
       .mockResolvedValueOnce({
-        stored_script: {
+        scripts: [
+        {
           id: 'saved-kafka',
           name: 'Orders Kafka',
           protocol: 'kafka',
@@ -1925,9 +2086,7 @@ describe('ProtocolAssetImport', () => {
           created_at: '2026-01-01T00:00:00Z',
           script: kafkaScript,
         },
-      })
-      .mockResolvedValueOnce({
-        stored_script: {
+        {
           id: 'saved-jms',
           name: 'Orders JMS',
           protocol: 'jms-solace',
@@ -1935,6 +2094,8 @@ describe('ProtocolAssetImport', () => {
           created_at: '2026-01-01T00:00:00Z',
           script: resolvedJMSScript,
         },
+        ],
+        count: 2,
       })
 
     await act(async () => {
@@ -1954,13 +2115,16 @@ describe('ProtocolAssetImport', () => {
     const jmsTab = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('jms-solace · Orders JMS'))
     await act(async () => jmsTab?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
 
-    const primarySave = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Save Selected Script (2 of 2) with 1 secret to configure'))
+    expect(container.querySelector('.secret-binding-review-script')?.textContent).toContain('Orders JMS')
+    const primarySave = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Save All 2 Scripts Atomically with 1 secret to configure'))
     const saveAll = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Save All 2 Scripts with 1 secret to configure'))
     expect(primarySave?.disabled).toBe(false)
     expect(saveAll?.disabled).toBe(false)
     const runtimeControls = Array.from(container.querySelectorAll<HTMLInputElement | HTMLSelectElement>('.import-runtime-options input, .import-runtime-options select'))
     expect(runtimeControls.length).toBeGreaterThan(0)
     expect(runtimeControls.some(control => control.disabled)).toBe(false)
+    const secretValue = container.querySelector<HTMLInputElement>('input[aria-label="Secret value for JMS_PASSWORD"]')!
+    await act(async () => setInputValue(secretValue, 'write-only-jms-password'))
     await act(async () => saveAll?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
     await flushPromises()
     await flushPromises()
@@ -1971,14 +2135,27 @@ describe('ProtocolAssetImport', () => {
       bindings: [{ requirement_id: 'jms-password', secret_name: 'JMS_PASSWORD' }],
     })
     expect(container.textContent).toContain('{{secret.JMS_PASSWORD}}')
-    expect(apiMock.commitAsyncAPIImport).toHaveBeenCalledTimes(2)
-    expect(apiMock.commitAsyncAPIImport).toHaveBeenNthCalledWith(2, expect.objectContaining({
-      script: expect.objectContaining({
+    expect(apiMock.createProjectSecrets).toHaveBeenCalledTimes(1)
+    expect(container.textContent).not.toContain('write-only-jms-password')
+    expect(container.textContent).toContain('Project-secret values prepared during review remain configured and will be reused')
+    const firstOperationID = apiMock.commitAsyncAPIImportBatch.mock.calls[0][0].operation_id
+    const retrySaveAll = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent?.includes('Save All 2 Scripts'))!
+    await act(async () => retrySaveAll.click())
+    await flushPromises()
+    await flushPromises()
+
+    expect(apiMock.createProjectSecrets).toHaveBeenCalledTimes(1)
+    expect(apiMock.commitAsyncAPIImport).not.toHaveBeenCalled()
+    expect(apiMock.commitAsyncAPIImportBatch).toHaveBeenCalledTimes(2)
+    expect(apiMock.commitAsyncAPIImportBatch.mock.calls[1][0].operation_id).toBe(firstOperationID)
+    expect(apiMock.commitAsyncAPIImportBatch).toHaveBeenLastCalledWith(expect.objectContaining({
+      scripts: expect.arrayContaining([expect.objectContaining({
         name: 'Orders JMS',
         config: expect.objectContaining({
           jms: expect.objectContaining({ password: '{{secret.JMS_PASSWORD}}' }),
         }),
-      }),
+      })]),
     }))
   })
 
@@ -2025,9 +2202,9 @@ describe('ProtocolAssetImport', () => {
         destination_value_preserved: true,
       }],
     })
-    apiMock.commitAsyncAPIImport
-      .mockResolvedValueOnce({
-        stored_script: {
+    apiMock.commitAsyncAPIImportBatch.mockResolvedValueOnce({
+      scripts: [
+        {
           id: 'saved-kafka-preserved',
           name: kafkaScript.name,
           protocol: kafkaScript.protocol,
@@ -2035,9 +2212,7 @@ describe('ProtocolAssetImport', () => {
           created_at: '2026-01-01T00:00:00Z',
           script: kafkaScript,
         },
-      })
-      .mockResolvedValueOnce({
-        stored_script: {
+        {
           id: 'saved-jms-preserved',
           name: preservedJMSScript.name,
           protocol: preservedJMSScript.protocol,
@@ -2045,7 +2220,9 @@ describe('ProtocolAssetImport', () => {
           created_at: '2026-01-01T00:00:00Z',
           script: preservedJMSScript,
         },
-      })
+      ],
+      count: 2,
+    })
 
     await act(async () => root.render(<ProtocolAssetImport kind="asyncapi" projectId="project-1" />))
     const fileInput = container.querySelector<HTMLInputElement>('input[type="file"]')!
@@ -2058,6 +2235,10 @@ describe('ProtocolAssetImport', () => {
     })
     await flushPromises()
 
+    const jmsTab = Array.from(container.querySelectorAll<HTMLButtonElement>('[role="tab"]'))
+      .find(button => button.textContent?.includes('Orders JMS'))!
+    await act(async () => jmsTab.click())
+    expect(container.querySelector('.secret-binding-review-script')?.textContent).toContain('Orders JMS')
     expect(container.textContent).toContain('Preserved in script')
     expect(container.textContent).toContain('0 to configure later')
     const saveAll = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
@@ -2068,18 +2249,19 @@ describe('ProtocolAssetImport', () => {
     await flushPromises()
 
     expect(apiMock.applySecretBindings).not.toHaveBeenCalled()
-    expect(apiMock.commitAsyncAPIImport).toHaveBeenCalledTimes(2)
-    expect(apiMock.commitAsyncAPIImport).toHaveBeenNthCalledWith(2, expect.objectContaining({
-      script: expect.objectContaining({
+    expect(apiMock.commitAsyncAPIImport).not.toHaveBeenCalled()
+    expect(apiMock.commitAsyncAPIImportBatch).toHaveBeenCalledTimes(1)
+    expect(apiMock.commitAsyncAPIImportBatch).toHaveBeenCalledWith(expect.objectContaining({
+      scripts: expect.arrayContaining([expect.objectContaining({
         name: 'Orders JMS',
         config: expect.objectContaining({
           jms: expect.objectContaining({ password: '[REDACTED]' }),
         }),
-      }),
+      })]),
     }))
   })
 
-  it('preserves write-only credential edits when switching AsyncAPI preview tabs', async () => {
+  it('isolates write-only credential edits and Save Remaining readiness by AsyncAPI candidate', async () => {
     const first = { name: 'Kafka One', version: '1.0.0', protocol: 'kafka', config: { base_url: '', kafka: { brokers: ['one:9092'], mock: true, sasl: { password: '[REDACTED]' } } }, actions: [] }
     const second = { name: 'Kafka Two', version: '1.0.0', protocol: 'kafka', config: { base_url: '', kafka: { brokers: ['two:9092'], mock: true, sasl: { password: '[REDACTED]' } } }, actions: [] }
     apiMock.importAsyncAPI.mockResolvedValueOnce({
@@ -2108,11 +2290,126 @@ describe('ProtocolAssetImport', () => {
       setInputValue(names[0], 'CUSTOM_KAFKA_PASSWORD')
       setInputValue(values[0], 'write-only-tab-value')
     })
+    const saveAllBeforeSwitch = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent?.includes('Save All 2 Scripts'))!
+    expect(saveAllBeforeSwitch.disabled).toBe(true)
+    expect(saveAllBeforeSwitch.getAttribute('aria-describedby')).toBe('asyncapi-save-all-disabled-reason')
+    expect(container.querySelector('#asyncapi-save-all-disabled-reason')?.textContent)
+      .toContain('credential choice belongs to another generated script')
+    expect(container.querySelector('.secret-binding-review-script')?.textContent).toContain('Kafka One')
     const secondTab = Array.from(container.querySelectorAll<HTMLButtonElement>('[role="tab"]')).find(button => button.textContent?.includes('Kafka Two'))!
     await act(async () => secondTab.click())
 
-    expect(container.querySelectorAll<HTMLInputElement>('.secret-binding-review input[type="text"]')[0].value).toBe('CUSTOM_KAFKA_PASSWORD')
-    expect(container.querySelectorAll<HTMLInputElement>('.secret-binding-review input[type="password"]')[0].value).toBe('write-only-tab-value')
+    expect(container.querySelector('.secret-binding-review-script')?.textContent).toContain('Kafka Two')
+    expect(container.querySelector('.secret-binding-review-script')?.textContent).not.toContain('Kafka One')
+    expect(container.querySelectorAll<HTMLInputElement>('.secret-binding-review input[type="text"]')[0].value).toBe('KAFKA_PASSWORD')
+    expect(container.querySelectorAll<HTMLInputElement>('.secret-binding-review input[type="password"]')[0].value).toBe('')
+    expect(container.textContent).not.toContain('write-only-tab-value')
+  })
+
+  it('keeps one archive-scoped AsyncAPI source session across credential lane preparation', async () => {
+    const first = { name: 'Source Kafka One', version: '1.0.0', protocol: 'kafka', config: { base_url: '', kafka: { brokers: ['one:9092'], mock: true, sasl: { password: '[REDACTED]' } } }, actions: [] }
+    const second = { name: 'Source Kafka Two', version: '1.0.0', protocol: 'kafka', config: { base_url: '', kafka: { brokers: ['two:9092'], mock: true, sasl: { password: '[REDACTED]' } } }, actions: [] }
+    apiMock.getProjectSecretStatuses.mockResolvedValue({
+      project_id: 'project-1',
+      capabilities: { provider: 'database', writable: true, create_supported: true, replace_supported: true, source_secret_migration_policy_enabled: true },
+      secrets: [],
+    })
+    apiMock.importAsyncAPI.mockResolvedValueOnce({
+      scripts: [first, second], script: first,
+      warnings: [], unsupported_elements: [], assumptions: [], review_sections: [], repair_suggestions: [], correlations: [],
+      stats: { format: 'asyncapi', converted_actions: 0 }, summary: {},
+      source_secret_session_id: 'asyncapi-archive-source-session',
+      source_secret_session_expires_at: '2099-01-01T00:00:00Z',
+      source_secret_migration_allowed: true,
+      secret_binding_requirements: [
+        { id: 'first-source-password', path: '/config/kafka/sasl/password', label: 'First password', context: 'Kafka SASL', suggested_name: 'KAFKA_PASSWORD', script_index: 0, script_name: first.name, source_value_available: true },
+        { id: 'second-source-password', path: '/config/kafka/sasl/password', label: 'Second password', context: 'Kafka SASL', suggested_name: 'KAFKA_PASSWORD', script_index: 1, script_name: second.name, source_value_available: true },
+      ],
+    })
+    apiMock.applySecretBindings
+      .mockResolvedValueOnce({ script: { ...first, config: { ...first.config, kafka: { ...first.config.kafka, sasl: { password: '{{secret.KAFKA_PASSWORD}}' } } } }, secret_binding_requirements: [] })
+      .mockResolvedValueOnce({ script: { ...second, config: { ...second.config, kafka: { ...second.config.kafka, sasl: { password: '{{secret.KAFKA_PASSWORD_2}}' } } } }, secret_binding_requirements: [] })
+
+    await act(async () => root.render(<ProtocolAssetImport kind="asyncapi" projectId="project-1" />))
+    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"]')!
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', { configurable: true, value: [new File(['asyncapi: 3.0.0'], 'source-secrets.yaml')] })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    const convert = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Convert AsyncAPI'))!
+    await act(async () => convert.click())
+    await flushPromises()
+
+    const migrate = container.querySelector<HTMLInputElement>('.credentials-source-migration input')!
+    await act(async () => migrate.click())
+    const prepare = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Prepare Selected Credentials'))!
+    await act(async () => prepare.click())
+    await flushPromises()
+
+    expect(apiMock.migrateImportSecrets).toHaveBeenCalledWith({
+      project_id: 'project-1',
+      source_secret_session_id: 'asyncapi-archive-source-session',
+      secrets: [
+        { requirement_id: 'first-source-password', secret_name: 'KAFKA_PASSWORD' },
+        { requirement_id: 'second-source-password', secret_name: 'KAFKA_PASSWORD_2' },
+      ],
+    })
+    expect(apiMock.discardImportSecretSession).not.toHaveBeenCalled()
+    expect(container.querySelector('.secret-binding-review-script')?.textContent).toContain(second.name)
+    expect(container.querySelector<HTMLInputElement>('.secret-binding-review input[type="text"]')?.value).toBe('KAFKA_PASSWORD_2')
+
+    const atomicSave = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Save All 2 Scripts Atomically'))!
+    await act(async () => atomicSave.click())
+    await flushPromises()
+
+    expect(apiMock.applySecretBindings).toHaveBeenCalledTimes(2)
+    expect(apiMock.commitAsyncAPIImport).not.toHaveBeenCalled()
+    expect(apiMock.commitAsyncAPIImportBatch).toHaveBeenCalledTimes(1)
+    expect(apiMock.discardImportSecretSession).not.toHaveBeenCalled()
+  })
+
+  it('paginates high-cardinality AsyncAPI script selectors with roving keyboard selection', async () => {
+    const scripts = Array.from({ length: 51 }, (_unused, index) => ({
+      name: `Async lane ${String(index + 1).padStart(2, '0')}`,
+      version: '1.0.0',
+      protocol: 'kafka',
+      config: { base_url: '', kafka: { brokers: ['broker:9092'], mock: true } },
+      actions: [],
+    }))
+    apiMock.importAsyncAPI.mockResolvedValueOnce({
+      scripts,
+      script: scripts[0],
+      warnings: [], unsupported_elements: [], assumptions: [], review_sections: [], repair_suggestions: [], correlations: [],
+      stats: { format: 'asyncapi', converted_actions: 0 }, summary: {}, secret_binding_requirements: [],
+    })
+
+    await act(async () => root.render(<ProtocolAssetImport kind="asyncapi" projectId="project-1" />))
+    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"]')!
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', { configurable: true, value: [new File(['asyncapi: 3.0.0'], 'many.yaml')] })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    const convert = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Convert AsyncAPI'))!
+    await act(async () => convert.click())
+    await flushPromises()
+
+    expect(container.querySelectorAll<HTMLButtonElement>('.sample-import-script-tab')).toHaveLength(50)
+    expect(container.textContent).toContain('Showing 1–50 of 51')
+    const nextPage = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Next scripts'))!
+    await act(async () => nextPage.click())
+    expect(container.querySelectorAll<HTMLButtonElement>('.sample-import-script-tab')).toHaveLength(1)
+    expect(container.textContent).toContain('Showing 51–51 of 51')
+    const lastLane = container.querySelector<HTMLButtonElement>('.sample-import-script-tab')!
+    expect(lastLane.getAttribute('aria-selected')).toBe('true')
+
+    await act(async () => {
+      lastLane.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }))
+    })
+    const selectedLane = Array.from(container.querySelectorAll<HTMLButtonElement>('.sample-import-script-tab'))
+      .find(button => button.getAttribute('aria-selected') === 'true')!
+    expect(selectedLane.textContent).toContain('Async lane 50')
+    expect(document.activeElement).toBe(selectedLane)
   })
 
   it('keeps individually saved AsyncAPI lanes in review and never saves them twice', async () => {
@@ -2127,6 +2424,18 @@ describe('ProtocolAssetImport', () => {
         created_at: '2026-01-01T00:00:00Z',
         script,
       },
+    }))
+    apiMock.commitAsyncAPIImportBatch.mockImplementation(async ({ scripts }: { scripts: Array<{ name: string; protocol: string; version: string }> }) => ({
+      scripts: scripts.map(script => ({
+        id: 'saved-jms-lane',
+        name: script.name,
+        protocol: script.protocol,
+        version: script.version,
+        project_id: 'project-1',
+        created_at: '2026-01-01T00:00:00Z',
+        script,
+      })),
+      count: scripts.length,
     }))
 
     await act(async () => root.render(<ProtocolAssetImport kind="asyncapi" projectId="project-1" onImported={onImported} />))
@@ -2173,9 +2482,10 @@ describe('ProtocolAssetImport', () => {
     await act(async () => saveRemaining?.click())
     await flushPromises()
 
-    expect(apiMock.commitAsyncAPIImport).toHaveBeenCalledTimes(2)
-    expect(apiMock.commitAsyncAPIImport).toHaveBeenLastCalledWith(expect.objectContaining({
-      script: expect.objectContaining({ name: 'Orders JMS' }),
+    expect(apiMock.commitAsyncAPIImport).toHaveBeenCalledTimes(1)
+    expect(apiMock.commitAsyncAPIImportBatch).toHaveBeenCalledTimes(1)
+    expect(apiMock.commitAsyncAPIImportBatch).toHaveBeenCalledWith(expect.objectContaining({
+      scripts: [expect.objectContaining({ name: 'Orders JMS' })],
     }))
     expect(onImported).toHaveBeenCalledTimes(2)
     expect(onImported.mock.calls[1][0]).toEqual({
@@ -2259,7 +2569,8 @@ describe('ProtocolAssetImport', () => {
     await flushPromises()
 
     expect(container.textContent).toContain('credential-preserving import draft has expired')
-    expect(container.textContent).toContain('operator-known-password')
+    expect(container.textContent).not.toContain('operator-known-password')
+    expect(container.textContent).toContain('[protected imported value]')
     const saveSelected = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
       .find(button => button.textContent?.includes('Save Selected Script'))!
     const saveAll = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
@@ -2286,11 +2597,11 @@ describe('ProtocolAssetImport', () => {
     expect(apiMock.applyImportParameterization).not.toHaveBeenCalled()
   })
 
-  it('saves all generated AsyncAPI scripts through the commit route', async () => {
+  it('saves all generated AsyncAPI scripts through one atomic batch commit', async () => {
     const onImported = vi.fn()
-    apiMock.commitAsyncAPIImport
-      .mockResolvedValueOnce({
-        stored_script: {
+    apiMock.commitAsyncAPIImportBatch.mockResolvedValueOnce({
+      scripts: [
+        {
           id: 'script-asyncapi-kafka',
           name: 'Orders Kafka',
           protocol: 'kafka',
@@ -2299,9 +2610,7 @@ describe('ProtocolAssetImport', () => {
           created_at: '2026-01-01T00:00:00Z',
           script: { name: 'Orders Kafka', version: '1.0.0', protocol: 'kafka', config: { base_url: '' }, actions: [] },
         },
-      })
-      .mockResolvedValueOnce({
-        stored_script: {
+        {
           id: 'script-asyncapi-jms',
           name: 'Orders JMS',
           protocol: 'jms-solace',
@@ -2310,7 +2619,9 @@ describe('ProtocolAssetImport', () => {
           created_at: '2026-01-01T00:00:00Z',
           script: { name: 'Orders JMS', version: '1.0.0', protocol: 'jms-solace', config: { base_url: '' }, actions: [] },
         },
-      })
+      ],
+      count: 2,
+    })
 
     await act(async () => {
       root.render(<ProtocolAssetImport kind="asyncapi" projectId="project-1" onImported={onImported} />)
@@ -2350,14 +2661,14 @@ describe('ProtocolAssetImport', () => {
     })
     await flushPromises()
 
-    expect(apiMock.commitAsyncAPIImport).toHaveBeenCalledTimes(2)
-    expect(apiMock.commitAsyncAPIImport).toHaveBeenNthCalledWith(1, expect.objectContaining({
-      mode: 'create',
-      script: expect.objectContaining({ name: 'Orders Kafka', protocol: 'kafka' }),
-    }))
-    expect(apiMock.commitAsyncAPIImport).toHaveBeenNthCalledWith(2, expect.objectContaining({
-      mode: 'create',
-      script: expect.objectContaining({ name: 'Orders JMS', protocol: 'jms-solace' }),
+    expect(apiMock.commitAsyncAPIImport).not.toHaveBeenCalled()
+    expect(apiMock.commitAsyncAPIImportBatch).toHaveBeenCalledTimes(1)
+    expect(apiMock.commitAsyncAPIImportBatch).toHaveBeenCalledWith(expect.objectContaining({
+      scripts: [
+        expect.objectContaining({ name: 'Orders Kafka', protocol: 'kafka' }),
+        expect.objectContaining({ name: 'Orders JMS', protocol: 'jms-solace' }),
+      ],
+      operation_id: expect.stringMatching(/^asyncapi-batch-/),
     }))
     expect(onImported).toHaveBeenCalledWith(expect.objectContaining({
       scripts: [
@@ -2372,18 +2683,6 @@ describe('ProtocolAssetImport', () => {
     // even though the authoring surface already passed it to ScriptEditor and
     // EnterpriseArchiveImport. Imports silently landed at the project root, and
     // the AsyncAPI commit sent no folder field at all.
-    apiMock.commitAsyncAPIImport.mockResolvedValue({
-      stored_script: {
-        id: 'script-asyncapi-kafka',
-        name: 'Orders Kafka',
-        protocol: 'kafka',
-        version: '1.0.0',
-        project_id: 'project-1',
-        created_at: '2026-01-01T00:00:00Z',
-        script: { name: 'Orders Kafka', version: '1.0.0', protocol: 'kafka', config: { base_url: '' }, actions: [] },
-      },
-    })
-
     await act(async () => {
       root.render(<ProtocolAssetImport kind="asyncapi" projectId="project-1" folderId="folder-9" />)
     })
@@ -2412,7 +2711,7 @@ describe('ProtocolAssetImport', () => {
     })
     await flushPromises()
 
-    expect(apiMock.commitAsyncAPIImport).toHaveBeenCalledWith(expect.objectContaining({
+    expect(apiMock.commitAsyncAPIImportBatch).toHaveBeenCalledWith(expect.objectContaining({
       folder_id: 'folder-9',
     }))
   })
@@ -2447,15 +2746,16 @@ describe('ProtocolAssetImport', () => {
     })
     let resolveParameterization: ((value: unknown) => void) | undefined
     apiMock.applyImportParameterization.mockReturnValueOnce(new Promise(resolve => { resolveParameterization = resolve }))
-    apiMock.commitAsyncAPIImport.mockImplementation(async ({ script }: { script: typeof firstScript }) => ({
-      stored_script: {
+    apiMock.commitAsyncAPIImportBatch.mockImplementation(async ({ scripts }: { scripts: Array<typeof firstScript> }) => ({
+      scripts: scripts.map(script => ({
         id: `saved-${script.name}`,
         name: script.name,
         protocol: script.protocol,
         version: script.version,
         created_at: '2026-01-01T00:00:00Z',
         script,
-      },
+      })),
+      count: scripts.length,
     }))
 
     await act(async () => root.render(<ProtocolAssetImport kind="asyncapi" projectId="project-1" />))
@@ -2475,7 +2775,7 @@ describe('ProtocolAssetImport', () => {
     const pendingSaveAll = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Save All 2 Scripts'))!
     expect(pendingSaveAll.disabled).toBe(true)
     act(() => pendingSaveAll.dispatchEvent(new MouseEvent('click', { bubbles: true })))
-    expect(apiMock.commitAsyncAPIImport).not.toHaveBeenCalled()
+    expect(apiMock.commitAsyncAPIImportBatch).not.toHaveBeenCalled()
 
     await act(async () => {
       resolveParameterization?.({
@@ -2491,19 +2791,29 @@ describe('ProtocolAssetImport', () => {
     await act(async () => readySaveAll.click())
     await flushPromises()
 
-    expect(apiMock.commitAsyncAPIImport).toHaveBeenCalledTimes(2)
-    expect(apiMock.commitAsyncAPIImport).toHaveBeenNthCalledWith(1, expect.objectContaining({
-      script: expect.objectContaining({
+    expect(apiMock.commitAsyncAPIImportBatch).toHaveBeenCalledTimes(1)
+    expect(apiMock.commitAsyncAPIImportBatch).toHaveBeenCalledWith(expect.objectContaining({
+      scripts: expect.arrayContaining([expect.objectContaining({
         actions: [expect.objectContaining({ target: 'orders/{{param.ORDER_ID}}' })],
-      }),
+      })]),
     }))
   })
 
-  it('uses a synchronous Save All lock and rolls back a partial AsyncAPI save', async () => {
-    let resolveFirstSave: ((value: unknown) => void) | undefined
-    apiMock.commitAsyncAPIImport
-      .mockReturnValueOnce(new Promise(resolve => { resolveFirstSave = resolve }))
-      .mockRejectedValueOnce(new Error('second script failed'))
+  it('uses a synchronous Save All lock and reuses the operation id after an atomic failure', async () => {
+    let rejectFirstSave!: (reason: unknown) => void
+    apiMock.commitAsyncAPIImportBatch
+      .mockReturnValueOnce(new Promise((_resolve, reject) => { rejectFirstSave = reject }))
+      .mockImplementationOnce(async ({ scripts }: { scripts: Array<{ name: string; protocol: string; version: string }> }) => ({
+        scripts: scripts.map((script, index) => ({
+          id: `saved-after-retry-${index}`,
+          name: script.name,
+          protocol: script.protocol,
+          version: script.version,
+          created_at: '2026-01-01T00:00:00Z',
+          script,
+        })),
+        count: scripts.length,
+      }))
 
     await act(async () => root.render(<ProtocolAssetImport kind="asyncapi" projectId="project-1" />))
     const fileInput = container.querySelector<HTMLInputElement>('input[type="file"]')!
@@ -2522,36 +2832,38 @@ describe('ProtocolAssetImport', () => {
       saveAll.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
     await flushPromises()
-    expect(apiMock.commitAsyncAPIImport).toHaveBeenCalledTimes(1)
+    expect(apiMock.commitAsyncAPIImportBatch).toHaveBeenCalledTimes(1)
     expect(Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.trim() === 'Saving...')?.disabled).toBe(true)
+    const firstOperationID = apiMock.commitAsyncAPIImportBatch.mock.calls[0][0].operation_id
+    expect(firstOperationID).toMatch(/^asyncapi-batch-/)
 
     await act(async () => {
-      resolveFirstSave?.({
-        stored_script: {
-          id: 'partially-saved-kafka', name: 'Orders Kafka', protocol: 'kafka', version: '1.0.0',
-          created_at: '2026-01-01T00:00:00Z', script: { name: 'Orders Kafka', version: '1.0.0', protocol: 'kafka', config: { base_url: '' }, actions: [] },
-        },
-      })
+      rejectFirstSave(new Error('atomic batch unavailable'))
       await Promise.resolve()
       await Promise.resolve()
       await Promise.resolve()
     })
     await flushPromises()
 
-    expect(apiMock.commitAsyncAPIImport).toHaveBeenCalledTimes(2)
-    expect(apiMock.deleteScript).toHaveBeenCalledTimes(1)
-    expect(apiMock.deleteScript).toHaveBeenCalledWith('partially-saved-kafka')
-    expect(container.textContent).toContain('Partially created scripts were removed.')
+    expect(apiMock.commitAsyncAPIImportBatch).toHaveBeenCalledTimes(1)
+    expect(apiMock.deleteScript).not.toHaveBeenCalled()
+    expect(container.textContent).toContain('Retrying Save Remaining safely reuses the same save operation')
+
+    const retry = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent?.includes('Save All 2 Scripts'))!
+    await act(async () => retry.click())
+    await flushPromises()
+    expect(apiMock.commitAsyncAPIImportBatch).toHaveBeenCalledTimes(2)
+    expect(apiMock.commitAsyncAPIImportBatch.mock.calls[1][0].operation_id).toBe(firstOperationID)
   })
 
-  it('fences AsyncAPI Save All after Back and reports an unremoved committed survivor without navigation', async () => {
+  it('reports an atomically completed AsyncAPI batch without navigation after Back fences the review', async () => {
     const onClose = vi.fn()
     const onImported = vi.fn()
     let resolveFirstSave!: (value: unknown) => void
-    apiMock.commitAsyncAPIImport.mockReturnValueOnce(new Promise(resolve => {
+    apiMock.commitAsyncAPIImportBatch.mockReturnValueOnce(new Promise(resolve => {
       resolveFirstSave = resolve
     }))
-    apiMock.deleteScript.mockRejectedValueOnce(new Error('cleanup unavailable'))
 
     await act(async () => root.render(
       <ProtocolAssetImport
@@ -2579,7 +2891,7 @@ describe('ProtocolAssetImport', () => {
         .find(button => button.textContent?.includes('Save All 2 Scripts'))?.click()
       await Promise.resolve()
     })
-    expect(apiMock.commitAsyncAPIImport).toHaveBeenCalledTimes(1)
+    expect(apiMock.commitAsyncAPIImportBatch).toHaveBeenCalledTimes(1)
 
     await act(async () => {
       Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
@@ -2589,30 +2901,32 @@ describe('ProtocolAssetImport', () => {
 
     await act(async () => {
       resolveFirstSave({
-        stored_script: {
-          id: 'asyncapi-survivor',
-          name: 'Orders Kafka',
-          protocol: 'kafka',
-          version: '1.0.0',
-          created_at: '2026-01-01T00:00:00Z',
-          script: {
-            name: 'Orders Kafka',
-            version: '1.0.0',
-            protocol: 'kafka',
-            config: { base_url: '' },
-            actions: [],
+        scripts: [
+          {
+            id: 'asyncapi-kafka', name: 'Orders Kafka', protocol: 'kafka', version: '1.0.0',
+            created_at: '2026-01-01T00:00:00Z',
+            script: { name: 'Orders Kafka', version: '1.0.0', protocol: 'kafka', config: { base_url: '' }, actions: [] },
           },
-        },
+          {
+            id: 'asyncapi-jms', name: 'Orders JMS', protocol: 'jms-solace', version: '1.0.0',
+            created_at: '2026-01-01T00:00:00Z',
+            script: { name: 'Orders JMS', version: '1.0.0', protocol: 'jms-solace', config: { base_url: '' }, actions: [] },
+          },
+        ],
+        count: 2,
       })
       await Promise.resolve()
       await Promise.resolve()
       await Promise.resolve()
     })
 
-    expect(apiMock.commitAsyncAPIImport).toHaveBeenCalledTimes(1)
-    expect(apiMock.deleteScript).toHaveBeenCalledWith('asyncapi-survivor')
+    expect(apiMock.commitAsyncAPIImportBatch).toHaveBeenCalledTimes(1)
+    expect(apiMock.deleteScript).not.toHaveBeenCalled()
     expect(onImported).toHaveBeenCalledWith({
-      scripts: [expect.objectContaining({ id: 'asyncapi-survivor' })],
+      scripts: [
+        expect.objectContaining({ id: 'asyncapi-kafka' }),
+        expect.objectContaining({ id: 'asyncapi-jms' }),
+      ],
       stayInImportReview: true,
     })
   })
@@ -2802,6 +3116,14 @@ describe('ProtocolAssetImport', () => {
       modeSelect.dispatchEvent(new Event('change', { bubbles: true }))
     })
 
+    const disabledReplace = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent?.includes('Replace Script'))!
+    expect(disabledReplace.disabled).toBe(true)
+    const disabledReasonId = disabledReplace.getAttribute('aria-describedby')
+    expect(disabledReasonId).toBeTruthy()
+    expect(document.getElementById(disabledReasonId!)?.textContent)
+      .toContain('Select the existing script that this Postman import should replace')
+
     const scriptSelect = Array.from(container.querySelectorAll('select')).find(select => select.closest('label')?.textContent?.includes('Script')) as HTMLSelectElement | undefined
     expect(scriptSelect).toBeDefined()
     if (!scriptSelect) return
@@ -2809,6 +3131,7 @@ describe('ProtocolAssetImport', () => {
       scriptSelect.value = 'script-existing'
       scriptSelect.dispatchEvent(new Event('change', { bubbles: true }))
     })
+    expect(container.querySelector('.script-import-review-save-disabled-reason')).toBeNull()
 
     const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Replace Script'))
     expect(saveButton).toBeDefined()
@@ -3006,7 +3329,11 @@ describe('ProtocolAssetImport', () => {
     expect(container.textContent).toContain('1 degraded')
     expect(container.textContent).toContain('1 unsupported')
     expect(container.textContent).toContain('Chrome customStep requires manual review')
-    expect(container.textContent).toContain('chrome_recorder_step:customStep')
+    expect(container.textContent).not.toContain('chrome_recorder_step:customStep')
+    const unsupported = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent?.trim() === '1 unsupported')!
+    await act(async () => unsupported.click())
+    expect(document.body.querySelector('[role="dialog"]')?.textContent).toContain('chrome_recorder_step:customStep')
   })
 
   it('requires replay validation before normal recorder import save and attaches evidence', async () => {
@@ -3088,31 +3415,36 @@ describe('ProtocolAssetImport', () => {
       saveButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
     await flushPromises()
-    expect(apiMock.createScript).toHaveBeenCalledWith(expect.objectContaining({
-      actions: expect.arrayContaining([
-        expect.objectContaining({
-          selector: 'role=button[name="Sign in"]',
-          metadata: expect.objectContaining({
-            selector_promoted_from_import_review: true,
+    expect(apiMock.commitGenericImportBatch).toHaveBeenCalledWith(expect.objectContaining({
+      source_profile: 'recorder_export',
+      folder_id: null,
+      operation_id: expect.stringMatching(/^import-batch-/),
+      scripts: [expect.objectContaining({
+        actions: expect.arrayContaining([
+          expect.objectContaining({
+            selector: 'role=button[name="Sign in"]',
+            metadata: expect.objectContaining({
+              selector_promoted_from_import_review: true,
+            }),
           }),
-        }),
-      ]),
-      metadata: expect.objectContaining({
-        import: expect.objectContaining({
-          preserved: expect.objectContaining({
-            replay_validation: expect.objectContaining({
-              status: 'completed',
-              success: true,
-              replay_session_id: 'replay-recorder-1',
-              events: 1,
-              draft_override: false,
+        ]),
+        metadata: expect.objectContaining({
+          import: expect.objectContaining({
+            preserved: expect.objectContaining({
+              replay_validation: expect.objectContaining({
+                status: 'completed',
+                success: true,
+                replay_session_id: 'replay-recorder-1',
+                events: 1,
+                draft_override: false,
+              }),
             }),
           }),
         }),
-      }),
-    }), 'project-1', null)
+      })],
+    }))
     expect(onImported).toHaveBeenCalledWith(expect.objectContaining({
-      scripts: [expect.objectContaining({ id: 'script-saved' })],
+      scripts: [expect.objectContaining({ id: 'script-saved-1' })],
     }))
   })
 
@@ -3410,10 +3742,59 @@ describe('ProtocolAssetImport', () => {
     const resolvedSave = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Save To Script Library'))!
     await act(async () => resolvedSave.click())
     await flushPromises()
-    expect(apiMock.createScript).toHaveBeenCalledWith(expect.objectContaining({
-      config: expect.objectContaining({ auth: { token: '{{secret.RECORDER_TOKEN}}' } }),
-      actions: [expect.objectContaining({ selector: 'role=button[name="Sign in"]' })],
-    }), 'project-1', null)
+    expect(apiMock.commitGenericImportBatch).toHaveBeenCalledWith(expect.objectContaining({
+      source_profile: 'recorder_export',
+      folder_id: null,
+      scripts: [expect.objectContaining({
+        config: expect.objectContaining({ auth: { token: '{{secret.RECORDER_TOKEN}}' } }),
+        actions: [expect.objectContaining({ selector: 'role=button[name="Sign in"]' })],
+      })],
+    }))
+  })
+
+  it('reuses a generic atomic save operation after an interrupted response', async () => {
+    let rejectFirstSave!: (reason: unknown) => void
+    apiMock.commitGenericImportBatch
+      .mockReturnValueOnce(new Promise((_resolve, reject) => { rejectFirstSave = reject }))
+      .mockImplementationOnce(async ({ scripts }: { scripts: Array<{ name: string; protocol: string; version: string }> }) => ({
+        scripts: scripts.map(script => ({
+          id: 'saved-k6-retry',
+          name: script.name,
+          protocol: script.protocol,
+          version: script.version,
+          created_at: '2026-01-01T00:00:00Z',
+          script,
+        })),
+        count: scripts.length,
+      }))
+
+    await act(async () => root.render(<ProtocolAssetImport kind="k6" projectId="project-1" />))
+    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"]')!
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', { configurable: true, value: [new File(['export default function() {}'], 'retry.js')] })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    const convert = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Convert k6 Script'))!
+    await act(async () => convert.click())
+    await flushPromises()
+    const save = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Save To Script Library'))!
+    act(() => save.click())
+    await flushPromises()
+    expect(apiMock.commitGenericImportBatch).toHaveBeenCalledTimes(1)
+    const firstOperationID = apiMock.commitGenericImportBatch.mock.calls[0][0].operation_id
+
+    await act(async () => {
+      rejectFirstSave(new Error('response interrupted'))
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    const retry = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Save To Script Library'))!
+    await act(async () => retry.click())
+    await flushPromises()
+
+    expect(apiMock.commitGenericImportBatch).toHaveBeenCalledTimes(2)
+    expect(apiMock.commitGenericImportBatch.mock.calls[1][0].operation_id).toBe(firstOperationID)
+    expect(apiMock.createScript).not.toHaveBeenCalled()
   })
 
   it('opens the repaired canonical recorder draft in the editor when no credentials are pending', async () => {
@@ -3554,8 +3935,13 @@ describe('ProtocolAssetImport', () => {
       soap_version: '1.2',
     }))
     expect(container.textContent).toContain('Review Generated Script')
-    expect(container.textContent).toContain('WSDL Operations')
-    expect(container.textContent).toContain('GetAccount')
+    expect(container.textContent).toContain('1 review detail')
+    expect(container.textContent).not.toContain('WSDL Operations')
+    const reviewDetails = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent?.trim() === '1 review detail')!
+    await act(async () => reviewDetails.click())
+    expect(document.body.querySelector('[role="dialog"]')?.textContent).toContain('WSDL Operations')
+    expect(document.body.querySelector('[role="dialog"]')?.textContent).toContain('GetAccount')
     expect(container.textContent).toContain('Source Comparison')
   })
   it('imports k6 scripts through the shared protocol asset flow', async () => {

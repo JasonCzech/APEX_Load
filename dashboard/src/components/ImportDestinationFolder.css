@@ -1,0 +1,111 @@
+.import-destination-folder {
+  display: grid;
+  width: 100%;
+  min-width: 0;
+  gap: 10px;
+  margin-bottom: 16px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-secondary);
+  box-sizing: border-box;
+  container: import-destination-folder / inline-size;
+}
+
+.import-operation-gate {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.import-destination-folder-heading,
+.import-destination-folder-create {
+  display: flex;
+  min-width: 0;
+  align-items: end;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.import-destination-folder-heading > div,
+.import-destination-folder-heading > label,
+.import-destination-folder-create > label {
+  min-width: 0;
+}
+
+.import-destination-folder h3,
+.import-destination-folder p {
+  margin: 0;
+}
+
+.import-destination-folder h3 {
+  color: var(--text-primary);
+  font-size: 14px;
+}
+
+.import-destination-folder-heading p,
+.import-destination-folder-guidance,
+.import-destination-folder-permission,
+.import-destination-folder-notice,
+.import-destination-folder-error {
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.import-destination-folder label {
+  display: grid;
+  gap: 5px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.import-destination-folder select,
+.import-destination-folder input {
+  width: min(360px, 100%);
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.import-destination-folder-create {
+  justify-content: flex-start;
+}
+
+.import-destination-folder-create > label {
+  flex: 1 1 260px;
+}
+
+.import-destination-folder-permission {
+  padding: 9px 10px;
+  border: 1px solid var(--warning-border);
+  border-radius: 7px;
+  background: var(--warning-bg);
+  color: var(--warning-text);
+}
+
+.import-destination-folder-error {
+  color: var(--danger-text);
+}
+
+.import-destination-folder-notice {
+  color: var(--success);
+}
+
+@container import-destination-folder (max-width: 620px) {
+  .import-destination-folder-heading,
+  .import-destination-folder-create {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .import-destination-folder select,
+  .import-destination-folder input,
+  .import-destination-folder-create .btn {
+    width: 100%;
+  }
+}

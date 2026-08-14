@@ -1,11 +1,12 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
 import { useObjectRepositoryApi } from '../hooks/api/useObjectRepositoryApi'
 import { ApiError } from '../hooks/apiClient'
 import { useNavigationGuard, type NavigationGuard } from '../hooks/NavigationGuardProvider'
 import { ObjectRepository, RepositoryObject } from '../types'
-import ConfirmDestructiveModal from './ConfirmDestructiveModal'
 import './parityPanels.css'
+
+const ConfirmDestructiveModal = lazy(() => import('./ConfirmDestructiveModal'))
 
 interface Props {
   projectId?: string
@@ -384,28 +385,30 @@ export default function ObjectRepositoryPanel({ projectId, canManage = false }: 
       </div>
 
       {deleteTarget && (
-        <ConfirmDestructiveModal
-          title="Delete object repository"
-          description={`This permanently deletes “${deleteTarget.name}” and its ${deleteTarget.objects?.length || 0} objects. Scripts referencing it will lose the shared descriptors.`}
-          target={deleteTarget.name}
-          targetLabel="Repository"
-          confirmLabel="Delete repository"
-          loading={busy}
-          error={error}
-          onCancel={() => setDeleteTarget(null)}
-          onConfirm={() => {
-            const target = deleteTarget
-            void runAction(
-              () => api.deleteObjectRepository(target.id),
-              () => {
-                deletedRepositoryIDsRef.current.add(target.id)
-                committedRepositoriesRef.current.delete(target.id)
-                setRepositories(current => current.filter(repository => repository.id !== target.id))
-                setDeleteTarget(null)
-              },
-            )
-          }}
-        />
+        <Suspense fallback={null}>
+          <ConfirmDestructiveModal
+            title="Delete object repository"
+            description={`This permanently deletes “${deleteTarget.name}” and its ${deleteTarget.objects?.length || 0} objects. Scripts referencing it will lose the shared descriptors.`}
+            target={deleteTarget.name}
+            targetLabel="Repository"
+            confirmLabel="Delete repository"
+            loading={busy}
+            error={error}
+            onCancel={() => setDeleteTarget(null)}
+            onConfirm={() => {
+              const target = deleteTarget
+              void runAction(
+                () => api.deleteObjectRepository(target.id),
+                () => {
+                  deletedRepositoryIDsRef.current.add(target.id)
+                  committedRepositoriesRef.current.delete(target.id)
+                  setRepositories(current => current.filter(repository => repository.id !== target.id))
+                  setDeleteTarget(null)
+                },
+              )
+            }}
+          />
+        </Suspense>
       )}
     </div>
   )

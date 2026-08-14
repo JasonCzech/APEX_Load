@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 
 import { type Folder, type StoredScript } from '../types'
 import { type ScriptDefinition } from '../types/scripts'
@@ -8,6 +9,7 @@ import {
   type BrunoNativeDiagnostic,
   type BrunoNativeScriptCandidate,
   type BrunoProjectionPreview,
+  type BrunoSecretRequirement,
   type BrunoSourceRevision,
   type BrunoSupportMatrixResponse,
   type CommitBrunoCanonicalResponse,
@@ -24,6 +26,7 @@ import { getErrorMessage } from '../utils/errorUtils'
 import DesktopApiResourceLink from './DesktopApiResourceLink'
 import SecretBindingReview, {
   type PreparedSecretBindings,
+  type RequirementDestinationState,
   type SecretBindingReviewHandle,
 } from './SecretBindingReview'
 import ParameterizationReview from './ParameterizationReview'
@@ -39,6 +42,8 @@ import {
 } from '../nativeImportRouting'
 import { brunoDestinationFolderOptions } from './brunoFolderOptions'
 import { nativeReviewGuidance } from './brunoNativeReviewGuidance'
+import { brunoSecretPresentation } from './brunoSecretPresentation'
+import { aggregateBrunoSecretRequirements } from './brunoSecretRequirements'
 import { mergeProtectedParameterizationSelectionIds } from './protectedImportSession'
 import './BrunoImport.css'
 
@@ -48,9 +53,12 @@ interface Props {
   projectId?: string
   folderId?: string | null
   onFolderChange?: (folderId: string) => void
+  /** The authoring shell renders and owns the only visible destination control. */
+  destinationFolderManagedExternally?: boolean
   onImported?: (result: ImportedSaveResult) => void
   onConfigureSecrets?: (projectId: string) => void
   onClose?: () => void
+  onOperationBusyChange?: (busy: boolean) => void
 }
 
 type RunOptions = {
@@ -89,6 +97,10 @@ const DEFAULT_RUN_OPTIONS: RunOptions = {
   defaultEnvironment: '',
   defaultGlobalEnvironment: '',
 }
+
+const NATIVE_CANDIDATE_PAGE_SIZE = 100
+const NATIVE_FINDING_PAGE_SIZE = 100
+const MAX_DETAILED_REVIEW_FINDING_BLOCKERS = 10
 
 function splitList(value: string) {
   return value.split(',').map(item => item.trim()).filter(Boolean)
@@ -221,20 +233,43 @@ function nativeCandidateTarget(candidate: BrunoNativeScriptCandidate) {
   return candidate.target || candidate.script.actions[0]?.target || candidate.script.config?.base_url || ''
 }
 
+function nativeSecretRequirementNoImportedValueMessage(
+  requirement: BrunoSecretRequirement,
+  destinationSecretName: string,
+): string {
+  if (
+    requirement.unresolved_source_variable !== true
+    || requirement.source_value_available === true
+    || requirement.destination_value_preserved === true
+    || requirement.preservation_unavailable_reason !== 'source_value_unavailable'
+  ) return ''
+  const sourceReference = requirement.source_variable
+    ? ` for {{${requirement.source_variable}}}`
+    : ''
+  const destinationReference = destinationSecretName
+    ? `{{secret.${destinationSecretName}}}`
+    : 'a project-secret reference whose name is still required'
+  return `No value${sourceReference} was included in the collection, so there is no imported value to preserve. The generated script uses ${destinationReference}; execution requires a configured value for that project secret.`
+}
+
 function BrunoNativeReviewDialog({
   candidate,
+  candidateSelected,
+  requirementDestinationState,
   onClose,
 }: {
   candidate: BrunoNativeScriptCandidate
+  candidateSelected: boolean
+  requirementDestinationState: Readonly<Record<string, RequirementDestinationState>>
   onClose: () => void
 }) {
   const dialogRef = useRef<HTMLElement | null>(null)
   const closeButtonRef = useRef<HTMLButtonElement | null>(null)
   useModalDialog({ dialogRef, initialFocusRef: closeButtonRef, onClose })
 
-  return (
+  return createPortal(
     <div
-      className="modal-overlay"
+      className="modal-overlay bruno-native-review-overlay"
       role="presentation"
       onClick={event => {
         if (event.target === event.currentTarget) onClose()
@@ -250,7 +285,9 @@ function BrunoNativeReviewDialog({
       >
         <header className="bruno-native-review-dialog-header">
           <div>
-            <h3 id="bruno-native-review-dialog-title">Review imported script</h3>
+            <h3 id="bruno-native-review-dialog-title">
+              {candidateSelected ? 'Review imported script' : 'Preview detected script'}
+            </h3>
             <p id="bruno-native-review-dialog-source">{candidate.source_path}</p>
           </div>
           <button
@@ -264,6 +301,12 @@ function BrunoNativeReviewDialog({
           </button>
         </header>
         <div className="bruno-native-review-dialog-body">
+          {!candidateSelected && (
+            <div className="bruno-native-review-selection-note" role="status">
+              <strong>Preview only — not selected for import.</strong>
+              <span>Select this request in the scripts table before relying on credential destination choices.</span>
+            </div>
+          )}
           <div className="bruno-native-review-summary" aria-label="Imported request summary">
             <span><small>Method</small><code>{nativeCandidateMethod(candidate)}</code></span>
             <span><small>Target</small><code>{nativeCandidateTarget(candidate)}</code></span>
@@ -279,12 +322,51 @@ function BrunoNativeReviewDialog({
             <section className="bruno-native-review-section">
               <h4>Secrets</h4>
               <ul>
-                {candidate.secret_requirements?.map(requirement => (
-                  <li key={requirement.id}>
-                    <code>{requirement.suggested_name}</code>
-                    {requirement.context && <span>{requirement.context}</span>}
-                  </li>
-                ))}
+                {candidate.secret_requirements?.map(requirement => {
+                  const presentation = brunoSecretPresentation(requirement)
+                  const liveDestination = candidateSelected
+                    ? requirementDestinationState[requirement.id]
+                    : undefined
+                  const usesProjectSecret = liveDestination?.usesProjectSecret
+                    ?? (requirement.destination_value_preserved !== true)
+                  const destinationSecretName = liveDestination
+                    ? liveDestination.secretName
+                    : requirement.suggested_name
+                  const noImportedValueMessage = presentation.preservationUnavailableDescription
+                    ? ''
+                    : nativeSecretRequirementNoImportedValueMessage(requirement, destinationSecretName)
+                  const currentDestinationGuidance = liveDestination?.guidance || ''
+                  return (
+                    <li key={requirement.id}>
+                      <strong>{presentation.label}</strong>
+                      {presentation.origin ? (
+                        <>
+                          <span>Import context: {presentation.context}</span>
+                          <span>Runtime purpose: {presentation.purpose}</span>
+                        </>
+                      ) : requirement.context ? <span>{requirement.context}</span> : null}
+                      {requirement.source_variable && (
+                        <span>Source variable: <code>{`{{${requirement.source_variable}}}`}</code></span>
+                      )}
+                      {usesProjectSecret ? (
+                        <span>
+                          {candidateSelected ? 'Project secret reference' : 'Detected project-secret suggestion'}:{' '}
+                          <code>{destinationSecretName ? `{{secret.${destinationSecretName}}}` : '{{secret.NAME}}'}</code>
+                        </span>
+                      ) : (
+                        <span>
+                          Optional project-secret suggestion: <code>{`{{secret.${requirement.suggested_name}}}`}</code>
+                        </span>
+                      )}
+                      {noImportedValueMessage && (
+                        <span>{noImportedValueMessage}</span>
+                      )}
+                      {currentDestinationGuidance && (
+                        <span>Current destination: {currentDestinationGuidance}</span>
+                      )}
+                    </li>
+                  )
+                })}
               </ul>
             </section>
           )}
@@ -313,7 +395,8 @@ function BrunoNativeReviewDialog({
           <button type="button" className="btn btn-secondary" onClick={onClose}>Close</button>
         </footer>
       </section>
-    </div>
+    </div>,
+    document.body,
   )
 }
 
@@ -337,7 +420,7 @@ function CollectionTree({ items }: { items: BrunoCollectionItem[] }) {
   )
 }
 
-export default function BrunoImport({ initialFiles, initialOutputMode, projectId, folderId, onFolderChange, onImported, onConfigureSecrets, onClose }: Props) {
+export default function BrunoImport({ initialFiles, initialOutputMode, projectId, folderId, onFolderChange, destinationFolderManagedExternally = false, onImported, onConfigureSecrets, onClose, onOperationBusyChange }: Props) {
   const api = useApi()
   const fileInputRef = useRef<HTMLInputElement>(null)
   const directoryInputRef = useRef<HTMLInputElement>(null)
@@ -367,23 +450,36 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
   const [scripts, setScripts] = useState<StoredScript[]>([])
   const [folders, setFolders] = useState<Folder[]>([])
   const [folderLoadError, setFolderLoadError] = useState('')
+  const [folderLoading, setFolderLoading] = useState(() => Boolean(projectId && !destinationFolderManagedExternally))
+  const [folderSelectionWarning, setFolderSelectionWarning] = useState('')
   const [folderReloadToken, setFolderReloadToken] = useState(0)
   const [localDestinationFolderId, setLocalDestinationFolderId] = useState(folderId ?? '')
   const destinationFolderId = folderId === undefined ? localDestinationFolderId : folderId || ''
   const selectDestinationFolder = useCallback((nextFolderId: string) => {
+    setFolderSelectionWarning('')
     setLocalDestinationFolderId(nextFolderId)
     onFolderChange?.(nextFolderId)
   }, [onFolderChange])
+  const destinationFolderIdRef = useRef(destinationFolderId)
+  destinationFolderIdRef.current = destinationFolderId
+  const selectDestinationFolderRef = useRef(selectDestinationFolder)
+  selectDestinationFolderRef.current = selectDestinationFolder
   const [newFolderName, setNewFolderName] = useState(() => suggestedBrunoFolderName(initialFiles || []))
   const [folderCreateError, setFolderCreateError] = useState('')
   const [creatingFolder, setCreatingFolder] = useState(false)
   const [folderCreationAccess, setFolderCreationAccess] = useState<FolderCreationAccess>(projectId ? 'checking' : 'denied')
   const [selectedCandidateIds, setSelectedCandidateIds] = useState<string[]>([])
+  const [nativeCandidatePage, setNativeCandidatePage] = useState(0)
+  const [nativeFindingPage, setNativeFindingPage] = useState(0)
   const [nativeNameOverrides, setNativeNameOverrides] = useState<Record<string, string>>({})
   const [acknowledgedFindingIds, setAcknowledgedFindingIds] = useState<string[]>([])
   const [nativeReviewCandidateId, setNativeReviewCandidateId] = useState<string | null>(null)
   const [migrateSecrets, setMigrateSecrets] = useState(false)
   const [preparedSecrets, setPreparedSecrets] = useState<PreparedSecretBindings | null>(null)
+  const [credentialDestinationState, setCredentialDestinationState] = useState<
+    Record<string, RequirementDestinationState>
+  >({})
+  const [configuredCredentialReviewIdentity, setConfiguredCredentialReviewIdentity] = useState('')
   const secretBindingsRef = useRef<Record<string, string>>({})
   const credentialReviewRef = useRef<SecretBindingReviewHandle | null>(null)
   const [conflictResolutions, setConflictResolutions] = useState<Record<string, string>>({})
@@ -397,14 +493,24 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
   const [rollbackLoading, setRollbackLoading] = useState('')
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
+  const operationBusy = loading || folderLoading || creatingFolder || parameterizationApplying
+  useEffect(() => {
+    onOperationBusyChange?.(operationBusy)
+    return () => onOperationBusyChange?.(false)
+  }, [onOperationBusyChange, operationBusy])
   const sourceGenerationRef = useRef(0)
   const mountedRef = useRef(true)
   const [sourceGeneration, setSourceGeneration] = useState(0)
+  const credentialReviewIdentity = `${sourceGeneration}:${projectId || ''}`
+  const projectSecretsConfiguredForReview = configuredCredentialReviewIdentity === credentialReviewIdentity
   const advanceSourceGeneration = useCallback(() => {
     const next = sourceGenerationRef.current + 1
     sourceGenerationRef.current = next
     setSourceGeneration(next)
     setNativeReviewCandidateId(null)
+    setCredentialDestinationState({})
+    setNativeCandidatePage(0)
+    setNativeFindingPage(0)
     return next
   }, [])
   const selectSynchronizationTarget = useCallback((nextScriptId: string) => {
@@ -498,10 +604,14 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
 
   useEffect(() => {
     let cancelled = false
+    const shouldLoadFolders = Boolean(projectId && !destinationFolderManagedExternally)
+    setFolderLoading(shouldLoadFolders)
+    setFolderLoadError('')
+    if (shouldLoadFolders) setFolders([])
     void Promise.all([
       api.getBrunoSupportMatrix().catch(() => null),
       projectId ? api.listScripts(projectId).catch(() => ({ scripts: [] as StoredScript[], count: 0 })) : Promise.resolve({ scripts: [] as StoredScript[], count: 0 }),
-      projectId
+      projectId && !destinationFolderManagedExternally
         ? api.listFolders(projectId, 'scripts')
           .then(response => ({ ...response, loadError: '' }))
           .catch(cause => ({
@@ -514,14 +624,25 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
       if (cancelled) return
       setSupport(matrix)
       setScripts((response.scripts || []).filter(script => script.protocol === 'bruno'))
-      setFolders(folderResponse.folders || [])
+      const loadedFolders = folderResponse.folders || []
+      setFolders(loadedFolders)
       setFolderLoadError(folderResponse.loadError)
+      setFolderLoading(false)
+      const selectedFolderID = destinationFolderIdRef.current
+      if (shouldLoadFolders && selectedFolderID && (
+        folderResponse.loadError || !loadedFolders.some(folder => folder.id === selectedFolderID)
+      )) {
+        selectDestinationFolderRef.current('')
+        setFolderSelectionWarning(folderResponse.loadError
+          ? 'The selected destination was cleared because its folder could not be revalidated. Retry loading folders before saving.'
+          : 'The previously selected destination folder no longer exists in this project. Select another script folder before saving.')
+      }
     })
     return () => { cancelled = true }
-  }, [api, folderReloadToken, projectId])
+  }, [api, destinationFolderManagedExternally, folderReloadToken, projectId])
 
   useEffect(() => {
-    if (!projectId) {
+    if (!projectId || destinationFolderManagedExternally) {
       setFolderCreationAccess('denied')
       return
     }
@@ -538,39 +659,69 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
         if (!cancelled) setFolderCreationAccess('unavailable')
       })
     return () => { cancelled = true }
-  }, [api, projectId])
+  }, [api, destinationFolderManagedExternally, projectId])
 
   const nativeCandidates = useMemo(
     () => inspection?.result.output_mode === 'native_requests' ? inspection.result.scripts : [],
     [inspection],
   )
-  const nativeReviewCandidate = nativeCandidates.find(candidate => candidate.candidate_id === nativeReviewCandidateId) || null
+  const selectedCandidateIdSet = useMemo(
+    () => new Set(selectedCandidateIds),
+    [selectedCandidateIds],
+  )
+  const nativeCandidatePageCount = Math.max(
+    1,
+    Math.ceil(nativeCandidates.length / NATIVE_CANDIDATE_PAGE_SIZE),
+  )
+  const safeNativeCandidatePage = Math.min(nativeCandidatePage, nativeCandidatePageCount - 1)
+  const nativeCandidatePageStart = safeNativeCandidatePage * NATIVE_CANDIDATE_PAGE_SIZE
+  const visibleNativeCandidates = useMemo(
+    () => nativeCandidates.slice(
+      nativeCandidatePageStart,
+      nativeCandidatePageStart + NATIVE_CANDIDATE_PAGE_SIZE,
+    ),
+    [nativeCandidatePageStart, nativeCandidates],
+  )
+  const nativeReviewCandidate = useMemo(
+    () => nativeCandidates.find(candidate => candidate.candidate_id === nativeReviewCandidateId) || null,
+    [nativeCandidates, nativeReviewCandidateId],
+  )
   const destinationFolderOptions = useMemo(
     () => brunoDestinationFolderOptions(folders),
     [folders],
   )
   const selectedDestinationFolderLabel = destinationFolderOptions
     .find(option => option.folder.id === destinationFolderId)?.label || ''
+  const selectedNativeCandidates = useMemo(
+    () => nativeCandidates.filter(candidate => selectedCandidateIdSet.has(candidate.candidate_id)),
+    [nativeCandidates, selectedCandidateIdSet],
+  )
   const requirements = useMemo(() => {
-    const selectedRequirements = nativeCandidates
-      .filter(candidate => selectedCandidateIds.includes(candidate.candidate_id))
+    const selectedRequirements = selectedNativeCandidates
       .flatMap(candidate => candidate.secret_requirements || [])
     const all = outputMode === 'native_requests' && nativeCandidates.length > 0
       ? selectedRequirements
       : inspection?.result.secret_requirements || []
-    return Array.from(new Map(all.map(requirement => [requirement.id, requirement])).values())
-  }, [inspection, nativeCandidates, outputMode, selectedCandidateIds])
-  const credentialRequirements = useMemo<SecretBindingRequirement[]>(() => requirements.map(requirement => ({
-    id: requirement.id,
-    path: requirement.path,
-    label: requirement.suggested_name,
-    context: requirement.context,
-    suggested_name: requirement.suggested_name,
-    replacement: requirement.replacement,
-    source_value_available: requirement.source_value_available,
-    destination_value_preserved: requirement.destination_value_preserved,
-    preservation_unavailable_reason: requirement.preservation_unavailable_reason,
-  })), [requirements])
+    return aggregateBrunoSecretRequirements(all)
+  }, [inspection, nativeCandidates.length, outputMode, selectedNativeCandidates])
+  const credentialRequirements = useMemo<SecretBindingRequirement[]>(() => requirements.map(requirement => {
+    const presentation = brunoSecretPresentation(requirement)
+    return {
+      id: requirement.id,
+      path: requirement.path,
+      label: presentation.label,
+      context: presentation.cardContext,
+      suggested_name: requirement.suggested_name,
+      replacement: requirement.replacement,
+      source_variable: requirement.source_variable,
+      unresolved_source_variable: requirement.unresolved_source_variable,
+      affected_paths: requirement.affected_paths,
+      source_value_available: requirement.source_value_available,
+      destination_value_preserved: requirement.destination_value_preserved,
+      preservation_unavailable_reason: requirement.preservation_unavailable_reason,
+      preservation_unavailable_description: presentation.preservationUnavailableDescription,
+    }
+  }), [requirements])
   const sourceMigrationAvailable = Boolean(
     support?.secret_store?.source_secret_migration_policy_enabled
     && support.secret_store.writable
@@ -580,18 +731,20 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
   const unresolvedConflicts = conflicts.filter(conflict => conflictResolutions[conflict.id] !== conflict.required_resolution)
   const selectedBytes = useMemo(() => files.reduce((total, file) => total + file.size, 0), [files])
   const importDisabled = support?.import_enabled === false
-  const canInspect = Boolean(projectId && files.length > 0 && !loading && !modeDetectionPending && !importDisabled)
+  const canInspect = Boolean(projectId && files.length > 0 && !loading && !creatingFolder && !modeDetectionPending && !importDisabled)
   const selectionMissing = outputMode === 'canonical'
     && (runOptions.selection === 'folder' || runOptions.selection === 'request')
     && splitList(runOptions.paths).length === 0
-  const selectedNativeCandidates = nativeCandidates.filter(candidate => selectedCandidateIds.includes(candidate.candidate_id))
   const allNativeCandidatesSelected = nativeCandidates.length > 0
     && selectedNativeCandidates.length === nativeCandidates.length
   const someNativeCandidatesSelected = selectedNativeCandidates.length > 0 && !allNativeCandidatesSelected
-  const nativeIdentityError = outputMode === 'native_requests'
-    ? nativeCandidateIdentityError(nativeCandidates)
-    : ''
-  const nativeReviewFindings = Array.from(new Map(selectedNativeCandidates.flatMap(candidate => (
+  const nativeIdentityError = useMemo(
+    () => outputMode === 'native_requests'
+      ? nativeCandidateIdentityError(nativeCandidates)
+      : '',
+    [nativeCandidates, outputMode],
+  )
+  const nativeReviewFindings = useMemo(() => Array.from(new Map(selectedNativeCandidates.flatMap(candidate => (
     candidate.diagnostics || []
   ).flatMap(diagnostic => {
     const id = nativeFindingID(diagnostic)
@@ -602,10 +755,36 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
       sourcePath: candidate.source_path || candidate.script.name,
       message: diagnostic.message || diagnostic.code || 'Imported behavior requires review.',
     }] as const]
-  }))).values()).sort((left, right) => left.id.localeCompare(right.id))
-  const nativeReviewFindingIds = nativeReviewFindings.map(finding => finding.id)
-  const unacknowledgedReviewFindings = nativeReviewFindings.filter(finding => !acknowledgedFindingIds.includes(finding.id))
-  const unacknowledgedFindingIds = unacknowledgedReviewFindings.map(finding => finding.id)
+  }))).values()).sort((left, right) => left.id.localeCompare(right.id)), [selectedNativeCandidates])
+  const nativeReviewFindingIds = useMemo(
+    () => nativeReviewFindings.map(finding => finding.id),
+    [nativeReviewFindings],
+  )
+  const acknowledgedFindingIdSet = useMemo(
+    () => new Set(acknowledgedFindingIds),
+    [acknowledgedFindingIds],
+  )
+  const unacknowledgedReviewFindings = useMemo(
+    () => nativeReviewFindings.filter(finding => !acknowledgedFindingIdSet.has(finding.id)),
+    [acknowledgedFindingIdSet, nativeReviewFindings],
+  )
+  const unacknowledgedFindingIds = useMemo(
+    () => unacknowledgedReviewFindings.map(finding => finding.id),
+    [unacknowledgedReviewFindings],
+  )
+  const nativeFindingPageCount = Math.max(
+    1,
+    Math.ceil(nativeReviewFindings.length / NATIVE_FINDING_PAGE_SIZE),
+  )
+  const safeNativeFindingPage = Math.min(nativeFindingPage, nativeFindingPageCount - 1)
+  const nativeFindingPageStart = safeNativeFindingPage * NATIVE_FINDING_PAGE_SIZE
+  const visibleNativeReviewFindings = useMemo(
+    () => nativeReviewFindings.slice(
+      nativeFindingPageStart,
+      nativeFindingPageStart + NATIVE_FINDING_PAGE_SIZE,
+    ),
+    [nativeFindingPageStart, nativeReviewFindings],
+  )
   const selectedNativeMissingVariables = Array.from(new Set(
     selectedNativeCandidates.flatMap(candidate => candidate.missing_variables || []),
   )).sort()
@@ -629,6 +808,9 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
     saveBlockers.push('This import session expired. Re-inspect the source to create a fresh review session.')
   }
   if (loading) saveBlockers.push('Wait for the current import operation to finish.')
+  if (!destinationFolderManagedExternally && folderLoading) saveBlockers.push('Wait for destination folders to finish loading before saving.')
+  if (!destinationFolderManagedExternally && folderLoadError) saveBlockers.push(`Destination folders could not be loaded: ${folderLoadError} Retry loading folders before saving.`)
+  if (creatingFolder) saveBlockers.push('Wait for destination folder creation to finish. The current destination cannot be used while its replacement is pending.')
   if (parameterizationApplying) saveBlockers.push('Wait for the selected parameterization changes to finish applying.')
   if (requirements.length > 0 && preparedSecrets === null) {
     saveBlockers.push('Wait for the credential review to finish preparing the selected credential choices.')
@@ -638,25 +820,28 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
   if (selectionMissing) saveBlockers.push('Enter at least one source path for the selected folder or request import scope.')
   if (outputMode === 'native_requests') {
     if (!destinationFolderId) {
-      if (folderLoadError) {
-        saveBlockers.push(`Destination folders could not be loaded: ${folderLoadError} Retry loading folders before saving.`)
-      } else if (destinationFolderOptions.length > 0) {
+      if (destinationFolderManagedExternally) {
+        saveBlockers.push('Select an existing script folder in Save destination; native batches cannot be saved to Project root.')
+      } else if (!folderLoading && !folderLoadError && destinationFolderOptions.length > 0) {
         saveBlockers.push('Select an existing destination folder in Import and execution profile.')
-      } else if (folderCreationAccess === 'allowed') {
+      } else if (!folderLoading && !folderLoadError && folderCreationAccess === 'allowed') {
         saveBlockers.push('Create and select a destination folder in Import and execution profile.')
-      } else if (folderCreationAccess === 'denied') {
+      } else if (!folderLoading && !folderLoadError && folderCreationAccess === 'denied') {
         saveBlockers.push('No destination folder is available, and your current role cannot create project folders. Ask a Project Administrator to create a script folder, then reload this page and select it.')
-      } else if (folderCreationAccess === 'checking') {
+      } else if (!folderLoading && !folderLoadError && folderCreationAccess === 'checking') {
         saveBlockers.push('No destination folder is available. Waiting for the folder-creation permission check to finish.')
-      } else {
+      } else if (!folderLoading && !folderLoadError) {
         saveBlockers.push('No destination folder is available, and folder-creation permission could not be verified. Refresh the page or ask a Project Administrator to create a script folder.')
       }
     }
     if (selectedNativeCandidates.length === 0) saveBlockers.push('Select at least one API request to import.')
     if (selectedNativeNames.some(name => name === '')) saveBlockers.push('Enter a non-empty script name for every selected API request.')
     if (duplicateNativeNames) saveBlockers.push('Give every selected API request a unique script name.')
-    for (const finding of unacknowledgedReviewFindings) {
+    for (const finding of unacknowledgedReviewFindings.slice(0, MAX_DETAILED_REVIEW_FINDING_BLOCKERS)) {
       saveBlockers.push(`Review ${finding.sourcePath}: ${finding.message} Acknowledge this finding under Review-gated conversions.`)
+    }
+    if (unacknowledgedReviewFindings.length > MAX_DETAILED_REVIEW_FINDING_BLOCKERS) {
+      saveBlockers.push(`${unacknowledgedReviewFindings.length - MAX_DETAILED_REVIEW_FINDING_BLOCKERS} additional review-gated conversion findings require acknowledgement. Use the paginated Review-gated conversions section for each finding's context and resolution.`)
     }
     if (nativeIdentityError) saveBlockers.push(nativeIdentityError)
   } else {
@@ -836,7 +1021,10 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
       setConflictResolutions({})
       const candidates = response.result.output_mode === 'native_requests' ? response.result.scripts : []
       setSelectedCandidateIds(candidates.map(candidate => candidate.candidate_id))
-      setNativeNameOverrides(Object.fromEntries(candidates.map(candidate => [candidate.candidate_id, candidate.script.name])))
+      // Keep overrides sparse. Initial names already live on each candidate;
+      // copying all of them would make every edit clone an object as large as
+      // the imported collection.
+      setNativeNameOverrides({})
       setAcknowledgedFindingIds([])
       const identityError = outputMode === 'native_requests'
         ? nativeCandidateIdentityError(candidates)
@@ -1002,6 +1190,10 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
     secretBindingsRef.current = next
   }
 
+  const handleProjectSecretsConfigured = useCallback((names: readonly string[]) => {
+    if (names.length > 0) setConfiguredCredentialReviewIdentity(credentialReviewIdentity)
+  }, [credentialReviewIdentity])
+
   const applyParameterization = (parameterizedScript: ScriptDefinition, _diffs: unknown[], selectedIds: string[]) => {
     const importSessionId = inspection?.import_session_id
     if (!importSessionId) return
@@ -1061,8 +1253,8 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
         <SecretBindingReview
           ref={credentialReviewRef}
           requirements={credentialRequirements}
-          reviewGeneration={`${sourceGeneration}:${projectId || ''}`}
-          disabled={loading || parameterizationApplying || protectedSessionExpired}
+          reviewGeneration={credentialReviewIdentity}
+          disabled={loading || creatingFolder || parameterizationApplying || protectedSessionExpired}
           projectId={projectId}
           sourceSecretSessionExpiresAt={inspection?.expires_at}
           sourceMigrationAllowed={sourceMigrationAvailable}
@@ -1070,7 +1262,16 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
           onExternalSourceMigrationChange={setMigrateSecrets}
           onApply={applyCredentialBindings}
           onPreparedChange={setPreparedSecrets}
+          onRequirementDestinationStateChange={setCredentialDestinationState}
+          onProjectSecretsConfigured={handleProjectSecretsConfigured}
         />
+      )}
+
+      {projectSecretsConfiguredForReview && !committed && (
+        <div className="bruno-preflight" role="status">
+          Project-secret values configured during this review remain in Project Secrets independently of script saving.
+          {' '}If script saving fails, retrying this save reuses those configured values. Any atomic-save promise on this page applies to scripts, not external secret-store writes.
+        </div>
       )}
 
       {protectedSessionLabel && !committed && (
@@ -1255,72 +1456,83 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
         </div>
           </>
         ) : null}
-        <div className="bruno-options-grid">
-          <label>
-            <span>Destination folder</span>
-            <select
-              aria-describedby={outputMode === 'native_requests' && destinationFolderOptions.length === 0 ? 'bruno-folder-empty-guidance' : undefined}
-              disabled={loading || (outputMode === 'native_requests' && destinationFolderOptions.length === 0)}
-              value={destinationFolderId}
-              onChange={event => selectDestinationFolder(event.target.value)}
-            >
-              <option value="" disabled={outputMode === 'native_requests'}>
-                {outputMode === 'native_requests' ? 'Select a script folder…' : 'Project root'}
-              </option>
-              {destinationFolderOptions.map(({ folder, label }) => (
-                <option key={folder.id} value={folder.id}>{label}</option>
-              ))}
-            </select>
-          </label>
-        </div>
-        {outputMode === 'native_requests' && destinationFolderOptions.length === 0 && !folderLoadError && (
-          <div id="bruno-folder-empty-guidance" className="bruno-preflight warning" role="status">
-            No script folders exist in this project. Native import creates one script per API and requires an existing destination folder before saving.
-          </div>
-        )}
-        {folderCreationAccess === 'allowed' ? (
-          <div className="bruno-folder-create">
-            <label>
-              <span>New script folder name</span>
-              <input
-                value={newFolderName}
-                disabled={loading || creatingFolder || !projectId}
-                onChange={event => {
-                  setNewFolderName(event.target.value)
-                  setFolderCreateError('')
-                }}
-                placeholder="Imported Bruno APIs"
-              />
-            </label>
-            <button
-              className="btn btn-secondary"
-              disabled={loading || creatingFolder || !projectId || newFolderName.trim() === ''}
-              onClick={() => void createDestinationFolder()}
-            >
-              {creatingFolder ? 'Creating folder…' : 'Create and select folder'}
-            </button>
-          </div>
-        ) : outputMode === 'native_requests' && destinationFolderOptions.length === 0 && !folderCreateError ? (
-          <div className="bruno-folder-permission" role="status">
-            {folderCreationAccess === 'checking'
-              ? 'Checking whether this session can create project folders…'
-              : folderCreationAccess === 'denied'
-                ? FOLDER_CREATION_DENIED_MESSAGE
-                : 'Folder-creation permission could not be verified. Refresh the page, select an existing folder, or ask a Project Administrator to create one.'}
-          </div>
-        ) : null}
-        {folderCreateError && <div className="bruno-preflight warning" role="alert">{folderCreateError}</div>}
-        {folderLoadError && (
-          <div className="bruno-preflight warning" role="alert">
-            {folderLoadError}{' '}
-            <button
-              className="btn btn-ghost"
-              disabled={loading}
-              onClick={() => setFolderReloadToken(value => value + 1)}
-            >
-              Retry
-            </button>
-          </div>
+        {!destinationFolderManagedExternally && (
+          <>
+            <div className="bruno-options-grid">
+              <label>
+                <span>Destination folder</span>
+                <select
+                  aria-describedby={outputMode === 'native_requests' && destinationFolderOptions.length === 0 ? 'bruno-folder-empty-guidance' : undefined}
+                  aria-busy={folderLoading || undefined}
+                  disabled={loading || folderLoading || Boolean(folderLoadError) || creatingFolder || (outputMode === 'native_requests' && destinationFolderOptions.length === 0)}
+                  value={destinationFolderId}
+                  onChange={event => selectDestinationFolder(event.target.value)}
+                >
+                  <option value="" disabled={outputMode === 'native_requests'}>
+                    {outputMode === 'native_requests' ? 'Select a script folder…' : 'Project root'}
+                  </option>
+                  {destinationFolderOptions.map(({ folder, label }) => (
+                    <option key={folder.id} value={folder.id}>{label}</option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            {folderLoading && (
+              <div className="bruno-preflight" role="status">Loading destination folders…</div>
+            )}
+            {folderSelectionWarning && (
+              <div className="bruno-preflight warning" role="alert">{folderSelectionWarning}</div>
+            )}
+            {outputMode === 'native_requests' && destinationFolderOptions.length === 0 && !folderLoading && !folderLoadError && (
+              <div id="bruno-folder-empty-guidance" className="bruno-preflight warning" role="status">
+                No script folders exist in this project. Native import creates one script per API and requires an existing destination folder before saving.
+              </div>
+            )}
+            {folderCreationAccess === 'allowed' ? (
+              <div className="bruno-folder-create">
+                <label>
+                  <span>New script folder name</span>
+                  <input
+                    value={newFolderName}
+                    disabled={loading || creatingFolder || !projectId}
+                    onChange={event => {
+                      setNewFolderName(event.target.value)
+                      setFolderCreateError('')
+                    }}
+                    placeholder="Imported Bruno APIs"
+                  />
+                </label>
+                <button
+                  className="btn btn-secondary"
+                  disabled={loading || creatingFolder || !projectId || newFolderName.trim() === ''}
+                  onClick={() => void createDestinationFolder()}
+                >
+                  {creatingFolder ? 'Creating folder…' : 'Create and select folder'}
+                </button>
+              </div>
+            ) : outputMode === 'native_requests' && destinationFolderOptions.length === 0 && !folderCreateError ? (
+              <div className="bruno-folder-permission" role="status">
+                {folderCreationAccess === 'checking'
+                  ? 'Checking whether this session can create project folders…'
+                  : folderCreationAccess === 'denied'
+                    ? FOLDER_CREATION_DENIED_MESSAGE
+                    : 'Folder-creation permission could not be verified. Refresh the page, select an existing folder, or ask a Project Administrator to create one.'}
+              </div>
+            ) : null}
+            {folderCreateError && <div className="bruno-preflight warning" role="alert">{folderCreateError}</div>}
+            {folderLoadError && (
+              <div className="bruno-preflight warning" role="alert">
+                {folderLoadError}{' '}
+                <button
+                  className="btn btn-ghost"
+                  disabled={loading || folderLoading}
+                  onClick={() => setFolderReloadToken(value => value + 1)}
+                >
+                  Retry
+                </button>
+              </div>
+            )}
+          </>
         )}
         {developerBlocked && (
           <div className="bruno-preflight warning">
@@ -1433,7 +1645,13 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
                     }}
                     aria-checked={someNativeCandidatesSelected ? 'mixed' : undefined}
                     checked={allNativeCandidatesSelected}
-                    onChange={event => setSelectedCandidateIds(event.target.checked ? nativeCandidates.map(candidate => candidate.candidate_id) : [])}
+                    onChange={event => {
+                      setCredentialDestinationState({})
+                      setNativeFindingPage(0)
+                      setSelectedCandidateIds(event.target.checked
+                        ? nativeCandidates.map(candidate => candidate.candidate_id)
+                        : [])
+                    }}
                   />
                   Select all
                 </label>
@@ -1451,8 +1669,8 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
                     </tr>
                   </thead>
                   <tbody>
-                    {nativeCandidates.map(candidate => {
-                      const selected = selectedCandidateIds.includes(candidate.candidate_id)
+                    {visibleNativeCandidates.map(candidate => {
+                      const selected = selectedCandidateIdSet.has(candidate.candidate_id)
                       const reviewFindings = nativeCandidateReviewFindings(candidate)
                       const diagnosticCount = (candidate.diagnostics || []).length
                       const missingVariableCount = (candidate.missing_variables || []).length
@@ -1483,9 +1701,13 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
                               checked={selected}
                               disabled={loading}
                               aria-label={`Select ${candidate.script.name}`}
-                              onChange={event => setSelectedCandidateIds(previous => event.target.checked
-                                ? [...previous, candidate.candidate_id]
-                                : previous.filter(id => id !== candidate.candidate_id))}
+                              onChange={event => {
+                                setCredentialDestinationState({})
+                                setNativeFindingPage(0)
+                                setSelectedCandidateIds(previous => event.target.checked
+                                  ? [...previous, candidate.candidate_id]
+                                  : previous.filter(id => id !== candidate.candidate_id))
+                              }}
                             />
                           </td>
                           <td>
@@ -1512,6 +1734,9 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
                               type="button"
                               className="btn btn-ghost bruno-native-review-button"
                               aria-haspopup="dialog"
+                              aria-label={selected
+                                ? `Review ${candidate.source_path}`
+                                : `Preview ${candidate.source_path}; not selected for import`}
                               onClick={() => setNativeReviewCandidateId(candidate.candidate_id)}
                             >
                               Review
@@ -1523,9 +1748,39 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
                   </tbody>
                 </table>
               </div>
+              {nativeCandidatePageCount > 1 && (
+                <nav className="bruno-native-table-pagination" aria-label="Native scripts table pages">
+                  <span aria-live="polite">
+                    Showing {nativeCandidatePageStart + 1}–{Math.min(
+                      nativeCandidates.length,
+                      nativeCandidatePageStart + visibleNativeCandidates.length,
+                    )} of {nativeCandidates.length} scripts. Page {safeNativeCandidatePage + 1} of {nativeCandidatePageCount}.
+                  </span>
+                  <div role="group" aria-label="Native scripts page controls">
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-sm"
+                      disabled={safeNativeCandidatePage === 0}
+                      onClick={() => setNativeCandidatePage(Math.max(0, safeNativeCandidatePage - 1))}
+                    >
+                      Previous {NATIVE_CANDIDATE_PAGE_SIZE}
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-sm"
+                      disabled={safeNativeCandidatePage >= nativeCandidatePageCount - 1}
+                      onClick={() => setNativeCandidatePage(Math.min(nativeCandidatePageCount - 1, safeNativeCandidatePage + 1))}
+                    >
+                      Next {NATIVE_CANDIDATE_PAGE_SIZE}
+                    </button>
+                  </div>
+                </nav>
+              )}
               {nativeReviewCandidate && (
                 <BrunoNativeReviewDialog
                   candidate={nativeReviewCandidate}
+                  candidateSelected={selectedCandidateIdSet.has(nativeReviewCandidate.candidate_id)}
+                  requirementDestinationState={credentialDestinationState}
                   onClose={() => setNativeReviewCandidateId(null)}
                 />
               )}
@@ -1534,7 +1789,8 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
                   <h4>Review-gated conversions</h4>
                   <p>Each item below is a separate finding in an affected script. To save these incomplete drafts, acknowledge that you understand each limitation. Acknowledgement records awareness only; it does not approve replay or remove the safety gate.</p>
                   <div className="bruno-native-acknowledgement-list">
-                    {nativeReviewFindings.map((finding, index) => {
+                    {visibleNativeReviewFindings.map((finding, pageIndex) => {
+                      const index = nativeFindingPageStart + pageIndex
                       const guidance = nativeReviewGuidance(finding.code)
                       const detailsId = `bruno-review-finding-${index + 1}`
                       return (
@@ -1561,7 +1817,7 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
                             <input
                               type="checkbox"
                               disabled={loading}
-                              checked={acknowledgedFindingIds.includes(finding.id)}
+                              checked={acknowledgedFindingIdSet.has(finding.id)}
                               aria-describedby={detailsId}
                               aria-label={`Acknowledge ${guidance.title} for ${finding.sourcePath}`}
                               onChange={event => setAcknowledgedFindingIds(previous => event.target.checked
@@ -1574,6 +1830,31 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
                       )
                     })}
                   </div>
+                  {nativeFindingPageCount > 1 && (
+                    <nav className="bruno-native-table-pagination" aria-label="Review-gated conversion pages">
+                      <span aria-live="polite">
+                        Showing findings {nativeFindingPageStart + 1}–{nativeFindingPageStart + visibleNativeReviewFindings.length} of {nativeReviewFindings.length}. Page {safeNativeFindingPage + 1} of {nativeFindingPageCount}.
+                      </span>
+                      <div role="group" aria-label="Review finding page controls">
+                        <button
+                          type="button"
+                          className="btn btn-secondary btn-sm"
+                          disabled={safeNativeFindingPage === 0}
+                          onClick={() => setNativeFindingPage(Math.max(0, safeNativeFindingPage - 1))}
+                        >
+                          Previous {NATIVE_FINDING_PAGE_SIZE}
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-secondary btn-sm"
+                          disabled={safeNativeFindingPage >= nativeFindingPageCount - 1}
+                          onClick={() => setNativeFindingPage(Math.min(nativeFindingPageCount - 1, safeNativeFindingPage + 1))}
+                        >
+                          Next {NATIVE_FINDING_PAGE_SIZE}
+                        </button>
+                      </div>
+                    </nav>
+                  )}
                 </div>
               )}
             </section>

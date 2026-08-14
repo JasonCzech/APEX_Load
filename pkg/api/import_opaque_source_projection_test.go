@@ -85,3 +85,34 @@ func TestProtectedOpaqueImportSourcesPersistExactlyAndProjectSafely(t *testing.T
 		t.Fatal("opaque source projection delta was not detected for import-draft attestation")
 	}
 }
+
+func TestOpaqueImportSourceProjectionIgnoresUnrelatedArraySanitization(t *testing.T) {
+	raw := map[string]any{
+		"metadata": map[string]any{
+			"review": []any{
+				map[string]any{"detail": "safe"},
+				map[string]any{"detail": "removed review row"},
+			},
+		},
+	}
+	projected := map[string]any{
+		"metadata": map[string]any{
+			"review": []any{map[string]any{"detail": "safe"}},
+		},
+	}
+	if opaqueImportSourceProjectionChanged(raw, projected) {
+		t.Fatal("ordinary shortened review array was mistaken for an opaque source delta")
+	}
+
+	raw["metadata"].(map[string]any)["review"] = []any{
+		map[string]any{"detail": "safe"},
+		map[string]any{
+			dsl.ImportPreservedJMeterJDBCSourcesKey: []any{
+				map[string]any{"password": "exact-source-password"},
+			},
+		},
+	}
+	if !opaqueImportSourceProjectionChanged(raw, projected) {
+		t.Fatal("opaque source nested in a removed array row was not detected")
+	}
+}

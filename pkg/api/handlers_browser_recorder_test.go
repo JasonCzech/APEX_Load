@@ -10,9 +10,13 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/convert/correlate"
+	"github.com/jasonczech/apexload/pkg/convert/har"
+	"github.com/jasonczech/apexload/pkg/dsl"
 	recbrowser "github.com/jasonczech/apexload/pkg/recorder/browser"
 	"github.com/jasonczech/apexload/pkg/scrub"
 	"github.com/jasonczech/apexload/pkg/selector"
@@ -20,14 +24,172 @@ import (
 )
 
 func newBrowserRecorderTestServer(t *testing.T, fake *fakeBrowserRecorderBackend) *Server {
+	return newBrowserRecorderTestServerWithStore(t, fake, nil)
+}
+
+func newBrowserRecorderTestServerWithStore(t *testing.T, fake *fakeBrowserRecorderBackend, store storage.Store) *Server {
 	t.Helper()
 	stubBrowserRecordingDependencyProbe(t, nil)
 	if runtime.GOOS == "linux" {
 		t.Setenv("DISPLAY", ":0") // satisfy the headed-display availability probe in CI
 	}
-	server := NewServer(ServerConfig{})
+	server := NewServer(ServerConfig{Store: store})
 	fake.install(server.browserRecording)
 	return server
+}
+
+func newHABrowserRecorderTestServerWithStore(t *testing.T, fake *fakeBrowserRecorderBackend, store storage.Store) *Server {
+	t.Helper()
+	stubBrowserRecordingDependencyProbe(t, nil)
+	if runtime.GOOS == "linux" {
+		t.Setenv("DISPLAY", ":0")
+	}
+	server := NewServer(ServerConfig{Store: store, HAExecutionLeadership: true})
+	fake.install(server.browserRecording)
+	return server
+}
+
+type failOnceBrowserRecordingBaselineStore struct {
+	*storage.SQLiteStore
+	fail bool
+}
+
+type failOnceBrowserRecordingBaselineReadStore struct {
+	*storage.SQLiteStore
+	fail bool
+}
+
+type browserRecordingLocatorCountingStore struct {
+	*storage.SQLiteStore
+	listScripts int
+	getScripts  int
+}
+
+type failOnceBrowserRecordingLocatorStore struct {
+	*storage.SQLiteStore
+	fail bool
+}
+
+type failOnceBrowserRecordingPublicationStore struct {
+	*storage.SQLiteStore
+	mu               sync.Mutex
+	failComplete     bool
+	failPublish      bool
+	failClaimCleanup bool
+}
+
+type browserRecordingRollbackTakeoverStore struct {
+	*storage.SQLiteStore
+	renewStarted  chan struct{}
+	renewContinue chan struct{}
+	renewOnce     sync.Once
+}
+
+func (s *failOnceBrowserRecordingLocatorStore) CompareAndSwapSetting(key, expected, value string) (bool, error) {
+	if s.fail && strings.HasPrefix(key, browserRecordingSaveLocatorKeyPrefix) && expected == "" {
+		s.fail = false
+		return false, errors.New("injected browser recording locator failure")
+	}
+	return s.SQLiteStore.CompareAndSwapSetting(key, expected, value)
+}
+
+func (s *failOnceBrowserRecordingPublicationStore) CompleteDirectImportReceipt(
+	id, ownerToken string,
+	scriptIDs []string,
+	scenarioID string,
+	now time.Time,
+) (bool, error) {
+	s.mu.Lock()
+	if s.failComplete {
+		s.failComplete = false
+		s.mu.Unlock()
+		return false, errors.New("injected browser receipt completion failure")
+	}
+	s.mu.Unlock()
+	return s.SQLiteStore.CompleteDirectImportReceipt(id, ownerToken, scriptIDs, scenarioID, now)
+}
+
+func (s *browserRecordingRollbackTakeoverStore) RenewDirectImportReceipt(
+	id, ownerToken string,
+	now time.Time,
+	lease time.Duration,
+) (bool, error) {
+	s.renewOnce.Do(func() { close(s.renewStarted) })
+	<-s.renewContinue
+	return s.SQLiteStore.RenewDirectImportReceipt(id, ownerToken, now, lease)
+}
+
+func (s *failOnceBrowserRecordingPublicationStore) CompareAndSwapSetting(key, expected, value string) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if strings.HasPrefix(key, browserRecordingSaveLocatorKeyPrefix) &&
+		strings.Contains(expected, `"state":"staged"`) &&
+		strings.Contains(value, `"state":"published"`) && s.failPublish {
+		s.failPublish = false
+		return false, errors.New("injected browser locator publication failure")
+	}
+	if key == libraryImportClaimsSettingKey && s.failClaimCleanup &&
+		strings.Contains(expected, `"remote_id":"direct-import:browser-recording"`) &&
+		strings.Contains(expected, `"committed":true`) &&
+		!strings.Contains(value, `"remote_id":"direct-import:browser-recording"`) {
+		s.failClaimCleanup = false
+		return false, errors.New("injected browser claim cleanup failure")
+	}
+	return s.SQLiteStore.CompareAndSwapSetting(key, expected, value)
+}
+
+func (s *browserRecordingLocatorCountingStore) ListScripts(projectID string, folderID *string) ([]*dsl.Script, error) {
+	s.listScripts++
+	return s.SQLiteStore.ListScripts(projectID, folderID)
+}
+
+func (s *browserRecordingLocatorCountingStore) GetScript(id string) (*dsl.Script, error) {
+	s.getScripts++
+	return s.SQLiteStore.GetScript(id)
+}
+
+func TestValidateBrowserRecordingHARBaselinePreparation(t *testing.T) {
+	observation := []correlate.Observation{{ID: 1}}
+	for _, test := range []struct {
+		name       string
+		durable    bool
+		hasHTTP    bool
+		baseline   []correlate.Observation
+		deriveErr  error
+		wantErrSub string
+	}{
+		{name: "durable baseline", durable: true, hasHTTP: true, baseline: observation},
+		{name: "storage-free embedding", durable: false, hasHTTP: true, deriveErr: errors.New("unavailable")},
+		{name: "no HTTP companion", durable: true, hasHTTP: false, deriveErr: errors.New("unavailable")},
+		{name: "durable derivation failure", durable: true, hasHTTP: true, deriveErr: errors.New("bad HAR"), wantErrSub: "bad HAR"},
+		{name: "durable empty baseline", durable: true, hasHTTP: true, wantErrSub: "no persistable HTTP exchanges"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			err := validateBrowserRecordingHARBaselinePreparation(test.durable, test.hasHTTP, test.baseline, test.deriveErr)
+			if test.wantErrSub == "" && err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if test.wantErrSub != "" && (err == nil || !strings.Contains(err.Error(), test.wantErrSub)) {
+				t.Fatalf("error = %v, want substring %q", err, test.wantErrSub)
+			}
+		})
+	}
+}
+
+func (s *failOnceBrowserRecordingBaselineStore) SaveScriptRecording(record *storage.ScriptRecordingRecord) error {
+	if s.fail {
+		s.fail = false
+		return errors.New("injected browser recording baseline failure")
+	}
+	return s.SQLiteStore.SaveScriptRecording(record)
+}
+
+func (s *failOnceBrowserRecordingBaselineReadStore) GetScriptRecording(scriptID string) (*storage.ScriptRecordingRecord, error) {
+	if s.fail {
+		s.fail = false
+		return nil, errors.New("injected browser recording baseline read failure")
+	}
+	return s.SQLiteStore.GetScriptRecording(scriptID)
 }
 
 func stubBrowserRecordingDependencyProbe(t *testing.T, err error) {
@@ -596,6 +758,50 @@ func TestHandleConvertBrowserRecordingRejectsChangedScriptCountBeforePersisting(
 	}
 }
 
+func TestHandleConvertBrowserRecordingPersistsEveryScriptInSelectedFolder(t *testing.T) {
+	fake := newFakeBrowserRecorder(recordedBrowserArtifact())
+	stubBrowserRecordingDependencyProbe(t, nil)
+	if runtime.GOOS == "linux" {
+		t.Setenv("DISPLAY", ":0")
+	}
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "browser-folder.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	server := NewServer(ServerConfig{Store: store})
+	fake.install(server.browserRecording)
+	if err := store.SaveProject(&storage.Project{ID: "proj-1", Name: "Browser project"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveFolder(&storage.Folder{
+		ID: "browser-scripts", ProjectID: "proj-1", Name: "Browser imports", Category: "scripts",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	id := startBrowserRecordingViaAPI(t, server)
+	stopBrowserRecordingViaAPI(t, server, id)
+
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/browser-recorder/sessions/"+id+"/convert",
+		bytes.NewBufferString(`{"name":"Checkout Folder","folder_id":"browser-scripts"}`),
+	)
+	req.Header.Set("Content-Type", "application/json")
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+	if resp.Code != http.StatusCreated {
+		t.Fatalf("convert status = %d body=%s", resp.Code, resp.Body.String())
+	}
+	stored := server.runner.ListScripts()
+	if len(stored) != 1 || stored[0] == nil || stored[0].Script == nil {
+		t.Fatalf("stored scripts = %#v, want one script", stored)
+	}
+	if stored[0].Script.FolderID == nil || *stored[0].Script.FolderID != "browser-scripts" {
+		t.Fatalf("stored folder = %#v, want browser-scripts", stored[0].Script.FolderID)
+	}
+}
+
 func TestHandleConvertBrowserRecordingAppliesReviewedParameterizationAtomically(t *testing.T) {
 	artifact := recordedBrowserArtifact()
 	artifact.StartURL = "https://shop.example/login?user_id=12345"
@@ -803,7 +1009,18 @@ func TestHandleConvertBrowserRecordingPreservesHARCredentialInDurableScript(t *t
 	artifact := recordedBrowserArtifact()
 	artifact.HAR = []byte(`{"log":{"version":"1.2","entries":[{"startedDateTime":"2026-05-12T20:00:00Z","time":12,"request":{"method":"GET","url":"https://shop.example/api/cart","httpVersion":"HTTP/1.1","headers":[{"name":"Authorization","value":"Bearer browser-recorded-token"}],"queryString":[],"cookies":[],"headersSize":-1,"bodySize":0},"response":{"status":200,"statusText":"OK","httpVersion":"HTTP/1.1","headers":[{"name":"Content-Type","value":"application/json"}],"cookies":[],"content":{"size":2,"mimeType":"application/json","text":"{}"},"redirectURL":"","headersSize":-1,"bodySize":2},"cache":{},"timings":{"send":1,"wait":10,"receive":1}}]}}`)
 	fake := newFakeBrowserRecorder(artifact)
-	server := newBrowserRecorderTestServer(t, fake)
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "browser-har-baseline.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	now := time.Now().UTC()
+	if err := store.SaveProject(&storage.Project{
+		ID: "proj-1", Name: "Browser recording", CreatedAt: now, UpdatedAt: now,
+	}); err != nil {
+		t.Fatalf("SaveProject: %v", err)
+	}
+	server := newBrowserRecorderTestServerWithStore(t, fake, store)
 	id := startBrowserRecordingViaAPI(t, server)
 	stopBrowserRecordingViaAPI(t, server, id)
 
@@ -855,6 +1072,19 @@ func TestHandleConvertBrowserRecordingPreservesHARCredentialInDurableScript(t *t
 	if !isCredentialPreservingImport(httpScript.Script) {
 		t.Fatalf("stored HTTP script lacks server-owned preservation policy: %#v", httpScript.Script.Metadata)
 	}
+	baseline, err := server.store.GetScriptRecording(httpScript.ID)
+	if err != nil {
+		t.Fatalf("load browser-recording HTTP baseline: %v", err)
+	}
+	if baseline == nil || baseline.Source != "browser_recording_har" || baseline.RequestCount != 1 {
+		t.Fatalf("browser-recording HTTP baseline = %#v, want one HAR observation", baseline)
+	}
+	if len(baseline.Observations) != 1 || strings.Contains(
+		baseline.Observations[0].RequestHeaders["Authorization"],
+		"browser-recorded-token",
+	) {
+		t.Fatalf("browser-recording baseline did not retain a disclosure-safe structural observation: %#v", baseline.Observations)
+	}
 	readReq := httptest.NewRequest(http.MethodGet, "/api/v1/scripts/"+httpScript.ID, nil)
 	readResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(readResp, readReq)
@@ -863,6 +1093,922 @@ func TestHandleConvertBrowserRecordingPreservesHARCredentialInDurableScript(t *t
 	}
 	if strings.Contains(readResp.Body.String(), "browser-recorded-token") {
 		t.Fatalf("ordinary stored-script read disclosed HAR credential: %s", readResp.Body.String())
+	}
+}
+
+func TestHandleConvertBrowserRecordingReplaysCompletedReceiptAfterRestart(t *testing.T) {
+	t.Setenv(recordingBaselineKeyEnvVar, "browser-restart-baseline-key")
+	artifact := recordedBrowserArtifact()
+	const credential = "restart-safe-browser-token"
+	artifact.HAR = []byte(`{"log":{"version":"1.2","entries":[{"startedDateTime":"2026-05-12T20:00:00Z","time":12,"request":{"method":"GET","url":"https://shop.example/api/cart","httpVersion":"HTTP/1.1","headers":[{"name":"Authorization","value":"Bearer ` + credential + `"}],"queryString":[],"cookies":[],"headersSize":-1,"bodySize":0},"response":{"status":200,"statusText":"OK","httpVersion":"HTTP/1.1","headers":[{"name":"Set-Cookie","value":"session=response-secret"}],"cookies":[],"content":{"size":17,"mimeType":"application/json","text":"{\"token\":\"reply\"}"},"redirectURL":"","headersSize":-1,"bodySize":17},"cache":{},"timings":{"send":1,"wait":10,"receive":1}}]}}`)
+	base, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "browser-restart.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = base.Close() })
+	now := time.Now().UTC()
+	if err := base.SaveProject(&storage.Project{ID: "proj-1", Name: "Browser project", CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	if err := base.SaveFolder(&storage.Folder{ID: "browser-restart-folder", ProjectID: "proj-1", Name: "Restart imports", Category: "scripts", CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+
+	first := newBrowserRecorderTestServerWithStore(t, newFakeBrowserRecorder(artifact), base)
+	id := startBrowserRecordingViaAPI(t, first)
+	stopBrowserRecordingViaAPI(t, first, id)
+	body := `{"name":"Restart-safe save","also_create_http_script":true,"folder_id":"browser-restart-folder","expected_script_count":2}`
+	firstReq := httptest.NewRequest(http.MethodPost, "/api/v1/browser-recorder/sessions/"+id+"/convert", bytes.NewBufferString(body))
+	firstReq.Header.Set("Content-Type", "application/json")
+	firstResp := httptest.NewRecorder()
+	first.mux.ServeHTTP(firstResp, firstReq)
+	if firstResp.Code != http.StatusCreated {
+		t.Fatalf("first save status = %d body=%s", firstResp.Code, firstResp.Body.String())
+	}
+	if strings.Contains(firstResp.Body.String(), credential) || strings.Contains(firstResp.Body.String(), "response-secret") {
+		t.Fatalf("first save response disclosed HAR credentials: %s", firstResp.Body.String())
+	}
+	firstStored := first.runner.ListScripts()
+	if len(firstStored) != 2 {
+		t.Fatalf("first save scripts = %d, want 2", len(firstStored))
+	}
+	firstIDs := map[string]struct{}{}
+	for _, stored := range firstStored {
+		firstIDs[stored.ID] = struct{}{}
+		if stored.Script.FolderID == nil || *stored.Script.FolderID != "browser-restart-folder" {
+			t.Fatalf("first save folder = %#v, want browser-restart-folder", stored.Script.FolderID)
+		}
+		preserved := browserRecordingImportPreserved(stored.Script)
+		if browserRecordingPreservedString(preserved, browserRecordingSaveSessionIDKey) != id {
+			t.Fatalf("first save script lacks durable recorder provenance: %#v", preserved)
+		}
+	}
+
+	// Simulate the response being lost and the controller restarting. The new
+	// manager has no process-local recording session or raw HAR capability.
+	restarted := newBrowserRecorderTestServerWithStore(t, newFakeBrowserRecorder(nil), base)
+	resolverRequest := httptest.NewRequest(http.MethodPost, "/api/v1/browser-recorder/sessions/"+id+"/convert", nil)
+	resolverRequest.SetPathValue("id", id)
+	resolvedProject, status, message := resolveBrowserRecordingSessionProjectID(restarted)(resolverRequest)
+	if status != 0 || resolvedProject != "proj-1" {
+		t.Fatalf("restart resolver = project %q status %d message %q, want proj-1", resolvedProject, status, message)
+	}
+	controlRequest := httptest.NewRequest(http.MethodPost, "/api/v1/browser-recorder/sessions/"+id+"/stop", nil)
+	controlRequest.SetPathValue("id", id)
+	if _, status, _ := resolveBrowserRecordingSessionProjectID(restarted)(controlRequest); status != http.StatusNotFound {
+		t.Fatalf("restart resolver granted a non-convert control, status = %d", status)
+	}
+	retryReq := httptest.NewRequest(http.MethodPost, "/api/v1/browser-recorder/sessions/"+id+"/convert", bytes.NewBufferString(body))
+	retryReq.Header.Set("Content-Type", "application/json")
+	retryResp := httptest.NewRecorder()
+	restarted.mux.ServeHTTP(retryResp, retryReq)
+	if retryResp.Code != http.StatusCreated {
+		t.Fatalf("restart retry status = %d body=%s", retryResp.Code, retryResp.Body.String())
+	}
+	if strings.Contains(retryResp.Body.String(), credential) || strings.Contains(retryResp.Body.String(), "response-secret") {
+		t.Fatalf("restart retry response disclosed HAR credentials: %s", retryResp.Body.String())
+	}
+	retriedStored := restarted.runner.ListScripts()
+	if len(retriedStored) != 2 {
+		t.Fatalf("restart retry scripts = %d, want the original 2", len(retriedStored))
+	}
+	var httpStored *StoredScript
+	for _, stored := range retriedStored {
+		if _, ok := firstIDs[stored.ID]; !ok {
+			t.Fatalf("restart retry created a different script %q", stored.ID)
+		}
+		if stored.Script.FolderID == nil || *stored.Script.FolderID != "browser-restart-folder" {
+			t.Fatalf("restart retry changed folder = %#v", stored.Script.FolderID)
+		}
+		if stored.Script.Protocol == "http" {
+			httpStored = stored
+		}
+	}
+	if httpStored == nil {
+		t.Fatal("restart retry lost the HTTP companion")
+	}
+	exact, err := json.Marshal(httpStored.Script)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(exact), credential) {
+		t.Fatalf("restart retry discarded exact imported credential: %s", exact)
+	}
+	baseline, err := base.GetScriptRecording(httpStored.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if baseline == nil || baseline.RequestCount != 1 || baseline.Source != "browser_recording_har" {
+		t.Fatalf("restart retry baseline = %#v, want one durable HAR exchange", baseline)
+	}
+}
+
+func TestHandleConvertBrowserRecordingRetriesAfterBaselinePersistenceFailure(t *testing.T) {
+	t.Setenv(recordingBaselineKeyEnvVar, "browser-baseline-retry-key")
+	artifact := recordedBrowserArtifact()
+	const credential = "baseline-retry-browser-token"
+	artifact.HAR = []byte(`{"log":{"version":"1.2","entries":[{"startedDateTime":"2026-05-12T20:00:00Z","time":12,"request":{"method":"GET","url":"https://shop.example/api/cart","httpVersion":"HTTP/1.1","headers":[{"name":"Authorization","value":"Bearer ` + credential + `"}],"queryString":[],"cookies":[],"headersSize":-1,"bodySize":0},"response":{"status":200,"statusText":"OK","httpVersion":"HTTP/1.1","headers":[],"cookies":[],"content":{"size":2,"mimeType":"application/json","text":"{}"},"redirectURL":"","headersSize":-1,"bodySize":2},"cache":{},"timings":{"send":1,"wait":10,"receive":1}}]}}`)
+	base, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "browser-baseline-retry.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = base.Close() })
+	store := &failOnceBrowserRecordingBaselineStore{SQLiteStore: base, fail: true}
+	now := time.Now().UTC()
+	if err := store.SaveProject(&storage.Project{ID: "proj-1", Name: "Browser project", CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveFolder(&storage.Folder{ID: "browser-baseline-folder", ProjectID: "proj-1", Name: "Baseline imports", Category: "scripts", CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	server := newBrowserRecorderTestServerWithStore(t, newFakeBrowserRecorder(artifact), store)
+	id := startBrowserRecordingViaAPI(t, server)
+	stopBrowserRecordingViaAPI(t, server, id)
+	body := `{"name":"Baseline retry","also_create_http_script":true,"folder_id":"browser-baseline-folder","expected_script_count":2}`
+
+	firstReq := httptest.NewRequest(http.MethodPost, "/api/v1/browser-recorder/sessions/"+id+"/convert", bytes.NewBufferString(body))
+	firstReq.Header.Set("Content-Type", "application/json")
+	firstResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(firstResp, firstReq)
+	if firstResp.Code != http.StatusInternalServerError {
+		t.Fatalf("failed baseline save status = %d, want 500 body=%s", firstResp.Code, firstResp.Body.String())
+	}
+	if got := len(server.runner.ListScripts()); got != 0 {
+		t.Fatalf("failed baseline save left %d committed script(s), want rollback", got)
+	}
+	_, actorSubject, _ := server.resolveAuditActor(firstReq)
+	operationID := strings.TrimSpace(actorSubject) + "\x00session:" + id
+	probeAttempt, probeReplay, err := server.claimDirectImportAttempt(
+		"proj-1",
+		"browser_recorder",
+		operationID,
+		"different-after-baseline-failure",
+	)
+	if err != nil {
+		t.Fatalf("baseline failure left a conflicting receipt: %v", err)
+	}
+	if probeReplay || probeAttempt == nil || !probeAttempt.created {
+		t.Fatalf("baseline failure left a completed/pending receipt: attempt=%#v replay=%v", probeAttempt, probeReplay)
+	}
+	if err := probeAttempt.rollback(nil); err != nil {
+		t.Fatalf("release receipt absence probe: %v", err)
+	}
+
+	retryReq := httptest.NewRequest(http.MethodPost, "/api/v1/browser-recorder/sessions/"+id+"/convert", bytes.NewBufferString(body))
+	retryReq.Header.Set("Content-Type", "application/json")
+	retryResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(retryResp, retryReq)
+	if retryResp.Code != http.StatusCreated {
+		t.Fatalf("baseline retry status = %d body=%s", retryResp.Code, retryResp.Body.String())
+	}
+	if strings.Contains(retryResp.Body.String(), credential) {
+		t.Fatalf("baseline retry response disclosed the HAR credential: %s", retryResp.Body.String())
+	}
+	stored := server.runner.ListScripts()
+	if len(stored) != 2 {
+		t.Fatalf("baseline retry scripts = %d, want 2", len(stored))
+	}
+	var httpStored *StoredScript
+	for _, item := range stored {
+		if item.Script.FolderID == nil || *item.Script.FolderID != "browser-baseline-folder" {
+			t.Fatalf("baseline retry folder = %#v", item.Script.FolderID)
+		}
+		if item.Script.Protocol == "http" {
+			httpStored = item
+		}
+	}
+	if httpStored == nil {
+		t.Fatal("baseline retry lost the HTTP companion")
+	}
+	baseline, err := base.GetScriptRecording(httpStored.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if baseline == nil || baseline.RequestCount != 1 || baseline.Source != "browser_recording_har" {
+		t.Fatalf("baseline retry record = %#v, want one durable HAR exchange", baseline)
+	}
+}
+
+func TestHandleConvertBrowserRecordingRejectsUnknownLostCapabilityWithoutWrites(t *testing.T) {
+	base, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "browser-unknown-capability.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = base.Close() })
+	now := time.Now().UTC()
+	if err := base.SaveProject(&storage.Project{ID: "proj-1", Name: "Browser project", CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	store := &browserRecordingLocatorCountingStore{SQLiteStore: base}
+	server := newBrowserRecorderTestServerWithStore(t, newFakeBrowserRecorder(nil), store)
+	// Ignore startup hydration. The assertion below covers only the bogus-id
+	// resolver/handler path and proves it does not scan the script catalog.
+	store.listScripts = 0
+	store.getScripts = 0
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/browser-recorder/sessions/lost-session/convert",
+		bytes.NewBufferString(`{"name":"Should not save"}`),
+	)
+	req.Header.Set("Content-Type", "application/json")
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+	if resp.Code != http.StatusNotFound {
+		t.Fatalf("unknown lost capability status = %d, want 404 body=%s", resp.Code, resp.Body.String())
+	}
+	if store.listScripts != 0 || store.getScripts != 0 {
+		t.Fatalf("bogus lost id performed script reads: ListScripts=%d GetScript=%d", store.listScripts, store.getScripts)
+	}
+	// Read the backing store directly after the no-scan assertion. The runner's
+	// user-facing ListScripts path intentionally performs a publication-fence
+	// revalidation against durable storage, so using it here would count the
+	// test's own verification as a bogus-id handler scan.
+	persisted, err := base.ListScripts("proj-1", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := len(persisted); got != 0 {
+		t.Fatalf("unknown lost capability persisted %d script(s), want none", got)
+	}
+}
+
+func TestHandleConvertBrowserRecordingRetriesAfterLocatorPersistenceFailure(t *testing.T) {
+	base, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "browser-locator-retry.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = base.Close() })
+	store := &failOnceBrowserRecordingLocatorStore{SQLiteStore: base, fail: true}
+	now := time.Now().UTC()
+	if err := store.SaveProject(&storage.Project{ID: "proj-1", Name: "Browser project", CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	server := newBrowserRecorderTestServerWithStore(t, newFakeBrowserRecorder(recordedBrowserArtifact()), store)
+	id := startBrowserRecordingViaAPI(t, server)
+	stopBrowserRecordingViaAPI(t, server, id)
+	body := `{"name":"Locator retry","expected_script_count":1}`
+
+	firstReq := httptest.NewRequest(http.MethodPost, "/api/v1/browser-recorder/sessions/"+id+"/convert", bytes.NewBufferString(body))
+	firstReq.Header.Set("Content-Type", "application/json")
+	firstResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(firstResp, firstReq)
+	if firstResp.Code != http.StatusInternalServerError {
+		t.Fatalf("locator failure status = %d, want 500 body=%s", firstResp.Code, firstResp.Body.String())
+	}
+	if got := len(server.runner.ListScripts()); got != 0 {
+		t.Fatalf("locator failure published %d script(s), want none", got)
+	}
+	locatorKey, err := server.browserRecordingSaveLocatorKey(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw, err := base.GetSetting(locatorKey); err != nil || raw != "" {
+		t.Fatalf("locator failure left locator %q err=%v", raw, err)
+	}
+
+	retryReq := httptest.NewRequest(http.MethodPost, "/api/v1/browser-recorder/sessions/"+id+"/convert", bytes.NewBufferString(body))
+	retryReq.Header.Set("Content-Type", "application/json")
+	retryResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(retryResp, retryReq)
+	if retryResp.Code != http.StatusCreated {
+		t.Fatalf("locator retry status = %d body=%s", retryResp.Code, retryResp.Body.String())
+	}
+	if got := len(server.runner.ListScripts()); got != 1 {
+		t.Fatalf("locator retry scripts = %d, want 1", got)
+	}
+	if raw, err := base.GetSetting(locatorKey); err != nil || raw == "" {
+		t.Fatalf("locator retry did not persist locator: %q err=%v", raw, err)
+	}
+}
+
+func TestRemoveBrowserRecordingSaveLocatorClearsReceiptBearingStagedValue(t *testing.T) {
+	base, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "browser-locator-cleanup.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = base.Close() })
+	server := newBrowserRecorderTestServerWithStore(t, newFakeBrowserRecorder(nil), base)
+	attempt := &directImportAttempt{receipt: &storage.DirectImportReceipt{
+		ID:               "receipt-1",
+		OperationKeyHash: "operation-hash",
+		RequestSHA256:    "request-digest",
+	}}
+	stored := []*StoredScript{{ID: "script-1"}}
+	if err := server.persistBrowserRecordingSaveLocator("recording-1", "proj-1", stored, attempt); err != nil {
+		t.Fatal(err)
+	}
+	locatorKey, err := server.browserRecordingSaveLocatorKey("recording-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw, err := base.GetSetting(locatorKey); err != nil || raw == "" {
+		t.Fatalf("staged receipt-bearing locator = %q err=%v", raw, err)
+	}
+	if err := server.removeBrowserRecordingSaveLocator("recording-1", "proj-1", stored, attempt); err != nil {
+		t.Fatal(err)
+	}
+	if raw, err := base.GetSetting(locatorKey); err != nil || raw != "" {
+		t.Fatalf("compensated locator = %q err=%v, want empty", raw, err)
+	}
+	if err := server.publishBrowserRecordingSaveLocator("recording-1", "proj-1", stored, attempt); err == nil {
+		t.Fatal("publication recreated an absent staged locator")
+	}
+}
+
+func TestRollbackBrowserRecordingSavePreservesLocatorWhenReceiptTakeoverWins(t *testing.T) {
+	base, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "browser-rollback-takeover.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = base.Close() })
+	store := &browserRecordingRollbackTakeoverStore{
+		SQLiteStore:   base,
+		renewStarted:  make(chan struct{}),
+		renewContinue: make(chan struct{}),
+	}
+	now := time.Now().UTC()
+	if err := store.SaveProject(&storage.Project{ID: "proj-1", Name: "Browser project", CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	server := newBrowserRecorderTestServerWithStore(t, newFakeBrowserRecorder(nil), store)
+	const recordingID = "rollback-takeover-recording"
+	req := browserRecordingConvertRequest{Name: "Rollback takeover", ExpectedScriptCount: 1}
+	script, err := preparePersistentImportedLibraryScript(&dsl.Script{
+		Name:      req.Name,
+		Version:   "1",
+		Protocol:  "browser",
+		ProjectID: "proj-1",
+		Actions: []dsl.Action{{
+			Name: "Open", Type: "browser_navigate", Target: "https://example.test",
+		}},
+	}, nil, "browser_recorder")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, actorSubject, _ := server.resolveAuditActor(httptest.NewRequest(http.MethodPost, "/", nil))
+	operationID := strings.TrimSpace(actorSubject) + "\x00session:" + recordingID
+	script.ID = deterministicDirectImportAssetID(
+		directImportOperationHash("proj-1", "browser_recorder", operationID),
+		"script",
+		0,
+	)
+	script.RefKey = ""
+	actorHash, err := server.browserRecordingSaveActorFingerprint(recordingID, actorSubject)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stampBrowserRecordingSaveProvenance(
+		script, recordingID, 0, 1, actorHash, browserRecordingSaveRoleBrowser, false,
+	)
+	proof, err := server.browserRecordingSaveProvenanceProof(script)
+	if err != nil {
+		t.Fatal(err)
+	}
+	script.Metadata.Import.Preserved[browserRecordingSaveProofKey] = proof
+	scripts := []*dsl.Script{script}
+	requestDigest, err := server.directImportScriptsRequestDigest(scripts, req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	attempt, replay, err := server.claimDirectImportAttempt(
+		"proj-1", "browser_recorder", operationID, requestDigest,
+	)
+	if err != nil || replay || attempt == nil || !attempt.created {
+		t.Fatalf("claim attempt=%#v replay=%v err=%v", attempt, replay, err)
+	}
+	transaction, err := newCreateImportTransaction(server, "browser-recording", scripts, "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stored, err := transaction.createImportedScript(script, "browser_recorder")
+	if err != nil {
+		t.Fatal(err)
+	}
+	allStored := []*StoredScript{stored}
+	if err := server.persistBrowserRecordingSaveLocator(recordingID, "proj-1", allStored, attempt); err != nil {
+		t.Fatal(err)
+	}
+
+	rollbackResult := make(chan error, 1)
+	go func() {
+		rollbackResult <- server.rollbackBrowserRecordingSave(
+			attempt, transaction, recordingID, "proj-1", allStored, true,
+		)
+	}()
+	<-store.renewStarted
+	takeover, takeoverErr := base.ClaimDirectImportReceipt(
+		"proj-1",
+		"browser_recorder",
+		attempt.receipt.OperationKeyHash,
+		attempt.receipt.RequestSHA256,
+		"winning-healer",
+		time.Now().UTC().Add(3*directImportReceiptLease()),
+		directImportReceiptLease(),
+	)
+	close(store.renewContinue)
+	if takeoverErr != nil || takeover == nil || takeover.Created || takeover.Replay {
+		t.Fatalf("receipt takeover=%#v err=%v", takeover, takeoverErr)
+	}
+	rollbackErr := <-rollbackResult
+	if rollbackErr == nil || !strings.Contains(rollbackErr.Error(), "ownership moved") {
+		t.Fatalf("losing rollback error=%v, want ownership-moved result", rollbackErr)
+	}
+	locatorKey, err := server.browserRecordingSaveLocatorKey(recordingID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := base.GetSetting(locatorKey)
+	if err != nil || raw == "" {
+		t.Fatalf("losing rollback removed staged locator: raw=%q err=%v", raw, err)
+	}
+	locator, err := server.decodeBrowserRecordingSaveLocator(raw)
+	if err != nil || locator.State != browserRecordingSaveLocatorStaged {
+		t.Fatalf("staged locator after takeover=%#v err=%v", locator, err)
+	}
+
+	// The exact healer can now authenticate and publish the save which won the
+	// receipt fence. This proves preserving the locator is recovery-enabling,
+	// not merely avoiding a destructive write.
+	if err := server.recoverStagedBrowserRecordingConversionsAtStartup(); err != nil {
+		t.Fatal(err)
+	}
+	raw, err = base.GetSetting(locatorKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	locator, err = server.decodeBrowserRecordingSaveLocator(raw)
+	if err != nil || locator.State != browserRecordingSaveLocatorPublished {
+		t.Fatalf("healed locator=%#v err=%v", locator, err)
+	}
+	if recovery, err := server.loadDurableBrowserRecordingConversion(recordingID); err != nil || recovery == nil || len(recovery.Scripts) != 1 {
+		t.Fatalf("healed conversion=%#v err=%v", recovery, err)
+	}
+}
+
+func TestValidatePersistedBrowserRecordingHARBaselineForAdoptionPreservesReadErrors(t *testing.T) {
+	base, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "browser-baseline-read.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = base.Close() })
+	store := &failOnceBrowserRecordingBaselineReadStore{SQLiteStore: base, fail: true}
+	server := &Server{store: store}
+	script := &dsl.Script{
+		ID: "http-script",
+		Metadata: &dsl.ScriptMetadata{Import: &dsl.ImportMetadata{Preserved: map[string]any{
+			browserRecordingSaveRoleKey:          browserRecordingSaveRoleHTTP,
+			browserRecordingHARBaselineNeededKey: true,
+		}}},
+	}
+	stored := []*StoredScript{{ID: script.ID, Script: script}}
+	valid, err := server.validatePersistedBrowserRecordingHARBaselineForAdoption(stored)
+	if err == nil || valid {
+		t.Fatalf("baseline read result valid=%v err=%v, want preserved storage error", valid, err)
+	}
+	valid, err = server.validatePersistedBrowserRecordingHARBaselineForAdoption(stored)
+	if err != nil || valid {
+		t.Fatalf("missing baseline result valid=%v err=%v, want incomplete without storage error", valid, err)
+	}
+}
+
+func TestHandleConvertBrowserRecordingHARetryFinishesEveryPublicationFailure(t *testing.T) {
+	for _, test := range []struct {
+		name             string
+		failComplete     bool
+		failPublish      bool
+		failClaimCleanup bool
+	}{
+		{name: "receipt completion", failComplete: true},
+		{name: "locator publication", failPublish: true},
+		{name: "retained claim cleanup", failClaimCleanup: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			base, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "browser-ha-publication.db"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = base.Close() })
+			store := &failOnceBrowserRecordingPublicationStore{
+				SQLiteStore:      base,
+				failComplete:     test.failComplete,
+				failPublish:      test.failPublish,
+				failClaimCleanup: test.failClaimCleanup,
+			}
+			now := time.Now().UTC()
+			if err := store.SaveProject(&storage.Project{ID: "proj-1", Name: "Browser project", CreatedAt: now, UpdatedAt: now}); err != nil {
+				t.Fatal(err)
+			}
+			server := newHABrowserRecorderTestServerWithStore(t, newFakeBrowserRecorder(recordedBrowserArtifact()), store)
+			id := startBrowserRecordingViaAPI(t, server)
+			stopBrowserRecordingViaAPI(t, server, id)
+			body := `{"name":"HA publication retry","expected_script_count":1}`
+
+			firstReq := httptest.NewRequest(http.MethodPost, "/api/v1/browser-recorder/sessions/"+id+"/convert", bytes.NewBufferString(body))
+			firstReq.Header.Set("Content-Type", "application/json")
+			firstResp := httptest.NewRecorder()
+			server.mux.ServeHTTP(firstResp, firstReq)
+			if firstResp.Code != http.StatusInternalServerError {
+				t.Fatalf("interrupted publication status=%d body=%s", firstResp.Code, firstResp.Body.String())
+			}
+			if got := len(server.runner.ListScripts()); got != 1 {
+				t.Fatalf("interrupted publication scripts=%d, want one retained exact asset", got)
+			}
+
+			retryReq := httptest.NewRequest(http.MethodPost, "/api/v1/browser-recorder/sessions/"+id+"/convert", bytes.NewBufferString(body))
+			retryReq.Header.Set("Content-Type", "application/json")
+			retryResp := httptest.NewRecorder()
+			server.mux.ServeHTTP(retryResp, retryReq)
+			if retryResp.Code != http.StatusCreated {
+				t.Fatalf("exact HA retry status=%d body=%s", retryResp.Code, retryResp.Body.String())
+			}
+			if got := len(server.runner.ListScripts()); got != 1 {
+				t.Fatalf("exact HA retry scripts=%d, want no duplicate", got)
+			}
+			claims, err := server.loadLibraryImportClaims()
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, claim := range claims {
+				if claim.RemoteID == "direct-import:browser-recording" {
+					t.Fatalf("exact HA retry retained claim %#v", claim)
+				}
+			}
+			locatorKey, err := server.browserRecordingSaveLocatorKey(id)
+			if err != nil {
+				t.Fatal(err)
+			}
+			raw, err := base.GetSetting(locatorKey)
+			if err != nil {
+				t.Fatal(err)
+			}
+			locator, err := server.decodeBrowserRecordingSaveLocator(raw)
+			if err != nil || locator.State != browserRecordingSaveLocatorPublished {
+				t.Fatalf("exact HA retry locator=%#v err=%v", locator, err)
+			}
+		})
+	}
+}
+
+func TestHandleConvertBrowserRecordingRestartAdoptsStagedLocatorBeforeClaimCommitAndRetriesExactSave(t *testing.T) {
+	t.Setenv(recordingBaselineKeyEnvVar, "browser-staged-locator-restart-key")
+	t.Setenv("APEXLOAD_LIBRARY_IMPORT_CLAIM_TTL", "5m")
+	artifact := recordedBrowserArtifact()
+	const credential = "staged-locator-retry-token"
+	artifact.HAR = []byte(`{"log":{"version":"1.2","entries":[{"startedDateTime":"2026-05-12T20:00:00Z","time":12,"request":{"method":"GET","url":"https://shop.example/api/cart","httpVersion":"HTTP/1.1","headers":[{"name":"Authorization","value":"Bearer ` + credential + `"}],"queryString":[],"cookies":[],"headersSize":-1,"bodySize":0},"response":{"status":200,"statusText":"OK","httpVersion":"HTTP/1.1","headers":[],"cookies":[],"content":{"size":2,"mimeType":"application/json","text":"{}"},"redirectURL":"","headersSize":-1,"bodySize":2},"cache":{},"timings":{"send":1,"wait":10,"receive":1}}]}}`)
+	base, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "browser-staged-locator-restart.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = base.Close() })
+	now := time.Now().UTC()
+	if err := base.SaveProject(&storage.Project{ID: "proj-1", Name: "Browser project", CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	if err := base.SaveFolder(&storage.Folder{ID: "browser-crash-folder", ProjectID: "proj-1", Name: "Crash imports", Category: "scripts", CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+
+	first := newBrowserRecorderTestServerWithStore(t, newFakeBrowserRecorder(artifact), base)
+	id := startBrowserRecordingViaAPI(t, first)
+	stopBrowserRecordingViaAPI(t, first, id)
+	folderID := "browser-crash-folder"
+	req := browserRecordingConvertRequest{
+		Name:                 "Crash-window retry",
+		FolderID:             &folderID,
+		AlsoCreateHTTPScript: true,
+		ExpectedScriptCount:  2,
+	}
+	info, ok := first.browserRecording.Get(id)
+	if !ok {
+		t.Fatal("stopped recording disappeared")
+	}
+	result := first.convertBrowserRecording(artifact, info, req)
+	if result == nil || len(result.Scripts) != 1 || result.Scripts[0] == nil {
+		t.Fatalf("browser conversion = %#v, want one script", result)
+	}
+	preparedBrowser, err := preparePersistentImportedLibraryScript(result.Scripts[0], nil, "browser_recorder")
+	if err != nil {
+		t.Fatal(err)
+	}
+	httpScript, _, err := first.createHTTPScriptFromHAR(artifact, info, req.Name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	preparedHTTP, err := preparePersistentImportedLibraryScript(httpScript, nil, "browser_recording_har")
+	if err != nil {
+		t.Fatal(err)
+	}
+	scripts := []*dsl.Script{preparedBrowser, preparedHTTP}
+	for _, script := range scripts {
+		if err := bindDraftScriptProject(script, "proj-1"); err != nil {
+			t.Fatal(err)
+		}
+		if status, err := first.applyProtectedImportFolderOverride(script, req.FolderID); err != nil || status != 0 {
+			t.Fatalf("apply folder status=%d err=%v", status, err)
+		}
+	}
+	_, actorSubject, _ := first.resolveAuditActor(httptest.NewRequest(http.MethodPost, "/", nil))
+	operationID := strings.TrimSpace(actorSubject) + "\x00session:" + id
+	assetIdentitySeed := directImportOperationHash("proj-1", "browser_recorder", operationID)
+	for index, script := range scripts {
+		script.ID = deterministicDirectImportAssetID(assetIdentitySeed, "script", index)
+		script.RefKey = ""
+	}
+	actorHash, err := first.browserRecordingSaveActorFingerprint(id, actorSubject)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for index, script := range scripts {
+		role := browserRecordingSaveRoleBrowser
+		baselineRequired := false
+		if index == len(scripts)-1 {
+			role = browserRecordingSaveRoleHTTP
+			baselineRequired = true
+		}
+		stampBrowserRecordingSaveProvenance(script, id, index, len(scripts), actorHash, role, baselineRequired)
+		proof, err := first.browserRecordingSaveProvenanceProof(script)
+		if err != nil {
+			t.Fatal(err)
+		}
+		script.Metadata.Import.Preserved[browserRecordingSaveProofKey] = proof
+	}
+	requestDigest, err := first.directImportScriptsRequestDigest(scripts, req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	attempt, replay, err := first.claimDirectImportAttempt("proj-1", "browser_recorder", operationID, requestDigest)
+	if err != nil || replay || attempt == nil || !attempt.created {
+		t.Fatalf("claim attempt=%#v replay=%v err=%v", attempt, replay, err)
+	}
+	transaction, err := newCreateImportTransaction(first, "browser-recording", scripts, "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stored := make([]*StoredScript, 0, len(scripts))
+	for index, script := range scripts {
+		profile := "browser_recorder"
+		if index == len(scripts)-1 {
+			profile = "browser_recording_har"
+		}
+		item, err := transaction.createImportedScript(script, profile)
+		if err != nil {
+			t.Fatal(err)
+		}
+		stored = append(stored, item)
+	}
+	baseline, err := har.CorrelationBaseline(artifact.HAR, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := first.finalizeBrowserRecordingHARBaseline(stored, baseline); err != nil {
+		t.Fatal(err)
+	}
+	if err := first.persistBrowserRecordingSaveLocator(id, "proj-1", stored, attempt); err != nil {
+		t.Fatal(err)
+	}
+	locatorKey, err := first.browserRecordingSaveLocatorKey(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stagedRaw, err := base.GetSetting(locatorKey)
+	if err != nil || stagedRaw == "" {
+		t.Fatalf("staged locator = %q err=%v", stagedRaw, err)
+	}
+	locator, err := first.decodeBrowserRecordingSaveLocator(stagedRaw)
+	if err != nil || locator.State != browserRecordingSaveLocatorStaged {
+		t.Fatalf("staged locator = %#v err=%v", locator, err)
+	}
+
+	// Model process loss after the staged locator CAS and before the claim commit,
+	// receipt completion, or locator publication. A fresh server must
+	// authenticate and adopt the complete staged set;
+	// it has no process-local recording session or raw stopped capability.
+	transaction.stopClaimHeartbeat()
+	activeLibraryImportOwners.Delete(transaction.claims.owner)
+	restarted := newBrowserRecorderTestServerWithStore(t, newFakeBrowserRecorder(nil), base)
+	if got := len(restarted.runner.ListScripts()); got != 2 {
+		t.Fatalf("startup recovery published %d script(s), want exact staged pair", got)
+	}
+	resolverRequest := httptest.NewRequest(http.MethodPost, "/api/v1/browser-recorder/sessions/"+id+"/convert", nil)
+	resolverRequest.SetPathValue("id", id)
+	if projectID, status, message := resolveBrowserRecordingSessionProjectID(restarted)(resolverRequest); status != 0 || projectID != "proj-1" {
+		t.Fatalf("recovered locator resolver project=%q status=%d message=%q", projectID, status, message)
+	}
+
+	// Retry through only the durable locator/receipt; no live session is recreated.
+	body := `{"name":"Crash-window retry","folder_id":"browser-crash-folder","also_create_http_script":true,"expected_script_count":2}`
+	retryReq := httptest.NewRequest(http.MethodPost, "/api/v1/browser-recorder/sessions/"+id+"/convert", bytes.NewBufferString(body))
+	retryReq.Header.Set("Content-Type", "application/json")
+	retryResp := httptest.NewRecorder()
+	restarted.mux.ServeHTTP(retryResp, retryReq)
+	if retryResp.Code != http.StatusCreated {
+		t.Fatalf("exact retry status=%d body=%s", retryResp.Code, retryResp.Body.String())
+	}
+	if strings.Contains(retryResp.Body.String(), credential) {
+		t.Fatalf("exact retry response disclosed credential: %s", retryResp.Body.String())
+	}
+	retried := restarted.runner.ListScripts()
+	if len(retried) != 2 {
+		t.Fatalf("exact retry scripts=%d, want 2", len(retried))
+	}
+	for index, script := range retried {
+		if script.ID != scripts[index].ID && script.ID != scripts[1-index].ID {
+			t.Fatalf("exact retry created unexpected script id %q", script.ID)
+		}
+	}
+	finalRaw, err := base.GetSetting(locatorKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	finalLocator, err := restarted.decodeBrowserRecordingSaveLocator(finalRaw)
+	if err != nil || finalLocator.State != browserRecordingSaveLocatorPublished {
+		t.Fatalf("published locator = %#v err=%v", finalLocator, err)
+	}
+}
+
+func TestHandleConvertBrowserRecordingHAAdoptsExpiredPreCommitStageAndRetriesExactSave(t *testing.T) {
+	t.Setenv("APEXLOAD_LIBRARY_IMPORT_CLAIM_TTL", "5m")
+	base, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "browser-ha-staged-restart.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = base.Close() })
+	store := &failOnceDirectImportReceiptStore{SQLiteStore: base}
+	now := time.Now().UTC()
+	if err := store.SaveProject(&storage.Project{ID: "proj-1", Name: "Browser project", CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	artifact := recordedBrowserArtifact()
+	first := newHABrowserRecorderTestServerWithStore(t, newFakeBrowserRecorder(artifact), store)
+	id := startBrowserRecordingViaAPI(t, first)
+	stopBrowserRecordingViaAPI(t, first, id)
+	req := browserRecordingConvertRequest{Name: "HA crash-window retry", ExpectedScriptCount: 1}
+	info, ok := first.browserRecording.Get(id)
+	if !ok {
+		t.Fatal("stopped recording disappeared")
+	}
+	result := first.convertBrowserRecording(artifact, info, req)
+	if result == nil || len(result.Scripts) != 1 || result.Scripts[0] == nil {
+		t.Fatalf("browser conversion = %#v, want one script", result)
+	}
+	script, err := preparePersistentImportedLibraryScript(result.Scripts[0], nil, "browser_recorder")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimSpace(script.Version) == "" {
+		script.Version = "1"
+	}
+	if err := bindDraftScriptProject(script, "proj-1"); err != nil {
+		t.Fatal(err)
+	}
+	_, actorSubject, _ := first.resolveAuditActor(httptest.NewRequest(http.MethodPost, "/", nil))
+	operationID := strings.TrimSpace(actorSubject) + "\x00session:" + id
+	assetIdentitySeed := directImportOperationHash("proj-1", "browser_recorder", operationID)
+	script.ID = deterministicDirectImportAssetID(assetIdentitySeed, "script", 0)
+	script.RefKey = ""
+	actorHash, err := first.browserRecordingSaveActorFingerprint(id, actorSubject)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stampBrowserRecordingSaveProvenance(script, id, 0, 1, actorHash, browserRecordingSaveRoleBrowser, false)
+	proof, err := first.browserRecordingSaveProvenanceProof(script)
+	if err != nil {
+		t.Fatal(err)
+	}
+	script.Metadata.Import.Preserved[browserRecordingSaveProofKey] = proof
+	scripts := []*dsl.Script{script}
+	requestDigest, err := first.directImportScriptsRequestDigest(scripts, req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	attempt, replay, err := first.claimDirectImportAttempt("proj-1", "browser_recorder", operationID, requestDigest)
+	if err != nil || replay || attempt == nil || !attempt.created {
+		t.Fatalf("claim attempt=%#v replay=%v err=%v", attempt, replay, err)
+	}
+	transaction, err := newCreateImportTransaction(first, "browser-recording", scripts, "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stored, err := transaction.createImportedScript(script, "browser_recorder")
+	if err != nil {
+		t.Fatal(err)
+	}
+	allStored := []*StoredScript{stored}
+	if err := first.persistBrowserRecordingSaveLocator(id, "proj-1", allStored, attempt); err != nil {
+		t.Fatal(err)
+	}
+
+	// Model a dead HA owner while its durable leases are still unexpired. Startup
+	// must leave the staged save fenced rather than stealing live-looking work.
+	transaction.stopClaimHeartbeat()
+	owner := transaction.claims.owner
+	activeLibraryImportOwners.Delete(owner)
+	restarted := newHABrowserRecorderTestServerWithStore(t, newFakeBrowserRecorder(nil), store)
+	if _, err := restarted.loadDurableBrowserRecordingConversion(id); !errors.Is(err, errBrowserRecordingSaveFinalizing) {
+		t.Fatalf("unexpired HA staged lookup error=%v, want finalizing conflict", err)
+	}
+
+	// The request-time resolver must retry exact adoption once the claim lease
+	// expires; the receipt test store advances its second claim clock beyond the
+	// deliberately longer receipt lease.
+	if err := restarted.mutateLibraryImportClaims(func(claims *[]libraryImportClaim) (bool, error) {
+		changed := false
+		for index := range *claims {
+			if (*claims)[index].OwnerID == owner {
+				(*claims)[index].ExpiresAt = time.Now().UTC().Add(-time.Minute)
+				changed = true
+			}
+		}
+		return changed, nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	body, err := json.Marshal(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	retryReq := httptest.NewRequest(http.MethodPost, "/api/v1/browser-recorder/sessions/"+id+"/convert", bytes.NewReader(body))
+	retryReq.Header.Set("Content-Type", "application/json")
+	retryResp := httptest.NewRecorder()
+	restarted.mux.ServeHTTP(retryResp, retryReq)
+	if retryResp.Code != http.StatusCreated {
+		t.Fatalf("exact HA crash retry status=%d body=%s", retryResp.Code, retryResp.Body.String())
+	}
+	if got := len(restarted.runner.ListScripts()); got != 1 {
+		t.Fatalf("exact HA crash retry scripts=%d, want no duplicate", got)
+	}
+}
+
+func TestHandleConvertBrowserRecordingRestartAdoptsAfterReceiptCompletionFailure(t *testing.T) {
+	t.Setenv("APEXLOAD_LIBRARY_IMPORT_CLAIM_TTL", "5m")
+	base, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "browser-receipt-completion-restart.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = base.Close() })
+	store := &failOnceDirectImportReceiptStore{SQLiteStore: base, failComplete: true}
+	now := time.Now().UTC()
+	if err := store.SaveProject(&storage.Project{ID: "proj-1", Name: "Browser project", CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	first := newBrowserRecorderTestServerWithStore(t, newFakeBrowserRecorder(recordedBrowserArtifact()), store)
+	id := startBrowserRecordingViaAPI(t, first)
+	stopBrowserRecordingViaAPI(t, first, id)
+	body := `{"name":"Receipt completion restart","expected_script_count":1}`
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/browser-recorder/sessions/"+id+"/convert", bytes.NewBufferString(body))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	first.mux.ServeHTTP(response, request)
+	if response.Code != http.StatusInternalServerError {
+		t.Fatalf("interrupted save status=%d body=%s", response.Code, response.Body.String())
+	}
+	if got := len(first.runner.ListScripts()); got != 1 {
+		t.Fatalf("interrupted save published %d script(s), want committed script retained", got)
+	}
+
+	// No live/stopped recorder capability survives. Startup uses the signed
+	// locator plus committed claim set to finish the exact receipt and publish it.
+	restarted := newBrowserRecorderTestServerWithStore(t, newFakeBrowserRecorder(nil), base)
+	if got := len(restarted.runner.ListScripts()); got != 1 {
+		t.Fatalf("startup adoption loaded %d script(s), want 1", got)
+	}
+	retry := httptest.NewRequest(http.MethodPost, "/api/v1/browser-recorder/sessions/"+id+"/convert", bytes.NewBufferString(body))
+	retry.Header.Set("Content-Type", "application/json")
+	retryResponse := httptest.NewRecorder()
+	restarted.mux.ServeHTTP(retryResponse, retry)
+	if retryResponse.Code != http.StatusCreated {
+		t.Fatalf("restart retry status=%d body=%s", retryResponse.Code, retryResponse.Body.String())
+	}
+	if got := len(restarted.runner.ListScripts()); got != 1 {
+		t.Fatalf("restart retry duplicated assets: %d scripts", got)
+	}
+	claims, err := restarted.loadLibraryImportClaims()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, claim := range claims {
+		if claim.RemoteID == "direct-import:browser-recording" {
+			t.Fatalf("restart adoption retained browser claim: %#v", claim)
+		}
+	}
+}
+
+func TestLoadDurableBrowserRecordingConversionRejectsTamperedLocator(t *testing.T) {
+	base, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "browser-tampered-locator.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = base.Close() })
+	server := newBrowserRecorderTestServerWithStore(t, newFakeBrowserRecorder(nil), base)
+	key, err := server.browserRecordingSaveLocatorKey("tampered-recording")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := base.SaveSetting(key, `{"version":1,"recording_id":"tampered-recording","project_id":"proj-1","script_ids":["attacker-script"],"proof":"forged"}`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := server.loadDurableBrowserRecordingConversion("tampered-recording"); err == nil || !strings.Contains(err.Error(), "proof does not match") {
+		t.Fatalf("tampered locator error = %v, want proof mismatch", err)
 	}
 }
 

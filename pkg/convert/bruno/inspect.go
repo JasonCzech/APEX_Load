@@ -264,6 +264,12 @@ func Inspect(input Input) (*Result, error) {
 			}
 		}
 	}
+	requirements = finalizeNativeSecretRequirements(requirements)
+	for index := range nativeCandidates {
+		nativeCandidates[index].SecretRequirements = finalizeNativeSecretRequirements(
+			nativeCandidates[index].SecretRequirements,
+		)
+	}
 	executable, apps := countItems(collection.Items)
 	projection := analyzeProjection(collection, capabilities)
 	result := &Result{
@@ -301,6 +307,14 @@ func Inspect(input Input) (*Result, error) {
 		nativeRequestPasses: nativeRequestPasses,
 	}
 	return result, nil
+}
+
+func finalizeNativeSecretRequirements(requirements []SecretRequirement) []SecretRequirement {
+	out := make([]SecretRequirement, len(requirements))
+	for index, requirement := range requirements {
+		out[index] = finalizeNativeSecretRequirement(requirement)
+	}
+	return out
 }
 
 func applyBrunoCollectionDisplayName(collection *Collection, requested string) {
@@ -1327,13 +1341,8 @@ func newSecretRequirement(
 ) SecretRequirement {
 	suggested := suggestionNames.claim(secretName(filename, suggestionKey))
 	idHash := sha256.Sum256([]byte(filename + "\x00" + identity))
-	if strings.EqualFold(strings.TrimSpace(value), scrub.Redacted) {
-		// A literal redaction sentinel proves that a credential existed, but its
-		// original material is unrecoverable. Keep the binding requirement while
-		// preventing source migration from treating the sentinel as a usable value.
-		value = ""
-	}
-	return SecretRequirement{
+	value = recoverableBrunoCredentialValue(value)
+	requirement := SecretRequirement{
 		ID:            hex.EncodeToString(idHash[:12]),
 		Path:          filename,
 		Key:           keyPath,
@@ -1341,7 +1350,46 @@ func newSecretRequirement(
 		Replacement:   "{{secret." + suggested + "}}",
 		Context:       "Bruno source credential",
 		Value:         value,
+		AffectedPaths: nativeSecretRequirementPaths(filename),
 	}
+	if headerName, isHeader := strings.CutPrefix(suggestionKey, "header_"); isHeader {
+		requirement = describeNativeHeaderSecretRequirement(requirement, headerName, value)
+	}
+	return requirement
+}
+
+// recoverableBrunoCredentialValue is the package-wide retention boundary for
+// source credential material. A scrubber sentinel proves that a credential
+// existed, but it is not the credential and must never be offered for
+// migration, retained in an import session, or restored on commit.
+func recoverableBrunoCredentialValue(value string) string {
+	if containsBrunoCredentialRedactionSentinel(value) {
+		return ""
+	}
+	return value
+}
+
+func containsBrunoCredentialRedactionSentinel(value string) bool {
+	return strings.Contains(strings.ToLower(value), strings.ToLower(scrub.Redacted))
+}
+
+func decodeBrunoCredentialValueToStable(
+	value string,
+	decode func(string) (string, error),
+) (string, bool) {
+	current := value
+	const maxDecodeDepth = 32
+	for range maxDecodeDepth {
+		decoded, err := decode(current)
+		if err != nil {
+			return current, false
+		}
+		if decoded == current {
+			return current, true
+		}
+		current = decoded
+	}
+	return current, false
 }
 
 func secretName(filename, key string) string {

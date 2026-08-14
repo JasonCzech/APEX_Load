@@ -695,6 +695,12 @@ func TestMaskScriptSecretsPreservesNativeSourceAndMessageIdentifiers(t *testing.
 func TestMaskScriptSecretsPreservesOAuthTokenEndpointLocator(t *testing.T) {
 	script := &dsl.Script{
 		ID: "oauth-locator", Name: "OAuth locator", Version: "1", Protocol: "http",
+		Metadata: &dsl.ScriptMetadata{Import: &dsl.ImportMetadata{
+			Source: "raml",
+			Preserved: map[string]any{
+				dsl.ImportPreservedCredentialPolicyKey: dsl.ImportPreservedCredentialPolicyPreserve,
+			},
+		}},
 		Init: []dsl.Action{{
 			Name: "token", Type: "http_oauth2_token",
 			Params: map[string]any{
@@ -1111,10 +1117,7 @@ func TestImportResponseMasksEmbeddedBase64BodyWithoutCorruptingWire(t *testing.T
 		if err != nil {
 			t.Fatalf("%s body is not valid base64: %v (%q)", label, err, action.Body)
 		}
-		wantWire := wireBody
-		if label == "result.script" {
-			wantWire = strings.Replace(wireBody, canary, maskedScriptSecret, 1)
-		}
+		wantWire := strings.Replace(wireBody, canary, maskedScriptSecret, 1)
 		if string(decoded) != wantWire {
 			t.Fatalf("%s wire bytes changed outside the expected disclosure boundary:\n got: %q\nwant: %q", label, decoded, wantWire)
 		}
@@ -1808,5 +1811,36 @@ func TestMaskScriptSecretsMasksRetainedUnsupportedAuthSourceFields(t *testing.T)
 	}
 	if !strings.Contains(string(payload), maskedScriptSecret) {
 		t.Fatalf("ordinary script projection did not mark retained auth field: %s", payload)
+	}
+}
+
+func TestMaskScriptSecretsPreservesOnlyKnownAgentforceSessionEndReason(t *testing.T) {
+	for _, test := range []struct {
+		name  string
+		value string
+		want  string
+	}{
+		{name: "known enum", value: "UserRequest", want: "UserRequest"},
+		{name: "arbitrary value", value: "session-end-secret", want: maskedScriptSecret},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			script := &dsl.Script{
+				Name: "Agentforce teardown", Version: "1", Protocol: "http",
+				Actions: []dsl.Action{{Name: "Request", Type: "request", Method: "GET", Target: "/"}},
+				Teardown: []dsl.Action{{
+					Name: "End Agent Session", Type: "request", Method: "DELETE", Target: "/sessions/id",
+					Headers: map[string]string{"x-session-end-reason": test.value},
+				}},
+			}
+			projected := maskScriptSecrets(script)
+			if projected == nil || projected.Teardown[0].Headers["x-session-end-reason"] != test.want {
+				t.Fatalf("projected header = %#v, want %q", projected, test.want)
+			}
+			if test.want == "UserRequest" {
+				if requirements := discoverSecretBindingRequirements(projected, 0); len(requirements) != 0 {
+					t.Fatalf("known lifecycle enum created credential requirements: %#v", requirements)
+				}
+			}
+		})
 	}
 }

@@ -1195,6 +1195,147 @@ func TestGeneratedSwaggerIncludesInferredHandlerContracts(t *testing.T) {
 	}
 }
 
+func TestAsyncAPIBatchCommitOpenAPIContract(t *testing.T) {
+	data, err := GenerateOpenAPIYAML("server.go")
+	if err != nil {
+		t.Fatalf("GenerateOpenAPIYAML: %v", err)
+	}
+	var spec struct {
+		Paths map[string]map[string]oasOperation `yaml:"paths"`
+	}
+	if err := yaml.Unmarshal(data, &spec); err != nil {
+		t.Fatalf("generated spec is not valid YAML: %v", err)
+	}
+
+	operation := spec.Paths["/api/v1/scripts/import/asyncapi/commit-batch"]["post"]
+	if operation.OperationID != "handleCommitAsyncAPIImportBatch" {
+		t.Fatalf("operation id = %q, want handleCommitAsyncAPIImportBatch", operation.OperationID)
+	}
+	if operation.RequestBody == nil || !operation.RequestBody.Required {
+		t.Fatal("AsyncAPI batch commit is missing its required JSON body")
+	}
+	schema := operation.RequestBody.Content["application/json"].Schema
+	if got, want := schema.Required, []string{"operation_id", "scripts"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("required request fields = %v, want %v", got, want)
+	}
+	if got := schema.Properties["scripts"].Type; got != "array" {
+		t.Fatalf("scripts schema type = %q, want array", got)
+	}
+	if got := schema.Properties["operation_id"].Type; got != "string" {
+		t.Fatalf("operation_id schema type = %q, want string", got)
+	}
+	if folder := schema.Properties["folder_id"]; folder.Type != "string" || !folder.Nullable {
+		t.Fatalf("folder_id schema = %#v, want nullable string", folder)
+	}
+	if _, ok := operation.Responses["201"]; !ok {
+		t.Fatalf("responses = %v, want explicit 201", sortedOpenAPIResponseStatuses(operation.Responses))
+	}
+}
+
+func TestEnterpriseArchiveBatchSaveOpenAPIContract(t *testing.T) {
+	data, err := GenerateOpenAPIYAML("server.go")
+	if err != nil {
+		t.Fatalf("GenerateOpenAPIYAML: %v", err)
+	}
+	var spec struct {
+		Paths map[string]map[string]oasOperation `yaml:"paths"`
+	}
+	if err := yaml.Unmarshal(data, &spec); err != nil {
+		t.Fatalf("generated spec is not valid YAML: %v", err)
+	}
+
+	operation := spec.Paths["/api/v1/scripts/import/enterprise-script-archive/save"]["post"]
+	if operation.OperationID != "handleSaveEnterpriseArchiveImport" {
+		t.Fatalf("operation id = %q, want handleSaveEnterpriseArchiveImport", operation.OperationID)
+	}
+	if operation.RequestBody == nil || !operation.RequestBody.Required {
+		t.Fatal("enterprise archive batch save is missing its required JSON body")
+	}
+	schema := operation.RequestBody.Content["application/json"].Schema
+	if got, want := schema.Required, []string{"operation_id", "scripts"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("required request fields = %v, want %v", got, want)
+	}
+	if got := schema.Properties["scripts"].Type; got != "array" {
+		t.Fatalf("scripts schema type = %q, want array", got)
+	}
+	if got := schema.Properties["operation_id"].Type; got != "string" {
+		t.Fatalf("operation_id schema type = %q, want string", got)
+	}
+	if folder := schema.Properties["folder_id"]; folder.Type != "string" || !folder.Nullable {
+		t.Fatalf("folder_id schema = %#v, want nullable string", folder)
+	}
+	if _, ok := operation.Responses["201"]; !ok {
+		t.Fatalf("responses = %v, want explicit 201", sortedOpenAPIResponseStatuses(operation.Responses))
+	}
+	if _, broadSuccess := operation.Responses["2XX"]; broadSuccess {
+		t.Fatalf("responses = %v, broad 2XX must not replace exact 201", sortedOpenAPIResponseStatuses(operation.Responses))
+	}
+}
+
+func TestGenericImportBatchCommitOpenAPIContract(t *testing.T) {
+	data, err := GenerateOpenAPIYAML("server.go")
+	if err != nil {
+		t.Fatalf("GenerateOpenAPIYAML: %v", err)
+	}
+	var spec struct {
+		Paths map[string]map[string]oasOperation `yaml:"paths"`
+	}
+	if err := yaml.Unmarshal(data, &spec); err != nil {
+		t.Fatalf("generated spec is not valid YAML: %v", err)
+	}
+
+	operation := spec.Paths["/api/v1/scripts/import/commit-batch"]["post"]
+	if operation.OperationID != "handleCommitGenericImportBatch" {
+		t.Fatalf("operation id = %q, want handleCommitGenericImportBatch", operation.OperationID)
+	}
+	if operation.RequestBody == nil || !operation.RequestBody.Required {
+		t.Fatal("generic import batch commit is missing its required JSON body")
+	}
+	schema := operation.RequestBody.Content["application/json"].Schema
+	if got, want := schema.Required, []string{"operation_id", "scripts", "source_profile"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("required request fields = %v, want %v", got, want)
+	}
+	if got := schema.Properties["scripts"].Type; got != "array" {
+		t.Fatalf("scripts schema type = %q, want array", got)
+	}
+	if got := schema.Properties["operation_id"].Type; got != "string" {
+		t.Fatalf("operation_id schema type = %q, want string", got)
+	}
+	profile := schema.Properties["source_profile"]
+	if profile.Type != "string" {
+		t.Fatalf("source_profile schema type = %q, want string", profile.Type)
+	}
+	if want := genericImportSourceProfileWireValues(); !reflect.DeepEqual(profile.Enum, want) {
+		t.Fatalf("source_profile enum = %v, want authoritative values %v", profile.Enum, want)
+	}
+	for _, requiredValue := range []string{"github", "recorder", "recorder-export", "sample", "sample-import"} {
+		if !openAPIStringSliceContains(profile.Enum, requiredValue) {
+			t.Errorf("source_profile enum %v is missing %q", profile.Enum, requiredValue)
+		}
+	}
+	for _, wireValue := range profile.Enum {
+		if normalizeGenericImportSourceProfile(wireValue) == "" {
+			t.Errorf("published source_profile %q is not accepted by the handler", wireValue)
+		}
+	}
+	recordingSessions := schema.Properties["source_recording_session_ids"]
+	if recordingSessions.Type != "array" || recordingSessions.Items == nil || recordingSessions.Items.Type != "string" {
+		t.Fatalf("source_recording_session_ids schema = %#v, want optional array of strings", recordingSessions)
+	}
+	if openAPIStringSliceContains(schema.Required, "source_recording_session_ids") {
+		t.Fatalf("source_recording_session_ids must remain optional; required = %v", schema.Required)
+	}
+	if folder := schema.Properties["folder_id"]; folder.Type != "string" || !folder.Nullable {
+		t.Fatalf("folder_id schema = %#v, want nullable string", folder)
+	}
+	if _, ok := operation.Responses["201"]; !ok {
+		t.Fatalf("responses = %v, want explicit 201", sortedOpenAPIResponseStatuses(operation.Responses))
+	}
+	if _, broad := operation.Responses["2XX"]; broad {
+		t.Fatalf("responses = %v, generic batch must not advertise broad 2XX", sortedOpenAPIResponseStatuses(operation.Responses))
+	}
+}
+
 func TestSharedImportCommitSchemasIncludeOptionalProtectedCandidateFields(t *testing.T) {
 	data, err := GenerateOpenAPIYAML("server.go")
 	if err != nil {

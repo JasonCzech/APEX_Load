@@ -37,6 +37,72 @@ func TestParseGeneratorRunSupervision(t *testing.T) {
 	}
 }
 
+func TestValidatePaaSControllerConfig(t *testing.T) {
+	valid := map[string]string{
+		"APEXLOAD_ENVIRONMENT":     "azure_container_apps",
+		"APEXLOAD_STORE":           "postgres",
+		"APEXLOAD_DATABASE_URL":    "postgres://db/apexload",
+		"APEXLOAD_REDIS_URL":       "rediss://cache/0",
+		"APEXLOAD_CACHE_BACKEND":   "redis",
+		"APEXLOAD_ARCHIVE_BACKEND": "azure_blob",
+	}
+	getenv := func(overrides map[string]string) func(string) string {
+		return func(key string) string {
+			if value, ok := overrides[key]; ok {
+				return value
+			}
+			return valid[key]
+		}
+	}
+	if err := validatePaaSControllerConfig(getenv(nil)); err != nil {
+		t.Fatalf("valid PaaS config: %v", err)
+	}
+	if err := validatePaaSControllerConfig(getenv(map[string]string{"APEXLOAD_ENVIRONMENT": "aws_ecs_fargate"})); err != nil {
+		t.Fatalf("valid AWS PaaS config: %v", err)
+	}
+	for _, test := range []struct {
+		name      string
+		overrides map[string]string
+	}{
+		{name: "HA refused", overrides: map[string]string{"APEXLOAD_CONTROLLER_HA": "true"}},
+		{name: "API role refused until durable split", overrides: map[string]string{"APEXLOAD_CONTROLLER_ROLE": "api"}},
+		{name: "SQLite refused", overrides: map[string]string{"APEXLOAD_STORE": "sqlite"}},
+		{name: "database required", overrides: map[string]string{"APEXLOAD_DATABASE_URL": ""}},
+		{name: "redis required", overrides: map[string]string{"APEXLOAD_REDIS_URL": ""}},
+		{name: "remote cache required", overrides: map[string]string{"APEXLOAD_CACHE_BACKEND": "memory"}},
+		{name: "object archive required", overrides: map[string]string{"APEXLOAD_ARCHIVE_BACKEND": "filesystem"}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if err := validatePaaSControllerConfig(getenv(test.overrides)); err == nil {
+				t.Fatal("expected fail-closed configuration error")
+			}
+		})
+	}
+	if err := validatePaaSControllerConfig(func(string) string { return "" }); err != nil {
+		t.Fatalf("non-PaaS deployment changed: %v", err)
+	}
+}
+
+func TestDynamicGeneratorsEnabled(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		values map[string]string
+		want   bool
+	}{
+		{name: "ordinary controller unchanged", values: map[string]string{}, want: false},
+		{name: "Azure PaaS", values: map[string]string{"APEXLOAD_ENVIRONMENT": "azure_container_apps"}, want: true},
+		{name: "AWS PaaS", values: map[string]string{"APEXLOAD_ENVIRONMENT": "aws_ecs_fargate"}, want: true},
+		{name: "external controller opt in", values: map[string]string{"APEXLOAD_DYNAMIC_GENERATORS": "true"}, want: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			got := dynamicGeneratorsEnabled(func(key string) string { return test.values[key] })
+			if got != test.want {
+				t.Fatalf("dynamicGeneratorsEnabled() = %v, want %v", got, test.want)
+			}
+		})
+	}
+}
+
 type controllerLifecycleStub struct {
 	startErr      error
 	shutdownErr   error
@@ -107,8 +173,19 @@ func TestImportAssetDirFromEnv(t *testing.T) {
 	t.Run("production requires durable configuration", func(t *testing.T) {
 		t.Setenv("APEXLOAD_ENV", "production")
 		t.Setenv("APEXLOAD_IMPORT_ASSET_DIR", "")
+		t.Setenv("APEXLOAD_ARCHIVE_BACKEND", "filesystem")
 		if _, err := importAssetDirFromEnv(); err == nil {
 			t.Fatal("expected production import storage error")
+		}
+	})
+	t.Run("production accepts object-backed asset storage", func(t *testing.T) {
+		t.Setenv("APEXLOAD_ENV", "production")
+		t.Setenv("APEXLOAD_IMPORT_ASSET_DIR", "")
+		for _, backend := range []string{"s3", "azure_blob", "gcs"} {
+			t.Setenv("APEXLOAD_ARCHIVE_BACKEND", backend)
+			if got, err := importAssetDirFromEnv(); err != nil || got != "" {
+				t.Fatalf("backend %s: dir = %q, err = %v", backend, got, err)
+			}
 		}
 	})
 	t.Run("local keeps API default", func(t *testing.T) {
@@ -217,6 +294,8 @@ func TestValidateGeneratorTransportStartupFailsClosedInProduction(t *testing.T) 
 		{name: "production token over plaintext", targets: []string{"generator:9090"}, env: "production", security: generatorrpc.TransportSecurity{Token: true}, wantErr: true},
 		{name: "production mTLS", targets: []string{"generator:9090"}, env: "production", security: generatorrpc.TransportSecurity{TLS: true, MutualTLS: true}, wantErr: false},
 		{name: "production TLS and token", targets: []string{"generator:9090"}, env: "production", security: generatorrpc.TransportSecurity{TLS: true, Token: true}, wantErr: false},
+		{name: "production authenticated reverse tunnel", targets: []string{"tunnel://generator"}, env: "production", security: generatorrpc.TransportSecurity{AuthenticatedTunnel: true}, wantErr: false},
+		{name: "production tunnel cannot bless direct target", targets: []string{"generator:9090"}, env: "production", security: generatorrpc.TransportSecurity{AuthenticatedTunnel: true}, wantErr: true},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

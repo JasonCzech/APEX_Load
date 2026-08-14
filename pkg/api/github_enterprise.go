@@ -1067,7 +1067,7 @@ func (s *Server) handleListGitHubCheckLinks(w http.ResponseWriter, r *http.Reque
 
 func (s *Server) githubScriptProjectID(scriptID string) (string, bool) {
 	if s != nil && s.store != nil {
-		script, err := s.store.GetScript(strings.TrimSpace(scriptID))
+		script, err := getPublishedImportScript(s.store, strings.TrimSpace(scriptID))
 		if err == nil && script != nil {
 			return script.ProjectID, true
 		}
@@ -1093,7 +1093,7 @@ func (s *Server) filterGitHubCheckLinksByProject(links []*storage.GitHubCheckLin
 			continue
 		}
 		if strings.TrimSpace(link.ScriptID) != "" {
-			script, err := s.store.GetScript(strings.TrimSpace(link.ScriptID))
+			script, err := getPublishedImportScript(s.store, strings.TrimSpace(link.ScriptID))
 			if err != nil || script == nil || normalizeProjectID(script.ProjectID) != projectID {
 				continue
 			}

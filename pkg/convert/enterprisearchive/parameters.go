@@ -2,6 +2,7 @@ package enterprisearchive
 
 import (
 	"encoding/csv"
+	"encoding/json"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -19,6 +20,303 @@ type ParsedParameterFile struct {
 	DataSources []dsl.DataSource
 	Sections    map[string]map[string]string
 	Warnings    []string
+}
+
+type parameterDefinitionCollision struct {
+	Name              string
+	ExistingSource    string
+	ConflictingSource string
+	AlternateName     string
+}
+
+type parameterMergeState struct {
+	parameterOrigins      map[string]string
+	parameterIndexes      map[string]int
+	parameterDefinitions  map[string]int
+	usedParameterNames    map[string]struct{}
+	dataSourceIndexes     map[string]int
+	dataSourceDefinitions map[string]int
+	usedDataSourceNames   map[string]struct{}
+}
+
+func newParameterMergeState(script *dsl.Script) *parameterMergeState {
+	state := &parameterMergeState{
+		parameterOrigins:      make(map[string]string),
+		parameterIndexes:      make(map[string]int),
+		parameterDefinitions:  make(map[string]int),
+		usedParameterNames:    make(map[string]struct{}),
+		dataSourceIndexes:     make(map[string]int),
+		dataSourceDefinitions: make(map[string]int),
+		usedDataSourceNames:   make(map[string]struct{}),
+	}
+	if script == nil {
+		return state
+	}
+	for index, parameter := range script.Parameters {
+		name := canonicalSourceParameterName(parameter.Name)
+		if name != "" {
+			state.parameterOrigins[name] = "converted script"
+			if _, exists := state.parameterIndexes[name]; !exists {
+				state.parameterIndexes[name] = index
+			}
+			state.parameterDefinitions[importedParameterDefinitionKey(name, parameter)] = index
+			state.usedParameterNames[name] = struct{}{}
+		}
+	}
+	for index, source := range script.DataSources {
+		name := strings.ToLower(strings.TrimSpace(source.Name))
+		if name != "" {
+			if _, exists := state.dataSourceIndexes[name]; !exists {
+				state.dataSourceIndexes[name] = index
+			}
+			state.dataSourceDefinitions[importedDataSourceDefinitionKey(name, source)] = index
+			state.usedDataSourceNames[name] = struct{}{}
+		}
+	}
+	return state
+}
+
+// mergeParsedParameterFile adds one .prm file without allowing its local name
+// registry to collide with parameters or data sources already attached to the
+// script. Identical definitions are reused. Conflicting parameter definitions
+// are retained under deterministic alternate names and reported to the caller,
+// which installs a replay gate because an action-level {{param.NAME}} reference
+// cannot identify which source profile LoadRunner intended.
+func mergeParsedParameterFile(
+	script *dsl.Script,
+	parsed ParsedParameterFile,
+	sourceFile string,
+	state *parameterMergeState,
+) []parameterDefinitionCollision {
+	if script == nil {
+		return nil
+	}
+	if state == nil {
+		state = newParameterMergeState(script)
+	}
+	sourceFile = filepath.Base(strings.TrimSpace(sourceFile))
+	if sourceFile == "" {
+		sourceFile = "parameter file"
+	}
+
+	dataSourceRemap := mergeParameterDataSources(script, parsed.DataSources, state)
+
+	type mergeEntry struct {
+		originalName string
+		parameter    dsl.Parameter
+		hadExisting  bool
+	}
+	entries := make([]mergeEntry, 0, len(parsed.Parameters))
+	for _, sourceParameter := range parsed.Parameters {
+		parameter := sourceParameter
+		originalName := canonicalSourceParameterName(parameter.Name)
+		if originalName == "" {
+			continue
+		}
+		if remapped, exists := dataSourceRemap[strings.ToLower(strings.TrimSpace(parameter.DataSource))]; exists {
+			parameter.DataSource = remapped
+		}
+		_, hadExisting := state.parameterIndexes[originalName]
+		entries = append(entries, mergeEntry{
+			originalName: originalName,
+			parameter:    parameter,
+			hadExisting:  hadExisting,
+		})
+	}
+
+	// Resolve destination names before appending definitions. A SameLineAs
+	// dependency can point forward, so a later conflict can force an otherwise
+	// identical earlier parameter to become a distinct definition too. Revisit
+	// only dependents of names whose allocation changed; this keeps a long
+	// dependency chain linear instead of rescanning every parameter per depth.
+	nameRemap := make(map[string]string, len(entries))
+	alternateNames := make(map[int]string, len(entries))
+	for _, entry := range entries {
+		if existingIndex, exists := state.parameterIndexes[entry.originalName]; exists {
+			nameRemap[entry.originalName] = script.Parameters[existingIndex].Name
+		} else {
+			nameRemap[entry.originalName] = uniqueImportedParameterName(
+				entry.originalName,
+				state.usedParameterNames,
+			)
+		}
+	}
+	dependents := make(map[string][]int, len(entries))
+	for index, entry := range entries {
+		if dependency := canonicalSourceParameterName(entry.parameter.SameLineAs); dependency != "" {
+			dependents[dependency] = append(dependents[dependency], index)
+		}
+	}
+	recalculate := func(index int) bool {
+		entry := entries[index]
+		parameter := entry.parameter
+		if remapped, exists := nameRemap[canonicalSourceParameterName(parameter.SameLineAs)]; exists {
+			parameter.SameLineAs = remapped
+		}
+		desired := nameRemap[entry.originalName]
+		if existingIndex, exists := state.parameterDefinitions[importedParameterDefinitionKey(entry.originalName, parameter)]; exists {
+			desired = script.Parameters[existingIndex].Name
+			if alternate := alternateNames[index]; alternate != "" && alternate != desired {
+				delete(state.usedParameterNames, canonicalSourceParameterName(alternate))
+				delete(alternateNames, index)
+			}
+		} else if entry.hadExisting {
+			desired = alternateNames[index]
+			if desired == "" {
+				desired = uniqueImportedParameterName(entry.originalName, state.usedParameterNames)
+				alternateNames[index] = desired
+			}
+		}
+		if nameRemap[entry.originalName] == desired {
+			return false
+		}
+		nameRemap[entry.originalName] = desired
+		return true
+	}
+	queue := make([]string, 0, len(entries))
+	pending := make(map[string]bool, len(entries))
+	enqueue := func(name string) {
+		if name == "" || pending[name] {
+			return
+		}
+		pending[name] = true
+		queue = append(queue, name)
+	}
+	for index, entry := range entries {
+		if recalculate(index) {
+			enqueue(entry.originalName)
+		}
+	}
+	for offset := 0; offset < len(queue); offset++ {
+		changedName := queue[offset]
+		pending[changedName] = false
+		for _, dependentIndex := range dependents[changedName] {
+			if recalculate(dependentIndex) {
+				enqueue(entries[dependentIndex].originalName)
+			}
+		}
+	}
+
+	collisions := make([]parameterDefinitionCollision, 0)
+	for _, entry := range entries {
+		parameter := entry.parameter
+		if remapped, exists := nameRemap[canonicalSourceParameterName(parameter.SameLineAs)]; exists {
+			parameter.SameLineAs = remapped
+		}
+		definitionKey := importedParameterDefinitionKey(entry.originalName, parameter)
+		if _, exists := state.parameterDefinitions[definitionKey]; exists {
+			continue
+		}
+		parameter.Name = nameRemap[entry.originalName]
+		if entry.hadExisting {
+			collisions = append(collisions, parameterDefinitionCollision{
+				Name:              entry.originalName,
+				ExistingSource:    state.parameterOrigins[entry.originalName],
+				ConflictingSource: sourceFile,
+				AlternateName:     parameter.Name,
+			})
+		}
+		index := len(script.Parameters)
+		script.Parameters = append(script.Parameters, parameter)
+		state.parameterDefinitions[definitionKey] = index
+		destinationName := canonicalSourceParameterName(parameter.Name)
+		state.parameterIndexes[destinationName] = index
+		state.parameterOrigins[destinationName] = sourceFile
+		if !entry.hadExisting {
+			state.parameterIndexes[entry.originalName] = index
+			state.parameterOrigins[entry.originalName] = sourceFile
+		}
+	}
+	return collisions
+}
+
+func mergeParameterDataSources(
+	script *dsl.Script,
+	incoming []dsl.DataSource,
+	state *parameterMergeState,
+) map[string]string {
+	remap := make(map[string]string, len(incoming))
+	if script == nil {
+		return remap
+	}
+	if state == nil {
+		state = newParameterMergeState(script)
+	}
+	for _, source := range incoming {
+		originalName := strings.TrimSpace(source.Name)
+		nameKey := strings.ToLower(originalName)
+		if nameKey == "" {
+			continue
+		}
+		definitionKey := importedDataSourceDefinitionKey(nameKey, source)
+		if existingIndex, exists := state.dataSourceDefinitions[definitionKey]; exists {
+			remap[nameKey] = script.DataSources[existingIndex].Name
+			continue
+		}
+		if _, exists := state.dataSourceIndexes[nameKey]; exists {
+			source.Name = uniqueImportedDataSourceName(originalName, state.usedDataSourceNames)
+		} else {
+			source.Name = originalName
+			state.usedDataSourceNames[nameKey] = struct{}{}
+		}
+		remap[nameKey] = source.Name
+		index := len(script.DataSources)
+		state.dataSourceIndexes[strings.ToLower(strings.TrimSpace(source.Name))] = index
+		state.dataSourceDefinitions[definitionKey] = index
+		script.DataSources = append(script.DataSources, source)
+	}
+	return remap
+}
+
+func importedDataSourceDefinitionKey(sourceName string, source dsl.DataSource) string {
+	source.Name = ""
+	encoded, _ := json.Marshal(source)
+	return strings.ToLower(strings.TrimSpace(sourceName)) + "\x00" + string(encoded)
+}
+
+func importedParameterDefinitionKey(sourceName string, parameter dsl.Parameter) string {
+	parameter.Name = ""
+	encoded, _ := json.Marshal(parameter)
+	return canonicalSourceParameterName(sourceName) + "\x00" + string(encoded)
+}
+
+func uniqueImportedDataSourceName(base string, used map[string]struct{}) string {
+	base = strings.TrimSpace(base)
+	if base == "" {
+		base = "data"
+	}
+	if _, exists := used[strings.ToLower(base)]; !exists {
+		used[strings.ToLower(base)] = struct{}{}
+		return base
+	}
+	for suffix := 2; ; suffix++ {
+		candidate := base + "_" + strconv.Itoa(suffix)
+		key := strings.ToLower(candidate)
+		if _, exists := used[key]; exists {
+			continue
+		}
+		used[key] = struct{}{}
+		return candidate
+	}
+}
+
+func uniqueImportedParameterName(base string, used map[string]struct{}) string {
+	base = canonicalSourceParameterName(base)
+	if base == "" {
+		base = "parameter"
+	}
+	if _, exists := used[base]; !exists {
+		used[base] = struct{}{}
+		return base
+	}
+	for suffix := 2; ; suffix++ {
+		candidate := base + "_" + strconv.Itoa(suffix)
+		if _, exists := used[candidate]; exists {
+			continue
+		}
+		used[candidate] = struct{}{}
+		return candidate
+	}
 }
 
 func ParseParameterFile(filename, content string, archiveFiles map[string]string) ParsedParameterFile {

@@ -10,7 +10,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jasonczech/apexload/pkg/convert/postman"
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/importartifact"
 )
 
 func TestHandleWebAPIExecutionSupportMatrix(t *testing.T) {
@@ -218,6 +220,32 @@ func TestHandleImportOpenAPI(t *testing.T) {
 	assertReviewSection(t, result.ReviewSections, "openapi_operations", "info", "getOrder")
 }
 
+func TestHandleImportOpenAPIExplainsAuthenticationPerOperation(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	body := strings.NewReader(`{
+  "content":"{\"openapi\":\"3.0.3\",\"info\":{\"title\":\"Auth review\",\"version\":\"1\"},\"servers\":[{\"url\":\"https://api.example.test\"}],\"components\":{\"securitySchemes\":{\"partnerAuth\":{\"type\":\"http\",\"scheme\":\"bearer\"}}},\"paths\":{\"/private\":{\"get\":{\"operationId\":\"privateStatus\",\"security\":[{\"partnerAuth\":[]}],\"responses\":{\"200\":{}}}},\"/public\":{\"get\":{\"operationId\":\"publicStatus\",\"security\":[],\"responses\":{\"200\":{}}}}}}"
+}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/openapi", body)
+	req.Header.Set("Content-Type", "application/json")
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", resp.Code, resp.Body.String())
+	}
+	var result struct {
+		ReviewSections []struct {
+			Key      string   `json:"key"`
+			Severity string   `json:"severity"`
+			Items    []string `json:"items"`
+		} `json:"review_sections"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+	assertReviewSection(t, result.ReviewSections, "openapi_auth", "warning", "GET /private — partnerAuth")
+	assertReviewSection(t, result.ReviewSections, "openapi_auth", "warning", "GET /public — explicitly anonymous")
+}
+
 func TestHandleImportOpenAPIRedactsCredentialsFromResultAndRootSummaries(t *testing.T) {
 	server := NewServer(ServerConfig{})
 	const (
@@ -252,9 +280,12 @@ func TestHandleImportOpenAPIRedactsCredentialsFromResultAndRootSummaries(t *test
 	}
 	editable := string(envelope["script"]) + string(envelope["scripts"])
 	for _, secret := range []string{username, password, token} {
-		if !strings.Contains(editable, secret) {
-			t.Fatalf("authorized OpenAPI editable draft lost URL credential %q: %s", secret, editable)
+		if strings.Contains(editable, secret) {
+			t.Fatalf("OpenAPI editable draft disclosed URL credential %q: %s", secret, editable)
 		}
+	}
+	if !strings.Contains(editable, maskedScriptSecret) || !strings.Contains(editable, "region=east") {
+		t.Fatalf("OpenAPI editable URL projection did not preserve safe structure: %s", editable)
 	}
 	delete(envelope, "script")
 	delete(envelope, "scripts")
@@ -882,6 +913,21 @@ func TestHandleImportPostmanMultipartEnvironment(t *testing.T) {
 		Stats struct {
 			EnvironmentValues int `json:"environment_values"`
 		} `json:"stats"`
+		Summary struct {
+			EnvironmentName string   `json:"environment_name"`
+			SourceFiles     []string `json:"source_files"`
+		} `json:"summary"`
+		SourceReview struct {
+			SourceFiles []struct {
+				Path string `json:"path"`
+			} `json:"source_files"`
+			TotalSourceFiles int `json:"total_source_files"`
+		} `json:"source_review"`
+		ReviewSections []struct {
+			Key      string   `json:"key"`
+			Severity string   `json:"severity"`
+			Items    []string `json:"items"`
+		} `json:"review_sections"`
 	}
 	if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
 		t.Fatalf("json.Unmarshal returned error: %v", err)
@@ -892,19 +938,93 @@ func TestHandleImportPostmanMultipartEnvironment(t *testing.T) {
 	if result.Stats.EnvironmentValues != 2 {
 		t.Fatalf("environment values = %d, want 2", result.Stats.EnvironmentValues)
 	}
-	// Keep the resolved source column as well as the executable occurrence:
-	// deleting it would change parameterized replay and would force an operator
-	// who already supplied the environment file to reconstruct its value.
+	if result.Summary.EnvironmentName != "Local" ||
+		!stringSliceContains(result.Summary.SourceFiles, "orders.postman_collection.json") ||
+		!stringSliceContains(result.Summary.SourceFiles, "local.postman_environment.json") {
+		t.Fatalf("source summary = %#v", result.Summary)
+	}
+	if result.SourceReview.TotalSourceFiles != 2 {
+		t.Fatalf("source review = %#v, want collection and environment", result.SourceReview)
+	}
+	assertReviewSection(t, result.ReviewSections, "postman_source_provenance", "info", "local.postman_environment.json")
+	// Public inspection projections must not disclose the environment
+	// credential. The unmodified value is retained only in a protected candidate
+	// when that facility is available.
 	if len(result.Script.DataSources) != 1 ||
-		!strings.Contains(result.Script.DataSources[0].InlineData, "env-token") {
-		t.Fatalf("data sources = %+v, want imported credential column retained", result.Script.DataSources)
+		!strings.Contains(result.Script.DataSources[0].InlineData, "[REDACTED]") ||
+		strings.Contains(result.Script.DataSources[0].InlineData, "env-token") {
+		t.Fatalf("data sources = %+v, want disclosure-safe projection", result.Script.DataSources)
 	}
 	if len(result.Script.Actions) != 1 ||
-		result.Script.Actions[0].Headers["X-Token"] != "env-token" {
-		t.Fatalf("destination action removed imported environment credential: %+v", result.Script.Actions)
+		result.Script.Actions[0].Headers["X-Token"] != "[REDACTED]" {
+		t.Fatalf("public action did not mask imported environment credential: %+v", result.Script.Actions)
 	}
-	if strings.Contains(resp.Body.String(), "collection-token") {
-		t.Fatalf("response retained shadowed collection credential: %s", resp.Body.String())
+	if strings.Contains(resp.Body.String(), "collection-token") || strings.Contains(resp.Body.String(), "env-token") {
+		t.Fatalf("response disclosed a collection/environment credential: %s", resp.Body.String())
+	}
+}
+
+func TestHandleImportPostmanProtectedCandidateBundlesEnvironment(t *testing.T) {
+	collection := []byte(`{"info":{"name":"Bundle"},"item":[{"name":"List","request":{"method":"GET","url":"https://api.example.test/items"}}]}`)
+	environment := []byte(`{"name":"Local","values":[{"key":"region","value":"east","enabled":true}]}`)
+	wrapper, err := importartifact.NewLocalAESKeyWrapper(importartifact.LocalKeyOptions{
+		Key:   bytes.Repeat([]byte{0x6b}, 32),
+		KeyID: "postman-source-bundle-test",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := NewServer(ServerConfig{
+		BrunoArtifactDir:     t.TempDir(),
+		BrunoArtifactWrapper: wrapper,
+	})
+	payload, err := json.Marshal(postman.ImportRequest{
+		ProjectID:           "project-postman-bundle",
+		Content:             string(collection),
+		CollectionFileName:  "bundle.postman_collection.json",
+		EnvironmentContent:  string(environment),
+		EnvironmentFileName: "local.postman_environment.json",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/postman", bytes.NewReader(payload))
+	req.Header.Set("Content-Type", "application/json")
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", resp.Code, resp.Body.String())
+	}
+	var inspection struct {
+		ImportSessionID string `json:"import_session_id"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &inspection); err != nil {
+		t.Fatal(err)
+	}
+	if inspection.ImportSessionID == "" {
+		t.Fatal("inspection did not create a protected candidate")
+	}
+	candidate, claim, err := server.claimProtectedImportCandidateSession(
+		httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/postman/save", nil),
+		"postman",
+		inspection.ImportSessionID,
+		"project-postman-bundle",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		clearProtectedImportCandidate(candidate)
+		server.releaseImportCandidateClaim(claim)
+	}()
+	bundle, err := postman.ParseProtectedSourceBundle(candidate.RawSource)
+	if err != nil {
+		t.Fatalf("parse retained source bundle: %v", err)
+	}
+	if len(bundle.Files) != 2 ||
+		!bytes.Equal(bundle.Files[0].Content, collection) ||
+		!bytes.Equal(bundle.Files[1].Content, environment) {
+		t.Fatalf("retained source bundle = %#v", bundle)
 	}
 }
 

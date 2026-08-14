@@ -468,7 +468,6 @@ func TestHandleImportSample(t *testing.T) {
 	resp := httptest.NewRecorder()
 
 	server.mux.ServeHTTP(resp, req)
-
 	if resp.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
 	}
@@ -672,17 +671,7 @@ func TestHandleImportSamplePreservedSourceReviewRedactsSecrets(t *testing.T) {
 	}
 
 	var result struct {
-		Script struct {
-			Actions []struct {
-				Headers map[string]string `json:"headers"`
-				Body    string            `json:"body"`
-			} `json:"actions"`
-			Metadata struct {
-				Import struct {
-					Preserved map[string]json.RawMessage `json:"preserved"`
-				} `json:"import"`
-			} `json:"metadata"`
-		} `json:"script"`
+		Script dsl.Script `json:"script"`
 	}
 	if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
 		t.Fatalf("json.Unmarshal returned error: %v", err)
@@ -691,22 +680,55 @@ func TestHandleImportSamplePreservedSourceReviewRedactsSecrets(t *testing.T) {
 	if len(result.Script.Actions) != 1 {
 		t.Fatalf("action count = %d, want 1", len(result.Script.Actions))
 	}
-	if got := result.Script.Actions[0].Headers["Authorization"]; got != "Basic dXNlcjpodW50ZXIyc2VjcmV0" {
-		t.Fatalf("authorization header = %q, want exact operator-authorized import value", got)
+	if got := result.Script.Actions[0].Headers["Authorization"]; got != "Basic "+maskedScriptSecret {
+		t.Fatalf("authorization header = %q, want disclosure-safe imported value", got)
 	}
-	if !strings.Contains(result.Script.Actions[0].Body, passwordValue) {
-		t.Fatalf("body = %q, want exact operator-authorized import value", result.Script.Actions[0].Body)
+	if strings.Contains(result.Script.Actions[0].Body, passwordValue) ||
+		!strings.Contains(result.Script.Actions[0].Body, maskedScriptSecret) {
+		t.Fatalf("body did not use a disclosure-safe imported value: %q", result.Script.Actions[0].Body)
+	}
+	if importDraftAttestationToken(&result.Script) == "" {
+		t.Fatalf("masked sample import omitted its opaque save capability: %#v", result.Script.Metadata)
 	}
 
+	if result.Script.Metadata == nil || result.Script.Metadata.Import == nil {
+		t.Fatalf("script metadata missing import provenance: %#v", result.Script.Metadata)
+	}
 	preservedReview, ok := result.Script.Metadata.Import.Preserved["source_review"]
-	if !ok || len(preservedReview) == 0 {
+	if !ok || preservedReview == nil {
 		t.Fatalf("script metadata missing preserved source_review: %#v", result.Script.Metadata.Import.Preserved)
 	}
-	if strings.Contains(string(preservedReview), "dXNlcjpodW50ZXIyc2VjcmV0") {
-		t.Fatalf("preserved source_review leaked Authorization value: %s", preservedReview)
+	preservedReviewJSON, err := json.Marshal(preservedReview)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if strings.Contains(string(preservedReview), passwordValue) {
-		t.Fatalf("preserved source_review leaked password: %s", preservedReview)
+	if strings.Contains(string(preservedReviewJSON), "dXNlcjpodW50ZXIyc2VjcmV0") {
+		t.Fatalf("preserved source_review leaked Authorization value: %s", preservedReviewJSON)
+	}
+	if strings.Contains(string(preservedReviewJSON), passwordValue) {
+		t.Fatalf("preserved source_review leaked password: %s", preservedReviewJSON)
+	}
+
+	created := createAttestedImportScript(t, server, &result.Script)
+	if created.Code != http.StatusCreated {
+		t.Fatalf("save masked sample import status = %d body=%s", created.Code, created.Body.String())
+	}
+	if strings.Contains(created.Body.String(), authValue) || strings.Contains(created.Body.String(), passwordValue) {
+		t.Fatalf("saved sample response disclosed imported credentials: %s", created.Body.String())
+	}
+	var createdScript StoredScript
+	if err := json.Unmarshal(created.Body.Bytes(), &createdScript); err != nil {
+		t.Fatal(err)
+	}
+	stored, ok := server.runner.GetScript(createdScript.ID)
+	if !ok || stored == nil || stored.Script == nil {
+		t.Fatal("attested sample import was not persisted")
+	}
+	if got := stored.Script.Actions[0].Headers["Authorization"]; got != authValue {
+		t.Fatalf("durable Authorization = %q, want exact imported value", got)
+	}
+	if !strings.Contains(stored.Script.Actions[0].Body, passwordValue) {
+		t.Fatalf("durable body lost exact imported password: %q", stored.Script.Actions[0].Body)
 	}
 }
 
@@ -1237,7 +1259,8 @@ securitySchemes:
 				Body    string            `json:"body"`
 			} `json:"actions"`
 		} `json:"script"`
-		Stats map[string]any `json:"stats"`
+		Stats        map[string]any             `json:"stats"`
+		Requirements []SecretBindingRequirement `json:"secret_binding_requirements"`
 	}
 	if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
 		t.Fatalf("json.Unmarshal returned error: %v", err)
@@ -1250,6 +1273,11 @@ securitySchemes:
 	}
 	if result.Script.Init[0].Params["token_url"] != "https://login.example.test/oauth/token" {
 		t.Fatalf("token_url = %#v", result.Script.Init[0].Params["token_url"])
+	}
+	for _, requirement := range result.Requirements {
+		if requirement.Path == "/init/0/params/token_url" {
+			t.Fatalf("OAuth endpoint was misclassified as a credential: %#v", requirement)
+		}
 	}
 	if len(result.Script.Actions) != 1 || result.Script.Actions[0].Method != "POST" || result.Script.Actions[0].Target != "/orders" {
 		t.Fatalf("actions = %#v", result.Script.Actions)
@@ -2271,16 +2299,8 @@ func TestHandleImportEnterpriseArchiveReturnsReviewArtifactForExternalRunnerProt
 	}
 
 	var result struct {
-		Scripts []json.RawMessage `json:"scripts"`
-		Script  *struct {
-			Protocol string `json:"protocol"`
-			Config   struct {
-				SAPGUI struct {
-					ConnectionString string `json:"connection_string"`
-					Password         string `json:"password"`
-				} `json:"sapgui"`
-			} `json:"config"`
-		} `json:"script"`
+		Scripts          []json.RawMessage `json:"scripts"`
+		Script           *dsl.Script       `json:"script"`
 		DetectedProtocol struct {
 			Canonical string `json:"canonical_source_protocol"`
 			Mode      string `json:"import_mode"`
@@ -2311,8 +2331,11 @@ func TestHandleImportEnterpriseArchiveReturnsReviewArtifactForExternalRunnerProt
 	if len(result.Scripts) != 1 || result.Script == nil || result.Script.Protocol != "sap_gui" {
 		t.Fatalf("scripts/script = %d/%#v, want SAP GUI external-runner draft", len(result.Scripts), result.Script)
 	}
-	if result.Script.Config.SAPGUI.ConnectionString != "ASHOST=server" || result.Script.Config.SAPGUI.Password != "" {
-		t.Fatalf("sapgui config = %#v, want exact imported connection string and no invented password", result.Script.Config.SAPGUI)
+	if result.Script.Config.SAPGUI.ConnectionString != maskedScriptSecret || result.Script.Config.SAPGUI.Password != "" {
+		t.Fatalf("sapgui config = %#v, want masked connection string and no invented password", result.Script.Config.SAPGUI)
+	}
+	if strings.Contains(resp.Body.String(), "ASHOST=server") || importDraftAttestationToken(result.Script) == "" {
+		t.Fatalf("SAP GUI preview disclosed or failed to attest its exact source config: %s", resp.Body.String())
 	}
 	if result.DetectedProtocol.Canonical != "sap_gui" || result.DetectedProtocol.Mode != "external_runner_required" {
 		t.Fatalf("detected_protocol = %#v, want SAP GUI external runner", result.DetectedProtocol)
@@ -2331,6 +2354,42 @@ func TestHandleImportEnterpriseArchiveReturnsReviewArtifactForExternalRunnerProt
 	}
 	if !responseHasReviewSection(result.ReviewSections, "review_artifact") || !responseHasRepairCategory(result.RepairSuggestions, "protocol") {
 		t.Fatalf("review sections/suggestions = %#v/%#v, want protocol review guidance", result.ReviewSections, result.RepairSuggestions)
+	}
+
+	savePayload, err := json.Marshal(map[string]any{
+		"scripts":      []dsl.Script{*result.Script},
+		"operation_id": "sap-gui-opaque-restoration",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	save := httptest.NewRecorder()
+	saveRequest := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/scripts/import/enterprise-script-archive/save",
+		bytes.NewReader(savePayload),
+	)
+	saveRequest.Header.Set("Content-Type", "application/json")
+	server.mux.ServeHTTP(save, saveRequest)
+	if save.Code != http.StatusCreated {
+		t.Fatalf("save SAP GUI draft status = %d body=%s", save.Code, save.Body.String())
+	}
+	if strings.Contains(save.Body.String(), "ASHOST=server") {
+		t.Fatalf("saved SAP GUI response disclosed its source connection string: %s", save.Body.String())
+	}
+	var saved struct {
+		Scripts []StoredScript `json:"scripts"`
+	}
+	if err := json.Unmarshal(save.Body.Bytes(), &saved); err != nil {
+		t.Fatal(err)
+	}
+	if len(saved.Scripts) != 1 {
+		t.Fatalf("saved SAP GUI scripts = %#v", saved.Scripts)
+	}
+	durable, ok := server.runner.GetScript(saved.Scripts[0].ID)
+	if !ok || durable == nil || durable.Script == nil ||
+		durable.Script.Config.SAPGUI.ConnectionString != "ASHOST=server" {
+		t.Fatalf("durable SAP GUI draft lost exact source config: %#v", durable)
 	}
 }
 
@@ -5800,34 +5859,58 @@ func enterpriseArchiveFixtureMultipartBody(t *testing.T, fixtureDir string, arch
 
 func TestHandleSaveJMeterImportPersistsScriptsAndScenario(t *testing.T) {
 	server := NewServer(ServerConfig{})
+	const credential = "imported-jmeter-token"
+	jmx := `<?xml version="1.0" encoding="UTF-8"?>
+<jmeterTestPlan version="1.2"><hashTree>
+  <TestPlan testname="Imported JMeter"/><hashTree>
+    <ThreadGroup testname="Users">
+      <stringProp name="ThreadGroup.num_threads">5</stringProp>
+      <stringProp name="ThreadGroup.ramp_time">10</stringProp>
+    </ThreadGroup><hashTree>
+      <HeaderManager testname="Authorization"><collectionProp name="HeaderManager.headers">
+        <elementProp name="" elementType="Header">
+          <stringProp name="Header.name">Authorization</stringProp>
+          <stringProp name="Header.value">Bearer ` + credential + `</stringProp>
+        </elementProp>
+      </collectionProp></HeaderManager><hashTree/>
+      <HTTPSamplerProxy testname="Home">
+        <stringProp name="HTTPSampler.domain">api.example.com</stringProp>
+        <stringProp name="HTTPSampler.protocol">https</stringProp>
+        <stringProp name="HTTPSampler.path">/home</stringProp>
+        <stringProp name="HTTPSampler.method">GET</stringProp>
+      </HTTPSamplerProxy><hashTree/>
+    </hashTree>
+  </hashTree>
+</hashTree></jmeterTestPlan>`
+	inspectReq := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/scripts/import/jmeter?filename=save-flow.jmx&scenario_draft=true",
+		strings.NewReader(jmx),
+	)
+	inspectReq.Header.Set("Content-Type", "application/xml")
+	inspect := httptest.NewRecorder()
+	server.mux.ServeHTTP(inspect, inspectReq)
+	if inspect.Code != http.StatusOK {
+		t.Fatalf("inspect status = %d body=%s", inspect.Code, inspect.Body.String())
+	}
+	if strings.Contains(inspect.Body.String(), credential) ||
+		!strings.Contains(inspect.Body.String(), maskedScriptSecret) {
+		t.Fatalf("JMeter inspect disclosed or failed to represent its credential: %s", inspect.Body.String())
+	}
+	var preview struct {
+		Scripts       []dsl.Script    `json:"scripts"`
+		ScenarioDraft json.RawMessage `json:"scenario_draft"`
+	}
+	if err := json.Unmarshal(inspect.Body.Bytes(), &preview); err != nil {
+		t.Fatal(err)
+	}
+	if len(preview.Scripts) != 1 || len(preview.ScenarioDraft) == 0 ||
+		importDraftAttestationToken(&preview.Scripts[0]) == "" {
+		t.Fatalf("JMeter inspect omitted its attested save draft: %#v", preview.Scripts)
+	}
 	payload := map[string]any{
-		"scripts": []map[string]any{{
-			"name":     "Imported_JMeter",
-			"version":  "1.0.0",
-			"protocol": "http",
-			"config":   map[string]any{"base_url": "https://api.example.com"},
-			"actions": []map[string]any{{
-				"name":   "Home",
-				"type":   "GET",
-				"method": "GET",
-				"target": "/home",
-				"headers": map[string]string{
-					"Authorization": "Bearer imported-jmeter-token",
-				},
-			}},
-		}},
-		"scenario_draft": map[string]any{
-			"name":          "Imported JMeter Scenario",
-			"duration":      "2m",
-			"scenario_mode": "vuser_driven",
-			"groups": []map[string]any{{
-				"name":           "Users",
-				"script_name":    "Imported_JMeter",
-				"vusers":         5,
-				"ramp_up":        "10s",
-				"initialization": "at_runtime",
-			}},
-		},
+		"scripts":        preview.Scripts,
+		"scenario_draft": preview.ScenarioDraft,
 	}
 	body, err := json.Marshal(payload)
 	if err != nil {
@@ -5864,8 +5947,19 @@ func TestHandleSaveJMeterImportPersistsScriptsAndScenario(t *testing.T) {
 	if !ok || stored == nil || stored.Script == nil {
 		t.Fatal("saved JMeter script was not available")
 	}
-	authorization := stored.Script.Actions[0].Headers["Authorization"]
-	if authorization != "Bearer imported-jmeter-token" {
+	authorization := stored.Script.Config.HTTP.DefaultHeaders["Authorization"]
+	if authorization == "" {
+		authorization = stored.Script.Actions[0].Headers["Authorization"]
+	}
+	if authorization == "" {
+		for _, header := range stored.Script.Actions[0].HeaderList {
+			if strings.EqualFold(header.Name, "Authorization") {
+				authorization = header.Value
+				break
+			}
+		}
+	}
+	if authorization != "Bearer "+credential {
 		t.Fatalf("stored JMeter authorization = %q, want exact imported credential", authorization)
 	}
 }

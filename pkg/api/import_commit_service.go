@@ -158,13 +158,25 @@ func protectedImportCreateScriptID(profile, sessionID string) string {
 }
 
 func (s *Server) applyProtectedImportFolderOverride(candidate *dsl.Script, override *string) (int, error) {
-	if candidate == nil || override == nil {
+	if candidate == nil {
 		return 0, nil
 	}
-	folderID := strings.TrimSpace(*override)
-	if folderID == "" {
-		candidate.FolderID = nil
-		return 0, nil
+	folderID := ""
+	if override != nil {
+		folderID = strings.TrimSpace(*override)
+		if folderID == "" {
+			candidate.FolderID = nil
+			return 0, nil
+		}
+	} else {
+		if candidate.FolderID == nil {
+			return 0, nil
+		}
+		folderID = strings.TrimSpace(*candidate.FolderID)
+		if folderID == "" {
+			candidate.FolderID = nil
+			return 0, nil
+		}
 	}
 	if s == nil || s.store == nil {
 		return http.StatusServiceUnavailable, errors.New("script folder storage is unavailable")
@@ -178,6 +190,9 @@ func (s *Server) applyProtectedImportFolderOverride(candidate *dsl.Script, overr
 	}
 	if folder == nil || normalizeProjectID(folder.ProjectID) != normalizeProjectID(candidate.ProjectID) {
 		return http.StatusNotFound, errors.New("script folder is unavailable for this project")
+	}
+	if !strings.EqualFold(strings.TrimSpace(folder.Category), "scripts") {
+		return http.StatusConflict, errors.New("destination must be a script folder")
 	}
 	candidate.FolderID = &folderID
 	return 0, nil
@@ -576,10 +591,6 @@ func (s *Server) handleImportCommit(w http.ResponseWriter, r *http.Request, spec
 		if req.Name != nil {
 			candidate.Name = strings.TrimSpace(*req.Name)
 		}
-		if status, err := s.applyProtectedImportFolderOverride(candidate, req.FolderID); err != nil {
-			writeError(w, status, err.Error())
-			return
-		}
 		candidate, err = applyProtectedImportCandidateOverrides(candidate, candidateRequirements, sharedReq)
 		if err != nil {
 			writeError(w, http.StatusConflict, err.Error())
@@ -593,31 +604,42 @@ func (s *Server) handleImportCommit(w http.ResponseWriter, r *http.Request, spec
 		// executable credential preservation.
 		if importDraftAttestationToken(script) != "" {
 			claim, claimErr := s.claimImportDraftAttestation(r, script)
-			if claimErr == nil &&
-				claim != nil &&
-				strings.EqualFold(
+			if claimErr != nil || claim == nil || claim.Script == nil ||
+				!strings.EqualFold(
 					strings.TrimSpace(claim.Profile),
 					strings.TrimSpace(spec.sourceProfile),
 				) {
-				draftAttestationClaim = claim
-				candidateSource = claim.RawSource
-				claim.RawSource = nil
-			} else if claim != nil {
-				s.releaseImportDraftAttestation(claim)
+				if claim != nil {
+					s.releaseImportDraftAttestation(claim)
+				}
+				writeError(w, http.StatusConflict, "credential-preserving import draft is invalid or expired; run the import again")
+				return
 			}
+			draftAttestationClaim = claim
+			candidateSource = claim.RawSource
+			claim.RawSource = nil
+			script = claim.Script
+		} else if fingerprint, fingerprintErr := fingerprintImportDraftCredentials(script); fingerprintErr != nil || fingerprint.HasRawCredentials {
+			writeError(w, http.StatusConflict, "credential-preserving import draft is missing its server capability; run the import again")
+			return
 		}
 		// Whether the claim succeeded or not, the capability is request-scoped
 		// and must never become durable provenance. An invalid/foreign marker
 		// simply falls through to ordinary strict persistence below.
 		stripImportDraftAttestation(script)
 	}
-	// This handler is itself the authenticated importer boundary. Legacy
-	// clients that submit the converted script directly (without a protected
-	// session) must retain the credentials the importing operator already
-	// supplied, just like protected-session clients do. The durable
-	// preservation marker is still established only by the server-side
-	// imported-script persistence path below; a marker forged on an ordinary
-	// script create/update remains untrusted.
+	if status, err := s.applyProtectedImportFolderOverride(script, req.FolderID); err != nil {
+		writeError(w, status, err.Error())
+		return
+	}
+	script, err := replaceUnavailableImportCredentialValues(script)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	// This handler is itself the authenticated importer boundary. Exact source
+	// credentials are admitted only through a claimed server-owned candidate or
+	// one-shot draft capability; value-free legacy drafts remain compatible.
 	credentialPreservingImportCommit := true
 	protectedImportCommit := candidateClaim != nil || draftAttestationClaim != nil
 	protectedSourceCommitOwner := ""

@@ -92,32 +92,14 @@ api_key=` + apiKey + `
 	if response.Code != http.StatusOK {
 		t.Fatalf("import status = %d; body=%s", response.Code, response.Body.String())
 	}
-	var responseFields map[string]json.RawMessage
-	if err := json.Unmarshal(response.Body.Bytes(), &responseFields); err != nil {
-		t.Fatal(err)
-	}
-	editable := append(
-		append([]byte(nil), responseFields["script"]...),
-		responseFields["scripts"]...,
-	)
 	for _, canary := range []string{proxyUser, proxyPass, authPass, apiKey} {
-		if !bytes.Contains(editable, []byte(canary)) {
-			t.Fatalf("authorized enterprise editable draft lost %q: %s", canary, editable)
-		}
-	}
-	delete(responseFields, "script")
-	delete(responseFields, "scripts")
-	reviewPayload, err := json.Marshal(responseFields)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, canary := range []string{proxyUser, proxyPass, authPass, apiKey} {
-		if bytes.Contains(reviewPayload, []byte(canary)) {
-			t.Fatalf("enterprise result/review surfaces disclosed %q: %s", canary, reviewPayload)
+		if bytes.Contains(response.Body.Bytes(), []byte(canary)) {
+			t.Fatalf("enterprise import response disclosed %q: %s", canary, response.Body.Bytes())
 		}
 	}
 
 	var envelope struct {
+		Script                 dsl.Script                 `json:"script"`
 		Requirements           []SecretBindingRequirement `json:"secret_binding_requirements"`
 		SourceSecretSessionID  string                     `json:"source_secret_session_id"`
 		SourceMigrationAllowed bool                       `json:"source_secret_migration_allowed"`
@@ -136,12 +118,43 @@ api_key=` + apiKey + `
 	if envelope.SourceSecretSessionID == "" || !envelope.SourceMigrationAllowed {
 		t.Fatalf("protected source session missing: %#v", envelope)
 	}
+	if importDraftAttestationToken(&envelope.Script) == "" ||
+		envelope.Script.Config.HTTP.Proxy.Username != maskedScriptSecret ||
+		envelope.Script.Config.HTTP.Proxy.Password != maskedScriptSecret ||
+		envelope.Script.Config.HTTP.Auth.Password != maskedScriptSecret ||
+		envelope.Script.Config.WebRuntime.AdditionalAttributes["api_key"] != maskedScriptSecret {
+		t.Fatalf("enterprise browser projection was not masked and attested: %#v", envelope.Script.Config)
+	}
+
+	created := createAttestedImportScript(t, server, &envelope.Script)
+	if created.Code != http.StatusCreated {
+		t.Fatalf("save enterprise draft status = %d body=%s", created.Code, created.Body.String())
+	}
+	for _, canary := range []string{proxyUser, proxyPass, authPass, apiKey} {
+		if strings.Contains(created.Body.String(), canary) {
+			t.Fatalf("enterprise save response disclosed %q: %s", canary, created.Body.String())
+		}
+	}
+	var storedResponse StoredScript
+	if err := json.Unmarshal(created.Body.Bytes(), &storedResponse); err != nil {
+		t.Fatal(err)
+	}
+	durable, ok := server.runner.GetScript(storedResponse.ID)
+	if !ok || durable == nil || durable.Script == nil {
+		t.Fatal("attested enterprise draft was not persisted")
+	}
+	if durable.Script.Config.HTTP.Proxy.Username != proxyUser ||
+		durable.Script.Config.HTTP.Proxy.Password != proxyPass ||
+		durable.Script.Config.HTTP.Auth.Password != authPass ||
+		durable.Script.Config.WebRuntime.AdditionalAttributes["api_key"] != apiKey {
+		t.Fatalf("durable enterprise draft lost exact source credentials: %#v", durable.Script.Config)
+	}
 }
 
 // The imported proxy credentials stay inert (proxy_mode "none") but durable and
-// exact, ordinary READS mask them, and the export is the runnable artifact so it
-// keeps them: an exported script has to import back into a script that runs.
-func TestEnterpriseArchiveUnsupportedProxyCredentialsPersistInertAndMaskOnlyReads(t *testing.T) {
+// exact. Browser projections and ordinary reads mask them; the runnable export
+// keeps them so importing that artifact again preserves execution behavior.
+func TestEnterpriseArchiveUnsupportedProxyCredentialsPersistInertAndMaskBrowserSurfaces(t *testing.T) {
 	const (
 		proxyUser = "unsupported-enterprise-proxy-user-canary-47ad"
 		proxyPass = "unsupported-enterprise-proxy-pass-canary-93e1"
@@ -204,10 +217,13 @@ ProxyPassword=` + proxyPass + `
 	}
 	if inspection.Script.Config.HTTP.ProxyMode != "none" ||
 		inspection.Script.Config.HTTP.Proxy.URL != "" ||
-		inspection.Script.Config.HTTP.Proxy.Username != proxyUser ||
-		inspection.Script.Config.HTTP.Proxy.Password != proxyPass {
+		inspection.Script.Config.HTTP.Proxy.Username != maskedScriptSecret ||
+		inspection.Script.Config.HTTP.Proxy.Password != maskedScriptSecret ||
+		importDraftAttestationToken(&inspection.Script) == "" ||
+		strings.Contains(importResponse.Body.String(), proxyUser) ||
+		strings.Contains(importResponse.Body.String(), proxyPass) {
 		t.Fatalf(
-			"editable disabled proxy record = %#v",
+			"browser-visible disabled proxy record was not masked and attested = %#v",
 			inspection.Script.Config.HTTP,
 		)
 	}

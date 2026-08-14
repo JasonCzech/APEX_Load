@@ -12,7 +12,7 @@ func TestPostgresForeignKeySpecsCoverDeclaredSchema(t *testing.T) {
 	if err != nil {
 		t.Fatalf("postgresForeignKeySpecs returned error: %v", err)
 	}
-	if got, want := len(specs), 69; got != want {
+	if got, want := len(specs), 75; got != want {
 		t.Fatalf("foreign key count = %d, want %d", got, want)
 	}
 
@@ -35,37 +35,43 @@ func TestPostgresForeignKeySpecsCoverDeclaredSchema(t *testing.T) {
 	}
 
 	for key, want := range map[string]string{
-		"applications.project_id":                           "projects.id",
-		"domain_deployment_targets.domain_id":               "domains.id",
-		"domain_deployment_targets.default_cluster_id":      "cluster_connections.id",
-		"bruno_source_artifacts.project_id":                 "projects.id",
-		"bruno_source_revisions.raw_artifact_id":            "bruno_source_artifacts.id",
-		"bruno_source_revisions.sanitized_artifact_id":      "bruno_source_artifacts.id",
-		"bruno_source_revisions.script_id":                  "scripts.id",
-		"bruno_native_import_batches.project_id":            "projects.id",
-		"bruno_native_import_batches.raw_artifact_id":       "bruno_source_artifacts.id",
-		"bruno_native_import_batches.sanitized_artifact_id": "bruno_source_artifacts.id",
-		"direct_import_receipts.project_id":                 "projects.id",
-		"scripts.folder_id":                                 "folders.id",
-		"tests.application_id":                              "applications.id",
-		"tests.scenario_id":                                 "scenarios.id",
-		"archive_finalization_jobs.test_id":                 "tests.id",
-		"execution_plan_schedule_occurrences.schedule_id":   "execution_plan_schedules.id",
-		"github_check_intents.project_id":                   "projects.id",
-		"github_script_sync_claims.project_id":              "projects.id",
-		"github_script_sync_claims.script_id":               "scripts.id",
-		"github_script_sync_target_claims.project_id":       "projects.id",
-		"github_script_sync_target_claims.script_id":        "scripts.id",
-		"github_script_sync_target_claims.target_key":       "github_script_sync_targets.target_key",
-		"github_script_sync_target_owners.project_id":       "projects.id",
-		"github_script_sync_target_owners.script_id":        "scripts.id",
-		"github_script_sync_target_owners.target_key":       "github_script_sync_targets.target_key",
-		"project_secrets.project_id":                        "projects.id",
-		"protected_source_secret_sessions.project_id":       "projects.id",
-		"runtime_secret_provisioning_attempts.project_id":   "projects.id",
-		"grafana_dashboard_snapshots.test_id":               "tests.id",
-		"local_auth_credentials.user_id":                    "users.id",
-		"local_auth_sessions.user_id":                       "users.id",
+		"applications.project_id":                               "projects.id",
+		"execution_targets.cloud_connection_id":                 "cloud_connections.id",
+		"execution_targets.cluster_connection_id":               "cluster_connections.id",
+		"domain_deployment_targets.domain_id":                   "domains.id",
+		"domain_deployment_targets.default_cluster_id":          "cluster_connections.id",
+		"domain_deployment_targets.default_execution_target_id": "execution_targets.id",
+		"domain_execution_target_allowlist.domain_id":           "domains.id",
+		"domain_execution_target_allowlist.execution_target_id": "execution_targets.id",
+		"bruno_source_artifacts.project_id":                     "projects.id",
+		"bruno_source_revisions.raw_artifact_id":                "bruno_source_artifacts.id",
+		"bruno_source_revisions.sanitized_artifact_id":          "bruno_source_artifacts.id",
+		"bruno_source_revisions.script_id":                      "scripts.id",
+		"bruno_native_import_batches.project_id":                "projects.id",
+		"bruno_native_import_batches.raw_artifact_id":           "bruno_source_artifacts.id",
+		"bruno_native_import_batches.sanitized_artifact_id":     "bruno_source_artifacts.id",
+		"direct_import_receipts.project_id":                     "projects.id",
+		"scripts.folder_id":                                     "folders.id",
+		"tests.application_id":                                  "applications.id",
+		"tests.scenario_id":                                     "scenarios.id",
+		"archive_finalization_jobs.test_id":                     "tests.id",
+		"execution_plan_schedule_occurrences.schedule_id":       "execution_plan_schedules.id",
+		"github_check_intents.project_id":                       "projects.id",
+		"github_script_sync_claims.project_id":                  "projects.id",
+		"github_script_sync_claims.script_id":                   "scripts.id",
+		"github_script_sync_target_claims.project_id":           "projects.id",
+		"github_script_sync_target_claims.script_id":            "scripts.id",
+		"github_script_sync_target_claims.target_key":           "github_script_sync_targets.target_key",
+		"github_script_sync_target_owners.project_id":           "projects.id",
+		"github_script_sync_target_owners.script_id":            "scripts.id",
+		"github_script_sync_target_owners.target_key":           "github_script_sync_targets.target_key",
+		"import_assets.project_id":                              "projects.id",
+		"project_secrets.project_id":                            "projects.id",
+		"protected_source_secret_sessions.project_id":           "projects.id",
+		"runtime_secret_provisioning_attempts.project_id":       "projects.id",
+		"grafana_dashboard_snapshots.test_id":                   "tests.id",
+		"local_auth_credentials.user_id":                        "users.id",
+		"local_auth_sessions.user_id":                           "users.id",
 	} {
 		got, ok := byColumn[key]
 		if !ok {

@@ -12,7 +12,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
-func TestBridgedBrowserImportReceivesRemoteAttestationAndRetainsCredential(t *testing.T) {
+func TestBridgedBrowserImportReceivesRemoteAttestationAndKeepsCredentialServerSide(t *testing.T) {
 	const credentialValue = "bridged-browser-password-canary-9a42"
 	server := NewServer(ServerConfig{})
 	script := dsl.Script{
@@ -86,8 +86,9 @@ func TestBridgedBrowserImportReceivesRemoteAttestationAndRetainsCredential(t *te
 		attested.Metadata.Import.Source != "browser_recording_har" {
 		t.Fatalf("remote profile = %#v, want server-stamped browser_recording_har", attested.Metadata)
 	}
-	if !strings.Contains(attest.Body.String(), credentialValue) {
-		t.Fatal("editable remote-attested draft lost the operator's credential")
+	if strings.Contains(attest.Body.String(), credentialValue) ||
+		!strings.Contains(attest.Body.String(), maskedScriptSecret) {
+		t.Fatal("remote-attested draft disclosed or failed to represent the protected credential")
 	}
 
 	createBody, err := json.Marshal(map[string]any{

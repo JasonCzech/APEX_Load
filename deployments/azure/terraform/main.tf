@@ -14,6 +14,7 @@ locals {
   keda_operator_namespace       = "kube-system"
   keda_operator_service_account = "keda-operator"
   private_network_enabled       = var.network_mode == "private"
+  aks_enabled                   = var.controller_compute == "aks" || var.generator_compute == "aks"
 
   generator_vm_capacity_by_size = {
     Standard_D4s_v5  = { cpu_millicores = 4000, memory_mib = 16384 }

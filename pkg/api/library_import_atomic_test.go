@@ -83,6 +83,86 @@ func (s *libraryAtomicForwardingStore) DeleteScriptIfUnchanged(id string, expect
 	}).DeleteScriptIfUnchanged(id, expected)
 }
 
+func TestLibraryImportOwnerIsActiveWhenClaimsBecomeDurable(t *testing.T) {
+	base, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "claim-owner-registration.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer base.Close()
+	server := NewServer(ServerConfig{Store: base})
+	item := LibraryBundleItem{
+		Kind: "script", SourceInstanceID: "source", SourceItemID: "script-1",
+		ProjectID: storage.DefaultProjectID, ContentHash: "sha256:owner-registration",
+	}
+	bundle := LibraryBundle{Items: []LibraryBundleItem{item}}
+	var observedOwner string
+	server.afterLibraryImportClaimsPersist = func() {
+		claims, loadErr := server.loadLibraryImportClaims()
+		if loadErr != nil {
+			t.Fatalf("load persisted claims: %v", loadErr)
+		}
+		if len(claims) != 1 {
+			t.Fatalf("persisted claims = %#v, want one", claims)
+		}
+		observedOwner = claims[0].OwnerID
+		if _, active := activeLibraryImportOwners.Load(observedOwner); !active {
+			t.Fatal("durable claim became visible before its process owner was registered")
+		}
+		// Exercise the exact competing startup-recovery window before acquire has
+		// returned or launched its heartbeat. A live owner must not be adopted.
+		if recoverErr := server.recoverAbandonedDirectImportsAtStartup(); recoverErr != nil {
+			t.Fatalf("concurrent startup recovery: %v", recoverErr)
+		}
+		claims, loadErr = server.loadLibraryImportClaims()
+		if loadErr != nil || len(claims) != 1 || claims[0].OwnerID != observedOwner {
+			t.Fatalf("startup recovery adopted live owner: claims=%#v err=%v", claims, loadErr)
+		}
+	}
+	handle, err := server.acquireLibraryImportClaims(bundle, "direct-import:owner-race", storage.DefaultProjectID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if observedOwner == "" || observedOwner != handle.owner {
+		t.Fatalf("observed owner = %q, handle owner = %q", observedOwner, handle.owner)
+	}
+	if err := handle.abandon(); err != nil {
+		t.Fatal(err)
+	}
+	if _, active := activeLibraryImportOwners.Load(handle.owner); active {
+		t.Fatal("abandoned federated claim owner remained registered")
+	}
+}
+
+func TestFederatedLibraryImportAbandonRemovesActiveOwner(t *testing.T) {
+	base, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "federated-owner-abandon.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer base.Close()
+	server := NewServer(ServerConfig{Store: base})
+	item := LibraryBundleItem{
+		Kind: "script", SourceInstanceID: "federated-source", SourceItemID: "script-1",
+		ProjectID: "source-project", ContentHash: "sha256:federated-owner",
+	}
+	handle, err := server.acquireLibraryImportClaims(
+		LibraryBundle{Items: []LibraryBundleItem{item}},
+		"federated-remote",
+		storage.DefaultProjectID,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, active := activeLibraryImportOwners.Load(handle.owner); !active {
+		t.Fatal("new federated claim owner was not registered")
+	}
+	if err := handle.abandon(); err != nil {
+		t.Fatal(err)
+	}
+	if _, active := activeLibraryImportOwners.Load(handle.owner); active {
+		t.Fatal("abandoned federated claim owner remained registered")
+	}
+}
+
 func (s *libraryAtomicForwardingStore) CreateScenarioWithDataPoolBindingsIfAbsent(scenario *storage.Scenario, scripts []storage.ScenarioScript, bindings []storage.ScenarioDataPoolBinding) (bool, error) {
 	return s.Store.(interface {
 		CreateScenarioWithDataPoolBindingsIfAbsent(*storage.Scenario, []storage.ScenarioScript, []storage.ScenarioDataPoolBinding) (bool, error)
