@@ -42,6 +42,8 @@ export interface ChartConfig {
   domain?: ChartDomain
   defaultMetricKeys?: string[]
   loadImpactMetric?: LoadImpactMetric
+  // Groups that have their own line on this Under Load graph.
+  loadImpactGroupNames?: string[]
   prometheusGraph?: PrometheusGraph
   // Imported Grafana dashboard panels.
   importedPanel?: ImportedPanelRef
@@ -321,15 +323,39 @@ export function hasLoadImpactPercentileRows(rows: LoadImpactRow[]) {
   return LOAD_IMPACT_PERCENTILE_KEYS.some(key => rows.some(row => row.metric.id === key))
 }
 
-export function buildLoadImpactCharts(rows: LoadImpactRow[]): ChartConfig[] {
-  return rows.map((row, index) => ({
-    id: loadImpactChartId(row.metric.id),
-    title: `${row.metric.label} Under Load`,
-    type: 'line-load-impact',
-    color: LOAD_IMPACT_GRAPH_COLORS[index % LOAD_IMPACT_GRAPH_COLORS.length],
-    defaultMetricKeys: ['average'],
-    loadImpactMetric: row.metric,
-  }))
+// Under-Load graphs draw one line per selected group alongside the aggregate, so
+// a group series needs a data key that cannot collide with the aggregate keys
+// (average/min/max) or with the time-series group keys (`Checkout_avgMs`).
+const LOAD_IMPACT_GROUP_SERIES_SUFFIX = '__loadImpactAverage'
+
+export function loadImpactGroupSeriesKey(groupName: string) {
+  return `${groupName}${LOAD_IMPACT_GROUP_SERIES_SUFFIX}`
+}
+
+export function isLoadImpactGroupSeriesKey(key: string) {
+  return key.endsWith(LOAD_IMPACT_GROUP_SERIES_SUFFIX)
+}
+
+// loadImpactGroupSeriesNames returns the groups that actually reported the metric
+// somewhere in the model, so a chart never advertises an empty group line.
+export function loadImpactGroupSeriesNames(row: LoadImpactRow | undefined, groupNames: string[]) {
+  if (!row) return []
+  return groupNames.filter(name => row.cells.some(cell => cell.groupAverages?.[name] !== undefined))
+}
+
+export function buildLoadImpactCharts(rows: LoadImpactRow[], groupNames: string[] = []): ChartConfig[] {
+  return rows.map((row, index) => {
+    const seriesGroups = loadImpactGroupSeriesNames(row, groupNames)
+    return {
+      id: loadImpactChartId(row.metric.id),
+      title: `${row.metric.label} Under Load`,
+      type: 'line-load-impact',
+      color: LOAD_IMPACT_GRAPH_COLORS[index % LOAD_IMPACT_GRAPH_COLORS.length],
+      defaultMetricKeys: ['average', ...seriesGroups.map(loadImpactGroupSeriesKey)],
+      loadImpactMetric: row.metric,
+      loadImpactGroupNames: seriesGroups.length > 0 ? seriesGroups : undefined,
+    }
+  })
 }
 
 export function buildPrometheusCharts(graphs: PrometheusGraph[]): ChartConfig[] {
@@ -1228,7 +1254,12 @@ export function chartMetricKeys(
     return overlays.length > 0 ? [...keys, ...overlays] : keys
   }
   if (isLoadImpactChart(chart)) {
-    keys = ['average', 'min', 'max']
+    keys = [
+      'average',
+      ...(chart.loadImpactGroupNames ?? []).map(loadImpactGroupSeriesKey),
+      'min',
+      'max',
+    ]
     const overlays = normalizeOverlayMetricKeys(chart, includeVuserOverlay, overlayMetricKeys)
       .filter(key => !keys.includes(key))
     return overlays.length > 0 ? [...keys, ...overlays] : keys
@@ -1314,8 +1345,27 @@ export function chartMetricRows(
   }
   if (isLoadImpactChart(chart)) {
     const unit = chart.loadImpactMetric?.unit
+    const loadImpactGroupNames = chart.loadImpactGroupNames ?? []
     rows = [
-      { key: 'average', label: 'Average', color: chart.color ?? 'var(--chart-1)', unit },
+      {
+        key: 'average',
+        label: loadImpactGroupNames.length > 0 ? 'All groups' : 'Average',
+        color: loadImpactGroupNames.length > 0 ? 'var(--text-muted)' : chart.color ?? 'var(--chart-1)',
+        unit,
+      },
+      // One line per selected group. Colors follow the group's palette slot from
+      // the group list so a group reads the same on every graph.
+      ...loadImpactGroupNames.map((name, fallbackIndex) => {
+        const paletteIndex = groupNames.indexOf(name)
+        const index = paletteIndex >= 0 ? paletteIndex : fallbackIndex
+        return {
+          key: loadImpactGroupSeriesKey(name),
+          label: name,
+          color: groupColors[index % groupColors.length] ?? 'var(--chart-1)',
+          unit,
+          strokeDasharray: groupSeriesDasharray(index, groupColors.length),
+        }
+      }),
       { key: 'min', label: 'Min', color: 'var(--chart-3)', unit },
       { key: 'max', label: 'Max', color: 'var(--chart-4)', unit },
     ]
@@ -1561,13 +1611,22 @@ function loadImpactMetricValueForBucket(row: LoadImpactRow | undefined, bucketId
   return row?.cells.find(cell => cell.bucket.id === bucketId)?.average
 }
 
-export function loadImpactChartDataForRow(row: LoadImpactRow | undefined, rows: LoadImpactRow[]): MetricsHistoryPoint[] {
+export function loadImpactChartDataForRow(
+  row: LoadImpactRow | undefined,
+  rows: LoadImpactRow[],
+  groupNames: string[] = [],
+): MetricsHistoryPoint[] {
   if (!row) return []
   const avgRow = rows.find(candidate => candidate.metric.id === 'avgMs')
   const tpsRow = rows.find(candidate => candidate.metric.id === 'tps')
   return row.cells.map((cell): MetricsHistoryPoint => {
     const midpointVusers = cell.bucket.minVusers + ((cell.bucket.maxVusers - cell.bucket.minVusers) / 2)
+    const groupSeries = groupNames.reduce<Record<string, number | undefined>>((series, name) => {
+      series[loadImpactGroupSeriesKey(name)] = cell.groupAverages?.[name]
+      return series
+    }, {})
     return {
+      ...groupSeries,
       time: cell.bucket.label,
       vusers: midpointVusers,
       tps: loadImpactMetricValueForBucket(tpsRow, cell.bucket.id) ?? 0,

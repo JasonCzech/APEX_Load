@@ -104,6 +104,62 @@ describe('loadImpactModel', () => {
     expect(model.rows.find(row => row.metric.id === 'cpuProcess')?.cells.map(cell => cell.sampleCount)).toEqual([0, 1])
   })
 
+  it('averages each requested group separately within the shared load buckets', () => {
+    const model = buildLoadImpactModel(
+      [
+        point('10:00:00', 10, { avgMs: 150, Checkout_avgMs: 100, Search_avgMs: 200 }),
+        point('10:00:01', 10, { avgMs: 170, Checkout_avgMs: 140, Search_avgMs: 200 }),
+        point('10:00:02', 20, { avgMs: 300, Checkout_avgMs: 200, Search_avgMs: 400 }),
+      ],
+      undefined,
+      undefined,
+      ['Checkout', 'Search'],
+    )
+    const artRow = model.rows.find(row => row.metric.id === 'avgMs')
+
+    expect(artRow?.cells.map(cell => cell.average)).toEqual([160, 300])
+    expect(artRow?.cells.map(cell => cell.groupAverages)).toEqual([
+      { Checkout: 120, Search: 200 },
+      { Checkout: 200, Search: 400 },
+    ])
+  })
+
+  it('leaves a group out of a bucket it did not report, and out of resource rows entirely', () => {
+    const model = buildLoadImpactModel(
+      [
+        point('10:00:00', 10, { avgMs: 150, cpuProcess: 40, Checkout_avgMs: 150 }),
+        point('10:00:01', 20, { avgMs: 300, cpuProcess: 60 }),
+      ],
+      undefined,
+      undefined,
+      ['Checkout'],
+    )
+
+    expect(model.rows.find(row => row.metric.id === 'avgMs')?.cells.map(cell => cell.groupAverages)).toEqual([
+      { Checkout: 150 },
+      {},
+    ])
+    expect(model.rows.find(row => row.metric.id === 'cpuProcess')?.cells.map(cell => cell.groupAverages)).toEqual([{}, {}])
+  })
+
+  it('keeps a metric row that only the groups reported', () => {
+    const model = buildLoadImpactModel(
+      [
+        point('10:00:00', 10, { avgMs: 150, Checkout_p95: 210 }),
+        point('10:00:01', 20, { avgMs: 300, Checkout_p95: 480 }),
+      ],
+      undefined,
+      undefined,
+      ['Checkout'],
+    )
+    const p95Row = model.rows.find(row => row.metric.id === 'p95')
+
+    expect(p95Row?.cells.map(cell => cell.groupAverages)).toEqual([{ Checkout: 210 }, { Checkout: 480 }])
+    expect(p95Row?.minAverage).toBeUndefined()
+    expect(p95Row?.maxAverage).toBeUndefined()
+    expect(p95Row?.cells.map(cell => cell.intensity)).toEqual([0, 0])
+  })
+
   it('formats values with compact metric units', () => {
     expect(formatLoadImpactValue(123.45, 'ms')).toBe('123ms')
     expect(formatLoadImpactValue(1.2345, '%')).toBe('1.23%')

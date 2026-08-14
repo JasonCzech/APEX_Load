@@ -36,6 +36,11 @@ export interface LoadImpactCell {
   sampleCount: number
   intensity: number
   points: LoadImpactPoint[]
+  // Per-group bucket averages, keyed by group name. Only groups that reported the
+  // metric in this bucket appear, so a group with no samples stays a gap in the
+  // graph rather than a misleading zero. Empty unless the caller asked for group
+  // series (buildLoadImpactModel's groupNames argument).
+  groupAverages?: Record<string, number>
 }
 
 export interface LoadImpactRow {
@@ -161,10 +166,39 @@ function metricValue(metric: LoadImpactMetric, point: MetricsHistoryPoint): numb
   return isFiniteNumber(value) ? value : undefined
 }
 
+// groupMetricValue reads a single group's sample for the metric (e.g.
+// `Checkout_avgMs`). Only performance metrics are reported per group — CPU,
+// memory, network and disk are generator-wide, so they have no group series.
+function groupMetricValue(metric: LoadImpactMetric, groupName: string, point: MetricsHistoryPoint): number | undefined {
+  if (metric.category !== 'performance' || point.resourceSampleOnly === 1) {
+    return undefined
+  }
+
+  const value = point[`${groupName}_${metric.key}`]
+  return isFiniteNumber(value) ? value : undefined
+}
+
+function groupAveragesForBucket(
+  metric: LoadImpactMetric,
+  groupNames: string[],
+  points: MetricsHistoryPoint[],
+): Record<string, number> {
+  return groupNames.reduce<Record<string, number>>((averages, groupName) => {
+    const values = points
+      .map(point => groupMetricValue(metric, groupName, point))
+      .filter((value): value is number => value !== undefined)
+    if (values.length > 0) {
+      averages[groupName] = values.reduce((sum, value) => sum + value, 0) / values.length
+    }
+    return averages
+  }, {})
+}
+
 export function buildLoadImpactModel(
   points: MetricsHistoryPoint[] | undefined,
   maxBuckets = 8,
   metrics = LOAD_IMPACT_METRICS,
+  groupNames: string[] = [],
 ): LoadImpactModel {
   const validPoints = (points || []).filter(point => isFiniteNumber(point.vusers) && point.vusers > 0)
   const buckets = createBuckets(validPoints, maxBuckets)
@@ -185,7 +219,8 @@ export function buildLoadImpactModel(
   const rows = metrics
     .map((metric): LoadImpactRow | null => {
       const baseCells = buckets.map((bucket): LoadImpactCell => {
-        const loadImpactPoints = (bucketedPoints.get(bucket.id) || [])
+        const bucketPoints = bucketedPoints.get(bucket.id) || []
+        const loadImpactPoints = bucketPoints
           .map((point): LoadImpactPoint | null => {
             const value = metricValue(metric, point)
             if (value === undefined) return null
@@ -211,22 +246,25 @@ export function buildLoadImpactModel(
           sampleCount,
           intensity: 0,
           points: loadImpactPoints,
+          groupAverages: groupNames.length > 0 ? groupAveragesForBucket(metric, groupNames, bucketPoints) : undefined,
         }
       })
 
-      if (!baseCells.some(cell => cell.sampleCount > 0)) {
+      if (!baseCells.some(cell => cell.sampleCount > 0 || Object.keys(cell.groupAverages ?? {}).length > 0)) {
         return null
       }
 
       const averages = baseCells
         .map(cell => cell.average)
         .filter((value): value is number => value !== undefined)
-      const minAverage = Math.min(...averages)
-      const maxAverage = Math.max(...averages)
-      const averageRange = maxAverage - minAverage
+      // A row kept only for its group series has no aggregate averages, so the
+      // envelope stays undefined rather than collapsing to ±Infinity.
+      const minAverage = averages.length > 0 ? Math.min(...averages) : undefined
+      const maxAverage = averages.length > 0 ? Math.max(...averages) : undefined
+      const averageRange = minAverage !== undefined && maxAverage !== undefined ? maxAverage - minAverage : 0
       const cells = baseCells.map(cell => ({
         ...cell,
-        intensity: cell.average === undefined
+        intensity: cell.average === undefined || minAverage === undefined
           ? 0
           : averageRange === 0
             ? 0.65

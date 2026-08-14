@@ -9,6 +9,7 @@ import {
   ART_STD_DEV_BAND_KEY,
   ART_STD_DEV_VALUE_KEY,
   buildArtStdDevBandData,
+  buildLoadImpactCharts,
   buildPrometheusCharts,
   buildSmoothedGraphData,
   boundedChartItems,
@@ -28,6 +29,7 @@ import {
   hasLoadImpactPercentileRows,
   isOverlayMetricAvailable,
   latestRouteLatencyValues,
+  loadImpactChartDataForRow,
   loadImpactHeatmapChart,
   loadImpactPercentileChartData,
   loadImpactPercentilesChart,
@@ -355,6 +357,45 @@ describe('chartStateForMonitorPreset', () => {
       { key: 'max', label: 'Max', color: 'var(--chart-4)', unit: 'ms' },
     ])
     expect(graphCsvForChart(chart, data, [], [])).toBe('load,average,min,max\n5 VUsers,120,100,140')
+  })
+
+  it('gives every selected group its own load-under line, series row, and CSV column', () => {
+    const source: MetricsHistoryPoint[] = [
+      { time: '10:00:00', vusers: 10, tps: 5, avgMs: 150, errorPct: 0, p50: 0, p90: 0, p99: 0, Checkout_avgMs: 100, Search_avgMs: 200 },
+      { time: '10:01:00', vusers: 20, tps: 9, avgMs: 300, errorPct: 0, p50: 0, p90: 0, p99: 0, Checkout_avgMs: 200, Search_avgMs: 400 },
+    ]
+    const groupNames = ['Checkout', 'Search']
+    const model = buildLoadImpactModel(source, undefined, undefined, groupNames)
+    const chart = buildLoadImpactCharts(model.rows, groupNames).find(candidate => candidate.id === 'load_impact_avgMs')!
+    const artRow = model.rows.find(row => row.metric.id === 'avgMs')
+    const chartData = loadImpactChartDataForRow(artRow, model.rows, chart.loadImpactGroupNames ?? [])
+
+    expect(chart.loadImpactGroupNames).toEqual(groupNames)
+    // Group lines are on by default — the point of the graph is comparing groups.
+    expect(chart.defaultMetricKeys).toEqual(['average', 'Checkout__loadImpactAverage', 'Search__loadImpactAverage'])
+    expect(chartMetricKeys(chart, groupNames, [])).toEqual([
+      'average',
+      'Checkout__loadImpactAverage',
+      'Search__loadImpactAverage',
+      'min',
+      'max',
+    ])
+    expect(chartMetricRows(chart, groupNames, [], ['#00a3ff', '#ff8a00']).map(row => [row.key, row.label, row.color])).toEqual([
+      ['average', 'All groups', 'var(--text-muted)'],
+      ['Checkout__loadImpactAverage', 'Checkout', '#00a3ff'],
+      ['Search__loadImpactAverage', 'Search', '#ff8a00'],
+      ['min', 'Min', 'var(--chart-3)'],
+      ['max', 'Max', 'var(--chart-4)'],
+    ])
+    expect(chartData.map(point => [point.average, point.Checkout__loadImpactAverage, point.Search__loadImpactAverage])).toEqual([
+      [150, 100, 200],
+      [300, 200, 400],
+    ])
+    expect(graphCsvForChart(chart, chartData, groupNames, [])).toBe([
+      'load,average,Checkout__loadImpactAverage,Search__loadImpactAverage,min,max',
+      '10 VUsers,150,100,200,150,150',
+      '20 VUsers,300,200,400,300,300',
+    ].join('\n'))
   })
 
   it('keeps the load impact heatmap chart visible by default', () => {

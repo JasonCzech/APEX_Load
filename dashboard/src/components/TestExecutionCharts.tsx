@@ -56,6 +56,7 @@ import {
   formatRelativeRunTime,
   graphCsvForChart,
   isLoadImpactChart,
+  isLoadImpactGroupSeriesKey,
   isLoadImpactHeatmapChart,
   isLoadImpactPercentilesChart,
   isImportedDashboardChart,
@@ -576,13 +577,24 @@ export default function TestExecutionCharts({
     }>
   >(new Map())
   const commandCenterSurface = surface === 'command-center'
+  // Group names arrive as a fresh array on every parent render, so memoize on a
+  // signature instead of identity — the load-impact model is rebuilt from the
+  // whole history and must not recompute on unrelated renders.
+  const graphGroupNamesSignature = (isMultiGroup ? groupNames : []).join('\u001f')
+  const graphGroupNames = useMemo(
+    () => graphGroupNamesSignature ? graphGroupNamesSignature.split('\u001f') : [],
+    [graphGroupNamesSignature],
+  )
   const loadImpactSourceData = loadImpactData.length > 0 ? loadImpactData : filteredData
-  const loadImpactModel = useMemo(() => buildLoadImpactModel(loadImpactSourceData), [loadImpactSourceData])
+  const loadImpactModel = useMemo(
+    () => buildLoadImpactModel(loadImpactSourceData, undefined, undefined, graphGroupNames),
+    [graphGroupNames, loadImpactSourceData],
+  )
   const loadImpactRows = loadImpactModel.rows
   const loadImpactRowsByChartId = useMemo(() => new Map(loadImpactRows.map(row => [loadImpactChartId(row.metric.id), row])), [loadImpactRows])
   const hasLoadImpactPercentiles = useMemo(() => hasLoadImpactPercentileRows(loadImpactRows), [loadImpactRows])
   const loadImpactPercentileData = useMemo(() => loadImpactPercentileChartData(loadImpactRows), [loadImpactRows])
-  const loadImpactCharts = useMemo(() => buildLoadImpactCharts(loadImpactRows), [loadImpactRows])
+  const loadImpactCharts = useMemo(() => buildLoadImpactCharts(loadImpactRows, graphGroupNames), [graphGroupNames, loadImpactRows])
   const prometheusGraphCharts = useMemo(() => buildPrometheusCharts(prometheusGraphs), [prometheusGraphs])
   const importedDashboardCharts = useMemo(() => buildImportedDashboardCharts(importedDashboards), [importedDashboards])
   const importedDashboardTabs = useMemo(() => importedDashboards.filter(dashboard => dashboard.panels.length > 0), [importedDashboards])
@@ -802,7 +814,6 @@ export default function TestExecutionCharts({
   }, [allChartConfigs, chartOrder])
   const latencyKeys = useMemo(() => routeLatencySeriesKeys(filteredData), [filteredData])
   const transactionNames = useMemo(() => transactionChartSeriesNames(filteredData), [filteredData])
-  const graphGroupNames = useMemo(() => isMultiGroup ? groupNames : [], [groupNames, isMultiGroup])
   const activeRouteLatencyKey = latencyKeys.includes(selectedRouteLatencyKey)
     ? selectedRouteLatencyKey
     : latencyKeys[0]
@@ -973,7 +984,7 @@ export default function TestExecutionCharts({
       return loadImpactPercentileData
     }
     if (isLoadImpactChart(chart)) {
-      return loadImpactChartDataForRow(loadImpactRowsByChartId.get(chart.id), loadImpactRows)
+      return loadImpactChartDataForRow(loadImpactRowsByChartId.get(chart.id), loadImpactRows, chart.loadImpactGroupNames ?? [])
     }
     if (isPrometheusChart(chart)) {
       return prometheusChartDataById.get(chart.id) ?? []
@@ -2760,22 +2771,28 @@ export default function TestExecutionCharts({
                 {showGradientUnderlays && renderGradientUnderlays(chart, metricRows, visibleMetricKeys, displayMetricKey, metricAxisIdForChart)}
                 {metricRows
                   .filter(row => !overlayMetricKeysForChart(chart).includes(row.key as OverlayMetricKey))
-                  .map((row) => showMetric(row.key) && (
-                    <Line
-                      key={row.key}
-                      yAxisId={metricAxisIdForChart}
-                      type="monotone"
-                      dataKey={displayMetricKey(row.key)}
-                      name={row.label}
-                      stroke={row.color}
-                      dot={{ r: row.key === 'average' ? 3 : 2 }}
-                      activeDot={{ r: 5 }}
-                      strokeWidth={row.key === 'average' ? 2.5 : 1.5}
-                      strokeDasharray={row.key === 'average' ? undefined : '4 2'}
-                      connectNulls
-                      isAnimationActive={false}
-                    />
-                ))}
+                  .map((row) => {
+                    // Group lines read as first-class series (solid, group color);
+                    // the min/max envelope stays thin and dashed behind them.
+                    const groupSeries = isLoadImpactGroupSeriesKey(row.key)
+                    const primary = row.key === 'average' || groupSeries
+                    return showMetric(row.key) && (
+                      <Line
+                        key={row.key}
+                        yAxisId={metricAxisIdForChart}
+                        type="monotone"
+                        dataKey={displayMetricKey(row.key)}
+                        name={row.label}
+                        stroke={row.color}
+                        dot={{ r: primary ? 3 : 2 }}
+                        activeDot={{ r: 5 }}
+                        strokeWidth={groupSeries ? 2 : row.key === 'average' ? 2.5 : 1.5}
+                        strokeDasharray={groupSeries ? row.strokeDasharray : row.key === 'average' ? undefined : '4 2'}
+                        connectNulls
+                        isAnimationActive={false}
+                      />
+                    )
+                  })}
                 {renderOverlayLines(chart, visibleMetricKeys, displayMetricKey)}
               </ComposedChart>
             ) : chart.type === 'line-load-impact-percentiles' ? (
@@ -3091,6 +3108,7 @@ export default function TestExecutionCharts({
                 {renderAccessibleMetricsTable(metricRows, visibleMetricKeys, chartTitle, accessibleTableId, metricSummaries)}
 
           {(chart.id === 'tps' || chart.id === 'errors') && renderLineMultiSeriesLegend(chart, metricRows, visibleMetricKeys)}
+          {isLoadImpactChart(chart) && (chart.loadImpactGroupNames?.length ?? 0) > 0 && renderLineMultiSeriesLegend(chart, metricRows, visibleMetricKeys)}
           {chart.id === 'latency' && renderLatencySeriesLegend(metricRows, visibleMetricKeys, includeArtStdDevBand)}
           {chart.id === 'network_latency' && showDetails && renderRouteLatencyDetails()}
           {chart.id === 'generator_impact' && showDetails && renderGeneratorImpactDetails()}

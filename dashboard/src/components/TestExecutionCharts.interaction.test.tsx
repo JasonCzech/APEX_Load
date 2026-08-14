@@ -1134,6 +1134,61 @@ describe('TestExecutionCharts context menu', () => {
     expect(heatmapCard?.textContent).toContain('data points')
   })
 
+  it('draws one Under Load line per selected group instead of a single aggregate line', async () => {
+    await act(async () => {
+      root.render(
+        <TestExecutionCharts
+          filteredData={[
+            { time: '10:00:00', vusers: 10, tps: 5, avgMs: 150, errorPct: 0, p50: 130, p90: 180, p95: 200, p99: 240, Checkout_avgMs: 100, Search_avgMs: 200 },
+            { time: '10:01:00', vusers: 20, tps: 9, avgMs: 300, errorPct: 0, p50: 260, p90: 360, p95: 400, p99: 480, Checkout_avgMs: 200, Search_avgMs: 400 },
+          ]}
+          expandedChart="load_impact_avgMs"
+          onExpandedChartChange={vi.fn()}
+          onChartMouseDown={vi.fn()}
+          onChartMouseMove={vi.fn()}
+          onZoom={vi.fn()}
+          onResetZoom={vi.fn()}
+          showRefArea={false}
+          refAreaLeft=""
+          refAreaEnd=""
+          timeRange="3m"
+          onTimeRangeChange={vi.fn()}
+          isMultiGroup
+          groupNames={['Checkout', 'Search']}
+          groupColors={['#00a3ff', '#ff8a00']}
+          showLoadImpact={false}
+          surface="command-center"
+          storageScope="apexload.commandCenter.grafana"
+          enableGraphGroupTabs
+          activeGraphGroupTab="under_load"
+          underLoadDisplayMode="graphs"
+        />,
+      )
+    })
+
+    const artUnderLoad = () => Array.from(container.querySelectorAll('.chart-card'))
+      .find(chart => chart.textContent?.includes('ART Under Load'))
+    const lineFor = (key: string) => artUnderLoad()?.querySelector(`path[data-testid="mock-line"][data-key="${key}"]`)
+
+    expect(lineFor('Checkout__loadImpactAverage')?.getAttribute('data-name')).toBe('Checkout')
+    expect(lineFor('Checkout__loadImpactAverage')?.getAttribute('data-stroke-dasharray')).toBe('')
+    expect(lineFor('Search__loadImpactAverage')?.getAttribute('data-name')).toBe('Search')
+    expect(lineFor('average')?.getAttribute('data-name')).toBe('All groups')
+    expect(artUnderLoad()?.querySelector('.chart-series-legend')?.textContent).toContain('Checkout')
+    expect(artUnderLoad()?.querySelector('.chart-series-legend')?.textContent).toContain('Search')
+
+    const searchToggle = Array.from(artUnderLoad()?.querySelectorAll<HTMLInputElement>('input[type="checkbox"]') ?? [])
+      .find(input => input.getAttribute('aria-label') === 'Show Search')
+    expect(searchToggle?.checked).toBe(true)
+
+    await act(async () => {
+      searchToggle?.click()
+    })
+
+    expect(lineFor('Search__loadImpactAverage')).toBeNull()
+    expect(lineFor('Checkout__loadImpactAverage')).not.toBeNull()
+  })
+
   it('applies default load-under visibility when old graph preferences are stored', async () => {
     window.localStorage.setItem('apexload.execution.hiddenCharts', '[]')
 
