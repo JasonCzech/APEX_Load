@@ -56,6 +56,15 @@ The importer reads the section/key vocabulary real VuGen writes, not only APEX-n
 
 Every key of the **selected** cfg/usp receives an explicit per-key disposition — `mapped`, `compatibility_only`, or `non_applicable` — recorded at `metadata.import.preserved.runtime_setting_dispositions` and rendered read-only in the Script Editor's **Imported Source Runtime Settings** section. Unmapped-but-active settings roll up into a `runtime_unmapped` (`compatibility_only`) parity entry and inert/authoring rows into `runtime_non_applicable`, so unexecuted source settings lower the migration-readiness score instead of silently inflating it. The `.usr` `[TransactionsOrder]`/`[Transactions]` declarations are cross-checked against the transactions the converted source actually starts.
 
+An imported iteration count (`.usp` `RunLogicNumOfIterations` → `config.run_logic.iterations`)
+is preserved and `executed`, but it does not override the scenario schedule. Runs
+are duration-driven, so a script-only per-VUser cap is dropped when the test is
+compiled — otherwise that group's VUsers retire mid-run while the rest of the
+scenario keeps loading, which is the same precedence LoadRunner Controller
+applies. Set `iterations` on the scenario group or in scenario/group
+`runtime_settings` to pin a fixed count; see
+[ENTERPRISE_LOAD_MODEL_CONTRACT.md](ENTERPRISE_LOAD_MODEL_CONTRACT.md#schedule-authority-over-script-iteration-caps).
+
 `block_scheduling` and `action_sequence` are migration evidence, not current
 execution controls. An executable migration policy should include
 `compatibility_only` in `migration_block_statuses`; this keeps imported random,

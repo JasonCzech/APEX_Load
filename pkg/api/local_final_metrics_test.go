@@ -206,13 +206,20 @@ func TestLocalExecutionFlushesMetricsWhenRunEndsBeforePublishInterval(t *testing
 	}
 	runner.StoreScript(&dsl.Script{
 		ID: "final-metrics-script", Name: "Final metrics", Protocol: protocolName, Version: "1.0.0",
-		Config:  dsl.ScriptConfig{RunLogic: dsl.RunLogicConfig{Iterations: 1}},
+		Config: dsl.ScriptConfig{
+			BaseURL:  "https://example.test",
+			RunLogic: dsl.RunLogicConfig{Iterations: 1},
+		},
 		Actions: []dsl.Action{{Name: "transaction", Type: "request", Target: "/"}},
 	})
 	p95Limit := 1.0
+	// This case needs the run to finish before the 5s publish interval, so the
+	// single iteration must be operator intent: a script-only cap is overridden
+	// by the schedule (applyScheduleIterationAuthority) and would run the full 5s.
 	testRun, err := runner.CreateTest(CreateTestRequest{
 		Name: "Sub-interval run", Duration: "5s", ScriptID: "final-metrics-script", VUsers: 1,
 		ScenarioMode: "goal_oriented", GoalConfig: &GoalConfig{P95LatencyMs: &p95Limit},
+		RuntimeSettings: &RuntimeSettingsOverride{RunLogic: &dsl.RunLogicConfig{Iterations: 1}},
 	})
 	if err != nil {
 		t.Fatalf("CreateTest: %v", err)

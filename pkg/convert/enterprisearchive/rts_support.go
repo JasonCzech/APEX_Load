@@ -184,7 +184,7 @@ var sourceRTSSupportDefinitions = []runtimeSettingSupportDefinition{
 			Concept: "Iterations",
 			Fields:  []string{"config.run_logic.iterations"},
 			Status:  RuntimeSettingStatusExecuted,
-			Notes:   "Applied by the engine iteration loop.",
+			Notes:   "Applied by the engine iteration loop. Like LoadRunner Controller, a duration-driven scenario schedule takes precedence: the compiled run drops a script-only per-VUser cap so groups keep loading for the whole schedule, and the imported value applies when the scenario or group sets iterations explicitly.",
 		},
 		matchers: []runtimeSettingMatcher{
 			matcher([]string{"Run Logic", "RunLogic", "Iterations"}, []string{"Iterations", "NumberOfIterations", "NumOfIterations"}),

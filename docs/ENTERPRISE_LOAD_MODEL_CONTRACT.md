@@ -52,6 +52,45 @@ Scripts can also set shared run goals in `config.run_logic`. The dashboard scrip
 
 Archive reports expose `overview.load_model_goals` and `overview.goal_completion` for configured staged groups, once-only scopes, target TPS, global iteration goals, max-transaction goals, achieved transactions, transaction completion percentage, and throughput miss counts.
 
+### Schedule authority over script iteration caps
+
+Every run is duration-driven, so the scenario schedule — not the script — decides
+when a group's VUsers stop. When a test is compiled, a per-VUser iteration cap
+that came only from the script (`config.run_logic.iterations`) is dropped, and
+the run is logged and reported as such. Without this, a group whose script
+carries a cap retires its VUsers as soon as they complete that many iterations
+and shuts down mid-run while the other groups keep loading. Imported LoadRunner
+scripts are the common case: the enterprise archive importer maps the RTS
+"Number of Iterations" into that field and falls back to `1` when the run-logic
+profile is missing or ambiguous. LoadRunner Controller resolves the same
+conflict the same way — with a scenario duration configured, the RTS iteration
+count does not apply.
+
+Precedence, highest first:
+
+1. `iterations` set on the scenario group (`groups[].iterations`) or in
+   `runtime_settings.run_logic.iterations` / `runtime_settings.iterations` at
+   either the scenario or group scope. This is explicit operator intent — the
+   equivalent of LoadRunner's "run until iterations complete" — and it wins.
+2. The scenario schedule. With no explicit iteration value, VUsers iterate until
+   the schedule (plus ramp-down and baseline windows) expires.
+3. The script's own `config.run_logic.iterations`, which is preserved in the
+   stored script for authoring and re-import fidelity but is not applied to a
+   duration-driven run.
+
+Two things are deliberately outside this rule:
+
+- Shared goals (`global_iterations`, `max_transactions`) still end a run when they
+  are met. They are authored run goals, and archive reports surface them as
+  configured goals with achieved-versus-configured completion.
+- Open-model scripts (`workload_model: open`) keep `iterations`, where it is the
+  per-worker arrival budget bounding total offered arrivals rather than a
+  per-VUser loop cap.
+
+Applied overrides appear in the pre-launch runtime-settings review as an
+informational `run_logic_iterations_schedule_override` finding naming the group
+and the cap that stopped applying.
+
 Scenario groups support `initialization` values. The dashboard scenario form exposes this scope so reusable scenarios can preserve shared setup/teardown behavior:
 
 - `at_runtime`: default; every VUser executes script `init` and `teardown`

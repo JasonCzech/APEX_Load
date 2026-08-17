@@ -443,6 +443,7 @@ Code-owned source of truth: `pkg/convert/enterprisearchive/rts_support.go`. Publ
 **Web Services (SOAP) RTS:** WSDL definitions map to `pkg/protocol/soap`. WS-Security configurations map to automated header management in the Go engine. Transport-level settings (proxy, HTTP version, keep-alive, timeouts, SOAP fault content check) map to standard HTTP protocol config.
 
 **Intentional caveats:**
+- `iterations` is subject to scenario-schedule authority: a duration-driven scenario ignores a script-only per-VUser cap (imported RTS iteration counts included) so no group retires before the schedule ends, exactly as LoadRunner Controller does. Set iterations on the scenario or group to pin a fixed count. See [ENTERPRISE_LOAD_MODEL_CONTRACT.md](ENTERPRISE_LOAD_MODEL_CONTRACT.md#schedule-authority-over-script-iteration-caps).
 - `download_resources = recorded` depends on recorded-resource URL metadata in the import/recording flow.
 - Streaming/media settings execute at HTTP response pacing level; no full browser media player.
 - DFE parity is bounded to APEX Load's supported HTTP response transform chain.

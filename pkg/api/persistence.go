@@ -1109,6 +1109,20 @@ func restoreStoredEngineGroupSpecs(test *ManagedTest) ([]engine.GroupConfig, err
 		group.stageDriven = stageDriven
 		group.initialVUsers = initialVUsers
 		group.currentVUsers = initialVUsers
+		// Restored specs must reach the engine with the same scheduler authority
+		// the compile path applies. Snapshots written before that rule existed
+		// still carry a script-sourced per-VUser cap, and honoring it here would
+		// resume the run with groups that retire early. A Java Vuser snapshot is
+		// left exactly as approved: its stamped approval is a content hash that
+		// launch re-verifies, and re-stamping it belongs to the compile path, not
+		// to a restore-time rewrite. Those snapshots pick the rule up on requeue.
+		if _, javaVuserApproved := readJavaVuserAuthoringApproval(group.script); !javaVuserApproved {
+			if overriddenCap := applyScheduleIterationAuthority(group.script, group.Iterations); overriddenCap > 0 {
+				group.scheduleOverriddenScriptIterations = overriddenCap
+				slog.Info("scenario schedule overrides the script per-vuser iteration cap on restore",
+					"test_id", test.ID, "group", group.Name, "script_id", group.ScriptID, "script_iterations", overriddenCap)
+			}
+		}
 		specs = append(specs, engine.GroupConfig{
 			Name:            group.Name,
 			Script:          group.script,

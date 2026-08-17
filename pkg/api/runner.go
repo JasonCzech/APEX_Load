@@ -682,6 +682,13 @@ type TestGroup struct {
 	initialVUsers          int
 	currentVUsers          int
 	script                 *dsl.Script
+	// scheduleOverriddenScriptIterations is the script-sourced per-VUser
+	// iteration cap that applyScheduleIterationAuthority removed from the
+	// compiled script because the scenario schedule owns run length (0 = none).
+	// It is review/logging provenance only: it is recomputed whenever the group
+	// is compiled or restored, so it is deliberately not part of the API JSON or
+	// the stored group snapshot.
+	scheduleOverriddenScriptIterations int
 	// javaVuserCapacityPlan is the compact immutable admission projection for
 	// this group's executable script. Request-scoped capacity snapshots retain it
 	// instead of retaining the full parsed script graph.

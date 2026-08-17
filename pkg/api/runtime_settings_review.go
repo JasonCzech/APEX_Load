@@ -122,6 +122,14 @@ func buildRuntimeSettingsScenarioReview(groups []TestGroup, engineGroups []engin
 			}
 		}
 		groupReview := buildRuntimeSettingsReviewForScript("scenario", scriptID, groupName, engineGroup.Script)
+		if index < len(groups) && groups[index].scheduleOverriddenScriptIterations > 0 {
+			// The compiled script no longer carries the cap, so this is the only
+			// place the operator can see that the schedule overrode it.
+			overridden := groups[index]
+			overridden.Name = groupName
+			review.Findings = append(review.Findings,
+				scheduleIterationOverrideFinding("scenario", overridden, overridden.scheduleOverriddenScriptIterations))
+		}
 		review.Findings = append(review.Findings, groupReview.Findings...)
 		review.BlockingFindings = append(review.BlockingFindings, groupReview.BlockingFindings...)
 		review.Warnings = append(review.Warnings, groupReview.Warnings...)
@@ -394,6 +402,20 @@ func runtimeSettingsReportForScenario(scenarioID string, scenario *StoredScenari
 		effectiveOverride := mergeRuntimeSettings(scenario.RuntimeSettings, ref.RuntimeSettings)
 		if effectiveOverride != nil {
 			_ = applyRuntimeOverrides(&scriptCopy, effectiveOverride)
+		}
+		// Report what a run of this scenario would actually do with the iteration
+		// count, not what the script alone asks for: the compile path drops a
+		// script-only per-VUser cap because the schedule owns run length.
+		if overriddenCap := applyScheduleIterationAuthority(
+			&scriptCopy,
+			scenarioGroupIterationIntent(scenario.RuntimeSettings, ref.RuntimeSettings, ref.Iterations),
+		); overriddenCap > 0 {
+			report.Findings = append(report.Findings, scheduleIterationOverrideFinding("scenario", TestGroup{
+				Name:       ref.Name,
+				ScriptID:   ref.ScriptID,
+				ScriptName: ref.ScriptName,
+				Protocol:   ref.Protocol,
+			}, overriddenCap))
 		}
 		entries := buildValidationRuntimeSettingsParity(&scriptCopy)
 		report.Entries = append(report.Entries, entries...)

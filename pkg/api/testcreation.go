@@ -2590,6 +2590,26 @@ func (tr *TestRunner) compileManagedTestGroupForModeWithRevisionLocked(index int
 			return TestGroup{}, engine.GroupConfig{}, fmt.Errorf("group[%d]: resolve redaction rules: %w", index, err)
 		}
 	}
+	// The scenario schedule, not the script, decides when this group's VUsers
+	// stop. Runs are always duration-driven, so a script-sourced per-VUser
+	// iteration cap would retire this group mid-run while the other groups keep
+	// loading. testGroup.Iterations is the effective scenario/group intent and is
+	// final by this point (the revision branch above restores it), so it is the
+	// signal for "the operator asked for a fixed count".
+	//
+	// A revision reuses an already-compiled snapshot verbatim and therefore skips
+	// the Java Vuser approval re-stamp below, so an approved Java snapshot is left
+	// byte-identical rather than invalidating its content hash. Only snapshots
+	// queued before this rule existed can still carry a cap there; a fresh create
+	// of the same scenario applies it.
+	_, javaVuserApprovalRetained := readJavaVuserAuthoringApproval(&scriptCopy)
+	if !runtimeAlreadyApplied || !javaVuserApprovalRetained {
+		if overriddenCap := applyScheduleIterationAuthority(&scriptCopy, testGroup.Iterations); overriddenCap > 0 {
+			testGroup.scheduleOverriddenScriptIterations = overriddenCap
+			slog.Info("scenario schedule overrides the script per-vuser iteration cap",
+				"group", name, "script_id", group.ScriptID, "script_iterations", overriddenCap)
+		}
+	}
 	redactionConfig, err := buildRuntimeRedactionConfig(effectiveRuntimeSettings)
 	if err != nil {
 		return TestGroup{}, engine.GroupConfig{}, fmt.Errorf("group[%d]: build redaction config: %w", index, err)
