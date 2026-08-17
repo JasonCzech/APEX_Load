@@ -91,7 +91,12 @@ func (s *Server) handleStartBrowserReplayScript(w http.ResponseWriter, r *http.R
 		if script.Name == "" {
 			script.Name = stored.Name
 		}
-		script, req.trustedPreservedImport = resolveTrustedStoredReplayEcho(script, stored.Script)
+		var resolveErr error
+		script, req.trustedPreservedImport, resolveErr = resolveStoredReplayImportScript(script, stored.Script)
+		if resolveErr != nil {
+			writeError(w, http.StatusBadRequest, resolveErr.Error())
+			return
+		}
 	} else {
 		// The stored-script route may apply only the bounded browser overrides
 		// in applyBrowserReplayOverrides; none can change the target, proxy, or

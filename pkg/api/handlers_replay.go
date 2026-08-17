@@ -108,7 +108,12 @@ func (s *Server) handleReplayScript(w http.ResponseWriter, r *http.Request) {
 		if script.Name == "" {
 			script.Name = stored.Name
 		}
-		script, req.trustedPreservedImport = resolveTrustedStoredReplayEcho(script, stored.Script)
+		var resolveErr error
+		script, req.trustedPreservedImport, resolveErr = resolveStoredReplayImportScript(script, stored.Script)
+		if resolveErr != nil {
+			writeError(w, http.StatusBadRequest, resolveErr.Error())
+			return
+		}
 	} else {
 		req.trustedPreservedImport = isCredentialPreservingImport(stored.Script)
 	}
@@ -806,8 +811,10 @@ func prepareTransientExecutableScript(
 ) (*dsl.Script, bool) {
 	trusted := len(trustedPreservedImport) > 0 && trustedPreservedImport[0]
 	if trusted {
-		// This path is restricted to an unchanged server-owned durable import
-		// snapshot. Preserve its exact executable values, including JVM argv,
+		// This path is restricted to a server-owned durable import snapshot:
+		// either the unchanged snapshot itself, or an operator edit already
+		// reconciled against it by resolveStoredReplayImportScript. Preserve
+		// its exact executable values, including JVM argv,
 		// including credentials whose literal bytes resemble a disclosure
 		// sentinel, while stripping non-executable review material before it
 		// enters a runtime session.

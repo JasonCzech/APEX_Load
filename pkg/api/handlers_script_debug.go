@@ -113,7 +113,12 @@ func (s *Server) handleStartScriptDebugScript(w http.ResponseWriter, r *http.Req
 		if script.Name == "" {
 			script.Name = stored.Name
 		}
-		script, req.trustedPreservedImport = resolveTrustedStoredReplayEcho(script, stored.Script)
+		var resolveErr error
+		script, req.trustedPreservedImport, resolveErr = resolveStoredReplayImportScript(script, stored.Script)
+		if resolveErr != nil {
+			writeError(w, http.StatusBadRequest, resolveErr.Error())
+			return
+		}
 	} else {
 		req.trustedPreservedImport = isCredentialPreservingImport(stored.Script)
 	}
@@ -175,7 +180,12 @@ func (s *Server) handleStartReplaySessionScript(w http.ResponseWriter, r *http.R
 		if script.Name == "" {
 			script.Name = stored.Name
 		}
-		script, req.trustedPreservedImport = resolveTrustedStoredReplayEcho(script, stored.Script)
+		var resolveErr error
+		script, req.trustedPreservedImport, resolveErr = resolveStoredReplayImportScript(script, stored.Script)
+		if resolveErr != nil {
+			writeError(w, http.StatusBadRequest, resolveErr.Error())
+			return
+		}
 	} else {
 		req.trustedPreservedImport = isCredentialPreservingImport(stored.Script)
 	}
@@ -191,6 +201,10 @@ func (s *Server) handleStartReplaySessionScript(w http.ResponseWriter, r *http.R
 // projection of a credential-preserving import. The client never receives the
 // retained credential bytes, so all saved-script replay/debug entry points must
 // substitute the server-owned durable snapshot before executable preparation.
+//
+// An edited projection is handled by resolveStoredReplayImportScript, which
+// reconciles the edit against the same durable prior instead of executing the
+// disclosure sentinels.
 func resolveTrustedStoredReplayEcho(candidate, stored *dsl.Script) (*dsl.Script, bool) {
 	if candidate != nil && isCredentialPreservingImport(stored) && matchesStoredScriptDisclosureProjection(candidate, stored) {
 		return stored, true
