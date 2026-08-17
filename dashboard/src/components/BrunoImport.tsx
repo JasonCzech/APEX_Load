@@ -731,7 +731,22 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
   const unresolvedConflicts = conflicts.filter(conflict => conflictResolutions[conflict.id] !== conflict.required_resolution)
   const selectedBytes = useMemo(() => files.reduce((total, file) => total + file.size, 0), [files])
   const importDisabled = support?.import_enabled === false
-  const canInspect = Boolean(projectId && files.length > 0 && !loading && !creatingFolder && !modeDetectionPending && !importDisabled)
+  // Bruno import publishes encrypted source artifacts during inspection, so it
+  // cannot run without an envelope key — and the server masks that failure as a
+  // generic error. An unconfigured controller now provisions a local key for
+  // itself, leaving only a production posture unable to retain source. Report
+  // that before the source bundle, destination folder, and profile have all
+  // been filled in for nothing.
+  const sourceRetentionUnavailable = support?.retention?.available === false
+  const sourceRetentionMessage = typeof support?.retention?.unavailable_reason === 'string'
+    ? support.retention.unavailable_reason
+    : 'Bruno import requires protected source retention, which needs an envelope key. Ask an operator to configure the wrapping master key and restart the controller.'
+  // Key custody is an operator advisory, not a blocker: import works, and the
+  // note says who holds the key rather than letting the UI imply managed custody.
+  const sourceRetentionAdvisory = !sourceRetentionUnavailable && typeof support?.retention?.advisory === 'string'
+    ? support.retention.advisory
+    : ''
+  const canInspect = Boolean(projectId && files.length > 0 && !loading && !creatingFolder && !modeDetectionPending && !importDisabled && !sourceRetentionUnavailable)
   const selectionMissing = outputMode === 'canonical'
     && (runOptions.selection === 'folder' || runOptions.selection === 'request')
     && splitList(runOptions.paths).length === 0
@@ -1542,6 +1557,16 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
         {importDisabled && (
           <div className="bruno-preflight warning" role="alert">
             Bruno import is disabled by an operator.
+          </div>
+        )}
+        {sourceRetentionUnavailable && (
+          <div className="bruno-preflight warning" role="alert">
+            {sourceRetentionMessage}
+          </div>
+        )}
+        {sourceRetentionAdvisory && (
+          <div className="bruno-preflight" role="status">
+            {sourceRetentionAdvisory}
           </div>
         )}
 		{selectionMissing && <div className="bruno-preflight warning">Choose at least one path for {runOptions.selection} selection.</div>}

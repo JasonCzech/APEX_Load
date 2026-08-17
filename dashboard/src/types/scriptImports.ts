@@ -1113,7 +1113,16 @@ export interface BrunoSupportMatrixResponse {
   request_types: string[]
   sandbox_modes: Record<string, unknown>
   intentional_extensions: string[]
-  retention: Record<string, unknown>
+  retention: Record<string, unknown> & {
+    // false only when a production posture has no operator-managed envelope key:
+    // Bruno import cannot publish its encrypted source artifacts, so inspection
+    // would dead-end. An unconfigured non-production controller provisions a
+    // local key instead and reports key_custody: 'local_auto' with an advisory.
+    available?: boolean
+    unavailable_reason?: string
+    key_custody?: 'operator_managed' | 'local_auto' | 'unavailable'
+    advisory?: string
+  }
   secret_store?: {
     provider: string
     writable: boolean

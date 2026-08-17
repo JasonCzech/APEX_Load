@@ -573,6 +573,65 @@ describe('BrunoImport', () => {
     expect(container.textContent).not.toContain('project secret still needs configuration')
   })
 
+  it('notes local key custody without blocking the import', async () => {
+    apiMock.getBrunoSupportMatrix.mockResolvedValueOnce({
+      compatibility_version: '3.5.2',
+      import_enabled: true,
+      safe_execution_enabled: true,
+      developer_execution_enabled: false,
+      native_projection_enabled: false,
+      retention: {
+        available: true,
+        key_custody: 'local_auto',
+        advisory: 'Bruno source is encrypted with a local key this controller generated for itself, stored beside the data. Set APEXLOAD_WRAPPING_MASTER_KEY or APEXLOAD_WRAPPING_KEY_VAULT_KEY_ID for operator-managed key custody.',
+      },
+    })
+    const file = new File(['version: 1'], 'opencollection.yml', { type: 'application/yaml' })
+    await act(async () => {
+      root.render(<BrunoImport initialFiles={[file]} projectId="project-1" />)
+      await Promise.resolve()
+    })
+    await act(async () => { await Promise.resolve() })
+
+    expect(container.textContent).toContain('operator-managed key custody')
+    const inspectButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent?.includes('Inspect source'))
+    expect(inspectButton?.disabled).toBe(false)
+  })
+
+  it('blocks inspection with the operator action when protected source retention is unavailable', async () => {
+    // Inspection publishes encrypted source artifacts, so with no envelope key
+    // it can only fail — and the server masks that failure. Without this the
+    // whole import form stays enabled and dead-ends at "Inspect source".
+    apiMock.getBrunoSupportMatrix.mockResolvedValueOnce({
+      compatibility_version: '3.5.2',
+      import_enabled: true,
+      safe_execution_enabled: true,
+      developer_execution_enabled: false,
+      native_projection_enabled: false,
+      retention: {
+        available: false,
+        unavailable_reason: 'Bruno import requires protected source retention, which needs an envelope key. Set APEXLOAD_WRAPPING_MASTER_KEY (32 bytes, or base64-encoded 32 bytes) or configure APEXLOAD_WRAPPING_KEY_VAULT_KEY_ID, then restart the controller.',
+      },
+    })
+    const file = new File(['version: 1'], 'opencollection.yml', { type: 'application/yaml' })
+    await act(async () => {
+      root.render(<BrunoImport initialFiles={[file]} projectId="project-1" />)
+      await Promise.resolve()
+    })
+    await act(async () => { await Promise.resolve() })
+
+    expect(container.textContent).toContain('Set APEXLOAD_WRAPPING_MASTER_KEY')
+    const inspectButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent?.includes('Inspect source'))
+    expect(inspectButton?.disabled).toBe(true)
+    await act(async () => {
+      inspectButton?.click()
+      await Promise.resolve()
+    })
+    expect(apiMock.inspectBrunoImport).not.toHaveBeenCalled()
+  })
+
   it('saves a native request with its imported credential when migration and binding stay unselected', async () => {
     const file = new File(['version: 1'], 'opencollection.yml', { type: 'application/yaml' })
     const inspection = nativeInspectionFixture()

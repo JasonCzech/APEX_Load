@@ -264,6 +264,10 @@ type Server struct {
 	brunoImportSessions               map[string]*brunoImportSession
 	brunoArtifactMu                   sync.Mutex
 	brunoArtifacts                    *importartifact.EncryptedStore
+	// brunoArtifactKeyCustody records which envelope key actually opened the
+	// store. Without it, caching the store would make every later custody
+	// report claim operator-managed custody regardless of the key in use.
+	brunoArtifactKeyCustody string
 	importSessions                    *importsession.Manager
 	brunoArtifactDir                  string
 	brunoArtifactWrapper              keywrap.KeyWrapper

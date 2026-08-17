@@ -182,6 +182,20 @@ type brunoInspectJSONFile struct {
 func (s *Server) handleBrunoSupportMatrix(w http.ResponseWriter, _ *http.Request) {
 	secretCapabilities := s.projectSecretCapabilities("")
 	secretCapabilities["fallback"] = "binding_only"
+	custody := s.brunoSourceRetentionKeyCustody()
+	retention := map[string]any{
+		"raw_source":        "encrypted and administrator-restricted",
+		"execution_source":  "sanitized encrypted bundle",
+		"content_addressed": true,
+		"available":         custody != brunoKeyCustodyNone,
+		"key_custody":       custody,
+	}
+	switch custody {
+	case brunoKeyCustodyNone:
+		retention["unavailable_reason"] = brunoSourceRetentionUnavailableMessage
+	case brunoKeyCustodyLocal:
+		retention["advisory"] = brunoLocalKeyAdvisory
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"schema_version":                brunoconvert.ImporterVersion,
 		"compatibility_version":         brunoconvert.CompatibilityVersion,
@@ -210,11 +224,7 @@ func (s *Server) handleBrunoSupportMatrix(w http.ResponseWriter, _ *http.Request
 			"WebSocket requests execute in collection runs",
 			"bru.runRequest supports HTTP, GraphQL, gRPC, and WebSocket",
 		},
-		"retention": map[string]any{
-			"raw_source":        "encrypted and administrator-restricted",
-			"execution_source":  "sanitized encrypted bundle",
-			"content_addressed": true,
-		},
+		"retention": retention,
 		"execution_governance": map[string]any{
 			"egress_broker_required":  true,
 			"egress_configured_here":  brunoprotocol.GovernedEgressConfigured(),
@@ -228,6 +238,15 @@ func (s *Server) handleBrunoSupportMatrix(w http.ResponseWriter, _ *http.Request
 func (s *Server) handleInspectBrunoImport(w http.ResponseWriter, r *http.Request) {
 	if !brunoFeatureEnabled("APEXLOAD_BRUNO_IMPORT_ENABLED", true) {
 		writeError(w, http.StatusServiceUnavailable, "Bruno importing is disabled by operator policy")
+		return
+	}
+	// Refuse before the upload is parsed rather than after the operator has
+	// filled in the whole import form. Inspection publishes encrypted source
+	// artifacts, so with no envelope key it can only fail — and writeError
+	// masks that failure into an opaque "internal server error", leaving the
+	// import UI enabled with no way forward.
+	if !s.brunoSourceRetentionAvailable() {
+		writeBrunoSourceRetentionUnavailable(w)
 		return
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, brunoImportMaxBodyBytes)
@@ -341,6 +360,10 @@ func (s *Server) handleInspectBrunoImport(w http.ResponseWriter, r *http.Request
 	}
 	objects, err := s.brunoArtifactStore()
 	if err != nil {
+		if !s.brunoSourceRetentionAvailable() {
+			writeBrunoSourceRetentionUnavailable(w)
+			return
+		}
 		writeError(w, http.StatusServiceUnavailable, "protected Bruno source retention is unavailable: "+err.Error())
 		return
 	}
@@ -3089,9 +3112,10 @@ func (s *Server) brunoArtifactStore() (*importartifact.EncryptedStore, error) {
 		root = filepath.Join(s.importAssetDir, ".bruno-artifacts")
 	}
 	wrapper := s.brunoArtifactWrapper
+	custody := brunoKeyCustodyOperator
 	if wrapper == nil {
 		var err error
-		wrapper, err = keywrap.NewConfiguredKeyWrapper(s.desktopMode)
+		wrapper, custody, err = s.brunoArtifactKeyWrapper(root)
 		if err != nil {
 			return nil, err
 		}
@@ -3105,6 +3129,7 @@ func (s *Server) brunoArtifactStore() (*importartifact.EncryptedStore, error) {
 		return nil, err
 	}
 	s.brunoArtifacts = objects
+	s.brunoArtifactKeyCustody = custody
 	if metadata, ok := s.store.(importartifact.ArtifactMetadataReader); ok && metadata != nil {
 		importartifact.SetResolver(&importartifact.StoreResolver{Objects: s.brunoArtifacts, Metadata: metadata})
 	}
@@ -3630,7 +3655,9 @@ func (s *Server) clearProjectBrunoImportSessions(projectID string) error {
 		delete(s.brunoImportSessions, id)
 	}
 	s.brunoImportMu.Unlock()
-	present, err := s.brunoArtifactStorePresent()
+	// Bruno's own store, including one opened with the local key, still owns
+	// this project's retained source and must release it.
+	present, err := s.brunoRetentionStorePresent()
 	if err != nil || !present {
 		return err
 	}
@@ -3641,14 +3668,33 @@ func (s *Server) clearProjectBrunoImportSessions(projectID string) error {
 	return objects.DeleteProject(context.Background(), projectID)
 }
 
+// brunoArtifactStorePresent reports whether the SHARED protected-import
+// facility is available — the one every importer's candidate sessions,
+// attestations, and source retention are gated on.
+//
+// It stays keyed on operator-managed custody. The Bruno-scoped local key
+// (brunoSourceRetentionKeyCustody) exists so Bruno import works on an
+// unconfigured controller; it must not silently switch other importers from
+// their established client-submitted flow to the protected flow, which changes
+// their capability and restart-recovery semantics.
 func (s *Server) brunoArtifactStorePresent() (bool, error) {
 	if s == nil {
 		return false, nil
 	}
-	if s.brunoArtifacts != nil || s.brunoArtifactWrapper != nil || strings.TrimSpace(s.brunoArtifactDir) != "" || s.desktopMode {
+	if s.brunoArtifactWrapper != nil || strings.TrimSpace(s.brunoArtifactDir) != "" || s.desktopMode {
 		return true, nil
 	}
 	if strings.TrimSpace(os.Getenv(keywrap.MasterKeyEnvVar)) != "" || strings.TrimSpace(os.Getenv(keywrap.KeyVaultKeyIDEnvVar)) != "" {
+		return true, nil
+	}
+	if s.brunoProspectiveKeyCustody() == brunoKeyCustodyLocal {
+		// Only Bruno's own local key is available. An artifact directory left
+		// by a Bruno import under that key is not an operator-managed
+		// protected store, and treating it as one previously also meant the
+		// shared paths opened a store they had no key for.
+		return false, nil
+	}
+	if s.brunoArtifacts != nil {
 		return true, nil
 	}
 	defaultRoot := filepath.Join(s.importAssetDir, ".bruno-artifacts")
@@ -3661,7 +3707,10 @@ func (s *Server) brunoArtifactStorePresent() (bool, error) {
 }
 
 func (s *Server) pruneExpiredBrunoImportSessions(now time.Time) error {
-	present, err := s.brunoArtifactStorePresent()
+	// Sessions and artifacts written under the local key still expire and must
+	// still be swept, so this uses Bruno's own availability, not the shared
+	// protected-import predicate.
+	present, err := s.brunoRetentionStorePresent()
 	if err != nil || !present {
 		return err
 	}
