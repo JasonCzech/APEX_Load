@@ -9,8 +9,9 @@ by three Playwright specs. Rather than chase coverage view-by-view, M1 locks the
 never break: if this journey is green, the product is usable; if any step is red, it is not,
 regardless of what unit coverage says.
 
-**Status:** S2, S8, S9 and S11 implemented and green (`dashboard/e2e/tier0-*.spec.ts`), plus a
-breadth guard covering all 16 top-level views. Run them with `scripts/run-e2e.sh`.
+**Status:** S2, S7, S8, S9, S10, S11 and S12 implemented and green (`dashboard/e2e/tier0-*.spec.ts`),
+plus a breadth guard covering all 16 top-level views. Run them with `scripts/run-e2e.sh`.
+Remaining: S1, S3, S4, S5, S6.
 
 **Observed behaviour worth recording**, since this document told the implementer to treat surprises
 as findings rather than adjusting assertions to match:
@@ -22,6 +23,15 @@ as findings rather than adjusting assertions to match:
 - **`PATCH /api/v1/tests/{id}/vusers` takes a single group**, `{group, target_vusers}` — not a
   `groups` array. An array decodes cleanly and is then rejected as a missing group name, so the
   mistake surfaces as a 400 that reads like a server fault.
+- **`GET /api/v1/tests/{id}/report` serves rendered HTML, not JSON.** Parsing it as JSON fails with
+  `Unexpected token '<'`, which reads like a server error rather than a wrong content type.
+- **The views render a run's NAME, not its UUID.** `startLiveRun` names its run `${label}-run`.
+  Asserting on `testId` in the results or report views finds nothing, and the resulting
+  "element not found" looks like a broken page rather than a wrong selector.
+- **Teardown must use the `seedLiveRun` fixture, never a body `try/finally`.** Playwright stops
+  awaiting the body on timeout and begins disposing fixtures, so a `finally` runs against a closed
+  request context; the repository measured it reaching the server zero times, leaving the run
+  executing against the controller the next spec asserts on.
 
 ## Conventions
 
