@@ -661,6 +661,11 @@ func (s *SQLiteStore) repairCapacityBindingTestBatch(afterID string, limit int, 
 	if err != nil {
 		return 0, 0, afterID, err
 	}
+	// Idempotent belt-and-braces: the explicit Close below is kept because it
+	// surfaces the Close error, which a bare defer would discard. The defer
+	// covers the paths that never reach it — an early return or a panic in a
+	// scan helper. sql.Rows.Close is documented idempotent, so both can run.
+	defer idRows.Close()
 	testIDs := make([]string, 0, limit)
 	for idRows.Next() {
 		var id string
@@ -697,6 +702,7 @@ func (s *SQLiteStore) repairCapacityBindingTestBatch(afterID string, limit int, 
 	if err != nil {
 		return 0, 0, afterID, err
 	}
+	defer reservationRows.Close()
 	reservations := make([]*CapacityReservation, 0, len(testIDs))
 	for reservationRows.Next() {
 		reservation, err := scanCapacityReservation(reservationRows)
@@ -726,6 +732,11 @@ func (s *SQLiteStore) repairCapacityBindingTestBatch(afterID string, limit int, 
 	if err != nil {
 		return 0, 0, afterID, err
 	}
+	// Idempotent belt-and-braces: the explicit Close below is kept because it
+	// surfaces the Close error, which a bare defer discards. The defer covers
+	// the paths that never reach it — notably a panic in a scan helper, which
+	// the controller recovers, pinning this connection for the process's life.
+	defer testRows.Close()
 	tests := make(map[string]*capacityBindingRepairTest, len(testIDs))
 	for testRows.Next() {
 		test := &capacityBindingRepairTest{}
@@ -885,6 +896,11 @@ func (s *SQLiteStore) repairOrphanCapacityReservationBatch(afterID string, limit
 	if err != nil {
 		return 0, 0, afterID, err
 	}
+	// Idempotent belt-and-braces: the explicit Close below is kept because it
+	// surfaces the Close error, which a bare defer discards. The defer covers
+	// the paths that never reach it — notably a panic in a scan helper, which
+	// the controller recovers, pinning this connection for the process's life.
+	defer rows.Close()
 	ids := make([]string, 0, limit)
 	for rows.Next() {
 		var id string

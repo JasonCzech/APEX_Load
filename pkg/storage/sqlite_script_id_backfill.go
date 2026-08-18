@@ -46,6 +46,11 @@ func (s *SQLiteStore) backfillBlankScriptIDs() error {
 	if err != nil {
 		return fmt.Errorf("list scripts with blank ids: %w", err)
 	}
+	// Idempotent belt-and-braces: the explicit Close below is kept because it
+	// surfaces the Close error, which a bare defer discards. The defer covers
+	// the paths that never reach it — notably a panic in a scan helper, which
+	// the controller recovers, pinning this connection for the process's life.
+	defer rows.Close()
 	var oldIDs []string
 	for rows.Next() {
 		var id string
@@ -222,6 +227,11 @@ func rewriteBlankScriptRevisionSnapshots(tx *storeTx, oldID, newID string) error
 	if err != nil {
 		return fmt.Errorf("list repaired script source revisions: %w", err)
 	}
+	// Idempotent belt-and-braces: the explicit Close below is kept because it
+	// surfaces the Close error, which a bare defer discards. The defer covers
+	// the paths that never reach it — notably a panic in a scan helper, which
+	// the controller recovers, pinning this connection for the process's life.
+	defer rows.Close()
 	type revisionSnapshot struct {
 		id      string
 		payload string
@@ -269,6 +279,11 @@ func rewriteBlankScriptBatchReceipts(tx *storeTx, oldID, newID string) error {
 	if err != nil {
 		return fmt.Errorf("list import receipts for blank script id repair: %w", err)
 	}
+	// Idempotent belt-and-braces: the explicit Close below is kept because it
+	// surfaces the Close error, which a bare defer discards. The defer covers
+	// the paths that never reach it — notably a panic in a scan helper, which
+	// the controller recovers, pinning this connection for the process's life.
+	defer rows.Close()
 	type receipt struct {
 		id        string
 		scriptIDs string
@@ -341,6 +356,11 @@ func rewriteBlankScriptDirectImportReceipts(tx *storeTx, oldID, newID string) er
 	if err != nil {
 		return fmt.Errorf("list direct import receipts for blank script id repair: %w", err)
 	}
+	// Idempotent belt-and-braces: the explicit Close below is kept because it
+	// surfaces the Close error, which a bare defer discards. The defer covers
+	// the paths that never reach it — notably a panic in a scan helper, which
+	// the controller recovers, pinning this connection for the process's life.
+	defer rows.Close()
 	type receipt struct {
 		id        string
 		scriptIDs string
@@ -395,6 +415,11 @@ func rewriteBlankScriptObjectRepositoryRefs(tx *storeTx, oldID, newID string) er
 	if err != nil {
 		return fmt.Errorf("list object repositories for blank script id repair: %w", err)
 	}
+	// Idempotent belt-and-braces: the explicit Close below is kept because it
+	// surfaces the Close error, which a bare defer discards. The defer covers
+	// the paths that never reach it — notably a panic in a scan helper, which
+	// the controller recovers, pinning this connection for the process's life.
+	defer rows.Close()
 	type repository struct {
 		id      string
 		objects string
@@ -446,6 +471,11 @@ func rewriteBlankScriptTestGroups(tx *storeTx, oldID, newID string) error {
 	if err != nil {
 		return fmt.Errorf("list test snapshots for blank script id repair: %w", err)
 	}
+	// Idempotent belt-and-braces: the explicit Close below is kept because it
+	// surfaces the Close error, which a bare defer discards. The defer covers
+	// the paths that never reach it — notably a panic in a scan helper, which
+	// the controller recovers, pinning this connection for the process's life.
+	defer rows.Close()
 	type testGroups struct {
 		id     string
 		groups string

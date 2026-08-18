@@ -974,6 +974,14 @@ func (s *SQLiteStore) listAuthoringSessions(projectID string, limit, offset int)
 		}
 		sessions = append(sessions, &session)
 	}
+	// rows.Next() returns false both when the result set is exhausted and when
+	// iteration failed part-way. Without this check a truncated read — a closed
+	// connection, a context cancellation mid-scan — returns the rows gathered so
+	// far as if they were the complete set, so a caller listing authoring
+	// sessions can silently see fewer than exist and treat that as authoritative.
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 	return sessions, nil
 }
 

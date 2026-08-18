@@ -430,7 +430,7 @@ func (service *Service) ClaimExecutionEpoch(ctx context.Context, claim *pb.Execu
 	if err := validateExecutionLeaseOwner(generation, leaseOwner, true); err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "execution_lease_owner_id: %v", err)
 	}
-	expiresAt := time.Now().Add(time.Duration(ttlMs) * time.Millisecond)
+	expiresAt := service.nowTime().Add(time.Duration(ttlMs) * time.Millisecond)
 	if testID := strings.TrimSpace(claim.GetTestId()); testID != "" {
 		return service.claimTestExecutionLease(ctx, testID, generation, leaseOwner, expiresAt)
 	}
@@ -444,7 +444,7 @@ func (service *Service) claimValidatedExecutionEpoch(ctx context.Context, genera
 			service.mu.Unlock()
 			return nil, status.FromContextError(err).Err()
 		}
-		decision := service.executionEpochManager.planClaimLocked(service, generation, leaseOwner, expiresAt, time.Now())
+		decision := service.executionEpochManager.planClaimLocked(service, generation, leaseOwner, expiresAt, service.nowTime())
 		service.mu.Unlock()
 		if decision.err != nil {
 			return nil, decision.err
@@ -506,7 +506,7 @@ func (service *Service) finishExecutionEpochClaim(ctx context.Context, generatio
 		}, nil
 	}
 	service.mu.Lock()
-	final := service.executionEpochManager.finalizeClaimLocked(service, generation, time.Now())
+	final := service.executionEpochManager.finalizeClaimLocked(service, generation, service.nowTime())
 	service.mu.Unlock()
 	if err := ctx.Err(); err != nil {
 		return nil, status.FromContextError(err).Err()

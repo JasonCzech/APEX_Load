@@ -76,7 +76,7 @@ func (s *Service) claimTestExecutionLease(ctx context.Context, testID string, ge
 	if err := s.validateMutationGenerationLocked(generation); err != nil {
 		return nil, err
 	}
-	now := time.Now()
+	now := s.nowTime()
 	if fencedGeneration := max(s.testExecutionLeaseFences[testID], s.testExecutionLeaseFenceAllGeneration); fencedGeneration >= generation {
 		return &pb.ExecutionEpochAck{
 			Accepted:          false,
@@ -161,7 +161,7 @@ func (s *Service) claimTestExecutionLease(ctx context.Context, testID string, ge
 func (s *Service) expireTestExecutionLease(testID string, generation uint64, expiresAt time.Time, token uint64) {
 	s.mu.Lock()
 	lease, ok := s.testExecutionLeases[testID]
-	if !ok || lease.token != token || lease.generation != generation || !lease.expiresAt.Equal(expiresAt) || time.Now().Before(expiresAt) {
+	if !ok || lease.token != token || lease.generation != generation || !lease.expiresAt.Equal(expiresAt) || s.nowTime().Before(expiresAt) {
 		s.mu.Unlock()
 		return
 	}
@@ -228,7 +228,7 @@ func (s *Service) resetTestExecutionLeasesForGenerationLocked(generation uint64)
 }
 
 func (s *Service) validateMutationGenerationLocked(generation uint64) error {
-	return s.executionEpochManager.validateMutationLocked(generation, time.Now())
+	return s.executionEpochManager.validateMutationLocked(generation, s.nowTime())
 }
 
 func (s *Service) testIDsBeforeGenerationLocked(generation uint64) []string {
@@ -252,7 +252,7 @@ func (s *Service) expireExecutionEpoch(generation uint64, expiresAt time.Time) {
 func (s *Service) expireExecutionEpochToken(generation uint64, expiresAt time.Time, token uint64, requireToken bool) {
 	for {
 		s.mu.Lock()
-		wait, testIDs, accepted := s.executionEpochManager.planExpiryLocked(s, generation, expiresAt, token, requireToken, time.Now())
+		wait, testIDs, accepted := s.executionEpochManager.planExpiryLocked(s, generation, expiresAt, token, requireToken, s.nowTime())
 		s.mu.Unlock()
 		if wait != nil {
 			<-wait

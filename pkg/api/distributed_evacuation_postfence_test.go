@@ -66,22 +66,33 @@ func (c *postFenceFaultEvacuationClient) ClaimTestExecutionEpoch(ctx context.Con
 // is never revived in place, so a staged replacement whose epoch lapsed can only
 // surface on the claim.
 func TestLapsedProcessEpochRejectsTheClaimAndFencesTheAssignmentLeaseDifferently(t *testing.T) {
-	client, _ := newTestGeneratorRPCClient(t, "gen-lapsed", 4, generatorrpc.WithExecution())
+	// The epoch is installed with a comfortable TTL and lapsed by advancing a
+	// controlled clock. A short TTL plus a sleep would reach the same state, but
+	// only if the scheduler cooperates: under a loaded machine the epoch could
+	// lapse before the claim that installed it was observed, failing at the
+	// install rather than at the assertion below. That was FLAKE-1 — 2 failures
+	// in 5 runs. See docs/qa/FLAKE_LOG.md.
+	clock := newGeneratorTestClock(time.Date(2026, 8, 18, 12, 0, 0, 0, time.UTC))
+	client, _ := newTestGeneratorRPCClient(t, "gen-lapsed", 4,
+		generatorrpc.WithExecution(),
+		generatorrpc.WithClock(clock.Now),
+	)
 	const (
 		generation = uint64(9)
 		owner      = "lapsed-epoch-probe/9"
+		epochTTL   = time.Minute
 	)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	installed, err := client.ClaimExecutionEpoch(ctx, generation, owner, 30*time.Millisecond)
+	installed, err := client.ClaimExecutionEpoch(ctx, generation, owner, epochTTL)
 	if err != nil || !installed.Accepted {
 		t.Fatalf("install execution epoch = (%+v, %v)", installed, err)
 	}
 	// Let the process-scoped session lapse without changing the generation: this
 	// is exactly the state a staged replacement reaches when nothing renews it
 	// during waitForLostGeneratorEpochFence.
-	time.Sleep(90 * time.Millisecond)
+	clock.Advance(epochTTL + time.Second)
 
 	deadline := time.Now().Add(2 * time.Second)
 	claimErr := claimGeneratorExecutionEpoch(ctx, client, generation, owner, deadline, 500*time.Millisecond)

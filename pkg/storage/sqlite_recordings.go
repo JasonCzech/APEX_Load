@@ -668,6 +668,11 @@ func (s *SQLiteStore) loadScriptRecordingSidecarValidationBatch(
 	if err != nil {
 		return nil, afterScriptID, false, fmt.Errorf("list encrypted script recording sidecars: %w", err)
 	}
+	// Idempotent belt-and-braces: the explicit Close below is kept because it
+	// surfaces the Close error, which a bare defer discards. The defer covers
+	// the paths that never reach it — notably a panic in a scan helper, which
+	// the controller recovers, pinning this connection for the process's life.
+	defer rows.Close()
 	snapshots := make([]scriptRecordingSidecarValidationSnapshot, 0, legacyScriptRecordingSidecarValidationBatchRows)
 	pageCount := 0
 	for rows.Next() {
@@ -1065,6 +1070,11 @@ func (s *SQLiteStore) loadScriptRecordingBindingRepairBatch(
 	if err != nil {
 		return nil, afterScriptID, false, fmt.Errorf("list script recording bindings: %w", err)
 	}
+	// Idempotent belt-and-braces: the explicit Close below is kept because it
+	// surfaces the Close error, which a bare defer discards. The defer covers
+	// the paths that never reach it — notably a panic in a scan helper, which
+	// the controller recovers, pinning this connection for the process's life.
+	defer rows.Close()
 	candidates := make([]scriptRecordingBindingRepair, 0, legacyScriptRecordingBindingBatchRows)
 	for rows.Next() {
 		var (
@@ -1362,6 +1372,11 @@ func (s *SQLiteStore) loadLegacyScriptRecordingObservationProjectionBatch(afterS
 	if err != nil {
 		return nil, afterScriptID, false, fmt.Errorf("list legacy script recording observations: %w", err)
 	}
+	// Idempotent belt-and-braces: the explicit Close below is kept because it
+	// surfaces the Close error, which a bare defer discards. The defer covers
+	// the paths that never reach it — notably a panic in a scan helper, which
+	// the controller recovers, pinning this connection for the process's life.
+	defer rows.Close()
 	snapshots := make([]legacyScriptRecordingObservationSnapshot, 0, legacyScriptRecordingProjectionBatchRows)
 	pageCount := 0
 	for rows.Next() {
@@ -1595,6 +1610,11 @@ func (s *SQLiteStore) loadScriptRecordingCorrelationStatusRepairBatch(
 	if err != nil {
 		return nil, afterScriptID, false, fmt.Errorf("load script recording correlation status metadata: %w", err)
 	}
+	// Idempotent belt-and-braces: the explicit Close below is kept because it
+	// surfaces the Close error, which a bare defer discards. The defer covers
+	// the paths that never reach it — notably a panic in a scan helper, which
+	// the controller recovers, pinning this connection for the process's life.
+	defer rows.Close()
 	snapshots := make([]scriptRecordingCorrelationStatusSnapshot, 0, legacyScriptRecordingStatusRepairBatchRows)
 	pageCount := 0
 	for rows.Next() {

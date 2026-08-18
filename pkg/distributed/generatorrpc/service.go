@@ -610,9 +610,13 @@ func (b *transactionBuffer) drainWindow(advanceEmpty bool) ([]TransactionMetric,
 type Service struct {
 	pb.UnimplementedGeneratorControlServer
 
-	mu                                   sync.RWMutex
-	adjustMu                             sync.Mutex
-	generatorID                          string
+	mu          sync.RWMutex
+	adjustMu    sync.Mutex
+	generatorID string
+	// now is the service's time source. Execution-epoch expiry reads it, so
+	// tests can drive lapse deterministically via WithClock. Always call
+	// nowTime() rather than this field directly; it may be nil.
+	now                                  func() time.Time
 	maxVUsers                            int32
 	maxAssignedTests                     int
 	maxAssignedGroups                    int
@@ -735,6 +739,23 @@ func WithExecution() ServiceOption {
 	}
 }
 
+// WithClock replaces the service's time source. Execution-epoch leases are
+// expiry-driven, so tests that exercise a lapsed epoch otherwise have to pick a
+// TTL short enough to elapse during the test and then sleep past it. That makes
+// the assertion a race against the scheduler: under a loaded machine the epoch
+// can lapse before the claim that installed it is even observed, which is how
+// TestLapsedProcessEpochRejectsTheClaimAndFencesTheAssignmentLeaseDifferently
+// came to fail 2 runs in 5 (see docs/qa/FLAKE_LOG.md, FLAKE-1).
+//
+// Passing a controlled clock lets a test install a comfortable TTL and then
+// advance time deliberately, so lapse is something the test causes rather than
+// something it waits for. Nil restores time.Now.
+func WithClock(now func() time.Time) ServiceOption {
+	return func(s *Service) {
+		s.now = now
+	}
+}
+
 // WithRunSupervisionRequired enables the production fail-closed distributed
 // execution contract. Tests that intentionally characterize legacy RPC shapes
 // omit this option.
@@ -810,6 +831,7 @@ func NewService(generatorID string, maxVUsers int, opts ...ServiceOption) *Servi
 	archiveManager := newArchiveManager(generatorID, archiveRecordMax, archiveTTL, 1024, defaultMaxArchiveTransfers, defaultMaxArchiveUnaryTransfers)
 	service := &Service{
 		generatorID:              generatorID,
+		now:                      time.Now,
 		maxVUsers:                int32(maxVUsers),
 		maxAssignedTests:         1024,
 		maxAssignedGroups:        4096,
@@ -3284,4 +3306,15 @@ func maxInt64(left, right int64) int64 {
 		return left
 	}
 	return right
+}
+
+// nowTime returns the service's current time, falling back to time.Now when no
+// clock was configured. Options run after the struct literal, so a caller can
+// pass WithClock(nil) and reach here with an unset field; production paths must
+// never depend on the option having been applied.
+func (s *Service) nowTime() time.Time {
+	if s == nil || s.now == nil {
+		return time.Now()
+	}
+	return s.now()
 }

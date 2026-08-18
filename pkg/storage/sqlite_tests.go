@@ -1393,6 +1393,11 @@ func (s *SQLiteStore) SetTestComparisonBaseline(id string, pinnedAt *time.Time) 
 	if err != nil {
 		return nil, err
 	}
+	// Idempotent belt-and-braces: the explicit Close below is kept because it
+	// surfaces the Close error, which a bare defer discards. The defer covers
+	// the paths that never reach it — notably a panic in a scan helper, which
+	// the controller recovers, pinning this connection for the process's life.
+	defer rows.Close()
 	states := make([]TestBaselineState, 0)
 	for rows.Next() {
 		var state TestBaselineState

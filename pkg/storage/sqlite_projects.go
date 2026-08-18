@@ -593,6 +593,11 @@ func (s *SQLiteStore) SaveApplication(application *Application) error {
 		if err != nil {
 			return err
 		}
+		// Idempotent belt-and-braces: the explicit Close below is kept because it
+		// surfaces the Close error, which a bare defer discards. The defer covers
+		// the paths that never reach it — notably a panic in a scan helper, which
+		// the controller recovers, pinning this connection for the process's life.
+		defer rows.Close()
 		type familySeed struct {
 			groupID    string
 			name       string
@@ -1114,6 +1119,11 @@ func (s *SQLiteStore) CreateProjectReleaseFamily(projectID, name, preferredAppli
 	if err != nil {
 		return nil, err
 	}
+	// Idempotent belt-and-braces: the explicit Close below is kept because it
+	// surfaces the Close error, which a bare defer discards. The defer covers
+	// the paths that never reach it — notably a panic in a scan helper, which
+	// the controller recovers, pinning this connection for the process's life.
+	defer rows.Close()
 	applicationIDs := make([]string, 0)
 	for rows.Next() {
 		var applicationID string
@@ -1603,6 +1613,11 @@ func deleteProjectGraphTx(tx *storeTx, id string) error {
 	if err != nil {
 		return err
 	}
+	// Idempotent belt-and-braces: the explicit Close below is kept because it
+	// surfaces the Close error, which a bare defer discards. The defer covers
+	// the paths that never reach it — notably a panic in a scan helper, which
+	// the controller recovers, pinning this connection for the process's life.
+	defer ownedScenarioRows.Close()
 	ownedScenarioIDs := []string{}
 	for ownedScenarioRows.Next() {
 		var scenarioID string
@@ -1720,6 +1735,11 @@ func deleteProjectServiceAccountGrants(tx *storeTx, projectID string) error {
 	if err != nil {
 		return err
 	}
+	// Idempotent belt-and-braces: the explicit Close below is kept because it
+	// surfaces the Close error, which a bare defer discards. The defer covers
+	// the paths that never reach it — notably a panic in a scan helper, which
+	// the controller recovers, pinning this connection for the process's life.
+	defer rows.Close()
 	type update struct {
 		id    string
 		roles string
@@ -1767,6 +1787,11 @@ func deleteDomainServiceAccountGrants(tx *storeTx, domainID, repositoryID string
 	if err != nil {
 		return err
 	}
+	// Idempotent belt-and-braces: the explicit Close below is kept because it
+	// surfaces the Close error, which a bare defer discards. The defer covers
+	// the paths that never reach it — notably a panic in a scan helper, which
+	// the controller recovers, pinning this connection for the process's life.
+	defer rows.Close()
 	type update struct {
 		id              string
 		domainRoles     string

@@ -227,6 +227,11 @@ func (s *SQLiteStore) loadLegacyCorrelationRulesetRepairBatch(
 	if err != nil {
 		return nil, afterID, false, fmt.Errorf("list legacy correlation rulesets: %w", err)
 	}
+	// Idempotent belt-and-braces: the explicit Close below is kept because it
+	// surfaces the Close error, which a bare defer discards. The defer covers
+	// the paths that never reach it — notably a panic in a scan helper, which
+	// the controller recovers, pinning this connection for the process's life.
+	defer rows.Close()
 	snapshots := make([]legacyCorrelationRulesetSnapshot, 0, legacyCorrelationRulesetRepairBatchRows)
 	for rows.Next() {
 		var snapshot legacyCorrelationRulesetSnapshot

@@ -301,6 +301,37 @@ jobs:
           gotestsum --junitfile test-results/go-junit.xml -- \
             -race -shuffle=on -count=1 -timeout=20m -coverprofile=test-results/coverage.out ./...
 
+      - name: Coverage ratchet
+        # REPORTING ONLY FOR NOW — see the sequence below before removing
+        # continue-on-error.
+        #
+        # The committed baseline (docs/qa/evidence/M0/coverage-baseline.json) was
+        # measured locally without -race and without -shuffle. This job runs with
+        # both. Enforcing a ratchet across that difference would compare two
+        # things that were never the same measurement, and the first PR would
+        # fail for reasons nobody could act on.
+        #
+        # To turn this into a real gate:
+        #   1. Land this step as-is and let one green run publish a figure.
+        #   2. Re-baseline from that run's coverage-current.json:
+        #        python3 scripts/coverage-ratchet.py <it> --update
+        #      and commit the result, noting in the message that the baseline is
+        #      now CI-measured.
+        #   3. Delete continue-on-error here. The gate is then live.
+        #
+        # This step only runs when the test step above succeeded, so recording
+        # the run status as "pass" is accurate rather than assumed.
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          go list ./... | grep -v '/node_modules/' > test-results/packages.txt
+          python3 scripts/coverage_baseline_report.py \
+            test-results/coverage.out \
+            test-results/coverage-current.json \
+            test-results/packages.txt \
+            pass
+          python3 scripts/coverage-ratchet.py test-results/coverage-current.json
+
       - name: Upload Go test evidence
         if: always()
         uses: ./.github/actions/upload-artifact

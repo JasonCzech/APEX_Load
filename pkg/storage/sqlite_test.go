@@ -783,6 +783,9 @@ func TestSQLiteSchemaIncludesAuditFilterIndexes(t *testing.T) {
 		}
 		found[name] = true
 	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("iterate index_list rows: %v", err)
+	}
 	for _, name := range []string{
 		"idx_audit_events_action_status_created",
 		"idx_audit_events_status_created",

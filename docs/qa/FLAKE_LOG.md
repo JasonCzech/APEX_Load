@@ -1,0 +1,121 @@
+# Flake Log
+
+**Policy.** A test that fails non-deterministically is quarantined within 24 hours of first
+observation, with a root-cause entry and a dated un-quarantine commitment. A quarantined test that
+passes its un-quarantine date without a fix is escalated to a defect in
+[DEFECTS.md](DEFECTS.md) — it is never silently left disabled.
+
+**Detection.** The nightly flake-hunt job (M0 week 3) runs `go test ./... -count=5 -shuffle=on` and
+the Playwright suite repeatedly. CI's main `go-tests` job already runs `-race -shuffle=on -count=1`.
+
+**Largest structural cause in this codebase:** no fake clock. Scheduling, lease generations, pacing
+token buckets, and percentile windowing all read real `time.Now()`. The M0 `Clock` harness targets
+this directly. Suspect timing before suspecting the test.
+
+| Test | First seen | Rate | Root cause | Quarantined | Un-quarantine by | State |
+|---|---|---|---|---|---|---|
+| `TestLapsedProcessEpochRejectsTheClaimAndFencesTheAssignmentLeaseDifferently` | 2026-08-18 | 2 of 5 runs (both full-suite) | 30 ms wall-clock TTL could not survive scheduler pressure | No — fixed at the cause | n/a | **FIXED** (uncommitted) |
+
+## FLAKE-1 — a 30 ms real-clock TTL in the epoch-fencing tests
+
+**Location:** `pkg/api/distributed_evacuation_postfence_test.go:79`
+
+**Reproduction rate:** 2 failures in 5 runs. Both failures were full-suite parallel runs; all three
+isolated runs of `pkg/api` passed.
+
+| # | Conditions | Result |
+|---|---|---|
+| 1 | Full suite, `go test ./...`, default covermode | pass |
+| 2 | Full suite, explicit package list, `-covermode=atomic` | **FAIL** after 277.6 s |
+| 3 | `pkg/api` alone, no coverage | pass, 263.8 s |
+| 4 | `pkg/api` alone, `-covermode=atomic` | pass, 268.4 s |
+| 5 | Full suite, explicit package list, `-covermode=atomic` | **FAIL** after 281.7 s |
+
+**Root cause.** The test installs an execution epoch with a **30-millisecond TTL**, then sleeps 90 ms
+to let it lapse deliberately:
+
+```go
+installed, err := client.ClaimExecutionEpoch(ctx, generation, owner, 30*time.Millisecond)
+if err != nil || !installed.Accepted {
+        t.Fatalf("install execution epoch = (%+v, %v)", installed, err)
+}
+time.Sleep(90 * time.Millisecond)
+```
+
+The failure is at the **install**, not at the assertion the test exists to make:
+
+```
+install execution epoch = ({Accepted:false CurrentGeneration:9
+  ExpiresAt:2026-08-18 14:22:25.981 -0400 EDT
+  ErrorMessage:execution generation changed or fencing did not complete}, <nil>)
+```
+
+With 110 packages competing for CPU, the goroutine can lose the scheduler for longer than 30 ms
+between installing the epoch and observing the result, so the epoch it just created has already
+lapsed — or a prior subtest's fencing has not finished. The 30 ms TTL and the 90 ms sleep are
+wall-clock assumptions that hold on an idle machine and break under load.
+
+**Hypothesis raised and rejected.** The first theory was `-covermode=atomic` instrumentation. Run 4
+falsified it: same instrumentation, isolated, passed. The cause is contention, not coverage.
+
+**Why it is not quarantined.** This is a real bug in the test, not an unexplained intermittency, and
+the fix is known. Quarantining would hide the single most concrete piece of evidence the program has
+produced for the M0 week-3 work.
+
+**Recommended fix — M0 week 3, not a TTL bump.** Raising 30 ms to, say, 500 ms would make the flake
+rarer without making it impossible, and would slow the suite. The correct fix is to inject the
+`Clock` interface into the epoch-expiry path so the test advances time deterministically instead of
+sleeping. This test is the first concrete instance justifying that work, and it sits in the
+execution-epoch fencing code that M6's HA failover drills depend on — so the harness pays for itself
+twice.
+
+**How this was diagnosed.** Only because `scripts/coverage-baseline.sh` now retains its test log.
+The first occurrence was undiagnosable: the script deleted its own log on exit (QA-004), destroying
+the evidence for the failure it had just detected. The retention fix produced a named root cause on
+the very next failing run.
+
+**Adjacent risk worth measuring.** CI runs `-race -shuffle=on -count=1 -timeout=20m -coverprofile`
+over `./...` (`.github/workflows/ci.yml:301`). `pkg/api` alone consumes 263–282 s here *without* the
+race detector, which typically costs several times that, on a runner slower than this machine,
+against a 20-minute ceiling. A timing-fragile test inside a package already near its timeout budget
+is a bad combination.
+
+
+## FLAKE-1 fixed 2026-08-18 — cause removed, not papered over
+
+`generatorrpc.WithClock` now injects the service's time source, and every
+execution-epoch time read goes through `Service.nowTime()` instead of a hardcoded
+`time.Now()` (7 call sites across `execution_epoch.go` and
+`execution_epoch_manager.go`). It follows the idiom already used in
+`pkg/api/execution_leadership.go:71`, `pkg/api/scheduler.go:58` and
+`pkg/kubeops/auth.go:119` — `now func() time.Time`, defaulting to `time.Now` —
+rather than introducing a competing `Clock` interface the repository would then
+have two of.
+
+`TestClockHeldStillKeepsLeaseValid` demonstrates the fix directly: it claims a
+lease with **FLAKE-1's exact 30 ms TTL**, sleeps 100 ms of real time, and asserts
+the lease is still valid, because the clock did not move. Under the old
+wall-clock path that is precisely the state that produced the flake.
+
+**The flaking test is migrated.** It now installs the epoch with a one-minute TTL
+and lapses it via `clock.Advance`, instead of a 30 ms TTL followed by a 90 ms
+sleep. Every assertion is unchanged — the test is about how two rejection shapes
+are *classified*, and the timing was only the mechanism for reaching the lapsed
+state. Only that mechanism changed, so the test is no weaker.
+
+**Evidence it is actually fixed, not merely currently green:**
+
+| Run | Result |
+|---|---|
+| 200 repetitions, `-race` | pass, 4.7 s |
+| 100 repetitions, `-race`, under 8-way CPU contention | pass, 4.5 s |
+| Full `pkg/api` (268 s) and `pkg/distributed/...` | pass |
+
+The contention run matters most: CPU starvation is the condition that produced
+both original failures, and the migrated test is indifferent to it. It is also
+faster — 0.06 s instead of carrying a 90 ms sleep.
+
+Detection is now systematic rather than accidental: `.github/workflows/flake-hunt.yml`
+runs the suite nightly with `-count=5 -shuffle=on -race` and reports repeat
+failures. It deliberately does not gate PRs — a flake-finder on the merge path
+teaches people to re-run until green.

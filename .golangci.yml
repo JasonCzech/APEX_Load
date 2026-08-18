@@ -15,6 +15,21 @@ run:
 # iface 12, recvcheck 10, interfacebloat 9, mirror 8, dupword 8, errname 7,
 # fatcontext 6, protogetter 4, bodyclose 3, nilnil 3, sqlclosecheck 3,
 # gosmopolitan 3, rowserrcheck 2, makezero 1, usetesting 1. Several of those
+#
+# WARNING — the counts above are TRUNCATED and understate the real backlog.
+# golangci-lint defaults to max-same-issues=3 and max-issues-per-linter=50, so
+# any entry reading "3" may be far larger and every "50+" is simply the cap.
+# Measured 2026-08-18 with --max-same-issues=0 --max-issues-per-linter=0:
+#   bodyclose 23 (not 3) · sqlclosecheck 41 (not 3) · rowserrcheck 2 (accurate)
+# Re-measure with those flags before scoping any burn-down from this list.
+#
+# Note also that a large share are not defects. sqlclosecheck reports "Close
+# should use defer" against this repository's deliberate idiom of closing on
+# every path AND checking the Close error — which a bare defer discards, so the
+# existing code is arguably stronger. bodyclose flags constructed cache-entry
+# responses (pkg/protocol/http/http.go) and raw-connection reads whose conn is
+# explicitly closed (pkg/recorder/websocket.go). Enabling these is a triage
+# project, not a mechanical fix.
 # are worth revisiting as standalone cleanups; none belong in a "cheap hygiene"
 # gate.
 linters:

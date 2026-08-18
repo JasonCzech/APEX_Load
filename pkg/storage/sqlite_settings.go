@@ -155,6 +155,11 @@ func (s *SQLiteStore) CompareAndSwapSettingWithCapacityFence(
 	if err != nil {
 		return false, err
 	}
+	// Idempotent belt-and-braces: the explicit Close below is kept because it
+	// surfaces the Close error, which a bare defer discards. The defer covers
+	// the paths that never reach it — notably a panic in a scan helper, which
+	// the controller recovers, pinning this connection for the process's life.
+	defer rows.Close()
 	approved := make([]*CapacityReservation, 0)
 	for rows.Next() {
 		reservation, scanErr := scanCapacityReservation(rows)

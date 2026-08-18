@@ -48,6 +48,11 @@ func (s *SQLiteStore) promoteGeneratorMetadataMemberships() error {
 	if err != nil {
 		return fmt.Errorf("list metadata-only fleet pool memberships: %w", err)
 	}
+	// Idempotent belt-and-braces: the explicit Close below is kept because it
+	// surfaces the Close error, which a bare defer discards. The defer covers
+	// the paths that never reach it — notably a panic in a scan helper, which
+	// the controller recovers, pinning this connection for the process's life.
+	defer rows.Close()
 	type promotion struct{ generatorID, poolID, target string }
 	pending := make([]promotion, 0)
 	for rows.Next() {
@@ -98,6 +103,11 @@ func (s *SQLiteStore) dedupeFleetPoolMembers() error {
 	if err != nil {
 		return fmt.Errorf("list duplicate fleet pool memberships: %w", err)
 	}
+	// Idempotent belt-and-braces: the explicit Close below is kept because it
+	// surfaces the Close error, which a bare defer discards. The defer covers
+	// the paths that never reach it — notably a panic in a scan helper, which
+	// the controller recovers, pinning this connection for the process's life.
+	defer rows.Close()
 	type candidate struct {
 		memberID string
 		poolID   string

@@ -113,6 +113,12 @@ not the source of truth for current API or DSL contracts.
 | [RUNTIME_TELEMETRY_SLA_PLAN.md](RUNTIME_TELEMETRY_SLA_PLAN.md) | Roadmap/detail |
 | [RUN_REPORT_IMPLEMENTATION_PLAN.md](RUN_REPORT_IMPLEMENTATION_PLAN.md) | Proposed implementation plan |
 | [SCRIPT_EDITOR_INTERACTION_MODEL.md](SCRIPT_EDITOR_INTERACTION_MODEL.md) | Approved design direction and phased plan |
+| [qa/TEST_PROGRAM.md](qa/TEST_PROGRAM.md) | Nine-month progressive test and infrastructure-readiness program; scope of record |
+| [qa/STATUS.md](qa/STATUS.md) | Live milestone state and headline metrics for the test program (tracker-enforced) |
+| [qa/TIER0_JOURNEY.md](qa/TIER0_JOURNEY.md) | The twelve-step end-to-end user journey the M1 Playwright suite implements |
+| [qa/DEFECTS.md](qa/DEFECTS.md) | Rolling defect log, including the eleven defects left open by the 2026-08-02 whole-application review |
+| [qa/RISK_REGISTER.md](qa/RISK_REGISTER.md) | Test-program risks, re-scored at each milestone close |
+| [qa/FLAKE_LOG.md](qa/FLAKE_LOG.md) | Quarantined non-deterministic tests, root causes, and un-quarantine dates |
 
 ## Historical
 

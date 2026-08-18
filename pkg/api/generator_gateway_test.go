@@ -53,6 +53,10 @@ func TestGeneratorGatewayAuthenticatesTargetAndRegistersByteStream(t *testing.T)
 	headers.Set(generatorGatewaySessionHeader, strings.Repeat("n", 32))
 	headers.Set(generatorGatewayTimestampHeader, fmt.Sprintf("%d", time.Now().UTC().Unix()))
 	wsURL := "ws" + strings.TrimPrefix(httpServer.URL, "http") + "/api/v1/generator-gateway/connect"
+	// gorilla/websocket documents that the handshake response "does not need to
+	// be closed by the application", so the response is read for its status and
+	// otherwise left alone. A defensive close here would have to guard Body as
+	// well as the response pointer, for no benefit.
 	ws, response, err := websocket.DefaultDialer.Dial(wsURL, headers)
 	if err != nil {
 		if response != nil {

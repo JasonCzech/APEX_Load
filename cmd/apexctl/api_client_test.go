@@ -26,7 +26,10 @@ func TestDoStatusReadContextStopsDuringRetryAfterDelay(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
 	defer cancel()
 	started := time.Now()
-	_, err := client.doStatusReadContext(ctx, "/retry")
+	resp, err := client.doStatusReadContext(ctx, "/retry")
+	if resp != nil {
+		_ = resp.Body.Close()
+	}
 	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("retry error = %v, want context deadline exceeded", err)
 	}

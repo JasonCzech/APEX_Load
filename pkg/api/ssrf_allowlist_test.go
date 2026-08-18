@@ -47,7 +47,8 @@ func TestHostAllowlistedHTTPClientPermitsConfiguredHostOnly(t *testing.T) {
 
 	// Without the allow-list, the loopback target is blocked at dial time.
 	blocked := newHostAllowlistedHTTPClient(nil, 2*time.Second)
-	if _, err := blocked.Get(server.URL); err == nil {
+	if blockedResp, err := blocked.Get(server.URL); err == nil {
+		_ = blockedResp.Body.Close()
 		t.Fatal("expected loopback connection to be blocked by the SSRF dialer")
 	}
 

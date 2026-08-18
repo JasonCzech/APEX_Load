@@ -1837,6 +1837,11 @@ func (s *SQLiteStore) backfillKubernetesExecutionTargets() error {
 	if err != nil {
 		return fmt.Errorf("list legacy clusters for execution-target backfill: %w", err)
 	}
+	// Idempotent belt-and-braces: the explicit Close below is kept because it
+	// surfaces the Close error, which a bare defer discards. The defer covers
+	// the paths that never reach it — notably a panic in a scan helper, which
+	// the controller recovers, pinning this connection for the process's life.
+	defer rows.Close()
 	clusters := make([]legacyCluster, 0)
 	for rows.Next() {
 		var cluster legacyCluster
@@ -1914,6 +1919,11 @@ func (s *SQLiteStore) backfillArchiveFinalizationIntentTokens() error {
 	if err != nil {
 		return fmt.Errorf("list legacy archive finalization intents: %w", err)
 	}
+	// Idempotent belt-and-braces: the explicit Close below is kept because it
+	// surfaces the Close error, which a bare defer discards. The defer covers
+	// the paths that never reach it — notably a panic in a scan helper, which
+	// the controller recovers, pinning this connection for the process's life.
+	defer rows.Close()
 	ids := make([]string, 0)
 	for rows.Next() {
 		var id string
@@ -1946,6 +1956,11 @@ func (s *SQLiteStore) backfillGitHubCheckLinkKinds() error {
 	if err != nil {
 		return fmt.Errorf("list legacy github check link kinds: %w", err)
 	}
+	// Idempotent belt-and-braces: the explicit Close below is kept because it
+	// surfaces the Close error, which a bare defer discards. The defer covers
+	// the paths that never reach it — notably a panic in a scan helper, which
+	// the controller recovers, pinning this connection for the process's life.
+	defer rows.Close()
 	ciLinkIDs := make([]string, 0)
 	for rows.Next() {
 		var id, testID string
@@ -2170,6 +2185,11 @@ func (s *SQLiteStore) ensureLegacyApplication() error {
 	if err != nil {
 		return fmt.Errorf("list projects for legacy hierarchy: %w", err)
 	}
+	// Idempotent belt-and-braces: the explicit Close below is kept because it
+	// surfaces the Close error, which a bare defer discards. The defer covers
+	// the paths that never reach it — notably a panic in a scan helper, which
+	// the controller recovers, pinning this connection for the process's life.
+	defer projectRows.Close()
 	var projectIDs []string
 	for projectRows.Next() {
 		var projectID string

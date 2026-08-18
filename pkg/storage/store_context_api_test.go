@@ -48,6 +48,9 @@ func TestStoreDBContextMethodsApplyTheDialectRewrite(t *testing.T) {
 	if err != nil {
 		t.Fatalf("QueryContext under the SQLite dialect: %v", err)
 	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("iterate dialect probe rows: %v", err)
+	}
 	if err := rows.Close(); err != nil {
 		t.Fatal(err)
 	}

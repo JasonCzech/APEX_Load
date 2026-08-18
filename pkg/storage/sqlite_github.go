@@ -388,6 +388,11 @@ func (s *SQLiteStore) backfillGitHubScriptSyncTargetOwners() error {
 	if err != nil {
 		return fmt.Errorf("list github script links for target-owner backfill: %w", err)
 	}
+	// Idempotent belt-and-braces: the explicit Close below is kept because it
+	// surfaces the Close error, which a bare defer discards. The defer covers
+	// the paths that never reach it — notably a panic in a scan helper, which
+	// the controller recovers, pinning this connection for the process's life.
+	defer rows.Close()
 	var linked []linkedScript
 	for rows.Next() {
 		var item linkedScript

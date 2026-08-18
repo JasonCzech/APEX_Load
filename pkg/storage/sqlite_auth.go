@@ -1129,6 +1129,11 @@ func (s *SQLiteStore) ListUsers(filter UserFilter) ([]*User, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Idempotent belt-and-braces: the explicit Close below is kept because it
+	// surfaces the Close error, which a bare defer would discard. The defer
+	// covers the paths that never reach it — an early return or a panic in a
+	// scan helper. sql.Rows.Close is documented idempotent, so both can run.
+	defer rows.Close()
 	users := []*User{}
 	for rows.Next() {
 		user, err := scanUser(rows)

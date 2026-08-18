@@ -1,0 +1,11 @@
+# Raw test logs are retained on disk so a failed coverage run can be diagnosed
+# (that retention is the fix for QA-004 — the script used to delete its own log
+# and destroyed the evidence for FLAKE-1). They are not committed: the log for a
+# full-suite run is close to a megabyte of mostly "ok" lines and would churn the
+# repository on every run.
+#
+# The committed evidence is the derived artifact: coverage-baseline.json and
+# coverage-baseline.md. When a log matters beyond the local machine, quote the
+# relevant excerpt into the finding instead of committing the whole file.
+coverage-test.log
+coverage.profile
