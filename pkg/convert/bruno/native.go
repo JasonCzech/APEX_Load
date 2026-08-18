@@ -2230,9 +2230,8 @@ func buildNativeCandidate(
 				Traceparent:         &traceparent,
 			},
 			RunLogic: dsl.RunLogicConfig{AutoTransactions: "none"},
-			ErrorHandling: dsl.ErrorHandlingConfig{
-				ContinueOnError: false,
-			},
+			// Unset: the scenario continue-on-error policy decides.
+			ErrorHandling: dsl.ErrorHandlingConfig{},
 		},
 		Parameters: parameters,
 		Actions:    []dsl.Action{action},

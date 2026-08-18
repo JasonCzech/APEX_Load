@@ -188,7 +188,7 @@ func isEmptyBrowserConfig(cfg dsl.BrowserConfig) bool {
 }
 
 func isEmptyErrorHandlingConfig(cfg dsl.ErrorHandlingConfig) bool {
-	return !cfg.ContinueOnError && cfg.MaxRetries == 0 && cfg.RetryDelayMs == 0 && cfg.RetryBackoff == "" && !cfg.SnapshotOnError
+	return cfg.ContinueOnError == nil && cfg.MaxRetries == 0 && cfg.RetryDelayMs == 0 && cfg.RetryBackoff == "" && !cfg.SnapshotOnError
 }
 
 func isEmptyWebRuntimeConfig(cfg dsl.WebRuntimeConfig) bool {

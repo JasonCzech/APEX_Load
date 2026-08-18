@@ -19,7 +19,7 @@ func applySourceContinueOnError(result *ConvertResult, fn ParsedFunction) {
 		"mapped_to": "config.error_handling.continue_on_error",
 	}
 	if enabled, ok := parseSourceBool(value); ok {
-		result.Script.Config.ErrorHandling.ContinueOnError = enabled
+		result.Script.Config.ErrorHandling.ContinueOnError = dsl.ContinueOnErrorValue(enabled)
 		details["enabled"] = enabled
 	}
 	preserveSourceRuntimeControl(result.Script, "source_runtime_controls", fn, details)
@@ -279,7 +279,7 @@ func reapplySourceRuntimeControlConfig(result *ConvertResult, fn ParsedFunction)
 	switch fn.Name {
 	case "lr_continue_on_error":
 		if enabled, ok := parseSourceBool(firstSourceControlArg(fn)); ok {
-			result.Script.Config.ErrorHandling.ContinueOnError = enabled
+			result.Script.Config.ErrorHandling.ContinueOnError = dsl.ContinueOnErrorValue(enabled)
 		}
 	case "web_cache_cleanup":
 		setSourceWebRuntimeAttribute(result.Script, "web_cache_cleanup", "true")

@@ -66,7 +66,8 @@ func authoringTemplateCatalog() []AuthoringTemplate {
 						Iterations:       1,
 						AutoTransactions: "per_action",
 					},
-					ErrorHandling: dsl.ErrorHandlingConfig{ContinueOnError: false},
+					// Left unset so the scenario continue-on-error policy decides.
+					ErrorHandling: dsl.ErrorHandlingConfig{},
 				},
 				Actions: []dsl.Action{
 					httpTemplateAction("GET", "Health Check", "/health", func(action *dsl.Action) {
@@ -101,7 +102,8 @@ func authoringTemplateCatalog() []AuthoringTemplate {
 						Iterations:       1,
 						AutoTransactions: "per_action",
 					},
-					ErrorHandling: dsl.ErrorHandlingConfig{ContinueOnError: false},
+					// Left unset so the scenario continue-on-error policy decides.
+					ErrorHandling: dsl.ErrorHandlingConfig{},
 				},
 				Init: []dsl.Action{
 					templateAction("http_oauth2_token", "Get Agent API Token", func(action *dsl.Action) {

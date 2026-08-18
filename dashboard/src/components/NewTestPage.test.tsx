@@ -1514,12 +1514,17 @@ describe('NewTestPage', () => {
     if (!continueSelect || !snapshotSelect) return
 
     // The scenario leaves runtime_settings.error_handling unset, so both selects must offer and
-    // display the inherit option rather than silently reading as an explicit Disabled.
-    for (const select of [continueSelect, snapshotSelect]) {
+    // display the inherit option rather than silently reading as an explicit Disabled. The two
+    // halves name different levels: continue-on-error inherits the scenario policy that enables
+    // it, while snapshot-on-error still falls back to the script's own config.
+    for (const [select, expectedLabel] of [
+      [continueSelect, 'Scenario default (enabled)'],
+      [snapshotSelect, 'Script default'],
+    ] as const) {
       const inheritOption = Array.from(select.options).find(option => option.value === '')
-      expect(inheritOption?.textContent).toBe('Script default')
+      expect(inheritOption?.textContent).toBe(expectedLabel)
       expect(select.value).toBe('')
-      expect(select.options[select.selectedIndex]?.textContent).toBe('Script default')
+      expect(select.options[select.selectedIndex]?.textContent).toBe(expectedLabel)
     }
 
     const saveButton = Array.from(modal.querySelectorAll('button')).find(button => button.textContent === 'Save For This Run') as HTMLButtonElement | undefined
@@ -1804,8 +1809,10 @@ describe('NewTestPage', () => {
     expect(continueSelect.value).toBe('true')
     expect(snapshotSelect.value).toBe('true')
     // Nothing above the group pins a section, so clearing the group's really does hand the run
-    // back to the script's own config.error_handling.
-    expect(Array.from(continueSelect.options).find(option => option.value === '')?.textContent).toBe('Script default')
+    // back to the script's own config.error_handling — except for continue-on-error, which the
+    // scenario policy enables whenever no layer explicitly disables it.
+    expect(Array.from(continueSelect.options).find(option => option.value === '')?.textContent).toBe('Scenario default (enabled)')
+    expect(Array.from(snapshotSelect.options).find(option => option.value === '')?.textContent).toBe('Script default')
 
     await act(async () => {
       setSelectValue(continueSelect, '')
@@ -2244,7 +2251,7 @@ describe('NewTestPage', () => {
     // The group itself pins nothing, so the option is available and names the level that wins.
     const inheritOption = Array.from(continueSelect.options).find(option => option.value === '')
     expect(inheritOption?.disabled).toBe(false)
-    expect(inheritOption?.textContent).toBe('Scenario default')
+    expect(inheritOption?.textContent).toBe('Scenario default (enabled)')
 
     await act(async () => {
       setSelectValue(continueSelect, '')
@@ -2334,7 +2341,7 @@ describe('NewTestPage', () => {
     if (!continueSelect || !snapshotSelect) return
     const inheritOption = Array.from(continueSelect.options).find(option => option.value === '')
     expect(inheritOption?.disabled).toBe(false)
-    expect(inheritOption?.textContent).toBe('Scenario default')
+    expect(inheritOption?.textContent).toBe('Scenario default (enabled)')
 
     await act(async () => {
       setSelectValue(continueSelect, '')

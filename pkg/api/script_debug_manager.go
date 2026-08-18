@@ -2218,7 +2218,7 @@ func replayRuntimeProfileForDebug(script *dsl.Script, req ScriptDebugStartReques
 			profile.Headless = &headless
 		}
 		if profile.FailurePolicy == "" {
-			if script.Config.ErrorHandling.ContinueOnError {
+			if script.Config.ErrorHandling.ContinueOnErrorEnabled() {
 				profile.FailurePolicy = "continue_on_error"
 			} else {
 				profile.FailurePolicy = "stop_on_error"
@@ -2242,7 +2242,7 @@ func replayRuntimeProfileForBrowser(script *dsl.Script, req BrowserReplayStartRe
 			headless := *script.Config.Browser.Headless
 			profile.Headless = &headless
 		}
-		if script.Config.ErrorHandling.ContinueOnError {
+		if script.Config.ErrorHandling.ContinueOnErrorEnabled() {
 			profile.FailurePolicy = "continue_on_error"
 		} else {
 			profile.FailurePolicy = "stop_on_error"

@@ -88,10 +88,13 @@ export function buildRuntimeSettingsDraft(settings?: RuntimeSettingsOverride): S
     browser: cloneValue(settings?.browser),
     log_level: settings?.log_level ?? '',
     auto_transactions: settings?.auto_transactions ?? '',
-    // The section's presence is meaningful: an explicit false overrides a
-    // script-level true, while an absent section inherits the script/default. A null section is
-    // the run-only clear tombstone, which is an absent section by definition.
-    continue_on_error: errorHandling == null ? undefined : (errorHandling.continue_on_error ?? false),
+    // continue_on_error is tri-state at the field level, not the section level:
+    // continue-on-error is enabled for every scenario unless explicitly disabled,
+    // so a present error_handling section that says nothing about it must stay
+    // undefined rather than collapse to false. An explicit false still overrides
+    // a script-level true. A null section is the run-only clear tombstone, which
+    // is an absent section by definition.
+    continue_on_error: errorHandling == null ? undefined : errorHandling.continue_on_error,
     snapshot_on_error: errorHandling == null ? undefined : (errorHandling.snapshot_on_error ?? false),
     max_retries: errorHandling?.max_retries,
     retry_delay_ms: errorHandling?.retry_delay_ms,

@@ -482,7 +482,7 @@ func runtimeSettingsProfilePresets() []RuntimeSettingsProfilePreset {
 				LogLevel:         "extended",
 				AutoTransactions: "per_action",
 				ErrorHandling: &dsl.ErrorHandlingConfig{
-					ContinueOnError: true,
+					ContinueOnError: dsl.ContinueOnErrorValue(true),
 					SnapshotOnError: true,
 				},
 			},
@@ -502,7 +502,7 @@ func runtimeSettingsProfilePresets() []RuntimeSettingsProfilePreset {
 					Headless: &headless,
 				},
 				ErrorHandling: &dsl.ErrorHandlingConfig{
-					ContinueOnError: true,
+					ContinueOnError: dsl.ContinueOnErrorValue(true),
 					SnapshotOnError: true,
 				},
 			},
@@ -551,7 +551,7 @@ func runtimeSettingsProfilePresets() []RuntimeSettingsProfilePreset {
 				LogLevel:         "extended",
 				AutoTransactions: "per_action",
 				ErrorHandling: &dsl.ErrorHandlingConfig{
-					ContinueOnError: true,
+					ContinueOnError: dsl.ContinueOnErrorValue(true),
 					SnapshotOnError: true,
 					MaxRetries:      1,
 					RetryDelayMs:    250,

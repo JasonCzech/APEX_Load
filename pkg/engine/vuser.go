@@ -271,7 +271,7 @@ func (vu *VUser) Run(ctx context.Context) {
 	actionTxMode := autoTx == "per_action"
 	iterationTxMode := autoTx == "per_iteration" || (autoTx == "none" && !scriptHasExplicitTransactions(vu.Script))
 	maxIter := cfg.RunLogic.Iterations
-	continueOnError := cfg.ErrorHandling.ContinueOnError
+	continueOnError := cfg.ErrorHandling.ContinueOnErrorEnabled()
 	preReserveActionTransaction := vu.ExecutionGoals != nil &&
 		vu.ExecutionGoals.hasTransactionLimit() &&
 		!iterationTxMode &&
@@ -1042,7 +1042,7 @@ func (vu *VUser) runLifecycleActions(ctx context.Context, actions []dsl.Action, 
 
 func (vu *VUser) runLifecycleActionsWithContexts(actionCtx, boundaryCtx context.Context, actions []dsl.Action, phase string, ignoreErrors bool, logger *slog.Logger, logCfg dsl.LogConfig, errCfg dsl.ErrorHandlingConfig) bool {
 	if ignoreErrors {
-		errCfg.ContinueOnError = true
+		errCfg.ContinueOnError = dsl.ContinueOnErrorValue(true)
 	}
 	softBoundaryCtx := boundaryCtx
 	entitledBoundaryCtx := actionCtx

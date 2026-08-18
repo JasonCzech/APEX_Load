@@ -189,7 +189,7 @@ func TestParse_FullConfig(t *testing.T) {
 	if script.Config.HTTP.Auth.Token != "my-token" {
 		t.Errorf("auth token = %q, want %q", script.Config.HTTP.Auth.Token, "my-token")
 	}
-	if !script.Config.ErrorHandling.ContinueOnError {
+	if !script.Config.ErrorHandling.ContinueOnErrorEnabled() {
 		t.Error("continue_on_error = false, want true")
 	}
 	if script.Config.ErrorHandling.MaxRetries != 3 {

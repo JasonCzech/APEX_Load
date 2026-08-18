@@ -538,9 +538,11 @@ func baseScriptConfig(opts ConvertOptions) dsl.ScriptConfig {
 			Type:   "fixed",
 			MeanMs: float64(firstPositive(opts.DefaultThinkTimeMs, 1000)),
 		},
-		Pacing:        dsl.PacingConfig{Type: "none"},
-		RunLogic:      dsl.RunLogicConfig{Iterations: 0, AutoTransactions: "none"},
-		ErrorHandling: dsl.ErrorHandlingConfig{ContinueOnError: false},
+		Pacing:   dsl.PacingConfig{Type: "none"},
+		RunLogic: dsl.RunLogicConfig{Iterations: 0, AutoTransactions: "none"},
+		// ErrorHandling is left unset so the scenario continue-on-error policy,
+		// not converter boilerplate, decides the effective behavior.
+		ErrorHandling: dsl.ErrorHandlingConfig{},
 		Log:           dsl.LogConfig{Level: "standard"},
 	}
 }

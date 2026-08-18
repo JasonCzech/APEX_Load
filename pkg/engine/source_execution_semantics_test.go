@@ -152,7 +152,7 @@ func TestSourceTransactionExplicitStatusAndAutoDerivation(t *testing.T) {
 					Protocol: "http",
 					Config: dsl.ScriptConfig{
 						RunLogic:      dsl.RunLogicConfig{Iterations: 1},
-						ErrorHandling: dsl.ErrorHandlingConfig{ContinueOnError: true},
+						ErrorHandling: dsl.ErrorHandlingConfig{ContinueOnError: dsl.ContinueOnErrorValue(true)},
 					},
 					Actions: []dsl.Action{
 						sourceTransactionAction("lr_start_transaction", ""),
@@ -197,7 +197,7 @@ func TestSourceTransactionAutoFailureWithoutImporterMetadata(t *testing.T) {
 			Protocol: "http",
 			Config: dsl.ScriptConfig{
 				RunLogic:      dsl.RunLogicConfig{Iterations: 1},
-				ErrorHandling: dsl.ErrorHandlingConfig{ContinueOnError: true},
+				ErrorHandling: dsl.ErrorHandlingConfig{ContinueOnError: dsl.ContinueOnErrorValue(true)},
 			},
 			Actions: []dsl.Action{
 				sourceTransactionAction("lr_start_transaction", ""),
@@ -258,7 +258,7 @@ func TestSourceTransactionAutoTracksHandledEngineActionFailures(t *testing.T) {
 				Protocol: "http",
 				Config: dsl.ScriptConfig{
 					RunLogic:      dsl.RunLogicConfig{Iterations: 1},
-					ErrorHandling: dsl.ErrorHandlingConfig{ContinueOnError: true},
+					ErrorHandling: dsl.ErrorHandlingConfig{ContinueOnError: dsl.ContinueOnErrorValue(true)},
 				},
 			}
 			scope := []dsl.Action{
@@ -298,7 +298,7 @@ func TestSourceTransactionAutoTracksFailedStreamingChildren(t *testing.T) {
 				Protocol: "source-outcome-streaming",
 				Config: dsl.ScriptConfig{
 					RunLogic:      dsl.RunLogicConfig{Iterations: 1},
-					ErrorHandling: dsl.ErrorHandlingConfig{ContinueOnError: true},
+					ErrorHandling: dsl.ErrorHandlingConfig{ContinueOnError: dsl.ContinueOnErrorValue(true)},
 				},
 			}
 			scope := []dsl.Action{
@@ -1114,7 +1114,7 @@ func TestReplayCanceledThinkTimeStopsBeforeTransactionEndAndNextAction(t *testin
 		Name:     "canceled-source-think-time",
 		Protocol: protocolName,
 		Config: dsl.ScriptConfig{ErrorHandling: dsl.ErrorHandlingConfig{
-			ContinueOnError: true,
+			ContinueOnError: dsl.ContinueOnErrorValue(true),
 		}},
 		Actions: []dsl.Action{
 			sourceTransactionAction("lr_start_transaction", ""),
@@ -1230,7 +1230,7 @@ func TestReplaySourceTransactionAutoTracksMetadataLessAndHandledFailures(t *test
 				Name:     "metadata-less-replay-" + tc.name,
 				Protocol: protocolName,
 				Config: dsl.ScriptConfig{ErrorHandling: dsl.ErrorHandlingConfig{
-					ContinueOnError: true,
+					ContinueOnError: dsl.ContinueOnErrorValue(true),
 				}},
 				Actions: []dsl.Action{
 					sourceTransactionAction("lr_start_transaction", ""),
@@ -1257,7 +1257,7 @@ func TestReplayFailedStreamingChildFailsAggregateAndSourceTransaction(t *testing
 		Name:     "replay-streamed-child-source-outcome",
 		Protocol: protocolName,
 		Config: dsl.ScriptConfig{ErrorHandling: dsl.ErrorHandlingConfig{
-			ContinueOnError: true,
+			ContinueOnError: dsl.ContinueOnErrorValue(true),
 		}},
 		Actions: []dsl.Action{
 			sourceTransactionAction("lr_start_transaction", ""),
@@ -1381,7 +1381,7 @@ func TestReplaySourceTransactionStatusAndMainIterationExit(t *testing.T) {
 					Name:     "replay-source-transaction",
 					Protocol: protocolName,
 					Config: dsl.ScriptConfig{
-						ErrorHandling: dsl.ErrorHandlingConfig{ContinueOnError: true},
+						ErrorHandling: dsl.ErrorHandlingConfig{ContinueOnError: dsl.ContinueOnErrorValue(true)},
 					},
 					Actions: []dsl.Action{
 						sourceTransactionAction("lr_start_transaction", ""),
@@ -1429,7 +1429,7 @@ func TestReplaySourceTransactionStatusAndMainIterationExit(t *testing.T) {
 				Name:     "replay-lr-exit",
 				Protocol: protocolName,
 				Config: dsl.ScriptConfig{
-					ErrorHandling: dsl.ErrorHandlingConfig{ContinueOnError: true},
+					ErrorHandling: dsl.ErrorHandlingConfig{ContinueOnError: dsl.ContinueOnErrorValue(true)},
 				},
 				Actions: []dsl.Action{
 					{Name: "before", Type: "GET", Method: "GET", Target: "https://example.test/before"},

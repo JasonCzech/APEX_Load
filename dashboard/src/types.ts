@@ -25,6 +25,7 @@ import type {
 import type { LoadStageDraft } from './types/loadModels'
 import type {
   AssignmentRecommendation,
+  ContinueOnErrorResolution,
   GeneratorAssignmentSettings,
   GeneratorShardSummary,
   ScenarioFootprint,
@@ -290,6 +291,7 @@ export type {
 export type { LoadStageDraft } from './types/loadModels'
 export type {
   AssignmentRecommendation,
+  ContinueOnErrorResolution,
   GeneratorAssignmentSettings,
   GeneratorShardSummary,
   ScenarioFootprint,
@@ -922,6 +924,22 @@ export interface TestRunManifestScript {
     max_transactions?: number
   }
   initialization?: string
+  continue_on_error?: ContinueOnErrorResolution
+}
+
+export interface TestRunManifestContinueOnErrorConflict {
+  group_name: string
+  script_id?: string
+  script_name?: string
+  effective: boolean
+  source: 'group' | 'script' | string
+  detail: string
+}
+
+export interface TestRunManifestContinueOnError {
+  scenario_value: boolean
+  scenario_explicit: boolean
+  conflicts?: TestRunManifestContinueOnErrorConflict[]
 }
 
 export interface TestRunManifestLoadGenerators {
@@ -985,6 +1003,9 @@ export interface TestRunManifest {
   load_generators: TestRunManifestLoadGenerators
   runtime_changes?: TestRunManifestRuntimeChange[]
   archive?: TestRunManifestArchive
+  // Absent on manifests whose groups were compiled before the scenario
+  // continue-on-error policy existed.
+  continue_on_error?: TestRunManifestContinueOnError
   warnings?: string[]
 }
 

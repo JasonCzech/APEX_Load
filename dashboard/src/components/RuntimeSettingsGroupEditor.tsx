@@ -217,6 +217,16 @@ export default function RuntimeSettingsGroupEditor({
   const inheritedThink: Partial<ThinkTimeSettings> = structuredClone(inheritedOverride?.think_time ?? {})
   const inheritedPacing: Partial<PacingSettings> = structuredClone(inheritedOverride?.pacing ?? {})
   const inheritedError: ErrorHandlingSettings = structuredClone(inheritedOverride?.error_handling ?? {})
+  // Continue-on-error follows the scenario policy rather than the collapsed
+  // inheritance chain: inside a scenario it is enabled unless a layer explicitly
+  // disables it, so the engine's stop-on-error default never applies here. This
+  // mirrors resolveGroupContinueOnError on the controller — only an explicit
+  // scenario or script value displaces the enabled-by-default policy, and the
+  // group's own override (currentError) still sits above this baseline.
+  inheritedError.continue_on_error =
+    scenarioDefault?.error_handling?.continue_on_error
+    ?? focusGroup.scriptConfig?.error_handling?.continue_on_error
+    ?? true
   const inheritedLog: LogSettings = structuredClone(
     inheritedOverride?.log ?? (inheritedOverride?.log_level ? { level: inheritedOverride.log_level } : {}),
   )

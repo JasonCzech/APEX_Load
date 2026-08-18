@@ -873,7 +873,7 @@ func (vu *VUser) executeHTTPSequenceAction(ctx context.Context, action dsl.Actio
 				copySequenceSourceResult(aggregate, result)
 			}
 			aggregate.Duration = sequenceAggregateDuration(measuredDuration, start)
-			if !errCfg.ContinueOnError {
+			if !errCfg.ContinueOnErrorEnabled() {
 				return aggregate, nil
 			}
 			if !vu.applyActionThinkTime(ctx, child) {
@@ -903,7 +903,7 @@ func (vu *VUser) executeHTTPSequenceAction(ctx context.Context, action dsl.Actio
 		if !result.Success {
 			aggregate.Success = false
 			aggregate.ErrorMessage = firstEngineValue(result.ErrorMessage, fmt.Sprintf("http_sequence child %d failed", index+1))
-			if !errCfg.ContinueOnError {
+			if !errCfg.ContinueOnErrorEnabled() {
 				break
 			}
 		}

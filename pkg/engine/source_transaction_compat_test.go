@@ -277,7 +277,7 @@ func TestDuplicateSourceTransactionStartIsRejectedWithoutMutationOrGoal(t *testi
 			Protocol: "http",
 			Config: dsl.ScriptConfig{
 				RunLogic:      runLogic,
-				ErrorHandling: dsl.ErrorHandlingConfig{ContinueOnError: true},
+				ErrorHandling: dsl.ErrorHandlingConfig{ContinueOnError: dsl.ContinueOnErrorValue(true)},
 			},
 			Actions: []dsl.Action{
 				sourceTransactionCall("lr_start_transaction", "Checkout"),
@@ -347,7 +347,7 @@ func TestSourceSubtransactionsRequireOpenParentAndCompleteIndependently(t *testi
 				Protocol: "http",
 				Config: dsl.ScriptConfig{
 					RunLogic:      runLogic,
-					ErrorHandling: dsl.ErrorHandlingConfig{ContinueOnError: true},
+					ErrorHandling: dsl.ErrorHandlingConfig{ContinueOnError: dsl.ContinueOnErrorValue(true)},
 				},
 				Actions: []dsl.Action{
 					sourceTransactionCall("lr_start_sub_transaction", "Child", "Missing"),
@@ -385,7 +385,7 @@ func TestOrphanSourceTransactionEndIsAnActionErrorWithoutTransactionOrGoal(t *te
 				Protocol: "http",
 				Config: dsl.ScriptConfig{
 					RunLogic:      runLogic,
-					ErrorHandling: dsl.ErrorHandlingConfig{ContinueOnError: true},
+					ErrorHandling: dsl.ErrorHandlingConfig{ContinueOnError: dsl.ContinueOnErrorValue(true)},
 				},
 				Actions: []dsl.Action{
 					sourceTransactionCall("lr_end_transaction", "Missing", "LR_PASS"),
@@ -532,7 +532,7 @@ func TestNilProtocolResultBecomesNormalFailureWithoutStrandingGoal(t *testing.T)
 				Protocol: "nil-result",
 				Config: dsl.ScriptConfig{
 					RunLogic:      runLogic,
-					ErrorHandling: dsl.ErrorHandlingConfig{ContinueOnError: true},
+					ErrorHandling: dsl.ErrorHandlingConfig{ContinueOnError: dsl.ContinueOnErrorValue(true)},
 				},
 				Actions: []dsl.Action{
 					{Name: "first", Type: "request", Target: "/first"},

@@ -114,7 +114,7 @@ func TestScriptDebugManagerBreakOnFailurePauses(t *testing.T) {
 		},
 	}
 	// Continue-on-error so the run resumes past the failure once the operator continues.
-	script.Config.ErrorHandling.ContinueOnError = true
+	script.Config.ErrorHandling.ContinueOnError = dsl.ContinueOnErrorValue(true)
 
 	session := manager.Start("", script, ScriptDebugStartRequest{
 		ReplaySessionID: "debug-bof",
@@ -225,7 +225,7 @@ func TestScriptDebugManagerBreakOnFailureAtFailingChild(t *testing.T) {
 		}},
 	}
 	// Continue-on-error so the sequence resumes past the failing child on Resume.
-	script.Config.ErrorHandling.ContinueOnError = true
+	script.Config.ErrorHandling.ContinueOnError = dsl.ContinueOnErrorValue(true)
 
 	manager.Start("", script, ScriptDebugStartRequest{
 		ReplaySessionID: "debug-seq-bof",

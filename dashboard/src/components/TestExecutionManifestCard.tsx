@@ -347,6 +347,42 @@ export default function TestExecutionManifestCard({ manifest, error, loading, on
         </div>
       </div>
 
+      {manifest.continue_on_error && (
+        <div className="manifest-section">
+          <h4>Continue On Error</h4>
+          <p>
+            Scenario policy: <strong>{manifest.continue_on_error.scenario_value ? 'Enabled' : 'Disabled'}</strong>
+            {' '}({manifest.continue_on_error.scenario_explicit ? 'set in the scenario settings' : 'scenario default'})
+          </p>
+          {manifest.continue_on_error.conflicts && manifest.continue_on_error.conflicts.length > 0 ? (
+            <div className="manifest-table-wrap">
+              <table className="manifest-table">
+                <thead>
+                  <tr>
+                    <th>Group</th>
+                    <th>Script</th>
+                    <th>Runs with</th>
+                    <th>Set by</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {manifest.continue_on_error.conflicts.map(conflict => (
+                    <tr key={`${conflict.group_name}-${conflict.script_id || ''}`}>
+                      <td>{conflict.group_name}</td>
+                      <td>{conflict.script_name || conflict.script_id || 'Not set'}</td>
+                      <td>{conflict.effective ? 'Enabled' : 'Disabled'}</td>
+                      <td>{conflict.source === 'script' ? 'Script runtime settings' : 'Group runtime settings'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <p className="empty-hint">Every group matches the scenario policy.</p>
+          )}
+        </div>
+      )}
+
       {manifest.warnings && manifest.warnings.length > 0 && (
         <div className="manifest-section">
           <h4>Data Quality</h4>

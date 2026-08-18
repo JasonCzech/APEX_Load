@@ -267,7 +267,7 @@ func TestApplicationReleaseAndScenarioHandlers(t *testing.T) {
 	if scenario.RuntimeSettings.AutoTransactions != "per_iteration" {
 		t.Fatalf("scenario auto transactions = %q, want per_iteration", scenario.RuntimeSettings.AutoTransactions)
 	}
-	if scenario.RuntimeSettings.ErrorHandling == nil || !scenario.RuntimeSettings.ErrorHandling.ContinueOnError || !scenario.RuntimeSettings.ErrorHandling.SnapshotOnError {
+	if scenario.RuntimeSettings.ErrorHandling == nil || !scenario.RuntimeSettings.ErrorHandling.ContinueOnErrorEnabled() || !scenario.RuntimeSettings.ErrorHandling.SnapshotOnError {
 		t.Fatalf("scenario error handling = %#v, want continue_on_error and snapshot_on_error", scenario.RuntimeSettings.ErrorHandling)
 	}
 }

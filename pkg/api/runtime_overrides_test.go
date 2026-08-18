@@ -20,7 +20,7 @@ func TestApplyRuntimeOverridesAppliesExtendedOverrideFields(t *testing.T) {
 			RunLogic:      dsl.RunLogicConfig{Iterations: 1, AutoTransactions: "none"},
 			Pacing:        dsl.PacingConfig{Type: "none"},
 			ThinkTime:     dsl.ThinkTimeConfig{Type: "fixed", MeanMs: 1000},
-			ErrorHandling: dsl.ErrorHandlingConfig{ContinueOnError: false, SnapshotOnError: false},
+			ErrorHandling: dsl.ErrorHandlingConfig{ContinueOnError: dsl.ContinueOnErrorValue(false), SnapshotOnError: false},
 			Log:           dsl.LogConfig{Level: "standard"},
 		},
 		Actions: []dsl.Action{{
@@ -41,7 +41,7 @@ func TestApplyRuntimeOverridesAppliesExtendedOverrideFields(t *testing.T) {
 		AutoTransactions: "per_iteration",
 		BaseURL:          "https://pr-123.example.com",
 		Env:              map[string]string{"target_namespace": "pr-123"},
-		ErrorHandling:    &dsl.ErrorHandlingConfig{ContinueOnError: true, SnapshotOnError: true},
+		ErrorHandling:    &dsl.ErrorHandlingConfig{ContinueOnError: dsl.ContinueOnErrorValue(true), SnapshotOnError: true},
 	})
 	if err != nil {
 		t.Fatalf("applyRuntimeOverrides returned error: %v", err)
@@ -77,7 +77,7 @@ func TestApplyRuntimeOverridesAppliesExtendedOverrideFields(t *testing.T) {
 	if script.Config.RunLogic.AutoTransactions != "per_iteration" {
 		t.Fatalf("auto transactions = %q, want per_iteration", script.Config.RunLogic.AutoTransactions)
 	}
-	if !script.Config.ErrorHandling.ContinueOnError || !script.Config.ErrorHandling.SnapshotOnError {
+	if !script.Config.ErrorHandling.ContinueOnErrorEnabled() || !script.Config.ErrorHandling.SnapshotOnError {
 		t.Fatalf("error handling = %#v, want continue_on_error and snapshot_on_error", script.Config.ErrorHandling)
 	}
 	if len(script.Actions) != 1 {

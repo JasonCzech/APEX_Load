@@ -47,10 +47,17 @@ func DefaultScriptConfig() ScriptConfig {
 			AutoTransactions: "none",
 		},
 		ErrorHandling: ErrorHandlingConfig{
-			ContinueOnError: false, // stop the iteration on the first error
-			MaxRetries:      0,
-			RetryDelayMs:    1000,
-			RetryBackoff:    "fixed",
+			// ContinueOnError stays unset on purpose. The engine's own default is
+			// stop-on-error, but that is a behavioral default, not a value this
+			// layer may state: callers materialize this config as the base layer of
+			// "apply runtime settings to groups", so an explicit false here would be
+			// copied onto target groups as a real opt-out and would silently defeat
+			// the scenario's enabled-by-default continue-on-error policy. Surfaces
+			// that need a concrete value to display resolve the scenario policy
+			// themselves.
+			MaxRetries:   0,
+			RetryDelayMs: 1000,
+			RetryBackoff: "fixed",
 		},
 		Log: LogConfig{Level: "standard", RedactRunEvidence: defaultBoolPtr(false)},
 	}

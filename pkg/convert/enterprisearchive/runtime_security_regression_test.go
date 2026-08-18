@@ -103,7 +103,7 @@ chain=base64,gzip
 	}
 	if rc.LogLevel != "extended" || !rc.OnErrorOnly ||
 		!containsString(rc.LogExtendedOptions, "parameter_substitution") ||
-		!rc.ContinueOnError || !rc.SnapshotOnError {
+		rc.ContinueOnError == nil || !*rc.ContinueOnError || !rc.SnapshotOnError {
 		t.Fatalf("case-insensitive logging/error projection = %#v", rc)
 	}
 	if rc.DownloadFilterMode != "include" || strings.Join(rc.DownloadFilterHosts, ",") != "example.test" ||
@@ -254,7 +254,7 @@ func TestParseRuntimeCfgMixedCaseKeysMatchCanonical(t *testing.T) {
 			canonical: "[RunLogic]\nIterations=3\nAutoTransactions=per_action\n[Logging]\nLevel=extended\nOnErrorOnly=1\n[Miscellaneous]\nContinueOnError=1\n",
 			variant:   "[rUnLoGiC]\niTeRaTiOnS=3\naUtOtRaNsAcTiOnS=per_action\n[lOgGiNg]\nlEvEl=extended\noNeRrOrOnLy=1\n[mIsCeLlAnEoUs]\ncOnTiNuEoNeRrOr=1\n",
 			project: func(rc *RuntimeConfig) string {
-				return fmt.Sprintf("%d/%s/%s/%t/%t", rc.Iterations, rc.AutoTransactions, rc.LogLevel, rc.OnErrorOnly, rc.ContinueOnError)
+				return fmt.Sprintf("%d/%s/%s/%t/%t", rc.Iterations, rc.AutoTransactions, rc.LogLevel, rc.OnErrorOnly, rc.ContinueOnError != nil && *rc.ContinueOnError)
 			},
 		},
 		{

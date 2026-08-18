@@ -18,6 +18,20 @@ export interface TestGroup {
   runtime_settings?: RuntimeSettingsOverride
   initialization?: 'at_runtime' | 'at_once'
   assignment?: GeneratorAssignmentSettings
+  /** How the scenario's enabled-by-default continue-on-error policy resolved
+   *  for this group, and which layer supplied the winning value. */
+  continue_on_error?: ContinueOnErrorResolution
+}
+
+/** ContinueOnErrorResolution explains how the scenario's enabled-by-default
+ *  continue-on-error policy resolved for one script group. `conflict` marks a
+ *  group whose effective value diverges from the scenario-level value. */
+export interface ContinueOnErrorResolution {
+  effective: boolean
+  source: 'group' | 'scenario' | 'script' | 'scenario_default' | string
+  scenario_value: boolean
+  scenario_explicit: boolean
+  conflict?: boolean
 }
 
 export interface GeneratorAssignmentSettings {

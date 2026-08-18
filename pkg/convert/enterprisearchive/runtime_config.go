@@ -38,40 +38,43 @@ type RuntimeConfig struct {
 	// into config.http.proxy beside proxy_mode=none, so the destination keeps
 	// the operator-owned values without allowing the HTTP transport to use
 	// them. They are cleared after final credential projection.
-	proxyReviewUser                  string
-	proxyReviewPass                  string
-	ProxyNoProxy                     []string
-	UserAgent                        string
-	AcceptLanguage                   string
-	AcceptEncoding                   string
-	UseGzip                          bool
-	EnableHTTP2                      *bool
-	EnableHTTP2Raw                   string
-	SSLVersion                       string
-	AuthUser                         string
-	AuthPass                         string
-	MaxRedirects                     int
-	Iterations                       int
-	AutoTransactions                 string
-	BlockScheduling                  string
-	ActionSequence                   []string
-	PacingType                       string
-	DelayMs                          int
-	MinDelayMs                       int
-	MaxDelayMs                       int
-	IntervalMs                       int
-	MinIntervalMs                    int
-	MaxIntervalMs                    int
-	ThinkTimeIgnore                  bool
-	ThinkTimeType                    string
-	ThinkTimeMultiplier              float64
-	ThinkTimeLimitMs                 float64
-	RuntimeFiles                     []string
-	RuntimeIssues                    []RuntimeMigrationIssue
-	LogLevel                         string
-	OnErrorOnly                      bool
-	LogExtendedOptions               []string
-	ContinueOnError                  bool
+	proxyReviewUser     string
+	proxyReviewPass     string
+	ProxyNoProxy        []string
+	UserAgent           string
+	AcceptLanguage      string
+	AcceptEncoding      string
+	UseGzip             bool
+	EnableHTTP2         *bool
+	EnableHTTP2Raw      string
+	SSLVersion          string
+	AuthUser            string
+	AuthPass            string
+	MaxRedirects        int
+	Iterations          int
+	AutoTransactions    string
+	BlockScheduling     string
+	ActionSequence      []string
+	PacingType          string
+	DelayMs             int
+	MinDelayMs          int
+	MaxDelayMs          int
+	IntervalMs          int
+	MinIntervalMs       int
+	MaxIntervalMs       int
+	ThinkTimeIgnore     bool
+	ThinkTimeType       string
+	ThinkTimeMultiplier float64
+	ThinkTimeLimitMs    float64
+	RuntimeFiles        []string
+	RuntimeIssues       []RuntimeMigrationIssue
+	LogLevel            string
+	OnErrorOnly         bool
+	LogExtendedOptions  []string
+	// ContinueOnError is tri-state: nil means the source runtime settings never
+	// stated a preference, so the scenario's continue-on-error policy decides.
+	// An explicit "0" in the source stays an explicit false.
+	ContinueOnError                  *bool
 	SnapshotOnError                  bool
 	CacheEnabled                     bool
 	CacheContentURLs                 bool
@@ -481,10 +484,12 @@ func ParseRuntimeCfg(content string) *RuntimeConfig {
 
 	miscSection := findMergedSection(sections, "Misc", "Miscellaneous")
 	webSection := findSection(sections, "WEB", "Web")
-	rc.ContinueOnError = parseBool(firstNonBlank(
+	if continueOnError, ok := parseBoolExplicit(firstNonBlank(
 		runtimeSectionFirstNonBlank(miscSection, "ContinueOnError", "ErrorContinue"),
 		runtimeSectionValue(generalSection, "ContinueOnError"),
-	))
+	)); ok {
+		rc.ContinueOnError = dsl.ContinueOnErrorValue(continueOnError)
+	}
 	rc.SnapshotOnError = parseBool(firstNonBlank(
 		runtimeSectionFirstNonBlank(miscSection, "SnapshotOnError", "GenerateSnapshotOnError"),
 		runtimeSectionValue(webSection, "SnapshotOnErrorActive"),
@@ -782,7 +787,7 @@ func (rc *RuntimeConfig) ToScriptConfig() *dsl.ScriptConfig {
 			ExtendedOptions: append([]string(nil), rc.LogExtendedOptions...),
 		}
 	}
-	if rc.ContinueOnError || rc.SnapshotOnError {
+	if rc.ContinueOnError != nil || rc.SnapshotOnError {
 		config.ErrorHandling = dsl.ErrorHandlingConfig{
 			ContinueOnError: rc.ContinueOnError,
 			SnapshotOnError: rc.SnapshotOnError,
@@ -2492,7 +2497,7 @@ func resetRuntimeSupportedConflict(rc *RuntimeConfig, id string, conflict runtim
 			rc.LogExtendedOptions = nil
 		}
 	case "continue_on_error":
-		rc.ContinueOnError = false
+		rc.ContinueOnError = nil
 	case "snapshot_on_error":
 		rc.SnapshotOnError = false
 	case "browser_device_emulation":

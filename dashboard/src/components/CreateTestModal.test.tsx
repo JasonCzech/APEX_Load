@@ -142,7 +142,10 @@ describe('CreateTestModal', () => {
     expect(continueOnErrorCheckbox).toBeDefined()
     expect(snapshotOnErrorCheckbox).toBeDefined()
     if (!continueOnErrorCheckbox || !snapshotOnErrorCheckbox) return
-    expect(continueOnErrorCheckbox.checked).toBe(false)
+    // Continue-on-error is enabled for every scenario unless it is explicitly
+    // disabled, so the box starts checked; clicking it is the explicit opt-out,
+    // which has to reach the payload as a literal false rather than as silence.
+    expect(continueOnErrorCheckbox.checked).toBe(true)
     expect(snapshotOnErrorCheckbox.checked).toBe(false)
     await act(async () => {
       continueOnErrorCheckbox.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -169,7 +172,7 @@ describe('CreateTestModal', () => {
       runtime_settings: expect.objectContaining({
         pacing: { type: 'fixed_delay', delay_ms: 1200 },
         think_time: expect.objectContaining({ type: 'fixed', mean_ms: 900 }),
-        error_handling: expect.objectContaining({ continue_on_error: true, snapshot_on_error: true }),
+        error_handling: expect.objectContaining({ continue_on_error: false, snapshot_on_error: true }),
       }),
     }))
     expect(onCreated).toHaveBeenCalledWith({ id: 'test-1' })

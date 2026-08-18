@@ -36,6 +36,77 @@ The support endpoint publishes six reusable profiles:
 | `debug_trace` | Verbose troubleshooting for protocol onboarding and failed migrations. |
 | `soak_stress` | Longer-running resource trend profile with conservative pacing and standard logging. |
 
+## Continue-On-Error Policy
+
+Continue-on-error is **enabled for every scenario, existing and new**, unless it
+is explicitly disabled. `config.error_handling.continue_on_error` is tri-state:
+an absent value is silence at that layer, and only a present `false` is an
+opt-out. A plain boolean could not express this — `omitempty` erases `false` on
+the wire — which is why the field is a nullable boolean end to end.
+
+The controller resolves one value per script group, most specific layer first:
+
+| Order | Layer | Wins when |
+| --- | --- | --- |
+| 1 | Script group runtime settings | The group sets `continue_on_error` explicitly. |
+| 2 | Scenario runtime settings | The scenario sets it explicitly. |
+| 3 | Script config | The script sets it explicitly — typically an Enterprise Script Archive import that carried `ContinueOnError=0` across from its source runtime settings. |
+| 4 | Scenario default | Nothing above states an intent. The value is **enabled**. |
+
+A group's `error_handling` override replaces the section as a whole, so an
+override that sets only `max_retries` states nothing about continue-on-error and
+still inherits the scenario value. Retries, backoff, and snapshot-on-error keep
+whatever the override set.
+
+### No Layer May State The Engine Default
+
+`dsl.DefaultScriptConfig()` deliberately leaves `continue_on_error` unset. The
+engine's own behavior is stop-on-error, but that is behavioral, not a value the
+engine-defaults layer may publish: "apply runtime settings to groups"
+materializes engine defaults -> script -> scenario -> source group and copies the
+result onto the targets, so an explicit `false` at the bottom of that chain would
+be written onto every target group as a genuine opt-out and would silently defeat
+the policy. Surfaces that need a concrete value to display resolve the scenario
+policy themselves rather than reading it from the engine layer.
+
+For the same reason, a revision that reuses its already-compiled script resolves
+the script layer from the immutable authoring base, not from the compiled copy —
+the compiled copy carries the value a previous compile stamped into it, and
+reading it back would report the script as the decision owner for a group that
+inherited the scenario default.
+
+### Conflicts Are Surfaced, Not Resolved
+
+A more specific layer still wins at execution time — a per-group opt-out has to
+mean something. Whenever the winning layer disagrees with the scenario-level
+value, the divergence is recorded on the compiled group and reported in the test
+run manifest under `continue_on_error`:
+
+```json
+{
+  "continue_on_error": {
+    "scenario_value": true,
+    "scenario_explicit": false,
+    "conflicts": [
+      {
+        "group_name": "search",
+        "script_id": "script-2",
+        "script_name": "Search",
+        "effective": false,
+        "source": "group",
+        "detail": "continue-on-error conflict: group \"search\" runs disabled because the script group's runtime settings sets it, while the scenario has it enabled by default; the group setting wins"
+      }
+    ]
+  }
+}
+```
+
+Each conflict is also appended to the manifest's `warnings` list, and the
+manifest card renders a Continue On Error section naming every diverging group.
+`scenario_explicit: false` means the scenario inherited the enabled default
+rather than choosing it. Manifests whose groups were compiled before this policy
+existed carry no `continue_on_error` block rather than a guessed one.
+
 ## Streaming And Media Decision
 
 Streaming/media playback settings (`mode`, `buffer_size_seconds`, `fixed_bitrate_kbps`, `bandwidth_estimation`) are `executed` for HTTP scripts. APEX Load maps imported playback mode, buffer, bitrate, and bandwidth-estimation settings into media-like response pacing so fixed bitrate playback, startup buffering, and adaptive bandwidth estimates affect action duration and transfer telemetry. The operational keys real VuGen writes in `[Streaming]` (`StreamTimeout`, `StreamRetryTime`, `StreamSeekMethod`) have no execution path and are classified `compatibility_only`; `StreamLog`/`SaveStreamSnapshot` are VuGen diagnostics and classify `non_applicable`.

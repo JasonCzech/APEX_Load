@@ -1142,7 +1142,7 @@ func TestCreateTestPreservesRuntimeSettingsAndGroups(t *testing.T) {
 			Env:              map[string]string{"target_namespace": "pr-123"},
 			RedactionRules:   []engine.RedactionRule{{Name: "customer id", Pattern: `customer-[0-9]+`}},
 			ErrorHandling: &dsl.ErrorHandlingConfig{
-				ContinueOnError: true,
+				ContinueOnError: dsl.ContinueOnErrorValue(true),
 				SnapshotOnError: true,
 			},
 		},
@@ -1175,7 +1175,7 @@ func TestCreateTestPreservesRuntimeSettingsAndGroups(t *testing.T) {
 	if test.RuntimeSettings.Env["target_namespace"] != "pr-123" {
 		t.Fatalf("expected env override target_namespace=pr-123, got %#v", test.RuntimeSettings.Env)
 	}
-	if test.RuntimeSettings.ErrorHandling == nil || !test.RuntimeSettings.ErrorHandling.SnapshotOnError || !test.RuntimeSettings.ErrorHandling.ContinueOnError {
+	if test.RuntimeSettings.ErrorHandling == nil || !test.RuntimeSettings.ErrorHandling.SnapshotOnError || !test.RuntimeSettings.ErrorHandling.ContinueOnErrorEnabled() {
 		t.Fatal("expected continue_on_error and snapshot_on_error overrides to be preserved")
 	}
 	if len(test.RuntimeSettings.RedactionRules) != 1 || test.RuntimeSettings.RedactionRules[0].Pattern != `customer-[0-9]+` {

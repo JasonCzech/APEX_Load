@@ -749,7 +749,7 @@ Action()
 	if result.Stats.Skipped != 0 || len(result.Stats.UnsupportedFuncs) != 0 {
 		t.Fatalf("unsupported funcs = %#v skipped=%d, want none", result.Stats.UnsupportedFuncs, result.Stats.Skipped)
 	}
-	if !result.Script.Config.ErrorHandling.ContinueOnError {
+	if !result.Script.Config.ErrorHandling.ContinueOnErrorEnabled() {
 		t.Fatal("continue_on_error = false, want true")
 	}
 	if result.Script.Config.HTTP.ConnectTimeoutMs != 30000 {
@@ -3089,7 +3089,7 @@ Chain=base64,gzip mode=decode,html_unescape,xml_to_json,url_encode,html_escape
 	if config.Log.Level != "extended" || !config.Log.OnErrorOnly || len(config.Log.ExtendedOptions) != 3 {
 		t.Fatalf("log config = %#v, want extended log settings", config.Log)
 	}
-	if !config.ErrorHandling.ContinueOnError || !config.ErrorHandling.SnapshotOnError {
+	if !config.ErrorHandling.ContinueOnErrorEnabled() || !config.ErrorHandling.SnapshotOnError {
 		t.Fatalf("error handling = %#v, want continue+snapshot", config.ErrorHandling)
 	}
 	if config.Browser.DownloadResources != "all" || config.Browser.CacheEnabled == nil || !*config.Browser.CacheEnabled || config.Browser.NewUserPerIter == nil || !*config.Browser.NewUserPerIter {
@@ -3310,7 +3310,7 @@ FailIfFound=1
 	if result.Script.Config.Log.Level != "extended" || !result.Script.Config.Log.OnErrorOnly {
 		t.Fatalf("log config = %#v, want extended on error only", result.Script.Config.Log)
 	}
-	if !result.Script.Config.ErrorHandling.ContinueOnError {
+	if !result.Script.Config.ErrorHandling.ContinueOnErrorEnabled() {
 		t.Fatalf("error handling = %#v, want continue on error", result.Script.Config.ErrorHandling)
 	}
 	if result.Script.Config.Browser.NewUserPerIter == nil || !*result.Script.Config.Browser.NewUserPerIter {
@@ -3385,7 +3385,7 @@ func TestGoldenWebHTTPHTMLFixtureRuntimeParity(t *testing.T) {
 	if config.Log.Level != "extended" || !config.Log.OnErrorOnly || len(config.Log.ExtendedOptions) != 3 {
 		t.Fatalf("log config = %#v, want extended error-only logging options", config.Log)
 	}
-	if !config.ErrorHandling.ContinueOnError || !config.ErrorHandling.SnapshotOnError {
+	if !config.ErrorHandling.ContinueOnErrorEnabled() || !config.ErrorHandling.SnapshotOnError {
 		t.Fatalf("error handling = %#v, want continue and snapshot on error", config.ErrorHandling)
 	}
 	if config.Browser.DownloadResources != "recorded" || config.Browser.DeviceProfile != "pixel_7" {

@@ -193,10 +193,11 @@ func convertSourceWithContext(name string, sourceFileName string, content string
 			GeneratedFrom: "devweb",
 			CreatedAt:     time.Now(),
 			Config: dsl.ScriptConfig{
-				BaseURL:       opts.BaseURL,
-				Pacing:        dsl.PacingConfig{Type: "none"},
-				RunLogic:      dsl.RunLogicConfig{Iterations: 0, AutoTransactions: "none"},
-				ErrorHandling: dsl.ErrorHandlingConfig{ContinueOnError: false},
+				BaseURL:  opts.BaseURL,
+				Pacing:   dsl.PacingConfig{Type: "none"},
+				RunLogic: dsl.RunLogicConfig{Iterations: 0, AutoTransactions: "none"},
+				// Unset: the scenario continue-on-error policy decides.
+				ErrorHandling: dsl.ErrorHandlingConfig{},
 				Log:           dsl.LogConfig{Level: "standard"},
 			},
 		},

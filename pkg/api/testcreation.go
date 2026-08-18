@@ -2445,6 +2445,18 @@ func (tr *TestRunner) compileManagedTestGroupForModeWithRevisionLocked(index int
 		return TestGroup{}, engine.GroupConfig{}, fmt.Errorf("group[%d]: initialization must be at_runtime or at_once", index)
 	}
 	effectiveRuntimeSettings := mergeRuntimeSettings(runtimeSettings, group.RuntimeSettings)
+	// Resolve continue-on-error from the pristine script, before any runtime
+	// override has overwritten config.error_handling — otherwise a group override
+	// would be indistinguishable from the script's own intent. On a revision that
+	// reuses its already-compiled script, that script carries the value a previous
+	// compile stamped into it, so read the immutable authoring base instead; using
+	// the compiled copy would feed this resolution its own output and report the
+	// script as the decision owner for a group that inherited the scenario default.
+	policyScript := script.Script
+	if runtimeAlreadyApplied && revisionGroup != nil && revisionGroup.baseScript != nil {
+		policyScript = revisionGroup.baseScript
+	}
+	continueOnError := resolveGroupContinueOnError(runtimeSettings, group.RuntimeSettings, policyScript)
 	if group.Iterations != nil {
 		effectiveRuntimeSettings = setRuntimeSettingsIteration(effectiveRuntimeSettings, *group.Iterations)
 	}
@@ -2470,6 +2482,7 @@ func (tr *TestRunner) compileManagedTestGroupForModeWithRevisionLocked(index int
 		Assignment:             cloneGeneratorAssignmentSettings(assignment),
 		RunLogicGoals:          runLogicGoalSnapshot(script.Script),
 		Initialization:         initStrategy,
+		ContinueOnError:        &continueOnError,
 		rampUpDur:              engineRampUp,
 		stageDriven:            stageDriven,
 		initialVUsers:          initialVUsers,
@@ -2546,6 +2559,12 @@ func (tr *TestRunner) compileManagedTestGroupForModeWithRevisionLocked(index int
 			return TestGroup{}, engine.GroupConfig{}, fmt.Errorf("group[%d]: %s", index, strings.Join(issues, "; "))
 		}
 	}
+	// The scenario's continue-on-error policy is applied after the runtime
+	// overrides, and only to that one field. A group's error_handling override
+	// replaces the section wholesale, so writing the resolved value here is what
+	// keeps an unstated continue_on_error from silently reverting to disabled —
+	// while retries and snapshot-on-error keep whatever the override set.
+	applyContinueOnErrorResolution(&scriptCopy, continueOnError)
 	// Resolve object-repository bindings into concrete selectors before the
 	// script is distributed — generators have no store, so an unresolved
 	// object_ref would be unrunnable on the generator.

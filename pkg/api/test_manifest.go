@@ -38,7 +38,34 @@ type TestRunManifest struct {
 	LoadGenerators                 TestRunManifestLoadGenerators          `json:"load_generators"`
 	RuntimeChanges                 []TestRunManifestRuntimeChange         `json:"runtime_changes,omitempty"`
 	Archive                        *TestRunManifestArchive                `json:"archive,omitempty"`
+	ContinueOnError                *TestRunManifestContinueOnError        `json:"continue_on_error,omitempty"`
 	Warnings                       []string                               `json:"warnings,omitempty"`
+}
+
+// TestRunManifestContinueOnError reports the scenario's continue-on-error policy
+// and every group that diverges from it. Continue-on-error is enabled unless the
+// scenario explicitly disables it; a group or script may still opt out, and each
+// opt-out is listed here so the divergence is visible rather than silent.
+type TestRunManifestContinueOnError struct {
+	// ScenarioValue is the scenario-level policy value.
+	ScenarioValue bool `json:"scenario_value"`
+	// ScenarioExplicit is false when ScenarioValue came from the enabled default
+	// rather than from the scenario settings.
+	ScenarioExplicit bool `json:"scenario_explicit"`
+	// Conflicts lists the groups whose effective value differs from
+	// ScenarioValue, in group order.
+	Conflicts []TestRunManifestContinueOnErrorConflict `json:"conflicts,omitempty"`
+}
+
+type TestRunManifestContinueOnErrorConflict struct {
+	GroupName  string `json:"group_name"`
+	ScriptID   string `json:"script_id,omitempty"`
+	ScriptName string `json:"script_name,omitempty"`
+	// Effective is the value this group runs with; it wins over ScenarioValue.
+	Effective bool `json:"effective"`
+	// Source names the layer that supplied Effective ("group" or "script").
+	Source string `json:"source"`
+	Detail string `json:"detail"`
 }
 
 // TestRunManifestConfigurationProvenance tells clients whether the initial
@@ -104,6 +131,7 @@ type TestRunManifestScript struct {
 	Assignment      *GeneratorAssignmentSettings `json:"assignment,omitempty"`
 	RunLogicGoals   *RunLogicGoalSnapshot        `json:"run_logic_goals,omitempty"`
 	Initialization  string                       `json:"initialization,omitempty"`
+	ContinueOnError *ContinueOnErrorResolution   `json:"continue_on_error,omitempty"`
 }
 
 type TestRunManifestLoadGenerators struct {
@@ -274,6 +302,13 @@ func (tr *TestRunner) buildTestManifestForManagedTest(test *ManagedTest, request
 	runtimeChanges, auditWarnings := tr.testManifestRuntimeChanges(test.ID, test.RefKey, requestedID)
 	warnings = append(warnings, auditWarnings...)
 
+	continueOnError := manifestContinueOnErrorFromGroups(current.Groups)
+	if continueOnError != nil {
+		for _, conflict := range continueOnError.Conflicts {
+			warnings = append(warnings, conflict.Detail)
+		}
+	}
+
 	manifest := &TestRunManifest{
 		SchemaVersion:                  testRunManifestSchemaVersion,
 		TestID:                         test.ID,
@@ -290,6 +325,7 @@ func (tr *TestRunner) buildTestManifestForManagedTest(test *ManagedTest, request
 		LoadGenerators:                 manifestLoadGeneratorsFromProvenance(provenance),
 		RuntimeChanges:                 runtimeChanges,
 		Archive:                        manifestArchiveFromRecord(archiveRecord, archiveManifest),
+		ContinueOnError:                continueOnError,
 		Warnings:                       uniqueStrings(warnings),
 	}
 	return manifest, nil
@@ -480,9 +516,53 @@ func manifestScriptsFromGroups(groups []TestGroup) []TestRunManifestScript {
 			Assignment:      cloneGeneratorAssignmentSettings(group.Assignment),
 			RunLogicGoals:   cloneRunLogicGoalSnapshot(group.RunLogicGoals),
 			Initialization:  group.Initialization,
+			ContinueOnError: cloneContinueOnErrorResolution(group.ContinueOnError),
 		})
 	}
 	return scripts
+}
+
+func cloneContinueOnErrorResolution(resolution *ContinueOnErrorResolution) *ContinueOnErrorResolution {
+	if resolution == nil {
+		return nil
+	}
+	clone := *resolution
+	return &clone
+}
+
+// manifestContinueOnErrorFromGroups summarizes the scenario's continue-on-error
+// policy across the compiled groups. Groups compiled before the policy existed
+// carry no resolution; they are skipped rather than guessed at, and a manifest
+// with no resolved group at all reports no policy block.
+func manifestContinueOnErrorFromGroups(groups []TestGroup) *TestRunManifestContinueOnError {
+	summary := &TestRunManifestContinueOnError{}
+	resolved := false
+	for _, group := range groups {
+		resolution := group.ContinueOnError
+		if resolution == nil {
+			continue
+		}
+		if !resolved {
+			summary.ScenarioValue = resolution.ScenarioValue
+			summary.ScenarioExplicit = resolution.ScenarioExplicit
+			resolved = true
+		}
+		if !resolution.Conflict {
+			continue
+		}
+		summary.Conflicts = append(summary.Conflicts, TestRunManifestContinueOnErrorConflict{
+			GroupName:  group.Name,
+			ScriptID:   group.ScriptID,
+			ScriptName: group.ScriptName,
+			Effective:  resolution.Effective,
+			Source:     resolution.Source,
+			Detail:     continueOnErrorConflictDetail(group.Name, *resolution),
+		})
+	}
+	if !resolved {
+		return nil
+	}
+	return summary
 }
 
 func manifestLoadGeneratorsFromProvenance(provenance RunArchiveProvenance) TestRunManifestLoadGenerators {

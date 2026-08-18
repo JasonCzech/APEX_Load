@@ -219,7 +219,7 @@ func loadModelTemplates() []LoadModelTemplate {
 				ScriptShakeout:   true,
 				ResourceBaseline: true,
 				GoalConfig:       &GoalConfig{TargetAverageTPS: &chaosTargetTPS, MinVUsers: &chaosMinVUsers, MaxVUsers: &chaosMaxVUsers, P95LatencyMs: &chaosP95, MaxErrorPct: &chaosMaxErrorPct},
-				RuntimeSettings:  &RuntimeSettingsOverride{ErrorHandling: &dsl.ErrorHandlingConfig{ContinueOnError: true, SnapshotOnError: true}},
+				RuntimeSettings:  &RuntimeSettingsOverride{ErrorHandling: &dsl.ErrorHandlingConfig{ContinueOnError: dsl.ContinueOnErrorValue(true), SnapshotOnError: true}},
 				Groups: []LoadModelTemplateGroup{{
 					Name:     "chaos-steady-state",
 					VUsers:   25,

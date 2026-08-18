@@ -413,7 +413,7 @@ func ReplayScript(ctx context.Context, script *dsl.Script, opts ReplayOptions) (
 		return nil, fmt.Errorf("prepare replay credential redaction: %s", err)
 	}
 
-	continueOnError := script.Config.ErrorHandling.ContinueOnError
+	continueOnError := script.Config.ErrorHandling.ContinueOnErrorEnabled()
 	globalThinkCfg := protocol.ThinkTimeConfig{
 		Type:       script.Config.ThinkTime.Type,
 		MeanMs:     script.Config.ThinkTime.MeanMs,
@@ -1538,7 +1538,7 @@ func buildReplayRuntimeProfile(script *dsl.Script, opts ReplayOptions) ReplayRun
 			profile.Headless = &headless
 		}
 		if strings.TrimSpace(profile.FailurePolicy) == "" {
-			if script.Config.ErrorHandling.ContinueOnError {
+			if script.Config.ErrorHandling.ContinueOnErrorEnabled() {
 				profile.FailurePolicy = "continue_on_error"
 			} else {
 				profile.FailurePolicy = "stop_on_error"

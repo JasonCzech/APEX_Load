@@ -808,9 +808,10 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 					Type:   "fixed",
 					MeanMs: float64(firstPositive(req.Options.DefaultThinkTimeMs, 1000)),
 				},
-				Pacing:        dsl.PacingConfig{Type: "none"},
-				RunLogic:      dsl.RunLogicConfig{Iterations: 0, AutoTransactions: "none"},
-				ErrorHandling: dsl.ErrorHandlingConfig{ContinueOnError: false},
+				Pacing:   dsl.PacingConfig{Type: "none"},
+				RunLogic: dsl.RunLogicConfig{Iterations: 0, AutoTransactions: "none"},
+				// Unset: the scenario continue-on-error policy decides.
+				ErrorHandling: dsl.ErrorHandlingConfig{},
 				Log:           dsl.LogConfig{Level: "standard"},
 				SOAP: dsl.SOAPConfig{
 					Version:       soapVersion,

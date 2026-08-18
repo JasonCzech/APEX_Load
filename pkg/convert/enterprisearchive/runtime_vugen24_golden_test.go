@@ -84,7 +84,7 @@ func TestGoldenVuGen24RealRuntimeSettings(t *testing.T) {
 		t.Fatalf("extended options = %#v", config.Log.ExtendedOptions)
 	}
 
-	if !config.ErrorHandling.ContinueOnError || !config.ErrorHandling.SnapshotOnError {
+	if !config.ErrorHandling.ContinueOnErrorEnabled() || !config.ErrorHandling.SnapshotOnError {
 		t.Fatalf("error handling = %#v, want continue and snapshot on error", config.ErrorHandling)
 	}
 

@@ -574,7 +574,7 @@ func TestReplayScriptStopsAfterFailureWhenContinueOnErrorDisabled(t *testing.T) 
 	report, err := ReplayScript(context.Background(), &dsl.Script{
 		Name:     "Failure Script",
 		Protocol: protocolName,
-		Config:   dsl.ScriptConfig{ErrorHandling: dsl.ErrorHandlingConfig{ContinueOnError: false}},
+		Config:   dsl.ScriptConfig{ErrorHandling: dsl.ErrorHandlingConfig{ContinueOnError: dsl.ContinueOnErrorValue(false)}},
 		Actions: []dsl.Action{
 			{Name: "first", Type: "GET", Target: "/first"},
 			{Name: "second", Type: "GET", Target: "/second"},
@@ -606,7 +606,7 @@ func TestReplayScriptAppliesActionThinkTimeAfterContinuedFailure(t *testing.T) {
 	start := time.Now()
 	report, err := ReplayScript(context.Background(), &dsl.Script{
 		Name: "Continued failure think time", Protocol: protocolName,
-		Config: dsl.ScriptConfig{ErrorHandling: dsl.ErrorHandlingConfig{ContinueOnError: true}},
+		Config: dsl.ScriptConfig{ErrorHandling: dsl.ErrorHandlingConfig{ContinueOnError: dsl.ContinueOnErrorValue(true)}},
 		Actions: []dsl.Action{{
 			Name: "failed", Type: "GET", Target: "/failed", ThinkTimeAfter: true,
 			ThinkTime: dsl.ThinkTimeConfig{Type: "fixed", MeanMs: 30},
@@ -657,7 +657,7 @@ func TestReplayMalformedHTTPSequenceRetainsParentThinkTimeWhenContinuing(t *test
 	start := time.Now()
 	report, err := ReplayScript(context.Background(), &dsl.Script{
 		Name: "Malformed sequence timing parity", Protocol: protocolName,
-		Config: dsl.ScriptConfig{ErrorHandling: dsl.ErrorHandlingConfig{ContinueOnError: true}},
+		Config: dsl.ScriptConfig{ErrorHandling: dsl.ErrorHandlingConfig{ContinueOnError: dsl.ContinueOnErrorValue(true)}},
 		Actions: []dsl.Action{
 			{
 				Name: "malformed", Type: "http_sequence",
@@ -740,7 +740,7 @@ func TestReplayProjectionScrubsShortSecretInputsAndProtocolErrors(t *testing.T) 
 	report, err := ReplayScript(context.Background(), &dsl.Script{
 		Name:     "Secret Replay",
 		Protocol: protocolName,
-		Config:   dsl.ScriptConfig{ErrorHandling: dsl.ErrorHandlingConfig{ContinueOnError: false}},
+		Config:   dsl.ScriptConfig{ErrorHandling: dsl.ErrorHandlingConfig{ContinueOnError: dsl.ContinueOnErrorValue(false)}},
 		Actions: []dsl.Action{{
 			Name: "password", Type: "browser_type", Target: "/login", Value: "{{secret.replay_short}}",
 		}},
@@ -882,7 +882,7 @@ func TestReplayScriptClassifiesFailuresAndReportsArtifacts(t *testing.T) {
 	report, err := ReplayScript(context.Background(), &dsl.Script{
 		Name:     "Auth Failure Script",
 		Protocol: protocolName,
-		Config:   dsl.ScriptConfig{ErrorHandling: dsl.ErrorHandlingConfig{ContinueOnError: false}},
+		Config:   dsl.ScriptConfig{ErrorHandling: dsl.ErrorHandlingConfig{ContinueOnError: dsl.ContinueOnErrorValue(false)}},
 		DataSources: []dsl.DataSource{{
 			Name:       "users",
 			Type:       "csv",
@@ -1375,7 +1375,7 @@ func TestReplayHTTPSequenceStopsAtFailingChildWhenStopOnError(t *testing.T) {
 	)
 	report, err := ReplayScript(context.Background(), &dsl.Script{
 		Name: "Seq", Protocol: protocolName,
-		Config:  dsl.ScriptConfig{ErrorHandling: dsl.ErrorHandlingConfig{ContinueOnError: false}},
+		Config:  dsl.ScriptConfig{ErrorHandling: dsl.ErrorHandlingConfig{ContinueOnError: dsl.ContinueOnErrorValue(false)}},
 		Actions: []dsl.Action{seq},
 	}, ReplayOptions{IgnoreThinkTime: true})
 	if err != nil {
@@ -1406,7 +1406,7 @@ func TestReplayHTTPSequenceContinuesPastFailingChildWhenContinueOnError(t *testi
 	)
 	report, err := ReplayScript(context.Background(), &dsl.Script{
 		Name: "Seq", Protocol: protocolName,
-		Config:  dsl.ScriptConfig{ErrorHandling: dsl.ErrorHandlingConfig{ContinueOnError: true}},
+		Config:  dsl.ScriptConfig{ErrorHandling: dsl.ErrorHandlingConfig{ContinueOnError: dsl.ContinueOnErrorValue(true)}},
 		Actions: []dsl.Action{seq},
 	}, ReplayOptions{IgnoreThinkTime: true})
 	if err != nil {

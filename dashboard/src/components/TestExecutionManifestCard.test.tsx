@@ -112,6 +112,39 @@ describe('TestExecutionManifestCard', () => {
     expect(container.textContent).toContain('Copy unavailable')
   })
 
+  it('highlights groups whose continue-on-error setting diverges from the scenario policy', async () => {
+    await renderCard({
+      ...makeManifest(),
+      continue_on_error: {
+        scenario_value: true,
+        scenario_explicit: false,
+        conflicts: [{
+          group_name: 'search',
+          script_id: 'script-2',
+          script_name: 'Search',
+          effective: false,
+          source: 'group',
+          detail: 'continue-on-error conflict: group "search" runs disabled',
+        }],
+      },
+    })
+
+    expect(container.textContent).toContain('Continue On Error')
+    expect(container.textContent).toContain('scenario default')
+    expect(container.textContent).toContain('search')
+    expect(container.textContent).toContain('Group runtime settings')
+  })
+
+  it('reports agreement when no group diverges from the scenario policy', async () => {
+    await renderCard({
+      ...makeManifest(),
+      continue_on_error: { scenario_value: false, scenario_explicit: true },
+    })
+
+    expect(container.textContent).toContain('set in the scenario settings')
+    expect(container.textContent).toContain('Every group matches the scenario policy.')
+  })
+
   async function renderCard(manifest: TestRunManifest | null, options: { error?: string; loading?: boolean } = {}) {
     await act(async () => {
       root.render(

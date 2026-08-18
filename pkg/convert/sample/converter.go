@@ -208,9 +208,9 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 					Iterations:       0,
 					AutoTransactions: "none",
 				},
+				// continue_on_error is left unset for the scenario policy to decide.
 				ErrorHandling: dsl.ErrorHandlingConfig{
-					ContinueOnError: false,
-					MaxRetries:      0,
+					MaxRetries: 0,
 				},
 				Log: dsl.LogConfig{Level: "standard"},
 			},

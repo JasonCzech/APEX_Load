@@ -111,7 +111,8 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 				Iterations:       1,
 				AutoTransactions: "per_action",
 			},
-			ErrorHandling: dsl.ErrorHandlingConfig{ContinueOnError: false},
+			// Unset: the scenario continue-on-error policy decides.
+			ErrorHandling: dsl.ErrorHandlingConfig{},
 		},
 	}
 

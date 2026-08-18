@@ -677,11 +677,16 @@ type TestGroup struct {
 	Assignment             *GeneratorAssignmentSettings `json:"assignment,omitempty"`
 	RunLogicGoals          *RunLogicGoalSnapshot        `json:"run_logic_goals,omitempty"`
 	Initialization         string                       `json:"initialization,omitempty"`
-	rampUpDur              time.Duration
-	stageDriven            bool
-	initialVUsers          int
-	currentVUsers          int
-	script                 *dsl.Script
+	// ContinueOnError records how the scenario's enabled-by-default
+	// continue-on-error policy resolved for this group, including whether a more
+	// specific layer diverged from it. The test run manifest reads it to surface
+	// conflicts.
+	ContinueOnError *ContinueOnErrorResolution `json:"continue_on_error,omitempty"`
+	rampUpDur       time.Duration
+	stageDriven     bool
+	initialVUsers   int
+	currentVUsers   int
+	script          *dsl.Script
 	// scheduleOverriddenScriptIterations is the script-sourced per-VUser
 	// iteration cap that applyScheduleIterationAuthority removed from the
 	// compiled script because the scenario schedule owns run length (0 = none).

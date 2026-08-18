@@ -1027,6 +1027,20 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
       disabled: false,
     }
   }, [editingGroup, editingGroupKey, groupRunOverrides, runDefaultOverrides, scenario])
+  // continue_on_error has a scenario-level policy the other error-handling
+  // booleans do not: it is enabled unless a layer explicitly disables it. Naming
+  // the inherit option "Script default" there would promise a fallback the run
+  // never takes, so it says what the group would actually run with instead.
+  const continueOnErrorInherit = useMemo(() => {
+    if (groupErrorHandlingInherit.disabled) return groupErrorHandlingInherit
+    if (!scenario) return { label: 'Scenario default (enabled)', disabled: false }
+    const rootRuntime = buildRuntimeSettingsForRun(scenario, runDefaultOverrides) || scenario.runtime_settings
+    const scenarioValue = rootRuntime?.error_handling?.continue_on_error
+    if (scenarioValue !== undefined) {
+      return { label: `Scenario default (${scenarioValue ? 'enabled' : 'disabled'})`, disabled: false }
+    }
+    return { label: 'Scenario default (enabled)', disabled: false }
+  }, [groupErrorHandlingInherit, runDefaultOverrides, scenario])
   const hasGroupEditChanges = useMemo(
     () => Object.values(groupEditChanges).some(Boolean),
     [groupEditChanges],
@@ -1959,7 +1973,7 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
         <label>
           <span>{editingDefaultKey === 'continue_on_error' ? 'Continue on error' : 'Snapshot on error'}</span>
           <select className="settings-input" value={defaultEditDraft.value} onChange={event => setDefaultEditDraft(prev => ({ ...prev, value: event.target.value }))}>
-            <option value="">Script default</option>
+            <option value="">{editingDefaultKey === 'continue_on_error' ? 'Scenario default (enabled)' : 'Script default'}</option>
             <option value="true">Enabled</option>
             <option value="false">Disabled</option>
           </select>
@@ -3655,7 +3669,7 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
                     <label className={changedFieldClass(groupEditChanges.continue_on_error)}>
                       <span>Continue on error <ChangedBadge changed={groupEditChanges.continue_on_error} /></span>
                       <select className="settings-input" value={groupEditDraft.continue_on_error} onChange={event => setGroupEditDraft(prev => ({ ...prev, ...applyGroupErrorHandlingDraftEdit(prev, 'continue_on_error', event.target.value) }))}>
-                        <option value="" disabled={groupErrorHandlingInherit.disabled}>{groupErrorHandlingInherit.label}</option>
+                        <option value="" disabled={continueOnErrorInherit.disabled}>{continueOnErrorInherit.label}</option>
                         <option value="true">Enabled</option>
                         <option value="false">Disabled</option>
                       </select>

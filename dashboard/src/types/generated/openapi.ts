@@ -662,7 +662,7 @@ export interface operations {
                   "rollback_on_teardown"?: boolean;
                 };
                 "error_handling"?: {
-                  "continue_on_error"?: boolean;
+                  "continue_on_error"?: (boolean) | null;
                   "max_retries"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
@@ -1924,7 +1924,7 @@ export interface operations {
             }) | null;
             "env"?: Record<string, string>;
             "error_handling"?: ({
-              "continue_on_error"?: boolean;
+              "continue_on_error"?: (boolean) | null;
               "max_retries"?: number;
               "retry_backoff"?: string;
               "retry_delay_ms"?: number;
@@ -2200,7 +2200,7 @@ export interface operations {
               }) | null;
               "env"?: Record<string, string>;
               "error_handling"?: ({
-                "continue_on_error"?: boolean;
+                "continue_on_error"?: (boolean) | null;
                 "max_retries"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
@@ -2437,7 +2437,7 @@ export interface operations {
                 "rollback_on_teardown"?: boolean;
               };
               "error_handling"?: {
-                "continue_on_error"?: boolean;
+                "continue_on_error"?: (boolean) | null;
                 "max_retries"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
@@ -3135,7 +3135,7 @@ export interface operations {
                 "rollback_on_teardown"?: boolean;
               };
               "error_handling"?: {
-                "continue_on_error"?: boolean;
+                "continue_on_error"?: (boolean) | null;
                 "max_retries"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
@@ -3735,7 +3735,7 @@ export interface operations {
                   "rollback_on_teardown"?: boolean;
                 };
                 "error_handling"?: {
-                  "continue_on_error"?: boolean;
+                  "continue_on_error"?: (boolean) | null;
                   "max_retries"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
@@ -4973,7 +4973,7 @@ export interface operations {
                 "rollback_on_teardown"?: boolean;
               };
               "error_handling"?: {
-                "continue_on_error"?: boolean;
+                "continue_on_error"?: (boolean) | null;
                 "max_retries"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
@@ -5585,7 +5585,7 @@ export interface operations {
                 }) | null;
                 "env"?: Record<string, string>;
                 "error_handling"?: ({
-                  "continue_on_error"?: boolean;
+                  "continue_on_error"?: (boolean) | null;
                   "max_retries"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
@@ -5967,7 +5967,7 @@ export interface operations {
                 "rollback_on_teardown"?: boolean;
               };
               "error_handling"?: {
-                "continue_on_error"?: boolean;
+                "continue_on_error"?: (boolean) | null;
                 "max_retries"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
@@ -7207,7 +7207,7 @@ export interface operations {
                 "rollback_on_teardown"?: boolean;
               };
               "error_handling"?: {
-                "continue_on_error"?: boolean;
+                "continue_on_error"?: (boolean) | null;
                 "max_retries"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
@@ -8643,7 +8643,7 @@ export interface operations {
                 "rollback_on_teardown"?: boolean;
               };
               "error_handling"?: {
-                "continue_on_error"?: boolean;
+                "continue_on_error"?: (boolean) | null;
                 "max_retries"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
@@ -9246,7 +9246,7 @@ export interface operations {
                 "rollback_on_teardown"?: boolean;
               };
               "error_handling"?: {
-                "continue_on_error"?: boolean;
+                "continue_on_error"?: (boolean) | null;
                 "max_retries"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
@@ -10078,7 +10078,7 @@ export interface operations {
                 "rollback_on_teardown"?: boolean;
               };
               "error_handling"?: {
-                "continue_on_error"?: boolean;
+                "continue_on_error"?: (boolean) | null;
                 "max_retries"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
@@ -10770,7 +10770,7 @@ export interface operations {
                   "rollback_on_teardown"?: boolean;
                 };
                 "error_handling"?: {
-                  "continue_on_error"?: boolean;
+                  "continue_on_error"?: (boolean) | null;
                   "max_retries"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
@@ -11359,7 +11359,7 @@ export interface operations {
                   "rollback_on_teardown"?: boolean;
                 };
                 "error_handling"?: {
-                  "continue_on_error"?: boolean;
+                  "continue_on_error"?: (boolean) | null;
                   "max_retries"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
@@ -13926,7 +13926,7 @@ export interface operations {
             }) | null;
             "env"?: Record<string, string>;
             "error_handling"?: ({
-              "continue_on_error"?: boolean;
+              "continue_on_error"?: (boolean) | null;
               "max_retries"?: number;
               "retry_backoff"?: string;
               "retry_delay_ms"?: number;
@@ -14177,7 +14177,7 @@ export interface operations {
               }) | null;
               "env"?: Record<string, string>;
               "error_handling"?: ({
-                "continue_on_error"?: boolean;
+                "continue_on_error"?: (boolean) | null;
                 "max_retries"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
@@ -14563,6 +14563,13 @@ export interface operations {
                   "selected_targets"?: Array<string>;
                   "shard_strategy"?: string;
                   "tolerate_generator_loss"?: boolean;
+                }) | null;
+                "continue_on_error"?: ({
+                  "conflict"?: boolean;
+                  "effective": boolean;
+                  "scenario_explicit": boolean;
+                  "scenario_value": boolean;
+                  "source": string;
                 }) | null;
                 "initialization"?: string;
                 "iteration_override"?: (number) | null;
@@ -15143,7 +15150,7 @@ export interface operations {
                 }) | null;
                 "env"?: Record<string, string>;
                 "error_handling"?: ({
-                  "continue_on_error"?: boolean;
+                  "continue_on_error"?: (boolean) | null;
                   "max_retries"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
@@ -15857,7 +15864,7 @@ export interface operations {
               }) | null;
               "env"?: Record<string, string>;
               "error_handling"?: ({
-                "continue_on_error"?: boolean;
+                "continue_on_error"?: (boolean) | null;
                 "max_retries"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
@@ -16042,7 +16049,7 @@ export interface operations {
             }) | null;
             "env"?: Record<string, string>;
             "error_handling"?: ({
-              "continue_on_error"?: boolean;
+              "continue_on_error"?: (boolean) | null;
               "max_retries"?: number;
               "retry_backoff"?: string;
               "retry_delay_ms"?: number;
@@ -16331,7 +16338,7 @@ export interface operations {
               }) | null;
               "env"?: Record<string, string>;
               "error_handling"?: ({
-                "continue_on_error"?: boolean;
+                "continue_on_error"?: (boolean) | null;
                 "max_retries"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
@@ -16624,7 +16631,7 @@ export interface operations {
                 }) | null;
                 "env"?: Record<string, string>;
                 "error_handling"?: ({
-                  "continue_on_error"?: boolean;
+                  "continue_on_error"?: (boolean) | null;
                   "max_retries"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
@@ -17108,7 +17115,7 @@ export interface operations {
                 "rollback_on_teardown"?: boolean;
               };
               "error_handling"?: {
-                "continue_on_error"?: boolean;
+                "continue_on_error"?: (boolean) | null;
                 "max_retries"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
@@ -17802,7 +17809,7 @@ export interface operations {
                   "rollback_on_teardown"?: boolean;
                 };
                 "error_handling"?: {
-                  "continue_on_error"?: boolean;
+                  "continue_on_error"?: (boolean) | null;
                   "max_retries"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
@@ -18479,7 +18486,7 @@ export interface operations {
               }) | null;
               "env"?: Record<string, string>;
               "error_handling"?: ({
-                "continue_on_error"?: boolean;
+                "continue_on_error"?: (boolean) | null;
                 "max_retries"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
@@ -18670,7 +18677,7 @@ export interface operations {
             }) | null;
             "env"?: Record<string, string>;
             "error_handling"?: ({
-              "continue_on_error"?: boolean;
+              "continue_on_error"?: (boolean) | null;
               "max_retries"?: number;
               "retry_backoff"?: string;
               "retry_delay_ms"?: number;
@@ -19138,6 +19145,13 @@ export interface operations {
                 "shard_strategy"?: string;
                 "tolerate_generator_loss"?: boolean;
               }) | null;
+              "continue_on_error"?: ({
+                "conflict"?: boolean;
+                "effective": boolean;
+                "scenario_explicit": boolean;
+                "scenario_value": boolean;
+                "source": string;
+              }) | null;
               "initialization"?: string;
               "iteration_override"?: (number) | null;
               "iteration_override_known"?: boolean;
@@ -19201,7 +19215,7 @@ export interface operations {
                 }) | null;
                 "env"?: Record<string, string>;
                 "error_handling"?: ({
-                  "continue_on_error"?: boolean;
+                  "continue_on_error"?: (boolean) | null;
                   "max_retries"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
@@ -20286,7 +20300,7 @@ export interface operations {
               }) | null;
               "env"?: Record<string, string>;
               "error_handling"?: ({
-                "continue_on_error"?: boolean;
+                "continue_on_error"?: (boolean) | null;
                 "max_retries"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
@@ -23458,7 +23472,7 @@ export interface operations {
               }) | null;
               "env"?: Record<string, string>;
               "error_handling"?: ({
-                "continue_on_error"?: boolean;
+                "continue_on_error"?: (boolean) | null;
                 "max_retries"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
@@ -23649,7 +23663,7 @@ export interface operations {
             }) | null;
             "env"?: Record<string, string>;
             "error_handling"?: ({
-              "continue_on_error"?: boolean;
+              "continue_on_error"?: (boolean) | null;
               "max_retries"?: number;
               "retry_backoff"?: string;
               "retry_delay_ms"?: number;
@@ -23906,6 +23920,13 @@ export interface operations {
                 "shard_strategy"?: string;
                 "tolerate_generator_loss"?: boolean;
               }) | null;
+              "continue_on_error"?: ({
+                "conflict"?: boolean;
+                "effective": boolean;
+                "scenario_explicit": boolean;
+                "scenario_value": boolean;
+                "source": string;
+              }) | null;
               "initialization"?: string;
               "iteration_override"?: (number) | null;
               "iteration_override_known"?: boolean;
@@ -23969,7 +23990,7 @@ export interface operations {
                 }) | null;
                 "env"?: Record<string, string>;
                 "error_handling"?: ({
-                  "continue_on_error"?: boolean;
+                  "continue_on_error"?: (boolean) | null;
                   "max_retries"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
@@ -24618,7 +24639,7 @@ export interface operations {
                 "rollback_on_teardown"?: boolean;
               };
               "error_handling"?: {
-                "continue_on_error"?: boolean;
+                "continue_on_error"?: (boolean) | null;
                 "max_retries"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
@@ -26204,7 +26225,7 @@ export interface operations {
                   "rollback_on_teardown"?: boolean;
                 };
                 "error_handling"?: {
-                  "continue_on_error"?: boolean;
+                  "continue_on_error"?: (boolean) | null;
                   "max_retries"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
@@ -29572,6 +29593,13 @@ export interface operations {
                   "shard_strategy"?: string;
                   "tolerate_generator_loss"?: boolean;
                 }) | null;
+                "continue_on_error"?: ({
+                  "conflict"?: boolean;
+                  "effective": boolean;
+                  "scenario_explicit": boolean;
+                  "scenario_value": boolean;
+                  "source": string;
+                }) | null;
                 "initialization"?: string;
                 "iteration_override"?: (number) | null;
                 "iteration_override_known"?: boolean;
@@ -30151,7 +30179,7 @@ export interface operations {
                 }) | null;
                 "env"?: Record<string, string>;
                 "error_handling"?: ({
-                  "continue_on_error"?: boolean;
+                  "continue_on_error"?: (boolean) | null;
                   "max_retries"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
@@ -30896,6 +30924,13 @@ export interface operations {
                   "shard_strategy"?: string;
                   "tolerate_generator_loss"?: boolean;
                 }) | null;
+                "continue_on_error"?: ({
+                  "conflict"?: boolean;
+                  "effective": boolean;
+                  "scenario_explicit": boolean;
+                  "scenario_value": boolean;
+                  "source": string;
+                }) | null;
                 "initialization"?: string;
                 "iteration_override"?: (number) | null;
                 "iteration_override_known"?: boolean;
@@ -30987,7 +31022,7 @@ export interface operations {
                 }) | null;
                 "env"?: Record<string, string>;
                 "error_handling"?: ({
-                  "continue_on_error"?: boolean;
+                  "continue_on_error"?: (boolean) | null;
                   "max_retries"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
@@ -31324,6 +31359,13 @@ export interface operations {
                   "shard_strategy"?: string;
                   "tolerate_generator_loss"?: boolean;
                 }) | null;
+                "continue_on_error"?: ({
+                  "conflict"?: boolean;
+                  "effective": boolean;
+                  "scenario_explicit": boolean;
+                  "scenario_value": boolean;
+                  "source": string;
+                }) | null;
                 "initialization"?: string;
                 "iteration_override"?: (number) | null;
                 "iteration_override_known"?: boolean;
@@ -31415,7 +31457,7 @@ export interface operations {
                 }) | null;
                 "env"?: Record<string, string>;
                 "error_handling"?: ({
-                  "continue_on_error"?: boolean;
+                  "continue_on_error"?: (boolean) | null;
                   "max_retries"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
@@ -31975,6 +32017,7 @@ export interface operations {
                 }) | null;
                 "groups"?: Array<{
                   "assignment"?: (Record<string, unknown>) | null;
+                  "continue_on_error"?: (Record<string, unknown>) | null;
                   "initialization"?: string;
                   "iteration_override"?: (number) | null;
                   "iteration_override_known"?: boolean;
@@ -32165,6 +32208,7 @@ export interface operations {
                 }) | null;
                 "groups"?: Array<{
                   "assignment"?: (Record<string, unknown>) | null;
+                  "continue_on_error"?: (Record<string, unknown>) | null;
                   "initialization"?: string;
                   "iteration_override"?: (number) | null;
                   "iteration_override_known"?: boolean;
@@ -33083,7 +33127,7 @@ export interface operations {
               }) | null;
               "env"?: Record<string, string>;
               "error_handling"?: ({
-                "continue_on_error"?: boolean;
+                "continue_on_error"?: (boolean) | null;
                 "max_retries"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
@@ -33376,7 +33420,7 @@ export interface operations {
                 }) | null;
                 "env"?: Record<string, string>;
                 "error_handling"?: ({
-                  "continue_on_error"?: boolean;
+                  "continue_on_error"?: (boolean) | null;
                   "max_retries"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
@@ -33732,7 +33776,7 @@ export interface operations {
                   "rollback_on_teardown"?: boolean;
                 };
                 "error_handling"?: {
-                  "continue_on_error"?: boolean;
+                  "continue_on_error"?: (boolean) | null;
                   "max_retries"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
@@ -35687,6 +35731,13 @@ export interface operations {
                 "shard_strategy"?: string;
                 "tolerate_generator_loss"?: boolean;
               }) | null;
+              "continue_on_error"?: ({
+                "conflict"?: boolean;
+                "effective": boolean;
+                "scenario_explicit": boolean;
+                "scenario_value": boolean;
+                "source": string;
+              }) | null;
               "initialization"?: string;
               "iteration_override"?: (number) | null;
               "iteration_override_known"?: boolean;
@@ -35750,7 +35801,7 @@ export interface operations {
                 }) | null;
                 "env"?: Record<string, string>;
                 "error_handling"?: ({
-                  "continue_on_error"?: boolean;
+                  "continue_on_error"?: (boolean) | null;
                   "max_retries"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
@@ -36835,7 +36886,7 @@ export interface operations {
               }) | null;
               "env"?: Record<string, string>;
               "error_handling"?: ({
-                "continue_on_error"?: boolean;
+                "continue_on_error"?: (boolean) | null;
                 "max_retries"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
@@ -37276,7 +37327,7 @@ export interface operations {
               }) | null;
               "env"?: Record<string, string>;
               "error_handling"?: ({
-                "continue_on_error"?: boolean;
+                "continue_on_error"?: (boolean) | null;
                 "max_retries"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
@@ -37512,7 +37563,7 @@ export interface operations {
               }) | null;
               "env"?: Record<string, string>;
               "error_handling"?: ({
-                "continue_on_error"?: boolean;
+                "continue_on_error"?: (boolean) | null;
                 "max_retries"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
@@ -37735,7 +37786,7 @@ export interface operations {
               }) | null;
               "env"?: Record<string, string>;
               "error_handling"?: ({
-                "continue_on_error"?: boolean;
+                "continue_on_error"?: (boolean) | null;
                 "max_retries"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
@@ -37958,7 +38009,7 @@ export interface operations {
               }) | null;
               "env"?: Record<string, string>;
               "error_handling"?: ({
-                "continue_on_error"?: boolean;
+                "continue_on_error"?: (boolean) | null;
                 "max_retries"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
@@ -38195,6 +38246,18 @@ export interface operations {
               "test_notes_file"?: string;
               "transaction_count"?: number;
             }) | null;
+            "continue_on_error"?: ({
+              "conflicts"?: Array<{
+                "detail": string;
+                "effective": boolean;
+                "group_name": string;
+                "script_id"?: string;
+                "script_name"?: string;
+                "source": string;
+              }>;
+              "scenario_explicit": boolean;
+              "scenario_value": boolean;
+            }) | null;
             "current_configuration": {
               "active_vusers"?: number;
               "assignment"?: ({
@@ -38251,6 +38314,13 @@ export interface operations {
                   "selected_targets"?: Array<string>;
                   "shard_strategy"?: string;
                   "tolerate_generator_loss"?: boolean;
+                }) | null;
+                "continue_on_error"?: ({
+                  "conflict"?: boolean;
+                  "effective": boolean;
+                  "scenario_explicit": boolean;
+                  "scenario_value": boolean;
+                  "source": string;
                 }) | null;
                 "initialization"?: string;
                 "iteration_override"?: (number) | null;
@@ -38340,7 +38410,7 @@ export interface operations {
                 }) | null;
                 "env"?: Record<string, string>;
                 "error_handling"?: ({
-                  "continue_on_error"?: boolean;
+                  "continue_on_error"?: (boolean) | null;
                   "max_retries"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
@@ -38560,6 +38630,13 @@ export interface operations {
                   "shard_strategy"?: string;
                   "tolerate_generator_loss"?: boolean;
                 }) | null;
+                "continue_on_error"?: ({
+                  "conflict"?: boolean;
+                  "effective": boolean;
+                  "scenario_explicit": boolean;
+                  "scenario_value": boolean;
+                  "source": string;
+                }) | null;
                 "initialization"?: string;
                 "iteration_override"?: (number) | null;
                 "iteration_override_known"?: boolean;
@@ -38648,7 +38725,7 @@ export interface operations {
                 }) | null;
                 "env"?: Record<string, string>;
                 "error_handling"?: ({
-                  "continue_on_error"?: boolean;
+                  "continue_on_error"?: (boolean) | null;
                   "max_retries"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
@@ -38944,6 +39021,13 @@ export interface operations {
                 "shard_strategy"?: string;
                 "tolerate_generator_loss"?: boolean;
               }) | null;
+              "continue_on_error"?: ({
+                "conflict"?: boolean;
+                "effective": boolean;
+                "scenario_explicit": boolean;
+                "scenario_value": boolean;
+                "source": string;
+              }) | null;
               "group_name": string;
               "initialization"?: string;
               "iterations"?: (number) | null;
@@ -39004,7 +39088,7 @@ export interface operations {
                 }) | null;
                 "env"?: Record<string, string>;
                 "error_handling"?: ({
-                  "continue_on_error"?: boolean;
+                  "continue_on_error"?: (boolean) | null;
                   "max_retries"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
@@ -47257,6 +47341,13 @@ export interface operations {
                 "shard_strategy"?: string;
                 "tolerate_generator_loss"?: boolean;
               }) | null;
+              "continue_on_error"?: ({
+                "conflict"?: boolean;
+                "effective": boolean;
+                "scenario_explicit": boolean;
+                "scenario_value": boolean;
+                "source": string;
+              }) | null;
               "initialization"?: string;
               "iteration_override"?: (number) | null;
               "iteration_override_known"?: boolean;
@@ -47320,7 +47411,7 @@ export interface operations {
                 }) | null;
                 "env"?: Record<string, string>;
                 "error_handling"?: ({
-                  "continue_on_error"?: boolean;
+                  "continue_on_error"?: (boolean) | null;
                   "max_retries"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
@@ -48405,7 +48496,7 @@ export interface operations {
               }) | null;
               "env"?: Record<string, string>;
               "error_handling"?: ({
-                "continue_on_error"?: boolean;
+                "continue_on_error"?: (boolean) | null;
                 "max_retries"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
@@ -48914,7 +49005,7 @@ export interface operations {
             }) | null;
             "env"?: Record<string, string>;
             "error_handling"?: ({
-              "continue_on_error"?: boolean;
+              "continue_on_error"?: (boolean) | null;
               "max_retries"?: number;
               "retry_backoff"?: string;
               "retry_delay_ms"?: number;
@@ -49347,7 +49438,7 @@ export interface operations {
                   "rollback_on_teardown"?: boolean;
                 };
                 "error_handling"?: {
-                  "continue_on_error"?: boolean;
+                  "continue_on_error"?: (boolean) | null;
                   "max_retries"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
@@ -50079,7 +50170,7 @@ export interface operations {
                 "rollback_on_teardown"?: boolean;
               };
               "error_handling"?: {
-                "continue_on_error"?: boolean;
+                "continue_on_error"?: (boolean) | null;
                 "max_retries"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
@@ -50669,7 +50760,7 @@ export interface operations {
                   "rollback_on_teardown"?: boolean;
                 };
                 "error_handling"?: {
-                  "continue_on_error"?: boolean;
+                  "continue_on_error"?: (boolean) | null;
                   "max_retries"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
@@ -51328,7 +51419,7 @@ export interface operations {
                   "rollback_on_teardown"?: boolean;
                 };
                 "error_handling"?: {
-                  "continue_on_error"?: boolean;
+                  "continue_on_error"?: (boolean) | null;
                   "max_retries"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
@@ -53023,6 +53114,13 @@ export interface operations {
                   "shard_strategy"?: string;
                   "tolerate_generator_loss"?: boolean;
                 }) | null;
+                "continue_on_error"?: ({
+                  "conflict"?: boolean;
+                  "effective": boolean;
+                  "scenario_explicit": boolean;
+                  "scenario_value": boolean;
+                  "source": string;
+                }) | null;
                 "initialization"?: string;
                 "iteration_override"?: (number) | null;
                 "iteration_override_known"?: boolean;
@@ -53602,7 +53700,7 @@ export interface operations {
                 }) | null;
                 "env"?: Record<string, string>;
                 "error_handling"?: ({
-                  "continue_on_error"?: boolean;
+                  "continue_on_error"?: (boolean) | null;
                   "max_retries"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
@@ -54127,6 +54225,13 @@ export interface operations {
                   "shard_strategy"?: string;
                   "tolerate_generator_loss"?: boolean;
                 }) | null;
+                "continue_on_error"?: ({
+                  "conflict"?: boolean;
+                  "effective": boolean;
+                  "scenario_explicit": boolean;
+                  "scenario_value": boolean;
+                  "source": string;
+                }) | null;
                 "initialization"?: string;
                 "iteration_override"?: (number) | null;
                 "iteration_override_known"?: boolean;
@@ -54706,7 +54811,7 @@ export interface operations {
                 }) | null;
                 "env"?: Record<string, string>;
                 "error_handling"?: ({
-                  "continue_on_error"?: boolean;
+                  "continue_on_error"?: (boolean) | null;
                   "max_retries"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
@@ -55231,6 +55336,13 @@ export interface operations {
                   "shard_strategy"?: string;
                   "tolerate_generator_loss"?: boolean;
                 }) | null;
+                "continue_on_error"?: ({
+                  "conflict"?: boolean;
+                  "effective": boolean;
+                  "scenario_explicit": boolean;
+                  "scenario_value": boolean;
+                  "source": string;
+                }) | null;
                 "initialization"?: string;
                 "iteration_override"?: (number) | null;
                 "iteration_override_known"?: boolean;
@@ -55810,7 +55922,7 @@ export interface operations {
                 }) | null;
                 "env"?: Record<string, string>;
                 "error_handling"?: ({
-                  "continue_on_error"?: boolean;
+                  "continue_on_error"?: (boolean) | null;
                   "max_retries"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
@@ -56335,6 +56447,13 @@ export interface operations {
                   "shard_strategy"?: string;
                   "tolerate_generator_loss"?: boolean;
                 }) | null;
+                "continue_on_error"?: ({
+                  "conflict"?: boolean;
+                  "effective": boolean;
+                  "scenario_explicit": boolean;
+                  "scenario_value": boolean;
+                  "source": string;
+                }) | null;
                 "initialization"?: string;
                 "iteration_override"?: (number) | null;
                 "iteration_override_known"?: boolean;
@@ -56914,7 +57033,7 @@ export interface operations {
                 }) | null;
                 "env"?: Record<string, string>;
                 "error_handling"?: ({
-                  "continue_on_error"?: boolean;
+                  "continue_on_error"?: (boolean) | null;
                   "max_retries"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
@@ -57439,6 +57558,13 @@ export interface operations {
                   "shard_strategy"?: string;
                   "tolerate_generator_loss"?: boolean;
                 }) | null;
+                "continue_on_error"?: ({
+                  "conflict"?: boolean;
+                  "effective": boolean;
+                  "scenario_explicit": boolean;
+                  "scenario_value": boolean;
+                  "source": string;
+                }) | null;
                 "initialization"?: string;
                 "iteration_override"?: (number) | null;
                 "iteration_override_known"?: boolean;
@@ -58018,7 +58144,7 @@ export interface operations {
                 }) | null;
                 "env"?: Record<string, string>;
                 "error_handling"?: ({
-                  "continue_on_error"?: boolean;
+                  "continue_on_error"?: (boolean) | null;
                   "max_retries"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
@@ -58476,7 +58602,7 @@ export interface operations {
                 "rollback_on_teardown"?: boolean;
               };
               "error_handling"?: {
-                "continue_on_error"?: boolean;
+                "continue_on_error"?: (boolean) | null;
                 "max_retries"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
@@ -59151,7 +59277,7 @@ export interface operations {
                 "rollback_on_teardown"?: boolean;
               };
               "error_handling"?: {
-                "continue_on_error"?: boolean;
+                "continue_on_error"?: (boolean) | null;
                 "max_retries"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
@@ -61106,7 +61232,7 @@ export interface operations {
                 "rollback_on_teardown"?: boolean;
               };
               "error_handling"?: {
-                "continue_on_error"?: boolean;
+                "continue_on_error"?: (boolean) | null;
                 "max_retries"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
@@ -62105,7 +62231,7 @@ export interface operations {
                 }) | null;
                 "env"?: Record<string, string>;
                 "error_handling"?: ({
-                  "continue_on_error"?: boolean;
+                  "continue_on_error"?: (boolean) | null;
                   "max_retries"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
@@ -62352,7 +62478,7 @@ export interface operations {
                 "rollback_on_teardown"?: boolean;
               };
               "error_handling"?: {
-                "continue_on_error"?: boolean;
+                "continue_on_error"?: (boolean) | null;
                 "max_retries"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
@@ -62897,7 +63023,7 @@ export interface operations {
                 "rollback_on_teardown"?: boolean;
               };
               "error_handling"?: {
-                "continue_on_error"?: boolean;
+                "continue_on_error"?: (boolean) | null;
                 "max_retries"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
@@ -64469,7 +64595,7 @@ export interface operations {
                 }) | null;
                 "env"?: Record<string, string>;
                 "error_handling"?: ({
-                  "continue_on_error"?: boolean;
+                  "continue_on_error"?: (boolean) | null;
                   "max_retries"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
@@ -64939,7 +65065,7 @@ export interface operations {
                 "rollback_on_teardown"?: boolean;
               };
               "error_handling"?: {
-                "continue_on_error"?: boolean;
+                "continue_on_error"?: (boolean) | null;
                 "max_retries"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
@@ -65931,7 +66057,7 @@ export interface operations {
                 "rollback_on_teardown"?: boolean;
               };
               "error_handling"?: {
-                "continue_on_error"?: boolean;
+                "continue_on_error"?: (boolean) | null;
                 "max_retries"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
@@ -66996,7 +67122,7 @@ export interface operations {
                 "rollback_on_teardown"?: boolean;
               };
               "error_handling"?: {
-                "continue_on_error"?: boolean;
+                "continue_on_error"?: (boolean) | null;
                 "max_retries"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
@@ -68056,7 +68182,7 @@ export interface operations {
                 "rollback_on_teardown"?: boolean;
               };
               "error_handling"?: {
-                "continue_on_error"?: boolean;
+                "continue_on_error"?: (boolean) | null;
                 "max_retries"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
@@ -69117,7 +69243,7 @@ export interface operations {
                 "rollback_on_teardown"?: boolean;
               };
               "error_handling"?: {
-                "continue_on_error"?: boolean;
+                "continue_on_error"?: (boolean) | null;
                 "max_retries"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
@@ -70177,7 +70303,7 @@ export interface operations {
                 "rollback_on_teardown"?: boolean;
               };
               "error_handling"?: {
-                "continue_on_error"?: boolean;
+                "continue_on_error"?: (boolean) | null;
                 "max_retries"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
@@ -73748,6 +73874,13 @@ export interface operations {
                 "shard_strategy"?: string;
                 "tolerate_generator_loss"?: boolean;
               }) | null;
+              "continue_on_error"?: ({
+                "conflict"?: boolean;
+                "effective": boolean;
+                "scenario_explicit": boolean;
+                "scenario_value": boolean;
+                "source": string;
+              }) | null;
               "initialization"?: string;
               "iteration_override"?: (number) | null;
               "iteration_override_known"?: boolean;
@@ -73811,7 +73944,7 @@ export interface operations {
                 }) | null;
                 "env"?: Record<string, string>;
                 "error_handling"?: ({
-                  "continue_on_error"?: boolean;
+                  "continue_on_error"?: (boolean) | null;
                   "max_retries"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
@@ -74896,7 +75029,7 @@ export interface operations {
               }) | null;
               "env"?: Record<string, string>;
               "error_handling"?: ({
-                "continue_on_error"?: boolean;
+                "continue_on_error"?: (boolean) | null;
                 "max_retries"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
@@ -75438,7 +75571,7 @@ export interface operations {
                 "rollback_on_teardown"?: boolean;
               };
               "error_handling"?: {
-                "continue_on_error"?: boolean;
+                "continue_on_error"?: (boolean) | null;
                 "max_retries"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
@@ -76026,7 +76159,7 @@ export interface operations {
                   "rollback_on_teardown"?: boolean;
                 };
                 "error_handling"?: {
-                  "continue_on_error"?: boolean;
+                  "continue_on_error"?: (boolean) | null;
                   "max_retries"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
@@ -78671,7 +78804,7 @@ export interface operations {
               }) | null;
               "env"?: Record<string, string>;
               "error_handling"?: ({
-                "continue_on_error"?: boolean;
+                "continue_on_error"?: (boolean) | null;
                 "max_retries"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
@@ -78856,7 +78989,7 @@ export interface operations {
             }) | null;
             "env"?: Record<string, string>;
             "error_handling"?: ({
-              "continue_on_error"?: boolean;
+              "continue_on_error"?: (boolean) | null;
               "max_retries"?: number;
               "retry_backoff"?: string;
               "retry_delay_ms"?: number;
@@ -79145,7 +79278,7 @@ export interface operations {
               }) | null;
               "env"?: Record<string, string>;
               "error_handling"?: ({
-                "continue_on_error"?: boolean;
+                "continue_on_error"?: (boolean) | null;
                 "max_retries"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
@@ -79438,7 +79571,7 @@ export interface operations {
                 }) | null;
                 "env"?: Record<string, string>;
                 "error_handling"?: ({
-                  "continue_on_error"?: boolean;
+                  "continue_on_error"?: (boolean) | null;
                   "max_retries"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
@@ -80022,7 +80155,7 @@ export interface operations {
                 "rollback_on_teardown"?: boolean;
               };
               "error_handling"?: {
-                "continue_on_error"?: boolean;
+                "continue_on_error"?: (boolean) | null;
                 "max_retries"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
@@ -80715,7 +80848,7 @@ export interface operations {
                   "rollback_on_teardown"?: boolean;
                 };
                 "error_handling"?: {
-                  "continue_on_error"?: boolean;
+                  "continue_on_error"?: (boolean) | null;
                   "max_retries"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
@@ -83333,7 +83466,7 @@ export interface operations {
               "platform"?: string;
             }) | null;
             "error_handling"?: ({
-              "continue_on_error"?: boolean;
+              "continue_on_error"?: (boolean) | null;
               "max_retries"?: number;
               "retry_backoff"?: string;
               "retry_delay_ms"?: number;
@@ -83566,7 +83699,7 @@ export interface operations {
               }) | null;
               "env"?: Record<string, string>;
               "error_handling"?: ({
-                "continue_on_error"?: boolean;
+                "continue_on_error"?: (boolean) | null;
                 "max_retries"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
@@ -84241,7 +84374,7 @@ export interface operations {
                 "rollback_on_teardown"?: boolean;
               };
               "error_handling"?: {
-                "continue_on_error"?: boolean;
+                "continue_on_error"?: (boolean) | null;
                 "max_retries"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
@@ -85167,7 +85300,7 @@ export interface operations {
               }) | null;
               "env"?: Record<string, string>;
               "error_handling"?: ({
-                "continue_on_error"?: boolean;
+                "continue_on_error"?: (boolean) | null;
                 "max_retries"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
@@ -85352,7 +85485,7 @@ export interface operations {
             }) | null;
             "env"?: Record<string, string>;
             "error_handling"?: ({
-              "continue_on_error"?: boolean;
+              "continue_on_error"?: (boolean) | null;
               "max_retries"?: number;
               "retry_backoff"?: string;
               "retry_delay_ms"?: number;

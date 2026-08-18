@@ -1904,6 +1904,7 @@ paths:
                             properties:
                               continue_on_error:
                                 type: boolean
+                                nullable: true
                               max_retries:
                                 type: integer
                                 format: int64
@@ -5267,6 +5268,7 @@ paths:
                       properties:
                         continue_on_error:
                           type: boolean
+                          nullable: true
                         max_retries:
                           type: integer
                           format: int64
@@ -6008,6 +6010,7 @@ paths:
                           properties:
                             continue_on_error:
                               type: boolean
+                              nullable: true
                             max_retries:
                               type: integer
                               format: int64
@@ -6623,6 +6626,7 @@ paths:
                           properties:
                             continue_on_error:
                               type: boolean
+                              nullable: true
                             max_retries:
                               type: integer
                               format: int64
@@ -8335,6 +8339,7 @@ paths:
                           properties:
                             continue_on_error:
                               type: boolean
+                              nullable: true
                             max_retries:
                               type: integer
                               format: int64
@@ -9853,6 +9858,7 @@ paths:
                             properties:
                               continue_on_error:
                                 type: boolean
+                                nullable: true
                               max_retries:
                                 type: integer
                                 format: int64
@@ -26897,6 +26903,7 @@ paths:
                         properties:
                           continue_on_error:
                             type: boolean
+                            nullable: true
                           max_retries:
                             type: integer
                             format: int64
@@ -42579,6 +42586,7 @@ paths:
                       properties:
                         continue_on_error:
                           type: boolean
+                          nullable: true
                         max_retries:
                           type: integer
                           format: int64
@@ -43278,6 +43286,7 @@ paths:
                           properties:
                             continue_on_error:
                               type: boolean
+                              nullable: true
                             max_retries:
                               type: integer
                               format: int64
@@ -44413,6 +44422,25 @@ paths:
                                   type: string
                                 tolerate_generator_loss:
                                   type: boolean
+                              nullable: true
+                            continue_on_error:
+                              type: object
+                              properties:
+                                conflict:
+                                  type: boolean
+                                effective:
+                                  type: boolean
+                                scenario_explicit:
+                                  type: boolean
+                                scenario_value:
+                                  type: boolean
+                                source:
+                                  type: string
+                              required:
+                                - effective
+                                - scenario_explicit
+                                - scenario_value
+                                - source
                               nullable: true
                             initialization:
                               type: string
@@ -46252,6 +46280,7 @@ paths:
                             properties:
                               continue_on_error:
                                 type: boolean
+                                nullable: true
                               max_retries:
                                 type: integer
                                 format: int64
@@ -47714,6 +47743,25 @@ paths:
                                 tolerate_generator_loss:
                                   type: boolean
                               nullable: true
+                            continue_on_error:
+                              type: object
+                              properties:
+                                conflict:
+                                  type: boolean
+                                effective:
+                                  type: boolean
+                                scenario_explicit:
+                                  type: boolean
+                                scenario_value:
+                                  type: boolean
+                                source:
+                                  type: string
+                              required:
+                                - effective
+                                - scenario_explicit
+                                - scenario_value
+                                - source
+                              nullable: true
                             initialization:
                               type: string
                             iteration_override:
@@ -49552,6 +49600,7 @@ paths:
                             properties:
                               continue_on_error:
                                 type: boolean
+                                nullable: true
                               max_retries:
                                 type: integer
                                 format: int64
@@ -51011,6 +51060,25 @@ paths:
                                 tolerate_generator_loss:
                                   type: boolean
                               nullable: true
+                            continue_on_error:
+                              type: object
+                              properties:
+                                conflict:
+                                  type: boolean
+                                effective:
+                                  type: boolean
+                                scenario_explicit:
+                                  type: boolean
+                                scenario_value:
+                                  type: boolean
+                                source:
+                                  type: string
+                              required:
+                                - effective
+                                - scenario_explicit
+                                - scenario_value
+                                - source
+                              nullable: true
                             initialization:
                               type: string
                             iteration_override:
@@ -52849,6 +52917,7 @@ paths:
                             properties:
                               continue_on_error:
                                 type: boolean
+                                nullable: true
                               max_retries:
                                 type: integer
                                 format: int64
@@ -54320,6 +54389,25 @@ paths:
                                 tolerate_generator_loss:
                                   type: boolean
                               nullable: true
+                            continue_on_error:
+                              type: object
+                              properties:
+                                conflict:
+                                  type: boolean
+                                effective:
+                                  type: boolean
+                                scenario_explicit:
+                                  type: boolean
+                                scenario_value:
+                                  type: boolean
+                                source:
+                                  type: string
+                              required:
+                                - effective
+                                - scenario_explicit
+                                - scenario_value
+                                - source
+                              nullable: true
                             initialization:
                               type: string
                             iteration_override:
@@ -56158,6 +56246,7 @@ paths:
                             properties:
                               continue_on_error:
                                 type: boolean
+                                nullable: true
                               max_retries:
                                 type: integer
                                 format: int64
@@ -57629,6 +57718,25 @@ paths:
                                 tolerate_generator_loss:
                                   type: boolean
                               nullable: true
+                            continue_on_error:
+                              type: object
+                              properties:
+                                conflict:
+                                  type: boolean
+                                effective:
+                                  type: boolean
+                                scenario_explicit:
+                                  type: boolean
+                                scenario_value:
+                                  type: boolean
+                                source:
+                                  type: string
+                              required:
+                                - effective
+                                - scenario_explicit
+                                - scenario_value
+                                - source
+                              nullable: true
                             initialization:
                               type: string
                             iteration_override:
@@ -59467,6 +59575,7 @@ paths:
                             properties:
                               continue_on_error:
                                 type: boolean
+                                nullable: true
                               max_retries:
                                 type: integer
                                 format: int64
@@ -60938,6 +61047,25 @@ paths:
                                 tolerate_generator_loss:
                                   type: boolean
                               nullable: true
+                            continue_on_error:
+                              type: object
+                              properties:
+                                conflict:
+                                  type: boolean
+                                effective:
+                                  type: boolean
+                                scenario_explicit:
+                                  type: boolean
+                                scenario_value:
+                                  type: boolean
+                                source:
+                                  type: string
+                              required:
+                                - effective
+                                - scenario_explicit
+                                - scenario_value
+                                - source
+                              nullable: true
                             initialization:
                               type: string
                             iteration_override:
@@ -62776,6 +62904,7 @@ paths:
                             properties:
                               continue_on_error:
                                 type: boolean
+                                nullable: true
                               max_retries:
                                 type: integer
                                 format: int64
@@ -64247,6 +64376,25 @@ paths:
                                 tolerate_generator_loss:
                                   type: boolean
                               nullable: true
+                            continue_on_error:
+                              type: object
+                              properties:
+                                conflict:
+                                  type: boolean
+                                effective:
+                                  type: boolean
+                                scenario_explicit:
+                                  type: boolean
+                                scenario_value:
+                                  type: boolean
+                                source:
+                                  type: string
+                              required:
+                                - effective
+                                - scenario_explicit
+                                - scenario_value
+                                - source
+                              nullable: true
                             initialization:
                               type: string
                             iteration_override:
@@ -66085,6 +66233,7 @@ paths:
                             properties:
                               continue_on_error:
                                 type: boolean
+                                nullable: true
                               max_retries:
                                 type: integer
                                 format: int64
@@ -74584,6 +74733,7 @@ paths:
                               properties:
                                 continue_on_error:
                                   type: boolean
+                                  nullable: true
                                 max_retries:
                                   type: integer
                                   format: int64
@@ -75350,6 +75500,7 @@ paths:
                             properties:
                               continue_on_error:
                                 type: boolean
+                                nullable: true
                               max_retries:
                                 type: integer
                                 format: int64
@@ -75827,6 +75978,7 @@ paths:
                       properties:
                         continue_on_error:
                           type: boolean
+                          nullable: true
                         max_retries:
                           type: integer
                           format: int64
@@ -76557,6 +76709,7 @@ paths:
                         properties:
                           continue_on_error:
                             type: boolean
+                            nullable: true
                           max_retries:
                             type: integer
                             format: int64
@@ -77340,6 +77493,7 @@ paths:
                               properties:
                                 continue_on_error:
                                   type: boolean
+                                  nullable: true
                                 max_retries:
                                   type: integer
                                   format: int64
@@ -78111,6 +78265,7 @@ paths:
                         properties:
                           continue_on_error:
                             type: boolean
+                            nullable: true
                           max_retries:
                             type: integer
                             format: int64
@@ -78894,6 +79049,7 @@ paths:
                               properties:
                                 continue_on_error:
                                   type: boolean
+                                  nullable: true
                                 max_retries:
                                   type: integer
                                   format: int64
@@ -79563,6 +79719,7 @@ paths:
                             properties:
                               continue_on_error:
                                 type: boolean
+                                nullable: true
                               max_retries:
                                 type: integer
                                 format: int64
@@ -80040,6 +80197,7 @@ paths:
                       properties:
                         continue_on_error:
                           type: boolean
+                          nullable: true
                         max_retries:
                           type: integer
                           format: int64
@@ -80770,6 +80928,7 @@ paths:
                         properties:
                           continue_on_error:
                             type: boolean
+                            nullable: true
                           max_retries:
                             type: integer
                             format: int64
@@ -81553,6 +81712,7 @@ paths:
                               properties:
                                 continue_on_error:
                                   type: boolean
+                                  nullable: true
                                 max_retries:
                                   type: integer
                                   format: int64
@@ -82526,6 +82686,7 @@ paths:
                             properties:
                               continue_on_error:
                                 type: boolean
+                                nullable: true
                               max_retries:
                                 type: integer
                                 format: int64
@@ -85597,6 +85758,7 @@ paths:
                             properties:
                               continue_on_error:
                                 type: boolean
+                                nullable: true
                               max_retries:
                                 type: integer
                                 format: int64
@@ -86259,6 +86421,7 @@ paths:
                             properties:
                               continue_on_error:
                                 type: boolean
+                                nullable: true
                               max_retries:
                                 type: integer
                                 format: int64
@@ -86736,6 +86899,7 @@ paths:
                       properties:
                         continue_on_error:
                           type: boolean
+                          nullable: true
                         max_retries:
                           type: integer
                           format: int64
@@ -95290,6 +95454,7 @@ paths:
                           properties:
                             continue_on_error:
                               type: boolean
+                              nullable: true
                             max_retries:
                               type: integer
                               format: int64
@@ -96987,6 +97152,7 @@ paths:
                             properties:
                               continue_on_error:
                                 type: boolean
+                                nullable: true
                               max_retries:
                                 type: integer
                                 format: int64
@@ -98686,6 +98852,7 @@ paths:
                             properties:
                               continue_on_error:
                                 type: boolean
+                                nullable: true
                               max_retries:
                                 type: integer
                                 format: int64
@@ -100305,6 +100472,7 @@ paths:
                           properties:
                             continue_on_error:
                               type: boolean
+                              nullable: true
                             max_retries:
                               type: integer
                               format: int64
@@ -102000,6 +102168,7 @@ paths:
                             properties:
                               continue_on_error:
                                 type: boolean
+                                nullable: true
                               max_retries:
                                 type: integer
                                 format: int64
@@ -103696,6 +103865,7 @@ paths:
                           properties:
                             continue_on_error:
                               type: boolean
+                              nullable: true
                             max_retries:
                               type: integer
                               format: int64
@@ -106685,6 +106855,7 @@ paths:
                           properties:
                             continue_on_error:
                               type: boolean
+                              nullable: true
                             max_retries:
                               type: integer
                               format: int64
@@ -110108,6 +110279,7 @@ paths:
                           properties:
                             continue_on_error:
                               type: boolean
+                              nullable: true
                             max_retries:
                               type: integer
                               format: int64
@@ -111804,6 +111976,7 @@ paths:
                           properties:
                             continue_on_error:
                               type: boolean
+                              nullable: true
                             max_retries:
                               type: integer
                               format: int64
@@ -115840,6 +116013,7 @@ paths:
                             properties:
                               continue_on_error:
                                 type: boolean
+                                nullable: true
                               max_retries:
                                 type: integer
                                 format: int64
@@ -117366,6 +117540,7 @@ paths:
                             properties:
                               continue_on_error:
                                 type: boolean
+                                nullable: true
                               max_retries:
                                 type: integer
                                 format: int64
@@ -118983,6 +119158,7 @@ paths:
                             properties:
                               continue_on_error:
                                 type: boolean
+                                nullable: true
                               max_retries:
                                 type: integer
                                 format: int64
@@ -120521,6 +120697,7 @@ paths:
                           properties:
                             continue_on_error:
                               type: boolean
+                              nullable: true
                             max_retries:
                               type: integer
                               format: int64
@@ -121998,6 +122175,7 @@ paths:
                             properties:
                               continue_on_error:
                                 type: boolean
+                                nullable: true
                               max_retries:
                                 type: integer
                                 format: int64
@@ -125045,6 +125223,7 @@ paths:
                             properties:
                               continue_on_error:
                                 type: boolean
+                                nullable: true
                               max_retries:
                                 type: integer
                                 format: int64
@@ -126878,6 +127057,7 @@ paths:
                           properties:
                             continue_on_error:
                               type: boolean
+                              nullable: true
                             max_retries:
                               type: integer
                               format: int64
@@ -129343,6 +129523,7 @@ paths:
                           properties:
                             continue_on_error:
                               type: boolean
+                              nullable: true
                             max_retries:
                               type: integer
                               format: int64
@@ -130832,6 +131013,7 @@ paths:
                             properties:
                               continue_on_error:
                                 type: boolean
+                                nullable: true
                               max_retries:
                                 type: integer
                                 format: int64
@@ -132556,6 +132738,7 @@ paths:
                             properties:
                               continue_on_error:
                                 type: boolean
+                                nullable: true
                               max_retries:
                                 type: integer
                                 format: int64
@@ -134285,6 +134468,7 @@ paths:
                           properties:
                             continue_on_error:
                               type: boolean
+                              nullable: true
                             max_retries:
                               type: integer
                               format: int64
@@ -136843,6 +137027,7 @@ paths:
                           properties:
                             continue_on_error:
                               type: boolean
+                              nullable: true
                             max_retries:
                               type: integer
                               format: int64
@@ -139219,6 +139404,7 @@ paths:
                             properties:
                               continue_on_error:
                                 type: boolean
+                                nullable: true
                               max_retries:
                                 type: integer
                                 format: int64
@@ -140693,6 +140879,7 @@ paths:
                             properties:
                               continue_on_error:
                                 type: boolean
+                                nullable: true
                               max_retries:
                                 type: integer
                                 format: int64
@@ -142380,6 +142567,7 @@ paths:
                             properties:
                               continue_on_error:
                                 type: boolean
+                                nullable: true
                               max_retries:
                                 type: integer
                                 format: int64
@@ -143854,6 +144042,7 @@ paths:
                             properties:
                               continue_on_error:
                                 type: boolean
+                                nullable: true
                               max_retries:
                                 type: integer
                                 format: int64
@@ -145659,6 +145848,7 @@ paths:
                             properties:
                               continue_on_error:
                                 type: boolean
+                                nullable: true
                               max_retries:
                                 type: integer
                                 format: int64
@@ -148161,6 +148351,7 @@ paths:
                           properties:
                             continue_on_error:
                               type: boolean
+                              nullable: true
                             max_retries:
                               type: integer
                               format: int64
@@ -150153,6 +150344,7 @@ paths:
                           properties:
                             continue_on_error:
                               type: boolean
+                              nullable: true
                             max_retries:
                               type: integer
                               format: int64
@@ -153233,6 +153425,7 @@ paths:
                           properties:
                             continue_on_error:
                               type: boolean
+                              nullable: true
                             max_retries:
                               type: integer
                               format: int64
@@ -154917,6 +155110,7 @@ paths:
                           properties:
                             continue_on_error:
                               type: boolean
+                              nullable: true
                             max_retries:
                               type: integer
                               format: int64
@@ -157479,6 +157673,7 @@ paths:
                           properties:
                             continue_on_error:
                               type: boolean
+                              nullable: true
                             max_retries:
                               type: integer
                               format: int64
@@ -159077,6 +159272,7 @@ paths:
                           properties:
                             continue_on_error:
                               type: boolean
+                              nullable: true
                             max_retries:
                               type: integer
                               format: int64
@@ -168690,6 +168886,7 @@ paths:
                             properties:
                               continue_on_error:
                                 type: boolean
+                                nullable: true
                               max_retries:
                                 type: integer
                                 format: int64
@@ -169179,6 +169376,7 @@ paths:
                       properties:
                         continue_on_error:
                           type: boolean
+                          nullable: true
                         max_retries:
                           type: integer
                           format: int64
@@ -170526,6 +170724,25 @@ paths:
                             tolerate_generator_loss:
                               type: boolean
                           nullable: true
+                        continue_on_error:
+                          type: object
+                          properties:
+                            conflict:
+                              type: boolean
+                            effective:
+                              type: boolean
+                            scenario_explicit:
+                              type: boolean
+                            scenario_value:
+                              type: boolean
+                            source:
+                              type: string
+                          required:
+                            - effective
+                            - scenario_explicit
+                            - scenario_value
+                            - source
+                          nullable: true
                         initialization:
                           type: string
                         iteration_override:
@@ -170693,6 +170910,7 @@ paths:
                               properties:
                                 continue_on_error:
                                   type: boolean
+                                  nullable: true
                                 max_retries:
                                   type: integer
                                   format: int64
@@ -174027,6 +174245,7 @@ paths:
                         properties:
                           continue_on_error:
                             type: boolean
+                            nullable: true
                           max_retries:
                             type: integer
                             format: int64
@@ -175744,6 +175963,25 @@ paths:
                             tolerate_generator_loss:
                               type: boolean
                           nullable: true
+                        continue_on_error:
+                          type: object
+                          properties:
+                            conflict:
+                              type: boolean
+                            effective:
+                              type: boolean
+                            scenario_explicit:
+                              type: boolean
+                            scenario_value:
+                              type: boolean
+                            source:
+                              type: string
+                          required:
+                            - effective
+                            - scenario_explicit
+                            - scenario_value
+                            - source
+                          nullable: true
                         initialization:
                           type: string
                         iteration_override:
@@ -175911,6 +176149,7 @@ paths:
                               properties:
                                 continue_on_error:
                                   type: boolean
+                                  nullable: true
                                 max_retries:
                                   type: integer
                                   format: int64
@@ -179245,6 +179484,7 @@ paths:
                         properties:
                           continue_on_error:
                             type: boolean
+                            nullable: true
                           max_retries:
                             type: integer
                             format: int64
@@ -181360,6 +181600,25 @@ paths:
                                 tolerate_generator_loss:
                                   type: boolean
                               nullable: true
+                            continue_on_error:
+                              type: object
+                              properties:
+                                conflict:
+                                  type: boolean
+                                effective:
+                                  type: boolean
+                                scenario_explicit:
+                                  type: boolean
+                                scenario_value:
+                                  type: boolean
+                                source:
+                                  type: string
+                              required:
+                                - effective
+                                - scenario_explicit
+                                - scenario_value
+                                - source
+                              nullable: true
                             initialization:
                               type: string
                             iteration_override:
@@ -181617,6 +181876,7 @@ paths:
                             properties:
                               continue_on_error:
                                 type: boolean
+                                nullable: true
                               max_retries:
                                 type: integer
                                 format: int64
@@ -182623,6 +182883,25 @@ paths:
                                 tolerate_generator_loss:
                                   type: boolean
                               nullable: true
+                            continue_on_error:
+                              type: object
+                              properties:
+                                conflict:
+                                  type: boolean
+                                effective:
+                                  type: boolean
+                                scenario_explicit:
+                                  type: boolean
+                                scenario_value:
+                                  type: boolean
+                                source:
+                                  type: string
+                              required:
+                                - effective
+                                - scenario_explicit
+                                - scenario_value
+                                - source
+                              nullable: true
                             initialization:
                               type: string
                             iteration_override:
@@ -182880,6 +183159,7 @@ paths:
                             properties:
                               continue_on_error:
                                 type: boolean
+                                nullable: true
                               max_retries:
                                 type: integer
                                 format: int64
@@ -184494,6 +184774,11 @@ paths:
                                   description: 'Go type: GeneratorAssignmentSettings'
                                   additionalProperties: true
                                   nullable: true
+                                continue_on_error:
+                                  type: object
+                                  description: 'Go type: ContinueOnErrorResolution'
+                                  additionalProperties: true
+                                  nullable: true
                                 initialization:
                                   type: string
                                 iteration_override:
@@ -185100,6 +185385,11 @@ paths:
                                 assignment:
                                   type: object
                                   description: 'Go type: GeneratorAssignmentSettings'
+                                  additionalProperties: true
+                                  nullable: true
+                                continue_on_error:
+                                  type: object
+                                  description: 'Go type: ContinueOnErrorResolution'
                                   additionalProperties: true
                                   nullable: true
                                 initialization:
@@ -187900,6 +188190,25 @@ paths:
                             tolerate_generator_loss:
                               type: boolean
                           nullable: true
+                        continue_on_error:
+                          type: object
+                          properties:
+                            conflict:
+                              type: boolean
+                            effective:
+                              type: boolean
+                            scenario_explicit:
+                              type: boolean
+                            scenario_value:
+                              type: boolean
+                            source:
+                              type: string
+                          required:
+                            - effective
+                            - scenario_explicit
+                            - scenario_value
+                            - source
+                          nullable: true
                         initialization:
                           type: string
                         iteration_override:
@@ -188067,6 +188376,7 @@ paths:
                               properties:
                                 continue_on_error:
                                   type: boolean
+                                  nullable: true
                                 max_retries:
                                   type: integer
                                   format: int64
@@ -191401,6 +191711,7 @@ paths:
                         properties:
                           continue_on_error:
                             type: boolean
+                            nullable: true
                           max_retries:
                             type: integer
                             format: int64
@@ -193062,6 +193373,25 @@ paths:
                             tolerate_generator_loss:
                               type: boolean
                           nullable: true
+                        continue_on_error:
+                          type: object
+                          properties:
+                            conflict:
+                              type: boolean
+                            effective:
+                              type: boolean
+                            scenario_explicit:
+                              type: boolean
+                            scenario_value:
+                              type: boolean
+                            source:
+                              type: string
+                          required:
+                            - effective
+                            - scenario_explicit
+                            - scenario_value
+                            - source
+                          nullable: true
                         initialization:
                           type: string
                         iteration_override:
@@ -193229,6 +193559,7 @@ paths:
                               properties:
                                 continue_on_error:
                                   type: boolean
+                                  nullable: true
                                 max_retries:
                                   type: integer
                                   format: int64
@@ -196563,6 +196894,7 @@ paths:
                         properties:
                           continue_on_error:
                             type: boolean
+                            nullable: true
                           max_retries:
                             type: integer
                             format: int64
@@ -198179,6 +198511,7 @@ paths:
                         properties:
                           continue_on_error:
                             type: boolean
+                            nullable: true
                           max_retries:
                             type: integer
                             format: int64
@@ -198767,6 +199100,7 @@ paths:
                         properties:
                           continue_on_error:
                             type: boolean
+                            nullable: true
                           max_retries:
                             type: integer
                             format: int64
@@ -199315,6 +199649,7 @@ paths:
                         properties:
                           continue_on_error:
                             type: boolean
+                            nullable: true
                           max_retries:
                             type: integer
                             format: int64
@@ -199863,6 +200198,7 @@ paths:
                         properties:
                           continue_on_error:
                             type: boolean
+                            nullable: true
                           max_retries:
                             type: integer
                             format: int64
@@ -200470,6 +200806,7 @@ paths:
                       properties:
                         continue_on_error:
                           type: boolean
+                          nullable: true
                         max_retries:
                           type: integer
                           format: int64
@@ -201025,6 +201362,7 @@ paths:
                         properties:
                           continue_on_error:
                             type: boolean
+                            nullable: true
                           max_retries:
                             type: integer
                             format: int64
@@ -201504,6 +201842,39 @@ paths:
                         type: integer
                         format: int64
                     nullable: true
+                  continue_on_error:
+                    type: object
+                    properties:
+                      conflicts:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            detail:
+                              type: string
+                            effective:
+                              type: boolean
+                            group_name:
+                              type: string
+                            script_id:
+                              type: string
+                            script_name:
+                              type: string
+                            source:
+                              type: string
+                          required:
+                            - detail
+                            - effective
+                            - group_name
+                            - source
+                      scenario_explicit:
+                        type: boolean
+                      scenario_value:
+                        type: boolean
+                    required:
+                      - scenario_explicit
+                      - scenario_value
+                    nullable: true
                   current_configuration:
                     type: object
                     properties:
@@ -201687,6 +202058,25 @@ paths:
                                   type: string
                                 tolerate_generator_loss:
                                   type: boolean
+                              nullable: true
+                            continue_on_error:
+                              type: object
+                              properties:
+                                conflict:
+                                  type: boolean
+                                effective:
+                                  type: boolean
+                                scenario_explicit:
+                                  type: boolean
+                                scenario_value:
+                                  type: boolean
+                                source:
+                                  type: string
+                              required:
+                                - effective
+                                - scenario_explicit
+                                - scenario_value
+                                - source
                               nullable: true
                             initialization:
                               type: string
@@ -201938,6 +202328,7 @@ paths:
                             properties:
                               continue_on_error:
                                 type: boolean
+                                nullable: true
                               max_retries:
                                 type: integer
                                 format: int64
@@ -202570,6 +202961,25 @@ paths:
                                 tolerate_generator_loss:
                                   type: boolean
                               nullable: true
+                            continue_on_error:
+                              type: object
+                              properties:
+                                conflict:
+                                  type: boolean
+                                effective:
+                                  type: boolean
+                                scenario_explicit:
+                                  type: boolean
+                                scenario_value:
+                                  type: boolean
+                                source:
+                                  type: string
+                              required:
+                                - effective
+                                - scenario_explicit
+                                - scenario_value
+                                - source
+                              nullable: true
                             initialization:
                               type: string
                             iteration_override:
@@ -202820,6 +203230,7 @@ paths:
                             properties:
                               continue_on_error:
                                 type: boolean
+                                nullable: true
                               max_retries:
                                 type: integer
                                 format: int64
@@ -203703,6 +204114,25 @@ paths:
                             tolerate_generator_loss:
                               type: boolean
                           nullable: true
+                        continue_on_error:
+                          type: object
+                          properties:
+                            conflict:
+                              type: boolean
+                            effective:
+                              type: boolean
+                            scenario_explicit:
+                              type: boolean
+                            scenario_value:
+                              type: boolean
+                            source:
+                              type: string
+                          required:
+                            - effective
+                            - scenario_explicit
+                            - scenario_value
+                            - source
+                          nullable: true
                         group_name:
                           type: string
                         initialization:
@@ -203862,6 +204292,7 @@ paths:
                               properties:
                                 continue_on_error:
                                   type: boolean
+                                  nullable: true
                                 max_retries:
                                   type: integer
                                   format: int64
@@ -205944,6 +206375,7 @@ paths:
                             properties:
                               continue_on_error:
                                 type: boolean
+                                nullable: true
                               max_retries:
                                 type: integer
                                 format: int64
@@ -206433,6 +206865,7 @@ paths:
                       properties:
                         continue_on_error:
                           type: boolean
+                          nullable: true
                         max_retries:
                           type: integer
                           format: int64
@@ -207127,6 +207560,25 @@ paths:
                             tolerate_generator_loss:
                               type: boolean
                           nullable: true
+                        continue_on_error:
+                          type: object
+                          properties:
+                            conflict:
+                              type: boolean
+                            effective:
+                              type: boolean
+                            scenario_explicit:
+                              type: boolean
+                            scenario_value:
+                              type: boolean
+                            source:
+                              type: string
+                          required:
+                            - effective
+                            - scenario_explicit
+                            - scenario_value
+                            - source
+                          nullable: true
                         initialization:
                           type: string
                         iteration_override:
@@ -207294,6 +207746,7 @@ paths:
                               properties:
                                 continue_on_error:
                                   type: boolean
+                                  nullable: true
                                 max_retries:
                                   type: integer
                                   format: int64
@@ -208157,6 +208610,7 @@ paths:
                       properties:
                         continue_on_error:
                           type: boolean
+                          nullable: true
                         max_retries:
                           type: integer
                           format: int64

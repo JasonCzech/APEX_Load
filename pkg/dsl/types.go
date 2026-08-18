@@ -736,12 +736,34 @@ type AuthConfig struct {
 
 // ErrorHandlingConfig controls how execution errors are handled.
 type ErrorHandlingConfig struct {
-	ContinueOnError bool   `json:"continue_on_error,omitempty"`
+	// ContinueOnError is tri-state: nil means "not set at this layer" and lets a
+	// higher layer (the scenario's continue-on-error policy) supply the value,
+	// while a non-nil false is an explicit opt-out that the scenario default must
+	// not silently overturn. Pointer + omitempty keeps an explicit false on the
+	// wire, which a plain bool could never round-trip.
+	ContinueOnError *bool  `json:"continue_on_error,omitempty"`
 	MaxRetries      int    `json:"max_retries,omitempty" jsonschema:"minimum=0,maximum=10"`         // default: 0
 	RetryDelayMs    int    `json:"retry_delay_ms,omitempty" jsonschema:"minimum=0,maximum=3600000"` // default: 1000
 	RetryBackoff    string `json:"retry_backoff,omitempty"`                                         // "fixed", "exponential"
 	SnapshotOnError bool   `json:"snapshot_on_error,omitempty"`                                     // capture req/resp on failure
 }
+
+// ContinueOnErrorEnabled reports the effective continue-on-error behavior for a
+// script that is executed as-is. An unset value falls back to the engine's
+// built-in default (stop the iteration on the first error); the scenario layer
+// resolves its own, more permissive default before execution.
+func (c ErrorHandlingConfig) ContinueOnErrorEnabled() bool {
+	return c.ContinueOnError != nil && *c.ContinueOnError
+}
+
+// ContinueOnErrorSet reports whether this layer states a continue-on-error
+// intent at all, which is what separates an explicit opt-out from silence.
+func (c ErrorHandlingConfig) ContinueOnErrorSet() bool {
+	return c.ContinueOnError != nil
+}
+
+// ContinueOnErrorValue returns a settable pointer for the given value.
+func ContinueOnErrorValue(enabled bool) *bool { return &enabled }
 
 type ThinkTimeConfig struct {
 	Type       string  `json:"type"`

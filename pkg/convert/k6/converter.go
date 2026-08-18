@@ -121,10 +121,11 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 			GeneratedFrom: "k6",
 			CreatedAt:     time.Now(),
 			Config: dsl.ScriptConfig{
-				BaseURL:       convertutil.FirstNonEmpty(strings.TrimSpace(req.Options.BaseURL), detectBaseURL(content)),
-				Pacing:        dsl.PacingConfig{Type: "none"},
-				RunLogic:      dsl.RunLogicConfig{Iterations: 0, AutoTransactions: "per_action"},
-				ErrorHandling: dsl.ErrorHandlingConfig{ContinueOnError: false, SnapshotOnError: true},
+				BaseURL:  convertutil.FirstNonEmpty(strings.TrimSpace(req.Options.BaseURL), detectBaseURL(content)),
+				Pacing:   dsl.PacingConfig{Type: "none"},
+				RunLogic: dsl.RunLogicConfig{Iterations: 0, AutoTransactions: "per_action"},
+				// continue_on_error is left unset for the scenario policy to decide.
+				ErrorHandling: dsl.ErrorHandlingConfig{SnapshotOnError: true},
 				Log:           dsl.LogConfig{Level: "standard"},
 			},
 			Metadata: &dsl.ScriptMetadata{Import: &dsl.ImportMetadata{

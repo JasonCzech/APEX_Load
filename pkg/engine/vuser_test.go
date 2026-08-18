@@ -1060,7 +1060,7 @@ func TestVUserContinuedHardErrorRetainsActionThinkTime(t *testing.T) {
 				Protocol: "http",
 				Config: dsl.ScriptConfig{
 					RunLogic:      dsl.RunLogicConfig{Iterations: 1},
-					ErrorHandling: dsl.ErrorHandlingConfig{ContinueOnError: true},
+					ErrorHandling: dsl.ErrorHandlingConfig{ContinueOnError: dsl.ContinueOnErrorValue(true)},
 				},
 				Actions: []dsl.Action{waitAction, nextAction},
 			},
@@ -1092,7 +1092,7 @@ func TestVUserMalformedHTTPSequenceRetainsParentThinkTimeWhenContinuing(t *testi
 			Protocol: "http",
 			Config: dsl.ScriptConfig{
 				RunLogic:      dsl.RunLogicConfig{Iterations: 1},
-				ErrorHandling: dsl.ErrorHandlingConfig{ContinueOnError: true},
+				ErrorHandling: dsl.ErrorHandlingConfig{ContinueOnError: dsl.ContinueOnErrorValue(true)},
 			},
 			Actions: []dsl.Action{
 				{
@@ -1726,7 +1726,7 @@ func TestVUser_Run_HTTPSequenceContinueOnErrorRunsRemainingChildren(t *testing.T
 			Protocol: "http",
 			Config: dsl.ScriptConfig{
 				RunLogic:      dsl.RunLogicConfig{Iterations: 1},
-				ErrorHandling: dsl.ErrorHandlingConfig{ContinueOnError: true},
+				ErrorHandling: dsl.ErrorHandlingConfig{ContinueOnError: dsl.ContinueOnErrorValue(true)},
 			},
 			Actions: []dsl.Action{{
 				Name: "CheckoutFlow",

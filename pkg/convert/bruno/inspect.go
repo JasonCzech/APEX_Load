@@ -1765,9 +1765,8 @@ func canonicalScript(input Input, collection Collection, manifest Manifest, sour
 				},
 			},
 			RunLogic: dsl.RunLogicConfig{AutoTransactions: "none"},
-			ErrorHandling: dsl.ErrorHandlingConfig{
-				ContinueOnError: false,
-			},
+			// Unset: the scenario continue-on-error policy decides.
+			ErrorHandling: dsl.ErrorHandlingConfig{},
 		},
 		Actions: []dsl.Action{{
 			Name:   "Run " + collection.Name,
