@@ -1,0 +1,31 @@
+.confirm-run-action-modal {
+  max-width: 460px;
+}
+
+.confirm-run-action-target {
+  display: grid;
+  gap: 4px;
+  margin: 4px 0 16px;
+  padding: 12px 14px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  background: var(--subtle-fill);
+}
+
+.confirm-run-action-target span {
+  font-size: 11px;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 700;
+}
+
+.confirm-run-action-target strong {
+  overflow-wrap: anywhere;
+  color: var(--text-primary);
+}
+
+.confirm-run-action-target small {
+  color: var(--text-secondary);
+  font-size: 12px;
+}

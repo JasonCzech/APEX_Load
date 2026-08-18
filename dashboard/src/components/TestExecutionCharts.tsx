@@ -2585,9 +2585,14 @@ export default function TestExecutionCharts({
               !visibleOverlayKeysForTitle.includes(key as OverlayMetricKey)
               && key !== routeLatencySuccessRateKey
             ))
+            // Fit the axis to the series the chart actually draws. With smoothing on,
+            // the plotted values are the `__smoothed` keys, whose peaks are lower than
+            // the raw samples -- scaling to the raw peak leaves a transient spike
+            // stretching the axis while the drawn line stays flattened near the x-axis.
+            const displayMetricKeysForDomain = primaryMetricKeysForDomain.map(displayMetricKey)
             const metricAxisDomain = visibleMetricDomain(
-              chartDataWithDisplayBands,
-              includeArtStdDevBand ? [...primaryMetricKeysForDomain, ART_STD_DEV_BAND_KEY] : primaryMetricKeysForDomain,
+              displayChartData,
+              includeArtStdDevBand ? [...displayMetricKeysForDomain, ART_STD_DEV_BAND_KEY] : displayMetricKeysForDomain,
               chart.domain,
             )
             const chartTitle = chartTitleWithOverlays(chart, visibleOverlayKeysForTitle)

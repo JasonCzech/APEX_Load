@@ -15,6 +15,7 @@ import { useExecutionArchiveSummaryHistory } from './useExecutionArchiveSummaryH
 import { useExecutionArchiveModel } from './useExecutionArchiveModel'
 import { useExecutionLiveControls } from './useExecutionLiveControls'
 import { useExecutionMetricsStream } from './useExecutionMetricsStream'
+import { useRunActionConfirmation } from './useRunActionConfirmation'
 import { useExecutionTestPolling } from './useExecutionTestPolling'
 import { useExecutionViewState } from './useExecutionViewState'
 import TestExecutionCharts from './TestExecutionCharts'
@@ -27,6 +28,7 @@ import GenerateReportModal from './GenerateReportModal'
 import type { ReportProfileId } from './reportTypeOptions'
 import ReportComposer from './ReportComposer'
 import TestNotesDialog from './TestNotesDialog'
+import ConfirmRunActionModal from './ConfirmRunActionModal'
 import TestExecutionScenarioPreview from './TestExecutionScenarioPreview'
 import TestExecutionStatusPanels from './TestExecutionStatusPanels'
 import TestExecutionSummary from './TestExecutionSummary'
@@ -273,24 +275,36 @@ export default function TestExecution({
     onDownloadBrowserDiagnostics,
     onDownloadArchiveArtifact,
   } = useExecutionArchiveModel(test)
+  // Every control that changes what the run is doing to the target environment
+  // is confirmed first. The wrappers are applied here, above both the topbar and
+  // the live-controls panel, so the two surfaces cannot drift apart. onStart is
+  // wrapped only for the plain Start button; the capacity/shakeout override
+  // flows are already an explicit confirmation of their own.
+  const { pendingAction, confirmRunAction, onConfirmRunAction, onCancelRunAction } = useRunActionConfirmation()
+  const onConfirmStart = confirmRunAction('start', onStart)
+  const onConfirmPause = confirmRunAction('pause', onPause)
+  const onConfirmResume = confirmRunAction('resume', onResume)
+  const onConfirmStop = confirmRunAction('stop', onStop)
+  const onConfirmAbort = confirmRunAction('abort', onAbort)
+
   const topbarActionHandlers = useRef({
-    onAbort,
+    onAbort: onConfirmAbort,
     onBack,
     onDownloadArchive,
-    onPause,
-    onResume,
-    onStart,
-    onStop,
+    onPause: onConfirmPause,
+    onResume: onConfirmResume,
+    onStart: onConfirmStart,
+    onStop: onConfirmStop,
     onPauseAllVUsers,
   })
   topbarActionHandlers.current = {
-    onAbort,
+    onAbort: onConfirmAbort,
     onBack,
     onDownloadArchive,
-    onPause,
-    onResume,
-    onStart,
-    onStop,
+    onPause: onConfirmPause,
+    onResume: onConfirmResume,
+    onStart: onConfirmStart,
+    onStop: onConfirmStop,
     onPauseAllVUsers,
   }
 
@@ -617,10 +631,10 @@ export default function TestExecution({
       isRunning={isRunning}
       isPaused={isPaused}
       isStopping={isStopping}
-      onPause={onPause}
-      onResume={onResume}
-      onStop={onStop}
-      onAbort={onAbort}
+      onPause={onConfirmPause}
+      onResume={onConfirmResume}
+      onStop={onConfirmStop}
+      onAbort={onConfirmAbort}
       liveControlPreview={liveControlPreview}
       controlFeedback={controlFeedback}
       groupColors={GROUP_COLORS}
@@ -701,7 +715,7 @@ export default function TestExecution({
           onDismissStartConflict={onDismissStartConflict}
           onConfirmStartAnyway={onConfirmStartAnyway}
           onContinueAfterShakeoutFailure={onContinueAfterShakeoutFailure}
-          onCancelShakeoutRun={onAbort}
+          onCancelShakeoutRun={onConfirmAbort}
           queuedScenarioPreview={queuedScenarioPreview}
           queuedScenarioRows={queuedScenarioRows}
           snapshotSource={snapshotSource}
@@ -909,6 +923,16 @@ export default function TestExecution({
         onClose={() => setShowScenarioEditor(false)}
         onSelectTest={onSelectTest}
       />
+
+      {pendingAction && (
+        <ConfirmRunActionModal
+          action={pendingAction}
+          runName={test?.name}
+          runRef={test?.ref_key}
+          onConfirm={onConfirmRunAction}
+          onCancel={onCancelRunAction}
+        />
+      )}
 
       {showGenerateReport && (
         <GenerateReportModal

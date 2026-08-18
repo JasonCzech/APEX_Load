@@ -973,6 +973,7 @@ describe('CommandCenterPrototype', () => {
     await renderPrototype()
 
     await click(buttonNamed('Pause'))
+    await confirmRunAction('Pause Test')
 
     expect(container.textContent).toContain('PAUSED')
     expect(container.textContent).toContain('Run paused at the next action boundary.')
@@ -1000,6 +1001,7 @@ describe('CommandCenterPrototype', () => {
     expect(shelfButton('Abort')?.disabled).toBe(false)
 
     await click(buttonNamed('Stop'))
+    await confirmRunAction('Stop Test')
 
     expect(container.textContent).toContain('STOPPING')
     // Stop is no longer offered once the graceful stop is underway (canStop excludes STOPPING),
@@ -1010,6 +1012,7 @@ describe('CommandCenterPrototype', () => {
     expect(abortDuringStopping?.disabled).toBe(false)
 
     await click(abortDuringStopping as HTMLButtonElement)
+    await confirmRunAction('Abort Test')
 
     expect(container.textContent).toContain('ABORTED')
     // Once fully terminal, Abort is no longer offered.
@@ -1025,6 +1028,7 @@ describe('CommandCenterPrototype', () => {
     const runActions = container.querySelector('.command-run-actions') as HTMLElement
     const abort = Array.from(runActions.querySelectorAll('button')).find(button => button.textContent?.trim() === 'Abort') as HTMLButtonElement
     await click(abort)
+    await confirmRunAction('Abort Test')
 
     expect(fetchMock).toHaveBeenCalledWith(
       expect.stringContaining('/api/v1/tests/live-vuser-1/abort'),
@@ -1034,6 +1038,53 @@ describe('CommandCenterPrototype', () => {
     expect(container.textContent).toContain('Abort requested. Waiting for generator teardown and finalization.')
     expect(container.textContent).not.toContain('ABORTED')
     expect(Array.from(runActions.querySelectorAll('button')).some(button => button.textContent?.trim() === 'Abort')).toBe(true)
+  })
+
+  it('reflects Stop and Abort on a paused run even while the socket override is stale', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => jsonResponse({}))
+    // statusOverride is the last lifecycle broadcast the app saw. A run that has
+    // been sitting PAUSED keeps publishing nothing, so the override is stale the
+    // moment the operator stops the run from this shelf.
+    await act(async () => {
+      root.render(<CommandCenterPrototype
+        testId="live-vuser-1"
+        initialTest={{ ...buildLiveVuserTest(), status: 'PAUSED' }}
+        history={[]}
+        statusOverride="PAUSED"
+      />)
+    })
+
+    const runActions = () => container.querySelector('.command-run-actions') as HTMLElement
+    const shelfButton = (name: string) =>
+      Array.from(runActions().querySelectorAll('button')).find(
+        candidate => candidate.textContent?.trim() === name,
+      ) as HTMLButtonElement | undefined
+
+    expect(shelfButton('Resume')).toBeDefined()
+
+    await click(shelfButton('Stop') as HTMLButtonElement)
+    await confirmRunAction('Stop Test')
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining('/api/v1/tests/live-vuser-1/stop'),
+      expect.objectContaining({ method: 'POST' }),
+    )
+    expect(container.textContent).toContain('STOPPING')
+    expect(container.textContent).toContain('Graceful stop requested.')
+    expect(shelfButton('Resume')).toBeUndefined()
+    expect(shelfButton('Stop')).toBeUndefined()
+
+    const abort = shelfButton('Abort')
+    expect(abort?.disabled).toBe(false)
+
+    await click(abort as HTMLButtonElement)
+    await confirmRunAction('Abort Test')
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining('/api/v1/tests/live-vuser-1/abort'),
+      expect.objectContaining({ method: 'POST' }),
+    )
+    expect(container.textContent).toContain('Abort requested. Waiting for generator teardown and finalization.')
   })
 
   it('stages slider targets and updates the current target indicator without calling the API', async () => {
@@ -1794,6 +1845,7 @@ describe('CommandCenterPrototype', () => {
     expect(controlShelf?.textContent).not.toContain('Stop')
 
     await click(buttonNamed('Start Test'))
+    await confirmRunAction('Start Test')
     await act(async () => {
       await Promise.resolve()
     })
@@ -2253,6 +2305,16 @@ describe('CommandCenterPrototype', () => {
     const input = container.querySelector(`input[aria-label="${label}"]`) as HTMLInputElement | null
     expect(input, `Expected input labeled ${label}`).not.toBeNull()
     return input as HTMLInputElement
+  }
+
+  // Start/Pause/Stop/Abort route through a confirmation dialog before firing.
+  async function confirmRunAction(label: string) {
+    const dialog = container.querySelector('.confirm-run-action-modal')
+    expect(dialog).not.toBeNull()
+    const button = Array.from(dialog?.querySelectorAll('button') ?? [])
+      .find(candidate => candidate.textContent?.trim() === label) as HTMLButtonElement | undefined
+    expect(button).toBeDefined()
+    await click(button as HTMLButtonElement)
   }
 
   async function click(element: HTMLElement) {

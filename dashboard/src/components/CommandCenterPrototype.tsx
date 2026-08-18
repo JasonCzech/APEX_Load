@@ -15,7 +15,8 @@ import PageViewToggle from './PageViewToggle'
 import StatusBadge from './StatusBadge'
 import { useTestApi } from '../hooks/api/useTestApi'
 import { isValidDurationInput, parseDurationToSeconds } from '../utils/timeUtils'
-import { isCompletedTestStatus, isLiveTestStatus, isPendingTestStatus } from '../utils/testStatusUtils'
+import { isCompletedTestStatus, isLiveTestStatus, isPendingTestStatus, resolveTestStatus } from '../utils/testStatusUtils'
+import { useRunActionConfirmation } from './useRunActionConfirmation'
 import type { BrowserReplaySnapshot, GroupLiveMetrics, ImportedDashboardResult, IntervalSummaryRecord, LiveErrorEvidence, LiveMetrics, MetricsHistoryPoint, PrometheusGraph, TestGroup, TestGroupParametersUpdateResult, TestGroupRuntimeSettingsUpdateResult, TestStatus, TestSummary, TransactionEvent, TxMetrics, VUserRampStatus } from '../types'
 import { getErrorMessage } from '../utils/errorUtils'
 import TestExecutionCharts, { type GraphCursorState, type GraphGroupTabId, type UnderLoadDisplayMode } from './TestExecutionCharts'
@@ -32,6 +33,7 @@ import { chartTooltipContentStyle, chartTooltipLabelStyle } from './chartTooltip
 import { omitTransactionChartSeries } from './transactionChartSeries'
 import SnapshotBodyPreview from './SnapshotBodyPreview'
 import SnapshotTextPreview from './SnapshotTextPreview'
+import ConfirmRunActionModal from './ConfirmRunActionModal'
 import TestNotesDialog from './TestNotesDialog'
 import GroupParametersDialog from './GroupParametersDialog'
 import GroupRuntimeSettingsDialog from './GroupRuntimeSettingsDialog'
@@ -435,6 +437,7 @@ export default function CommandCenterPrototype({
   const [backendScopedChartData, setBackendScopedChartData] = useState<MetricsHistoryPoint[] | null>(null)
   const [backendScopedMetrics, setBackendScopedMetrics] = useState<LiveMetrics | undefined>()
   const [showNotes, setShowNotes] = useState(false)
+  const { pendingAction, confirmRunAction, onConfirmRunAction, onCancelRunAction } = useRunActionConfirmation()
   const [groupSettingsDialog, setGroupSettingsDialog] = useState<{ group: string; kind: GroupSettingsDialogKind } | null>(null)
   const archiveCheckGenerationRef = useRef(0)
   const archiveCheckInFlightRef = useRef(false)
@@ -683,8 +686,17 @@ export default function CommandCenterPrototype({
   }, [api, applicationId, autoSelectedTestId, discoveryScopeKey, initialTest, projectId, prototypeMode, setAutoSelectedTestId, testIdProp])
 
   const activeLiveTest = liveTest?.id === testId ? liveTest : null
+  // resolveTestStatus keeps the socket override from rolling the run backward.
+  // Stop/Abort on a PAUSED run is known here before its broadcast arrives, and
+  // letting a stale PAUSED override mask it left the shelf showing Resume/Stop
+  // as though the click had done nothing.
   const streamStatus = activeLiveTest
-    ? coerceTestStatus(isHistoricalRunStatus(activeLiveTest.status) ? activeLiveTest.status : statusOverride || activeLiveTest.status, activeLiveTest.status)
+    ? coerceTestStatus(
+      isHistoricalRunStatus(activeLiveTest.status)
+        ? activeLiveTest.status
+        : resolveTestStatus(activeLiveTest, statusOverride ? { [activeLiveTest.id]: statusOverride } : {}),
+      activeLiveTest.status,
+    )
     : undefined
   const { localMetricsHistory, latestMetrics } = useExecutionMetricsStream(testId || '', streamStatus)
   const liveMetrics = latestMetrics || activeLiveTest?.live_metrics
@@ -1229,13 +1241,23 @@ export default function CommandCenterPrototype({
         errorPct={displayTest.live_metrics?.error_pct}
         feedback={feedback}
         historicalRun={historicalRun || (hasLiveRoute && !liveMode)}
-        onStart={() => { void startRun() }}
-        onPauseResume={() => { void togglePause() }}
-        onStop={() => { void stopRun() }}
-        onAbort={() => { void abortRun() }}
+        onStart={confirmRunAction('start', startRun)}
+        // One button, two directions: confirm whichever one it is about to do.
+        onPauseResume={confirmRunAction(runStatus === 'PAUSED' ? 'resume' : 'pause', togglePause)}
+        onStop={confirmRunAction('stop', stopRun)}
+        onAbort={confirmRunAction('abort', abortRun)}
         onOpenExecution={testId && onOpenExecution ? () => onOpenExecution(testId) : undefined}
         onOpenTestNotes={testId ? () => setShowNotes(true) : undefined}
       />
+      {pendingAction && (
+        <ConfirmRunActionModal
+          action={pendingAction}
+          runName={displayTest.name}
+          runRef={displayTest.ref_key}
+          onConfirm={onConfirmRunAction}
+          onCancel={onCancelRunAction}
+        />
+      )}
       {showNotes && testId && (
         <TestNotesDialog
           testId={testId}

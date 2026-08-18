@@ -287,6 +287,8 @@ describe('TestExecution workspace layout', () => {
 
     const queuedActions = latestActionBridge()
     await clickTopbarButton('Start Test')
+    expect(queuedActions.onStart).not.toHaveBeenCalled()
+    await confirmRunAction('Start Test')
     expect(queuedActions.onStart).toHaveBeenCalledTimes(1)
     await clickTopbarButton('Test Notes')
     expect(container.textContent).toContain('Test Notes Dialog test-1')
@@ -325,6 +327,8 @@ describe('TestExecution workspace layout', () => {
 
     const runningActions = latestActionBridge()
     await clickTopbarButton('Pause')
+    expect(runningActions.onPause).not.toHaveBeenCalled()
+    await confirmRunAction('Pause Test')
     expect(runningActions.onPause).toHaveBeenCalledTimes(1)
   })
 
@@ -349,6 +353,8 @@ describe('TestExecution workspace layout', () => {
 
     const stoppingActions = latestActionBridge()
     await clickTopbarButton('Abort')
+    expect(stoppingActions.onAbort).not.toHaveBeenCalled()
+    await confirmRunAction('Abort Test')
     expect(stoppingActions.onAbort).toHaveBeenCalledTimes(1)
   })
 
@@ -364,6 +370,7 @@ describe('TestExecution workspace layout', () => {
 
     await clickTopbarButton('Start Test')
 
+    await confirmRunAction('Start Test')
     expect(firstActions.onStart).not.toHaveBeenCalled()
     expect(latestActions.onStart).toHaveBeenCalledTimes(1)
   })
@@ -693,6 +700,19 @@ describe('TestExecution workspace layout', () => {
   function latestActionBridge() {
     const results = hookMocks.useExecutionActionBridge.mock.results
     return results[results.length - 1]?.value
+  }
+
+  // Start/Pause/Stop/Abort open a confirmation dialog before the action is sent.
+  async function confirmRunAction(label: string) {
+    const dialog = container.querySelector('.confirm-run-action-modal')
+    expect(dialog).not.toBeNull()
+    const button = Array.from(dialog?.querySelectorAll('button') ?? [])
+      .find(candidate => candidate.textContent?.trim() === label)
+    expect(button).toBeDefined()
+    await act(async () => {
+      button?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
   }
 
   async function clickTopbarButton(label: string) {

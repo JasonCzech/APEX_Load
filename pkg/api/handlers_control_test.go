@@ -281,6 +281,36 @@ func TestHandlePauseAndResumeTest(t *testing.T) {
 	waitForTestStatus(t, server.runner, testRun.ID, "RUNNING")
 }
 
+// A paused run holds its VUsers at the pause gate. Stop and Abort must still
+// drive it to a terminal state without an intervening Resume, or an operator who
+// paused to inspect a spike has no way to end the run.
+func TestStopAndAbortTerminalizeAPausedRun(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		endpoint string
+	}{
+		{name: "stop", endpoint: "stop"},
+		{name: "abort", endpoint: "abort"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			server, testRun := newRunningControlTestServer(t)
+			if err := server.runner.PauseTest(testRun.ID); err != nil {
+				t.Fatalf("PauseTest returned error: %v", err)
+			}
+			waitForTestStatus(t, server.runner, testRun.ID, "PAUSED")
+
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/tests/"+testRun.ID+"/"+tc.endpoint, nil)
+			resp := httptest.NewRecorder()
+			server.mux.ServeHTTP(resp, req)
+			if resp.Code != http.StatusOK {
+				t.Fatalf("%s status = %d, want %d body=%s", tc.endpoint, resp.Code, http.StatusOK, resp.Body.String())
+			}
+
+			waitForStatusAny(t, server.runner, testRun.ID, 15*time.Second, "COMPLETE", "FAILED", "ABORTED")
+		})
+	}
+}
+
 func TestHandleDeleteTestRejectsPausedRun(t *testing.T) {
 	server, testRun := newRunningControlTestServer(t)
 	if err := server.runner.PauseTest(testRun.ID); err != nil {

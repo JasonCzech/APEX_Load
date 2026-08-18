@@ -825,6 +825,56 @@ describe('TestExecutionCharts context menu', () => {
     expect(window.localStorage.getItem('apexload.execution.chartMetricFilters')).toContain('"latency":["avgMs","p50","p90","p95"]')
   })
 
+  it('scales the graph axis to the smoothed line rather than the raw spike', async () => {
+    const spikeIndex = 20
+    const spikeData: MetricsHistoryPoint[] = Array.from({ length: 41 }, (_, index) => {
+      const avgMs = index === spikeIndex ? 5000 : 100
+      return {
+        time: `10:00:${String(index).padStart(2, '0')}`,
+        vusers: 2,
+        tps: 3,
+        avgMs,
+        errorPct: 0,
+        p50: avgMs,
+        p90: avgMs,
+        p95: avgMs,
+        p99: avgMs,
+      }
+    })
+
+    await act(async () => {
+      root.render(
+        <TestExecutionCharts
+          filteredData={spikeData}
+          expandedChart={null}
+          onExpandedChartChange={vi.fn()}
+          onChartMouseDown={vi.fn()}
+          onChartMouseMove={vi.fn()}
+          onZoom={vi.fn()}
+          onResetZoom={vi.fn()}
+          showRefArea={false}
+          refAreaLeft=""
+          refAreaEnd=""
+          timeRange="3m"
+          onTimeRangeChange={vi.fn()}
+          isMultiGroup={false}
+          groupNames={[]}
+          groupColors={['#00a3ff']}
+          surface="command-center"
+        />,
+      )
+    })
+
+    const responseChart = Array.from(container.querySelectorAll('.chart-card')).find(chart => chart.textContent?.includes('Response Time (ms)'))
+    // Command Center smooths the drawn series, so the spike never reaches 5000 on
+    // screen. Scaling to the raw peak would flatten the 100ms baseline against the
+    // x-axis; the axis must follow what is actually plotted.
+    const [floor, ceiling] = (primaryAxisDomain(responseChart) ?? '').split('|').map(Number)
+    expect(floor).toBe(0)
+    expect(ceiling).toBeGreaterThan(100)
+    expect(ceiling).toBeLessThan(5000)
+  })
+
   it('toggles and persists ART rolling standard-deviation bands', async () => {
     await renderCharts()
 

@@ -23,6 +23,19 @@ describe('test status utilities', () => {
     expect(resolveTestStatus(buildTest('RUNNING'), { run: 'FAILED' })).toBe('FAILED')
     expect(resolveTestStatus(buildTest('QUEUED'), { run: 'RUNNING' })).toBe('RUNNING')
   })
+
+  it('never lets a stale override roll the run backward through the lifecycle', () => {
+    // A Stop issued on a paused run is known locally before its broadcast lands.
+    expect(resolveTestStatus(buildTest('STOPPING'), { run: 'PAUSED' })).toBe('STOPPING')
+    expect(resolveTestStatus(buildTest('STOPPING'), { run: 'RUNNING' })).toBe('STOPPING')
+    expect(resolveTestStatus(buildTest('RUNNING'), { run: 'QUEUED' })).toBe('RUNNING')
+    // Pause and resume move in both directions and must both be honoured.
+    expect(resolveTestStatus(buildTest('RUNNING'), { run: 'PAUSED' })).toBe('PAUSED')
+    expect(resolveTestStatus(buildTest('PAUSED'), { run: 'RUNNING' })).toBe('RUNNING')
+    expect(resolveTestStatus(buildTest('PAUSED'), { run: 'STOPPING' })).toBe('STOPPING')
+    // An unrecognized status has no comparable position; the override still wins.
+    expect(resolveTestStatus(buildTest('STOPPING'), { run: 'MYSTERY' })).toBe('MYSTERY')
+  })
 })
 
 function buildTest(status: TestSummary['status']): Pick<TestSummary, 'id' | 'status'> {
