@@ -1,5 +1,6 @@
-import { expect, test, type APIRequestContext } from '@playwright/test'
-import { abortLiveRun, startLiveRun, type LiveRun } from './support/liveRun'
+import type { APIRequestContext } from '@playwright/test'
+
+import { expect, test } from './support/liveRun'
 
 // Tier-0 journey steps S8, S9 and S11 (docs/qa/TIER0_JOURNEY.md): controlling a
 // run mid-flight, stopping it, and proving the evidence it produced is intact.
@@ -38,12 +39,18 @@ async function waitForStatus(
   throw new Error(`${what}: status stayed ${last || '(empty)'} for ${timeoutMs}ms`)
 }
 
-test('a run pauses, resumes, scales, stops, and leaves a verifiable archive', async ({ request, baseURL }) => {
+// Teardown deliberately lives in the `seedLiveRun` fixture rather than a
+// `finally` in this body. Playwright stops awaiting the body when a test times
+// out and begins disposing fixtures, so a body `finally` runs against an
+// already-closed request context and every teardown call throws — leaving the
+// seeded run executing against the controller the next spec asserts on. The
+// repository verified this directly: a body `finally` after a timeout reached
+// the server zero times.
+test('a run pauses, resumes, scales, stops, and leaves a verifiable archive', async ({ request, seedLiveRun }) => {
   test.setTimeout(240_000)
 
-  let run: LiveRun | undefined
-  try {
-    run = await startLiveRun(request, baseURL, { label: 'tier0-lifecycle', vusers: 2 })
+  {
+    const run = await seedLiveRun({ label: 'tier0-lifecycle', vusers: 2 })
     const testId = run.testId
 
     // S8 — pause must be observable, not merely accepted.
@@ -101,9 +108,5 @@ test('a run pauses, resumes, scales, stops, and leaves a verifiable archive', as
     expect(['verified', 'verified_partial'], `archive integrity status was ${String(report.status)}`)
       .toContain(String(report.status))
     expect(report.mismatched, 'no artifact may fail its recorded checksum').toBe(0)
-  } finally {
-    // Always tear down: specs share one controller (workers: 1), so a leaked
-    // run contaminates whatever runs next.
-    if (run) await abortLiveRun(request, run)
   }
 })
