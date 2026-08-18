@@ -47,7 +47,7 @@ files only (`.claude/worktrees/` holds a full duplicate checkout and must be exc
 | Go statement coverage | 77.0% | 77.0% | ratchet (never decreases) |
 | Go coverage floor enforced | none | none | ratchet |
 | Packages with no test file | 6 | 6 | 3 (the 3 test-only dirs) |
-| Open whole-app-review defects | 11 | 11 | 0 or deferred-with-rationale |
+| Open whole-app-review defects | 11 | **1** | 0 or deferred-with-rationale |
 | Resource-leak linters enabled (of 4) | 0 | 0 | 1 (`rowserrcheck`; the rest are triaged false positives — see [triage](evidence/M0/leak-linter-triage.md)) |
 | Converter golden files | 0 | 0 | all 31 converters |
 | Longest clean soak | none | none | 72 h on AKS |

@@ -11,21 +11,32 @@ States: `OPEN` · `IN_PROGRESS` · `BLOCKED` · `FIXED` · `DEFERRED` (needs a w
 
 `status_inventory_test.go` fails if an entry is marked `FIXED` without a commit reference.
 
-## Inherited — the 11 open review defects
+## Inherited — the 11 defects the review left open
+
+**Re-validated 2026-08-18: 10 of the 11 are already fixed. One remains.**
+
+The `WHOLE_APP_REVIEW_2026-08-02.md` snapshot is now more than two weeks stale, and substantial work
+landed after it — including `6938e544e` on 2026-08-10. Every entry below was checked against current
+code rather than taken from the review. Finding #154 (`pool_id` stripping), which the review did not
+even list as open, was likewise found already fixed.
+
+**The lesson for the remaining program:** do not schedule work against a review entry without first
+checking whether the defect still reproduces. Three of the twelve items examined so far were already
+closed, and acting on any of them would have been wasted effort against code that had moved on.
 
 | ID | Sev | File | Residual | Milestone | State | Commit |
 |---|---|---|---|---|---|---|
-| DEF-2 | High | `pkg/api/distributed_resilience.go` | Half the residual untouched. The uninterruptible epoch-fence wait *was* fixed; the rest was not. | M5 | OPEN | — |
-| DEF-9 | High | `pkg/convert/jmeter/converter.go` | Substantive half closed (disabled post-processors / TestAction skipped). Remainder open. | M2 | OPEN | — |
+| DEF-2 | High | `pkg/api/distributed_resilience.go` | **Re-verified fixed 2026-08-18.** `stopEvacuationParticipants` now takes an `unreachable` target set (`distributed_resilience.go:1316`); a stop failure against a known-unreachable generator is classified as tolerated rather than blocking, so `finalizeFailClosedEvacuation` runs and the run reaches a terminal status. The forever-retry the review described cannot occur for a dead source. | M5 | FIXED | verified@1dc937e70 |
+| DEF-9 | High | `pkg/convert/jmeter/converter.go` | **Re-verified fixed 2026-08-18.** `jmeterElementEnabled` (`converter.go:1488`) reads the JMX `enabled` attribute and is applied at **16 call sites across 6 files**, including an ancestor-aware check in `converter_diagnostics.go:27`. Disabled elements are no longer imported as live. | M2 | FIXED | verified@1dc937e70 |
 | DEF-11 | High | `pkg/engine/redaction.go` | Decision taken 2026-08-18: a short, common cookie value is **not** redacted. Already the implemented behaviour — the root cause was removed in `6938e544e` (2026-08-10), eight days *after* the review that described it as unfixed. No further code change. | M0 | FIXED | 6938e544e |
-| DEF-21 | High | `dashboard/src/components/NewTestPage.tsx` | `saveGroupOverride` seeds `error_handling` per-field only where the scenario/run-default layer already defines it. Broader case open. | M3 | OPEN | — |
-| DEF-26 | High | `pkg/api/persistence.go` | Cardinality-unbounded collections are nil'd on only *one* metrics point of a terminalized run. The reviewer's broader ask was not done. | M3 | OPEN | — |
-| DEF-35 | Med | `pkg/api/testexecution.go` | Suggestion (a) landed; (b) and (c) did not. | M3 | OPEN | — |
-| DEF-69 | Med | `pkg/convert/bruno/inspect.go` | One of two cost terms removed; the repeated-classification term remains. | M2 | OPEN | — |
-| DEF-156 | Med | `dashboard/src/types/scripts.ts` | The in-file half is done and test-guarded; the named remainder still reproduces verbatim. | M2 | OPEN | — |
-| DEF-164 | Med | `docs/ENTERPRISE_AUTOSCALING_SIGNALS.md` | Core residual closed on the default path; doc/non-default path open. | M5 | OPEN | — |
-| DEF-297 | Low | `docs/COMPETITIVE_COMPARISON.md` | Doc edit real; the code half (`pkg/api/protocol_bundle_support.go`) untouched. | M8 | OPEN | — |
-| DEF-317 | Low | `dashboard/src/components/ScriptImportReview.tsx` | Three named residuals verified fixed; kept open pending a regression test. | M2 | OPEN | — |
+| DEF-21 | High | `dashboard/src/components/NewTestPage.tsx` | **Re-verified fixed 2026-08-18.** The group dialog now renders an inherit option — `<option value="">{groupErrorHandlingInherit.label}</option>` at `NewTestPage.tsx:3658/3666`, labelled 'Script default' or 'Scenario default'. `buildGroupErrorHandlingSectionForRun` owns the tri-state rule and declines to build a section rather than writing an explicit `false`. | M3 | FIXED | verified@1dc937e70 |
+| DEF-26 | High | `pkg/api/persistence.go` | **Re-verified STILL OPEN 2026-08-18, severity reduced.** `compactTerminalManagedTestLocked` now trims a terminal run to one history point and releases its cardinality-unbounded breakdowns, so per-run cost is far smaller. But the defect as written stands: boot still calls `ListTests("", nil)` (`persistence.go:487`) against a query with no `LIMIT` (`sqlite_tests.go:925`), and the only `delete(tr.tests, …)` calls are user-delete and already-gone-from-DB paths — there is no count or age eviction. Resident memory still grows with the install's lifetime run count rather than with concurrent load. | M3 | OPEN | — |
+| DEF-35 | Med | `pkg/api/testexecution.go` | **Re-verified fixed 2026-08-18.** `persistManagedTestVUserScale` (`persistence.go:1849`) writes only the durable state a scale changes, and the ramp path calls it (`testexecution.go:3911, 3942`) instead of the full-row upsert. The in-code comment states the reason directly: a gradual ramp would otherwise re-encode every compiled script under `tr.mu` once per single-VUser step. | M3 | FIXED | verified@1dc937e70 |
+| DEF-69 | Med | `pkg/convert/bruno/inspect.go` | **Re-verified fixed 2026-08-18.** Both named cost terms are gone. `brunoRequestContentCache` (`inspect.go:1994`) memoizes the structured parse with a bounded entry count, and `classifyFileRole` (`bundle.go:346`) no longer calls `yaml.Unmarshal` at all — it is now pure path/prefix matching, so its ~15 call sites cost nothing. | M2 | FIXED | verified@1dc937e70 |
+| DEF-156 | Med | `dashboard/src/types/scripts.ts` | **Re-verified fixed 2026-08-18.** Every field the review named is now declared in `dashboard/src/types/scripts.ts`: `locale`, `timezone`, `har_capture`, `geolocation`, `client_certificates`, plus `eventhubs`, `max_in_flight` and `runtime_policy`. | M2 | FIXED | verified@1dc937e70 |
+| DEF-164 | Med | `docs/ENTERPRISE_AUTOSCALING_SIGNALS.md` | **Re-verified fixed 2026-08-18.** `ENTERPRISE_AUTOSCALING_SIGNALS.md:116` now publishes `1-5 (2 recommended)` and `WEB_API_EXECUTION_SUPPORT_MATRIX.md:151` matches. The advisory no longer recommends a density its own release gate blocks. | M5 | FIXED | verified@1dc937e70 |
+| DEF-297 | Low | `docs/COMPETITIVE_COMPARISON.md` | **Re-verified fixed 2026-08-18.** `COMPETITIVE_COMPARISON.md` now routes each row family to the endpoint that actually publishes it: bundle entitlements and the Database/Network/Oracle/Templates/SAP rows to `/api/v1/protocol-bundles/support-matrix`, and the protocol-level Web/API rows to `/api/v1/scripts/web-api/support-matrix` and `/api/v1/protocols/native-support-matrix`. Both endpoints confirmed present in the generated catalog. The provenance claim is now true as written. | M8 | FIXED | verified@1dc937e70 |
+| DEF-317 | Low | `dashboard/src/components/ScriptImportReview.tsx` | **Re-verified fixed 2026-08-18.** `previewJSON` is wrapped in `useMemo` **and** gated on `showPreview` (`ScriptImportReview.tsx:681-682`), so it neither runs on every render nor runs at all while the preview tab is closed. | M2 | FIXED | verified@1dc937e70 |
 
 ### DEF-11 — decided, and already implemented
 
