@@ -322,7 +322,7 @@ export default function AuthGate({
             <form className="auth-gate-form" onSubmit={submitLocalLogin}>
               <label>
                 <span>Username</span>
-                <input autoComplete="username" autoFocus value={username} onChange={(event) => setUsername(event.target.value)} disabled={loginPending} required />
+                <input autoComplete="username" value={username} onChange={(event) => setUsername(event.target.value)} disabled={loginPending} required />
               </label>
               <label>
                 <span>Password</span>

@@ -190,6 +190,7 @@ describe("AuthGate", () => {
       );
     });
     const inputs = container.querySelectorAll<HTMLInputElement>("input");
+    expect(inputs[0]?.hasAttribute("autofocus")).toBe(false);
     await act(async () => {
       setInputValue(inputs[0], "unknown");
       setInputValue(inputs[1], "wrong");
