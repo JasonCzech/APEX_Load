@@ -17,7 +17,7 @@ States: `OPEN` · `IN_PROGRESS` · `BLOCKED` · `FIXED` · `DEFERRED` (needs a w
 |---|---|---|---|---|---|---|
 | DEF-2 | High | `pkg/api/distributed_resilience.go` | Half the residual untouched. The uninterruptible epoch-fence wait *was* fixed; the rest was not. | M5 | OPEN | — |
 | DEF-9 | High | `pkg/convert/jmeter/converter.go` | Substantive half closed (disabled post-processors / TestAction skipped). Remainder open. | M2 | OPEN | — |
-| DEF-11 | High | `pkg/engine/redaction.go` | **No code change at all.** Needs a product decision — see below. | M0 | BLOCKED | — |
+| DEF-11 | High | `pkg/engine/redaction.go` | Decision taken 2026-08-18: a short, common cookie value is **not** redacted. Already the implemented behaviour — the root cause was removed in `6938e544e` (2026-08-10), eight days *after* the review that described it as unfixed. No further code change. | M0 | FIXED | 6938e544e |
 | DEF-21 | High | `dashboard/src/components/NewTestPage.tsx` | `saveGroupOverride` seeds `error_handling` per-field only where the scenario/run-default layer already defines it. Broader case open. | M3 | OPEN | — |
 | DEF-26 | High | `pkg/api/persistence.go` | Cardinality-unbounded collections are nil'd on only *one* metrics point of a terminalized run. The reviewer's broader ask was not done. | M3 | OPEN | — |
 | DEF-35 | Med | `pkg/api/testexecution.go` | Suggestion (a) landed; (b) and (c) did not. | M3 | OPEN | — |
@@ -27,31 +27,43 @@ States: `OPEN` · `IN_PROGRESS` · `BLOCKED` · `FIXED` · `DEFERRED` (needs a w
 | DEF-297 | Low | `docs/COMPETITIVE_COMPARISON.md` | Doc edit real; the code half (`pkg/api/protocol_bundle_support.go`) untouched. | M8 | OPEN | — |
 | DEF-317 | Low | `dashboard/src/components/ScriptImportReview.tsx` | Three named residuals verified fixed; kept open pending a regression test. | M2 | OPEN | — |
 
-### DEF-11 — blocked on a product decision, not on engineering
+### DEF-11 — decided, and already implemented
 
-The runtime secret matcher redacts arbitrarily short/common values, destroying response bodies,
-URLs, error messages, and correlation evidence for the rest of a run. A remediation agent
-implemented the obvious minimum-length filter; it passed every test in the package **except two
-that deliberately pin the disputed behaviour**:
+**The decision (2026-08-18):** a short, common cookie value such as `locale=en` or
+`cookieconsent=true` must **not** be redacted. Redaction requires a minimum length or a sensitive
+name, accepting that a genuinely short secret could survive in evidence.
 
-- `pkg/protocol/http/cookie_test.go` → `TestBoundedCookieJarRuntimeSnapshotProtectsShortApplicationDefinedCookies`
-  asserts the snapshot **must** equal `["en", "sensitive-session-token", "true"]` — i.e. it *requires*
-  `locale=en` and `cookieconsent=true` to be treated as secrets. That is DEF-11's literal failure
-  scenario encoded as the expected outcome.
-- `pkg/engine/redaction_test.go` → `TestRuntimeSecretRedactionDoesNotAmplifyShortMatches` registers a
-  one-byte secret `"a"` and asserts full redaction — definitionally incompatible with a length floor.
+**That is already the behaviour**, via a stronger fix than the one the question implied. Rather than
+adding a length floor to the matcher, commit `6938e544e` removed the root cause: the bounded cookie
+jar no longer harvests values from the system under test into the runtime secret matcher at all. A
+cookie value issued by the SUT was never platform-managed secret material, so treating it as such
+was the actual defect.
 
-**The question:** should a short, common cookie value (`en`, `true`) be redacted everywhere it
-appears — protecting a possible secret at the cost of destroying run evidence — or should redaction
-require a minimum length / sensitive name, accepting that a genuinely short secret could survive?
+**Why the tracker said otherwise.** `WHOLE_APP_REVIEW_2026-08-02.md` recorded DEF-11 as "no code
+change at all" and named two tests as pinning the disputed behaviour. The review is dated
+**2026-08-02**; the fix landed **2026-08-10**. One of the two named tests
+(`TestBoundedCookieJarRuntimeSnapshotProtectsShortApplicationDefinedCookies`) no longer exists —
+it was replaced by `TestBoundedCookieJarDoesNotHarvestCookieValuesAsSecrets`, which asserts the
+opposite and now also guards structurally that neither the jar nor `protocol.Result` may
+reintroduce a cookie-value side channel.
 
-Either answer requires changing one of those two tests. **Decide in M0 week 4** and record the
-decision and its rationale here. This blocks evidence quality for the whole program: a run archive
-full of over-redacted bodies is a weak artifact.
+**Verified, not assumed:**
 
-> Related standing decision: nothing sourced from an imported script is a secret — the operator
-> already has the script. DEF-11 concerns *runtime* evidence redaction, which is governed separately
-> by `config.log.redact_run_evidence`.
+| Check | Result |
+|---|---|
+| `6938e544e` is an ancestor of HEAD | yes |
+| `TestBoundedCookieJarDoesNotHarvestCookieValuesAsSecrets` | passes |
+| `TestShortSUTCookieDoesNotScrubMetricDimensionsOrZeroGroupTotals` (asserts DEF-11's literal failure — dimension keys scrubbed, group totals zeroed — no longer occurs) | passes |
+| The harvesting side channel exists anywhere in non-test code | no |
+
+**What was deliberately NOT done.** No minimum-length floor was added to the runtime matcher. The
+second test the review named, `TestRuntimeSecretRedactionDoesNotAmplifyShortMatches`, still asserts
+that a one-byte **platform-managed** secret — one an operator explicitly placed in the project
+secret store — is redacted. That is a different case from a SUT-issued cookie and is consistent with
+the decision: an operator who registers a value as a secret has asked for it to be redacted.
+Weakening that path was not authorised and would trade security for nothing.
+
+Run-evidence redaction is now a setting: `config.log.redact_run_evidence` (`pkg/dsl/types.go:664`).
 
 ## Found by this program
 

@@ -6,6 +6,11 @@ populated `evidence/M<n>/` directory.
 
 **Program start:** 2026-08-18 · **Target completion:** 2027-05 · **Budget:** ~8 hrs/week
 
+**Dashboard:** <https://claude.ai/code/artifact/2f07ea80-f800-4599-aff1-5327b3d05663> — the
+published view of this file. Keep it current: update it whenever a milestone or headline metric
+moves, and republish to **that same URL** rather than creating a second tracker. Publishing without
+the URL makes a new artifact, which is how a program ends up with two dashboards disagreeing.
+
 ## Milestones
 
 | ID | Milestone | State | Hrs spent | Evidence |
@@ -147,5 +152,7 @@ the one that could be enabled almost immediately.
 
 - **QA-001** — `main` is not gofmt-clean (3 files), so CI's `go-quality` job fails its own format
   gate. Pure-formatting fix, zero risk, but it blocks the M0 week-2 CI work. Fix first.
-- **DEF-11** needs a product decision before it can be closed. See [DEFECTS.md](DEFECTS.md). Decide
-  in M0 week 4 — it gates evidence quality for the whole program.
+- ~~**DEF-11** needs a product decision~~ — **resolved 2026-08-18.** A short, common cookie value is
+  not redacted. This is already the implemented behaviour: the root cause was removed in `6938e544e`,
+  which landed eight days after the review that recorded it as unfixed. No code change was needed and
+  none was made. See [DEFECTS.md](DEFECTS.md).
