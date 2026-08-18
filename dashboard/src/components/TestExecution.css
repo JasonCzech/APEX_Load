@@ -1284,6 +1284,15 @@
   width: 100%;
 }
 
+.charts-config-empty {
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px dashed var(--border-subtle);
+  border-radius: 8px;
+  color: var(--text-muted);
+  font-size: 0.82rem;
+}
+
 .charts-config-option {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);

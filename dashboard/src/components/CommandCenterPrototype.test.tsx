@@ -1362,12 +1362,20 @@ describe('CommandCenterPrototype', () => {
 
     await click(buttonNamed('Configure Graphs'))
 
+    // The card list follows the graph page in view, so the fleet CPU card is
+    // reachable from the Infrastructure page rather than Live Metrics.
+    expect(container.querySelector('input[aria-label="Show CPU Usage — Fleet (%)"]')).toBeNull()
+
+    await click(tabNamed('Infrastructure'))
+
     const cpuToggle = inputByLabel('Show CPU Usage — Fleet (%)')
     expect(cpuToggle.checked).toBe(true)
 
     await click(cpuToggle)
 
     expect(window.localStorage.getItem('apexload.commandCenter.grafana.hiddenCharts')).toContain('cpu')
+
+    await click(tabNamed('Live Metrics'))
 
     const expandButton = container.querySelector<HTMLButtonElement>('.btn-expand')
     expect(expandButton).not.toBeNull()

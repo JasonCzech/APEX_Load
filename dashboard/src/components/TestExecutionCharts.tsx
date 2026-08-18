@@ -62,6 +62,7 @@ import {
   isImportedDashboardChart,
   isOverlayMetricAvailable,
   isPrometheusChart,
+  isResponsePercentileChart,
   isStatTileChart,
   buildImportedDashboardCharts,
   latestRouteLatencyValues,
@@ -82,6 +83,7 @@ import {
   overlayMetricRows,
   prometheusChartData,
   rateOverlayAxisLabel,
+  RESPONSE_PERCENTILE_KEYS,
   responseTimeDataWithoutNetworkLatency,
   routeLatencyModes,
   routeLatencySeriesKeys,
@@ -105,6 +107,7 @@ import {
   type MetricTableSort,
   type MetricTableSortKey,
   type OverlayMetricKey,
+  type ResponsePercentileKey,
   type ResponseTimeNetworkMode,
   type RouteLatencyMode,
 } from './testExecutionChartModel'
@@ -814,6 +817,18 @@ export default function TestExecutionCharts({
   }, [allChartConfigs, chartOrder])
   const latencyKeys = useMemo(() => routeLatencySeriesKeys(filteredData), [filteredData])
   const transactionNames = useMemo(() => transactionChartSeriesNames(filteredData), [filteredData])
+  // A percentile graph lists only the transactions that actually reported that
+  // percentile, so an archived run whose interval summaries carry no
+  // per-transaction percentiles never offers an empty line.
+  const percentileTransactionNames = useMemo(() => (
+    RESPONSE_PERCENTILE_KEYS.reduce((names, percentileKey) => {
+      names[percentileKey] = transactionChartSeriesNames(filteredData, percentileKey)
+      return names
+    }, {} as Record<ResponsePercentileKey, string[]>)
+  ), [filteredData])
+  const transactionNamesForChart = (chart: ChartConfig) => (
+    isResponsePercentileChart(chart) ? percentileTransactionNames[chart.percentileKey] : transactionNames
+  )
   const activeRouteLatencyKey = latencyKeys.includes(selectedRouteLatencyKey)
     ? selectedRouteLatencyKey
     : latencyKeys[0]
@@ -895,6 +910,15 @@ export default function TestExecutionCharts({
     updateActiveGraphGroupTab('test_results')
   }, [activeGraphGroupTab, enableGraphGroupTabs, updateActiveGraphGroupTab, visibleGraphGroupTabs])
   const visibleCharts = orderedCharts.filter(chart => !hiddenChartIds.includes(chart.id))
+  // Configure Graphs lists the cards belonging to the graph page in view. It
+  // filters `orderedCharts` (not `visibleCharts`) so a hidden card on this page
+  // is still listed and can be switched back on.
+  const configurableCharts = enableGraphGroupTabs
+    ? orderedCharts.filter(chart => graphGroupForChart(chart) === activeGraphGroupTab)
+    : orderedCharts
+  const configurableChartsScopeLabel = enableGraphGroupTabs
+    ? graphGroupTabs.find(tab => tab.id === activeGraphGroupTab)?.label.toLowerCase() ?? ''
+    : ''
   const tabbedCharts = enableGraphGroupTabs
     ? visibleCharts.filter(chart => graphGroupForChart(chart) === activeGraphGroupTab)
     : visibleCharts
@@ -989,7 +1013,9 @@ export default function TestExecutionCharts({
     if (isPrometheusChart(chart)) {
       return prometheusChartDataById.get(chart.id) ?? []
     }
-    return chart.id === 'latency' ? granularResponseTimeData : granularBaseData
+    // The percentile graphs are response-time graphs too, so they follow the
+    // end-to-end / application network-latency mode with the ART graph.
+    return chart.id === 'latency' || isResponsePercentileChart(chart) ? granularResponseTimeData : granularBaseData
   }
   const updateSharedCursor = (cursor: GraphCursorState | null) => {
     if (sameGraphCursor(sharedCursorRef.current, cursor)) {
@@ -1266,7 +1292,7 @@ export default function TestExecutionCharts({
     })
   }
 
-  const metricRowsForChart = (chart: ChartConfig) => chartMetricRows(chart, graphGroupNames, latencyKeys, groupColors, false, overlayMetricKeysForChart(chart), routeLatencyMode, activeRouteLatencyKey, transactionNames)
+  const metricRowsForChart = (chart: ChartConfig) => chartMetricRows(chart, graphGroupNames, latencyKeys, groupColors, false, overlayMetricKeysForChart(chart), routeLatencyMode, activeRouteLatencyKey, transactionNamesForChart(chart))
 
   const visibleMetricKeysForChart = (chart: ChartConfig, rows = metricRowsForChart(chart)) => {
     const availableKeys = rows.map(row => row.key)
@@ -1425,30 +1451,30 @@ export default function TestExecutionCharts({
   const downloadChartSvgSnapshot = async (chart: ChartConfig) => {
     const card = chartCardRefs.current[chart.id]
     if (!card) {
-      await downloadTextFile(latestGraphValuesText({ ...chart, title: displayTitleForChart(chart) }, latest, graphGroupNames, latencyKeys, latencyLatestValues, overlayMetricKeysForChart(chart), routeLatencyMode, activeRouteLatencyKey, transactionNames), `${safeFileName(displayTitleForChart(chart))}-values.txt`, 'text/plain;charset=utf-8')
+      await downloadTextFile(latestGraphValuesText({ ...chart, title: displayTitleForChart(chart) }, latest, graphGroupNames, latencyKeys, latencyLatestValues, overlayMetricKeysForChart(chart), routeLatencyMode, activeRouteLatencyKey, transactionNamesForChart(chart)), `${safeFileName(displayTitleForChart(chart))}-values.txt`, 'text/plain;charset=utf-8')
       return
     }
     const displayTitle = displayTitleForChart(chart)
     const snapshot = chartSnapshotSvg(card, { ...chart, title: displayTitle })
     if (!snapshot) {
-      await downloadTextFile(latestGraphValuesText({ ...chart, title: displayTitle }, latest, graphGroupNames, latencyKeys, latencyLatestValues, overlayMetricKeysForChart(chart), routeLatencyMode, activeRouteLatencyKey, transactionNames), `${safeFileName(displayTitle)}-values.txt`, 'text/plain;charset=utf-8')
+      await downloadTextFile(latestGraphValuesText({ ...chart, title: displayTitle }, latest, graphGroupNames, latencyKeys, latencyLatestValues, overlayMetricKeysForChart(chart), routeLatencyMode, activeRouteLatencyKey, transactionNamesForChart(chart)), `${safeFileName(displayTitle)}-values.txt`, 'text/plain;charset=utf-8')
       return
     }
     await downloadTextFile(snapshot, `${safeFileName(displayTitle)}-snapshot.svg`, 'image/svg+xml;charset=utf-8')
   }
 
   const exportChartCsv = async (chart: ChartConfig) => {
-    await downloadTextFile(graphCsvForChart(chart, chartDataFor(chart), graphGroupNames, latencyKeys, false, overlayMetricKeysForChart(chart), routeLatencyMode, activeRouteLatencyKey, transactionNames), `${safeFileName(displayTitleForChart(chart))}-data.csv`, 'text/csv;charset=utf-8')
+    await downloadTextFile(graphCsvForChart(chart, chartDataFor(chart), graphGroupNames, latencyKeys, false, overlayMetricKeysForChart(chart), routeLatencyMode, activeRouteLatencyKey, transactionNamesForChart(chart)), `${safeFileName(displayTitleForChart(chart))}-data.csv`, 'text/csv;charset=utf-8')
   }
 
   const copyLatestValues = async (chart: ChartConfig) => {
     const chartData = chartDataFor(chart)
     const chartLatest = chartData[chartData.length - 1] || latest
-    const visibleKeys = chartMetricKeys(chart, graphGroupNames, latencyKeys, false, overlayMetricKeysForChart(chart), routeLatencyMode, activeRouteLatencyKey, transactionNames)
+    const visibleKeys = chartMetricKeys(chart, graphGroupNames, latencyKeys, false, overlayMetricKeysForChart(chart), routeLatencyMode, activeRouteLatencyKey, transactionNamesForChart(chart))
     const routeLatestValues = chart.id === 'network_latency'
       ? latestRouteLatencyValues(chartData, visibleKeys)
       : latencyLatestValues
-    const text = latestGraphValuesText({ ...chart, title: displayTitleForChart(chart) }, chartLatest, graphGroupNames, latencyKeys, routeLatestValues, overlayMetricKeysForChart(chart), routeLatencyMode, activeRouteLatencyKey, transactionNames)
+    const text = latestGraphValuesText({ ...chart, title: displayTitleForChart(chart) }, chartLatest, graphGroupNames, latencyKeys, routeLatestValues, overlayMetricKeysForChart(chart), routeLatencyMode, activeRouteLatencyKey, transactionNamesForChart(chart))
     if (!await copyTextToClipboard(text)) {
       await downloadTextFile(text, `${safeFileName(displayTitleForChart(chart))}-latest-values.txt`, 'text/plain;charset=utf-8')
     }
@@ -1767,10 +1793,13 @@ export default function TestExecutionCharts({
       <div className="charts-config-panel-section">
         <div>
           <h4>Graph Cards</h4>
-          <span>Add or remove graph cards</span>
+          <span>{configurableChartsScopeLabel ? `Add or remove ${configurableChartsScopeLabel} graph cards` : 'Add or remove graph cards'}</span>
         </div>
         <div className="charts-config-option-list">
-          {orderedCharts.map(chart => {
+          {configurableCharts.length === 0 && (
+            <p className="charts-config-empty">No graph cards on this graph page.</p>
+          )}
+          {configurableCharts.map(chart => {
             const visible = !hiddenChartIds.includes(chart.id)
             return (
               <label key={chart.id} className="charts-config-option">

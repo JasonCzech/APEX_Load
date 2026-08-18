@@ -19,6 +19,7 @@ import {
   chartMetricRows,
   chartMetricSummary,
   chartMetricSummaries,
+  chartPrimaryYAxisLabel,
   chartStateForMonitorPreset,
   defaultHiddenChartIds,
   downsampleGraphData,
@@ -28,6 +29,7 @@ import {
   graphCsvForChart,
   hasLoadImpactPercentileRows,
   isOverlayMetricAvailable,
+  isResponsePercentileChart,
   latestRouteLatencyValues,
   loadImpactChartDataForRow,
   loadImpactHeatmapChart,
@@ -36,6 +38,8 @@ import {
   prometheusChartData,
   rawGraphMetricKey,
   resolveSharedCursorTime,
+  responsePercentileChartId,
+  RESPONSE_PERCENTILE_KEYS,
   responseTimeDataWithoutNetworkLatency,
   rollingArtStdDevWindowForRadius,
   routeLatencySeriesKeys,
@@ -111,8 +115,8 @@ describe('chartStateForMonitorPreset', () => {
       [],
     )
 
-    expect(chartMetricKeys(chart, ['Checkout'], [])).toEqual(['avgMs', 'Checkout_avgMs', 'p50', 'p90', 'p95', 'p99'])
-    expect(csv).toBe('time,avgMs,Checkout_avgMs,p50,p90,p95,p99\n10:00:00,100,92,80,100,115,130')
+    expect(chartMetricKeys(chart, ['Checkout'], [])).toEqual(['avgMs', 'Checkout_avgMs'])
+    expect(csv).toBe('time,avgMs,Checkout_avgMs\n10:00:00,100,92')
   })
 
   it('can include active VUsers when exporting a graph with the overlay enabled', () => {
@@ -201,13 +205,66 @@ describe('chartStateForMonitorPreset', () => {
 
     expect(chartMetricRows(chart, ['Checkout', 'Search'], [], ['#00a3ff', '#ffaa00'])).toEqual([
       { key: 'avgMs', label: 'Total', color: 'var(--text-muted)', unit: 'ms', kind: 'transaction' },
-      { key: 'Checkout_avgMs', label: 'Checkout', color: '#00a3ff', unit: 'ms', kind: 'transaction' },
-      { key: 'Search_avgMs', label: 'Search', color: '#ffaa00', unit: 'ms', kind: 'transaction' },
-      { key: 'p50', label: 'P50', color: 'var(--chart-5)', unit: 'ms', kind: 'percentile' },
-      { key: 'p90', label: 'P90', color: 'var(--chart-3)', unit: 'ms', kind: 'percentile' },
-      { key: 'p95', label: 'P95', color: 'var(--chart-2)', unit: 'ms', kind: 'percentile' },
-      { key: 'p99', label: 'P99', color: 'var(--chart-4)', unit: 'ms', kind: 'percentile' },
+      { key: 'Checkout_avgMs', label: 'Checkout', color: '#00a3ff', unit: 'ms', kind: 'transaction', strokeDasharray: undefined },
+      { key: 'Search_avgMs', label: 'Search', color: '#ffaa00', unit: 'ms', kind: 'transaction', strokeDasharray: undefined },
     ])
+  })
+
+  it('keeps percentiles off the response time graph and gives each its own graph', () => {
+    const latencyChart = chartConfigs.find(chart => chart.id === 'latency')!
+    const latencyKeys = chartMetricKeys(latencyChart, ['Checkout'], [], false, [], 'total', undefined, ['Login'])
+
+    expect(latencyKeys.some(key => key.includes('p50') || key.includes('p90') || key.includes('p95') || key.includes('p99'))).toBe(false)
+
+    expect(RESPONSE_PERCENTILE_KEYS.map(responsePercentileChartId)).toEqual(['latency_p50', 'latency_p90', 'latency_p95', 'latency_p99'])
+    RESPONSE_PERCENTILE_KEYS.forEach(percentileKey => {
+      const chart = chartConfigs.find(candidate => candidate.id === responsePercentileChartId(percentileKey))!
+      expect(chart.percentileKey).toBe(percentileKey)
+      expect(isResponsePercentileChart(chart)).toBe(true)
+      expect(chartMetricKeys(chart, ['Checkout', 'Search'], [], false, [], 'total', undefined, ['Login'])).toEqual([
+        percentileKey,
+        `Checkout_${percentileKey}`,
+        `Search_${percentileKey}`,
+        transactionChartSeriesKey('Login', percentileKey),
+      ])
+    })
+  })
+
+  it('builds one line per selected group and transaction on a percentile graph', () => {
+    const chart = chartConfigs.find(candidate => candidate.id === 'latency_p95')!
+
+    expect(chartMetricRows(chart, ['Checkout', 'Search'], [], ['#00a3ff', '#ffaa00'], false, [], 'total', undefined, ['Login'])).toEqual([
+      { key: 'p95', label: 'Total', color: 'var(--text-muted)', unit: 'ms' },
+      { key: 'Checkout_p95', label: 'Checkout', color: '#00a3ff', unit: 'ms', strokeDasharray: undefined },
+      { key: 'Search_p95', label: 'Search', color: '#ffaa00', unit: 'ms', strokeDasharray: undefined },
+      expect.objectContaining({
+        key: transactionChartSeriesKey('Login', 'p95'),
+        label: 'Transaction · Login',
+        unit: 'ms',
+        kind: 'transaction',
+      }),
+    ])
+    expect(chartPrimaryYAxisLabel(chart)).toBe('P95 response time (ms)')
+  })
+
+  it('lists only the transactions that reported a percentile', () => {
+    const data = [{
+      time: '10:00:00',
+      vusers: 4,
+      tps: 5,
+      avgMs: 100,
+      errorPct: 0,
+      p50: 80,
+      p90: 120,
+      p99: 180,
+      [transactionChartSeriesKey('Login', 'avgMs')]: 90,
+      [transactionChartSeriesKey('Login', 'p95')]: 140,
+      [transactionChartSeriesKey('Search', 'avgMs')]: 110,
+    }]
+
+    expect(transactionChartSeriesNames(data)).toEqual(['Login', 'Search'])
+    expect(transactionChartSeriesNames(data, 'p95')).toEqual(['Login'])
+    expect(transactionChartSeriesNames(data, 'p99')).toEqual([])
   })
 
   it('builds simultaneous throughput, response-time, and error series for every transaction', () => {
@@ -273,10 +330,10 @@ describe('chartStateForMonitorPreset', () => {
     const rows = chartMetricRows(chart, ['Checkout'], [], ['#00a3ff'])
     const total = rows.find(row => row.key === 'avgMs')!
     const checkout = rows.find(row => row.key === 'Checkout_avgMs')!
-    const p95 = rows.find(row => row.key === 'p95')!
+    const p95 = chartMetricRows(loadImpactPercentilesChart, [], [], ['#00a3ff']).find(row => row.key === 'p95')!
 
     expect(chartMetricLinePresentation(total)).toEqual({ role: 'transaction', strokeWidth: 2.5, strokeOpacity: 1 })
-    expect(chartMetricLinePresentation(checkout)).toEqual({ role: 'transaction', strokeWidth: 2.2, strokeOpacity: 1 })
+    expect(chartMetricLinePresentation(checkout)).toEqual({ role: 'transaction', strokeWidth: 2.2, strokeDasharray: undefined, strokeOpacity: 1 })
     expect(chartMetricLinePresentation(p95)).toEqual({ role: 'percentile', strokeWidth: 1.25, strokeDasharray: '4 2', strokeOpacity: 0.68 })
   })
 

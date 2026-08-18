@@ -1,6 +1,6 @@
 import type { MetricsHistoryPoint } from '../types'
 
-export type TransactionChartMetric = 'tps' | 'avgMs' | 'errorPct'
+export type TransactionChartMetric = 'tps' | 'avgMs' | 'errorPct' | 'p50' | 'p90' | 'p95' | 'p99'
 
 // Archive interval summaries are compacted to this cardinality. Keep the UI on
 // the same bound so malformed or forward-version payloads cannot create an
@@ -8,7 +8,7 @@ export type TransactionChartMetric = 'tps' | 'avgMs' | 'errorPct'
 export const MAX_TRANSACTION_CHART_SERIES = 512
 
 const TRANSACTION_SERIES_PREFIX = 'transaction:'
-const TRANSACTION_SERIES_METRICS: TransactionChartMetric[] = ['tps', 'avgMs', 'errorPct']
+const TRANSACTION_SERIES_METRICS: TransactionChartMetric[] = ['tps', 'avgMs', 'errorPct', 'p50', 'p90', 'p95', 'p99']
 const TRANSACTION_SERIES_COLORS = [
   'var(--chart-1)',
   'var(--chart-2)',
@@ -72,10 +72,22 @@ export function omitTransactionChartSeries(point: MetricsHistoryPoint): MetricsH
   return scopedPoint
 }
 
-export function transactionChartSeriesNames(data: ReadonlyArray<MetricsHistoryPoint>) {
+// transactionChartSeriesNames lists the transactions present in the data. Pass a
+// metric to list only the transactions that actually reported it — percentile
+// graphs must not advertise a line for a transaction whose source (e.g. an
+// archived interval summary) carries no percentiles.
+export function transactionChartSeriesNames(
+  data: ReadonlyArray<MetricsHistoryPoint>,
+  metric?: TransactionChartMetric,
+) {
   const names = new Set<string>()
   data.forEach(point => {
     Object.keys(point).forEach(key => {
+      if (metric !== undefined) {
+        if (!key.endsWith(`:${metric}`)) return
+        const value = point[key]
+        if (typeof value !== 'number' || !Number.isFinite(value)) return
+      }
       const name = transactionChartSeriesName(key)
       if (name !== undefined) names.add(name)
     })

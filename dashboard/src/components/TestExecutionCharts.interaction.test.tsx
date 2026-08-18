@@ -384,9 +384,9 @@ describe('TestExecutionCharts context menu', () => {
     await renderCharts()
 
     const mockCharts = Array.from(container.querySelectorAll('[data-testid="mock-chart"]'))
-    expect(mockCharts).toHaveLength(14)
-    expect(mockCharts.map(chart => chart.getAttribute('data-sync-id'))).toEqual([...Array(11).fill('metrics'), '', '', ''])
-    expect(Array.from(container.querySelectorAll('[data-testid="mock-tooltip"]')).map(tooltip => tooltip.getAttribute('data-label-display'))).toEqual(Array(14).fill('none'))
+    expect(mockCharts).toHaveLength(18)
+    expect(mockCharts.map(chart => chart.getAttribute('data-sync-id'))).toEqual([...Array(15).fill('metrics'), '', '', ''])
+    expect(Array.from(container.querySelectorAll('[data-testid="mock-tooltip"]')).map(tooltip => tooltip.getAttribute('data-label-display'))).toEqual(Array(18).fill('none'))
 
     const tpsChart = mockCharts[1]
     await act(async () => {
@@ -398,15 +398,15 @@ describe('TestExecutionCharts context menu', () => {
     expect(tooltips.map(tooltip => tooltip.getAttribute('data-label-display'))).toEqual([
       'none',
       '',
-      ...Array(12).fill('none'),
+      ...Array(16).fill('none'),
     ])
     expect(tooltips.map(tooltip => tooltip.getAttribute('data-label-text'))).toEqual([
       '',
       '10:00:01',
-      ...Array(12).fill(''),
+      ...Array(16).fill(''),
     ])
     expect(tooltips.map(tooltip => tooltip.getAttribute('data-formatted-value'))).toEqual([
-      ...Array(11).fill('123.46'),
+      ...Array(15).fill('123.46'),
       '123',
       '123',
       '123',
@@ -787,8 +787,8 @@ describe('TestExecutionCharts context menu', () => {
       root.render(
         <TestExecutionCharts
           filteredData={[
-            { time: '10:00:00', vusers: 2, tps: 3, avgMs: 100, errorPct: 0, p50: 80, p90: 100, p95: 115, p99: 2200 },
-            { time: '10:00:01', vusers: 4, tps: 6, avgMs: 110, errorPct: 0, p50: 85, p90: 105, p95: 118, p99: 2400 },
+            { time: '10:00:00', vusers: 2, tps: 3, avgMs: 100, errorPct: 0, p50: 80, p90: 100, p95: 115, p99: 2200, Checkout_p99: 2200, Browse_p99: 90 },
+            { time: '10:00:01', vusers: 4, tps: 6, avgMs: 110, errorPct: 0, p50: 85, p90: 105, p95: 118, p99: 2400, Checkout_p99: 2400, Browse_p99: 95 },
           ]}
           expandedChart={null}
           onExpandedChartChange={vi.fn()}
@@ -801,28 +801,36 @@ describe('TestExecutionCharts context menu', () => {
           refAreaEnd=""
           timeRange="3m"
           onTimeRangeChange={vi.fn()}
-          isMultiGroup={false}
-          groupNames={[]}
-          groupColors={['#00a3ff']}
+          isMultiGroup
+          groupNames={['Checkout', 'Browse']}
+          groupColors={['#00a3ff', '#ffaa00']}
         />,
       )
     })
 
-    const responseChart = Array.from(container.querySelectorAll('.chart-card')).find(chart => chart.textContent?.includes('Response Time (ms)'))
-    expect(primaryAxisDomain(responseChart)).toBe('0|2592')
-    expect(responseChart?.querySelector('path[data-testid="mock-line"][data-key="p99"]')).not.toBeNull()
+    const p99Chart = Array.from(container.querySelectorAll('.chart-card')).find(chart => chart.textContent?.includes('P99 Response Time (ms)'))
+    expect(primaryAxisDomain(p99Chart)).toBe('0|2592')
+    expect(p99Chart?.querySelector('path[data-testid="mock-line"][data-key="p99"]')).not.toBeNull()
+    expect(p99Chart?.querySelector('path[data-testid="mock-line"][data-key="Checkout_p99"]')).not.toBeNull()
+    expect(p99Chart?.querySelector('path[data-testid="mock-line"][data-key="Browse_p99"]')).not.toBeNull()
 
-    const p99Toggle = Array.from(responseChart?.querySelectorAll<HTMLInputElement>('input[type="checkbox"]') ?? [])
-      .find(input => input.getAttribute('aria-label') === 'Show P99')
-    expect(p99Toggle).not.toBeUndefined()
+    const hideTotal = Array.from(p99Chart?.querySelectorAll<HTMLInputElement>('input[type="checkbox"]') ?? [])
+      .find(input => input.getAttribute('aria-label') === 'Show Total')
+    const hideCheckout = Array.from(p99Chart?.querySelectorAll<HTMLInputElement>('input[type="checkbox"]') ?? [])
+      .find(input => input.getAttribute('aria-label') === 'Show Checkout')
+    expect(hideTotal).not.toBeUndefined()
+    expect(hideCheckout).not.toBeUndefined()
 
     await act(async () => {
-      p99Toggle?.click()
+      hideTotal?.click()
+    })
+    await act(async () => {
+      hideCheckout?.click()
     })
 
-    expect(responseChart?.querySelector('path[data-testid="mock-line"][data-key="p99"]')).toBeNull()
-    expect(primaryAxisDomain(responseChart)).toBe('0|127.44')
-    expect(window.localStorage.getItem('apexload.execution.chartMetricFilters')).toContain('"latency":["avgMs","p50","p90","p95"]')
+    expect(p99Chart?.querySelector('path[data-testid="mock-line"][data-key="Checkout_p99"]')).toBeNull()
+    expect(primaryAxisDomain(p99Chart)).toBe('0|102.6')
+    expect(window.localStorage.getItem('apexload.execution.chartMetricFilters')).toContain('"latency_p99":["Browse_p99"]')
   })
 
   it('scales the graph axis to the smoothed line rather than the raw spike', async () => {
@@ -905,17 +913,26 @@ describe('TestExecutionCharts context menu', () => {
     expect(responseChart?.querySelector('path[data-testid="mock-area"][data-key="avgMsStdDevBand"]')).not.toBeNull()
   })
 
-  it('separates ART transaction and percentile legend groups', async () => {
+  it('keeps percentiles off the response time graph and draws one graph per percentile', async () => {
     await renderCharts()
 
-    const responseChart = Array.from(container.querySelectorAll('.chart-card')).find(chart => chart.textContent?.includes('Response Time (ms)'))
-    expect(responseChart?.querySelector('.chart-series-legend')?.textContent).toContain('Transactions')
-    expect(responseChart?.querySelector('.chart-series-legend')?.textContent).toContain('Percentiles')
+    const chartCard = (title: string) => Array.from(container.querySelectorAll('.chart-card')).find(chart => chart.textContent?.includes(title))
+    const responseChart = chartCard('Response Time (ms)')
+    expect(responseChart?.querySelector('.chart-series-legend')?.textContent).not.toContain('Percentiles')
     expect(responseChart?.querySelector('path[data-testid="mock-line"][data-name="Total"]')?.getAttribute('data-stroke-width')).toBe('2.5')
     expect(responseChart?.querySelector('path[data-testid="mock-line"][data-name="Total"]')?.getAttribute('data-stroke-dasharray')).toBe('')
-    expect(responseChart?.querySelector('path[data-testid="mock-line"][data-name="P95"]')?.getAttribute('data-stroke-width')).toBe('1.25')
-    expect(responseChart?.querySelector('path[data-testid="mock-line"][data-name="P95"]')?.getAttribute('data-stroke-dasharray')).toBe('4 2')
-    expect(responseChart?.querySelector('path[data-testid="mock-line"][data-name="P95"]')?.getAttribute('data-stroke-opacity')).toBe('0.68')
+    expect(responseChart?.querySelector('path[data-testid="mock-line"][data-key="p95"]')).toBeNull()
+    expect(responseChart?.querySelector('path[data-testid="mock-line"][data-key="p99"]')).toBeNull()
+
+    const titles = chartTitles()
+    expect(titles).toContain('P50 Response Time (ms)')
+    expect(titles).toContain('P90 Response Time (ms)')
+    expect(titles).toContain('P95 Response Time (ms)')
+    expect(titles).toContain('P99 Response Time (ms)')
+
+    const p99Chart = chartCard('P99 Response Time (ms)')
+    expect(p99Chart?.querySelector('path[data-testid="mock-line"][data-key="p99"]')?.getAttribute('data-stroke-width')).toBe('2')
+    expect(p99Chart?.querySelector('path[data-testid="mock-line"][data-key="p50"]')).toBeNull()
   })
 
   it('renders load-under graphs as selectable runtime graph cards', async () => {
@@ -985,6 +1002,77 @@ describe('TestExecutionCharts context menu', () => {
 
     expect(pValuesUnderLoad()?.querySelector('path[data-testid="mock-line"][data-key="p90"][data-name="P90"]')).toBeNull()
     expect(window.localStorage.getItem('apexload.execution.chartMetricFilters')).toContain('"load_impact_percentiles":["p50","p95","p99"]')
+  })
+
+  it('scopes the Configure Graphs card list to the graph page in view', async () => {
+    await act(async () => {
+      root.render(
+        <TestExecutionCharts
+          filteredData={[
+            { time: '10:00:00', vusers: 5, tps: 2.5, avgMs: 115, errorPct: 0, p50: 105, p90: 132, p95: 145, p99: 180 },
+            { time: '10:01:00', vusers: 15, tps: 6.7, avgMs: 150, errorPct: 0.5, p50: 138, p90: 196, p95: 218, p99: 268 },
+            { time: '10:02:00', vusers: 30, tps: 11.6, avgMs: 224, errorPct: 1.1, p50: 202, p90: 308, p95: 340, p99: 410 },
+          ]}
+          expandedChart={null}
+          onExpandedChartChange={vi.fn()}
+          onChartMouseDown={vi.fn()}
+          onChartMouseMove={vi.fn()}
+          onZoom={vi.fn()}
+          onResetZoom={vi.fn()}
+          showRefArea={false}
+          refAreaLeft=""
+          refAreaEnd=""
+          timeRange="3m"
+          onTimeRangeChange={vi.fn()}
+          isMultiGroup={false}
+          groupNames={[]}
+          groupColors={['#00a3ff']}
+          enableGraphGroupTabs
+        />,
+      )
+    })
+
+    await act(async () => {
+      buttonByText('Configure Graphs')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const cardLabels = () => Array.from(container.querySelectorAll<HTMLInputElement>('.charts-config-option input[type="checkbox"]'))
+      .map(input => input.getAttribute('aria-label'))
+
+    // Live Metrics is in view: only its cards are listed.
+    expect(cardLabels()).toContain('Show Response Time (ms)')
+    expect(cardLabels()).toContain('Show P95 Response Time (ms)')
+    expect(cardLabels()).not.toContain('Show ART Under Load')
+    expect(cardLabels()).not.toContain('Show Load Impact Heatmap')
+    expect(cardLabels()).not.toContain('Show CPU Usage — Fleet (%)')
+    expect(container.querySelector('.charts-config-panel-section span')?.textContent).toBe('Add or remove live metrics graph cards')
+
+    await act(async () => {
+      Array.from(container.querySelectorAll('button[role="tab"]')).find(button => button.textContent?.includes('Under Load'))
+        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    // Switching pages re-scopes the list, and hidden cards stay listed so they
+    // can be switched back on.
+    expect(cardLabels()).toContain('Show ART Under Load')
+    expect(cardLabels()).toContain('Show Load Impact Heatmap')
+    expect(cardLabels()).toContain('Show P Values Under Load')
+    expect(cardLabels()).not.toContain('Show Response Time (ms)')
+    expect(cardLabels()).not.toContain('Show P95 Response Time (ms)')
+
+    await act(async () => {
+      Array.from(container.querySelectorAll('button[role="tab"]')).find(button => button.textContent?.includes('Infrastructure'))
+        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(cardLabels()).toEqual([
+      'Show CPU Usage — Fleet (%)',
+      'Show Memory — Fleet total (MB)',
+      'Show Network & Disk I/O (KB/s)',
+      'Show Network Phase Breakdown — Transaction Traffic (ms)',
+      'Show Generator Impact',
+      'Show Route Latency (ms)',
+    ])
   })
 
   it('shows the load impact heatmap in Under Load by default and lets it be hidden', async () => {
@@ -1384,7 +1472,7 @@ describe('TestExecutionCharts context menu', () => {
     expect(container.querySelector('.monitor-preset-buttons')).toBeNull()
     expect(container.querySelector('.charts-customize-panel')).toBeNull()
     expect(container.querySelector('.charts-toolbar')?.textContent).toContain('Runtime Graphs')
-    expect(container.querySelector('.charts-toolbar')?.textContent).toContain('15 graphs')
+    expect(container.querySelector('.charts-toolbar')?.textContent).toContain('19 graphs')
     expect(container.querySelector('.charts-config-drawer')).toBeNull()
 
     await act(async () => {
@@ -1433,8 +1521,8 @@ describe('TestExecutionCharts context menu', () => {
       errorRateGraphToggle?.click()
     })
 
-    expect(container.querySelectorAll('.chart-card')).toHaveLength(14)
-    expect(container.querySelector('.charts-toolbar')?.textContent).toContain('14 graphs')
+    expect(container.querySelectorAll('.chart-card')).toHaveLength(18)
+    expect(container.querySelector('.charts-toolbar')?.textContent).toContain('18 graphs')
     expect(window.localStorage.getItem('apexload.execution.hiddenCharts')).toContain('errors')
 
     await act(async () => {
@@ -1469,7 +1557,7 @@ describe('TestExecutionCharts context menu', () => {
     expect(buttonByText('Standard')?.getAttribute('aria-pressed')).toBe('false')
     expect(buttonByText('6 Graphs')?.getAttribute('aria-pressed')).toBe('true')
     expect(window.localStorage.getItem('apexload.execution.chartDensity')).toBe('six_up')
-    expect(Array.from(container.querySelectorAll('[data-testid="mock-responsive-container"]')).map(container => container.getAttribute('data-height'))).toEqual(Array(13).fill('132'))
+    expect(Array.from(container.querySelectorAll('[data-testid="mock-responsive-container"]')).map(container => container.getAttribute('data-height'))).toEqual(Array(17).fill('132'))
     expect(container.querySelector('.chart-metrics-table')).toBeNull()
 
     await act(async () => {
@@ -1494,7 +1582,7 @@ describe('TestExecutionCharts context menu', () => {
     expect(window.localStorage.getItem('apexload.execution.responseTimeNetworkMode')).toBe('application')
     expect(responseChart?.textContent).toContain('82.6ms')
 
-    expect(container.querySelectorAll('.chart-card')).toHaveLength(14)
+    expect(container.querySelectorAll('.chart-card')).toHaveLength(18)
 
     const resetButton = buttonByText('Reset Graphs')
     expect(resetButton?.className).toContain('btn-chip')
@@ -1503,7 +1591,7 @@ describe('TestExecutionCharts context menu', () => {
       resetButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
-    expect(container.querySelectorAll('.chart-card')).toHaveLength(15)
+    expect(container.querySelectorAll('.chart-card')).toHaveLength(19)
   })
 
   it('traps graph configuration focus, closes on Escape, and restores its trigger', async () => {

@@ -128,6 +128,12 @@ export function mapExecutionMetricToHistoryPoint(metric: LiveMetrics): MetricsHi
       point[transactionChartSeriesKey(name, 'errorPct')] = transactionMetric.count > 0
         ? rounded(transactionMetric.errors / transactionMetric.count * 100, 100)
         : 0
+      // Percentiles stay optional: a transaction that reported none must leave a
+      // gap on the P-value graphs rather than a misleading 0 ms line.
+      point[transactionChartSeriesKey(name, 'p50')] = roundedOptional(transactionMetric.p50_ms)
+      point[transactionChartSeriesKey(name, 'p90')] = roundedOptional(transactionMetric.p90_ms)
+      point[transactionChartSeriesKey(name, 'p95')] = roundedOptional(transactionMetric.p95_ms)
+      point[transactionChartSeriesKey(name, 'p99')] = roundedOptional(transactionMetric.p99_ms)
     })
   }
 

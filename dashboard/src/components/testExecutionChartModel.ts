@@ -15,6 +15,10 @@ import {
   transactionChartSeriesPresentation,
 } from './transactionChartSeries'
 
+// The percentiles the aggregate, per-group, and per-transaction series all
+// report, each with its own Live Metrics graph.
+export type ResponsePercentileKey = 'p50' | 'p90' | 'p95' | 'p99'
+
 export type ChartDomain = ComponentProps<typeof YAxis>['domain']
 
 export interface ImportedPanelRef {
@@ -42,6 +46,9 @@ export interface ChartConfig {
   domain?: ChartDomain
   defaultMetricKeys?: string[]
   loadImpactMetric?: LoadImpactMetric
+  // Set on the standalone P50/P90/P95/P99 response-time graphs: the single
+  // percentile every series on the graph reports.
+  percentileKey?: ResponsePercentileKey
   // Groups that have their own line on this Under Load graph.
   loadImpactGroupNames?: string[]
   prometheusGraph?: PrometheusGraph
@@ -227,10 +234,41 @@ export interface GraphSmoothingDensity {
   expanded?: boolean
 }
 
+export const RESPONSE_PERCENTILE_KEYS: ResponsePercentileKey[] = ['p50', 'p90', 'p95', 'p99']
+
+const RESPONSE_PERCENTILE_COLORS: Record<ResponsePercentileKey, string> = {
+  p50: 'var(--chart-5)',
+  p90: 'var(--chart-3)',
+  p95: 'var(--chart-2)',
+  p99: 'var(--chart-4)',
+}
+
+export function responsePercentileChartId(percentileKey: ResponsePercentileKey) {
+  return `latency_${percentileKey}`
+}
+
+export function responsePercentileLabel(percentileKey: ResponsePercentileKey) {
+  return percentileKey.toUpperCase()
+}
+
+const responsePercentileCharts: ChartConfig[] = RESPONSE_PERCENTILE_KEYS.map(percentileKey => ({
+  id: responsePercentileChartId(percentileKey),
+  title: `${responsePercentileLabel(percentileKey)} Response Time (ms)`,
+  type: 'line-multi',
+  totalKey: percentileKey,
+  color: RESPONSE_PERCENTILE_COLORS[percentileKey],
+  percentileKey,
+}))
+
+export function isResponsePercentileChart(chart: ChartConfig): chart is ChartConfig & { percentileKey: ResponsePercentileKey } {
+  return chart.percentileKey !== undefined
+}
+
 export const chartConfigs: ChartConfig[] = [
   { id: 'vusers', title: 'Virtual Users', type: 'area', dataKey: 'vusers', color: 'var(--chart-1)' },
   { id: 'tps', title: 'Transactions Per Second', type: 'line-multi', totalKey: 'tps' },
   { id: 'latency', title: 'Response Time (ms)', type: 'line-latency' },
+  ...responsePercentileCharts,
   { id: 'errors', title: 'Error Rate (%)', type: 'line-multi', totalKey: 'errorPct', color: 'var(--chart-4)', domain: [0, 'auto'] },
   {
     id: 'cpu',
@@ -536,6 +574,9 @@ function normalizeOverlayMetricKeys(chart: ChartConfig, includeVuserOverlay: boo
 }
 
 export function chartPrimaryYAxisLabel(chart: ChartConfig) {
+  if (isResponsePercentileChart(chart)) {
+    return `${responsePercentileLabel(chart.percentileKey)} response time (ms)`
+  }
   switch (chart.id) {
     case 'vusers':
       return 'VUsers'
@@ -639,9 +680,9 @@ export function presetExemptChartIds(charts: ChartConfig[]): string[] {
 
 export const monitorPresets = [
   { id: 'run_operator', label: 'Run Operator', chartIds: ['vusers', 'tps', 'latency', 'errors', 'error_taxonomy'] },
-  { id: 'performance_engineer', label: 'Performance Engineer', chartIds: ['latency', 'tps', 'errors', 'error_taxonomy', 'tx_network_phases', 'cpu', 'mem', 'io', 'generator_impact', 'network_latency', 'vusers'] },
+  { id: 'performance_engineer', label: 'Performance Engineer', chartIds: ['latency', 'latency_p95', 'latency_p99', 'tps', 'errors', 'error_taxonomy', 'tx_network_phases', 'cpu', 'mem', 'io', 'generator_impact', 'network_latency', 'vusers'] },
   { id: 'platform_admin', label: 'Platform Admin', chartIds: ['cpu', 'mem', 'io', 'tx_network_phases', 'generator_impact', 'network_latency', 'vusers', 'tps'] },
-  { id: 'release_approver', label: 'Release Approver', chartIds: ['latency', 'errors', 'error_taxonomy', 'tps'] },
+  { id: 'release_approver', label: 'Release Approver', chartIds: ['latency', 'latency_p95', 'errors', 'error_taxonomy', 'tps'] },
 ] as const
 
 export function sameStringArray(left: string[], right: string[]) {
@@ -702,15 +743,59 @@ export function latestRouteLatencyValues(data: MetricsHistoryPoint[], keys = rou
   return values
 }
 
+// responsePercentileMetricKeys mirrors the aggregate/group/transaction shape the
+// TPS and Error Rate graphs use, for a single percentile.
+export function responsePercentileMetricKeys(
+  percentileKey: ResponsePercentileKey,
+  groupNames: string[],
+  transactionNames: string[] = [],
+) {
+  return [
+    percentileKey,
+    ...groupNames.map(name => `${name}_${percentileKey}`),
+    ...transactionNames.map(name => transactionChartSeriesKey(name, percentileKey)),
+  ]
+}
+
+function responsePercentileMetricRows(
+  chart: ChartConfig & { percentileKey: ResponsePercentileKey },
+  groupNames: string[],
+  groupColors: string[],
+  transactionNames: string[],
+): ChartMetricRow[] {
+  const percentileKey = chart.percentileKey
+  return [
+    { key: percentileKey, label: 'Total', color: 'var(--text-muted)', unit: 'ms' },
+    ...groupNames.map((name, index) => ({
+      key: `${name}_${percentileKey}`,
+      label: name,
+      color: groupColors[index % groupColors.length],
+      unit: 'ms',
+      strokeDasharray: groupSeriesDasharray(index, groupColors.length),
+    })),
+    ...transactionNames.map(name => {
+      const presentation = transactionChartSeriesPresentation(name)
+      return {
+        key: transactionChartSeriesKey(name, percentileKey),
+        label: `Transaction · ${name}`,
+        color: presentation.color,
+        unit: 'ms',
+        kind: 'transaction' as const,
+        strokeDasharray: presentation.strokeDasharray,
+      }
+    }),
+  ]
+}
+
+// responseTimeMetricKeys lists every series the "remove network latency" mode
+// adjusts: average response time plus each percentile, for the aggregate, the
+// groups, and the transactions.
 function responseTimeMetricKeys(groupNames: string[], transactionNames: string[] = []) {
   return [
     'avgMs',
     ...groupNames.map(name => `${name}_avgMs`),
     ...transactionNames.map(name => transactionChartSeriesKey(name, 'avgMs')),
-    'p50',
-    'p90',
-    'p95',
-    'p99',
+    ...RESPONSE_PERCENTILE_KEYS.flatMap(percentileKey => responsePercentileMetricKeys(percentileKey, groupNames, transactionNames)),
   ]
 }
 
@@ -1264,6 +1349,12 @@ export function chartMetricKeys(
       .filter(key => !keys.includes(key))
     return overlays.length > 0 ? [...keys, ...overlays] : keys
   }
+  if (isResponsePercentileChart(chart)) {
+    keys = responsePercentileMetricKeys(chart.percentileKey, groupNames, transactionNames)
+    const overlays = normalizeOverlayMetricKeys(chart, includeVuserOverlay, overlayMetricKeys)
+      .filter(key => !keys.includes(key))
+    return overlays.length > 0 ? [...keys, ...overlays] : keys
+  }
   switch (chart.id) {
     case 'tps':
       keys = [
@@ -1277,10 +1368,6 @@ export function chartMetricKeys(
         'avgMs',
         ...groupNames.map(name => `${name}_avgMs`),
         ...transactionNames.map(name => transactionChartSeriesKey(name, 'avgMs')),
-        'p50',
-        'p90',
-        'p95',
-        'p99',
       ]
       break
     case 'errors':
@@ -1374,6 +1461,13 @@ export function chartMetricRows(
       .map(key => overlayMetricRows[key])
     return overlayRows.length > 0 ? [...rows, ...overlayRows] : rows
   }
+  if (isResponsePercentileChart(chart)) {
+    rows = responsePercentileMetricRows(chart, groupNames, groupColors, transactionNames)
+    const overlayRows = normalizeOverlayMetricKeys(chart, includeVuserOverlay, overlayMetricKeys)
+      .filter(key => !rows.some(row => row.key === key))
+      .map(key => overlayMetricRows[key])
+    return overlayRows.length > 0 ? [...rows, ...overlayRows] : rows
+  }
   switch (chart.id) {
     case 'vusers':
       rows = [{ key: 'vusers', label: 'Active VUsers', color: chart.color ?? 'var(--chart-1)' }]
@@ -1421,10 +1515,6 @@ export function chartMetricRows(
             strokeDasharray: presentation.strokeDasharray,
           }
         }),
-        { key: 'p50', label: 'P50', color: 'var(--chart-5)', unit: 'ms', kind: 'percentile' },
-        { key: 'p90', label: 'P90', color: 'var(--chart-3)', unit: 'ms', kind: 'percentile' },
-        { key: 'p95', label: 'P95', color: 'var(--chart-2)', unit: 'ms', kind: 'percentile' },
-        { key: 'p99', label: 'P99', color: 'var(--chart-4)', unit: 'ms', kind: 'percentile' },
       ]
       break
     case 'errors':
