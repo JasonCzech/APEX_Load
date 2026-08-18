@@ -4,7 +4,8 @@ export default defineConfig({
   testDir: './e2e',
   fullyParallel: false,
   forbidOnly: Boolean(process.env.CI),
-  retries: process.env.CI ? 1 : 0,
+  // A retry hides the first signal the flake policy requires us to log.
+  retries: 0,
   workers: 1,
   reporter: process.env.CI
     ? [['line'], ['junit', { outputFile: 'test-results/playwright-junit.xml' }]]

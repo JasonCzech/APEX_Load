@@ -1,0 +1,100 @@
+{
+    "schema_version": 1,
+    "manifest_schema": "evidence-manifest.schema.json",
+    "milestones": [
+        {
+            "id": "M0",
+            "required": [
+                "manifest.json",
+                "SUMMARY.md",
+                "coverage-baseline.json",
+                "coverage-baseline.md",
+                "leak-linter-triage.md",
+                "flake-baseline.md"
+            ]
+        },
+        {
+            "id": "M1",
+            "required": [
+                "manifest.json",
+                "SUMMARY.md",
+                "tier0-assertion-matrix.json",
+                "tier0-assertion-matrix.md",
+                "api-contract-matrix.json"
+            ]
+        },
+        {
+            "id": "M2",
+            "required": [
+                "manifest.json",
+                "SUMMARY.md",
+                "converter-golden-inventory.json",
+                "lr-corpus-smoke.json",
+                "protected-import-e2e.json"
+            ]
+        },
+        {
+            "id": "M3",
+            "required": [
+                "manifest.json",
+                "SUMMARY.md",
+                "run-control-matrix.json",
+                "archive-integrity.json",
+                "soak-24h/summary.json"
+            ]
+        },
+        {
+            "id": "M4",
+            "required": [
+                "manifest.json",
+                "SUMMARY.md",
+                "postgres-contract.json",
+                "migration-validation.json",
+                "restore-drill.json"
+            ]
+        },
+        {
+            "id": "M5",
+            "required": [
+                "manifest.json",
+                "SUMMARY.md",
+                "kind-scale-ladder.json",
+                "failure-matrix.json",
+                "fanout.json",
+                "performance.json"
+            ]
+        },
+        {
+            "id": "M6",
+            "required": [
+                "manifest.json",
+                "SUMMARY.md",
+                "azure-prerequisites.json",
+                "aks-gates.json",
+                "ha-disruptions.json"
+            ]
+        },
+        {
+            "id": "M7",
+            "required": [
+                "manifest.json",
+                "SUMMARY.md",
+                "multi-region-reconciliation.json",
+                "pool-pinning.json",
+                "performance.json"
+            ]
+        },
+        {
+            "id": "M8",
+            "required": [
+                "manifest.json",
+                "SUMMARY.md",
+                "auth-mode-matrix.json",
+                "dependency-loss.json",
+                "soak-72h/summary.json",
+                "release-checklist.json",
+                "release-evidence-manifest.json"
+            ]
+        }
+    ]
+}

@@ -269,7 +269,7 @@ func (s *scenarioScheduler) RunDueSchedules() (runErr error) {
 		}
 		s.runner.mu.Lock()
 		s.runner.advanceSchedulerReadinessLocked(sweepAt)
-		s.runner.publishRuntimeReadinessLocked(time.Now().UTC())
+		s.runner.publishRuntimeReadinessLocked(sweepAt)
 		s.runner.mu.Unlock()
 		return nil
 	}
@@ -432,7 +432,7 @@ func (s *scenarioScheduler) RunDueSchedules() (runErr error) {
 	// Schedule updates above operate on clones, so every successful fenced
 	// installer applied its old->new counter/heap delta. Publish the combined
 	// result once instead of rescanning the full catalog or allocating per row.
-	s.runner.publishRuntimeReadinessLocked(time.Now().UTC())
+	s.runner.publishRuntimeReadinessLocked(sweepAt)
 	s.runner.mu.Unlock()
 	if !s.runner.executionLeaseTermCurrent(leaseTerm) {
 		return errNotExecutionLeader

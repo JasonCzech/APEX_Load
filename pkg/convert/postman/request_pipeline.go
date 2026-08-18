@@ -754,7 +754,7 @@ func postmanSourceVariableExpressionRef(expression string, variables map[string]
 		return fallback
 	}
 	selected.ItemID = fallback.ItemID
-	return requestimport.SourceRef(selected)
+	return selected
 }
 
 func postmanSourceVariableByRuntimeName(

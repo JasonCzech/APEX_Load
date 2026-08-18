@@ -9,9 +9,10 @@ by three Playwright specs. Rather than chase coverage view-by-view, M1 locks the
 never break: if this journey is green, the product is usable; if any step is red, it is not,
 regardless of what unit coverage says.
 
-**Status:** S1, S2, S7, S8, S9, S10, S11 and S12 implemented and green (`dashboard/e2e/tier0-*.spec.ts`),
-plus a breadth guard covering all 16 top-level views. Run them with `scripts/run-e2e.sh`.
-Remaining: S3, S4, S5, S6.
+**Status:** [TIER0_ASSERTION_MATRIX.md](TIER0_ASSERTION_MATRIX.md) is the completion inventory.
+Today S1 and S7 are `GREEN`; S2 and S8–S12 are `PARTIAL`; S3–S6 and the full arc are `MISSING`.
+The breadth guard still covers all 16 top-level views. Run implemented specs with
+`scripts/run-e2e.sh`. A step is not green merely because one of its API assertions exists.
 
 **Observed behaviour worth recording**, since this document told the implementer to treat surprises
 as findings rather than adjusting assertions to match:
@@ -221,6 +222,11 @@ on each other: each seeds its own state through the API via the `liveRun.ts` fix
 step. CI runs Playwright with `workers: 1` and `fullyParallel: false` today, but per-step
 independence is what makes it safe to raise that later, and what keeps a failure in S5 from
 cascading into eight misleading downstream failures.
+
+The journey uses two explicit profiles. `dev-admin` is the fast functional profile for S2–S12.
+`local-auth` configures the fresh store for Local Test Login, restarts the controller, and drives the
+seeded `admin/admin` login for S1. A dev-bypass status check remains useful harness validation, but
+does not satisfy the sign-in assertion.
 
 ## Definition of done for M1
 

@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://apexload.dev/schemas/qa-evidence-manifest-v1.json",
+  "title": "APEX Load QA milestone evidence manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "milestone", "repository_commit", "environment", "commands", "started_at", "finished_at", "result", "limitations", "artifacts"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "milestone": {"pattern": "^M[0-9]+$"},
+    "repository_commit": {"pattern": "^[0-9a-f]{40}$"},
+    "environment": {"type": "object"},
+    "commands": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+    "started_at": {"type": "string", "format": "date-time"},
+    "finished_at": {"type": "string", "format": "date-time"},
+    "result": {"enum": ["pass", "fail", "blocked"]},
+    "limitations": {"type": "array", "items": {"type": "string"}},
+    "artifacts": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "sha256"],
+        "properties": {
+          "path": {"type": "string", "minLength": 1},
+          "sha256": {"pattern": "^[0-9a-f]{64}$"}
+        }
+      }
+    }
+  }
+}

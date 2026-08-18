@@ -1302,7 +1302,7 @@ func validateDataPoolImportFileSize(size int64, markedAPEXExport ...bool) error 
 	marked := len(markedAPEXExport) > 0 && markedAPEXExport[0]
 	return validateDataPoolImportFileSizeAgainst(
 		size,
-		int64(fileasset.MaxBytes),
+		fileasset.MaxBytes,
 		dataPoolExportEnvelopeOverheadBytes,
 		marked,
 	)

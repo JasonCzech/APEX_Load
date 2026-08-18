@@ -65,7 +65,16 @@ func TestStoreDBContextMethodsApplyTheDialectRewrite(t *testing.T) {
 	if _, err := postgres.ExecContext(ctx, probe); !rewritten(err) {
 		t.Fatalf("ExecContext did not rewrite for Postgres; err = %v", err)
 	}
-	if _, err := postgres.QueryContext(ctx, probe); !rewritten(err) {
+	postgresRows, err := postgres.QueryContext(ctx, probe)
+	if err == nil {
+		if rowsErr := postgresRows.Err(); rowsErr != nil {
+			t.Fatalf("unexpected successful Postgres probe rows error: %v", rowsErr)
+		}
+		if closeErr := postgresRows.Close(); closeErr != nil {
+			t.Fatalf("close unexpected successful Postgres probe rows: %v", closeErr)
+		}
+	}
+	if !rewritten(err) {
 		t.Fatalf("QueryContext did not rewrite for Postgres; err = %v", err)
 	}
 }
@@ -81,7 +90,16 @@ func TestStoreDBContextMethodsHonourCancellation(t *testing.T) {
 	if _, err := db.ExecContext(ctx, `SELECT 1`); !errors.Is(err, context.Canceled) {
 		t.Fatalf("ExecContext with a canceled context err = %v, want context.Canceled", err)
 	}
-	if _, err := db.QueryContext(ctx, `SELECT 1`); !errors.Is(err, context.Canceled) {
+	rows, err := db.QueryContext(ctx, `SELECT 1`)
+	if err == nil {
+		if rowsErr := rows.Err(); rowsErr != nil {
+			t.Fatalf("unexpected successful canceled query rows error: %v", rowsErr)
+		}
+		if closeErr := rows.Close(); closeErr != nil {
+			t.Fatalf("close unexpected successful canceled query rows: %v", closeErr)
+		}
+	}
+	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("QueryContext with a canceled context err = %v, want context.Canceled", err)
 	}
 	var value int

@@ -269,6 +269,7 @@ jobs:
         with:
           ref: ${{ inputs.checkout-ref || github.sha }}
           persist-credentials: false
+          fetch-depth: 0
 
       - name: Setup Go from go.mod
         uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
@@ -322,6 +323,8 @@ jobs:
         # This step only runs when the test step above succeeded, so recording
         # the run status as "pass" is accurate rather than assumed.
         continue-on-error: true
+        env:
+          COVERAGE_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before }}
         run: |
           set -euo pipefail
           go list ./... | grep -v '/node_modules/' > test-results/packages.txt
@@ -330,7 +333,14 @@ jobs:
             test-results/coverage-current.json \
             test-results/packages.txt \
             pass
-          python3 scripts/coverage-ratchet.py test-results/coverage-current.json
+          ratchet_status=0
+          diff_status=0
+          python3 scripts/coverage-ratchet.py test-results/coverage-current.json || ratchet_status=$?
+          python3 scripts/diff-coverage.py test-results/coverage.out \
+            --base "${COVERAGE_BASE_SHA:-HEAD^}" --floor 80 || diff_status=$?
+          if (( ratchet_status != 0 || diff_status != 0 )); then
+            exit 1
+          fi
 
       - name: Upload Go test evidence
         if: always()
@@ -530,33 +540,11 @@ jobs:
         run: ./node_modules/.bin/playwright install chromium
 
       - name: Browser smoke against the embedded controller dashboard
-        env:
-          APEXLOAD_E2E_BASE_URL: http://127.0.0.1:18081
         run: |
           set -euo pipefail
-          go build -trimpath -o "${RUNNER_TEMP}/controller" ./cmd/controller
-          APEXLOAD_ADDR=127.0.0.1:18081 \
-            APEXLOAD_DB="${RUNNER_TEMP}/apexload-e2e.db" \
-            APEXLOAD_ARCHIVE_DIR="${RUNNER_TEMP}/apexload-e2e-archives" \
-            "${RUNNER_TEMP}/controller" >"${RUNNER_TEMP}/controller-e2e.log" 2>&1 &
-          pid=$!
-          cleanup() {
-            exit_code=$?
-            trap - EXIT INT TERM
-            kill "${pid}" 2>/dev/null || true
-            wait "${pid}" 2>/dev/null || true
-            if (( exit_code != 0 )); then cat "${RUNNER_TEMP}/controller-e2e.log" >&2; fi
-            exit "${exit_code}"
-          }
-          trap cleanup EXIT
-          trap 'exit 130' INT
-          trap 'exit 143' TERM
-          for _ in $(seq 1 60); do
-            if curl --silent --fail "${APEXLOAD_E2E_BASE_URL}/api/v1/system/health" >/dev/null; then break; fi
-            sleep 1
-          done
-          curl --silent --show-error --fail "${APEXLOAD_E2E_BASE_URL}/api/v1/system/health" >/dev/null
-          npm --prefix dashboard run e2e
+          scripts/run-e2e.sh
+          APEXLOAD_E2E_PROFILE=local-auth APEXLOAD_E2E_PORT=18082 \
+            scripts/run-e2e.sh tier0-local-auth.spec.ts
 
       - name: Upload browser evidence
         if: always()

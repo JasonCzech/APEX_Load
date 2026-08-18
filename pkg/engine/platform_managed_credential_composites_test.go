@@ -324,7 +324,7 @@ func walkCredentialSurfaceFields(
 	visiting map[reflect.Type]struct{},
 	found map[string]struct{},
 ) {
-	for typ.Kind() == reflect.Ptr || typ.Kind() == reflect.Slice ||
+	for typ.Kind() == reflect.Pointer || typ.Kind() == reflect.Slice ||
 		typ.Kind() == reflect.Array || typ.Kind() == reflect.Map {
 		typ = typ.Elem()
 	}
@@ -348,7 +348,7 @@ func walkCredentialSurfaceFields(
 		}
 		path := prefix + "." + name
 		fieldType := field.Type
-		for fieldType.Kind() == reflect.Ptr {
+		for fieldType.Kind() == reflect.Pointer {
 			fieldType = fieldType.Elem()
 		}
 		if fieldType.Kind() == reflect.String {

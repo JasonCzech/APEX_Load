@@ -1,6 +1,6 @@
 # APEX Load — 9-Month Progressive Test & Infrastructure-Readiness Program
 
-_Program scope of record. Live state is in [STATUS.md](STATUS.md); defects in [DEFECTS.md](DEFECTS.md); risks in [RISK_REGISTER.md](RISK_REGISTER.md). Started 2026-08-18._
+_Program scope of record. Live state is in [STATUS.md](STATUS.md); defects in [DEFECTS.md](DEFECTS.md); risks in [RISK_REGISTER.md](RISK_REGISTER.md). Started 2026-08-18. Calendar months are forecasts; only exit gates close milestones._
 
 ## Context
 
@@ -25,7 +25,7 @@ The intended outcome: work bottom-up from a rock-solid single-node end-user expe
 
 ### Parameters (confirmed)
 
-- **Executor:** solo, ~8 hrs/week, with Claude Code doing the bulk authoring. ~31 hrs/month, ~280 hrs total.
+- **Executor:** solo, ~8 hrs/week, with agent-assisted authoring. ~31 hrs/month is a planning forecast, never authority to waive an exit gate.
 - **Emphasis:** automation-first — durable suites that run in CI forever, manual exploration secondary.
 - **Target infra:** vendor-neutral K8s artifacts, proven on **Azure/AKS** (most mature path: full Terraform, `aks`+`aks-ha` overlays, `deploy-aks.yml` with cosign verification, and a written 10-gate cutover list).
 - **Multi-region end-state:** one control plane, generator fleets in 2+ regions, region-weighted placement proven correct, per-region attribution verified. Not regional control-plane federation.
@@ -35,7 +35,7 @@ The intended outcome: work bottom-up from a rock-solid single-node end-user expe
 
 ## Guiding principles
 
-1. **Progressive gating.** A milestone's exit gate becomes the next milestone's entry precondition and a permanent CI gate. Nothing regresses silently.
+1. **Progressive gating.** A milestone's exit gate becomes the next milestone's entry precondition. Fast checks remain PR gates; repeated/integration suites run nightly; cloud, scale, performance, and soak work is executed manually and its committed evidence is validated on every PR.
 2. **Evidence over assertion.** Every claim lands as a committed artifact under `docs/qa/evidence/`. Follow the existing house style in `docs/PERFORMANCE_BENCHMARK_EVIDENCE.md` — versioned JSON plus deterministic Markdown, never prose alone.
 3. **Reuse the repo's own patterns.** This codebase already has excellent conventions to extend rather than replace:
    - Self-enforcing meta-tests — `pkg/convert/enterprisearchive/optin_suite_inventory_test.go` fails if a gated suite isn't documented in `docs/OPTIN_TEST_SUITES.md`.
@@ -55,19 +55,30 @@ All tracking lives in the repo under a new `docs/qa/` directory, plus a regenera
 docs/qa/
   TEST_PROGRAM.md          # this plan, versioned; the single source of scope
   STATUS.md                # milestone + workstream table, updated weekly
+  DASHBOARD.md             # generated repository-owned view; never hand-edited
+  HEADLINE_METRICS.md      # generated from tracked files and committed evidence
+  TIER0_ASSERTION_MATRIX.md # assertion-level M1 completion inventory
+  evidence-contract.json   # required committed artifacts per milestone
+  evidence-manifest.schema.json # common evidence metadata/hash contract
   RISK_REGISTER.md         # open risks w/ owner, severity, mitigation, milestone
   DEFECTS.md               # rolling defect log: id, severity, found-by, milestone, state
   FLAKE_LOG.md             # quarantined tests, first-seen, root cause, un-quarantine date
-  RELEASE_TEST_CHECKLIST.md # written in M8, executed thereafter
+  RELEASE_TEST_CHECKLIST.md # drafted in M0, evolved through M7, executed in M8
   evidence/
     M0/ … M8/              # coverage snapshots, perf JSON, failover logs, drill transcripts
 ```
 
-**Enforcement.** Add `docs/qa/status_inventory_test.go` (a test-only package, matching the
-`scripts/` and `deployments/k8s/` pattern) that parses `STATUS.md` and fails if: a milestone ID is
-missing, a milestone is marked `DONE` without a matching `evidence/M<n>/` directory, or a defect in
-`DEFECTS.md` is marked closed without a referenced commit. The tracker cannot drift from reality
-because CI won't let it.
+**Enforcement.** `docs/qa/status_inventory_test.go` derives milestone IDs from this file and checks
+the machine-readable evidence contract has the same ordered inventory. A `DONE` milestone must have
+every contract-required file committed in `HEAD`, including a passing `manifest.json` whose tested
+commit is an ancestor and whose artifact hashes match. `FIXED` defects cite a resolvable ancestor
+commit; `DEFERRED` defects carry an owner, review date, target milestone, and rationale. The
+repository dashboard is freshness-checked against `STATUS.md` and the Tier-0 assertion matrix.
+
+**Gate tiers.** Every PR runs formatting, unit/integration tests, generated-artifact freshness,
+coverage, dashboard checks, and Tier-0. Nightly workflows run repeated Go/Playwright,
+PostgreSQL, and longer protocol suites. kind/AKS, performance, disruption, and soak work is manual
+evidence; PR CI validates its manifest rather than attempting to rerun it.
 
 **Cadence.**
 - *Weekly (~30 min):* update `STATUS.md` — items moved, hours spent, blockers. Append to `FLAKE_LOG.md`.
@@ -100,7 +111,7 @@ pollute every later signal.
 |---|---|---|
 | 1 | Stand up `docs/qa/` + `status_inventory_test.go`. Baseline per-package coverage (exclude `.claude/worktrees/`). Publish the first dashboard artifact. | 8 |
 | 2 | Coverage gate: add a `coverage` job to `ci.yml` enforcing a **ratchet** (floor = current, never decreases) plus a diff-coverage floor on changed files. Record baselines in `evidence/M0/coverage-baseline.json`. | 8 |
-| 3 | **Deterministic time harness.** Introduce a `Clock` interface and inject it into the three places that already hand-rolled `nowFunc` hooks — `pkg/distributed/generatorrpc/client.go`, `execution_epoch.go`, `pkg/storage/scheduler_content_version_test.go` — then extend to `pkg/api/scheduler.go` and `execution_leadership.go`. Add a nightly `-count=5 -shuffle=on` flake-hunt job; seed `FLAKE_LOG.md`. | 8 |
+| 3 | **Deterministic time harness.** Extend the repository's injected `now func() time.Time` convention from epoch fencing through scheduler and execution leadership; do not introduce a competing clock abstraction. Run repeated Go and Playwright flake hunts nightly and seed `FLAKE_LOG.md`. | 8 |
 | 4 | Enable `bodyclose`, `sqlclosecheck`, `rowserrcheck`, `nilerr` in `.golangci.yml` and fix the ~40 violations its header already enumerates. Triage the 11 open items in `docs/reviews/WHOLE_APP_REVIEW_2026-08-02.md` into `DEFECTS.md`. | 7 |
 
 **Key files:** `.github/workflows/ci.yml`, `.golangci.yml`, `docs/qa/*`, `pkg/api/scheduler.go`,
@@ -127,7 +138,7 @@ true leaks fixed.
 
 ---
 
-### M1 — Tier-0 end-user journey (Month 2, ~31 hrs)
+### M1 — Tier-0 end-user journey and API contract (Month 2, ~31 hrs)
 
 Define and lock the golden path a real user walks. This is the "rock solid basics" foundation
 everything later assumes.
@@ -140,15 +151,16 @@ archive.
 
 | Week | Work | Hrs |
 |---|---|---|
-| 1 | Write `docs/qa/TIER0_JOURNEY.md` — each step, its route, its API calls, its assertions. Extend `dashboard/e2e/support/liveRun.ts` (already seeds a real controller run via the API) into a reusable journey fixture. | 8 |
-| 2–3 | Grow `dashboard/e2e/` from 3 → ~20 specs covering the journey. Add a thin accessible-query helper (or adopt RTL) so the 261 raw-`createRoot` component tests can assert focus, keyboard flow, and accessible names — the `lint:a11y` gate exists but nothing *tests* a11y behavior today. | 16 |
-| 4 | **API contract matrix.** Generate a test table from `docs/api-endpoint-catalog.json` (543 routes, each with `method`/`path`/`public`/`authenticated`/`access`) asserting every route enforces its declared auth and access requirement. This catches drift between the two coexisting route-registration paths — 397 legacy `s.mux.Handle` calls in `pkg/api/server.go` and the 14 modular catalogs in `route_registry_*.go`. | 7 |
+| 1 | Maintain `TIER0_ASSERTION_MATRIX.md`, extend the reusable journey fixtures, and run S2–S12 under the `dev-admin` profile. Run S1 separately under `local-auth` and perform a real seeded administrator login; dev bypass does not count as sign-in. | 8 |
+| 2–3 | Close every `PARTIAL`/`MISSING` assertion in the matrix and add one full-arc smoke. Adopt Testing Library, `user-event`, and `jest-dom` for new accessible component tests without mechanically rewriting the existing suite. | 16 |
+| 4 | **API contract matrix.** Generate cases from `docs/api-endpoint-catalog.json` rather than a hard-coded route count. Assert public/authenticated posture plus allowed and denied roles for every protected route. | 7 |
 
 **Key files:** `dashboard/e2e/`, `dashboard/e2e/support/liveRun.ts`, `dashboard/src/test/vitestSetup.ts`,
 `pkg/api/route_catalog.go`, `docs/api-endpoint-catalog.json`.
 
-**Exit gate:** Tier-0 journey runs green in CI on every PR · every one of the 543 routes has an
-enforced auth/access assertion · a11y assertions possible in component tests.
+**Exit gate:** every Tier-0 matrix assertion and the full arc run green on every PR · every
+catalogued route has generated auth/access assertions · accessible queries and user interaction are
+available for new component tests.
 
 ---
 
@@ -198,8 +210,10 @@ Two decisions this forces, both in M0 week 2 when the ratchet is built:
 **Key files:** `pkg/convert/*/testdata/`, `pkg/convert/enterprisearchive/`, `scripts/fetch-lr-scripts-corpus.sh`,
 `dashboard/src/components/ScriptImportReview.tsx`, `pkg/keywrap/`, `pkg/secretstore/`.
 
-**Exit gate:** every converter has golden coverage — a converter change now produces a reviewable
-diff instead of a silent behavior shift · LR corpus smoke green in CI · no package below 0.80 test:source.
+**Exit gate:** every registered converter has a deterministic valid golden and a meaningful
+invalid/diagnostic case, with inventory parity enforced · a converter change produces a reviewable
+diff instead of a silent behavior shift · the cached LR corpus smoke is repeatable. Coverage risk is
+governed by the ratchet, not a test-file-to-source-file ratio.
 
 ---
 
@@ -289,7 +303,7 @@ can finally say controller failover has passed an AKS disruption test, because i
 | 1 | Security pass: RBAC access-matrix simulation across all 543 routes × the 4 auth modes; production fail-closed posture (`APEXLOAD_ENV=production` refusing `dev`/`local`, trusted-proxy gate, bootstrap admin); SSRF guard (`pkg/netpolicy/`); secret handling and redaction; gRPC mTLS hard-fail; supply-chain verification. | 8 |
 | 2 | Chaos & dependency loss on AKS: kill Postgres, kill Redis, revoke Blob access, induce clock skew (a documented fatality in `EKS_INTEGRATION_READINESS.md`), rolling upgrade in place with a run active. | 8 |
 | 3 | **72-hour endurance soak on AKS**, multi-region, Postgres, HA enabled. Full observability capture. This is where the resource leaks the M0 linters didn't catch will surface. | 8 |
-| 4 | Write `docs/qa/RELEASE_TEST_CHECKLIST.md` and execute it once end to end. Update `docs/RELEASE_EVIDENCE_MANIFEST.md` to link every claim to its M0–M8 artifact. Final dashboard artifact. | 7 |
+| 4 | Finalize and execute the release checklist drafted in M0. Update `docs/RELEASE_EVIDENCE_MANIFEST.md` to link every claim to its M0–M8 artifact. Regenerate the repository dashboard. | 7 |
 
 **Exit gate:** 72 h soak clean · release checklist executed · every performance and readiness claim in
 the docs traceable to a committed artifact.
@@ -305,7 +319,7 @@ the docs traceable to a committed artifact.
 | Azure spend during M6–M8 | Budget | Scripted teardown after every drill; use spot node pools for generators; keep the ladder on kind through M5. |
 | Solo bus factor on cloud drills | Program stalls | Every drill is a committed script, never a manual sequence. If it isn't scripted, it isn't done. |
 | E2E flake erodes trust in the gate | Suites get ignored | Strict `FLAKE_LOG.md` policy: quarantine within 24 h with a root-cause entry and a dated un-quarantine commitment. The M0 fake clock removes the largest structural cause. |
-| Review defect #11 (over-eager redaction) stays undecided | Blocks evidence quality all program | Force the decision in M0 week 4, not later. |
+| Azure subscription, quota, DNS/TLS, or budget prerequisites are unavailable | M6 cannot produce honest evidence | Validate and commit the prerequisite report before provisioning; mark M6 `BLOCKED` rather than substituting simulation. |
 
 ---
 
@@ -333,8 +347,8 @@ APEXLOAD_RUN_HA_FAILOVER_SOAK=1 APEXLOAD_HA_SOAK_ITERATIONS=25 go test ./pkg/api
 make docker-local-up && make k8s-kind-apply && make k8s-smoke-test
 ```
 
-- **M0:** CI fails a deliberate coverage regression; `golangci-lint run` green with the 4 new linters.
-- **M1:** the ~20 Tier-0 Playwright specs pass against a freshly built controller; the 543-route contract matrix passes.
+- **M0:** CI fails deliberate overall/package/missing-package coverage regressions; `rowserrcheck` is enabled and other leak-linter exclusions remain documented.
+- **M1:** every assertion in `TIER0_ASSERTION_MATRIX.md` is green against a freshly built controller; the generated route contract matrix passes.
 - **M2:** `go test ./pkg/convert/...` green with goldens; a deliberate converter tweak produces a golden diff.
 - **M3:** `evidence/M3/soak-24h/` shows flat goroutine and heap curves; archive verify exits 0.
 - **M4:** full suite green under `APEXLOAD_STORE=postgres`; migrator count parity; `scripts/restore-drill.sh` exits 0.

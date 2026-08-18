@@ -9,12 +9,16 @@
 package qa_test
 
 import (
+	"crypto/sha256"
+	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 )
 
 var validStates = map[string]bool{
@@ -37,7 +41,32 @@ var (
 	milestoneRow     = regexp.MustCompile(`^\|\s*(M\d+)\s*\|`)
 	defectRow        = regexp.MustCompile(`^\|\s*((?:DEF|QA)-\d+)\s*\|`)
 	commitReference  = regexp.MustCompile(`^(?:verified@)?([0-9a-fA-F]{7,40})$`)
+	deferredMetadata = regexp.MustCompile(`^owner=[^;]+;\s*review=\d{4}-\d{2}-\d{2};\s*target=M\d+;\s*rationale=.+$`)
 )
+
+type evidenceContract struct {
+	SchemaVersion int `json:"schema_version"`
+	Milestones    []struct {
+		ID       string   `json:"id"`
+		Required []string `json:"required"`
+	} `json:"milestones"`
+}
+
+type evidenceManifest struct {
+	SchemaVersion    int            `json:"schema_version"`
+	Milestone        string         `json:"milestone"`
+	RepositoryCommit string         `json:"repository_commit"`
+	Environment      map[string]any `json:"environment"`
+	Commands         []string       `json:"commands"`
+	StartedAt        string         `json:"started_at"`
+	FinishedAt       string         `json:"finished_at"`
+	Result           string         `json:"result"`
+	Limitations      []string       `json:"limitations"`
+	Artifacts        []struct {
+		Path   string `json:"path"`
+		SHA256 string `json:"sha256"`
+	} `json:"artifacts"`
+}
 
 // splitRow returns the cells of a Markdown table row, trimmed.
 func splitRow(line string) []string {
@@ -56,6 +85,22 @@ func readLines(t *testing.T, name string) []string {
 		t.Fatalf("read %s: %v", name, err)
 	}
 	return strings.Split(string(data), "\n")
+}
+
+func readEvidenceContract(t *testing.T) evidenceContract {
+	t.Helper()
+	data, err := os.ReadFile("evidence-contract.json")
+	if err != nil {
+		t.Fatalf("read evidence-contract.json: %v", err)
+	}
+	var contract evidenceContract
+	if err := json.Unmarshal(data, &contract); err != nil {
+		t.Fatalf("parse evidence-contract.json: %v", err)
+	}
+	if contract.SchemaVersion != 1 {
+		t.Fatalf("evidence contract schema_version = %d, want 1", contract.SchemaVersion)
+	}
+	return contract
 }
 
 // programMilestones reads the scope of record rather than duplicating it in
@@ -102,24 +147,10 @@ func (e *gitError) Error() string {
 	return e.err.Error() + ": " + e.output
 }
 
-// hasCommittedEvidence reports whether HEAD contains a regular artifact below
-// evidence/<milestone>. An untracked file, staged-only file, empty directory,
-// or .gitkeep cannot close a milestone.
-func hasCommittedEvidence(t *testing.T, milestone string) bool {
+func isCommitted(t *testing.T, path string) bool {
 	t.Helper()
-	root := filepath.Join("evidence", milestone)
-	found := false
-	_ = filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
-		if err != nil || info.IsDir() || info.Name() == ".gitkeep" {
-			return nil
-		}
-		repositoryPath := filepath.ToSlash(filepath.Join("docs", "qa", path))
-		if git(t, "cat-file", "-e", "HEAD:"+repositoryPath) == nil {
-			found = true
-		}
-		return nil
-	})
-	return found
+	repositoryPath := filepath.ToSlash(filepath.Join("docs", "qa", path))
+	return git(t, "cat-file", "-e", "HEAD:"+repositoryPath) == nil
 }
 
 func citedCommit(commit string) (string, bool) {
@@ -128,6 +159,68 @@ func citedCommit(commit string) (string, bool) {
 		return "", false
 	}
 	return match[1], true
+}
+
+func validateEvidenceManifest(t *testing.T, milestone string, required []string) {
+	t.Helper()
+	manifestPath := filepath.Join("evidence", milestone, "manifest.json")
+	data, err := os.ReadFile(manifestPath)
+	if err != nil {
+		t.Errorf("read %s: %v", manifestPath, err)
+		return
+	}
+	var manifest evidenceManifest
+	if err := json.Unmarshal(data, &manifest); err != nil {
+		t.Errorf("parse %s: %v", manifestPath, err)
+		return
+	}
+	if manifest.SchemaVersion != 1 || manifest.Milestone != milestone || manifest.Result != "pass" {
+		t.Errorf("%s must carry schema_version=1, milestone=%s, and result=pass", manifestPath, milestone)
+	}
+	if !regexp.MustCompile(`^[0-9a-f]{40}$`).MatchString(manifest.RepositoryCommit) {
+		t.Errorf("%s repository_commit must be a full 40-digit lowercase Git hash", manifestPath)
+	} else if err := git(t, "merge-base", "--is-ancestor", manifest.RepositoryCommit, "HEAD"); err != nil {
+		t.Errorf("%s tested commit is not an ancestor of HEAD: %v", manifestPath, err)
+	}
+	if len(manifest.Environment) == 0 || len(manifest.Commands) == 0 {
+		t.Errorf("%s must describe a non-empty environment and command list", manifestPath)
+	}
+	started, startErr := time.Parse(time.RFC3339, manifest.StartedAt)
+	finished, finishErr := time.Parse(time.RFC3339, manifest.FinishedAt)
+	if startErr != nil || finishErr != nil || finished.Before(started) {
+		t.Errorf("%s started_at/finished_at must be ordered RFC3339 timestamps", manifestPath)
+	}
+
+	artifacts := make(map[string]string)
+	for _, artifact := range manifest.Artifacts {
+		if artifact.Path == "manifest.json" || filepath.IsAbs(artifact.Path) || strings.Contains(filepath.Clean(artifact.Path), "..") {
+			t.Errorf("%s contains unsafe or self-referential artifact path %q", manifestPath, artifact.Path)
+			continue
+		}
+		if !regexp.MustCompile(`^[0-9a-f]{64}$`).MatchString(artifact.SHA256) {
+			t.Errorf("%s artifact %q has invalid SHA-256 %q", manifestPath, artifact.Path, artifact.SHA256)
+			continue
+		}
+		artifacts[artifact.Path] = artifact.SHA256
+	}
+	for _, artifact := range required {
+		if artifact == "manifest.json" {
+			continue
+		}
+		want, ok := artifacts[artifact]
+		if !ok {
+			t.Errorf("%s does not hash required artifact %q", manifestPath, artifact)
+			continue
+		}
+		artifactData, err := os.ReadFile(filepath.Join("evidence", milestone, artifact))
+		if err != nil {
+			continue
+		}
+		got := fmt.Sprintf("%x", sha256.Sum256(artifactData))
+		if got != want {
+			t.Errorf("%s hash for %q = %s, want %s", manifestPath, artifact, want, got)
+		}
+	}
 }
 
 // TestStatusListsEveryMilestone fails when a milestone is dropped from the
@@ -171,9 +264,43 @@ func TestStatusListsEveryMilestone(t *testing.T) {
 	}
 }
 
+func TestEvidenceContractMatchesProgram(t *testing.T) {
+	program := programMilestones(t)
+	contract := readEvidenceContract(t)
+	if len(contract.Milestones) != len(program) {
+		t.Fatalf("evidence contract has %d milestones, TEST_PROGRAM.md has %d", len(contract.Milestones), len(program))
+	}
+	for index, milestone := range program {
+		entry := contract.Milestones[index]
+		if entry.ID != milestone {
+			t.Errorf("evidence contract milestone %d = %q, want %q", index, entry.ID, milestone)
+		}
+		seen := make(map[string]bool)
+		for _, required := range entry.Required {
+			if filepath.IsAbs(required) || strings.Contains(filepath.Clean(required), "..") {
+				t.Errorf("%s evidence path %q must stay inside its milestone directory", milestone, required)
+			}
+			if seen[required] {
+				t.Errorf("%s evidence contract repeats %q", milestone, required)
+			}
+			seen[required] = true
+		}
+		for _, universal := range []string{"manifest.json", "SUMMARY.md"} {
+			if !seen[universal] {
+				t.Errorf("%s evidence contract must require %s", milestone, universal)
+			}
+		}
+	}
+}
+
 // TestDoneMilestonesHaveEvidence enforces the program's central rule: a
 // milestone is closed by an artifact, never by an assertion.
+
 func TestDoneMilestonesHaveEvidence(t *testing.T) {
+	required := make(map[string][]string)
+	for _, milestone := range readEvidenceContract(t).Milestones {
+		required[milestone.ID] = milestone.Required
+	}
 	for _, line := range readLines(t, "STATUS.md") {
 		match := milestoneRow.FindStringSubmatch(line)
 		if match == nil {
@@ -183,10 +310,18 @@ func TestDoneMilestonesHaveEvidence(t *testing.T) {
 		if len(cells) < 3 || cells[2] != "DONE" {
 			continue
 		}
-		if !hasCommittedEvidence(t, match[1]) {
-			t.Errorf("milestone %s is marked DONE but HEAD holds no artifact in docs/qa/evidence/%s/; "+
-				"untracked or staged-only files do not count", match[1], match[1])
+		for _, artifact := range required[match[1]] {
+			path := filepath.Join("evidence", match[1], artifact)
+			info, err := os.Stat(path)
+			if err != nil || info.IsDir() {
+				t.Errorf("milestone %s is DONE but required evidence %s is missing", match[1], path)
+				continue
+			}
+			if !isCommitted(t, path) {
+				t.Errorf("milestone %s is DONE but required evidence %s is not committed in HEAD", match[1], path)
+			}
 		}
+		validateEvidenceManifest(t, match[1], required[match[1]])
 	}
 }
 
@@ -223,6 +358,12 @@ func TestFixedDefectsCiteACommit(t *testing.T) {
 		state, commit := cells[len(cells)-2], cells[len(cells)-1]
 		if !validDefectStates[state] {
 			t.Errorf("defect %s has state %q, want one of OPEN/IN_PROGRESS/BLOCKED/FIXED/DEFERRED", match[1], state)
+			continue
+		}
+		if state == "DEFERRED" {
+			if !deferredMetadata.MatchString(strings.Trim(strings.TrimSpace(commit), "`")) {
+				t.Errorf("defect %s is DEFERRED without owner, review date, target milestone, and rationale in the resolution cell", match[1])
+			}
 			continue
 		}
 		if state != "FIXED" {
@@ -289,11 +430,61 @@ func TestInheritedReviewDefectsAreAllTracked(t *testing.T) {
 	}
 }
 
+func TestQuarantinedFlakesHaveOwnersAndUnexpiredDates(t *testing.T) {
+	for _, line := range readLines(t, "FLAKE_LOG.md") {
+		cells := splitRow(line)
+		if len(cells) != 8 || !strings.HasPrefix(cells[0], "`Test") {
+			continue
+		}
+		owner, quarantined, deadline, state := cells[4], cells[5], cells[6], cells[7]
+		if !strings.HasPrefix(strings.ToLower(quarantined), "yes") || strings.Contains(state, "FIXED") {
+			continue
+		}
+		if owner == "" || owner == "—" {
+			t.Errorf("quarantined flake %s has no owner", cells[0])
+		}
+		due, err := time.Parse("2006-01-02", deadline)
+		if err != nil {
+			t.Errorf("quarantined flake %s has invalid un-quarantine date %q", cells[0], deadline)
+			continue
+		}
+		if !due.After(time.Now().UTC().Truncate(24 * time.Hour)) {
+			t.Errorf("quarantined flake %s expired on %s; fix it or escalate it to DEFECTS.md", cells[0], deadline)
+		}
+	}
+}
+
+func TestOpenHighSeverityRisksHaveOwners(t *testing.T) {
+	for _, line := range readLines(t, "RISK_REGISTER.md") {
+		cells := splitRow(line)
+		if len(cells) != 7 || !strings.HasPrefix(cells[0], "R-") || cells[2] != "High" || cells[6] != "OPEN" {
+			continue
+		}
+		if cells[4] == "" || cells[4] == "—" {
+			t.Errorf("open high-severity risk %s has no owner", cells[0])
+		}
+	}
+}
+
 // TestTrackerFilesExist guards the tracker's own shape.
 func TestTrackerFilesExist(t *testing.T) {
-	for _, name := range []string{"STATUS.md", "DEFECTS.md", "RISK_REGISTER.md", "FLAKE_LOG.md", "TEST_PROGRAM.md"} {
+	for _, name := range []string{"STATUS.md", "DEFECTS.md", "RISK_REGISTER.md", "FLAKE_LOG.md", "TEST_PROGRAM.md", "evidence-contract.json", "evidence-manifest.schema.json", "DASHBOARD.md", "HEADLINE_METRICS.md", "TIER0_ASSERTION_MATRIX.md", "RELEASE_TEST_CHECKLIST.md"} {
 		if _, err := os.Stat(name); err != nil {
 			t.Errorf("docs/qa/%s is missing: %v", name, err)
 		}
+	}
+}
+
+func TestGeneratedDashboardIsFresh(t *testing.T) {
+	metrics := exec.Command("python3", "../../scripts/qa-generate-metrics.py",
+		"--root", "../..", "--output", "docs/qa/HEADLINE_METRICS.md", "--check")
+	if output, err := metrics.CombinedOutput(); err != nil {
+		t.Fatalf("QA metrics freshness: %v\n%s", err, output)
+	}
+	command := exec.Command("python3", "../../scripts/qa-generate-dashboard.py",
+		"--status", "STATUS.md", "--matrix", "TIER0_ASSERTION_MATRIX.md", "--metrics", "HEADLINE_METRICS.md", "--output", "DASHBOARD.md", "--check")
+	command.Dir = "."
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("QA dashboard freshness: %v\n%s", err, output)
 	}
 }

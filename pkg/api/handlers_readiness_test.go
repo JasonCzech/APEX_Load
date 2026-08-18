@@ -618,7 +618,7 @@ func TestStartRefreshesDurableReadinessSettingsBeforeFirstResponse(t *testing.T)
 		t.Fatal("server did not publish a listener")
 	}
 
-	response, err := http.Get("http://" + server.BoundAddr() + "/api/v1/system/readiness") //nolint:gosec -- loopback test server
+	response, err := http.Get("http://" + server.BoundAddr() + "/api/v1/system/readiness") //nolint:gosec // loopback test server
 	if err != nil {
 		t.Fatalf("GET first readiness response: %v", err)
 	}

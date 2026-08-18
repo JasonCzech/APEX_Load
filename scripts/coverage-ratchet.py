@@ -83,6 +83,12 @@ def main() -> int:
 
     baseline = load(args.baseline)
 
+    if baseline.get("test_run_status") != "pass":
+        print("error: the committed coverage baseline was not produced by a passing test run; "
+              "replace it with a green CI artifact before enabling the ratchet",
+              file=sys.stderr)
+        return 2
+
     # A failed test run produces a partial profile: packages that crashed report
     # less coverage than they truly have. Comparing against that would raise a
     # wall of false regressions and teach everyone to ignore this gate.

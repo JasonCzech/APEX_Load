@@ -26,6 +26,10 @@ on:
         description: 'Packages to hunt (default: the whole module)'
         required: false
         default: './...'
+      playwright-count:
+        description: 'Playwright suite repetitions'
+        required: false
+        default: '3'
 
 permissions:
   contents: read
@@ -56,11 +60,14 @@ jobs:
         # `set -uo pipefail` without `-e` and ends with a successful command, so
         # it cannot fail the job. Whether a flake was seen is decided by the
         # Summarize step reading the log, which is the single source of truth.
+        env:
+          COUNT_INPUT: ${{ github.event.inputs.count || '5' }}
+          PACKAGES_INPUT: ${{ github.event.inputs.packages || './...' }}
         run: |
           set -uo pipefail
           mkdir -p flake-results
-          COUNT="${{ github.event.inputs.count || '5' }}"
-          PKGS="${{ github.event.inputs.packages || './...' }}"
+          COUNT="$COUNT_INPUT"
+          PKGS="$PACKAGES_INPUT"
           echo "Running $PKGS with -count=$COUNT -shuffle=on -race"
           # No pipefail-driven early exit: a failure here is the finding, not an
           # error, and the log must be preserved either way.
@@ -95,6 +102,71 @@ jobs:
         uses: ./.github/actions/upload-artifact
         with:
           name: flake-hunt-log
+          path: flake-results/
+          if-no-files-found: warn
+          retention-days: 14
+
+  browser-hunt:
+    name: Repeated Playwright suite
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Check out
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Set up Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22.22.0
+          cache: npm
+          cache-dependency-path: dashboard/package-lock.json
+
+      - name: Install and build dashboard
+        run: |
+          npm --prefix dashboard ci --ignore-scripts
+          npm --prefix dashboard run build
+          (cd dashboard && ./node_modules/.bin/playwright install --with-deps chromium)
+
+      - name: Hunt browser flakes
+        env:
+          PLAYWRIGHT_COUNT_INPUT: ${{ github.event.inputs['playwright-count'] || '3' }}
+        run: |
+          set -uo pipefail
+          mkdir -p flake-results
+          count="$PLAYWRIGHT_COUNT_INPUT"
+          status=0
+          for iteration in $(seq 1 "$count"); do
+            echo "=== Playwright repetition $iteration/$count ===" >> flake-results/playwright.log
+            APEXLOAD_E2E_PORT="$((18100 + iteration))" scripts/run-e2e.sh \
+              >> flake-results/playwright.log 2>&1 || status=1
+            APEXLOAD_E2E_PROFILE=local-auth APEXLOAD_E2E_PORT="$((18200 + iteration))" \
+              scripts/run-e2e.sh tier0-local-auth.spec.ts \
+              >> flake-results/playwright.log 2>&1 || status=1
+          done
+          echo "$status" > flake-results/playwright-status
+
+      - name: Summarize browser hunt
+        if: always()
+        run: |
+          status="$(cat flake-results/playwright-status 2>/dev/null || echo 1)"
+          if [[ "$status" == "0" ]]; then
+            echo "## Playwright flake hunt: no failures" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "## Playwright flake hunt: failures observed" >> "$GITHUB_STEP_SUMMARY"
+            echo "Log the first unexplained failure; fix or quarantine after the second occurrence." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload browser flake evidence
+        if: always()
+        uses: ./.github/actions/upload-artifact
+        with:
+          name: playwright-flake-hunt-log
           path: flake-results/
           if-no-files-found: warn
           retention-days: 14

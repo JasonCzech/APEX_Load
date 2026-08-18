@@ -30,6 +30,7 @@ import subprocess
 import sys
 
 SCHEMA_VERSION = 3
+RATCHET_EXCLUDED_PACKAGES = {"api/proto"}
 
 
 def module_path() -> str:
@@ -87,6 +88,15 @@ def parse_profile(path: pathlib.Path):
     return {pkg: (t[0], t[1]) for pkg, t in totals.items()}
 
 
+def ratchet_totals(per_pkg: dict[str, tuple[int, int]], relative) -> tuple[int, int]:
+    included = (
+        values for pkg, values in per_pkg.items()
+        if relative(pkg) not in RATCHET_EXCLUDED_PACKAGES
+    )
+    totals = list(included)
+    return sum(value[0] for value in totals), sum(value[1] for value in totals)
+
+
 def main() -> int:
     if len(sys.argv) < 3:
         print(__doc__, file=sys.stderr)
@@ -128,8 +138,7 @@ def main() -> int:
                 })
     packages.sort(key=lambda p: p["package"])
 
-    grand_total = sum(s for s, _ in per_pkg.values())
-    grand_covered = sum(c for _, c in per_pkg.values())
+    grand_total, grand_covered = ratchet_totals(per_pkg, relative)
     overall = round(100.0 * grand_covered / grand_total, 2) if grand_total else None
 
     report = {
@@ -138,12 +147,14 @@ def main() -> int:
                                 .replace(microsecond=0).isoformat(),
         "test_run_status": status,
         "metric": "statement_coverage",
+        "ratchet_excluded_packages": sorted(RATCHET_EXCLUDED_PACKAGES),
         "note": ("Baseline for the coverage ratchet. Every percentage here is STATEMENT coverage, "
                  "at both package and repository level; function coverage is deliberately not "
                  "reported, because ratcheting on it would gate on a signal that barely moves. "
                  "Package selection comes from `go list` with node_modules excluded, so neither "
                  "the duplicate checkout under .claude/worktrees/ nor vendored third-party Go is "
-                 "counted. Packages with no test file are listed with has_tests=false and a null "
+                 "counted. Generated api/proto code remains visible per-package but is excluded "
+                 "from the ratcheted overall total. Packages with no test file are listed with has_tests=false and a null "
                  "statement total, since an uninstrumented package contributes nothing to the "
                  "profile and its true size is unknown here."),
         "overall_statement_coverage_pct": overall,

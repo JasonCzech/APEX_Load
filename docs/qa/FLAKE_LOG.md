@@ -1,8 +1,8 @@
 # Flake Log
 
-**Policy.** A test that fails non-deterministically is quarantined within 24 hours of first
-observation, with a root-cause entry and a dated un-quarantine commitment. A quarantined test that
-passes its un-quarantine date without a fix is escalated to a defect in
+**Policy.** The first unexplained intermittent failure is logged. After a second occurrence it must
+be fixed or quarantined within 24 hours, with an owner, root-cause entry, and dated un-quarantine
+commitment. A quarantined test that passes its un-quarantine date without a fix is escalated to a defect in
 [DEFECTS.md](DEFECTS.md) — it is never silently left disabled.
 
 **Detection.** The nightly flake-hunt job (M0 week 3) runs `go test ./... -count=5 -shuffle=on` and
@@ -12,9 +12,9 @@ the Playwright suite repeatedly. CI's main `go-tests` job already runs `-race -s
 token buckets, and percentile windowing all read real `time.Now()`. The M0 `Clock` harness targets
 this directly. Suspect timing before suspecting the test.
 
-| Test | First seen | Rate | Root cause | Quarantined | Un-quarantine by | State |
-|---|---|---|---|---|---|---|
-| `TestLapsedProcessEpochRejectsTheClaimAndFencesTheAssignmentLeaseDifferently` | 2026-08-18 | 2 of 5 runs (both full-suite) | 30 ms wall-clock TTL could not survive scheduler pressure | No — fixed at the cause | n/a | **FIXED** (uncommitted) |
+| Test | First seen | Rate | Root cause | Owner | Quarantined | Un-quarantine by | State |
+|---|---|---|---|---|---|---|---|
+| `TestLapsedProcessEpochRejectsTheClaimAndFencesTheAssignmentLeaseDifferently` | 2026-08-18 | 2 of 5 runs (both full-suite) | 30 ms wall-clock TTL could not survive scheduler pressure | QA program | No — fixed at the cause | n/a | **FIXED** (`267e9697b`) |
 
 ## FLAKE-1 — a 30 ms real-clock TTL in the epoch-fencing tests
 
