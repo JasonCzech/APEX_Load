@@ -198,25 +198,18 @@ func (tr *TestRunner) filterPublishedLibraryAssets(scriptCandidates []*StoredScr
 	}
 	currentScenarioVersions := make(map[string]time.Time, len(scenarioCandidates))
 	if scenarioCandidates != nil {
-		candidateIDs := make(map[string]struct{}, len(scenarioCandidates))
-		for _, candidate := range scenarioCandidates {
-			if candidate != nil {
-				candidateIDs[candidate.ID] = struct{}{}
-			}
-		}
-		current, loadErr := store.ListScenarios()
-		if loadErr != nil {
+		applied, loadErr := tr.reloadStoredScenariosApplied()
+		if loadErr != nil || !applied {
 			slog.Warn("failed to revalidate direct-import scenario listing; hiding library assets", "error", loadErr)
 			return nil, nil
 		}
-		for _, scenario := range current {
-			if scenario != nil {
-				if _, wanted := candidateIDs[scenario.ID]; !wanted {
-					continue
-				}
+		tr.mu.RLock()
+		for _, scenario := range tr.scenarios {
+			if scenario != nil && (projectID == "" || normalizeProjectID(scenario.ProjectID) == projectID) {
 				currentScenarioVersions[scenario.ID] = scenario.UpdatedAt
 			}
 		}
+		tr.mu.RUnlock()
 	}
 	if (scriptCandidates != nil && !storedScriptVersionSetMatches(scriptCandidates, currentScriptVersions)) ||
 		(scenarioCandidates != nil && !storedScenarioVersionSetMatches(scenarioCandidates, currentScenarioVersions)) {

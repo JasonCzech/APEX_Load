@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -278,6 +279,45 @@ func TestStoredScriptListMasksDataFilesWhileDetailViewRevealsThem(t *testing.T) 
 	server.handleGetScript(getResponse, getRequest)
 	if getResponse.Code != http.StatusOK || !strings.Contains(getResponse.Body.String(), dataPassword) {
 		t.Fatalf("script detail did not reveal data-file value: status=%d body=%s", getResponse.Code, getResponse.Body.String())
+	}
+}
+
+func TestListScriptsSupportsBoundedServerSideReplacementSearch(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	for index, name := range []string{"Orders Alpha", "Inventory", "Orders Beta"} {
+		seedLegacySecretScript(server, &dsl.Script{
+			ID:        fmt.Sprintf("replacement-%d", index),
+			Name:      name,
+			Version:   "1",
+			Protocol:  "http",
+			ProjectID: "project-a",
+			Actions:   []dsl.Action{{Name: "Request", Type: "request", Method: "GET", Target: "/"}},
+		})
+	}
+
+	response := httptest.NewRecorder()
+	server.handleListScripts(response, httptest.NewRequest(
+		http.MethodGet,
+		"/api/v1/scripts?project_id=project-a&q=orders&limit=1&offset=1",
+		nil,
+	))
+	if response.Code != http.StatusOK {
+		t.Fatalf("list status = %d body=%s", response.Code, response.Body.String())
+	}
+	var payload struct {
+		Scripts []StoredScript `json:"scripts"`
+		Count   int            `json:"count"`
+		Limit   int            `json:"limit"`
+		Offset  int            `json:"offset"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode list response: %v", err)
+	}
+	if payload.Count != 2 || payload.Limit != 1 || payload.Offset != 1 || len(payload.Scripts) != 1 {
+		t.Fatalf("unexpected paged list: %#v", payload)
+	}
+	if payload.Scripts[0].Name != "Orders Beta" {
+		t.Fatalf("paged script = %q, want Orders Beta", payload.Scripts[0].Name)
 	}
 }
 

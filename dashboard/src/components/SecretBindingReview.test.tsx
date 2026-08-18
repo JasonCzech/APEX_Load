@@ -522,6 +522,33 @@ describe('SecretBindingReview', () => {
     expect(committedNames).toEqual(writes.map(write => write.name))
   })
 
+  it('checkpoints only server-confirmed names from a partial secret write', async () => {
+    const writes = [
+      { name: 'TOKEN_A', value: 'write-only-a' },
+      { name: 'TOKEN_B', value: 'write-only-b' },
+      { name: 'TOKEN_C', value: 'write-only-c' },
+    ]
+    const partial = new ApiError('provider write failed', 502, {
+      partial: true,
+      created: [
+        { name: 'TOKEN_A' },
+        { name: 'TOKEN_A' },
+        { name: 'NOT_IN_THIS_BATCH' },
+        { malformed: true },
+      ],
+    })
+    const committedNames: string[] = []
+
+    await expect(createProjectSecretsInBatches(
+      vi.fn().mockRejectedValueOnce(partial),
+      'project-1',
+      writes,
+      names => committedNames.push(...names),
+    )).rejects.toBe(partial)
+
+    expect(committedNames).toEqual(['TOKEN_A'])
+  })
+
   it('fails closed when batched status responses disagree about store capabilities', async () => {
     const requirementsAcrossBatches = Array.from({ length: 300 }, (_, index): SecretBindingRequirement => ({
       id: `capability-${index}`,
@@ -1794,6 +1821,140 @@ describe('SecretBindingReview', () => {
     expect(onApply).toHaveBeenCalledWith([
       { requirement_id: 'authorization-header', secret_name: 'ORDER_API_TOKEN_2' },
     ])
+  })
+
+  it('retries only the unwritten subset after a partial project-secret batch failure', async () => {
+    const partialRequirements: SecretBindingRequirement[] = [
+      {
+        ...requirements[0],
+        id: 'partial-token-a',
+        suggested_name: 'PARTIAL_TOKEN_A',
+        replacement: '{{secret.PARTIAL_TOKEN_A}}',
+      },
+      {
+        ...requirements[0],
+        id: 'partial-token-b',
+        suggested_name: 'PARTIAL_TOKEN_B',
+        replacement: '{{secret.PARTIAL_TOKEN_B}}',
+      },
+    ]
+    apiMock.getProjectSecretStatuses.mockImplementation(async (_projectId: string, names: string[]) => ({
+      project_id: 'project-1',
+      capabilities: {
+        provider: 'database',
+        writable: true,
+        create_supported: true,
+        replace_supported: true,
+        source_secret_migration_policy_enabled: false,
+      },
+      secrets: names.map(name => ({ name, configured: false, provider: 'database', writable: true })),
+    }))
+    apiMock.createProjectSecrets
+      .mockRejectedValueOnce(new ApiError('provider write failed', 502, {
+        partial: true,
+        created: [{ name: 'PARTIAL_TOKEN_A' }],
+        remaining_names: ['PARTIAL_TOKEN_B'],
+      }))
+      .mockResolvedValueOnce({ project_id: 'project-1', secrets: [], count: 1 })
+    const reviewRef = { current: null as SecretBindingReviewHandle | null }
+    const onApply = vi.fn().mockResolvedValue(undefined)
+    await act(async () => {
+      root.render(
+        <SecretBindingReview
+          ref={reviewRef}
+          projectId="project-1"
+          requirements={partialRequirements}
+          onApply={onApply}
+        />,
+      )
+      await Promise.resolve()
+    })
+    act(() => {
+      const inputs = Array.from(container.querySelectorAll<HTMLInputElement>('input[type="password"]'))
+      setInput(inputs[0], 'write-only-a')
+      setInput(inputs[1], 'write-only-b')
+    })
+
+    await act(async () => {
+      expect(await reviewRef.current?.commit()).toBe(false)
+    })
+    expect(apiMock.createProjectSecrets).toHaveBeenNthCalledWith(1, 'project-1', [
+      { name: 'PARTIAL_TOKEN_A', value: 'write-only-a' },
+      { name: 'PARTIAL_TOKEN_B', value: 'write-only-b' },
+    ])
+
+    await act(async () => {
+      expect(await reviewRef.current?.commit()).toBe(true)
+    })
+    expect(apiMock.createProjectSecrets).toHaveBeenNthCalledWith(2, 'project-1', [
+      { name: 'PARTIAL_TOKEN_B', value: 'write-only-b' },
+    ])
+    expect(onApply).toHaveBeenCalledWith([
+      { requirement_id: 'partial-token-a', secret_name: 'PARTIAL_TOKEN_A' },
+      { requirement_id: 'partial-token-b', secret_name: 'PARTIAL_TOKEN_B' },
+    ])
+  })
+
+  it('probes many collision-safe names in bounded concurrent batches', async () => {
+    const collisionRequirements = Array.from({ length: 12 }, (_, index): SecretBindingRequirement => ({
+      ...requirements[0],
+      id: `collision-${index}`,
+      suggested_name: `CONFIGURED_TOKEN_${index}`,
+      replacement: `{{secret.CONFIGURED_TOKEN_${index}}}`,
+    }))
+    let inFlight = 0
+    let maxInFlight = 0
+    apiMock.getProjectSecretStatuses.mockImplementation(async (_projectId: string, names: string[]) => {
+      const suffixProbe = names.some(name => /_\d+$/.test(name.replace(/^CONFIGURED_TOKEN_\d+/, '')))
+      if (suffixProbe) {
+        inFlight += 1
+        maxInFlight = Math.max(maxInFlight, inFlight)
+        await Promise.resolve()
+        inFlight -= 1
+      }
+      return {
+        project_id: 'project-1',
+        capabilities: {
+          provider: 'database', writable: true, create_supported: true, replace_supported: true,
+          source_secret_migration_policy_enabled: false,
+        },
+        secrets: names.map(name => ({
+          name,
+          configured: !suffixProbe,
+          provider: 'database',
+          writable: true,
+        })),
+      }
+    })
+    const reviewRef = { current: null as SecretBindingReviewHandle | null }
+    await act(async () => {
+      root.render(
+        <SecretBindingReview
+          ref={reviewRef}
+          projectId="project-1"
+          requirements={collisionRequirements}
+          onApply={vi.fn().mockResolvedValue(undefined)}
+        />,
+      )
+      await Promise.resolve()
+    })
+    act(() => {
+      for (const [index, input] of Array.from(container.querySelectorAll<HTMLInputElement>('input[type="password"]')).entries()) {
+        setInput(input, `manual-${index}`)
+      }
+    })
+
+    await act(async () => {
+      expect(await reviewRef.current?.commit()).toBe(true)
+    })
+
+    const suffixCalls = apiMock.getProjectSecretStatuses.mock.calls.filter(([, names]) => (
+      names.some((name: string) => /_\d+$/.test(name.replace(/^CONFIGURED_TOKEN_\d+/, '')))
+    ))
+    expect(suffixCalls.length).toBeGreaterThan(1)
+    expect(suffixCalls.every(([, names]) => names.length <= 256)).toBe(true)
+    expect(maxInFlight).toBeGreaterThan(1)
+    expect(apiMock.createProjectSecrets).toHaveBeenCalledTimes(1)
   })
 
   it('allocates another fresh name when a create-only race claims the speculative name', async () => {

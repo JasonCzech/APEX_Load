@@ -1371,6 +1371,88 @@ describe('ProtocolAssetImport', () => {
     }))
   })
 
+  it.each([
+    { kind: 'openapi' as const, convertLabel: 'Convert OpenAPI', fileName: 'large.yaml' },
+    { kind: 'postman' as const, convertLabel: 'Convert Postman Collection', fileName: 'large.json' },
+  ])('pages and searches the $kind replacement library on the server', async ({ kind, convertLabel, fileName }) => {
+    const reviewedScript = {
+      name: `Imported ${kind}`,
+      version: '1.0.0',
+      protocol: 'http',
+      config: { base_url: 'https://api.example.test' },
+      actions: [{ name: 'Request', type: 'request', method: 'GET', target: '/' }],
+    }
+    const importResult = {
+      scripts: [], script: reviewedScript, warnings: [], unsupported_elements: [], assumptions: [],
+      review_sections: [], repair_suggestions: [], correlations: [], stats: { converted_actions: 1 }, summary: {},
+    }
+    if (kind === 'openapi') apiMock.importOpenAPI.mockResolvedValueOnce(importResult)
+    else apiMock.importPostman.mockResolvedValueOnce(importResult)
+    apiMock.listScripts.mockImplementation(async (_projectId, _folderId, options) => {
+      const offset = options?.offset || 0
+      const search = options?.search || ''
+      const count = search ? 1 : 250
+      const size = Math.min(options?.limit || count, Math.max(0, count - offset))
+      return {
+        scripts: Array.from({ length: size }, (_, index) => ({
+          id: `target-${offset + index}`,
+          name: search ? `Matching ${search}` : `Target ${offset + index}`,
+          protocol: 'http', version: '1.0.0', project_id: 'project-1', created_at: '2026-01-01T00:00:00Z',
+          script: { ...reviewedScript, name: `Target ${offset + index}` },
+        })),
+        count,
+        limit: options?.limit,
+        offset,
+      }
+    })
+
+    await act(async () => root.render(<ProtocolAssetImport kind={kind} projectId="project-1" />))
+    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"]')!
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', { configurable: true, value: [new File(['{}'], fileName)] })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await act(async () => {
+      Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes(convertLabel))?.click()
+    })
+    await flushPromises()
+    const modeSelect = Array.from(container.querySelectorAll<HTMLSelectElement>('select'))
+      .find(select => select.closest('label')?.textContent?.includes('Mode'))!
+    await act(async () => {
+      modeSelect.value = 'replace'
+      modeSelect.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await flushPromises()
+
+    expect(apiMock.listScripts).toHaveBeenLastCalledWith('project-1', undefined, {
+      limit: 100, offset: 0, search: '',
+    })
+    const targetSelect = Array.from(container.querySelectorAll<HTMLSelectElement>('select'))
+      .find(select => select.closest('label')?.querySelector('span')?.textContent === 'Script')!
+    expect(targetSelect.options).toHaveLength(101)
+    const pager = container.querySelector<HTMLElement>(`[aria-label="${kind === 'openapi' ? 'OpenAPI' : 'Postman'} replacement script pages"]`)!
+    expect(pager.textContent).toContain('Showing 1–100 of 250')
+    await act(async () => {
+      Array.from(pager.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Next')?.click()
+    })
+    await flushPromises()
+    expect(apiMock.listScripts).toHaveBeenLastCalledWith('project-1', undefined, {
+      limit: 100, offset: 100, search: '',
+    })
+
+    const search = Array.from(container.querySelectorAll<HTMLInputElement>('input[type="search"]'))
+      .find(input => input.closest('label')?.textContent?.includes('Find script'))!
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set?.call(search, 'orders')
+      search.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    await flushPromises()
+    expect(apiMock.listScripts).toHaveBeenLastCalledWith('project-1', undefined, {
+      limit: 100, offset: 0, search: 'orders',
+    })
+    expect(targetSelect.options).toHaveLength(2)
+  })
+
   it('does not retry an unavailable OpenAPI protected session through the legacy create path', async () => {
     apiMock.commitOpenAPIImport.mockRejectedValueOnce(Object.assign(
       new Error('import session not found or expired'),

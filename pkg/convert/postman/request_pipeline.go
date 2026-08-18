@@ -560,12 +560,37 @@ func (pipeline *postmanRequestPipeline) redactSourceReviewBodies(
 	if pipeline == nil || len(sources) == 0 || len(pipeline.sourceReviewBodies) == 0 {
 		return false
 	}
+	type sourceReviewReplacement struct {
+		raw      string
+		redacted string
+	}
+	replacements := make([]sourceReviewReplacement, 0, len(pipeline.sourceReviewBodies))
+	for raw, redacted := range pipeline.sourceReviewBodies {
+		if strings.TrimSpace(raw) == "" {
+			continue
+		}
+		replacements = append(replacements, sourceReviewReplacement{raw: raw, redacted: redacted})
+	}
+	sort.SliceStable(replacements, func(left, right int) bool {
+		if len(replacements[left].raw) == len(replacements[right].raw) {
+			return replacements[left].raw < replacements[right].raw
+		}
+		return len(replacements[left].raw) > len(replacements[right].raw)
+	})
+	if len(replacements) == 0 {
+		return false
+	}
+	// Each entry can require both its JSON-encoded spelling and its raw spelling
+	// to be scanned. Fail closed before performing source-size x value-count work.
+	if !postmanLiteralRedactionWithinBudget(sources, len(replacements)*2, maxPostmanLiteralRedactionWork) {
+		return omitPostmanSourcesForCredentialRedaction(sources)
+	}
 	changed := false
 	for name, source := range sources {
 		redactedSource := source
-		for raw, redacted := range pipeline.sourceReviewBodies {
-			rawJSON, rawErr := json.Marshal(raw)
-			redactedJSON, redactedErr := json.Marshal(redacted)
+		for _, replacement := range replacements {
+			rawJSON, rawErr := json.Marshal(replacement.raw)
+			redactedJSON, redactedErr := json.Marshal(replacement.redacted)
 			if rawErr == nil && redactedErr == nil {
 				redactedSource = strings.ReplaceAll(
 					redactedSource,
@@ -573,7 +598,7 @@ func (pipeline *postmanRequestPipeline) redactSourceReviewBodies(
 					string(redactedJSON),
 				)
 			}
-			redactedSource = strings.ReplaceAll(redactedSource, raw, redacted)
+			redactedSource = strings.ReplaceAll(redactedSource, replacement.raw, replacement.redacted)
 		}
 		if redactedSource != source {
 			sources[name] = redactedSource
@@ -1247,16 +1272,7 @@ func maskPostmanLiteralSourceValuesWithBudget(
 		return false
 	}
 	if !postmanLiteralRedactionWithinBudget(sources, len(values), maxWork) {
-		changed := false
-		for name, source := range sources {
-			omitted := "// [POSTMAN SOURCE OMITTED: CREDENTIAL REDACTION WORK LIMIT EXCEEDED]" +
-				strings.Repeat("\n", strings.Count(source, "\n"))
-			if omitted != source {
-				sources[name] = omitted
-				changed = true
-			}
-		}
-		return changed
+		return omitPostmanSourcesForCredentialRedaction(sources)
 	}
 	changed := false
 	for name, source := range sources {
@@ -1267,6 +1283,19 @@ func maskPostmanLiteralSourceValuesWithBudget(
 		redacted, _ = scrub.RedactQuotedValues(redacted, values)
 		if redacted != source {
 			sources[name] = redacted
+			changed = true
+		}
+	}
+	return changed
+}
+
+func omitPostmanSourcesForCredentialRedaction(sources map[string]string) bool {
+	changed := false
+	for name, source := range sources {
+		omitted := "// [POSTMAN SOURCE OMITTED: CREDENTIAL REDACTION WORK LIMIT EXCEEDED]" +
+			strings.Repeat("\n", strings.Count(source, "\n"))
+		if omitted != source {
+			sources[name] = omitted
 			changed = true
 		}
 	}

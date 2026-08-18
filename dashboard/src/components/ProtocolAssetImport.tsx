@@ -32,6 +32,7 @@ import './SampleScriptImport.css'
 export type ImportKind = 'devweb' | 'har' | 'recorder-export' | 'openapi' | 'raml' | 'postman' | 'wsdl' | 'asyncapi' | 'k6' | 'eventhubs-capture' | 'broker-config'
 
 const ASYNCAPI_SCRIPT_PAGE_SIZE = 50
+const REPLACE_TARGET_PAGE_SIZE = 100
 
 interface Props {
   kind: ImportKind
@@ -780,6 +781,9 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
   const [openAPIReplaceScriptId, setOpenAPIReplaceScriptId] = useState('')
   const [openAPIReplaceMode, setOpenAPIReplaceMode] = useState<'full' | 'merge_by_operation_id'>('full')
   const [openAPIScripts, setOpenAPIScripts] = useState<StoredScript[]>([])
+  const [openAPIScriptSearch, setOpenAPIScriptSearch] = useState('')
+  const [openAPIScriptOffset, setOpenAPIScriptOffset] = useState(0)
+  const [openAPIScriptCount, setOpenAPIScriptCount] = useState(0)
 
   useEffect(() => {
     latestResultRef.current = result || null
@@ -804,6 +808,9 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
   const [postmanSaveMode, setPostmanSaveMode] = useState<'create' | 'replace'>('create')
   const [postmanReplaceScriptId, setPostmanReplaceScriptId] = useState('')
   const [postmanScripts, setPostmanScripts] = useState<StoredScript[]>([])
+  const [postmanScriptSearch, setPostmanScriptSearch] = useState('')
+  const [postmanScriptOffset, setPostmanScriptOffset] = useState(0)
+  const [postmanScriptCount, setPostmanScriptCount] = useState(0)
   const openAPISaveTargetRef = useRef({
     mode: openAPISaveMode,
     targetScriptId: openAPIReplaceScriptId,
@@ -1000,34 +1007,68 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
   }, [selectedScriptIndex, file])
 
   useEffect(() => {
-    if (kind !== 'openapi') return
-    let cancelled = false
     setOpenAPIScripts([])
     setOpenAPIReplaceScriptId('')
-    api.listScripts(projectId)
-      .then(response => {
-        if (!cancelled) setOpenAPIScripts(response.scripts || [])
-      })
-      .catch(() => {
-        if (!cancelled) setOpenAPIScripts([])
-      })
-    return () => { cancelled = true }
-  }, [api, kind, projectId])
+    setOpenAPIScriptSearch('')
+    setOpenAPIScriptOffset(0)
+    setOpenAPIScriptCount(0)
+  }, [kind, projectId])
 
   useEffect(() => {
-    if (kind !== 'postman') return
+    if (kind !== 'openapi' || openAPISaveMode !== 'replace') return
     let cancelled = false
-    setPostmanScripts([])
-    setPostmanReplaceScriptId('')
-    api.listScripts(projectId)
+    setOpenAPIScripts([])
+    api.listScripts(projectId, undefined, {
+      limit: REPLACE_TARGET_PAGE_SIZE,
+      offset: openAPIScriptOffset,
+      search: openAPIScriptSearch,
+    })
       .then(response => {
-        if (!cancelled) setPostmanScripts(response.scripts || [])
+        if (!cancelled) {
+          setOpenAPIScripts(response.scripts || [])
+          setOpenAPIScriptCount(response.count || 0)
+        }
       })
       .catch(() => {
-        if (!cancelled) setPostmanScripts([])
+        if (!cancelled) {
+          setOpenAPIScripts([])
+          setOpenAPIScriptCount(0)
+        }
       })
     return () => { cancelled = true }
-  }, [api, kind, projectId])
+  }, [api, kind, openAPISaveMode, openAPIScriptOffset, openAPIScriptSearch, projectId])
+
+  useEffect(() => {
+    setPostmanScripts([])
+    setPostmanReplaceScriptId('')
+    setPostmanScriptSearch('')
+    setPostmanScriptOffset(0)
+    setPostmanScriptCount(0)
+  }, [kind, projectId])
+
+  useEffect(() => {
+    if (kind !== 'postman' || postmanSaveMode !== 'replace') return
+    let cancelled = false
+    setPostmanScripts([])
+    api.listScripts(projectId, undefined, {
+      limit: REPLACE_TARGET_PAGE_SIZE,
+      offset: postmanScriptOffset,
+      search: postmanScriptSearch,
+    })
+      .then(response => {
+        if (!cancelled) {
+          setPostmanScripts(response.scripts || [])
+          setPostmanScriptCount(response.count || 0)
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setPostmanScripts([])
+          setPostmanScriptCount(0)
+        }
+      })
+    return () => { cancelled = true }
+  }, [api, kind, postmanSaveMode, postmanScriptOffset, postmanScriptSearch, projectId])
 
   const handleConvert = async (mode: 'conversion' | 'validation' = 'conversion', overrides?: { salesforceNative?: boolean }) => {
     if (!file) {
@@ -2472,6 +2513,20 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
                   {openAPISaveMode === 'replace' && (
                     <>
                       <label className="sample-import-field">
+                        <span>Find script</span>
+                        <input
+                          type="search"
+                          value={openAPIScriptSearch}
+                          disabled={saveTargetLocked}
+                          onChange={event => {
+                            setOpenAPIScriptSearch(event.target.value)
+                            setOpenAPIScriptOffset(0)
+                            setOpenAPIReplaceScriptId('')
+                          }}
+                          placeholder="Search by name or reference"
+                        />
+                      </label>
+                      <label className="sample-import-field">
                         <span>Script</span>
                         <select value={openAPIReplaceScriptId} disabled={saveTargetLocked} onChange={event => setOpenAPIReplaceScriptId(event.target.value)}>
                           <option value="">Select script</option>
@@ -2480,6 +2535,33 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
                           ))}
                         </select>
                       </label>
+                      <nav className="sample-import-script-pagination" aria-label="OpenAPI replacement script pages">
+                        <button
+                          type="button"
+                          disabled={saveTargetLocked || openAPIScriptOffset === 0}
+                          onClick={() => {
+                            setOpenAPIScriptOffset(Math.max(0, openAPIScriptOffset - REPLACE_TARGET_PAGE_SIZE))
+                            setOpenAPIReplaceScriptId('')
+                          }}
+                        >
+                          Previous
+                        </button>
+                        <span>
+                          {openAPIScriptCount === 0
+                            ? 'No matching scripts'
+                            : `Showing ${openAPIScriptOffset + 1}–${Math.min(openAPIScriptOffset + openAPIScripts.length, openAPIScriptCount)} of ${openAPIScriptCount}`}
+                        </span>
+                        <button
+                          type="button"
+                          disabled={saveTargetLocked || openAPIScriptOffset + openAPIScripts.length >= openAPIScriptCount}
+                          onClick={() => {
+                            setOpenAPIScriptOffset(openAPIScriptOffset + REPLACE_TARGET_PAGE_SIZE)
+                            setOpenAPIReplaceScriptId('')
+                          }}
+                        >
+                          Next
+                        </button>
+                      </nav>
                       <label className="sample-import-field">
                         <span>Replace Mode</span>
                         <select value={openAPIReplaceMode} disabled={saveTargetLocked} onChange={event => setOpenAPIReplaceMode(event.target.value as 'full' | 'merge_by_operation_id')}>
@@ -2504,15 +2586,58 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
                     </select>
                   </label>
                   {postmanSaveMode === 'replace' && (
-                    <label className="sample-import-field">
-                      <span>Script</span>
-                      <select value={postmanReplaceScriptId} disabled={saveTargetLocked} onChange={event => setPostmanReplaceScriptId(event.target.value)}>
-                        <option value="">Select script</option>
-                        {postmanScripts.map(script => (
-                          <option key={script.id} value={script.id}>{script.name}</option>
-                        ))}
-                      </select>
-                    </label>
+                    <>
+                      <label className="sample-import-field">
+                        <span>Find script</span>
+                        <input
+                          type="search"
+                          value={postmanScriptSearch}
+                          disabled={saveTargetLocked}
+                          onChange={event => {
+                            setPostmanScriptSearch(event.target.value)
+                            setPostmanScriptOffset(0)
+                            setPostmanReplaceScriptId('')
+                          }}
+                          placeholder="Search by name or reference"
+                        />
+                      </label>
+                      <label className="sample-import-field">
+                        <span>Script</span>
+                        <select value={postmanReplaceScriptId} disabled={saveTargetLocked} onChange={event => setPostmanReplaceScriptId(event.target.value)}>
+                          <option value="">Select script</option>
+                          {postmanScripts.map(script => (
+                            <option key={script.id} value={script.id}>{script.name}</option>
+                          ))}
+                        </select>
+                      </label>
+                      <nav className="sample-import-script-pagination" aria-label="Postman replacement script pages">
+                        <button
+                          type="button"
+                          disabled={saveTargetLocked || postmanScriptOffset === 0}
+                          onClick={() => {
+                            setPostmanScriptOffset(Math.max(0, postmanScriptOffset - REPLACE_TARGET_PAGE_SIZE))
+                            setPostmanReplaceScriptId('')
+                          }}
+                        >
+                          Previous
+                        </button>
+                        <span>
+                          {postmanScriptCount === 0
+                            ? 'No matching scripts'
+                            : `Showing ${postmanScriptOffset + 1}–${Math.min(postmanScriptOffset + postmanScripts.length, postmanScriptCount)} of ${postmanScriptCount}`}
+                        </span>
+                        <button
+                          type="button"
+                          disabled={saveTargetLocked || postmanScriptOffset + postmanScripts.length >= postmanScriptCount}
+                          onClick={() => {
+                            setPostmanScriptOffset(postmanScriptOffset + REPLACE_TARGET_PAGE_SIZE)
+                            setPostmanReplaceScriptId('')
+                          }}
+                        >
+                          Next
+                        </button>
+                      </nav>
+                    </>
                   )}
                 </div>
               </div>

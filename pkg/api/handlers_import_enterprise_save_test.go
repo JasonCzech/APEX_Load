@@ -212,6 +212,13 @@ func TestHandleSaveEnterpriseArchiveImportRestartRecoversCommittedCredentialedBa
 	if first.Code != http.StatusInternalServerError {
 		t.Fatalf("injected completion status = %d body=%s", first.Code, first.Body.String())
 	}
+	reuse := postEnterpriseArchiveBatch(t, firstServer, map[string]any{
+		"operation_id": "enterprise-credential-restart-different-operation",
+		"scripts":      masked,
+	})
+	if reuse.Code != http.StatusConflict {
+		t.Fatalf("post-commit capability reuse status = %d body=%s", reuse.Code, reuse.Body.String())
+	}
 
 	restarted := NewServer(ServerConfig{Store: store})
 	recovered := postEnterpriseArchiveBatch(t, restarted, payload)

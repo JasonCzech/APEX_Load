@@ -571,6 +571,54 @@ func TestLibraryCatalogPaginatesAndCountsOnlyPublishedAssets(t *testing.T) {
 	}
 }
 
+func TestLibraryCatalogRejectsScenarioCommittedBetweenCandidatesAndClaimSnapshot(t *testing.T) {
+	base, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "direct-import-catalog-scenario-race.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer base.Close()
+	server := NewServer(ServerConfig{Store: base})
+	script := libraryTestScript(uuid.NewString(), "Raced script", storage.DefaultProjectID, "/raced")
+	scenarioID := uuid.NewString()
+	scenarioRequest := CreateScenarioRequest{
+		Name: "Raced scenario", Duration: "1m", ScenarioMode: "vuser_driven",
+		Groups: []CreateGroupEntry{{Name: "Users", ScriptID: script.ID, Role: GroupRoleLoad, VUsers: 1, InitStrategy: "at_runtime"}},
+	}
+	transaction, err := newCreateImportTransaction(server, "catalog-scenario-race", []*dsl.Script{script}, scenarioID, &scenarioRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer transaction.rollback()
+	if _, err := transaction.createScript(script); err != nil {
+		t.Fatal(err)
+	}
+
+	var publishErr error
+	var once sync.Once
+	server.runner.setImportPublicationSnapshot(base, func() (map[string]struct{}, error) {
+		once.Do(func() {
+			if _, err := transaction.createScenario(scenarioID, scenarioRequest); err != nil {
+				publishErr = err
+				return
+			}
+			publishErr = transaction.commit()
+		})
+		return server.pendingDirectImportAssets()
+	})
+	page, total := server.libraryCatalogPage(storage.DefaultProjectID, "", 0, 10)
+	if publishErr != nil {
+		t.Fatalf("commit between candidates and claim snapshot: %v", publishErr)
+	}
+	if len(page) != 0 || total != 0 {
+		t.Fatalf("catalog returned a script-only slice of an atomically committed batch: page=%#v total=%d", page, total)
+	}
+
+	page, total = server.libraryCatalogPage(storage.DefaultProjectID, "", 0, 10)
+	if len(page) != 2 || total != 2 {
+		t.Fatalf("fresh catalog did not return the complete committed batch: page=%#v total=%d", page, total)
+	}
+}
+
 func TestBrowserDirectImportRetainsCommittedClaimsUntilExplicitCleanup(t *testing.T) {
 	base, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "browser-retained-claims.db"))
 	if err != nil {

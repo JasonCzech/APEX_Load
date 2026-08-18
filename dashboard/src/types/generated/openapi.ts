@@ -44438,7 +44438,10 @@ export interface operations {
     parameters: {
       "query"?: {
         "folder_id"?: string;
+        "limit"?: number;
+        "offset"?: number;
         "project_id"?: string;
+        "q"?: string;
       };
     };
     requestBody?: never;

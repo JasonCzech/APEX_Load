@@ -3,6 +3,7 @@ package credentialpolicy
 import (
 	"bytes"
 	"encoding/base64"
+	"fmt"
 	"net/url"
 	"strings"
 	"testing"
@@ -66,6 +67,20 @@ func TestClassifySourceCredentialValue(t *testing.T) {
 				t.Fatalf("recoverable value = %q, want byte-faithful %q", got, test.value)
 			}
 		})
+	}
+}
+
+func TestClassifySourceCredentialValueFailsClosedOnExcessEncodedCandidates(t *testing.T) {
+	tokens := make([]string, sourceCredentialCandidateLimit+1)
+	for index := range tokens {
+		tokens[index] = base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("credential-candidate-%03d", index)))
+	}
+	value := strings.Join(tokens, " ")
+	if got := ClassifySourceCredentialValue(value); got != SourceCredentialValueUnsafeEncoding {
+		t.Fatalf("status = %q, want %q", got, SourceCredentialValueUnsafeEncoding)
+	}
+	if recovered, ok := RecoverableSourceCredentialValue(value); ok || recovered != "" {
+		t.Fatalf("overflow candidate recovered as credential: %q, %t", recovered, ok)
 	}
 }
 

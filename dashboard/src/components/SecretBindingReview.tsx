@@ -1028,48 +1028,80 @@ const SecretBindingReview = forwardRef<SecretBindingReviewHandle, Props>(functio
       const reservedNames = new Set(incomingValueNames)
       const claimedNames = new Set<string>()
       const resolvedNames = new Map<string, string>()
-      for (const originalName of Array.from(incomingValueNames).sort()) {
-        let resolvedName = originalName
+      const sortedIncomingNames = Array.from(incomingValueNames).sort()
+      let unresolvedCollisions: string[] = []
+      for (const originalName of sortedIncomingNames) {
         if (
-          !committedValueNamesRef.current.has(resolvedName)
-          && (currentStatuses.get(resolvedName)?.configured === true || claimedNames.has(resolvedName))
+          !committedValueNamesRef.current.has(originalName)
+          && currentStatuses.get(originalName)?.configured === true
         ) {
-          let resolved = false
-          const candidates: string[] = []
-          for (let ordinal = 2; candidates.length < MAX_COLLISION_CANDIDATES; ordinal += 1) {
-            const candidate = collisionSafeSecretName(originalName, ordinal)
-            if (reservedNames.has(candidate) || claimedNames.has(candidate)) continue
-            candidates.push(candidate)
-          }
-          for (let offset = 0; offset < candidates.length && !resolved; offset += COLLISION_PROBE_BATCH_SIZE) {
-            const batch = candidates.slice(offset, offset + COLLISION_PROBE_BATCH_SIZE)
-            const unknownNames = batch.filter(candidate => !currentStatuses.has(candidate))
-            if (unknownNames.length > 0) {
-              if (!projectId || typeof api.getProjectSecretStatuses !== 'function') {
-                throw new Error('The project secret store cannot resolve a collision-safe credential name.')
-              }
-              const response = await api.getProjectSecretStatuses(projectId, unknownNames)
-              if (!requestIsCurrent()) return false
-              const probedStatuses = normalizeStatusMap(response)
-              const completedStatuses = unknownNames.map(name => [
-                name,
-                probedStatuses.get(name) || { name, configured: false },
-              ] as const)
-              currentStatuses = new Map([...currentStatuses, ...probedStatuses, ...completedStatuses])
-            }
-            const availableName = batch.find(candidate => currentStatuses.get(candidate)?.configured !== true)
-            if (availableName) {
-              resolvedName = availableName
-              resolved = true
-            }
-          }
-          if (!resolved) {
-            throw new Error(`Unable to allocate a collision-safe project secret name for ${originalName}.`)
-          }
+          unresolvedCollisions.push(originalName)
+          continue
         }
-        resolvedNames.set(originalName, resolvedName)
-        if (originalName !== resolvedName) collisionResolvedNamesRef.current.set(originalName, resolvedName)
-        claimedNames.add(resolvedName)
+        resolvedNames.set(originalName, originalName)
+        claimedNames.add(originalName)
+      }
+      const reservedCandidates = new Set(reservedNames)
+      const nextOrdinal = new Map(unresolvedCollisions.map(name => [name, 2]))
+      while (unresolvedCollisions.length > 0) {
+        const candidatesByOriginal = new Map<string, string[]>()
+        const waveCandidates: string[] = []
+        for (const originalName of unresolvedCollisions) {
+          const candidates: string[] = []
+          let ordinal = nextOrdinal.get(originalName) ?? 2
+          while (candidates.length < COLLISION_PROBE_BATCH_SIZE && ordinal <= MAX_COLLISION_CANDIDATES + 1) {
+            const candidate = collisionSafeSecretName(originalName, ordinal)
+            ordinal += 1
+            if (reservedCandidates.has(candidate) || claimedNames.has(candidate)) continue
+            reservedCandidates.add(candidate)
+            candidates.push(candidate)
+            waveCandidates.push(candidate)
+          }
+          nextOrdinal.set(originalName, ordinal)
+          candidatesByOriginal.set(originalName, candidates)
+        }
+        if (waveCandidates.length === 0) break
+        const unknownNames = waveCandidates.filter(candidate => !currentStatuses.has(candidate))
+        if (unknownNames.length > 0) {
+          if (!projectId || typeof api.getProjectSecretStatuses !== 'function') {
+            throw new Error('The project secret store cannot resolve a collision-safe credential name.')
+          }
+          const snapshot = unknownNames.length <= PROJECT_SECRET_STATUS_BATCH_SIZE
+            ? projectSecretStatusSnapshot([
+              await api.getProjectSecretStatuses(projectId, unknownNames),
+            ], projectId)
+            : await getProjectSecretStatusesBatched(
+              api.getProjectSecretStatuses,
+              projectId,
+              unknownNames,
+            )
+          if (!requestIsCurrent()) return false
+          if (!snapshot.storeWritable) {
+            throw new Error('The project secret store cannot resolve a collision-safe credential name.')
+          }
+          const completedStatuses = unknownNames.map(name => [
+            name,
+            snapshot.statuses.get(name) || { name, configured: false },
+          ] as const)
+          currentStatuses = new Map([...currentStatuses, ...snapshot.statuses, ...completedStatuses])
+        }
+        const stillUnresolved: string[] = []
+        for (const originalName of unresolvedCollisions) {
+          const availableName = candidatesByOriginal.get(originalName)?.find(candidate => (
+            currentStatuses.get(candidate)?.configured !== true && !claimedNames.has(candidate)
+          ))
+          if (!availableName) {
+            stillUnresolved.push(originalName)
+            continue
+          }
+          resolvedNames.set(originalName, availableName)
+          collisionResolvedNamesRef.current.set(originalName, availableName)
+          claimedNames.add(availableName)
+        }
+        unresolvedCollisions = stillUnresolved
+      }
+      if (unresolvedCollisions.length > 0) {
+        throw new Error(`Unable to allocate a collision-safe project secret name for ${unresolvedCollisions[0]}.`)
       }
       if (Array.from(resolvedNames).some(([originalName, resolvedName]) => originalName !== resolvedName)) {
         setNames(current => Object.fromEntries(Object.entries(current).map(([key, name]) => [

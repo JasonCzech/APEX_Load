@@ -451,6 +451,12 @@ func TestCommitGenericImportBatchRecoversCommittedRecorderBaselineWithoutLiveSes
 	if first.Code != http.StatusInternalServerError {
 		t.Fatalf("injected completion status = %d body=%s", first.Code, first.Body.String())
 	}
+	differentOperation := cloneGenericImportBatchPayload(payload)
+	differentOperation["operation_id"] = "recorder-baseline-recovery-different-operation"
+	reuse := postGenericImportBatch(t, server, differentOperation)
+	if reuse.Code != http.StatusConflict {
+		t.Fatalf("post-commit capability reuse status = %d body=%s", reuse.Code, reuse.Body.String())
+	}
 	stored, err := base.ListScripts(storage.DefaultProjectID, nil)
 	if err != nil {
 		t.Fatal(err)

@@ -15,6 +15,7 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
+	"github.com/jasonczech/apexload/pkg/convert/credentialpolicy"
 	"github.com/jasonczech/apexload/pkg/convert/jmeter"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/internal/archiveingest"
@@ -230,9 +231,11 @@ func convertJMeterImportRequest(request *jmeterImportRequest) (*jmeter.ConvertRe
 		documents = []jmeterImportDocument{{Data: request.Data, FileName: request.Opts.FileName}}
 	}
 	combined := &jmeter.ConvertResult{}
+	credentialRegistry := credentialpolicy.NewNameRegistry()
 	for _, document := range documents {
 		opts := request.Opts
 		opts.FileName = document.FileName
+		opts.CredentialRegistry = credentialRegistry
 		if len(request.Documents) > 0 {
 			opts.SidecarFiles = jmeterSidecarsForDocument(request.Opts.SidecarFiles, document.FileName)
 		}
@@ -856,7 +859,11 @@ func (s *Server) handleSaveJMeterImport(w http.ResponseWriter, r *http.Request) 
 	defer func() {
 		for _, claim := range claims {
 			if claim != nil {
-				s.releaseImportDraftAttestation(claim)
+				if assetsCommitted {
+					s.retainCommittedImportDraftAttestation(claim)
+				} else {
+					s.releaseImportDraftAttestation(claim)
+				}
 			}
 		}
 	}()
@@ -1003,9 +1010,14 @@ func (s *Server) handleSaveJMeterImport(w http.ResponseWriter, r *http.Request) 
 			deterministicScriptIDs(preparedScripts),
 			scenarioID,
 		)
-		if loadErr == nil && directImportPreparedAssetsMatch(
-			s, storedScripts, preparedScripts, storedScenario, scenarioRequest,
-		) {
+		if loadErr == nil {
+			assetsCommitted = true
+			if !directImportPreparedAssetsMatch(
+				s, storedScripts, preparedScripts, storedScenario, scenarioRequest,
+			) {
+				writeError(w, http.StatusConflict, "an asset from the prior JMeter import changed before recovery; use a new operation id")
+				return
+			}
 			if completeErr := attempt.complete(storedScripts, storedScenario); completeErr != nil {
 				writeError(w, http.StatusInternalServerError, "failed to reconcile JMeter import receipt: "+completeErr.Error())
 				return
@@ -1284,6 +1296,7 @@ func completeJMeterImportDraftClaims(s *Server, claims []*importDraftAttestation
 			continue
 		}
 		if err := s.completeImportDraftAttestation(claim); err != nil {
+			claims[index] = nil
 			slog.Warn("failed to finalize JMeter import draft capability", "error", err)
 			continue
 		}

@@ -100,6 +100,7 @@ const DEFAULT_RUN_OPTIONS: RunOptions = {
 
 const NATIVE_CANDIDATE_PAGE_SIZE = 100
 const NATIVE_FINDING_PAGE_SIZE = 100
+const COLLECTION_TREE_PAGE_SIZE = 100
 const MAX_DETAILED_REVIEW_FINDING_BLOCKERS = 10
 
 function splitList(value: string) {
@@ -400,23 +401,55 @@ function BrunoNativeReviewDialog({
   )
 }
 
+function CollectionTreeItem({ item }: { item: BrunoCollectionItem }) {
+  const [expanded, setExpanded] = useState(false)
+  const hasChildren = Boolean(item.children?.length)
+  return (
+    <li>
+      <div className="bruno-tree-row">
+        {hasChildren && (
+          <button
+            type="button"
+            className="btn btn-ghost bruno-tree-toggle"
+            aria-expanded={expanded}
+            aria-label={`${expanded ? 'Collapse' : 'Expand'} ${item.name}`}
+            onClick={() => setExpanded(value => !value)}
+          >
+            {expanded ? 'Collapse' : 'Expand'}
+          </button>
+        )}
+        <span className={`bruno-type bruno-type-${item.type}`}>{item.type}</span>
+        <span>{item.name}</span>
+        {!item.executable && <small>preserved only</small>}
+        {item.has_scripts && <small>scripts</small>}
+        {item.has_tests && <small>tests</small>}
+      </div>
+      {expanded && item.children && <CollectionTree items={item.children} />}
+    </li>
+  )
+}
+
 function CollectionTree({ items }: { items: BrunoCollectionItem[] }) {
+  const [page, setPage] = useState(0)
+  const pageCount = Math.max(1, Math.ceil(items.length / COLLECTION_TREE_PAGE_SIZE))
+  const safePage = Math.min(page, pageCount - 1)
+  const start = safePage * COLLECTION_TREE_PAGE_SIZE
+  const visibleItems = items.slice(start, start + COLLECTION_TREE_PAGE_SIZE)
+  useEffect(() => setPage(0), [items])
   if (items.length === 0) return <p className="bruno-empty">No collection items were detected.</p>
   return (
-    <ul className="bruno-tree">
-      {items.map(item => (
-        <li key={`${item.uid}-${item.path}`}>
-          <div className="bruno-tree-row">
-            <span className={`bruno-type bruno-type-${item.type}`}>{item.type}</span>
-            <span>{item.name}</span>
-            {!item.executable && <small>preserved only</small>}
-            {item.has_scripts && <small>scripts</small>}
-            {item.has_tests && <small>tests</small>}
-          </div>
-          {item.children && item.children.length > 0 && <CollectionTree items={item.children} />}
-        </li>
-      ))}
-    </ul>
+    <>
+      <ul className="bruno-tree">
+        {visibleItems.map(item => <CollectionTreeItem key={`${item.uid}-${item.path}`} item={item} />)}
+      </ul>
+      {pageCount > 1 && (
+        <nav className="bruno-native-table-pagination" aria-label="Collection tree pages">
+          <span>Items {start + 1}–{Math.min(start + COLLECTION_TREE_PAGE_SIZE, items.length)} of {items.length}</span>
+          <button type="button" className="btn btn-ghost" disabled={safePage === 0} onClick={() => setPage(value => Math.max(0, value - 1))}>Previous {COLLECTION_TREE_PAGE_SIZE}</button>
+          <button type="button" className="btn btn-ghost" disabled={safePage + 1 >= pageCount} onClick={() => setPage(value => Math.min(pageCount - 1, value + 1))}>Next {COLLECTION_TREE_PAGE_SIZE}</button>
+        </nav>
+      )}
+    </>
   )
 }
 
@@ -424,6 +457,7 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
   const api = useApi()
   const fileInputRef = useRef<HTMLInputElement>(null)
   const directoryInputRef = useRef<HTMLInputElement>(null)
+  const folderCreateRequestRef = useRef(0)
   const [files, setFiles] = useState<File[]>(initialFiles || [])
   const [outputMode, setOutputMode] = useState<OutputMode>(() => initialOutputMode || (isOpenCollectionYAML(initialFiles || []) ? 'native_requests' : 'canonical'))
   const initiallyDetectingMode = !initialOutputMode && needsBrunoContentModeDetection(initialFiles || [])
@@ -582,6 +616,7 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
 
   useEffect(() => {
     if (resetProjectIdRef.current === projectId) return
+    folderCreateRequestRef.current += 1
     resetProjectIdRef.current = projectId
     advanceSourceGeneration()
     setInspection(null)
@@ -954,6 +989,8 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
     const folderName = newFolderName.trim()
     const sourceProjectId = sourceProjectIdRef.current
     if (!sourceProjectId || !folderName || creatingFolder || folderCreationAccess !== 'allowed') return
+    const requestID = folderCreateRequestRef.current + 1
+    folderCreateRequestRef.current = requestID
     setCreatingFolder(true)
     setFolderCreateError('')
     try {
@@ -961,14 +998,14 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
         name: folderName,
         category: 'scripts',
       })
-      if (!mountedRef.current || sourceProjectIdRef.current !== sourceProjectId) return
+      if (!mountedRef.current || sourceProjectIdRef.current !== sourceProjectId || folderCreateRequestRef.current !== requestID) return
       setFolders(previous => previous.some(folder => folder.id === created.id)
         ? previous
         : [...previous, created])
       selectDestinationFolder(created.id)
       setNotice(`Created and selected script folder “${created.name}”.`)
     } catch (cause) {
-      if (mountedRef.current && sourceProjectIdRef.current === sourceProjectId) {
+      if (mountedRef.current && sourceProjectIdRef.current === sourceProjectId && folderCreateRequestRef.current === requestID) {
         if (cause instanceof ApiError && cause.status === 403) {
           setFolderCreationAccess('denied')
           setFolderCreateError(FOLDER_CREATION_DENIED_MESSAGE)
@@ -977,7 +1014,7 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
         }
       }
     } finally {
-      if (mountedRef.current && sourceProjectIdRef.current === sourceProjectId) {
+      if (mountedRef.current && sourceProjectIdRef.current === sourceProjectId && folderCreateRequestRef.current === requestID) {
         setCreatingFolder(false)
       }
     }

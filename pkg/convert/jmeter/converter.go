@@ -29,6 +29,9 @@ type ConvertOptions struct {
 	ScenarioDraft     bool
 	FileName          string
 	SidecarFiles      map[string][]byte
+	// CredentialRegistry lets a multi-document caller allocate logical secret
+	// names across the complete batch instead of restarting identity per JMX.
+	CredentialRegistry *credentialpolicy.NameRegistry
 }
 
 type ConvertResult struct {
@@ -181,7 +184,10 @@ func ConvertJMX(data []byte, opts ConvertOptions) (*ConvertResult, error) {
 	sourceMappings := make([]sourceview.Mapping, 0)
 	allRequirements := make([]credentialpolicy.Requirement, 0)
 	allFindings := make([]importreview.Finding, 0)
-	credentialNames := credentialpolicy.NewNameRegistry()
+	credentialNames := opts.CredentialRegistry
+	if credentialNames == nil {
+		credentialNames = credentialpolicy.NewNameRegistry()
+	}
 	variableReview := newJMeterVariableReview()
 	type variableSet struct {
 		values map[string]string

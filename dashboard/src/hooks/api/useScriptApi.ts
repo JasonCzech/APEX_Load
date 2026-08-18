@@ -71,6 +71,14 @@ type DraftScriptDebugStartBody = CompatibleDebugStartRequest<
 type ScriptListResponse = {
   scripts: StoredScript[]
   count: number
+  limit?: number
+  offset?: number
+}
+
+type ScriptListOptions = {
+  limit?: number
+  offset?: number
+  search?: string
 }
 
 type DeleteScriptResponse = {
@@ -328,10 +336,13 @@ async function errorMessageFromResponse(res: Response): Promise<string> {
   return res.statusText
 }
 
-function buildScriptQuery(projectId?: string, folderId?: string | null) {
+function buildScriptQuery(projectId?: string, folderId?: string | null, options?: ScriptListOptions) {
   const query = new URLSearchParams()
   if (projectId) query.set('project_id', projectId)
   if (folderId !== undefined) query.set('folder_id', folderId || '')
+  if (options?.limit !== undefined) query.set('limit', String(options.limit))
+  if (options?.offset !== undefined) query.set('offset', String(options.offset))
+  if (options?.search?.trim()) query.set('q', options.search.trim())
   const suffix = query.toString()
   return suffix ? `?${suffix}` : ''
 }
@@ -345,8 +356,8 @@ function buildScenarioQuery(projectId?: string) {
 
 export function useScriptApi() {
   const listScripts = useCallback(
-    (projectId?: string, folderId?: string | null) =>
-      request<ScriptListResponse>(`/scripts${buildScriptQuery(projectId, folderId)}`),
+    (projectId?: string, folderId?: string | null, options?: ScriptListOptions) =>
+      request<ScriptListResponse>(`/scripts${buildScriptQuery(projectId, folderId, options)}`),
     [],
   )
 

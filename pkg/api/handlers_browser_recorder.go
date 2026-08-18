@@ -1465,7 +1465,7 @@ func (s *Server) recoverStagedBrowserRecordingConversionsAtStartup() error {
 			if err := s.expireLibraryImportClaims(recoveryOwner); err != nil {
 				return fmt.Errorf("expire incomplete browser recording takeover: %w", err)
 			}
-			if err := s.recoverExpiredLibraryImportClaims(); err != nil {
+			if err := s.recoverExpiredLibraryImportClaimsWithBrowserCompensation(true); err != nil {
 				return fmt.Errorf("compensate incomplete browser recording takeover: %w", err)
 			}
 		}
@@ -2351,7 +2351,11 @@ func (s *Server) handleConvertBrowserRecording(w http.ResponseWriter, r *http.Re
 		return
 	}
 	if attempt != nil && !attempt.created {
-		if recoverErr := s.recoverExpiredLibraryImportClaims(); recoverErr != nil {
+		// This request already owns the durable receipt recovery lease. Recovering
+		// staged browser imports here could complete that same receipt under a
+		// different owner before the request renews it; only reconcile unrelated
+		// non-browser claims at this point.
+		if recoverErr := s.recoverExpiredLibraryImportClaimsWithBrowserCompensation(false); recoverErr != nil {
 			writeError(w, http.StatusInternalServerError, "failed to recover prior browser recording transaction: "+recoverErr.Error())
 			return
 		}
@@ -2590,7 +2594,7 @@ func (s *Server) handleRecoverBrowserRecordingConversion(
 	if receiptReplay {
 		stored, _, err = s.loadDirectImportReceiptAssets(attempt)
 	} else {
-		if recoverErr := s.recoverExpiredLibraryImportClaims(); recoverErr != nil {
+		if recoverErr := s.recoverExpiredLibraryImportClaimsWithBrowserCompensation(false); recoverErr != nil {
 			writeError(w, http.StatusInternalServerError, "failed to recover prior browser recording transaction: "+recoverErr.Error())
 			return
 		}

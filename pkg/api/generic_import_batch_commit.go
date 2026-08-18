@@ -279,7 +279,11 @@ func (s *Server) handleCommitGenericImportBatch(w http.ResponseWriter, r *http.R
 	defer func() {
 		for _, claim := range claims {
 			if claim != nil {
-				s.releaseImportDraftAttestation(claim)
+				if assetsCommitted {
+					s.retainCommittedImportDraftAttestation(claim)
+				} else {
+					s.releaseImportDraftAttestation(claim)
+				}
 			}
 		}
 	}()
@@ -668,6 +672,9 @@ func completeGenericImportBatchDraftClaims(s *Server, claims []*importDraftAttes
 			continue
 		}
 		if err := s.completeImportDraftAttestation(claim); err != nil {
+			// Assets and their receipt are already durable. Strand this one-shot
+			// claim for expiry instead of letting the handler defer reopen it.
+			claims[index] = nil
 			scriptID := ""
 			if index < len(stored) && stored[index] != nil {
 				scriptID = stored[index].ID

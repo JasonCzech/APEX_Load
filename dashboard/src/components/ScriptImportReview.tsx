@@ -36,17 +36,8 @@ const PROTECTED_PREVIEW_VALUE = '[protected imported value]'
 const previewSemanticNameKeys = new Set([
   'key', 'name', 'field', 'fieldname', 'label', 'header', 'headername', 'attributename', 'property',
 ])
-const previewSemanticPayloadKeys = new Set([
-  'value', 'text', 'content', 'selector', 'xpath', 'regex', 'sourcesnippet', 'snippet', 'raw', 'source', 'arguments',
-  'attributes', 'selectorcandidates', 'objectdescriptor', 'objectdescriptors', 'steps', 'unsupportedfragments',
-])
-
 function isPreviewSemanticNameKey(key: string): boolean {
   return previewSemanticNameKeys.has(normalizeCredentialPreviewName(key))
-}
-
-function isPreviewSemanticPayloadKey(key: string): boolean {
-  return previewSemanticPayloadKeys.has(normalizeCredentialPreviewName(key))
 }
 
 function previewObjectHasSensitiveSemanticName(candidate: Record<string, unknown>, keys: string[]): boolean {
@@ -360,7 +351,10 @@ function previewJSON(value: unknown): { text: string; truncated: boolean } {
           const childSensitive = (
             sensitiveAncestor
             || (!semanticNameKey && isSensitiveCredentialPreviewKey(key))
-            || (sensitiveSemanticName && isPreviewSemanticPayloadKey(key))
+            // A semantic credential record can use arbitrary adapter-specific
+            // payload keys such as defaultValue, values, or schema.default. Protect
+            // every non-name descendant instead of relying on a small allowlist.
+            || (sensitiveSemanticName && !semanticNameKey)
           )
           result[key] = visit(child, depth + 1, childSensitive)
         } catch {

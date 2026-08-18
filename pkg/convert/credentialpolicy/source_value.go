@@ -52,7 +52,11 @@ func ClassifySourceCredentialValue(value string) SourceCredentialValueStatus {
 			if containsDisclosureSentinel(candidate) {
 				return SourceCredentialValueRedactedPlaceholder
 			}
-			for _, decoded := range sourceCredentialDecodings(candidate) {
+			decodedValues, overflow := sourceCredentialDecodings(candidate)
+			if overflow {
+				return SourceCredentialValueUnsafeEncoding
+			}
+			for _, decoded := range decodedValues {
 				if decoded == candidate {
 					continue
 				}
@@ -77,7 +81,8 @@ func ClassifySourceCredentialValue(value string) SourceCredentialValueStatus {
 	// More decoding work after the fixed bound is ambiguous. Refuse to migrate
 	// it rather than allowing an over-depth placeholder to become executable.
 	for _, candidate := range candidates {
-		if len(sourceCredentialDecodings(candidate)) > 0 {
+		decodedValues, overflow := sourceCredentialDecodings(candidate)
+		if overflow || len(decodedValues) > 0 {
 			return SourceCredentialValueUnsafeEncoding
 		}
 	}
@@ -98,8 +103,9 @@ func containsDisclosureSentinel(value string) bool {
 	return strings.Contains(strings.ToLower(value), strings.ToLower(credential.Redacted))
 }
 
-func sourceCredentialDecodings(value string) []string {
+func sourceCredentialDecodings(value string) ([]string, bool) {
 	decoded := make([]string, 0, 8)
+	overflow := false
 	appendDecoded := func(candidate string) {
 		if candidate == "" || candidate == value {
 			return
@@ -108,6 +114,10 @@ func sourceCredentialDecodings(value string) []string {
 			if prior == candidate {
 				return
 			}
+		}
+		if len(decoded) >= sourceCredentialCandidateLimit {
+			overflow = true
+			return
 		}
 		decoded = append(decoded, candidate)
 	}
@@ -127,10 +137,15 @@ func sourceCredentialDecodings(value string) []string {
 
 	trimmed := strings.TrimSpace(value)
 	appendCredentialBase64Decodings(trimmed, appendDecoded)
-	for _, token := range encodedCredentialCandidatePattern.FindAllString(value, -1) {
-		appendCredentialBase64Decodings(token, appendDecoded)
+	tokenLocations := encodedCredentialCandidatePattern.FindAllStringIndex(value, sourceCredentialCandidateLimit+1)
+	if len(tokenLocations) > sourceCredentialCandidateLimit {
+		overflow = true
+		tokenLocations = tokenLocations[:sourceCredentialCandidateLimit]
 	}
-	return decoded
+	for _, location := range tokenLocations {
+		appendCredentialBase64Decodings(value[location[0]:location[1]], appendDecoded)
+	}
+	return decoded, overflow
 }
 
 func tolerantPercentDecode(value string) string {

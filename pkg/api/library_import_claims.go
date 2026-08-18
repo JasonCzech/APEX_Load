@@ -879,6 +879,22 @@ func (s *Server) recoverAbandonedDirectImportsAtStartup() error {
 // recoverExpiredLibraryImportClaims takes over one expired transaction at a
 // time. A CAS lease prevents two replacement replicas from compensating it.
 func (s *Server) recoverExpiredLibraryImportClaims() error {
+	// Browser-recording imports have additional durable evidence (a signed
+	// locator, HAR baseline, and receipt) that can turn an expired claim set into
+	// a completed save. Give that format-specific reconciler first refusal before
+	// generic claim recovery compensates any rows. The reconciler uses the
+	// including-browser variant below only after it has proved a taken-over set is
+	// incomplete, which avoids recursive recovery.
+	if err := s.recoverStagedBrowserRecordingConversionsAtStartup(); err != nil {
+		return err
+	}
+	// Any expired browser claim that remains after the format-specific pass had
+	// no recoverable staged evidence (or was a definitively abandoned active
+	// attempt), so ordinary compensation is now safe.
+	return s.recoverExpiredLibraryImportClaimsWithBrowserCompensation(true)
+}
+
+func (s *Server) recoverExpiredLibraryImportClaimsWithBrowserCompensation(includeBrowser bool) error {
 	for {
 		now := time.Now().UTC()
 		recoveryOwner := uuid.NewString()
@@ -905,7 +921,8 @@ func (s *Server) recoverExpiredLibraryImportClaims() error {
 			}
 			owner := ""
 			for _, claim := range *claims {
-				if !claim.Committed && !claim.ExpiresAt.After(now) {
+				if !claim.Committed && !claim.ExpiresAt.After(now) &&
+					(includeBrowser || !isRetainedBrowserDirectImportClaim(claim)) {
 					owner = claim.OwnerID
 					break
 				}

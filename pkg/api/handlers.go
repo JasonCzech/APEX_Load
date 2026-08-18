@@ -863,19 +863,41 @@ func (s *Server) handleListScripts(w http.ResponseWriter, r *http.Request) {
 		folderID = &value
 	}
 	projectID = s.projectIDForFolderFilter(r, projectID, folderID)
+	var scripts []*StoredScript
 	if projectID == "" && folderID == nil {
-		scripts := s.runner.ListScriptsWithUsage()
-		writeJSON(w, http.StatusOK, map[string]any{
-			"scripts": maskStoredScripts(scripts),
-			"count":   len(scripts),
-		})
-		return
+		scripts = s.runner.ListScriptsWithUsage()
+	} else {
+		scripts = s.runner.ListScriptsFiltered(projectID, folderID)
 	}
-	scripts := s.runner.ListScriptsFiltered(projectID, folderID)
-	writeJSON(w, http.StatusOK, map[string]any{
-		"scripts": maskStoredScripts(scripts),
-		"count":   len(scripts),
-	})
+
+	query := strings.TrimSpace(r.URL.Query().Get("q"))
+	if query != "" {
+		needle := strings.ToLower(query)
+		filtered := make([]*StoredScript, 0, len(scripts))
+		for _, script := range scripts {
+			if script == nil {
+				continue
+			}
+			if strings.Contains(strings.ToLower(script.Name), needle) ||
+				strings.Contains(strings.ToLower(script.ID), needle) ||
+				strings.Contains(strings.ToLower(script.RefKey), needle) {
+				filtered = append(filtered, script)
+			}
+		}
+		scripts = filtered
+	}
+	total := len(scripts)
+	response := map[string]any{"count": total}
+	if r.URL.Query().Has("limit") || r.URL.Query().Has("offset") || query != "" {
+		limit, offset := parseLimitOffsetQuery(r, 100)
+		start := min(offset, total)
+		end := min(start+limit, total)
+		scripts = scripts[start:end]
+		response["limit"] = limit
+		response["offset"] = offset
+	}
+	response["scripts"] = maskStoredScripts(scripts)
+	writeJSON(w, http.StatusOK, response)
 }
 
 func (s *Server) projectIDForFolderFilter(r *http.Request, projectID string, folderID *string) string {

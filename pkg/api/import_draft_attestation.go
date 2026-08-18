@@ -566,6 +566,22 @@ func (s *Server) releaseImportDraftAttestation(claim *importDraftAttestationClai
 	}
 }
 
+// retainCommittedImportDraftAttestation drops process-local sensitive bytes and
+// stops lease renewal without releasing the one-shot capability. Once imported
+// assets are durable, a cleanup failure must leave the capability claimed until
+// its normal expiry/reconciliation path; releasing it would authorize the same
+// credential-bearing draft to create a second batch under a new operation ID.
+func (s *Server) retainCommittedImportDraftAttestation(claim *importDraftAttestationClaim) {
+	if s == nil || claim == nil {
+		return
+	}
+	clear(claim.RawSource)
+	claim.RawSource = nil
+	if claim.ProtectedLease != nil {
+		claim.ProtectedLease.stop()
+	}
+}
+
 func (s *Server) completeImportDraftAttestation(claim *importDraftAttestationClaim) error {
 	if s == nil || claim == nil {
 		return nil

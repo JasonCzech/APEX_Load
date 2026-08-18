@@ -304,7 +304,7 @@ func TestAPIArchiveReadersRejectTraversalEntries(t *testing.T) {
 }
 
 func TestJMeterZIPConvertsEveryJMXInDeterministicPathOrder(t *testing.T) {
-	const jmx = `<jmeterTestPlan version="1.2"><hashTree><TestPlan testname="Plan" enabled="true"/><hashTree><ThreadGroup testname="Users" enabled="true"/><hashTree><HTTPSamplerProxy testname="Home" enabled="true"><stringProp name="HTTPSampler.domain">example.test</stringProp><stringProp name="HTTPSampler.protocol">https</stringProp><stringProp name="HTTPSampler.path">/</stringProp><stringProp name="HTTPSampler.method">GET</stringProp></HTTPSamplerProxy><hashTree/></hashTree></hashTree></hashTree></jmeterTestPlan>`
+	const jmx = `<jmeterTestPlan version="1.2"><hashTree><TestPlan testname="Plan" enabled="true"/><hashTree><ThreadGroup testname="Users" enabled="true"/><hashTree><HeaderManager testname="Auth" enabled="true"><collectionProp name="HeaderManager.headers"><elementProp name="" elementType="Header"><stringProp name="Header.name">X-API-Key</stringProp><stringProp name="Header.value">[REDACTED]</stringProp></elementProp></collectionProp></HeaderManager><hashTree/><HTTPSamplerProxy testname="Home" enabled="true"><stringProp name="HTTPSampler.domain">example.test</stringProp><stringProp name="HTTPSampler.protocol">https</stringProp><stringProp name="HTTPSampler.path">/</stringProp><stringProp name="HTTPSampler.method">GET</stringProp></HTTPSamplerProxy><hashTree/></hashTree></hashTree></hashTree></jmeterTestPlan>`
 	archive := buildPreflightCoverageArchive(t, map[string]string{
 		"z/second.jmx":   jmx,
 		"a/first.jmx":    jmx,
@@ -326,6 +326,15 @@ func TestJMeterZIPConvertsEveryJMXInDeterministicPathOrder(t *testing.T) {
 	}
 	if len(result.Scripts) != 2 {
 		t.Fatalf("scripts = %d, want 2", len(result.Scripts))
+	}
+	if len(result.SecretRequirements) != 2 ||
+		result.SecretRequirements[0].SuggestedName == result.SecretRequirements[1].SuggestedName {
+		t.Fatalf("multi-JMX credentials were not allocated across the batch: %#v", result.SecretRequirements)
+	}
+	for index, wantPath := range []string{"a/first.jmx", "z/second.jmx"} {
+		if result.SecretRequirements[index].Source.Path != wantPath {
+			t.Fatalf("requirement %d source = %q, want %q", index, result.SecretRequirements[index].Source.Path, wantPath)
+		}
 	}
 	if result.Scripts[0].Name == result.Scripts[1].Name ||
 		strings.EqualFold(result.Scripts[0].Name, result.Scripts[1].Name) {

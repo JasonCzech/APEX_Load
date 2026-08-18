@@ -167,7 +167,11 @@ func (s *Server) handleCommitAsyncAPIImportBatch(w http.ResponseWriter, r *http.
 	defer func() {
 		for _, claim := range claims {
 			if claim != nil {
-				s.releaseImportDraftAttestation(claim)
+				if assetsCommitted {
+					s.retainCommittedImportDraftAttestation(claim)
+				} else {
+					s.releaseImportDraftAttestation(claim)
+				}
 			}
 		}
 	}()
@@ -249,6 +253,7 @@ func (s *Server) handleCommitAsyncAPIImportBatch(w http.ResponseWriter, r *http.
 		}
 		stored, _, loadErr := s.loadDirectImportAssetsByIDs(projectID, plannedIDs, "")
 		if loadErr == nil {
+			assetsCommitted = true
 			if !directImportPreparedAssetsMatch(s, stored, prepared, nil, nil) {
 				writeError(w, http.StatusConflict, "a script from the prior AsyncAPI batch changed before recovery; use a new operation id")
 				return
@@ -333,6 +338,7 @@ func completeAsyncAPIBatchDraftClaims(s *Server, claims []*importDraftAttestatio
 			continue
 		}
 		if err := s.completeImportDraftAttestation(claim); err != nil {
+			claims[index] = nil
 			scriptID := ""
 			if index < len(stored) && stored[index] != nil {
 				scriptID = stored[index].ID

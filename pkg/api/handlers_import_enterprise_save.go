@@ -173,7 +173,11 @@ func (s *Server) handleSaveEnterpriseArchiveImport(w http.ResponseWriter, r *htt
 	defer func() {
 		for _, claim := range claims {
 			if claim != nil {
-				s.releaseImportDraftAttestation(claim)
+				if assetsCommitted {
+					s.retainCommittedImportDraftAttestation(claim)
+				} else {
+					s.releaseImportDraftAttestation(claim)
+				}
 			}
 		}
 	}()
@@ -277,6 +281,7 @@ func (s *Server) handleSaveEnterpriseArchiveImport(w http.ResponseWriter, r *htt
 		}
 		stored, _, loadErr := s.loadDirectImportAssetsByIDs(projectID, plannedIDs, "")
 		if loadErr == nil {
+			assetsCommitted = true
 			if !directImportPreparedAssetsMatch(s, stored, prepared, nil, nil) {
 				writeError(w, http.StatusConflict, "a script from the prior enterprise archive batch changed before recovery; use a new operation id")
 				return
@@ -380,6 +385,7 @@ func completeEnterpriseArchiveDraftClaims(s *Server, claims []*importDraftAttest
 			continue
 		}
 		if err := s.completeImportDraftAttestation(claim); err != nil {
+			claims[index] = nil
 			// The assets and idempotency receipt are already durable. Do not report
 			// a false rollback; this is best-effort capability cleanup.
 			scriptID := ""

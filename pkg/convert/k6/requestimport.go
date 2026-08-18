@@ -16,6 +16,8 @@ import (
 	"github.com/jasonczech/apexload/pkg/scrub"
 )
 
+const maxK6CredentialRedactionWork int64 = 256 << 20
+
 // finalizeK6HTTPRequest is the source-adapter boundary: JavaScript recognition
 // has already happened, and only the effective static request enters the shared
 // request/security/finalization pipeline.
@@ -177,28 +179,37 @@ func redactK6CredentialValues(
 	requests []parsedHTTPRequest,
 ) (string, bool) {
 	values := make([]string, 0, len(requirements)+len(requests)*2)
-	for _, requirement := range requirements {
-		if value := strings.TrimSpace(requirement.Value); value != "" {
-			values = append(values, value)
+	seen := make(map[string]struct{}, cap(values))
+	appendValue := func(value string) {
+		if strings.TrimSpace(value) == "" {
+			return
 		}
+		if _, duplicate := seen[value]; duplicate {
+			return
+		}
+		seen[value] = struct{}{}
+		values = append(values, value)
+	}
+	for _, requirement := range requirements {
+		appendValue(requirement.Value)
 	}
 	for _, request := range requests {
 		if request.URL != "" && scrub.ValueURL(request.URL, scrub.Policy{}) != request.URL {
 			// Redact the complete authored URL scalar. This covers URL userinfo
 			// and preserves encoded query spelling without trying to splice a
 			// decoded value into JavaScript source.
-			values = append(values, request.URL)
+			appendValue(request.URL)
 		}
 		for name, value := range request.Headers {
 			if credential.SensitiveHeader(name) && value != "" {
-				values = append(values, value)
+				appendValue(value)
 			}
 		}
 		if request.Body != "" && scrub.Value(request.Body, scrub.Policy{}) != request.Body {
 			// A JavaScript string may contain escaped JSON/XML/form data. The
 			// quoted-value redactor below recognizes the decoded body and
 			// removes the whole source scalar while retaining line positions.
-			values = append(values, request.Body)
+			appendValue(request.Body)
 		}
 	}
 	sort.SliceStable(values, func(i, j int) bool {
@@ -207,6 +218,13 @@ func redactK6CredentialValues(
 		}
 		return len(values[i]) > len(values[j])
 	})
+	if len(values) > 0 {
+		patterns := int64(len(values)) * 2 // literal and quoted-value passes
+		if patterns <= 0 || int64(len(content)) > maxK6CredentialRedactionWork/patterns {
+			return "// [K6 SOURCE OMITTED: CREDENTIAL REDACTION WORK LIMIT EXCEEDED]" +
+				strings.Repeat("\n", strings.Count(content, "\n")), true
+		}
+	}
 	changed := false
 	for _, value := range values {
 		next := strings.ReplaceAll(content, value, credential.Redacted)

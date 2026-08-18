@@ -192,6 +192,31 @@ describe('ScriptImportReview', () => {
     expect(preview).toContain('visible-non-credential-value')
   })
 
+  it('protects adapter-specific descendants of semantic credential records', () => {
+    act(() => {
+      root.render(
+        <ScriptImportReview
+          title="Semantic credential preview"
+          script={script}
+          previewData={{
+            fields: [
+              { name: 'client_secret', defaultValue: 'semantic-default-canary' },
+              { key: 'password', values: ['semantic-values-canary'] },
+              { name: 'api_key', schema: { default: 'semantic-nested-canary' } },
+              { name: 'display_name', defaultValue: 'visible-display-name' },
+            ],
+          }}
+        />,
+      )
+    })
+
+    const preview = container.querySelector('.script-import-review-preview')?.textContent || ''
+    expect(preview).not.toContain('semantic-default-canary')
+    expect(preview).not.toContain('semantic-values-canary')
+    expect(preview).not.toContain('semantic-nested-canary')
+    expect(preview).toContain('visible-display-name')
+  })
+
   it('mirrors broad backend header governance without hiding non-sensitive header values', () => {
     act(() => {
       root.render(

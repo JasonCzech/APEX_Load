@@ -209,6 +209,13 @@ func TestCommitAsyncAPIImportBatchRestartRecoversCommittedCredentialedBatch(t *t
 	if first.Code != http.StatusInternalServerError {
 		t.Fatalf("injected completion status = %d body=%s", first.Code, first.Body.String())
 	}
+	reuse := postAsyncAPIBatch(t, firstServer, map[string]any{
+		"operation_id": "asyncapi-credential-restart-different-operation",
+		"scripts":      masked,
+	})
+	if reuse.Code != http.StatusConflict {
+		t.Fatalf("post-commit capability reuse status = %d body=%s", reuse.Code, reuse.Body.String())
+	}
 
 	// The second process shares only durable storage; the masked token's local
 	// credential candidate is deliberately gone.

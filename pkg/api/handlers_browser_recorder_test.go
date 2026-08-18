@@ -1908,9 +1908,9 @@ func TestHandleConvertBrowserRecordingHAAdoptsExpiredPreCommitStageAndRetriesExa
 		t.Fatalf("unexpired HA staged lookup error=%v, want finalizing conflict", err)
 	}
 
-	// The request-time resolver must retry exact adoption once the claim lease
-	// expires; the receipt test store advances its second claim clock beyond the
-	// deliberately longer receipt lease.
+	// Any later import acquisition invokes generic expired-claim recovery. Once
+	// the browser claim expires, that shared path must give the recorder-specific
+	// staged evidence first refusal instead of deleting the stopped recording.
 	if err := restarted.mutateLibraryImportClaims(func(claims *[]libraryImportClaim) (bool, error) {
 		changed := false
 		for index := range *claims {
@@ -1922,6 +1922,9 @@ func TestHandleConvertBrowserRecordingHAAdoptsExpiredPreCommitStageAndRetriesExa
 		return changed, nil
 	}); err != nil {
 		t.Fatal(err)
+	}
+	if err := restarted.recoverExpiredLibraryImportClaims(); err != nil {
+		t.Fatalf("unrelated import recovery did not adopt staged browser save: %v", err)
 	}
 	body, err := json.Marshal(req)
 	if err != nil {

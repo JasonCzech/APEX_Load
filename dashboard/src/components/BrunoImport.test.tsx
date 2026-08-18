@@ -1900,6 +1900,115 @@ describe('BrunoImport', () => {
     expect(saveButton.disabled).toBe(false)
   })
 
+  it('does not revive an earlier folder create across an A to B to A project switch', async () => {
+    let setProject!: (projectId: string) => void
+    let resolveFirst!: (folder: Folder) => void
+    let resolveSecond!: (folder: Folder) => void
+    apiMock.createFolder
+      .mockReturnValueOnce(new Promise<Folder>(resolve => { resolveFirst = resolve }))
+      .mockReturnValueOnce(new Promise<Folder>(resolve => { resolveSecond = resolve }))
+    const file = new File(['version: 1'], 'opencollection.yml', { type: 'application/yaml' })
+
+    function Harness() {
+      const [projectId, updateProject] = useState('project-a')
+      const [folderId, setFolderId] = useState('folder-1')
+      setProject = updateProject
+      return (
+        <BrunoImport
+          initialFiles={[file]}
+          projectId={projectId}
+          folderId={folderId}
+          onFolderChange={setFolderId}
+        />
+      )
+    }
+
+    await act(async () => {
+      root.render(<Harness />)
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    const createButton = () => Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent?.includes('Create and select folder'))!
+    await act(async () => {
+      createButton().click()
+      await Promise.resolve()
+      setProject('project-b')
+      await Promise.resolve()
+      setProject('project-a')
+      await Promise.resolve()
+      createButton().click()
+      await Promise.resolve()
+    })
+
+    await act(async () => {
+      resolveFirst({
+        id: 'stale-folder', project_id: 'project-a', parent_id: null, name: 'Stale', category: 'scripts',
+        created_at: '2026-07-16T19:00:00Z', updated_at: '2026-07-16T19:00:00Z',
+      })
+      await Promise.resolve()
+    })
+    const destination = Array.from(container.querySelectorAll<HTMLSelectElement>('select'))
+      .find(select => select.parentElement?.textContent?.includes('Destination folder'))!
+    expect(destination.value).not.toBe('stale-folder')
+    expect(destination.disabled).toBe(true)
+
+    await act(async () => {
+      resolveSecond({
+        id: 'current-folder', project_id: 'project-a', parent_id: null, name: 'Current', category: 'scripts',
+        created_at: '2026-07-16T19:00:00Z', updated_at: '2026-07-16T19:00:00Z',
+      })
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(destination.value).toBe('current-folder')
+    expect(destination.disabled).toBe(false)
+  })
+
+  it('pages large collection trees and lazily mounts descendants', async () => {
+    const inspection = inspectionFixture()
+    inspection.result.collection.items = Array.from({ length: 10_000 }, (_, index) => ({
+      uid: `folder-${index}`,
+      name: `Folder ${index}`,
+      path: `folder-${index}`,
+      type: 'folder',
+      executable: false,
+      has_scripts: false,
+      has_tests: false,
+      children: index === 0 ? [{
+        uid: 'nested-secret-request',
+        name: 'Nested request',
+        path: 'folder-0/request.yml',
+        type: 'http',
+        executable: true,
+        has_scripts: false,
+        has_tests: false,
+      }] : undefined,
+    }))
+    apiMock.inspectBrunoImport.mockResolvedValueOnce(inspection)
+
+    await act(async () => {
+      root.render(<BrunoImport initialFiles={[new File(['version: 1'], 'opencollection.yml')]} projectId="project-1" folderId="folder-1" />)
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    await act(async () => {
+      Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+        .find(button => button.textContent?.includes('Inspect source'))?.click()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(container.querySelectorAll('.bruno-tree-row')).toHaveLength(100)
+    expect(container.textContent).toContain('Items 1–100 of 10000')
+    expect(container.textContent).not.toContain('Nested request')
+    await act(async () => {
+      Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+        .find(button => button.textContent === 'Expand')?.click()
+    })
+    expect(container.textContent).toContain('Nested request')
+  })
+
   it('explains that a project administrator must create the missing destination when folder management is denied', async () => {
     apiMock.listFolders.mockResolvedValueOnce({ folders: [], count: 0 })
     apiMock.getAuthEffectiveAccess.mockResolvedValueOnce({

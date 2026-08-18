@@ -564,6 +564,25 @@ func TestForgedImportSaveAttestationCannotAuthorizePlaintext(t *testing.T) {
 	}
 }
 
+func TestRetainedCommittedImportAttestationCannotBeClaimedAgain(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	script := attestedImportTestScript("retained-one-shot", "one-shot-password")
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/sample", nil)
+	server.newScriptImportResponseWithSourceSecrets(
+		request,
+		scriptImportResponseOptions{Script: script},
+	)
+
+	claim, err := server.claimImportDraftAttestation(request, script)
+	if err != nil || claim == nil {
+		t.Fatalf("initial claim = %#v, err=%v", claim, err)
+	}
+	server.retainCommittedImportDraftAttestation(claim)
+	if reused, reuseErr := server.claimImportDraftAttestation(request, script); reuseErr == nil || reused != nil {
+		t.Fatalf("retained capability was claimable again: %#v, err=%v", reused, reuseErr)
+	}
+}
+
 func TestImportSaveAttestationSurvivesReplicaHandoff(t *testing.T) {
 	wrapper, err := importartifact.NewLocalAESKeyWrapper(importartifact.LocalKeyOptions{
 		Key:   bytes.Repeat([]byte{0x7c}, 32),
