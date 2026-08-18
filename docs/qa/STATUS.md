@@ -16,7 +16,7 @@ the URL makes a new artifact, which is how a program ends up with two dashboards
 | ID | Milestone | State | Hrs spent | Evidence |
 |---|---|---|---|---|
 | M0 | Instrument the program | IN_PROGRESS | 0 | `evidence/M0/` |
-| M1 | Tier-0 end-user journey | IN_PROGRESS | 3 | `evidence/M1/` |
+| M1 | Tier-0 end-user journey | IN_PROGRESS | 6 | `evidence/M1/` |
 | M2 | Import & authoring correctness | NOT_STARTED | 0 | `evidence/M2/` |
 | M3 | Run lifecycle & data integrity | NOT_STARTED | 0 | `evidence/M3/` |
 | M4 | Persistence hardening & migration | NOT_STARTED | 0 | `evidence/M4/` |
@@ -48,8 +48,8 @@ files only (`.claude/worktrees/` holds a full duplicate checkout and must be exc
 |---|---|---|---|
 | Perf targets measured (of 4) | 0 | 0 | 4 |
 | AKS cutover gates passed (of 10) | 0 | 0 | 10 |
-| Tier-0 E2E specs green in CI | 0 | 3 | ~20 |
-| Playwright specs total | 3 | 6 | ~20 |
+| Tier-0 E2E specs green in CI | 0 | 4 | ~20 |
+| Playwright specs total | 3 | 7 | ~20 |
 | Go statement coverage | 77.0% | 77.0% | ratchet (never decreases) |
 | Go coverage floor enforced | none | none | ratchet |
 | Packages with no test file | 6 | 6 | 3 (the 3 test-only dirs) |

@@ -9,7 +9,19 @@ by three Playwright specs. Rather than chase coverage view-by-view, M1 locks the
 never break: if this journey is green, the product is usable; if any step is red, it is not,
 regardless of what unit coverage says.
 
-**Status:** specification only. No spec in this document is implemented yet.
+**Status:** S2, S8, S9 and S11 implemented and green (`dashboard/e2e/tier0-*.spec.ts`), plus a
+breadth guard covering all 16 top-level views. Run them with `scripts/run-e2e.sh`.
+
+**Observed behaviour worth recording**, since this document told the implementer to treat surprises
+as findings rather than adjusting assertions to match:
+
+- **Archive integrity reports `verified`** — every artifact recomputed to its recorded SHA-256. The
+  verdict vocabulary is `verified` / `verified_partial` / `tampered` / `corrupt` / `unverifiable`,
+  and the payload also carries a `mismatched` **count**. Assert on `status` and that count; a
+  substring search for "mismatch" matches the field name and flags a healthy archive.
+- **`PATCH /api/v1/tests/{id}/vusers` takes a single group**, `{group, target_vusers}` — not a
+  `groups` array. An array decodes cleanly and is then rejected as a missing group name, so the
+  mistake surfaces as a 400 that reads like a server fault.
 
 ## Conventions
 
