@@ -16,7 +16,7 @@ the URL makes a new artifact, which is how a program ends up with two dashboards
 | ID | Milestone | State | Hrs spent | Evidence |
 |---|---|---|---|---|
 | M0 | Instrument the program | IN_PROGRESS | 0 | `evidence/M0/` |
-| M1 | Tier-0 end-user journey | NOT_STARTED | 0 | `evidence/M1/` |
+| M1 | Tier-0 end-user journey | IN_PROGRESS | 3 | `evidence/M1/` |
 | M2 | Import & authoring correctness | NOT_STARTED | 0 | `evidence/M2/` |
 | M3 | Run lifecycle & data integrity | NOT_STARTED | 0 | `evidence/M3/` |
 | M4 | Persistence hardening & migration | NOT_STARTED | 0 | `evidence/M4/` |
@@ -27,7 +27,13 @@ the URL makes a new artifact, which is how a program ends up with two dashboards
 
 Valid states: `NOT_STARTED` · `IN_PROGRESS` · `BLOCKED` · `DONE`
 
-M1 remains `NOT_STARTED` although its first deliverable — [TIER0_JOURNEY.md](TIER0_JOURNEY.md), the
+M1 is underway. `scripts/run-e2e.sh` reproduces CI's browser-smoke recipe locally — build the
+controller, run it on a dedicated port with a throwaway database, wait for health, run Playwright,
+clean up — so specs are written against a running system rather than an imagined one. The first
+three Tier-0 specs are green, and each was **mutation-tested**: the assertion was deliberately
+broken to prove it fails, because a browser assertion that cannot fail is worse than no assertion.
+
+Original note follows. M1 remained `NOT_STARTED` while its first deliverable — [TIER0_JOURNEY.md](TIER0_JOURNEY.md), the
 twelve-step specification the Playwright suite implements — is written. It was pulled forward
 because it is the one M1 artifact that needs no command execution, and week 2 of M0 is blocked on
 exactly that. No spec in it is implemented, so the milestone has not started in any sense that
@@ -42,8 +48,8 @@ files only (`.claude/worktrees/` holds a full duplicate checkout and must be exc
 |---|---|---|---|
 | Perf targets measured (of 4) | 0 | 0 | 4 |
 | AKS cutover gates passed (of 10) | 0 | 0 | 10 |
-| Tier-0 E2E specs green in CI | 0 | 0 | ~20 |
-| Playwright specs total | 3 | 3 | ~20 |
+| Tier-0 E2E specs green in CI | 0 | 3 | ~20 |
+| Playwright specs total | 3 | 6 | ~20 |
 | Go statement coverage | 77.0% | 77.0% | ratchet (never decreases) |
 | Go coverage floor enforced | none | none | ratchet |
 | Packages with no test file | 6 | 6 | 3 (the 3 test-only dirs) |
