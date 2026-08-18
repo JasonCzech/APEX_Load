@@ -9,9 +9,9 @@ by three Playwright specs. Rather than chase coverage view-by-view, M1 locks the
 never break: if this journey is green, the product is usable; if any step is red, it is not,
 regardless of what unit coverage says.
 
-**Status:** S2, S7, S8, S9, S10, S11 and S12 implemented and green (`dashboard/e2e/tier0-*.spec.ts`),
+**Status:** S1, S2, S7, S8, S9, S10, S11 and S12 implemented and green (`dashboard/e2e/tier0-*.spec.ts`),
 plus a breadth guard covering all 16 top-level views. Run them with `scripts/run-e2e.sh`.
-Remaining: S1, S3, S4, S5, S6.
+Remaining: S3, S4, S5, S6.
 
 **Observed behaviour worth recording**, since this document told the implementer to treat surprises
 as findings rather than adjusting assertions to match:

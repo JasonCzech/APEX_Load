@@ -82,5 +82,17 @@ if [[ -z "$ready" ]]; then
 fi
 echo "Controller healthy." >&2
 
+# A fresh throwaway store is expected to start in the local dev bypass mode.
+# There is intentionally no APEXLOAD_AUTH_MODE environment variable: auth mode
+# is persisted system state. Check it here so E2E never silently inherits a
+# production-mode database or proves the journey under an unknown identity.
+auth_status="$(curl --silent --fail "${base_url}/api/v1/auth/me")"
+if [[ "$auth_status" != *'"mode":"dev"'* ]] || [[ "$auth_status" != *'"enabled":false'* ]]; then
+  echo "ERROR: E2E requires explicit dev bypass auth; /api/v1/auth/me returned:" >&2
+  echo "$auth_status" >&2
+  exit 1
+fi
+echo "Auth mode verified: dev bypass." >&2
+
 cd dashboard
 APEXLOAD_E2E_BASE_URL="$base_url" ./node_modules/.bin/playwright test "$@"

@@ -10,15 +10,12 @@ package qa_test
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
 )
-
-// expectedMilestones is the full program from docs/qa/TEST_PROGRAM.md. A
-// milestone may be renamed or rescheduled, but it may not silently vanish.
-var expectedMilestones = []string{"M0", "M1", "M2", "M3", "M4", "M5", "M6", "M7", "M8"}
 
 var validStates = map[string]bool{
 	"NOT_STARTED": true,
@@ -36,8 +33,10 @@ var validDefectStates = map[string]bool{
 }
 
 var (
-	milestoneRow = regexp.MustCompile(`^\|\s*(M\d)\s*\|`)
-	defectRow    = regexp.MustCompile(`^\|\s*((?:DEF|QA)-\d+)\s*\|`)
+	milestoneHeading = regexp.MustCompile(`^###\s+(M\d+)\b`)
+	milestoneRow     = regexp.MustCompile(`^\|\s*(M\d+)\s*\|`)
+	defectRow        = regexp.MustCompile(`^\|\s*((?:DEF|QA)-\d+)\s*\|`)
+	commitReference  = regexp.MustCompile(`^(?:verified@)?([0-9a-fA-F]{7,40})$`)
 )
 
 // splitRow returns the cells of a Markdown table row, trimmed.
@@ -59,22 +58,76 @@ func readLines(t *testing.T, name string) []string {
 	return strings.Split(string(data), "\n")
 }
 
-// hasEvidence reports whether evidence/<milestone>/ holds anything beyond the
-// .gitkeep placeholder. A milestone is not DONE until it has produced an
-// artifact; that is the whole point of the program's evidence-over-assertion
-// rule.
-func hasEvidence(t *testing.T, milestone string) bool {
+// programMilestones reads the scope of record rather than duplicating it in
+// Go. Adding M9 to TEST_PROGRAM.md must immediately require M9 everywhere else.
+func programMilestones(t *testing.T) []string {
 	t.Helper()
-	entries, err := os.ReadDir(filepath.Join("evidence", milestone))
-	if err != nil {
-		return false
-	}
-	for _, entry := range entries {
-		if entry.Name() != ".gitkeep" {
-			return true
+	var milestones []string
+	seen := make(map[string]bool)
+	for _, line := range readLines(t, "TEST_PROGRAM.md") {
+		match := milestoneHeading.FindStringSubmatch(line)
+		if match == nil {
+			continue
 		}
+		if seen[match[1]] {
+			t.Fatalf("TEST_PROGRAM.md declares milestone %s more than once", match[1])
+		}
+		seen[match[1]] = true
+		milestones = append(milestones, match[1])
 	}
-	return false
+	if len(milestones) == 0 {
+		t.Fatal("TEST_PROGRAM.md declares no milestones")
+	}
+	return milestones
+}
+
+func git(t *testing.T, args ...string) error {
+	t.Helper()
+	command := exec.Command("git", append([]string{"-C", "../.."}, args...)...)
+	if output, err := command.CombinedOutput(); err != nil {
+		return &gitError{err: err, output: strings.TrimSpace(string(output))}
+	}
+	return nil
+}
+
+type gitError struct {
+	err    error
+	output string
+}
+
+func (e *gitError) Error() string {
+	if e.output == "" {
+		return e.err.Error()
+	}
+	return e.err.Error() + ": " + e.output
+}
+
+// hasCommittedEvidence reports whether HEAD contains a regular artifact below
+// evidence/<milestone>. An untracked file, staged-only file, empty directory,
+// or .gitkeep cannot close a milestone.
+func hasCommittedEvidence(t *testing.T, milestone string) bool {
+	t.Helper()
+	root := filepath.Join("evidence", milestone)
+	found := false
+	_ = filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+		if err != nil || info.IsDir() || info.Name() == ".gitkeep" {
+			return nil
+		}
+		repositoryPath := filepath.ToSlash(filepath.Join("docs", "qa", path))
+		if git(t, "cat-file", "-e", "HEAD:"+repositoryPath) == nil {
+			found = true
+		}
+		return nil
+	})
+	return found
+}
+
+func citedCommit(commit string) (string, bool) {
+	match := commitReference.FindStringSubmatch(strings.Trim(strings.TrimSpace(commit), "`"))
+	if match == nil {
+		return "", false
+	}
+	return match[1], true
 }
 
 // TestStatusListsEveryMilestone fails when a milestone is dropped from the
@@ -99,7 +152,9 @@ func TestStatusListsEveryMilestone(t *testing.T) {
 		seen[match[1]] = cells[2]
 	}
 
-	for _, milestone := range expectedMilestones {
+	expected := make(map[string]bool)
+	for _, milestone := range programMilestones(t) {
+		expected[milestone] = true
 		state, ok := seen[milestone]
 		if !ok {
 			t.Errorf("STATUS.md is missing milestone %s; every milestone in TEST_PROGRAM.md must appear", milestone)
@@ -107,6 +162,11 @@ func TestStatusListsEveryMilestone(t *testing.T) {
 		}
 		if !validStates[state] {
 			t.Errorf("milestone %s has state %q, want one of NOT_STARTED/IN_PROGRESS/BLOCKED/DONE", milestone, state)
+		}
+	}
+	for milestone := range seen {
+		if !expected[milestone] {
+			t.Errorf("STATUS.md lists milestone %s, but TEST_PROGRAM.md does not define it", milestone)
 		}
 	}
 }
@@ -123,9 +183,9 @@ func TestDoneMilestonesHaveEvidence(t *testing.T) {
 		if len(cells) < 3 || cells[2] != "DONE" {
 			continue
 		}
-		if !hasEvidence(t, match[1]) {
-			t.Errorf("milestone %s is marked DONE but docs/qa/evidence/%s/ holds no artifact; "+
-				"either commit the evidence or move it back to IN_PROGRESS", match[1], match[1])
+		if !hasCommittedEvidence(t, match[1]) {
+			t.Errorf("milestone %s is marked DONE but HEAD holds no artifact in docs/qa/evidence/%s/; "+
+				"untracked or staged-only files do not count", match[1], match[1])
 		}
 	}
 }
@@ -133,7 +193,7 @@ func TestDoneMilestonesHaveEvidence(t *testing.T) {
 // TestEveryMilestoneHasAnEvidenceDir keeps the evidence tree in step with the
 // milestone list, so closing a milestone never requires inventing a directory.
 func TestEveryMilestoneHasAnEvidenceDir(t *testing.T) {
-	for _, milestone := range expectedMilestones {
+	for _, milestone := range programMilestones(t) {
 		info, err := os.Stat(filepath.Join("evidence", milestone))
 		if err != nil || !info.IsDir() {
 			t.Errorf("docs/qa/evidence/%s/ is missing; every milestone needs an evidence directory", milestone)
@@ -168,10 +228,42 @@ func TestFixedDefectsCiteACommit(t *testing.T) {
 		if state != "FIXED" {
 			continue
 		}
-		if commit == "" || commit == "—" || commit == "-" || commit == "TBD" {
-			t.Errorf("defect %s is marked FIXED with no commit reference (%q); "+
-				"cite the commit that closed it", match[1], commit)
+		hash, ok := citedCommit(commit)
+		if !ok {
+			t.Errorf("defect %s is marked FIXED with invalid commit reference %q; "+
+				"use a 7–40 digit Git hash or verified@<hash>", match[1], commit)
+			continue
 		}
+		if err := git(t, "cat-file", "-e", hash+"^{commit}"); err != nil {
+			t.Errorf("defect %s cites commit %q, which does not resolve: %v", match[1], commit, err)
+			continue
+		}
+		if err := git(t, "merge-base", "--is-ancestor", hash, "HEAD"); err != nil {
+			t.Errorf("defect %s cites commit %q, which is not an ancestor of HEAD: %v", match[1], commit, err)
+		}
+	}
+}
+
+func TestDefectCommitReferenceSyntax(t *testing.T) {
+	tests := []struct {
+		name  string
+		value string
+		want  string
+	}{
+		{name: "plain hash", value: "6938e544e", want: "6938e544e"},
+		{name: "verified hash", value: "verified@1dc937e70", want: "1dc937e70"},
+		{name: "markdown hash", value: "`6938e544e`", want: "6938e544e"},
+		{name: "placeholder", value: "—"},
+		{name: "arbitrary prose", value: "fixed in the auth patch"},
+		{name: "too short", value: "123abc"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got, ok := citedCommit(test.value)
+			if got != test.want || ok != (test.want != "") {
+				t.Fatalf("citedCommit(%q) = (%q, %v), want (%q, %v)", test.value, got, ok, test.want, test.want != "")
+			}
+		})
 	}
 }
 

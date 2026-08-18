@@ -267,35 +267,35 @@ type Server struct {
 	// brunoArtifactKeyCustody records which envelope key actually opened the
 	// store. Without it, caching the store would make every later custody
 	// report claim operator-managed custody regardless of the key in use.
-	brunoArtifactKeyCustody string
-	importSessions                    *importsession.Manager
-	brunoArtifactDir                  string
-	brunoArtifactWrapper              keywrap.KeyWrapper
-	brunoSessionCleanupCancel         context.CancelFunc
-	grafanaSessionCleanupCancel       context.CancelFunc
-	projectSecretStore                secretstore.Store
-	protectedSourceSessions           *secretstore.ProtectedSourceSessionStore
-	sourceSecretMu                    sync.Mutex
-	sourceSecretSessions              map[string]*sourceSecretSession
-	sourceSecretSessionLifetime       time.Duration
-	sourceSecretCleanupCancel         context.CancelFunc
-	ciRunCreateMu                     sync.Mutex
-	ciRunCreates                      map[string]int
-	beforeCIRunMaterialize            func(CreateTestRequest)
-	afterCIRunMaterialize             func(*ManagedTest)
-	afterLibraryImportClaimsPersist   func()
-	bindScope                         string
-	boundAddr                         string
-	boundAddrMu                       sync.RWMutex
-	lifecycleMu                       sync.Mutex
-	startupContext                    context.Context
-	startupCancel                     context.CancelFunc
-	startupStarted                    bool
-	startupDone                       chan struct{}
-	startupDoneOnce                   sync.Once
-	shutdownStarted                   bool
-	shutdownDone                      chan struct{}
-	shutdownErr                       error
+	brunoArtifactKeyCustody         string
+	importSessions                  *importsession.Manager
+	brunoArtifactDir                string
+	brunoArtifactWrapper            keywrap.KeyWrapper
+	brunoSessionCleanupCancel       context.CancelFunc
+	grafanaSessionCleanupCancel     context.CancelFunc
+	projectSecretStore              secretstore.Store
+	protectedSourceSessions         *secretstore.ProtectedSourceSessionStore
+	sourceSecretMu                  sync.Mutex
+	sourceSecretSessions            map[string]*sourceSecretSession
+	sourceSecretSessionLifetime     time.Duration
+	sourceSecretCleanupCancel       context.CancelFunc
+	ciRunCreateMu                   sync.Mutex
+	ciRunCreates                    map[string]int
+	beforeCIRunMaterialize          func(CreateTestRequest)
+	afterCIRunMaterialize           func(*ManagedTest)
+	afterLibraryImportClaimsPersist func()
+	bindScope                       string
+	boundAddr                       string
+	boundAddrMu                     sync.RWMutex
+	lifecycleMu                     sync.Mutex
+	startupContext                  context.Context
+	startupCancel                   context.CancelFunc
+	startupStarted                  bool
+	startupDone                     chan struct{}
+	startupDoneOnce                 sync.Once
+	shutdownStarted                 bool
+	shutdownDone                    chan struct{}
+	shutdownErr                     error
 	// staticFS is the dashboard asset filesystem probed by readiness checks.
 	// It defaults to the compile-time embedded StaticFS; tests override it so
 	// the readiness suite does not depend on a prior `npm run build`.

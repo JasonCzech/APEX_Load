@@ -19,21 +19,21 @@ func TestComputeRoutesAreSystemAdminOnly(t *testing.T) {
 		}
 	}
 	want := map[string]bool{
-		http.MethodPost + " /api/v1/system/cloud-connections":                         true,
-		http.MethodGet + " /api/v1/system/cloud-connections":                          true,
-		http.MethodGet + " /api/v1/system/cloud-connections/{id}":                     true,
-		http.MethodPut + " /api/v1/system/cloud-connections/{id}":                     true,
-		http.MethodDelete + " /api/v1/system/cloud-connections/{id}":                  true,
-		http.MethodPost + " /api/v1/system/cloud-connections/{id}/test":               true,
-		http.MethodGet + " /api/v1/system/cloud-connections/{id}/resources":           true,
-		http.MethodPost + " /api/v1/system/execution-targets":                         true,
-		http.MethodGet + " /api/v1/system/execution-targets":                          true,
-		http.MethodGet + " /api/v1/system/execution-targets/{id}":                     true,
-		http.MethodPut + " /api/v1/system/execution-targets/{id}":                     true,
-		http.MethodDelete + " /api/v1/system/execution-targets/{id}":                  true,
-		http.MethodPost + " /api/v1/system/execution-targets/{id}/test":               true,
-		http.MethodGet + " /api/v1/system/execution-targets/{id}/capabilities":         true,
-		http.MethodGet + " /api/v1/system/execution-targets/{id}/capacity":             true,
+		http.MethodPost + " /api/v1/system/cloud-connections":                  true,
+		http.MethodGet + " /api/v1/system/cloud-connections":                   true,
+		http.MethodGet + " /api/v1/system/cloud-connections/{id}":              true,
+		http.MethodPut + " /api/v1/system/cloud-connections/{id}":              true,
+		http.MethodDelete + " /api/v1/system/cloud-connections/{id}":           true,
+		http.MethodPost + " /api/v1/system/cloud-connections/{id}/test":        true,
+		http.MethodGet + " /api/v1/system/cloud-connections/{id}/resources":    true,
+		http.MethodPost + " /api/v1/system/execution-targets":                  true,
+		http.MethodGet + " /api/v1/system/execution-targets":                   true,
+		http.MethodGet + " /api/v1/system/execution-targets/{id}":              true,
+		http.MethodPut + " /api/v1/system/execution-targets/{id}":              true,
+		http.MethodDelete + " /api/v1/system/execution-targets/{id}":           true,
+		http.MethodPost + " /api/v1/system/execution-targets/{id}/test":        true,
+		http.MethodGet + " /api/v1/system/execution-targets/{id}/capabilities": true,
+		http.MethodGet + " /api/v1/system/execution-targets/{id}/capacity":     true,
 	}
 	for _, route := range computeAdministrationAPIRouteCatalog.Routes {
 		delete(want, route.Method+" "+route.Path)

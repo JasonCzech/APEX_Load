@@ -49,7 +49,7 @@ files only (`.claude/worktrees/` holds a full duplicate checkout and must be exc
 | Perf targets measured (of 4) | 0 | 0 | 4 |
 | AKS cutover gates passed (of 10) | 0 | 0 | 10 |
 | Tier-0 E2E specs green in CI | 0 | 8 | ~20 |
-| Playwright specs total | 3 | 11 | ~20 |
+| Playwright specs total | 3 | 12 | ~20 |
 | Go statement coverage | 77.0% | 77.0% | ratchet (never decreases) |
 | Go coverage floor enforced | none | none | ratchet |
 | Packages with no test file | 6 | 6 | 3 (the 3 test-only dirs) |
@@ -156,8 +156,9 @@ the one that could be enabled almost immediately.
 
 ## Blockers
 
-- **QA-001** — `main` is not gofmt-clean (3 files), so CI's `go-quality` job fails its own format
-  gate. Pure-formatting fix, zero risk, but it blocks the M0 week-2 CI work. Fix first.
+- **QA-001** — the three known files are now gofmt-clean in the working tree. Keep the defect open
+  until the formatting change has a commit reference, as required by `status_inventory_test.go`;
+  it no longer blocks local verification.
 - ~~**DEF-11** needs a product decision~~ — **resolved 2026-08-18.** A short, common cookie value is
   not redacted. This is already the implemented behaviour: the root cause was removed in `6938e544e`,
   which landed eight days after the review that recorded it as unfixed. No code change was needed and
