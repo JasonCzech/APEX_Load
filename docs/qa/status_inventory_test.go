@@ -266,6 +266,12 @@ func validateEvidenceManifest(t *testing.T, milestone string, required []string)
 			t.Errorf("%s limitations must not contain empty entries", manifestPath)
 		}
 	}
+	if manifest.Limitations == nil {
+		t.Errorf("%s limitations must be a JSON array (use [] when there are none)", manifestPath)
+	}
+	if len(manifest.Artifacts) == 0 {
+		t.Errorf("%s must hash at least one milestone report", manifestPath)
+	}
 	started, startErr := time.Parse(time.RFC3339, manifest.StartedAt)
 	finished, finishErr := time.Parse(time.RFC3339, manifest.FinishedAt)
 	if startErr != nil || finishErr != nil || finished.Before(started) {
@@ -457,6 +463,31 @@ func TestCleanEvidencePath(t *testing.T) {
 				t.Fatalf("cleanEvidencePath(%q) safe = %v, want %v", test.value, ok, test.ok)
 			}
 		})
+	}
+}
+
+func TestCommittedEvidenceRejectsWorktreeOnlyFile(t *testing.T) {
+	file, err := os.CreateTemp(filepath.Join("evidence", "M0"), "worktree-only-*.json")
+	if err != nil {
+		t.Fatalf("create worktree-only evidence fixture: %v", err)
+	}
+	name := file.Name()
+	if _, err := file.WriteString("{}\n"); err != nil {
+		_ = file.Close()
+		_ = os.Remove(name)
+		t.Fatalf("write worktree-only evidence fixture: %v", err)
+	}
+	if err := file.Close(); err != nil {
+		_ = os.Remove(name)
+		t.Fatalf("close worktree-only evidence fixture: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Remove(name) })
+	relative, err := filepath.Rel(".", name)
+	if err != nil {
+		t.Fatalf("resolve fixture path: %v", err)
+	}
+	if _, err := committedEvidence(t, relative); err == nil {
+		t.Fatalf("worktree-only evidence %s was accepted as committed HEAD evidence", relative)
 	}
 }
 

@@ -166,9 +166,10 @@ def main() -> int:
                  "Package selection comes from `go list` with node_modules excluded, so neither "
                  "the duplicate checkout under .claude/worktrees/ nor vendored third-party Go is "
                  "counted. Generated api/proto code remains visible per-package but is excluded "
-                 "from the ratcheted overall total. Packages with no test file are listed with has_tests=false and a null "
-                 "statement total, since an uninstrumented package contributes nothing to the "
-        "profile. Test presence comes from go list TestGoFiles/XTestGoFiles rather than profile presence."),
+                 "from the ratcheted overall total. Packages with no test file remain in the "
+                 "overall statement total and are marked has_tests=false; their statement total "
+                 "is null only when the profile contains no executable blocks for that package. "
+                 "Test presence comes from go list TestGoFiles/XTestGoFiles rather than profile presence."),
         "overall_statement_coverage_pct": overall,
         "statements_total": grand_total,
         "statements_covered": grand_covered,
