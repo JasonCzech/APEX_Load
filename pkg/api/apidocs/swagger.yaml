@@ -16262,7 +16262,7 @@ paths:
       x-handler: handleListBrowserRecordings
     post:
       summary: Start Browser Recording
-      description: '**Access Control:** Requires Authentication'
+      description: '**Access Control:** Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write'
       operationId: handleStartBrowserRecording
       requestBody:
         required: true
@@ -16368,7 +16368,7 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         default:
           description: Additional handler-defined response.
-      x-roles: Requires Authentication
+      x-roles: 'Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write'
       tags:
         - Browser Recorder
       x-handler: handleStartBrowserRecording
@@ -16423,7 +16423,7 @@ paths:
       x-handler: handleDeleteBrowserRecording
     get:
       summary: Get Browser Recording
-      description: '**Access Control:** Requires Authentication'
+      description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read'
       operationId: handleGetBrowserRecording
       responses:
         "200":
@@ -16453,7 +16453,7 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         default:
           description: Additional handler-defined response.
-      x-roles: Requires Authentication
+      x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read'
       parameters:
         - name: id
           in: path
@@ -16466,7 +16466,7 @@ paths:
   /api/v1/browser-recorder/sessions/{id}/control-panel:
     post:
       summary: Open Browser Recording Control Panel
-      description: '**Access Control:** Requires Authentication'
+      description: '**Access Control:** Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write'
       operationId: handleOpenBrowserRecordingControlPanel
       requestBody:
         required: true
@@ -16528,7 +16528,7 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         default:
           description: Additional handler-defined response.
-      x-roles: Requires Authentication
+      x-roles: 'Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write'
       parameters:
         - name: id
           in: path
@@ -16547,7 +16547,7 @@ paths:
   /api/v1/browser-recorder/sessions/{id}/convert:
     post:
       summary: Convert Browser Recording
-      description: '**Access Control:** Requires Authentication'
+      description: '**Access Control:** Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write'
       operationId: handleConvertBrowserRecording
       requestBody:
         content:
@@ -16659,7 +16659,7 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         default:
           description: Additional handler-defined response.
-      x-roles: Requires Authentication
+      x-roles: 'Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write'
       parameters:
         - name: id
           in: path
@@ -16672,7 +16672,7 @@ paths:
   /api/v1/browser-recorder/sessions/{id}/convert/preview:
     post:
       summary: Preview Browser Recording Conversion
-      description: '**Access Control:** Requires Authentication'
+      description: '**Access Control:** Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write'
       operationId: handlePreviewBrowserRecordingConversion
       requestBody:
         content:
@@ -16742,7 +16742,7 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         default:
           description: Additional handler-defined response.
-      x-roles: Requires Authentication
+      x-roles: 'Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write'
       parameters:
         - name: id
           in: path
@@ -16755,7 +16755,7 @@ paths:
   /api/v1/browser-recorder/sessions/{id}/export:
     get:
       summary: Export Browser Recording
-      description: '**Access Control:** Requires Authentication'
+      description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read'
       operationId: handleExportBrowserRecording
       responses:
         "200":
@@ -16802,7 +16802,7 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         default:
           description: Additional handler-defined response.
-      x-roles: Requires Authentication
+      x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read'
       parameters:
         - name: id
           in: path
@@ -16821,7 +16821,7 @@ paths:
   /api/v1/browser-recorder/sessions/{id}/focus:
     post:
       summary: Focus Browser Recording
-      description: '**Access Control:** Requires Authentication'
+      description: '**Access Control:** Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write'
       operationId: handleFocusBrowserRecording
       responses:
         2XX:
@@ -16830,7 +16830,7 @@ paths:
           description: Request, authentication, authorization, resource, or state error.
         5XX:
           description: Controller-side failure.
-      x-roles: Requires Authentication
+      x-roles: 'Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write'
       parameters:
         - name: id
           in: path
@@ -16843,7 +16843,7 @@ paths:
   /api/v1/browser-recorder/sessions/{id}/force-stop:
     post:
       summary: Force Stop Browser Recording
-      description: '**Access Control:** Requires Authentication'
+      description: '**Access Control:** Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write'
       operationId: handleForceStopBrowserRecording
       responses:
         "200":
@@ -16879,7 +16879,7 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         default:
           description: Additional handler-defined response.
-      x-roles: Requires Authentication
+      x-roles: 'Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write'
       parameters:
         - name: id
           in: path
@@ -16892,7 +16892,7 @@ paths:
   /api/v1/browser-recorder/sessions/{id}/navigate:
     post:
       summary: Navigate Browser Recording
-      description: '**Access Control:** Requires Authentication'
+      description: '**Access Control:** Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write'
       operationId: handleNavigateBrowserRecording
       requestBody:
         required: true
@@ -16936,7 +16936,7 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         default:
           description: Additional handler-defined response.
-      x-roles: Requires Authentication
+      x-roles: 'Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write'
       parameters:
         - name: id
           in: path
@@ -16949,7 +16949,7 @@ paths:
   /api/v1/browser-recorder/sessions/{id}/notes:
     post:
       summary: Add Browser Recording Note
-      description: '**Access Control:** Requires Authentication'
+      description: '**Access Control:** Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write'
       operationId: handleAddBrowserRecordingNote
       requestBody:
         content:
@@ -17004,7 +17004,7 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         default:
           description: Additional handler-defined response.
-      x-roles: Requires Authentication
+      x-roles: 'Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write'
       parameters:
         - name: id
           in: path
@@ -17017,7 +17017,7 @@ paths:
   /api/v1/browser-recorder/sessions/{id}/pause:
     post:
       summary: Pause Browser Recording
-      description: '**Access Control:** Requires Authentication'
+      description: '**Access Control:** Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write'
       operationId: handlePauseBrowserRecording
       responses:
         2XX:
@@ -17026,7 +17026,7 @@ paths:
           description: Request, authentication, authorization, resource, or state error.
         5XX:
           description: Controller-side failure.
-      x-roles: Requires Authentication
+      x-roles: 'Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write'
       parameters:
         - name: id
           in: path
@@ -17039,7 +17039,7 @@ paths:
   /api/v1/browser-recorder/sessions/{id}/pick-mode:
     post:
       summary: Set Browser Recording Pick Mode
-      description: '**Access Control:** Requires Authentication'
+      description: '**Access Control:** Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write'
       operationId: handleSetBrowserRecordingPickMode
       requestBody:
         required: true
@@ -17083,7 +17083,7 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         default:
           description: Additional handler-defined response.
-      x-roles: Requires Authentication
+      x-roles: 'Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write'
       parameters:
         - name: id
           in: path
@@ -17096,7 +17096,7 @@ paths:
   /api/v1/browser-recorder/sessions/{id}/resume:
     post:
       summary: Resume Browser Recording
-      description: '**Access Control:** Requires Authentication'
+      description: '**Access Control:** Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write'
       operationId: handleResumeBrowserRecording
       responses:
         2XX:
@@ -17105,7 +17105,7 @@ paths:
           description: Request, authentication, authorization, resource, or state error.
         5XX:
           description: Controller-side failure.
-      x-roles: Requires Authentication
+      x-roles: 'Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write'
       parameters:
         - name: id
           in: path
@@ -17118,7 +17118,7 @@ paths:
   /api/v1/browser-recorder/sessions/{id}/section:
     post:
       summary: Set Browser Recording Section
-      description: '**Access Control:** Requires Authentication'
+      description: '**Access Control:** Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write'
       operationId: handleSetBrowserRecordingSection
       requestBody:
         required: true
@@ -17162,7 +17162,7 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         default:
           description: Additional handler-defined response.
-      x-roles: Requires Authentication
+      x-roles: 'Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write'
       parameters:
         - name: id
           in: path
@@ -17175,7 +17175,7 @@ paths:
   /api/v1/browser-recorder/sessions/{id}/steps/{seq}:
     patch:
       summary: Update Browser Recording Step
-      description: '**Access Control:** Requires Authentication'
+      description: '**Access Control:** Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write'
       operationId: handleUpdateBrowserRecordingStep
       requestBody:
         required: true
@@ -17229,7 +17229,7 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         default:
           description: Additional handler-defined response.
-      x-roles: Requires Authentication
+      x-roles: 'Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write'
       parameters:
         - name: id
           in: path
@@ -17247,7 +17247,7 @@ paths:
   /api/v1/browser-recorder/sessions/{id}/steps/last:
     delete:
       summary: Delete Last Browser Recording Step
-      description: '**Access Control:** Requires Authentication'
+      description: '**Access Control:** Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write'
       operationId: handleDeleteLastBrowserRecordingStep
       responses:
         2XX:
@@ -17256,7 +17256,7 @@ paths:
           description: Request, authentication, authorization, resource, or state error.
         5XX:
           description: Controller-side failure.
-      x-roles: Requires Authentication
+      x-roles: 'Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write'
       parameters:
         - name: id
           in: path
@@ -17269,7 +17269,7 @@ paths:
   /api/v1/browser-recorder/sessions/{id}/stop:
     post:
       summary: Stop Browser Recording
-      description: '**Access Control:** Requires Authentication'
+      description: '**Access Control:** Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write'
       operationId: handleStopBrowserRecording
       responses:
         "200":
@@ -17299,7 +17299,7 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         default:
           description: Additional handler-defined response.
-      x-roles: Requires Authentication
+      x-roles: 'Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write'
       parameters:
         - name: id
           in: path
@@ -17312,7 +17312,7 @@ paths:
   /api/v1/browser-recorder/sessions/{id}/storage-state:
     get:
       summary: Export Browser Recording Storage State
-      description: '**Access Control:** Requires Authentication'
+      description: '**Access Control:** Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: read'
       operationId: handleExportBrowserRecordingStorageState
       responses:
         "200":
@@ -17353,7 +17353,7 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         default:
           description: Additional handler-defined response.
-      x-roles: Requires Authentication
+      x-roles: 'Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: read'
       parameters:
         - name: id
           in: path
@@ -17366,7 +17366,7 @@ paths:
   /api/v1/browser-recorder/sessions/{id}/transactions/end:
     post:
       summary: End Browser Recording Transaction
-      description: '**Access Control:** Requires Authentication'
+      description: '**Access Control:** Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write'
       operationId: handleEndBrowserRecordingTransaction
       requestBody:
         content:
@@ -17421,7 +17421,7 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         default:
           description: Additional handler-defined response.
-      x-roles: Requires Authentication
+      x-roles: 'Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write'
       parameters:
         - name: id
           in: path
@@ -17434,7 +17434,7 @@ paths:
   /api/v1/browser-recorder/sessions/{id}/transactions/start:
     post:
       summary: Start Browser Recording Transaction
-      description: '**Access Control:** Requires Authentication'
+      description: '**Access Control:** Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write'
       operationId: handleStartBrowserRecordingTransaction
       requestBody:
         content:
@@ -17489,7 +17489,7 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         default:
           description: Additional handler-defined response.
-      x-roles: Requires Authentication
+      x-roles: 'Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write'
       parameters:
         - name: id
           in: path
@@ -17502,7 +17502,7 @@ paths:
   /api/v1/browser-recorder/sessions/{id}/transactions/suggestions:
     get:
       summary: Suggest Browser Recording Transactions
-      description: '**Access Control:** Requires Authentication'
+      description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read'
       operationId: handleSuggestBrowserRecordingTransactions
       responses:
         "200":
@@ -17532,7 +17532,7 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         default:
           description: Additional handler-defined response.
-      x-roles: Requires Authentication
+      x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read'
       parameters:
         - name: id
           in: path
@@ -17545,7 +17545,7 @@ paths:
   /api/v1/browser-recorder/sessions/{id}/verify:
     post:
       summary: Verify Browser Recording
-      description: '**Access Control:** Requires Authentication'
+      description: '**Access Control:** Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write'
       operationId: handleVerifyBrowserRecording
       requestBody:
         content:
@@ -18451,7 +18451,7 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         default:
           description: Additional handler-defined response.
-      x-roles: Requires Authentication
+      x-roles: 'Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write'
       parameters:
         - name: id
           in: path
@@ -18464,7 +18464,7 @@ paths:
   /api/v1/browser-replay/sessions/{session_id}:
     get:
       summary: Get Browser Replay Session
-      description: '**Access Control:** Requires Authentication'
+      description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read'
       operationId: handleGetBrowserReplaySession
       responses:
         "200":
@@ -19319,7 +19319,7 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         default:
           description: Additional handler-defined response.
-      x-roles: Requires Authentication
+      x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read'
       parameters:
         - name: session_id
           in: path
@@ -19332,7 +19332,7 @@ paths:
   /api/v1/browser-replay/sessions/{session_id}/pause:
     post:
       summary: Pause Browser Replay Session
-      description: '**Access Control:** Requires Authentication'
+      description: '**Access Control:** Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write'
       operationId: handlePauseBrowserReplaySession
       responses:
         "200":
@@ -20193,7 +20193,7 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         default:
           description: Additional handler-defined response.
-      x-roles: Requires Authentication
+      x-roles: 'Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write'
       parameters:
         - name: session_id
           in: path
@@ -20206,7 +20206,7 @@ paths:
   /api/v1/browser-replay/sessions/{session_id}/resume:
     post:
       summary: Resume Browser Replay Session
-      description: '**Access Control:** Requires Authentication'
+      description: '**Access Control:** Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write'
       operationId: handleResumeBrowserReplaySession
       responses:
         "200":
@@ -21067,7 +21067,7 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         default:
           description: Additional handler-defined response.
-      x-roles: Requires Authentication
+      x-roles: 'Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write'
       parameters:
         - name: session_id
           in: path
@@ -21080,7 +21080,7 @@ paths:
   /api/v1/browser-replay/sessions/{session_id}/stop:
     post:
       summary: Stop Browser Replay Session
-      description: '**Access Control:** Requires Authentication'
+      description: '**Access Control:** Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write'
       operationId: handleStopBrowserReplaySession
       responses:
         "200":
@@ -21935,7 +21935,7 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         default:
           description: Additional handler-defined response.
-      x-roles: Requires Authentication
+      x-roles: 'Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write'
       parameters:
         - name: session_id
           in: path
@@ -39838,7 +39838,7 @@ paths:
   /api/v1/recorder:
     get:
       summary: List Recordings
-      description: '**Access Control:** Requires Authentication'
+      description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read'
       operationId: handleListRecordings
       responses:
         "200":
@@ -39862,7 +39862,7 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         default:
           description: Additional handler-defined response.
-      x-roles: Requires Authentication
+      x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read'
       parameters:
         - name: include_requests
           in: query
@@ -39888,7 +39888,7 @@ paths:
   /api/v1/recorder/{id}:
     delete:
       summary: Delete Recording
-      description: '**Access Control:** Requires Authentication'
+      description: '**Access Control:** Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write'
       operationId: handleDeleteRecording
       responses:
         "200":
@@ -39919,7 +39919,7 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         default:
           description: Additional handler-defined response.
-      x-roles: Requires Authentication
+      x-roles: 'Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write'
       parameters:
         - name: id
           in: path
@@ -39931,7 +39931,7 @@ paths:
       x-handler: handleDeleteRecording
     get:
       summary: Get Recording
-      description: '**Access Control:** Requires Authentication'
+      description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read'
       operationId: handleGetRecording
       responses:
         "200":
@@ -40155,7 +40155,7 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         default:
           description: Additional handler-defined response.
-      x-roles: Requires Authentication
+      x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read'
       parameters:
         - name: id
           in: path
@@ -40192,7 +40192,7 @@ paths:
   /api/v1/recorder/{id}/convert:
     post:
       summary: Convert Recording
-      description: '**Access Control:** Requires Authentication'
+      description: '**Access Control:** Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write'
       operationId: handleConvertRecording
       requestBody:
         content:
@@ -40255,7 +40255,7 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         default:
           description: Additional handler-defined response.
-      x-roles: Requires Authentication
+      x-roles: 'Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write'
       parameters:
         - name: id
           in: path
@@ -40268,7 +40268,7 @@ paths:
   /api/v1/recorder/{id}/convert/preview:
     post:
       summary: Preview Recording Conversion
-      description: '**Access Control:** Requires Authentication'
+      description: '**Access Control:** Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write'
       operationId: handlePreviewRecordingConversion
       requestBody:
         content:
@@ -40325,7 +40325,7 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         default:
           description: Additional handler-defined response.
-      x-roles: Requires Authentication
+      x-roles: 'Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write'
       parameters:
         - name: id
           in: path
@@ -40338,7 +40338,7 @@ paths:
   /api/v1/recorder/{id}/export:
     get:
       summary: Export Recording
-      description: '**Access Control:** Requires Authentication'
+      description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read'
       operationId: handleExportRecording
       responses:
         "200":
@@ -40379,7 +40379,7 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         default:
           description: Additional handler-defined response.
-      x-roles: Requires Authentication
+      x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read'
       parameters:
         - name: id
           in: path
@@ -40404,7 +40404,7 @@ paths:
   /api/v1/recorder/{id}/pause:
     post:
       summary: Pause Recording
-      description: '**Access Control:** Requires Authentication'
+      description: '**Access Control:** Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write'
       operationId: handlePauseRecording
       responses:
         "200":
@@ -40622,7 +40622,7 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         default:
           description: Additional handler-defined response.
-      x-roles: Requires Authentication
+      x-roles: 'Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write'
       parameters:
         - name: id
           in: path
@@ -40635,7 +40635,7 @@ paths:
   /api/v1/recorder/{id}/requests/{seq}:
     patch:
       summary: Update Recorded Request
-      description: '**Access Control:** Requires Authentication'
+      description: '**Access Control:** Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write'
       operationId: handleUpdateRecordedRequest
       requestBody:
         required: true
@@ -40814,7 +40814,7 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         default:
           description: Additional handler-defined response.
-      x-roles: Requires Authentication
+      x-roles: 'Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write'
       parameters:
         - name: id
           in: path
@@ -40832,7 +40832,7 @@ paths:
   /api/v1/recorder/{id}/resume:
     post:
       summary: Resume Recording
-      description: '**Access Control:** Requires Authentication'
+      description: '**Access Control:** Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write'
       operationId: handleResumeRecording
       responses:
         "200":
@@ -41050,7 +41050,7 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         default:
           description: Additional handler-defined response.
-      x-roles: Requires Authentication
+      x-roles: 'Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write'
       parameters:
         - name: id
           in: path
@@ -41063,7 +41063,7 @@ paths:
   /api/v1/recorder/{id}/stop:
     post:
       summary: Stop Recording
-      description: '**Access Control:** Requires Authentication'
+      description: '**Access Control:** Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write'
       operationId: handleStopRecording
       responses:
         "200":
@@ -41281,7 +41281,7 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         default:
           description: Additional handler-defined response.
-      x-roles: Requires Authentication
+      x-roles: 'Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write'
       parameters:
         - name: id
           in: path
@@ -41310,7 +41310,7 @@ paths:
   /api/v1/recorder/start:
     post:
       summary: Start Recording
-      description: '**Access Control:** Requires Authentication'
+      description: '**Access Control:** Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write'
       operationId: handleStartRecording
       requestBody:
         required: true
@@ -41383,7 +41383,7 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         default:
           description: Additional handler-defined response.
-      x-roles: Requires Authentication
+      x-roles: 'Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write'
       tags:
         - Recorder
       x-handler: handleStartRecording
@@ -66925,7 +66925,7 @@ paths:
   /api/v1/replay/sessions/{session_id}:
     get:
       summary: Get Script Debug Session
-      description: '**Access Control:** Requires Authentication'
+      description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read'
       operationId: handleGetScriptDebugSession
       responses:
         "200":
@@ -67918,7 +67918,7 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         default:
           description: Additional handler-defined response.
-      x-roles: Requires Authentication
+      x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read'
       parameters:
         - name: session_id
           in: path
@@ -67931,7 +67931,7 @@ paths:
   /api/v1/replay/sessions/{session_id}/breakpoints:
     patch:
       summary: Update Script Debug Breakpoints
-      description: '**Access Control:** Requires Authentication'
+      description: '**Access Control:** Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write'
       operationId: handleUpdateScriptDebugBreakpoints
       requestBody:
         required: true
@@ -68942,7 +68942,7 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         default:
           description: Additional handler-defined response.
-      x-roles: Requires Authentication
+      x-roles: 'Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write'
       parameters:
         - name: session_id
           in: path
@@ -68955,7 +68955,7 @@ paths:
   /api/v1/replay/sessions/{session_id}/export:
     get:
       summary: Export Script Debug Session
-      description: '**Access Control:** Requires Authentication'
+      description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read'
       operationId: handleExportScriptDebugSession
       responses:
         "200":
@@ -68984,7 +68984,7 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         default:
           description: Additional handler-defined response.
-      x-roles: Requires Authentication
+      x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read'
       parameters:
         - name: session_id
           in: path
@@ -69003,7 +69003,7 @@ paths:
   /api/v1/replay/sessions/{session_id}/options:
     patch:
       summary: Update Script Debug Options
-      description: '**Access Control:** Requires Authentication'
+      description: '**Access Control:** Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write'
       operationId: handleUpdateScriptDebugOptions
       requestBody:
         required: true
@@ -70014,7 +70014,7 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         default:
           description: Additional handler-defined response.
-      x-roles: Requires Authentication
+      x-roles: 'Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write'
       parameters:
         - name: session_id
           in: path
@@ -70027,7 +70027,7 @@ paths:
   /api/v1/replay/sessions/{session_id}/pause:
     post:
       summary: Pause Script Debug Session
-      description: '**Access Control:** Requires Authentication'
+      description: '**Access Control:** Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write'
       operationId: handlePauseScriptDebugSession
       responses:
         "200":
@@ -71026,7 +71026,7 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         default:
           description: Additional handler-defined response.
-      x-roles: Requires Authentication
+      x-roles: 'Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write'
       parameters:
         - name: session_id
           in: path
@@ -71039,7 +71039,7 @@ paths:
   /api/v1/replay/sessions/{session_id}/resume:
     post:
       summary: Resume Script Debug Session
-      description: '**Access Control:** Requires Authentication'
+      description: '**Access Control:** Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write'
       operationId: handleResumeScriptDebugSession
       responses:
         "200":
@@ -72038,7 +72038,7 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         default:
           description: Additional handler-defined response.
-      x-roles: Requires Authentication
+      x-roles: 'Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write'
       parameters:
         - name: session_id
           in: path
@@ -72051,7 +72051,7 @@ paths:
   /api/v1/replay/sessions/{session_id}/step:
     post:
       summary: Step Script Debug Session
-      description: '**Access Control:** Requires Authentication'
+      description: '**Access Control:** Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write'
       operationId: handleStepScriptDebugSession
       requestBody:
         content:
@@ -73061,7 +73061,7 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         default:
           description: Additional handler-defined response.
-      x-roles: Requires Authentication
+      x-roles: 'Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write'
       parameters:
         - name: session_id
           in: path
@@ -73074,7 +73074,7 @@ paths:
   /api/v1/replay/sessions/{session_id}/stop:
     post:
       summary: Stop Script Debug Session
-      description: '**Access Control:** Requires Authentication'
+      description: '**Access Control:** Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write'
       operationId: handleStopScriptDebugSession
       responses:
         "200":
@@ -74067,7 +74067,7 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         default:
           description: Additional handler-defined response.
-      x-roles: Requires Authentication
+      x-roles: 'Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write'
       parameters:
         - name: session_id
           in: path
@@ -87869,7 +87869,7 @@ paths:
   /api/v1/script-debug/sessions/{session_id}:
     get:
       summary: Get Script Debug Session
-      description: '**Access Control:** Requires Authentication'
+      description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read'
       operationId: handleGetScriptDebugSession_2
       deprecated: true
       responses:
@@ -88863,7 +88863,7 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         default:
           description: Additional handler-defined response.
-      x-roles: Requires Authentication
+      x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read'
       parameters:
         - name: session_id
           in: path
@@ -88876,7 +88876,7 @@ paths:
   /api/v1/script-debug/sessions/{session_id}/breakpoints:
     patch:
       summary: Update Script Debug Breakpoints
-      description: '**Access Control:** Requires Authentication'
+      description: '**Access Control:** Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write'
       operationId: handleUpdateScriptDebugBreakpoints_2
       deprecated: true
       requestBody:
@@ -89888,7 +89888,7 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         default:
           description: Additional handler-defined response.
-      x-roles: Requires Authentication
+      x-roles: 'Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write'
       parameters:
         - name: session_id
           in: path
@@ -89901,7 +89901,7 @@ paths:
   /api/v1/script-debug/sessions/{session_id}/export:
     get:
       summary: Export Script Debug Session
-      description: '**Access Control:** Requires Authentication'
+      description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read'
       operationId: handleExportScriptDebugSession_2
       deprecated: true
       responses:
@@ -89931,7 +89931,7 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         default:
           description: Additional handler-defined response.
-      x-roles: Requires Authentication
+      x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read'
       parameters:
         - name: session_id
           in: path
@@ -89950,7 +89950,7 @@ paths:
   /api/v1/script-debug/sessions/{session_id}/options:
     patch:
       summary: Update Script Debug Options
-      description: '**Access Control:** Requires Authentication'
+      description: '**Access Control:** Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write'
       operationId: handleUpdateScriptDebugOptions_2
       deprecated: true
       requestBody:
@@ -90962,7 +90962,7 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         default:
           description: Additional handler-defined response.
-      x-roles: Requires Authentication
+      x-roles: 'Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write'
       parameters:
         - name: session_id
           in: path
@@ -90975,7 +90975,7 @@ paths:
   /api/v1/script-debug/sessions/{session_id}/pause:
     post:
       summary: Pause Script Debug Session
-      description: '**Access Control:** Requires Authentication'
+      description: '**Access Control:** Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write'
       operationId: handlePauseScriptDebugSession_2
       deprecated: true
       responses:
@@ -91975,7 +91975,7 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         default:
           description: Additional handler-defined response.
-      x-roles: Requires Authentication
+      x-roles: 'Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write'
       parameters:
         - name: session_id
           in: path
@@ -91988,7 +91988,7 @@ paths:
   /api/v1/script-debug/sessions/{session_id}/resume:
     post:
       summary: Resume Script Debug Session
-      description: '**Access Control:** Requires Authentication'
+      description: '**Access Control:** Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write'
       operationId: handleResumeScriptDebugSession_2
       deprecated: true
       responses:
@@ -92988,7 +92988,7 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         default:
           description: Additional handler-defined response.
-      x-roles: Requires Authentication
+      x-roles: 'Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write'
       parameters:
         - name: session_id
           in: path
@@ -93001,7 +93001,7 @@ paths:
   /api/v1/script-debug/sessions/{session_id}/step:
     post:
       summary: Step Script Debug Session
-      description: '**Access Control:** Requires Authentication'
+      description: '**Access Control:** Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write'
       operationId: handleStepScriptDebugSession_2
       deprecated: true
       requestBody:
@@ -94012,7 +94012,7 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         default:
           description: Additional handler-defined response.
-      x-roles: Requires Authentication
+      x-roles: 'Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write'
       parameters:
         - name: session_id
           in: path
@@ -94025,7 +94025,7 @@ paths:
   /api/v1/script-debug/sessions/{session_id}/stop:
     post:
       summary: Stop Script Debug Session
-      description: '**Access Control:** Requires Authentication'
+      description: '**Access Control:** Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write'
       operationId: handleStopScriptDebugSession_2
       deprecated: true
       responses:
@@ -95019,7 +95019,7 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         default:
           description: Additional handler-defined response.
-      x-roles: Requires Authentication
+      x-roles: 'Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write'
       parameters:
         - name: session_id
           in: path

@@ -82,6 +82,12 @@ func TestAPIContractMatrixAuthAssertions(t *testing.T) {
 	settings := func() AuthSettings {
 		return AuthSettings{Mode: authModeTrustedHeaders}
 	}
+	contractServer := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080"})
+	contractSettings := contractServer.runner.GetSystemSettings()
+	contractSettings.Auth.Mode = authModeTrustedHeaders
+	if _, err := contractServer.runner.UpdateSystemSettings(contractSettings); err != nil {
+		t.Fatal(err)
+	}
 	for _, route := range discovered {
 		if !route.Authenticated {
 			continue
@@ -99,9 +105,18 @@ func TestAPIContractMatrixAuthAssertions(t *testing.T) {
 				if recorder.Code != http.StatusUnauthorized || reached {
 					t.Fatalf("anonymous auth boundary = (%d, reached=%v), want (401, false); body=%s", recorder.Code, reached, recorder.Body.String())
 				}
+			} else if route.AuthMiddleware != "" {
+				recorder := httptest.NewRecorder()
+				contractServer.mux.ServeHTTP(recorder, req)
+				if recorder.Code != http.StatusUnauthorized {
+					t.Fatalf("anonymous specialized auth boundary = %d, want 401; body=%s", recorder.Code, recorder.Body.String())
+				}
 			}
 
 			requirement, ok := accessRequirementForRequest(req)
+			if !ok {
+				requirement, ok = documentedSpecializedAccessRequirement(route.Method, route.Path, route.AuthMiddleware)
+			}
 			if ok {
 				assertQAContractRoleCases(t, req, requirement)
 			}
@@ -110,6 +125,108 @@ func TestAPIContractMatrixAuthAssertions(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestAPIContractHandlerSpecificAuthAssertions(t *testing.T) {
+	t.Run("authentication diagnostics role gate", func(t *testing.T) {
+		server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080"})
+		settings := server.runner.GetSystemSettings()
+		settings.Auth.Mode = authModeTrustedHeaders
+		if _, err := server.runner.UpdateSystemSettings(settings); err != nil {
+			t.Fatal(err)
+		}
+		anonymousResponse := httptest.NewRecorder()
+		server.mux.ServeHTTP(anonymousResponse, httptest.NewRequest(http.MethodGet, "/api/v1/auth/diagnostics", nil))
+		if anonymousResponse.Code != http.StatusUnauthorized {
+			t.Fatalf("auth diagnostics without identity = %d, want 401", anonymousResponse.Code)
+		}
+		viewerRequest := httptest.NewRequest(http.MethodGet, "/api/v1/auth/diagnostics", nil)
+		viewerRequest.Header.Set("X-Auth-Request-User", "qa-contract-viewer")
+		viewerRequest.Header.Set("X-APEXLoad-Roles", RoleViewer)
+		viewerResponse := httptest.NewRecorder()
+		server.mux.ServeHTTP(viewerResponse, viewerRequest)
+		if viewerResponse.Code != http.StatusForbidden {
+			t.Fatalf("auth diagnostics with viewer role = %d, want 403", viewerResponse.Code)
+		}
+		adminRequest := httptest.NewRequest(http.MethodGet, "/api/v1/auth/diagnostics", nil)
+		adminRequest.Header.Set("X-Auth-Request-User", "qa-contract-admin")
+		adminRequest.Header.Set("X-APEXLoad-Roles", RoleSystemAdmin)
+		adminResponse := httptest.NewRecorder()
+		server.mux.ServeHTTP(adminResponse, adminRequest)
+		if adminResponse.Code != http.StatusOK {
+			t.Fatalf("auth diagnostics with system-admin role = %d, want 200; body=%s", adminResponse.Code, adminResponse.Body.String())
+		}
+	})
+
+	t.Run("conditional metrics bearer token", func(t *testing.T) {
+		publicServer := NewServer(ServerConfig{})
+		publicResponse := httptest.NewRecorder()
+		publicServer.mux.ServeHTTP(publicResponse, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+		if publicResponse.Code != http.StatusOK {
+			t.Fatalf("metrics without configured token = %d, want 200", publicResponse.Code)
+		}
+
+		protectedServer := NewServer(ServerConfig{MetricsToken: "qa-contract-metrics"})
+		anonymousResponse := httptest.NewRecorder()
+		protectedServer.mux.ServeHTTP(anonymousResponse, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+		if anonymousResponse.Code != http.StatusUnauthorized {
+			t.Fatalf("protected metrics without bearer token = %d, want 401", anonymousResponse.Code)
+		}
+		authorizedRequest := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+		authorizedRequest.Header.Set("Authorization", "Bearer qa-contract-metrics")
+		authorizedResponse := httptest.NewRecorder()
+		protectedServer.mux.ServeHTTP(authorizedResponse, authorizedRequest)
+		if authorizedResponse.Code != http.StatusOK {
+			t.Fatalf("protected metrics with bearer token = %d, want 200", authorizedResponse.Code)
+		}
+	})
+
+	t.Run("recording bridge token and session", func(t *testing.T) {
+		server := newBrowserRecorderBridgeTestServer(t, newFakeBrowserRecorder(nil))
+		sessionID := pairBridgeForTest(t, server, bridgeTestOrigin)
+
+		anonymousRequest := httptest.NewRequest(http.MethodGet, bridgeStatusPath, nil)
+		anonymousRequest.Header.Set("Origin", bridgeTestOrigin)
+		anonymousResponse := httptest.NewRecorder()
+		server.mux.ServeHTTP(anonymousResponse, anonymousRequest)
+		if anonymousResponse.Code != http.StatusUnauthorized {
+			t.Fatalf("bridge status without capability headers = %d, want 401", anonymousResponse.Code)
+		}
+
+		authorizedRequest := httptest.NewRequest(http.MethodGet, bridgeStatusPath, nil)
+		authorizedRequest.Header.Set("Origin", bridgeTestOrigin)
+		authorizedRequest.Header.Set(bridgeTokenHeader, bridgeTestToken)
+		authorizedRequest.Header.Set(bridgeSessionHeader, sessionID)
+		authorizedResponse := httptest.NewRecorder()
+		server.mux.ServeHTTP(authorizedResponse, authorizedRequest)
+		if authorizedResponse.Code != http.StatusOK {
+			t.Fatalf("bridge status with capability headers = %d, want 200; body=%s", authorizedResponse.Code, authorizedResponse.Body.String())
+		}
+	})
+
+	t.Run("monitoring collector bearer token", func(t *testing.T) {
+		server, _ := newTimeslotServer(t)
+		create := timeslotRequest(t, server, http.MethodPost, "/api/v1/monitoring/collectors",
+			map[string]any{"project_id": "proj-a", "name": "qa-contract", "allowed_metric_packs": []string{"linux-hosts"}})
+		if create.Code != http.StatusCreated {
+			t.Fatalf("create collector = %d, want 201; body=%s", create.Code, create.Body.String())
+		}
+		var created struct {
+			Collector storage.MonitoringCollector `json:"collector"`
+			Token     string                      `json:"token"`
+		}
+		if err := json.Unmarshal(create.Body.Bytes(), &created); err != nil {
+			t.Fatal(err)
+		}
+		heartbeat := map[string]any{"health": "healthy", "packs": []map[string]any{{"pack": "linux-hosts", "samples": map[string]float64{"cpu_pct": 1}}}}
+		path := "/api/v1/monitoring/collectors/" + created.Collector.ID + "/heartbeat"
+		if response := collectorRequest(t, server, http.MethodPost, path, "", heartbeat); response.Code != http.StatusUnauthorized {
+			t.Fatalf("collector heartbeat without token = %d, want 401", response.Code)
+		}
+		if response := collectorRequest(t, server, http.MethodPost, path, created.Token, heartbeat); response.Code != http.StatusOK {
+			t.Fatalf("collector heartbeat with token = %d, want 200; body=%s", response.Code, response.Body.String())
+		}
+	})
 }
 
 func assertQAContractRoleCases(t *testing.T, req *http.Request, requirement accessRequirement) {
@@ -219,10 +336,10 @@ func buildQAAPIContractMatrix(t *testing.T) []byte {
 		case documented.Public:
 			matrix.Totals.Public++
 			if route.Path == "/metrics" {
-				matrix.Totals.Partial++
-				row.State = "PARTIAL"
+				matrix.Totals.Green++
+				row.State = "GREEN"
 				row.Enforcement = "conditional handler token"
-				row.AnonymousAssertion = "allowed only when no metrics token is configured"
+				row.AnonymousAssertion = "HTTP 200 without token configuration; HTTP 401 when configured and missing; HTTP 200 with valid bearer token"
 				row.RoleAssertion = "not applicable; route uses a metrics bearer token rather than RBAC"
 			} else {
 				matrix.Totals.Green++
@@ -235,18 +352,31 @@ func buildQAAPIContractMatrix(t *testing.T) []byte {
 			matrix.Totals.Protected++
 			req := qaContractRequest(t, route)
 			requirement, ok := accessRequirementForRequest(req)
+			specializedProfile := false
+			if !ok {
+				requirement, ok = documentedSpecializedAccessRequirement(route.Method, route.Path, route.AuthMiddleware)
+				specializedProfile = ok
+			}
 			if route.GenericAuth {
 				row.AnonymousAssertion = "HTTP 401 before handler"
+			} else if route.AuthMiddleware == "" {
+				row.AnonymousAssertion = "handler performs authentication and authorization"
 			} else {
 				row.AnonymousAssertion = "route is registered with handler-specific auth middleware"
 			}
 			if !ok {
 				if inHandlerAuthenticatedRoute(route.Method, route.Path, route.Handler) || route.Path == bridgeStatusPath {
 					matrix.Totals.HandlerAuthenticated++
-					matrix.Totals.Partial++
-					row.State = "PARTIAL"
+					matrix.Totals.Green++
+					row.State = "GREEN"
 					row.Enforcement = "handler-specific capability authentication"
-					row.RoleAssertion = "not applicable; route authenticates a capability rather than an RBAC role"
+					if route.Path == bridgeStatusPath {
+						row.AnonymousAssertion = "HTTP 401 without bridge token/session; HTTP 200 with both valid headers"
+						row.RoleAssertion = "not applicable; route authenticates bridge token and session capabilities rather than an RBAC role"
+					} else {
+						row.AnonymousAssertion = "HTTP 401 without collector token; HTTP 200 with valid collector bearer token"
+						row.RoleAssertion = "not applicable; route authenticates a collector capability rather than an RBAC role"
+					}
 				} else {
 					matrix.Totals.RoleMetadataMissing++
 					matrix.Totals.Missing++
@@ -259,7 +389,11 @@ func buildQAAPIContractMatrix(t *testing.T) []byte {
 			matrix.Totals.RBAC++
 			matrix.Totals.Green++
 			row.State = "GREEN"
-			row.Enforcement = "authentication middleware and access catalog"
+			if specializedProfile {
+				row.Enforcement = "specialized resource authentication middleware and shared access profile"
+			} else {
+				row.Enforcement = "authentication middleware and access catalog"
+			}
 			row.AllowedRoles = qaAPIContractRoleSets{
 				Global: sortedCopy(requirement.GlobalRoles), Project: sortedCopy(requirement.ProjectRoles),
 				Domain: sortedCopy(requirement.DomainRoles), Repository: sortedCopy(requirement.RepositoryRoles),

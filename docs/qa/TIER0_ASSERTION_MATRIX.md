@@ -27,7 +27,7 @@ The generated [API contract matrix](evidence/M1/api-contract-matrix.json) is the
 completion inventory. It derives its totals from the endpoint catalog, checks catalog-to-router
 public/authenticated parity, proves anonymous rejection through the generic middleware, and runs
 allowed and denied RBAC cases from structured access requirements. Its own `GREEN`, `PARTIAL`, and
-`MISSING` totals are authoritative: legacy resource-scoped recorder/replay routes remain missing
-until the endpoint catalog carries their role metadata, while capability-token routes remain
-partial until their handler-specific anonymous/authenticated cases are incorporated into the
-generated suite.
+`MISSING` totals are authoritative. Legacy resource-scoped recorder/replay routes share role
+profiles with their runtime middleware, while metrics, recording-bridge, and collector-token routes
+run their handler-specific anonymous/authenticated cases. Route-contract coverage is fully green;
+that does not change the S1–S12 journey states above.

@@ -8,12 +8,12 @@
     "routes": 543,
     "public": 22,
     "protected": 521,
-    "rbac": 466,
+    "rbac": 519,
     "handler_authenticated": 2,
-    "role_metadata_missing": 53,
-    "green": 487,
-    "partial": 3,
-    "missing": 53
+    "role_metadata_missing": 0,
+    "green": 543,
+    "partial": 0,
+    "missing": 0
   },
   "routes": [
     {
@@ -600,7 +600,7 @@
       "state": "GREEN",
       "enforcement": "authentication middleware and access catalog",
       "access": "Requires authentication; global roles: SystemAdmin; service-account scope: read",
-      "anonymous_assertion": "route is registered with handler-specific auth middleware",
+      "anonymous_assertion": "handler performs authentication and authorization",
       "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
       "allowed_roles": {
         "global": [
@@ -1016,11 +1016,11 @@
       "operation_id": "handleStatus",
       "public": false,
       "authenticated": true,
-      "state": "PARTIAL",
+      "state": "GREEN",
       "enforcement": "handler-specific capability authentication",
       "access": "Recording-agent bridge token and session via X-APEXLoad-Bridge-Token and X-APEXLoad-Bridge-Session",
-      "anonymous_assertion": "route is registered with handler-specific auth middleware",
-      "role_assertion": "not applicable; route authenticates a capability rather than an RBAC role",
+      "anonymous_assertion": "HTTP 401 without bridge token/session; HTTP 200 with both valid headers",
+      "role_assertion": "not applicable; route authenticates bridge token and session capabilities rather than an RBAC role",
       "allowed_roles": {}
     },
     {
@@ -1124,12 +1124,24 @@
       "operation_id": "handleStartBrowserRecording",
       "public": false,
       "authenticated": true,
-      "state": "MISSING",
-      "enforcement": "resource-scoped authentication middleware",
-      "access": "Requires Authentication",
+      "state": "GREEN",
+      "enforcement": "specialized resource authentication middleware and shared access profile",
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write",
       "anonymous_assertion": "route is registered with handler-specific auth middleware",
-      "role_assertion": "MISSING: endpoint catalog has no allowed or denied role metadata",
-      "allowed_roles": {}
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin"
+        ],
+        "project": [
+          "editor",
+          "project_admin"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "write"
     },
     {
       "method": "DELETE",
@@ -1158,12 +1170,26 @@
       "operation_id": "handleGetBrowserRecording",
       "public": false,
       "authenticated": true,
-      "state": "MISSING",
-      "enforcement": "resource-scoped authentication middleware",
-      "access": "Requires Authentication",
+      "state": "GREEN",
+      "enforcement": "specialized resource authentication middleware and shared access profile",
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read",
       "anonymous_assertion": "route is registered with handler-specific auth middleware",
-      "role_assertion": "MISSING: endpoint catalog has no allowed or denied role metadata",
-      "allowed_roles": {}
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin",
+          "viewer"
+        ],
+        "project": [
+          "editor",
+          "project_admin",
+          "viewer"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "read"
     },
     {
       "method": "POST",
@@ -1171,12 +1197,24 @@
       "operation_id": "handleOpenBrowserRecordingControlPanel",
       "public": false,
       "authenticated": true,
-      "state": "MISSING",
-      "enforcement": "resource-scoped authentication middleware",
-      "access": "Requires Authentication",
+      "state": "GREEN",
+      "enforcement": "specialized resource authentication middleware and shared access profile",
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write",
       "anonymous_assertion": "route is registered with handler-specific auth middleware",
-      "role_assertion": "MISSING: endpoint catalog has no allowed or denied role metadata",
-      "allowed_roles": {}
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin"
+        ],
+        "project": [
+          "editor",
+          "project_admin"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "write"
     },
     {
       "method": "POST",
@@ -1184,12 +1222,24 @@
       "operation_id": "handleConvertBrowserRecording",
       "public": false,
       "authenticated": true,
-      "state": "MISSING",
-      "enforcement": "resource-scoped authentication middleware",
-      "access": "Requires Authentication",
+      "state": "GREEN",
+      "enforcement": "specialized resource authentication middleware and shared access profile",
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write",
       "anonymous_assertion": "route is registered with handler-specific auth middleware",
-      "role_assertion": "MISSING: endpoint catalog has no allowed or denied role metadata",
-      "allowed_roles": {}
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin"
+        ],
+        "project": [
+          "editor",
+          "project_admin"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "write"
     },
     {
       "method": "POST",
@@ -1197,12 +1247,24 @@
       "operation_id": "handlePreviewBrowserRecordingConversion",
       "public": false,
       "authenticated": true,
-      "state": "MISSING",
-      "enforcement": "resource-scoped authentication middleware",
-      "access": "Requires Authentication",
+      "state": "GREEN",
+      "enforcement": "specialized resource authentication middleware and shared access profile",
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write",
       "anonymous_assertion": "route is registered with handler-specific auth middleware",
-      "role_assertion": "MISSING: endpoint catalog has no allowed or denied role metadata",
-      "allowed_roles": {}
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin"
+        ],
+        "project": [
+          "editor",
+          "project_admin"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "write"
     },
     {
       "method": "GET",
@@ -1210,12 +1272,26 @@
       "operation_id": "handleExportBrowserRecording",
       "public": false,
       "authenticated": true,
-      "state": "MISSING",
-      "enforcement": "resource-scoped authentication middleware",
-      "access": "Requires Authentication",
+      "state": "GREEN",
+      "enforcement": "specialized resource authentication middleware and shared access profile",
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read",
       "anonymous_assertion": "route is registered with handler-specific auth middleware",
-      "role_assertion": "MISSING: endpoint catalog has no allowed or denied role metadata",
-      "allowed_roles": {}
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin",
+          "viewer"
+        ],
+        "project": [
+          "editor",
+          "project_admin",
+          "viewer"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "read"
     },
     {
       "method": "POST",
@@ -1223,12 +1299,24 @@
       "operation_id": "handleFocusBrowserRecording",
       "public": false,
       "authenticated": true,
-      "state": "MISSING",
-      "enforcement": "resource-scoped authentication middleware",
-      "access": "Requires Authentication",
+      "state": "GREEN",
+      "enforcement": "specialized resource authentication middleware and shared access profile",
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write",
       "anonymous_assertion": "route is registered with handler-specific auth middleware",
-      "role_assertion": "MISSING: endpoint catalog has no allowed or denied role metadata",
-      "allowed_roles": {}
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin"
+        ],
+        "project": [
+          "editor",
+          "project_admin"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "write"
     },
     {
       "method": "POST",
@@ -1236,12 +1324,24 @@
       "operation_id": "handleForceStopBrowserRecording",
       "public": false,
       "authenticated": true,
-      "state": "MISSING",
-      "enforcement": "resource-scoped authentication middleware",
-      "access": "Requires Authentication",
+      "state": "GREEN",
+      "enforcement": "specialized resource authentication middleware and shared access profile",
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write",
       "anonymous_assertion": "route is registered with handler-specific auth middleware",
-      "role_assertion": "MISSING: endpoint catalog has no allowed or denied role metadata",
-      "allowed_roles": {}
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin"
+        ],
+        "project": [
+          "editor",
+          "project_admin"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "write"
     },
     {
       "method": "POST",
@@ -1249,12 +1349,24 @@
       "operation_id": "handleNavigateBrowserRecording",
       "public": false,
       "authenticated": true,
-      "state": "MISSING",
-      "enforcement": "resource-scoped authentication middleware",
-      "access": "Requires Authentication",
+      "state": "GREEN",
+      "enforcement": "specialized resource authentication middleware and shared access profile",
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write",
       "anonymous_assertion": "route is registered with handler-specific auth middleware",
-      "role_assertion": "MISSING: endpoint catalog has no allowed or denied role metadata",
-      "allowed_roles": {}
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin"
+        ],
+        "project": [
+          "editor",
+          "project_admin"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "write"
     },
     {
       "method": "POST",
@@ -1262,12 +1374,24 @@
       "operation_id": "handleAddBrowserRecordingNote",
       "public": false,
       "authenticated": true,
-      "state": "MISSING",
-      "enforcement": "resource-scoped authentication middleware",
-      "access": "Requires Authentication",
+      "state": "GREEN",
+      "enforcement": "specialized resource authentication middleware and shared access profile",
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write",
       "anonymous_assertion": "route is registered with handler-specific auth middleware",
-      "role_assertion": "MISSING: endpoint catalog has no allowed or denied role metadata",
-      "allowed_roles": {}
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin"
+        ],
+        "project": [
+          "editor",
+          "project_admin"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "write"
     },
     {
       "method": "POST",
@@ -1275,12 +1399,24 @@
       "operation_id": "handlePauseBrowserRecording",
       "public": false,
       "authenticated": true,
-      "state": "MISSING",
-      "enforcement": "resource-scoped authentication middleware",
-      "access": "Requires Authentication",
+      "state": "GREEN",
+      "enforcement": "specialized resource authentication middleware and shared access profile",
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write",
       "anonymous_assertion": "route is registered with handler-specific auth middleware",
-      "role_assertion": "MISSING: endpoint catalog has no allowed or denied role metadata",
-      "allowed_roles": {}
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin"
+        ],
+        "project": [
+          "editor",
+          "project_admin"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "write"
     },
     {
       "method": "POST",
@@ -1288,12 +1424,24 @@
       "operation_id": "handleSetBrowserRecordingPickMode",
       "public": false,
       "authenticated": true,
-      "state": "MISSING",
-      "enforcement": "resource-scoped authentication middleware",
-      "access": "Requires Authentication",
+      "state": "GREEN",
+      "enforcement": "specialized resource authentication middleware and shared access profile",
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write",
       "anonymous_assertion": "route is registered with handler-specific auth middleware",
-      "role_assertion": "MISSING: endpoint catalog has no allowed or denied role metadata",
-      "allowed_roles": {}
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin"
+        ],
+        "project": [
+          "editor",
+          "project_admin"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "write"
     },
     {
       "method": "POST",
@@ -1301,12 +1449,24 @@
       "operation_id": "handleResumeBrowserRecording",
       "public": false,
       "authenticated": true,
-      "state": "MISSING",
-      "enforcement": "resource-scoped authentication middleware",
-      "access": "Requires Authentication",
+      "state": "GREEN",
+      "enforcement": "specialized resource authentication middleware and shared access profile",
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write",
       "anonymous_assertion": "route is registered with handler-specific auth middleware",
-      "role_assertion": "MISSING: endpoint catalog has no allowed or denied role metadata",
-      "allowed_roles": {}
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin"
+        ],
+        "project": [
+          "editor",
+          "project_admin"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "write"
     },
     {
       "method": "POST",
@@ -1314,12 +1474,24 @@
       "operation_id": "handleSetBrowserRecordingSection",
       "public": false,
       "authenticated": true,
-      "state": "MISSING",
-      "enforcement": "resource-scoped authentication middleware",
-      "access": "Requires Authentication",
+      "state": "GREEN",
+      "enforcement": "specialized resource authentication middleware and shared access profile",
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write",
       "anonymous_assertion": "route is registered with handler-specific auth middleware",
-      "role_assertion": "MISSING: endpoint catalog has no allowed or denied role metadata",
-      "allowed_roles": {}
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin"
+        ],
+        "project": [
+          "editor",
+          "project_admin"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "write"
     },
     {
       "method": "DELETE",
@@ -1327,12 +1499,24 @@
       "operation_id": "handleDeleteLastBrowserRecordingStep",
       "public": false,
       "authenticated": true,
-      "state": "MISSING",
-      "enforcement": "resource-scoped authentication middleware",
-      "access": "Requires Authentication",
+      "state": "GREEN",
+      "enforcement": "specialized resource authentication middleware and shared access profile",
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write",
       "anonymous_assertion": "route is registered with handler-specific auth middleware",
-      "role_assertion": "MISSING: endpoint catalog has no allowed or denied role metadata",
-      "allowed_roles": {}
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin"
+        ],
+        "project": [
+          "editor",
+          "project_admin"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "write"
     },
     {
       "method": "PATCH",
@@ -1340,12 +1524,24 @@
       "operation_id": "handleUpdateBrowserRecordingStep",
       "public": false,
       "authenticated": true,
-      "state": "MISSING",
-      "enforcement": "resource-scoped authentication middleware",
-      "access": "Requires Authentication",
+      "state": "GREEN",
+      "enforcement": "specialized resource authentication middleware and shared access profile",
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write",
       "anonymous_assertion": "route is registered with handler-specific auth middleware",
-      "role_assertion": "MISSING: endpoint catalog has no allowed or denied role metadata",
-      "allowed_roles": {}
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin"
+        ],
+        "project": [
+          "editor",
+          "project_admin"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "write"
     },
     {
       "method": "POST",
@@ -1353,12 +1549,24 @@
       "operation_id": "handleStopBrowserRecording",
       "public": false,
       "authenticated": true,
-      "state": "MISSING",
-      "enforcement": "resource-scoped authentication middleware",
-      "access": "Requires Authentication",
+      "state": "GREEN",
+      "enforcement": "specialized resource authentication middleware and shared access profile",
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write",
       "anonymous_assertion": "route is registered with handler-specific auth middleware",
-      "role_assertion": "MISSING: endpoint catalog has no allowed or denied role metadata",
-      "allowed_roles": {}
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin"
+        ],
+        "project": [
+          "editor",
+          "project_admin"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "write"
     },
     {
       "method": "GET",
@@ -1366,12 +1574,24 @@
       "operation_id": "handleExportBrowserRecordingStorageState",
       "public": false,
       "authenticated": true,
-      "state": "MISSING",
-      "enforcement": "resource-scoped authentication middleware",
-      "access": "Requires Authentication",
+      "state": "GREEN",
+      "enforcement": "specialized resource authentication middleware and shared access profile",
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: read",
       "anonymous_assertion": "route is registered with handler-specific auth middleware",
-      "role_assertion": "MISSING: endpoint catalog has no allowed or denied role metadata",
-      "allowed_roles": {}
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin"
+        ],
+        "project": [
+          "editor",
+          "project_admin"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "read"
     },
     {
       "method": "POST",
@@ -1379,12 +1599,24 @@
       "operation_id": "handleEndBrowserRecordingTransaction",
       "public": false,
       "authenticated": true,
-      "state": "MISSING",
-      "enforcement": "resource-scoped authentication middleware",
-      "access": "Requires Authentication",
+      "state": "GREEN",
+      "enforcement": "specialized resource authentication middleware and shared access profile",
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write",
       "anonymous_assertion": "route is registered with handler-specific auth middleware",
-      "role_assertion": "MISSING: endpoint catalog has no allowed or denied role metadata",
-      "allowed_roles": {}
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin"
+        ],
+        "project": [
+          "editor",
+          "project_admin"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "write"
     },
     {
       "method": "POST",
@@ -1392,12 +1624,24 @@
       "operation_id": "handleStartBrowserRecordingTransaction",
       "public": false,
       "authenticated": true,
-      "state": "MISSING",
-      "enforcement": "resource-scoped authentication middleware",
-      "access": "Requires Authentication",
+      "state": "GREEN",
+      "enforcement": "specialized resource authentication middleware and shared access profile",
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write",
       "anonymous_assertion": "route is registered with handler-specific auth middleware",
-      "role_assertion": "MISSING: endpoint catalog has no allowed or denied role metadata",
-      "allowed_roles": {}
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin"
+        ],
+        "project": [
+          "editor",
+          "project_admin"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "write"
     },
     {
       "method": "GET",
@@ -1405,12 +1649,26 @@
       "operation_id": "handleSuggestBrowserRecordingTransactions",
       "public": false,
       "authenticated": true,
-      "state": "MISSING",
-      "enforcement": "resource-scoped authentication middleware",
-      "access": "Requires Authentication",
+      "state": "GREEN",
+      "enforcement": "specialized resource authentication middleware and shared access profile",
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read",
       "anonymous_assertion": "route is registered with handler-specific auth middleware",
-      "role_assertion": "MISSING: endpoint catalog has no allowed or denied role metadata",
-      "allowed_roles": {}
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin",
+          "viewer"
+        ],
+        "project": [
+          "editor",
+          "project_admin",
+          "viewer"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "read"
     },
     {
       "method": "POST",
@@ -1418,12 +1676,24 @@
       "operation_id": "handleVerifyBrowserRecording",
       "public": false,
       "authenticated": true,
-      "state": "MISSING",
-      "enforcement": "resource-scoped authentication middleware",
-      "access": "Requires Authentication",
+      "state": "GREEN",
+      "enforcement": "specialized resource authentication middleware and shared access profile",
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write",
       "anonymous_assertion": "route is registered with handler-specific auth middleware",
-      "role_assertion": "MISSING: endpoint catalog has no allowed or denied role metadata",
-      "allowed_roles": {}
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin"
+        ],
+        "project": [
+          "editor",
+          "project_admin"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "write"
     },
     {
       "method": "GET",
@@ -1431,12 +1701,26 @@
       "operation_id": "handleGetBrowserReplaySession",
       "public": false,
       "authenticated": true,
-      "state": "MISSING",
-      "enforcement": "resource-scoped authentication middleware",
-      "access": "Requires Authentication",
+      "state": "GREEN",
+      "enforcement": "specialized resource authentication middleware and shared access profile",
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read",
       "anonymous_assertion": "route is registered with handler-specific auth middleware",
-      "role_assertion": "MISSING: endpoint catalog has no allowed or denied role metadata",
-      "allowed_roles": {}
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin",
+          "viewer"
+        ],
+        "project": [
+          "editor",
+          "project_admin",
+          "viewer"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "read"
     },
     {
       "method": "POST",
@@ -1444,12 +1728,24 @@
       "operation_id": "handlePauseBrowserReplaySession",
       "public": false,
       "authenticated": true,
-      "state": "MISSING",
-      "enforcement": "resource-scoped authentication middleware",
-      "access": "Requires Authentication",
+      "state": "GREEN",
+      "enforcement": "specialized resource authentication middleware and shared access profile",
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write",
       "anonymous_assertion": "route is registered with handler-specific auth middleware",
-      "role_assertion": "MISSING: endpoint catalog has no allowed or denied role metadata",
-      "allowed_roles": {}
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin"
+        ],
+        "project": [
+          "editor",
+          "project_admin"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "write"
     },
     {
       "method": "POST",
@@ -1457,12 +1753,24 @@
       "operation_id": "handleResumeBrowserReplaySession",
       "public": false,
       "authenticated": true,
-      "state": "MISSING",
-      "enforcement": "resource-scoped authentication middleware",
-      "access": "Requires Authentication",
+      "state": "GREEN",
+      "enforcement": "specialized resource authentication middleware and shared access profile",
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write",
       "anonymous_assertion": "route is registered with handler-specific auth middleware",
-      "role_assertion": "MISSING: endpoint catalog has no allowed or denied role metadata",
-      "allowed_roles": {}
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin"
+        ],
+        "project": [
+          "editor",
+          "project_admin"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "write"
     },
     {
       "method": "POST",
@@ -1470,12 +1778,24 @@
       "operation_id": "handleStopBrowserReplaySession",
       "public": false,
       "authenticated": true,
-      "state": "MISSING",
-      "enforcement": "resource-scoped authentication middleware",
-      "access": "Requires Authentication",
+      "state": "GREEN",
+      "enforcement": "specialized resource authentication middleware and shared access profile",
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write",
       "anonymous_assertion": "route is registered with handler-specific auth middleware",
-      "role_assertion": "MISSING: endpoint catalog has no allowed or denied role metadata",
-      "allowed_roles": {}
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin"
+        ],
+        "project": [
+          "editor",
+          "project_admin"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "write"
     },
     {
       "method": "GET",
@@ -4592,11 +4912,11 @@
       "operation_id": "handleCollectorHeartbeat",
       "public": false,
       "authenticated": true,
-      "state": "PARTIAL",
+      "state": "GREEN",
       "enforcement": "handler-specific capability authentication",
       "access": "Collector token via Bearer or X-APEXLoad-API-Key",
-      "anonymous_assertion": "route is registered with handler-specific auth middleware",
-      "role_assertion": "not applicable; route authenticates a capability rather than an RBAC role",
+      "anonymous_assertion": "HTTP 401 without collector token; HTTP 200 with valid collector bearer token",
+      "role_assertion": "not applicable; route authenticates a collector capability rather than an RBAC role",
       "allowed_roles": {}
     },
     {
@@ -5610,12 +5930,26 @@
       "operation_id": "handleListRecordings",
       "public": false,
       "authenticated": true,
-      "state": "MISSING",
-      "enforcement": "resource-scoped authentication middleware",
-      "access": "Requires Authentication",
+      "state": "GREEN",
+      "enforcement": "specialized resource authentication middleware and shared access profile",
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read",
       "anonymous_assertion": "route is registered with handler-specific auth middleware",
-      "role_assertion": "MISSING: endpoint catalog has no allowed or denied role metadata",
-      "allowed_roles": {}
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin",
+          "viewer"
+        ],
+        "project": [
+          "editor",
+          "project_admin",
+          "viewer"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "read"
     },
     {
       "method": "GET",
@@ -5653,12 +5987,24 @@
       "operation_id": "handleStartRecording",
       "public": false,
       "authenticated": true,
-      "state": "MISSING",
-      "enforcement": "resource-scoped authentication middleware",
-      "access": "Requires Authentication",
+      "state": "GREEN",
+      "enforcement": "specialized resource authentication middleware and shared access profile",
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write",
       "anonymous_assertion": "route is registered with handler-specific auth middleware",
-      "role_assertion": "MISSING: endpoint catalog has no allowed or denied role metadata",
-      "allowed_roles": {}
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin"
+        ],
+        "project": [
+          "editor",
+          "project_admin"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "write"
     },
     {
       "method": "GET",
@@ -5696,12 +6042,24 @@
       "operation_id": "handleDeleteRecording",
       "public": false,
       "authenticated": true,
-      "state": "MISSING",
-      "enforcement": "resource-scoped authentication middleware",
-      "access": "Requires Authentication",
+      "state": "GREEN",
+      "enforcement": "specialized resource authentication middleware and shared access profile",
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write",
       "anonymous_assertion": "route is registered with handler-specific auth middleware",
-      "role_assertion": "MISSING: endpoint catalog has no allowed or denied role metadata",
-      "allowed_roles": {}
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin"
+        ],
+        "project": [
+          "editor",
+          "project_admin"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "write"
     },
     {
       "method": "GET",
@@ -5709,12 +6067,26 @@
       "operation_id": "handleGetRecording",
       "public": false,
       "authenticated": true,
-      "state": "MISSING",
-      "enforcement": "resource-scoped authentication middleware",
-      "access": "Requires Authentication",
+      "state": "GREEN",
+      "enforcement": "specialized resource authentication middleware and shared access profile",
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read",
       "anonymous_assertion": "route is registered with handler-specific auth middleware",
-      "role_assertion": "MISSING: endpoint catalog has no allowed or denied role metadata",
-      "allowed_roles": {}
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin",
+          "viewer"
+        ],
+        "project": [
+          "editor",
+          "project_admin",
+          "viewer"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "read"
     },
     {
       "method": "POST",
@@ -5722,12 +6094,24 @@
       "operation_id": "handleConvertRecording",
       "public": false,
       "authenticated": true,
-      "state": "MISSING",
-      "enforcement": "resource-scoped authentication middleware",
-      "access": "Requires Authentication",
+      "state": "GREEN",
+      "enforcement": "specialized resource authentication middleware and shared access profile",
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write",
       "anonymous_assertion": "route is registered with handler-specific auth middleware",
-      "role_assertion": "MISSING: endpoint catalog has no allowed or denied role metadata",
-      "allowed_roles": {}
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin"
+        ],
+        "project": [
+          "editor",
+          "project_admin"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "write"
     },
     {
       "method": "POST",
@@ -5735,12 +6119,24 @@
       "operation_id": "handlePreviewRecordingConversion",
       "public": false,
       "authenticated": true,
-      "state": "MISSING",
-      "enforcement": "resource-scoped authentication middleware",
-      "access": "Requires Authentication",
+      "state": "GREEN",
+      "enforcement": "specialized resource authentication middleware and shared access profile",
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write",
       "anonymous_assertion": "route is registered with handler-specific auth middleware",
-      "role_assertion": "MISSING: endpoint catalog has no allowed or denied role metadata",
-      "allowed_roles": {}
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin"
+        ],
+        "project": [
+          "editor",
+          "project_admin"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "write"
     },
     {
       "method": "GET",
@@ -5748,12 +6144,26 @@
       "operation_id": "handleExportRecording",
       "public": false,
       "authenticated": true,
-      "state": "MISSING",
-      "enforcement": "resource-scoped authentication middleware",
-      "access": "Requires Authentication",
+      "state": "GREEN",
+      "enforcement": "specialized resource authentication middleware and shared access profile",
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read",
       "anonymous_assertion": "route is registered with handler-specific auth middleware",
-      "role_assertion": "MISSING: endpoint catalog has no allowed or denied role metadata",
-      "allowed_roles": {}
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin",
+          "viewer"
+        ],
+        "project": [
+          "editor",
+          "project_admin",
+          "viewer"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "read"
     },
     {
       "method": "POST",
@@ -5761,12 +6171,24 @@
       "operation_id": "handlePauseRecording",
       "public": false,
       "authenticated": true,
-      "state": "MISSING",
-      "enforcement": "resource-scoped authentication middleware",
-      "access": "Requires Authentication",
+      "state": "GREEN",
+      "enforcement": "specialized resource authentication middleware and shared access profile",
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write",
       "anonymous_assertion": "route is registered with handler-specific auth middleware",
-      "role_assertion": "MISSING: endpoint catalog has no allowed or denied role metadata",
-      "allowed_roles": {}
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin"
+        ],
+        "project": [
+          "editor",
+          "project_admin"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "write"
     },
     {
       "method": "PATCH",
@@ -5774,12 +6196,24 @@
       "operation_id": "handleUpdateRecordedRequest",
       "public": false,
       "authenticated": true,
-      "state": "MISSING",
-      "enforcement": "resource-scoped authentication middleware",
-      "access": "Requires Authentication",
+      "state": "GREEN",
+      "enforcement": "specialized resource authentication middleware and shared access profile",
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write",
       "anonymous_assertion": "route is registered with handler-specific auth middleware",
-      "role_assertion": "MISSING: endpoint catalog has no allowed or denied role metadata",
-      "allowed_roles": {}
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin"
+        ],
+        "project": [
+          "editor",
+          "project_admin"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "write"
     },
     {
       "method": "POST",
@@ -5787,12 +6221,24 @@
       "operation_id": "handleResumeRecording",
       "public": false,
       "authenticated": true,
-      "state": "MISSING",
-      "enforcement": "resource-scoped authentication middleware",
-      "access": "Requires Authentication",
+      "state": "GREEN",
+      "enforcement": "specialized resource authentication middleware and shared access profile",
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write",
       "anonymous_assertion": "route is registered with handler-specific auth middleware",
-      "role_assertion": "MISSING: endpoint catalog has no allowed or denied role metadata",
-      "allowed_roles": {}
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin"
+        ],
+        "project": [
+          "editor",
+          "project_admin"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "write"
     },
     {
       "method": "POST",
@@ -5800,12 +6246,24 @@
       "operation_id": "handleStopRecording",
       "public": false,
       "authenticated": true,
-      "state": "MISSING",
-      "enforcement": "resource-scoped authentication middleware",
-      "access": "Requires Authentication",
+      "state": "GREEN",
+      "enforcement": "specialized resource authentication middleware and shared access profile",
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write",
       "anonymous_assertion": "route is registered with handler-specific auth middleware",
-      "role_assertion": "MISSING: endpoint catalog has no allowed or denied role metadata",
-      "allowed_roles": {}
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin"
+        ],
+        "project": [
+          "editor",
+          "project_admin"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "write"
     },
     {
       "method": "DELETE",
@@ -6196,12 +6654,26 @@
       "operation_id": "handleGetScriptDebugSession",
       "public": false,
       "authenticated": true,
-      "state": "MISSING",
-      "enforcement": "resource-scoped authentication middleware",
-      "access": "Requires Authentication",
+      "state": "GREEN",
+      "enforcement": "specialized resource authentication middleware and shared access profile",
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read",
       "anonymous_assertion": "route is registered with handler-specific auth middleware",
-      "role_assertion": "MISSING: endpoint catalog has no allowed or denied role metadata",
-      "allowed_roles": {}
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin",
+          "viewer"
+        ],
+        "project": [
+          "editor",
+          "project_admin",
+          "viewer"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "read"
     },
     {
       "method": "PATCH",
@@ -6209,12 +6681,24 @@
       "operation_id": "handleUpdateScriptDebugBreakpoints",
       "public": false,
       "authenticated": true,
-      "state": "MISSING",
-      "enforcement": "resource-scoped authentication middleware",
-      "access": "Requires Authentication",
+      "state": "GREEN",
+      "enforcement": "specialized resource authentication middleware and shared access profile",
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write",
       "anonymous_assertion": "route is registered with handler-specific auth middleware",
-      "role_assertion": "MISSING: endpoint catalog has no allowed or denied role metadata",
-      "allowed_roles": {}
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin"
+        ],
+        "project": [
+          "editor",
+          "project_admin"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "write"
     },
     {
       "method": "GET",
@@ -6222,12 +6706,26 @@
       "operation_id": "handleExportScriptDebugSession",
       "public": false,
       "authenticated": true,
-      "state": "MISSING",
-      "enforcement": "resource-scoped authentication middleware",
-      "access": "Requires Authentication",
+      "state": "GREEN",
+      "enforcement": "specialized resource authentication middleware and shared access profile",
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read",
       "anonymous_assertion": "route is registered with handler-specific auth middleware",
-      "role_assertion": "MISSING: endpoint catalog has no allowed or denied role metadata",
-      "allowed_roles": {}
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin",
+          "viewer"
+        ],
+        "project": [
+          "editor",
+          "project_admin",
+          "viewer"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "read"
     },
     {
       "method": "PATCH",
@@ -6235,12 +6733,24 @@
       "operation_id": "handleUpdateScriptDebugOptions",
       "public": false,
       "authenticated": true,
-      "state": "MISSING",
-      "enforcement": "resource-scoped authentication middleware",
-      "access": "Requires Authentication",
+      "state": "GREEN",
+      "enforcement": "specialized resource authentication middleware and shared access profile",
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write",
       "anonymous_assertion": "route is registered with handler-specific auth middleware",
-      "role_assertion": "MISSING: endpoint catalog has no allowed or denied role metadata",
-      "allowed_roles": {}
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin"
+        ],
+        "project": [
+          "editor",
+          "project_admin"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "write"
     },
     {
       "method": "POST",
@@ -6248,12 +6758,24 @@
       "operation_id": "handlePauseScriptDebugSession",
       "public": false,
       "authenticated": true,
-      "state": "MISSING",
-      "enforcement": "resource-scoped authentication middleware",
-      "access": "Requires Authentication",
+      "state": "GREEN",
+      "enforcement": "specialized resource authentication middleware and shared access profile",
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write",
       "anonymous_assertion": "route is registered with handler-specific auth middleware",
-      "role_assertion": "MISSING: endpoint catalog has no allowed or denied role metadata",
-      "allowed_roles": {}
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin"
+        ],
+        "project": [
+          "editor",
+          "project_admin"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "write"
     },
     {
       "method": "POST",
@@ -6261,12 +6783,24 @@
       "operation_id": "handleResumeScriptDebugSession",
       "public": false,
       "authenticated": true,
-      "state": "MISSING",
-      "enforcement": "resource-scoped authentication middleware",
-      "access": "Requires Authentication",
+      "state": "GREEN",
+      "enforcement": "specialized resource authentication middleware and shared access profile",
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write",
       "anonymous_assertion": "route is registered with handler-specific auth middleware",
-      "role_assertion": "MISSING: endpoint catalog has no allowed or denied role metadata",
-      "allowed_roles": {}
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin"
+        ],
+        "project": [
+          "editor",
+          "project_admin"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "write"
     },
     {
       "method": "POST",
@@ -6274,12 +6808,24 @@
       "operation_id": "handleStepScriptDebugSession",
       "public": false,
       "authenticated": true,
-      "state": "MISSING",
-      "enforcement": "resource-scoped authentication middleware",
-      "access": "Requires Authentication",
+      "state": "GREEN",
+      "enforcement": "specialized resource authentication middleware and shared access profile",
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write",
       "anonymous_assertion": "route is registered with handler-specific auth middleware",
-      "role_assertion": "MISSING: endpoint catalog has no allowed or denied role metadata",
-      "allowed_roles": {}
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin"
+        ],
+        "project": [
+          "editor",
+          "project_admin"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "write"
     },
     {
       "method": "POST",
@@ -6287,12 +6833,24 @@
       "operation_id": "handleStopScriptDebugSession",
       "public": false,
       "authenticated": true,
-      "state": "MISSING",
-      "enforcement": "resource-scoped authentication middleware",
-      "access": "Requires Authentication",
+      "state": "GREEN",
+      "enforcement": "specialized resource authentication middleware and shared access profile",
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write",
       "anonymous_assertion": "route is registered with handler-specific auth middleware",
-      "role_assertion": "MISSING: endpoint catalog has no allowed or denied role metadata",
-      "allowed_roles": {}
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin"
+        ],
+        "project": [
+          "editor",
+          "project_admin"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "write"
     },
     {
       "method": "GET",
@@ -7083,12 +7641,26 @@
       "operation_id": "handleGetScriptDebugSession_2",
       "public": false,
       "authenticated": true,
-      "state": "MISSING",
-      "enforcement": "resource-scoped authentication middleware",
-      "access": "Requires Authentication",
+      "state": "GREEN",
+      "enforcement": "specialized resource authentication middleware and shared access profile",
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read",
       "anonymous_assertion": "route is registered with handler-specific auth middleware",
-      "role_assertion": "MISSING: endpoint catalog has no allowed or denied role metadata",
-      "allowed_roles": {}
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin",
+          "viewer"
+        ],
+        "project": [
+          "editor",
+          "project_admin",
+          "viewer"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "read"
     },
     {
       "method": "PATCH",
@@ -7096,12 +7668,24 @@
       "operation_id": "handleUpdateScriptDebugBreakpoints_2",
       "public": false,
       "authenticated": true,
-      "state": "MISSING",
-      "enforcement": "resource-scoped authentication middleware",
-      "access": "Requires Authentication",
+      "state": "GREEN",
+      "enforcement": "specialized resource authentication middleware and shared access profile",
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write",
       "anonymous_assertion": "route is registered with handler-specific auth middleware",
-      "role_assertion": "MISSING: endpoint catalog has no allowed or denied role metadata",
-      "allowed_roles": {}
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin"
+        ],
+        "project": [
+          "editor",
+          "project_admin"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "write"
     },
     {
       "method": "GET",
@@ -7109,12 +7693,26 @@
       "operation_id": "handleExportScriptDebugSession_2",
       "public": false,
       "authenticated": true,
-      "state": "MISSING",
-      "enforcement": "resource-scoped authentication middleware",
-      "access": "Requires Authentication",
+      "state": "GREEN",
+      "enforcement": "specialized resource authentication middleware and shared access profile",
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read",
       "anonymous_assertion": "route is registered with handler-specific auth middleware",
-      "role_assertion": "MISSING: endpoint catalog has no allowed or denied role metadata",
-      "allowed_roles": {}
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin",
+          "viewer"
+        ],
+        "project": [
+          "editor",
+          "project_admin",
+          "viewer"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "read"
     },
     {
       "method": "PATCH",
@@ -7122,12 +7720,24 @@
       "operation_id": "handleUpdateScriptDebugOptions_2",
       "public": false,
       "authenticated": true,
-      "state": "MISSING",
-      "enforcement": "resource-scoped authentication middleware",
-      "access": "Requires Authentication",
+      "state": "GREEN",
+      "enforcement": "specialized resource authentication middleware and shared access profile",
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write",
       "anonymous_assertion": "route is registered with handler-specific auth middleware",
-      "role_assertion": "MISSING: endpoint catalog has no allowed or denied role metadata",
-      "allowed_roles": {}
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin"
+        ],
+        "project": [
+          "editor",
+          "project_admin"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "write"
     },
     {
       "method": "POST",
@@ -7135,12 +7745,24 @@
       "operation_id": "handlePauseScriptDebugSession_2",
       "public": false,
       "authenticated": true,
-      "state": "MISSING",
-      "enforcement": "resource-scoped authentication middleware",
-      "access": "Requires Authentication",
+      "state": "GREEN",
+      "enforcement": "specialized resource authentication middleware and shared access profile",
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write",
       "anonymous_assertion": "route is registered with handler-specific auth middleware",
-      "role_assertion": "MISSING: endpoint catalog has no allowed or denied role metadata",
-      "allowed_roles": {}
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin"
+        ],
+        "project": [
+          "editor",
+          "project_admin"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "write"
     },
     {
       "method": "POST",
@@ -7148,12 +7770,24 @@
       "operation_id": "handleResumeScriptDebugSession_2",
       "public": false,
       "authenticated": true,
-      "state": "MISSING",
-      "enforcement": "resource-scoped authentication middleware",
-      "access": "Requires Authentication",
+      "state": "GREEN",
+      "enforcement": "specialized resource authentication middleware and shared access profile",
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write",
       "anonymous_assertion": "route is registered with handler-specific auth middleware",
-      "role_assertion": "MISSING: endpoint catalog has no allowed or denied role metadata",
-      "allowed_roles": {}
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin"
+        ],
+        "project": [
+          "editor",
+          "project_admin"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "write"
     },
     {
       "method": "POST",
@@ -7161,12 +7795,24 @@
       "operation_id": "handleStepScriptDebugSession_2",
       "public": false,
       "authenticated": true,
-      "state": "MISSING",
-      "enforcement": "resource-scoped authentication middleware",
-      "access": "Requires Authentication",
+      "state": "GREEN",
+      "enforcement": "specialized resource authentication middleware and shared access profile",
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write",
       "anonymous_assertion": "route is registered with handler-specific auth middleware",
-      "role_assertion": "MISSING: endpoint catalog has no allowed or denied role metadata",
-      "allowed_roles": {}
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin"
+        ],
+        "project": [
+          "editor",
+          "project_admin"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "write"
     },
     {
       "method": "POST",
@@ -7174,12 +7820,24 @@
       "operation_id": "handleStopScriptDebugSession_2",
       "public": false,
       "authenticated": true,
-      "state": "MISSING",
-      "enforcement": "resource-scoped authentication middleware",
-      "access": "Requires Authentication",
+      "state": "GREEN",
+      "enforcement": "specialized resource authentication middleware and shared access profile",
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write",
       "anonymous_assertion": "route is registered with handler-specific auth middleware",
-      "role_assertion": "MISSING: endpoint catalog has no allowed or denied role metadata",
-      "allowed_roles": {}
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin"
+        ],
+        "project": [
+          "editor",
+          "project_admin"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "write"
     },
     {
       "method": "GET",
@@ -11987,10 +12645,10 @@
       "operation_id": "handlePrometheusMetricsWithAuth",
       "public": true,
       "authenticated": false,
-      "state": "PARTIAL",
+      "state": "GREEN",
       "enforcement": "conditional handler token",
       "access": "Public when no metrics token is configured; otherwise requires the metrics Bearer token",
-      "anonymous_assertion": "allowed only when no metrics token is configured",
+      "anonymous_assertion": "HTTP 200 without token configuration; HTTP 401 when configured and missing; HTTP 200 with valid bearer token",
       "role_assertion": "not applicable; route uses a metrics bearer token rather than RBAC",
       "allowed_roles": {}
     }

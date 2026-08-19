@@ -45,7 +45,7 @@ Sources: [STATUS.md](STATUS.md) · [TEST_PROGRAM.md](TEST_PROGRAM.md) · [Headli
 
 | GREEN | PARTIAL | MISSING | Total |
 |---:|---:|---:|---:|
-| 487 | 3 | 53 | 543 |
+| 543 | 0 | 0 | 543 |
 
 ## Gate tiers
 

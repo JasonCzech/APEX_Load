@@ -49,9 +49,11 @@ profile and drives both rejected and successful seeded administrator login.
 The generated M1 API contract matrix now inventories the endpoint catalog without embedding a
 route total in program prose. It proves public/authenticated registration parity, anonymous 401s
 through the generic auth middleware, and allowed/denied RBAC role decisions where structured access
-metadata exists. It also exposes the remaining work honestly: legacy recorder/replay routes still
-publish only “Requires Authentication” and therefore remain `MISSING` role-metadata coverage;
-capability-token routes are recorded separately as role-inapplicable.
+metadata exists. Legacy recorder/replay middleware now consumes the same viewer/editor access
+profiles used by generated documentation, eliminating role-list drift while retaining each
+server-instance session-to-project lookup. Metrics, recording-bridge, and collector-token routes
+have explicit handler-level anonymous/authenticated cases. The route matrix is fully `GREEN`; M1
+remains open on the Tier-0 browser journey and full arc.
 
 ## Headline metrics
 
