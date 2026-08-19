@@ -102,6 +102,72 @@ evidence; PR CI validates its manifest rather than attempting to rerun it.
 
 ---
 
+## Reassessment — 2026-08-18
+
+The plan below was written assuming ~8 hrs/week for nine months, with one milestone per month worked
+strictly in sequence. **One day in, that model is obsolete.** M0–M4 are all open simultaneously, 32
+commits have landed, and the measured state is:
+
+| | Baseline | Now |
+|---|---:|---:|
+| Tier-0 assertions GREEN | 0 / 12 | **12 / 12** |
+| Playwright specs | 3 | **14** |
+| Converter golden files | 0 | **30** (all 15 registered surfaces) |
+| Open inherited review defects | 11 | **1** (DEF-26) |
+| Go statement coverage | 77.01% | 77.01% |
+| **Coverage floor enforced** | 0 | **0** |
+| **Packages with no test file** | 6 | **8** |
+| **Performance targets measured** | 0 / 4 | **0 / 4** |
+| AKS cutover gates passed | 0 / 10 | **0 / 10** |
+
+### What this changes
+
+**The bottleneck has moved, and the plan should follow it.** Authoring effort is no longer the
+scarce resource. What remains scarce is *wall-clock time and infrastructure access*: a 72-hour soak
+takes 72 hours no matter how fast anything is written, an AKS gate needs a real cluster and real
+spend, and multi-region needs two regions. Those cannot be compressed by working faster, and they
+are now the critical path.
+
+So the month-per-milestone framing is retired in favour of two tracks:
+
+**Track A — software correctness (M0–M4).** Parallelisable, no external dependencies, roughly 60%
+done. Continue opportunistically; do not serialise it.
+
+**Track B — infrastructure evidence (M5–M8).** Serialised by wall-clock and infrastructure, entirely
+untouched, and it is the half of the original brief that remains completely unevidenced. **Its
+long-lead items should start now, not after Track A closes** — cloud account and quota, a realistic
+target application to generate load against, and booked soak windows. Waiting for Track A to finish
+before requesting cloud access would idle the critical path behind work that no longer needs the
+time.
+
+### Three things the numbers say that the prose would not
+
+1. **The coverage ratchet still runs `continue-on-error: true`.** It has never been a gate. Every
+   suite built since exists without the floor that was supposed to protect it, and closing this is
+   cheap — one CI-measured baseline and a deleted line.
+
+2. **Packages with no test file went 6 → 8.** Coverage regressed while the program was actively
+   adding tests. This is exactly what an enforcing ratchet exists to catch, and it is the concrete
+   argument for item 1 rather than a hypothetical one.
+
+3. **Performance targets remain 0 of 4.** This was named in the Context section as the single
+   largest gap — every published target still reads `not_evaluated`. Nothing in the work so far has
+   touched it, because it lives in Track B.
+
+### Revised immediate sequence
+
+1. **Enforce the coverage ratchet.** Take one green CI run's `coverage-current.json`, re-baseline,
+   delete `continue-on-error`. Cheapest high-value item outstanding.
+2. **Fix the 6 → 8 untested-package regression**, or record each as a deliberate exclusion.
+3. **Close M1** — the per-step assertions are green; the full-arc browser smoke is the gap.
+4. **Start Track B's long-lead items in parallel**, beginning with the local scale ladder on kind
+   (M5), which needs no cloud spend and is the prerequisite for every later infrastructure gate.
+
+The milestone definitions below remain accurate as *scope*. Only their sequencing and their
+month-sized effort estimates are superseded by this section.
+
+---
+
 ## Milestones
 
 The month labels and hour slices below are planning forecasts. A milestone stays open until its exit
