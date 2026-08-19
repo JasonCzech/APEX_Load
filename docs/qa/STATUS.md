@@ -25,6 +25,15 @@ state-bearing dashboard. External published views may mirror it, but must not ca
 
 Valid states: `NOT_STARTED` · `IN_PROGRESS` · `BLOCKED` · `DONE`
 
+## Recovery gate
+
+The QA implementation baseline through `b172f1bbd` was verified from an isolated detached worktree,
+not from the concurrently edited application workspace. `go test ./...`, the configured
+golangci-lint suite, dashboard type-check/lint/accessibility/unit/build, the dev-admin browser suite,
+the local-auth browser suite, workflow validation, tracker validation, and the QA Python mutation
+tests all passed. The live workspace still contains separately owned runtime-adjustment changes, so
+it is intentionally not described as clean.
+
 M1 is underway. `scripts/run-e2e.sh` reproduces CI's browser-smoke recipe locally against a fresh
 controller and throwaway database. Completion is tracked by
 [TIER0_ASSERTION_MATRIX.md](TIER0_ASSERTION_MATRIX.md), not spec count: S1 and S7 are green; S2 and
