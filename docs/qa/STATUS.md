@@ -15,7 +15,7 @@ state-bearing dashboard. External published views may mirror it, but must not ca
 |---|---|---|---|---|
 | M0 | Instrument the program | IN_PROGRESS | not recorded | `evidence/M0/` |
 | M1 | Tier-0 end-user journey | IN_PROGRESS | 11 | `evidence/M1/` |
-| M2 | Import & authoring correctness | NOT_STARTED | 0 | `evidence/M2/` |
+| M2 | Import & authoring correctness | IN_PROGRESS | not recorded | `evidence/M2/` |
 | M3 | Run lifecycle & data integrity | NOT_STARTED | 0 | `evidence/M3/` |
 | M4 | Persistence hardening & migration | NOT_STARTED | 0 | `evidence/M4/` |
 | M5 | Distributed execution at scale | NOT_STARTED | 0 | `evidence/M5/` |
@@ -53,8 +53,16 @@ through the generic auth middleware, and allowed/denied RBAC role decisions wher
 metadata exists. Legacy recorder/replay middleware now consumes the same viewer/editor access
 profiles used by generated documentation, eliminating role-list drift while retaining each
 server-instance session-to-project lookup. Metrics, recording-bridge, and collector-token routes
-have explicit handler-level anonymous/authenticated cases. The route matrix is fully `GREEN`; M1
-remains open on the Tier-0 browser journey and full arc.
+have explicit handler-level anonymous/authenticated cases. The route matrix and all per-step Tier-0
+assertions are `GREEN`; M1 remains open on the full-arc browser smoke.
+
+M2 is underway with one explicit-update golden harness and a backend-registry-derived inventory.
+Seven converter surfaces now have separate valid-output and invalid/diagnostic goldens. Eight remain
+`missing`, and the Oracle E-Business launcher is classified `review_only` because it reuses the
+enterprise-archive converter. The inventory is committed at
+[evidence/M2/converter-golden-inventory.json](evidence/M2/converter-golden-inventory.json); M2 is not
+closeable until every non-review surface is covered and the corpus and protected-lifecycle reports
+also exist.
 
 ## Headline metrics
 

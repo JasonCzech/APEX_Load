@@ -1,0 +1,106 @@
+{
+  "schema_version": 1,
+  "source": "pkg/api/authoring_capabilities.go:authoringImportSurfaces",
+  "totals": {
+    "covered": 7,
+    "missing": 8,
+    "registered": 16,
+    "review_only": 1
+  },
+  "surfaces": [
+    {
+      "surface": "openapi",
+      "converter": "openapi",
+      "state": "missing"
+    },
+    {
+      "surface": "bruno",
+      "converter": "bruno",
+      "state": "missing"
+    },
+    {
+      "surface": "postman",
+      "converter": "postman",
+      "state": "missing"
+    },
+    {
+      "surface": "wsdl",
+      "converter": "wsdl",
+      "state": "missing"
+    },
+    {
+      "surface": "asyncapi",
+      "converter": "asyncapi",
+      "valid_golden": "asyncapi.valid.golden",
+      "diagnostic_golden": "asyncapi.invalid.golden",
+      "state": "covered"
+    },
+    {
+      "surface": "raml",
+      "converter": "raml",
+      "valid_golden": "raml.valid.golden",
+      "diagnostic_golden": "raml.invalid.golden",
+      "state": "covered"
+    },
+    {
+      "surface": "traffic_har",
+      "converter": "har",
+      "state": "missing"
+    },
+    {
+      "surface": "recorder_export",
+      "converter": "recorderjson",
+      "valid_golden": "recorderjson.valid.golden",
+      "diagnostic_golden": "recorderjson.invalid.golden",
+      "state": "covered"
+    },
+    {
+      "surface": "sample",
+      "converter": "sample_curl",
+      "valid_golden": "sample_curl.valid.golden",
+      "diagnostic_golden": "sample_curl.invalid.golden",
+      "state": "covered"
+    },
+    {
+      "surface": "enterprise_archive",
+      "converter": "enterprisearchive",
+      "valid_golden": "enterprisearchive.valid.golden",
+      "diagnostic_golden": "enterprisearchive.invalid.golden",
+      "state": "covered"
+    },
+    {
+      "surface": "jmeter",
+      "converter": "jmeter",
+      "state": "missing"
+    },
+    {
+      "surface": "devweb",
+      "converter": "devweb",
+      "valid_golden": "devweb.valid.golden",
+      "diagnostic_golden": "devweb.invalid.golden",
+      "state": "covered"
+    },
+    {
+      "surface": "k6",
+      "converter": "k6",
+      "state": "missing"
+    },
+    {
+      "surface": "eventhubs_capture",
+      "converter": "eventhubscapture",
+      "state": "missing"
+    },
+    {
+      "surface": "broker_config",
+      "converter": "brokerconfig",
+      "valid_golden": "brokerconfig.valid.golden",
+      "diagnostic_golden": "brokerconfig.invalid.golden",
+      "state": "covered"
+    },
+    {
+      "surface": "oracle_ebusiness_review",
+      "state": "review_only",
+      "rationale": "Capability launches the enterprise-archive review flow; it is not a distinct converter registration."
+    }
+  ]
+}

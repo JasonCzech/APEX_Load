@@ -1,0 +1,125 @@
+{
+  "assumptions": [
+    "APEX Load converts DevWeb SDK calls statically and does not execute the script's JavaScript; dynamic URLs, control flow, and custom helper logic are not replayed.",
+    "Review extracted requests, WebSocket flows, and parameter templates against the original script before promoting this draft to load execution."
+  ],
+  "script": {
+    "actions": [
+      {
+        "method": "GET",
+        "name": "DevWebAction_GET",
+        "target": "https://api.example.test/orders",
+        "think_time": {
+          "mean_ms": 0,
+          "type": ""
+        },
+        "type": "request"
+      }
+    ],
+    "config": {
+      "base_url": "https://api.example.test",
+      "browser": {
+        "geolocation": {},
+        "http_credentials": {},
+        "proxy": {},
+        "review_policy": {},
+        "viewport": {}
+      },
+      "bruno": {
+        "limits": {}
+      },
+      "database": {},
+      "error_handling": {},
+      "eventhubs": {},
+      "grpc": {},
+      "http": {
+        "auth": {},
+        "proxy": {},
+        "tls": {}
+      },
+      "java_http": {},
+      "java_vuser": {},
+      "jms": {},
+      "kafka": {},
+      "log": {
+        "level": "standard"
+      },
+      "network": {},
+      "observability": {},
+      "pacing": {
+        "type": "none"
+      },
+      "run_logic": {
+        "auto_transactions": "none"
+      },
+      "sapgui": {},
+      "soap": {
+        "fault_handling": {}
+      },
+      "think_time": {
+        "mean_ms": 0,
+        "type": ""
+      },
+      "web_runtime": {
+        "data_formatting": {},
+        "download_filters": {},
+        "network_simulation": {},
+        "streaming": {}
+      },
+      "websocket": {}
+    },
+    "created_at": "\u003cTIMESTAMP\u003e",
+    "generated_by": "apexload-devweb-converter",
+    "generated_from": "devweb",
+    "id": "",
+    "metadata": {
+      "import": {
+        "preserved": {
+          "import_value_policy": "preserve"
+        },
+        "source": "devweb"
+      }
+    },
+    "name": "devweb_golden",
+    "protocol": "http",
+    "updated_at": "\u003cTIMESTAMP\u003e",
+    "version": "1.0.0"
+  },
+  "source_review": {
+    "mappings": [
+      {
+        "end_line": 2,
+        "function": "load.WebRequest",
+        "id": "devweb-golden.js:2-2:load.webrequest:actions[0]:converted",
+        "notes": "DevWeb SDK construct was converted into generated APEX Load DSL.",
+        "source_file": "devweb golden.js",
+        "start_line": 2,
+        "status": "converted",
+        "target_kind": "action",
+        "target_name": "DevWebAction_GET",
+        "target_path": "actions[0]"
+      }
+    ],
+    "source_files": [
+      {
+        "content": "load.action(async function () {\n  await new load.WebRequest({url: \"https://api.example.test/orders\", method: \"GET\"}).send();\n});",
+        "language": "javascript",
+        "original_bytes": 128,
+        "path": "devweb golden.js"
+      }
+    ],
+    "total_source_files": 1
+  },
+  "stats": {
+    "converted_actions": 1,
+    "grpc_calls": 0,
+    "http_requests": 1,
+    "skipped": 0,
+    "think_times": 0,
+    "total_steps": 1,
+    "websocket_actions": 0
+  },
+  "warnings": [
+    "no load.action blocks found; imported top-level DevWeb calls in source order"
+  ]
+}

@@ -10,7 +10,7 @@ Sources: [STATUS.md](STATUS.md) · [TEST_PROGRAM.md](TEST_PROGRAM.md) · [Headli
 |---|---|---|---|---|
 | M0 | Instrument the program | IN_PROGRESS | not recorded | `evidence/M0/` |
 | M1 | Tier-0 end-user journey | IN_PROGRESS | 11 | `evidence/M1/` |
-| M2 | Import & authoring correctness | NOT_STARTED | 0 | `evidence/M2/` |
+| M2 | Import & authoring correctness | IN_PROGRESS | not recorded | `evidence/M2/` |
 | M3 | Run lifecycle & data integrity | NOT_STARTED | 0 | `evidence/M3/` |
 | M4 | Persistence hardening & migration | NOT_STARTED | 0 | `evidence/M4/` |
 | M5 | Distributed execution at scale | NOT_STARTED | 0 | `evidence/M5/` |
@@ -32,7 +32,7 @@ Sources: [STATUS.md](STATUS.md) · [TEST_PROGRAM.md](TEST_PROGRAM.md) · [Headli
 | Packages with no test file | 6 | 8 | 3 |
 | Open inherited review defects | 11 | 1 | 0 |
 | Resource-leak linters enabled | 0 | 1 | 1 |
-| Converter golden files | 0 | 0 | all registered converters |
+| Converter golden files | 0 | 14 | all registered converters |
 | Longest clean soak | none | none | 72 h on AKS |
 
 ## Tier-0 assertion coverage
