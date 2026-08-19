@@ -15,17 +15,32 @@ this directly. Suspect timing before suspecting the test.
 | Test | First seen | Rate | Root cause | Owner | Quarantined | Un-quarantine by | State |
 |---|---|---|---|---|---|---|---|
 | `TestLapsedProcessEpochRejectsTheClaimAndFencesTheAssignmentLeaseDifferently` | 2026-08-18 | 2 of 5 runs (both full-suite) | 30 ms wall-clock TTL could not survive scheduler pressure | QA program | No — fixed at the cause | n/a | **FIXED** (`267e9697b`) |
-| `TestRunPreparedTestRetainsTestIdentityOnPollTimeout` | 2026-08-18 | 1 full-suite failure; 0 of 10 isolated repetitions | Unexplained; timeout path returned no partial run result under full-suite load | QA program | No — first occurrence under observation | n/a | **OBSERVING** |
+| `TestRunPreparedTestRetainsTestIdentityOnPollTimeout` | 2026-08-18 | 2 full-suite failures; 0 of 10 isolated repetitions before diagnosis | A 10 ms command-wide deadline could expire during preparation, before a test identity existed | QA program | No — fixed at the cause | n/a | **FIXED** |
 
 ## FLAKE-2 — apexctl poll-timeout partial result
 
 **Location:** `cmd/apexctl/api_client_test.go:108`
 
 The clean isolated `go test ./...` verification for the generated M1 API contract matrix observed
-one failure: `runPreparedTest` returned a nil partial result after its polling timeout, although the
-test requires the created test identity and elapsed time to survive that timeout. Ten immediate
-isolated repetitions passed. This first unexplained intermittent failure is logged per policy; a
-second occurrence requires a root-cause fix or a dated quarantine within 24 hours.
+two failures: `runPreparedTest` returned a nil partial result after its timeout, although the test
+expected the created test identity and elapsed time to survive. Ten immediate isolated repetitions
+passed after the first occurrence; the second full-suite occurrence crossed the mandatory-action
+threshold.
+
+**Root cause.** `PollTimeout` bounds the entire command, including upload, test creation, start, and
+polling. The test set it to 10 ms while claiming to exercise a polling timeout. Under full-suite CPU
+pressure that deadline could expire during upload or test creation. A nil result is therefore the
+only correct outcome: no durable test identity exists yet. The existing preparation-timeout test
+already owns that contract.
+
+**Fix.** `ApiClient` now has an unexported polling-wait seam. This test invokes
+`runPreparedTestContext` with a non-expiring preparation context and injects
+`context.DeadlineExceeded` only when polling begins. It deterministically proves the intended
+behavior without weakening the command-wide production timeout or replacing one fragile duration
+with a larger one.
+
+**Evidence:** 200 consecutive repetitions passed in 1.0 s, followed by 200 with the race detector
+in 3.2 s. The full repository suite is rerun as part of the owning M1 commit verification.
 
 ## FLAKE-1 — a 30 ms real-clock TTL in the epoch-fencing tests
 
