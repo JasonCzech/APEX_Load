@@ -498,7 +498,7 @@ func (s *SQLiteStore) CommitBrunoNativeImport(commit *BrunoNativeImportCommit) (
 			Profile:              ImportBatchProfileBrunoNative,
 			ReceiptVersion:       ImportBatchReceiptVersion1,
 			IdempotencyKey:       commit.Batch.IdempotencyKey,
-			RequestDigestProfile: ImportBatchDigestBrunoNativeCommitV1,
+			RequestDigestProfile: digestProfileOrDefault(commit.Batch.RequestDigestProfile),
 			RequestSHA256:        commit.Batch.RequestSHA256,
 			RawArtifactID:        commit.Batch.RawArtifactID,
 			SanitizedArtifactID:  commit.Batch.SanitizedArtifactID,
@@ -566,15 +566,26 @@ func brunoNativeBatchPtrFromImportReceipt(receipt *ImportBatchReceipt) *BrunoNat
 
 func brunoNativeBatchFromImportReceipt(receipt ImportBatchReceipt) BrunoNativeImportBatch {
 	return BrunoNativeImportBatch{
-		ID:                  receipt.ID,
-		ProjectID:           receipt.ProjectID,
-		IdempotencyKey:      receipt.IdempotencyKey,
-		RequestSHA256:       receipt.RequestSHA256,
-		RawArtifactID:       receipt.RawArtifactID,
-		SanitizedArtifactID: receipt.SanitizedArtifactID,
-		CandidateIDs:        append([]string(nil), receipt.CandidateIDs...),
-		ScriptIDs:           append([]string(nil), receipt.ScriptIDs...),
-		CreatedBy:           receipt.CreatedBy,
-		CreatedAt:           receipt.CreatedAt,
+		ID:                   receipt.ID,
+		ProjectID:            receipt.ProjectID,
+		IdempotencyKey:       receipt.IdempotencyKey,
+		RequestDigestProfile: digestProfileOrDefault(receipt.RequestDigestProfile),
+		RequestSHA256:        receipt.RequestSHA256,
+		RawArtifactID:        receipt.RawArtifactID,
+		SanitizedArtifactID:  receipt.SanitizedArtifactID,
+		CandidateIDs:         append([]string(nil), receipt.CandidateIDs...),
+		ScriptIDs:            append([]string(nil), receipt.ScriptIDs...),
+		CreatedBy:            receipt.CreatedBy,
+		CreatedAt:            receipt.CreatedAt,
 	}
+}
+
+// digestProfileOrDefault treats a blank profile as V1. Receipts written before
+// the profile was plumbed through carry no value, and they were all produced by
+// the V1 hash.
+func digestProfileOrDefault(profile string) string {
+	if strings.TrimSpace(profile) == "" {
+		return ImportBatchDigestBrunoNativeCommitV1
+	}
+	return strings.TrimSpace(profile)
 }

@@ -5,13 +5,13 @@
     "source": "pkg/api/server.go"
   },
   "totals": {
-    "routes": 545,
+    "routes": 548,
     "public": 22,
-    "protected": 523,
-    "rbac": 521,
+    "protected": 526,
+    "rbac": 524,
     "handler_authenticated": 2,
     "role_metadata_missing": 0,
-    "green": 545,
+    "green": 548,
     "partial": 0,
     "missing": 0
   },
@@ -5832,6 +5832,33 @@
     },
     {
       "method": "GET",
+      "path": "/api/v1/projects/{id}/secrets/{name}/usage",
+      "operation_id": "handleProjectSecretUsage",
+      "public": false,
+      "authenticated": true,
+      "state": "GREEN",
+      "enforcement": "authentication middleware and access catalog",
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read",
+      "anonymous_assertion": "HTTP 401 before handler",
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin",
+          "viewer"
+        ],
+        "project": [
+          "editor",
+          "project_admin",
+          "viewer"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "read"
+    },
+    {
+      "method": "GET",
       "path": "/api/v1/projects/{pid}/folders",
       "operation_id": "handleListFolders",
       "public": false,
@@ -9409,6 +9436,31 @@
     },
     {
       "method": "POST",
+      "path": "/api/v1/scripts/import/shared-values/apply",
+      "operation_id": "handleApplyImportSharedValues",
+      "public": false,
+      "authenticated": true,
+      "state": "GREEN",
+      "enforcement": "authentication middleware and access catalog",
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: scripts:write",
+      "anonymous_assertion": "HTTP 401 before handler",
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin"
+        ],
+        "project": [
+          "editor",
+          "project_admin"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "scripts:write"
+    },
+    {
+      "method": "POST",
       "path": "/api/v1/scripts/import/wsdl",
       "operation_id": "handleImportWSDL",
       "public": false,
@@ -9536,6 +9588,31 @@
       "method": "POST",
       "path": "/api/v1/scripts/secret-bindings/apply",
       "operation_id": "handleApplyScriptSecretBindings",
+      "public": false,
+      "authenticated": true,
+      "state": "GREEN",
+      "enforcement": "authentication middleware and access catalog",
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: scripts:write",
+      "anonymous_assertion": "HTTP 401 before handler",
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin"
+        ],
+        "project": [
+          "editor",
+          "project_admin"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "scripts:write"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/scripts/secret-references/rebind",
+      "operation_id": "handleRebindScriptSecretReference",
       "public": false,
       "authenticated": true,
       "state": "GREEN",

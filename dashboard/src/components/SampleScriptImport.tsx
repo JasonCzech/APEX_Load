@@ -12,7 +12,7 @@ import {
   type LoadedSample,
   type SampleFormat,
 } from './sampleImportUtils'
-import { type SampleImportResult, type SecretBindingSelection } from '../types/scriptImports'
+import { type SampleImportResult, type SecretBindingSelection, type SharedValues } from '../types/scriptImports'
 import { type StoredScript } from '../types'
 import { type ReplayPreflight, type ScriptDataSource, type ScriptDefinition, type SourceReview } from '../types/scripts'
 import { getErrorMessage } from '../utils/errorUtils'
@@ -30,7 +30,7 @@ import ReplayPreflightCard from './ReplayPreflightCard'
 import { buildLocalReplayPreflight } from './replayPreflightUtils'
 import { withFallbackPersistedScript } from './importSaveUtils'
 import { isValidSecretBindingName, refreshedSecretBindingRequirements, secretBindingReference } from './secretBindingUtils'
-import { credentialPreservingImportDraftRequiresSave } from './protectedImportSession'
+import { credentialPreservingImportDraftRequiresSave, earliestImportDraftExpiry } from './protectedImportSession'
 import { type ImportedSaveResult } from './useScriptsAuthoringState'
 import SecondsFromMillisecondsInput from './SecondsFromMillisecondsInput'
 import { useSourceSecretSessionLifecycle } from './sourceSecretSessionLifecycle'
@@ -920,6 +920,32 @@ export default function SampleScriptImport({ initialFiles, projectId, folderId, 
     })
   }
 
+  const handleSharedValuesApplied = (
+    updatedScripts: ScriptDefinition[],
+    _diffs: unknown[],
+    refreshed?: SharedValues,
+    importDraftExpiresAt?: (string | null)[],
+  ) => {
+    if (!result || updatedScripts.length === 0) return
+    advanceReviewGeneration()
+    resetSaveTask()
+    const preflight = buildLocalReplayPreflight(updatedScripts[0])
+    const scripts = updatedScripts.map((script, index) => (
+      index === 0 ? attachReplayPreflight(script, preflight) : script
+    ))
+    const rotatedExpiry = earliestImportDraftExpiry(importDraftExpiresAt)
+    const nextResult: SampleImportResult = {
+      ...result,
+      script: scripts[0],
+      scripts,
+      preflight,
+      ...(refreshed ? { shared_values: refreshed } : {}),
+      ...(rotatedExpiry ? { import_draft_expires_at: rotatedExpiry } : {}),
+    }
+    latestResultRef.current = nextResult
+    convertTask.setValue(nextResult)
+  }
+
   const handleSecretBindingsApply = async (bindings: SecretBindingSelection[]) => {
     if (!result || !reviewedScript) return
     const sourceGeneration = reviewGenerationRef.current
@@ -1232,6 +1258,9 @@ export default function SampleScriptImport({ initialFiles, projectId, folderId, 
             onParameterizationApplied={handleParameterizationApplied}
             secretBindingRequirements={result.secret_binding_requirements}
             onSecretBindingsApply={handleSecretBindingsApply}
+            sharedValues={result.shared_values}
+            sharedValueScripts={result.scripts}
+            onSharedValuesApplied={handleSharedValuesApplied}
             projectId={projectId}
             sourceSecretSessionId={result.source_secret_session_id}
             sourceSecretSessionExpiresAt={result.source_secret_session_expires_at}

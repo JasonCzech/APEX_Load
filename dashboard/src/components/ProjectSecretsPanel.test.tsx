@@ -12,6 +12,7 @@ import { NavigationGuardRegisterContext, type NavigationGuard } from '../hooks/N
 
 const apiMock = vi.hoisted(() => ({
   listProjectSecrets: vi.fn(),
+  getProjectSecretUsage: vi.fn(),
   createProjectSecrets: vi.fn(),
   rotateProjectSecret: vi.fn(),
 }))
@@ -62,6 +63,17 @@ describe('ProjectSecretsPanel', () => {
       count: 1,
     })
     apiMock.createProjectSecrets.mockResolvedValue({ project_id: 'project-1', secrets: [], count: 1 })
+    apiMock.getProjectSecretUsage.mockImplementation(async (projectId: string, name: string) => ({
+      project_id: projectId,
+      name,
+      usage_revision: 'usage-1',
+      consumer_count: 0,
+      reference_count: 0,
+      consumers: [],
+      limit: 50,
+      offset: 0,
+      has_more: false,
+    }))
     apiMock.rotateProjectSecret.mockResolvedValue({
       project_id: 'project-1',
       secret: { name: 'EXISTING_TOKEN', provider: 'encrypted_database', writable: true },
@@ -136,8 +148,57 @@ describe('ProjectSecretsPanel', () => {
     await act(async () => rotateConfirm?.click())
     await flushPromises()
 
-    expect(apiMock.rotateProjectSecret).toHaveBeenCalledWith('project-1', 'EXISTING_TOKEN', 'replacement-value')
+    expect(apiMock.rotateProjectSecret).toHaveBeenCalledWith('project-1', 'EXISTING_TOKEN', 'replacement-value', {
+      expected_usage_revision: 'usage-1',
+      acknowledge_shared_usage: undefined,
+    })
     expect(container.textContent).not.toContain('replacement-value')
+  })
+
+  it('paginates every consumer before a shared secret is rotated', async () => {
+    apiMock.getProjectSecretUsage
+      .mockResolvedValueOnce({
+        project_id: 'project-1',
+        name: 'EXISTING_TOKEN',
+        usage_revision: 'shared-usage-1',
+        consumer_count: 2,
+        reference_count: 3,
+        consumers: [{ script_id: 'script-1', script_name: 'Checkout', reference_count: 2 }],
+        limit: 1,
+        offset: 0,
+        has_more: true,
+      })
+      .mockResolvedValueOnce({
+        project_id: 'project-1',
+        name: 'EXISTING_TOKEN',
+        usage_revision: 'shared-usage-1',
+        consumer_count: 2,
+        reference_count: 3,
+        consumers: [{ script_id: 'script-2', script_name: 'Billing', reference_count: 1 }],
+        limit: 1,
+        offset: 1,
+        has_more: false,
+      })
+
+    await act(async () => {
+      root.render(<ProjectSecretsPanel projectId="project-1" projectName="Checkout" canCreate canRotate />)
+    })
+    await flushPromises()
+
+    const details = container.querySelector<HTMLDetailsElement>('details')!
+    details.open = true
+    expect(details.textContent).toContain('Checkout · 2')
+    const loadMore = Array.from(details.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent === 'Load more consumers')
+    await act(async () => loadMore?.click())
+    await flushPromises()
+
+    expect(apiMock.getProjectSecretUsage).toHaveBeenNthCalledWith(2, 'project-1', 'EXISTING_TOKEN', {
+      limit: 1,
+      offset: 1,
+    })
+    expect(details.textContent).toContain('Billing · 1')
+    expect(details.textContent).not.toContain('Load more consumers')
   })
 
   it('honors provider create and replace capabilities independently', async () => {

@@ -6,11 +6,13 @@ export default function ReplayPreflightCard({
   onConfigureSecrets,
   secretStatusState,
   onRetrySecretStatus,
+  configureSecretsLabel = 'Configure secrets',
 }: {
   preflight: ReplayPreflight
   onConfigureSecrets?: () => void
   secretStatusState?: 'checking' | 'unavailable'
   onRetrySecretStatus?: () => void
+  configureSecretsLabel?: string
 }) {
   const expectedActionCount = preflight.expected_action_count ?? preflight.action_count
   return (
@@ -53,7 +55,7 @@ export default function ReplayPreflightCard({
           </span>
           {onConfigureSecrets && (
             <button className="btn btn-secondary btn-sm" type="button" onClick={onConfigureSecrets}>
-              Configure secrets
+              {configureSecretsLabel}
             </button>
           )}
           {secretStatusState === 'unavailable' && onRetrySecretStatus && (
@@ -73,7 +75,7 @@ export default function ReplayPreflightCard({
           ))}
           {(preflight.missing_secrets?.length || 0) > 0 && onConfigureSecrets && (
             <button className="btn btn-secondary btn-sm" type="button" onClick={onConfigureSecrets}>
-              Configure secrets
+              {configureSecretsLabel}
             </button>
           )}
         </div>

@@ -3,7 +3,7 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { useApi } from '../hooks/useApi'
 import { ApiError } from '../hooks/apiClient'
 import { useNavigationGuard, type NavigationGuard } from '../hooks/NavigationGuardProvider'
-import { type ProjectSecretMetadata } from '../types/secrets'
+import { type ProjectSecretMetadata, type ProjectSecretUsage } from '../types/secrets'
 import { getErrorMessage } from '../utils/errorUtils'
 import { isValidSecretBindingName } from './secretBindingUtils'
 import './ProjectSecretsPanel.css'
@@ -58,16 +58,19 @@ export default function ProjectSecretsPanel({
   const activeMutationRef = useRef<{ id: number; projectId: string } | null>(null)
   const committedSecretsRef = useRef(new Map<string, ProjectSecretMetadata>())
   const [secrets, setSecrets] = useState<ProjectSecretMetadata[]>([])
+  const [usageByName, setUsageByName] = useState<Record<string, ProjectSecretUsage>>({})
   const [provider, setProvider] = useState('')
   const [writable, setWritable] = useState(false)
   const [createSupported, setCreateSupported] = useState(false)
   const [replaceSupported, setReplaceSupported] = useState(false)
   const [loading, setLoading] = useState(true)
   const [busyName, setBusyName] = useState('')
+  const [usageLoadingName, setUsageLoadingName] = useState('')
   const [newName, setNewName] = useState('')
   const [newValue, setNewValue] = useState('')
   const [rotateName, setRotateName] = useState('')
   const [rotateValue, setRotateValue] = useState('')
+  const [rotationAcknowledged, setRotationAcknowledged] = useState(false)
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
   const [loadError, setLoadError] = useState(false)
@@ -87,6 +90,11 @@ export default function ProjectSecretsPanel({
       const response = await api.listProjectSecrets(targetProjectId)
       if (!requestIsCurrent()) return null
       const listed = Array.isArray(response.secrets) ? response.secrets : []
+      const usages = typeof api.getProjectSecretUsage === 'function'
+        ? await Promise.all(listed.map(secret => api.getProjectSecretUsage(targetProjectId, secret.name, { limit: 50 })))
+        : []
+      if (!requestIsCurrent()) return null
+      setUsageByName(Object.fromEntries(usages.map(usage => [usage.name, usage])))
       const next = [...listed]
       committedSecretsRef.current.forEach((secret, name) => {
         const listedSecret = listed.find(candidate => candidate.name === name)
@@ -121,6 +129,7 @@ export default function ProjectSecretsPanel({
   useEffect(() => {
     loadRequestRef.current += 1
     setSecrets([])
+    setUsageByName({})
     setProvider('')
     setWritable(false)
     setCreateSupported(false)
@@ -129,10 +138,12 @@ export default function ProjectSecretsPanel({
     activeMutationRef.current = null
     committedSecretsRef.current.clear()
     setBusyName('')
+    setUsageLoadingName('')
     setNewName('')
     setNewValue('')
     setRotateName('')
     setRotateValue('')
+    setRotationAcknowledged(false)
     setMessage('')
     setError('')
     setLoadError(false)
@@ -142,6 +153,49 @@ export default function ProjectSecretsPanel({
   useEffect(() => {
     void load()
   }, [load])
+
+  const loadMoreConsumers = async (name: string): Promise<void> => {
+    const current = usageByName[name]
+    if (!current?.has_more || usageLoadingName) return
+    const targetProjectId = projectId
+    setUsageLoadingName(name)
+    setError('')
+    try {
+      const next = await api.getProjectSecretUsage(targetProjectId, name, {
+        limit: current.limit || 50,
+        offset: current.consumers.length,
+      })
+      if (activeProjectIdRef.current !== targetProjectId) return
+      if (next.usage_revision !== current.usage_revision) {
+        setMessage(`${name} usage changed while its consumers were loading. The vault inventory was refreshed.`)
+        await load()
+        return
+      }
+      setUsageByName(previous => {
+        const latest = previous[name]
+        if (!latest || latest.usage_revision !== current.usage_revision) return previous
+        const consumers = [...latest.consumers]
+        const existing = new Set(consumers.map(consumer => consumer.script_id))
+        next.consumers.forEach(consumer => {
+          if (!existing.has(consumer.script_id)) consumers.push(consumer)
+        })
+        return {
+          ...previous,
+          [name]: {
+            ...next,
+            consumers,
+            offset: 0,
+          },
+        }
+      })
+    } catch (err: unknown) {
+      if (activeProjectIdRef.current === targetProjectId) {
+        setError(getErrorMessage(err, `Unable to load more consumers for ${name}`))
+      }
+    } finally {
+      if (activeProjectIdRef.current === targetProjectId) setUsageLoadingName('')
+    }
+  }
 
   const normalizedNewName = newName.trim().toUpperCase().replace(/\s+/g, '_')
   const nameError = useMemo(() => {
@@ -239,7 +293,8 @@ export default function ProjectSecretsPanel({
 
   const rotateSecret = async (name: string): Promise<boolean> => {
     const secret = secrets.find(candidate => candidate.name === name)
-    if (activeMutationRef.current || !secret?.writable || !rotateValue || !canRotate || !writable || !replaceSupported) return false
+    const usage = usageByName[name]
+    if (activeMutationRef.current || !secret?.writable || !rotateValue || !canRotate || !writable || !replaceSupported || ((usage?.consumer_count || 0) > 1 && !rotationAcknowledged)) return false
     const targetProjectId = projectId
     const operation = { id: ++mutationSequenceRef.current, projectId: targetProjectId }
     activeMutationRef.current = operation
@@ -248,7 +303,12 @@ export default function ProjectSecretsPanel({
     setError('')
     setLoadError(false)
     try {
-      const response = await api.rotateProjectSecret(targetProjectId, name, rotateValue)
+      const response = usage
+        ? await api.rotateProjectSecret(targetProjectId, name, rotateValue, {
+            expected_usage_revision: usage.usage_revision,
+            acknowledge_shared_usage: usage.consumer_count > 1 ? rotationAcknowledged : undefined,
+          })
+        : await api.rotateProjectSecret(targetProjectId, name, rotateValue)
       if (activeProjectIdRef.current !== targetProjectId || activeMutationRef.current !== operation) return false
       const committed = response.secret || response.secrets?.find(secret => secret.name === name)
       if (committed) {
@@ -257,6 +317,7 @@ export default function ProjectSecretsPanel({
       }
       setRotateName('')
       setRotateValue('')
+      setRotationAcknowledged(false)
       setMessage(`${name} was rotated. Its previous value is no longer available to APEX Load.`)
       await load()
       return true
@@ -290,7 +351,8 @@ export default function ProjectSecretsPanel({
     setNewName('')
     setNewValue('')
     setRotateName('')
-    setRotateValue('')
+      setRotateValue('')
+      setRotationAcknowledged(false)
     setReconciliation(null)
     setError('')
   }
@@ -308,9 +370,9 @@ export default function ProjectSecretsPanel({
       <div className="settings-subsection">
         <div className="settings-manager-summary">
           <div>
-            <span className="setting-label">Project Secrets</span>
+            <span className="setting-label">Project Secret Vault</span>
             <span className="setting-desc">
-              Write-only credentials for {projectName}. Values are encrypted by the configured provider and are never returned to the browser.
+              Inventory, provider health, consumers, orphaned entries, and administrative rotation for {projectName}. Values are never returned to the browser; scripts are normally configured from their Secret Bindings dialog.
             </span>
           </div>
           <span className={`script-health-token ${writable ? 'healthy' : 'warning'}`}>
@@ -365,7 +427,30 @@ export default function ProjectSecretsPanel({
                   <span>
                     {secret.provider || provider || 'project provider'}{secret.writable ? '' : ' · read-only'} · Updated {formatTimestamp(secret.updated_at)}
                   </span>
+                  <span>
+                    {usageByName[secret.name]?.consumer_count
+                      ? `${usageByName[secret.name].consumer_count} consuming script${usageByName[secret.name].consumer_count === 1 ? '' : 's'} · ${usageByName[secret.name].reference_count} reference${usageByName[secret.name].reference_count === 1 ? '' : 's'}`
+                      : 'Unused vault entry'}
+                  </span>
                   {secret.created_by && <span>Created by {secret.created_by}</span>}
+                  {(usageByName[secret.name]?.consumers.length || 0) > 0 && (
+                    <details>
+                      <summary>Consumers</summary>
+                      <ul>{usageByName[secret.name].consumers.map(consumer => (
+                        <li key={consumer.script_id}>{consumer.script_name} · {consumer.reference_count}</li>
+                      ))}</ul>
+                      {usageByName[secret.name].has_more && (
+                        <button
+                          className="btn btn-ghost btn-sm"
+                          type="button"
+                          disabled={Boolean(usageLoadingName)}
+                          onClick={() => { void loadMoreConsumers(secret.name) }}
+                        >
+                          {usageLoadingName === secret.name ? 'Loading consumers...' : 'Load more consumers'}
+                        </button>
+                      )}
+                    </details>
+                  )}
                 </div>
                 {rotateName === secret.name ? (
                   <div className="project-secret-rotate">
@@ -380,11 +465,21 @@ export default function ProjectSecretsPanel({
                       autoComplete="new-password"
                       placeholder="Enter replacement value"
                     />
+                    {(usageByName[secret.name]?.consumer_count || 0) > 1 && (
+                      <label className="project-secret-shared-rotation-ack">
+                        <input
+                          type="checkbox"
+                          checked={rotationAcknowledged}
+                          onChange={event => setRotationAcknowledged(event.target.checked)}
+                        />
+                        Rotate for all {usageByName[secret.name].consumer_count} consuming scripts
+                      </label>
+                    )}
                     <button
                       className="btn btn-primary btn-sm"
                       type="button"
                       onClick={() => { void rotateSecret(secret.name) }}
-                      disabled={!secret.writable || !canRotate || !writable || !replaceSupported || !rotateValue || Boolean(busyName)}
+                      disabled={!secret.writable || !canRotate || !writable || !replaceSupported || !rotateValue || Boolean(busyName) || ((usageByName[secret.name]?.consumer_count || 0) > 1 && !rotationAcknowledged)}
                     >
                       {busyName === secret.name ? 'Rotating...' : 'Rotate'}
                     </button>
@@ -396,6 +491,7 @@ export default function ProjectSecretsPanel({
                         if (activeMutationRef.current) return
                         setRotateName('')
                         setRotateValue('')
+                        setRotationAcknowledged(false)
                       }}
                     >
                       Cancel
@@ -409,6 +505,7 @@ export default function ProjectSecretsPanel({
                       if (activeMutationRef.current) return
                       setRotateName(secret.name)
                       setRotateValue('')
+                      setRotationAcknowledged(false)
                     }}
                     disabled={!secret.writable || !canRotate || !writable || !replaceSupported || Boolean(busyName)}
                     title={!secret.writable ? 'This secret is managed by a read-only provider and cannot be rotated here.' : undefined}

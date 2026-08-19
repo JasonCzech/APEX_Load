@@ -1469,7 +1469,6 @@ button.command-group-name:focus-visible {
   min-width: 0;
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 12px;
   padding: 10px;
   border: 1px solid var(--border);
@@ -1482,6 +1481,11 @@ button.command-group-name:focus-visible {
   display: flex;
   flex-wrap: wrap;
   gap: 7px;
+  margin-right: auto;
+}
+
+.command-table-tabs .table-pagination-toolbar {
+  margin: 0;
 }
 
 .command-table-tab-buttons button {

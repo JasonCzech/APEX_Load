@@ -32,6 +32,14 @@ function shouldManageTable(table: HTMLTableElement): boolean {
 }
 
 function getToolbarInsertionTarget(table: HTMLTableElement): HTMLElement {
+  // The command center's main tab table (scenario/errors/infrastructure, but
+  // not the secondary error-evidence table) shares a row with its tab buttons
+  // and filter box, so its pagination toolbar is docked there instead of
+  // floating above the table.
+  if (table.closest('.command-table-surface') && !table.closest('.command-evidence-table-wrap')) {
+    const filterLabel = table.closest('.command-run-tables')?.querySelector('.command-table-filter')
+    if (filterLabel instanceof HTMLElement) return filterLabel
+  }
   const wrapper = table.closest('.data-table')
   if (wrapper instanceof HTMLElement) return wrapper
   return table

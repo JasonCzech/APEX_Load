@@ -14,7 +14,7 @@ interface Props {
   activeProject?: Project | null
   scripts?: StoredScript[]
   createOptionActions: ScriptsCreateOptionActions
-  onSaved: (script: StoredScript) => void
+  onSaved: ScriptsAuthoringSurfaceProps['onSaved']
   onOpenLibrary: () => void
   onOpenCreateOptions: () => void
   onImported: (result: ImportedSaveResult) => void

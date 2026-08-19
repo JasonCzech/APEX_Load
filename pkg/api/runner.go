@@ -181,45 +181,48 @@ type runtimeSecretRecoveryState struct {
 }
 
 type TestRunner struct {
-	tests                   map[string]*ManagedTest
-	scripts                 map[string]*StoredScript
-	privateCISnapshots      map[string]int
-	scenarios               map[string]*StoredScenario
-	archives                map[string]*storage.RunArchiveRecord
-	deletingProjects        map[string]struct{}
-	projectDeletionGates    projectMutationCoordinator
-	projectDeletionUnlock   map[string]func()
-	shuttingDown            bool
-	mu                      sync.RWMutex
-	scriptMutationMu        sync.Mutex
-	scenarioMutationMu      sync.Mutex
-	compatCreateMu          sync.Mutex
-	reservedLaunchCreateMu  sync.Mutex
-	contentRevision         uint64
-	contentReloadMu         sync.Mutex
-	haScriptRefresh         haRefreshCoalescer
-	testReloadMu            sync.Mutex
-	haTestRefresh           haRefreshCoalescer
-	capacityBindingRefresh  haRefreshCoalescer
-	haScenarioRefreshMu     sync.Mutex
-	haScenarioRefreshAt     time.Time
-	schedulerContentMu      sync.Mutex
-	schedulerContentToken   string
-	schedulerContentKnown   bool
-	activeStopMu            sync.Mutex
-	runtimeAdjustmentMu     sync.Mutex
-	remoteControlMu         sync.Mutex
-	remoteControlGates      map[string]*distributedControlGate
-	hub                     *Hub
-	maxTests                int
-	defaultMaxTests         int
-	settings                SystemSettings
-	settingsRefreshMu       sync.Mutex
-	settingsWriteMu         sync.Mutex
-	settingsAuthRefreshAt   time.Time
-	settingsRefreshInFlight chan struct{}
-	systemSettingsRaw       string
-	settingsRevision        uint64
+	tests                 map[string]*ManagedTest
+	scripts               map[string]*StoredScript
+	privateCISnapshots    map[string]int
+	scenarios             map[string]*StoredScenario
+	archives              map[string]*storage.RunArchiveRecord
+	deletingProjects      map[string]struct{}
+	projectDeletionGates  projectMutationCoordinator
+	projectDeletionUnlock map[string]func()
+	// secretReferenceMutations is shared with Server so every durable script
+	// mutation path fences the usage snapshots used by secret create/rotation.
+	secretReferenceMutations *projectMutationCoordinator
+	shuttingDown             bool
+	mu                       sync.RWMutex
+	scriptMutationMu         sync.Mutex
+	scenarioMutationMu       sync.Mutex
+	compatCreateMu           sync.Mutex
+	reservedLaunchCreateMu   sync.Mutex
+	contentRevision          uint64
+	contentReloadMu          sync.Mutex
+	haScriptRefresh          haRefreshCoalescer
+	testReloadMu             sync.Mutex
+	haTestRefresh            haRefreshCoalescer
+	capacityBindingRefresh   haRefreshCoalescer
+	haScenarioRefreshMu      sync.Mutex
+	haScenarioRefreshAt      time.Time
+	schedulerContentMu       sync.Mutex
+	schedulerContentToken    string
+	schedulerContentKnown    bool
+	activeStopMu             sync.Mutex
+	runtimeAdjustmentMu      sync.Mutex
+	remoteControlMu          sync.Mutex
+	remoteControlGates       map[string]*distributedControlGate
+	hub                      *Hub
+	maxTests                 int
+	defaultMaxTests          int
+	settings                 SystemSettings
+	settingsRefreshMu        sync.Mutex
+	settingsWriteMu          sync.Mutex
+	settingsAuthRefreshAt    time.Time
+	settingsRefreshInFlight  chan struct{}
+	systemSettingsRaw        string
+	settingsRevision         uint64
 	// readinessRuntime is a fixed-size immutable projection published only
 	// while mu is held. readinessScheduler is the mutable counter source for
 	// that combined projection and is likewise guarded by mu.
@@ -1373,6 +1376,14 @@ func WithProjectSecretStore(store secretstore.Store) TestRunnerOption {
 	}
 }
 
+func withSecretReferenceMutationCoordinator(coordinator *projectMutationCoordinator) TestRunnerOption {
+	return func(tr *TestRunner) {
+		if coordinator != nil {
+			tr.secretReferenceMutations = coordinator
+		}
+	}
+}
+
 func (tr *TestRunner) secretResolverForProject(projectID string) engine.SecretResolver {
 	if secretBindingEnforcementDisabled() {
 		// Explicitly opted-in development mode keeps secret placeholders runnable
@@ -1431,6 +1442,7 @@ func NewTestRunner(maxTests int, hub *Hub, store storage.Store, opts ...TestRunn
 		archives:                     make(map[string]*storage.RunArchiveRecord),
 		deletingProjects:             make(map[string]struct{}),
 		projectDeletionUnlock:        make(map[string]func()),
+		secretReferenceMutations:     &projectMutationCoordinator{},
 		hub:                          hub,
 		maxTests:                     maxTests,
 		defaultMaxTests:              maxTests,

@@ -1510,6 +1510,45 @@ func resolveParameterizeApplyProjectID(r *http.Request, _ storage.Store) (string
 	return normalizeProjectID(req.Script.ProjectID), 0, ""
 }
 
+// resolveSharedValuesApplyProjectID scopes the collection-wide shared-value
+// apply endpoint. Every script in one import draft belongs to the same project,
+// so the first draft that names one is authoritative; a request that mixes
+// projects is rejected rather than authorized against only its first entry.
+func resolveSharedValuesApplyProjectID(r *http.Request, _ storage.Store) (string, int, string) {
+	type draftRef struct {
+		ProjectID string `json:"project_id,omitempty"`
+	}
+	var req struct {
+		Scripts []*draftRef `json:"scripts,omitempty"`
+		Script  *draftRef   `json:"script,omitempty"`
+	}
+	if err := decodeRequestBody(r, &req); err != nil {
+		return "", http.StatusBadRequest, "invalid request body: " + err.Error()
+	}
+	drafts := req.Scripts
+	if len(drafts) == 0 && req.Script != nil {
+		drafts = []*draftRef{req.Script}
+	}
+	projectID := ""
+	for _, draft := range drafts {
+		if draft == nil {
+			continue
+		}
+		normalized := normalizeProjectID(draft.ProjectID)
+		if normalized == "" {
+			continue
+		}
+		if projectID != "" && projectID != normalized {
+			return "", http.StatusBadRequest, "every script in one shared-value apply must belong to the same project"
+		}
+		projectID = normalized
+	}
+	if projectID == "" {
+		return "", http.StatusBadRequest, "script.project_id is required for project-scoped shared-value access"
+	}
+	return projectID, 0, ""
+}
+
 func resolveAIAssistanceProjectID(r *http.Request, store storage.Store) (string, int, string) {
 	var req struct {
 		ProjectID        string `json:"project_id,omitempty"`

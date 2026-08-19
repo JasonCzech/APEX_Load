@@ -30,6 +30,7 @@ import SecretBindingReview, {
   type SecretBindingReviewHandle,
 } from './SecretBindingReview'
 import ParameterizationReview from './ParameterizationReview'
+import SharedImportValues from './SharedImportValues'
 import { formatBytes } from './settingsPageFormatters'
 import { type ImportedSaveResult } from './useScriptsAuthoringState'
 import {
@@ -521,6 +522,10 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
   const [committedDeferredSecretCount, setCommittedDeferredSecretCount] = useState(0)
   const [parameterizationSelectedIds, setParameterizationSelectedIds] = useState<string[]>([])
   const [parameterizationApplying, setParameterizationApplying] = useState(false)
+  // Bruno artifacts never leave the server, so collection values are collected
+  // here and applied server-side by the native commit rather than through the
+  // generic shared-values apply endpoint.
+  const [sharedValueSelections, setSharedValueSelections] = useState<Record<string, string>>({})
   const [revisions, setRevisions] = useState<BrunoSourceRevision[]>([])
   const [projection, setProjection] = useState<BrunoProjectionPreview | null>(null)
   const [loading, setLoading] = useState(false)
@@ -916,6 +921,9 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
   useEffect(() => {
     setParameterizationSelectedIds([])
     setParameterizationApplying(false)
+    // Candidate IDs are derived from one specific inspection. Carrying a
+    // selection into a new session would send IDs the server cannot re-derive.
+    setSharedValueSelections({})
   }, [inspection?.import_session_id])
 
   useEffect(() => {
@@ -1140,6 +1148,9 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
             .filter(requirement => secretBindingsRef.current[requirement.id])
             .map(requirement => [requirement.id, secretBindingsRef.current[requirement.id]])),
           acknowledged_finding_ids: nativeReviewFindingIds,
+          ...(Object.keys(sharedValueSelections).length > 0
+            ? { shared_values: sharedValueSelections }
+            : {}),
         })
         : await api.commitBrunoImport({
           project_id: projectId,
@@ -1937,10 +1948,23 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
             </section>
           )}
 
+          {outputMode === 'native_requests' && inspection.shared_values && (inspection.shared_values.candidates?.length ?? 0) > 0 && !committed && (
+            <section className="bruno-card">
+              <SharedImportValues
+                sharedValues={inspection.shared_values}
+                collectOnly
+                scriptCount={selectedNativeCandidates.length}
+                onValuesChange={setSharedValueSelections}
+                reviewGeneration={`${sourceGeneration}:${projectId || ''}`}
+                disabled={loading || protectedSessionExpired}
+              />
+            </section>
+          )}
+
           {(inspection.result.missing_variables || []).length > 0 && (
             <section className="bruno-card">
               <h3>Preflight requirements</h3>
-              <p>These values were referenced but not defined in the uploaded source. Provide them through Bruno environments or APEX runtime bindings before execution.</p>
+              <p>These values were referenced but not defined in the uploaded source. Supply them above under Collection Values, through Bruno environments, or through APEX runtime bindings before execution.</p>
               <div className="bruno-capability-list">
                 {(inspection.result.missing_variables || []).map(variable => <span key={variable}>{variable}</span>)}
               </div>

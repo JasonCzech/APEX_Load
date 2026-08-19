@@ -127,6 +127,69 @@ export interface ApplyParameterizationResponse {
   warnings?: string[]
 }
 
+// A value the whole collection shares, entered once during import review and
+// written into every generated script. See pkg/convert/sharedvalue.
+export type SharedValueKind = 'existing_parameter' | 'source_variable' | 'repeated_literal'
+
+export interface SharedValueCandidate {
+  id: string
+  kind: SharedValueKind | string
+  name: string
+  source_variable?: string
+  // The only value a candidate carries: what the operator will edit. Empty for
+  // a credential-shaped candidate, which never leaves the server with a value.
+  current_value?: string
+  occurrence_count: number
+  script_names?: string[]
+  // Credential-shaped candidates are never applied as parameters: a parameter
+  // of that name is masked out of every disclosure-safe read, so the value
+  // would be destroyed on the next save. They route to Secret Bindings instead.
+  credential_shaped?: boolean
+  rationale?: string
+  targets_base_url?: boolean
+}
+
+export interface SharedValueSummary {
+  total: number
+  by_kind: Record<string, number>
+  credential_count: number
+  multi_script_count: number
+}
+
+export interface SharedValues {
+  candidates: SharedValueCandidate[]
+  summary: SharedValueSummary
+  warnings?: string[]
+}
+
+export interface SharedValueDiff {
+  candidate_id?: string
+  script_name?: string
+  path: string
+  before?: string
+  after?: string
+}
+
+export interface ApplySharedValuesRequest {
+  scripts: ScriptDefinition[]
+  values: Record<string, string>
+}
+
+export interface ApplySharedValuesResponse {
+  scripts: ScriptDefinition[]
+  diffs: SharedValueDiff[]
+  applied_count: number
+  warnings?: string[]
+  // Parallel to scripts by position, null where a script needed no rotation.
+  // Script names are not unique across a batch, so a name-keyed map would drop
+  // one draft's rotated capability.
+  import_draft_expires_at?: (string | null)[]
+  // Re-derived from the mutated scripts. Applying a value changes what the
+  // collection shares, so the caller must replace its stored block with this
+  // one rather than keep showing the pre-apply candidates.
+  shared_values?: SharedValues
+}
+
 // A credential location presented for operator review. Most imports expose a
 // redacted location that can be replaced with a governed {{secret.NAME}}
 // reference. A server-marked preservation import may instead retain the
@@ -202,6 +265,7 @@ export interface ScriptImportResult<
   source_review?: SourceReview
   trueclient2_compat_report?: TrueClient2CompatReport
   parameterization?: Parameterization
+  shared_values?: SharedValues
   secret_binding_requirements?: SecretBindingRequirement[]
   secret_store?: {
     provider: string
@@ -1078,8 +1142,9 @@ type BrunoNativeInspectResult =
   }
 
 export type BrunoInspectResponse =
-  Omit<BrunoAPISchemas['BrunoInspectResponse'], 'parameterization' | 'result'> & {
+  Omit<BrunoAPISchemas['BrunoInspectResponse'], 'parameterization' | 'result' | 'shared_values'> & {
     parameterization: Parameterization | null
+    shared_values?: SharedValues
     result: BrunoCanonicalInspectResult | BrunoNativeInspectResult
   }
 

@@ -1,4 +1,5 @@
 import type { StoredScript } from '../types'
+import type { ScriptDefinition } from '../types/scripts'
 
 const LOGICAL_SECRET_NAME = /^[A-Za-z0-9_.-]{1,249}$/
 const SECRET_TEMPLATE = /\{\{\s*secret\.\s*([A-Za-z0-9_.-]{1,249})\s*\}\}/g
@@ -84,6 +85,70 @@ function collectSecretNames(
   if (dedicatedField && !candidate.includes('{{') && LOGICAL_SECRET_NAME.test(candidate)) {
     names.add(canonicalSecretName(candidate))
   }
+}
+
+export interface ScriptSecretReferenceSummary {
+  name: string
+  occurrence_count: number
+  locations: string[]
+}
+
+function collectSecretReferenceSummaries(
+  value: unknown,
+  summaries: Map<string, { count: number; locations: Set<string> }>,
+  root = false,
+  dedicatedField = false,
+  path = '',
+): void {
+  if (Array.isArray(value)) {
+    value.forEach((child, index) => collectSecretReferenceSummaries(child, summaries, false, dedicatedField, `${path}/${index}`))
+    return
+  }
+  if (value !== null && typeof value === 'object') {
+    const record = value as Record<string, unknown>
+    if (reviewOnlyAction(record)) return
+    const encodedBody = typeof record.body === 'string' && String(record.body_encoding || '').trim().toLowerCase() === 'base64'
+    if (encodedBody) {
+      collectSecretReferenceSummaries(decodedBase64Text(record.body as string), summaries, false, false, `${path}/body`)
+    }
+    Object.entries(record).forEach(([key, child]) => {
+      const normalizedKey = key.trim().toLowerCase()
+      if (root && NON_EXECUTABLE_ROOT_FIELDS.has(normalizedKey)) return
+      if (encodedBody && normalizedKey === 'body') return
+      if (path === '/config/java_vuser' && normalizedKey === 'additional_vm_parameters') return
+      collectSecretReferenceSummaries(
+        child,
+        summaries,
+        false,
+        DEDICATED_SECRET_FIELDS.has(normalizedKey),
+        `${path}/${key.replace(/~/g, '~0').replace(/\//g, '~1')}`,
+      )
+    })
+    return
+  }
+  if (typeof value !== 'string') return
+
+  const recordOccurrence = (rawName: string) => {
+    const name = canonicalSecretName(rawName)
+    const summary = summaries.get(name) || { count: 0, locations: new Set<string>() }
+    summary.count += 1
+    summary.locations.add(path)
+    summaries.set(name, summary)
+  }
+  for (const match of value.matchAll(SECRET_TEMPLATE)) recordOccurrence(match[1])
+  const candidate = value.trim()
+  if (dedicatedField && !candidate.includes('{{') && LOGICAL_SECRET_NAME.test(candidate)) recordOccurrence(candidate)
+}
+
+export function scriptSecretReferenceSummaries(script?: ScriptDefinition | null): ScriptSecretReferenceSummary[] {
+  if (!script) return []
+  const summaries = new Map<string, { count: number; locations: Set<string> }>()
+  collectSecretReferenceSummaries(script, summaries, true)
+  return Array.from(summaries, ([name, summary]) => ({
+    name,
+    occurrence_count: summary.count,
+    locations: Array.from(summary.locations).sort(),
+  })).sort((left, right) => left.name.localeCompare(right.name))
 }
 
 export function requiredScriptSecrets(script: StoredScript): string[] {

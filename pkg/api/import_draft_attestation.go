@@ -964,3 +964,87 @@ func fullImportDraftExecutionDigest(script *dsl.Script) (string, error) {
 	sum := sha256.Sum256(payload)
 	return hex.EncodeToString(sum[:]), nil
 }
+
+// completeImportDraftMutations rotates the capabilities of a whole batch of
+// credential-preserving drafts, lifting completeImportDraftMutation's two-phase
+// ordering from one script to many.
+//
+// Calling completeImportDraftMutation in a loop looks equivalent but is not: a
+// failure on the third script leaves the first two with their old capabilities
+// already consumed and their new ones attached only to the server's in-memory
+// copies, which the caller then discards along with the error response. Those
+// drafts become unsaveable and the operator has to re-import — precisely the
+// stranding the single-script ordering exists to prevent.
+//
+// Phase one issues every new capability and rolls all of them back if any
+// fails, which is where the capacity error lives. Phase two consumes the old
+// ones, after asserting ownership of every protected lease up front so the
+// common failure is caught before anything is consumed. Once phase one has
+// completed, replacementReady is true: a later cleanup failure must not cause
+// the caller to discard those usable replacements and strand the draft.
+//
+// claims and scripts are index-parallel; a nil claim means that script needs no
+// rotation and reports a zero expiry.
+func (s *Server) completeImportDraftMutations(
+	r *http.Request,
+	claims []*importDraftAttestationClaim,
+	scripts []*dsl.Script,
+) ([]time.Time, bool, error) {
+	expiries := make([]time.Time, len(claims))
+	if len(claims) != len(scripts) {
+		return nil, false, errors.New("import draft rotation requires index-parallel claims and scripts")
+	}
+
+	attached := make([]int, 0, len(claims))
+	rollback := func() {
+		for _, index := range attached {
+			s.discardImportDraftAttestation(r, scripts[index])
+		}
+	}
+
+	for index, claim := range claims {
+		if claim == nil {
+			stripImportDraftAttestation(scripts[index])
+			continue
+		}
+		if err := s.assertImportDraftAttestationOwned(claim); err != nil {
+			rollback()
+			return nil, false, err
+		}
+		stripImportDraftAttestation(scripts[index])
+		expiresAt, err := s.attachImportDraftAttestationWithExpiry(
+			r,
+			scripts[index],
+			claim.RecordingSessionID,
+			claim.RecordingSnapshotDigest,
+		)
+		if err != nil {
+			rollback()
+			return nil, false, err
+		}
+		attached = append(attached, index)
+		expiries[index] = expiresAt
+	}
+
+	cleanupErr := completeImportDraftAttestationBatch(claims, s.completeImportDraftAttestation)
+	return expiries, true, cleanupErr
+}
+
+func completeImportDraftAttestationBatch(
+	claims []*importDraftAttestationClaim,
+	complete func(*importDraftAttestationClaim) error,
+) error {
+	var cleanupErr error
+	for _, claim := range claims {
+		if claim == nil {
+			continue
+		}
+		if err := complete(claim); err != nil {
+			// Every replacement capability is already durable and attached to the
+			// response script. Continue consuming the remaining old claims and let
+			// the caller return the replacements with a cleanup warning.
+			cleanupErr = errors.Join(cleanupErr, err)
+		}
+	}
+	return cleanupErr
+}

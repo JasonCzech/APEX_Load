@@ -72,16 +72,21 @@ type BrunoImportCommitResult struct {
 // Source artifacts are shared by every script in the batch instead of being
 // copied into each script's metadata.
 type BrunoNativeImportBatch struct {
-	ID                  string    `json:"id"`
-	ProjectID           string    `json:"project_id"`
-	IdempotencyKey      string    `json:"idempotency_key"`
-	RequestSHA256       string    `json:"request_sha256"`
-	RawArtifactID       string    `json:"raw_artifact_id,omitempty"`
-	SanitizedArtifactID string    `json:"sanitized_artifact_id"`
-	CandidateIDs        []string  `json:"candidate_ids"`
-	ScriptIDs           []string  `json:"script_ids"`
-	CreatedBy           string    `json:"created_by,omitempty"`
-	CreatedAt           time.Time `json:"created_at"`
+	ID             string `json:"id"`
+	ProjectID      string `json:"project_id"`
+	IdempotencyKey string `json:"idempotency_key"`
+	// RequestDigestProfile names the hash function the receipt's RequestSHA256
+	// was produced with. A replay must verify against the profile the receipt
+	// was written under, not whichever profile the server writes today, or
+	// receipts predating a profile change would all read as conflicts.
+	RequestDigestProfile string    `json:"request_digest_profile,omitempty"`
+	RequestSHA256        string    `json:"request_sha256"`
+	RawArtifactID        string    `json:"raw_artifact_id,omitempty"`
+	SanitizedArtifactID  string    `json:"sanitized_artifact_id"`
+	CandidateIDs         []string  `json:"candidate_ids"`
+	ScriptIDs            []string  `json:"script_ids"`
+	CreatedBy            string    `json:"created_by,omitempty"`
+	CreatedAt            time.Time `json:"created_at"`
 }
 
 type BrunoNativeImportCommit struct {

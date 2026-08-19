@@ -350,7 +350,36 @@ func (tr *TestRunner) StoreScript(script *dsl.Script) *StoredScript {
 }
 
 func (tr *TestRunner) StoreScriptDurable(script *dsl.Script) (*StoredScript, error) {
+	if script == nil {
+		return nil, fmt.Errorf("script is required")
+	}
+	releaseReferenceMutation, err := tr.acquireSecretReferenceMutation(script.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	defer releaseReferenceMutation()
 	return tr.storeScriptDurable(script, false)
+}
+
+func (tr *TestRunner) acquireSecretReferenceMutation(projectID string) (func(), error) {
+	if tr == nil || tr.secretReferenceMutations == nil {
+		return func() {}, nil
+	}
+	return tr.secretReferenceMutations.acquireDurable(projectID)
+}
+
+func (tr *TestRunner) scriptProjectIDForSecretReferenceMutation(id string) string {
+	if tr == nil {
+		return ""
+	}
+	tr.mu.RLock()
+	id = tr.resolveRefKeyLocked(strings.TrimSpace(id))
+	projectID := ""
+	if stored := tr.scripts[id]; stored != nil {
+		projectID = stored.ProjectID
+	}
+	tr.mu.RUnlock()
+	return projectID
 }
 
 func (tr *TestRunner) prepareGitHubScriptImportLocked(script *dsl.Script) (*dsl.Script, *dsl.Script, error) {
@@ -436,9 +465,17 @@ func (tr *TestRunner) StoreGitHubScriptImportDurable(
 	script *dsl.Script,
 	link *storage.GitHubScriptLink,
 ) (*StoredScript, storage.GitHubScriptImportOutcome, error) {
+	if script == nil {
+		return nil, storage.GitHubScriptImportConflict, fmt.Errorf("script is required")
+	}
 	if link == nil {
 		return nil, storage.GitHubScriptImportConflict, fmt.Errorf("github script import link is required")
 	}
+	releaseReferenceMutation, err := tr.acquireSecretReferenceMutation(script.ProjectID)
+	if err != nil {
+		return nil, storage.GitHubScriptImportConflict, err
+	}
+	defer releaseReferenceMutation()
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
 	tr.beginLockHeldDurableWrite()
@@ -525,6 +562,14 @@ func (tr *TestRunner) StoreGitHubScriptImportDurable(
 // persistence paths must use StoreScriptDurable and cannot manufacture legacy
 // full_lifecycle grandfathering.
 func (tr *TestRunner) storeScriptDurableForRestore(script *dsl.Script) (*StoredScript, error) {
+	if script == nil {
+		return nil, fmt.Errorf("script is required")
+	}
+	releaseReferenceMutation, err := tr.acquireSecretReferenceMutation(script.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	defer releaseReferenceMutation()
 	return tr.storeScriptDurable(script, true)
 }
 
@@ -772,6 +817,11 @@ func (tr *TestRunner) createScriptDurable(
 	if script == nil {
 		return nil, false, fmt.Errorf("script is required")
 	}
+	releaseReferenceMutation, err := tr.acquireSecretReferenceMutation(script.ProjectID)
+	if err != nil {
+		return nil, false, err
+	}
+	defer releaseReferenceMutation()
 	if scriptRequiresJavaVuserAuthoringApproval(script) && !authoringApprovedJava {
 		return nil, false, fmt.Errorf("Java Vuser scripts must be saved through authoring-session review and approval")
 	}
@@ -790,7 +840,6 @@ func (tr *TestRunner) createScriptDurable(
 		return nil, false, err
 	}
 	var projected *dsl.Script
-	var err error
 	if trustedImport {
 		projected, err = preparePersistentImportedLibraryScript(script, nil, sourceProfile)
 	} else {
@@ -901,6 +950,11 @@ func (tr *TestRunner) UpdateScriptDurableIfUnchanged(script, expected *dsl.Scrip
 	if err := validatePersistentLibraryScript(script); err != nil {
 		return nil, false, err
 	}
+	releaseReferenceMutation, err := tr.acquireSecretReferenceMutation(expected.ProjectID)
+	if err != nil {
+		return nil, false, err
+	}
+	defer releaseReferenceMutation()
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
 	tr.beginLockHeldDurableWrite()
@@ -985,6 +1039,11 @@ func (tr *TestRunner) UpdateScriptDurableIfUnchanged(script, expected *dsl.Scrip
 // while its durable version still matches the import journal. A concurrent
 // editor therefore wins over rollback instead of having their update erased.
 func (tr *TestRunner) DeleteScriptDurableIfUnchanged(id string, expectedUpdatedAt time.Time) (bool, error) {
+	releaseReferenceMutation, err := tr.acquireSecretReferenceMutation(tr.scriptProjectIDForSecretReferenceMutation(id))
+	if err != nil {
+		return false, err
+	}
+	defer releaseReferenceMutation()
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
 	tr.beginLockHeldDurableWrite()
@@ -1428,6 +1487,15 @@ func (tr *TestRunner) updateScriptDurableInProject(
 	if err := validatePersistentLibraryScript(script); err != nil {
 		return nil, false, err
 	}
+	mutationProjectID := expectedProjectID
+	if strings.TrimSpace(mutationProjectID) == "" {
+		mutationProjectID = script.ProjectID
+	}
+	releaseReferenceMutation, err := tr.acquireSecretReferenceMutation(mutationProjectID)
+	if err != nil {
+		return nil, false, err
+	}
+	defer releaseReferenceMutation()
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
 	tr.beginLockHeldDurableWrite()
@@ -1592,6 +1660,15 @@ func (tr *TestRunner) DeleteScriptDurable(id string) (bool, error) {
 // version in the authorized project. A concurrent edit or same-ID replacement
 // wins and the caller must reload instead of deleting the newer row.
 func (tr *TestRunner) DeleteScriptDurableInProject(id string, expectedProjectID string) (bool, error) {
+	mutationProjectID := expectedProjectID
+	if strings.TrimSpace(mutationProjectID) == "" {
+		mutationProjectID = tr.scriptProjectIDForSecretReferenceMutation(id)
+	}
+	releaseReferenceMutation, err := tr.acquireSecretReferenceMutation(mutationProjectID)
+	if err != nil {
+		return false, err
+	}
+	defer releaseReferenceMutation()
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
 	tr.beginLockHeldDurableWrite()

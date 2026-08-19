@@ -30,7 +30,7 @@ import type {
 } from '../../types/replay'
 import { type AuthoringTemplate } from '../../types'
 import { type CorrelationDiagnoseResponse, type CorrelationStep, type ScriptDefinition, type ScriptExportResponse, type ScriptReplayResponse, type ScriptValidationResponse } from '../../types/scripts'
-import { type CloneScriptDraftResponse, type DiscardImportSecretSessionRequest, type MigrateImportSecretsRequest, type MigrateImportSecretsResponse, type ScriptSecretStatus } from '../../types/secrets'
+import { type CloneScriptDraftResponse, type DiscardImportSecretSessionRequest, type MigrateImportSecretsRequest, type MigrateImportSecretsResponse, type RebindScriptSecretReferenceResponse, type ScriptSecretStatus } from '../../types/secrets'
 import { type BrunoInspectResponse, type BrunoProjectionPreview, type BrunoSourceRevision, type BrunoSupportMatrixResponse, type CommitBrunoImportRequest, type CommitBrunoImportResponse } from '../../types/scriptImports'
 import { downloadFilenameFromDisposition } from '../../utils/fileUtils'
 
@@ -45,7 +45,7 @@ export interface ScriptRecordingStatus {
   sensitivity?: string
   captured_at?: string
 }
-import { type ApplyParameterizationRequest, type ApplyParameterizationResponse, type ApplySecretBindingsRequest, type ApplySecretBindingsResponse, type AuthoringCapabilitiesResponse, type Parameterization, type AsyncAPIImportResult, type AsyncAPISupportMatrixResponse, type BrokerConfigImportResult, type BrokerConfigSupportMatrixResponse, type BrowserRecordingImportResult, type CommitAsyncAPIImportBatchRequest, type CommitAsyncAPIImportBatchResponse, type CommitAsyncAPIImportRequest, type CommitAsyncAPIImportResponse, type CommitGenericImportBatchRequest, type CommitGenericImportBatchResponse, type CommitOpenAPIImportRequest, type CommitOpenAPIImportResponse, type DevWebImportResult, type DevWebSupportMatrixResponse, type EventHubsCaptureImportResult, type EventHubsCaptureSupportMatrixResponse, type HARImportResult, type ImportAssetUploadResponse, type JavaClasspathAssetUploadResponse, type JMeterImportResult, type JMeterSupportMatrixResponse, type K6ImportResult, type K6SupportMatrixResponse, type EnterpriseArchiveImportResult, type EnterpriseArchiveSupportMatrixResponse, type OpenAPIImportResult, type OpenAPISupportMatrixResponse, type OracleEBusinessReviewRequest, type OracleEBusinessReviewResponse, type OracleEBusinessSupportMatrixResponse, type PostmanImportResult, type PostmanSupportMatrixResponse, type RAMLImportResult, type RAMLSupportMatrixResponse, type SalesforceImportResult, type SampleImportResult, type SaveEnterpriseArchiveImportRequest, type SaveEnterpriseArchiveImportResponse, type SaveJMeterImportRequest, type SaveJMeterImportResponse, type SavePostmanImportRequest, type SavePostmanImportResponse, type WSDLImportResult } from '../../types/scriptImports'
+import { type ApplyParameterizationRequest, type ApplyParameterizationResponse, type ApplySecretBindingsRequest, type ApplySecretBindingsResponse, type ApplySharedValuesRequest, type ApplySharedValuesResponse, type AuthoringCapabilitiesResponse, type Parameterization, type AsyncAPIImportResult, type AsyncAPISupportMatrixResponse, type BrokerConfigImportResult, type BrokerConfigSupportMatrixResponse, type BrowserRecordingImportResult, type CommitAsyncAPIImportBatchRequest, type CommitAsyncAPIImportBatchResponse, type CommitAsyncAPIImportRequest, type CommitAsyncAPIImportResponse, type CommitGenericImportBatchRequest, type CommitGenericImportBatchResponse, type CommitOpenAPIImportRequest, type CommitOpenAPIImportResponse, type DevWebImportResult, type DevWebSupportMatrixResponse, type EventHubsCaptureImportResult, type EventHubsCaptureSupportMatrixResponse, type HARImportResult, type ImportAssetUploadResponse, type JavaClasspathAssetUploadResponse, type JMeterImportResult, type JMeterSupportMatrixResponse, type K6ImportResult, type K6SupportMatrixResponse, type EnterpriseArchiveImportResult, type EnterpriseArchiveSupportMatrixResponse, type OpenAPIImportResult, type OpenAPISupportMatrixResponse, type OracleEBusinessReviewRequest, type OracleEBusinessReviewResponse, type OracleEBusinessSupportMatrixResponse, type PostmanImportResult, type PostmanSupportMatrixResponse, type RAMLImportResult, type RAMLSupportMatrixResponse, type SalesforceImportResult, type SampleImportResult, type SaveEnterpriseArchiveImportRequest, type SaveEnterpriseArchiveImportResponse, type SaveJMeterImportRequest, type SaveJMeterImportResponse, type SavePostmanImportRequest, type SavePostmanImportResponse, type WSDLImportResult } from '../../types/scriptImports'
 import { type JsonRequestBody } from '../../types/generated/openapi'
 import { ApiError, apiFetch, request } from '../apiClient'
 
@@ -394,7 +394,16 @@ export function useScriptApi() {
   const validateScript = useCallback((id: string) => request<ScriptValidationResponse>(`/scripts/${id}/validate`, { method: 'POST' }), [])
 
   const getScriptSecretStatus = useCallback(
-    (id: string) => request<ScriptSecretStatus>(`/scripts/${encodeURIComponent(id)}/secret-status`),
+    (id: string, options?: { details?: boolean }) => request<ScriptSecretStatus>(`/scripts/${encodeURIComponent(id)}/secret-status${options?.details ? '?details=bindings' : ''}`),
+    [],
+  )
+
+  const rebindScriptSecretReference = useCallback(
+    (script: ScriptDefinition, oldName: string, newName: string) =>
+      request<RebindScriptSecretReferenceResponse>('/scripts/secret-references/rebind', {
+        method: 'POST',
+        body: JSON.stringify({ script, old_name: oldName, new_name: newName }),
+      }),
     [],
   )
 
@@ -1339,6 +1348,15 @@ export function useScriptApi() {
     [],
   )
 
+  // Collection-wide values entered once during import review. Unlike
+  // parameterization, this applies across every script of a multi-script import
+  // in one round trip, because one value can touch all of them.
+  const applyImportSharedValues = useCallback(
+    (payload: ApplySharedValuesRequest) =>
+      request<ApplySharedValuesResponse>('/scripts/import/shared-values/apply', { method: 'POST', body: JSON.stringify(payload) }),
+    [],
+  )
+
   const applySecretBindings = useCallback(
     (payload: ApplySecretBindingsRequest) =>
       request<ApplySecretBindingsResponse>('/scripts/secret-bindings/apply', { method: 'POST', body: JSON.stringify(payload) }),
@@ -1474,6 +1492,7 @@ export function useScriptApi() {
       moveScript,
       validateScript,
       getScriptSecretStatus,
+      rebindScriptSecretReference,
       cloneScriptDraft,
       migrateImportSecrets,
       discardImportSecretSession,
@@ -1560,6 +1579,7 @@ export function useScriptApi() {
       previewBrunoProjection,
       commitBrunoProjection,
       applyImportParameterization,
+      applyImportSharedValues,
       applySecretBindings,
       suggestParameterization,
       listScenarios,
@@ -1590,6 +1610,7 @@ export function useScriptApi() {
       moveScript,
       validateScript,
       getScriptSecretStatus,
+      rebindScriptSecretReference,
       cloneScriptDraft,
       migrateImportSecrets,
       discardImportSecretSession,
@@ -1676,6 +1697,7 @@ export function useScriptApi() {
       previewBrunoProjection,
       commitBrunoProjection,
       applyImportParameterization,
+      applyImportSharedValues,
       applySecretBindings,
       suggestParameterization,
       listScenarios,

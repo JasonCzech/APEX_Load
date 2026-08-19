@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react'
 import { useApi } from '../hooks/useApi'
 import { summarizeImportExtractors, summarizeSupportMatrix, summarizeSupportMatrixEntries } from './jmeterImportUtils'
-import { type JMeterImportResult as ImportResult, type JMeterSupportMatrixEntry, type JMeterSupportMatrixResponse, type SecretBindingSelection, type SupportMatrix } from '../types/scriptImports'
+import { type JMeterImportResult as ImportResult, type JMeterSupportMatrixEntry, type JMeterSupportMatrixResponse, type SecretBindingSelection, type SharedValues, type SupportMatrix } from '../types/scriptImports'
 import { type ScriptDefinition, type SourceReview } from '../types/scripts'
 import { getErrorMessage } from '../utils/errorUtils'
 import { isDesktopSurface } from '../desktop/desktopBridge'
@@ -16,7 +16,7 @@ import SourceMappingReview from './SourceMappingReview'
 import { withFallbackPersistedScripts } from './importSaveUtils'
 import { type ImportedSaveResult } from './useScriptsAuthoringState'
 import { refreshedSecretBindingRequirements, replaceSecretBindingRequirementsForScript, secretBindingRequirementsForScript } from './secretBindingUtils'
-import { credentialPreservingImportDraftRequiresSave } from './protectedImportSession'
+import { credentialPreservingImportDraftRequiresSave, earliestImportDraftExpiry } from './protectedImportSession'
 import { useSourceSecretSessionLifecycle } from './sourceSecretSessionLifecycle'
 import './EnterpriseArchiveImport.css'
 
@@ -361,6 +361,30 @@ export default function JMeterImport({ initialFile, projectId, folderId, onImpor
     })
   }
 
+  const handleSharedValuesApplied = (
+    updatedScripts: ScriptDefinition[],
+    _diffs: unknown[],
+    refreshed?: SharedValues,
+    importDraftExpiresAt?: (string | null)[],
+  ) => {
+    if (updatedScripts.length === 0) return
+    advanceReviewGeneration()
+    const rotatedExpiry = earliestImportDraftExpiry(importDraftExpiresAt)
+    setResult(prev => {
+      if (!prev) return prev
+      const next = {
+        ...prev,
+        script: updatedScripts[0],
+        scripts: updatedScripts,
+        ...(refreshed ? { shared_values: refreshed } : {}),
+        ...(rotatedExpiry ? { import_draft_expires_at: rotatedExpiry } : {}),
+      }
+      latestResultRef.current = next
+      return next
+    })
+    setNotice('Collection values updated every generated script. Review the changes before saving.')
+  }
+
   const handleSaveConverted = async () => {
     const resultToSave = latestResultRef.current
     if (!resultToSave?.scripts?.length || saveInFlightRef.current) return
@@ -672,6 +696,9 @@ export default function JMeterImport({ initialFile, projectId, folderId, onImpor
             reviewSections={result.review_sections}
             secretBindingRequirements={result.secret_binding_requirements}
             onSecretBindingsApply={handleSecretBindingsApply}
+            sharedValues={result.shared_values}
+            sharedValueScripts={result.scripts}
+            onSharedValuesApplied={handleSharedValuesApplied}
             projectId={projectId}
             sourceSecretSessionId={result.source_secret_session_id}
             sourceSecretSessionExpiresAt={result.source_secret_session_expires_at}

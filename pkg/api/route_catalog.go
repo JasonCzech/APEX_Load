@@ -76,6 +76,7 @@ var legacyRouteCatalogAuthRules = []apiRouteAuthRule{
 	routeAuth(http.MethodGet, "/api/v1/protocol-bundles/support-matrix", viewerGlobalAccess()),
 	routeAuth(http.MethodGet, "/api/v1/protocols/native-support-matrix", viewerGlobalAccess()),
 	routeAuth(http.MethodGet, "/api/v1/projects/{id}/secrets", viewerProjectAccess(resolveProjectIDFromPath)),
+	routeAuth(http.MethodGet, "/api/v1/projects/{id}/secrets/{name}/usage", viewerProjectAccess(resolveProjectIDFromPath)),
 	routeAuth(http.MethodPost, "/api/v1/projects/{id}/secrets/status", accessRequirement{
 		GlobalRoles:   []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
 		ProjectRoles:  []string{RoleViewer, RoleEditor, RoleProjectAdmin},
@@ -91,6 +92,7 @@ var legacyRouteCatalogAuthRules = []apiRouteAuthRule{
 	}),
 	routeAuth(http.MethodPost, "/api/v1/scripts/validate", accessRequirement{GlobalRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}, ProjectRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin}, ProjectLookup: resolveScriptCreateProjectID}),
 	routeAuth(http.MethodPost, "/api/v1/scripts/secret-bindings/apply", editorProjectAccess(resolveScriptCreateProjectID)),
+	routeAuth(http.MethodPost, "/api/v1/scripts/secret-references/rebind", editorImportAccess(resolveScriptCreateProjectID, 4<<20)),
 	routeAuth(http.MethodPost, "/api/v1/scripts/import/secrets/migrate", accessRequirement{
 		GlobalRoles:   []string{RoleProjectAdmin, RoleSystemAdmin},
 		ProjectRoles:  []string{RoleProjectAdmin},
@@ -282,6 +284,7 @@ var legacyRouteCatalogAuthRules = []apiRouteAuthRule{
 	routeAuth(http.MethodPost, "/api/v1/scripts/import/recorder/replay", editorImportAccess(resolveImportProjectIDFromJSONOrForm, recorderImportMaxBodyBytes)),
 	routeAuth(http.MethodPost, "/api/v1/scripts/import/browser-recorder/attest", editorImportAccess(resolveBridgedBrowserImportProjectID, webAPIImportMaxBodyBytes)),
 	routeAuth(http.MethodPost, "/api/v1/scripts/import/parameterize/apply", editorProjectAccess(resolveParameterizeApplyProjectID)),
+	routeAuth(http.MethodPost, "/api/v1/scripts/import/shared-values/apply", editorProjectAccess(resolveSharedValuesApplyProjectID)),
 	routeAuth(http.MethodPost, "/api/v1/scripts/{id}/parameterize/suggest", editorProjectAccess(resolveScriptProjectID)),
 	routeAuth(http.MethodPost, "/api/v1/scripts/import/asyncapi/commit", editorProjectAccessWithBodyLimit(resolveAsyncAPICommitProjectID, webAPIImportCommitMaxBodyBytes)),
 	routeAuth(http.MethodPost, "/api/v1/scripts/import/asyncapi/commit-batch", editorProjectAccessWithBodyLimit(resolveJMeterSaveProjectID, webAPIImportCommitMaxBodyBytes)),

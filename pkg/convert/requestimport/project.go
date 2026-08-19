@@ -1866,3 +1866,88 @@ func firstNonEmpty(values ...string) string {
 	}
 	return ""
 }
+
+// BaseURLHasUnresolvableRuntimeTemplate reports whether config.base_url still
+// holds a template the HTTP runtime cannot resolve. Exported so a later
+// mutation pass can tell whether it has actually cleared the condition that
+// raised base_url_runtime_template_unavailable, rather than guessing.
+func BaseURLHasUnresolvableRuntimeTemplate(value string) bool {
+	return baseURLHasUnresolvableRuntimeTemplate(value)
+}
+
+// ClearResolvedBaseURLTemplateGate removes the
+// base_url_runtime_template_unavailable review gate once config.base_url holds
+// a literal (or a project-secret reference) again.
+//
+// The gate's own documented resolution is "replace_with_literal_or_secret_
+// reference_and_remove_gate", so a pass that performs the replacement must also
+// remove the gate — otherwise the operator does the fix and the script still
+// refuses to run. Actions gated for any other reason keep their gate.
+func ClearResolvedBaseURLTemplateGate(script *dsl.Script) ([]string, error) {
+	if script == nil || baseURLHasUnresolvableRuntimeTemplate(script.Config.BaseURL) {
+		return nil, nil
+	}
+	var cleared []string
+	err := dslwalk.WalkActions(script, func(ref dslwalk.ActionRef) error {
+		if ref.Action == nil || ref.Action.Metadata == nil {
+			return nil
+		}
+		review, _ := ref.Action.Metadata["import_review"].(map[string]any)
+		if review == nil {
+			return nil
+		}
+		reasons := dslwalk.MetadataStrings(review, "reason_codes")
+		remaining := make([]string, 0, len(reasons))
+		for _, reason := range reasons {
+			if reason != reasonBaseURLRuntimeTemplateUnavailable {
+				remaining = append(remaining, reason)
+			}
+		}
+		if len(remaining) == len(reasons) {
+			return nil
+		}
+		if len(remaining) > 0 {
+			// Another reason still justifies the review record and its blocker.
+			review["reason_codes"] = remaining
+			cleared = append(cleared, ref.Path)
+			return nil
+		}
+		delete(ref.Action.Metadata, "import_review")
+		clearExecutionBlockerCode(ref.Action, importReviewRequiredBlocker)
+		cleared = append(cleared, ref.Path)
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	sort.Strings(cleared)
+	return cleared, nil
+}
+
+// clearExecutionBlockerCode drops one code from an action's execution gate,
+// leaving any other blocker intact.
+func clearExecutionBlockerCode(action *dsl.Action, code string) {
+	if action == nil || action.Metadata == nil {
+		return
+	}
+	remaining := make([]string, 0, 2)
+	for _, existing := range dslwalk.MetadataStrings(action.Metadata, "execution_blockers") {
+		if existing != code {
+			remaining = append(remaining, existing)
+		}
+	}
+	if blocker, ok := action.Metadata["execution_blocker"].(string); ok {
+		blocker = strings.TrimSpace(blocker)
+		if blocker != "" && blocker != code && !containsString(remaining, blocker) {
+			remaining = append(remaining, blocker)
+		}
+	}
+	if len(remaining) == 0 {
+		delete(action.Metadata, "execution_blocker")
+		delete(action.Metadata, "execution_blockers")
+		return
+	}
+	sort.Strings(remaining)
+	action.Metadata["execution_blocker"] = remaining[0]
+	action.Metadata["execution_blockers"] = remaining
+}

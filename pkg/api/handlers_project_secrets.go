@@ -27,11 +27,13 @@ const (
 	sourceSecretSessionTTL           = 30 * time.Minute
 	sourceSecretSessionLimit         = 128
 	sourceSecretSessionMaxTotalBytes = 1 << 20
+	projectSecretMutationBudget      = 4 * time.Minute
 )
 
 type projectSecretInput struct {
-	Name  string `json:"name"`
-	Value string `json:"value"`
+	Name          string                      `json:"name"`
+	Value         string                      `json:"value"`
+	ExpectedUsage *projectSecretExpectedUsage `json:"expected_usage,omitempty"`
 }
 
 type projectSecretBatchRequest struct {
@@ -50,7 +52,9 @@ type projectSecretStatus struct {
 }
 
 type rotateProjectSecretRequest struct {
-	Value string `json:"value"`
+	Value                  string `json:"value"`
+	ExpectedUsageRevision  string `json:"expected_usage_revision"`
+	AcknowledgeSharedUsage bool   `json:"acknowledge_shared_usage,omitempty"`
 }
 
 type cloneScriptDraftRequest struct {
@@ -284,8 +288,30 @@ func (s *Server) handleCreateProjectSecrets(w http.ResponseWriter, r *http.Reque
 		writeError(w, http.StatusServiceUnavailable, "no atomic create-only project secret provider is configured")
 		return
 	}
+	releaseReferenceMutation, fenceErr := s.acquireSecretReferenceMutation(projectID)
+	if fenceErr != nil {
+		writeError(w, http.StatusServiceUnavailable, "project secret usage fence is unavailable")
+		return
+	}
+	defer releaseReferenceMutation()
+	mutationCtx, cancelMutation := context.WithTimeout(r.Context(), projectSecretMutationBudget)
+	defer cancelMutation()
+	for _, input := range inputs {
+		if input.ExpectedUsage == nil {
+			continue
+		}
+		usage, usageErr := s.projectSecretUsage(projectID, input.Name)
+		if usageErr != nil {
+			writeError(w, http.StatusServiceUnavailable, "project secret usage is unavailable")
+			return
+		}
+		if err := validateExpectedProjectSecretUsage(usage, input.ExpectedUsage); err != nil {
+			writeError(w, http.StatusConflict, err.Error())
+			return
+		}
+	}
 	actor := secretActorSubject(s, r)
-	probeCtx, cancelProbe := engine.WithSecretResolutionBudget(r.Context())
+	probeCtx, cancelProbe := engine.WithSecretResolutionBudget(mutationCtx)
 	defer cancelProbe()
 	for _, input := range inputs {
 		if _, _, err := s.projectSecretStore.Get(probeCtx, projectID, input.Name); err == nil {
@@ -311,7 +337,7 @@ func (s *Server) handleCreateProjectSecrets(w http.ResponseWriter, r *http.Reque
 			writeProjectSecretPartialFailure(w, http.StatusServiceUnavailable, projectID, "project secret creation audit is unavailable", "created", created, input.Name, "audit_persistence_unavailable", projectSecretInputNames(inputs[index:]), false)
 			return
 		}
-		metadata, outcome, err := createProjectSecretWithReconciliation(r.Context(), s.projectSecretStore, projectID, input.Name, input.Value, actor)
+		metadata, outcome, err := createProjectSecretWithReconciliation(mutationCtx, s.projectSecretStore, projectID, input.Name, input.Value, actor)
 		if err != nil {
 			status := http.StatusServiceUnavailable
 			message := "project secret could not be created"
@@ -365,6 +391,33 @@ func (s *Server) handleRotateProjectSecret(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	releaseReferenceMutation, fenceErr := s.acquireSecretReferenceMutation(projectID)
+	if fenceErr != nil {
+		writeError(w, http.StatusServiceUnavailable, "project secret usage fence is unavailable")
+		return
+	}
+	defer releaseReferenceMutation()
+	mutationCtx, cancelMutation := context.WithTimeout(r.Context(), projectSecretMutationBudget)
+	defer cancelMutation()
+	usage, usageErr := s.projectSecretUsage(projectID, name)
+	if usageErr != nil {
+		writeError(w, http.StatusServiceUnavailable, "project secret usage is unavailable")
+		return
+	}
+	if strings.TrimSpace(req.ExpectedUsageRevision) != "" && req.ExpectedUsageRevision != usage.UsageRevision {
+		writeError(w, http.StatusConflict, "secret consumers changed; refresh usage before rotating the value")
+		return
+	}
+	if usage.ConsumerCount > 1 {
+		if strings.TrimSpace(req.ExpectedUsageRevision) == "" {
+			writeError(w, http.StatusConflict, "shared secret rotation requires a current usage revision")
+			return
+		}
+		if !req.AcknowledgeSharedUsage {
+			writeError(w, http.StatusConflict, "shared secret rotation requires acknowledgement of all consuming scripts")
+			return
+		}
+	}
 	if s.projectSecretStore == nil || !s.projectSecretStore.Writable() {
 		writeError(w, http.StatusServiceUnavailable, "no writable project secret provider is configured")
 		return
@@ -374,7 +427,7 @@ func (s *Server) handleRotateProjectSecret(w http.ResponseWriter, r *http.Reques
 		writeProjectSecretAuditUnavailable(w)
 		return
 	}
-	metadata, outcome, err := replaceProjectSecretWithReconciliation(r.Context(), s.projectSecretStore, projectID, name, req.Value, secretActorSubject(s, r))
+	metadata, outcome, err := replaceProjectSecretWithReconciliation(mutationCtx, s.projectSecretStore, projectID, name, req.Value, secretActorSubject(s, r))
 	if err != nil {
 		status := http.StatusServiceUnavailable
 		message := "project secret could not be rotated"
@@ -400,7 +453,7 @@ func (s *Server) handleRotateProjectSecret(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusServiceUnavailable, "project secret was rotated but its audit outcome could not be persisted; refresh secret status before retrying")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"project_id": projectID, "secret": metadata})
+	writeJSON(w, http.StatusOK, map[string]any{"project_id": projectID, "secret": metadata, "usage": usage})
 }
 
 func (s *Server) handleScriptSecretStatus(w http.ResponseWriter, r *http.Request) {
@@ -435,6 +488,9 @@ func (s *Server) handleScriptSecretStatus(w http.ResponseWriter, r *http.Request
 		"missing":      missing,
 		"secrets":      statuses,
 		"capabilities": s.projectSecretCapabilities(stored.ProjectID),
+	}
+	if strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("details")), "bindings") {
+		response["bindings"] = scriptSecretBindingDetails(stored.Script, statuses)
 	}
 	// Report the REAL store state even when placeholder substitution is enabled.
 	// Claiming every secret is configured hid the fact that runs were sending a
@@ -1157,7 +1213,7 @@ func validateProjectSecretInputs(raw []projectSecretInput) ([]projectSecretInput
 			continue
 		}
 		seen[name] = input.Value
-		result = append(result, projectSecretInput{Name: name, Value: input.Value})
+		result = append(result, projectSecretInput{Name: name, Value: input.Value, ExpectedUsage: input.ExpectedUsage})
 	}
 	sort.Slice(result, func(i, j int) bool { return result[i].Name < result[j].Name })
 	return result, nil

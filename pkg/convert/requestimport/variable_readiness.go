@@ -522,3 +522,118 @@ func hasImporterMissingVariableGate(action *dsl.Action) bool {
 	}
 	return false
 }
+
+// missingVariableGateCodes are the execution-blocker codes that exist solely
+// because a variable had no value. Both spellings are in use: the shared
+// importer gate emits import_missing_variables, and the Bruno native path
+// stamps bruno_missing_variables directly on the first action.
+var missingVariableGateCodes = map[string]bool{
+	"import_missing_variables": true,
+	"bruno_missing_variables":  true,
+}
+
+// ClearResolvedMissingVariableGates removes missing-variable execution gates
+// that a later step has satisfied — typically by declaring the parameter the
+// operator supplied a collection-wide value for.
+//
+// Gates are stamped at conversion time and are not self-healing, so without
+// this a script would still refuse to run after the operator had supplied the
+// very value the gate was asking for. Only the missing-variable contribution is
+// removed: an action blocked for an unrelated reason stays blocked.
+//
+// It returns the action paths whose gate was cleared.
+func ClearResolvedMissingVariableGates(script *dsl.Script) ([]string, error) {
+	if script == nil {
+		return nil, nil
+	}
+	analysis := AnalyzeVariableReadiness(script, nil)
+	stillMissing := make(map[string]bool, len(analysis.ByAction))
+	for path := range analysis.ByAction {
+		stillMissing[sequenceContainerPath(path)] = true
+	}
+
+	var cleared []string
+	err := dslwalk.WalkActions(script, func(ref dslwalk.ActionRef) error {
+		if !hasImporterMissingVariableGate(ref.Action) || stillMissing[ref.Path] {
+			return nil
+		}
+		if clearMissingVariableGate(ref.Action) {
+			cleared = append(cleared, ref.Path)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	sort.Strings(cleared)
+	return cleared, nil
+}
+
+func clearMissingVariableGate(action *dsl.Action) bool {
+	if action == nil || action.Metadata == nil {
+		return false
+	}
+	delete(action.Metadata, "missing_variables")
+
+	remaining := make([]string, 0, 2)
+	for _, code := range metadataStrings(action.Metadata, "execution_blockers") {
+		if !missingVariableGateCodes[code] {
+			remaining = append(remaining, code)
+		}
+	}
+	if blocker, ok := action.Metadata["execution_blocker"].(string); ok {
+		blocker = strings.TrimSpace(blocker)
+		if blocker != "" && !missingVariableGateCodes[blocker] && !containsString(remaining, blocker) {
+			remaining = append(remaining, blocker)
+		}
+	}
+	if len(remaining) == 0 {
+		delete(action.Metadata, "execution_blocker")
+		delete(action.Metadata, "execution_blockers")
+	} else {
+		sort.Strings(remaining)
+		action.Metadata["execution_blocker"] = remaining[0]
+		action.Metadata["execution_blockers"] = remaining
+	}
+
+	clearMissingVariableImportReview(action)
+	if len(action.Metadata) == 0 {
+		action.Metadata = nil
+	}
+	return true
+}
+
+// clearMissingVariableImportReview drops the durable review record's
+// missing-variable reason. The record is deleted only when nothing else
+// justified it, so an unrelated gate keeps its provenance.
+func clearMissingVariableImportReview(action *dsl.Action) {
+	review, _ := action.Metadata["import_review"].(map[string]any)
+	if review == nil {
+		return
+	}
+	reasons := metadataStrings(review, "reason_codes")
+	remaining := make([]string, 0, len(reasons))
+	for _, reason := range reasons {
+		if reason != "missing_variable" && !missingVariableGateCodes[reason] {
+			remaining = append(remaining, reason)
+		}
+	}
+	if len(remaining) == 0 {
+		delete(action.Metadata, "import_review")
+		return
+	}
+	review["reason_codes"] = remaining
+}
+
+func metadataStrings(metadata map[string]any, key string) []string {
+	return dslwalk.MetadataStrings(metadata, key)
+}
+
+func containsString(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
+}

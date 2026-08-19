@@ -279,6 +279,13 @@
   letter-spacing: 0.03em;
 }
 
+/* Reusing one binding across every script that needs the same credential is an
+   explicit operator action, so it reads as a button rather than a default. */
+.secret-binding-review-reuse-all {
+  align-self: flex-start;
+  margin-top: 6px;
+}
+
 .secret-binding-review-location p {
   margin: 5px 0;
   color: var(--text-muted);

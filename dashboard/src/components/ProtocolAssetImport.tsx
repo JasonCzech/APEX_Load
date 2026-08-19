@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useAsyncTask } from '../hooks/useAsyncTask'
 import { useApi } from '../hooks/useApi'
 import { type BrowserReplayReport, type BrowserReplayStartResponse, type ReplayRepairSuggestion, type StoredScript } from '../types'
-import { type AgentforceReview, type AgentforceTransformChange, type AsyncAPIImportResult, type AsyncAPISupportMatrixEntry, type BrokerConfigImportResult, type BrokerConfigSupportMatrixEntry, type BrowserRecordingImportResult, type DevWebImportResult, type DevWebSupportMatrixEntry, type EventHubsCaptureImportResult, type EventHubsCaptureSupportMatrixEntry, type HARImportResult, type HARImportSummary, type K6ImportResult, type K6SupportMatrixEntry, type MulesoftReview, type OpenAPICorrelation, type OpenAPIImportResult, type OpenAPISupportMatrixEntry, type PostmanImportResult, type PostmanSupportMatrixEntry, type RAMLImportResult, type RAMLSupportMatrixEntry, type SalesforceImportResult, type SalesforceReview, type SecretBindingSelection, type WSDLImportResult } from '../types/scriptImports'
+import { type AgentforceReview, type AgentforceTransformChange, type AsyncAPIImportResult, type AsyncAPISupportMatrixEntry, type BrokerConfigImportResult, type BrokerConfigSupportMatrixEntry, type BrowserRecordingImportResult, type DevWebImportResult, type DevWebSupportMatrixEntry, type EventHubsCaptureImportResult, type EventHubsCaptureSupportMatrixEntry, type HARImportResult, type HARImportSummary, type K6ImportResult, type K6SupportMatrixEntry, type MulesoftReview, type OpenAPICorrelation, type OpenAPIImportResult, type OpenAPISupportMatrixEntry, type PostmanImportResult, type PostmanSupportMatrixEntry, type RAMLImportResult, type RAMLSupportMatrixEntry, type SalesforceImportResult, type SalesforceReview, type SecretBindingSelection, type SharedValues, type WSDLImportResult } from '../types/scriptImports'
 import { type ScriptDefinition, type SourceReview } from '../types/scripts'
 import { getErrorMessage } from '../utils/errorUtils'
 import ImportDropzone from './ImportDropzone'
@@ -22,6 +22,7 @@ import { refreshedSecretBindingRequirements, replaceSecretBindingRequirementsFor
 import {
   activeProtectedImportSessionId,
   credentialPreservingImportDraftRequiresSave,
+	  earliestImportDraftExpiry,
   importDraftExpiryStatus,
   invalidateProtectedImportCandidate,
   mergeProtectedParameterizationSelectionIds,
@@ -1918,6 +1919,46 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
     )
   }
 
+  // Unlike parameterization, this replaces the WHOLE script array: a
+  // collection-wide value is written into every generated script, so keeping
+  // only the selected one would silently drop the rest of the change.
+  const handleSharedValuesApplied = (
+    updatedScripts: ScriptDefinition[],
+    _diffs: unknown[],
+    refreshed?: SharedValues,
+    importDraftExpiresAt?: (string | null)[],
+  ) => {
+    if (!result || updatedScripts.length === 0) return
+    if (importDraftHasExpired(result)) {
+      setMessageError(IMPORT_DRAFT_EXPIRED_MESSAGE)
+      return
+    }
+    if (asyncAPISelectedScriptSaved) return
+    advanceReviewGeneration()
+    const rotatedExpiry = earliestImportDraftExpiry(importDraftExpiresAt)
+    const nextResult = {
+      ...result,
+      script: updatedScripts[0],
+      scripts: updatedScripts,
+      // The scripts changed, so the candidates derived from them changed too.
+      // Keeping the old block would show values the scripts no longer hold.
+      ...(refreshed ? { shared_values: refreshed } : {}),
+      ...(rotatedExpiry ? { import_draft_expires_at: rotatedExpiry } : {}),
+    } as ProtocolImportResult
+    // The apply endpoint mutates the server-held draft in place and rotates its
+    // capability; the protected candidate is still the one the save must commit
+    // through. Dropping it here would push the save onto the unprotected path
+    // and lose the preserved credentials, exactly as it would for
+    // parameterization.
+    const sessionId = activeProtectedImportSessionId(result)
+    const preserveProtectedCandidate = (kind === 'openapi' || kind === 'postman') && !!sessionId
+    commitReviewMutation(
+      nextResult,
+      'Collection values updated every generated script. Run replay validation again before saving normally.',
+      { preserveProtectedCandidate },
+    )
+  }
+
   const handleSourceSecretSessionSettled = (
     sessionId: string,
     migrationSelections: SecretBindingSelection[],
@@ -2297,6 +2338,9 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
             reviewSections={result.review_sections}
             parameterization={asyncAPISelectedScriptSaved ? undefined : result.parameterization}
             onParameterizationApplied={handleParameterizationApplied}
+            sharedValues={asyncAPISelectedScriptSaved ? undefined : result.shared_values}
+            sharedValueScripts={generatedScripts}
+            onSharedValuesApplied={handleSharedValuesApplied}
             secretBindingRequirements={secretBindingRequirements}
             sourceMigrationRequirements={asyncAPIArchiveSecretBindingRequirements}
             preserveSourceSessionAfterApply={asyncAPIMultiScript && asyncAPIArchiveSecretBindingRequirements.length > secretBindingRequirements.length}

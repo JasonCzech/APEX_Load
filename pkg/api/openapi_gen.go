@@ -1104,6 +1104,11 @@ func brunoOpenAPIComponentSchemas() map[string]oasSchema {
 					AdditionalProperties: boolPointer(true),
 					Nullable:             true,
 				},
+				"shared_values": {
+					Type:                 "object",
+					Description:          "Collection-wide values the operator supplies once; present for native request inspection only.",
+					AdditionalProperties: boolPointer(true),
+				},
 			},
 			Required: []string{
 				"import_session_id", "expires_at", "result", "artifacts",
@@ -1190,6 +1195,7 @@ func brunoOpenAPIComponentSchemas() map[string]oasSchema {
 					Items:       &oasSchema{Type: "string"},
 				},
 				"name_overrides": openAPIStringMap("Native candidate ID to requested script name."),
+				"shared_values":  openAPIStringMap("Shared-value candidate ID to the operator-entered value applied across every selected script."),
 				"acknowledged_finding_ids": {
 					Type:  "array",
 					Items: &oasSchema{Type: "string"},

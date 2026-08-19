@@ -3,6 +3,7 @@ import { useCallback, useMemo } from 'react'
 import { Project, Folder, ProjectSettings } from '../../types'
 import {
   type ProjectSecretStatusesResponse,
+  type ProjectSecretUsage,
   type ProjectSecretsResponse,
   type ProjectSecretsWriteResponse,
   type ProjectSecretWrite,
@@ -66,6 +67,17 @@ export function useProjectApi() {
     [],
   )
 
+  const getProjectSecretUsage = useCallback(
+    (projectId: string, name: string, options?: { limit?: number; offset?: number }, callOptions?: ApiCallOptions) => {
+      const params = new URLSearchParams()
+      if (options?.limit) params.set('limit', String(options.limit))
+      if (options?.offset) params.set('offset', String(options.offset))
+      const suffix = params.toString()
+      return request<ProjectSecretUsage>(`/projects/${encodeURIComponent(projectId)}/secrets/${encodeURIComponent(name)}/usage${suffix ? `?${suffix}` : ''}`, withCallOptions(undefined, callOptions))
+    },
+    [],
+  )
+
   const createProjectSecrets = useCallback(
     (projectId: string, secrets: ProjectSecretWrite[], options?: ApiCallOptions) =>
       request<ProjectSecretsWriteResponse>(`/projects/${encodeURIComponent(projectId)}/secrets`, withCallOptions({
@@ -77,10 +89,10 @@ export function useProjectApi() {
   )
 
   const rotateProjectSecret = useCallback(
-    (projectId: string, name: string, value: string, options?: ApiCallOptions) =>
+    (projectId: string, name: string, value: string, usage?: { expected_usage_revision?: string; acknowledge_shared_usage?: boolean }, options?: ApiCallOptions) =>
       request<ProjectSecretsWriteResponse>(`/projects/${encodeURIComponent(projectId)}/secrets/${encodeURIComponent(name)}`, withCallOptions({
         method: 'PUT',
-        body: JSON.stringify({ value }),
+        body: JSON.stringify({ value, ...usage }),
         timeoutMs: PROJECT_SECRET_MUTATION_TIMEOUT_MS,
       }, options)),
     [],
@@ -114,6 +126,7 @@ export function useProjectApi() {
       deleteProject,
       listProjectSecrets,
       getProjectSecretStatuses,
+      getProjectSecretUsage,
       createProjectSecrets,
       rotateProjectSecret,
       listFolders,
@@ -121,6 +134,6 @@ export function useProjectApi() {
       updateFolder,
       deleteFolder,
     }),
-    [listProjects, createProject, updateProject, deleteProject, listProjectSecrets, getProjectSecretStatuses, createProjectSecrets, rotateProjectSecret, listFolders, createFolder, updateFolder, deleteFolder],
+    [listProjects, createProject, updateProject, deleteProject, listProjectSecrets, getProjectSecretStatuses, getProjectSecretUsage, createProjectSecrets, rotateProjectSecret, listFolders, createFolder, updateFolder, deleteFolder],
   )
 }

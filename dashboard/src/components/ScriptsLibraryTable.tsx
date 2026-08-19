@@ -343,7 +343,7 @@ export default function ScriptsLibraryTable({
               || (requiresSecrets && secretStatusState !== undefined && secretStatusState !== 'ready')
             const configureSecretsAvailable = scriptAddressable
               && onConfigureSecrets
-              && (missingSecrets.length > 0 || secretStatusUnknown)
+              && requiresSecrets
             const hostItem = scriptAddressable ? federation?.hostItemForLocal(scriptId) : undefined
             const syncStatus = scriptAddressable ? federation?.syncStatusForLocal(scriptId) || 'local only' : 'unavailable'
             const conflict = syncStatus === 'conflict'
@@ -458,16 +458,22 @@ export default function ScriptsLibraryTable({
                             type="button"
                             className="script-health-token warning issue-pill-button"
                             aria-label={`View ${missingSecrets.length} missing secret ${missingSecrets.length === 1 ? 'detail' : 'details'} for ${script.name}`}
-                            onClick={() => setIssueDialog({
-                              title: `${script.name} missing secrets`,
-                              issues: missingSecrets.map((name, index) => ({
-                                id: `${name}-${index}`,
-                                severity: 'warning',
-                                title: name,
-                                description: 'This required project secret has not been configured.',
-                                source: 'Project secrets',
-                              })),
-                            })}
+                            onClick={() => {
+                              if (onConfigureSecrets) {
+                                onConfigureSecrets(script)
+                                return
+                              }
+                              setIssueDialog({
+                                title: `${script.name} missing secrets`,
+                                issues: missingSecrets.map((name, index) => ({
+                                  id: `${name}-${index}`,
+                                  severity: 'warning',
+                                  title: name,
+                                  description: 'This required project secret has not been configured.',
+                                  source: 'Project secrets',
+                                })),
+                              })
+                            }}
                           >
                             {missingSecrets.length} secret{missingSecrets.length === 1 ? '' : 's'} missing
                           </button>

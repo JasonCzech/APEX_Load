@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   activeProtectedImportSessionId,
   credentialPreservingImportDraftRequiresSave,
+	  earliestImportDraftExpiry,
   importDraftExpiryStatus,
   invalidateProtectedImportCandidate,
   mergeProtectedParameterizationSelectionIds,
@@ -88,5 +89,15 @@ describe('protected import sessions', () => {
       label: 'This credential-preserving import draft has expired. Re-run the import before saving or editing it.',
     })
     expect(importDraftExpiryStatus('not-a-date', now)).toBeNull()
+  })
+
+  it('uses the earliest renewed expiry for a protected script batch', () => {
+    expect(earliestImportDraftExpiry([
+      '2026-07-26T12:45:00Z',
+      null,
+      'not-a-date',
+      '2026-07-26T12:30:00Z',
+    ])).toBe('2026-07-26T12:30:00Z')
+    expect(earliestImportDraftExpiry([null, 'invalid'])).toBeUndefined()
   })
 })

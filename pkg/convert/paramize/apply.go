@@ -787,3 +787,11 @@ func cloneScript(in *dsl.Script) (*dsl.Script, error) {
 	}
 	return &out, nil
 }
+
+// ReplaceOutsideTemplates exposes the template-aware literal replacement used
+// by ApplySuggestions so the cross-script pass in pkg/convert/sharedvalue can
+// share one rule set. Getting this wrong corrupts previously inserted
+// templates, so it must not be reimplemented elsewhere.
+func ReplaceOutsideTemplates(value string, replacements map[string]string) string {
+	return replaceOutsideTemplates(value, replacements)
+}

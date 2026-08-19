@@ -2,9 +2,16 @@ package api
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"fmt"
+	"log/slog"
 	"net/http"
 	"strings"
 	"sync"
+	"time"
+
+	"github.com/google/uuid"
 )
 
 const deleteProjectRoutePattern = "DELETE /api/v1/projects/{id}"
@@ -18,7 +25,19 @@ type projectMutationCoordinator struct {
 	mu         sync.Mutex
 	entries    map[string]*projectMutationLock
 	tombstones map[string]struct{}
+	durable    projectMutationLeaseStore
 }
+
+type projectMutationLeaseStore interface {
+	TryAcquireSchedulerLease(name, ownerID string, now time.Time, ttl time.Duration) (bool, error)
+	ReleaseSchedulerLease(name, ownerID string) error
+}
+
+const (
+	secretReferenceMutationLeaseTTL  = 5 * time.Minute
+	secretReferenceMutationWait      = 5 * time.Second
+	secretReferenceMutationPollEvery = 25 * time.Millisecond
+)
 
 type projectMutationLock struct {
 	mu   sync.RWMutex
@@ -62,6 +81,77 @@ func (c *projectMutationCoordinator) acquire(projectID string, exclusive bool) f
 			}
 			c.mu.Unlock()
 		})
+	}
+}
+
+func (c *projectMutationCoordinator) configureDurableLease(store any) {
+	if c == nil {
+		return
+	}
+	leaseStore, _ := store.(projectMutationLeaseStore)
+	c.mu.Lock()
+	c.durable = leaseStore
+	c.mu.Unlock()
+}
+
+func (c *projectMutationCoordinator) acquireDurable(projectID string) (func(), error) {
+	projectID = normalizeProjectID(projectID)
+	releaseLocal := c.acquire(projectID, true)
+	if projectID == "" {
+		return releaseLocal, nil
+	}
+	c.mu.Lock()
+	store := c.durable
+	c.mu.Unlock()
+	if store == nil {
+		return releaseLocal, nil
+	}
+	sum := sha256.Sum256([]byte(projectID))
+	leaseName := "secret-reference-mutation/" + hex.EncodeToString(sum[:])
+	ownerID := uuid.NewString()
+	deadline := time.Now().Add(secretReferenceMutationWait)
+	for {
+		acquired, err := store.TryAcquireSchedulerLease(leaseName, ownerID, time.Now().UTC(), secretReferenceMutationLeaseTTL)
+		if err != nil {
+			releaseLocal()
+			return func() {}, fmt.Errorf("acquire durable secret-reference mutation fence: %w", err)
+		}
+		if acquired {
+			stopRenewal := make(chan struct{})
+			renewalDone := make(chan struct{})
+			go func() {
+				defer close(renewalDone)
+				ticker := time.NewTicker(secretReferenceMutationLeaseTTL / 3)
+				defer ticker.Stop()
+				for {
+					select {
+					case <-stopRenewal:
+						return
+					case now := <-ticker.C:
+						renewed, renewErr := store.TryAcquireSchedulerLease(leaseName, ownerID, now.UTC(), secretReferenceMutationLeaseTTL)
+						if renewErr != nil || !renewed {
+							slog.Error("renew durable secret-reference mutation fence", "project_id", projectID, "error", renewErr)
+						}
+					}
+				}
+			}()
+			var once sync.Once
+			return func() {
+				once.Do(func() {
+					close(stopRenewal)
+					<-renewalDone
+					if err := store.ReleaseSchedulerLease(leaseName, ownerID); err != nil {
+						slog.Error("release durable secret-reference mutation fence", "project_id", projectID, "error", err)
+					}
+					releaseLocal()
+				})
+			}, nil
+		}
+		if !time.Now().Before(deadline) {
+			releaseLocal()
+			return func() {}, fmt.Errorf("project secret references are busy; retry the mutation")
+		}
+		time.Sleep(secretReferenceMutationPollEvery)
 	}
 }
 

@@ -34,7 +34,7 @@ export interface ScriptsAuthoringSurfaceProps {
   // session is approved; omitting it saves to project root.
   folderId?: string | null
   activeProject?: Project | null
-  onSaved: (script: StoredScript) => void
+  onSaved: (script: StoredScript, options?: { configureSecrets?: boolean }) => void
   onOpenLibrary: () => void
   onOpenCreateOptions: () => void
   onImported: (result: ImportedSaveResult) => void

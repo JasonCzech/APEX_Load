@@ -52,8 +52,8 @@ import type { ScriptRecordingStatus } from '../hooks/api/useScriptApi'
 import type { ProjectSecretStatus, ScriptSecretStatus } from '../types/secrets'
 import PageViewToggle from './PageViewToggle'
 import ReplayPreflightCard from './ReplayPreflightCard'
+import ScriptSecretBindingsDialog from './ScriptSecretBindingsDialog'
 import { buildLocalReplayPreflight, reconcileReplayPreflightSecretStatus, replayPreflightStatusLabel } from './replayPreflightUtils'
-import { prepareProjectSecretsSettingsNavigation } from './projectSecretsNavigation'
 import {
   applyMigrationAssistantSuggestion,
   applyAuthoringComponentToScript,
@@ -627,7 +627,7 @@ interface Props {
   initialFocusedRuntimeArea?: string | null
   projectId?: string
   folderId?: string | null
-  onSave?: (script: StoredScript) => void
+  onSave?: (script: StoredScript, options?: { configureSecrets?: boolean }) => void
   onClose?: () => void
 }
 
@@ -638,6 +638,9 @@ function scriptHasAuthoredActions(script: ScriptData): boolean {
 
 export default function ScriptEditor({ scriptId, initialScript, initiallyDirty = false, initialFocusedActionName, initialFocusedSection, initialFocusedDataSourceName, initialFocusedRuntimeArea, projectId, folderId, onSave, onClose }: Props) {
   const api = useApi()
+  const [secretBindingsOpen, setSecretBindingsOpen] = useState(false)
+  const saveAndConfigureRequestedRef = useRef(false)
+  const pendingCreatedSecretNamesRef = useRef<string[]>([])
   const [scriptSecretStatus, setScriptSecretStatus] = useState<ScriptSecretStatus | null>(null)
   const scriptSecretStatusRequestRef = useRef(0)
   const [projectSecretProbe, setProjectSecretProbe] = useState<{
@@ -716,12 +719,15 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
   )
   const hasTopbarContributionProvider = useHasTopbarContributionProvider()
   const { runGuarded } = useNavigationGuardRunner()
+  const handleSaveRef = useRef<() => Promise<boolean>>(async () => false)
   const openProjectSecrets = useCallback(() => {
-    runGuarded(() => {
-      prepareProjectSecretsSettingsNavigation(projectId)
-      window.location.hash = '#/settings'
-    })
-  }, [projectId, runGuarded])
+    if (scriptId) {
+      setSecretBindingsOpen(true)
+      return
+    }
+    saveAndConfigureRequestedRef.current = true
+    void handleSaveRef.current()
+  }, [scriptId])
   const {
     activeAction,
     activeReplaySessionId,
@@ -2549,7 +2555,6 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
       ? 'Enter a script name before checking readiness'
       : 'Recheck script readiness'
   const scriptEditorDirtyRef = useRef(scriptEditorDirty)
-  const handleSaveRef = useRef<() => Promise<boolean>>(async () => false)
   scriptEditorDirtyRef.current = scriptEditorDirty
 
   const handleSave = async (): Promise<boolean> => {
@@ -2610,16 +2615,25 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
       }
       markBaseline(currentScript)
       setInitialSaveRequired(false)
+      pendingCreatedSecretNamesRef.current = []
       setSuccess('Script saved successfully!')
       if (scriptId) {
         await refreshScriptSecretStatus()
         setProjectSecretProbeRetryGeneration(generation => generation + 1)
       }
-      onSave?.(savedScript)
+      const configureSecrets = saveAndConfigureRequestedRef.current
+      saveAndConfigureRequestedRef.current = false
+      if (configureSecrets) onSave?.(savedScript, { configureSecrets: true })
+      else onSave?.(savedScript)
       return true
     } catch (e: unknown) {
       if (!requestIsCurrent()) return false
-      setError(getErrorMessage(e, 'Failed to save script'))
+      saveAndConfigureRequestedRef.current = false
+      const baseMessage = getErrorMessage(e, 'Failed to save script')
+      const createdNames = pendingCreatedSecretNamesRef.current
+      setError(createdNames.length > 0
+        ? `${baseMessage} ${createdNames.join(', ')} ${createdNames.length === 1 ? 'was' : 'were'} already created and remain in the project vault as unused entries until this draft is saved or the entries are removed administratively.`
+        : baseMessage)
       if (getErrorMessage(e, '').includes('Script JSON is invalid')) {
         setDebuggerBottomTab('problems')
       }
@@ -5165,6 +5179,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
       <ReplayPreflightCard
         preflight={replayPreflight}
         onConfigureSecrets={projectId ? openProjectSecrets : undefined}
+        configureSecretsLabel={scriptId ? 'Configure secrets' : 'Save & configure secrets'}
         secretStatusState={replaySecretStatusState}
         onRetrySecretStatus={replaySecretStatusState === 'unavailable'
           ? () => setProjectSecretProbeRetryGeneration(generation => generation + 1)
@@ -5389,7 +5404,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
             </span>
           </div>
           <div className="settings-inline-actions">
-            <button className="btn btn-secondary btn-sm" type="button" onClick={openProjectSecrets}>Configure secrets</button>
+            <button className="btn btn-secondary btn-sm" type="button" onClick={openProjectSecrets}>{scriptId ? 'Configure secrets' : 'Save & configure secrets'}</button>
             {replaySecretStatusState === 'unavailable' && (
               <button className="btn btn-secondary btn-sm" type="button" onClick={() => setProjectSecretProbeRetryGeneration(generation => generation + 1)}>
                 Retry credential check
@@ -5397,6 +5412,29 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
             )}
           </div>
         </div>
+      )}
+      {secretBindingsOpen && scriptId && projectId && (
+        <ScriptSecretBindingsDialog
+          scriptId={scriptId}
+          script={currentDraftScript}
+          projectId={projectId}
+          scriptName={currentDraftScript.name || 'Script'}
+          onClose={() => setSecretBindingsOpen(false)}
+          onConfigured={async () => {
+            await refreshScriptSecretStatus()
+            setProjectSecretProbeRetryGeneration(generation => generation + 1)
+          }}
+          onRebound={(rebound, changedLocations, outcome) => {
+            commitJsonDraft(rebound)
+            if (outcome?.createdSecretName) {
+              pendingCreatedSecretNamesRef.current = Array.from(new Set([
+                ...pendingCreatedSecretNamesRef.current,
+                outcome.createdSecretName,
+              ]))
+            }
+            setSuccess(`Updated ${changedLocations.length} secret reference location${changedLocations.length === 1 ? '' : 's'} in the draft. Save the script to make the rebind authoritative.`)
+          }}
+        />
       )}
       <ScriptImportReviewDialogs
         controller={importReviewController}

@@ -6,10 +6,13 @@ import {
   type ParameterizationDiff,
   type SecretBindingRequirement,
   type SecretBindingSelection,
+  type SharedValueDiff,
+  type SharedValues,
 } from '../types/scriptImports'
 import { type ScriptDefinition } from '../types/scripts'
 import { isSensitiveCredentialPreviewKey, normalizeCredentialPreviewName } from './credentialPreviewPolicy'
 import ParameterizationReview from './ParameterizationReview'
+import SharedImportValues from './SharedImportValues'
 import { importDraftExpiryStatus, protectedImportExpiryLabel } from './protectedImportSession'
 import SecretBindingReview, {
   type PreparedSecretBindings,
@@ -387,6 +390,17 @@ interface Props {
   warningsTitle?: string
   unsupportedElements?: string[]
   reviewSections?: ImportReviewSection[]
+  // Collection-wide values, applied across every script of the import at once.
+  // sharedValueScripts carries the whole batch: the panel is import-wide even
+  // though the rest of this review is scoped to one script.
+  sharedValues?: SharedValues
+  sharedValueScripts?: ScriptDefinition[]
+  onSharedValuesApplied?: (
+    scripts: ScriptDefinition[],
+    diffs: SharedValueDiff[],
+    refreshed?: SharedValues,
+    importDraftExpiresAt?: (string | null)[],
+  ) => void
   parameterization?: Parameterization
   onParameterizationApplied?: (
     script: ScriptDefinition,
@@ -437,6 +451,9 @@ export default function ScriptImportReview({
   warningsTitle = 'Warnings',
   unsupportedElements = [],
   reviewSections = [],
+  sharedValues,
+  sharedValueScripts,
+  onSharedValuesApplied,
   parameterization,
   onParameterizationApplied,
   secretBindingRequirements = [],
@@ -475,11 +492,13 @@ export default function ScriptImportReview({
   const [preparedSecrets, setPreparedSecrets] = useState<PreparedSecretBindings | null>(null)
   const [credentialAction, setCredentialAction] = useState<CredentialAction | null>(null)
   const [parameterizationApplying, setParameterizationApplying] = useState(false)
+  const [sharedValuesApplying, setSharedValuesApplying] = useState(false)
   const [importDraftExpiryGeneration, setImportDraftExpiryGeneration] = useState(0)
   const [issueDialog, setIssueDialog] = useState<{ title: string; issues: IssueDetail[] } | null>(null)
   const [configuredCredentialReviewIdentity, setConfiguredCredentialReviewIdentity] = useState('')
   const saveDisabledReasonId = useId()
   const parameterizationApplyingRef = useRef(false)
+  const sharedValuesApplyingRef = useRef(false)
   const credentialActionRequestRef = useRef<CredentialActionRequest | null>(null)
   const credentialActionRequestIdRef = useRef(0)
   const reviewIdentity = String(reviewGeneration)
@@ -523,10 +542,11 @@ export default function ScriptImportReview({
     ? `${editLabel} with ${configureLaterCount} secret${configureLaterCount === 1 ? '' : 's'} to configure`
     : editLabel
 
-  const reportInternalReviewBusy = useCallback((options?: { parameterization?: boolean; credentials?: boolean }) => {
+  const reportInternalReviewBusy = useCallback((options?: { parameterization?: boolean; credentials?: boolean; sharedValues?: boolean }) => {
     const parameterizationBusy = options?.parameterization ?? parameterizationApplyingRef.current
     const credentialsBusy = options?.credentials ?? credentialActionRequestRef.current !== null
-    onReviewBusyChange?.(parameterizationBusy || credentialsBusy)
+    const sharedValuesBusy = options?.sharedValues ?? sharedValuesApplyingRef.current
+    onReviewBusyChange?.(parameterizationBusy || credentialsBusy || sharedValuesBusy)
   }, [onReviewBusyChange])
 
   const clearCredentialAction = useCallback(() => {
@@ -539,6 +559,12 @@ export default function ScriptImportReview({
     parameterizationApplyingRef.current = applying
     setParameterizationApplying(applying)
     reportInternalReviewBusy({ parameterization: applying })
+  }, [reportInternalReviewBusy])
+
+  const handleSharedValuesApplyingChange = useCallback((applying: boolean) => {
+    sharedValuesApplyingRef.current = applying
+    setSharedValuesApplying(applying)
+    reportInternalReviewBusy({ sharedValues: applying })
   }, [reportInternalReviewBusy])
 
   const handleProjectSecretsConfigured = useCallback((names: readonly string[]) => {
@@ -578,6 +604,10 @@ export default function ScriptImportReview({
   }, [handleParameterizationApplyingChange, parameterization, reviewIdentity])
 
   useEffect(() => {
+    handleSharedValuesApplyingChange(false)
+  }, [handleSharedValuesApplyingChange, sharedValues, reviewIdentity])
+
+  useEffect(() => {
     setIssueDialog(null)
   }, [reviewIdentity])
 
@@ -595,6 +625,7 @@ export default function ScriptImportReview({
     credentialActionRequestIdRef.current += 1
     credentialActionRequestRef.current = null
     parameterizationApplyingRef.current = false
+    sharedValuesApplyingRef.current = false
     onReviewBusyChange?.(false)
   }, [onReviewBusyChange])
 
@@ -626,7 +657,7 @@ export default function ScriptImportReview({
   }, [onSecretBindingsApply, reportInternalReviewBusy, reviewIdentity])
 
   const runAction = async (action: CredentialAction) => {
-    if (importDraftExpired || parameterizationApplyingRef.current || reviewBusy) return
+    if (importDraftExpired || parameterizationApplyingRef.current || sharedValuesApplyingRef.current || reviewBusy) return
     if (!hasUnresolvedSecretBindings) {
       if (action === 'save') onSave?.()
       if (action === 'edit') onEdit?.()
@@ -778,7 +809,7 @@ export default function ScriptImportReview({
             <button
               className="btn btn-secondary"
               onClick={() => { void runAction('edit') }}
-              disabled={importDraftExpired || parameterizationApplying || reviewBusy || !credentialsValid || credentialHandlerUnavailable || credentialAction !== null}
+              disabled={importDraftExpired || parameterizationApplying || sharedValuesApplying || reviewBusy || !credentialsValid || credentialHandlerUnavailable || credentialAction !== null}
               title={importDraftExpired
                 ? 'Re-run the import to obtain a fresh credential-preserving draft before editing.'
                 : !credentialsValid
@@ -792,7 +823,7 @@ export default function ScriptImportReview({
             <button
               className="btn btn-primary"
               onClick={() => { void runAction('save') }}
-              disabled={importDraftExpired || saving || saveDisabled || parameterizationApplying || reviewBusy || !credentialsValid || credentialHandlerUnavailable || credentialAction !== null}
+              disabled={importDraftExpired || saving || saveDisabled || parameterizationApplying || sharedValuesApplying || reviewBusy || !credentialsValid || credentialHandlerUnavailable || credentialAction !== null}
               aria-describedby={visibleSaveDisabledReason ? saveDisabledReasonId : undefined}
               title={importDraftExpired
                 ? 'Re-run the import to obtain a fresh credential-preserving draft before saving.'
@@ -844,7 +875,7 @@ export default function ScriptImportReview({
           onApply={applySecretBindings}
           onPreparedChange={setPreparedSecrets}
           onProjectSecretsConfigured={handleProjectSecretsConfigured}
-          disabled={importDraftExpired || parameterizationApplying || reviewBusy}
+          disabled={importDraftExpired || parameterizationApplying || sharedValuesApplying || reviewBusy}
         />
       )}
 
@@ -899,6 +930,17 @@ export default function ScriptImportReview({
             </button>
           )}
         </div>
+      )}
+
+      {sharedValues && onSharedValuesApplied && (sharedValues.candidates?.length ?? 0) > 0 && (
+        <SharedImportValues
+          sharedValues={sharedValues}
+          scripts={sharedValueScripts && sharedValueScripts.length > 0 ? sharedValueScripts : [script]}
+          reviewGeneration={reviewGeneration}
+          disabled={importDraftExpired || saving || reviewBusy || credentialAction !== null}
+          onApplyingChange={handleSharedValuesApplyingChange}
+          onApplied={onSharedValuesApplied}
+        />
       )}
 
       {parameterization && onParameterizationApplied && (parameterization.suggestions?.length ?? 0) > 0 && (

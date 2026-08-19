@@ -344,8 +344,8 @@ func (s *SQLiteStore) DeleteScriptIfUnchanged(id string, expectedUpdatedAt time.
 		return false, errors.New("script id and expected updated_at are required")
 	}
 	var currentUpdatedAt time.Time
-	var currentUpdatedRaw string
-	if err := s.db.QueryRow(`SELECT updated_at, CAST(updated_at AS TEXT) FROM scripts WHERE id = ?`, id).Scan(&currentUpdatedAt, &currentUpdatedRaw); err != nil {
+	var currentUpdatedRaw, projectID string
+	if err := s.db.QueryRow(`SELECT updated_at, CAST(updated_at AS TEXT), COALESCE(project_id, '') FROM scripts WHERE id = ?`, id).Scan(&currentUpdatedAt, &currentUpdatedRaw, &projectID); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return false, nil
 		}
@@ -359,6 +359,10 @@ func (s *SQLiteStore) DeleteScriptIfUnchanged(id string, expectedUpdatedAt time.
 		return false, err
 	}
 	defer tx.Rollback()
+	if err := lockRequiredPlacementParent(tx,
+		`UPDATE projects SET updated_at = updated_at WHERE id = ?`, normalizeProjectID(projectID), "script", "project"); err != nil {
+		return false, err
+	}
 	// Lock the parent scripts row before touching dependent rows so this
 	// transaction and SaveScriptRecording (which locks the parent first, then
 	// upserts script_recordings) acquire row locks in the same order on
@@ -542,6 +546,17 @@ func (s *SQLiteStore) DeleteScript(id string) error {
 		return err
 	}
 	defer tx.Rollback()
+	var projectID string
+	if err := tx.QueryRow(`SELECT COALESCE(project_id, '') FROM scripts WHERE id = ?`, id).Scan(&projectID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil
+		}
+		return err
+	}
+	if err := lockRequiredPlacementParent(tx,
+		`UPDATE projects SET updated_at = updated_at WHERE id = ?`, normalizeProjectID(projectID), "script", "project"); err != nil {
+		return err
+	}
 	// Lock the parent before removing dependent integration rows. A concurrent
 	// GitHub link save takes the same row lock, so it cannot insert a new link
 	// after this transaction has already passed its dependent-row cleanup.

@@ -173,15 +173,22 @@ func newScriptImportResponse(opts scriptImportResponseOptions) map[string]any {
 	if summary == nil {
 		summary = map[string]any{}
 	}
+	parameterizationScripts := importParameterizationScripts(
+		projectedImportScripts{value: parameterizationProjection},
+	)
 	parameterization := opts.Parameterization
 	if parameterization == nil {
 		parameterization = &paramize.Result{Suggestions: []paramize.Suggestion{}}
 	} else {
-		parameterization = sanitizeImportParameterization(
-			parameterization,
-			projectedImportScripts{value: parameterizationProjection},
-		)
+		parameterization = sanitizeImportParameterization(parameterization, parameterizationScripts)
 	}
+
+	// Collection-wide values are derived from the same disclosure projection the
+	// parameterization pass uses, so both panels agree on the tree and the IDs
+	// here match what the apply endpoint re-derives. Decoding that projection
+	// into typed scripts is the expensive part, so it is done once and shared
+	// with the parameterization trust pass above.
+	sharedValues := buildImportSharedValues(parameterizationScripts)
 
 	response := map[string]any{
 		"scripts":                     scripts,
@@ -203,6 +210,7 @@ func newScriptImportResponse(opts scriptImportResponseOptions) map[string]any {
 		"trueclient2_compat_report":   sanitizeImportReviewEvidence(opts.TrueClient2Compat),
 		"protocol_compat_report":      sanitizeImportReviewEvidence(opts.ProtocolCompat),
 		"parameterization":            parameterization,
+		"shared_values":               sharedValues,
 		"preflight":                   sanitizeImportEmbeddedReviewEvidence(opts.Preflight),
 	}
 	if opts.Result != nil {
@@ -1110,6 +1118,13 @@ type projectedImportScripts struct {
 func importParameterizationScripts(values ...any) []*dsl.Script {
 	result := make([]*dsl.Script, 0)
 	for _, value := range values {
+		// Decoding the projection into typed scripts is the expensive step, so a
+		// caller that already did it passes the result straight through instead
+		// of paying for a second marshal/unmarshal of the whole tree.
+		if decoded, ok := value.([]*dsl.Script); ok {
+			result = append(result, decoded...)
+			continue
+		}
 		var projected any
 		if preProjected, ok := value.(projectedImportScripts); ok {
 			projected = preProjected.value

@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from '../hooks/apiClient'
 import { type SecretBindingRequirement, type SecretBindingSelection } from '../types/scriptImports'
 import SecretBindingReview, { type SecretBindingReviewHandle } from './SecretBindingReview'
+import { credentialNoun } from './secretBindingNoun'
 import { createProjectSecretsInBatches } from './secretBindingBatches'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
@@ -2230,5 +2231,131 @@ describe('SecretBindingReview', () => {
       { requirement_id: 'other', secret_name: 'DUPLICATE_2' },
     ])
     expect(onApply).not.toHaveBeenCalled()
+  })
+})
+
+// A credential shared by a whole collection is deliberately split into one
+// requirement per script, so nothing is ever bound to unrelated drafts by
+// accident. That leaves the operator naming the same password once per script.
+// Reusing one binding across them is an explicit choice the selection contract
+// already permits, so it should take one click.
+describe('SecretBindingReview reuse across scripts', () => {
+  let container: HTMLDivElement
+  let root: Root
+
+  // Importers derive the name from the request, so the three copies of one
+  // collection password arrive as USERS_PASSWORD / ORDERS_PASSWORD /
+  // INVOICES_PASSWORD — never as one repeated name.
+  const perScriptRequirements: SecretBindingRequirement[] = ['USERS', 'ORDERS', 'INVOICES'].map((prefix, index) => ({
+    id: `password-${index}`,
+    path: '/actions/0/params/password',
+    label: `${prefix} — Password`,
+    context: 'Basic auth credential',
+    suggested_name: `${prefix}_PASSWORD`,
+    replacement: `{{secret.${prefix}_PASSWORD}}`,
+    script_index: index,
+    script_name: `get-${prefix.toLowerCase()}`,
+  }))
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    apiMock.getProjectSecretStatuses.mockResolvedValue({
+      project_id: 'project-1',
+      capabilities: {
+        provider: 'database',
+        writable: true,
+        create_supported: true,
+        replace_supported: true,
+        source_secret_migration_policy_enabled: false,
+      },
+      secrets: [],
+    })
+  })
+
+  afterEach(() => {
+    act(() => root.unmount())
+    container.remove()
+  })
+
+  function nameInputs(): HTMLInputElement[] {
+    return Array.from(container.querySelectorAll<HTMLInputElement>('input[type="text"]'))
+      .filter(input => input.labels?.[0]?.textContent === 'Secret reference name')
+  }
+
+  it('de-duplicates per-script names by default and reuses one on request', () => {
+    act(() => {
+      root.render(<SecretBindingReview requirements={perScriptRequirements} onApply={vi.fn()} />)
+    })
+
+    // Without the control, the operator faces three distinct names.
+    expect(nameInputs().map(input => input.value))
+      .toEqual(['USERS_PASSWORD', 'ORDERS_PASSWORD', 'INVOICES_PASSWORD'])
+
+    const reuseButtons = Array.from(
+      container.querySelectorAll<HTMLButtonElement>('.secret-binding-review-reuse-all'),
+    )
+    expect(reuseButtons).toHaveLength(3)
+    expect(reuseButtons[0].textContent).toContain('all 3 password locations')
+    // The operator must be able to see what would be merged before merging it.
+    expect(reuseButtons[0].title).toContain('USERS — Password')
+    expect(reuseButtons[0].title).toContain('INVOICES — Password')
+
+    act(() => {
+      reuseButtons[0].dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(nameInputs().map(input => input.value))
+      .toEqual(['USERS_PASSWORD', 'USERS_PASSWORD', 'USERS_PASSWORD'])
+  })
+
+  // Usernames and passwords are different credentials and must not be merged
+  // into one binding by the same click.
+  it('keeps different credential kinds in separate reuse sets', () => {
+    const mixed: SecretBindingRequirement[] = [
+      ...perScriptRequirements,
+      {
+        id: 'username-0',
+        path: '/actions/0/params/username',
+        label: 'USERS — Username',
+        context: 'Basic auth identity',
+        suggested_name: 'USERS_USERNAME',
+        replacement: '{{secret.USERS_USERNAME}}',
+        script_index: 0,
+        script_name: 'get-users',
+      },
+    ]
+    act(() => {
+      root.render(<SecretBindingReview requirements={mixed} onApply={vi.fn()} />)
+    })
+    const buttons = Array.from(
+      container.querySelectorAll<HTMLButtonElement>('.secret-binding-review-reuse-all'),
+    )
+    // Only the three passwords form a set; the lone username gets no offer.
+    expect(buttons).toHaveLength(3)
+    expect(buttons.every(button => button.textContent?.includes('password'))).toBe(true)
+  })
+
+  it('offers no reuse control when a credential appears only once', () => {
+    act(() => {
+      root.render(<SecretBindingReview requirements={[perScriptRequirements[0]]} onApply={vi.fn()} />)
+    })
+    expect(container.querySelector('.secret-binding-review-reuse-all')).toBeNull()
+  })
+})
+
+
+describe('credentialNoun', () => {
+  // The credential kind is the only part of an importer-derived name that is
+  // stable across requests, so it is what identifies the same credential seen
+  // again. Anything unrecognized gets no reuse offer rather than a guess.
+  it('extracts the credential kind from an importer-derived name', () => {
+    expect(credentialNoun('LOGIN_A_PASSWORD')).toBe('PASSWORD')
+    expect(credentialNoun('PASSWORD')).toBe('PASSWORD')
+    expect(credentialNoun('ORDERS_TOKEN')).toBe('TOKEN')
+    expect(credentialNoun('ORDER_API_REFERENCE')).toBe('')
+    expect(credentialNoun('')).toBe('')
   })
 })

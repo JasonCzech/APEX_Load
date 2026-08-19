@@ -160,13 +160,16 @@ type Server struct {
 	// from being erased by deletion of that same project without stalling work
 	// for unrelated projects.
 	projectMutations projectMutationCoordinator
-	oidcMu           sync.Mutex
-	oidcRuntimeKey   string
-	oidcRuntime      *oidcRuntime
-	ciAuthMu         sync.Mutex
-	ciOIDCProviders  map[string]*ciOIDCProviderRuntime
-	ciOIDCExchanges  map[string]ciOIDCExchangeCacheEntry
-	ciChecksCancel   context.CancelFunc
+	// secretReferenceMutations fences authoritative reference snapshots against
+	// script CRUD and secret create/rotation for the same project.
+	secretReferenceMutations *projectMutationCoordinator
+	oidcMu                   sync.Mutex
+	oidcRuntimeKey           string
+	oidcRuntime              *oidcRuntime
+	ciAuthMu                 sync.Mutex
+	ciOIDCProviders          map[string]*ciOIDCProviderRuntime
+	ciOIDCExchanges          map[string]ciOIDCExchangeCacheEntry
+	ciChecksCancel           context.CancelFunc
 	// selfHealMu serializes replay/debug self-heal write-back. Both the browser
 	// replay and script debug managers fire completion hooks into the shared
 	// persistSelfHealToRepository, whose read-modify-write of the whole objects
@@ -480,7 +483,12 @@ func NewServer(cfg ServerConfig) *Server {
 	if protectedRecords, ok := cfg.Store.(storage.ProtectedSourceSecretSessionStore); ok && protectedRecords != nil && wrapper != nil {
 		protectedSourceSessions = &secretstore.ProtectedSourceSessionStore{Records: protectedRecords, Wrapper: wrapper}
 	}
-	runnerOpts = append(runnerOpts, WithProjectSecretStore(projectSecretStore))
+	secretReferenceMutations := &projectMutationCoordinator{}
+	secretReferenceMutations.configureDurableLease(cfg.Store)
+	runnerOpts = append(runnerOpts,
+		WithProjectSecretStore(projectSecretStore),
+		withSecretReferenceMutationCoordinator(secretReferenceMutations),
+	)
 	runner := NewTestRunner(cfg.MaxConcurrent, hub, cfg.Store, runnerOpts...)
 	runner.setLiveStateStore(cache)
 	startupAuthSettings := normalizeAuthSettings(runner.GetSystemSettings().Auth)
@@ -558,6 +566,7 @@ func NewServer(cfg ServerConfig) *Server {
 		brunoArtifactDir:            strings.TrimSpace(cfg.BrunoArtifactDir),
 		brunoArtifactWrapper:        cfg.BrunoArtifactWrapper,
 		projectSecretStore:          projectSecretStore,
+		secretReferenceMutations:    secretReferenceMutations,
 		protectedSourceSessions:     protectedSourceSessions,
 		sourceSecretSessions:        make(map[string]*sourceSecretSession),
 		sourceSecretSessionLifetime: sourceSecretSessionTTL,
@@ -952,6 +961,7 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.mux.Handle("PUT /api/v1/projects/{id}", cors(log(auth(http.HandlerFunc(s.handleUpdateProject)))))
 	s.mux.Handle("DELETE /api/v1/projects/{id}", cors(log(auth(http.HandlerFunc(s.handleDeleteProject)))))
 	s.mux.Handle("GET /api/v1/projects/{id}/secrets", cors(log(auth(http.HandlerFunc(s.handleListProjectSecrets)))))
+	s.mux.Handle("GET /api/v1/projects/{id}/secrets/{name}/usage", cors(log(auth(http.HandlerFunc(s.handleProjectSecretUsage)))))
 	s.mux.Handle("POST /api/v1/projects/{id}/secrets/status", cors(log(auth(http.HandlerFunc(s.handleProjectSecretStatus)))))
 	s.mux.Handle("POST /api/v1/projects/{id}/secrets", cors(log(auth(http.HandlerFunc(s.handleCreateProjectSecrets)))))
 	s.mux.Handle("PUT /api/v1/projects/{id}/secrets/{name}", cors(log(auth(http.HandlerFunc(s.handleRotateProjectSecret)))))
@@ -1060,6 +1070,7 @@ func (s *Server) routes(allowedOrigins []string) {
 	// Script CRUD, validation, import, and export endpoints.
 	s.mux.Handle("POST /api/v1/scripts", cors(log(auth(http.HandlerFunc(s.handleCreateScript)))))
 	s.mux.Handle("POST /api/v1/scripts/secret-bindings/apply", cors(log(auth(http.HandlerFunc(s.handleApplyScriptSecretBindings)))))
+	s.mux.Handle("POST /api/v1/scripts/secret-references/rebind", cors(log(auth(http.HandlerFunc(s.handleRebindScriptSecretReference)))))
 	s.mux.Handle("POST /api/v1/scripts/import/secrets/migrate", cors(log(auth(http.HandlerFunc(s.handleMigrateSourceSecrets)))))
 	s.mux.Handle("POST /api/v1/scripts/import/secrets/discard", cors(log(auth(http.HandlerFunc(s.handleDiscardSourceSecretSession)))))
 	s.mux.Handle("GET /api/v1/scripts", cors(log(auth(http.HandlerFunc(s.handleListScripts)))))
@@ -1166,6 +1177,7 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.mux.Handle("POST /api/v1/scripts/import/broker-config", cors(log(auth(http.HandlerFunc(s.handleImportBrokerConfig)))))
 	s.mux.Handle("GET /api/v1/scripts/import/broker-config/support-matrix", cors(log(auth(http.HandlerFunc(s.handleBrokerConfigSupportMatrix)))))
 	s.mux.Handle("POST /api/v1/scripts/import/parameterize/apply", cors(log(auth(http.HandlerFunc(s.handleApplyImportParameterization)))))
+	s.mux.Handle("POST /api/v1/scripts/import/shared-values/apply", cors(log(auth(http.HandlerFunc(s.handleApplyImportSharedValues)))))
 	s.mux.Handle("POST /api/v1/scripts/{id}/parameterize/suggest", cors(log(auth(http.HandlerFunc(s.handleSuggestScriptParameterization)))))
 
 	// Governed AI-assisted authoring, repair, explanation, and analysis.

@@ -12,6 +12,11 @@ export function secretBindingReference(value: string): string {
   return `{{secret.${value.trim()}}}`
 }
 
+export function collisionSafeSecretName(base: string, ordinal: number): string {
+  const suffix = `_${ordinal}`
+  return `${base.slice(0, MAX_SECRET_BINDING_NAME_LENGTH - suffix.length)}${suffix}`
+}
+
 export function requirementsPreserveDestinationValues(
   requirements: readonly SecretBindingRequirement[],
 ): boolean {

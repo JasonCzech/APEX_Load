@@ -20,13 +20,15 @@ import {
   type ProjectSecretWrite,
 } from '../types/secrets'
 import { getErrorMessage } from '../utils/errorUtils'
-import { isValidSecretBindingName, MAX_SECRET_BINDING_NAME_LENGTH } from './secretBindingUtils'
+import { collisionSafeSecretName, isValidSecretBindingName, MAX_SECRET_BINDING_NAME_LENGTH } from './secretBindingUtils'
 import {
   formatSourceSecretSessionFailure,
   getSourceSecretSessionFailureMetadata,
   sourceSecretSessionIsExpired,
 } from './sourceSecretSession'
 import { createProjectSecretsInBatches } from './secretBindingBatches'
+import SecretReferenceValueControl from './SecretReferenceValueControl'
+import { credentialNoun } from './secretBindingNoun'
 import './ScriptImportReview.css'
 
 interface Props {
@@ -57,6 +59,11 @@ interface RequirementGroup {
   key: string
   requirements: SecretBindingRequirement[]
   suggestedName: string
+  // baseName is the importer's suggestion before per-scope de-duplication
+  // renames it. The reuse control reads the credential kind out of it, which
+  // the renamed suggestedName would no longer carry cleanly.
+  baseName: string
+  destinationClass: string
 }
 
 type DestinationChoice = 'preserve' | 'project-secret'
@@ -122,7 +129,7 @@ function groupRequirements(requirements: SecretBindingRequirement[]): Requiremen
     if (existing) {
       existing.requirements.push(requirement)
     } else {
-      groups.set(key, { key, requirements: [requirement], suggestedName })
+      groups.set(key, { key, requirements: [requirement], suggestedName, baseName: suggestedName, destinationClass })
     }
   }
   const result = Array.from(groups.values())
@@ -279,11 +286,6 @@ function normalizeStatusMap(response: unknown): Map<string, ProjectSecretStatus>
       ? candidate.secrets
       : []
   return new Map(items.map(status => [status.name, status]))
-}
-
-function collisionSafeSecretName(base: string, ordinal: number): string {
-  const suffix = `_${ordinal}`
-  return `${base.slice(0, MAX_SECRET_BINDING_NAME_LENGTH - suffix.length)}${suffix}`
 }
 
 const MAX_COLLISION_CANDIDATES = 256
@@ -1276,6 +1278,57 @@ const SecretBindingReview = forwardRef<SecretBindingReviewHandle, Props>(functio
     setError('')
   }
 
+  // One credential shared by a whole collection is split into one requirement
+  // per script on purpose, so a batch can never be attached to unrelated drafts
+  // by accident. That leaves the operator naming the same password once per
+  // request. Reusing one binding across them is an explicit choice, and
+  // SecretBindingSelection exists to express it — so offer it as one click
+  // instead of making them retype it N times.
+  //
+  // Grouping is by the credential noun the importer derived, not by the whole
+  // suggested name: importers prefix the name with the request (LOGIN_PASSWORD,
+  // ORDERS_PASSWORD), so whole-name grouping would never match a real import.
+  // Nothing is merged automatically — the operator sees the count and the
+  // affected requests before choosing.
+  const reuseSets = new Map<string, RequirementGroup[]>()
+  for (const group of groups) {
+    const noun = credentialNoun(group.baseName)
+    if (!noun) continue
+    const key = `${noun}:${group.destinationClass}`
+    const existing = reuseSets.get(key)
+    if (existing) existing.push(group)
+    else reuseSets.set(key, [group])
+  }
+
+  const reuseSetFor = (group: RequirementGroup): RequirementGroup[] => {
+    const noun = credentialNoun(group.baseName)
+    if (!noun) return []
+    const members = reuseSets.get(`${noun}:${group.destinationClass}`) || []
+    return members.length > 1 ? members : []
+  }
+
+  const applyNameToReuseSet = (group: RequirementGroup) => {
+    const members = reuseSetFor(group)
+    if (members.length === 0 || applying || disabled) return
+    const name = (names[group.key] ?? group.suggestedName).trim()
+    if (!name) return
+    const value = values[group.key] || ''
+    setNames(current => {
+      const next = { ...current }
+      for (const member of members) next[member.key] = name
+      return next
+    })
+    // Names reused across locations must carry the same optional value, so copy
+    // the value too rather than leaving the set in a conflicting state.
+    setValues(current => {
+      const next = { ...current }
+      for (const member of members) next[member.key] = value
+      valuesRef.current = next
+      return next
+    })
+    setError('')
+  }
+
   const updateDestinationChoice = (group: RequirementGroup, choice: DestinationChoice) => {
     if (choice === 'preserve' && !groupCanPreserveDestinationValue(group)) return
     setDestinationChoices(current => ({ ...current, [group.key]: choice }))
@@ -1405,8 +1458,6 @@ const SecretBindingReview = forwardRef<SecretBindingReviewHandle, Props>(functio
         {visibleGroups.map((group, pageIndex) => {
           const index = credentialPageStart + pageIndex
           const inputId = `${idPrefix}-secret-binding-${index}`
-          const valueId = `${inputId}-value`
-          const helpId = `${inputId}-help`
           const nameErrorId = `${inputId}-name-error`
           const valueConflictErrorId = `${inputId}-value-conflict-error`
           const preservationHelpId = `${inputId}-preservation-help`
@@ -1463,6 +1514,12 @@ const SecretBindingReview = forwardRef<SecretBindingReviewHandle, Props>(functio
                 ? 'warning'
                 : ''
           const valueConflict = conflictingValueNames.has(name.trim())
+          const reuseSet = reuseSetFor(group)
+          const reuseSetSize = reuseSet.length
+          const reuseNoun = credentialNoun(group.baseName)
+          const reuseSetLabels = reuseSet
+            .map(member => member.requirements[0]?.label || member.suggestedName)
+            .slice(0, 8)
 
           return (
             <li key={group.key} className="secret-binding-review-item">
@@ -1531,38 +1588,22 @@ const SecretBindingReview = forwardRef<SecretBindingReviewHandle, Props>(functio
                     </div>
                   )}
                 </fieldset>
-                <label htmlFor={inputId}>Secret reference name</label>
-                <input
+                <SecretReferenceValueControl
                   id={inputId}
-                  type="text"
-                  value={name}
-                  onChange={event => updateName(group.key, event.target.value)}
-                  disabled={applying || disabled || !bindingSelected}
-                  aria-describedby={[
-                    helpId,
+                  name={name}
+                  value={values[group.key] || ''}
+                  onNameChange={value => updateName(group.key, value)}
+                  onValueChange={value => updateValue(group.key, value)}
+                  nameDisabled={applying || disabled || !bindingSelected}
+                  valueDisabled={applying || disabled || !bindingSelected || !projectId || scopedProbeState !== 'ready' || !scopedStoreWritable || configured}
+                  nameDescribedBy={[
                     nameError ? nameErrorId : '',
                     valueConflict ? valueConflictErrorId : '',
                   ].filter(Boolean).join(' ')}
-                  aria-invalid={nameError || valueConflict ? 'true' : 'false'}
-                  autoComplete="off"
-                  spellCheck={false}
-                />
-                <span id={helpId} className="secret-binding-review-reference">
-                  {bindingSelected ? 'Script reference' : 'Optional project reference'}: <code>{name.trim() ? `{{secret.${name.trim()}}}` : '{{secret.NAME}}'}</code>
-                </span>
-                {nameError && <span id={nameErrorId} className="secret-binding-review-field-error">{nameError}</span>}
-                {valueConflict && <span id={valueConflictErrorId} className="secret-binding-review-field-error">Reused names must use the same optional value.</span>}
-
-                <label htmlFor={valueId}>Secret value (optional)</label>
-                <input
-                  id={valueId}
-                  type="password"
-                  value={values[group.key] || ''}
-                  onChange={event => updateValue(group.key, event.target.value)}
-                  disabled={applying || disabled || !bindingSelected || !projectId || scopedProbeState !== 'ready' || !scopedStoreWritable || configured}
-                  autoComplete="new-password"
-                  aria-label={`Secret value for ${name || group.requirements[0]?.label || 'credential'}`}
-                  placeholder={configured
+                  nameInvalid={Boolean(nameError || valueConflict)}
+                  referenceKind={bindingSelected ? 'Script reference' : 'Optional project reference'}
+                  valueAriaLabel={`Secret value for ${name || group.requirements[0]?.label || 'credential'}`}
+                  valuePlaceholder={configured
                     ? 'Already configured'
                     : !projectId
                       ? 'Select a project to enter a value'
@@ -1574,6 +1615,19 @@ const SecretBindingReview = forwardRef<SecretBindingReviewHandle, Props>(functio
                             ? 'Enter now or leave blank'
                             : 'Provider is read-only'}
                 />
+                {reuseSetSize > 1 && (
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm secret-binding-review-reuse-all"
+                    disabled={applying || disabled || !name.trim() || Boolean(nameError)}
+                    onClick={() => applyNameToReuseSet(group)}
+                    title={`Point these at one project secret: ${reuseSetLabels.join(', ')}. Do this only when they really are the same credential.`}
+                  >
+                    Use this binding for all {reuseSetSize} {reuseNoun.toLowerCase()} locations
+                  </button>
+                )}
+                {nameError && <span id={nameErrorId} className="secret-binding-review-field-error">{nameError}</span>}
+                {valueConflict && <span id={valueConflictErrorId} className="secret-binding-review-field-error">Reused names must use the same optional value.</span>}
               </div>
             </li>
           )

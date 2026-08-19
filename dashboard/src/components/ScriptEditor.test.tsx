@@ -33,6 +33,10 @@ const apiMock = {
   getScript: vi.fn(),
   getScriptSecretStatus: vi.fn(),
   getProjectSecretStatuses: vi.fn(),
+  getProjectSecretUsage: vi.fn(),
+  listProjectSecrets: vi.fn(),
+  createProjectSecrets: vi.fn(),
+  rebindScriptSecretReference: vi.fn(),
   createScript: vi.fn(),
   updateScript: vi.fn(),
   createAuthoringSession: vi.fn(),
@@ -491,6 +495,24 @@ describe('ScriptEditor', () => {
       },
       secrets: names.map(name => ({ name, configured: false })),
     }))
+    apiMock.getProjectSecretUsage.mockImplementation(async (projectId: string, name: string) => ({
+      project_id: projectId,
+      name,
+      usage_revision: `usage-${name}`,
+      consumer_count: 1,
+      reference_count: 1,
+      consumers: [{ script_id: 'script-1', script_name: 'Checkout Flow', reference_count: 1 }],
+      limit: 50,
+      offset: 0,
+      has_more: false,
+    }))
+    apiMock.listProjectSecrets.mockResolvedValue({
+      project_id: 'project-1',
+      capabilities: { provider: 'encrypted_database', writable: true, create_supported: true, replace_supported: true },
+      secrets: [],
+      count: 0,
+    })
+    apiMock.createProjectSecrets.mockResolvedValue({ project_id: 'project-1', secrets: [], count: 1 })
     apiMock.createScript.mockResolvedValue({ id: 'script-1' })
     apiMock.updateScript.mockResolvedValue({ id: 'script-1' })
     apiMock.validateScript.mockResolvedValue({
@@ -670,8 +692,19 @@ describe('ScriptEditor', () => {
     expect(container.querySelector('.side-panel-script-name')).not.toBeNull()
   })
 
-  it('loads stored secret status, refreshes it after save, and preserves the project settings target', async () => {
+  it('loads stored secret status, opens script bindings, and refreshes it after save', async () => {
     apiMock.getProjectSecretStatuses
+      .mockResolvedValueOnce({
+        project_id: 'project-1',
+        capabilities: {
+          provider: 'encrypted_database',
+          writable: true,
+          create_supported: true,
+          replace_supported: true,
+          source_secret_migration_policy_enabled: false,
+        },
+        secrets: [{ name: 'LOGIN_TOKEN', configured: false }],
+      })
       .mockResolvedValueOnce({
         project_id: 'project-1',
         capabilities: {
@@ -714,6 +747,22 @@ describe('ScriptEditor', () => {
         script_id: 'script-1',
         project_id: 'project-1',
         required: ['LOGIN_TOKEN'],
+        configured: [],
+        missing: ['LOGIN_TOKEN'],
+        secrets: [{ name: 'LOGIN_TOKEN', configured: false }],
+        bindings: [{ name: 'LOGIN_TOKEN', configured: false, occurrence_count: 1, locations: ['/actions/0/headers/Authorization'] }],
+        capabilities: {
+          provider: 'encrypted_database',
+          writable: true,
+          create_supported: true,
+          replace_supported: true,
+          source_secret_migration_policy_enabled: false,
+        },
+      })
+      .mockResolvedValueOnce({
+        script_id: 'script-1',
+        project_id: 'project-1',
+        required: ['LOGIN_TOKEN'],
         configured: ['LOGIN_TOKEN'],
         missing: [],
         secrets: [{ name: 'LOGIN_TOKEN', configured: true }],
@@ -744,10 +793,13 @@ describe('ScriptEditor', () => {
     await act(async () => {
       configureButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
-    expect(window.localStorage.getItem('apexload.settings.focusSection')).toBe('projects')
-    expect(window.localStorage.getItem('apexload.settings.projectSubsection')).toBe(JSON.stringify('secrets'))
-    expect(window.localStorage.getItem('apexload.settings.projectId')).toBe('project-1')
-    expect(window.location.hash).toBe('#/settings')
+    await flushReact()
+    expect(document.body.textContent).toContain('Secret Bindings · Checkout Flow')
+    expect(window.localStorage.getItem('apexload.settings.focusSection')).toBeNull()
+    expect(window.location.hash).toBe('')
+    await act(async () => {
+      Array.from(document.body.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Close')?.click()
+    })
 
     const nameInput = container.querySelector<HTMLInputElement>('.side-panel-script-name input')
     expect(nameInput).not.toBeNull()
@@ -763,7 +815,7 @@ describe('ScriptEditor', () => {
     })
     await flushReact()
 
-    expect(apiMock.getScriptSecretStatus).toHaveBeenCalledTimes(2)
+    expect(apiMock.getScriptSecretStatus).toHaveBeenCalledTimes(3)
     expect(container.querySelector('.script-secret-banner')).toBeNull()
   })
 
@@ -854,7 +906,102 @@ describe('ScriptEditor', () => {
     expect(runButton?.title).toContain('LOGIN_TOKEN')
   })
 
-  it('treats a Model Existing clone as immediately saveable and guards Configure secrets navigation', async () => {
+  it('reports a created dedicated secret when the later editor save fails', async () => {
+    const secretScript: ScriptDefinition = {
+      ...initialScript,
+      actions: [{
+        ...initialScript.actions[0],
+        headers: {
+          ...initialScript.actions[0].headers,
+          Authorization: 'Bearer {{secret.LOGIN_TOKEN}}',
+        },
+      }],
+    }
+    apiMock.getScriptSecretStatus.mockResolvedValue({
+      script_id: 'script-1',
+      project_id: 'project-1',
+      required: ['LOGIN_TOKEN'],
+      configured: [],
+      missing: ['LOGIN_TOKEN'],
+      secrets: [{ name: 'LOGIN_TOKEN', configured: false }],
+      bindings: [{
+        name: 'LOGIN_TOKEN', configured: false, occurrence_count: 1,
+        locations: ['/actions/0/headers/Authorization'],
+      }],
+      capabilities: {
+        provider: 'encrypted_database', writable: true, create_supported: true,
+        replace_supported: true, source_secret_migration_policy_enabled: false,
+      },
+    })
+    apiMock.getProjectSecretUsage.mockImplementation(async (projectId: string, name: string) => ({
+      project_id: projectId,
+      name,
+      usage_revision: `usage-${name}`,
+      consumer_count: name === 'LOGIN_TOKEN' ? 2 : 0,
+      reference_count: name === 'LOGIN_TOKEN' ? 2 : 0,
+      consumers: name === 'LOGIN_TOKEN'
+        ? [
+            { script_id: 'script-1', script_name: 'Checkout Flow', reference_count: 1 },
+            { script_id: 'script-2', script_name: 'Checkout Clone', reference_count: 1 },
+          ]
+        : [],
+      limit: 50,
+      offset: 0,
+      has_more: false,
+    }))
+    apiMock.rebindScriptSecretReference.mockResolvedValue({
+      script: {
+        ...secretScript,
+        actions: [{
+          ...secretScript.actions[0],
+          headers: {
+            ...secretScript.actions[0].headers,
+            Authorization: 'Bearer {{secret.LOGIN_TOKEN_CHECKOUT_FLOW}}',
+          },
+        }],
+      },
+      old_name: 'LOGIN_TOKEN',
+      new_name: 'LOGIN_TOKEN_CHECKOUT_FLOW',
+      changed_locations: ['/actions/0/headers/Authorization'],
+      changed_count: 1,
+    })
+    apiMock.updateScript.mockRejectedValueOnce(new Error('save unavailable'))
+
+    await act(async () => {
+      root.render(<ScriptEditor scriptId="script-1" initialScript={secretScript} projectId="project-1" />)
+    })
+    await flushReact()
+    await act(async () => {
+      findButtonByText(container, 'Configure secrets')?.click()
+    })
+    await flushReact()
+
+    const valueInput = document.body.querySelector<HTMLInputElement>('input[type="password"]')
+    expect(valueInput).not.toBeNull()
+    if (!valueInput) return
+    await act(async () => {
+      changeInputValue(valueInput, 'dedicated-secret-value')
+    })
+    await act(async () => {
+      Array.from(document.body.querySelectorAll<HTMLButtonElement>('button'))
+        .find(button => button.textContent === 'Create dedicated value')?.click()
+    })
+    await flushReact()
+
+    const saveButton = container.querySelector<HTMLButtonElement>('.actions-sidebar button[aria-label="Save script"]')
+    expect(saveButton?.disabled).toBe(false)
+    await act(async () => {
+      saveButton?.click()
+    })
+    await flushReact()
+
+    expect(container.textContent).toContain('save unavailable')
+    expect(container.textContent).toContain('LOGIN_TOKEN_CHECKOUT_FLOW was already created')
+    expect(container.textContent).toContain('unused entries')
+    expect(container.textContent).not.toContain('dedicated-secret-value')
+  })
+
+  it('treats a Model Existing clone as immediately saveable with Save & configure sequencing', async () => {
     const clonedScript: ScriptDefinition = {
       ...initialScript,
       name: 'Copy of Checkout Flow',
@@ -890,20 +1037,15 @@ describe('ScriptEditor', () => {
     expect(apiMock.getProjectSecretStatuses).toHaveBeenCalledWith('project-1', ['LOGIN_TOKEN'])
     expect(container.querySelector('.script-secret-banner')?.textContent).toContain('1 project secret still needs configuration')
 
-    const configureButton = findButtonByText(container, 'Configure secrets')
+    const configureButton = findButtonByText(container, 'Save & configure secrets')
     await act(async () => {
       configureButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
       await Promise.resolve()
     })
 
-    expect(container.textContent).toContain('Create Script has unsaved changes')
+    expect(apiMock.createScript).toHaveBeenCalled()
     expect(window.location.hash).toBe('')
     expect(window.localStorage.getItem('apexload.settings.focusSection')).toBeNull()
-
-    await act(async () => {
-      findButtonByText(container, 'Keep editing')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
-    expect(window.location.hash).toBe('')
   })
 
   it('keeps Save available but fails replay closed while required-secret status is unknown or unavailable', async () => {

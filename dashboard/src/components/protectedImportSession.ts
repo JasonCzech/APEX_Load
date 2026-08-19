@@ -72,6 +72,12 @@ export interface ImportDraftExpiryStatus {
   label: string
 }
 
+export function earliestImportDraftExpiry(values: readonly (string | null)[] | undefined): string | undefined {
+	return values
+		?.filter((value): value is string => !!value && Number.isFinite(Date.parse(value)))
+		.sort((left, right) => Date.parse(left) - Date.parse(right))[0]
+}
+
 export function importDraftExpiryStatus(
   raw: string | undefined,
   now = Date.now(),

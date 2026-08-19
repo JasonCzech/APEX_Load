@@ -41,6 +41,10 @@ export interface ProjectSecretStatusesResponse {
 export interface ProjectSecretWrite {
   name: string
   value: string
+  expected_usage?: {
+    usage_revision: string
+    exclusive_script_id?: string
+  }
 }
 
 export interface ProjectSecretsWriteResponse {
@@ -48,6 +52,30 @@ export interface ProjectSecretsWriteResponse {
   secrets?: ProjectSecretMetadata[]
   secret?: ProjectSecretMetadata
   count?: number
+  usage?: ProjectSecretUsage
+}
+
+export interface ProjectSecretConsumer {
+  script_id: string
+  script_name: string
+  reference_count: number
+}
+
+export interface ProjectSecretUsage {
+  project_id: string
+  name: string
+  usage_revision: string
+  consumer_count: number
+  reference_count: number
+  consumers: ProjectSecretConsumer[]
+  limit: number
+  offset: number
+  has_more: boolean
+}
+
+export interface ScriptSecretBinding extends ProjectSecretStatus {
+  occurrence_count: number
+  locations: string[]
 }
 
 export interface ScriptSecretStatus {
@@ -58,6 +86,15 @@ export interface ScriptSecretStatus {
   missing: string[]
   secrets: ProjectSecretStatus[]
   capabilities: ProjectSecretCapabilities
+  bindings?: ScriptSecretBinding[]
+}
+
+export interface RebindScriptSecretReferenceResponse {
+  script: ScriptDefinition
+  old_name: string
+  new_name: string
+  changed_locations: string[]
+  changed_count: number
 }
 
 export interface CloneScriptDraftResponse {

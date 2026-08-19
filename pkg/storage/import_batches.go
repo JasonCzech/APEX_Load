@@ -11,6 +11,11 @@ const (
 	ImportBatchProfileBrunoNative        = "bruno_native"
 	ImportBatchReceiptVersion1           = 1
 	ImportBatchDigestBrunoNativeCommitV1 = "bruno-native-commit-v1"
+	// ImportBatchDigestBrunoNativeCommitV2 adds shared_values to the hashed
+	// request. V1 omitted it, so two commits that differed only in the
+	// operator's collection-wide values hashed identically and the idempotent
+	// replay path returned the first commit's batch for the second request.
+	ImportBatchDigestBrunoNativeCommitV2 = "bruno-native-commit-v2"
 )
 
 var (

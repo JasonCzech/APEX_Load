@@ -20,6 +20,7 @@ import { type ImportedSaveResult, type ScriptsAuthoringSubView, useScriptsAuthor
 import { getErrorMessage } from '../utils/errorUtils'
 import { useHasTopbarContributionProvider, useTopbarContribution } from '../hooks/TopbarContributionProvider'
 import { prepareProjectSecretsSettingsNavigation } from './projectSecretsNavigation'
+import ScriptSecretBindingsDialog from './ScriptSecretBindingsDialog'
 import { requestSettingsFocus } from './settingsSectionLayout'
 import {
   formatSourceSecretSessionFailure,
@@ -156,6 +157,7 @@ export default function ScriptsPage({ applicationRepository, initialMode = 'list
   const [effectiveAuthAccessResources, setEffectiveAuthAccessResources] = useState<DashboardAuthEffectiveAccessResource[]>([])
   const [effectiveAccessLoaded, setEffectiveAccessLoaded] = useState(false)
   const [libraryNotice, setLibraryNotice] = useState('')
+  const [secretDialogScript, setSecretDialogScript] = useState<StoredScript | null>(null)
   const projectScopeRef = useRef({ id: activeProjectId, generation: 0 })
   const scriptsRequestGenerationRef = useRef(0)
   const authoringSessionsRequestGenerationRef = useRef(0)
@@ -192,6 +194,10 @@ export default function ScriptsPage({ applicationRepository, initialMode = 'list
   }, [onNavigate])
 
   const openProjectSecrets = useCallback((script?: StoredScript) => {
+    if (script?.id && script.script) {
+      setSecretDialogScript(script)
+      return
+    }
     prepareProjectSecretsSettingsNavigation(script?.project_id || activeProjectId)
     if (onNavigate) onNavigate('settings')
     else window.location.hash = '#/settings'
@@ -715,10 +721,11 @@ export default function ScriptsPage({ applicationRepository, initialMode = 'list
     }
   }
 
-  const handleSaved = useCallback((script: StoredScript) => {
+  const handleSaved = useCallback((script: StoredScript, options?: { configureSecrets?: boolean }) => {
     void refresh()
     void refreshAuthoringSessions()
     handleSavedScript(script)
+    if (options?.configureSecrets) setSecretDialogScript(script)
   }, [handleSavedScript, refresh, refreshAuthoringSessions])
 
   const handleImported = useCallback((result: ImportedSaveResult) => {
@@ -1007,7 +1014,7 @@ export default function ScriptsPage({ applicationRepository, initialMode = 'list
             github={canManageScripts && githubReady ? { enabled: true, onPush: setGithubPushScript, statusByScript: githubStatusByScript } : undefined}
             secretStatusByScript={secretStatusByScript}
             secretStatusStateByScript={secretStatusStateByScript}
-            onConfigureSecrets={onNavigate ? openProjectSecrets : undefined}
+            onConfigureSecrets={openProjectSecrets}
             onRetrySecretStatus={retryScriptSecretStatus}
             onValidateScriptDetails={api.validateScript}
           />
@@ -1030,6 +1037,25 @@ export default function ScriptsPage({ applicationRepository, initialMode = 'list
             onPushed={handleGithubPushed}
           />
         </Suspense>
+      )}
+      {secretDialogScript?.script && (
+        <ScriptSecretBindingsDialog
+          scriptId={secretDialogScript.id}
+          script={secretDialogScript.script}
+          projectId={secretDialogScript.project_id || activeProjectId || ''}
+          scriptName={secretDialogScript.name}
+          onClose={() => setSecretDialogScript(null)}
+          onConfigured={async () => {
+            retryScriptSecretStatus(secretDialogScript)
+            await refresh()
+          }}
+          onRebound={async (rebound, changedLocations) => {
+            const saved = await api.updateScript(secretDialogScript.id, rebound)
+            setSecretDialogScript(saved)
+            appendLibraryNotice(`Rebound ${changedLocations.length} secret reference location${changedLocations.length === 1 ? '' : 's'} in ${saved.name}.`)
+            await refresh()
+          }}
+        />
       )}
       {githubImportOpen && githubConfig && (
         <Suspense fallback={null}>

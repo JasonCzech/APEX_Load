@@ -87,7 +87,7 @@ describe('ScriptsLibraryTable federation', () => {
   }
 
   async function waitForIssueDialog() {
-    for (let attempt = 0; attempt < 10; attempt += 1) {
+    for (let attempt = 0; attempt < 50; attempt += 1) {
       const dialog = document.body.querySelector<HTMLElement>('[role="dialog"]')
       if (dialog) return dialog
       await act(async () => { await new Promise(resolve => window.setTimeout(resolve, 0)) })
@@ -234,9 +234,55 @@ describe('ScriptsLibraryTable federation', () => {
     })
 
     expect(container.textContent).toContain('1 secret missing')
+    await act(async () => findButton('1 secret missing')?.click())
+    expect(onConfigureSecrets).toHaveBeenCalledWith(script)
     const configure = findButton('Configure secrets')
     await act(async () => configure?.click())
-    expect(onConfigureSecrets).toHaveBeenCalledWith(script)
+    expect(onConfigureSecrets).toHaveBeenCalledTimes(2)
+  })
+
+  it('keeps secret binding configuration available after every value is configured', async () => {
+    const onConfigureSecrets = vi.fn()
+    const secretBackedScript: StoredScript = {
+      ...script,
+      script: {
+        name: script.name,
+        version: script.version,
+        protocol: 'http',
+        config: { base_url: 'https://api.example.test' },
+        actions: [{ name: 'Call API', type: 'request', target: '/', headers: { Authorization: 'Bearer {{secret.ORDER_API_TOKEN}}' } }],
+      },
+    }
+    await act(async () => {
+      root.render(
+        <ScriptsLibraryTable
+          {...baseProps}
+          scripts={[secretBackedScript]}
+          secretStatusByScript={{
+            [script.id]: {
+              script_id: script.id,
+              project_id: 'project-1',
+              required: ['ORDER_API_TOKEN'],
+              configured: ['ORDER_API_TOKEN'],
+              missing: [],
+              secrets: [{ name: 'ORDER_API_TOKEN', configured: true, provider: 'database' }],
+              capabilities: {
+                provider: 'database',
+                writable: true,
+                create_supported: true,
+                replace_supported: true,
+                source_secret_migration_policy_enabled: false,
+              },
+            },
+          }}
+          secretStatusStateByScript={{ [script.id]: 'ready' }}
+          onConfigureSecrets={onConfigureSecrets}
+        />,
+      )
+    })
+
+    await act(async () => findButton('Configure secrets')?.click())
+    expect(onConfigureSecrets).toHaveBeenCalledWith(secretBackedScript)
   })
 
   it('never presents a secret-backed script as healthy when credential status is unavailable', async () => {

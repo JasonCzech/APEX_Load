@@ -28,6 +28,7 @@ import (
 	brunoconvert "github.com/jasonczech/apexload/pkg/convert/bruno"
 	"github.com/jasonczech/apexload/pkg/convert/credentialpolicy"
 	"github.com/jasonczech/apexload/pkg/convert/paramize"
+	"github.com/jasonczech/apexload/pkg/convert/sharedvalue"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/engine"
 	"github.com/jasonczech/apexload/pkg/importartifact"
@@ -112,6 +113,11 @@ type brunoInspectResponse struct {
 	SyncPreview        *brunoSyncPreview      `json:"sync_preview,omitempty"`
 	ExecutionPreflight map[string]any         `json:"execution_preflight"`
 	Parameterization   *paramize.Result       `json:"parameterization"`
+	// SharedValues is populated for native imports only. Canonical mode hands
+	// the collection to the Bruno runner, which resolves variables from the
+	// selected environment inside the sealed bundle; offering a competing
+	// override there would fight the runner rather than help the operator.
+	SharedValues *sharedvalue.Result `json:"shared_values,omitempty"`
 }
 
 type brunoCommitRequest struct {
@@ -127,6 +133,10 @@ type brunoCommitRequest struct {
 	SecretBindings         map[string]string `json:"secret_bindings,omitempty"`
 	MigrateSecrets         *bool             `json:"migrate_secrets,omitempty"`
 	ParameterizationIDs    []string          `json:"parameterization_selected_ids,omitempty"`
+	// SharedValues maps a shared-value candidate ID to the operator's value.
+	// Bruno artifacts never leave the server, so the values are applied here at
+	// commit rather than through the generic shared-values apply endpoint.
+	SharedValues           map[string]string `json:"shared_values,omitempty"`
 	ConflictResolutions    map[string]string `json:"conflict_resolutions,omitempty"`
 	CandidateIDs           []string          `json:"candidate_ids,omitempty"`
 	NameOverrides          map[string]string `json:"name_overrides,omitempty"`
@@ -473,6 +483,7 @@ func (s *Server) handleInspectBrunoImport(w http.ResponseWriter, r *http.Request
 		CreatedAt:          now,
 	}
 	var parameterization *paramize.Result
+	var sharedValues *sharedvalue.Result
 	responseResult := result
 	if nativeMode {
 		for index := range result.Scripts {
@@ -487,6 +498,11 @@ func (s *Server) handleInspectBrunoImport(w http.ResponseWriter, r *http.Request
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
+		// Derived from the masked projection so the candidate IDs the browser
+		// receives are the ones the commit path re-derives. Candidate IDs are
+		// structural (name, path, field) and never carry a value, so masking a
+		// credential cannot shift them.
+		sharedValues = buildImportSharedValues(brunoNativeCandidateScripts(responseResult))
 	} else {
 		if result.Script == nil {
 			writeError(w, http.StatusInternalServerError, "Bruno importer produced no canonical script")
@@ -575,7 +591,23 @@ func (s *Server) handleInspectBrunoImport(w http.ResponseWriter, r *http.Request
 		SyncPreview:        syncPreview,
 		ExecutionPreflight: executionPreflight,
 		Parameterization:   parameterization,
+		SharedValues:       sharedValues,
 	})
+}
+
+// brunoNativeCandidateScripts collects the generated scripts of a native
+// inspection so cross-script passes can see the whole collection at once.
+func brunoNativeCandidateScripts(result *brunoconvert.Result) []*dsl.Script {
+	if result == nil {
+		return nil
+	}
+	scripts := make([]*dsl.Script, 0, len(result.Scripts))
+	for _, candidate := range result.Scripts {
+		if candidate.Script != nil {
+			scripts = append(scripts, candidate.Script)
+		}
+	}
+	return scripts
 }
 
 func setBrunoDestinationPreservationEvidence(
@@ -1361,7 +1393,7 @@ func (s *Server) handleCommitBrunoNativeImport(
 	allowedFields := map[string]struct{}{
 		"project_id": {}, "import_session_id": {}, "mode": {}, "folder_id": {},
 		"candidate_ids": {}, "name_overrides": {}, "secret_bindings": {},
-		"migrate_secrets": {}, "acknowledged_finding_ids": {},
+		"migrate_secrets": {}, "acknowledged_finding_ids": {}, "shared_values": {},
 	}
 	var incompatible []string
 	for field := range fields {
@@ -1405,7 +1437,8 @@ func (s *Server) handleCommitBrunoNativeImport(
 			writeError(w, http.StatusConflict, storage.ErrBrunoNativeBatchConflict.Error())
 			return
 		}
-		requestSHA, digestErr := brunoNativeCommitRequestSHA(replayRequest)
+		receiptProfile := receipt.Batch.RequestDigestProfile
+		requestSHA, digestErr := brunoNativeCommitRequestSHAForProfile(receiptProfile, replayRequest)
 		if digestErr != nil {
 			writeError(w, http.StatusBadRequest, digestErr.Error())
 			return
@@ -1433,7 +1466,7 @@ func (s *Server) handleCommitBrunoNativeImport(
 			if omissionVariant.names {
 				variant.nameOverridesOmitted = true
 			}
-			variantSHA, variantErr := brunoNativeCommitRequestSHA(variant)
+			variantSHA, variantErr := brunoNativeCommitRequestSHAForProfile(receiptProfile, variant)
 			if variantErr != nil {
 				writeError(w, http.StatusBadRequest, variantErr.Error())
 				return
@@ -1622,6 +1655,44 @@ func (s *Server) handleCommitBrunoNativeImport(
 		}
 		scripts = append(scripts, script)
 		candidateIDs = append(candidateIDs, candidate.CandidateID)
+	}
+
+	// Collection-wide values are applied across the whole selected batch before
+	// anything is canonicalized or persisted: one value can touch every script,
+	// so a per-script pass would leave the batch inconsistent.
+	if len(request.SharedValues) > 0 {
+		trusted := trustedSharedValueCandidates(scripts)
+		known := make(map[string]bool, len(trusted))
+		for _, candidate := range trusted {
+			known[candidate.ID] = true
+		}
+		for id := range request.SharedValues {
+			if !known[id] {
+				writeError(w, http.StatusConflict,
+					"selected Bruno shared values are stale or unavailable; inspect the source again")
+				return
+			}
+		}
+		if _, applyErr := sharedvalue.Apply(scripts, trusted, request.SharedValues); applyErr != nil {
+			if errors.Is(applyErr, sharedvalue.ErrCredentialShaped) {
+				writeError(w, http.StatusUnprocessableEntity,
+					"credential-shaped shared values must use guided credential bindings")
+				return
+			}
+			writeError(w, http.StatusUnprocessableEntity, "failed to apply Bruno shared values: "+applyErr.Error())
+			return
+		}
+		for index, script := range scripts {
+			if issues := dsl.ValidateScriptIssues(script); len(issues) > 0 {
+				writeJSON(w, http.StatusUnprocessableEntity, map[string]any{
+					"error":        "native Bruno script validation failed after applying shared values",
+					"code":         "bruno_native_script_validation_failed",
+					"candidate_id": candidateIDs[index],
+					"issues":       issues,
+				})
+				return
+			}
+		}
 	}
 
 	request = canonicalizeBrunoNativeSelectedRequest(request, selected, scripts)
@@ -1883,20 +1954,35 @@ func (s *Server) handleCommitBrunoNativeImport(
 		return
 	}
 
+	releaseReferenceMutation, fenceErr := s.acquireSecretReferenceMutation(request.ProjectID)
+	if fenceErr != nil {
+		failAfterSecretMigration(
+			http.StatusServiceUnavailable,
+			"bruno_native_reference_fence_unavailable",
+			"Native Bruno script references are busy; retry the import",
+			fenceErr,
+			"reference_fence",
+		)
+		return
+	}
 	commitResult, err := nativeStore.CommitBrunoNativeImport(&storage.BrunoNativeImportCommit{
 		Batch: storage.BrunoNativeImportBatch{
 			ID:             session.RevisionID,
 			ProjectID:      request.ProjectID,
 			IdempotencyKey: session.ID,
-			RequestSHA256:  requestSHA,
-			CandidateIDs:   candidateIDs,
-			CreatedBy:      actorSubject,
+			// Record the profile alongside the digest so a later replay can
+			// verify with the same hash this commit used.
+			RequestDigestProfile: brunoNativeCommitCurrentDigestProfile,
+			RequestSHA256:        requestSHA,
+			CandidateIDs:         candidateIDs,
+			CreatedBy:            actorSubject,
 		},
 		Scripts:           scripts,
 		RawArtifact:       session.RawArtifact,
 		SanitizedArtifact: session.SanitizedArtifact,
 		RefKeyEnv:         s.runner.envCode,
 	})
+	releaseReferenceMutation()
 	if err != nil {
 		reconciled, reconcileErr := nativeStore.GetBrunoNativeImportByIdempotencyKey(session.ID, request.ProjectID)
 		switch {
@@ -2649,14 +2735,20 @@ func brunoNativeOverridesMatchReceipt(
 	return true
 }
 
+// brunoNativeCommitCurrentDigestProfile is the profile new receipts are written
+// under. Replays must use the profile recorded on the receipt instead.
+const brunoNativeCommitCurrentDigestProfile = storage.ImportBatchDigestBrunoNativeCommitV2
+
 func brunoNativeCommitRequestSHA(request brunoCommitRequest) (string, error) {
-	return brunoNativeCommitRequestSHAForProfile(storage.ImportBatchDigestBrunoNativeCommitV1, request)
+	return brunoNativeCommitRequestSHAForProfile(brunoNativeCommitCurrentDigestProfile, request)
 }
 
 func brunoNativeCommitRequestSHAForProfile(profile string, request brunoCommitRequest) (string, error) {
 	switch strings.TrimSpace(profile) {
 	case storage.ImportBatchDigestBrunoNativeCommitV1:
 		return brunoNativeCommitRequestSHAV1(request)
+	case storage.ImportBatchDigestBrunoNativeCommitV2:
+		return brunoNativeCommitRequestSHAV2(request)
 	default:
 		return "", fmt.Errorf("unsupported Bruno native commit request digest profile %q", profile)
 	}
@@ -2704,6 +2796,66 @@ func brunoNativeCommitRequestSHAV1(request brunoCommitRequest) (string, error) {
 		CandidateIDs:           candidateIDs,
 		NameOverrides:          request.NameOverrides,
 		SecretBindings:         request.SecretBindings,
+		MigrateSecrets:         migrate,
+		AcknowledgedFindingIDs: acknowledged,
+		CandidateIDsOmitted:    request.candidateIDsOmitted,
+		NameOverridesOmitted:   request.nameOverridesOmitted,
+	})
+	if err != nil {
+		return "", err
+	}
+	sum := sha256.Sum256(payload)
+	return fmt.Sprintf("%x", sum[:]), nil
+}
+
+// brunoNativeCommitRequestSHAV2 extends V1 with shared_values. V1 is immutable
+// and frozen by a golden, so this is a new profile rather than an edit: without
+// it, two commits differing only in the operator's collection-wide values hash
+// identically, and the replay path returns the first commit's batch while
+// reporting success for the second.
+//
+// Like V1, this implementation is frozen once receipts exist under it.
+func brunoNativeCommitRequestSHAV2(request brunoCommitRequest) (string, error) {
+	if strings.TrimSpace(request.ImportSessionID) == "" {
+		return "", errors.New("import_session_id is required")
+	}
+	candidateIDs := append([]string(nil), request.CandidateIDs...)
+	for index := range candidateIDs {
+		candidateIDs[index] = strings.TrimSpace(candidateIDs[index])
+	}
+	sort.Strings(candidateIDs)
+	acknowledged := append([]string(nil), request.AcknowledgedFindingIDs...)
+	for index := range acknowledged {
+		acknowledged[index] = strings.TrimSpace(acknowledged[index])
+	}
+	sort.Strings(acknowledged)
+	folderID := ""
+	if request.FolderID != nil {
+		folderID = strings.TrimSpace(*request.FolderID)
+	}
+	migrate := request.MigrateSecrets != nil && *request.MigrateSecrets
+	payload, err := json.Marshal(struct {
+		ProjectID              string            `json:"project_id"`
+		ImportSessionID        string            `json:"import_session_id"`
+		Mode                   string            `json:"mode"`
+		FolderID               string            `json:"folder_id"`
+		CandidateIDs           []string          `json:"candidate_ids"`
+		NameOverrides          map[string]string `json:"name_overrides"`
+		SecretBindings         map[string]string `json:"secret_bindings"`
+		SharedValues           map[string]string `json:"shared_values"`
+		MigrateSecrets         bool              `json:"migrate_secrets"`
+		AcknowledgedFindingIDs []string          `json:"acknowledged_finding_ids"`
+		CandidateIDsOmitted    bool              `json:"candidate_ids_omitted"`
+		NameOverridesOmitted   bool              `json:"name_overrides_omitted"`
+	}{
+		ProjectID:              normalizeProjectID(request.ProjectID),
+		ImportSessionID:        strings.TrimSpace(request.ImportSessionID),
+		Mode:                   "create_native_batch",
+		FolderID:               folderID,
+		CandidateIDs:           candidateIDs,
+		NameOverrides:          request.NameOverrides,
+		SecretBindings:         request.SecretBindings,
+		SharedValues:           request.SharedValues,
 		MigrateSecrets:         migrate,
 		AcknowledgedFindingIDs: acknowledged,
 		CandidateIDsOmitted:    request.candidateIDsOmitted,

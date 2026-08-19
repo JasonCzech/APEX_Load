@@ -22,6 +22,11 @@ const apiMock = {
   getScript: vi.fn(),
   getScriptSecretStatus: vi.fn(),
   getProjectSecretStatuses: vi.fn(),
+  getProjectSecretUsage: vi.fn(),
+  listProjectSecrets: vi.fn(),
+  createProjectSecrets: vi.fn(),
+  rebindScriptSecretReference: vi.fn(),
+  updateScript: vi.fn(),
   cloneScriptDraft: vi.fn(),
   applySecretBindings: vi.fn(),
   migrateImportSecrets: vi.fn(),
@@ -353,6 +358,27 @@ describe('ScriptsPage', () => {
       },
       secrets: [],
     })
+    apiMock.getProjectSecretUsage.mockResolvedValue({
+      project_id: 'project-1',
+      name: 'LOGIN_TOKEN',
+      usage_revision: 'usage-revision-1',
+      consumer_count: 1,
+      reference_count: 1,
+      consumers: [{ script_id: 'script-1', script_name: 'Existing Script', reference_count: 1 }],
+      count: 1,
+      limit: 50,
+      offset: 0,
+    })
+    apiMock.listProjectSecrets.mockResolvedValue({
+      project_id: 'project-1',
+      provider: 'encrypted_database',
+      writable: true,
+      secrets: [],
+      count: 0,
+    })
+    apiMock.createProjectSecrets.mockResolvedValue({ project_id: 'project-1', secrets: [], count: 0 })
+    apiMock.rebindScriptSecretReference.mockResolvedValue({ script: null, changed_locations: [], changed_count: 0 })
+    apiMock.updateScript.mockResolvedValue(scriptRecord('script-1', 'Existing Script', 'project-1'))
     apiMock.applySecretBindings.mockResolvedValue({ script: null, secret_binding_requirements: [] })
     apiMock.migrateImportSecrets.mockResolvedValue({ project_id: 'project-1', secrets: [], count: 0 })
     apiMock.deleteScript.mockResolvedValue({})
@@ -413,7 +439,7 @@ describe('ScriptsPage', () => {
     window.localStorage.removeItem('apexload.settings.projectId')
   })
 
-  it('preserves the script project when opening Project Secrets from library health', async () => {
+  it('opens the script-scoped bindings dialog from library health without navigating away', async () => {
     apiMock.listScripts.mockResolvedValueOnce({
       scripts: [{
         ...scriptRecord('script-1', 'Existing Script', 'project-1'),
@@ -449,11 +475,15 @@ describe('ScriptsPage', () => {
     await act(async () => {
       configureButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
+    await flushPromises()
 
-    expect(onNavigate).toHaveBeenCalledWith('settings')
-    expect(window.localStorage.getItem('apexload.settings.focusSection')).toBe('projects')
-    expect(window.localStorage.getItem('apexload.settings.projectSubsection')).toBe(JSON.stringify('secrets'))
-    expect(window.localStorage.getItem('apexload.settings.projectId')).toBe('project-1')
+    const dialog = document.body.querySelector<HTMLElement>('[role="dialog"][aria-modal="true"]')
+    expect(dialog?.textContent).toContain('Secret Bindings · Existing Script')
+    expect(dialog?.textContent).toContain('LOGIN_TOKEN')
+    expect(onNavigate).not.toHaveBeenCalled()
+    expect(window.localStorage.getItem('apexload.settings.focusSection')).toBeNull()
+    expect(window.localStorage.getItem('apexload.settings.projectSubsection')).toBeNull()
+    expect(window.localStorage.getItem('apexload.settings.projectId')).toBeNull()
   })
 
   it('loads script secret readiness through one project-scoped batch', async () => {

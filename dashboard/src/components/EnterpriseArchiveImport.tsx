@@ -4,7 +4,7 @@ import { ApiError } from '../hooks/apiClient'
 import { isDesktopSurface } from '../desktop/desktopBridge'
 import { canUseNativeDialogs, filesFromDroppedPaths, nativeFileReadErrorMessage, pickFilesViaBridge, shouldUseBrowserFileFallback } from '../desktop/desktopFiles'
 import { useDesktopFileDrop } from '../desktop/useDesktopFileDrop'
-import { type DetectedSourceProtocol, type ImportRepairSuggestion, type EnterpriseArchiveImportResult, type EnterpriseArchiveImportSummary, type EnterpriseArchiveJavaSupportEntry, type EnterpriseArchiveMigrationReadiness, type EnterpriseArchiveProtocolSupportEntry, type EnterpriseArchiveReviewArtifact, type EnterpriseArchiveSupportMatrixEntry, type EnterpriseArchiveSupportMatrixExample, type EnterpriseArchiveSupportMatrixResponse, type SalesforceReview, type SecretBindingSelection, type TrueClient2CompatReport } from '../types/scriptImports'
+import { type DetectedSourceProtocol, type ImportRepairSuggestion, type EnterpriseArchiveImportResult, type EnterpriseArchiveImportSummary, type EnterpriseArchiveJavaSupportEntry, type EnterpriseArchiveMigrationReadiness, type EnterpriseArchiveProtocolSupportEntry, type EnterpriseArchiveReviewArtifact, type EnterpriseArchiveSupportMatrixEntry, type EnterpriseArchiveSupportMatrixExample, type EnterpriseArchiveSupportMatrixResponse, type SalesforceReview, type SecretBindingSelection, type SharedValues, type TrueClient2CompatReport } from '../types/scriptImports'
 import { type BrowserReplayEvent, type BrowserReplaySession, type StoredScript } from '../types'
 import { type JavaClasspathAsset, type ReplayPreflight, type SourceArchiveReview, type ScriptActionDefinition, type ScriptDefinition } from '../types/scripts'
 import { isJavaClasspathUploadEnabled } from '../utils/featureFlags'
@@ -30,7 +30,7 @@ import {
   updateSecretBindingRequirementNames,
 } from './secretBindingUtils'
 import { type DraftEditorFocus, type ImportedSaveResult } from './useScriptsAuthoringState'
-import { credentialPreservingImportDraftRequiresSave } from './protectedImportSession'
+import { credentialPreservingImportDraftRequiresSave, earliestImportDraftExpiry } from './protectedImportSession'
 import './EnterpriseArchiveImport.css'
 
 interface ImportMetadata {
@@ -3521,6 +3521,52 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
     })
   }
 
+  const handleSharedValuesApplied = (
+    updatedScripts: ScriptDefinition[],
+    _diffs: unknown[],
+    refreshed?: SharedValues,
+    importDraftExpiresAt?: (string | null)[],
+  ) => {
+    if (!selectedItem || !result || updatedScripts.length === 0) return
+    const previewIndex = Math.min(activeResultScriptIndex, updatedScripts.length - 1)
+    const rotatedExpiry = earliestImportDraftExpiry(importDraftExpiresAt)
+    const nextResult: EnterpriseArchiveImportResult = {
+      ...result,
+      script: updatedScripts[0],
+      scripts: updatedScripts,
+      ...(refreshed ? { shared_values: refreshed } : {}),
+      ...(rotatedExpiry ? { import_draft_expires_at: rotatedExpiry } : {}),
+    }
+    latestPreparedReviewRef.current = {
+      itemId: selectedItem.id,
+      generation: selectedItem.reviewGeneration + 1,
+      scriptIndex: previewIndex,
+      projectId: reviewProjectIdRef.current,
+      optionsIdentity: selectedItem.reviewOptionsIdentity || '',
+      importedScript: updatedScripts[previewIndex],
+      result: nextResult,
+      secretBindingRequirements: secretBindingRequirementsForScript(
+        nextResult.secret_binding_requirements,
+        previewIndex,
+        updatedScripts[previewIndex],
+      ),
+    }
+    nextRequestToken(replayRequestTokensRef.current, selectedItem.id)
+    updateImportItem(selectedItem.id, {
+      result: nextResult,
+      reviewGeneration: selectedItem.reviewGeneration + 1,
+      replayValidationLoading: false,
+      replayValidationError: '',
+      replayValidationWarnings: [],
+      replayValidationSession: null,
+      replayReviewGeneration: -1,
+      replayScriptIndex: -1,
+      replayProjectId: '',
+      error: '',
+      notice: 'Collection values updated every generated script.',
+    })
+  }
+
   const handleSaveReviewArtifact = async () => {
     const preparedReview = latestPreparedReviewRef.current
     const currentResult = preparedReview.result
@@ -4280,6 +4326,9 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
             sourceMigrationRequirements={archiveSecretBindingRequirements}
             preserveSourceSessionAfterApply={archiveSecretBindingRequirements.length > secretBindingRequirements.length}
             onSecretBindingsApply={handleSecretBindingsApply}
+            sharedValues={result.shared_values}
+            sharedValueScripts={resultScripts}
+            onSharedValuesApplied={handleSharedValuesApplied}
             projectId={projectId}
             sourceSecretSessionId={result.source_secret_session_id}
             sourceSecretSessionExpiresAt={result.source_secret_session_expires_at}
