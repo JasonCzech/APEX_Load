@@ -5,13 +5,13 @@
     "source": "pkg/api/server.go"
   },
   "totals": {
-    "routes": 543,
+    "routes": 545,
     "public": 22,
-    "protected": 521,
-    "rbac": 519,
+    "protected": 523,
+    "rbac": 521,
     "handler_authenticated": 2,
     "role_metadata_missing": 0,
-    "green": 543,
+    "green": 545,
     "partial": 0,
     "missing": 0
   },
@@ -12433,6 +12433,56 @@
       "method": "POST",
       "path": "/api/v1/tests/{id}/resume",
       "operation_id": "handleResumeTest",
+      "public": false,
+      "authenticated": true,
+      "state": "GREEN",
+      "enforcement": "authentication middleware and access catalog",
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin",
+      "anonymous_assertion": "HTTP 401 before handler",
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin"
+        ],
+        "project": [
+          "editor",
+          "project_admin"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "tests:run"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/tests/{id}/runtime-adjustments",
+      "operation_id": "handleApplyRuntimeAdjustment",
+      "public": false,
+      "authenticated": true,
+      "state": "GREEN",
+      "enforcement": "authentication middleware and access catalog",
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin",
+      "anonymous_assertion": "HTTP 401 before handler",
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin"
+        ],
+        "project": [
+          "editor",
+          "project_admin"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "tests:run"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/tests/{id}/runtime-adjustments/preview",
+      "operation_id": "handlePreviewRuntimeAdjustment",
       "public": false,
       "authenticated": true,
       "state": "GREEN",
