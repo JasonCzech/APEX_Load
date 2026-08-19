@@ -729,6 +729,47 @@ export interface TestSummary {
   script_name?: string
 }
 
+export interface RuntimeAdjustmentGroupRequest {
+  name: string
+  target_duration?: string
+  target_vusers?: number
+  target_tps?: number
+}
+
+export interface RuntimeAdjustmentRequest {
+  groups: RuntimeAdjustmentGroupRequest[]
+  transition?: 'immediate' | 'gradual'
+  ramp_duration?: string
+  expected_revision?: string
+}
+
+export interface RuntimeAdjustmentGroupPreview {
+  name: string
+  current_duration: string
+  target_duration: string
+  current_vusers: number
+  target_vusers: number
+  current_target_tps?: number
+  target_tps?: number
+  effective_end_at?: string
+  runtime_state: string
+}
+
+export interface RuntimeAdjustmentPreview {
+  test_id: string
+  decision: 'allowed' | 'blocked'
+  revision: string
+  groups: RuntimeAdjustmentGroupPreview[]
+  impact: {
+    scenario_duration: string
+    scenario_end_at?: string
+    peak_vusers: number
+    recommended_generators: number
+  }
+  conflicts?: Array<{ code: string; source: string; message: string; starts_at?: string }>
+  safe_proposal?: RuntimeAdjustmentRequest
+}
+
 export interface TestSparklinePoint {
   timestamp: string
   tps: number

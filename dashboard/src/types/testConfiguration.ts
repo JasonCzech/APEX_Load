@@ -9,6 +9,10 @@ export interface TestGroup {
   protocol: string
   role?: 'load' | 'observer'
   vusers: number
+  target_duration?: string
+  effective_end_at?: string
+  runtime_state?: 'scheduled' | 'running' | 'stopping' | 'ended' | string
+  ended_at?: string
   ramp_up?: string
   ramp_down?: string
   stages?: LoadStageDraft[]

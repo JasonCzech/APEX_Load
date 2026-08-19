@@ -1202,6 +1202,74 @@ func (s *Server) handleAdjustDuration(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (s *Server) handlePreviewRuntimeAdjustment(w http.ResponseWriter, r *http.Request) {
+	if !s.requireExecutionLeader(w) {
+		return
+	}
+	var req RuntimeAdjustmentRequest
+	if !decodeJSONBody(w, r, &req) {
+		return
+	}
+	preview, err := s.runner.PreviewRuntimeAdjustment(r.PathValue("id"), req)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, preview)
+}
+
+func (s *Server) handleApplyRuntimeAdjustment(w http.ResponseWriter, r *http.Request) {
+	if !s.requireExecutionLeader(w) {
+		return
+	}
+	var req RuntimeAdjustmentRequest
+	if !decodeJSONBody(w, r, &req) {
+		return
+	}
+	before, _ := s.runner.GetTest(r.PathValue("id"))
+	preview, err := s.runner.ApplyRuntimeAdjustment(r.PathValue("id"), req)
+	if err != nil {
+		status := http.StatusBadRequest
+		if preview != nil || strings.TrimSpace(req.ExpectedRevision) != "" {
+			status = http.StatusConflict
+		}
+		writeJSON(w, status, map[string]any{"error": err.Error(), "preview": preview})
+		return
+	}
+	test, _ := s.runner.GetTest(r.PathValue("id"))
+	projectID, name := "", ""
+	if test != nil {
+		projectID, name = test.ProjectID, test.Name
+	}
+	changes := make([]map[string]any, 0, len(req.Groups))
+	for _, requested := range req.Groups {
+		change := map[string]any{"group": requested.Name, "target_duration": requested.TargetDuration}
+		if requested.TargetVUsers != nil {
+			change["target_vusers"] = *requested.TargetVUsers
+		}
+		if requested.TargetTPS != nil {
+			change["target_tps"] = *requested.TargetTPS
+		}
+		if before != nil {
+			for _, group := range before.Groups {
+				if group.Name == requested.Name {
+					change["previous_duration"] = effectiveGroupDuration(group, before.Duration).String()
+					change["previous_vusers"] = groupCurrentVUsers(group)
+					break
+				}
+			}
+			if goal, ok := before.GoalTargets[requested.Name]; ok {
+				change["previous_tps"] = goal.TargetTPS
+			}
+		}
+		changes = append(changes, change)
+	}
+	s.recordAuditEvent(r, "test.runtime.adjust", "success", "test", r.PathValue("id"), projectID, map[string]any{
+		"name": name, "scenario_duration": preview.Impact.ScenarioDuration, "peak_vusers": preview.Impact.PeakVUsers, "changes": changes,
+	})
+	writeJSON(w, http.StatusOK, preview)
+}
+
 func (s *Server) handleSystemVersion(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, s.versionResponse())
 }

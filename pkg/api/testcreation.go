@@ -240,6 +240,10 @@ func cloneManagedTestCapacitySnapshotLocked(test *ManagedTest) *ManagedTest {
 			Protocol:                   group.Protocol,
 			Role:                       group.Role,
 			VUsers:                     group.VUsers,
+			TargetDuration:             group.TargetDuration,
+			EffectiveEndAt:             cloneTimePtr(group.EffectiveEndAt),
+			RuntimeState:               group.RuntimeState,
+			EndedAt:                    cloneTimePtr(group.EndedAt),
 			RampUp:                     group.RampUp,
 			RampDown:                   group.RampDown,
 			Stages:                     cloneLoadStages(group.Stages),
@@ -1322,6 +1326,14 @@ func (tr *TestRunner) buildManagedTestLocked(req CreateTestRequest, id string, s
 	}
 
 	testName := deriveManagedTestName(req.Name, testGroups)
+	for index := range testGroups {
+		if strings.TrimSpace(testGroups[index].TargetDuration) == "" {
+			testGroups[index].TargetDuration = dur.String()
+		}
+		if testGroups[index].RuntimeState == "" {
+			testGroups[index].RuntimeState = "scheduled"
+		}
+	}
 
 	if err := tr.projectDeletionErrorLocked(projectID); err != nil {
 		return nil, err

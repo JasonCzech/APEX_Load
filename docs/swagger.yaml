@@ -44442,6 +44442,14 @@ paths:
                                 - scenario_value
                                 - source
                               nullable: true
+                            effective_end_at:
+                              type: string
+                              format: date-time
+                              nullable: true
+                            ended_at:
+                              type: string
+                              format: date-time
+                              nullable: true
                             initialization:
                               type: string
                             iteration_override:
@@ -44543,6 +44551,8 @@ paths:
                                   additionalProperties: true
                                   nullable: true
                               nullable: true
+                            runtime_state:
+                              type: string
                             script_id:
                               type: string
                             script_name:
@@ -44552,6 +44562,8 @@ paths:
                               items:
                                 type: object
                                 additionalProperties: true
+                            target_duration:
+                              type: string
                             vusers:
                               type: integer
                               format: int64
@@ -47762,6 +47774,14 @@ paths:
                                 - scenario_value
                                 - source
                               nullable: true
+                            effective_end_at:
+                              type: string
+                              format: date-time
+                              nullable: true
+                            ended_at:
+                              type: string
+                              format: date-time
+                              nullable: true
                             initialization:
                               type: string
                             iteration_override:
@@ -47863,6 +47883,8 @@ paths:
                                   additionalProperties: true
                                   nullable: true
                               nullable: true
+                            runtime_state:
+                              type: string
                             script_id:
                               type: string
                             script_name:
@@ -47872,6 +47894,8 @@ paths:
                               items:
                                 type: object
                                 additionalProperties: true
+                            target_duration:
+                              type: string
                             vusers:
                               type: integer
                               format: int64
@@ -51079,6 +51103,14 @@ paths:
                                 - scenario_value
                                 - source
                               nullable: true
+                            effective_end_at:
+                              type: string
+                              format: date-time
+                              nullable: true
+                            ended_at:
+                              type: string
+                              format: date-time
+                              nullable: true
                             initialization:
                               type: string
                             iteration_override:
@@ -51180,6 +51212,8 @@ paths:
                                   additionalProperties: true
                                   nullable: true
                               nullable: true
+                            runtime_state:
+                              type: string
                             script_id:
                               type: string
                             script_name:
@@ -51189,6 +51223,8 @@ paths:
                               items:
                                 type: object
                                 additionalProperties: true
+                            target_duration:
+                              type: string
                             vusers:
                               type: integer
                               format: int64
@@ -54408,6 +54444,14 @@ paths:
                                 - scenario_value
                                 - source
                               nullable: true
+                            effective_end_at:
+                              type: string
+                              format: date-time
+                              nullable: true
+                            ended_at:
+                              type: string
+                              format: date-time
+                              nullable: true
                             initialization:
                               type: string
                             iteration_override:
@@ -54509,6 +54553,8 @@ paths:
                                   additionalProperties: true
                                   nullable: true
                               nullable: true
+                            runtime_state:
+                              type: string
                             script_id:
                               type: string
                             script_name:
@@ -54518,6 +54564,8 @@ paths:
                               items:
                                 type: object
                                 additionalProperties: true
+                            target_duration:
+                              type: string
                             vusers:
                               type: integer
                               format: int64
@@ -57737,6 +57785,14 @@ paths:
                                 - scenario_value
                                 - source
                               nullable: true
+                            effective_end_at:
+                              type: string
+                              format: date-time
+                              nullable: true
+                            ended_at:
+                              type: string
+                              format: date-time
+                              nullable: true
                             initialization:
                               type: string
                             iteration_override:
@@ -57838,6 +57894,8 @@ paths:
                                   additionalProperties: true
                                   nullable: true
                               nullable: true
+                            runtime_state:
+                              type: string
                             script_id:
                               type: string
                             script_name:
@@ -57847,6 +57905,8 @@ paths:
                               items:
                                 type: object
                                 additionalProperties: true
+                            target_duration:
+                              type: string
                             vusers:
                               type: integer
                               format: int64
@@ -61066,6 +61126,14 @@ paths:
                                 - scenario_value
                                 - source
                               nullable: true
+                            effective_end_at:
+                              type: string
+                              format: date-time
+                              nullable: true
+                            ended_at:
+                              type: string
+                              format: date-time
+                              nullable: true
                             initialization:
                               type: string
                             iteration_override:
@@ -61167,6 +61235,8 @@ paths:
                                   additionalProperties: true
                                   nullable: true
                               nullable: true
+                            runtime_state:
+                              type: string
                             script_id:
                               type: string
                             script_name:
@@ -61176,6 +61246,8 @@ paths:
                               items:
                                 type: object
                                 additionalProperties: true
+                            target_duration:
+                              type: string
                             vusers:
                               type: integer
                               format: int64
@@ -64395,6 +64467,14 @@ paths:
                                 - scenario_value
                                 - source
                               nullable: true
+                            effective_end_at:
+                              type: string
+                              format: date-time
+                              nullable: true
+                            ended_at:
+                              type: string
+                              format: date-time
+                              nullable: true
                             initialization:
                               type: string
                             iteration_override:
@@ -64496,6 +64576,8 @@ paths:
                                   additionalProperties: true
                                   nullable: true
                               nullable: true
+                            runtime_state:
+                              type: string
                             script_id:
                               type: string
                             script_name:
@@ -64505,6 +64587,8 @@ paths:
                               items:
                                 type: object
                                 additionalProperties: true
+                            target_duration:
+                              type: string
                             vusers:
                               type: integer
                               format: int64
@@ -170763,6 +170847,14 @@ paths:
                             - scenario_value
                             - source
                           nullable: true
+                        effective_end_at:
+                          type: string
+                          format: date-time
+                          nullable: true
+                        ended_at:
+                          type: string
+                          format: date-time
+                          nullable: true
                         initialization:
                           type: string
                         iteration_override:
@@ -171192,6 +171284,8 @@ paths:
                                   additionalProperties: true
                               nullable: true
                           nullable: true
+                        runtime_state:
+                          type: string
                         script_id:
                           type: string
                         script_name:
@@ -171217,6 +171311,8 @@ paths:
                             required:
                               - duration
                               - type
+                        target_duration:
+                          type: string
                         vusers:
                           type: integer
                           format: int64
@@ -176002,6 +176098,14 @@ paths:
                             - scenario_value
                             - source
                           nullable: true
+                        effective_end_at:
+                          type: string
+                          format: date-time
+                          nullable: true
+                        ended_at:
+                          type: string
+                          format: date-time
+                          nullable: true
                         initialization:
                           type: string
                         iteration_override:
@@ -176431,6 +176535,8 @@ paths:
                                   additionalProperties: true
                               nullable: true
                           nullable: true
+                        runtime_state:
+                          type: string
                         script_id:
                           type: string
                         script_name:
@@ -176456,6 +176562,8 @@ paths:
                             required:
                               - duration
                               - type
+                        target_duration:
+                          type: string
                         vusers:
                           type: integer
                           format: int64
@@ -181639,6 +181747,14 @@ paths:
                                 - scenario_value
                                 - source
                               nullable: true
+                            effective_end_at:
+                              type: string
+                              format: date-time
+                              nullable: true
+                            ended_at:
+                              type: string
+                              format: date-time
+                              nullable: true
                             initialization:
                               type: string
                             iteration_override:
@@ -181740,6 +181856,8 @@ paths:
                                   additionalProperties: true
                                   nullable: true
                               nullable: true
+                            runtime_state:
+                              type: string
                             script_id:
                               type: string
                             script_name:
@@ -181749,6 +181867,8 @@ paths:
                               items:
                                 type: object
                                 additionalProperties: true
+                            target_duration:
+                              type: string
                             vusers:
                               type: integer
                               format: int64
@@ -182922,6 +183042,14 @@ paths:
                                 - scenario_value
                                 - source
                               nullable: true
+                            effective_end_at:
+                              type: string
+                              format: date-time
+                              nullable: true
+                            ended_at:
+                              type: string
+                              format: date-time
+                              nullable: true
                             initialization:
                               type: string
                             iteration_override:
@@ -183023,6 +183151,8 @@ paths:
                                   additionalProperties: true
                                   nullable: true
                               nullable: true
+                            runtime_state:
+                              type: string
                             script_id:
                               type: string
                             script_name:
@@ -183032,6 +183162,8 @@ paths:
                               items:
                                 type: object
                                 additionalProperties: true
+                            target_duration:
+                              type: string
                             vusers:
                               type: integer
                               format: int64
@@ -184799,6 +184931,14 @@ paths:
                                   description: 'Go type: ContinueOnErrorResolution'
                                   additionalProperties: true
                                   nullable: true
+                                effective_end_at:
+                                  type: string
+                                  format: date-time
+                                  nullable: true
+                                ended_at:
+                                  type: string
+                                  format: date-time
+                                  nullable: true
                                 initialization:
                                   type: string
                                 iteration_override:
@@ -184831,6 +184971,8 @@ paths:
                                   description: 'Go type: RuntimeSettingsOverride'
                                   additionalProperties: true
                                   nullable: true
+                                runtime_state:
+                                  type: string
                                 script_id:
                                   type: string
                                 script_name:
@@ -184840,6 +184982,8 @@ paths:
                                   items:
                                     type: object
                                     additionalProperties: true
+                                target_duration:
+                                  type: string
                                 vusers:
                                   type: integer
                                   format: int64
@@ -185412,6 +185556,14 @@ paths:
                                   description: 'Go type: ContinueOnErrorResolution'
                                   additionalProperties: true
                                   nullable: true
+                                effective_end_at:
+                                  type: string
+                                  format: date-time
+                                  nullable: true
+                                ended_at:
+                                  type: string
+                                  format: date-time
+                                  nullable: true
                                 initialization:
                                   type: string
                                 iteration_override:
@@ -185444,6 +185596,8 @@ paths:
                                   description: 'Go type: RuntimeSettingsOverride'
                                   additionalProperties: true
                                   nullable: true
+                                runtime_state:
+                                  type: string
                                 script_id:
                                   type: string
                                 script_name:
@@ -185453,6 +185607,8 @@ paths:
                                   items:
                                     type: object
                                     additionalProperties: true
+                                target_duration:
+                                  type: string
                                 vusers:
                                   type: integer
                                   format: int64
@@ -188229,6 +188385,14 @@ paths:
                             - scenario_value
                             - source
                           nullable: true
+                        effective_end_at:
+                          type: string
+                          format: date-time
+                          nullable: true
+                        ended_at:
+                          type: string
+                          format: date-time
+                          nullable: true
                         initialization:
                           type: string
                         iteration_override:
@@ -188658,6 +188822,8 @@ paths:
                                   additionalProperties: true
                               nullable: true
                           nullable: true
+                        runtime_state:
+                          type: string
                         script_id:
                           type: string
                         script_name:
@@ -188683,6 +188849,8 @@ paths:
                             required:
                               - duration
                               - type
+                        target_duration:
+                          type: string
                         vusers:
                           type: integer
                           format: int64
@@ -193412,6 +193580,14 @@ paths:
                             - scenario_value
                             - source
                           nullable: true
+                        effective_end_at:
+                          type: string
+                          format: date-time
+                          nullable: true
+                        ended_at:
+                          type: string
+                          format: date-time
+                          nullable: true
                         initialization:
                           type: string
                         iteration_override:
@@ -193841,6 +194017,8 @@ paths:
                                   additionalProperties: true
                               nullable: true
                           nullable: true
+                        runtime_state:
+                          type: string
                         script_id:
                           type: string
                         script_name:
@@ -193866,6 +194044,8 @@ paths:
                             required:
                               - duration
                               - type
+                        target_duration:
+                          type: string
                         vusers:
                           type: integer
                           format: int64
@@ -202098,6 +202278,14 @@ paths:
                                 - scenario_value
                                 - source
                               nullable: true
+                            effective_end_at:
+                              type: string
+                              format: date-time
+                              nullable: true
+                            ended_at:
+                              type: string
+                              format: date-time
+                              nullable: true
                             initialization:
                               type: string
                             iteration_override:
@@ -202199,6 +202387,8 @@ paths:
                                   additionalProperties: true
                                   nullable: true
                               nullable: true
+                            runtime_state:
+                              type: string
                             script_id:
                               type: string
                             script_name:
@@ -202208,6 +202398,8 @@ paths:
                               items:
                                 type: object
                                 additionalProperties: true
+                            target_duration:
+                              type: string
                             vusers:
                               type: integer
                               format: int64
@@ -203000,6 +203192,14 @@ paths:
                                 - scenario_value
                                 - source
                               nullable: true
+                            effective_end_at:
+                              type: string
+                              format: date-time
+                              nullable: true
+                            ended_at:
+                              type: string
+                              format: date-time
+                              nullable: true
                             initialization:
                               type: string
                             iteration_override:
@@ -203101,6 +203301,8 @@ paths:
                                   additionalProperties: true
                                   nullable: true
                               nullable: true
+                            runtime_state:
+                              type: string
                             script_id:
                               type: string
                             script_name:
@@ -203110,6 +203312,8 @@ paths:
                               items:
                                 type: object
                                 additionalProperties: true
+                            target_duration:
+                              type: string
                             vusers:
                               type: integer
                               format: int64
@@ -205703,6 +205907,424 @@ paths:
       tags:
         - Tests
       x-handler: handleResumeTest
+  /api/v1/tests/{id}/runtime-adjustments:
+    patch:
+      summary: Apply Runtime Adjustment
+      description: '**Access Control:** Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin'
+      operationId: handleApplyRuntimeAdjustment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                expected_revision:
+                  type: string
+                groups:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      name:
+                        type: string
+                      target_duration:
+                        type: string
+                      target_tps:
+                        type: number
+                        format: double
+                        nullable: true
+                      target_vusers:
+                        type: integer
+                        format: int64
+                        nullable: true
+                ramp_duration:
+                  type: string
+                transition:
+                  type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  conflicts:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        available_generators:
+                          type: integer
+                          format: int64
+                        code:
+                          type: string
+                        ends_at:
+                          type: string
+                          format: date-time
+                          nullable: true
+                        message:
+                          type: string
+                        required_generators:
+                          type: integer
+                          format: int64
+                        resource_id:
+                          type: string
+                        severity:
+                          type: string
+                        source:
+                          type: string
+                        starts_at:
+                          type: string
+                          format: date-time
+                          nullable: true
+                      required:
+                        - code
+                        - message
+                        - severity
+                  decision:
+                    type: string
+                  groups:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        current_duration:
+                          type: string
+                        current_target_tps:
+                          type: number
+                          format: double
+                          nullable: true
+                        current_vusers:
+                          type: integer
+                          format: int64
+                        effective_end_at:
+                          type: string
+                        name:
+                          type: string
+                        runtime_state:
+                          type: string
+                        target_duration:
+                          type: string
+                        target_tps:
+                          type: number
+                          format: double
+                          nullable: true
+                        target_vusers:
+                          type: integer
+                          format: int64
+                      required:
+                        - current_duration
+                        - current_vusers
+                        - name
+                        - runtime_state
+                        - target_duration
+                        - target_vusers
+                  impact:
+                    type: object
+                    properties:
+                      peak_vusers:
+                        type: integer
+                        format: int64
+                      recommended_generators:
+                        type: integer
+                        format: int64
+                      scenario_duration:
+                        type: string
+                      scenario_end_at:
+                        type: string
+                    required:
+                      - peak_vusers
+                      - recommended_generators
+                      - scenario_duration
+                  revision:
+                    type: string
+                  safe_proposal:
+                    type: object
+                    properties:
+                      expected_revision:
+                        type: string
+                      groups:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            name:
+                              type: string
+                            target_duration:
+                              type: string
+                            target_tps:
+                              type: number
+                              format: double
+                              nullable: true
+                            target_vusers:
+                              type: integer
+                              format: int64
+                              nullable: true
+                          required:
+                            - name
+                      ramp_duration:
+                        type: string
+                      transition:
+                        type: string
+                    required:
+                      - groups
+                    nullable: true
+                  test_id:
+                    type: string
+                required:
+                  - decision
+                  - groups
+                  - impact
+                  - revision
+                  - test_id
+                nullable: true
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Tests
+      x-handler: handleApplyRuntimeAdjustment
+  /api/v1/tests/{id}/runtime-adjustments/preview:
+    post:
+      summary: Preview Runtime Adjustment
+      description: '**Access Control:** Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin'
+      operationId: handlePreviewRuntimeAdjustment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                expected_revision:
+                  type: string
+                groups:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      name:
+                        type: string
+                      target_duration:
+                        type: string
+                      target_tps:
+                        type: number
+                        format: double
+                        nullable: true
+                      target_vusers:
+                        type: integer
+                        format: int64
+                        nullable: true
+                ramp_duration:
+                  type: string
+                transition:
+                  type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  conflicts:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        available_generators:
+                          type: integer
+                          format: int64
+                        code:
+                          type: string
+                        ends_at:
+                          type: string
+                          format: date-time
+                          nullable: true
+                        message:
+                          type: string
+                        required_generators:
+                          type: integer
+                          format: int64
+                        resource_id:
+                          type: string
+                        severity:
+                          type: string
+                        source:
+                          type: string
+                        starts_at:
+                          type: string
+                          format: date-time
+                          nullable: true
+                      required:
+                        - code
+                        - message
+                        - severity
+                  decision:
+                    type: string
+                  groups:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        current_duration:
+                          type: string
+                        current_target_tps:
+                          type: number
+                          format: double
+                          nullable: true
+                        current_vusers:
+                          type: integer
+                          format: int64
+                        effective_end_at:
+                          type: string
+                        name:
+                          type: string
+                        runtime_state:
+                          type: string
+                        target_duration:
+                          type: string
+                        target_tps:
+                          type: number
+                          format: double
+                          nullable: true
+                        target_vusers:
+                          type: integer
+                          format: int64
+                      required:
+                        - current_duration
+                        - current_vusers
+                        - name
+                        - runtime_state
+                        - target_duration
+                        - target_vusers
+                  impact:
+                    type: object
+                    properties:
+                      peak_vusers:
+                        type: integer
+                        format: int64
+                      recommended_generators:
+                        type: integer
+                        format: int64
+                      scenario_duration:
+                        type: string
+                      scenario_end_at:
+                        type: string
+                    required:
+                      - peak_vusers
+                      - recommended_generators
+                      - scenario_duration
+                  revision:
+                    type: string
+                  safe_proposal:
+                    type: object
+                    properties:
+                      expected_revision:
+                        type: string
+                      groups:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            name:
+                              type: string
+                            target_duration:
+                              type: string
+                            target_tps:
+                              type: number
+                              format: double
+                              nullable: true
+                            target_vusers:
+                              type: integer
+                              format: int64
+                              nullable: true
+                          required:
+                            - name
+                      ramp_duration:
+                        type: string
+                      transition:
+                        type: string
+                    required:
+                      - groups
+                    nullable: true
+                  test_id:
+                    type: string
+                required:
+                  - decision
+                  - groups
+                  - impact
+                  - revision
+                  - test_id
+                nullable: true
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Tests
+      x-handler: handlePreviewRuntimeAdjustment
   /api/v1/tests/{id}/sla-status:
     get:
       summary: Get Test SLA Status
@@ -207599,6 +208221,14 @@ paths:
                             - scenario_value
                             - source
                           nullable: true
+                        effective_end_at:
+                          type: string
+                          format: date-time
+                          nullable: true
+                        ended_at:
+                          type: string
+                          format: date-time
+                          nullable: true
                         initialization:
                           type: string
                         iteration_override:
@@ -208028,6 +208658,8 @@ paths:
                                   additionalProperties: true
                               nullable: true
                           nullable: true
+                        runtime_state:
+                          type: string
                         script_id:
                           type: string
                         script_name:
@@ -208053,6 +208685,8 @@ paths:
                             required:
                               - duration
                               - type
+                        target_duration:
+                          type: string
                         vusers:
                           type: integer
                           format: int64

@@ -5456,6 +5456,101 @@ export interface operations {
       };
     };
   };
+  "handleApplyRuntimeAdjustment": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          "expected_revision"?: string;
+          "groups"?: Array<{
+            "name"?: string;
+            "target_duration"?: string;
+            "target_tps"?: (number) | null;
+            "target_vusers"?: (number) | null;
+          }>;
+          "ramp_duration"?: string;
+          "transition"?: string;
+        };
+      };
+    };
+    responses: {
+      "200": {
+        content: {
+          "application/json": ({
+            "conflicts"?: Array<{
+              "available_generators"?: number;
+              "code": string;
+              "ends_at"?: (string) | null;
+              "message": string;
+              "required_generators"?: number;
+              "resource_id"?: string;
+              "severity": string;
+              "source"?: string;
+              "starts_at"?: (string) | null;
+            }>;
+            "decision": string;
+            "groups": Array<{
+              "current_duration": string;
+              "current_target_tps"?: (number) | null;
+              "current_vusers": number;
+              "effective_end_at"?: string;
+              "name": string;
+              "runtime_state": string;
+              "target_duration": string;
+              "target_tps"?: (number) | null;
+              "target_vusers": number;
+            }>;
+            "impact": {
+              "peak_vusers": number;
+              "recommended_generators": number;
+              "scenario_duration": string;
+              "scenario_end_at"?: string;
+            };
+            "revision": string;
+            "safe_proposal"?: ({
+              "expected_revision"?: string;
+              "groups": Array<{
+                "name": string;
+                "target_duration"?: string;
+                "target_tps"?: (number) | null;
+                "target_vusers"?: (number) | null;
+              }>;
+              "ramp_duration"?: string;
+              "transition"?: string;
+            }) | null;
+            "test_id": string;
+          }) | null;
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
   "handleApplyScenarioRuntimeToGroups": {
     parameters: {
       "path": {
@@ -14571,6 +14666,8 @@ export interface operations {
                   "scenario_value": boolean;
                   "source": string;
                 }) | null;
+                "effective_end_at"?: (string) | null;
+                "ended_at"?: (string) | null;
                 "initialization"?: string;
                 "iteration_override"?: (number) | null;
                 "iteration_override_known"?: boolean;
@@ -14603,9 +14700,11 @@ export interface operations {
                   "think_time"?: (Record<string, unknown>) | null;
                   "web_runtime"?: (Record<string, unknown>) | null;
                 }) | null;
+                "runtime_state"?: string;
                 "script_id": string;
                 "script_name": string;
                 "stages"?: Array<Record<string, unknown>>;
+                "target_duration"?: string;
                 "vusers": number;
               }>;
               "history"?: Array<({
@@ -19152,6 +19251,8 @@ export interface operations {
                 "scenario_value": boolean;
                 "source": string;
               }) | null;
+              "effective_end_at"?: (string) | null;
+              "ended_at"?: (string) | null;
               "initialization"?: string;
               "iteration_override"?: (number) | null;
               "iteration_override_known"?: boolean;
@@ -19305,6 +19406,7 @@ export interface operations {
                   "streaming"?: Record<string, unknown>;
                 }) | null;
               }) | null;
+              "runtime_state"?: string;
               "script_id": string;
               "script_name": string;
               "stages"?: Array<{
@@ -19314,6 +19416,7 @@ export interface operations {
                 "target_vusers"?: number;
                 "type": string;
               }>;
+              "target_duration"?: string;
               "vusers": number;
             }>;
             "history"?: Array<({
@@ -23927,6 +24030,8 @@ export interface operations {
                 "scenario_value": boolean;
                 "source": string;
               }) | null;
+              "effective_end_at"?: (string) | null;
+              "ended_at"?: (string) | null;
               "initialization"?: string;
               "iteration_override"?: (number) | null;
               "iteration_override_known"?: boolean;
@@ -24080,6 +24185,7 @@ export interface operations {
                   "streaming"?: Record<string, unknown>;
                 }) | null;
               }) | null;
+              "runtime_state"?: string;
               "script_id": string;
               "script_name": string;
               "stages"?: Array<{
@@ -24089,6 +24195,7 @@ export interface operations {
                 "target_vusers"?: number;
                 "type": string;
               }>;
+              "target_duration"?: string;
               "vusers": number;
             }>;
             "resource_baseline"?: boolean;
@@ -29600,6 +29707,8 @@ export interface operations {
                   "scenario_value": boolean;
                   "source": string;
                 }) | null;
+                "effective_end_at"?: (string) | null;
+                "ended_at"?: (string) | null;
                 "initialization"?: string;
                 "iteration_override"?: (number) | null;
                 "iteration_override_known"?: boolean;
@@ -29632,9 +29741,11 @@ export interface operations {
                   "think_time"?: (Record<string, unknown>) | null;
                   "web_runtime"?: (Record<string, unknown>) | null;
                 }) | null;
+                "runtime_state"?: string;
                 "script_id": string;
                 "script_name": string;
                 "stages"?: Array<Record<string, unknown>>;
+                "target_duration"?: string;
                 "vusers": number;
               }>;
               "history"?: Array<({
@@ -30931,6 +31042,8 @@ export interface operations {
                   "scenario_value": boolean;
                   "source": string;
                 }) | null;
+                "effective_end_at"?: (string) | null;
+                "ended_at"?: (string) | null;
                 "initialization"?: string;
                 "iteration_override"?: (number) | null;
                 "iteration_override_known"?: boolean;
@@ -30963,9 +31076,11 @@ export interface operations {
                   "think_time"?: (Record<string, unknown>) | null;
                   "web_runtime"?: (Record<string, unknown>) | null;
                 }) | null;
+                "runtime_state"?: string;
                 "script_id": string;
                 "script_name": string;
                 "stages"?: Array<Record<string, unknown>>;
+                "target_duration"?: string;
                 "vusers": number;
               }>;
               "project_id"?: string;
@@ -31366,6 +31481,8 @@ export interface operations {
                   "scenario_value": boolean;
                   "source": string;
                 }) | null;
+                "effective_end_at"?: (string) | null;
+                "ended_at"?: (string) | null;
                 "initialization"?: string;
                 "iteration_override"?: (number) | null;
                 "iteration_override_known"?: boolean;
@@ -31398,9 +31515,11 @@ export interface operations {
                   "think_time"?: (Record<string, unknown>) | null;
                   "web_runtime"?: (Record<string, unknown>) | null;
                 }) | null;
+                "runtime_state"?: string;
                 "script_id": string;
                 "script_name": string;
                 "stages"?: Array<Record<string, unknown>>;
+                "target_duration"?: string;
                 "vusers": number;
               }>;
               "project_id"?: string;
@@ -32018,6 +32137,8 @@ export interface operations {
                 "groups"?: Array<{
                   "assignment"?: (Record<string, unknown>) | null;
                   "continue_on_error"?: (Record<string, unknown>) | null;
+                  "effective_end_at"?: (string) | null;
+                  "ended_at"?: (string) | null;
                   "initialization"?: string;
                   "iteration_override"?: (number) | null;
                   "iteration_override_known"?: boolean;
@@ -32029,9 +32150,11 @@ export interface operations {
                   "role"?: string;
                   "run_logic_goals"?: (Record<string, unknown>) | null;
                   "runtime_settings"?: (Record<string, unknown>) | null;
+                  "runtime_state"?: string;
                   "script_id": string;
                   "script_name": string;
                   "stages"?: Array<Record<string, unknown>>;
+                  "target_duration"?: string;
                   "vusers": number;
                 }>;
                 "project_id"?: string;
@@ -32209,6 +32332,8 @@ export interface operations {
                 "groups"?: Array<{
                   "assignment"?: (Record<string, unknown>) | null;
                   "continue_on_error"?: (Record<string, unknown>) | null;
+                  "effective_end_at"?: (string) | null;
+                  "ended_at"?: (string) | null;
                   "initialization"?: string;
                   "iteration_override"?: (number) | null;
                   "iteration_override_known"?: boolean;
@@ -32220,9 +32345,11 @@ export interface operations {
                   "role"?: string;
                   "run_logic_goals"?: (Record<string, unknown>) | null;
                   "runtime_settings"?: (Record<string, unknown>) | null;
+                  "runtime_state"?: string;
                   "script_id": string;
                   "script_name": string;
                   "stages"?: Array<Record<string, unknown>>;
+                  "target_duration"?: string;
                   "vusers": number;
                 }>;
                 "project_id"?: string;
@@ -35738,6 +35865,8 @@ export interface operations {
                 "scenario_value": boolean;
                 "source": string;
               }) | null;
+              "effective_end_at"?: (string) | null;
+              "ended_at"?: (string) | null;
               "initialization"?: string;
               "iteration_override"?: (number) | null;
               "iteration_override_known"?: boolean;
@@ -35891,6 +36020,7 @@ export interface operations {
                   "streaming"?: Record<string, unknown>;
                 }) | null;
               }) | null;
+              "runtime_state"?: string;
               "script_id": string;
               "script_name": string;
               "stages"?: Array<{
@@ -35900,6 +36030,7 @@ export interface operations {
                 "target_vusers"?: number;
                 "type": string;
               }>;
+              "target_duration"?: string;
               "vusers": number;
             }>;
             "history"?: Array<({
@@ -38322,6 +38453,8 @@ export interface operations {
                   "scenario_value": boolean;
                   "source": string;
                 }) | null;
+                "effective_end_at"?: (string) | null;
+                "ended_at"?: (string) | null;
                 "initialization"?: string;
                 "iteration_override"?: (number) | null;
                 "iteration_override_known"?: boolean;
@@ -38354,9 +38487,11 @@ export interface operations {
                   "think_time"?: (Record<string, unknown>) | null;
                   "web_runtime"?: (Record<string, unknown>) | null;
                 }) | null;
+                "runtime_state"?: string;
                 "script_id": string;
                 "script_name": string;
                 "stages"?: Array<Record<string, unknown>>;
+                "target_duration"?: string;
                 "vusers": number;
               }>;
               "resource_baseline"?: boolean;
@@ -38637,6 +38772,8 @@ export interface operations {
                   "scenario_value": boolean;
                   "source": string;
                 }) | null;
+                "effective_end_at"?: (string) | null;
+                "ended_at"?: (string) | null;
                 "initialization"?: string;
                 "iteration_override"?: (number) | null;
                 "iteration_override_known"?: boolean;
@@ -38669,9 +38806,11 @@ export interface operations {
                   "think_time"?: (Record<string, unknown>) | null;
                   "web_runtime"?: (Record<string, unknown>) | null;
                 }) | null;
+                "runtime_state"?: string;
                 "script_id": string;
                 "script_name": string;
                 "stages"?: Array<Record<string, unknown>>;
+                "target_duration"?: string;
                 "vusers": number;
               }>;
               "resource_baseline"?: boolean;
@@ -47351,6 +47490,8 @@ export interface operations {
                 "scenario_value": boolean;
                 "source": string;
               }) | null;
+              "effective_end_at"?: (string) | null;
+              "ended_at"?: (string) | null;
               "initialization"?: string;
               "iteration_override"?: (number) | null;
               "iteration_override_known"?: boolean;
@@ -47504,6 +47645,7 @@ export interface operations {
                   "streaming"?: Record<string, unknown>;
                 }) | null;
               }) | null;
+              "runtime_state"?: string;
               "script_id": string;
               "script_name": string;
               "stages"?: Array<{
@@ -47513,6 +47655,7 @@ export interface operations {
                 "target_vusers"?: number;
                 "type": string;
               }>;
+              "target_duration"?: string;
               "vusers": number;
             }>;
             "history"?: Array<({
@@ -52075,6 +52218,101 @@ export interface operations {
       };
     };
   };
+  "handlePreviewRuntimeAdjustment": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          "expected_revision"?: string;
+          "groups"?: Array<{
+            "name"?: string;
+            "target_duration"?: string;
+            "target_tps"?: (number) | null;
+            "target_vusers"?: (number) | null;
+          }>;
+          "ramp_duration"?: string;
+          "transition"?: string;
+        };
+      };
+    };
+    responses: {
+      "200": {
+        content: {
+          "application/json": ({
+            "conflicts"?: Array<{
+              "available_generators"?: number;
+              "code": string;
+              "ends_at"?: (string) | null;
+              "message": string;
+              "required_generators"?: number;
+              "resource_id"?: string;
+              "severity": string;
+              "source"?: string;
+              "starts_at"?: (string) | null;
+            }>;
+            "decision": string;
+            "groups": Array<{
+              "current_duration": string;
+              "current_target_tps"?: (number) | null;
+              "current_vusers": number;
+              "effective_end_at"?: string;
+              "name": string;
+              "runtime_state": string;
+              "target_duration": string;
+              "target_tps"?: (number) | null;
+              "target_vusers": number;
+            }>;
+            "impact": {
+              "peak_vusers": number;
+              "recommended_generators": number;
+              "scenario_duration": string;
+              "scenario_end_at"?: string;
+            };
+            "revision": string;
+            "safe_proposal"?: ({
+              "expected_revision"?: string;
+              "groups": Array<{
+                "name": string;
+                "target_duration"?: string;
+                "target_tps"?: (number) | null;
+                "target_vusers"?: (number) | null;
+              }>;
+              "ramp_duration"?: string;
+              "transition"?: string;
+            }) | null;
+            "test_id": string;
+          }) | null;
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
   "handleProjectSecretStatus": {
     parameters: {
       "path": {
@@ -53124,6 +53362,8 @@ export interface operations {
                   "scenario_value": boolean;
                   "source": string;
                 }) | null;
+                "effective_end_at"?: (string) | null;
+                "ended_at"?: (string) | null;
                 "initialization"?: string;
                 "iteration_override"?: (number) | null;
                 "iteration_override_known"?: boolean;
@@ -53156,9 +53396,11 @@ export interface operations {
                   "think_time"?: (Record<string, unknown>) | null;
                   "web_runtime"?: (Record<string, unknown>) | null;
                 }) | null;
+                "runtime_state"?: string;
                 "script_id": string;
                 "script_name": string;
                 "stages"?: Array<Record<string, unknown>>;
+                "target_duration"?: string;
                 "vusers": number;
               }>;
               "history"?: Array<({
@@ -54235,6 +54477,8 @@ export interface operations {
                   "scenario_value": boolean;
                   "source": string;
                 }) | null;
+                "effective_end_at"?: (string) | null;
+                "ended_at"?: (string) | null;
                 "initialization"?: string;
                 "iteration_override"?: (number) | null;
                 "iteration_override_known"?: boolean;
@@ -54267,9 +54511,11 @@ export interface operations {
                   "think_time"?: (Record<string, unknown>) | null;
                   "web_runtime"?: (Record<string, unknown>) | null;
                 }) | null;
+                "runtime_state"?: string;
                 "script_id": string;
                 "script_name": string;
                 "stages"?: Array<Record<string, unknown>>;
+                "target_duration"?: string;
                 "vusers": number;
               }>;
               "history"?: Array<({
@@ -55346,6 +55592,8 @@ export interface operations {
                   "scenario_value": boolean;
                   "source": string;
                 }) | null;
+                "effective_end_at"?: (string) | null;
+                "ended_at"?: (string) | null;
                 "initialization"?: string;
                 "iteration_override"?: (number) | null;
                 "iteration_override_known"?: boolean;
@@ -55378,9 +55626,11 @@ export interface operations {
                   "think_time"?: (Record<string, unknown>) | null;
                   "web_runtime"?: (Record<string, unknown>) | null;
                 }) | null;
+                "runtime_state"?: string;
                 "script_id": string;
                 "script_name": string;
                 "stages"?: Array<Record<string, unknown>>;
+                "target_duration"?: string;
                 "vusers": number;
               }>;
               "history"?: Array<({
@@ -56457,6 +56707,8 @@ export interface operations {
                   "scenario_value": boolean;
                   "source": string;
                 }) | null;
+                "effective_end_at"?: (string) | null;
+                "ended_at"?: (string) | null;
                 "initialization"?: string;
                 "iteration_override"?: (number) | null;
                 "iteration_override_known"?: boolean;
@@ -56489,9 +56741,11 @@ export interface operations {
                   "think_time"?: (Record<string, unknown>) | null;
                   "web_runtime"?: (Record<string, unknown>) | null;
                 }) | null;
+                "runtime_state"?: string;
                 "script_id": string;
                 "script_name": string;
                 "stages"?: Array<Record<string, unknown>>;
+                "target_duration"?: string;
                 "vusers": number;
               }>;
               "history"?: Array<({
@@ -57568,6 +57822,8 @@ export interface operations {
                   "scenario_value": boolean;
                   "source": string;
                 }) | null;
+                "effective_end_at"?: (string) | null;
+                "ended_at"?: (string) | null;
                 "initialization"?: string;
                 "iteration_override"?: (number) | null;
                 "iteration_override_known"?: boolean;
@@ -57600,9 +57856,11 @@ export interface operations {
                   "think_time"?: (Record<string, unknown>) | null;
                   "web_runtime"?: (Record<string, unknown>) | null;
                 }) | null;
+                "runtime_state"?: string;
                 "script_id": string;
                 "script_name": string;
                 "stages"?: Array<Record<string, unknown>>;
+                "target_duration"?: string;
                 "vusers": number;
               }>;
               "history"?: Array<({
@@ -73884,6 +74142,8 @@ export interface operations {
                 "scenario_value": boolean;
                 "source": string;
               }) | null;
+              "effective_end_at"?: (string) | null;
+              "ended_at"?: (string) | null;
               "initialization"?: string;
               "iteration_override"?: (number) | null;
               "iteration_override_known"?: boolean;
@@ -74037,6 +74297,7 @@ export interface operations {
                   "streaming"?: Record<string, unknown>;
                 }) | null;
               }) | null;
+              "runtime_state"?: string;
               "script_id": string;
               "script_name": string;
               "stages"?: Array<{
@@ -74046,6 +74307,7 @@ export interface operations {
                 "target_vusers"?: number;
                 "type": string;
               }>;
+              "target_duration"?: string;
               "vusers": number;
             }>;
             "history"?: Array<({
@@ -87736,6 +87998,12 @@ export interface paths {
   };
   "/api/v1/tests/{id}/resume": {
     "post": operations["handleResumeTest"];
+  };
+  "/api/v1/tests/{id}/runtime-adjustments": {
+    "patch": operations["handleApplyRuntimeAdjustment"];
+  };
+  "/api/v1/tests/{id}/runtime-adjustments/preview": {
+    "post": operations["handlePreviewRuntimeAdjustment"];
   };
   "/api/v1/tests/{id}/sla-status": {
     "get": operations["handleGetTestSLAStatus"];

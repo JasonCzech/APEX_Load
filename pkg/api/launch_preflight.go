@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"sort"
 	"strings"
 	"time"
@@ -86,6 +87,86 @@ type launchCapacityEvent struct {
 	Generators         int
 	VUsers             int
 	ApprovedQuotaBurst bool
+	// GroupProfileKnown distinguishes a segmented run whose groups have all
+	// ended from a legacy event that has no per-group profile. Without it, an
+	// empty active-group slice incorrectly falls back to the whole-run demand.
+	GroupProfileKnown bool
+	Groups            []launchGroupCapacity
+}
+
+type launchGroupCapacity struct {
+	EndAt               time.Time
+	VUsers              int
+	ReleaseAt           time.Time
+	BeforeReleaseVUsers int
+}
+
+func launchCapacityAt(event launchCapacityEvent, sample time.Time) (int, int) {
+	if len(event.Groups) == 0 && !event.GroupProfileKnown {
+		return event.Generators, event.VUsers
+	}
+	vusers := 0
+	for _, group := range event.Groups {
+		if sample.Before(group.EndAt) {
+			groupVUsers := group.VUsers
+			if !group.ReleaseAt.IsZero() && sample.Before(group.ReleaseAt) {
+				groupVUsers = maxInt(groupVUsers, group.BeforeReleaseVUsers)
+			}
+			vusers = saturatingAddNonNegative(vusers, groupVUsers)
+		}
+	}
+	if vusers <= 0 || event.VUsers <= 0 {
+		if sample.Before(event.EndAt) && event.Generators > 0 {
+			return 1, 0
+		}
+		return 0, 0
+	}
+	generators := int(math.Ceil(float64(event.Generators) * float64(vusers) / float64(event.VUsers)))
+	return maxInt(1, generators), vusers
+}
+
+func launchGroupCapacities(test *ManagedTest, start, now time.Time) []launchGroupCapacity {
+	if test == nil {
+		return nil
+	}
+	pause := test.CumulativePause
+	if test.PausedAt != nil && !test.PausedAt.IsZero() {
+		pause += max(time.Duration(0), now.Sub(*test.PausedAt))
+	}
+	preBaseline, _ := testexec.ResourceBaselineWindows(test.ResourceBaseline)
+	offset := testexec.StartDelayWindow(test.StartDelay) + preBaseline + pause
+	groups := make([]launchGroupCapacity, 0, len(test.Groups))
+	for _, group := range test.Groups {
+		if group.RuntimeState == "ended" {
+			continue
+		}
+		duration := effectiveGroupDuration(group, test.Duration)
+		rampDown, _ := time.ParseDuration(group.RampDown)
+		reserved := group.VUsers
+		if group.stageDriven && group.currentVUsers > reserved {
+			reserved = group.currentVUsers
+		}
+		capacity := launchGroupCapacity{EndAt: start.Add(offset + duration + rampDown).UTC(), VUsers: reserved}
+		if ramp, ok := test.VUserRamps[group.Name]; ok && ramp.StartVUsers > ramp.TargetVUsers {
+			rampDuration := time.Duration(ramp.RampDurationSeconds) * time.Second
+			if rampDuration <= 0 {
+				rampDuration, _ = time.ParseDuration(ramp.RampDuration)
+			}
+			capacity.VUsers = ramp.TargetVUsers
+			capacity.BeforeReleaseVUsers = ramp.StartVUsers
+			capacity.ReleaseAt = ramp.StartedAt.Add(rampDuration).UTC()
+		}
+		groups = append(groups, capacity)
+	}
+	return groups
+}
+
+func launchGroupPeakVUsers(groups []launchGroupCapacity) int {
+	total := 0
+	for _, group := range groups {
+		total = saturatingAddNonNegative(total, maxInt(group.VUsers, group.BeforeReleaseVUsers))
+	}
+	return total
 }
 
 // launchWindowEvidence is the durable state needed by a launch-window
@@ -807,6 +888,7 @@ func (tr *TestRunner) launchWindowConflictsWithEvidenceLocked(test *ManagedTest,
 	conflicts := make([]LaunchConflict, 0)
 	conflicts = append(conflicts, tr.launchGovernanceWindowConflictsLocked(test, window)...)
 
+	proposalGroups := launchGroupCapacities(test, window.StartAt, now)
 	proposal := launchCapacityEvent{
 		ID:                 "proposal",
 		Source:             "proposal",
@@ -815,8 +897,10 @@ func (tr *TestRunner) launchWindowConflictsWithEvidenceLocked(test *ManagedTest,
 		StartAt:            window.StartAt,
 		EndAt:              window.EndAt,
 		Generators:         recommendedGeneratorCountForTest(test),
-		VUsers:             test.TotalVUsers,
+		VUsers:             maxInt(test.TotalVUsers, launchGroupPeakVUsers(proposalGroups)),
 		ApprovedQuotaBurst: hasApprovedExecutionPlanQuotaBurst(test),
+		GroupProfileKnown:  true,
+		Groups:             proposalGroups,
 	}
 	if proposal.Generators < 1 && proposal.VUsers > 0 {
 		proposal.Generators = 1
@@ -927,15 +1011,18 @@ func (tr *TestRunner) launchCapacityEventForTestLocked(test *ManagedTest, now ti
 	if generators < 1 && test.TotalVUsers > 0 {
 		generators = 1
 	}
+	groups := launchGroupCapacities(test, start, now)
 	return launchCapacityEvent{
-		ID:         test.ID,
-		Source:     "test",
-		Title:      firstNonEmpty(test.Name, "Run"),
-		ProjectID:  normalizeProjectID(test.ProjectID),
-		StartAt:    start.UTC(),
-		EndAt:      end.UTC(),
-		Generators: generators,
-		VUsers:     test.TotalVUsers,
+		ID:                test.ID,
+		Source:            "test",
+		Title:             firstNonEmpty(test.Name, "Run"),
+		ProjectID:         normalizeProjectID(test.ProjectID),
+		StartAt:           start.UTC(),
+		EndAt:             end.UTC(),
+		Generators:        generators,
+		VUsers:            maxInt(test.TotalVUsers, launchGroupPeakVUsers(groups)),
+		GroupProfileKnown: true,
+		Groups:            groups,
 	}, true
 }
 
@@ -979,15 +1066,18 @@ func (tr *TestRunner) launchCapacityEventForScenarioLocked(schedule *storage.Sce
 	if generators < 1 && totalVUsers > 0 {
 		generators = 1
 	}
+	capacityGroups := launchGroupCapacities(testLike, plannedAt, plannedAt)
 	return launchCapacityEvent{
-		ID:         schedule.ID,
-		Source:     "cron",
-		Title:      testLike.Name,
-		ProjectID:  testLike.ProjectID,
-		StartAt:    window.StartAt,
-		EndAt:      window.EndAt,
-		Generators: generators,
-		VUsers:     totalVUsers,
+		ID:                schedule.ID,
+		Source:            "cron",
+		Title:             testLike.Name,
+		ProjectID:         testLike.ProjectID,
+		StartAt:           window.StartAt,
+		EndAt:             window.EndAt,
+		Generators:        generators,
+		VUsers:            maxInt(totalVUsers, launchGroupPeakVUsers(capacityGroups)),
+		GroupProfileKnown: true,
+		Groups:            capacityGroups,
 	}
 }
 
@@ -999,6 +1089,14 @@ func launchSampleTimes(window LaunchWindow, events []launchCapacityEvent, reserv
 		}
 		if launchInstantInWindow(event.EndAt, window) {
 			values = append(values, event.EndAt)
+		}
+		for _, group := range event.Groups {
+			if !group.ReleaseAt.IsZero() && launchInstantInWindow(group.ReleaseAt, window) {
+				values = append(values, group.ReleaseAt)
+			}
+			if launchInstantInWindow(group.EndAt, window) {
+				values = append(values, group.EndAt)
+			}
 		}
 	}
 	for _, reservation := range normalizeCapacityReservations(reservations) {
@@ -1059,21 +1157,23 @@ func (tr *TestRunner) launchCapacityConflictsAtWithEvidenceLocked(proposal launc
 	if availability < 1 {
 		availability = tr.settings.CapacityPlanning.Availability.ConfiguredAvailableGenerators
 	}
-	totalGenerators := proposal.Generators
+	proposalGenerators, proposalVUsers := launchCapacityAt(proposal, sample)
+	totalGenerators := proposalGenerators
 	existingGenerators := 0
 	globalTests := 1
 	projectTests := 1
-	projectVUsers := proposal.VUsers
-	byProject := map[string]int{proposal.ProjectID: proposal.Generators}
+	projectVUsers := proposalVUsers
+	byProject := map[string]int{proposal.ProjectID: proposalGenerators}
 	for _, event := range existing {
-		totalGenerators = saturatingAddNonNegative(totalGenerators, event.Generators)
-		existingGenerators = saturatingAddNonNegative(existingGenerators, event.Generators)
+		eventGenerators, eventVUsers := launchCapacityAt(event, sample)
+		totalGenerators = saturatingAddNonNegative(totalGenerators, eventGenerators)
+		existingGenerators = saturatingAddNonNegative(existingGenerators, eventGenerators)
 		globalTests = saturatingAddNonNegative(globalTests, 1)
 		existingProjectID := normalizeProjectID(event.ProjectID)
-		byProject[existingProjectID] = saturatingAddNonNegative(byProject[existingProjectID], event.Generators)
+		byProject[existingProjectID] = saturatingAddNonNegative(byProject[existingProjectID], eventGenerators)
 		if normalizeProjectID(event.ProjectID) == proposal.ProjectID {
 			projectTests = saturatingAddNonNegative(projectTests, 1)
-			projectVUsers = saturatingAddNonNegative(projectVUsers, event.VUsers)
+			projectVUsers = saturatingAddNonNegative(projectVUsers, eventVUsers)
 		}
 	}
 	conflicts := make([]LaunchConflict, 0, 5)

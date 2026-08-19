@@ -207,6 +207,7 @@ type TestRunner struct {
 	schedulerContentToken   string
 	schedulerContentKnown   bool
 	activeStopMu            sync.Mutex
+	runtimeAdjustmentMu     sync.Mutex
 	remoteControlMu         sync.Mutex
 	remoteControlGates      map[string]*distributedControlGate
 	hub                     *Hub
@@ -655,15 +656,21 @@ type VUserRampStatus struct {
 }
 
 type TestGroup struct {
-	Name       string              `json:"name"`
-	ScriptID   string              `json:"script_id"`
-	ScriptName string              `json:"script_name"`
-	Protocol   string              `json:"protocol"`
-	Role       string              `json:"role,omitempty"`
-	VUsers     int                 `json:"vusers"`
-	RampUp     string              `json:"ramp_up,omitempty"`
-	RampDown   string              `json:"ramp_down,omitempty"`
-	Stages     []storage.LoadStage `json:"stages,omitempty"`
+	Name       string `json:"name"`
+	ScriptID   string `json:"script_id"`
+	ScriptName string `json:"script_name"`
+	Protocol   string `json:"protocol"`
+	Role       string `json:"role,omitempty"`
+	VUsers     int    `json:"vusers"`
+	// TargetDuration is this group's operator-controlled active runtime. Empty
+	// legacy snapshots inherit the enclosing test duration.
+	TargetDuration string              `json:"target_duration,omitempty"`
+	EffectiveEndAt *time.Time          `json:"effective_end_at,omitempty"`
+	RuntimeState   string              `json:"runtime_state,omitempty"`
+	EndedAt        *time.Time          `json:"ended_at,omitempty"`
+	RampUp         string              `json:"ramp_up,omitempty"`
+	RampDown       string              `json:"ramp_down,omitempty"`
+	Stages         []storage.LoadStage `json:"stages,omitempty"`
 	// Iterations is the effective root+group value retained for API compatibility.
 	Iterations *int `json:"iterations,omitempty"`
 	// IterationOverride records group-owned intent supplied through the compact

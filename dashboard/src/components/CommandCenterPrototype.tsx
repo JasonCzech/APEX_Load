@@ -37,6 +37,8 @@ import ConfirmRunActionModal from './ConfirmRunActionModal'
 import TestNotesDialog from './TestNotesDialog'
 import GroupParametersDialog from './GroupParametersDialog'
 import GroupRuntimeSettingsDialog from './GroupRuntimeSettingsDialog'
+import RuntimeAdjustmentDialog from './RuntimeAdjustmentDialog'
+import { runtimeAdjustmentTargets } from './runtimeAdjustmentModel'
 import ThresholdAlertStrip from './ThresholdAlertStrip'
 import type { ThresholdAlertEntry } from '../thresholdAlerts'
 import { liveEvidenceCacheKey } from './commandCenterEvidenceModel'
@@ -437,6 +439,7 @@ export default function CommandCenterPrototype({
   const [backendScopedChartData, setBackendScopedChartData] = useState<MetricsHistoryPoint[] | null>(null)
   const [backendScopedMetrics, setBackendScopedMetrics] = useState<LiveMetrics | undefined>()
   const [showNotes, setShowNotes] = useState(false)
+  const [showRuntimeAdjustment, setShowRuntimeAdjustment] = useState(false)
   const { pendingAction, confirmRunAction, onConfirmRunAction, onCancelRunAction } = useRunActionConfirmation()
   const [groupSettingsDialog, setGroupSettingsDialog] = useState<{ group: string; kind: GroupSettingsDialogKind } | null>(null)
   const archiveCheckGenerationRef = useRef(0)
@@ -451,6 +454,7 @@ export default function CommandCenterPrototype({
     archiveCheckGenerationRef.current += 1
     archiveCheckInFlightRef.current = false
     setGroupSettingsDialog(null)
+    setShowRuntimeAdjustment(false)
     setLiveEvidenceByRunSignature({})
     setSelectedEvidenceId('')
     setEvidenceLoadingKey('')
@@ -1248,6 +1252,8 @@ export default function CommandCenterPrototype({
         onAbort={confirmRunAction('abort', abortRun)}
         onOpenExecution={testId && onOpenExecution ? () => onOpenExecution(testId) : undefined}
         onOpenTestNotes={testId ? () => setShowNotes(true) : undefined}
+        onChangeDuration={variant === 'ops' && liveMode && runStatus === 'RUNNING' ? () => setShowRuntimeAdjustment(true) : undefined}
+        changeDurationDisabled={showRuntimeAdjustment || pendingAction !== null}
       />
       {pendingAction && (
         <ConfirmRunActionModal
@@ -1263,6 +1269,52 @@ export default function CommandCenterPrototype({
           testId={testId}
           testName={displayTest.name}
           onClose={() => setShowNotes(false)}
+        />
+      )}
+      {showRuntimeAdjustment && testId && liveMode && runStatus === 'RUNNING' && (
+        <RuntimeAdjustmentDialog
+          test={displayTest}
+          onClose={() => setShowRuntimeAdjustment(false)}
+          onApplied={(result) => {
+            setLiveTest(current => {
+              if (!current) return current
+              const goalTargets = { ...current.goal_targets }
+              for (const adjusted of result.groups) {
+                if (adjusted.target_tps !== undefined) {
+                  goalTargets[adjusted.name] = { group: adjusted.name, target_tps: adjusted.target_tps }
+                }
+              }
+              const groups = current.groups.map(group => {
+                const adjusted = result.groups.find(candidate => candidate.name === group.name)
+                return adjusted ? {
+                  ...group,
+                  target_duration: adjusted.target_duration,
+                  effective_end_at: adjusted.effective_end_at,
+                  runtime_state: adjusted.runtime_state,
+                  vusers: adjusted.target_vusers,
+                } : group
+              })
+              return {
+                ...current,
+                duration: result.impact.scenario_duration,
+                total_vusers: groups.reduce((total, group) => total + group.vusers, 0),
+                groups,
+                goal_targets: Object.keys(goalTargets).length > 0 ? goalTargets : current.goal_targets,
+                goal_config: current.goal_config && Object.keys(goalTargets).length > 0 ? {
+                  ...current.goal_config,
+                  target_average_tps: Object.values(goalTargets).reduce((total, target) => total + target.target_tps, 0),
+                } : current.goal_config,
+              }
+            })
+            setState(previous => ({
+              ...previous,
+              vuserTargets: {
+                ...previous.vuserTargets,
+                ...runtimeAdjustmentTargets(result.groups),
+              },
+              feedback: `Runtime adjusted to ${result.impact.scenario_duration}; peak load ${result.impact.peak_vusers.toLocaleString()} VUsers.`,
+            }))
+          }}
         />
       )}
       {groupSettingsDialog && testId && liveMode && groupSettingsDialog.kind === 'runtime-settings' && (
@@ -1444,6 +1496,8 @@ interface RunControlShelfProps {
   onAbort: () => void
   onOpenExecution?: () => void
   onOpenTestNotes?: () => void
+  onChangeDuration?: () => void
+  changeDurationDisabled?: boolean
 }
 
 function RunControlShelf({
@@ -1462,6 +1516,8 @@ function RunControlShelf({
   onAbort,
   onOpenExecution,
   onOpenTestNotes,
+  onChangeDuration,
+  changeDurationDisabled = false,
 }: RunControlShelfProps) {
   const terminal = status === 'ABORTED' || status === 'STOPPING' || status === 'COMPLETE' || status === 'FAILED'
   // Abort must stay available during STOPPING so a wedged graceful stop can still be escalated.
@@ -1500,6 +1556,11 @@ function RunControlShelf({
           <button type="button" className="btn btn-sm btn-ghost" onClick={onOpenTestNotes}>
             <NotesIcon />
             Test Notes
+          </button>
+        )}
+        {onChangeDuration && (
+          <button type="button" className="btn btn-sm btn-accent" onClick={onChangeDuration} disabled={changeDurationDisabled}>
+            Change duration
           </button>
         )}
         {!historicalRun && (

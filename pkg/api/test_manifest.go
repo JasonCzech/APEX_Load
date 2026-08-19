@@ -691,7 +691,7 @@ func (tr *TestRunner) testManifestRuntimeChanges(testID string, refKey string, r
 
 func testManifestAuditAction(action string) bool {
 	switch action {
-	case "test.create", "test.start", "test.pause", "test.resume", "test.stop", "test.abort", "test.vusers.scale", "test.duration.adjust",
+	case "test.create", "test.start", "test.pause", "test.resume", "test.stop", "test.abort", "test.vusers.scale", "test.duration.adjust", "test.runtime.adjust",
 		"test.runtime_settings.update", "test.parameters.update":
 		return true
 	default:
@@ -717,6 +717,8 @@ func testManifestAuditLabel(action string) string {
 		return "VUsers changed"
 	case "test.duration.adjust":
 		return "Duration changed"
+	case "test.runtime.adjust":
+		return "Runtime adjusted"
 	case "test.runtime_settings.update":
 		return "Runtime settings changed"
 	case "test.parameters.update":
@@ -742,10 +744,12 @@ func safeManifestAuditDetails(details map[string]any) map[string]any {
 		"new_duration":           {},
 		"override_requested":     {},
 		"parameters":             {},
+		"peak_vusers":            {},
 		"ramp_duration":          {},
 		"reason":                 {},
 		"recommended_generators": {},
 		"requires_override":      {},
+		"scenario_duration":      {},
 		"shortfall_generators":   {},
 		"status":                 {},
 		"target_vusers":          {},

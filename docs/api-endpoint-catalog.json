@@ -5346,6 +5346,26 @@
       "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin"
     },
     {
+      "method": "PATCH",
+      "path": "/api/v1/tests/{id}/runtime-adjustments",
+      "operationId": "handleApplyRuntimeAdjustment",
+      "summary": "Apply Runtime Adjustment",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/tests/{id}/runtime-adjustments/preview",
+      "operationId": "handlePreviewRuntimeAdjustment",
+      "summary": "Preview Runtime Adjustment",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin"
+    },
+    {
       "method": "GET",
       "path": "/api/v1/tests/{id}/sla-status",
       "operationId": "handleGetTestSLAStatus",

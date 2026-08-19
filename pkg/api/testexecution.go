@@ -3509,6 +3509,9 @@ func (tr *TestRunner) runStageSchedule(ctx context.Context, testID string, group
 		}
 	}
 	for index, stage := range stages {
+		if !tr.runtimeGroupAcceptsStages(testID, groupName) {
+			return
+		}
 		stageType := strings.ToLower(strings.TrimSpace(stage.Type))
 		duration, err := time.ParseDuration(stage.Duration)
 		if err != nil || duration <= 0 {
@@ -3567,6 +3570,21 @@ func (tr *TestRunner) runStageSchedule(ctx context.Context, testID string, group
 	}
 }
 
+func (tr *TestRunner) runtimeGroupAcceptsStages(testID, groupName string) bool {
+	tr.mu.RLock()
+	defer tr.mu.RUnlock()
+	test := tr.tests[testID]
+	if test == nil {
+		return false
+	}
+	for _, group := range test.Groups {
+		if group.Name == groupName {
+			return group.RuntimeState != "stopping" && group.RuntimeState != "ended"
+		}
+	}
+	return false
+}
+
 // applyStageHoldTarget enforces the absolute load at a hold boundary. Existing
 // ramps must not continue past that boundary, including when the group already
 // happens to be at the requested target. A pause can race the readiness check in
@@ -3576,6 +3594,14 @@ func (tr *TestRunner) applyStageHoldTarget(ctx context.Context, testID string, g
 	for {
 		tr.mu.Lock()
 		currentTest := tr.tests[testID]
+		if currentTest == nil {
+			tr.mu.Unlock()
+			return fmt.Errorf("test not found: %s", testID)
+		}
+		if !runtimeGroupAcceptsStagesLocked(currentTest, groupName) {
+			tr.mu.Unlock()
+			return context.Canceled
+		}
 		currentVUsers, found := testGroupVUsers(currentTest, groupName)
 		if found && currentVUsers == targetVUsers {
 			tr.cancelVUserScaleRampLocked(currentTest, groupName)
@@ -3610,6 +3636,18 @@ func (tr *TestRunner) applyStageHoldTarget(ctx context.Context, testID string, g
 			return err
 		}
 	}
+}
+
+func runtimeGroupAcceptsStagesLocked(test *ManagedTest, groupName string) bool {
+	if test == nil {
+		return false
+	}
+	for _, group := range test.Groups {
+		if group.Name == groupName {
+			return group.RuntimeState != "stopping" && group.RuntimeState != "ended"
+		}
+	}
+	return false
 }
 
 type vuserScaleAdmissionGuard func(current *ManagedTest) error
@@ -3814,6 +3852,9 @@ func (tr *TestRunner) vuserScaleProposalWithEvidenceLocked(test *ManagedTest, gr
 			continue
 		}
 		found = true
+		if proposal.Groups[i].RuntimeState == "ended" && targetVUsers > 0 {
+			return nil, fmt.Errorf("group %q has ended and cannot be restarted", groupName)
+		}
 		if proposal.Groups[i].Role == GroupRoleObserver && targetVUsers > observerMaxVUsers {
 			return nil, fmt.Errorf("observer group %q cannot exceed %d VUsers", groupName, observerMaxVUsers)
 		}
@@ -4598,12 +4639,15 @@ func (tr *TestRunner) ResumeTest(id string) error {
 	test.Status = "RUNNING"
 	previousPausedAt := cloneTimePtr(test.PausedAt)
 	previousCumulativePause := test.CumulativePause
+	previousGroups := cloneArchiveTestGroups(test.Groups)
 	test.PausedAt = nil
 	test.CumulativePause = proposal.CumulativePause
+	refreshRuntimeGroupEffectiveEndsLocked(test, calendarTestStart(test))
 	if err := tr.saveManagedTestRecord(test); err != nil {
 		test.Status = "PAUSED"
 		test.PausedAt = previousPausedAt
 		test.CumulativePause = previousCumulativePause
+		test.Groups = previousGroups
 		tr.mu.Unlock()
 		if rollbackErr := tr.applyPause(test, multiEngine, backend); rollbackErr != nil {
 			controlErr := errors.Join(fmt.Errorf("persist resumed test state: %w", err), fmt.Errorf("pause backend after persistence failure: %w", rollbackErr))
@@ -5267,6 +5311,7 @@ func (tr *TestRunner) startManagedTestRun(test *ManagedTest, mge *engine.MultiGr
 	previousQueuePosition := test.QueuePosition
 	previousError := test.Error
 	previousGoalControl := test.goalControl
+	previousGroups := cloneArchiveTestGroups(test.Groups)
 	test.multiEngine = mge
 	test.StartedAt = &now
 	test.EndedAt = nil
@@ -5276,6 +5321,7 @@ func (tr *TestRunner) startManagedTestRun(test *ManagedTest, mge *engine.MultiGr
 	test.QueuePosition = 0
 	test.Error = ""
 	test.goalControl = &goalControllerState{}
+	initializeRuntimeGroupsLocked(test, now)
 	if err := tr.saveManagedTestRecord(test); err != nil {
 		test.multiEngine = previousMultiEngine
 		test.StartedAt = previousStartedAt
@@ -5286,6 +5332,7 @@ func (tr *TestRunner) startManagedTestRun(test *ManagedTest, mge *engine.MultiGr
 		test.QueuePosition = previousQueuePosition
 		test.Error = previousError
 		test.goalControl = previousGoalControl
+		test.Groups = previousGroups
 		if previousExecutionCtx == nil || previousCancel == nil {
 			test.cancel()
 			test.executionCtx = previousExecutionCtx
@@ -5301,6 +5348,7 @@ func (tr *TestRunner) startManagedTestRun(test *ManagedTest, mge *engine.MultiGr
 	tr.cacheRunSnapshot(snapshot)
 	tr.broadcastEvent("test_started", eventSnapshot)
 	tr.startStageSchedules(ctx, test, mge)
+	tr.scheduleRuntimeGroupDeadlines(eventSnapshot)
 
 	metricsDone := make(chan struct{})
 	metricsStopped := make(chan time.Time, 1)

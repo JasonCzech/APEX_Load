@@ -28,6 +28,8 @@ import {
   TestNote,
   TestRunManifest,
   TestSummary,
+  RuntimeAdjustmentPreview,
+  RuntimeAdjustmentRequest,
   TransactionEvent,
 } from '../../types'
 import type { ScriptParameterDefinition } from '../../types/scripts'
@@ -773,6 +775,22 @@ export function useTestApi() {
     [],
   )
 
+  const previewRuntimeAdjustment = useCallback(
+    (testId: string, payload: RuntimeAdjustmentRequest, options?: ApiCallOptions) =>
+      request<RuntimeAdjustmentPreview>(`/tests/${testId}/runtime-adjustments/preview`, withCallOptions({
+        method: 'POST', body: JSON.stringify(payload),
+      }, options)),
+    [],
+  )
+
+  const applyRuntimeAdjustment = useCallback(
+    (testId: string, payload: RuntimeAdjustmentRequest, options?: ApiCallOptions) =>
+      request<RuntimeAdjustmentPreview>(`/tests/${testId}/runtime-adjustments`, withCallOptions({
+        method: 'PATCH', body: JSON.stringify(payload),
+      }, options)),
+    [],
+  )
+
   return useMemo(
     () => ({
       listTests,
@@ -824,6 +842,8 @@ export function useTestApi() {
       scaleVUsers,
       updateGoalTarget,
       adjustDuration,
+      previewRuntimeAdjustment,
+      applyRuntimeAdjustment,
       pauseTest,
       resumeTest,
       createRemoteRun,
@@ -911,6 +931,8 @@ export function useTestApi() {
       scaleVUsers,
       updateGoalTarget,
       adjustDuration,
+      previewRuntimeAdjustment,
+      applyRuntimeAdjustment,
     ],
   )
 }

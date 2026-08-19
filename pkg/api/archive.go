@@ -770,6 +770,8 @@ func cloneArchiveTestGroups(groups []TestGroup) []TestGroup {
 	cloned := make([]TestGroup, len(groups))
 	copy(cloned, groups)
 	for i := range cloned {
+		cloned[i].EffectiveEndAt = cloneTimePtr(groups[i].EffectiveEndAt)
+		cloned[i].EndedAt = cloneTimePtr(groups[i].EndedAt)
 		cloned[i].Stages = cloneLoadStages(groups[i].Stages)
 		cloned[i].Iterations = cloneIntPtr(groups[i].Iterations)
 		cloned[i].IterationOverride = cloneIntPtr(groups[i].IterationOverride)
