@@ -65,6 +65,57 @@ describe("AuthGate", () => {
     expect(container.textContent).not.toContain("Sign-in required");
   });
 
+  it("shows the development persona login after Dev View sign-out", async () => {
+    const onDevPersonaLogin = vi.fn();
+    await act(async () => {
+      root.render(
+        <AuthGate
+          state={readyState({ enabled: false, mode: "dev", authenticated: false })}
+          devPersonaSignedOut
+          onDevPersonaLogin={onDevPersonaLogin}
+        >
+          <div data-testid="protected">Protected content</div>
+        </AuthGate>,
+      );
+    });
+
+    expect(container.textContent).toContain("Choose a test persona");
+    expect(container.textContent).toContain("admin/admin");
+    expect(container.textContent).toContain("dev/dev");
+    expect(container.textContent).not.toContain("Protected content");
+
+    const inputs = container.querySelectorAll<HTMLInputElement>("input");
+    await act(async () => {
+      setInputValue(inputs[0], "dev");
+      setInputValue(inputs[1], "dev");
+      container.querySelector("form")?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    });
+
+    expect(onDevPersonaLogin).toHaveBeenCalledWith("user");
+  });
+
+  it("rejects invalid development persona credentials", async () => {
+    await act(async () => {
+      root.render(
+        <AuthGate
+          state={readyState({ enabled: false, mode: "dev", authenticated: false })}
+          devPersonaSignedOut
+        >
+          <div>Protected content</div>
+        </AuthGate>,
+      );
+    });
+
+    const inputs = container.querySelectorAll<HTMLInputElement>("input");
+    await act(async () => {
+      setInputValue(inputs[0], "unknown");
+      setInputValue(inputs[1], "wrong");
+      container.querySelector("form")?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    });
+
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain("Invalid development persona credentials");
+  });
+
   it("blocks the dashboard when trusted-header auth is enabled without a user", async () => {
     await act(async () => {
       root.render(

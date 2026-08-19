@@ -691,6 +691,7 @@ describe('Sidebar', () => {
 
   it('signs the dev user preview out to the admin view', async () => {
     window.localStorage.setItem('apexload.devViewMode', 'user')
+    const onDevPreviewLogout = vi.fn()
 
     await act(async () => {
       root.render(
@@ -699,6 +700,7 @@ describe('Sidebar', () => {
             active="dashboard"
             onNavigate={vi.fn()}
             connectionState="connected"
+            onDevPreviewLogout={onDevPreviewLogout}
             authStatus={{
               enabled: false,
               mode: 'dev',
@@ -727,8 +729,8 @@ describe('Sidebar', () => {
       signOutButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
-    expect(window.localStorage.getItem('apexload.devViewMode')).toBe('admin')
-    expect(container.querySelector<HTMLButtonElement>('.dev-view-segmented button.active')?.textContent).toBe('Admin')
+    expect(onDevPreviewLogout).toHaveBeenCalledOnce()
+    expect(window.localStorage.getItem('apexload.devViewMode')).toBe('user')
     expect(authApiMock.logout).not.toHaveBeenCalled()
   })
 

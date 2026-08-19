@@ -12,6 +12,7 @@ import {
   openDesktopBrowserWithPreview,
   requestApiNavigation,
   resolveApiResourceUrl,
+  type DevViewMode,
 } from "../hooks/apiClient";
 import { AuthStatusState } from "../hooks/useAuthStatus";
 import { getDesktopBridge, isDesktopSurface } from "../desktop/desktopBridge";
@@ -53,6 +54,8 @@ export default function AuthGate({
   state,
   onDesktopHandlersChange,
   onAuthenticationChanged,
+  devPersonaSignedOut = false,
+  onDevPersonaLogin,
 }: {
   children: ReactNode;
   state: AuthStatusState;
@@ -60,6 +63,8 @@ export default function AuthGate({
     handlers: DesktopShellEventHandlers | null,
   ) => void;
   onAuthenticationChanged?: () => void;
+  devPersonaSignedOut?: boolean;
+  onDevPersonaLogin?: (mode: DevViewMode) => void;
 }) {
   const [logoutPending, setLogoutPending] = useState(false);
   const [loginPending, setLoginPending] = useState(false);
@@ -249,6 +254,24 @@ export default function AuthGate({
     setLoginPending(true);
     setLoginError("");
     try {
+      if (
+        state.status === "ready" &&
+        state.auth.mode === "dev" &&
+        devPersonaSignedOut
+      ) {
+        const normalizedUsername = username.trim().toLowerCase();
+        const previewMode =
+          normalizedUsername === "admin" && password === "admin"
+            ? "admin"
+            : normalizedUsername === "dev" && password === "dev"
+              ? "user"
+              : undefined;
+        if (!previewMode) {
+          throw new Error("Invalid development persona credentials.");
+        }
+        onDevPersonaLogin?.(previewMode);
+        return;
+      }
       const response = await login(username, password);
       if (!response.authenticated) throw new Error("Authentication did not complete.");
       reloadAuthentication();
@@ -303,6 +326,42 @@ export default function AuthGate({
           )}
           {desktopOpenError && <p role="alert">{desktopOpenError}</p>}
           {desktopIntentError && <p role="alert">{desktopIntentError}</p>}
+        </section>
+      </div>
+    );
+  }
+
+  if (state.auth.mode === "dev" && devPersonaSignedOut) {
+    return (
+      <div className="auth-gate-shell">
+        <section className="auth-gate-card auth-gate-card--blocked">
+          <div className="auth-gate-brand">
+            <Logo size={32} title="APEX Load" />
+            <p className="auth-gate-kicker">APEX Load Dev Access</p>
+          </div>
+          <h1>Choose a test persona</h1>
+          <p>Sign in as a development persona to continue to the dashboard.</p>
+          <form className="auth-gate-form" onSubmit={submitLocalLogin}>
+            <label>
+              <span>Username</span>
+              <input autoComplete="username" value={username} onChange={(event) => setUsername(event.target.value)} disabled={loginPending} required />
+            </label>
+            <label>
+              <span>Password</span>
+              <input type="password" autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} disabled={loginPending} required />
+            </label>
+            <button className="auth-gate-action" type="submit" disabled={loginPending}>
+              {loginPending ? "Signing in…" : "Sign in"}
+            </button>
+          </form>
+          {loginError && <p className="auth-gate-error" role="alert">{loginError}</p>}
+          <div className="auth-gate-personas" aria-label="Development test credentials">
+            <strong>Test credentials</strong>
+            <ul>
+              <li><code>admin/admin</code><span>System administrator preview</span></li>
+              <li><code>dev/dev</code><span>Workspace editor preview</span></li>
+            </ul>
+          </div>
         </section>
       </div>
     );

@@ -36,6 +36,7 @@ interface Props {
   canCreateProjects?: boolean
   canCreateReleases?: boolean
   showAccess?: boolean
+  onDevPreviewLogout?: () => void
 }
 
 const NAV_ITEMS: { id: NavPage; label: string; icon: ReactNode; requiresAccess?: boolean }[] = [
@@ -188,6 +189,7 @@ export default function Sidebar({
   canCreateProjects = false,
   canCreateReleases = false,
   showAccess = false,
+  onDevPreviewLogout,
 }: Props) {
   const [collapsed, setCollapsed] = useState(false)
   const [domainOpen, setDomainOpen] = useState(false)
@@ -373,6 +375,10 @@ export default function Sidebar({
   }
 
   const handleDevPreviewLogout = () => {
+    if (onDevPreviewLogout) {
+      onDevPreviewLogout()
+      return
+    }
     setDevViewMode('admin')
   }
 

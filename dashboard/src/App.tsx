@@ -346,9 +346,11 @@ function viewForMonitorCategory(categoryId: MonitorCategoryId): AppView {
 function AppShell({
   authStatus,
   desktopHandlerCoordinator,
+  onDevPreviewLogout,
 }: {
   authStatus?: import("./types").DashboardAuthStatus;
   desktopHandlerCoordinator: DesktopShellHandlerCoordinator;
+  onDevPreviewLogout?: () => void;
 }) {
   const [view, setView] = useState<AppView>(() =>
     typeof window === "undefined"
@@ -3057,6 +3059,7 @@ function AppShell({
           canCreateProjects={canManageRepositoryProjects}
           canCreateReleases={canCreateReleases}
           showAccess={canUseAccessWorkspace}
+          onDevPreviewLogout={onDevPreviewLogout}
         />
         <main
           ref={mainContentRef}
@@ -3532,6 +3535,10 @@ export default function App() {
 
 function AppContent() {
   const authState = useAuthStatus();
+  const { setMode: setDevViewMode } = useDevView();
+  const [devPersonaSignedOut, setDevPersonaSignedOut] = useState(
+    () => readStoredString("apexload.devPersonaSignedOut") === "true",
+  );
   const [desktopHandlerCoordinator] = useState(
     () =>
       new DesktopShellHandlerCoordinator(announceDesktopOpenActivation),
@@ -3561,6 +3568,12 @@ function AppContent() {
         state={authState}
         onDesktopHandlersChange={desktopHandlerCoordinator.setGatedHandlers}
         onAuthenticationChanged={() => window.location.reload()}
+        devPersonaSignedOut={devPersonaSignedOut}
+        onDevPersonaLogin={(mode) => {
+          setDevViewMode(mode);
+          removeStoredItem("apexload.devPersonaSignedOut");
+          setDevPersonaSignedOut(false);
+        }}
       >
         <ProjectProvider>
           <ApplicationProvider>
@@ -3573,6 +3586,10 @@ function AppContent() {
                       authState.status === "ready" ? authState.auth : undefined
                     }
                     desktopHandlerCoordinator={desktopHandlerCoordinator}
+                    onDevPreviewLogout={() => {
+                      writeStoredString("apexload.devPersonaSignedOut", "true");
+                      setDevPersonaSignedOut(true);
+                    }}
                   />
                 </NavigationGuardProvider>
               </TopbarContributionProvider>
