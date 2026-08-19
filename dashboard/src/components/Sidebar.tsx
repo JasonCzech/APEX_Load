@@ -372,6 +372,10 @@ export default function Sidebar({
     }
   }
 
+  const handleDevPreviewLogout = () => {
+    setDevViewMode('admin')
+  }
+
   return (
     <aside className={`sidebar ${collapsed ? 'collapsed' : ''}`}>
       <button type="button" className="sidebar-brand" onClick={() => onNavigate('dashboard')} aria-label="APEX Load dashboard">
@@ -689,6 +693,13 @@ export default function Sidebar({
                   User
                 </button>
               </div>
+              <button
+                type="button"
+                className="sidebar-identity-action sidebar-identity-action-button"
+                onClick={handleDevPreviewLogout}
+              >
+                Sign out
+              </button>
             </div>
           )}
           <div className="sidebar-footer-row">

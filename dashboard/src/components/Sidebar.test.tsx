@@ -669,6 +669,7 @@ describe('Sidebar', () => {
     expect(container.textContent).toContain('New Test')
     expect(container.textContent).toContain('API Guide')
     expect(container.textContent).toContain('Settings')
+    expect(Array.from(container.querySelectorAll<HTMLButtonElement>('button')).some(button => button.textContent?.trim() === 'Sign out')).toBe(true)
 
     const userButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'User')
     expect(userButton).toBeDefined()
@@ -685,6 +686,50 @@ describe('Sidebar', () => {
     expect(container.textContent).toContain('New Test')
     expect(container.textContent).toContain('API Guide')
     expect(container.textContent).not.toContain('Settings')
+    expect(Array.from(container.querySelectorAll<HTMLButtonElement>('button')).some(button => button.textContent?.trim() === 'Sign out')).toBe(true)
+  })
+
+  it('signs the dev user preview out to the admin view', async () => {
+    window.localStorage.setItem('apexload.devViewMode', 'user')
+
+    await act(async () => {
+      root.render(
+        <DevViewProvider>
+          <Sidebar
+            active="dashboard"
+            onNavigate={vi.fn()}
+            connectionState="connected"
+            authStatus={{
+              enabled: false,
+              mode: 'dev',
+              authenticated: true,
+              dev_view_mode: 'user',
+              simulated: true,
+              user: {
+                subject: 'dev-user',
+                display_name: 'Dev User Preview',
+                global_roles: ['viewer'],
+                project_roles: { 'project-a': ['editor'] },
+              },
+            }}
+          />
+        </DevViewProvider>,
+      )
+    })
+
+    expect(container.textContent).toContain('Dev User Preview')
+    const signOutButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent?.trim() === 'Sign out')
+    expect(signOutButton).toBeDefined()
+    if (!signOutButton) return
+
+    await act(async () => {
+      signOutButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(window.localStorage.getItem('apexload.devViewMode')).toBe('admin')
+    expect(container.querySelector<HTMLButtonElement>('.dev-view-segmented button.active')?.textContent).toBe('Admin')
+    expect(authApiMock.logout).not.toHaveBeenCalled()
   })
 
   it('does not render the dev view toggle for production auth modes', async () => {
