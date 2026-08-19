@@ -17,7 +17,7 @@ state-bearing dashboard. External published views may mirror it, but must not ca
 | M1 | Tier-0 end-user journey | IN_PROGRESS | 11 | `evidence/M1/` |
 | M2 | Import & authoring correctness | IN_PROGRESS | not recorded | `evidence/M2/` |
 | M3 | Run lifecycle & data integrity | IN_PROGRESS | not recorded | `evidence/M3/` |
-| M4 | Persistence hardening & migration | NOT_STARTED | 0 | `evidence/M4/` |
+| M4 | Persistence hardening & migration | IN_PROGRESS | not recorded | `evidence/M4/` |
 | M5 | Distributed execution at scale | NOT_STARTED | 0 | `evidence/M5/` |
 | M6 | AKS deployment & HA failover | NOT_STARTED | 0 | `evidence/M6/` |
 | M7 | Multi-region & scale evidence | NOT_STARTED | 0 | `evidence/M7/` |
@@ -70,6 +70,14 @@ generates [evidence/M3/run-control-matrix.json](evidence/M3/run-control-matrix.j
 adjustments and conditional gates such as leadership, in-flight persistence, finalization, and
 backend acknowledgements remain open matrix work. DEF-26 also remains open: terminal payloads are
 compacted, but durable history is still loaded into an unbounded process-lifetime map.
+
+M4 is underway with an ordered, fingerprinted `schema_migrations` ledger shared by SQLite and
+PostgreSQL. Store construction records convergence only after the full idempotent schema, backfill,
+index, foreign-key, and optional Timescale sequence succeeds; reopening is idempotent, changed
+release identities fail closed, and a database newer than the binary is rejected. Configured stores
+expose a read-only `SchemaStatusProvider`, and backend readiness now reports `apexload.schema.v1`
+instead of the unrelated archive-manifest version. The dialect inventory, SQLite→PostgreSQL mover,
+real PostgreSQL reconciliation, and restore drill remain open.
 
 ## Headline metrics
 

@@ -27,6 +27,12 @@ type BackendInfoProvider interface {
 	BackendInfo() StoreBackendInfo
 }
 
+// SchemaStatusProvider exposes read-only migration inspection for callers that
+// receive the broad Store interface from configuration.
+type SchemaStatusProvider interface {
+	SchemaStatus() (SchemaStatus, error)
+}
+
 func StoreConfigFromEnv() StoreConfig {
 	backend := strings.TrimSpace(strings.ToLower(os.Getenv("APEXLOAD_STORE")))
 	if backend == "" {
