@@ -15,6 +15,17 @@ this directly. Suspect timing before suspecting the test.
 | Test | First seen | Rate | Root cause | Owner | Quarantined | Un-quarantine by | State |
 |---|---|---|---|---|---|---|---|
 | `TestLapsedProcessEpochRejectsTheClaimAndFencesTheAssignmentLeaseDifferently` | 2026-08-18 | 2 of 5 runs (both full-suite) | 30 ms wall-clock TTL could not survive scheduler pressure | QA program | No — fixed at the cause | n/a | **FIXED** (`267e9697b`) |
+| `TestRunPreparedTestRetainsTestIdentityOnPollTimeout` | 2026-08-18 | 1 full-suite failure; 0 of 10 isolated repetitions | Unexplained; timeout path returned no partial run result under full-suite load | QA program | No — first occurrence under observation | n/a | **OBSERVING** |
+
+## FLAKE-2 — apexctl poll-timeout partial result
+
+**Location:** `cmd/apexctl/api_client_test.go:108`
+
+The clean isolated `go test ./...` verification for the generated M1 API contract matrix observed
+one failure: `runPreparedTest` returned a nil partial result after its polling timeout, although the
+test requires the created test identity and elapsed time to survive that timeout. Ten immediate
+isolated repetitions passed. This first unexplained intermittent failure is logged per policy; a
+second occurrence requires a root-cause fix or a dated quarantine within 24 hours.
 
 ## FLAKE-1 — a 30 ms real-clock TTL in the epoch-fencing tests
 

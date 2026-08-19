@@ -14,6 +14,7 @@ class QADashboardTest(unittest.TestCase):
             status = root / "STATUS.md"
             matrix = root / "TIER0_ASSERTION_MATRIX.md"
             metrics = root / "HEADLINE_METRICS.md"
+            api_contract = root / "api-contract-matrix.json"
             output = root / "DASHBOARD.md"
             status.write_text(
                 "## Milestones\n\n| ID | State |\n|---|---|\n| M0 | IN_PROGRESS |\n"
@@ -23,10 +24,14 @@ class QADashboardTest(unittest.TestCase):
                 "| S1 | Login | GREEN |\n| S2 | Workspace | PARTIAL |\n| S3 | Import | MISSING |\n"
             )
             metrics.write_text("# QA Headline Metrics\n\n| Metric | Current |\n|---|---:|\n| Specs | 1 |\n")
-            command = [str(SCRIPT), "--status", str(status), "--matrix", str(matrix), "--metrics", str(metrics), "--output", str(output)]
+            api_contract.write_text(
+                '{"totals":{"routes":4,"green":2,"partial":1,"missing":1}}\n'
+            )
+            command = [str(SCRIPT), "--status", str(status), "--matrix", str(matrix), "--metrics", str(metrics), "--api-contract", str(api_contract), "--output", str(output)]
             subprocess.run(command, check=True)
             generated = output.read_text()
             self.assertIn("| 1 | 1 | 1 | 3 |", generated)
+            self.assertIn("| 2 | 1 | 1 | 4 |", generated)
             subprocess.run([*command, "--check"], check=True)
             output.write_text(generated + "stale\n")
             self.assertNotEqual(subprocess.run([*command, "--check"], capture_output=True).returncode, 0)

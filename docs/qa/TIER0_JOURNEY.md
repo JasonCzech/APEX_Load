@@ -1,13 +1,13 @@
 # Tier-0 Journey
 
 The single end-to-end arc a real user walks, from an empty workspace to a downloaded run archive.
-This is the specification the M1 Playwright suite implements — roughly twenty specs, each owning one
-step below, plus a full-arc smoke spec that runs all of them in sequence.
+This is the specification the M1 Playwright suite implements. Completion is measured by the
+assertion inventory, not by a target number of spec files; independently seeded step coverage is
+supplemented by a full-arc smoke spec.
 
-**Why this exists.** The dashboard has ~24 routable views and six wizard/tab systems, covered today
-by three Playwright specs. Rather than chase coverage view-by-view, M1 locks the one path that must
-never break: if this journey is green, the product is usable; if any step is red, it is not,
-regardless of what unit coverage says.
+**Why this exists.** Rather than chase coverage view-by-view, M1 locks the one path that must never
+break: if this journey is green, the product is usable; if any step is red, it is not, regardless
+of what unit coverage says. Generated inventories track changing route and spec breadth separately.
 
 **Status:** [TIER0_ASSERTION_MATRIX.md](TIER0_ASSERTION_MATRIX.md) is the completion inventory.
 Today S1 and S7 are `GREEN`; S2 and S8–S12 are `PARTIAL`; S3–S6 and the full arc are `MISSING`.
@@ -83,7 +83,7 @@ application and then asserts *which project it landed in* is the regression guar
 |---|---|
 | Route | `#/scripts?mode=import` |
 | Components | `ScriptsPage.tsx` → `ScriptCreateOptions.tsx` → per-format import component |
-| API | `/api/v1/scripts/import/*` (49 routes), `.../validate`, `.../commit` |
+| API | `/api/v1/scripts/import/*`, `.../validate`, `.../commit` (inventory generated from the endpoint catalog) |
 
 Use one deterministic, dependency-free format for the Tier-0 arc — OpenAPI or Bruno — and leave the
 other fifteen import types to M2's golden-file work. Assert the three-stage `POST` → `validate` →

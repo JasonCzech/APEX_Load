@@ -1609,9 +1609,6 @@ func routeRolesText(method, path string) string {
 	if method == http.MethodGet && path == "/metrics" {
 		return "Public when no metrics token is configured; otherwise requires the metrics Bearer token"
 	}
-	if requirement, ok := documentedAccessRequirementFromAPIRouteCatalogs(method, path); ok {
-		return renderAccessRoles(requirement)
-	}
 	concrete := pathParamRe.ReplaceAllString(path, "x")
 	req, err := http.NewRequest(method, "http://localhost"+concrete, nil)
 	if err != nil {
@@ -1623,7 +1620,10 @@ func routeRolesText(method, path string) string {
 	for _, m := range pathParamRe.FindAllStringSubmatch(path, -1) {
 		req.SetPathValue(m[1], "x")
 	}
-	requirement, ok := accessRequirementForRequest(req)
+	requirement, ok := documentedAccessRequirementFromAPIRouteCatalogs(method, path)
+	if !ok {
+		requirement, ok = accessRequirementForRequest(req)
+	}
 	if !ok {
 		return "Requires Authentication"
 	}

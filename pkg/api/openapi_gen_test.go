@@ -593,6 +593,15 @@ func TestGeneratedSwaggerDocumentsConditionalAndInHandlerAuthentication(t *testi
 			t.Errorf("authoring capabilities access text = %q / %q, want %q", authoringCapabilities.XRoles, authoringCapabilities.Description, contract)
 		}
 	}
+	// Modular route catalogs provide the base role contract, while runtime access
+	// narrows these global collections when project_id is supplied. Documentation
+	// must retain both halves instead of returning early after the modular lookup.
+	for _, path := range []string{"/api/v1/fleet/capacity", "/api/v1/system/usage"} {
+		operation := spec.Paths[path]["get"]
+		if !strings.Contains(operation.XRoles, "when project_id is supplied, project roles: Viewer, Editor, ProjectAdmin") {
+			t.Errorf("%s access text = %q, want query-conditional project roles", path, operation.XRoles)
+		}
+	}
 
 	for _, endpoint := range []struct {
 		method string

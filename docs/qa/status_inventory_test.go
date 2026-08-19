@@ -663,7 +663,8 @@ func TestGeneratedDashboardIsFresh(t *testing.T) {
 		t.Fatalf("QA metrics freshness: %v\n%s", err, output)
 	}
 	command := exec.Command("python3", "../../scripts/qa-generate-dashboard.py",
-		"--status", "STATUS.md", "--matrix", "TIER0_ASSERTION_MATRIX.md", "--metrics", "HEADLINE_METRICS.md", "--output", "DASHBOARD.md", "--check")
+		"--status", "STATUS.md", "--matrix", "TIER0_ASSERTION_MATRIX.md", "--metrics", "HEADLINE_METRICS.md",
+		"--api-contract", "evidence/M1/api-contract-matrix.json", "--output", "DASHBOARD.md", "--check")
 	command.Dir = "."
 	if output, err := command.CombinedOutput(); err != nil {
 		t.Fatalf("QA dashboard freshness: %v\n%s", err, output)

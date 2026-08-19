@@ -20,3 +20,14 @@ the required behavior has no journey assertion. File counts are deliberately not
 | S12 | Results filter locates run and opens its report | PARTIAL | Results visibility is covered; filter and report navigation remain. |
 
 The full-arc smoke remains `MISSING` until S1–S12 can execute sequentially against one workspace.
+
+## API contract coverage
+
+The generated [API contract matrix](evidence/M1/api-contract-matrix.json) is the route-level
+completion inventory. It derives its totals from the endpoint catalog, checks catalog-to-router
+public/authenticated parity, proves anonymous rejection through the generic middleware, and runs
+allowed and denied RBAC cases from structured access requirements. Its own `GREEN`, `PARTIAL`, and
+`MISSING` totals are authoritative: legacy resource-scoped recorder/replay routes remain missing
+until the endpoint catalog carries their role metadata, while capability-token routes remain
+partial until their handler-specific anonymous/authenticated cases are incorporated into the
+generated suite.

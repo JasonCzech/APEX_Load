@@ -46,6 +46,13 @@ controller and throwaway database. Completion is tracked by
 S8–S12 are partial; S3–S6 and the full arc are missing. S1 uses a separate local-auth controller
 profile and drives both rejected and successful seeded administrator login.
 
+The generated M1 API contract matrix now inventories the endpoint catalog without embedding a
+route total in program prose. It proves public/authenticated registration parity, anonymous 401s
+through the generic auth middleware, and allowed/denied RBAC role decisions where structured access
+metadata exists. It also exposes the remaining work honestly: legacy recorder/replay routes still
+publish only “Requires Authentication” and therefore remain `MISSING` role-metadata coverage;
+capability-token routes are recorded separately as role-inapplicable.
+
 ## Headline metrics
 
 Every number is generated from tracked files or committed evidence in

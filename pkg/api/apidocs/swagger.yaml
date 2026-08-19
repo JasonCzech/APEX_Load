@@ -29338,7 +29338,7 @@ paths:
   /api/v1/fleet/capacity:
     get:
       summary: Get Fleet Capacity
-      description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; service-account scope: read'
+      description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; service-account scope: read; when project_id is supplied, project roles: Viewer, Editor, ProjectAdmin'
       operationId: handleGetFleetCapacity
       responses:
         "200":
@@ -29443,7 +29443,7 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         default:
           description: Additional handler-defined response.
-      x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; service-account scope: read'
+      x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; service-account scope: read; when project_id is supplied, project roles: Viewer, Editor, ProjectAdmin'
       parameters:
         - name: project_id
           in: query
@@ -29952,7 +29952,7 @@ paths:
   /api/v1/fleet/load-zones:
     get:
       summary: Get Fleet Load Zones
-      description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; service-account scope: read'
+      description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; service-account scope: read; when project_id is supplied, project roles: Viewer, Editor, ProjectAdmin'
       operationId: handleGetFleetLoadZones
       responses:
         "200":
@@ -30058,7 +30058,7 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         default:
           description: Additional handler-defined response.
-      x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; service-account scope: read'
+      x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; service-account scope: read; when project_id is supplied, project roles: Viewer, Editor, ProjectAdmin'
       parameters:
         - name: project_id
           in: query
@@ -74313,7 +74313,7 @@ paths:
   /api/v1/run-calendar:
     get:
       summary: Get Run Calendar
-      description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; service-account scope: read'
+      description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; service-account scope: read; when project_id is supplied, project roles: Viewer, Editor, ProjectAdmin'
       operationId: handleGetRunCalendar
       responses:
         "200":
@@ -74579,7 +74579,7 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         default:
           description: Additional handler-defined response.
-      x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; service-account scope: read'
+      x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; service-account scope: read; when project_id is supplied, project roles: Viewer, Editor, ProjectAdmin'
       parameters:
         - name: capacity
           in: query
@@ -167852,7 +167852,7 @@ paths:
   /api/v1/system/usage:
     get:
       summary: Get Usage Accounting
-      description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; service-account scope: system:read'
+      description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; service-account scope: system:read; when project_id is supplied, project roles: Viewer, Editor, ProjectAdmin'
       operationId: handleGetUsageAccounting
       responses:
         "200":
@@ -168061,7 +168061,7 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         default:
           description: Additional handler-defined response.
-      x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; service-account scope: system:read'
+      x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; service-account scope: system:read; when project_id is supplied, project roles: Viewer, Editor, ProjectAdmin'
       parameters:
         - name: project_id
           in: query
@@ -168075,7 +168075,7 @@ paths:
   /api/v1/system/usage/export:
     get:
       summary: Export Usage Accounting
-      description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; service-account scope: system:read'
+      description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; service-account scope: system:read; when project_id is supplied, project roles: Viewer, Editor, ProjectAdmin'
       operationId: handleExportUsageAccounting
       responses:
         2XX:
@@ -168098,7 +168098,7 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         default:
           description: Additional handler-defined response.
-      x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; service-account scope: system:read'
+      x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; service-account scope: system:read; when project_id is supplied, project roles: Viewer, Editor, ProjectAdmin'
       parameters:
         - name: project_id
           in: query
@@ -168112,7 +168112,7 @@ paths:
   /api/v1/system/usage/snapshots:
     get:
       summary: List Usage Accounting Snapshots
-      description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; service-account scope: system:read'
+      description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; service-account scope: system:read; when project_id is supplied, project roles: Viewer, Editor, ProjectAdmin'
       operationId: handleListUsageAccountingSnapshots
       responses:
         "200":
@@ -168250,7 +168250,7 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         default:
           description: Additional handler-defined response.
-      x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; service-account scope: system:read'
+      x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; service-account scope: system:read; when project_id is supplied, project roles: Viewer, Editor, ProjectAdmin'
       parameters:
         - name: limit
           in: query

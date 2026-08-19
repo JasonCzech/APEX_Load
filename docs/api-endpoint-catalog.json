@@ -1593,7 +1593,7 @@
       "category": "Operations \u0026 Observability",
       "public": false,
       "authenticated": true,
-      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; service-account scope: read"
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; service-account scope: read; when project_id is supplied, project roles: Viewer, Editor, ProjectAdmin"
     },
     {
       "method": "GET",
@@ -1663,7 +1663,7 @@
       "category": "Operations \u0026 Observability",
       "public": false,
       "authenticated": true,
-      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; service-account scope: read"
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; service-account scope: read; when project_id is supplied, project roles: Viewer, Editor, ProjectAdmin"
     },
     {
       "method": "GET",
@@ -3053,7 +3053,7 @@
       "category": "Scheduling",
       "public": false,
       "authenticated": true,
-      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; service-account scope: read"
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; service-account scope: read; when project_id is supplied, project roles: Viewer, Editor, ProjectAdmin"
     },
     {
       "method": "GET",
@@ -4853,7 +4853,7 @@
       "category": "System \u0026 Distribution",
       "public": false,
       "authenticated": true,
-      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; service-account scope: system:read"
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; service-account scope: system:read; when project_id is supplied, project roles: Viewer, Editor, ProjectAdmin"
     },
     {
       "method": "GET",
@@ -4863,7 +4863,7 @@
       "category": "System \u0026 Distribution",
       "public": false,
       "authenticated": true,
-      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; service-account scope: system:read"
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; service-account scope: system:read; when project_id is supplied, project roles: Viewer, Editor, ProjectAdmin"
     },
     {
       "method": "GET",
@@ -4873,7 +4873,7 @@
       "category": "System \u0026 Distribution",
       "public": false,
       "authenticated": true,
-      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; service-account scope: system:read"
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; service-account scope: system:read; when project_id is supplied, project roles: Viewer, Editor, ProjectAdmin"
     },
     {
       "method": "POST",

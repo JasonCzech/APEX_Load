@@ -4,18 +4,18 @@ _Program scope of record. Live state is in [STATUS.md](STATUS.md); defects in [D
 
 ## Context
 
-APEX Load is already heavily tested at the unit level — 1,293 Go test files / 10,508 `Test*`
-functions, 323 dashboard unit test files, and a 15-job CI gate in `.github/workflows/ci.yml`.
+APEX Load is already heavily tested at the unit level; the current inventory is generated in
+[HEADLINE_METRICS.md](HEADLINE_METRICS.md), rather than copied into this scope document.
 **This is not a "write more tests" plan.** The gap is different and specific:
 
 | What's missing | Evidence |
 |---|---|
 | Coverage is collected and thrown away | `ci.yml` writes `coverage.out`, uploads it as a 14-day artifact. No threshold, no diff-coverage, no Codecov. |
-| End-to-end coverage is near-zero | 3 Playwright specs in `dashboard/e2e/` against ~24 routable views and 6 wizard/tab systems. |
+| End-to-end coverage is incomplete | [TIER0_ASSERTION_MATRIX.md](TIER0_ASSERTION_MATRIX.md) records required behavior as `GREEN`, `PARTIAL`, or `MISSING`; spec-file count is not completion evidence. |
 | Every performance claim is unproven | All four targets in `docs/PERFORMANCE_BENCHMARK_EVIDENCE.md` are `attainment_status: not_evaluated`, and the schema validator *rejects* a report claiming `met`. |
 | HA failover has never been tested for real | `APEXLOAD_RUN_HA_FAILOVER_SOAK` is an in-process two-`api.Server` simulation. `docs/AKS_INTEGRATION_READINESS.md` states plainly: no production controller-failover evidence is committed. |
-| No golden-file testing on the conversion core | Zero `.golden` files across `pkg/convert/`'s 191 source files and 31 converters. |
-| No deterministic time | No fake clock anywhere. For a product built on schedules, leases, pacing, and percentile windows, this is a systemic flake and correctness risk. |
+| Converter output lacks an enforced golden inventory | M2 must derive registered converters and require valid and diagnostic cases for each; source-file and converter counts are generated, not embedded here. |
+| Deterministic-time coverage is incomplete | The existing injected `now` convention must cover scheduler, execution leadership, and epoch fencing without introducing a competing clock abstraction. |
 | No SQLite→Postgres migrator, no restore drill | `docs/SQLITE_TO_POSTGRES_MIGRATION_GUIDE.md` tells you to write the migrator yourself. Backup/restore is runbook prose only. |
 | Multi-region is a label | `region` is an operator-supplied string on `APEXLOAD_GENERATORS=dns://...\|region=eastus2`, consumed by soft-preference weighting in `pkg/api/distributed_placement.go`. Zero occurrences of "multi-region" in any doc. |
 
@@ -94,7 +94,7 @@ evidence; PR CI validates its manifest rather than attempting to rerun it.
 |---|---|---|
 | Perf targets `not_evaluated` → measured | 0 / 4 | 4 / 4 |
 | AKS cutover gates passed (`AKS_INTEGRATION_READINESS.md` §Production Migration Gates) | 0 / 10 | 10 / 10 |
-| Tier-0 journey E2E specs green in CI | 0 | ~20 |
+| Tier-0 journey assertions green in CI | generated assertion inventory | every required assertion plus the full arc |
 | Go coverage, enforced floor | none | ratchet |
 | Open whole-app-review defects | 11 | 0 or explicitly deferred with rationale |
 | Resource-leak linters enabled | 0 / 4 | 1 / 4 — revised, see M0 note |
@@ -104,7 +104,8 @@ evidence; PR CI validates its manifest rather than attempting to rerun it.
 
 ## Milestones
 
-Each is one month, ~31 hrs. Weekly slices are ~8 hrs.
+The month labels and hour slices below are planning forecasts. A milestone stays open until its exit
+gate passes, regardless of elapsed calendar time.
 
 ### M0 — Instrument the program (Month 1, ~31 hrs)
 
@@ -170,13 +171,13 @@ available for new component tests.
 
 ### M2 — Import & authoring correctness (Month 3, ~31 hrs)
 
-The largest functional surface: 119 Script Authoring routes, 31 converters in `pkg/convert/`, 16
-user-visible import types in `ScriptCreateOptions.tsx`. Zero golden files today.
+This is a large functional surface. Its route, converter, import-type, fixture, and golden breadth
+must come from generated inventories; this plan deliberately carries no fixed totals.
 
 | Week | Work | Hrs |
 |---|---|---|
-| 1 | Build a golden-file harness for `pkg/convert` (`-update` flag, deterministic serialization). Seed goldens for the existing 35 `testdata/` fixtures. | 8 |
-| 2 | Wire the LoadRunner corpus into CI: `scripts/fetch-lr-scripts-corpus.sh` + `TestPinnedLRScriptsCorpusSmoke` (auto-runs when ≥20 script dirs are present). Cache the corpus so CI doesn't refetch. Extend goldens to Bruno, Postman, OpenAPI, JMeter, HAR, WSDL. | 8 |
+| 1 | Build one deterministic golden harness for `pkg/convert` with explicit `-update`, stable ordering, and normalized generated identifiers/timestamps. Enforce registered-converter parity with at least one valid golden and one meaningful invalid/diagnostic case per converter. | 8 |
+| 2 | Cache and run the pinned LoadRunner corpus without network access in normal PR execution. Extend reviewable deterministic output across every registered converter. | 8 |
 | 3 | E2E: import → review (`ScriptImportReview`, `ParameterizationReview`, `SecretBindingReview`, `SourceMappingReview`) → edit in the workbench → save → replay in the debugger. Cover the 3-stage `POST`→`validate`→`commit` flow and `imports/rollback`. | 8 |
 | 4 | Lift the genuinely thinnest packages — see the corrected target list below. | 7 |
 
@@ -244,7 +245,7 @@ only some have a Postgres twin test. **Dialect drift is the single highest-value
 | Week | Work | Hrs |
 |---|---|---|
 | 1 | Run the **entire** suite under `APEXLOAD_STORE=postgres` against a real PG 16 container (CI already stands one up in the `deployment-artifacts` job). Catalogue and fix every dialect divergence. | 8 |
-| 2 | **Build the SQLite→Postgres migrator** (`cmd/apexload-migrate` or `scripts/`). None exists — `docs/SQLITE_TO_POSTGRES_MIGRATION_GUIDE.md` says write it yourself. Follow the guide's 8-tier dependency order; emit the ~20-entity validation counts automatically. | 8 |
+| 2 | **Build the SQLite→Postgres migrator** (`cmd/apexload-migrate` or `scripts/`). Supply the DSN by environment variable, default to dry-run, require `--apply` for mutation, and support resumable checkpoints. Derive an ordered entity plan and emit count reconciliation plus final verification automatically. | 8 |
 | 3 | **Schema version ledger.** `pkg/storage/sqlite_schema.go` applies ~100+ `ALTER TABLE ADD COLUMN` on *every* startup, idempotent only by string-matching `"duplicate column name"`. No version table, no ordering, no dry-run, and startup time grows with the list. Add a version table + `--dry-run`, keeping the additive/idempotent policy. Test upgrade *and* rollback across the last 3 release tags. | 8 |
 | 4 | Scripted backup/restore drill: managed-PG backup → restore into an isolated DB → validate counts → point a controller at it. Also archive-store (Blob) recovery. Commit as `scripts/restore-drill.sh` + evidence. | 7 |
 
@@ -304,7 +305,7 @@ can finally say controller failover has passed an AKS disruption test, because i
 
 | Week | Work | Hrs |
 |---|---|---|
-| 1 | Security pass: RBAC access-matrix simulation across all 543 routes × the 4 auth modes; production fail-closed posture (`APEXLOAD_ENV=production` refusing `dev`/`local`, trusted-proxy gate, bootstrap admin); SSRF guard (`pkg/netpolicy/`); secret handling and redaction; gRPC mTLS hard-fail; supply-chain verification. | 8 |
+| 1 | Security pass: execute the generated route matrix under local, trusted-header, OIDC, and service-account authentication, including production fail-closed posture (`APEXLOAD_ENV=production` refusing `dev`/`local`, trusted-proxy gate, bootstrap admin); SSRF guard (`pkg/netpolicy/`); secret handling and redaction; gRPC mTLS hard-fail; supply-chain verification. | 8 |
 | 2 | Chaos & dependency loss on AKS: kill Postgres, kill Redis, revoke Blob access, induce clock skew (a documented fatality in `EKS_INTEGRATION_READINESS.md`), rolling upgrade in place with a run active. | 8 |
 | 3 | **72-hour endurance soak on AKS**, multi-region, Postgres, HA enabled. Full observability capture. This is where the resource leaks the M0 linters didn't catch will surface. | 8 |
 | 4 | Finalize and execute the release checklist drafted in M0. Update `docs/RELEASE_EVIDENCE_MANIFEST.md` to link every claim to its M0–M8 artifact. Regenerate the repository dashboard. | 7 |
