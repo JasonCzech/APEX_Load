@@ -10,7 +10,7 @@ break: if this journey is green, the product is usable; if any step is red, it i
 of what unit coverage says. Generated inventories track changing route and spec breadth separately.
 
 **Status:** [TIER0_ASSERTION_MATRIX.md](TIER0_ASSERTION_MATRIX.md) is the completion inventory.
-Today S1 and S7 are `GREEN`; S2 and S8–S12 are `PARTIAL`; S3–S6 and the full arc are `MISSING`.
+Today S1, S2, and S7 are `GREEN`; S8–S12 are `PARTIAL`; S3–S6 and the full arc are `MISSING`.
 The breadth guard still covers all 16 top-level views. Run implemented specs with
 `scripts/run-e2e.sh`. A step is not green merely because one of its API assertions exists.
 
@@ -65,12 +65,13 @@ nothing.
 
 | | |
 |---|---|
-| Route | `#/repository` |
-| Component | `ApplicationRepositoryPage.tsx` |
-| API | `/api/v1/domains`, `/applications`, `/projects`, `/releases` |
+| Routes | `#/settings`, `#/repository` |
+| Components | `SettingsPage.tsx`, `ApplicationRepositoryPage.tsx` |
+| API | `/api/v1/domains`, `/api/v1/projects`, `/api/v1/applications`, `/api/v1/projects/{id}/releases` |
 
-Create Domain → Application Repository → Project → Release. Assert each appears in its tab and that
-the scope params propagate into subsequent routes.
+Create a Domain (which provisions its Application Repository), then a Project, Application, and
+Release. Assert each appears on its management surface and that the project, application, and
+release scope params propagate into subsequent routes.
 
 **Known trap, assert explicitly:** any project-picking UI must go through the scoped
 `setActiveProject`. A local-only cursor previously caused both a spurious "Select a project before

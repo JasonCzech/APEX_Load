@@ -24,8 +24,8 @@ Sources: [STATUS.md](STATUS.md) · [TEST_PROGRAM.md](TEST_PROGRAM.md) · [Headli
 |---|---:|---:|---:|
 | Performance targets measured | 0 | 0 | 4 |
 | AKS cutover gates passed | 0 | 0 | 10 |
-| Tier-0 assertions GREEN | 0 | 2 | 12 |
-| Tier-0 assertions PARTIAL/MISSING | 12 | 10 | 0 |
+| Tier-0 assertions GREEN | 0 | 3 | 12 |
+| Tier-0 assertions PARTIAL/MISSING | 12 | 9 | 0 |
 | Playwright spec files | 3 | 10 | assertion-driven |
 | Go statement coverage | 77.01% | 77.01% | ratchet |
 | Go coverage floor enforced | 0 | 0 | 1 |
@@ -39,7 +39,7 @@ Sources: [STATUS.md](STATUS.md) · [TEST_PROGRAM.md](TEST_PROGRAM.md) · [Headli
 
 | GREEN | PARTIAL | MISSING | Total |
 |---:|---:|---:|---:|
-| 2 | 6 | 4 | 12 |
+| 3 | 5 | 4 | 12 |
 
 ## M1 API contract coverage
 

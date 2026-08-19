@@ -1,6 +1,29 @@
 import { expect, test } from '@playwright/test'
 import { createWorkspace, scopeQuery } from './support/workspace'
 
+function record(payload: unknown, key?: string): Record<string, unknown> {
+  if (!payload || typeof payload !== 'object') {
+    throw new Error(`expected an object response, received ${JSON.stringify(payload)}`)
+  }
+  const root = payload as Record<string, unknown>
+  if (!key) return root
+  const nested = root[key]
+  return nested && typeof nested === 'object' ? nested as Record<string, unknown> : root
+}
+
+function responseID(payload: unknown, what: string, key?: string): string {
+  const id = record(payload, key).id
+  if (typeof id !== 'string' || id === '') {
+    throw new Error(`${what} response carried no id: ${JSON.stringify(payload).slice(0, 300)}`)
+  }
+  return id
+}
+
+function routeScope(url: string): URLSearchParams {
+  const query = new URL(url).hash.split('?')[1] || ''
+  return new URLSearchParams(query)
+}
+
 // Tier-0 journey step S2 (docs/qa/TIER0_JOURNEY.md): the workspace hierarchy a
 // user builds before anything else can happen.
 //
@@ -52,4 +75,116 @@ test('the repository view renders a freshly created project', async ({ page, req
     page.getByText(`${workspace.label} project`, { exact: false }).first(),
     'the repository view must show the project that was just created',
   ).toBeVisible({ timeout: 15_000 })
+})
+
+test('the UI creates and scopes the complete workspace hierarchy', async ({ page, request }) => {
+  test.setTimeout(120_000)
+  const label = `tier0-ui-${Date.now()}`
+  const domainName = `${label} domain`
+  const ownerProjectName = `${label} owner`
+  const decoyProjectName = `${label} decoy`
+  const applicationName = `${label} application`
+  const releaseName = `${label} 1.0`
+
+  await page.goto('/#/settings')
+  await page.getByRole('group', { name: 'Settings sections' })
+    .getByRole('button', { name: 'Domains' })
+    .click()
+
+  await page.getByPlaceholder('Create domain, e.g. Retail').fill(domainName)
+  const domainResponsePromise = page.waitForResponse(response => (
+    response.request().method() === 'POST'
+    && new URL(response.url()).pathname === '/api/v1/domains'
+  ))
+  await page.getByRole('button', { name: 'Add Domain' }).click()
+  const domainPayload = await (await domainResponsePromise).json()
+  const domainId = responseID(domainPayload, 'create domain', 'domain')
+  responseID(domainPayload, 'provision application repository', 'application_repository')
+
+  await expect(page.getByText(`Domain "${domainName}" created.`)).toBeVisible({ timeout: 15_000 })
+  await expect(page.locator('button.settings-app-card').filter({ hasText: domainName })).toBeVisible()
+
+  const settingsSections = page.getByRole('group', { name: 'Settings sections' })
+  await settingsSections.getByRole('button', { name: 'Projects & Compliance' }).click()
+  const projectNameInput = page.getByPlaceholder('Create project, e.g. Customer Portal')
+
+  const createProject = async (name: string) => {
+    await projectNameInput.fill(name)
+    const responsePromise = page.waitForResponse(response => (
+      response.request().method() === 'POST'
+      && new URL(response.url()).pathname === '/api/v1/projects'
+    ))
+    await page.getByRole('button', { name: 'Add Project' }).click()
+    const payload = await (await responsePromise).json()
+    const project = record(payload, 'project')
+    expect(project.domain_id, `${name} must be created in the UI-selected domain`).toBe(domainId)
+    await expect(page.locator('button.settings-app-card').filter({ hasText: name })).toBeVisible({ timeout: 15_000 })
+    return responseID(payload, `create project ${name}`, 'project')
+  }
+
+  const ownerProjectId = await createProject(ownerProjectName)
+  const decoyProjectId = await createProject(decoyProjectName)
+  expect(routeScope(page.url()).get('projectId')).toBe(decoyProjectId)
+
+  // Keep the decoy as the active workspace project, then explicitly target the
+  // owner in the application picker. This is the wrong-project regression:
+  // the picker must move real workspace scope, not only its local form cursor.
+  await settingsSections.getByRole('button', { name: 'Applications & Releases' }).click()
+  await page.getByPlaceholder('Create application, e.g. ACC').fill(applicationName)
+  const applicationProject = page.getByRole('combobox', { name: 'Project for the new application' })
+  await applicationProject.selectOption(ownerProjectId)
+  await expect(applicationProject).toHaveValue(ownerProjectId)
+
+  const applicationResponsePromise = page.waitForResponse(response => (
+    response.request().method() === 'POST'
+    && new URL(response.url()).pathname === '/api/v1/applications'
+  ))
+  await page.getByRole('button', { name: 'Add Application' }).click()
+  const applicationPayload = await (await applicationResponsePromise).json()
+  const application = record(applicationPayload, 'application')
+  const applicationId = responseID(applicationPayload, 'create application', 'application')
+  expect(application.project_id, 'application must belong to the project chosen in the UI').toBe(ownerProjectId)
+
+  await expect(page.locator('button.settings-app-card').filter({ hasText: applicationName })).toBeVisible({ timeout: 15_000 })
+  await expect(page.getByRole('button', { name: new RegExp(`Current project: ${ownerProjectName}`) })).toBeVisible()
+  await expect.poll(() => routeScope(page.url()).get('projectId')).toBe(ownerProjectId)
+  await expect.poll(() => routeScope(page.url()).get('applicationId')).toBe(applicationId)
+
+  const storedApplication = await request.get(`/api/v1/applications/${applicationId}`)
+  expect(storedApplication.ok()).toBeTruthy()
+  expect(record(await storedApplication.json(), 'application').project_id).toBe(ownerProjectId)
+
+  // Release creation in the sidebar changes active scope. The repository tabs
+  // below then prove that the same hierarchy is visible on the S2 route.
+  await page.getByRole('button', { name: /Select release\. Current release:/ }).click()
+  await page.getByRole('button', { name: 'New Release' }).click()
+  const releaseDialog = page.getByRole('dialog', { name: 'New Release' })
+  await releaseDialog.getByRole('textbox', { name: 'Name' }).fill(releaseName)
+  const releaseResponsePromise = page.waitForResponse(response => (
+    response.request().method() === 'POST'
+    && new URL(response.url()).pathname === `/api/v1/projects/${ownerProjectId}/releases`
+  ))
+  await releaseDialog.getByRole('button', { name: 'Save' }).click()
+  const releasePayload = await (await releaseResponsePromise).json()
+  const release = record(releasePayload, 'release')
+  const releaseId = typeof release.application_release_id === 'string'
+    ? release.application_release_id
+    : responseID(releasePayload, 'create release', 'release')
+
+  await expect(page.getByRole('button', { name: new RegExp(`Current release: ${releaseName}`) })).toBeVisible({ timeout: 15_000 })
+  await expect.poll(() => routeScope(page.url()).get('releaseId')).toBe(releaseId)
+
+  await page.getByRole('button', { name: 'Repository', exact: true }).click()
+  await expect(page.getByRole('heading', { level: 1, name: 'Application Repository' })).toBeVisible({ timeout: 15_000 })
+
+  const repositoryTabs = page.getByRole('tablist', { name: 'Repository asset types' })
+  await repositoryTabs.getByRole('tab', { name: /Projects/ }).click()
+  await expect(page.getByText(ownerProjectName, { exact: true }).first()).toBeVisible()
+  await repositoryTabs.getByRole('tab', { name: /Releases/ }).click()
+  await expect(page.getByText(releaseName, { exact: true }).first()).toBeVisible()
+
+  const finalScope = routeScope(page.url())
+  expect(finalScope.get('projectId')).toBe(ownerProjectId)
+  expect(finalScope.get('applicationId')).toBe(applicationId)
+  expect(finalScope.get('releaseId')).toBe(releaseId)
 })
