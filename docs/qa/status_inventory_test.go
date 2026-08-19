@@ -9,11 +9,13 @@
 package qa_test
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -41,12 +43,13 @@ var (
 	milestoneRow     = regexp.MustCompile(`^\|\s*(M\d+)\s*\|`)
 	defectRow        = regexp.MustCompile(`^\|\s*((?:DEF|QA)-\d+)\s*\|`)
 	commitReference  = regexp.MustCompile(`^(?:verified@)?([0-9a-fA-F]{7,40})$`)
-	deferredMetadata = regexp.MustCompile(`^owner=[^;]+;\s*review=\d{4}-\d{2}-\d{2};\s*target=M\d+;\s*rationale=.+$`)
+	deferredMetadata = regexp.MustCompile(`^owner=([^;]+);\s*review=(\d{4}-\d{2}-\d{2});\s*target=(M\d+);\s*rationale=(.+)$`)
 )
 
 type evidenceContract struct {
-	SchemaVersion int `json:"schema_version"`
-	Milestones    []struct {
+	SchemaVersion  int    `json:"schema_version"`
+	ManifestSchema string `json:"manifest_schema"`
+	Milestones     []struct {
 		ID       string   `json:"id"`
 		Required []string `json:"required"`
 	} `json:"milestones"`
@@ -100,6 +103,9 @@ func readEvidenceContract(t *testing.T) evidenceContract {
 	if contract.SchemaVersion != 1 {
 		t.Fatalf("evidence contract schema_version = %d, want 1", contract.SchemaVersion)
 	}
+	if contract.ManifestSchema != "evidence-manifest.schema.json" {
+		t.Fatalf("evidence contract manifest_schema = %q, want evidence-manifest.schema.json", contract.ManifestSchema)
+	}
 	return contract
 }
 
@@ -128,11 +134,18 @@ func programMilestones(t *testing.T) []string {
 
 func git(t *testing.T, args ...string) error {
 	t.Helper()
+	_, err := gitOutput(t, args...)
+	return err
+}
+
+func gitOutput(t *testing.T, args ...string) ([]byte, error) {
+	t.Helper()
 	command := exec.Command("git", append([]string{"-C", "../.."}, args...)...)
-	if output, err := command.CombinedOutput(); err != nil {
-		return &gitError{err: err, output: strings.TrimSpace(string(output))}
+	output, err := command.CombinedOutput()
+	if err != nil {
+		return nil, &gitError{err: err, output: strings.TrimSpace(string(output))}
 	}
-	return nil
+	return output, nil
 }
 
 type gitError struct {
@@ -150,7 +163,32 @@ func (e *gitError) Error() string {
 func isCommitted(t *testing.T, path string) bool {
 	t.Helper()
 	repositoryPath := filepath.ToSlash(filepath.Join("docs", "qa", path))
-	return git(t, "cat-file", "-e", "HEAD:"+repositoryPath) == nil
+	output, err := gitOutput(t, "ls-tree", "HEAD", "--", repositoryPath)
+	if err != nil {
+		return false
+	}
+	fields := strings.Fields(string(output))
+	return len(fields) >= 3 && (fields[0] == "100644" || fields[0] == "100755") && fields[1] == "blob"
+}
+
+func committedEvidence(t *testing.T, relativePath string) ([]byte, error) {
+	t.Helper()
+	if !isCommitted(t, relativePath) {
+		return nil, fmt.Errorf("not a committed regular file in HEAD")
+	}
+	repositoryPath := filepath.ToSlash(filepath.Join("docs", "qa", relativePath))
+	return gitOutput(t, "show", "HEAD:"+repositoryPath)
+}
+
+func cleanEvidencePath(value string) (string, bool) {
+	if value == "" || path.IsAbs(value) || !regexp.MustCompile(`^[A-Za-z0-9._/-]+$`).MatchString(value) {
+		return "", false
+	}
+	cleaned := path.Clean(value)
+	if cleaned != value || cleaned == "." || cleaned == ".." || strings.HasPrefix(cleaned, "../") {
+		return "", false
+	}
+	return cleaned, true
 }
 
 func citedCommit(commit string) (string, bool) {
@@ -161,13 +199,46 @@ func citedCommit(commit string) (string, bool) {
 	return match[1], true
 }
 
+func validateDeferredMetadata(value string, program map[string]bool) error {
+	metadata := strings.Trim(strings.TrimSpace(value), "`")
+	match := deferredMetadata.FindStringSubmatch(metadata)
+	if match == nil || strings.TrimSpace(match[1]) == "" || strings.TrimSpace(match[4]) == "" {
+		return fmt.Errorf("missing owner, review date, target milestone, or rationale")
+	}
+	if _, err := time.Parse("2006-01-02", match[2]); err != nil {
+		return fmt.Errorf("invalid review date %q", match[2])
+	}
+	if !program[match[3]] {
+		return fmt.Errorf("target milestone %s is undefined", match[3])
+	}
+	return nil
+}
+
 func validateEvidenceManifest(t *testing.T, milestone string, required []string) {
 	t.Helper()
 	manifestPath := filepath.Join("evidence", milestone, "manifest.json")
-	data, err := os.ReadFile(manifestPath)
+	data, err := committedEvidence(t, manifestPath)
 	if err != nil {
-		t.Errorf("read %s: %v", manifestPath, err)
+		t.Errorf("read committed %s: %v", manifestPath, err)
 		return
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		t.Errorf("parse %s: %v", manifestPath, err)
+		return
+	}
+	requiredFields := []string{"schema_version", "milestone", "repository_commit", "environment", "commands", "started_at", "finished_at", "result", "limitations", "artifacts"}
+	allowedFields := make(map[string]bool, len(requiredFields))
+	for _, field := range requiredFields {
+		allowedFields[field] = true
+		if _, ok := fields[field]; !ok {
+			t.Errorf("%s is missing required field %q", manifestPath, field)
+		}
+	}
+	for field := range fields {
+		if !allowedFields[field] {
+			t.Errorf("%s contains unsupported field %q", manifestPath, field)
+		}
 	}
 	var manifest evidenceManifest
 	if err := json.Unmarshal(data, &manifest); err != nil {
@@ -185,6 +256,16 @@ func validateEvidenceManifest(t *testing.T, milestone string, required []string)
 	if len(manifest.Environment) == 0 || len(manifest.Commands) == 0 {
 		t.Errorf("%s must describe a non-empty environment and command list", manifestPath)
 	}
+	for _, command := range manifest.Commands {
+		if strings.TrimSpace(command) == "" {
+			t.Errorf("%s commands must not contain empty entries", manifestPath)
+		}
+	}
+	for _, limitation := range manifest.Limitations {
+		if strings.TrimSpace(limitation) == "" {
+			t.Errorf("%s limitations must not contain empty entries", manifestPath)
+		}
+	}
 	started, startErr := time.Parse(time.RFC3339, manifest.StartedAt)
 	finished, finishErr := time.Parse(time.RFC3339, manifest.FinishedAt)
 	if startErr != nil || finishErr != nil || finished.Before(started) {
@@ -193,33 +274,56 @@ func validateEvidenceManifest(t *testing.T, milestone string, required []string)
 
 	artifacts := make(map[string]string)
 	for _, artifact := range manifest.Artifacts {
-		if artifact.Path == "manifest.json" || filepath.IsAbs(artifact.Path) || strings.Contains(filepath.Clean(artifact.Path), "..") {
+		cleaned, safe := cleanEvidencePath(artifact.Path)
+		if !safe || cleaned == "manifest.json" || cleaned == "SUMMARY.md" {
 			t.Errorf("%s contains unsafe or self-referential artifact path %q", manifestPath, artifact.Path)
+			continue
+		}
+		if _, duplicate := artifacts[cleaned]; duplicate {
+			t.Errorf("%s repeats artifact path %q", manifestPath, cleaned)
 			continue
 		}
 		if !regexp.MustCompile(`^[0-9a-f]{64}$`).MatchString(artifact.SHA256) {
 			t.Errorf("%s artifact %q has invalid SHA-256 %q", manifestPath, artifact.Path, artifact.SHA256)
 			continue
 		}
-		artifacts[artifact.Path] = artifact.SHA256
-	}
-	for _, artifact := range required {
-		if artifact == "manifest.json" {
+		artifacts[cleaned] = artifact.SHA256
+		artifactPath := path.Join("evidence", milestone, cleaned)
+		artifactData, err := committedEvidence(t, artifactPath)
+		if err != nil {
+			t.Errorf("%s hashes artifact %q that is not committed in HEAD: %v", manifestPath, cleaned, err)
 			continue
 		}
-		want, ok := artifacts[artifact]
+		got := fmt.Sprintf("%x", sha256.Sum256(artifactData))
+		if got != artifact.SHA256 {
+			t.Errorf("%s hash for %q = %s, want %s", manifestPath, cleaned, artifact.SHA256, got)
+		}
+	}
+	for _, artifact := range required {
+		if artifact == "manifest.json" || artifact == "SUMMARY.md" {
+			continue
+		}
+		_, ok := artifacts[artifact]
 		if !ok {
 			t.Errorf("%s does not hash required artifact %q", manifestPath, artifact)
 			continue
 		}
-		artifactData, err := os.ReadFile(filepath.Join("evidence", milestone, artifact))
-		if err != nil {
-			continue
-		}
-		got := fmt.Sprintf("%x", sha256.Sum256(artifactData))
-		if got != want {
-			t.Errorf("%s hash for %q = %s, want %s", manifestPath, artifact, want, got)
-		}
+	}
+	summaryPath := filepath.Join("evidence", milestone, "SUMMARY.md")
+	summary, err := committedEvidence(t, summaryPath)
+	if err != nil {
+		t.Errorf("read committed %s: %v", summaryPath, err)
+		return
+	}
+	command := exec.Command("python3", "../../scripts/qa-generate-evidence-summary.py", "--manifest", "-")
+	command.Stdin = bytes.NewReader(data)
+	generated, err := command.CombinedOutput()
+	if err != nil {
+		t.Errorf("generate %s: %v\n%s", summaryPath, err, generated)
+		return
+	}
+	if !bytes.Equal(summary, generated) {
+		t.Errorf("%s is stale; regenerate it from the committed manifest", summaryPath)
 	}
 }
 
@@ -277,7 +381,7 @@ func TestEvidenceContractMatchesProgram(t *testing.T) {
 		}
 		seen := make(map[string]bool)
 		for _, required := range entry.Required {
-			if filepath.IsAbs(required) || strings.Contains(filepath.Clean(required), "..") {
+			if _, safe := cleanEvidencePath(required); !safe {
 				t.Errorf("%s evidence path %q must stay inside its milestone directory", milestone, required)
 			}
 			if seen[required] {
@@ -312,11 +416,6 @@ func TestDoneMilestonesHaveEvidence(t *testing.T) {
 		}
 		for _, artifact := range required[match[1]] {
 			path := filepath.Join("evidence", match[1], artifact)
-			info, err := os.Stat(path)
-			if err != nil || info.IsDir() {
-				t.Errorf("milestone %s is DONE but required evidence %s is missing", match[1], path)
-				continue
-			}
 			if !isCommitted(t, path) {
 				t.Errorf("milestone %s is DONE but required evidence %s is not committed in HEAD", match[1], path)
 			}
@@ -329,16 +428,45 @@ func TestDoneMilestonesHaveEvidence(t *testing.T) {
 // milestone list, so closing a milestone never requires inventing a directory.
 func TestEveryMilestoneHasAnEvidenceDir(t *testing.T) {
 	for _, milestone := range programMilestones(t) {
-		info, err := os.Stat(filepath.Join("evidence", milestone))
-		if err != nil || !info.IsDir() {
-			t.Errorf("docs/qa/evidence/%s/ is missing; every milestone needs an evidence directory", milestone)
+		placeholder := filepath.Join("evidence", milestone, ".gitkeep")
+		if !isCommitted(t, placeholder) {
+			t.Errorf("docs/qa/%s is not committed; every milestone needs a committed evidence directory placeholder", placeholder)
 		}
+	}
+}
+
+func TestCleanEvidencePath(t *testing.T) {
+	tests := []struct {
+		value string
+		ok    bool
+	}{
+		{value: "report.json", ok: true},
+		{value: "soak/summary.json", ok: true},
+		{value: "../report.json"},
+		{value: "soak/../report.json"},
+		{value: "./report.json"},
+		{value: "/tmp/report.json"},
+		{value: `soak\report.json`},
+		{value: "report|forged.md"},
+		{value: ""},
+	}
+	for _, test := range tests {
+		t.Run(test.value, func(t *testing.T) {
+			_, ok := cleanEvidencePath(test.value)
+			if ok != test.ok {
+				t.Fatalf("cleanEvidencePath(%q) safe = %v, want %v", test.value, ok, test.ok)
+			}
+		})
 	}
 }
 
 // TestFixedDefectsCiteACommit stops a defect from being closed on a claim. The
 // commit column must name something; an em dash placeholder is not a reference.
 func TestFixedDefectsCiteACommit(t *testing.T) {
+	program := make(map[string]bool)
+	for _, milestone := range programMilestones(t) {
+		program[milestone] = true
+	}
 	for _, line := range readLines(t, "DEFECTS.md") {
 		match := defectRow.FindStringSubmatch(line)
 		if match == nil {
@@ -361,8 +489,8 @@ func TestFixedDefectsCiteACommit(t *testing.T) {
 			continue
 		}
 		if state == "DEFERRED" {
-			if !deferredMetadata.MatchString(strings.Trim(strings.TrimSpace(commit), "`")) {
-				t.Errorf("defect %s is DEFERRED without owner, review date, target milestone, and rationale in the resolution cell", match[1])
+			if err := validateDeferredMetadata(commit, program); err != nil {
+				t.Errorf("defect %s has invalid DEFERRED metadata: %v", match[1], err)
 			}
 			continue
 		}
@@ -408,6 +536,28 @@ func TestDefectCommitReferenceSyntax(t *testing.T) {
 	}
 }
 
+func TestDeferredMetadataValidation(t *testing.T) {
+	program := map[string]bool{"M0": true, "M1": true}
+	tests := []struct {
+		name  string
+		value string
+		valid bool
+	}{
+		{name: "valid", value: "owner=QA; review=2026-09-01; target=M1; rationale=awaiting fixture", valid: true},
+		{name: "invalid date", value: "owner=QA; review=2026-99-01; target=M1; rationale=awaiting fixture"},
+		{name: "unknown milestone", value: "owner=QA; review=2026-09-01; target=M9; rationale=awaiting fixture"},
+		{name: "missing owner", value: "owner=; review=2026-09-01; target=M1; rationale=awaiting fixture"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			err := validateDeferredMetadata(test.value, program)
+			if (err == nil) != test.valid {
+				t.Fatalf("validateDeferredMetadata(%q) error = %v, valid = %v", test.value, err, test.valid)
+			}
+		})
+	}
+}
+
 // TestInheritedReviewDefectsAreAllTracked pins the eleven defects the
 // 2026-08-02 whole-application review left open. Dropping one from the tracker
 // would quietly shrink the program's scope.
@@ -433,7 +583,7 @@ func TestInheritedReviewDefectsAreAllTracked(t *testing.T) {
 func TestQuarantinedFlakesHaveOwnersAndUnexpiredDates(t *testing.T) {
 	for _, line := range readLines(t, "FLAKE_LOG.md") {
 		cells := splitRow(line)
-		if len(cells) != 8 || !strings.HasPrefix(cells[0], "`Test") {
+		if len(cells) != 8 || !strings.HasPrefix(cells[0], "`") || !strings.HasSuffix(cells[0], "`") {
 			continue
 		}
 		owner, quarantined, deadline, state := cells[4], cells[5], cells[6], cells[7]
@@ -469,8 +619,8 @@ func TestOpenHighSeverityRisksHaveOwners(t *testing.T) {
 // TestTrackerFilesExist guards the tracker's own shape.
 func TestTrackerFilesExist(t *testing.T) {
 	for _, name := range []string{"STATUS.md", "DEFECTS.md", "RISK_REGISTER.md", "FLAKE_LOG.md", "TEST_PROGRAM.md", "evidence-contract.json", "evidence-manifest.schema.json", "DASHBOARD.md", "HEADLINE_METRICS.md", "TIER0_ASSERTION_MATRIX.md", "RELEASE_TEST_CHECKLIST.md"} {
-		if _, err := os.Stat(name); err != nil {
-			t.Errorf("docs/qa/%s is missing: %v", name, err)
+		if !isCommitted(t, name) {
+			t.Errorf("docs/qa/%s is not a committed regular file in HEAD", name)
 		}
 	}
 }

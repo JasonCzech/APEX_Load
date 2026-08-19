@@ -314,7 +314,8 @@ jobs:
         #
         # To turn this into a real gate:
         #   1. Land this step as-is and let one green run publish a figure.
-        #   2. Re-baseline from that run's coverage-current.json:
+        #   2. Re-baseline from that run's coverage-current.json and adjacent
+        #      coverage-current.md companion:
         #        python3 scripts/coverage-ratchet.py <it> --update
         #      and commit the result, noting in the message that the baseline is
         #      now CI-measured.
@@ -337,6 +338,7 @@ jobs:
           diff_status=0
           python3 scripts/coverage-ratchet.py test-results/coverage-current.json || ratchet_status=$?
           python3 scripts/diff-coverage.py test-results/coverage.out \
+            --report test-results/coverage-current.json \
             --base "${COVERAGE_BASE_SHA:-HEAD^}" --floor 80 || diff_status=$?
           if (( ratchet_status != 0 || diff_status != 0 )); then
             exit 1

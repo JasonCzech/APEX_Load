@@ -75,10 +75,29 @@ def main() -> int:
 
     current = load(args.current)
 
+    # Neither comparison nor re-baselining may bless a partial/unknown run.
+    # In particular, --update is the final step that turns a report into the
+    # source of truth, so accepting a failed report there would permanently
+    # disable the ratchet on the next invocation.
+    status = current.get("test_run_status")
+    if status != "pass":
+        print("error: the current run's tests did not pass; only a report with "
+              "test_run_status=pass may be compared or committed as a baseline",
+              file=sys.stderr)
+        return 2
+
     if args.update:
+        companion = args.current.with_suffix(".md")
+        try:
+            companion_text = companion.read_text()
+        except OSError as exc:
+            print(f"error: cannot update baseline without the generated Markdown companion "
+                  f"{companion}: {exc}", file=sys.stderr)
+            return 2
         args.baseline.parent.mkdir(parents=True, exist_ok=True)
         args.baseline.write_text(json.dumps(current, indent=2) + "\n")
-        print(f"baseline updated from {args.current}")
+        args.baseline.with_suffix(".md").write_text(companion_text)
+        print(f"baseline JSON and Markdown updated from {args.current} and {companion}")
         return 0
 
     baseline = load(args.baseline)
@@ -92,13 +111,6 @@ def main() -> int:
     # A failed test run produces a partial profile: packages that crashed report
     # less coverage than they truly have. Comparing against that would raise a
     # wall of false regressions and teach everyone to ignore this gate.
-    status = current.get("test_run_status")
-    if status == "fail":
-        print("error: the current run's tests failed; fix the failures before "
-              "the ratchet can say anything meaningful about coverage",
-              file=sys.stderr)
-        return 2
-
     base_pkgs, cur_pkgs = coverage_map(baseline), coverage_map(current)
 
     regressions, new_pkgs, dropped = [], [], []

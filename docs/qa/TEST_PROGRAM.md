@@ -71,7 +71,9 @@ docs/qa/
 **Enforcement.** `docs/qa/status_inventory_test.go` derives milestone IDs from this file and checks
 the machine-readable evidence contract has the same ordered inventory. A `DONE` milestone must have
 every contract-required file committed in `HEAD`, including a passing `manifest.json` whose tested
-commit is an ancestor and whose artifact hashes match. `FIXED` defects cite a resolvable ancestor
+commit is an ancestor and whose report hashes match the committed blobs. `SUMMARY.md` is a derived
+rendering of that manifest and is freshness-checked rather than self-hashed, avoiding a circular
+manifest → summary → manifest digest. `FIXED` defects cite a resolvable ancestor
 commit; `DEFERRED` defects carry an owner, review date, target milestone, and rationale. The
 repository dashboard is freshness-checked against `STATUS.md` and the Tier-0 assertion matrix.
 
@@ -82,7 +84,9 @@ evidence; PR CI validates its manifest rather than attempting to rerun it.
 
 **Cadence.**
 - *Weekly (~30 min):* update `STATUS.md` — items moved, hours spent, blockers. Append to `FLAKE_LOG.md`.
-- *Monthly (~2 hrs):* close the milestone, write `evidence/M<n>/SUMMARY.md`, regenerate the dashboard Artifact, re-score `RISK_REGISTER.md`.
+- *Monthly (~2 hrs):* close the milestone, generate `evidence/M<n>/SUMMARY.md` with
+  `scripts/qa-generate-evidence-summary.py`, regenerate the repository dashboard, and re-score
+  `RISK_REGISTER.md`.
 
 **Headline metrics** (the dashboard's top row — every one starts at zero or unknown):
 

@@ -84,7 +84,8 @@ avoids touching the `required` meta-gate that enumerates every lane.
 was measured locally without `-race` and without `-shuffle`; CI runs with both. Enforcing across
 that difference would compare two measurements that were never the same, and the first PR would fail
 for reasons nobody could act on. The sequence to make it real is written into the workflow step:
-land it, take one green CI run's figure as the baseline via `--update`, then delete
+land it, download one green CI run's adjacent `coverage-current.json` and
+`coverage-current.md`, update both baseline companions via `--update`, then delete
 `continue-on-error`.
 
 **Two policy decisions are now encoded in `EXCLUDED_PACKAGES` and should be argued with, not

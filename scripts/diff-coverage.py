@@ -5,7 +5,9 @@ from __future__ import annotations
 
 import argparse
 from collections import defaultdict
+import json
 from pathlib import Path
+from pathlib import PurePosixPath
 import re
 import subprocess
 import sys
@@ -22,6 +24,9 @@ def changed_lines(diff: str) -> dict[str, set[int]]:
     for line in diff.splitlines():
         if line.startswith("+++ b/"):
             current = line[6:]
+            continue
+        if line == "+++ /dev/null":
+            current = ""
             continue
         match = HUNK.match(line)
         if not current or not match:
@@ -58,6 +63,8 @@ def score(profile: str, changed: dict[str, set[int]], module: str) -> tuple[int,
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("profile", type=Path)
+    parser.add_argument("--report", type=Path, required=True,
+                        help="coverage JSON used to detect changed packages with no tests")
     parser.add_argument("--base", default="HEAD^")
     parser.add_argument("--diff-file", type=Path)
     parser.add_argument("--module", default="github.com/jasonczech/apexload")
@@ -68,6 +75,11 @@ def main() -> int:
         profile = args.profile.read_text()
     except OSError as exc:
         print(f"error: read coverage profile: {exc}", file=sys.stderr)
+        return 2
+    try:
+        report = json.loads(args.report.read_text())
+    except (OSError, json.JSONDecodeError) as exc:
+        print(f"error: read coverage report: {exc}", file=sys.stderr)
         return 2
     if args.diff_file:
         diff = args.diff_file.read_text()
@@ -82,7 +94,29 @@ def main() -> int:
             return 2
         diff = completed.stdout
 
-    covered, total = score(profile, changed_lines(diff), args.module)
+    changed = changed_lines(diff)
+    untested_packages = {
+        item.get("package")
+        for item in report.get("packages", [])
+        if item.get("has_tests") is False
+    }
+    changed_untested = sorted({
+        str(PurePosixPath(filename).parent)
+        for filename, lines in changed.items()
+        if lines
+        and filename.endswith(".go")
+        and not filename.endswith("_test.go")
+        and not filename.endswith(".pb.go")
+        and not filename.startswith(EXCLUDED_PREFIXES)
+        and str(PurePosixPath(filename).parent) in untested_packages
+    })
+    if changed_untested:
+        print("DIFF COVERAGE FAILED: changed production Go packages have no test files:", file=sys.stderr)
+        for package in changed_untested:
+            print(f"  {package}", file=sys.stderr)
+        return 1
+
+    covered, total = score(profile, changed, args.module)
     if total == 0:
         print("diff coverage: no changed executable Go statements")
         return 0

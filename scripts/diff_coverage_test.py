@@ -1,3 +1,4 @@
+import json
 import subprocess
 import tempfile
 import unittest
@@ -8,15 +9,24 @@ SCRIPT = Path(__file__).with_name("diff-coverage.py")
 
 
 class DiffCoverageTest(unittest.TestCase):
-    def run_case(self, profile: str, diff: str, floor: int = 80) -> subprocess.CompletedProcess[str]:
+    def run_case(self, profile: str, diff: str, floor: int = 80, untested: tuple[str, ...] = ()) -> subprocess.CompletedProcess[str]:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             profile_path = root / "coverage.out"
             diff_path = root / "change.diff"
+            report_path = root / "coverage.json"
             profile_path.write_text(profile)
             diff_path.write_text(diff)
+            report_path.write_text(
+                json.dumps({
+                    "packages": [
+                        {"package": package, "has_tests": False}
+                        for package in untested
+                    ]
+                })
+            )
             return subprocess.run(
-                [str(SCRIPT), str(profile_path), "--diff-file", str(diff_path), "--floor", str(floor)],
+                [str(SCRIPT), str(profile_path), "--report", str(report_path), "--diff-file", str(diff_path), "--floor", str(floor)],
                 text=True,
                 capture_output=True,
             )
@@ -44,6 +54,15 @@ class DiffCoverageTest(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("no changed executable", result.stdout)
+
+    def test_fails_when_changed_package_has_no_tests_or_profile_blocks(self) -> None:
+        result = self.run_case(
+            "mode: atomic\n",
+            "+++ b/pkg/untested/new.go\n@@ -0,0 +1,4 @@\n",
+            untested=("pkg/untested",),
+        )
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("pkg/untested", result.stderr)
 
 
 if __name__ == "__main__":

@@ -155,6 +155,7 @@ func TestAuthoritativeCIWorkflowContract(t *testing.T) {
 		"go test",
 		"-race -shuffle=on -count=1",
 		"scripts/diff-coverage.py",
+		"--report test-results/coverage-current.json",
 		"--floor 80",
 		"CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build",
 		"jms_servicebus_real",
