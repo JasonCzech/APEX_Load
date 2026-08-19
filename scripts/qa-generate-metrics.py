@@ -18,6 +18,24 @@ def tracked_count(root: Path, pattern: str) -> int:
     return len([line for line in output.splitlines() if line])
 
 
+def packages_without_tests(root: Path) -> int:
+    output = subprocess.run(
+        [
+            "go", "list", "-f",
+            "{{.ImportPath}}{{\"\\t\"}}{{if or (gt (len .TestGoFiles) 0) (gt (len .XTestGoFiles) 0)}}true{{else}}false{{end}}",
+            "./...",
+        ],
+        cwd=root,
+        check=True,
+        text=True,
+        capture_output=True,
+    ).stdout
+    return sum(
+        1 for line in output.splitlines()
+        if "/node_modules/" not in line and line.endswith("\tfalse")
+    )
+
+
 def tier0_states(matrix: str) -> dict[str, int]:
     result = {"GREEN": 0, "PARTIAL": 0, "MISSING": 0}
     for state in result:
@@ -55,7 +73,7 @@ def render(root: Path) -> str:
         f"| Playwright spec files | 3 | {tracked_count(root, 'dashboard/e2e/*.spec.ts')} | assertion-driven |",
         f"| Go statement coverage | {baseline.get('overall_statement_coverage_pct', 'unknown')}% | {baseline.get('overall_statement_coverage_pct', 'unknown')}% | ratchet |",
         f"| Go coverage floor enforced | 0 | {1 if coverage_enforced else 0} | 1 |",
-        f"| Packages with no test file | {baseline.get('packages_without_tests', 'unknown')} | {baseline.get('packages_without_tests', 'unknown')} | 3 |",
+        f"| Packages with no test file | {baseline.get('packages_without_tests', 'unknown')} | {packages_without_tests(root)} | 3 |",
         f"| Open inherited review defects | 11 | {open_inherited_defects((qa / 'DEFECTS.md').read_text())} | 0 |",
         f"| Resource-leak linters enabled | 0 | {leak_enabled} | 1 |",
         f"| Converter golden files | 0 | {tracked_count(root, '*.golden')} | all registered converters |",

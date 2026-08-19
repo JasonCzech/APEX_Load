@@ -328,7 +328,8 @@ jobs:
           COVERAGE_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before }}
         run: |
           set -euo pipefail
-          go list ./... | grep -v '/node_modules/' > test-results/packages.txt
+          go list -f '{{.ImportPath}}{{"\t"}}{{if or (gt (len .TestGoFiles) 0) (gt (len .XTestGoFiles) 0)}}true{{else}}false{{end}}' ./... \
+            | grep -v '/node_modules/' > test-results/packages.txt
           python3 scripts/coverage_baseline_report.py \
             test-results/coverage.out \
             test-results/coverage-current.json \

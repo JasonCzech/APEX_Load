@@ -35,10 +35,11 @@ profile="$workdir/coverage.profile"
 pkglist="$workdir/packages.txt"
 testlog="$outdir/coverage-test.log"
 
-go list ./... | grep -v '/node_modules/' > "$pkglist"
+go list -f '{{.ImportPath}}{{"\t"}}{{if or (gt (len .TestGoFiles) 0) (gt (len .XTestGoFiles) 0)}}true{{else}}false{{end}}' ./... \
+  | grep -v '/node_modules/' > "$pkglist"
 
 packages=()
-while IFS= read -r pkg; do
+while IFS=$'\t' read -r pkg _has_tests; do
   # A plain `[[ -n "$pkg" ]] && packages+=(...)` would be wrong here: under
   # `set -e` an AND-list whose left side is false returns non-zero, and as a
   # standalone statement in a loop body that aborts the script. One blank line

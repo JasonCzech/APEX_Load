@@ -15,12 +15,12 @@ every function is entered once but almost no branch is exercised scores near
 would barely move while real coverage eroded, so this report deals in
 statements only, at both package and repository level.
 
-PKGLIST is the `go list` output the run covered. Packages appearing there but
-absent from the profile have no test file at all; they are emitted with
-has_tests=false rather than dropped, because a package with no tests is
-precisely what the ratchet needs to surface. Their statement totals are
-unknown — an uninstrumented package contributes nothing to the profile — and
-are reported as null rather than as a misleading zero.
+PKGLIST is a tab-separated `go list` inventory containing import path and an
+explicit true/false derived from TestGoFiles/XTestGoFiles. Profile presence is
+not a valid proxy: `go test -coverprofile` emits zero-count blocks even for a
+package with no tests. Untested packages retain any known statement totals but
+are emitted with has_tests=false so changed-line enforcement cannot mistake
+instrumentation for a test suite.
 """
 import collections
 import datetime
@@ -97,6 +97,21 @@ def ratchet_totals(per_pkg: dict[str, tuple[int, int]], relative) -> tuple[int, 
     return sum(value[0] for value in totals), sum(value[1] for value in totals)
 
 
+def package_inventory(path: pathlib.Path | None) -> dict[str, bool]:
+    inventory: dict[str, bool] = {}
+    if path is None or not path.exists():
+        return inventory
+    for line in path.read_text().splitlines():
+        fields = line.split("\t")
+        package = fields[0].strip()
+        if not package:
+            continue
+        if len(fields) != 2 or fields[1] not in {"true", "false"}:
+            raise ValueError(f"invalid package inventory row: {line!r}")
+        inventory[package] = fields[1] == "true"
+    return inventory
+
+
 def main() -> int:
     if len(sys.argv) < 3:
         print(__doc__, file=sys.stderr)
@@ -113,30 +128,27 @@ def main() -> int:
     def relative(pkg: str) -> str:
         return pkg[len(mod) + 1:] if mod and pkg.startswith(mod + "/") else pkg
 
+    try:
+        inventory = package_inventory(pkglist)
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+
     packages = []
-    for pkg in sorted(per_pkg):
-        stmts, covered = per_pkg[pkg]
+    all_packages = sorted(set(per_pkg) | set(inventory))
+    for pkg in all_packages:
+        totals = per_pkg.get(pkg)
+        stmts, covered = totals if totals is not None else (None, 0)
+        has_tests = inventory.get(pkg, False)
         packages.append({
             "package": relative(pkg),
-            "has_tests": True,
+            "has_tests": has_tests,
             "statements_total": stmts,
             "statements_covered": covered,
-            "statement_coverage_pct": round(100.0 * covered / stmts, 2) if stmts else 0.0,
+            "statement_coverage_pct": round(100.0 * covered / stmts, 2) if stmts else None,
         })
 
-    untested: list[str] = []
-    if pkglist and pkglist.exists():
-        for pkg in pkglist.read_text().split():
-            if pkg and pkg not in per_pkg:
-                untested.append(relative(pkg))
-                packages.append({
-                    "package": relative(pkg),
-                    "has_tests": False,
-                    "statements_total": None,
-                    "statements_covered": 0,
-                    "statement_coverage_pct": None,
-                })
-    packages.sort(key=lambda p: p["package"])
+    untested = [relative(pkg) for pkg, has_tests in inventory.items() if not has_tests]
 
     grand_total, grand_covered = ratchet_totals(per_pkg, relative)
     overall = round(100.0 * grand_covered / grand_total, 2) if grand_total else None
@@ -156,7 +168,7 @@ def main() -> int:
                  "counted. Generated api/proto code remains visible per-package but is excluded "
                  "from the ratcheted overall total. Packages with no test file are listed with has_tests=false and a null "
                  "statement total, since an uninstrumented package contributes nothing to the "
-                 "profile and its true size is unknown here."),
+        "profile. Test presence comes from go list TestGoFiles/XTestGoFiles rather than profile presence."),
         "overall_statement_coverage_pct": overall,
         "statements_total": grand_total,
         "statements_covered": grand_covered,
@@ -168,7 +180,7 @@ def main() -> int:
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(report, indent=2) + "\n")
 
-    tested = [p for p in packages if p["has_tests"]]
+    tested = [p for p in packages if p["has_tests"] and p["statement_coverage_pct"] is not None]
     thinnest = sorted(tested, key=lambda p: (p["statement_coverage_pct"], -p["statements_total"]))
     lines = [
         "# Go Coverage Baseline",
