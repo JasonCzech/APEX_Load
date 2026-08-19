@@ -16,14 +16,56 @@ import (
 	"github.com/jasonczech/apexload/pkg/scrub"
 )
 
+type LifecycleControl string
+
+const (
+	ControlStart  LifecycleControl = "start"
+	ControlPause  LifecycleControl = "pause"
+	ControlResume LifecycleControl = "resume"
+	ControlStop   LifecycleControl = "stop"
+	ControlAbort  LifecycleControl = "abort"
+)
+
+// lifecycleStatuses is the complete public/durable vocabulary considered by
+// the status-only run-control matrix. STARTING is included even though it is a
+// process-private persistence reservation: callers can race that reservation,
+// and the matrix must prove that every control rejects it.
+var lifecycleStatuses = []string{
+	"QUEUED", "PENDING", "RESERVED", "SCHEDULED", "SHAKEOUT", "SHAKEOUT_REVIEW",
+	"INITIALIZING", "STARTING", "RUNNING", "PAUSED", "STOPPING",
+	"COMPLETE", "FAILED", "ABORTED",
+}
+
+var lifecycleControls = []LifecycleControl{ControlStart, ControlPause, ControlResume, ControlStop, ControlAbort}
+
+// AllowsLifecycleControl is the shared status-only policy for operator
+// lifecycle controls. Leadership, passive-write ownership, finalization, and
+// backend capability checks are additional runtime gates and deliberately do
+// not belong in this pure matrix.
+func AllowsLifecycleControl(status string, control LifecycleControl) bool {
+	switch control {
+	case ControlStart:
+		switch status {
+		case "QUEUED", "PENDING", "RESERVED", "SCHEDULED", "SHAKEOUT_REVIEW":
+			return true
+		}
+	case ControlPause:
+		return status == "RUNNING"
+	case ControlResume:
+		return status == "PAUSED"
+	case ControlStop, ControlAbort:
+		switch status {
+		case "QUEUED", "PENDING", "RESERVED", "SCHEDULED", "SHAKEOUT", "SHAKEOUT_REVIEW", "INITIALIZING",
+			"RUNNING", "PAUSED", "STOPPING", "COMPLETE", "FAILED", "ABORTED":
+			return true
+		}
+	}
+	return false
+}
+
 // IsStartableTestStatus reports whether a test in the given status may be started.
 func IsStartableTestStatus(status string) bool {
-	switch status {
-	case "QUEUED", "PENDING", "RESERVED", "SCHEDULED", "SHAKEOUT_REVIEW":
-		return true
-	default:
-		return false
-	}
+	return AllowsLifecycleControl(status, ControlStart)
 }
 
 // StartableTestStatusError is the error returned when a test is not in a startable status.

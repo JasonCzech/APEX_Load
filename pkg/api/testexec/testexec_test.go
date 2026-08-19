@@ -26,6 +26,23 @@ func TestIsStartableTestStatus(t *testing.T) {
 	}
 }
 
+func TestAllowsLifecycleControlRejectsUnknownAndUnnormalizedValues(t *testing.T) {
+	for _, test := range []struct {
+		status  string
+		control LifecycleControl
+	}{
+		{status: "", control: ControlStart},
+		{status: "running", control: ControlPause},
+		{status: "RUNNING ", control: ControlPause},
+		{status: "RUNNING", control: "restart"},
+		{status: "UNKNOWN", control: ControlAbort},
+	} {
+		if AllowsLifecycleControl(test.status, test.control) {
+			t.Errorf("AllowsLifecycleControl(%q, %q) = true, want false", test.status, test.control)
+		}
+	}
+}
+
 func TestStartableTestStatusError(t *testing.T) {
 	err := StartableTestStatusError("RUNNING")
 	if err == nil {

@@ -11,7 +11,7 @@ Sources: [STATUS.md](STATUS.md) · [TEST_PROGRAM.md](TEST_PROGRAM.md) · [Headli
 | M0 | Instrument the program | IN_PROGRESS | not recorded | `evidence/M0/` |
 | M1 | Tier-0 end-user journey | IN_PROGRESS | 11 | `evidence/M1/` |
 | M2 | Import & authoring correctness | IN_PROGRESS | not recorded | `evidence/M2/` |
-| M3 | Run lifecycle & data integrity | NOT_STARTED | 0 | `evidence/M3/` |
+| M3 | Run lifecycle & data integrity | IN_PROGRESS | not recorded | `evidence/M3/` |
 | M4 | Persistence hardening & migration | NOT_STARTED | 0 | `evidence/M4/` |
 | M5 | Distributed execution at scale | NOT_STARTED | 0 | `evidence/M5/` |
 | M6 | AKS deployment & HA failover | NOT_STARTED | 0 | `evidence/M6/` |

@@ -16,7 +16,7 @@ state-bearing dashboard. External published views may mirror it, but must not ca
 | M0 | Instrument the program | IN_PROGRESS | not recorded | `evidence/M0/` |
 | M1 | Tier-0 end-user journey | IN_PROGRESS | 11 | `evidence/M1/` |
 | M2 | Import & authoring correctness | IN_PROGRESS | not recorded | `evidence/M2/` |
-| M3 | Run lifecycle & data integrity | NOT_STARTED | 0 | `evidence/M3/` |
+| M3 | Run lifecycle & data integrity | IN_PROGRESS | not recorded | `evidence/M3/` |
 | M4 | Persistence hardening & migration | NOT_STARTED | 0 | `evidence/M4/` |
 | M5 | Distributed execution at scale | NOT_STARTED | 0 | `evidence/M5/` |
 | M6 | AKS deployment & HA failover | NOT_STARTED | 0 | `evidence/M6/` |
@@ -63,6 +63,13 @@ enterprise-archive converter. The inventory is committed at
 [evidence/M2/converter-golden-inventory.json](evidence/M2/converter-golden-inventory.json); M2 is not
 closeable until every non-review surface is covered and the corpus and protected-lifecycle reports
 also exist.
+
+M3 is underway with a generated status-only lifecycle matrix covering every canonical run status
+against Start, Pause, Resume, Stop, and Abort. The handlers now consume the same pure policy that
+generates [evidence/M3/run-control-matrix.json](evidence/M3/run-control-matrix.json). Runtime
+adjustments and conditional gates such as leadership, in-flight persistence, finalization, and
+backend acknowledgements remain open matrix work. DEF-26 also remains open: terminal payloads are
+compacted, but durable history is still loaded into an unbounded process-lifetime map.
 
 ## Headline metrics
 
