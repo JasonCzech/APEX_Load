@@ -10,7 +10,7 @@ break: if this journey is green, the product is usable; if any step is red, it i
 of what unit coverage says. Generated inventories track changing route and spec breadth separately.
 
 **Status:** [TIER0_ASSERTION_MATRIX.md](TIER0_ASSERTION_MATRIX.md) is the completion inventory.
-Today S1–S5 and S7 are `GREEN`; S8–S12 are `PARTIAL`; S6 and the full arc are `MISSING`.
+Today S1–S12 are `GREEN`; the full arc remains `MISSING`.
 The breadth guard still covers all 16 top-level views. Run implemented specs with
 `scripts/run-e2e.sh`. A step is not green merely because one of its API assertions exists.
 
@@ -33,6 +33,13 @@ as findings rather than adjusting assertions to match:
   awaiting the body on timeout and begins disposing fixtures, so a `finally` runs against a closed
   request context; the repository measured it reaching the server zero times, leaving the run
   executing against the controller the next spec asserts on.
+- **Graceful stop must finish as `COMPLETE`; force abort must finish as `ABORTED`.** The local
+  backend previously collapsed every durable `STOPPING` run to `ABORTED`, even when the engine had
+  recorded an explicit graceful-stop boundary. The controller now carries the engine's stop mode
+  into terminalization, and both UI paths have exact assertions.
+- **The report UI is feature-gated off by default.** Report journey specs set
+  `apexload.featureFlags.runReport=true` before application initialization; otherwise report hashes
+  deliberately normalize to the legacy archive workspace and a lens assertion tests the wrong UI.
 
 ## Conventions
 

@@ -3724,6 +3724,54 @@ describe('NewTestPage', () => {
     expect(openCommandCenter).toHaveBeenCalledWith('test-1')
   })
 
+  it('starts an immediately allowed run and opens its command center', async () => {
+    const openCommandCenter = vi.fn()
+    apiMock.preflightTest.mockResolvedValue({
+      decision: 'start_now',
+      start_now_allowed: true,
+      schedule_allowed: false,
+      queue_allowed: false,
+      candidate_window: {
+        start_at: '2026-05-12T20:07:30Z',
+        end_at: '2026-05-12T20:17:30Z',
+        duration_seconds: 600,
+      },
+      blocking_conflicts: [],
+      warnings: [],
+    })
+
+    await act(async () => {
+      root.render(
+        <NewTestPage
+          activeApplication={{ id: 'app-1', name: 'ACC', created_at: '', updated_at: '' }}
+          activeRelease={{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }}
+          releases={[{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }]}
+          onSelectTest={vi.fn()}
+          onOpenCommandCenter={openCommandCenter}
+          onCreateRelease={vi.fn().mockResolvedValue(null)}
+        />,
+      )
+    })
+
+    await flushPromises()
+    await flushDebouncedPreflight()
+
+    const startButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Start Now')
+    expect(startButton).toBeTruthy()
+    await act(async () => {
+      startButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    expect(apiMock.createTest).toHaveBeenCalledWith(expect.objectContaining({
+      scenario_id: 'scenario-1',
+      release_id: 'release-1',
+    }))
+    expect(apiMock.createTest).not.toHaveBeenCalledWith(expect.objectContaining({ reserve_launch_window: true }))
+    expect(apiMock.startTest).toHaveBeenCalledWith('test-1')
+    expect(openCommandCenter).toHaveBeenCalledWith('test-1')
+  })
+
   it('sends scheduled_start_at when one-time scheduled preflight is allowed', async () => {
     const selectTest = vi.fn()
     const scheduledLocal = '2026-06-02T13:30'

@@ -121,6 +121,7 @@ type MultiGroupEngine struct {
 	gracefulCancel         context.CancelFunc
 	softStop               context.CancelFunc
 	gracefulStopRequested  bool
+	hardStopRequested      bool
 	gracefulStopCh         chan struct{}
 	mockNamespace          string
 	scaleGuard             bool
@@ -2917,6 +2918,10 @@ func (mge *MultiGroupEngine) WaitIfPaused(ctx context.Context) error {
 }
 
 func (mge *MultiGroupEngine) Stop() {
+	mge.stop(true)
+}
+
+func (mge *MultiGroupEngine) stop(hard bool) {
 	mge.mu.Lock()
 	// Close launch/control admission under the same lock used by VUser
 	// activation. Cancelling the context after unlocking is still required to
@@ -2925,6 +2930,9 @@ func (mge *MultiGroupEngine) Stop() {
 	mge.launchOpen = false
 	mge.scalingOpen = false
 	mge.controlsReady = false
+	if hard {
+		mge.hardStopRequested = true
+	}
 	cancel := mge.cancel
 	mge.mu.Unlock()
 	if cancel != nil {
@@ -2954,7 +2962,7 @@ func (mge *MultiGroupEngine) GracefulStop() {
 		cancel()
 		return
 	}
-	mge.Stop()
+	mge.stop(false)
 }
 
 // GracefulStopRequested reports whether the engine was asked to drain current
@@ -2964,6 +2972,15 @@ func (mge *MultiGroupEngine) GracefulStopRequested() bool {
 	mge.mu.Lock()
 	defer mge.mu.Unlock()
 	return mge.gracefulStopRequested
+}
+
+// HardStopRequested reports whether Stop escalated this engine to immediate
+// cancellation. It remains true after a prior GracefulStop so callers can
+// distinguish a completed drain from a later force-abort escalation.
+func (mge *MultiGroupEngine) HardStopRequested() bool {
+	mge.mu.Lock()
+	defer mge.mu.Unlock()
+	return mge.hardStopRequested
 }
 
 func (mge *MultiGroupEngine) LatestSnapshot() (MetricsSnapshot, bool) {

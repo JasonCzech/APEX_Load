@@ -1134,6 +1134,7 @@ describe('ResultsPage', () => {
   it('opens selected results on the run dashboard and exposes the run archive action', async () => {
     const onSelectTest = vi.fn()
     const onOpenTestArchive = vi.fn()
+    const onOpenReport = vi.fn()
 
     await act(async () => {
       root.render(
@@ -1141,6 +1142,7 @@ describe('ResultsPage', () => {
           testStatuses={{}}
           onSelectTest={onSelectTest}
           onOpenTestArchive={onOpenTestArchive}
+          onOpenReport={onOpenReport}
           activeApplication={{ id: 'app-1', name: 'Storefront', created_at: '2026-05-01T00:00:00Z', updated_at: '2026-05-01T00:00:00Z' }}
           activeRelease={{ id: 'rel-1', application_id: 'app-1', name: 'Sprint 24', created_at: '2026-05-02T00:00:00Z', updated_at: '2026-05-02T00:00:00Z' }}
         />,
@@ -1154,9 +1156,11 @@ describe('ResultsPage', () => {
     const rowButtons = Array.from(row?.querySelectorAll('button') ?? []) as HTMLButtonElement[]
     const runDashboardButton = rowButtons.find(button => button.textContent?.trim() === 'Run Dashboard')
     const runArchiveButton = rowButtons.find(button => button.textContent?.trim() === 'Run Archive')
+    const openReportButton = rowButtons.find(button => button.textContent?.trim() === 'Open Report')
     const rowText = row?.textContent ?? ''
     expect(runDashboardButton).toBeDefined()
     expect(runArchiveButton).toBeDefined()
+    expect(openReportButton).toBeDefined()
     expect(rowButtons.some(button => button.textContent?.trim() === 'Archive')).toBe(false)
     expect(rowText).not.toContain('Download Archive')
     expect(rowText).not.toContain('Download Report')
@@ -1184,6 +1188,13 @@ describe('ResultsPage', () => {
     })
 
     expect(onOpenTestArchive).toHaveBeenCalledWith('run-a')
+    expect(onSelectTest).not.toHaveBeenCalled()
+
+    await act(async () => {
+      openReportButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(onOpenReport).toHaveBeenCalledWith('run-a')
     expect(onSelectTest).not.toHaveBeenCalled()
   })
 

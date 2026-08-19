@@ -53,6 +53,7 @@ interface Props {
   onSelectTest: (id: string) => void
   onOpenCommandCenter?: (id: string) => void
   onOpenTestArchive?: (id: string) => void
+  onOpenReport?: (id: string) => void
   onNavigate?: (page: NavPage) => void
   activeApplication?: Application | null
   activeRelease?: Release | null
@@ -405,7 +406,7 @@ function comparisonTableDeltaClass(delta: number | undefined, metric: Comparison
   return delta > 0 ? 'text-danger' : 'text-success'
 }
 
-function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onOpenTestArchive, onNavigate, activeApplication, activeRelease, activeProjectName }: Props) {
+function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onOpenTestArchive, onOpenReport, onNavigate, activeApplication, activeRelease, activeProjectName }: Props) {
   const api = useApi()
   const [releaseFilter, setReleaseFilter] = useState(() => activeRelease?.id || 'all')
   const testListParams = useMemo(() => activeApplication?.id ? {
@@ -1404,6 +1405,11 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onOpenTe
                 {test.archive && onOpenTestArchive && (
                   <button className="btn btn-sm btn-secondary" onClick={event => { event.stopPropagation(); onOpenTestArchive(test.id) }}>
                     Run Archive
+                  </button>
+                )}
+                {test.archive && onOpenReport && (
+                  <button className="btn btn-sm btn-secondary" onClick={event => { event.stopPropagation(); onOpenReport(test.id) }}>
+                    Open Report
                   </button>
                 )}
                 <button className="btn btn-sm btn-primary" onClick={event => { event.stopPropagation(); (onOpenCommandCenter ?? onSelectTest)(test.id) }}>

@@ -3405,7 +3405,8 @@ function AppShell({
                   testStatuses={testStatuses}
                   onSelectTest={navigateToTest}
                   onOpenCommandCenter={navigateToCommandCenter}
-                  onOpenTestArchive={openCompletedRun}
+                  onOpenTestArchive={navigateToTestArchive}
+                  onOpenReport={runReportEnabled ? navigateToRunReport : undefined}
                   onNavigate={handleNavigate}
                   activeApplication={activeApplication}
                   activeRelease={activeRelease}

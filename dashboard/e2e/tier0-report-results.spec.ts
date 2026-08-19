@@ -16,6 +16,10 @@ const TEST_TIMEOUT_MS = READY_TIMEOUT_MS + TERMINAL_TIMEOUT_MS + 120_000
 
 const TERMINAL = new Set(['COMPLETE', 'FAILED', 'ABORTED'])
 
+async function enableRunReport(page: import('@playwright/test').Page): Promise<void> {
+  await page.addInitScript(() => window.localStorage.setItem('apexload.featureFlags.runReport', 'true'))
+}
+
 async function status(request: APIRequestContext, testId: string): Promise<string> {
   const response = await request.get(`/api/v1/tests/${testId}`)
   if (!response.ok()) return ''
@@ -58,6 +62,7 @@ async function waitForReport(request: APIRequestContext, testId: string): Promis
 
 test('a finished run produces a report and stays findable in results', async ({ request, page, seedLiveRun }) => {
   test.setTimeout(TEST_TIMEOUT_MS)
+  await enableRunReport(page)
 
   // startLiveRun names the run `${label}-run`; the views render that name rather
   // than the UUID, so assert on what a user actually sees.
@@ -81,14 +86,21 @@ test('a finished run produces a report and stays findable in results', async ({ 
 
   // The results view must render that run rather than an empty history.
   await page.goto(`/#/results`)
-  await expect(
-    page.getByText(runName, { exact: false }).first(),
-    'the results view must list the finished run',
-  ).toBeVisible({ timeout: 30_000 })
+  const filter = page.getByPlaceholder('Find releases or results...')
+  await expect(filter).toBeVisible({ timeout: 30_000 })
+  await filter.fill(runName)
+  const resultRow = page.locator('tbody tr').filter({ hasText: runName })
+  await expect(resultRow, 'the filtered results view must list the finished run').toBeVisible()
+  const openReport = resultRow.getByRole('button', { name: 'Open Report' })
+  await expect(openReport, 'an archived result must expose its report action').toBeVisible({ timeout: 30_000 })
+  await openReport.click()
+  await expect(page).toHaveURL(new RegExp(`#/report/${run.testId}`))
+  await expect(page.getByText(runName, { exact: false }).first()).toBeVisible({ timeout: 30_000 })
 })
 
 test('every report lens renders the same run', async ({ request, page, seedLiveRun }) => {
   test.setTimeout(TEST_TIMEOUT_MS)
+  await enableRunReport(page)
 
   const label = 'tier0-lenses'
   const runName = `${label}-run`
@@ -99,6 +111,7 @@ test('every report lens renders the same run', async ({ request, page, seedLiveR
 
   // All three audience lenses are the same run told three ways. Each must render
   // without throwing and must be about the run it was opened for.
+  const scorecards: string[] = []
   for (const lens of ['executive', 'engineer', 'audit'] as const) {
     const pageErrors: Error[] = []
     const onPageError = (error: Error) => pageErrors.push(error)
@@ -109,9 +122,13 @@ test('every report lens renders the same run', async ({ request, page, seedLiveR
         page.getByText(runName, { exact: false }).first(),
         `the ${lens} lens must identify the run it describes`,
       ).toBeVisible({ timeout: 30_000 })
+      const scorecard = page.locator('[aria-label="Run KPI scorecard"]')
+      await expect(scorecard, `the ${lens} lens must show shared headline metrics`).toBeVisible()
+      scorecards.push((await scorecard.innerText()).replace(/\s+/g, ' ').trim())
       expect(pageErrors, `the ${lens} lens threw: ${pageErrors.map(e => e.message).join('; ')}`).toEqual([])
     } finally {
       page.off('pageerror', onPageError)
     }
   }
+  expect(new Set(scorecards).size, 'all lenses must reconcile to the same headline values').toBe(1)
 })

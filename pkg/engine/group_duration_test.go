@@ -311,6 +311,18 @@ func TestGracefulStopBeforeRunIsLatched(t *testing.T) {
 	}
 }
 
+func TestHardStopRecordsEscalationAfterGracefulStop(t *testing.T) {
+	mge := &MultiGroupEngine{}
+	mge.GracefulStop()
+	if !mge.GracefulStopRequested() || mge.HardStopRequested() {
+		t.Fatalf("graceful state = graceful %v hard %v, want true/false", mge.GracefulStopRequested(), mge.HardStopRequested())
+	}
+	mge.Stop()
+	if !mge.GracefulStopRequested() || !mge.HardStopRequested() {
+		t.Fatalf("escalated state = graceful %v hard %v, want true/true", mge.GracefulStopRequested(), mge.HardStopRequested())
+	}
+}
+
 func TestGracefulStopSynchronouslyClosesScaleAdmission(t *testing.T) {
 	baseCtx, cancel := context.WithCancel(context.Background())
 	defer cancel()
