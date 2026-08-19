@@ -34,6 +34,12 @@ the local-auth browser suite, workflow validation, tracker validation, and the Q
 tests all passed. The live workspace still contains separately owned runtime-adjustment changes, so
 it is intentionally not described as clean.
 
+The subsequent review corrections through `ec843df76` were re-verified from isolated detached
+worktrees with 22 QA Python tests, `go test ./docs/qa ./scripts`, workflow validation, generated
+dashboard freshness, and diff checks. The second review found and fixed the false assumption that
+coverage-profile presence implies a package has tests; no unresolved finding remains in the
+QA-owned diff.
+
 M1 is underway. `scripts/run-e2e.sh` reproduces CI's browser-smoke recipe locally against a fresh
 controller and throwaway database. Completion is tracked by
 [TIER0_ASSERTION_MATRIX.md](TIER0_ASSERTION_MATRIX.md), not spec count: S1 and S7 are green; S2 and
