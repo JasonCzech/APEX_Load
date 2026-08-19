@@ -14,7 +14,7 @@ state-bearing dashboard. External published views may mirror it, but must not ca
 | ID | Milestone | State | Hrs spent | Evidence |
 |---|---|---|---|---|
 | M0 | Instrument the program | IN_PROGRESS | not recorded | `evidence/M0/` |
-| M1 | Tier-0 end-user journey | IN_PROGRESS | 10 | `evidence/M1/` |
+| M1 | Tier-0 end-user journey | IN_PROGRESS | 11 | `evidence/M1/` |
 | M2 | Import & authoring correctness | NOT_STARTED | 0 | `evidence/M2/` |
 | M3 | Run lifecycle & data integrity | NOT_STARTED | 0 | `evidence/M3/` |
 | M4 | Persistence hardening & migration | NOT_STARTED | 0 | `evidence/M4/` |
@@ -31,8 +31,9 @@ The QA implementation baseline through `b172f1bbd` was verified from an isolated
 not from the concurrently edited application workspace. `go test ./...`, the configured
 golangci-lint suite, dashboard type-check/lint/accessibility/unit/build, the dev-admin browser suite,
 the local-auth browser suite, workflow validation, tracker validation, and the QA Python mutation
-tests all passed. The live workspace still contains separately owned runtime-adjustment changes, so
-it is intentionally not described as clean.
+tests all passed. At that point the live workspace contained separately owned runtime-adjustment
+changes and was intentionally not described as clean. Those changes were subsequently
+integrated, and this QA branch resumed the Tier-0 increments from a clean committed `HEAD`.
 
 The subsequent review corrections through `ec843df76` were re-verified from isolated detached
 worktrees with 22 QA Python tests, `go test ./docs/qa ./scripts`, workflow validation, generated
@@ -42,8 +43,8 @@ QA-owned diff.
 
 M1 is underway. `scripts/run-e2e.sh` reproduces CI's browser-smoke recipe locally against a fresh
 controller and throwaway database. Completion is tracked by
-[TIER0_ASSERTION_MATRIX.md](TIER0_ASSERTION_MATRIX.md), not spec count: S1–S4 and S7 are green;
-S8–S12 are partial; S5–S6 and the full arc are missing. S1 uses a separate local-auth controller
+[TIER0_ASSERTION_MATRIX.md](TIER0_ASSERTION_MATRIX.md), not spec count: S1–S5 and S7 are green;
+S8–S12 are partial; S6 and the full arc are missing. S1 uses a separate local-auth controller
 profile and drives both rejected and successful seeded administrator login.
 
 The generated M1 API contract matrix now inventories the endpoint catalog without embedding a

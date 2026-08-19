@@ -10,7 +10,7 @@ break: if this journey is green, the product is usable; if any step is red, it i
 of what unit coverage says. Generated inventories track changing route and spec breadth separately.
 
 **Status:** [TIER0_ASSERTION_MATRIX.md](TIER0_ASSERTION_MATRIX.md) is the completion inventory.
-Today S1–S4 and S7 are `GREEN`; S8–S12 are `PARTIAL`; S5–S6 and the full arc are `MISSING`.
+Today S1–S5 and S7 are `GREEN`; S8–S12 are `PARTIAL`; S6 and the full arc are `MISSING`.
 The breadth guard still covers all 16 top-level views. Run implemented specs with
 `scripts/run-e2e.sh`. A step is not green merely because one of its API assertions exists.
 
@@ -128,8 +128,12 @@ then filters to the last action to prove the windowed outline still addresses th
 
 Walk all six steps. Assert forward/back navigation preserves entered values, and that Review shows
 what was actually entered. The unsaved-changes guard (`guardedNavigation.ts`,
-`NavigationGuardProvider.tsx`) needs its own spec: navigate away mid-wizard and assert the modal
-appears and that cancelling keeps the draft.
+`NavigationGuardProvider.tsx`) has its own spec: it navigates away mid-wizard, requires the modal,
+and proves that cancelling keeps the draft.
+
+The implemented guard uses the user-facing **Keep editing** action for cancellation. Review exposes
+duration and mode plus a per-group table (script, role, VUsers, ramp, and initialization), so parity
+is asserted on the actual configuration rather than on a group count alone.
 
 ## S6 · Configure and launch a run
 
