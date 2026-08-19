@@ -57,12 +57,11 @@ have explicit handler-level anonymous/authenticated cases. The route matrix and 
 assertions are `GREEN`; M1 remains open on the full-arc browser smoke.
 
 M2 is underway with one explicit-update golden harness and a backend-registry-derived inventory.
-Seven converter surfaces now have separate valid-output and invalid/diagnostic goldens. Eight remain
-`missing`, and the Oracle E-Business launcher is classified `review_only` because it reuses the
-enterprise-archive converter. The inventory is committed at
+All 15 converter surfaces now have separate valid-output and invalid/diagnostic goldens, and every
+successful result must also pass canonical DSL validation. The Oracle E-Business launcher is
+classified `review_only` because it reuses the enterprise-archive converter. The inventory is at
 [evidence/M2/converter-golden-inventory.json](evidence/M2/converter-golden-inventory.json); M2 is not
-closeable until every non-review surface is covered and the corpus and protected-lifecycle reports
-also exist.
+closeable until the offline LoadRunner corpus and protected-lifecycle reports also exist.
 
 M3 is underway with a generated status-only lifecycle matrix covering every canonical run status
 against Start, Pause, Resume, Stop, and Abort. The handlers now consume the same pure policy that

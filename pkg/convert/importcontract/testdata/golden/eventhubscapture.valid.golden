@@ -1,0 +1,96 @@
+{
+  "script": {
+    "actions": [
+      {
+        "assertions": [
+          {
+            "type": "message_received"
+          }
+        ],
+        "body": "{\"order_id\":\"123\"}",
+        "headers": {
+          "source": "golden"
+        },
+        "metadata": {
+          "eventhubs_capture": true,
+          "source_sequence_number": 1
+        },
+        "name": "publish-captured-1",
+        "params": {
+          "partition_key": "tenant-a"
+        },
+        "target": "orders",
+        "think_time": {
+          "mean_ms": 0,
+          "type": ""
+        },
+        "type": "eventhubs_produce"
+      }
+    ],
+    "config": {
+      "base_url": "",
+      "browser": {
+        "geolocation": {},
+        "http_credentials": {},
+        "proxy": {},
+        "review_policy": {},
+        "viewport": {}
+      },
+      "bruno": {
+        "limits": {}
+      },
+      "database": {},
+      "error_handling": {},
+      "eventhubs": {
+        "event_hub": "orders",
+        "mock": true
+      },
+      "grpc": {},
+      "http": {
+        "auth": {},
+        "proxy": {},
+        "tls": {}
+      },
+      "java_http": {},
+      "java_vuser": {},
+      "jms": {},
+      "kafka": {},
+      "log": {},
+      "network": {},
+      "observability": {},
+      "pacing": {
+        "type": ""
+      },
+      "run_logic": {},
+      "sapgui": {},
+      "soap": {
+        "fault_handling": {}
+      },
+      "think_time": {
+        "mean_ms": 0,
+        "type": ""
+      },
+      "web_runtime": {
+        "data_formatting": {},
+        "download_filters": {},
+        "network_simulation": {},
+        "streaming": {}
+      },
+      "websocket": {}
+    },
+    "created_at": "<TIMESTAMP>",
+    "id": "",
+    "name": "capture golden",
+    "protocol": "eventhubs",
+    "updated_at": "<TIMESTAMP>",
+    "version": ""
+  },
+  "stats": {
+    "actions_emitted": 1,
+    "binary_bodies": 0,
+    "empty_bodies": 0,
+    "partition_keys": 1,
+    "records_read": 1
+  },
+  "summary": "Imported 1 of 1 captured Event Hubs events into produce actions for event hub \"orders\" (mock mode)."
+}

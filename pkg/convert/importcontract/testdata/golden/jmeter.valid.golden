@@ -1,0 +1,226 @@
+{
+  "assumptions": [
+    "JMeter controller structure was flattened into script action order where safe."
+  ],
+  "script": {
+    "actions": [
+      {
+        "method": "GET",
+        "name": "Health",
+        "target": "/health",
+        "think_time": {
+          "mean_ms": 0,
+          "type": ""
+        },
+        "type": "GET"
+      }
+    ],
+    "config": {
+      "base_url": "https://api.example.test",
+      "browser": {
+        "geolocation": {},
+        "http_credentials": {},
+        "proxy": {},
+        "review_policy": {},
+        "viewport": {}
+      },
+      "bruno": {
+        "limits": {}
+      },
+      "database": {},
+      "error_handling": {},
+      "eventhubs": {},
+      "grpc": {},
+      "http": {
+        "auth": {},
+        "proxy": {},
+        "tls": {},
+        "traceparent": false
+      },
+      "java_http": {},
+      "java_vuser": {},
+      "jms": {},
+      "kafka": {},
+      "log": {},
+      "network": {},
+      "observability": {},
+      "pacing": {
+        "type": ""
+      },
+      "run_logic": {
+        "auto_transactions": "per_action"
+      },
+      "sapgui": {},
+      "soap": {
+        "fault_handling": {}
+      },
+      "think_time": {
+        "mean_ms": 0,
+        "type": ""
+      },
+      "web_runtime": {
+        "data_formatting": {},
+        "download_filters": {},
+        "network_simulation": {},
+        "streaming": {}
+      },
+      "websocket": {}
+    },
+    "created_at": "<TIMESTAMP>",
+    "generated_by": "jmeter-import",
+    "generated_from": "jmeter",
+    "id": "",
+    "metadata": {
+      "import": {
+        "preserved": {
+          "file_name": "health.jmx",
+          "import_value_policy": "preserve",
+          "imported_at": "<TIMESTAMP>",
+          "original_file_name": "health.jmx",
+          "unsupported_count": 0,
+          "warning_count": 0
+        },
+        "source": "jmeter",
+        "source_script_name": "Users"
+      }
+    },
+    "name": "Users",
+    "protocol": "http",
+    "updated_at": "<TIMESTAMP>",
+    "version": "1.0.0"
+  },
+  "scripts": [
+    {
+      "actions": [
+        {
+          "method": "GET",
+          "name": "Health",
+          "target": "/health",
+          "think_time": {
+            "mean_ms": 0,
+            "type": ""
+          },
+          "type": "GET"
+        }
+      ],
+      "config": {
+        "base_url": "https://api.example.test",
+        "browser": {
+          "geolocation": {},
+          "http_credentials": {},
+          "proxy": {},
+          "review_policy": {},
+          "viewport": {}
+        },
+        "bruno": {
+          "limits": {}
+        },
+        "database": {},
+        "error_handling": {},
+        "eventhubs": {},
+        "grpc": {},
+        "http": {
+          "auth": {},
+          "proxy": {},
+          "tls": {},
+          "traceparent": false
+        },
+        "java_http": {},
+        "java_vuser": {},
+        "jms": {},
+        "kafka": {},
+        "log": {},
+        "network": {},
+        "observability": {},
+        "pacing": {
+          "type": ""
+        },
+        "run_logic": {
+          "auto_transactions": "per_action"
+        },
+        "sapgui": {},
+        "soap": {
+          "fault_handling": {}
+        },
+        "think_time": {
+          "mean_ms": 0,
+          "type": ""
+        },
+        "web_runtime": {
+          "data_formatting": {},
+          "download_filters": {},
+          "network_simulation": {},
+          "streaming": {}
+        },
+        "websocket": {}
+      },
+      "created_at": "<TIMESTAMP>",
+      "generated_by": "jmeter-import",
+      "generated_from": "jmeter",
+      "id": "",
+      "metadata": {
+        "import": {
+          "preserved": {
+            "file_name": "health.jmx",
+            "import_value_policy": "preserve",
+            "imported_at": "<TIMESTAMP>",
+            "original_file_name": "health.jmx",
+            "unsupported_count": 0,
+            "warning_count": 0
+          },
+          "source": "jmeter",
+          "source_script_name": "Users"
+        }
+      },
+      "name": "Users",
+      "protocol": "http",
+      "updated_at": "<TIMESTAMP>",
+      "version": "1.0.0"
+    }
+  ],
+  "source_review": {
+    "mappings": [
+      {
+        "end_line": 1,
+        "function": "HTTPSamplerProxy",
+        "id": "health.jmx:1-1:httpsamplerproxy:actions[0]:converted",
+        "notes": "JMeter HTTP sampler was converted into a generated APEX Load action.",
+        "source_file": "health.jmx",
+        "start_line": 1,
+        "status": "converted",
+        "target_kind": "action",
+        "target_name": "Health",
+        "target_path": "actions[0]"
+      }
+    ],
+    "source_files": [
+      {
+        "content": "<?xml version=\"1.0\"?><jmeterTestPlan><hashTree><TestPlan testname=\"Plan\"/><hashTree><ThreadGroup testname=\"Users\"/><hashTree><HTTPSamplerProxy testname=\"Health\"><stringProp name=\"HTTPSampler.protocol\">https</stringProp><stringProp name=\"HTTPSampler.domain\">api.example.test</stringProp><stringProp name=\"HTTPSampler.path\">/health</stringProp><stringProp name=\"HTTPSampler.method\">GET</stringProp></HTTPSamplerProxy><hashTree/></hashTree></hashTree></hashTree></jmeterTestPlan>",
+        "language": "xml",
+        "original_bytes": 476,
+        "path": "health.jmx"
+      }
+    ],
+    "total_source_files": 1
+  },
+  "stats": {
+    "adapter_required": 0,
+    "assertions": 0,
+    "converted_actions": 1,
+    "csv_sources": 0,
+    "headers": 0,
+    "mapped": 1,
+    "review_required": 0,
+    "samplers": 1,
+    "thread_groups": 1,
+    "timers": 0,
+    "total_samplers": 1,
+    "unsupported": 0,
+    "variables": 0
+  },
+  "summary": {
+    "file_name": "health.jmx",
+    "sampler_count": 1,
+    "thread_group_count": 1
+  }
+}

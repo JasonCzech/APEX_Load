@@ -32,20 +32,20 @@ type converterGoldenInventory struct {
 // the denominator in a prose count.
 func TestConverterGoldenInventoryFreshness(t *testing.T) {
 	registrations := map[string]converterGoldenRegistration{
-		"openapi":            missingGolden("openapi", "openapi"),
-		"bruno":              missingGolden("bruno", "bruno"),
-		"postman":            missingGolden("postman", "postman"),
-		"wsdl":               missingGolden("wsdl", "wsdl"),
+		"openapi":            coveredGolden("openapi", "openapi"),
+		"bruno":              coveredGolden("bruno", "bruno"),
+		"postman":            coveredGolden("postman", "postman"),
+		"wsdl":               coveredGolden("wsdl", "wsdl"),
 		"asyncapi":           coveredGolden("asyncapi", "asyncapi"),
 		"raml":               coveredGolden("raml", "raml"),
-		"traffic_har":        missingGolden("traffic_har", "har"),
+		"traffic_har":        coveredGolden("traffic_har", "har"),
 		"recorder_export":    coveredGolden("recorder_export", "recorderjson"),
 		"sample":             coveredGolden("sample", "sample_curl"),
 		"enterprise_archive": coveredGolden("enterprise_archive", "enterprisearchive"),
-		"jmeter":             missingGolden("jmeter", "jmeter"),
+		"jmeter":             coveredGolden("jmeter", "jmeter"),
 		"devweb":             coveredGolden("devweb", "devweb"),
-		"k6":                 missingGolden("k6", "k6"),
-		"eventhubs_capture":  missingGolden("eventhubs_capture", "eventhubscapture"),
+		"k6":                 coveredGolden("k6", "k6"),
+		"eventhubs_capture":  coveredGolden("eventhubs_capture", "eventhubscapture"),
 		"broker_config":      coveredGolden("broker_config", "brokerconfig"),
 		"oracle_ebusiness_review": {
 			Surface:   "oracle_ebusiness_review",
@@ -137,10 +137,6 @@ func coveredGolden(surface, converter string) converterGoldenRegistration {
 		Diagnostic: converter + ".invalid.golden",
 		State:      "covered",
 	}
-}
-
-func missingGolden(surface, converter string) converterGoldenRegistration {
-	return converterGoldenRegistration{Surface: surface, Converter: converter, State: "missing"}
 }
 
 func authoringSurfaceIDs(t *testing.T, path string) []string {

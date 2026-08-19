@@ -72,11 +72,11 @@
       },
       "websocket": {}
     },
-    "created_at": "\u003cTIMESTAMP\u003e",
+    "created_at": "<TIMESTAMP>",
     "id": "",
     "name": "raml golden",
     "protocol": "http",
-    "updated_at": "\u003cTIMESTAMP\u003e",
+    "updated_at": "<TIMESTAMP>",
     "version": "1.0.0"
   },
   "stats": {

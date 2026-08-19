@@ -1,0 +1,149 @@
+{
+  "artifact_mode": "design_har",
+  "governance": {
+    "artifact_mode": "design_har",
+    "body_capture_required": true,
+    "redaction_enabled": true,
+    "retention_days": 7,
+    "scope": "http_family_only",
+    "sensitivity": "scrubbed"
+  },
+  "script": {
+    "actions": [
+      {
+        "assertions": [
+          {
+            "expected": 200,
+            "type": "status_code"
+          }
+        ],
+        "method": "GET",
+        "name": "01 - GET health",
+        "target": "/health",
+        "think_time": {
+          "mean_ms": 0,
+          "type": ""
+        },
+        "type": "request"
+      }
+    ],
+    "config": {
+      "base_url": "https://api.example.test",
+      "browser": {
+        "geolocation": {},
+        "http_credentials": {},
+        "proxy": {},
+        "review_policy": {},
+        "viewport": {}
+      },
+      "bruno": {
+        "limits": {}
+      },
+      "database": {},
+      "error_handling": {},
+      "eventhubs": {},
+      "grpc": {},
+      "http": {
+        "auth": {},
+        "proxy": {},
+        "tls": {},
+        "traceparent": false
+      },
+      "java_http": {},
+      "java_vuser": {},
+      "jms": {},
+      "kafka": {},
+      "log": {
+        "level": "standard"
+      },
+      "network": {},
+      "observability": {},
+      "pacing": {
+        "type": "none"
+      },
+      "run_logic": {
+        "auto_transactions": "none"
+      },
+      "sapgui": {},
+      "soap": {
+        "fault_handling": {}
+      },
+      "think_time": {
+        "mean_ms": 1000,
+        "type": "fixed"
+      },
+      "web_runtime": {
+        "data_formatting": {},
+        "download_filters": {},
+        "network_simulation": {},
+        "streaming": {}
+      },
+      "websocket": {}
+    },
+    "created_at": "<TIMESTAMP>",
+    "generated_by": "apexload-har-converter",
+    "generated_from": "har",
+    "id": "",
+    "metadata": {
+      "import": {
+        "preserved": {
+          "import_value_policy": "preserve"
+        },
+        "source": "har"
+      }
+    },
+    "name": "har golden",
+    "protocol": "http",
+    "updated_at": "<TIMESTAMP>",
+    "version": "1.0.0"
+  },
+  "source_review": {
+    "mappings": [
+      {
+        "end_line": 1,
+        "function": "response_status",
+        "id": "sample.har:1-1:response_status:actions[0].assertions[0]:contributor",
+        "notes": "Sample response status was converted into a generated assertion.",
+        "source_file": "sample.har",
+        "start_line": 1,
+        "status": "contributor",
+        "target_kind": "assertion",
+        "target_name": "status_code",
+        "target_path": "actions[0].assertions[0]"
+      },
+      {
+        "end_line": 1,
+        "function": "har_entry",
+        "id": "sample.har:1-1:har_entry:actions[0]:converted",
+        "notes": "Source request was converted into a generated APEX Load action.",
+        "source_file": "sample.har",
+        "start_line": 1,
+        "status": "converted",
+        "target_kind": "action",
+        "target_name": "01 - GET health",
+        "target_path": "actions[0]"
+      }
+    ],
+    "source_files": [
+      {
+        "content": "{\"log\":{\"_apexloadSensitivity\":\"scrubbed\",\"entries\":[{\"request\":{\"headers\":[],\"method\":\"GET\",\"url\":\"https://api.example.test/health\"},\"response\":{\"content\":{\"text\":\"ok\"},\"headers\":[],\"status\":200},\"startedDateTime\":\"2026-01-01T00:00:00Z\",\"time\":10}]}}",
+        "language": "json",
+        "original_bytes": 251,
+        "path": "sample.har",
+        "redacted": true
+      }
+    ],
+    "total_source_files": 1
+  },
+  "stats": {
+    "assertions": 1,
+    "converted_actions": 1,
+    "correlations_detected": 0,
+    "extractors": 0,
+    "format": "har",
+    "total_requests": 1
+  },
+  "warnings": [
+    "no reusable correlation values were detected across the provided samples"
+  ]
+}

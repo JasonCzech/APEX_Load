@@ -79,13 +79,13 @@
       },
       "websocket": {}
     },
-    "created_at": "\u003cTIMESTAMP\u003e",
+    "created_at": "<TIMESTAMP>",
     "generated_by": "apexload-asyncapi-converter",
     "generated_from": "asyncapi",
     "id": "",
     "name": "asyncapi_golden",
     "protocol": "kafka",
-    "updated_at": "\u003cTIMESTAMP\u003e",
+    "updated_at": "<TIMESTAMP>",
     "version": "1.0.0"
   },
   "scripts": [
@@ -169,13 +169,13 @@
         },
         "websocket": {}
       },
-      "created_at": "\u003cTIMESTAMP\u003e",
+      "created_at": "<TIMESTAMP>",
       "generated_by": "apexload-asyncapi-converter",
       "generated_from": "asyncapi",
       "id": "",
       "name": "asyncapi_golden",
       "protocol": "kafka",
-      "updated_at": "\u003cTIMESTAMP\u003e",
+      "updated_at": "<TIMESTAMP>",
       "version": "1.0.0"
     }
   ],
