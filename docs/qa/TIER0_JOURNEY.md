@@ -10,7 +10,7 @@ break: if this journey is green, the product is usable; if any step is red, it i
 of what unit coverage says. Generated inventories track changing route and spec breadth separately.
 
 **Status:** [TIER0_ASSERTION_MATRIX.md](TIER0_ASSERTION_MATRIX.md) is the completion inventory.
-Today S1–S3 and S7 are `GREEN`; S8–S12 are `PARTIAL`; S4–S6 and the full arc are `MISSING`.
+Today S1–S4 and S7 are `GREEN`; S8–S12 are `PARTIAL`; S5–S6 and the full arc are `MISSING`.
 The breadth guard still covers all 16 top-level views. Run implemented specs with
 `scripts/run-e2e.sh`. A step is not green merely because one of its API assertions exists.
 
@@ -112,6 +112,10 @@ not the JSON view — is the primary surface.
 **Performance guard:** large imports previously froze the editor for ~2.5 minutes, and CodeMirror
 still full-renders very large scripts. Give this step a generous but *bounded* timeout so a
 regression surfaces as a failure rather than a hang.
+
+The Tier-0 guard uses 400 deterministic actions, requires the editor to become usable within the
+30-second test boundary, verifies that fewer outline rows are mounted than the 400 source actions,
+then filters to the last action to prove the windowed outline still addresses the complete script.
 
 ## S5 · Build a scenario
 

@@ -16,6 +16,25 @@ this directly. Suspect timing before suspecting the test.
 |---|---|---|---|---|---|---|---|
 | `TestLapsedProcessEpochRejectsTheClaimAndFencesTheAssignmentLeaseDifferently` | 2026-08-18 | 2 of 5 runs (both full-suite) | 30 ms wall-clock TTL could not survive scheduler pressure | QA program | No — fixed at the cause | n/a | **FIXED** (`267e9697b`) |
 | `TestRunPreparedTestRetainsTestIdentityOnPollTimeout` | 2026-08-18 | 2 full-suite failures; 0 of 10 isolated repetitions before diagnosis | A 10 ms command-wide deadline could expire during preparation, before a test identity existed | QA program | No — fixed at the cause | n/a | **FIXED** |
+| `TestExecuteControllerCIAbortsOnCancellation` | 2026-08-18 | 1 concurrent full-suite failure; isolated and serial full-suite reruns passed | Under investigation: cancellation returned the expected result, but controller-teardown confirmation exceeded its deadline under three-lane CPU contention | QA program | No | n/a | **OBSERVED — first occurrence** |
+
+## FLAKE-3 — apexctl cancellation teardown confirmation
+
+**Location:** `cmd/apexctl/ci_test.go:1196`
+
+The S4 integrated verification ran `go test ./...`, all dashboard checks, and the complete
+Playwright suite concurrently. `TestExecuteControllerCIAbortsOnCancellation` produced the expected
+`cancelled` / `CANCELLED` result, but its cleanup confirmation returned:
+
+```text
+controller may still be running the cancelled CI load: context deadline exceeded
+```
+
+The exact test passed immediately in an isolated uncached run. A subsequent full repository run
+with Go package parallelism limited to one also passed, including the previously failing
+`cmd/apexctl` package. That evidence classifies this as a first intermittent occurrence, not a
+confirmed product failure and not yet a mandatory quarantine. A second occurrence triggers the
+policy above: diagnose and fix the teardown timing or quarantine with an expiry within 24 hours.
 
 ## FLAKE-2 — apexctl poll-timeout partial result
 
