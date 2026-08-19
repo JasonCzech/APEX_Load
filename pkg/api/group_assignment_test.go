@@ -8,7 +8,50 @@ import (
 	"github.com/jasonczech/apexload/pkg/distributed/generatorrpc"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/protocol"
+	"github.com/jasonczech/apexload/pkg/storage"
 )
+
+func TestScenarioPoolAssignmentRoundTripsIntoMaterializedTest(t *testing.T) {
+	server, store := newTimeslotServer(t)
+	const poolID = "tier0-pool"
+	if err := store.SaveFleetPool(&storage.FleetPool{ID: poolID, Name: "Tier-0 Pool", CloudProvider: "kubernetes"}); err != nil {
+		t.Fatalf("SaveFleetPool: %v", err)
+	}
+	if err := store.SaveFleetPoolMembers(poolID, []*storage.FleetPoolMember{{ID: "tier0-member", PoolID: poolID, GeneratorID: "tier0-generator", Target: "tier0-generator:9090"}}); err != nil {
+		t.Fatalf("SaveFleetPoolMembers: %v", err)
+	}
+	server.runner.StoreScript(&dsl.Script{
+		ID: "script-pool-assignment", Name: "Pool Flow", Protocol: "http", Version: "1.0.0",
+		Config: dsl.ScriptConfig{BaseURL: "https://example.test"}, Actions: []dsl.Action{{Name: "step", Type: "request", Target: "/"}},
+	})
+
+	scenario, err := server.runner.StoreScenario(CreateScenarioRequest{
+		Name: "Pool Placement", Duration: "5m",
+		Assignment: &GeneratorAssignmentSettings{Mode: generatorAssignmentModeAuto, PoolID: poolID},
+		Groups:     []CreateGroupEntry{{Name: "users", ScriptID: "script-pool-assignment", VUsers: 2}},
+	})
+	if err != nil {
+		t.Fatalf("StoreScenario: %v", err)
+	}
+	stored, ok := server.runner.GetScenario(scenario.ID)
+	if !ok || stored == nil {
+		t.Fatal("stored scenario is missing")
+	}
+	if stored.Assignment == nil || stored.Assignment.PoolID != poolID {
+		t.Fatalf("stored scenario assignment = %#v, want pool_id %q", stored.Assignment, poolID)
+	}
+
+	run, err := server.runner.CreateTest(CreateTestRequest{ScenarioID: scenario.ID})
+	if err != nil {
+		t.Fatalf("CreateTest: %v", err)
+	}
+	if run.Assignment == nil || run.Assignment.PoolID != poolID {
+		t.Fatalf("materialized assignment = %#v, want pool_id %q", run.Assignment, poolID)
+	}
+	if run.Assignment.Mode != generatorAssignmentModeSpecificHosts || len(run.Assignment.SelectedTargets) != 1 || run.Assignment.SelectedTargets[0] != "tier0-generator:9090" {
+		t.Fatalf("resolved materialized assignment = %#v, want the pool target", run.Assignment)
+	}
+}
 
 func TestScenarioGroupAssignmentPersistsIntoMaterializedTest(t *testing.T) {
 	runner := NewTestRunner(10, NewHub(), nil)

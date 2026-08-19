@@ -1128,6 +1128,43 @@ describe('TestHub', () => {
     expect(wizardStepComplete('Run Settings')).toBe(true)
   })
 
+  it('shows the configured duration and script-group values on review', async () => {
+    await act(async () => {
+      root.render(<TestHub initialView="builder" testStatuses={{}} onSelectTest={vi.fn()} />)
+    })
+
+    await flushPromises()
+    await clickWizardStep('Scripts')
+
+    const nameInput = container.querySelector<HTMLInputElement>('input[placeholder="Scenario name"]')
+    expect(nameInput).not.toBeNull()
+    if (!nameInput) return
+    await act(async () => {
+      setInputValue(nameInput, 'Review Parity Scenario')
+    })
+    await chooseLibraryScriptForGroup()
+
+    await clickWizardStep('Run Settings')
+    const duration = getDurationFieldByLabel(container, 'Duration')
+    const vusers = findControlByLabel<HTMLInputElement>(container, 'VUsers', 'input[type="number"]')
+    expect(duration).not.toBeNull()
+    expect(vusers).toBeDefined()
+    if (!duration || !vusers) return
+    await act(async () => {
+      setInputValue(duration.input, '3')
+      setSelectValue(duration.select, 'm')
+      setInputValue(vusers, '17')
+    })
+
+    await clickWizardStep('Review')
+
+    const reviewGroups = container.querySelector<HTMLTableElement>('table[aria-label="Scenario review groups"]')
+    expect(reviewGroups).not.toBeNull()
+    expect(container.querySelector('.scenario-review-grid')?.textContent).toContain('Duration3m')
+    const reviewCells = Array.from(reviewGroups?.querySelectorAll('tbody td') || []).map(cell => cell.textContent)
+    expect(reviewCells).toEqual(['Group 1', 'Checkout Flow', 'Load', '17', 'None', 'None', 'Per VUser'])
+  })
+
   it('seeds goal-oriented run settings and shows shape guidance when an open-arrival-rate shape is selected manually', async () => {
     await act(async () => {
       root.render(<TestHub initialView="builder" testStatuses={{}} onSelectTest={vi.fn()} />)

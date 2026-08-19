@@ -1358,7 +1358,7 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
     scenarioSortField === field ? (scenarioSortDirection === 'asc' ? 'ascending' : 'descending') : 'none'
   )
 
-  const createRun = async (intent: 'reserve' | 'queue' | 'schedule', options: { navigate?: boolean } = {}): Promise<boolean> => {
+  const createRun = async (intent: 'start' | 'reserve' | 'queue' | 'schedule', options: { navigate?: boolean } = {}): Promise<boolean> => {
     const navigate = options.navigate ?? true
     const currentRunDefaults = runDefaultOverridesRef.current
     const currentGroupOverrides = groupRunOverridesRef.current
@@ -1522,6 +1522,11 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
           return true
         }
         resolveQueueAttempt()
+        if (navigate) (onOpenCommandCenter || onSelectTest)(test.id)
+        return true
+      }
+      if (intent === 'start') {
+        await api.startTest(test.id)
         if (navigate) (onOpenCommandCenter || onSelectTest)(test.id)
         return true
       }
@@ -3307,7 +3312,10 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
                 <button className="btn btn-secondary" disabled>Checking Window</button>
               )}
               {showStartNow && (
-                <button className="btn btn-primary" onClick={() => createRun('reserve')} disabled={!canLaunch || immediatePreflightLoading || !startNowAllowed} title="Holds a launch window for this run to be started manually later. This is not a capacity timeslot reservation.">Hold for Manual Start</button>
+                <>
+                  <button className="btn btn-primary" onClick={() => createRun('start')} disabled={!canLaunch || immediatePreflightLoading || !startNowAllowed}>Start Now</button>
+                  <button className="btn btn-secondary" onClick={() => createRun('reserve')} disabled={!canLaunch || immediatePreflightLoading || !startNowAllowed} title="Holds a launch window for this run to be started manually later. This is not a capacity timeslot reservation.">Hold for Manual Start</button>
+                </>
               )}
               {showQueueRun && (
                 <button className="btn btn-secondary" onClick={() => createRun('queue')} disabled={!canLaunch || immediatePreflightLoading || Boolean(queueRecovery)}>Create Queued Run</button>

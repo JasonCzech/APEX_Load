@@ -19,6 +19,7 @@ import (
 // TestPostgresSchemaBooleanColumnsRewriteToBoolean.
 func schemaCreateTableStatements() []string {
 	return []string{
+		schemaMigrationLedgerDDL,
 		`CREATE TABLE IF NOT EXISTS domains (
 			id TEXT PRIMARY KEY,
 			name TEXT NOT NULL,
@@ -1706,6 +1707,9 @@ var schemaIndexes = []schemaIndex{
 }
 
 func (s *SQLiteStore) init() error {
+	if err := s.ensureSchemaMigrationLedger(); err != nil {
+		return err
+	}
 	// Import tables retain their original Bruno-era physical names. Restore a
 	// database opened by the short-lived format-neutral release before CREATE
 	// TABLE can silently create empty legacy tables beside its populated ones.
@@ -1811,7 +1815,10 @@ func (s *SQLiteStore) init() error {
 	if err := s.ensurePostgresForeignKeys(); err != nil {
 		return err
 	}
-	return s.applyTimescaleDB()
+	if err := s.applyTimescaleDB(); err != nil {
+		return err
+	}
+	return s.recordSchemaReleases()
 }
 
 func (s *SQLiteStore) backfillExecutionTargetEnrollmentExpiry() error {

@@ -170,7 +170,8 @@ func (localExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 	testStatus := test.Status
 	testError := test.Error
 	tr.mu.RUnlock()
-	finalStatus, finalError := localExecutionFinalState(testStatus, testError, err)
+	gracefulStopCompleted := mge.GracefulStopRequested() && !mge.HardStopRequested()
+	finalStatus, finalError := localExecutionFinalState(testStatus, testError, err, gracefulStopCompleted)
 
 	// Released with defer, not manually: artifacts.finalize is the archive writer
 	// the run-driver panic backstop exists for, and that backstop terminalizes
@@ -258,10 +259,13 @@ func localExecutionRunError(ctx context.Context, runErr error) error {
 	return ctx.Err()
 }
 
-func localExecutionFinalState(testStatus, testError string, runErr error) (string, string) {
+func localExecutionFinalState(testStatus, testError string, runErr error, gracefulStopRequested bool) (string, string) {
 	testStatus = strings.ToUpper(strings.TrimSpace(testStatus))
 	testError = strings.TrimSpace(testError)
 	if testStatus == "STOPPING" {
+		if gracefulStopRequested {
+			return "COMPLETE", ""
+		}
 		return "ABORTED", testError
 	}
 	if runErr == nil {

@@ -14,10 +14,10 @@ state-bearing dashboard. External published views may mirror it, but must not ca
 | ID | Milestone | State | Hrs spent | Evidence |
 |---|---|---|---|---|
 | M0 | Instrument the program | IN_PROGRESS | not recorded | `evidence/M0/` |
-| M1 | Tier-0 end-user journey | IN_PROGRESS | 10 | `evidence/M1/` |
-| M2 | Import & authoring correctness | NOT_STARTED | 0 | `evidence/M2/` |
-| M3 | Run lifecycle & data integrity | NOT_STARTED | 0 | `evidence/M3/` |
-| M4 | Persistence hardening & migration | NOT_STARTED | 0 | `evidence/M4/` |
+| M1 | Tier-0 end-user journey | IN_PROGRESS | 11 | `evidence/M1/` |
+| M2 | Import & authoring correctness | IN_PROGRESS | not recorded | `evidence/M2/` |
+| M3 | Run lifecycle & data integrity | IN_PROGRESS | not recorded | `evidence/M3/` |
+| M4 | Persistence hardening & migration | IN_PROGRESS | not recorded | `evidence/M4/` |
 | M5 | Distributed execution at scale | NOT_STARTED | 0 | `evidence/M5/` |
 | M6 | AKS deployment & HA failover | NOT_STARTED | 0 | `evidence/M6/` |
 | M7 | Multi-region & scale evidence | NOT_STARTED | 0 | `evidence/M7/` |
@@ -31,8 +31,9 @@ The QA implementation baseline through `b172f1bbd` was verified from an isolated
 not from the concurrently edited application workspace. `go test ./...`, the configured
 golangci-lint suite, dashboard type-check/lint/accessibility/unit/build, the dev-admin browser suite,
 the local-auth browser suite, workflow validation, tracker validation, and the QA Python mutation
-tests all passed. The live workspace still contains separately owned runtime-adjustment changes, so
-it is intentionally not described as clean.
+tests all passed. At that point the live workspace contained separately owned runtime-adjustment
+changes and was intentionally not described as clean. Those changes were subsequently
+integrated, and this QA branch resumed the Tier-0 increments from a clean committed `HEAD`.
 
 The subsequent review corrections through `ec843df76` were re-verified from isolated detached
 worktrees with 22 QA Python tests, `go test ./docs/qa ./scripts`, workflow validation, generated
@@ -42,9 +43,40 @@ QA-owned diff.
 
 M1 is underway. `scripts/run-e2e.sh` reproduces CI's browser-smoke recipe locally against a fresh
 controller and throwaway database. Completion is tracked by
-[TIER0_ASSERTION_MATRIX.md](TIER0_ASSERTION_MATRIX.md), not spec count: S1 and S7 are green; S2 and
-S8–S12 are partial; S3–S6 and the full arc are missing. S1 uses a separate local-auth controller
+[TIER0_ASSERTION_MATRIX.md](TIER0_ASSERTION_MATRIX.md), not spec count: S1–S12 are green and the
+full arc remains missing. S1 uses a separate local-auth controller
 profile and drives both rejected and successful seeded administrator login.
+
+The generated M1 API contract matrix now inventories the endpoint catalog without embedding a
+route total in program prose. It proves public/authenticated registration parity, anonymous 401s
+through the generic auth middleware, and allowed/denied RBAC role decisions where structured access
+metadata exists. Legacy recorder/replay middleware now consumes the same viewer/editor access
+profiles used by generated documentation, eliminating role-list drift while retaining each
+server-instance session-to-project lookup. Metrics, recording-bridge, and collector-token routes
+have explicit handler-level anonymous/authenticated cases. The route matrix and all per-step Tier-0
+assertions are `GREEN`; M1 remains open on the full-arc browser smoke.
+
+M2 is underway with one explicit-update golden harness and a backend-registry-derived inventory.
+All 15 converter surfaces now have separate valid-output and invalid/diagnostic goldens, and every
+successful result must also pass canonical DSL validation. The Oracle E-Business launcher is
+classified `review_only` because it reuses the enterprise-archive converter. The inventory is at
+[evidence/M2/converter-golden-inventory.json](evidence/M2/converter-golden-inventory.json); M2 is not
+closeable until the offline LoadRunner corpus and protected-lifecycle reports also exist.
+
+M3 is underway with a generated status-only lifecycle matrix covering every canonical run status
+against Start, Pause, Resume, Stop, and Abort. The handlers now consume the same pure policy that
+generates [evidence/M3/run-control-matrix.json](evidence/M3/run-control-matrix.json). Runtime
+adjustments and conditional gates such as leadership, in-flight persistence, finalization, and
+backend acknowledgements remain open matrix work. DEF-26 also remains open: terminal payloads are
+compacted, but durable history is still loaded into an unbounded process-lifetime map.
+
+M4 is underway with an ordered, fingerprinted `schema_migrations` ledger shared by SQLite and
+PostgreSQL. Store construction records convergence only after the full idempotent schema, backfill,
+index, foreign-key, and optional Timescale sequence succeeds; reopening is idempotent, changed
+release identities fail closed, and a database newer than the binary is rejected. Configured stores
+expose a read-only `SchemaStatusProvider`, and backend readiness now reports `apexload.schema.v1`
+instead of the unrelated archive-manifest version. The dialect inventory, SQLite→PostgreSQL mover,
+real PostgreSQL reconciliation, and restore drill remain open.
 
 ## Headline metrics
 

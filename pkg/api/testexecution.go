@@ -2626,6 +2626,16 @@ func (tr *TestRunner) stopTestWithContextAndCIReasonAndActorModeAttempt(ctx cont
 		return nil
 	}
 	status := test.Status
+	control := testexec.ControlStop
+	controlResult := "stopped"
+	if forceAbort {
+		control = testexec.ControlAbort
+		controlResult = "aborted"
+	}
+	if !testexec.AllowsLifecycleControl(status, control) {
+		tr.mu.Unlock()
+		return fmt.Errorf("test is %s and cannot be %s", status, controlResult)
+	}
 	if requireLeadership {
 		if err := tr.claimTestExecutionFence(test); err != nil {
 			tr.mu.Unlock()
@@ -2729,11 +2739,14 @@ func (tr *TestRunner) stopTestWithContextAndCIReasonAndActorModeAttempt(ctx cont
 		}
 		tr.cancelAllVUserScaleRampsLocked(test)
 	default:
+		// The shared status policy above makes this unreachable. Retain a guarded
+		// default so a future policy expansion cannot mutate actor metadata without
+		// a corresponding transition implementation.
 		if actorChanged {
 			restoreTestStoppedByActor(test, actorSnapshot)
 		}
 		tr.mu.Unlock()
-		return fmt.Errorf("test is %s and cannot be stopped", status)
+		return fmt.Errorf("test is %s and cannot be %s", status, controlResult)
 	}
 	backend := tr.resolveBackend(test)
 	multiEngine := test.multiEngine
@@ -4435,7 +4448,7 @@ func (tr *TestRunner) PauseTest(id string) error {
 	if finalizing {
 		return fmt.Errorf("test is finalizing and cannot be paused")
 	}
-	if status != "RUNNING" {
+	if !testexec.AllowsLifecycleControl(status, testexec.ControlPause) {
 		return fmt.Errorf("test is %s, must be RUNNING to pause", status)
 	}
 	if activationErr != nil {
@@ -4557,7 +4570,7 @@ func (tr *TestRunner) ResumeTest(id string) error {
 		tr.mu.Unlock()
 		return fmt.Errorf("test is finalizing and cannot be resumed")
 	}
-	if status != "PAUSED" {
+	if !testexec.AllowsLifecycleControl(status, testexec.ControlResume) {
 		tr.mu.Unlock()
 		return fmt.Errorf("test is %s, must be PAUSED to resume", status)
 	}

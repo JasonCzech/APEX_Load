@@ -989,6 +989,10 @@
   gap: 6px;
 }
 
+.scenario-review-groups {
+  margin-top: 14px;
+}
+
 .scenario-option-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));

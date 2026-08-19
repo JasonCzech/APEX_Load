@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 from collections import Counter
+import json
 from pathlib import Path
 import sys
 
@@ -35,10 +36,19 @@ def assertion_counts(matrix: str) -> Counter[str]:
     return counts
 
 
-def render(status: str, matrix: str, metrics: str) -> str:
+def render(status: str, matrix: str, metrics: str, api_contract: dict[str, object]) -> str:
     milestones = markdown_table(status, "## Milestones")
     metric_table = markdown_table(metrics, "# QA Headline Metrics")
     counts = assertion_counts(matrix)
+    contract_totals = api_contract.get("totals")
+    if not isinstance(contract_totals, dict):
+        raise ValueError("API contract matrix has no totals object")
+    contract_green = int(contract_totals.get("green", 0))
+    contract_partial = int(contract_totals.get("partial", 0))
+    contract_missing = int(contract_totals.get("missing", 0))
+    contract_routes = int(contract_totals.get("routes", 0))
+    if contract_green + contract_partial + contract_missing != contract_routes:
+        raise ValueError("API contract matrix state totals do not equal route total")
     return "\n".join(
         [
             "# QA Program Dashboard",
@@ -47,6 +57,7 @@ def render(status: str, matrix: str, metrics: str) -> str:
             "",
             "Sources: [STATUS.md](STATUS.md) · [TEST_PROGRAM.md](TEST_PROGRAM.md) · "
             "[Headline metrics](HEADLINE_METRICS.md) · [Tier-0 matrix](TIER0_ASSERTION_MATRIX.md) · "
+            "[API contract matrix](evidence/M1/api-contract-matrix.json) · "
             "[Evidence contract](evidence-contract.json)",
             "",
             "## Milestones",
@@ -62,6 +73,12 @@ def render(status: str, matrix: str, metrics: str) -> str:
             "| GREEN | PARTIAL | MISSING | Total |",
             "|---:|---:|---:|---:|",
             f"| {counts['GREEN']} | {counts['PARTIAL']} | {counts['MISSING']} | {sum(counts.values())} |",
+            "",
+            "## M1 API contract coverage",
+            "",
+            "| GREEN | PARTIAL | MISSING | Total |",
+            "|---:|---:|---:|---:|",
+            f"| {contract_green} | {contract_partial} | {contract_missing} | {contract_routes} |",
             "",
             "## Gate tiers",
             "",
@@ -80,11 +97,17 @@ def main() -> int:
     parser.add_argument("--status", type=Path, default=Path("docs/qa/STATUS.md"))
     parser.add_argument("--matrix", type=Path, default=Path("docs/qa/TIER0_ASSERTION_MATRIX.md"))
     parser.add_argument("--metrics", type=Path, default=Path("docs/qa/HEADLINE_METRICS.md"))
+    parser.add_argument("--api-contract", type=Path, default=Path("docs/qa/evidence/M1/api-contract-matrix.json"))
     parser.add_argument("--output", type=Path, default=Path("docs/qa/DASHBOARD.md"))
     parser.add_argument("--check", action="store_true")
     args = parser.parse_args()
 
-    generated = render(args.status.read_text(), args.matrix.read_text(), args.metrics.read_text())
+    generated = render(
+        args.status.read_text(),
+        args.matrix.read_text(),
+        args.metrics.read_text(),
+        json.loads(args.api_contract.read_text()),
+    )
     if args.check:
         if not args.output.exists() or args.output.read_text() != generated:
             print(f"{args.output} is stale; run scripts/qa-generate-dashboard.py", file=sys.stderr)

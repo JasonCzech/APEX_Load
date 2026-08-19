@@ -1,0 +1,130 @@
+{
+  "script": {
+    "actions": [
+      {
+        "header_list": [
+          {
+            "name": "Accept",
+            "value": "application/json"
+          }
+        ],
+        "headers": {
+          "Accept": "application/json"
+        },
+        "method": "GET",
+        "name": "01 - GET orders",
+        "target": "/orders",
+        "think_time": {
+          "mean_ms": 0,
+          "type": ""
+        },
+        "type": "request"
+      }
+    ],
+    "config": {
+      "base_url": "https://api.example.test",
+      "browser": {
+        "geolocation": {},
+        "http_credentials": {},
+        "proxy": {},
+        "review_policy": {},
+        "viewport": {}
+      },
+      "bruno": {
+        "limits": {}
+      },
+      "database": {},
+      "error_handling": {},
+      "eventhubs": {},
+      "grpc": {},
+      "http": {
+        "auth": {},
+        "proxy": {},
+        "tls": {},
+        "traceparent": false
+      },
+      "java_http": {},
+      "java_vuser": {},
+      "jms": {},
+      "kafka": {},
+      "log": {
+        "level": "standard"
+      },
+      "network": {},
+      "observability": {},
+      "pacing": {
+        "type": "none"
+      },
+      "run_logic": {
+        "auto_transactions": "none"
+      },
+      "sapgui": {},
+      "soap": {
+        "fault_handling": {}
+      },
+      "think_time": {
+        "mean_ms": 1000,
+        "type": "fixed"
+      },
+      "web_runtime": {
+        "data_formatting": {},
+        "download_filters": {},
+        "network_simulation": {},
+        "streaming": {}
+      },
+      "websocket": {}
+    },
+    "created_at": "<TIMESTAMP>",
+    "generated_by": "sample-import",
+    "generated_from": "curl",
+    "id": "",
+    "metadata": {
+      "import": {
+        "preserved": {
+          "import_value_policy": "preserve"
+        },
+        "source": "curl"
+      }
+    },
+    "name": "curl golden",
+    "protocol": "http",
+    "updated_at": "<TIMESTAMP>",
+    "version": "1.0.0"
+  },
+  "source_review": {
+    "mappings": [
+      {
+        "end_line": 1,
+        "function": "curl_command",
+        "id": "sample.curl:1-1:curl_command:actions[0]:converted",
+        "notes": "Source request was converted into a generated APEX Load action.",
+        "source_file": "sample.curl",
+        "start_line": 1,
+        "status": "converted",
+        "target_kind": "action",
+        "target_name": "01 - GET orders",
+        "target_path": "actions[0]"
+      }
+    ],
+    "source_files": [
+      {
+        "content": "curl -X GET 'https://api.example.test/orders' -H 'Accept: application/json'",
+        "language": "text",
+        "original_bytes": 75,
+        "path": "sample.curl"
+      }
+    ],
+    "total_source_files": 1
+  },
+  "stats": {
+    "assertions": 0,
+    "converted_actions": 1,
+    "correlations_detected": 0,
+    "extractors": 0,
+    "format": "curl",
+    "total_requests": 1
+  },
+  "warnings": [
+    "no reusable correlation values were detected across the provided samples"
+  ]
+}

@@ -1,0 +1,207 @@
+{
+  "findings": [
+    {
+      "action_path": "actions[0]",
+      "code": "wsdl_unresolved_input_message_review_required",
+      "detail": "The operation input message or selected body parts could not be resolved and the generated placeholder must be replaced before execution",
+      "element": "WSDL input message",
+      "gate": "execution",
+      "location": "service.wsdl#operation/Check/body",
+      "severity": "blocker"
+    }
+  ],
+  "readiness": {
+    "blocking_codes": [
+      "import_review_required",
+      "wsdl_unresolved_input_message_review_required"
+    ],
+    "draft_valid": true,
+    "promotion_ready": false,
+    "replay_ready": false,
+    "state": "blocked"
+  },
+  "script": {
+    "actions": [
+      {
+        "body": "<soapenv:Envelope xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\" xmlns:tns=\"urn:health\">\n  <soapenv:Header/>\n  <soapenv:Body>\n    <tns:Check>      <!-- Review request elements from the WSDL/XSD and replace placeholders before replay. --></tns:Check>\n  </soapenv:Body>\n</soapenv:Envelope>",
+        "metadata": {
+          "execution_blocker": "import_review_required",
+          "execution_blockers": [
+            "import_review_required",
+            "wsdl_unresolved_input_message_review_required"
+          ],
+          "import_review": {
+            "reason_codes": [
+              "wsdl_unresolved_input_message_review_required"
+            ],
+            "resolution": "replace_behavior_and_remove_gate",
+            "source": "wsdl",
+            "source_refs": [
+              "service.wsdl#operation/Check",
+              "service.wsdl#operation/Check/body"
+            ],
+            "version": 1
+          },
+          "soap_action": "urn:Check",
+          "soap_version": "1.1",
+          "wsdl_binding": "HealthBinding",
+          "wsdl_operation": "Check",
+          "wsdl_port": "HealthPort",
+          "wsdl_service": "HealthService"
+        },
+        "method": "POST",
+        "name": "Check",
+        "soap": {
+          "action": "urn:Check",
+          "body_mode": "generated",
+          "operation": "Check"
+        },
+        "target": "https://api.example.test/soap",
+        "think_time": {
+          "mean_ms": 0,
+          "type": ""
+        },
+        "type": "request"
+      }
+    ],
+    "config": {
+      "base_url": "https://api.example.test/soap",
+      "browser": {
+        "geolocation": {},
+        "http_credentials": {},
+        "proxy": {},
+        "review_policy": {},
+        "viewport": {}
+      },
+      "bruno": {
+        "limits": {}
+      },
+      "database": {},
+      "error_handling": {},
+      "eventhubs": {},
+      "grpc": {},
+      "http": {
+        "auth": {},
+        "proxy": {},
+        "tls": {}
+      },
+      "java_http": {},
+      "java_vuser": {},
+      "jms": {},
+      "kafka": {},
+      "log": {
+        "level": "standard"
+      },
+      "network": {},
+      "observability": {},
+      "pacing": {
+        "type": "none"
+      },
+      "run_logic": {
+        "auto_transactions": "none"
+      },
+      "sapgui": {},
+      "soap": {
+        "fault_handling": {
+          "fail_on_fault": true
+        },
+        "namespaces": {
+          "tns": "urn:health"
+        },
+        "version": "1.1"
+      },
+      "think_time": {
+        "mean_ms": 1000,
+        "type": "fixed"
+      },
+      "web_runtime": {
+        "data_formatting": {},
+        "download_filters": {},
+        "network_simulation": {},
+        "streaming": {}
+      },
+      "websocket": {}
+    },
+    "created_at": "<TIMESTAMP>",
+    "generated_by": "apexload-wsdl-converter",
+    "generated_from": "wsdl",
+    "id": "",
+    "metadata": {
+      "import": {
+        "preserved": {
+          "import_value_policy": "preserve"
+        },
+        "source": "wsdl"
+      }
+    },
+    "name": "wsdl_golden",
+    "protocol": "soap",
+    "updated_at": "<TIMESTAMP>",
+    "version": "1.0.0"
+  },
+  "source_review": {
+    "mappings": [
+      {
+        "end_line": 1,
+        "function": "operation Check",
+        "id": "service.wsdl:1-1:operation-check:actions[0]:converted",
+        "notes": "WSDL operation was converted into a generated SOAP action.",
+        "source_file": "service.wsdl",
+        "start_line": 1,
+        "status": "converted",
+        "target_kind": "action",
+        "target_name": "Check",
+        "target_path": "actions[0]"
+      }
+    ],
+    "source_files": [
+      {
+        "content": "<definitions name=\"HealthService\" targetNamespace=\"urn:health\" xmlns=\"http://schemas.xmlsoap.org/wsdl/\" xmlns:soap=\"http://schemas.xmlsoap.org/wsdl/soap/\" xmlns:tns=\"urn:health\"><portType name=\"HealthPortType\"><operation name=\"Check\"/></portType><binding name=\"HealthBinding\" type=\"tns:HealthPortType\"><soap:binding style=\"document\" transport=\"http://schemas.xmlsoap.org/soap/http\"/><operation name=\"Check\"><soap:operation soapAction=\"urn:Check\"/></operation></binding><service name=\"HealthService\"><port name=\"HealthPort\" binding=\"tns:HealthBinding\"><soap:address location=\"https://api.example.test/soap\"/></port></service></definitions>",
+        "language": "xml",
+        "original_bytes": 638,
+        "path": "service.wsdl"
+      }
+    ],
+    "total_source_files": 1
+  },
+  "stats": {
+    "bindings": 1,
+    "converted_actions": 1,
+    "format": "wsdl",
+    "operations_detected": 1,
+    "port_types": 1,
+    "services": 1,
+    "soap_actions_detected": [
+      "urn:Check"
+    ]
+  },
+  "summary": {
+    "base_url": "https://api.example.test/soap",
+    "binding_name": "HealthBinding",
+    "binding_style": "document",
+    "binding_transport": "http://schemas.xmlsoap.org/soap/http",
+    "binding_use": "literal",
+    "endpoint": "https://api.example.test/soap",
+    "operations": [
+      "Check"
+    ],
+    "port_name": "HealthPort",
+    "service_name": "HealthService",
+    "soap_version": "1.1",
+    "target_namespace": "urn:health"
+  },
+  "unsupported": [
+    {
+      "detail": "input message/part could not be resolved; generated a placeholder SOAP body",
+      "element": "WSDL input message",
+      "location": "operation Check",
+      "severity": "warning"
+    },
+    {
+      "detail": "The operation input message or selected body parts could not be resolved and the generated placeholder must be replaced before execution",
+      "element": "WSDL input message",
+      "location": "service.wsdl#operation/Check/body",
+      "severity": "blocker"
+    }
+  ]
+}

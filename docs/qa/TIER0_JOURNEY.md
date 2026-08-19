@@ -1,16 +1,16 @@
 # Tier-0 Journey
 
 The single end-to-end arc a real user walks, from an empty workspace to a downloaded run archive.
-This is the specification the M1 Playwright suite implements — roughly twenty specs, each owning one
-step below, plus a full-arc smoke spec that runs all of them in sequence.
+This is the specification the M1 Playwright suite implements. Completion is measured by the
+assertion inventory, not by a target number of spec files; independently seeded step coverage is
+supplemented by a full-arc smoke spec.
 
-**Why this exists.** The dashboard has ~24 routable views and six wizard/tab systems, covered today
-by three Playwright specs. Rather than chase coverage view-by-view, M1 locks the one path that must
-never break: if this journey is green, the product is usable; if any step is red, it is not,
-regardless of what unit coverage says.
+**Why this exists.** Rather than chase coverage view-by-view, M1 locks the one path that must never
+break: if this journey is green, the product is usable; if any step is red, it is not, regardless
+of what unit coverage says. Generated inventories track changing route and spec breadth separately.
 
 **Status:** [TIER0_ASSERTION_MATRIX.md](TIER0_ASSERTION_MATRIX.md) is the completion inventory.
-Today S1 and S7 are `GREEN`; S2 and S8–S12 are `PARTIAL`; S3–S6 and the full arc are `MISSING`.
+Today S1–S12 are `GREEN`; the full arc remains `MISSING`.
 The breadth guard still covers all 16 top-level views. Run implemented specs with
 `scripts/run-e2e.sh`. A step is not green merely because one of its API assertions exists.
 
@@ -33,6 +33,13 @@ as findings rather than adjusting assertions to match:
   awaiting the body on timeout and begins disposing fixtures, so a `finally` runs against a closed
   request context; the repository measured it reaching the server zero times, leaving the run
   executing against the controller the next spec asserts on.
+- **Graceful stop must finish as `COMPLETE`; force abort must finish as `ABORTED`.** The local
+  backend previously collapsed every durable `STOPPING` run to `ABORTED`, even when the engine had
+  recorded an explicit graceful-stop boundary. The controller now carries the engine's stop mode
+  into terminalization, and both UI paths have exact assertions.
+- **The report UI is feature-gated off by default.** Report journey specs set
+  `apexload.featureFlags.runReport=true` before application initialization; otherwise report hashes
+  deliberately normalize to the legacy archive workspace and a lens assertion tests the wrong UI.
 
 ## Conventions
 
@@ -65,12 +72,13 @@ nothing.
 
 | | |
 |---|---|
-| Route | `#/repository` |
-| Component | `ApplicationRepositoryPage.tsx` |
-| API | `/api/v1/domains`, `/applications`, `/projects`, `/releases` |
+| Routes | `#/settings`, `#/repository` |
+| Components | `SettingsPage.tsx`, `ApplicationRepositoryPage.tsx` |
+| API | `/api/v1/domains`, `/api/v1/projects`, `/api/v1/applications`, `/api/v1/projects/{id}/releases` |
 
-Create Domain → Application Repository → Project → Release. Assert each appears in its tab and that
-the scope params propagate into subsequent routes.
+Create a Domain (which provisions its Application Repository), then a Project, Application, and
+Release. Assert each appears on its management surface and that the project, application, and
+release scope params propagate into subsequent routes.
 
 **Known trap, assert explicitly:** any project-picking UI must go through the scoped
 `setActiveProject`. A local-only cursor previously caused both a spurious "Select a project before
@@ -81,13 +89,16 @@ application and then asserts *which project it landed in* is the regression guar
 
 | | |
 |---|---|
-| Route | `#/scripts?mode=import` |
+| Route | `#/scripts?mode=create` → **Import From Source** |
 | Components | `ScriptsPage.tsx` → `ScriptCreateOptions.tsx` → per-format import component |
-| API | `/api/v1/scripts/import/*` (49 routes), `.../validate`, `.../commit` |
+| API | `POST /api/v1/scripts/import/openapi` (dry-run validation and conversion inspection), `POST /api/v1/scripts/import/openapi/commit` |
 
 Use one deterministic, dependency-free format for the Tier-0 arc — OpenAPI or Bruno — and leave the
-other fifteen import types to M2's golden-file work. Assert the three-stage `POST` → `validate` →
-`save`/`commit` flow completes and the script appears in the library.
+other fifteen import types to M2's golden-file work. OpenAPI does not expose a separate validation
+route: **Validate Only** and **Convert OpenAPI** are distinct UI stages backed by the protected
+inspection endpoint. Assert that validation reports a ready preflight while persisting nothing,
+conversion produces the expected action and source mapping, the explicit commit succeeds, and the
+script appears in the project library.
 
 Do **not** put LoadRunner archive import on the critical path: it is the largest and slowest
 importer, and a Tier-0 failure there would be ambiguous between "the journey broke" and "one
@@ -109,6 +120,10 @@ not the JSON view — is the primary surface.
 still full-renders very large scripts. Give this step a generous but *bounded* timeout so a
 regression surfaces as a failure rather than a hang.
 
+The Tier-0 guard uses 400 deterministic actions, requires the editor to become usable within the
+30-second test boundary, verifies that fewer outline rows are mounted than the 400 source actions,
+then filters to the last action to prove the windowed outline still addresses the complete script.
+
 ## S5 · Build a scenario
 
 | | |
@@ -120,8 +135,12 @@ regression surfaces as a failure rather than a hang.
 
 Walk all six steps. Assert forward/back navigation preserves entered values, and that Review shows
 what was actually entered. The unsaved-changes guard (`guardedNavigation.ts`,
-`NavigationGuardProvider.tsx`) needs its own spec: navigate away mid-wizard and assert the modal
-appears and that cancelling keeps the draft.
+`NavigationGuardProvider.tsx`) has its own spec: it navigates away mid-wizard, requires the modal,
+and proves that cancelling keeps the draft.
+
+The implemented guard uses the user-facing **Keep editing** action for cancellation. Review exposes
+duration and mode plus a per-group table (script, role, VUsers, ramp, and initialization), so parity
+is asserted on the actual configuration rather than on a group count alone.
 
 ## S6 · Configure and launch a run
 

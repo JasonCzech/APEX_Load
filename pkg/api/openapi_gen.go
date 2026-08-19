@@ -177,6 +177,7 @@ type discoveredRoute struct {
 	Path            string
 	Handler         string // e.g. "handleGetTest" ("" if not a plain s.handleXxx handler)
 	ActionArg       string // first string literal arg when the handler is a factory call
+	AuthMiddleware  string // registration-chain auth identifier (auth, recorderSessionViewAuth, ...)
 	Authenticated   bool   // the registration chain includes an auth middleware
 	GenericAuth     bool   // the registration uses the standard auth middleware
 	Unauthenticated bool   // no HTTP authentication middleware wraps the handler
@@ -437,14 +438,16 @@ func discoveredMuxRoute(call *ast.CallExpr) (discoveredRoute, bool) {
 		return discoveredRoute{}, false
 	}
 	handler, actionArg := findHandlerFunc(call.Args[1])
-	hasAuthMiddleware := chainRequiresAuth(call.Args[1])
+	authMiddleware := chainAuthMiddlewareName(call.Args[1])
+	hasAuthMiddleware := authMiddleware != ""
 	return discoveredRoute{
 		Method:          method,
 		Path:            path,
 		Handler:         handler,
 		ActionArg:       actionArg,
+		AuthMiddleware:  authMiddleware,
 		Authenticated:   hasAuthMiddleware || inHandlerAuthenticatedRoute(method, path, handler),
-		GenericAuth:     chainUsesGenericAuth(call.Args[1]),
+		GenericAuth:     authMiddleware == "auth",
 		Unauthenticated: !hasAuthMiddleware,
 	}, true
 }
@@ -467,10 +470,15 @@ func discoveredRouteSpec(call *ast.CallExpr) (discoveredRoute, bool) {
 		return discoveredRoute{}, false
 	}
 	hasAuthMiddleware := constructor.Name == "newAuthenticatedAPIRoute"
+	authMiddleware := ""
+	if hasAuthMiddleware {
+		authMiddleware = "auth"
+	}
 	return discoveredRoute{
 		Method:          method,
 		Path:            path,
 		Handler:         handler,
+		AuthMiddleware:  authMiddleware,
 		Authenticated:   hasAuthMiddleware || inHandlerAuthenticatedRoute(method, path, handler),
 		GenericAuth:     hasAuthMiddleware,
 		Unauthenticated: !hasAuthMiddleware,
@@ -1543,7 +1551,7 @@ func buildRouteDocs(routes []discoveredRoute) []routeDoc {
 
 		roles := publicRoleText
 		if r.Authenticated || r.Path == "/metrics" {
-			roles = routeRolesText(r.Method, r.Path)
+			roles = routeRolesText(r.Method, r.Path, r.AuthMiddleware)
 		}
 
 		handlerLabel := r.Handler
@@ -1599,7 +1607,7 @@ func buildRouteDocs(routes []discoveredRoute) []routeDoc {
 // routeRolesText resolves access from the canonical registry first, preserving
 // the pre-migration presentation of derived scopes, then falls back to runtime
 // authorization logic for legacy routes.
-func routeRolesText(method, path string) string {
+func routeRolesText(method, path, authMiddleware string) string {
 	if method == http.MethodGet && path == bridgeStatusPath {
 		return "Recording-agent bridge token and session via " + bridgeTokenHeader + " and " + bridgeSessionHeader
 	}
@@ -1608,9 +1616,6 @@ func routeRolesText(method, path string) string {
 	}
 	if method == http.MethodGet && path == "/metrics" {
 		return "Public when no metrics token is configured; otherwise requires the metrics Bearer token"
-	}
-	if requirement, ok := documentedAccessRequirementFromAPIRouteCatalogs(method, path); ok {
-		return renderAccessRoles(requirement)
 	}
 	concrete := pathParamRe.ReplaceAllString(path, "x")
 	req, err := http.NewRequest(method, "http://localhost"+concrete, nil)
@@ -1623,7 +1628,13 @@ func routeRolesText(method, path string) string {
 	for _, m := range pathParamRe.FindAllStringSubmatch(path, -1) {
 		req.SetPathValue(m[1], "x")
 	}
-	requirement, ok := accessRequirementForRequest(req)
+	requirement, ok := documentedAccessRequirementFromAPIRouteCatalogs(method, path)
+	if !ok {
+		requirement, ok = accessRequirementForRequest(req)
+	}
+	if !ok {
+		requirement, ok = documentedSpecializedAccessRequirement(method, path, authMiddleware)
+	}
 	if !ok {
 		return "Requires Authentication"
 	}
@@ -1746,15 +1757,15 @@ func findHandlerFunc(expr ast.Expr) (handler string, actionArg string) {
 	return handler, actionArg
 }
 
-// chainRequiresAuth reports whether the middleware chain wrapping a handler
-// includes an authentication middleware — the local `auth` middleware or any of
-// the specialized `*Auth` session middlewares (e.g. browserRecordingSessionEditAuth).
-// Handler references are SelectorExprs (s.handleXxx), so they are never mistaken
-// for a middleware Ident even when the handler name contains "Auth".
-func chainRequiresAuth(expr ast.Expr) bool {
-	found := false
+// chainAuthMiddlewareName returns the authentication middleware identifier from
+// the chain wrapping a handler — local `auth` or a specialized `*Auth` session
+// middleware (e.g. browserRecordingSessionEditAuth). Handler references are
+// SelectorExprs (s.handleXxx), so they are never mistaken for middleware Idents
+// even when the handler name contains "Auth".
+func chainAuthMiddlewareName(expr ast.Expr) string {
+	found := ""
 	ast.Inspect(expr, func(n ast.Node) bool {
-		if found {
+		if found != "" {
 			return false
 		}
 		call, ok := n.(*ast.CallExpr)
@@ -1766,29 +1777,7 @@ func chainRequiresAuth(expr ast.Expr) bool {
 			return true
 		}
 		if ident.Name == "auth" || strings.HasSuffix(ident.Name, "Auth") {
-			found = true
-			return false
-		}
-		return true
-	})
-	return found
-}
-
-// chainUsesGenericAuth reports whether the route uses the controller's standard
-// auth middleware rather than a specialized project/session wrapper.
-func chainUsesGenericAuth(expr ast.Expr) bool {
-	found := false
-	ast.Inspect(expr, func(n ast.Node) bool {
-		if found {
-			return false
-		}
-		call, ok := n.(*ast.CallExpr)
-		if !ok {
-			return true
-		}
-		ident, ok := call.Fun.(*ast.Ident)
-		if ok && ident.Name == "auth" {
-			found = true
+			found = ident.Name
 			return false
 		}
 		return true

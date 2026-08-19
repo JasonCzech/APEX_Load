@@ -100,7 +100,14 @@ func TestRunPreparedTestRetainsTestIdentityOnPollTimeout(t *testing.T) {
 
 	client := NewApiClient(server.URL)
 	client.PollTimeout = 10 * time.Millisecond
-	result, err := client.RunPreparedTest("script.json", []byte(`{"name":"test"}`), 1, "1s", "0s", "json", nil)
+	// Enter the polling timeout deterministically after preparation has created
+	// the durable test. A real 10 ms command-wide deadline can expire during the
+	// three preparation requests under full-suite CPU pressure, which tests a
+	// different contract and cannot possibly return a test identity.
+	client.pollWait = func(context.Context, time.Duration) error {
+		return context.DeadlineExceeded
+	}
+	result, err := client.runPreparedTestContext(t.Context(), "script.json", []byte(`{"name":"test"}`), 1, "1s", "0s", "json", nil)
 	if err == nil || !strings.Contains(err.Error(), "timed out") {
 		t.Fatalf("poll error = %v, want timeout", err)
 	}

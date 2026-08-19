@@ -1,0 +1,213 @@
+{
+  "capabilities": {
+    "has_bruno_apps": false,
+    "has_certificates": false,
+    "has_file_bodies": false,
+    "has_javascript": false,
+    "has_local_modules": false,
+    "has_npm_dependencies": false,
+    "has_private_key_files": false,
+    "request_types": [
+      "http"
+    ],
+    "required_sandbox": "safe"
+  },
+  "collection": {
+    "items": [
+      {
+        "executable": true,
+        "name": "Health",
+        "path": "health.yml",
+        "sequence": 1,
+        "type": "http",
+        "uid": "ad5f7136bd7e62ea4b2c7d8e420f078a"
+      }
+    ],
+    "name": "Health"
+  },
+  "fidelity": {
+    "compatibility": "3.5.2",
+    "dropped_items": 0,
+    "executable_items": 1,
+    "intentional_extensions": [
+      "gRPC items execute in collection runs",
+      "WebSocket items execute in collection runs",
+      "bru.runRequest may target HTTP, GraphQL, gRPC, or WebSocket items"
+    ],
+    "preserved_apps": 0,
+    "preserved_files": 1,
+    "status": "lossless"
+  },
+  "inspected_at": "<TIMESTAMP>",
+  "manifest": {
+    "bundle_sha256": "aa4e73dbbd795e8acf1f5f04367224c8d31448f456d977ba77af4900491fc3e1",
+    "files": [
+      {
+        "media_type": "application/yaml",
+        "mode": 420,
+        "path": "health.yml",
+        "role": "request",
+        "sha256": "e353903fbf3b857603076a4fe0dcb2c69f9e559a3b1bccd062b3490cc900f4d2",
+        "size_bytes": 102
+      }
+    ],
+    "sha256": "d3735743e771e5822e82be05e60e88810299ba52093ece4acb1ab16bfd97d0a7",
+    "total_bytes": 102,
+    "version": "apexload.bruno-import.v1"
+  },
+  "native_projection": {
+    "eligible": false,
+    "reasons": [
+      "static subset detected; differential proof has not been run"
+    ]
+  },
+  "output_mode": "canonical",
+  "root_path": "",
+  "schema_version": "apexload.bruno-import.v1",
+  "script": {
+    "actions": [
+      {
+        "metadata": {
+          "source_profile": "bruno",
+          "source_step_id": ""
+        },
+        "name": "Run Health",
+        "params": {
+          "bail": false,
+          "delay_ms": 0,
+          "environment": "",
+          "exclude_tags": null,
+          "execution": "sequential",
+          "global_environment": "",
+          "include_tags": null,
+          "paths": null,
+          "persist_session_across_iterations": false,
+          "recursive": true,
+          "selection": "collection",
+          "stream_timeout_ms": 60000,
+          "tests_only": false
+        },
+        "target": "",
+        "think_time": {
+          "mean_ms": 0,
+          "type": ""
+        },
+        "type": "bruno_run"
+      }
+    ],
+    "config": {
+      "base_url": "",
+      "browser": {
+        "geolocation": {},
+        "http_credentials": {},
+        "proxy": {},
+        "review_policy": {},
+        "viewport": {}
+      },
+      "bruno": {
+        "bundle_ref": "artifact://sha256/aa4e73dbbd795e8acf1f5f04367224c8d31448f456d977ba77af4900491fc3e1",
+        "bundle_sha256": "aa4e73dbbd795e8acf1f5f04367224c8d31448f456d977ba77af4900491fc3e1",
+        "compatibility_version": "3.5.2",
+        "limits": {
+          "default_stream_timeout_ms": 60000,
+          "max_jumps": 10000,
+          "max_output_bytes": 4194304,
+          "max_parallel_requests": 100,
+          "max_run_request_depth": 64
+        },
+        "manifest_sha256": "d3735743e771e5822e82be05e60e88810299ba52093ece4acb1ab16bfd97d0a7",
+        "sandbox": "safe",
+        "source_format": "yml"
+      },
+      "database": {},
+      "error_handling": {},
+      "eventhubs": {},
+      "grpc": {},
+      "http": {
+        "auth": {},
+        "proxy": {},
+        "tls": {}
+      },
+      "java_http": {},
+      "java_vuser": {},
+      "jms": {},
+      "kafka": {},
+      "log": {},
+      "network": {},
+      "observability": {},
+      "pacing": {
+        "type": ""
+      },
+      "run_logic": {
+        "auto_transactions": "none"
+      },
+      "sapgui": {},
+      "soap": {
+        "fault_handling": {}
+      },
+      "think_time": {
+        "mean_ms": 0,
+        "type": ""
+      },
+      "web_runtime": {
+        "data_formatting": {},
+        "download_filters": {},
+        "network_simulation": {},
+        "streaming": {}
+      },
+      "websocket": {}
+    },
+    "created_at": "<TIMESTAMP>",
+    "generated_by": "apexload-bruno-importer",
+    "generated_from": "yml",
+    "id": "",
+    "metadata": {
+      "import": {
+        "preserved": {
+          "collection": {
+            "items": [
+              {
+                "executable": true,
+                "name": "Health",
+                "path": "health.yml",
+                "sequence": 1,
+                "type": "http",
+                "uid": "ad5f7136bd7e62ea4b2c7d8e420f078a"
+              }
+            ],
+            "name": "Health"
+          },
+          "compatibility_version": "3.5.2",
+          "manifest": {
+            "bundle_sha256": "aa4e73dbbd795e8acf1f5f04367224c8d31448f456d977ba77af4900491fc3e1",
+            "files": [
+              {
+                "media_type": "application/yaml",
+                "mode": 420,
+                "path": "health.yml",
+                "role": "request",
+                "sha256": "e353903fbf3b857603076a4fe0dcb2c69f9e559a3b1bccd062b3490cc900f4d2",
+                "size_bytes": 102
+              }
+            ],
+            "sha256": "d3735743e771e5822e82be05e60e88810299ba52093ece4acb1ab16bfd97d0a7",
+            "total_bytes": 102,
+            "version": "apexload.bruno-import.v1"
+          },
+          "missing_variables": [],
+          "native_projection": "requires_equivalence_proof",
+          "root_path": "",
+          "schema_version": "apexload.bruno-import.v1"
+        },
+        "source": "bruno",
+        "source_script_name": "Health"
+      }
+    },
+    "name": "Health",
+    "project_id": "golden-project",
+    "protocol": "bruno",
+    "updated_at": "<TIMESTAMP>",
+    "version": "1.0"
+  },
+  "source_format": "yml"
+}

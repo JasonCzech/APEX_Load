@@ -1,0 +1,404 @@
+{
+  "schema_version": 1,
+  "source": "pkg/api/testexec.AllowsLifecycleControl",
+  "scope": "status-only lifecycle controls; runtime adjustment controls are tracked separately until added to this matrix",
+  "additional_runtime_gates": [
+    "execution leadership",
+    "passive persistence ownership",
+    "distributed finalization ownership",
+    "backend control capability and acknowledgement",
+    "capacity, quota, and launch-window admission"
+  ],
+  "totals": {
+    "allowed": 33,
+    "controls": 5,
+    "denied": 37,
+    "rows": 70,
+    "statuses": 14
+  },
+  "rows": [
+    {
+      "status": "QUEUED",
+      "control": "start",
+      "allowed": true,
+      "transition": "admission_pipeline"
+    },
+    {
+      "status": "QUEUED",
+      "control": "pause",
+      "allowed": false
+    },
+    {
+      "status": "QUEUED",
+      "control": "resume",
+      "allowed": false
+    },
+    {
+      "status": "QUEUED",
+      "control": "stop",
+      "allowed": true,
+      "transition": "ABORTED"
+    },
+    {
+      "status": "QUEUED",
+      "control": "abort",
+      "allowed": true,
+      "transition": "ABORTED"
+    },
+    {
+      "status": "PENDING",
+      "control": "start",
+      "allowed": true,
+      "transition": "admission_pipeline"
+    },
+    {
+      "status": "PENDING",
+      "control": "pause",
+      "allowed": false
+    },
+    {
+      "status": "PENDING",
+      "control": "resume",
+      "allowed": false
+    },
+    {
+      "status": "PENDING",
+      "control": "stop",
+      "allowed": true,
+      "transition": "ABORTED"
+    },
+    {
+      "status": "PENDING",
+      "control": "abort",
+      "allowed": true,
+      "transition": "ABORTED"
+    },
+    {
+      "status": "RESERVED",
+      "control": "start",
+      "allowed": true,
+      "transition": "admission_pipeline"
+    },
+    {
+      "status": "RESERVED",
+      "control": "pause",
+      "allowed": false
+    },
+    {
+      "status": "RESERVED",
+      "control": "resume",
+      "allowed": false
+    },
+    {
+      "status": "RESERVED",
+      "control": "stop",
+      "allowed": true,
+      "transition": "ABORTED"
+    },
+    {
+      "status": "RESERVED",
+      "control": "abort",
+      "allowed": true,
+      "transition": "ABORTED"
+    },
+    {
+      "status": "SCHEDULED",
+      "control": "start",
+      "allowed": true,
+      "transition": "admission_pipeline"
+    },
+    {
+      "status": "SCHEDULED",
+      "control": "pause",
+      "allowed": false
+    },
+    {
+      "status": "SCHEDULED",
+      "control": "resume",
+      "allowed": false
+    },
+    {
+      "status": "SCHEDULED",
+      "control": "stop",
+      "allowed": true,
+      "transition": "ABORTED"
+    },
+    {
+      "status": "SCHEDULED",
+      "control": "abort",
+      "allowed": true,
+      "transition": "ABORTED"
+    },
+    {
+      "status": "SHAKEOUT",
+      "control": "start",
+      "allowed": false
+    },
+    {
+      "status": "SHAKEOUT",
+      "control": "pause",
+      "allowed": false
+    },
+    {
+      "status": "SHAKEOUT",
+      "control": "resume",
+      "allowed": false
+    },
+    {
+      "status": "SHAKEOUT",
+      "control": "stop",
+      "allowed": true,
+      "transition": "ABORTED"
+    },
+    {
+      "status": "SHAKEOUT",
+      "control": "abort",
+      "allowed": true,
+      "transition": "ABORTED"
+    },
+    {
+      "status": "SHAKEOUT_REVIEW",
+      "control": "start",
+      "allowed": true,
+      "transition": "admission_pipeline"
+    },
+    {
+      "status": "SHAKEOUT_REVIEW",
+      "control": "pause",
+      "allowed": false
+    },
+    {
+      "status": "SHAKEOUT_REVIEW",
+      "control": "resume",
+      "allowed": false
+    },
+    {
+      "status": "SHAKEOUT_REVIEW",
+      "control": "stop",
+      "allowed": true,
+      "transition": "ABORTED"
+    },
+    {
+      "status": "SHAKEOUT_REVIEW",
+      "control": "abort",
+      "allowed": true,
+      "transition": "ABORTED"
+    },
+    {
+      "status": "INITIALIZING",
+      "control": "start",
+      "allowed": false
+    },
+    {
+      "status": "INITIALIZING",
+      "control": "pause",
+      "allowed": false
+    },
+    {
+      "status": "INITIALIZING",
+      "control": "resume",
+      "allowed": false
+    },
+    {
+      "status": "INITIALIZING",
+      "control": "stop",
+      "allowed": true,
+      "transition": "ABORTED"
+    },
+    {
+      "status": "INITIALIZING",
+      "control": "abort",
+      "allowed": true,
+      "transition": "ABORTED"
+    },
+    {
+      "status": "STARTING",
+      "control": "start",
+      "allowed": false
+    },
+    {
+      "status": "STARTING",
+      "control": "pause",
+      "allowed": false
+    },
+    {
+      "status": "STARTING",
+      "control": "resume",
+      "allowed": false
+    },
+    {
+      "status": "STARTING",
+      "control": "stop",
+      "allowed": false
+    },
+    {
+      "status": "STARTING",
+      "control": "abort",
+      "allowed": false
+    },
+    {
+      "status": "RUNNING",
+      "control": "start",
+      "allowed": false
+    },
+    {
+      "status": "RUNNING",
+      "control": "pause",
+      "allowed": true,
+      "transition": "PAUSED"
+    },
+    {
+      "status": "RUNNING",
+      "control": "resume",
+      "allowed": false
+    },
+    {
+      "status": "RUNNING",
+      "control": "stop",
+      "allowed": true,
+      "transition": "STOPPING"
+    },
+    {
+      "status": "RUNNING",
+      "control": "abort",
+      "allowed": true,
+      "transition": "STOPPING"
+    },
+    {
+      "status": "PAUSED",
+      "control": "start",
+      "allowed": false
+    },
+    {
+      "status": "PAUSED",
+      "control": "pause",
+      "allowed": false
+    },
+    {
+      "status": "PAUSED",
+      "control": "resume",
+      "allowed": true,
+      "transition": "RUNNING"
+    },
+    {
+      "status": "PAUSED",
+      "control": "stop",
+      "allowed": true,
+      "transition": "STOPPING"
+    },
+    {
+      "status": "PAUSED",
+      "control": "abort",
+      "allowed": true,
+      "transition": "STOPPING"
+    },
+    {
+      "status": "STOPPING",
+      "control": "start",
+      "allowed": false
+    },
+    {
+      "status": "STOPPING",
+      "control": "pause",
+      "allowed": false
+    },
+    {
+      "status": "STOPPING",
+      "control": "resume",
+      "allowed": false
+    },
+    {
+      "status": "STOPPING",
+      "control": "stop",
+      "allowed": true,
+      "transition": "STOPPING"
+    },
+    {
+      "status": "STOPPING",
+      "control": "abort",
+      "allowed": true,
+      "transition": "STOPPING"
+    },
+    {
+      "status": "COMPLETE",
+      "control": "start",
+      "allowed": false
+    },
+    {
+      "status": "COMPLETE",
+      "control": "pause",
+      "allowed": false
+    },
+    {
+      "status": "COMPLETE",
+      "control": "resume",
+      "allowed": false
+    },
+    {
+      "status": "COMPLETE",
+      "control": "stop",
+      "allowed": true,
+      "transition": "COMPLETE"
+    },
+    {
+      "status": "COMPLETE",
+      "control": "abort",
+      "allowed": true,
+      "transition": "COMPLETE"
+    },
+    {
+      "status": "FAILED",
+      "control": "start",
+      "allowed": false
+    },
+    {
+      "status": "FAILED",
+      "control": "pause",
+      "allowed": false
+    },
+    {
+      "status": "FAILED",
+      "control": "resume",
+      "allowed": false
+    },
+    {
+      "status": "FAILED",
+      "control": "stop",
+      "allowed": true,
+      "transition": "FAILED"
+    },
+    {
+      "status": "FAILED",
+      "control": "abort",
+      "allowed": true,
+      "transition": "FAILED"
+    },
+    {
+      "status": "ABORTED",
+      "control": "start",
+      "allowed": false
+    },
+    {
+      "status": "ABORTED",
+      "control": "pause",
+      "allowed": false
+    },
+    {
+      "status": "ABORTED",
+      "control": "resume",
+      "allowed": false
+    },
+    {
+      "status": "ABORTED",
+      "control": "stop",
+      "allowed": true,
+      "transition": "ABORTED"
+    },
+    {
+      "status": "ABORTED",
+      "control": "abort",
+      "allowed": true,
+      "transition": "ABORTED"
+    }
+  ]
+}

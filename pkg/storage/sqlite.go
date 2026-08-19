@@ -231,7 +231,7 @@ func NewSQLiteStore(path string) (*SQLiteStore, error) {
 	s := newSQLStore(db, storeDialectSQLite, StoreBackendInfo{
 		Type:             "sqlite",
 		Driver:           "modernc.org/sqlite",
-		MigrationVersion: archiveRecordSchemaVersion,
+		MigrationVersion: currentSchemaVersionLabel(),
 		LeaseCapability:  true,
 		DSN:              path,
 	})
@@ -260,7 +260,7 @@ func NewPostgresStore(databaseURL string, options StoreConnectionOptions, timesc
 	s := newSQLStore(db, storeDialectPostgres, StoreBackendInfo{
 		Type:               "postgres",
 		Driver:             "github.com/jackc/pgx/v5/stdlib",
-		MigrationVersion:   archiveRecordSchemaVersion,
+		MigrationVersion:   currentSchemaVersionLabel(),
 		LeaseCapability:    true,
 		TimescaleDBEnabled: timescaleDB,
 		DSN:                databaseURL,

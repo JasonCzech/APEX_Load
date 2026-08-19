@@ -1,0 +1,179 @@
+{
+  "assumptions": [
+    "APEX Load converts DevWeb SDK calls statically and does not execute the script's JavaScript; dynamic URLs, control flow, and custom helper logic are not replayed.",
+    "Review extracted requests, WebSocket flows, and parameter templates against the original script before promoting this draft to load execution."
+  ],
+  "findings": [
+    {
+      "action_path": "actions[0]",
+      "code": "import_review_required",
+      "detail": "Source behavior outside the proven static subset may affect this action and must be replaced before execution.",
+      "element": "DevWeb residual source behavior",
+      "gate": "execution",
+      "location": "actions[0]",
+      "reason_code": "unsupported_source_logic",
+      "resolution": "replace_behavior_and_remove_gate",
+      "severity": "blocker",
+      "source": "devweb",
+      "source_ref": "invalid.js"
+    }
+  ],
+  "script": {
+    "actions": [
+      {
+        "metadata": {
+          "execution_blocker": "import_review_required",
+          "execution_blockers": [
+            "import_review_required"
+          ],
+          "import_review": {
+            "reason_codes": [
+              "dynamic_request_shape",
+              "unsupported_source_logic"
+            ],
+            "resolution": "replace_behavior_and_remove_gate",
+            "source": "devweb",
+            "source_refs": [
+              "Escaped line 2",
+              "invalid.js"
+            ],
+            "version": 1
+          },
+          "source": "load.WebRequest"
+        },
+        "name": "Escaped_js_review",
+        "target": "",
+        "think_time": {
+          "mean_ms": 0,
+          "type": ""
+        },
+        "type": "review_required",
+        "value": "Source behavior requires operator review before execution."
+      }
+    ],
+    "config": {
+      "base_url": "https://missing-base-url.apexload.invalid",
+      "browser": {
+        "geolocation": {},
+        "http_credentials": {},
+        "proxy": {},
+        "review_policy": {},
+        "viewport": {}
+      },
+      "bruno": {
+        "limits": {}
+      },
+      "database": {},
+      "error_handling": {},
+      "eventhubs": {},
+      "grpc": {},
+      "http": {
+        "auth": {},
+        "proxy": {},
+        "tls": {}
+      },
+      "java_http": {},
+      "java_vuser": {},
+      "jms": {},
+      "kafka": {},
+      "log": {
+        "level": "standard"
+      },
+      "network": {},
+      "observability": {},
+      "pacing": {
+        "type": "none"
+      },
+      "run_logic": {
+        "auto_transactions": "none"
+      },
+      "sapgui": {},
+      "soap": {
+        "fault_handling": {}
+      },
+      "think_time": {
+        "mean_ms": 0,
+        "type": ""
+      },
+      "web_runtime": {
+        "data_formatting": {},
+        "download_filters": {},
+        "network_simulation": {},
+        "streaming": {}
+      },
+      "websocket": {}
+    },
+    "created_at": "<TIMESTAMP>",
+    "generated_by": "apexload-devweb-converter",
+    "generated_from": "devweb",
+    "id": "",
+    "metadata": {
+      "import": {
+        "preserved": {
+          "devweb_gated_source": {
+            "invalid.js": "load.action(\"Escaped\", async function () {\n\t\t\t\t  await new load.WebRequest({url: \"https://api.example.test/\\q\", method: \"GET\"}).send();\n\t\t\t\t});"
+          },
+          "import_value_policy": "preserve"
+        },
+        "source": "devweb"
+      }
+    },
+    "name": "invalid",
+    "protocol": "http",
+    "updated_at": "<TIMESTAMP>",
+    "version": "1.0.0"
+  },
+  "source_review": {
+    "mappings": [
+      {
+        "end_line": 2,
+        "function": "load.WebRequest",
+        "id": "invalid.js:2-2:load.webrequest:actions[0]:review_only",
+        "notes": "Omitted DevWeb source behavior affects this flow; the generated action remains blocked until the behavior is replaced.",
+        "source_file": "invalid.js",
+        "start_line": 2,
+        "status": "review_only",
+        "support_mode": "review_required",
+        "target_kind": "action",
+        "target_name": "Escaped_js_review",
+        "target_path": "actions[0]"
+      }
+    ],
+    "source_files": [
+      {
+        "content": "// [SOURCE OMITTED FROM PUBLIC IMPORT REVIEW]\n// [SOURCE OMITTED FROM PUBLIC IMPORT REVIEW]\n// [SOURCE OMITTED FROM PUBLIC IMPORT REVIEW]",
+        "language": "javascript",
+        "original_bytes": 137,
+        "path": "invalid.js",
+        "redacted": true
+      }
+    ],
+    "total_source_files": 1
+  },
+  "stats": {
+    "converted_actions": 1,
+    "grpc_calls": 0,
+    "http_requests": 0,
+    "skipped": 1,
+    "think_times": 0,
+    "total_steps": 1,
+    "unsupported_calls": [
+      "load.WebRequest"
+    ],
+    "websocket_actions": 0
+  },
+  "unsupported": [
+    {
+      "detail": "WebRequest object literal could not be parsed; request was not converted",
+      "element": "DevWeb load.WebRequest",
+      "location": "Escaped line 2",
+      "severity": "warning"
+    },
+    {
+      "detail": "Source behavior outside the proven static subset may affect this action and must be replaced before execution.",
+      "element": "DevWeb residual source behavior",
+      "location": "actions[0]",
+      "severity": "blocker"
+    }
+  ]
+}

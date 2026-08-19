@@ -25,6 +25,9 @@ type ApiClient struct {
 	APIKey      string
 	BearerToken string
 	PollTimeout time.Duration
+	// pollWait is a test seam for entering a terminal polling condition without
+	// spending the command-wide timeout budget on preparation requests.
+	pollWait func(context.Context, time.Duration) error
 }
 
 type controllerHTTPStatusError struct {
@@ -443,8 +446,8 @@ func (c *ApiClient) pollTestContext(ctx context.Context, testID string, format s
 	}
 	consecutiveErrors := 0
 	for {
-		if err := waitForContext(ctx, 2*time.Second); err != nil {
-			if ctx.Err() != nil && c.PollTimeout > 0 {
+		if err := c.waitForTestPoll(ctx, 2*time.Second); err != nil {
+			if c.PollTimeout > 0 && (ctx.Err() != nil || errors.Is(err, context.DeadlineExceeded)) {
 				return nil, timeoutError()
 			}
 			return nil, err
@@ -514,6 +517,13 @@ func (c *ApiClient) pollTestContext(ctx context.Context, testID string, format s
 			return res, nil
 		}
 	}
+}
+
+func (c *ApiClient) waitForTestPoll(ctx context.Context, delay time.Duration) error {
+	if c.pollWait != nil {
+		return c.pollWait(ctx, delay)
+	}
+	return waitForContext(ctx, delay)
 }
 
 // GetTestStatus fetches the current managed-test record (status + live metrics).

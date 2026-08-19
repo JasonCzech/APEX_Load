@@ -1,0 +1,13 @@
+openapi: 3.0.3
+info:
+  title: Tier-0 Orders API
+  version: "1.0"
+servers:
+  - url: https://api.tier0.invalid
+paths:
+  /orders:
+    get:
+      operationId: listOrders
+      responses:
+        "200":
+          description: Orders listed

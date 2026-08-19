@@ -1,0 +1,241 @@
+{
+  "script": {
+    "actions": [
+      {
+        "assertions": [
+          {
+            "type": "offset_advanced"
+          }
+        ],
+        "body": "{}",
+        "metadata": {
+          "asyncapi_channel": "orders.created"
+        },
+        "name": "publishOrder",
+        "target": "orders.created",
+        "think_time": {
+          "mean_ms": 0,
+          "type": ""
+        },
+        "type": "kafka_produce"
+      }
+    ],
+    "config": {
+      "base_url": "",
+      "browser": {
+        "geolocation": {},
+        "http_credentials": {},
+        "proxy": {},
+        "review_policy": {},
+        "viewport": {}
+      },
+      "bruno": {
+        "limits": {}
+      },
+      "database": {},
+      "error_handling": {},
+      "eventhubs": {},
+      "grpc": {},
+      "http": {
+        "auth": {},
+        "proxy": {},
+        "tls": {}
+      },
+      "java_http": {},
+      "java_vuser": {},
+      "jms": {},
+      "kafka": {
+        "acks": "all",
+        "brokers": [
+          "broker.example.test:9092"
+        ],
+        "mock": true,
+        "security_protocol": "plaintext"
+      },
+      "log": {
+        "level": "standard"
+      },
+      "network": {},
+      "observability": {},
+      "pacing": {
+        "type": "none"
+      },
+      "run_logic": {
+        "auto_transactions": "none"
+      },
+      "sapgui": {},
+      "soap": {
+        "fault_handling": {}
+      },
+      "think_time": {
+        "mean_ms": 1000,
+        "type": "fixed"
+      },
+      "web_runtime": {
+        "data_formatting": {},
+        "download_filters": {},
+        "network_simulation": {},
+        "streaming": {}
+      },
+      "websocket": {}
+    },
+    "created_at": "<TIMESTAMP>",
+    "generated_by": "apexload-asyncapi-converter",
+    "generated_from": "asyncapi",
+    "id": "",
+    "name": "asyncapi_golden",
+    "protocol": "kafka",
+    "updated_at": "<TIMESTAMP>",
+    "version": "1.0.0"
+  },
+  "scripts": [
+    {
+      "actions": [
+        {
+          "assertions": [
+            {
+              "type": "offset_advanced"
+            }
+          ],
+          "body": "{}",
+          "metadata": {
+            "asyncapi_channel": "orders.created"
+          },
+          "name": "publishOrder",
+          "target": "orders.created",
+          "think_time": {
+            "mean_ms": 0,
+            "type": ""
+          },
+          "type": "kafka_produce"
+        }
+      ],
+      "config": {
+        "base_url": "",
+        "browser": {
+          "geolocation": {},
+          "http_credentials": {},
+          "proxy": {},
+          "review_policy": {},
+          "viewport": {}
+        },
+        "bruno": {
+          "limits": {}
+        },
+        "database": {},
+        "error_handling": {},
+        "eventhubs": {},
+        "grpc": {},
+        "http": {
+          "auth": {},
+          "proxy": {},
+          "tls": {}
+        },
+        "java_http": {},
+        "java_vuser": {},
+        "jms": {},
+        "kafka": {
+          "acks": "all",
+          "brokers": [
+            "broker.example.test:9092"
+          ],
+          "mock": true,
+          "security_protocol": "plaintext"
+        },
+        "log": {
+          "level": "standard"
+        },
+        "network": {},
+        "observability": {},
+        "pacing": {
+          "type": "none"
+        },
+        "run_logic": {
+          "auto_transactions": "none"
+        },
+        "sapgui": {},
+        "soap": {
+          "fault_handling": {}
+        },
+        "think_time": {
+          "mean_ms": 1000,
+          "type": "fixed"
+        },
+        "web_runtime": {
+          "data_formatting": {},
+          "download_filters": {},
+          "network_simulation": {},
+          "streaming": {}
+        },
+        "websocket": {}
+      },
+      "created_at": "<TIMESTAMP>",
+      "generated_by": "apexload-asyncapi-converter",
+      "generated_from": "asyncapi",
+      "id": "",
+      "name": "asyncapi_golden",
+      "protocol": "kafka",
+      "updated_at": "<TIMESTAMP>",
+      "version": "1.0.0"
+    }
+  ],
+  "source_review": {
+    "mappings": [
+      {
+        "end_line": 1,
+        "function": "orders.created (produce)",
+        "id": "asyncapi.yaml:1-1:orders.created-produce:kafka.actions[0]:converted",
+        "notes": "AsyncAPI operation was converted into a generated APEX Load action.",
+        "source_file": "asyncapi.yaml",
+        "start_line": 1,
+        "status": "converted",
+        "target_kind": "action",
+        "target_name": "publishOrder",
+        "target_path": "kafka.actions[0]"
+      }
+    ],
+    "source_files": [
+      {
+        "content": "asyncapi: \"2.6.0\"\ninfo: {title: Orders, version: \"1.0.0\"}\nservers:\n  production: {url: broker.example.test:9092, protocol: kafka}\nchannels:\n  orders.created:\n    publish:\n      operationId: publishOrder\n      message:\n        payload: {type: object}",
+        "language": "yaml",
+        "original_bytes": 249,
+        "path": "asyncapi.yaml"
+      }
+    ],
+    "total_source_files": 1
+  },
+  "stats": {
+    "asyncapi_version": "2.6.0",
+    "brokers": [
+      "broker.example.test:9092"
+    ],
+    "consume_actions": 0,
+    "converted_actions": 1,
+    "format": "asyncapi",
+    "messages_with_correlation": 0,
+    "produce_actions": 1,
+    "request_reply_actions": 0,
+    "server_protocols": [
+      "kafka"
+    ],
+    "total_channels": 1,
+    "total_operations": 1
+  },
+  "summary": {
+    "brokers": [
+      "broker.example.test:9092"
+    ],
+    "operation_names": [
+      "publishOrder"
+    ],
+    "security_protocol": "plaintext",
+    "title": "Orders",
+    "topics": [
+      "orders.created"
+    ],
+    "version": "1.0.0"
+  },
+  "warnings": [
+    "config.kafka.mock is enabled so the generated script runs against the in-memory broker; disable it once a real Kafka adapter is configured"
+  ]
+}

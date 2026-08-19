@@ -67,6 +67,9 @@ func TestLocalStopIsGracefulAndAbortIsForceful(t *testing.T) {
 		if test.Status != "STOPPING" || multi.GracefulStopRequested() {
 			t.Fatalf("force abort state = status %q graceful requested %v", test.Status, multi.GracefulStopRequested())
 		}
+		if !multi.HardStopRequested() {
+			t.Fatal("force abort did not record hard-stop state")
+		}
 		if executionCtx.Err() == nil {
 			t.Fatal("force abort did not cancel execution context")
 		}

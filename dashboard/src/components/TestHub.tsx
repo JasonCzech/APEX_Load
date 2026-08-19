@@ -3544,8 +3544,41 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
           <div className="scenario-review-card"><span>Name</span><strong>{form.name.trim() || 'Unnamed scenario'}</strong></div>
           <div className="scenario-review-card"><span>Shape</span><strong>{shapeLabel}</strong></div>
           <div className="scenario-review-card"><span>Scripts</span><strong>{formGroups.length} group{formGroups.length === 1 ? '' : 's'}</strong></div>
+          <div className="scenario-review-card"><span>Duration</span><strong>{form.duration}</strong></div>
+          <div className="scenario-review-card"><span>Mode</span><strong>{form.scenario_mode === 'goal_oriented' ? 'Goal oriented' : 'VUser driven'}</strong></div>
           <div className="scenario-review-card"><span>Data</span><strong>{dataPoolLabel}</strong></div>
           <div className="scenario-review-card"><span>Shakeout</span><strong>{form.script_shakeout ? 'Enabled' : 'Disabled'}</strong></div>
+        </div>
+        <div className="data-table scenario-review-groups">
+          <table aria-label="Scenario review groups">
+            <thead>
+              <tr>
+                <th>Group</th>
+                <th>Script</th>
+                <th>Role</th>
+                <th>VUsers</th>
+                <th>Ramp Up</th>
+                <th>Ramp Down</th>
+                <th>Initialization</th>
+              </tr>
+            </thead>
+            <tbody>
+              {formGroups.map((group, index) => {
+                const script = findScriptById(scripts, group.script_id)
+                return (
+                  <tr key={`${group.script_id || 'group'}-review-${index}`}>
+                    <td>{group.name || `Group ${index + 1}`}</td>
+                    <td>{script?.name || 'Unassigned script'}</td>
+                    <td>{group.role === 'observer' ? 'Observer Canary' : 'Load'}</td>
+                    <td>{group.vusers}</td>
+                    <td>{group.ramp_up || 'None'}</td>
+                    <td>{group.ramp_down || 'None'}</td>
+                    <td>{group.initialization === 'at_once' ? 'Once per group' : 'Per VUser'}</td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
         </div>
         {loadModelValidationError && <div className="settings-error-inline">{loadModelValidationError}</div>}
         {loadModelValidation ? (

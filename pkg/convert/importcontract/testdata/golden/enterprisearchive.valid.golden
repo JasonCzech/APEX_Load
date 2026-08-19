@@ -1,0 +1,252 @@
+{
+  "detected_protocol": {
+    "apexload_protocol": "http",
+    "bundle": "Foundation Entitlement",
+    "canonical_source_protocol": "web_http_html",
+    "confidence": "high",
+    "display_name": "Web HTTP/HTML",
+    "import_mode": "executable",
+    "signals": [
+      ".usr [General] Type=Web",
+      "web_* request function calls"
+    ],
+    "source_type": "Web"
+  },
+  "fidelity_report": {
+    "converted_actions": 1,
+    "converted_functions": 1,
+    "expected_functions": 1,
+    "parameter_parity": {
+      "converted_data_sources": 0,
+      "converted_parameters": 0
+    },
+    "promotion_status": "promotable",
+    "source_files": [
+      {
+        "bytes": 93,
+        "language": "c",
+        "path": "Action.c",
+        "phase": "action",
+        "role": "lifecycle_action"
+      },
+      {
+        "bytes": 45,
+        "language": "loadrunner",
+        "path": "script.usr",
+        "role": "project"
+      }
+    ]
+  },
+  "recorded_resource_urls_captured": true,
+  "script": {
+    "actions": [
+      {
+        "metadata": {
+          "original_url": "https://api.example.test/orders",
+          "phase": "action",
+          "source_end_line": 5,
+          "source_file": "Action.c",
+          "source_function": "web_url",
+          "source_line": 3
+        },
+        "method": "GET",
+        "name": "orders",
+        "target": "/orders",
+        "think_time": {
+          "mean_ms": 0,
+          "type": ""
+        },
+        "type": "GET"
+      }
+    ],
+    "config": {
+      "base_url": "https://api.example.test",
+      "browser": {
+        "geolocation": {},
+        "http_credentials": {},
+        "proxy": {},
+        "review_policy": {},
+        "viewport": {}
+      },
+      "bruno": {
+        "limits": {}
+      },
+      "database": {},
+      "error_handling": {},
+      "eventhubs": {},
+      "grpc": {},
+      "http": {
+        "auth": {},
+        "proxy": {},
+        "tls": {}
+      },
+      "java_http": {},
+      "java_vuser": {},
+      "jms": {},
+      "kafka": {},
+      "log": {},
+      "network": {},
+      "observability": {},
+      "pacing": {
+        "type": ""
+      },
+      "run_logic": {},
+      "sapgui": {},
+      "soap": {
+        "fault_handling": {}
+      },
+      "think_time": {
+        "mean_ms": 0,
+        "type": ""
+      },
+      "web_runtime": {
+        "data_formatting": {},
+        "download_filters": {},
+        "network_simulation": {},
+        "streaming": {}
+      },
+      "websocket": {}
+    },
+    "created_at": "<TIMESTAMP>",
+    "generated_by": "apexload-enterprise-script-archive-importer",
+    "generated_from": "enterprise_script_archive",
+    "id": "",
+    "metadata": {
+      "import": {
+        "preserved": {
+          "detected_protocol": {
+            "apexload_protocol": "http",
+            "bundle": "Foundation Entitlement",
+            "canonical_source_protocol": "web_http_html",
+            "confidence": "high",
+            "display_name": "Web HTTP/HTML",
+            "import_mode": "executable",
+            "signals": [
+              ".usr [General] Type=Web",
+              "web_* request function calls"
+            ],
+            "source_type": "Web"
+          },
+          "fidelity_report": {
+            "converted_actions": 1,
+            "converted_functions": 1,
+            "expected_functions": 1,
+            "parameter_parity": {
+              "converted_data_sources": 0,
+              "converted_parameters": 0
+            },
+            "promotion_status": "promotable",
+            "source_files": [
+              {
+                "bytes": 93,
+                "language": "c",
+                "path": "Action.c",
+                "phase": "action",
+                "role": "lifecycle_action"
+              },
+              {
+                "bytes": 45,
+                "language": "loadrunner",
+                "path": "script.usr",
+                "role": "project"
+              }
+            ]
+          },
+          "import_value_policy": "preserve",
+          "project_file": "script.usr",
+          "project_settings": {
+            "Actions": {
+              "Action": "Action.c"
+            },
+            "General": {
+              "Type": "Web"
+            }
+          },
+          "recorded_resource_urls": null,
+          "recorded_resource_urls_available": true,
+          "source_review": {
+            "mappings": [
+              {
+                "end_line": 5,
+                "function": "web_url",
+                "id": "action.c:3-5:web_url:actions[0]:converted",
+                "notes": "Converted to a generated APEX Load action.",
+                "source_file": "Action.c",
+                "start_line": 3,
+                "status": "converted",
+                "support_mode": "executable",
+                "target_kind": "action",
+                "target_name": "orders",
+                "target_path": "actions[0]"
+              }
+            ],
+            "source_files": [
+              {
+                "content": "Action()\n{\n\tweb_url(\"orders\",\n\t\t\"URL=https://api.example.test/orders\",\n\t\tLAST);\n\treturn 0;\n}\n",
+                "language": "c",
+                "original_bytes": 93,
+                "path": "Action.c"
+              },
+              {
+                "content": "[General]\nType=Web\n[Actions]\nAction=Action.c\n",
+                "language": "ini",
+                "original_bytes": 45,
+                "path": "script.usr"
+              }
+            ],
+            "total_source_files": 2
+          }
+        },
+        "source": "enterprise_script_archive",
+        "source_script_name": "script"
+      }
+    },
+    "name": "script",
+    "protocol": "http",
+    "updated_at": "<TIMESTAMP>",
+    "version": "1.0.0"
+  },
+  "source_review": {
+    "mappings": [
+      {
+        "end_line": 5,
+        "function": "web_url",
+        "id": "action.c:3-5:web_url:actions[0]:converted",
+        "notes": "Converted to a generated APEX Load action.",
+        "source_file": "Action.c",
+        "start_line": 3,
+        "status": "converted",
+        "support_mode": "executable",
+        "target_kind": "action",
+        "target_name": "orders",
+        "target_path": "actions[0]"
+      }
+    ],
+    "source_files": [
+      {
+        "content": "Action()\n{\n\tweb_url(\"orders\",\n\t\t\"URL=https://api.example.test/orders\",\n\t\tLAST);\n\treturn 0;\n}\n",
+        "language": "c",
+        "original_bytes": 93,
+        "path": "Action.c"
+      },
+      {
+        "content": "[General]\nType=Web\n[Actions]\nAction=Action.c\n",
+        "language": "ini",
+        "original_bytes": 45,
+        "path": "script.usr"
+      }
+    ],
+    "total_source_files": 2
+  },
+  "stats": {
+    "converted_actions": 1,
+    "extractors": 0,
+    "logical_actions": 1,
+    "native_functions": 1,
+    "raw_request_actions": 1,
+    "skipped": 0,
+    "think_times": 0,
+    "total_functions": 1,
+    "transactions": 0
+  }
+}
