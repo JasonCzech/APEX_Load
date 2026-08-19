@@ -1082,7 +1082,8 @@ describe('BrunoImport', () => {
       name: 'COLLIDING_TOKEN_2',
       value: 'write-only-value',
     }])
-    expect(container.textContent).toContain('temporary script-store failure')
+    const commitError = container.querySelector<HTMLElement>('.bruno-commit-bar [role="alert"]')
+    expect(commitError?.textContent).toContain('Save failed: temporary script-store failure')
     expect(container.textContent).toContain('Project-secret values configured during this review remain in Project Secrets independently of script saving')
     expect(container.textContent).toContain('retrying this save reuses those configured values')
     expect(container.textContent).toContain('applies to scripts, not external secret-store writes')

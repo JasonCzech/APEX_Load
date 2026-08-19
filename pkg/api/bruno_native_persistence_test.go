@@ -3,7 +3,6 @@ package api
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -13,7 +12,6 @@ import (
 
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/importartifact"
-	"github.com/jasonczech/apexload/pkg/secretstore"
 )
 
 func TestPreparePersistentBrunoNativeScriptPreservesXMLVerbatim(t *testing.T) {
@@ -251,65 +249,67 @@ func TestBrunoNativeBatchRetryCanonicalizesImplicitSelection(t *testing.T) {
 	}
 }
 
-func TestBrunoNativePersistenceValidationOccursBeforeClaimAndSecretWrites(t *testing.T) {
+func TestBrunoNativeBatchPreservesAuthoredXMLCredentials(t *testing.T) {
 	server, store, _ := newBrunoImportAPITestServer(t)
-	enableSourceSecretMigration(t, server)
+	const (
+		xmlUsername = "source-xml-user"
+		xmlPassword = "source-xml-password"
+		headerValue = "source-session-header"
+	)
 	inspection := inspectBrunoNativeFiles(t, server, brunoImportTestProject, []brunoInspectJSONFile{
 		{
 			Path:    "demo/opencollection.yml",
-			Content: "opencollection: 1.0.0\ninfo: {name: Preclaim validation}\n",
+			Content: "opencollection: 1.0.0\ninfo: {name: XML preservation}\n",
 		},
 		{
 			Path: "demo/request.yml",
-			Content: `info: {name: Preclaim validation, uid: preclaim-validation, type: http}
+			Content: `info: {name: XML preservation, uid: xml-preservation, type: http}
 http:
   method: POST
   url: https://example.test/soap
-  auth: {type: basic, username: source-user, password: source-password}
-  body: {type: xml, data: "<Envelope><messageId>AbCdEf0123456789GhIjKlMnOpQrStUv</messageId></Envelope>"}
+  headers:
+    - {name: Content-Type, value: text/xml}
+    - {name: idpctx-session-id, value: ` + headerValue + `}
+  auth: {type: basic, username: "{{username}}", password: "{{password}}"}
+  body: {type: xml, data: "<Envelope><SecurityMessageHeader><userName>` + xmlUsername + `</userName><userPassword>` + xmlPassword + `</userPassword></SecurityMessageHeader></Envelope>"}
 `,
 		},
 	})
-
-	request := newTestBrunoRequest()
-	protected, err := server.consumeBrunoImportSession(request, inspection.ImportSessionID, brunoImportTestProject)
-	if err != nil {
-		t.Fatalf("claim protected inspection fixture: %v", err)
-	}
-	protected.Result.Scripts[0].Script.Actions[0].Body =
-		`<Envelope><password>unbound-source-value</password></Envelope>`
-	if err := server.restoreClaimedBrunoImportSession(protected); err != nil {
-		t.Fatalf("restore protected inspection fixture: %v", err)
-	}
-
-	folderID := saveBrunoNativeScriptFolder(t, store, brunoImportTestProject, "folder-bruno-native-preclaim")
+	folderID := saveBrunoNativeScriptFolder(t, store, brunoImportTestProject, "folder-bruno-native-xml-preserve")
 	bindings := make(map[string]string, len(inspection.Result.SecretRequirements))
-	for index, requirement := range inspection.Result.SecretRequirements {
-		bindings[requirement.ID] = "BRUNO_PRECLAIM_" + string(rune('A'+index))
+	for _, requirement := range inspection.Result.SecretRequirements {
+		if !requirement.DestinationValuePreserved {
+			bindings[requirement.ID] = requirement.SuggestedName
+		}
 	}
-	migrate := true
 	response := commitBrunoImportWithStatus(t, server, brunoCommitRequest{
 		ProjectID:       brunoImportTestProject,
 		ImportSessionID: inspection.ImportSessionID,
 		Mode:            "create_native_batch",
 		FolderID:        &folderID,
 		SecretBindings:  bindings,
-		MigrateSecrets:  &migrate,
 	})
-	if response.Code != http.StatusUnprocessableEntity ||
-		!strings.Contains(response.Body.String(), "bruno_native_persistence_validation_failed") {
-		t.Fatalf("preclaim validation status = %d body=%s", response.Code, response.Body.String())
+	if response.Code != http.StatusCreated {
+		t.Fatalf("XML preservation commit status = %d body=%s", response.Code, response.Body.String())
 	}
-	for _, name := range bindings {
-		if _, _, err := server.projectSecretStore.Get(context.Background(), brunoImportTestProject, name); !errors.Is(err, secretstore.ErrNotFound) {
-			t.Fatalf("secret provider was written before validation for %q: %v", name, err)
+	for _, canary := range []string{xmlPassword, headerValue} {
+		if strings.Contains(response.Body.String(), canary) {
+			t.Fatalf("commit response disclosed imported credential %q: %s", canary, response.Body.String())
 		}
 	}
-	retained, err := server.loadBrunoImportSession(newTestBrunoRequest(), inspection.ImportSessionID, brunoImportTestProject)
+	scripts, err := store.ListScripts(brunoImportTestProject, &folderID)
 	if err != nil {
-		t.Fatalf("preclaim validation consumed session: %v", err)
+		t.Fatal(err)
 	}
-	clearBrunoImportSession(retained)
+	if len(scripts) != 1 || len(scripts[0].Actions) != 1 {
+		t.Fatalf("saved XML scripts = %#v", scripts)
+	}
+	if body := scripts[0].Actions[0].Body; !strings.Contains(body, xmlUsername) || !strings.Contains(body, xmlPassword) {
+		t.Fatalf("saved XML body lost authored credentials: %q", body)
+	}
+	if got := scripts[0].Actions[0].Headers["idpctx-session-id"]; got != headerValue {
+		t.Fatalf("saved sensitive header = %q, want %q", got, headerValue)
+	}
 }
 
 func TestBrunoNativeBatchRejectsTrulyExpiredPersistedSession(t *testing.T) {

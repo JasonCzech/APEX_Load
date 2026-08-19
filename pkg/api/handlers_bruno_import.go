@@ -1604,23 +1604,13 @@ func (s *Server) handleCommitBrunoNativeImport(
 			script.Actions[0].Metadata["execution_blocker"] = "bruno_missing_variables"
 			script.Actions[0].Metadata["missing_variables"] = missingVariables
 		}
-		// The protected session must contain the disclosure-safe script that was
-		// inspected. Imported plaintext is restored later through authenticated
-		// occurrence targets; an unrelated literal smuggled into the session
-		// must not inherit the script-wide credential-preservation policy.
-		for _, action := range script.Actions {
-			if !isBrunoNativeXMLAction(action) {
-				continue
-			}
-			if err := validateBrunoNativeXMLCredentialBindings(action.Body); err != nil {
-				writeJSON(w, http.StatusUnprocessableEntity, map[string]any{
-					"error":        "native Bruno persistence validation failed",
-					"code":         "bruno_native_persistence_validation_failed",
-					"candidate_id": candidate.CandidateID,
-				})
-				return
-			}
-		}
+		// Native inspection retains authored credential literals in the encrypted,
+		// authenticated source session so the imported request remains runnable.
+		// Do not apply the governed-reference-only XML rule here: that rule is for
+		// ordinary, non-imported scripts and conflicts with the import-preservation
+		// contract. The converter already parsed and bounded the XML before the
+		// protected session was published, and the persistence boundary below masks
+		// the browser response without rewriting the durable executable body.
 		if issues := dsl.ValidateScriptIssues(script); len(issues) > 0 {
 			writeJSON(w, http.StatusUnprocessableEntity, map[string]any{
 				"error":        "native Bruno script validation failed",

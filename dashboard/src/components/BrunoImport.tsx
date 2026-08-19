@@ -1346,7 +1346,7 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
         />
       )}
 
-      {error && <div className="settings-error" role="alert">{error}</div>}
+      {error && (!inspection || committed) && <div className="settings-error" role="alert">{error}</div>}
       {notice && <div className="settings-notice" role="status">{notice}</div>}
       {!projectId && <div className="settings-error">Select a project before importing Bruno source.</div>}
 
@@ -1989,6 +1989,11 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
                     <ul>{saveBlockers.map(blocker => <li key={blocker}>{blocker}</li>)}</ul>
                     {deferredSecretCount > 0 && <p>{deferredSecretCount} project secret{deferredSecretCount === 1 ? ' is' : 's are'} still unconfigured, but that does not prevent saving.</p>}
                     {selectedNativeMissingVariables.length > 0 && <p>{selectedNativeMissingVariables.length} unresolved runtime variable{selectedNativeMissingVariables.length === 1 ? ' does' : 's do'} not prevent saving, but must be configured before execution.</p>}
+                  </div>
+                )}
+                {error && (
+                  <div className="settings-error" role="alert">
+                    Save failed: {error}
                   </div>
                 )}
               </div>
