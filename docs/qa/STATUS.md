@@ -42,8 +42,8 @@ QA-owned diff.
 
 M1 is underway. `scripts/run-e2e.sh` reproduces CI's browser-smoke recipe locally against a fresh
 controller and throwaway database. Completion is tracked by
-[TIER0_ASSERTION_MATRIX.md](TIER0_ASSERTION_MATRIX.md), not spec count: S1, S2, and S7 are green;
-S8–S12 are partial; S3–S6 and the full arc are missing. S1 uses a separate local-auth controller
+[TIER0_ASSERTION_MATRIX.md](TIER0_ASSERTION_MATRIX.md), not spec count: S1–S3 and S7 are green;
+S8–S12 are partial; S4–S6 and the full arc are missing. S1 uses a separate local-auth controller
 profile and drives both rejected and successful seeded administrator login.
 
 The generated M1 API contract matrix now inventories the endpoint catalog without embedding a

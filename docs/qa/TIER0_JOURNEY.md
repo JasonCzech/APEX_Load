@@ -10,7 +10,7 @@ break: if this journey is green, the product is usable; if any step is red, it i
 of what unit coverage says. Generated inventories track changing route and spec breadth separately.
 
 **Status:** [TIER0_ASSERTION_MATRIX.md](TIER0_ASSERTION_MATRIX.md) is the completion inventory.
-Today S1, S2, and S7 are `GREEN`; S8–S12 are `PARTIAL`; S3–S6 and the full arc are `MISSING`.
+Today S1–S3 and S7 are `GREEN`; S8–S12 are `PARTIAL`; S4–S6 and the full arc are `MISSING`.
 The breadth guard still covers all 16 top-level views. Run implemented specs with
 `scripts/run-e2e.sh`. A step is not green merely because one of its API assertions exists.
 
@@ -82,13 +82,16 @@ application and then asserts *which project it landed in* is the regression guar
 
 | | |
 |---|---|
-| Route | `#/scripts?mode=import` |
+| Route | `#/scripts?mode=create` → **Import From Source** |
 | Components | `ScriptsPage.tsx` → `ScriptCreateOptions.tsx` → per-format import component |
-| API | `/api/v1/scripts/import/*`, `.../validate`, `.../commit` (inventory generated from the endpoint catalog) |
+| API | `POST /api/v1/scripts/import/openapi` (dry-run validation and conversion inspection), `POST /api/v1/scripts/import/openapi/commit` |
 
 Use one deterministic, dependency-free format for the Tier-0 arc — OpenAPI or Bruno — and leave the
-other fifteen import types to M2's golden-file work. Assert the three-stage `POST` → `validate` →
-`save`/`commit` flow completes and the script appears in the library.
+other fifteen import types to M2's golden-file work. OpenAPI does not expose a separate validation
+route: **Validate Only** and **Convert OpenAPI** are distinct UI stages backed by the protected
+inspection endpoint. Assert that validation reports a ready preflight while persisting nothing,
+conversion produces the expected action and source mapping, the explicit commit succeeds, and the
+script appears in the project library.
 
 Do **not** put LoadRunner archive import on the critical path: it is the largest and slowest
 importer, and a Tier-0 failure there would be ambiguous between "the journey broke" and "one

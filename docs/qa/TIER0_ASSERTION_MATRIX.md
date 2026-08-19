@@ -8,7 +8,7 @@ the required behavior has no journey assertion. File counts are deliberately not
 |---|---|---|---|
 | S1 | Real sign-in, dashboard landing, connected stream, entitled navigation | GREEN | `tier0-local-auth.spec.ts` proves invalid-login rejection and a real seeded `admin/admin` login; `tier0-auth.spec.ts` separately pins dev-admin harness posture. |
 | S2 | UI creates Domain (and its provisioned repository) → Project → Application → Release; selected project owns the application; scope propagates | GREEN | `tier0-workspace.spec.ts` drives every create through the UI, targets an owner while a decoy project is active, verifies persisted application ownership, and carries project/application/release scope into the repository tabs. |
-| S3 | Deterministic OpenAPI import, validate, commit, library visibility | MISSING | Add a dependency-free fixture and UI/API flow. |
+| S3 | Deterministic OpenAPI import, validate, commit, library visibility | GREEN | `tier0-script-import.spec.ts` uploads the dependency-free `tier0-orders.openapi.yaml` fixture, proves dry-run preflight and generated action semantics, verifies inspection does not persist, commits through the protected endpoint, and finds the saved script in the scoped library. |
 | S4 | Action-list-first editor, tab preservation, save/reopen, bounded large-script render | MISSING | Add editor assertions using the S3 script. |
 | S5 | Six wizard steps, back/forward preservation, review parity, guarded navigation cancellation | MISSING | Add scenario-builder specs. |
 | S6 | Preflight, estimate, launch to RUNNING, `pool_id` survives save/reload | MISSING | Add launch and assignment round-trip specs. |
