@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"io"
 	"mime"
-	"path/filepath"
+	"path"
 	"regexp"
 	"sort"
 	"strings"
@@ -21,6 +21,7 @@ import (
 )
 
 var jmeterRuntimeVariablePattern = regexp.MustCompile(`\{\{\s*var\.([A-Za-z_][A-Za-z0-9_.-]*)\s*\}\}`)
+var windowsDrivePathPattern = regexp.MustCompile(`^[A-Za-z]:/`)
 
 // finalizeJMeterHTTPRequest is deliberately downstream of JMX inheritance,
 // controller traversal, assertion/extractor parsing, and SOAP recognition.
@@ -411,11 +412,12 @@ func prepareJMeterHTTPDraft(script *dsl.Script, sourceFile string) (requestimpor
 	for index := range script.DataSources {
 		source := &script.DataSources[index]
 		rawPath := strings.TrimSpace(source.Path)
-		if rawPath == "" || filepath.IsAbs(rawPath) {
+		normalizedPath := strings.ReplaceAll(rawPath, "\\", "/")
+		if rawPath == "" || path.IsAbs(normalizedPath) || windowsDrivePathPattern.MatchString(normalizedPath) {
 			continue
 		}
 		if source.FileName == "" {
-			source.FileName = filepath.Base(rawPath)
+			source.FileName = path.Base(normalizedPath)
 		}
 		source.Path = ""
 		if strings.TrimSpace(source.InlineData) == "" {

@@ -1,3 +1,5 @@
+import { importFileLogicalPath, importLogicalBase } from './importLogicalPath'
+
 export type NativeImportTarget = {
   launcher: string
   mode?: string | null
@@ -131,7 +133,11 @@ export function hasBrunoSourceMarkers(content: string): boolean {
 }
 
 export function isOpenCollectionFileName(file: File): boolean {
-  return /(^|\/)opencollection\.ya?ml$/i.test(file.webkitRelativePath || file.name)
+  try {
+    return /^opencollection\.ya?ml$/i.test(importLogicalBase(importFileLogicalPath(file)))
+  } catch {
+    return false
+  }
 }
 
 export async function filesContainNativeBrunoSource(files: File[]): Promise<boolean> {

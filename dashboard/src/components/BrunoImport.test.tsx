@@ -429,6 +429,32 @@ describe('BrunoImport', () => {
     vi.clearAllMocks()
   })
 
+  it('shows the actionable Windows protected-store requirement on inspect failure', async () => {
+    const message = 'Protected imports on Windows require an artifact directory on a local fixed NTFS or ReFS volume. Network, removable, and unsupported filesystems are not accepted.'
+    apiMock.inspectBrunoImport.mockRejectedValueOnce(new ApiError(message, 503, {
+      error: message,
+      code: 'protected_import_store_unsupported_filesystem',
+      retryable: false,
+    }))
+    const file = new File(['version: 1'], 'opencollection.yml', { type: 'application/yaml' })
+    await act(async () => {
+      root.render(<BrunoImport initialFiles={[file]} projectId="project-1" />)
+      await Promise.resolve()
+    })
+
+    const inspectButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent?.includes('Inspect source'))
+    await act(async () => {
+      inspectButton?.click()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(container.textContent).toContain('local fixed NTFS or ReFS volume')
+    expect(container.textContent).toContain('Network, removable, and unsupported filesystems are not accepted')
+    expect(container.textContent).not.toContain('Controller reported a server error')
+  })
+
   it('uses the shell-owned destination without rendering or loading a second folder control', async () => {
     const file = new File(['version: 1'], 'ambiguous.yml', { type: 'application/yaml' })
     await act(async () => {

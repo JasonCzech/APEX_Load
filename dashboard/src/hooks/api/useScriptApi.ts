@@ -33,6 +33,7 @@ import { type CorrelationDiagnoseResponse, type CorrelationStep, type ScriptDefi
 import { type CloneScriptDraftResponse, type DiscardImportSecretSessionRequest, type MigrateImportSecretsRequest, type MigrateImportSecretsResponse, type RebindScriptSecretReferenceResponse, type ScriptSecretStatus } from '../../types/secrets'
 import { type BrunoInspectResponse, type BrunoProjectionPreview, type BrunoSourceRevision, type BrunoSupportMatrixResponse, type CommitBrunoImportRequest, type CommitBrunoImportResponse } from '../../types/scriptImports'
 import { downloadFilenameFromDisposition } from '../../utils/fileUtils'
+import { importFileLogicalPath } from '../../importLogicalPath'
 
 export interface ScriptRecordingStatus {
   exists: boolean
@@ -1273,7 +1274,7 @@ export function useScriptApi() {
       if (Object.keys(inspectOptions).length > 0) formData.append('options', JSON.stringify(inspectOptions))
       const directoryUpload = files.length > 1 || files.some(file => Boolean(file.webkitRelativePath))
       files.forEach(file => {
-        const relative = file.webkitRelativePath || file.name
+        const relative = importFileLogicalPath(file)
         const field = directoryUpload ? `file:${encodeURIComponent(relative)}` : 'file'
         formData.append(field, file, file.name)
       })

@@ -115,7 +115,7 @@ func (s *Server) registerImportCandidateSessionWithRequirements(
 	}
 	present, err := s.brunoArtifactStorePresent()
 	if err != nil {
-		return "", time.Time{}, err
+		return "", time.Time{}, markProtectedImportStoreUnavailable(err)
 	}
 	if !present {
 		// Protected sessions are additive. Deployments without an envelope-key
@@ -151,7 +151,7 @@ func (s *Server) registerImportCandidateSessionWithRequirements(
 	}
 	manager, err := s.protectedImportSessionManager()
 	if err != nil {
-		return "", time.Time{}, err
+		return "", time.Time{}, markProtectedImportStoreUnavailable(err)
 	}
 	id := uuid.NewString()
 	err = manager.Save(r.Context(), importsession.SessionDescriptor{
@@ -162,7 +162,7 @@ func (s *Server) registerImportCandidateSessionWithRequirements(
 		ExpiresAt: expiresAt,
 	}, payload, importCandidateSessionMaxBytes)
 	if err != nil {
-		return "", time.Time{}, err
+		return "", time.Time{}, markProtectedImportStoreUnavailable(err)
 	}
 	return id, expiresAt, nil
 }

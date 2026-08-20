@@ -2,7 +2,7 @@ package enterprisearchive
 
 import (
 	"fmt"
-	"path/filepath"
+	filepath "path"
 	"sort"
 	"strings"
 

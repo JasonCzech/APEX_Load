@@ -1,7 +1,7 @@
 package enterprisearchive
 
 import (
-	"path/filepath"
+	filepath "path"
 	"sort"
 	"strings"
 
@@ -140,7 +140,7 @@ func countCSourceParseFailureGates(script *dsl.Script) int {
 }
 
 func javaReviewPathKey(value string) string {
-	value = filepath.ToSlash(filepath.Clean(strings.TrimSpace(value)))
+	value = filepath.Clean(strings.ReplaceAll(strings.TrimSpace(value), "\\", "/"))
 	return strings.ToLower(strings.TrimPrefix(value, "./"))
 }
 

@@ -70,7 +70,7 @@ func loadSourceFiles(input Input) ([]sourceFile, []byte, error) {
 		files, err := loadTAR(input.Content, false, limits)
 		return files, append([]byte(nil), input.Content...), err
 	default:
-		files, err := validateAndNormalizeFiles([]sourceFile{{Path: path.Base(filename), Data: append([]byte(nil), input.Content...), Mode: 0o644}}, limits)
+		files, err := validateAndNormalizeFiles([]sourceFile{{Path: archiveingest.LogicalBase(filename), Data: append([]byte(nil), input.Content...), Mode: 0o644}}, limits)
 		return files, append([]byte(nil), input.Content...), err
 	}
 }

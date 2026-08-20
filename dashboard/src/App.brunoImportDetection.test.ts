@@ -12,6 +12,18 @@ import {
 import { storedZipFixture } from './test/zipFixture'
 
 describe('Bruno source auto-detection', () => {
+  it('recognizes a Windows-style directory-upload OpenCollection path', async () => {
+    const manifest = new File(['meta:\n  name: CTA\n'], 'opencollection.yml', { type: 'application/yaml' })
+    Object.defineProperty(manifest, 'webkitRelativePath', {
+      configurable: true,
+      value: 'CTA_Collection\\opencollection.yml',
+    })
+    await expect(nativeImportTargetForFile(manifest)).resolves.toEqual({
+      launcher: 'bruno',
+      mode: 'native_requests',
+    })
+  })
+
   it('routes classic and explicitly named Bruno artifacts to the Bruno importer', () => {
     expect(nativeImportTargetForFileName('collection.bru')).toEqual({ launcher: 'bruno' })
     expect(nativeImportTargetForFileName('checkout.bruno.zip')).toEqual({ launcher: 'bruno' })

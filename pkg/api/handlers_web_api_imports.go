@@ -6,7 +6,6 @@ import (
 	"io"
 	"net/http"
 	"path"
-	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -718,7 +717,7 @@ func (s *Server) handleImportEventHubsCapture(w http.ResponseWriter, r *http.Req
 		if !ok {
 			return
 		}
-		name = strings.TrimSuffix(filepath.Base(filename), filepath.Ext(filename))
+		name = strings.TrimSuffix(archiveingest.LogicalBase(filename), archiveingest.LogicalExt(filename))
 		projectID = authorizedImportProjectID(r)
 	} else {
 		data, ok = readImportBody(w, r)
@@ -726,7 +725,7 @@ func (s *Server) handleImportEventHubsCapture(w http.ResponseWriter, r *http.Req
 			return
 		}
 		filename := r.URL.Query().Get("filename")
-		name = strings.TrimSuffix(filepath.Base(filename), filepath.Ext(filename))
+		name = strings.TrimSuffix(archiveingest.LogicalBase(filename), archiveingest.LogicalExt(filename))
 		projectID = r.URL.Query().Get("project_id")
 	}
 
@@ -819,7 +818,7 @@ func (s *Server) handleImportBrokerConfig(w http.ResponseWriter, r *http.Request
 		if !ok {
 			return
 		}
-		name = strings.TrimSuffix(filepath.Base(filename), filepath.Ext(filename))
+		name = strings.TrimSuffix(archiveingest.LogicalBase(filename), archiveingest.LogicalExt(filename))
 		projectID = authorizedImportProjectID(r)
 	} else {
 		data, ok = readImportBody(w, r)
@@ -827,7 +826,7 @@ func (s *Server) handleImportBrokerConfig(w http.ResponseWriter, r *http.Request
 			return
 		}
 		filename := r.URL.Query().Get("filename")
-		name = strings.TrimSuffix(filepath.Base(filename), filepath.Ext(filename))
+		name = strings.TrimSuffix(archiveingest.LogicalBase(filename), archiveingest.LogicalExt(filename))
 		projectID = r.URL.Query().Get("project_id")
 	}
 
@@ -968,7 +967,7 @@ func readAsyncAPIImportRequest(w http.ResponseWriter, r *http.Request) (*asyncAP
 		return &asyncAPIImportRequest{
 			Data:      data,
 			ProjectID: authorizedImportProjectID(r),
-			Name:      strings.TrimSuffix(filename, filepath.Ext(filename)),
+			Name:      strings.TrimSuffix(archiveingest.LogicalBase(filename), archiveingest.LogicalExt(filename)),
 			Opts:      asyncAPIOptionsFromForm(r),
 		}, true
 	}
@@ -980,7 +979,7 @@ func readAsyncAPIImportRequest(w http.ResponseWriter, r *http.Request) (*asyncAP
 	return &asyncAPIImportRequest{
 		Data:      data,
 		ProjectID: r.URL.Query().Get("project_id"),
-		Name:      strings.TrimSuffix(filepath.Base(filename), filepath.Ext(filename)),
+		Name:      strings.TrimSuffix(archiveingest.LogicalBase(filename), archiveingest.LogicalExt(filename)),
 		Opts:      asyncAPIOptionsFromValues(r.URL.Query()),
 	}, true
 }
@@ -1091,7 +1090,7 @@ func readOpenAPIImportRequest(w http.ResponseWriter, r *http.Request) (*openAPII
 		return &openAPIImportRequest{
 			Data:      data,
 			ProjectID: authorizedImportProjectID(r),
-			Name:      strings.TrimSuffix(filename, filepath.Ext(filename)),
+			Name:      strings.TrimSuffix(archiveingest.LogicalBase(filename), archiveingest.LogicalExt(filename)),
 			Opts: openapi.ConvertOptions{
 				BaseURL:    r.FormValue("base_url"),
 				ScriptName: r.FormValue("script_name"),
@@ -1106,7 +1105,7 @@ func readOpenAPIImportRequest(w http.ResponseWriter, r *http.Request) (*openAPII
 	return &openAPIImportRequest{
 		Data:      data,
 		ProjectID: r.URL.Query().Get("project_id"),
-		Name:      strings.TrimSuffix(filepath.Base(filename), filepath.Ext(filename)),
+		Name:      strings.TrimSuffix(archiveingest.LogicalBase(filename), archiveingest.LogicalExt(filename)),
 		Opts: openapi.ConvertOptions{
 			BaseURL:    r.URL.Query().Get("base_url"),
 			ScriptName: r.URL.Query().Get("script_name"),
@@ -1149,8 +1148,8 @@ func readRAMLImportRequest(w http.ResponseWriter, r *http.Request) (*ramlImportR
 		}
 		data = fileData
 		projectID = authorizedImportProjectID(r)
-		name = strings.TrimSuffix(filename, filepath.Ext(filename))
-		origName = filename
+		name = strings.TrimSuffix(archiveingest.LogicalBase(filename), archiveingest.LogicalExt(filename))
+		origName = archiveingest.LogicalBase(filename)
 		opts = raml.ConvertOptions{BaseURL: r.FormValue("base_url"), ScriptName: r.FormValue("script_name")}
 	default:
 		body, ok := readImportBody(w, r)
@@ -1160,7 +1159,7 @@ func readRAMLImportRequest(w http.ResponseWriter, r *http.Request) (*ramlImportR
 		filename := r.URL.Query().Get("filename")
 		data = body
 		projectID = r.URL.Query().Get("project_id")
-		name = strings.TrimSuffix(filepath.Base(filename), filepath.Ext(filename))
+		name = strings.TrimSuffix(archiveingest.LogicalBase(filename), archiveingest.LogicalExt(filename))
 		origName = filename
 		opts = raml.ConvertOptions{BaseURL: r.URL.Query().Get("base_url"), ScriptName: r.URL.Query().Get("script_name")}
 	}
@@ -1177,7 +1176,7 @@ func readRAMLImportRequest(w http.ResponseWriter, r *http.Request) (*ramlImportR
 		// Replace a zip-derived/empty script name with the main RAML entry name.
 		// Check the ORIGINAL filename (the stripped `name` no longer ends in .zip).
 		if strings.TrimSpace(importReq.Name) == "" || strings.HasSuffix(strings.ToLower(origName), ".zip") {
-			importReq.Name = strings.TrimSuffix(filepath.Base(mainName), filepath.Ext(mainName))
+			importReq.Name = strings.TrimSuffix(archiveingest.LogicalBase(mainName), archiveingest.LogicalExt(mainName))
 		}
 	}
 	return importReq, true
@@ -1258,8 +1257,8 @@ func readWSDLImportRequest(w http.ResponseWriter, r *http.Request) (*wsdlImportR
 		}
 		rootFile := ""
 		files := map[string]string(nil)
-		name := strings.TrimSuffix(filename, filepath.Ext(filename))
-		if strings.EqualFold(filepath.Ext(filename), ".zip") {
+		name := strings.TrimSuffix(archiveingest.LogicalBase(filename), archiveingest.LogicalExt(filename))
+		if strings.EqualFold(archiveingest.LogicalExt(filename), ".zip") {
 			root, archiveFiles, err := wsdl.FilesFromZip(data)
 			if err != nil {
 				writeError(w, http.StatusUnprocessableEntity, "WSDL zip: "+err.Error())
@@ -1286,8 +1285,8 @@ func readWSDLImportRequest(w http.ResponseWriter, r *http.Request) (*wsdlImportR
 	filename := r.URL.Query().Get("filename")
 	rootFile := ""
 	files := map[string]string(nil)
-	name := strings.TrimSuffix(filepath.Base(filename), filepath.Ext(filename))
-	if strings.EqualFold(filepath.Ext(filename), ".zip") || strings.HasPrefix(contentType, "application/zip") || strings.HasPrefix(contentType, "application/x-zip-compressed") {
+	name := strings.TrimSuffix(archiveingest.LogicalBase(filename), archiveingest.LogicalExt(filename))
+	if strings.EqualFold(archiveingest.LogicalExt(filename), ".zip") || strings.HasPrefix(contentType, "application/zip") || strings.HasPrefix(contentType, "application/x-zip-compressed") {
 		root, archiveFiles, err := wsdl.FilesFromZip(data)
 		if err != nil {
 			writeError(w, http.StatusUnprocessableEntity, "WSDL zip: "+err.Error())
@@ -1335,7 +1334,7 @@ func readPostmanImportRequest(w http.ResponseWriter, r *http.Request) (*postmanI
 		if strings.TrimSpace(req.Content) == "" && strings.Contains(string(data), `"item"`) {
 			return &postmanImportRequest{
 				Data:               data,
-				CollectionFileName: filepath.Base(r.URL.Query().Get("filename")),
+				CollectionFileName: archiveingest.LogicalBase(r.URL.Query().Get("filename")),
 				ProjectID:          r.URL.Query().Get("project_id"),
 				Name:               r.URL.Query().Get("name"),
 				Opts:               postmanConvertOptionsFromValue(r.URL.Query().Get),
@@ -1362,11 +1361,11 @@ func readPostmanImportRequest(w http.ResponseWriter, r *http.Request) (*postmanI
 		}
 		return &postmanImportRequest{
 			Data:                data,
-			CollectionFileName:  filepath.Base(filename),
+			CollectionFileName:  archiveingest.LogicalBase(filename),
 			EnvironmentData:     environmentData,
 			EnvironmentFileName: environmentFilename,
 			ProjectID:           authorizedImportProjectID(r),
-			Name:                strings.TrimSuffix(filename, filepath.Ext(filename)),
+			Name:                strings.TrimSuffix(archiveingest.LogicalBase(filename), archiveingest.LogicalExt(filename)),
 			Opts:                postmanConvertOptionsFromValue(r.FormValue),
 		}, true
 	}
@@ -1377,9 +1376,9 @@ func readPostmanImportRequest(w http.ResponseWriter, r *http.Request) (*postmanI
 	filename := r.URL.Query().Get("filename")
 	return &postmanImportRequest{
 		Data:               data,
-		CollectionFileName: filepath.Base(filename),
+		CollectionFileName: archiveingest.LogicalBase(filename),
 		ProjectID:          r.URL.Query().Get("project_id"),
-		Name:               strings.TrimSuffix(filepath.Base(filename), filepath.Ext(filename)),
+		Name:               strings.TrimSuffix(archiveingest.LogicalBase(filename), archiveingest.LogicalExt(filename)),
 		Opts:               postmanConvertOptionsFromValue(r.URL.Query().Get),
 	}, true
 }
@@ -1429,7 +1428,7 @@ func readPostmanEnvironmentMultipartFile(w http.ResponseWriter, r *http.Request)
 			writeError(w, http.StatusBadRequest, "failed to read uploaded Postman environment: "+err.Error())
 			return nil, "", false
 		}
-		return data, filepath.Base(headers[0].Filename), true
+		return data, archiveingest.LogicalBase(headers[0].Filename), true
 	}
 	return nil, "", true
 }

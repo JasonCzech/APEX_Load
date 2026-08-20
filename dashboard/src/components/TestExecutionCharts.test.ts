@@ -429,16 +429,14 @@ describe('chartStateForMonitorPreset', () => {
 
     expect(chart.loadImpactGroupNames).toEqual(groupNames)
     // Group lines are on by default — the point of the graph is comparing groups.
-    expect(chart.defaultMetricKeys).toEqual(['average', 'Checkout__loadImpactAverage', 'Search__loadImpactAverage'])
+    expect(chart.defaultMetricKeys).toEqual(['Checkout__loadImpactAverage', 'Search__loadImpactAverage'])
     expect(chartMetricKeys(chart, groupNames, [])).toEqual([
-      'average',
       'Checkout__loadImpactAverage',
       'Search__loadImpactAverage',
       'min',
       'max',
     ])
     expect(chartMetricRows(chart, groupNames, [], ['#00a3ff', '#ff8a00']).map(row => [row.key, row.label, row.color])).toEqual([
-      ['average', 'All groups', 'var(--text-muted)'],
       ['Checkout__loadImpactAverage', 'Checkout', '#00a3ff'],
       ['Search__loadImpactAverage', 'Search', '#ff8a00'],
       ['min', 'Min', 'var(--chart-3)'],
@@ -449,9 +447,9 @@ describe('chartStateForMonitorPreset', () => {
       [300, 200, 400],
     ])
     expect(graphCsvForChart(chart, chartData, groupNames, [])).toBe([
-      'load,average,Checkout__loadImpactAverage,Search__loadImpactAverage,min,max',
-      '10 VUsers,150,100,200,150,150',
-      '20 VUsers,300,200,400,300,300',
+      'load,Checkout__loadImpactAverage,Search__loadImpactAverage,min,max',
+      '10,150,100,200,150,150',
+      '20,300,200,400,300,300',
     ].join('\n'))
   })
 

@@ -42,6 +42,16 @@ func TestValidateFilePathUsesArchiveReaderPolicy(t *testing.T) {
 	}
 }
 
+func TestLogicalPathHelpersAreHostIndependent(t *testing.T) {
+	t.Parallel()
+	if got := LogicalJoin(LogicalDir(`collection\scripts\main.js`), `helpers\auth.js`); got != "collection/scripts/helpers/auth.js" {
+		t.Fatalf("LogicalJoin = %q", got)
+	}
+	if got := LogicalBase(`collection\scripts\main.js`); got != "main.js" {
+		t.Fatalf("LogicalBase = %q", got)
+	}
+}
+
 func TestValidateFilePathsRejectsNormalizedCollisions(t *testing.T) {
 	t.Parallel()
 

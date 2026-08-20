@@ -36,10 +36,11 @@ const (
 )
 
 var (
-	ErrProjectDeleted   = importsession.ErrProjectDeleted
-	ErrSessionCapacity  = importsession.ErrSessionCapacity
-	ErrSessionClaimed   = importsession.ErrSessionClaimed
-	ErrSessionClaimLost = importsession.ErrSessionClaimLost
+	ErrProjectDeleted        = importsession.ErrProjectDeleted
+	ErrSessionCapacity       = importsession.ErrSessionCapacity
+	ErrSessionClaimed        = importsession.ErrSessionClaimed
+	ErrSessionClaimLost      = importsession.ErrSessionClaimLost
+	ErrUnsupportedFilesystem = errors.New("protected import artifact filesystem is unsupported")
 )
 
 type EncryptedStore struct {
@@ -137,7 +138,13 @@ func NewEncryptedStore(options StoreOptions) (*EncryptedStore, error) {
 		if err := initializeWritableStoreRoot(absolute, syncDirectory); err != nil {
 			return nil, err
 		}
+		if err := validateDurableFilesystem(absolute); err != nil {
+			return nil, err
+		}
 		if err := pruneLegacyPlaintextStaging(absolute); err != nil {
+			return nil, err
+		}
+		if err := cleanupDurableTombstones(absolute); err != nil {
 			return nil, err
 		}
 	}
@@ -162,16 +169,16 @@ func NewEncryptedStore(options StoreOptions) (*EncryptedStore, error) {
 	return store, nil
 }
 
-// initializeWritableStoreRoot persists every directory entry that could have
-// been created by this or an interrupted earlier MkdirAll. Internal mutations
-// later stop their sync chain at s.root, so initialization syncs through the
-// volume root and does not assume that an already-visible parent is durable.
+// initializeWritableStoreRoot prepares every ancestor used by the store. Unix
+// persists directory entries through fsync. Windows validates every ancestor's
+// local fixed NTFS/ReFS volume policy here; subsequent namespace publication is
+// persisted by MoveFileExW with MOVEFILE_WRITE_THROUGH.
 func initializeWritableStoreRoot(root string, syncFn func(string) error) error {
 	root = filepath.Clean(root)
 	if syncFn == nil {
 		return errors.New("Bruno artifact directory sync is required")
 	}
-	if err := os.MkdirAll(root, 0o700); err != nil {
+	if err := mkdirAllDurably(root, 0o700); err != nil {
 		return err
 	}
 	if err := os.Chmod(root, 0o700); err != nil {
@@ -218,7 +225,7 @@ func (s *EncryptedStore) Put(ctx context.Context, projectID, kind string, reader
 		return nil, ErrProjectDeleted
 	}
 	stagingDir := filepath.Join(s.root, ".staging")
-	if err := os.MkdirAll(stagingDir, 0o700); err != nil {
+	if err := mkdirAllDurably(stagingDir, 0o700); err != nil {
 		return nil, err
 	}
 	plaintext, err := os.CreateTemp(stagingDir, "plain-*")
@@ -337,7 +344,7 @@ func (s *EncryptedStore) putKnown(ctx context.Context, projectID, kind string, s
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return nil, err
 	}
-	if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
+	if err := mkdirAllDurably(filepath.Dir(target), 0o700); err != nil {
 		return nil, s.projectWriteError(projectID, err)
 	}
 	unlockEncryptedWrites, err := s.lockEncryptedObjectWrites()
@@ -535,7 +542,7 @@ func (s *EncryptedStore) SavePublication(descriptor PublicationDescriptor) error
 		return err
 	}
 	directory := filepath.Join(s.root, ".publications")
-	if err := os.MkdirAll(directory, 0o700); err != nil {
+	if err := mkdirAllDurably(directory, 0o700); err != nil {
 		return err
 	}
 	temp, err := os.CreateTemp(directory, ".publication-*")
@@ -736,7 +743,7 @@ func (s *EncryptedStore) saveSession(ctx context.Context, descriptor SessionDesc
 		return err
 	}
 	directory := filepath.Join(s.root, ".sessions")
-	if err := os.MkdirAll(directory, 0o700); err != nil {
+	if err := mkdirAllDurably(directory, 0o700); err != nil {
 		return err
 	}
 	target := filepath.Join(directory, descriptor.ID+".json")
@@ -781,7 +788,7 @@ func (s *EncryptedStore) saveSession(ctx context.Context, descriptor SessionDesc
 
 func (s *EncryptedStore) reserveSessionCapacity(descriptor SessionDescriptor) (int, error) {
 	directory := filepath.Join(s.root, ".sessions", ".capacity")
-	if err := os.MkdirAll(directory, 0o700); err != nil {
+	if err := mkdirAllDurably(directory, 0o700); err != nil {
 		return 0, err
 	}
 	reservation := sessionCapacityReservation{
@@ -942,7 +949,7 @@ func (s *EncryptedStore) sessionCapacityPath(slot int) string {
 
 func (s *EncryptedStore) lockSessionClaims() (func() error, error) {
 	directory := filepath.Join(s.root, ".project-tombstones")
-	if err := os.MkdirAll(directory, 0o700); err != nil {
+	if err := mkdirAllDurably(directory, 0o700); err != nil {
 		return nil, err
 	}
 	return filelock.Acquire(filepath.Join(directory, ".session-claims.lock"))
@@ -950,7 +957,7 @@ func (s *EncryptedStore) lockSessionClaims() (func() error, error) {
 
 func (s *EncryptedStore) lockEncryptedObjectWrites() (func() error, error) {
 	directory := filepath.Join(s.root, ".project-tombstones")
-	if err := os.MkdirAll(directory, 0o700); err != nil {
+	if err := mkdirAllDurably(directory, 0o700); err != nil {
 		return nil, err
 	}
 	return filelock.Acquire(filepath.Join(directory, ".encrypted-objects.lock"))
@@ -985,7 +992,7 @@ func (s *EncryptedStore) syncDirectoryChain(directory string) error {
 }
 
 func (s *EncryptedStore) linkDurably(existingPath, targetPath string) error {
-	if err := os.Link(existingPath, targetPath); err != nil {
+	if err := publishCreateOnly(existingPath, targetPath); err != nil {
 		return err
 	}
 	if err := s.syncDirectoryChain(filepath.Dir(targetPath)); err != nil {
@@ -998,7 +1005,7 @@ func (s *EncryptedStore) linkDurably(existingPath, targetPath string) error {
 }
 
 func (s *EncryptedStore) renameDurably(oldPath, newPath string) error {
-	if err := os.Rename(oldPath, newPath); err != nil {
+	if err := renameWriteThrough(oldPath, newPath); err != nil {
 		return err
 	}
 	newDirectory := filepath.Dir(newPath)
@@ -1016,7 +1023,7 @@ func (s *EncryptedStore) renameDurably(oldPath, newPath string) error {
 // absent. That makes a retry complete an earlier unlink whose directory sync
 // may have failed after the namespace mutation succeeded.
 func (s *EncryptedStore) removeDurably(path string) error {
-	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+	if err := removeWriteThrough(s.root, path); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
 	directory := filepath.Dir(path)
@@ -1039,7 +1046,7 @@ func (s *EncryptedStore) LockSourcePublication() (func() error, error) {
 		return nil, errors.New("Bruno artifact store is read-only")
 	}
 	directory := filepath.Join(s.root, ".project-tombstones")
-	if err := os.MkdirAll(directory, 0o700); err != nil {
+	if err := mkdirAllDurably(directory, 0o700); err != nil {
 		return nil, err
 	}
 	return filelock.Acquire(filepath.Join(directory, ".source-publication.lock"))
@@ -2211,7 +2218,7 @@ func (s *EncryptedStore) projectDeleted(projectID string) (bool, error) {
 
 func (s *EncryptedStore) markProjectDeleted(projectID string) error {
 	directory := filepath.Join(s.root, ".project-tombstones")
-	if err := os.MkdirAll(directory, 0o700); err != nil {
+	if err := mkdirAllDurably(directory, 0o700); err != nil {
 		return err
 	}
 	path := s.projectTombstonePath(projectID)

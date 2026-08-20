@@ -389,7 +389,9 @@ export function buildLoadImpactCharts(rows: LoadImpactRow[], groupNames: string[
       title: `${row.metric.label} Under Load`,
       type: 'line-load-impact',
       color: LOAD_IMPACT_GRAPH_COLORS[index % LOAD_IMPACT_GRAPH_COLORS.length],
-      defaultMetricKeys: ['average', ...seriesGroups.map(loadImpactGroupSeriesKey)],
+      defaultMetricKeys: seriesGroups.length > 0
+        ? seriesGroups.map(loadImpactGroupSeriesKey)
+        : ['average'],
       loadImpactMetric: row.metric,
       loadImpactGroupNames: seriesGroups.length > 0 ? seriesGroups : undefined,
     }
@@ -1339,9 +1341,10 @@ export function chartMetricKeys(
     return overlays.length > 0 ? [...keys, ...overlays] : keys
   }
   if (isLoadImpactChart(chart)) {
+    const loadImpactGroupNames = chart.loadImpactGroupNames ?? []
     keys = [
-      'average',
-      ...(chart.loadImpactGroupNames ?? []).map(loadImpactGroupSeriesKey),
+      ...(loadImpactGroupNames.length > 0 ? [] : ['average']),
+      ...loadImpactGroupNames.map(loadImpactGroupSeriesKey),
       'min',
       'max',
     ]
@@ -1434,12 +1437,12 @@ export function chartMetricRows(
     const unit = chart.loadImpactMetric?.unit
     const loadImpactGroupNames = chart.loadImpactGroupNames ?? []
     rows = [
-      {
+      ...(loadImpactGroupNames.length > 0 ? [] : [{
         key: 'average',
-        label: loadImpactGroupNames.length > 0 ? 'All groups' : 'Average',
-        color: loadImpactGroupNames.length > 0 ? 'var(--text-muted)' : chart.color ?? 'var(--chart-1)',
+        label: 'Average',
+        color: chart.color ?? 'var(--chart-1)',
         unit,
-      },
+      }]),
       // One line per selected group. Colors follow the group's palette slot from
       // the group list so a group reads the same on every graph.
       ...loadImpactGroupNames.map((name, fallbackIndex) => {
@@ -1711,13 +1714,15 @@ export function loadImpactChartDataForRow(
   const tpsRow = rows.find(candidate => candidate.metric.id === 'tps')
   return row.cells.map((cell): MetricsHistoryPoint => {
     const midpointVusers = cell.bucket.minVusers + ((cell.bucket.maxVusers - cell.bucket.minVusers) / 2)
+    const bucketTime = String(midpointVusers)
     const groupSeries = groupNames.reduce<Record<string, number | undefined>>((series, name) => {
       series[loadImpactGroupSeriesKey(name)] = cell.groupAverages?.[name]
       return series
     }, {})
     return {
       ...groupSeries,
-      time: cell.bucket.label,
+      time: bucketTime,
+      timestampMs: cell.points[0]?.timestampMs,
       vusers: midpointVusers,
       tps: loadImpactMetricValueForBucket(tpsRow, cell.bucket.id) ?? 0,
       avgMs: loadImpactMetricValueForBucket(avgRow, cell.bucket.id) ?? 0,
@@ -1751,7 +1756,8 @@ export function loadImpactPercentileChartData(rows: LoadImpactRow[]): MetricsHis
   return referenceRow.cells.map((cell): MetricsHistoryPoint => {
     const midpointVusers = cell.bucket.minVusers + ((cell.bucket.maxVusers - cell.bucket.minVusers) / 2)
     return {
-      time: cell.bucket.label,
+      time: String(midpointVusers),
+      timestampMs: cell.points[0]?.timestampMs,
       vusers: midpointVusers,
       tps: loadImpactMetricValueForBucket(tpsRow, cell.bucket.id) ?? 0,
       avgMs: loadImpactMetricValueForBucket(avgRow, cell.bucket.id) ?? 0,

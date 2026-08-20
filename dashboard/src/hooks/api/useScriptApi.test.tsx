@@ -89,6 +89,19 @@ describe('useScriptApi import wrappers', () => {
     expect(body.get('file')).toBeInstanceOf(File)
   })
 
+  it('normalizes Windows directory upload paths in Bruno multipart fields', async () => {
+    const file = new File(['version: 1'], 'opencollection.yml', { type: 'application/yaml' })
+    Object.defineProperty(file, 'webkitRelativePath', {
+      configurable: true,
+      value: 'CTA_Collection\\opencollection.yml',
+    })
+    await api.inspectBrunoImport([file], { project_id: 'p1', output_mode: 'native_requests' })
+
+    const [, options] = (apiFetch as Mock).mock.calls[0]
+    const body = options.body as FormData
+    expect(body.get('file:CTA_Collection%2Fopencollection.yml')).toBeInstanceOf(File)
+  })
+
   it('merges canonical Bruno run settings and output mode into one inspect options object', async () => {
     const file = new File(['meta { name: Demo }'], 'request.bru', { type: 'text/plain' })
     await api.inspectBrunoImport([file], {

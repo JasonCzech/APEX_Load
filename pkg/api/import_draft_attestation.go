@@ -202,7 +202,7 @@ func (s *Server) attachImportDraftAttestationWithExpiry(
 
 	protectedStorePresent, err := s.brunoArtifactStorePresent()
 	if err != nil {
-		return time.Time{}, err
+		return time.Time{}, markProtectedImportStoreUnavailable(err)
 	}
 	if protectedStorePresent {
 		protectedCandidate := cloneScriptDefinition(script)
@@ -235,13 +235,12 @@ func (s *Server) attachImportDraftAttestationWithExpiry(
 			protectedCandidate,
 		)
 		if err != nil {
-			if s.haExecution {
-				return time.Time{}, err
-			}
+			// A configured protected store is an explicit durability boundary.
+			// Never silently downgrade its operational or filesystem failure to
+			// a process-local capability, even on a single controller.
+			return time.Time{}, err
 		} else if strings.TrimSpace(sessionID) == "" {
-			if s.haExecution {
-				return time.Time{}, errors.New("protected import draft session was not created")
-			}
+			return time.Time{}, errors.New("protected import draft session was not created")
 		} else {
 			preserved := ensureScriptImportPreserved(script, profile)
 			preserved[importDraftAttestationMetadataKey] =

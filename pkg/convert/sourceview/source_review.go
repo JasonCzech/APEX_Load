@@ -2,13 +2,13 @@ package sourceview
 
 import (
 	"fmt"
-	"path/filepath"
 	"regexp"
 	"sort"
 	"strconv"
 	"strings"
 
 	"github.com/jasonczech/apexload/pkg/convert/convertutil"
+	"github.com/jasonczech/apexload/pkg/internal/archiveingest"
 	"github.com/jasonczech/apexload/pkg/scrub"
 )
 
@@ -161,7 +161,7 @@ func CoarseMapping(sourceFile string, function string, targetPath string, target
 }
 
 func Language(path string) string {
-	switch strings.ToLower(filepath.Ext(path)) {
+	switch strings.ToLower(archiveingest.LogicalExt(path)) {
 	case ".c", ".h":
 		return "c"
 	case ".js":
@@ -264,7 +264,7 @@ func buildFiles(files map[string]string, mappings []Mapping) ([]SourceFile, int,
 			continue
 		}
 		referenced[strings.ToLower(mapping.SourceFile)] = struct{}{}
-		referenced[strings.ToLower(filepath.Base(mapping.SourceFile))] = struct{}{}
+		referenced[strings.ToLower(archiveingest.LogicalBase(mapping.SourceFile))] = struct{}{}
 	}
 
 	names := make([]string, 0, len(files))
@@ -310,10 +310,10 @@ func shouldIncludeFile(name string, referenced map[string]struct{}) bool {
 	if _, ok := referenced[lower]; ok {
 		return true
 	}
-	if _, ok := referenced[strings.ToLower(filepath.Base(lower))]; ok {
+	if _, ok := referenced[strings.ToLower(archiveingest.LogicalBase(lower))]; ok {
 		return true
 	}
-	switch filepath.Ext(lower) {
+	switch archiveingest.LogicalExt(lower) {
 	case ".c", ".h", ".usr", ".cfg", ".prm", ".dat", ".xml", ".jmx", ".wsdl", ".js", ".java", ".json", ".har", ".yaml", ".yml", ".http", ".txt":
 		return true
 	default:
@@ -323,7 +323,7 @@ func shouldIncludeFile(name string, referenced map[string]struct{}) bool {
 
 func stableMappingID(mapping Mapping) string {
 	parts := []string{
-		filepath.Base(mapping.SourceFile),
+		archiveingest.LogicalBase(mapping.SourceFile),
 		fmt.Sprintf("%d-%d", mapping.StartLine, mapping.EndLine),
 		mapping.Function,
 		mapping.TargetPath,

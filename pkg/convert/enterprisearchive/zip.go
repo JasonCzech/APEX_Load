@@ -4,7 +4,6 @@ import (
 	"encoding/base64"
 	"fmt"
 	"path"
-	"path/filepath"
 	"sort"
 	"strings"
 
@@ -110,8 +109,8 @@ func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
 		// Use .usr filename (without extension) as script name if not set
 		if opts.ScriptName == "" {
 			opts.ScriptName = strings.TrimSuffix(
-				filepath.Base(projectFileName),
-				filepath.Ext(projectFileName),
+				path.Base(projectFileName),
+				path.Ext(projectFileName),
 			)
 		}
 	}
@@ -573,7 +572,7 @@ func finalizeEnterpriseArchiveImportResult(
 				result.Warnings = append(result.Warnings, parsed.Warnings...)
 			}
 			if len(parsed.Sections) > 0 {
-				parameterSections[filepath.Base(parameterFileName)] = parsed.Sections
+				parameterSections[path.Base(parameterFileName)] = parsed.Sections
 			}
 		}
 		for _, script := range scripts {
@@ -1431,7 +1430,7 @@ func findSourceArchiveFile(files map[string]string, requested string) (string, s
 
 func sourceActionPointerRequired(projectConfig *ProjectConfig, name string) bool {
 	if projectConfig == nil || len(projectConfig.SourceActionFiles) == 0 {
-		return strings.EqualFold(filepath.Base(strings.TrimSpace(name)), "Action.c")
+		return strings.EqualFold(path.Base(strings.TrimSpace(name)), "Action.c")
 	}
 	normalized := normalizeRuntimeArchivePath(name)
 	for _, sourceFile := range projectConfig.SourceActionFiles {
@@ -1443,7 +1442,7 @@ func sourceActionPointerRequired(projectConfig *ProjectConfig, name string) bool
 }
 
 func sourceActionPhase(fileName string) string {
-	base := strings.ToLower(filepath.Base(strings.TrimSpace(fileName)))
+	base := strings.ToLower(path.Base(strings.TrimSpace(fileName)))
 	switch base {
 	case "vuser_init.c", "vuser_init.java":
 		return "init"
@@ -1471,7 +1470,7 @@ func sourceActionPhaseForProjectFile(projectConfig *ProjectConfig, fileName stri
 			matchedPhase := ""
 			matches := 0
 			for _, sourceFile := range projectConfig.SourceActionFiles {
-				if !strings.EqualFold(filepath.Base(sourceFile.Name), filepath.Base(fileName)) {
+				if !strings.EqualFold(path.Base(sourceFile.Name), path.Base(fileName)) {
 					continue
 				}
 				matches++
@@ -1559,10 +1558,10 @@ func findFileEntry(files map[string]string, name string) (string, string, bool) 
 		return "", "", false
 	}
 	// Try base name match
-	baseName := filepath.Base(name)
+	baseName := path.Base(name)
 	matches = matches[:0]
 	for _, key := range keys {
-		if filepath.Base(key) == baseName || strings.EqualFold(filepath.Base(key), baseName) {
+		if path.Base(key) == baseName || strings.EqualFold(path.Base(key), baseName) {
 			matches = append(matches, key)
 		}
 	}
@@ -1885,7 +1884,7 @@ func findParameterFiles(files map[string]string, projectConfig *ProjectConfig) [
 
 func sourceZipHasDevWebMain(files map[string]string) bool {
 	for name, content := range files {
-		if strings.EqualFold(filepath.Base(name), "main.js") && strings.Contains(content, "load.") {
+		if strings.EqualFold(path.Base(name), "main.js") && strings.Contains(content, "load.") {
 			return true
 		}
 	}
@@ -1914,7 +1913,7 @@ func isJavaVuserArchive(files map[string]string, projectConfig *ProjectConfig) b
 		}
 	}
 	for name, content := range files {
-		base := strings.ToLower(filepath.Base(name))
+		base := strings.ToLower(path.Base(name))
 		if base == "actions.java" || base == "vuser_init.java" || base == "vuser_end.java" {
 			return true
 		}
@@ -2222,7 +2221,7 @@ func attachSourceMetadata(script *dsl.Script, result *ConvertResult, projectFile
 		}
 	}
 	if projectFileName != "" {
-		preserved["project_file"] = filepath.Base(projectFileName)
+		preserved["project_file"] = path.Base(projectFileName)
 	}
 	if len(projectSections) > 0 {
 		preserved["project_settings"] = disclosureSafeConfigSections(projectSections)
@@ -2266,7 +2265,7 @@ func attachSourceMetadata(script *dsl.Script, result *ConvertResult, projectFile
 	if len(parameterFileNames) > 0 {
 		files := make([]string, 0, len(parameterFileNames))
 		for _, name := range parameterFileNames {
-			files = append(files, filepath.Base(name))
+			files = append(files, path.Base(name))
 		}
 		preserved["parameter_files"] = uniqueStrings(files)
 	}

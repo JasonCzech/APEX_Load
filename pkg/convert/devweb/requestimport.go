@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"mime"
 	"net/url"
-	"path/filepath"
+	filepath "path"
 	"regexp"
 	"sort"
 	"strings"

@@ -194,6 +194,18 @@ Useful options:
 
 `-ConfigureRecorderProxy` saves the current `HKCU` WinINET proxy settings, points HTTP/HTTPS traffic at the local recorder proxy, and restores the saved state when you press Enter to stop the utility.
 
+Collection imports that contain credentials use the encrypted protected-import
+artifact store. On Windows, place that store on a local fixed NTFS or ReFS
+volume. SMB/network shares, removable drives, and other filesystems are rejected
+before inspection with an actionable `protected_import_store_unsupported_filesystem`
+response. Artifact publication, session-claim transitions, and deletion use
+write-through Windows namespace operations; long local paths are supported.
+
+Paths inside uploaded collections and archives are logical `/`-delimited paths
+on every platform. Windows directory uploads using `\` separators are normalized
+before format routing and multipart construction, while drive-qualified, UNC,
+absolute, and traversal paths remain invalid.
+
 ## Environment Variables
 
 Controller runtime configuration:

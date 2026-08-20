@@ -578,6 +578,103 @@ func TestCommitGenericImportBatchPreservesAttestedEmbeddedFolder(t *testing.T) {
 	}
 }
 
+func TestCrossPlatformGenericImporterBatchContractMatrix(t *testing.T) {
+	profiles := []string{
+		"broker_config", "browser_recorder", "browser_recording_har", "devweb",
+		"eventhubs_capture", "github", "har", "k6", "raml", "raw_http",
+		"recorder_export", "rest_json", "salesforce", "sample", "truclient", "wsdl",
+	}
+	for _, profile := range profiles {
+		profile := profile
+		t.Run(profile, func(t *testing.T) {
+			store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), profile+"-batch-contract.db"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer store.Close()
+			now := time.Now().UTC()
+			folderID := profile + "-import-folder"
+			if err := store.SaveFolder(&storage.Folder{
+				ID: folderID, ProjectID: storage.DefaultProjectID, Name: "Imported " + profile,
+				Category: "scripts", CreatedAt: now, UpdatedAt: now,
+			}); err != nil {
+				t.Fatal(err)
+			}
+			server := NewServer(ServerConfig{Store: store})
+			const credential = "cross-platform-import-contract-canary"
+			scripts := []*dsl.Script{
+				genericImportBatchScriptWithCredential(profile+" first", credential+"-1"),
+				genericImportBatchScriptWithCredential(profile+" second", credential+"-2"),
+			}
+			for _, script := range scripts {
+				script.Metadata.Import.Source = profile
+			}
+			preview := server.newScriptImportResponseWithSourceSecrets(
+				httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/"+profile, nil),
+				scriptImportResponseOptions{Scripts: scripts},
+			)
+			masked, ok := preview["scripts"].([]any)
+			if !ok || len(masked) != len(scripts) {
+				t.Fatalf("preview scripts = %#v", preview["scripts"])
+			}
+			for _, candidate := range masked {
+				candidate.(map[string]any)["folder_id"] = folderID
+			}
+			payload := map[string]any{
+				"operation_id":   "cross-platform-" + profile,
+				"source_profile": profile,
+				"scripts":        masked,
+			}
+			created := postGenericImportBatch(t, server, payload)
+			if created.Code != http.StatusCreated {
+				t.Fatalf("create status = %d body=%s", created.Code, created.Body.String())
+			}
+			if strings.Contains(created.Body.String(), credential) {
+				t.Fatalf("create response disclosed protected credential: %s", created.Body.String())
+			}
+			stored, err := store.ListScripts(storage.DefaultProjectID, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(stored) != len(scripts) {
+				t.Fatalf("stored scripts = %d, want %d", len(stored), len(scripts))
+			}
+			ids := make(map[string]struct{}, len(stored))
+			for _, script := range stored {
+				if script.FolderID == nil || *script.FolderID != folderID {
+					t.Fatalf("stored destination = %#v, want %q", script.FolderID, folderID)
+				}
+				if len(script.Actions) == 0 || len(script.Actions[0].HeaderList) == 0 ||
+					!strings.Contains(script.Actions[0].HeaderList[0].Value, credential) {
+					t.Fatalf("stored credential was not restored for %q", script.Name)
+				}
+				ids[script.ID] = struct{}{}
+			}
+
+			// A fresh controller must replay the completed durable receipt rather
+			// than consume the now-lost process-local preview capabilities or
+			// create duplicate scripts.
+			restarted := NewServer(ServerConfig{Store: store})
+			replayed := postGenericImportBatch(t, restarted, payload)
+			if replayed.Code != http.StatusCreated {
+				t.Fatalf("restart replay status = %d body=%s", replayed.Code, replayed.Body.String())
+			}
+			after, err := store.ListScripts(storage.DefaultProjectID, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(after) != len(stored) {
+				t.Fatalf("restart replay duplicated scripts: before=%d after=%d", len(stored), len(after))
+			}
+			for _, script := range after {
+				if _, ok := ids[script.ID]; !ok {
+					t.Fatalf("restart replay changed script ID to %q", script.ID)
+				}
+			}
+		})
+	}
+}
+
 func TestGenericImportSourceProfilesCompatible(t *testing.T) {
 	tests := []struct {
 		name      string

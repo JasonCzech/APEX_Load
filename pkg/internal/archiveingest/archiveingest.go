@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"path"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -18,6 +19,22 @@ import (
 	"golang.org/x/text/cases"
 	"golang.org/x/text/unicode/norm"
 )
+
+// LogicalPath normalizes an importer-owned path using archive semantics. It is
+// not a security validator; untrusted paths must still pass ValidateFilePath.
+func LogicalPath(value string) string {
+	return path.Clean(strings.ReplaceAll(strings.TrimSpace(value), `\`, "/"))
+}
+
+func LogicalBase(value string) string { return path.Base(LogicalPath(value)) }
+func LogicalDir(value string) string  { return path.Dir(LogicalPath(value)) }
+func LogicalExt(value string) string  { return path.Ext(LogicalPath(value)) }
+func LogicalJoin(values ...string) string {
+	for index := range values {
+		values[index] = strings.ReplaceAll(values[index], `\`, "/")
+	}
+	return path.Join(values...)
+}
 
 const (
 	defaultMaxEntries    = 4096

@@ -4,7 +4,7 @@ package devweb
 
 import (
 	"fmt"
-	"path/filepath"
+	"path"
 	"regexp"
 	"strings"
 
@@ -201,7 +201,7 @@ type devWebHelperRequestDefinition struct {
 func devWebHelperModules(files map[string]string, sourceFileName string) []string {
 	helperModules := make([]string, 0)
 	for name := range files {
-		if strings.EqualFold(filepath.Ext(name), ".js") && !strings.EqualFold(filepath.Base(name), "main.js") && name != sourceFileName {
+		if strings.EqualFold(path.Ext(name), ".js") && !strings.EqualFold(path.Base(name), "main.js") && name != sourceFileName {
 			helperModules = append(helperModules, name)
 		}
 	}
@@ -330,25 +330,25 @@ func devWebHelperAliases(content string, sourceFileName string, helperModules []
 }
 
 func resolveDevWebHelperModule(sourceFileName string, required string, helperModules []string) string {
-	required = strings.TrimSpace(strings.TrimSuffix(required, ".js"))
+	required = normalizeDevWebArchiveReference(strings.TrimSuffix(required, ".js"))
 	if required == "" {
 		return ""
 	}
-	sourceDir := filepath.ToSlash(filepath.Dir(sourceFileName))
+	sourceDir := path.Dir(normalizeDevWebArchiveReference(sourceFileName))
 	candidates := []string{
-		filepath.ToSlash(filepath.Join(sourceDir, required+".js")),
-		filepath.ToSlash(filepath.Join(sourceDir, required)),
+		path.Join(sourceDir, required+".js"),
+		path.Join(sourceDir, required),
 		strings.TrimPrefix(required+".js", "./"),
 		strings.TrimPrefix(required, "./"),
-		filepath.Base(required) + ".js",
-		filepath.Base(required),
+		path.Base(required) + ".js",
+		path.Base(required),
 	}
 	for _, helper := range helperModules {
-		normalized := filepath.ToSlash(helper)
-		base := filepath.Base(normalized)
+		normalized := normalizeDevWebArchiveReference(helper)
+		base := path.Base(normalized)
 		for _, candidate := range candidates {
-			candidate = filepath.ToSlash(candidate)
-			if strings.EqualFold(normalized, candidate) || strings.EqualFold(base, filepath.Base(candidate)) {
+			candidate = normalizeDevWebArchiveReference(candidate)
+			if strings.EqualFold(normalized, candidate) || strings.EqualFold(base, path.Base(candidate)) {
 				return helper
 			}
 		}

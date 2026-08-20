@@ -1,7 +1,7 @@
 package enterprisearchive
 
 import (
-	"path/filepath"
+	filepath "path"
 	"regexp"
 	"sort"
 	"strconv"

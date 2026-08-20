@@ -6,7 +6,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
-	"path/filepath"
+	filepath "path"
 	"strconv"
 	"strings"
 	"unicode/utf16"

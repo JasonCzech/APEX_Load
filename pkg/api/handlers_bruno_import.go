@@ -32,6 +32,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/engine"
 	"github.com/jasonczech/apexload/pkg/importartifact"
+	"github.com/jasonczech/apexload/pkg/internal/archiveingest"
 	"github.com/jasonczech/apexload/pkg/keywrap"
 	brunoprotocol "github.com/jasonczech/apexload/pkg/protocol/bruno"
 	"github.com/jasonczech/apexload/pkg/refkey"
@@ -199,6 +200,18 @@ func (s *Server) handleBrunoSupportMatrix(w http.ResponseWriter, _ *http.Request
 		"content_addressed": true,
 		"available":         custody != brunoKeyCustodyNone,
 		"key_custody":       custody,
+	}
+	if custody != brunoKeyCustodyNone {
+		if _, err := s.brunoArtifactStore(); err != nil {
+			retention["available"] = false
+			if errors.Is(err, importartifact.ErrUnsupportedFilesystem) {
+				retention["unavailable_code"] = "protected_import_store_unsupported_filesystem"
+				retention["unavailable_reason"] = "Protected imports on Windows require a local fixed NTFS or ReFS artifact directory."
+			} else {
+				retention["unavailable_code"] = "protected_import_store_unavailable"
+				retention["unavailable_reason"] = "Protected import storage is unavailable; verify the controller artifact directory."
+			}
+		}
 	}
 	switch custody {
 	case brunoKeyCustodyNone:
@@ -374,7 +387,7 @@ func (s *Server) handleInspectBrunoImport(w http.ResponseWriter, r *http.Request
 			writeBrunoSourceRetentionUnavailable(w)
 			return
 		}
-		writeError(w, http.StatusServiceUnavailable, "protected Bruno source retention is unavailable: "+err.Error())
+		writeProtectedImportStoreError(w, err)
 		return
 	}
 	unlockSourcePublication, err := objects.LockSourcePublication()
@@ -3259,7 +3272,7 @@ func (s *Server) brunoArtifactStore() (*importartifact.EncryptedStore, error) {
 		var err error
 		wrapper, custody, err = s.brunoArtifactKeyWrapper(root)
 		if err != nil {
-			return nil, err
+			return nil, markProtectedImportStoreUnavailable(err)
 		}
 	}
 	objects, err := importartifact.NewEncryptedStore(importartifact.StoreOptions{
@@ -3268,7 +3281,7 @@ func (s *Server) brunoArtifactStore() (*importartifact.EncryptedStore, error) {
 		SessionCapacity: brunoImportSessionLimit,
 	})
 	if err != nil {
-		return nil, err
+		return nil, markProtectedImportStoreUnavailable(err)
 	}
 	s.brunoArtifacts = objects
 	s.brunoArtifactKeyCustody = custody
@@ -5206,7 +5219,7 @@ func filenameFromContentDisposition(value string) string {
 	if err != nil {
 		return ""
 	}
-	return filepath.Base(strings.TrimSpace(parameters["filename"]))
+	return archiveingest.LogicalBase(parameters["filename"])
 }
 
 func importErrorStatus(err error) int {

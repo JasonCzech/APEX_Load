@@ -1,7 +1,9 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"reflect"
@@ -14,6 +16,8 @@ import (
 	"github.com/jasonczech/apexload/pkg/credential"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/engine"
+	"github.com/jasonczech/apexload/pkg/importartifact"
+	"github.com/jasonczech/apexload/pkg/importsession"
 	"github.com/jasonczech/apexload/pkg/scrub"
 )
 
@@ -72,7 +76,27 @@ type scriptImportResponseOptions struct {
 	draftAttestationExpiresAt time.Time
 }
 
-const importDraftResponseFailureKey = "__apexload_import_draft_response_failure"
+const (
+	importDraftResponseFailureKey      = "__apexload_import_draft_response_failure"
+	importDraftResponseFailureErrorKey = "__apexload_import_draft_response_error"
+)
+
+var errProtectedImportStoreUnavailable = errors.New("protected import store is unavailable")
+
+func markProtectedImportStoreUnavailable(err error) error {
+	if err == nil ||
+		errors.Is(err, context.Canceled) ||
+		errors.Is(err, context.DeadlineExceeded) ||
+		errors.Is(err, importsession.ErrSessionCapacity) ||
+		errors.Is(err, importsession.ErrProjectDeleted) ||
+		errors.Is(err, importsession.ErrSessionClaimed) ||
+		errors.Is(err, importsession.ErrSessionClaimLost) ||
+		errors.Is(err, importsession.ErrSessionExpired) ||
+		errors.Is(err, importsession.ErrSessionScope) {
+		return err
+	}
+	return fmt.Errorf("%w: %w", errProtectedImportStoreUnavailable, err)
+}
 
 type scriptImportReviewSection struct {
 	Key      string   `json:"key"`
@@ -707,7 +731,10 @@ func (s *Server) newScriptImportResponseWithSourceSecrets(r *http.Request, opts 
 			// cannot subsequently save. The writer recognizes this private
 			// marker and replaces the entire response, including any fields a
 			// handler may add later, with a value-free retryable error.
-			return map[string]any{importDraftResponseFailureKey: true}
+			return map[string]any{
+				importDraftResponseFailureKey:      true,
+				importDraftResponseFailureErrorKey: err,
+			}
 		}
 	}
 
@@ -1021,6 +1048,31 @@ func writeScriptImportResponse(w http.ResponseWriter, status int, response map[s
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Pragma", "no-cache")
 	if failed, _ := response[importDraftResponseFailureKey].(bool); failed {
+		if cause, _ := response[importDraftResponseFailureErrorKey].(error); cause != nil {
+			switch {
+			case errors.Is(cause, importartifact.ErrUnsupportedFilesystem),
+				errors.Is(cause, errProtectedImportStoreUnavailable):
+				writeProtectedImportStoreError(w, cause)
+				return
+			case errors.Is(cause, importsession.ErrProjectDeleted),
+				errors.Is(cause, importsession.ErrSessionExpired),
+				errors.Is(cause, importsession.ErrSessionScope):
+				writeJSON(w, http.StatusNotFound, map[string]any{
+					"error":     "Protected import session is unavailable or expired. Re-import the source and try again.",
+					"code":      "protected_import_session_unavailable",
+					"retryable": false,
+				})
+				return
+			case errors.Is(cause, importsession.ErrSessionClaimed),
+				errors.Is(cause, importsession.ErrSessionClaimLost):
+				writeJSON(w, http.StatusConflict, map[string]any{
+					"error":     "Protected import session ownership changed. Retry from the current import review.",
+					"code":      "protected_import_session_conflict",
+					"retryable": true,
+				})
+				return
+			}
+		}
 		w.Header().Set("Retry-After", "5")
 		writeJSON(w, http.StatusServiceUnavailable, map[string]any{
 			"error":     "credential-preserving import draft could not be secured; retry the import",
@@ -1030,6 +1082,25 @@ func writeScriptImportResponse(w http.ResponseWriter, status int, response map[s
 		return
 	}
 	writeJSON(w, status, response)
+}
+
+func writeProtectedImportStoreError(w http.ResponseWriter, err error) {
+	code := "protected_import_store_unavailable"
+	message := "Protected import storage is temporarily unavailable. Verify the controller import-artifact directory and retry."
+	retryable := true
+	if errors.Is(err, importartifact.ErrUnsupportedFilesystem) {
+		code = "protected_import_store_unsupported_filesystem"
+		message = "Protected imports on Windows require an artifact directory on a local fixed NTFS or ReFS volume. Network, removable, and unsupported filesystems are not accepted."
+		retryable = false
+	}
+	if retryable {
+		w.Header().Set("Retry-After", "5")
+	}
+	writeJSON(w, http.StatusServiceUnavailable, map[string]any{
+		"error":     message,
+		"code":      code,
+		"retryable": retryable,
+	})
 }
 
 func (s *Server) writeScriptImportResponseWithSourceSecrets(

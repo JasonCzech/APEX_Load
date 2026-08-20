@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"encoding/xml"
 	"fmt"
-	"path/filepath"
+	filepath "path"
 	"regexp"
 	"sort"
 	"strconv"

@@ -3,7 +3,7 @@ package enterprisearchive
 import (
 	"fmt"
 	"math"
-	"path/filepath"
+	filepath "path"
 	"regexp"
 	"sort"
 	"strconv"
@@ -5285,7 +5285,7 @@ func javaNormalizedSourcePath(value string) string {
 		return ""
 	}
 	value = strings.ReplaceAll(value, "\\", "/")
-	value = filepath.ToSlash(filepath.Clean(value))
+	value = filepath.Clean(strings.ReplaceAll(value, "\\", "/"))
 	value = strings.TrimPrefix(value, "./")
 	return strings.ToLower(strings.TrimSpace(value))
 }

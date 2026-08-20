@@ -4,9 +4,12 @@ import (
 	"bytes"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -86,6 +89,35 @@ func TestLegacyImportSaveAttestationPreservesCredentialWithoutReentry(t *testing
 	)
 	if read.Code != http.StatusOK || strings.Contains(read.Body.String(), canary) {
 		t.Fatalf("stored-script read = %d %s", read.Code, read.Body.String())
+	}
+}
+
+func TestConfiguredProtectedImportStoreFailureNeverFallsBackToMemory(t *testing.T) {
+	wrapper, err := importartifact.NewLocalAESKeyWrapper(importartifact.LocalKeyOptions{
+		Key:   bytes.Repeat([]byte{0x6d}, 32),
+		KeyID: "configured-store-failure",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	invalidRoot := filepath.Join(t.TempDir(), "artifact-root-is-a-file")
+	if err := os.WriteFile(invalidRoot, []byte("not a directory"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	server := NewServer(ServerConfig{
+		BrunoArtifactDir:     invalidRoot,
+		BrunoArtifactWrapper: wrapper,
+	})
+	script := attestedImportTestScript("configured-store-failure", "configured-store-canary")
+	err = server.attachImportDraftAttestation(
+		httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/sample", nil),
+		script,
+	)
+	if !errors.Is(err, errProtectedImportStoreUnavailable) {
+		t.Fatalf("attach error = %v, want protected store unavailable", err)
+	}
+	if token := importDraftAttestationToken(script); token != "" {
+		t.Fatalf("failed protected store silently issued fallback token %q", token)
 	}
 }
 

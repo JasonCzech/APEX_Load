@@ -3,7 +3,7 @@ package enterprisearchive
 import (
 	"encoding/csv"
 	"encoding/json"
-	"path/filepath"
+	filepath "path"
 	"regexp"
 	"sort"
 	"strconv"

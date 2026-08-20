@@ -1,11 +1,11 @@
 package jmeter
 
 import (
-	"path/filepath"
 	"regexp"
 	"strings"
 
 	"github.com/jasonczech/apexload/pkg/convert/sourceview"
+	"github.com/jasonczech/apexload/pkg/internal/archiveingest"
 )
 
 const jmeterOmittedSourceMarker = "[SOURCE LOGIC OMITTED]"
@@ -36,11 +36,11 @@ func markJMeterSourceReviewRedacted(review *sourceview.Review, sourceFileName st
 	if review == nil {
 		return
 	}
-	want := strings.ToLower(filepath.Clean(sourceFileName))
-	wantBase := strings.ToLower(filepath.Base(sourceFileName))
+	want := strings.ToLower(archiveingest.LogicalPath(sourceFileName))
+	wantBase := strings.ToLower(archiveingest.LogicalBase(sourceFileName))
 	for index := range review.SourceFiles {
-		got := strings.ToLower(filepath.Clean(review.SourceFiles[index].Path))
-		if got == want || strings.ToLower(filepath.Base(got)) == wantBase {
+		got := strings.ToLower(archiveingest.LogicalPath(review.SourceFiles[index].Path))
+		if got == want || strings.ToLower(archiveingest.LogicalBase(got)) == wantBase {
 			review.SourceFiles[index].Redacted = true
 		}
 	}

@@ -1311,7 +1311,8 @@ describe('TestExecutionCharts context menu', () => {
     expect(lineFor('Checkout__loadImpactAverage')?.getAttribute('data-name')).toBe('Checkout')
     expect(lineFor('Checkout__loadImpactAverage')?.getAttribute('data-stroke-dasharray')).toBe('')
     expect(lineFor('Search__loadImpactAverage')?.getAttribute('data-name')).toBe('Search')
-    expect(lineFor('average')?.getAttribute('data-name')).toBe('All groups')
+    expect(lineFor('average')).toBeNull()
+    expect(artUnderLoad()?.querySelector('[data-testid="mock-x-axis"]')?.getAttribute('data-key')).toBe('vusers')
     expect(artUnderLoad()?.querySelector('.chart-series-legend')?.textContent).toContain('Checkout')
     expect(artUnderLoad()?.querySelector('.chart-series-legend')?.textContent).toContain('Search')
 

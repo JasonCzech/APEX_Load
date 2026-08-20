@@ -5,7 +5,6 @@ package devweb
 import (
 	"fmt"
 	"path"
-	"path/filepath"
 	"strings"
 
 	"github.com/jasonczech/apexload/pkg/convert/convertutil"
@@ -29,13 +28,13 @@ func selectDevWebMainSource(files map[string]string) (string, string, string) {
 	}
 	names := make([]string, 0, len(files))
 	for name := range files {
-		if strings.EqualFold(filepath.Ext(name), ".js") {
+		if strings.EqualFold(path.Ext(name), ".js") {
 			names = append(names, name)
 		}
 	}
 	sortStrings(names)
 	for _, name := range names {
-		if strings.EqualFold(filepath.Base(name), "main.js") {
+		if strings.EqualFold(path.Base(name), "main.js") {
 			return devWebScriptNameFromFiles(files, name), name, files[name]
 		}
 	}
@@ -48,10 +47,10 @@ func selectDevWebMainSource(files map[string]string) (string, string, string) {
 
 func devWebScriptNameFromFiles(files map[string]string, sourceFile string) string {
 	for name, content := range files {
-		if !strings.EqualFold(filepath.Ext(name), ".usr") {
+		if !strings.EqualFold(path.Ext(name), ".usr") {
 			continue
 		}
-		base := strings.TrimSuffix(filepath.Base(name), filepath.Ext(name))
+		base := strings.TrimSuffix(path.Base(name), path.Ext(name))
 		if strings.TrimSpace(base) != "" {
 			return base
 		}
@@ -59,7 +58,7 @@ func devWebScriptNameFromFiles(files map[string]string, sourceFile string) strin
 			return parsed
 		}
 	}
-	return strings.TrimSuffix(filepath.Base(sourceFile), filepath.Ext(sourceFile))
+	return strings.TrimSuffix(path.Base(sourceFile), path.Ext(sourceFile))
 }
 
 func devWebUSRScriptName(content string) string {
@@ -96,7 +95,7 @@ func applyDevWebZipMetadata(result *ConvertResult, ctx *convertContext, diagnost
 	preserved := ensureDevWebImportPreserved(result.Script)
 	helperModules := make([]string, 0)
 	for name := range ctx.files {
-		if strings.EqualFold(filepath.Ext(name), ".js") && !strings.EqualFold(filepath.Base(name), "main.js") && name != ctx.sourceFileName {
+		if strings.EqualFold(path.Ext(name), ".js") && !strings.EqualFold(path.Base(name), "main.js") && name != ctx.sourceFileName {
 			helperModules = append(helperModules, name)
 		}
 	}
@@ -289,7 +288,7 @@ func applyDevWebParameters(result *ConvertResult, ctx *convertContext, diagnosti
 				nameSource = resolvedPath
 			}
 			sourceName = uniqueDevWebIdentifier(
-				sanitizeName(strings.TrimSuffix(filepath.Base(nameSource), filepath.Ext(nameSource))),
+				sanitizeName(strings.TrimSuffix(path.Base(nameSource), path.Ext(nameSource))),
 				usedDataSourceNames,
 			)
 			dataSource := dsl.DataSource{
@@ -475,7 +474,7 @@ func findDevWebCompanionFile(
 ) (string, string, bool) {
 	var names []string
 	for name := range files {
-		if strings.EqualFold(filepath.Base(name), base) {
+		if strings.EqualFold(path.Base(name), base) {
 			names = append(names, name)
 		}
 	}

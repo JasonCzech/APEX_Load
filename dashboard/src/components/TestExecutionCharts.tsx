@@ -1102,7 +1102,7 @@ export default function TestExecutionCharts({
 
   const renderLoadImpactAxis = () => (
     <XAxis
-      dataKey="time"
+      dataKey="vusers"
       stroke="var(--text-muted)"
       fontSize={11}
       height={46}

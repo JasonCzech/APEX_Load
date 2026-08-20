@@ -3,7 +3,7 @@ package enterprisearchive
 import (
 	"fmt"
 	"hash/fnv"
-	"path/filepath"
+	filepath "path"
 	"sort"
 	"strings"
 

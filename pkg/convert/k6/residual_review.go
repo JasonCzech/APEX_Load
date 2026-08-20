@@ -2,12 +2,12 @@ package k6
 
 import (
 	"fmt"
-	"path/filepath"
 	"regexp"
 	"strings"
 
 	"github.com/jasonczech/apexload/pkg/convert/diag"
 	"github.com/jasonczech/apexload/pkg/convert/sourceview"
+	"github.com/jasonczech/apexload/pkg/internal/archiveingest"
 )
 
 var (
@@ -148,11 +148,11 @@ func markK6SourceReviewRedacted(review *sourceview.Review, sourceFile string) {
 	if review == nil {
 		return
 	}
-	want := strings.ToLower(filepath.Clean(sourceFile))
-	wantBase := strings.ToLower(filepath.Base(sourceFile))
+	want := strings.ToLower(archiveingest.LogicalPath(sourceFile))
+	wantBase := strings.ToLower(archiveingest.LogicalBase(sourceFile))
 	for index := range review.SourceFiles {
-		got := strings.ToLower(filepath.Clean(review.SourceFiles[index].Path))
-		if got == want || strings.ToLower(filepath.Base(got)) == wantBase {
+		got := strings.ToLower(archiveingest.LogicalPath(review.SourceFiles[index].Path))
+		if got == want || strings.ToLower(archiveingest.LogicalBase(got)) == wantBase {
 			review.SourceFiles[index].Redacted = true
 		}
 	}

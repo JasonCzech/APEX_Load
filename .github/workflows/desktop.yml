@@ -120,6 +120,15 @@ jobs:
           NODE_EXTRA_CA_CERTS: ${{ vars.NODE_EXTRA_CA_CERTS }}
         run: cd dashboard && npm run check:node && npm ci --ignore-scripts && npm run build
 
+      - name: Cross-platform import contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          go test -count=1 ./pkg/internal/archiveingest ./pkg/importartifact ./pkg/convert/...
+          go test -count=1 ./pkg/api -run '^(TestWriteProtectedImportStoreErrorIsActionableAndDisclosureSafe|TestProtectedImportStoreMarkerPreservesSemanticSessionErrors|TestSharedImportWriterPreservesSemanticSessionFailureStatus|TestConfiguredProtectedImportStoreFailureNeverFallsBackToMemory|TestCrossPlatformGenericImporterBatchContractMatrix|TestSharedImportCommitPreservesJSONBodyWireBytesAcrossLegacyRoutes|TestCommitAsyncAPIImportBatchRestoresOpaqueDraftsWithEmbeddedFolderAndReplaysCompletedReceipt|TestHandleSaveEnterpriseArchiveImportRestoresAttestedCredentialInEmbeddedFolder|TestJMeterAttestedSaveRestoresCredentialUsesSelectedFolderAndReplays|TestBrunoNativeBatchInspectCommitAndIdempotentRetry|TestBrunoNativeInspectExposesSuppliedHeaderCredentialMetadata)$'
+          cd dashboard
+          npm test -- --run src/importLogicalPath.test.ts src/App.brunoImportDetection.test.ts src/hooks/api/useScriptApi.test.tsx
+
       - name: Resolve friendly build version
         id: version
         shell: bash
@@ -186,6 +195,17 @@ jobs:
               if (Test-Path $stdout) { Get-Content $stdout | Write-Host }
               if (Test-Path $stderr) { Get-Content $stderr | Write-Host }
               throw "Windows controller did not become healthy"
+            }
+
+            Push-Location dashboard
+            try {
+              ./node_modules/.bin/playwright install chromium
+              if ($LASTEXITCODE -ne 0) { throw "Chromium installation failed" }
+              $env:APEXLOAD_E2E_BASE_URL = "http://127.0.0.1:18082"
+              ./node_modules/.bin/playwright test e2e/tier0-bruno-import.spec.ts
+              if ($LASTEXITCODE -ne 0) { throw "Windows Bruno import browser journey failed" }
+            } finally {
+              Pop-Location
             }
           } finally {
             if (-not $process.HasExited) {

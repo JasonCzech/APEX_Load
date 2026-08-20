@@ -3,7 +3,7 @@ package trueclient
 import (
 	"encoding/xml"
 	"fmt"
-	"path/filepath"
+	filepath "path"
 	"regexp"
 	"strings"
 

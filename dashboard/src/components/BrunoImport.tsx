@@ -46,6 +46,7 @@ import { nativeReviewGuidance } from './brunoNativeReviewGuidance'
 import { brunoSecretPresentation } from './brunoSecretPresentation'
 import { aggregateBrunoSecretRequirements } from './brunoSecretRequirements'
 import { mergeProtectedParameterizationSelectionIds } from './protectedImportSession'
+import { importFileLogicalPath } from '../importLogicalPath'
 import './BrunoImport.css'
 
 interface Props {
@@ -119,7 +120,7 @@ function needsBrunoContentModeDetection(files: File[]) {
 
 function suggestedBrunoFolderName(files: File[]) {
   if (files.length === 0) return 'Imported Bruno APIs'
-  const sourcePath = files[0].webkitRelativePath || files[0].name
+  const sourcePath = importFileLogicalPath(files[0])
   const firstSegment = sourcePath.split('/').filter(Boolean)[0] || files[0].name
   const withoutSuffix = firstSegment
     .replace(/\.bruno\.(?:tar\.gz|tar|zip)$/i, '')
@@ -1394,7 +1395,7 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
         {files.length > 0 && (
           <div className="bruno-file-list">
             {files.slice(0, 12).map((file, index) => (
-              <span key={`${file.webkitRelativePath || file.name}-${index}`}>{file.webkitRelativePath || file.name}</span>
+              <span key={`${importFileLogicalPath(file)}-${index}`}>{importFileLogicalPath(file)}</span>
             ))}
             {files.length > 12 && <span>+ {files.length - 12} more</span>}
           </div>
