@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"github.com/jasonczech/apexload/pkg/convert/convertresult"
 	"path"
 	"regexp"
 	"sort"
@@ -738,4 +739,20 @@ func jsonBody(value any) string {
 		return "{}"
 	}
 	return string(raw)
+}
+
+// Accounting reports this conversion's completeness in the terms every importer
+// shares. See convertresult.Accounting.
+func (result *ConvertResult) Accounting() convertresult.Accounting {
+	if result == nil {
+		return convertresult.Accounting{}
+	}
+	// RAML publishes no source review, so no converted action is marked
+	// review-only and the bucket is always empty.
+	return convertresult.New(
+		result.Stats.TotalMethods,
+		result.Stats.ConvertedActions,
+		result.Stats.TotalMethods-result.Stats.ConvertedActions,
+		0,
+	)
 }

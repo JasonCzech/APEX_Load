@@ -1209,7 +1209,7 @@ func brunoOpenAPIComponentSchemas() map[string]oasSchema {
 				{Ref: "#/components/schemas/BrunoNativeBatchCommitRequest"},
 			},
 		},
-		"BrunoSourceRevision": {
+		"ImportSourceRevision": {
 			Type: "object",
 			Properties: map[string]oasSchema{
 				"id":                      {Type: "string"},
@@ -1239,7 +1239,7 @@ func brunoOpenAPIComponentSchemas() map[string]oasSchema {
 			Type: "object",
 			Properties: map[string]oasSchema{
 				"script":                   {Ref: "#/components/schemas/APEXScript"},
-				"revision":                 {Ref: "#/components/schemas/BrunoSourceRevision"},
+				"revision":                 {Ref: "#/components/schemas/ImportSourceRevision"},
 				"created":                  {Type: "boolean"},
 				"change_summary":           openAPIFreeformObject("Canonical synchronization change summary."),
 				"secret_migrations":        {Type: "array", Items: &oasSchema{Type: "object", AdditionalProperties: boolPointer(true)}},

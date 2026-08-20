@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
-	"path/filepath"
 	"strings"
 
 	"github.com/google/uuid"
@@ -28,12 +27,12 @@ func (s *Server) handleImportRecorder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, preflight, err := s.convertRecorderImport(importReq)
+	result, augmented, err := s.convertRecorderImport(r, importReq)
 	if err != nil {
 		writeError(w, http.StatusUnprocessableEntity, "conversion failed: "+err.Error())
 		return
 	}
-	writeScriptImportResponse(w, http.StatusOK, s.buildRecorderImportResponse(r, result, preflight))
+	writeScriptImportResponse(w, http.StatusOK, s.buildRecorderImportResponse(r, result, augmented))
 }
 
 func (s *Server) handleValidateRecorderImport(w http.ResponseWriter, r *http.Request) {
@@ -41,12 +40,12 @@ func (s *Server) handleValidateRecorderImport(w http.ResponseWriter, r *http.Req
 	if !ok {
 		return
 	}
-	result, preflight, err := s.convertRecorderImport(importReq)
+	result, augmented, err := s.convertRecorderImport(r, importReq)
 	if err != nil {
 		writeError(w, http.StatusUnprocessableEntity, "conversion failed: "+err.Error())
 		return
 	}
-	writeScriptImportResponse(w, http.StatusOK, s.buildRecorderImportResponse(r, result, preflight))
+	writeScriptImportResponse(w, http.StatusOK, s.buildRecorderImportResponse(r, result, augmented))
 }
 
 func (s *Server) handleReplayRecorderImport(w http.ResponseWriter, r *http.Request) {
@@ -57,7 +56,7 @@ func (s *Server) handleReplayRecorderImport(w http.ResponseWriter, r *http.Reque
 	if !ok {
 		return
 	}
-	result, preflight, err := s.convertRecorderImport(importReq)
+	result, augmented, err := s.convertRecorderImport(r, importReq)
 	if err != nil {
 		writeError(w, http.StatusUnprocessableEntity, "conversion failed: "+err.Error())
 		return
@@ -68,7 +67,7 @@ func (s *Server) handleReplayRecorderImport(w http.ResponseWriter, r *http.Reque
 	}
 	issues := validateScriptForReplay(result.Script)
 	if len(issues) > 0 {
-		response := s.buildRecorderImportResponse(r, result, preflight)
+		response := s.buildRecorderImportResponse(r, result, augmented)
 		response["valid"] = false
 		response["issues"] = issues
 		writeScriptImportResponse(w, http.StatusBadRequest, response)
@@ -87,14 +86,14 @@ func (s *Server) handleReplayRecorderImport(w http.ResponseWriter, r *http.Reque
 	// Ordering it this way is also the more correct behaviour — the replay now
 	// runs against exactly the script the response describes, credential policy
 	// included, rather than a pre-mutation version of it.
-	response := s.buildRecorderImportResponse(r, result, preflight)
+	response := s.buildRecorderImportResponse(r, result, augmented)
 
 	ignoreThink := true
 	executionCtx, releaseExecutionCtx := s.runner.executionOperationContext(context.Background())
 	replay, replayErr := s.browserReplay.Start(result.Script.ID, result.Script, BrowserReplayStartRequest{
 		GroupName:               result.Script.Name + " — import replay",
 		IgnoreThinkTime:         &ignoreThink,
-		Preflight:               preflight,
+		Preflight:               augmented.Preflight,
 		executionContext:        executionCtx,
 		releaseExecutionContext: releaseExecutionCtx,
 	})
@@ -108,41 +107,45 @@ func (s *Server) handleReplayRecorderImport(w http.ResponseWriter, r *http.Reque
 	writeScriptImportResponse(w, http.StatusCreated, response)
 }
 
-func (s *Server) convertRecorderImport(importReq *recorderImportRequest) (*recorderjson.ConvertResult, *ReplayPreflight, error) {
+func (s *Server) convertRecorderImport(r *http.Request, importReq *recorderImportRequest) (*recorderjson.ConvertResult, importAugmentation, error) {
 	result, err := recorderjson.Convert(importReq.Data, importReq.Opts)
 	if err != nil {
-		return nil, nil, err
+		return nil, importAugmentation{}, err
 	}
 	if result.Script != nil {
 		if result.Script.ID == "" {
 			result.Script.ID = uuid.New().String()
 		}
-		result.Script.ProjectID = normalizeProjectID(importReq.ProjectID)
-		issues := validateScript(result.Script)
-		result.Warnings = append(result.Warnings, issues...)
-		preflight := buildReplayPreflight(result.Script, nil, validateScriptForReplay(result.Script), result.Warnings)
-		attachImportReplayPreflight(result.Script, "recorder_export", preflight)
 		preserved := ensureScriptImportPreserved(result.Script, "recorder_export")
 		preserved["source_format"] = result.Stats.Format
 		preserved["replay_required"] = true
 		preserved["replay_supported"] = result.Script.Protocol == "browser"
 		preserved["conversion_confidence"] = recorderConversionConfidence(result.Stats)
 		preserved["step_mapping"] = recorderStepMapping(result)
-		return result, preflight, nil
 	}
-	return result, nil, nil
+	draft := importDraft{
+		Source:           "recorder_export",
+		SourceScriptName: importReq.Opts.ScriptName,
+		ProjectID:        importReq.ProjectID,
+		Script:           result.Script,
+		Unsupported:      result.Unsupported,
+		Warnings:         result.Warnings,
+	}
+	augmented := draft.augment(r)
+	result.Warnings = augmented.Warnings
+	return result, augmented, nil
 }
 
-func (s *Server) buildRecorderImportResponse(r *http.Request, result *recorderjson.ConvertResult, preflight *ReplayPreflight) map[string]any {
+func (s *Server) buildRecorderImportResponse(r *http.Request, result *recorderjson.ConvertResult, augmented importAugmentation) map[string]any {
 	return s.newScriptImportResponseWithSourceSecrets(r, scriptImportResponseOptions{
 		Result:              result,
 		Script:              result.Script,
 		Warnings:            result.Warnings,
 		Stats:               result.Stats,
 		UnsupportedElements: result.Unsupported.Strings(),
-		ReviewSections:      importDiagnosticReviewSections(result.Unsupported),
+		ReviewSections:      augmented.Sections,
 		Parameterization:    buildImportParameterization(result.Script, nil),
-		Preflight:           preflight,
+		Preflight:           augmented.Preflight,
 		Summary: map[string]any{
 			"import_mode":           result.Stats.Format,
 			"source_format":         result.Stats.Format,
@@ -245,16 +248,18 @@ func recorderStepMapping(result *recorderjson.ConvertResult) []map[string]any {
 }
 
 func readRecorderImportRequest(w http.ResponseWriter, r *http.Request) (*recorderImportRequest, bool) {
-	r.Body = http.MaxBytesReader(w, r.Body, recorderImportMaxBodyBytes)
-	contentType := r.Header.Get("Content-Type")
-	if strings.HasPrefix(contentType, "application/json") {
+	upload, ok := decodeImportUpload(w, r, recorderImportMaxBodyBytes)
+	if !ok {
+		return nil, false
+	}
+	if upload.Transport == importTransportJSON {
 		var req struct {
 			Name      string                      `json:"name,omitempty"`
 			ProjectID string                      `json:"project_id,omitempty"`
 			Content   string                      `json:"content"`
 			Options   recorderjson.ConvertOptions `json:"options,omitempty"`
 		}
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		if err := json.Unmarshal(upload.Data, &req); err != nil {
 			writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
 			return nil, false
 		}
@@ -263,34 +268,18 @@ func readRecorderImportRequest(w http.ResponseWriter, r *http.Request) (*recorde
 			return nil, false
 		}
 		req.Options.ScriptName = firstNonEmpty(req.Options.ScriptName, req.Name)
-		return &recorderImportRequest{Data: []byte(req.Content), ProjectID: jsonImportProjectID(r, req.ProjectID), Opts: req.Options}, true
-	}
-	if strings.HasPrefix(contentType, "multipart/form-data") {
-		data, uploadName, ok := readImportMultipartFile(w, r, recorderImportMaxBodyBytes)
-		if !ok {
-			return nil, false
-		}
-		name := strings.TrimSuffix(uploadName, filepath.Ext(uploadName))
 		return &recorderImportRequest{
-			Data:      data,
-			ProjectID: authorizedImportProjectID(r),
-			Opts: recorderjson.ConvertOptions{
-				ScriptName: firstNonEmpty(r.FormValue("name"), name),
-				BaseURL:    r.FormValue("base_url"),
-			},
+			Data:      []byte(req.Content),
+			ProjectID: upload.jsonProjectID(req.ProjectID),
+			Opts:      req.Options,
 		}, true
 	}
-	data, ok := readImportBody(w, r)
-	if !ok {
-		return nil, false
-	}
-	filename := r.URL.Query().Get("filename")
 	return &recorderImportRequest{
-		Data:      data,
-		ProjectID: r.URL.Query().Get("project_id"),
+		Data:      upload.Data,
+		ProjectID: upload.ProjectID,
 		Opts: recorderjson.ConvertOptions{
-			ScriptName: firstNonEmpty(r.URL.Query().Get("name"), strings.TrimSuffix(filepath.Base(filename), filepath.Ext(filename))),
-			BaseURL:    r.URL.Query().Get("base_url"),
+			ScriptName: firstNonEmpty(upload.Value("name"), upload.Name),
+			BaseURL:    upload.Value("base_url"),
 		},
 	}, true
 }

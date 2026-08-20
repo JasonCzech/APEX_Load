@@ -92,7 +92,7 @@ func TestRetainImportSourceStoresRawOnlyRevision(t *testing.T) {
 		t.Fatal("retained revision should become the active one")
 	}
 
-	active, err := store.GetActiveBrunoSourceRevision("script-1", DefaultProjectID)
+	active, err := store.GetActiveImportSourceRevision("script-1", DefaultProjectID)
 	if err != nil {
 		t.Fatalf("read active revision: %v", err)
 	}
@@ -161,7 +161,7 @@ func TestRetainImportSourceSupersedesPriorRevision(t *testing.T) {
 		t.Fatalf("second revision parent = %q, want %q", second.ParentRevisionID, first.ID)
 	}
 
-	revisions, err := store.ListBrunoSourceRevisions("script-1", DefaultProjectID)
+	revisions, err := store.ListImportSourceRevisions("script-1", DefaultProjectID)
 	if err != nil {
 		t.Fatalf("list revisions: %v", err)
 	}
@@ -236,14 +236,14 @@ func TestRetainImportSourceRejectsDelayedStaleActivation(t *testing.T) {
 		t.Fatalf("delayed retention A error = %v, want %v", err, ErrImportSourceScriptChanged)
 	}
 
-	active, err := store.GetActiveBrunoSourceRevision("script-1", DefaultProjectID)
+	active, err := store.GetActiveImportSourceRevision("script-1", DefaultProjectID)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if active.ID != currentRevision.ID {
 		t.Fatalf("delayed A activated revision %q over current B %q", active.ID, currentRevision.ID)
 	}
-	artifact, err := store.GetBrunoSourceArtifact(active.RawArtifactID, DefaultProjectID)
+	artifact, err := store.GetImportSourceArtifact(active.RawArtifactID, DefaultProjectID)
 	if err != nil {
 		t.Fatal(err)
 	}

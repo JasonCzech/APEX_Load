@@ -5,12 +5,9 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"sort"
 	"strings"
 
-	"github.com/google/uuid"
 	"github.com/jasonczech/apexload/pkg/dsl"
-	"github.com/jasonczech/apexload/pkg/storage"
 )
 
 const (
@@ -19,30 +16,10 @@ const (
 	genericImportRecordingSessionIDMaxBytes = 256
 )
 
-// genericImportSourceProfileNormalization is the single wire-level allowlist
-// for this endpoint. OpenAPI generation reads the same map, so SDK guidance
-// cannot drift from server acceptance when a new importer is added.
-var genericImportSourceProfileNormalization = map[string]string{
-	"browser_recorder":      "browser_recorder",
-	"browser_recording_har": "browser_recording_har",
-	"broker_config":         "broker_config",
-	"curl":                  "curl",
-	"devweb":                "devweb",
-	"eventhubs_capture":     "eventhubs_capture",
-	"github":                "github",
-	"har":                   "har",
-	"k6":                    "k6",
-	"raml":                  "raml",
-	"raw_http":              "raw_http",
-	"recorder":              "recorder",
-	"recorder-export":       "recorder_export",
-	"recorder_export":       "recorder_export",
-	"rest_json":             "rest_json",
-	"salesforce":            "salesforce",
-	"sample":                "sample",
-	"sample-import":         "sample",
-	"truclient":             "truclient",
-	"wsdl":                  "wsdl",
+// genericImportBatchWorkflow names this endpoint in the shared receipt helpers.
+var genericImportBatchWorkflow = importBatchWorkflow{
+	Profile: genericImportBatchProfile,
+	Noun:    "import batch",
 }
 
 type genericImportBatchCommitRequest struct {
@@ -155,19 +132,10 @@ func (s *Server) handleCommitGenericImportBatch(w http.ResponseWriter, r *http.R
 		writeError(w, http.StatusInternalServerError, "failed to fingerprint import batch")
 		return
 	}
-	attempt, receiptReplay, err := s.claimDirectImportAttempt(
-		projectID, genericImportBatchProfile, operationID, requestDigest,
+	attempt, receiptReplay, ok := s.claimImportBatchReceipt(
+		w, genericImportBatchWorkflow, projectID, operationID, requestDigest,
 	)
-	if err != nil {
-		switch {
-		case errors.Is(err, storage.ErrDirectImportReceiptBusy):
-			w.Header().Set("Retry-After", "2")
-			writeError(w, http.StatusConflict, "this import batch save is already in progress")
-		case errors.Is(err, storage.ErrDirectImportReceiptConflict):
-			writeError(w, http.StatusConflict, "operation_id was already used for a different import batch")
-		default:
-			writeError(w, http.StatusInternalServerError, "failed to reserve import batch")
-		}
+	if !ok {
 		return
 	}
 	if receiptReplay {
@@ -190,20 +158,9 @@ func (s *Server) handleCommitGenericImportBatch(w http.ResponseWriter, r *http.R
 			}
 		}
 	}()
-	assetIdentitySeed := ""
-	if attempt != nil && attempt.receipt != nil {
-		assetIdentitySeed = attempt.receipt.ID
-	} else if operationID != "" {
-		assetIdentitySeed = directImportOperationHash(projectID, genericImportBatchProfile, operationID)
-	}
-	plannedIDs := make([]string, len(requestScripts))
-	for index := range plannedIDs {
-		if assetIdentitySeed == "" {
-			plannedIDs[index] = uuid.NewString()
-		} else {
-			plannedIDs[index] = deterministicDirectImportAssetID(assetIdentitySeed, "script", index)
-		}
-	}
+	plannedIDs := importBatchPlannedAssetIDs(
+		attempt, genericImportBatchWorkflow, projectID, operationID, len(requestScripts),
+	)
 
 	// A stale receipt may come from another controller process that committed
 	// every deterministic asset before losing the receipt-completion response.
@@ -212,17 +169,7 @@ func (s *Server) handleCommitGenericImportBatch(w http.ResponseWriter, r *http.R
 	// This branch can only adopt existing assets for the exact durable request
 	// digest; it never authorizes a new create with an invalid token.
 	if attempt != nil && !attempt.created {
-		if recoverErr := s.recoverExpiredLibraryImportClaims(); recoverErr != nil {
-			writeError(w, http.StatusInternalServerError, "failed to recover prior import batch")
-			return
-		}
-		if renewErr := attempt.renew(); renewErr != nil {
-			writeError(w, http.StatusConflict, "import batch receipt ownership was lost; retry the save")
-			return
-		}
-		if fenceErr := s.fenceDirectImportAssetAdoption(attempt, projectID, plannedIDs, ""); fenceErr != nil {
-			w.Header().Set("Retry-After", "2")
-			writeError(w, http.StatusConflict, "the prior import batch is still finalizing; retry the save")
+		if !s.fenceImportBatchAdoption(w, genericImportBatchWorkflow, attempt, projectID, plannedIDs, "") {
 			return
 		}
 		stored, _, loadErr := s.loadDirectImportAssetsByIDs(projectID, plannedIDs, "")
@@ -382,17 +329,7 @@ func (s *Server) handleCommitGenericImportBatch(w http.ResponseWriter, r *http.R
 	allocateAtomicImportBatchScriptNames(prepared)
 
 	if attempt != nil && !attempt.created {
-		if recoverErr := s.recoverExpiredLibraryImportClaims(); recoverErr != nil {
-			writeError(w, http.StatusInternalServerError, "failed to recover prior import batch")
-			return
-		}
-		if renewErr := attempt.renew(); renewErr != nil {
-			writeError(w, http.StatusConflict, "import batch receipt ownership was lost; retry the save")
-			return
-		}
-		if fenceErr := s.fenceDirectImportAssetAdoption(attempt, projectID, plannedIDs, ""); fenceErr != nil {
-			w.Header().Set("Retry-After", "2")
-			writeError(w, http.StatusConflict, "the prior import batch is still finalizing; retry the save")
+		if !s.fenceImportBatchAdoption(w, genericImportBatchWorkflow, attempt, projectID, plannedIDs, "") {
 			return
 		}
 		stored, _, loadErr := s.loadDirectImportAssetsByIDs(projectID, plannedIDs, "")
@@ -595,18 +532,17 @@ func genericImportSourceProfilesCompatible(requested, actual string) bool {
 	}
 }
 
+// normalizeGenericImportSourceProfile resolves an accepted wire spelling to its
+// durable profile, or "" when this endpoint does not accept the profile. The
+// allowlist comes from the importer registry, so registering a format is what
+// makes it committable here.
 func normalizeGenericImportSourceProfile(raw string) string {
 	profile := strings.ToLower(strings.TrimSpace(raw))
-	return genericImportSourceProfileNormalization[profile]
+	return importerProfileNormalization()[profile]
 }
 
 func genericImportSourceProfileWireValues() []string {
-	values := make([]string, 0, len(genericImportSourceProfileNormalization))
-	for value := range genericImportSourceProfileNormalization {
-		values = append(values, value)
-	}
-	sort.Strings(values)
-	return values
+	return importerProfileWireValues()
 }
 
 func (s *Server) persistOrVerifyGenericImportBatchBaselines(

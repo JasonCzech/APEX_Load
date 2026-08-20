@@ -326,9 +326,9 @@ http:
 	if bytes.Contains(encodedAudits, []byte("literal-user")) || bytes.Contains(encodedAudits, []byte("literal-password")) {
 		t.Fatalf("migration audit events disclosed imported credential material: %s", encodedAudits)
 	}
-	firstRevision, err := store.GetActiveBrunoSourceRevision(script.ID, brunoImportTestProject)
+	firstRevision, err := store.GetActiveImportSourceRevision(script.ID, brunoImportTestProject)
 	if err != nil {
-		t.Fatalf("GetActiveBrunoSourceRevision: %v", err)
+		t.Fatalf("GetActiveImportSourceRevision: %v", err)
 	}
 
 	sanitized := requestBrunoSource(t, server, script.ID, false)
@@ -364,7 +364,7 @@ http:
 	if updatedScript.Config.Bruno.SourceRevision == firstRevision.ID {
 		t.Fatal("synchronization did not activate a new source revision")
 	}
-	secondRevision, err := store.GetActiveBrunoSourceRevision(script.ID, brunoImportTestProject)
+	secondRevision, err := store.GetActiveImportSourceRevision(script.ID, brunoImportTestProject)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -382,7 +382,7 @@ http:
 	if rollback.Code != http.StatusOK {
 		t.Fatalf("rollback status = %d body=%s", rollback.Code, rollback.Body.String())
 	}
-	active, err := store.GetActiveBrunoSourceRevision(script.ID, brunoImportTestProject)
+	active, err := store.GetActiveImportSourceRevision(script.ID, brunoImportTestProject)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -469,9 +469,9 @@ http: {method: GET, url: https://example.test/v1}
 		if err != nil {
 			t.Fatalf("GetScript before sync: %v", err)
 		}
-		active, err := store.GetActiveBrunoSourceRevision(script.ID, brunoImportTestProject)
+		active, err := store.GetActiveImportSourceRevision(script.ID, brunoImportTestProject)
 		if err != nil {
-			t.Fatalf("GetActiveBrunoSourceRevision: %v", err)
+			t.Fatalf("GetActiveImportSourceRevision: %v", err)
 		}
 		payload := map[string]any{
 			"project_id":                  brunoImportTestProject,
@@ -576,15 +576,15 @@ func TestBrunoRollbackRestoresPreUpgradeRevisionCredentialWithoutReentry(t *test
 				Config:  dsl.ScriptConfig{Bruno: dsl.BrunoConfig{SecretBindings: bindings}},
 				Actions: []dsl.Action{{Name: "Run", Type: "bruno_run", Target: "/"}},
 			},
-			RawArtifact: storage.BrunoSourceArtifact{
+			RawArtifact: storage.ImportSourceArtifact{
 				ID: rawID, ProjectID: brunoImportTestProject, ArtifactKind: "raw", BackendKey: "legacy/" + rawID,
 				SHA256: "sha-" + rawID, SizeBytes: 1,
 			},
-			SanitizedArtifact: storage.BrunoSourceArtifact{
+			SanitizedArtifact: storage.ImportSourceArtifact{
 				ID: sanitizedID, ProjectID: brunoImportTestProject, ArtifactKind: "sanitized", BackendKey: "legacy/" + sanitizedID,
 				SHA256: "sha-" + sanitizedID, SizeBytes: 1,
 			},
-			Revision: storage.BrunoSourceRevision{ID: revisionID, SourceFormat: "bruno"},
+			Revision: storage.ImportSourceRevision{ID: revisionID, SourceFormat: "bruno"},
 		}
 	}
 
@@ -622,7 +622,7 @@ func TestBrunoRollbackRestoresPreUpgradeRevisionCredentialWithoutReentry(t *test
 	if strings.Contains(response.Body.String(), legacySecret) {
 		t.Fatalf("rollback response disclosed legacy secret: %s", response.Body.String())
 	}
-	active, err := store.GetActiveBrunoSourceRevision(scriptID, brunoImportTestProject)
+	active, err := store.GetActiveImportSourceRevision(scriptID, brunoImportTestProject)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -653,16 +653,16 @@ func TestBrunoRevisionActivationSynchronizesRawArtifactMasking(t *testing.T) {
 				Protocol: "bruno", ProjectID: brunoImportTestProject,
 				Actions: []dsl.Action{{Name: "Run", Type: "bruno_run", Target: "."}},
 			},
-			RawArtifact: storage.BrunoSourceArtifact{
+			RawArtifact: storage.ImportSourceArtifact{
 				ID: rawID, ArtifactKind: "raw", BackendKey: "objects/" + rawID,
 				SHA256: "sha-" + rawID, SizeBytes: 1,
 			},
-			SanitizedArtifact: storage.BrunoSourceArtifact{
+			SanitizedArtifact: storage.ImportSourceArtifact{
 				ID: sanitizedID, ArtifactKind: "sanitized", BackendKey: "objects/" + sanitizedID,
 				SHA256: "sha-" + sanitizedID, SizeBytes: 1,
 			},
 			UseRawArtifact: useRaw,
-			Revision: storage.BrunoSourceRevision{
+			Revision: storage.ImportSourceRevision{
 				ID: revisionID, SourceFormat: "bruno", CreatedBy: "test",
 			},
 		}
@@ -1161,7 +1161,7 @@ http:
 		t.Fatalf("default-preservation runtime marker = %#v, want raw", stored.Metadata)
 	}
 	artifactID := strings.TrimPrefix(stored.Config.Bruno.BundleRef, "artifact://")
-	artifact, err := store.GetBrunoSourceArtifact(artifactID, brunoImportTestProject)
+	artifact, err := store.GetImportSourceArtifact(artifactID, brunoImportTestProject)
 	if err != nil {
 		t.Fatalf("load default-preservation artifact: %v", err)
 	}
@@ -1406,7 +1406,7 @@ func TestBrunoRevisionPrivateKeySourceRestriction(t *testing.T) {
 	if brunoRevisionHasPrivateKeyFiles(nil) {
 		t.Fatal("nil revision reported private-key files")
 	}
-	revision := &storage.BrunoSourceRevision{SecurityProfile: map[string]any{
+	revision := &storage.ImportSourceRevision{SecurityProfile: map[string]any{
 		"capabilities": map[string]any{"has_private_key_files": true},
 	}}
 	if !brunoRevisionHasPrivateKeyFiles(revision) {
@@ -1536,9 +1536,9 @@ http:
 			t.Fatalf("unexpected secret requirement: %#v", requirement)
 		}
 	}
-	brunoStore, ok := any(records).(storage.BrunoImportStore)
+	brunoStore, ok := any(records).(storage.ImportSourceStore)
 	if !ok {
-		t.Fatal("test store does not implement BrunoImportStore")
+		t.Fatal("test store does not implement ImportSourceStore")
 	}
 	const commitFailure = "simulated commit detail must not reach response"
 	server.store = &failingBrunoCommitStore{Store: records, delegate: brunoStore, err: errors.New(commitFailure)}
@@ -1610,7 +1610,7 @@ http:
 	for index, requirement := range inspect.Result.SecretRequirements {
 		bindings[requirement.ID] = fmt.Sprintf("BRUNO_UNKNOWN_%d", index+1)
 	}
-	brunoStore := any(records).(storage.BrunoImportStore)
+	brunoStore := any(records).(storage.ImportSourceStore)
 	server.store = &failingBrunoCommitStore{
 		Store: records, delegate: brunoStore,
 		err: errors.New("lost commit acknowledgement"), lookupErr: errors.New("receipt lookup unavailable"),
@@ -2376,11 +2376,11 @@ func TestCleanupUnreferencedBrunoArtifactsDeletesFailedPublication(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	artifact := storage.BrunoSourceArtifact{
+	artifact := storage.ImportSourceArtifact{
 		ProjectID: brunoImportTestProject, ArtifactKind: "raw",
 		BackendKey: object.BackendKey, SHA256: object.SHA256, SizeBytes: object.SizeBytes,
 	}
-	server.cleanupUnreferencedBrunoArtifacts([]storage.BrunoSourceArtifact{artifact})
+	server.cleanupUnreferencedBrunoArtifacts([]storage.ImportSourceArtifact{artifact})
 	if _, err := objects.ReadAll(
 		context.Background(),
 		brunoArtifactOpenRequest(artifact),
@@ -2573,7 +2573,7 @@ func (s *blockingCreateSecretStore) createNames() []string {
 
 type failingBrunoCommitStore struct {
 	storage.Store
-	delegate  storage.BrunoImportStore
+	delegate  storage.ImportSourceStore
 	err       error
 	lookupErr error
 }
@@ -2582,27 +2582,27 @@ func (s *failingBrunoCommitStore) CommitBrunoImport(*storage.BrunoImportCommit) 
 	return nil, s.err
 }
 
-func (s *failingBrunoCommitStore) GetBrunoSourceArtifact(id string, projectID string) (*storage.BrunoSourceArtifact, error) {
-	return s.delegate.GetBrunoSourceArtifact(id, projectID)
+func (s *failingBrunoCommitStore) GetImportSourceArtifact(id string, projectID string) (*storage.ImportSourceArtifact, error) {
+	return s.delegate.GetImportSourceArtifact(id, projectID)
 }
 
-func (s *failingBrunoCommitStore) GetBrunoSourceRevision(id string, projectID string) (*storage.BrunoSourceRevision, error) {
+func (s *failingBrunoCommitStore) GetImportSourceRevision(id string, projectID string) (*storage.ImportSourceRevision, error) {
 	if s.lookupErr != nil {
 		return nil, s.lookupErr
 	}
-	return s.delegate.GetBrunoSourceRevision(id, projectID)
+	return s.delegate.GetImportSourceRevision(id, projectID)
 }
 
-func (s *failingBrunoCommitStore) GetActiveBrunoSourceRevision(scriptID string, projectID string) (*storage.BrunoSourceRevision, error) {
-	return s.delegate.GetActiveBrunoSourceRevision(scriptID, projectID)
+func (s *failingBrunoCommitStore) GetActiveImportSourceRevision(scriptID string, projectID string) (*storage.ImportSourceRevision, error) {
+	return s.delegate.GetActiveImportSourceRevision(scriptID, projectID)
 }
 
-func (s *failingBrunoCommitStore) ListBrunoSourceRevisions(scriptID string, projectID string) ([]*storage.BrunoSourceRevision, error) {
-	return s.delegate.ListBrunoSourceRevisions(scriptID, projectID)
+func (s *failingBrunoCommitStore) ListImportSourceRevisions(scriptID string, projectID string) ([]*storage.ImportSourceRevision, error) {
+	return s.delegate.ListImportSourceRevisions(scriptID, projectID)
 }
 
-func (s *failingBrunoCommitStore) ActivateBrunoSourceRevision(scriptID string, projectID string, revisionID string, expectedActiveRevisionID string) (*storage.BrunoSourceRevision, error) {
-	return s.delegate.ActivateBrunoSourceRevision(scriptID, projectID, revisionID, expectedActiveRevisionID)
+func (s *failingBrunoCommitStore) ActivateImportSourceRevision(scriptID string, projectID string, revisionID string, expectedActiveRevisionID string) (*storage.ImportSourceRevision, error) {
+	return s.delegate.ActivateImportSourceRevision(scriptID, projectID, revisionID, expectedActiveRevisionID)
 }
 
 type flakyBrunoArtifactReferenceStore struct {
@@ -2902,11 +2902,11 @@ func readCommittedBrunoRuntimeSource(
 		t.Fatalf("committed Bruno runtime marker = %#v, want raw", script.Metadata)
 	}
 	artifactID := strings.TrimPrefix(script.Config.Bruno.BundleRef, "artifact://")
-	brunoStore, ok := server.store.(storage.BrunoImportStore)
+	brunoStore, ok := server.store.(storage.ImportSourceStore)
 	if !ok {
 		t.Fatal("test store does not implement Bruno import storage")
 	}
-	artifact, err := brunoStore.GetBrunoSourceArtifact(
+	artifact, err := brunoStore.GetImportSourceArtifact(
 		artifactID,
 		normalizeProjectID(script.ProjectID),
 	)

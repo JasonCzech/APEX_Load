@@ -3,6 +3,7 @@ package jmeter
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/jasonczech/apexload/pkg/convert/convertresult"
 	"regexp"
 	"slices"
 	"sort"
@@ -1496,4 +1497,18 @@ func jmeterElementEnabled(element *xmlNode) bool {
 		return false
 	}
 	return !strings.EqualFold(strings.TrimSpace(element.Attrs["enabled"]), "false")
+}
+
+// Accounting reports this conversion's completeness in the terms every importer
+// shares. See convertresult.Accounting.
+func (result *ConvertResult) Accounting() convertresult.Accounting {
+	if result == nil {
+		return convertresult.Accounting{}
+	}
+	return convertresult.New(
+		result.Stats.TotalSamplers,
+		result.Stats.ConvertedActions,
+		result.Stats.SkippedSamplers,
+		result.SourceReview.ReviewOnlyActionCount(),
+	)
 }

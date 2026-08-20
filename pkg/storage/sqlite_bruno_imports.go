@@ -220,7 +220,7 @@ func upsertBrunoImportScriptTx(tx *storeTx, script *dsl.Script, encoded storedSc
 	return false, nil
 }
 
-func normalizeBrunoArtifact(artifact *BrunoSourceArtifact, projectID, kind string) error {
+func normalizeBrunoArtifact(artifact *ImportSourceArtifact, projectID, kind string) error {
 	if artifact == nil {
 		return errors.New("Bruno source artifact is required")
 	}
@@ -244,7 +244,7 @@ func normalizeBrunoArtifact(artifact *BrunoSourceArtifact, projectID, kind strin
 	return nil
 }
 
-func saveBrunoArtifactTx(tx *storeTx, artifact *BrunoSourceArtifact) (*BrunoSourceArtifact, error) {
+func saveBrunoArtifactTx(tx *storeTx, artifact *ImportSourceArtifact) (*ImportSourceArtifact, error) {
 	encryptionJSON, err := marshalStorageJSON(artifact.EncryptionMetadata)
 	if err != nil {
 		return nil, fmt.Errorf("marshal Bruno artifact encryption metadata: %w", err)
@@ -273,7 +273,7 @@ func saveBrunoArtifactTx(tx *storeTx, artifact *BrunoSourceArtifact) (*BrunoSour
 		artifact.ProjectID, artifact.ArtifactKind, artifact.SHA256).Scan(&existingID); err != nil {
 		return nil, err
 	}
-	existing, err := getBrunoSourceArtifactTx(tx, existingID, artifact.ProjectID)
+	existing, err := getImportSourceArtifactTx(tx, existingID, artifact.ProjectID)
 	if err != nil {
 		return nil, err
 	}
@@ -283,8 +283,8 @@ func saveBrunoArtifactTx(tx *storeTx, artifact *BrunoSourceArtifact) (*BrunoSour
 	return existing, nil
 }
 
-func (s *SQLiteStore) GetBrunoSourceArtifact(id string, projectID string) (*BrunoSourceArtifact, error) {
-	return getBrunoSourceArtifactDB(s.db, strings.TrimSpace(id), normalizeProjectID(strings.TrimSpace(projectID)))
+func (s *SQLiteStore) GetImportSourceArtifact(id string, projectID string) (*ImportSourceArtifact, error) {
+	return getImportSourceArtifactDB(s.db, strings.TrimSpace(id), normalizeProjectID(strings.TrimSpace(projectID)))
 }
 
 func (s *SQLiteStore) IsBrunoArtifactBackendKeyReferenced(backendKey string) (bool, error) {
@@ -297,20 +297,20 @@ func (s *SQLiteStore) IsImportArtifactBackendKeyReferenced(backendKey string) (b
 	return count > 0, err
 }
 
-func getBrunoSourceArtifactTx(tx *storeTx, id, projectID string) (*BrunoSourceArtifact, error) {
+func getImportSourceArtifactTx(tx *storeTx, id, projectID string) (*ImportSourceArtifact, error) {
 	return scanBrunoArtifact(tx.QueryRow(`SELECT id, project_id, artifact_kind, backend_key, sha256, size_bytes,
 		COALESCE(manifest_sha256, ''), COALESCE(source_format, ''), encryption_json, lifecycle_state, created_at
 		FROM bruno_source_artifacts WHERE id = ? AND project_id = ?`, id, projectID))
 }
 
-func getBrunoSourceArtifactDB(db *storeDB, id, projectID string) (*BrunoSourceArtifact, error) {
+func getImportSourceArtifactDB(db *storeDB, id, projectID string) (*ImportSourceArtifact, error) {
 	return scanBrunoArtifact(db.QueryRow(`SELECT id, project_id, artifact_kind, backend_key, sha256, size_bytes,
 		COALESCE(manifest_sha256, ''), COALESCE(source_format, ''), encryption_json, lifecycle_state, created_at
 		FROM bruno_source_artifacts WHERE id = ? AND project_id = ?`, id, projectID))
 }
 
-func scanBrunoArtifact(row rowScanner) (*BrunoSourceArtifact, error) {
-	var artifact BrunoSourceArtifact
+func scanBrunoArtifact(row rowScanner) (*ImportSourceArtifact, error) {
+	var artifact ImportSourceArtifact
 	var encryptionJSON string
 	if err := row.Scan(&artifact.ID, &artifact.ProjectID, &artifact.ArtifactKind, &artifact.BackendKey,
 		&artifact.SHA256, &artifact.SizeBytes, &artifact.ManifestSHA256, &artifact.SourceFormat,
@@ -323,24 +323,24 @@ func scanBrunoArtifact(row rowScanner) (*BrunoSourceArtifact, error) {
 	return &artifact, nil
 }
 
-func (s *SQLiteStore) GetBrunoSourceRevision(id string, projectID string) (*BrunoSourceRevision, error) {
+func (s *SQLiteStore) GetImportSourceRevision(id string, projectID string) (*ImportSourceRevision, error) {
 	return scanBrunoRevision(s.db.QueryRow(brunoRevisionSelect+` WHERE id = ? AND project_id = ?`,
 		strings.TrimSpace(id), normalizeProjectID(strings.TrimSpace(projectID))))
 }
 
-func (s *SQLiteStore) GetActiveBrunoSourceRevision(scriptID string, projectID string) (*BrunoSourceRevision, error) {
+func (s *SQLiteStore) GetActiveImportSourceRevision(scriptID string, projectID string) (*ImportSourceRevision, error) {
 	return scanBrunoRevision(s.db.QueryRow(brunoRevisionSelect+` WHERE script_id = ? AND project_id = ? AND active_flag = 1`,
 		strings.TrimSpace(scriptID), normalizeProjectID(strings.TrimSpace(projectID))))
 }
 
-func (s *SQLiteStore) ListBrunoSourceRevisions(scriptID string, projectID string) ([]*BrunoSourceRevision, error) {
+func (s *SQLiteStore) ListImportSourceRevisions(scriptID string, projectID string) ([]*ImportSourceRevision, error) {
 	rows, err := s.db.Query(brunoRevisionSelect+` WHERE script_id = ? AND project_id = ? ORDER BY created_at DESC`,
 		strings.TrimSpace(scriptID), normalizeProjectID(strings.TrimSpace(projectID)))
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var revisions []*BrunoSourceRevision
+	var revisions []*ImportSourceRevision
 	for rows.Next() {
 		revision, err := scanBrunoRevision(rows)
 		if err != nil {
@@ -351,7 +351,7 @@ func (s *SQLiteStore) ListBrunoSourceRevisions(scriptID string, projectID string
 	return revisions, rows.Err()
 }
 
-func (s *SQLiteStore) ActivateBrunoSourceRevision(scriptID string, projectID string, revisionID string, expectedActiveRevisionID string) (*BrunoSourceRevision, error) {
+func (s *SQLiteStore) ActivateImportSourceRevision(scriptID string, projectID string, revisionID string, expectedActiveRevisionID string) (*ImportSourceRevision, error) {
 	scriptID = strings.TrimSpace(scriptID)
 	projectID = normalizeProjectID(strings.TrimSpace(projectID))
 	revisionID = strings.TrimSpace(revisionID)
@@ -473,8 +473,8 @@ const brunoRevisionSelect = `SELECT id, script_id, project_id, COALESCE(parent_r
 	secret_bindings_json, canonical_script_json, COALESCE(created_by, ''), created_at
 	FROM bruno_source_revisions`
 
-func scanBrunoRevision(row rowScanner) (*BrunoSourceRevision, error) {
-	var revision BrunoSourceRevision
+func scanBrunoRevision(row rowScanner) (*ImportSourceRevision, error) {
+	var revision ImportSourceRevision
 	var active int
 	var sanitizedAvailable int
 	var identityMapJSON, importOptionsJSON, securityProfileJSON, changeSummaryJSON, secretBindingsJSON, canonicalScriptJSON string
@@ -514,7 +514,7 @@ type storedBrunoRevisionJSON struct {
 	canonicalScript string
 }
 
-func marshalBrunoRevision(revision *BrunoSourceRevision) (storedBrunoRevisionJSON, error) {
+func marshalBrunoRevision(revision *ImportSourceRevision) (storedBrunoRevisionJSON, error) {
 	if revision == nil || revision.CanonicalScript == nil {
 		return storedBrunoRevisionJSON{}, errors.New("Bruno revision canonical script is required")
 	}
@@ -572,22 +572,22 @@ func cloneBrunoScript(script *dsl.Script) *dsl.Script {
 	return &clone
 }
 
-func cloneBrunoRevision(revision *BrunoSourceRevision) *BrunoSourceRevision {
+func cloneBrunoRevision(revision *ImportSourceRevision) *ImportSourceRevision {
 	if revision == nil {
 		return nil
 	}
 	payload, _ := json.Marshal(revision)
-	var clone BrunoSourceRevision
+	var clone ImportSourceRevision
 	_ = json.Unmarshal(payload, &clone)
 	return &clone
 }
 
-func cloneBrunoArtifact(artifact *BrunoSourceArtifact) *BrunoSourceArtifact {
+func cloneBrunoArtifact(artifact *ImportSourceArtifact) *ImportSourceArtifact {
 	if artifact == nil {
 		return nil
 	}
 	payload, _ := json.Marshal(artifact)
-	var clone BrunoSourceArtifact
+	var clone ImportSourceArtifact
 	_ = json.Unmarshal(payload, &clone)
 	return &clone
 }

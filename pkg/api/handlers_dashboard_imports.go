@@ -596,10 +596,7 @@ func (s *Server) handleImportGrafanaDashboardByUID(w http.ResponseWriter, r *htt
 }
 
 func (s *Server) handleGrafanaDashboardSupportMatrix(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{
-		"entries": grafana.GetSupportMatrix(),
-		"notes":   grafana.GetSupportMatrixNotes(),
-	})
+	s.writeImporterSupportMatrix(w, r, "grafana")
 }
 
 func firstNonEmptyString(values ...string) string {

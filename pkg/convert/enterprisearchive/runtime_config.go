@@ -838,7 +838,7 @@ func (rc *RuntimeConfig) ToScriptConfig() *dsl.ScriptConfig {
 				LatencyMs:     rc.NetworkLatencyMs,
 			},
 			Streaming: dsl.StreamingConfig{
-				Mode:                rc.StreamingMode,
+				Mode:                executableStreamingMode(rc.StreamingMode, rc.StreamingFixedBitrateKbps),
 				BufferSizeSeconds:   rc.StreamingBufferSizeSeconds,
 				FixedBitrateKbps:    rc.StreamingFixedBitrateKbps,
 				BandwidthEstimation: rc.StreamingBandwidthEstimation,
@@ -4322,4 +4322,18 @@ func mapSSLVersionExact(v string) (string, bool) {
 	default:
 		return "", false
 	}
+}
+
+// executableStreamingMode drops a fixed-bitrate streaming mode the source did
+// not finish describing. LoadRunner accepts [Streaming] Mode=fixed with no
+// FixedBitrateKbps, but a fixed mode with no bitrate names no rate to hold, and
+// the DSL validator rejects it. Carrying it through produced a draft the
+// platform's own validator refused — invisible until every importer started
+// validating its drafts. The buffer size and bandwidth estimation still travel;
+// only the unusable mode is dropped.
+func executableStreamingMode(mode string, fixedBitrateKbps int) string {
+	if mode == "fixed" && fixedBitrateKbps <= 0 {
+		return ""
+	}
+	return mode
 }

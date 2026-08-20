@@ -58,8 +58,8 @@ type brunoImportSession struct {
 	ProjectID               string
 	Actor                   string
 	Result                  *brunoconvert.Result
-	RawArtifact             storage.BrunoSourceArtifact
-	SanitizedArtifact       storage.BrunoSourceArtifact
+	RawArtifact             storage.ImportSourceArtifact
+	SanitizedArtifact       storage.ImportSourceArtifact
 	RevisionID              string
 	SyncScriptID            string
 	NativeCredentialTargets map[string][]brunoconvert.NativeCredentialTarget
@@ -73,8 +73,8 @@ type persistedBrunoImportSession struct {
 	ProjectID               string                                           `json:"project_id"`
 	Actor                   string                                           `json:"actor"`
 	Result                  *brunoconvert.Result                             `json:"result"`
-	RawArtifact             storage.BrunoSourceArtifact                      `json:"raw_artifact"`
-	SanitizedArtifact       storage.BrunoSourceArtifact                      `json:"sanitized_artifact"`
+	RawArtifact             storage.ImportSourceArtifact                     `json:"raw_artifact"`
+	SanitizedArtifact       storage.ImportSourceArtifact                     `json:"sanitized_artifact"`
 	RevisionID              string                                           `json:"revision_id"`
 	SyncScriptID            string                                           `json:"sync_script_id,omitempty"`
 	NativeCredentialTargets map[string][]brunoconvert.NativeCredentialTarget `json:"native_credential_targets,omitempty"`
@@ -190,7 +190,14 @@ type brunoInspectJSONFile struct {
 	ContentBase64 string `json:"content_base64,omitempty"`
 }
 
-func (s *Server) handleBrunoSupportMatrix(w http.ResponseWriter, _ *http.Request) {
+func (s *Server) handleBrunoSupportMatrix(w http.ResponseWriter, r *http.Request) {
+	s.writeImporterSupportMatrix(w, r, "bruno")
+}
+
+// brunoSupportMatrixPayload reports Bruno coverage together with the live
+// secret-capability and source-retention posture, which depend on how this
+// controller is configured rather than on the converter alone.
+func brunoSupportMatrixPayload(s *Server) map[string]any {
 	secretCapabilities := s.projectSecretCapabilities("")
 	secretCapabilities["fallback"] = "binding_only"
 	custody := s.brunoSourceRetentionKeyCustody()
@@ -219,7 +226,7 @@ func (s *Server) handleBrunoSupportMatrix(w http.ResponseWriter, _ *http.Request
 	case brunoKeyCustodyLocal:
 		retention["advisory"] = brunoLocalKeyAdvisory
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
+	return map[string]any{
 		"schema_version":                brunoconvert.ImporterVersion,
 		"compatibility_version":         brunoconvert.CompatibilityVersion,
 		"import_enabled":                brunoFeatureEnabled("APEXLOAD_BRUNO_IMPORT_ENABLED", true),
@@ -255,7 +262,7 @@ func (s *Server) handleBrunoSupportMatrix(w http.ResponseWriter, _ *http.Request
 			"unresolved_secrets_fail": "before runner session creation",
 		},
 		"secret_store": secretCapabilities,
-	})
+	}
 }
 
 func (s *Server) handleInspectBrunoImport(w http.ResponseWriter, r *http.Request) {
@@ -398,7 +405,7 @@ func (s *Server) handleInspectBrunoImport(w http.ResponseWriter, r *http.Request
 	sourcePublicationLocked := true
 	sourcePublished := false
 	publicationRecorded := false
-	sourceArtifacts := make([]storage.BrunoSourceArtifact, 0, 2)
+	sourceArtifacts := make([]storage.ImportSourceArtifact, 0, 2)
 	now := time.Now().UTC()
 	sessionID := uuid.NewString()
 	revisionID := uuid.NewString()
@@ -450,11 +457,11 @@ func (s *Server) handleInspectBrunoImport(w http.ResponseWriter, r *http.Request
 	}
 	publicationRecorded = true
 	sourceArtifacts = append(sourceArtifacts,
-		storage.BrunoSourceArtifact{
+		storage.ImportSourceArtifact{
 			BackendKey: rawPlan.BackendKey, ProjectID: input.ProjectID,
 			ArtifactKind: "raw", SHA256: rawPlan.SHA256, SizeBytes: rawPlan.SizeBytes,
 		},
-		storage.BrunoSourceArtifact{
+		storage.ImportSourceArtifact{
 			BackendKey: sanitizedPlan.BackendKey, ProjectID: input.ProjectID,
 			ArtifactKind: "sanitized", SHA256: sanitizedPlan.SHA256, SizeBytes: sanitizedPlan.SizeBytes,
 		},
@@ -469,7 +476,7 @@ func (s *Server) handleInspectBrunoImport(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusUnprocessableEntity, "retain sanitized Bruno source: "+err.Error())
 		return
 	}
-	rawArtifact := storage.BrunoSourceArtifact{
+	rawArtifact := storage.ImportSourceArtifact{
 		ID:                 uuid.NewString(),
 		ProjectID:          input.ProjectID,
 		ArtifactKind:       "raw",
@@ -482,7 +489,7 @@ func (s *Server) handleInspectBrunoImport(w http.ResponseWriter, r *http.Request
 		LifecycleState:     "active",
 		CreatedAt:          now,
 	}
-	sanitizedArtifact := storage.BrunoSourceArtifact{
+	sanitizedArtifact := storage.ImportSourceArtifact{
 		ID:                 uuid.NewString(),
 		ProjectID:          input.ProjectID,
 		ArtifactKind:       "sanitized",
@@ -825,9 +832,9 @@ func (s *Server) handleCommitBrunoImport(w http.ResponseWriter, r *http.Request)
 	if !s.authorizeBrunoSourceSecretMigration(w, r, request.ProjectID, migrateSecrets) {
 		return
 	}
-	brunoStore, ok := s.store.(storage.BrunoImportStore)
+	brunoStore, ok := s.store.(storage.ImportSourceStore)
 	if !ok || brunoStore == nil {
-		writeError(w, http.StatusServiceUnavailable, "Bruno revision storage is not configured")
+		writeError(w, http.StatusServiceUnavailable, "import source retention is not configured")
 		return
 	}
 	targetID := strings.TrimSpace(firstNonEmpty(request.SyncScriptID, session.SyncScriptID))
@@ -847,7 +854,7 @@ func (s *Server) handleCommitBrunoImport(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	var existing *dsl.Script
-	var activeRevision *storage.BrunoSourceRevision
+	var activeRevision *storage.ImportSourceRevision
 	if mode == "sync" {
 		existing, err = getPublishedImportScript(s.store, targetID)
 		if err != nil {
@@ -862,7 +869,7 @@ func (s *Server) handleCommitBrunoImport(w http.ResponseWriter, r *http.Request)
 			writeError(w, http.StatusForbidden, "Bruno synchronization target belongs to another project")
 			return
 		}
-		activeRevision, err = brunoStore.GetActiveBrunoSourceRevision(existing.ID, request.ProjectID)
+		activeRevision, err = brunoStore.GetActiveImportSourceRevision(existing.ID, request.ProjectID)
 		if err != nil && !errors.Is(err, sql.ErrNoRows) {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
@@ -1222,7 +1229,7 @@ func (s *Server) handleCommitBrunoImport(w http.ResponseWriter, r *http.Request)
 		RawArtifact:              session.RawArtifact,
 		SanitizedArtifact:        session.SanitizedArtifact,
 		UseRawArtifact:           preserveSourceCredentials,
-		Revision: storage.BrunoSourceRevision{
+		Revision: storage.ImportSourceRevision{
 			ID:                    session.RevisionID,
 			ParentRevisionID:      parentRevisionID,
 			SourceFormat:          session.Result.SourceFormat,
@@ -1273,7 +1280,7 @@ func (s *Server) handleCommitBrunoImport(w http.ResponseWriter, r *http.Request)
 		// transaction durable. Reconcile by the immutable revision ID before any
 		// compensating secret deletion. On an unavailable lookup the only safe
 		// action is to retain both the secrets and retryable session.
-		reconciledRevision, reconcileErr := brunoStore.GetBrunoSourceRevision(session.RevisionID, request.ProjectID)
+		reconciledRevision, reconcileErr := brunoStore.GetImportSourceRevision(session.RevisionID, request.ProjectID)
 		switch {
 		case reconcileErr == nil && reconciledRevision != nil &&
 			reconciledRevision.ScriptID == script.ID && reconciledRevision.CanonicalScript != nil:
@@ -2960,11 +2967,15 @@ func brunoCommitErrorReason(err error) string {
 	}
 }
 
-func (s *Server) handleGetBrunoImportSource(w http.ResponseWriter, r *http.Request) {
+// handleGetImportSource serves the raw or sanitized artifact an import retained.
+// It is not Bruno-specific: any import routed through a protected session can
+// retain its upload, and the active-revision lookup is the real gate — a script
+// with nothing retained 404s regardless of which importer produced it.
+func (s *Server) handleGetImportSource(w http.ResponseWriter, r *http.Request) {
 	extendArtifactWriteDeadline(w)
-	brunoStore, ok := s.store.(storage.BrunoImportStore)
+	brunoStore, ok := s.store.(storage.ImportSourceStore)
 	if !ok || brunoStore == nil {
-		writeError(w, http.StatusServiceUnavailable, "Bruno revision storage is not configured")
+		writeError(w, http.StatusServiceUnavailable, "import source retention is not configured")
 		return
 	}
 	script, err := getPublishedImportScript(s.store, r.PathValue("id"))
@@ -2980,14 +2991,14 @@ func (s *Server) handleGetBrunoImportSource(w http.ResponseWriter, r *http.Reque
 	// which is the same answer the protocol check used to give.
 	projectID := normalizeProjectID(script.ProjectID)
 	raw := strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("raw")), "true")
-	if raw && !s.canReadRawBrunoSource(r, projectID) {
+	if raw && !s.canReadRawImportSource(r, projectID) {
 		s.recordAuditEvent(r, "script.import.bruno.source.raw", "denied", "script", script.ID, projectID, map[string]any{"reason": "insufficient_role"})
-		writeError(w, http.StatusForbidden, "raw Bruno source access requires project_admin or system_admin permission")
+		writeError(w, http.StatusForbidden, "raw import source access requires project_admin or system_admin permission")
 		return
 	}
-	revision, err := brunoStore.GetActiveBrunoSourceRevision(script.ID, projectID)
+	revision, err := brunoStore.GetActiveImportSourceRevision(script.ID, projectID)
 	if err != nil {
-		writeError(w, http.StatusNotFound, "active Bruno source revision not found")
+		writeError(w, http.StatusNotFound, "no retained import source revision is active for this script")
 		return
 	}
 	if !raw && !revision.SanitizedAvailable {
@@ -3002,23 +3013,23 @@ func (s *Server) handleGetBrunoImportSource(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	privateKeyFiles := brunoRevisionHasPrivateKeyFiles(revision)
-	if !raw && privateKeyFiles && !s.canReadRawBrunoSource(r, projectID) {
+	if !raw && privateKeyFiles && !s.canReadRawImportSource(r, projectID) {
 		s.recordAuditEvent(r, "script.import.bruno.source.sanitized", "denied", "script", script.ID, projectID, map[string]any{"reason": "private_key_material"})
-		writeError(w, http.StatusForbidden, "this Bruno source bundle contains private-key files and requires project_admin or system_admin permission")
+		writeError(w, http.StatusForbidden, "this import source bundle contains private-key files and requires project_admin or system_admin permission")
 		return
 	}
 	artifactID := revision.SanitizedArtifactID
 	if raw {
 		artifactID = revision.RawArtifactID
 	}
-	artifact, err := brunoStore.GetBrunoSourceArtifact(artifactID, projectID)
+	artifact, err := brunoStore.GetImportSourceArtifact(artifactID, projectID)
 	if err != nil {
-		writeError(w, http.StatusNotFound, "Bruno source artifact not found")
+		writeError(w, http.StatusNotFound, "retained import source artifact not found")
 		return
 	}
 	objects, err := s.brunoArtifactStore()
 	if err != nil {
-		writeError(w, http.StatusServiceUnavailable, "Bruno source decryption is unavailable: "+err.Error())
+		writeError(w, http.StatusServiceUnavailable, "import source decryption is unavailable: "+err.Error())
 		return
 	}
 	reader, size, err := objects.Open(r.Context(), importartifact.OpenRequest{
@@ -3029,7 +3040,7 @@ func (s *Server) handleGetBrunoImportSource(w http.ResponseWriter, r *http.Reque
 		SizeBytes:  artifact.SizeBytes,
 	})
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "open Bruno source artifact: "+err.Error())
+		writeError(w, http.StatusInternalServerError, "open retained import source artifact: "+err.Error())
 		return
 	}
 	defer reader.Close()
@@ -3070,7 +3081,7 @@ func (s *Server) handleGetBrunoImportSource(w http.ResponseWriter, r *http.Reque
 	}
 }
 
-func brunoRevisionHasPrivateKeyFiles(revision *storage.BrunoSourceRevision) bool {
+func brunoRevisionHasPrivateKeyFiles(revision *storage.ImportSourceRevision) bool {
 	if revision == nil || revision.SecurityProfile == nil {
 		return false
 	}
@@ -3082,10 +3093,10 @@ func brunoRevisionHasPrivateKeyFiles(revision *storage.BrunoSourceRevision) bool
 	return value
 }
 
-func (s *Server) handleListBrunoImportRevisions(w http.ResponseWriter, r *http.Request) {
-	brunoStore, ok := s.store.(storage.BrunoImportStore)
+func (s *Server) handleListImportSourceRevisions(w http.ResponseWriter, r *http.Request) {
+	brunoStore, ok := s.store.(storage.ImportSourceStore)
 	if !ok || brunoStore == nil {
-		writeError(w, http.StatusServiceUnavailable, "Bruno revision storage is not configured")
+		writeError(w, http.StatusServiceUnavailable, "import source retention is not configured")
 		return
 	}
 	script, err := getPublishedImportScript(s.store, r.PathValue("id"))
@@ -3093,22 +3104,22 @@ func (s *Server) handleListBrunoImportRevisions(w http.ResponseWriter, r *http.R
 		writeError(w, http.StatusNotFound, "script not found")
 		return
 	}
-	revisions, err := brunoStore.ListBrunoSourceRevisions(script.ID, normalizeProjectID(script.ProjectID))
+	revisions, err := brunoStore.ListImportSourceRevisions(script.ID, normalizeProjectID(script.ProjectID))
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	public := make([]*storage.BrunoSourceRevision, 0, len(revisions))
+	public := make([]*storage.ImportSourceRevision, 0, len(revisions))
 	for _, revision := range revisions {
 		public = append(public, publicBrunoRevision(revision))
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"revisions": public, "count": len(public)})
 }
 
-func (s *Server) handleRollbackBrunoImport(w http.ResponseWriter, r *http.Request) {
-	brunoStore, ok := s.store.(storage.BrunoImportStore)
+func (s *Server) handleRollbackImportSource(w http.ResponseWriter, r *http.Request) {
+	brunoStore, ok := s.store.(storage.ImportSourceStore)
 	if !ok || brunoStore == nil {
-		writeError(w, http.StatusServiceUnavailable, "Bruno revision storage is not configured")
+		writeError(w, http.StatusServiceUnavailable, "import source retention is not configured")
 		return
 	}
 	script, err := getPublishedImportScript(s.store, r.PathValue("id"))
@@ -3126,7 +3137,7 @@ func (s *Server) handleRollbackBrunoImport(w http.ResponseWriter, r *http.Reques
 	}
 	projectID := normalizeProjectID(script.ProjectID)
 	targetRevisionID := strings.TrimSpace(request.RevisionID)
-	targetRevision, err := brunoStore.GetBrunoSourceRevision(targetRevisionID, projectID)
+	targetRevision, err := brunoStore.GetImportSourceRevision(targetRevisionID, projectID)
 	if err != nil {
 		if errors.Is(err, storage.ErrBrunoRevisionNotFound) || errors.Is(err, sql.ErrNoRows) {
 			writeError(w, http.StatusNotFound, storage.ErrBrunoRevisionNotFound.Error())
@@ -3136,7 +3147,7 @@ func (s *Server) handleRollbackBrunoImport(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	if targetRevision.CanonicalScript == nil {
-		writeError(w, http.StatusUnprocessableEntity, "Bruno revision has no canonical script snapshot")
+		writeError(w, http.StatusUnprocessableEntity, "retained import source revision has no canonical script snapshot")
 		return
 	}
 	if !isBrunoRollbackRevision(targetRevision) {
@@ -3171,7 +3182,7 @@ func (s *Server) handleRollbackBrunoImport(w http.ResponseWriter, r *http.Reques
 		})
 		return
 	}
-	revision, err := brunoStore.ActivateBrunoSourceRevision(
+	revision, err := brunoStore.ActivateImportSourceRevision(
 		script.ID,
 		projectID,
 		targetRevisionID,
@@ -3196,7 +3207,7 @@ func (s *Server) handleRollbackBrunoImport(w http.ResponseWriter, r *http.Reques
 	writeJSON(w, http.StatusOK, map[string]any{"revision": publicBrunoRevision(revision)})
 }
 
-func isBrunoRollbackRevision(revision *storage.BrunoSourceRevision) bool {
+func isBrunoRollbackRevision(revision *storage.ImportSourceRevision) bool {
 	if revision == nil || revision.CanonicalScript == nil {
 		return false
 	}
@@ -3215,9 +3226,9 @@ func isBrunoRollbackRevision(revision *storage.BrunoSourceRevision) bool {
 }
 
 func (s *Server) handlePreviewBrunoProjection(w http.ResponseWriter, r *http.Request) {
-	brunoStore, ok := s.store.(storage.BrunoImportStore)
+	brunoStore, ok := s.store.(storage.ImportSourceStore)
 	if !ok || brunoStore == nil {
-		writeError(w, http.StatusServiceUnavailable, "Bruno revision storage is not configured")
+		writeError(w, http.StatusServiceUnavailable, "import source retention is not configured")
 		return
 	}
 	script, err := getPublishedImportScript(s.store, r.PathValue("id"))
@@ -3225,9 +3236,9 @@ func (s *Server) handlePreviewBrunoProjection(w http.ResponseWriter, r *http.Req
 		writeError(w, http.StatusNotFound, "script not found")
 		return
 	}
-	revision, err := brunoStore.GetActiveBrunoSourceRevision(script.ID, normalizeProjectID(script.ProjectID))
+	revision, err := brunoStore.GetActiveImportSourceRevision(script.ID, normalizeProjectID(script.ProjectID))
 	if err != nil {
-		writeError(w, http.StatusNotFound, "active Bruno source revision not found")
+		writeError(w, http.StatusNotFound, "no retained import source revision is active for this script")
 		return
 	}
 	report := revision.SecurityProfile["native_projection"]
@@ -4086,7 +4097,7 @@ func (s *Server) persistBrunoImportSession(ctx context.Context, session *brunoIm
 	}, data, brunoImportSessionMaxBytes)
 }
 
-func brunoArtifactOpenRequest(artifact storage.BrunoSourceArtifact) importartifact.OpenRequest {
+func brunoArtifactOpenRequest(artifact storage.ImportSourceArtifact) importartifact.OpenRequest {
 	return importartifact.OpenRequest{
 		BackendKey: artifact.BackendKey,
 		ProjectID:  artifact.ProjectID,
@@ -4382,7 +4393,7 @@ func (s *Server) cleanupBrunoImportSessionArtifacts(session *brunoImportSession)
 		return
 	}
 	defer func() { _ = unlockSourcePublication() }()
-	if cleanupErr := s.cleanupUnreferencedBrunoArtifactsLocked(objects, []storage.BrunoSourceArtifact{
+	if cleanupErr := s.cleanupUnreferencedBrunoArtifactsLocked(objects, []storage.ImportSourceArtifact{
 		session.RawArtifact,
 		session.SanitizedArtifact,
 	}, session.ID); cleanupErr != nil {
@@ -4390,7 +4401,7 @@ func (s *Server) cleanupBrunoImportSessionArtifacts(session *brunoImportSession)
 	}
 }
 
-func (s *Server) cleanupUnreferencedBrunoArtifacts(artifacts []storage.BrunoSourceArtifact) {
+func (s *Server) cleanupUnreferencedBrunoArtifacts(artifacts []storage.ImportSourceArtifact) {
 	if len(artifacts) == 0 {
 		return
 	}
@@ -4410,7 +4421,7 @@ func (s *Server) cleanupUnreferencedBrunoArtifacts(artifacts []storage.BrunoSour
 
 func (s *Server) cleanupUnreferencedBrunoArtifactsLocked(
 	objects *importartifact.EncryptedStore,
-	artifacts []storage.BrunoSourceArtifact,
+	artifacts []storage.ImportSourceArtifact,
 	excludedSessionID string,
 ) error {
 	if objects == nil || len(artifacts) == 0 {
@@ -4495,11 +4506,11 @@ func (s *Server) previewBrunoSynchronization(scriptID, projectID string, result 
 	if normalizeProjectID(existing.ProjectID) != normalizeProjectID(projectID) {
 		return nil, errors.New("Bruno synchronization target belongs to another project")
 	}
-	brunoStore, ok := s.store.(storage.BrunoImportStore)
+	brunoStore, ok := s.store.(storage.ImportSourceStore)
 	if !ok {
-		return nil, errors.New("Bruno revision storage is not configured")
+		return nil, errors.New("import source retention is not configured")
 	}
-	active, err := brunoStore.GetActiveBrunoSourceRevision(existing.ID, normalizeProjectID(projectID))
+	active, err := brunoStore.GetActiveImportSourceRevision(existing.ID, normalizeProjectID(projectID))
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return nil, err
 	}
@@ -4516,7 +4527,7 @@ func (s *Server) previewBrunoSynchronization(scriptID, projectID string, result 
 	return preview, nil
 }
 
-func detectBrunoCanonicalConflicts(existing *dsl.Script, active *storage.BrunoSourceRevision) []brunoImportConflict {
+func detectBrunoCanonicalConflicts(existing *dsl.Script, active *storage.ImportSourceRevision) []brunoImportConflict {
 	if existing == nil || active == nil || active.CanonicalScript == nil {
 		return nil
 	}
@@ -5124,7 +5135,7 @@ func (s *Server) allocateScriptRefKey() (string, error) {
 	return refkey.Script(s.runner.envCode, sequence, 1), nil
 }
 
-func (s *Server) canReadRawBrunoSource(r *http.Request, projectID string) bool {
+func (s *Server) canReadRawImportSource(r *http.Request, projectID string) bool {
 	settings := s.authSettingsForRequest()
 	if isAuthBypassMode(settings.Mode) {
 		return true
@@ -5147,19 +5158,19 @@ func (s *Server) canReadRawBrunoSource(r *http.Request, projectID string) bool {
 		user.hasRepositoryRole(repositoryIDForProject(s.store, project), RoleProjectAdmin)
 }
 
-func publicBrunoRevision(revision *storage.BrunoSourceRevision) *storage.BrunoSourceRevision {
+func publicBrunoRevision(revision *storage.ImportSourceRevision) *storage.ImportSourceRevision {
 	if revision == nil {
 		return nil
 	}
 	payload, _ := json.Marshal(revision)
-	var clone storage.BrunoSourceRevision
+	var clone storage.ImportSourceRevision
 	_ = json.Unmarshal(payload, &clone)
 	clone.CanonicalScript = nil
 	clone.RawArtifactID = ""
 	return &clone
 }
 
-func brunoSanitizedArtifactPublicSummary(artifact storage.BrunoSourceArtifact) brunoArtifactSummary {
+func brunoSanitizedArtifactPublicSummary(artifact storage.ImportSourceArtifact) brunoArtifactSummary {
 	return brunoArtifactSummary{
 		ID:             artifact.ID,
 		ArtifactKind:   "sanitized",

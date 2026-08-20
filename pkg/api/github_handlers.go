@@ -241,34 +241,13 @@ func (s *Server) handleImportGitHub(w http.ResponseWriter, r *http.Request) {
 		"html_url":          contents.File.HTMLURL,
 		"auth_mode":         resolved.AuthMode,
 	}
-	attachSourceReviewToScript(script, "github", sourceName, review)
-
-	var warnings []string
-	issues := validateScript(script)
-	if len(issues) > 0 {
-		warnings = append(warnings, issues...)
-	}
-	preflight := buildAndAttachImportPreflight(script, "github", issues, warnings)
-
-	s.recordAuditEvent(r, "github.script.import", "success", "script", script.Name, script.ProjectID, map[string]any{
-		"owner": req.Owner, "repo": req.Repo, "path": contents.File.Path,
-	})
-	s.writeScriptImportResponseWithSourceSecrets(w, r, http.StatusOK, scriptImportResponseOptions{
+	draft := importDraft{
+		Source:           "github",
+		SourceScriptName: sourceName,
+		ProjectID:        script.ProjectID,
 		Script:           script,
-		Warnings:         warnings,
-		Parameterization: buildImportParameterization(script, nil),
-		Preflight:        preflight,
-		Summary: map[string]any{
-			"owner":             req.Owner,
-			"repo":              req.Repo,
-			"branch":            branch,
-			"path":              contents.File.Path,
-			"commit_sha":        contents.File.SHA,
-			"remote_blob_sha":   contents.File.SHA,
-			"remote_commit_sha": remoteCommitSHA,
-			"auth_mode":         resolved.AuthMode,
-		},
-		ReviewSections: []scriptImportReviewSection{{
+		SourceReview:     review,
+		Sections: []scriptImportReviewSection{{
 			Key:      "github_source",
 			Title:    "GitHub Source",
 			Severity: "info",
@@ -279,7 +258,30 @@ func (s *Server) handleImportGitHub(w http.ResponseWriter, r *http.Request) {
 				"commit " + shortGitHubSHA(contents.File.SHA),
 			},
 		}},
-		SourceReview: review,
+	}
+	augmented := draft.augment(r)
+	warnings := augmented.Warnings
+
+	s.recordAuditEvent(r, "github.script.import", "success", "script", script.Name, script.ProjectID, map[string]any{
+		"owner": req.Owner, "repo": req.Repo, "path": contents.File.Path,
+	})
+	s.writeScriptImportResponseWithSourceSecrets(w, r, http.StatusOK, scriptImportResponseOptions{
+		Script:           script,
+		Warnings:         warnings,
+		Parameterization: buildImportParameterization(script, nil),
+		Preflight:        augmented.Preflight,
+		Summary: map[string]any{
+			"owner":             req.Owner,
+			"repo":              req.Repo,
+			"branch":            branch,
+			"path":              contents.File.Path,
+			"commit_sha":        contents.File.SHA,
+			"remote_blob_sha":   contents.File.SHA,
+			"remote_commit_sha": remoteCommitSHA,
+			"auth_mode":         resolved.AuthMode,
+		},
+		ReviewSections: augmented.Sections,
+		SourceReview:   review,
 	})
 }
 

@@ -35,37 +35,40 @@ func (s *Server) handleImportSalesforce(w http.ResponseWriter, r *http.Request) 
 		result.Script.ProjectID = normalizeProjectID(importReq.ProjectID)
 	}
 
-	augmented := augmentHARImportWithSalesforce(result, importReq.Data, importReq.ProjectID, importReq.Opts.ScriptName, "salesforce_har", true, agentforceTransformRequested(r), false)
+	agentforceTransform := agentforceTransformRequested(r)
+	salesforceAugmentation := augmentHARImportWithSalesforce(result, importReq.Data, importReq.ProjectID, importReq.Opts.ScriptName, "salesforce_har", true, agentforceTransform, false)
 
-	// Validate AFTER the MuleSoft/Agentforce attach calls: agentforce.Transform
-	// mutates the script in place (injects an OAuth init, rewrites headers, appends
-	// a teardown), so validating earlier would compute warnings against a script
-	// that no longer matches what is returned.
-	issues := validateScript(augmented.Script)
-	if len(issues) > 0 {
-		result.Warnings = append(result.Warnings, issues...)
+	draft := importDraft{
+		Source:           salesforceAugmentation.Source,
+		SourceScriptName: importReq.Opts.ScriptName,
+		ProjectID:        importReq.ProjectID,
+		Script:           salesforceAugmentation.Script,
+		SourceReview:     result.SourceReview,
+		Unsupported:      result.Unsupported,
+		Sections:         salesforceAugmentation.ReviewSections,
+		Warnings:         result.Warnings,
+		Accounting:       result.Accounting(),
 	}
-	// Attach a replay preflight for parity with the HAR importer's Salesforce path.
-	preflight := buildReplayPreflight(augmented.Script, nil, issues, result.Warnings)
-	attachImportReplayPreflight(augmented.Script, augmented.Source, preflight)
+	augmented := draft.augmentWithAgentforceTransform(agentforceTransform)
+	result.Warnings = augmented.Warnings
 
 	preApplied := sampleCorrelationsToPreApplied(result.Correlations)
-	if augmented.Script != result.Script {
+	if salesforceAugmentation.Script != result.Script {
 		preApplied = nil
 	}
 
 	s.writeScriptImportResponseWithSourceSecrets(w, r, http.StatusOK, scriptImportResponseOptions{
 		Result:                result,
-		Script:                augmented.Script,
+		Script:                salesforceAugmentation.Script,
 		Warnings:              result.Warnings,
 		Stats:                 result.Stats,
-		Correlations:          augmented.Correlations,
+		Correlations:          salesforceAugmentation.Correlations,
 		UnsupportedElements:   result.Unsupported.Strings(),
-		ReviewSections:        augmented.ReviewSections,
+		ReviewSections:        augmented.Sections,
 		SourceReview:          result.SourceReview,
-		Summary:               augmented.Summary,
-		Parameterization:      buildImportParameterization(augmented.Script, preApplied),
-		Preflight:             preflight,
+		Summary:               salesforceAugmentation.Summary,
+		Parameterization:      buildImportParameterization(salesforceAugmentation.Script, preApplied),
+		Preflight:             augmented.Preflight,
 		ProtectedRequirements: protectedRequirements,
 	})
 }
@@ -144,11 +147,8 @@ func augmentHARImportWithSalesforce(result *har.ConvertResult, data []byte, proj
 	if reviewForResponse != nil {
 		augmentation.Summary["salesforce_review"] = reviewForResponse
 	}
-	if augmentation.Script != nil {
-		attachSourceReviewToScript(augmentation.Script, augmentation.Source, sourceName, result.SourceReview)
-		if reviewForResponse != nil {
-			ensureScriptImportPreserved(augmentation.Script, augmentation.Source)["salesforce_review"] = reviewForResponse
-		}
+	if augmentation.Script != nil && reviewForResponse != nil {
+		ensureScriptImportPreserved(augmentation.Script, augmentation.Source)["salesforce_review"] = reviewForResponse
 	}
 	if review != nil {
 		severity := "info"
@@ -163,8 +163,10 @@ func augmentHARImportWithSalesforce(result *har.ConvertResult, data []byte, proj
 			Items:    salesforceReviewItems(review),
 		})
 	}
-	augmentation.ReviewSections = attachMuleSoftReview(augmentation.Script, augmentation.Source, augmentation.ReviewSections)
-	augmentation.ReviewSections = attachAgentforceReview(augmentation.Script, augmentation.Source, augmentation.ReviewSections, agentforce)
+	// The MuleSoft and Agentforce detectors, the source review, validation, and
+	// the replay preflight are the shared draft pass's job. This function's
+	// contract is narrower: decide which script the import ships (the HAR draft
+	// or its native Salesforce rewrite) and under which source profile.
 	return augmentation
 }
 

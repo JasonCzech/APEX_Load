@@ -366,3 +366,22 @@ var (
 	xmlValueAttribute            = regexp.MustCompile(`(?is)\b(?:value|text|content|selector|xpath|regex)\s*=\s*(?:"[^"]*"|'[^']*')`)
 	cssSensitiveAttributePattern = regexp.MustCompile(`(?is)(\[\s*(?:data[-_:]?|aria[-_:]?)?(?:password|passwd|pwd|token|secret|api[-_:]?key|authorization|cookie|session(?:[-_:]?id)?)\s*(?:[*^$|~]?=)\s*(["']))([^"']*)(["'])`)
 )
+
+// ReviewOnlyActionCount is how many converted actions were preserved for review
+// rather than execution. It is the review-only bucket of an import's conversion
+// accounting, and it reads only the shared review shape, so every importer
+// derives it the same way.
+func (r *Review) ReviewOnlyActionCount() int {
+	if r == nil {
+		return 0
+	}
+	count := 0
+	for _, mapping := range r.Mappings {
+		if strings.EqualFold(mapping.TargetKind, "action") &&
+			strings.TrimSpace(mapping.TargetPath) != "" &&
+			strings.EqualFold(mapping.Status, "review_only") {
+			count++
+		}
+	}
+	return count
+}

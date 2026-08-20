@@ -1965,9 +1965,18 @@ func applyAutoParameterization(script *dsl.Script) {
 
 // createHTTPScriptFromHAR converts the recorded side-car HAR into a
 // protocol-level HTTP script via the shared HAR importer.
-func (s *Server) createHTTPScriptFromHAR(artifact *recbrowser.Session, info *BrowserRecordingSession, name string) (*dsl.Script, []string, error) {
+// browserRecordingImportWorkflow names browser-recording saves in the shared
+// receipt helpers. It skips browser claim compensation because the
+// format-specific reconciler is what drives these paths.
+var browserRecordingImportWorkflow = importBatchWorkflow{
+	Profile:                      "browser_recorder",
+	Noun:                         "browser recording transaction",
+	SkipBrowserClaimCompensation: true,
+}
+
+func (s *Server) createHTTPScriptFromHAR(artifact *recbrowser.Session, info *BrowserRecordingSession, name string) (*dsl.Script, []string, []scriptImportReviewSection, error) {
 	if len(artifact.HAR) == 0 {
-		return nil, nil, fmt.Errorf("no side-car HAR is available to build an HTTP script")
+		return nil, nil, nil, fmt.Errorf("no side-car HAR is available to build an HTTP script")
 	}
 	httpName := strings.TrimSpace(name)
 	if httpName == "" {
@@ -1976,7 +1985,7 @@ func (s *Server) createHTTPScriptFromHAR(artifact *recbrowser.Session, info *Bro
 	httpName += " (HTTP)"
 	result, err := har.Convert(artifact.HAR, har.ConvertOptions{ScriptName: httpName})
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	if result.Script != nil {
 		result.Script.ProjectID = normalizeProjectID(info.ProjectID)
@@ -1992,10 +2001,25 @@ func (s *Server) createHTTPScriptFromHAR(artifact *recbrowser.Session, info *Bro
 				result.Warnings = append(result.Warnings, "Salesforce traffic detected; the HAR Traffic importer auto-generates the native HTTP draft.")
 			}
 		}
-		_ = attachMuleSoftReview(result.Script, "browser_recording_har", nil)
-		_ = attachAgentforceReview(result.Script, "browser_recording_har", nil, false)
 	}
-	return result.Script, result.Warnings, nil
+	// Run the shared augmentation over the generated HTTP draft and hand its
+	// sections back. Before this the detectors ran here with their return value
+	// discarded, so an Anypoint or Agentforce finding was preserved on the
+	// script and never reached the operator.
+	// The HAR converter's source review is deliberately not attached here. It
+	// embeds a scrubbed copy of the capture, and this draft is persisted as a
+	// credential-preserving script whose recorded values must survive verbatim —
+	// the recorder already keeps the capture itself as the script's baseline.
+	draft := importDraft{
+		Source:           "browser_recording_har",
+		SourceScriptName: httpName,
+		ProjectID:        info.ProjectID,
+		Script:           result.Script,
+		Unsupported:      result.Unsupported,
+		Warnings:         result.Warnings,
+	}
+	augmented := draft.augmentWithAgentforceTransform(false)
+	return result.Script, augmented.Warnings, augmented.Sections, nil
 }
 
 func (s *Server) handlePreviewBrowserRecordingConversion(w http.ResponseWriter, r *http.Request) {
@@ -2024,10 +2048,11 @@ func (s *Server) handlePreviewBrowserRecordingConversion(w http.ResponseWriter, 
 		}
 	}
 	var httpScript *dsl.Script
+	var httpSections []scriptImportReviewSection
 	if req.AlsoCreateHTTPScript {
 		var httpWarnings []string
 		var err error
-		httpScript, httpWarnings, err = s.createHTTPScriptFromHAR(artifact, info, req.Name)
+		httpScript, httpWarnings, httpSections, err = s.createHTTPScriptFromHAR(artifact, info, req.Name)
 		if err != nil {
 			warnings = append(warnings, "HTTP script generation skipped: "+err.Error())
 		} else if httpScript != nil {
@@ -2040,6 +2065,7 @@ func (s *Server) handlePreviewBrowserRecordingConversion(w http.ResponseWriter, 
 		Scripts:          scripts,
 		Warnings:         warnings,
 		Stats:            result.Stats,
+		ReviewSections:   httpSections,
 		Parameterization: buildImportParameterization(result.Script, nil),
 	})
 	if httpScript != nil {
@@ -2143,7 +2169,10 @@ func (s *Server) handleConvertBrowserRecording(w http.ResponseWriter, r *http.Re
 	var httpWarnings []string
 	if req.AlsoCreateHTTPScript {
 		var err error
-		httpScript, httpWarnings, err = s.createHTTPScriptFromHAR(artifact, info, req.Name)
+		// The convert route persists the drafts and answers with StoredScripts,
+		// which carry no review sections; the preview route above is where the
+		// generated HTTP draft's sections are shown.
+		httpScript, httpWarnings, _, err = s.createHTTPScriptFromHAR(artifact, info, req.Name)
 		if err != nil {
 			warnings = append(warnings, "HTTP script generation skipped: "+err.Error())
 		} else if httpScript == nil {
@@ -2355,26 +2384,7 @@ func (s *Server) handleConvertBrowserRecording(w http.ResponseWriter, r *http.Re
 		// staged browser imports here could complete that same receipt under a
 		// different owner before the request renews it; only reconcile unrelated
 		// non-browser claims at this point.
-		if recoverErr := s.recoverExpiredLibraryImportClaimsWithBrowserCompensation(false); recoverErr != nil {
-			writeError(w, http.StatusInternalServerError, "failed to recover prior browser recording transaction: "+recoverErr.Error())
-			return
-		}
-		if renewErr := attempt.renew(); renewErr != nil {
-			writeError(w, http.StatusInternalServerError, "failed to renew browser recording receipt after recovery: "+renewErr.Error())
-			return
-		}
-		if fenceErr := s.fenceDirectImportAssetAdoption(
-			attempt,
-			projectID,
-			deterministicScriptIDs(transactionScripts),
-			"",
-		); fenceErr != nil {
-			if errors.Is(fenceErr, errDirectImportAssetsClaimed) {
-				w.Header().Set("Retry-After", "2")
-				writeError(w, http.StatusConflict, "the prior browser recording transaction is still finalizing; retry conversion")
-			} else {
-				writeError(w, http.StatusInternalServerError, "failed to inspect prior browser recording transaction: "+fenceErr.Error())
-			}
+		if !s.fenceImportBatchAdoption(w, browserRecordingImportWorkflow, attempt, projectID, deterministicScriptIDs(transactionScripts), "") {
 			return
 		}
 		stored, storedScenario, loadErr := s.loadDirectImportAssetsByIDs(
@@ -2594,21 +2604,7 @@ func (s *Server) handleRecoverBrowserRecordingConversion(
 	if receiptReplay {
 		stored, _, err = s.loadDirectImportReceiptAssets(attempt)
 	} else {
-		if recoverErr := s.recoverExpiredLibraryImportClaimsWithBrowserCompensation(false); recoverErr != nil {
-			writeError(w, http.StatusInternalServerError, "failed to recover prior browser recording transaction: "+recoverErr.Error())
-			return
-		}
-		if renewErr := attempt.renew(); renewErr != nil {
-			writeError(w, http.StatusInternalServerError, "failed to renew browser recording receipt after recovery: "+renewErr.Error())
-			return
-		}
-		if fenceErr := s.fenceDirectImportAssetAdoption(attempt, recovery.ProjectID, expectedIDs, ""); fenceErr != nil {
-			if errors.Is(fenceErr, errDirectImportAssetsClaimed) {
-				w.Header().Set("Retry-After", "2")
-				writeError(w, http.StatusConflict, "the prior browser recording transaction is still finalizing; retry conversion")
-			} else {
-				writeError(w, http.StatusInternalServerError, "failed to inspect prior browser recording transaction: "+fenceErr.Error())
-			}
+		if !s.fenceImportBatchAdoption(w, browserRecordingImportWorkflow, attempt, recovery.ProjectID, expectedIDs, "") {
 			return
 		}
 		stored, _, err = s.loadDirectImportAssetsByIDs(recovery.ProjectID, expectedIDs, "")

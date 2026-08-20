@@ -10,7 +10,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/convert/convertresult"
 	"github.com/jasonczech/apexload/pkg/convert/credentialpolicy"
+	"github.com/jasonczech/apexload/pkg/convert/enterprisearchive"
+	"github.com/jasonczech/apexload/pkg/convert/jmeter"
 	"github.com/jasonczech/apexload/pkg/convert/paramize"
 	"github.com/jasonczech/apexload/pkg/convert/sourceview"
 	"github.com/jasonczech/apexload/pkg/credential"
@@ -32,16 +35,26 @@ type scriptImportResponseOptions struct {
 	UnsupportedElements []string
 	ReviewSections      []scriptImportReviewSection
 	RepairSuggestions   []scriptImportRepairSuggestion
-	ScenarioDraft       any
+	ScenarioDraft       *jmeter.ScenarioDraft
 	Summary             any
-	DetectedProtocol    any
-	FidelityReport      any
-	ReviewArtifact      any
-	SourceReview        any
-	TrueClient2Compat   any
-	ProtocolCompat      any
-	Parameterization    *paramize.Result
-	Preflight           any
+	// Result, Scripts, Script, Stats, Summary, and Correlations stay untyped
+	// because each converter package declares its own shape for them. They
+	// become typeable once the converters share a result core.
+	DetectedProtocol *enterprisearchive.DetectedProtocol
+	FidelityReport   *enterprisearchive.ImportFidelityReport
+	ReviewArtifact   *enterprisearchive.ReviewArtifact
+	// SourceReview holds three shapes today — sourceview.Review from most
+	// converters, enterprisearchive.SourceReview from the archive, and a plain
+	// map from the GitHub importer — so it cannot be typed ahead of that core.
+	SourceReview      any
+	TrueClient2Compat *trueClient2CompatReport
+	ProtocolCompat    *protocolCompatReport
+	// Accounting is how much of the source converted, in the terms every
+	// importer shares. It is omitted when the converter tracks no detected
+	// count, rather than reported as an all-zero conversion.
+	Accounting       convertresult.Accounting
+	Parameterization *paramize.Result
+	Preflight        *ReplayPreflight
 	// ProtectedRequirements is an in-memory, one-shot adapter handoff. Values
 	// are attached to an encrypted source-secret migration session when one is
 	// available and are never serialized into the response.
@@ -116,6 +129,18 @@ type scriptImportRepairSuggestion struct {
 	TargetAction           string   `json:"target_action,omitempty"`
 	SelectorStabilityScore int      `json:"selector_stability_score,omitempty"`
 	SelectorSignals        []string `json:"selector_signals,omitempty"`
+}
+
+// importResponseValue hands a typed pointer to the response sanitizers as a
+// true nil when it is nil. A nil typed pointer boxed into an `any` is not a nil
+// interface, and the sanitizers only short-circuit on the latter — so a field
+// left unset would otherwise take the marshal-and-reparse path on its way to
+// producing the same null.
+func importResponseValue[T any](value *T) any {
+	if value == nil {
+		return nil
+	}
+	return value
 }
 
 func newScriptImportResponse(opts scriptImportResponseOptions) map[string]any {
@@ -225,17 +250,20 @@ func newScriptImportResponse(opts scriptImportResponseOptions) map[string]any {
 		"unsupported_elements":        sanitizeImportReviewEvidence(unsupported),
 		"review_sections":             sanitizeImportReviewEvidence(reviewSections),
 		"repair_suggestions":          sanitizeImportReviewEvidence(repairSuggestions),
-		"scenario_draft":              sanitizeImportEmbeddedReviewEvidence(maskScriptResponseValue(opts.ScenarioDraft)),
+		"scenario_draft":              sanitizeImportEmbeddedReviewEvidence(maskScriptResponseValue(importResponseValue(opts.ScenarioDraft))),
 		"summary":                     sanitizeImportEmbeddedReviewEvidence(summary),
-		"detected_protocol":           sanitizeImportEmbeddedReviewEvidence(opts.DetectedProtocol),
-		"fidelity_report":             sanitizeImportReviewEvidence(opts.FidelityReport),
-		"review_artifact":             sanitizeImportReviewEvidence(opts.ReviewArtifact),
+		"detected_protocol":           sanitizeImportEmbeddedReviewEvidence(importResponseValue(opts.DetectedProtocol)),
+		"fidelity_report":             sanitizeImportReviewEvidence(importResponseValue(opts.FidelityReport)),
+		"review_artifact":             sanitizeImportReviewEvidence(importResponseValue(opts.ReviewArtifact)),
 		"source_review":               sanitizeImportReviewEvidence(opts.SourceReview),
-		"trueclient2_compat_report":   sanitizeImportReviewEvidence(opts.TrueClient2Compat),
-		"protocol_compat_report":      sanitizeImportReviewEvidence(opts.ProtocolCompat),
+		"trueclient2_compat_report":   sanitizeImportReviewEvidence(importResponseValue(opts.TrueClient2Compat)),
+		"protocol_compat_report":      sanitizeImportReviewEvidence(importResponseValue(opts.ProtocolCompat)),
 		"parameterization":            parameterization,
 		"shared_values":               sharedValues,
-		"preflight":                   sanitizeImportEmbeddedReviewEvidence(opts.Preflight),
+		"preflight":                   sanitizeImportEmbeddedReviewEvidence(importResponseValue(opts.Preflight)),
+	}
+	if !opts.Accounting.Empty() {
+		response["accounting"] = opts.Accounting
 	}
 	if opts.Result != nil {
 		response["result"] = sanitizeImportResponseValue(opts.Result)

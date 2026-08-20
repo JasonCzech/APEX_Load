@@ -121,7 +121,7 @@ func (s *Server) retainProtectedImportSource(
 		}
 		cleanupErr := s.cleanupUnreferencedBrunoArtifactsLocked(
 			objects,
-			[]storage.BrunoSourceArtifact{plannedArtifact},
+			[]storage.ImportSourceArtifact{plannedArtifact},
 			"",
 		)
 		if cleanupErr != nil {
@@ -184,12 +184,12 @@ func (s *Server) retainedImportSourceMatchesActive(
 	if s == nil || script == nil {
 		return false
 	}
-	revisions, ok := s.store.(storage.BrunoImportStore)
+	revisions, ok := s.store.(storage.ImportSourceStore)
 	if !ok || revisions == nil {
 		return false
 	}
 	projectID := normalizeProjectID(script.ProjectID)
-	active, err := revisions.GetActiveBrunoSourceRevision(
+	active, err := revisions.GetActiveImportSourceRevision(
 		script.ID,
 		projectID,
 	)
@@ -197,7 +197,7 @@ func (s *Server) retainedImportSourceMatchesActive(
 		!strings.EqualFold(strings.TrimSpace(active.SourceFormat), strings.TrimSpace(sourceProfile)) {
 		return false
 	}
-	artifact, err := revisions.GetBrunoSourceArtifact(active.RawArtifactID, projectID)
+	artifact, err := revisions.GetImportSourceArtifact(active.RawArtifactID, projectID)
 	if err != nil || artifact == nil ||
 		artifact.ProjectID != projectID ||
 		!strings.EqualFold(strings.TrimSpace(artifact.ArtifactKind), "raw") ||

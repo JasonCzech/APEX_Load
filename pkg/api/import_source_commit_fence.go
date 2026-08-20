@@ -188,13 +188,13 @@ func (s *Server) retainedImportSourceCommitOwnerWasPublished(
 	sourceProfile string,
 	source []byte,
 ) (bool, error) {
-	revisions, ok := s.store.(storage.BrunoImportStore)
+	revisions, ok := s.store.(storage.ImportSourceStore)
 	if !ok || revisions == nil || len(source) == 0 {
 		return false, nil
 	}
 	sourceSum := sha256.Sum256(source)
 	sourceSHA256 := hex.EncodeToString(sourceSum[:])
-	rows, err := revisions.ListBrunoSourceRevisions(
+	rows, err := revisions.ListImportSourceRevisions(
 		strings.TrimSpace(scriptID),
 		normalizeProjectID(projectID),
 	)
@@ -225,12 +225,12 @@ func (s *Server) retainedImportSourceCommitFenceMatchesActive(
 	projectID string,
 	fence protectedImportSourceCommitFence,
 ) bool {
-	revisions, ok := s.store.(storage.BrunoImportStore)
+	revisions, ok := s.store.(storage.ImportSourceStore)
 	if !ok || revisions == nil {
 		return false
 	}
 	projectID = normalizeProjectID(projectID)
-	active, err := revisions.GetActiveBrunoSourceRevision(
+	active, err := revisions.GetActiveImportSourceRevision(
 		strings.TrimSpace(scriptID),
 		projectID,
 	)
@@ -245,7 +245,7 @@ func (s *Server) retainedImportSourceCommitFenceMatchesActive(
 		activeFence.SourceSizeBytes != fence.SourceSizeBytes {
 		return false
 	}
-	artifact, err := revisions.GetBrunoSourceArtifact(active.RawArtifactID, projectID)
+	artifact, err := revisions.GetImportSourceArtifact(active.RawArtifactID, projectID)
 	return err == nil && artifact != nil &&
 		artifact.ProjectID == projectID &&
 		strings.EqualFold(strings.TrimSpace(artifact.ArtifactKind), "raw") &&

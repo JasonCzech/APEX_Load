@@ -12,7 +12,6 @@ import (
 	"github.com/jasonczech/apexload/pkg/convert/agentforce"
 	"github.com/jasonczech/apexload/pkg/convert/asyncapi"
 	"github.com/jasonczech/apexload/pkg/convert/brokerconfig"
-	"github.com/jasonczech/apexload/pkg/convert/devweb"
 	"github.com/jasonczech/apexload/pkg/convert/eventhubscapture"
 	"github.com/jasonczech/apexload/pkg/convert/mulesoft"
 	"github.com/jasonczech/apexload/pkg/convert/openapi"
@@ -65,11 +64,7 @@ type ramlImportRequest struct {
 }
 
 func (s *Server) handleDevWebSupportMatrix(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{
-		"support_matrix":  devweb.GetSupportMatrix(),
-		"notes":           devweb.GetSupportMatrixNotes(),
-		"tested_examples": devweb.GetSupportMatrixExamples(),
-	})
+	s.writeImporterSupportMatrix(w, r, "devweb")
 }
 
 func (s *Server) handleImportOpenAPI(w http.ResponseWriter, r *http.Request) {
@@ -89,27 +84,19 @@ func (s *Server) handleImportOpenAPI(w http.ResponseWriter, r *http.Request) {
 	}
 	protectedRequirements := result.ProtectedRequirements.Take()
 	defer clearCredentialRequirementValues(protectedRequirements)
-	if result.Script != nil {
-		result.Script.ProjectID = normalizeProjectID(importReq.ProjectID)
+	draft := importDraft{
+		Source:           "openapi",
+		SourceScriptName: importReq.Name,
+		ProjectID:        importReq.ProjectID,
+		Script:           result.Script,
+		SourceReview:     result.SourceReview,
+		Unsupported:      result.Unsupported,
+		Sections:         buildOpenAPIReviewSections(result),
+		Warnings:         result.Warnings,
+		Accounting:       result.Accounting(),
 	}
-	attachSourceReviewToScript(result.Script, "openapi", importReq.Name, result.SourceReview)
-	reviewSections := appendImportDiagnosticReviewSections(buildOpenAPIReviewSections(result), result.Unsupported)
-	if muleReview := mulesoft.Analyze(result.Script); muleReview.Detected {
-		if result.Script != nil {
-			ensureScriptImportPreserved(result.Script, "openapi")["mulesoft_review"] = muleReview
-		}
-		reviewSections = append(reviewSections, mulesoftReviewSection(muleReview))
-	}
-	reviewSections = attachAgentforceReview(result.Script, "openapi", reviewSections, agentforceTransformRequested(r))
-	// Agentforce transformation mutates executable actions and can add governed
-	// secret references. Validate and build replay guidance from that final draft,
-	// not the pre-transform script.
-	issues := validateScript(result.Script)
-	preflight := buildReplayPreflight(result.Script, nil, issues, result.Warnings)
-	attachImportReplayPreflight(result.Script, "openapi", preflight)
-	if len(issues) > 0 {
-		result.Warnings = append(result.Warnings, issues...)
-	}
+	augmented := draft.augment(r)
+	result.Warnings = augmented.Warnings
 	preparedCredentialReview, credentialReviewErr := prepareImportCredentialReview(
 		[]*dsl.Script{result.Script}, protectedRequirements, nil,
 	)
@@ -137,10 +124,10 @@ func (s *Server) handleImportOpenAPI(w http.ResponseWriter, r *http.Request) {
 		Summary:                  result.Summary,
 		UnsupportedElements:      result.Unsupported.Strings(),
 		Correlations:             result.Correlations,
-		ReviewSections:           reviewSections,
+		ReviewSections:           augmented.Sections,
 		SourceReview:             result.SourceReview,
 		Parameterization:         buildImportParameterization(result.Script, openAPICorrelationsToPreApplied(result.Correlations)),
-		Preflight:                preflight,
+		Preflight:                augmented.Preflight,
 		ProtectedRequirements:    protectedRequirements,
 		PreparedCredentialReview: preparedCredentialReview,
 		CredentialReviewPrepared: true,
@@ -180,10 +167,7 @@ func attachImportCandidateDraftAttestation(
 }
 
 func (s *Server) handleOpenAPISupportMatrix(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{
-		"support_matrix": openapi.GetSupportMatrix(),
-		"notes":          openapi.GetSupportMatrixNotes(),
-	})
+	s.writeImporterSupportMatrix(w, r, "openapi")
 }
 
 type openAPIImportCommitRequest struct {
@@ -225,10 +209,7 @@ func (s *Server) handleCommitOpenAPIImport(w http.ResponseWriter, r *http.Reques
 }
 
 func (s *Server) handleRAMLSupportMatrix(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{
-		"support_matrix": raml.GetSupportMatrix(),
-		"notes":          raml.GetSupportMatrixNotes(),
-	})
+	s.writeImporterSupportMatrix(w, r, "raml")
 }
 
 func (s *Server) handleImportRAML(w http.ResponseWriter, r *http.Request) {
@@ -247,38 +228,30 @@ func (s *Server) handleImportRAML(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnprocessableEntity, "conversion failed: "+err.Error())
 		return
 	}
-	if result.Script != nil {
-		result.Script.ProjectID = normalizeProjectID(importReq.ProjectID)
+	draft := importDraft{
+		Source:           "raml",
+		SourceScriptName: importReq.Name,
+		ProjectID:        importReq.ProjectID,
+		Script:           result.Script,
+		Unsupported:      result.Unsupported,
+		Sections: []scriptImportReviewSection{{
+			Key:      "raml_import",
+			Title:    "RAML Import Review",
+			Severity: "info",
+			Summary:  "RAML resources and methods were converted to HTTP DSL actions.",
+			Items:    ramlReviewItems(result),
+		}},
+		Warnings:   result.Warnings,
+		Accounting: result.Accounting(),
 	}
-	attachSourceReviewToScript(result.Script, "raml", importReq.Name, nil)
-	reviewSections := []scriptImportReviewSection{{
-		Key:      "raml_import",
-		Title:    "RAML Import Review",
-		Severity: "info",
-		Summary:  "RAML resources and methods were converted to HTTP DSL actions.",
-		Items:    ramlReviewItems(result),
-	}}
-	muleReview := mulesoft.Analyze(result.Script)
-	if muleReview.Detected {
-		// The RAML review section already surfaces Anypoint Client ID Enforcement
-		// (the converter emits its own policy hint); drop the duplicate from the
-		// MuleSoft section so the same guidance is not shown twice.
-		if ramlSummaryReportsPolicy(result.Summary, "client_id_enforcement") {
-			dropMulesoftClientIDEnforcement(muleReview)
-		}
-		if mulesoftReviewHasContent(muleReview) {
-			if result.Script != nil {
-				ensureScriptImportPreserved(result.Script, "raml")["mulesoft_review"] = muleReview
-			}
-			reviewSections = append(reviewSections, mulesoftReviewSection(muleReview))
-		}
+	// The RAML review section already surfaces Anypoint Client ID Enforcement
+	// (the converter emits its own policy hint), so drop the duplicate from the
+	// MuleSoft section rather than show the same guidance twice.
+	if ramlSummaryReportsPolicy(result.Summary, "client_id_enforcement") {
+		draft.SuppressedMuleSoftPolicies = []string{"client_id_enforcement"}
 	}
-	reviewSections = attachAgentforceReview(result.Script, "raml", reviewSections, agentforceTransformRequested(r))
-	issues := validateScript(result.Script)
-	if len(issues) > 0 {
-		result.Warnings = append(result.Warnings, issues...)
-	}
-	preflight := buildAndAttachImportPreflight(result.Script, "raml", issues, result.Warnings)
+	augmented := draft.augment(r)
+	result.Warnings = augmented.Warnings
 
 	s.writeScriptImportResponseWithSourceSecrets(w, r, http.StatusOK, scriptImportResponseOptions{
 		Result:                 result,
@@ -287,10 +260,10 @@ func (s *Server) handleImportRAML(w http.ResponseWriter, r *http.Request) {
 		Stats:                  result.Stats,
 		Summary:                result.Summary,
 		UnsupportedElements:    result.Unsupported.Strings(),
-		ReviewSections:         reviewSections,
+		ReviewSections:         augmented.Sections,
 		CredentialRequirements: result.SecretRequirements,
 		Parameterization:       buildImportParameterization(result.Script, nil),
-		Preflight:              preflight,
+		Preflight:              augmented.Preflight,
 	})
 }
 
@@ -303,21 +276,31 @@ func ramlSummaryReportsPolicy(summary raml.ReviewSummary, policy string) bool {
 	return false
 }
 
-// dropMulesoftClientIDEnforcement removes the client_id_enforcement policy and
-// its credential blocker from a MuleSoft review (used when another section
-// already reports the same Anypoint policy).
-func dropMulesoftClientIDEnforcement(review *mulesoft.Review) {
-	policies := review.PolicyFindings[:0]
-	for _, p := range review.PolicyFindings {
-		if p.Policy != "client_id_enforcement" {
-			policies = append(policies, p)
+// dropMulesoftPolicies removes named Anypoint policies, and the credential
+// blockers they raise, from a MuleSoft review. It is used when another review
+// section already reports the same policy from the converter's own summary.
+func dropMulesoftPolicies(review *mulesoft.Review, policies ...string) {
+	if review == nil || len(policies) == 0 {
+		return
+	}
+	dropped := make(map[string]struct{}, len(policies))
+	for _, policy := range policies {
+		dropped[policy] = struct{}{}
+	}
+	kept := review.PolicyFindings[:0]
+	for _, finding := range review.PolicyFindings {
+		if _, drop := dropped[finding.Policy]; !drop {
+			kept = append(kept, finding)
 		}
 	}
-	review.PolicyFindings = policies
+	review.PolicyFindings = kept
+	if _, drop := dropped["client_id_enforcement"]; !drop {
+		return
+	}
 	blockers := review.Blockers[:0]
-	for _, b := range review.Blockers {
-		if !strings.Contains(b, "client_id/client_secret") {
-			blockers = append(blockers, b)
+	for _, blocker := range review.Blockers {
+		if !strings.Contains(blocker, "client_id/client_secret") {
+			blockers = append(blockers, blocker)
 		}
 	}
 	review.Blockers = blockers
@@ -327,9 +310,18 @@ func mulesoftReviewHasContent(review *mulesoft.Review) bool {
 	return review != nil && (len(review.Domains) > 0 || len(review.PolicyFindings) > 0 || len(review.AuthFindings) > 0 || len(review.Blockers) > 0)
 }
 
-func attachMuleSoftReview(script *dsl.Script, source string, sections []scriptImportReviewSection) []scriptImportReviewSection {
+// attachMuleSoftReview runs the MuleSoft/Anypoint analyzer and, when the draft
+// carries Anypoint signals, preserves the review on the script and returns the
+// review section appended to the supplied sections. suppressedPolicies drops
+// policies a caller's own section already reports, so the same Anypoint finding
+// is not shown twice.
+func attachMuleSoftReview(script *dsl.Script, source string, sections []scriptImportReviewSection, suppressedPolicies ...string) []scriptImportReviewSection {
 	review := mulesoft.Analyze(script)
-	if !review.Detected || !mulesoftReviewHasContent(review) {
+	if !review.Detected {
+		return sections
+	}
+	dropMulesoftPolicies(review, suppressedPolicies...)
+	if !mulesoftReviewHasContent(review) {
 		return sections
 	}
 	if script != nil {
@@ -483,15 +475,19 @@ func (s *Server) handleImportWSDL(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnprocessableEntity, "conversion failed: "+err.Error())
 		return
 	}
-	if result.Script != nil {
-		result.Script.ProjectID = normalizeProjectID(importReq.ProjectID)
+	draft := importDraft{
+		Source:           "wsdl",
+		SourceScriptName: importReq.Name,
+		ProjectID:        importReq.ProjectID,
+		Script:           result.Script,
+		SourceReview:     result.SourceReview,
+		Unsupported:      result.Unsupported,
+		Sections:         buildWSDLReviewSections(result),
+		Warnings:         result.Warnings,
+		Accounting:       result.Accounting(),
 	}
-	attachSourceReviewToScript(result.Script, "wsdl", importReq.Name, result.SourceReview)
-	issues := validateScript(result.Script)
-	if len(issues) > 0 {
-		result.Warnings = append(result.Warnings, issues...)
-	}
-	preflight := buildAndAttachImportPreflight(result.Script, "wsdl", issues, result.Warnings)
+	augmented := draft.augment(r)
+	result.Warnings = augmented.Warnings
 	s.writeScriptImportResponseWithSourceSecrets(w, r, http.StatusOK, scriptImportResponseOptions{
 		Result:                 result,
 		Script:                 result.Script,
@@ -499,11 +495,11 @@ func (s *Server) handleImportWSDL(w http.ResponseWriter, r *http.Request) {
 		Stats:                  result.Stats,
 		Summary:                result.Summary,
 		UnsupportedElements:    result.Unsupported.Strings(),
-		ReviewSections:         appendImportDiagnosticReviewSections(buildWSDLReviewSections(result), result.Unsupported),
+		ReviewSections:         augmented.Sections,
 		SourceReview:           result.SourceReview,
 		CredentialRequirements: result.SecretRequirements,
 		Parameterization:       buildImportParameterization(result.Script, nil),
-		Preflight:              preflight,
+		Preflight:              augmented.Preflight,
 	})
 }
 
@@ -535,24 +531,19 @@ func (s *Server) handleValidatePostmanImport(w http.ResponseWriter, r *http.Requ
 func (s *Server) writePostmanImportResponse(w http.ResponseWriter, r *http.Request, result *postman.ConvertResult, importReq *postmanImportRequest, agentforceTransform bool) {
 	protectedRequirements := result.ProtectedRequirements.Take()
 	defer clearCredentialRequirementValues(protectedRequirements)
-	if result.Script != nil {
-		result.Script.ProjectID = normalizeProjectID(importReq.ProjectID)
+	draft := importDraft{
+		Source:           "postman",
+		SourceScriptName: importReq.Name,
+		ProjectID:        importReq.ProjectID,
+		Script:           result.Script,
+		SourceReview:     result.SourceReview,
+		Unsupported:      result.Unsupported,
+		Sections:         buildPostmanReviewSections(result),
+		Warnings:         result.Warnings,
+		Accounting:       result.Accounting(),
 	}
-	attachSourceReviewToScript(result.Script, "postman", importReq.Name, result.SourceReview)
-	reviewSections := appendImportDiagnosticReviewSections(buildPostmanReviewSections(result), result.Unsupported)
-	if muleReview := mulesoft.Analyze(result.Script); muleReview.Detected {
-		if result.Script != nil {
-			ensureScriptImportPreserved(result.Script, "postman")["mulesoft_review"] = muleReview
-		}
-		reviewSections = append(reviewSections, mulesoftReviewSection(muleReview))
-	}
-	reviewSections = attachAgentforceReview(result.Script, "postman", reviewSections, agentforceTransform)
-	issues := validateScript(result.Script)
-	preflight := buildReplayPreflight(result.Script, nil, issues, result.Warnings)
-	attachImportReplayPreflight(result.Script, "postman", preflight)
-	if len(issues) > 0 {
-		result.Warnings = append(result.Warnings, issues...)
-	}
+	augmented := draft.augmentWithAgentforceTransform(agentforceTransform)
+	result.Warnings = augmented.Warnings
 	preparedCredentialReview, credentialReviewErr := prepareImportCredentialReview(
 		[]*dsl.Script{result.Script}, protectedRequirements, nil,
 	)
@@ -586,11 +577,11 @@ func (s *Server) writePostmanImportResponse(w http.ResponseWriter, r *http.Reque
 		Stats:                    result.Stats,
 		Summary:                  result.Summary,
 		UnsupportedElements:      result.Unsupported.Strings(),
-		ReviewSections:           reviewSections,
+		ReviewSections:           augmented.Sections,
 		SourceReview:             result.SourceReview,
 		Correlations:             result.Correlations,
 		Parameterization:         buildImportParameterization(result.Script, postmanCorrelationsToPreApplied(result.Correlations)),
-		Preflight:                preflight,
+		Preflight:                augmented.Preflight,
 		ProtectedRequirements:    protectedRequirements,
 		PreparedCredentialReview: preparedCredentialReview,
 		CredentialReviewPrepared: true,
@@ -614,34 +605,11 @@ func (s *Server) handleSavePostmanImport(w http.ResponseWriter, r *http.Request)
 }
 
 func (s *Server) handlePostmanSupportMatrix(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{
-		"support_matrix": postman.GetSupportMatrix(),
-		"notes":          postman.GetSupportMatrixNotes(),
-	})
+	s.writeImporterSupportMatrix(w, r, "postman")
 }
 
 func (s *Server) handleAsyncAPISupportMatrix(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{
-		"support_matrix": asyncapi.GetSupportMatrix(),
-		"notes":          asyncapi.GetSupportMatrixNotes(),
-	})
-}
-
-func validateScripts(scripts []*dsl.Script) []string {
-	var issues []string
-	for _, script := range scripts {
-		if script == nil {
-			continue
-		}
-		for _, issue := range validateScript(script) {
-			if len(scripts) > 1 {
-				issues = append(issues, fmt.Sprintf("%s: %s", script.Name, issue))
-			} else {
-				issues = append(issues, issue)
-			}
-		}
-	}
-	return issues
+	s.writeImporterSupportMatrix(w, r, "asyncapi")
 }
 
 func (s *Server) handleImportAsyncAPI(w http.ResponseWriter, r *http.Request) {
@@ -659,23 +627,20 @@ func (s *Server) handleImportAsyncAPI(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnprocessableEntity, "conversion failed: "+err.Error())
 		return
 	}
-	if result.Script != nil {
-		result.Script.ProjectID = normalizeProjectID(importReq.ProjectID)
+	draft := importDraft{
+		Source:           "asyncapi",
+		SourceScriptName: importReq.Name,
+		ProjectID:        importReq.ProjectID,
+		Script:           result.Script,
+		Scripts:          result.Scripts,
+		SourceReview:     result.SourceReview,
+		Unsupported:      result.Unsupported,
+		Sections:         buildAsyncAPIReviewSections(result),
+		Warnings:         result.Warnings,
+		Accounting:       result.Accounting(),
 	}
-	for _, script := range result.Scripts {
-		if script != nil {
-			script.ProjectID = normalizeProjectID(importReq.ProjectID)
-		}
-	}
-	attachSourceReviewToScripts(result.Scripts, "asyncapi", importReq.Name, result.SourceReview)
-	issues := validateScripts(result.Scripts)
-	preflight := buildReplayPreflight(result.Script, nil, validateScript(result.Script), result.Warnings)
-	for _, script := range result.Scripts {
-		attachImportReplayPreflight(script, "asyncapi", buildReplayPreflight(script, nil, validateScript(script), result.Warnings))
-	}
-	if len(issues) > 0 {
-		result.Warnings = append(result.Warnings, issues...)
-	}
+	augmented := draft.augment(r)
+	result.Warnings = augmented.Warnings
 	s.writeScriptImportResponseWithSourceSecrets(w, r, http.StatusOK, scriptImportResponseOptions{
 		Result:                 result,
 		Scripts:                result.Scripts,
@@ -684,53 +649,30 @@ func (s *Server) handleImportAsyncAPI(w http.ResponseWriter, r *http.Request) {
 		Stats:                  result.Stats,
 		Summary:                result.Summary,
 		UnsupportedElements:    result.Unsupported.Strings(),
-		ReviewSections:         appendImportDiagnosticReviewSections(buildAsyncAPIReviewSections(result), result.Unsupported),
+		ReviewSections:         augmented.Sections,
 		SourceReview:           result.SourceReview,
 		CredentialRequirements: result.SecretRequirements,
 		Parameterization:       buildMultiScriptParameterization(result.Scripts),
-		Preflight:              preflight,
+		Preflight:              augmented.Preflight,
 	})
 }
 
 func (s *Server) handleEventHubsCaptureSupportMatrix(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{
-		"support_matrix": eventhubscapture.GetSupportMatrix(),
-		"notes":          eventhubscapture.GetSupportMatrixNotes(),
-	})
+	s.writeImporterSupportMatrix(w, r, "eventhubs_capture")
 }
 
 // handleImportEventHubsCapture imports an Event Hubs Capture Avro file (binary)
 // into a native eventhubs producer script. Accepts a multipart file upload or a
 // raw binary body.
 func (s *Server) handleImportEventHubsCapture(w http.ResponseWriter, r *http.Request) {
-	r.Body = http.MaxBytesReader(w, r.Body, webAPIImportMaxBodyBytes)
-
-	var (
-		data      []byte
-		name      string
-		projectID string
-		ok        bool
-	)
-	if strings.HasPrefix(r.Header.Get("Content-Type"), "multipart/form-data") {
-		var filename string
-		data, filename, ok = readImportMultipartFile(w, r, webAPIImportMaxBodyBytes)
-		if !ok {
-			return
-		}
-		name = strings.TrimSuffix(archiveingest.LogicalBase(filename), archiveingest.LogicalExt(filename))
-		projectID = authorizedImportProjectID(r)
-	} else {
-		data, ok = readImportBody(w, r)
-		if !ok {
-			return
-		}
-		filename := r.URL.Query().Get("filename")
-		name = strings.TrimSuffix(archiveingest.LogicalBase(filename), archiveingest.LogicalExt(filename))
-		projectID = r.URL.Query().Get("project_id")
+	upload, ok := decodeImportUpload(w, r, webAPIImportMaxBodyBytes)
+	if !ok {
+		return
 	}
+	data, name, projectID := upload.Data, upload.Name, upload.ProjectID
 
 	maxEvents := 0
-	if v := strings.TrimSpace(r.URL.Query().Get("max_events")); v != "" {
+	if v := strings.TrimSpace(upload.Value("max_events")); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
 			maxEvents = n
 		}
@@ -739,7 +681,7 @@ func (s *Server) handleImportEventHubsCapture(w http.ResponseWriter, r *http.Req
 	result, err := eventhubscapture.Convert(eventhubscapture.ConvertRequest{
 		Name:      name,
 		ProjectID: projectID,
-		EventHub:  strings.TrimSpace(r.URL.Query().Get("event_hub")),
+		EventHub:  strings.TrimSpace(upload.Value("event_hub")),
 		Data:      data,
 		MaxEvents: maxEvents,
 	})
@@ -747,23 +689,25 @@ func (s *Server) handleImportEventHubsCapture(w http.ResponseWriter, r *http.Req
 		writeError(w, http.StatusUnprocessableEntity, "conversion failed: "+err.Error())
 		return
 	}
-	if result.Script != nil {
-		result.Script.ProjectID = normalizeProjectID(projectID)
+	draft := importDraft{
+		Source:           "eventhubs_capture",
+		SourceScriptName: name,
+		ProjectID:        projectID,
+		Script:           result.Script,
+		Sections:         buildEventHubsCaptureReviewSections(result),
+		Warnings:         result.Warnings,
 	}
-	issues := validateScript(result.Script)
-	if len(issues) > 0 {
-		result.Warnings = append(result.Warnings, issues...)
-	}
-	preflight := buildAndAttachImportPreflight(result.Script, "eventhubs_capture", issues, result.Warnings)
+	augmented := draft.augment(r)
+	result.Warnings = augmented.Warnings
 	s.writeScriptImportResponseWithSourceSecrets(w, r, http.StatusOK, scriptImportResponseOptions{
 		Result:           result,
 		Script:           result.Script,
 		Warnings:         result.Warnings,
 		Stats:            result.Stats,
 		Summary:          result.Summary,
-		ReviewSections:   buildEventHubsCaptureReviewSections(result),
+		ReviewSections:   augmented.Sections,
 		Parameterization: buildImportParameterization(result.Script, nil),
-		Preflight:        preflight,
+		Preflight:        augmented.Preflight,
 	})
 }
 
@@ -793,10 +737,7 @@ func buildEventHubsCaptureReviewSections(result *eventhubscapture.ConvertResult)
 }
 
 func (s *Server) handleBrokerConfigSupportMatrix(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{
-		"support_matrix": brokerconfig.GetSupportMatrix(),
-		"notes":          brokerconfig.GetSupportMatrixNotes(),
-	})
+	s.writeImporterSupportMatrix(w, r, "broker_config")
 }
 
 // handleImportBrokerConfig imports a standalone messaging broker-config artifact
@@ -804,34 +745,14 @@ func (s *Server) handleBrokerConfigSupportMatrix(w http.ResponseWriter, r *http.
 // seeded from the broker's queue/topic topology. Accepts a multipart file upload
 // or a raw body; the format auto-detects but can be pinned via ?format=mqsc|jndi.
 func (s *Server) handleImportBrokerConfig(w http.ResponseWriter, r *http.Request) {
-	r.Body = http.MaxBytesReader(w, r.Body, webAPIImportMaxBodyBytes)
-
-	var (
-		data      []byte
-		name      string
-		projectID string
-		ok        bool
-	)
-	if strings.HasPrefix(r.Header.Get("Content-Type"), "multipart/form-data") {
-		var filename string
-		data, filename, ok = readImportMultipartFile(w, r, webAPIImportMaxBodyBytes)
-		if !ok {
-			return
-		}
-		name = strings.TrimSuffix(archiveingest.LogicalBase(filename), archiveingest.LogicalExt(filename))
-		projectID = authorizedImportProjectID(r)
-	} else {
-		data, ok = readImportBody(w, r)
-		if !ok {
-			return
-		}
-		filename := r.URL.Query().Get("filename")
-		name = strings.TrimSuffix(archiveingest.LogicalBase(filename), archiveingest.LogicalExt(filename))
-		projectID = r.URL.Query().Get("project_id")
+	upload, ok := decodeImportUpload(w, r, webAPIImportMaxBodyBytes)
+	if !ok {
+		return
 	}
+	data, name, projectID := upload.Data, upload.Name, upload.ProjectID
 
 	maxDest := 0
-	if v := strings.TrimSpace(r.URL.Query().Get("max_destinations")); v != "" {
+	if v := strings.TrimSpace(upload.Value("max_destinations")); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
 			maxDest = n
 		}
@@ -841,30 +762,32 @@ func (s *Server) handleImportBrokerConfig(w http.ResponseWriter, r *http.Request
 		Name:            name,
 		ProjectID:       projectID,
 		Data:            data,
-		Format:          strings.TrimSpace(r.URL.Query().Get("format")),
+		Format:          strings.TrimSpace(upload.Value("format")),
 		MaxDestinations: maxDest,
 	})
 	if err != nil {
 		writeError(w, http.StatusUnprocessableEntity, "conversion failed: "+err.Error())
 		return
 	}
-	if result.Script != nil {
-		result.Script.ProjectID = normalizeProjectID(projectID)
+	draft := importDraft{
+		Source:           "broker_config",
+		SourceScriptName: name,
+		ProjectID:        projectID,
+		Script:           result.Script,
+		Sections:         buildBrokerConfigReviewSections(result),
+		Warnings:         result.Warnings,
 	}
-	issues := validateScript(result.Script)
-	if len(issues) > 0 {
-		result.Warnings = append(result.Warnings, issues...)
-	}
-	preflight := buildAndAttachImportPreflight(result.Script, "broker_config", issues, result.Warnings)
+	augmented := draft.augment(r)
+	result.Warnings = augmented.Warnings
 	s.writeScriptImportResponseWithSourceSecrets(w, r, http.StatusOK, scriptImportResponseOptions{
 		Result:           result,
 		Script:           result.Script,
 		Warnings:         result.Warnings,
 		Stats:            result.Stats,
 		Summary:          result.Summary,
-		ReviewSections:   buildBrokerConfigReviewSections(result),
+		ReviewSections:   augmented.Sections,
 		Parameterization: buildImportParameterization(result.Script, nil),
-		Preflight:        preflight,
+		Preflight:        augmented.Preflight,
 	})
 }
 
@@ -937,64 +860,34 @@ func buildAsyncAPIReviewSections(result *asyncapi.ConvertResult) []scriptImportR
 }
 
 func readAsyncAPIImportRequest(w http.ResponseWriter, r *http.Request) (*asyncAPIImportRequest, bool) {
-	r.Body = http.MaxBytesReader(w, r.Body, webAPIImportMaxBodyBytes)
-	contentType := r.Header.Get("Content-Type")
-	if strings.HasPrefix(contentType, "application/json") {
-		data, ok := readImportBody(w, r)
-		if !ok {
-			return nil, false
-		}
-		var req asyncapi.ImportRequest
-		if err := json.Unmarshal(data, &req); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
-			return nil, false
-		}
-		if strings.TrimSpace(req.Content) == "" && strings.Contains(string(data), `"asyncapi"`) {
-			return &asyncAPIImportRequest{
-				Data:      data,
-				ProjectID: r.URL.Query().Get("project_id"),
-				Name:      r.URL.Query().Get("name"),
-				Opts:      asyncAPIOptionsFromValues(r.URL.Query()),
-			}, true
-		}
-		return &asyncAPIImportRequest{Data: []byte(req.Content), ProjectID: jsonImportProjectID(r, req.ProjectID), Name: req.Name, Opts: req.Options}, true
-	}
-	if strings.HasPrefix(contentType, "multipart/form-data") {
-		data, filename, ok := readImportMultipartFile(w, r, webAPIImportMaxBodyBytes)
-		if !ok {
-			return nil, false
-		}
-		return &asyncAPIImportRequest{
-			Data:      data,
-			ProjectID: authorizedImportProjectID(r),
-			Name:      strings.TrimSuffix(archiveingest.LogicalBase(filename), archiveingest.LogicalExt(filename)),
-			Opts:      asyncAPIOptionsFromForm(r),
-		}, true
-	}
-	data, ok := readImportBody(w, r)
+	upload, ok := decodeImportUpload(w, r, webAPIImportMaxBodyBytes)
 	if !ok {
 		return nil, false
 	}
-	filename := r.URL.Query().Get("filename")
-	return &asyncAPIImportRequest{
-		Data:      data,
-		ProjectID: r.URL.Query().Get("project_id"),
-		Name:      strings.TrimSuffix(archiveingest.LogicalBase(filename), archiveingest.LogicalExt(filename)),
-		Opts:      asyncAPIOptionsFromValues(r.URL.Query()),
-	}, true
-}
-
-func asyncAPIOptionsFromForm(r *http.Request) asyncapi.ConvertOptions {
-	values := r.PostForm
-	if values == nil {
-		values = map[string][]string{}
-	}
-	if r.MultipartForm != nil {
-		for key, value := range r.MultipartForm.Value {
-			values[key] = value
+	if upload.Transport == importTransportJSON {
+		var req asyncapi.ImportRequest
+		if err := json.Unmarshal(upload.Data, &req); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+			return nil, false
+		}
+		// A bare AsyncAPI document posted as JSON is not an envelope: it carries
+		// no content field but does carry an asyncapi version key. Fall through
+		// and treat the body itself as the document.
+		if strings.TrimSpace(req.Content) != "" || !strings.Contains(string(upload.Data), `"asyncapi"`) {
+			return &asyncAPIImportRequest{
+				Data:      []byte(req.Content),
+				ProjectID: upload.jsonProjectID(req.ProjectID),
+				Name:      req.Name,
+				Opts:      req.Options,
+			}, true
 		}
 	}
-	return asyncAPIOptionsFromValues(values)
+	return &asyncAPIImportRequest{
+		Data:      upload.Data,
+		ProjectID: upload.ProjectID,
+		Name:      upload.bareArtifactName(),
+		Opts:      asyncAPIOptionsFromValues(upload.Values()),
+	}, true
 }
 
 func asyncAPIOptionsFromValues(values map[string][]string) asyncapi.ConvertOptions {
@@ -1057,116 +950,72 @@ func splitCSV(value string) []string {
 }
 
 func readOpenAPIImportRequest(w http.ResponseWriter, r *http.Request) (*openAPIImportRequest, bool) {
-	r.Body = http.MaxBytesReader(w, r.Body, webAPIImportMaxBodyBytes)
-	contentType := r.Header.Get("Content-Type")
-	if strings.HasPrefix(contentType, "application/json") {
-		data, ok := readImportBody(w, r)
-		if !ok {
-			return nil, false
-		}
-		var req openapi.ImportRequest
-		if err := json.Unmarshal(data, &req); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
-			return nil, false
-		}
-		if strings.TrimSpace(req.Content) == "" && strings.Contains(string(data), `"paths"`) {
-			return &openAPIImportRequest{
-				Data:      data,
-				ProjectID: r.URL.Query().Get("project_id"),
-				Name:      r.URL.Query().Get("name"),
-				Opts: openapi.ConvertOptions{
-					BaseURL:    r.URL.Query().Get("base_url"),
-					ScriptName: r.URL.Query().Get("script_name"),
-				},
-			}, true
-		}
-		return &openAPIImportRequest{Data: []byte(req.Content), ProjectID: jsonImportProjectID(r, req.ProjectID), Name: req.Name, Opts: req.Options}, true
-	}
-	if strings.HasPrefix(contentType, "multipart/form-data") {
-		data, filename, ok := readImportMultipartFile(w, r, webAPIImportMaxBodyBytes)
-		if !ok {
-			return nil, false
-		}
-		return &openAPIImportRequest{
-			Data:      data,
-			ProjectID: authorizedImportProjectID(r),
-			Name:      strings.TrimSuffix(archiveingest.LogicalBase(filename), archiveingest.LogicalExt(filename)),
-			Opts: openapi.ConvertOptions{
-				BaseURL:    r.FormValue("base_url"),
-				ScriptName: r.FormValue("script_name"),
-			},
-		}, true
-	}
-	data, ok := readImportBody(w, r)
+	upload, ok := decodeImportUpload(w, r, webAPIImportMaxBodyBytes)
 	if !ok {
 		return nil, false
 	}
-	filename := r.URL.Query().Get("filename")
+	if upload.Transport == importTransportJSON {
+		var req openapi.ImportRequest
+		if err := json.Unmarshal(upload.Data, &req); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+			return nil, false
+		}
+		// A bare OpenAPI document posted as JSON is not an envelope: it carries
+		// no content field but does carry a paths object. Fall through and treat
+		// the body itself as the spec, reading options from the query string.
+		if strings.TrimSpace(req.Content) != "" || !strings.Contains(string(upload.Data), `"paths"`) {
+			return &openAPIImportRequest{
+				Data:      []byte(req.Content),
+				ProjectID: upload.jsonProjectID(req.ProjectID),
+				Name:      req.Name,
+				Opts:      req.Options,
+			}, true
+		}
+	}
 	return &openAPIImportRequest{
-		Data:      data,
-		ProjectID: r.URL.Query().Get("project_id"),
-		Name:      strings.TrimSuffix(archiveingest.LogicalBase(filename), archiveingest.LogicalExt(filename)),
+		Data:      upload.Data,
+		ProjectID: upload.ProjectID,
+		Name:      upload.bareArtifactName(),
 		Opts: openapi.ConvertOptions{
-			BaseURL:    r.URL.Query().Get("base_url"),
-			ScriptName: r.URL.Query().Get("script_name"),
+			BaseURL:    upload.Value("base_url"),
+			ScriptName: upload.Value("script_name"),
 		},
 	}, true
 }
 
 func readRAMLImportRequest(w http.ResponseWriter, r *http.Request) (*ramlImportRequest, bool) {
-	r.Body = http.MaxBytesReader(w, r.Body, webAPIImportMaxBodyBytes)
-	contentType := r.Header.Get("Content-Type")
+	upload, ok := decodeImportUpload(w, r, webAPIImportMaxBodyBytes)
+	if !ok {
+		return nil, false
+	}
 
-	var (
-		data      []byte
-		projectID string
-		name      string
-		origName  string
-		opts      raml.ConvertOptions
-	)
-
-	switch {
-	case strings.HasPrefix(contentType, "application/json"):
-		body, ok := readImportBody(w, r)
-		if !ok {
-			return nil, false
-		}
+	importReq := &ramlImportRequest{
+		Data:      upload.Data,
+		ProjectID: upload.ProjectID,
+		Name:      upload.Name,
+		Opts: raml.ConvertOptions{
+			BaseURL:    upload.Value("base_url"),
+			ScriptName: upload.Value("script_name"),
+		},
+	}
+	// origName keeps the untrimmed filename so the zip branch below can tell a
+	// name derived from an archive apart from a real RAML entry name.
+	origName := upload.Filename
+	if upload.Transport == importTransportJSON {
 		var req raml.ImportRequest
-		if err := json.Unmarshal(body, &req); err != nil {
+		if err := json.Unmarshal(upload.Data, &req); err != nil {
 			writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
 			return nil, false
 		}
-		data = []byte(req.Content)
-		projectID = jsonImportProjectID(r, req.ProjectID)
-		name = req.Name
+		importReq.Data = []byte(req.Content)
+		importReq.ProjectID = upload.jsonProjectID(req.ProjectID)
+		importReq.Name = req.Name
+		importReq.Opts = req.Options
 		origName = req.Name
-		opts = req.Options
-	case strings.HasPrefix(contentType, "multipart/form-data"):
-		fileData, filename, ok := readImportMultipartFile(w, r, webAPIImportMaxBodyBytes)
-		if !ok {
-			return nil, false
-		}
-		data = fileData
-		projectID = authorizedImportProjectID(r)
-		name = strings.TrimSuffix(archiveingest.LogicalBase(filename), archiveingest.LogicalExt(filename))
-		origName = archiveingest.LogicalBase(filename)
-		opts = raml.ConvertOptions{BaseURL: r.FormValue("base_url"), ScriptName: r.FormValue("script_name")}
-	default:
-		body, ok := readImportBody(w, r)
-		if !ok {
-			return nil, false
-		}
-		filename := r.URL.Query().Get("filename")
-		data = body
-		projectID = r.URL.Query().Get("project_id")
-		name = strings.TrimSuffix(archiveingest.LogicalBase(filename), archiveingest.LogicalExt(filename))
-		origName = filename
-		opts = raml.ConvertOptions{BaseURL: r.URL.Query().Get("base_url"), ScriptName: r.URL.Query().Get("script_name")}
 	}
 
-	importReq := &ramlImportRequest{Data: data, ProjectID: projectID, Name: name, Opts: opts}
-	if isZipArchive(data) {
-		mainContent, files, mainName, err := extractRAMLZip(data)
+	if isZipArchive(importReq.Data) {
+		mainContent, files, mainName, err := extractRAMLZip(importReq.Data)
 		if err != nil {
 			writeError(w, http.StatusUnprocessableEntity, "RAML zip: "+err.Error())
 			return nil, false
@@ -1174,7 +1023,7 @@ func readRAMLImportRequest(w http.ResponseWriter, r *http.Request) (*ramlImportR
 		importReq.Data = mainContent
 		importReq.Files = files
 		// Replace a zip-derived/empty script name with the main RAML entry name.
-		// Check the ORIGINAL filename (the stripped `name` no longer ends in .zip).
+		// Check the ORIGINAL filename (the stripped Name no longer ends in .zip).
 		if strings.TrimSpace(importReq.Name) == "" || strings.HasSuffix(strings.ToLower(origName), ".zip") {
 			importReq.Name = strings.TrimSuffix(archiveingest.LogicalBase(mainName), archiveingest.LogicalExt(mainName))
 		}
@@ -1240,71 +1089,54 @@ func pickMainRAML(files map[string][]byte) string {
 }
 
 func readWSDLImportRequest(w http.ResponseWriter, r *http.Request) (*wsdlImportRequest, bool) {
-	r.Body = http.MaxBytesReader(w, r.Body, webAPIImportMaxBodyBytes)
-	contentType := r.Header.Get("Content-Type")
-	if strings.HasPrefix(contentType, "application/json") {
-		var req wsdl.ImportRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
-			return nil, false
-		}
-		return &wsdlImportRequest{Data: []byte(req.Content), RootFile: req.RootFile, Files: req.Files, ProjectID: jsonImportProjectID(r, req.ProjectID), Name: req.Name, Opts: req.Options}, true
-	}
-	if strings.HasPrefix(contentType, "multipart/form-data") {
-		data, filename, ok := readImportMultipartFile(w, r, webAPIImportMaxBodyBytes)
-		if !ok {
-			return nil, false
-		}
-		rootFile := ""
-		files := map[string]string(nil)
-		name := strings.TrimSuffix(archiveingest.LogicalBase(filename), archiveingest.LogicalExt(filename))
-		if strings.EqualFold(archiveingest.LogicalExt(filename), ".zip") {
-			root, archiveFiles, err := wsdl.FilesFromZip(data)
-			if err != nil {
-				writeError(w, http.StatusUnprocessableEntity, "WSDL zip: "+err.Error())
-				return nil, false
-			}
-			rootFile = root
-			files = archiveFiles
-			data = []byte(archiveFiles[root])
-			name = strings.TrimSuffix(path.Base(root), path.Ext(root))
-		}
-		return &wsdlImportRequest{
-			Data:      data,
-			RootFile:  rootFile,
-			Files:     files,
-			ProjectID: authorizedImportProjectID(r),
-			Name:      name,
-			Opts:      wsdlConvertOptionsFromValue(r.FormValue),
-		}, true
-	}
-	data, ok := readImportBody(w, r)
+	upload, ok := decodeImportUpload(w, r, webAPIImportMaxBodyBytes)
 	if !ok {
 		return nil, false
 	}
-	filename := r.URL.Query().Get("filename")
-	rootFile := ""
-	files := map[string]string(nil)
-	name := strings.TrimSuffix(archiveingest.LogicalBase(filename), archiveingest.LogicalExt(filename))
-	if strings.EqualFold(archiveingest.LogicalExt(filename), ".zip") || strings.HasPrefix(contentType, "application/zip") || strings.HasPrefix(contentType, "application/x-zip-compressed") {
-		root, archiveFiles, err := wsdl.FilesFromZip(data)
+	if upload.Transport == importTransportJSON {
+		var req wsdl.ImportRequest
+		if err := json.Unmarshal(upload.Data, &req); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+			return nil, false
+		}
+		return &wsdlImportRequest{
+			Data:      []byte(req.Content),
+			RootFile:  req.RootFile,
+			Files:     req.Files,
+			ProjectID: upload.jsonProjectID(req.ProjectID),
+			Name:      req.Name,
+			Opts:      req.Options,
+		}, true
+	}
+
+	importReq := &wsdlImportRequest{
+		Data:      upload.Data,
+		ProjectID: upload.ProjectID,
+		Name:      upload.Name,
+		Opts:      wsdlConvertOptionsFromValue(upload.Value),
+	}
+	// A WSDL upload may be a single document or an archive of a root document
+	// plus its imported schemas. The archive is recognised by extension, and on
+	// a raw body also by content type, since a bare POST need not name the file.
+	zipUpload := strings.EqualFold(archiveingest.LogicalExt(upload.Filename), ".zip")
+	if upload.Transport == importTransportRaw {
+		contentType := r.Header.Get("Content-Type")
+		zipUpload = zipUpload ||
+			strings.HasPrefix(contentType, "application/zip") ||
+			strings.HasPrefix(contentType, "application/x-zip-compressed")
+	}
+	if zipUpload {
+		root, archiveFiles, err := wsdl.FilesFromZip(upload.Data)
 		if err != nil {
 			writeError(w, http.StatusUnprocessableEntity, "WSDL zip: "+err.Error())
 			return nil, false
 		}
-		rootFile = root
-		files = archiveFiles
-		data = []byte(archiveFiles[root])
-		name = strings.TrimSuffix(path.Base(root), path.Ext(root))
+		importReq.RootFile = root
+		importReq.Files = archiveFiles
+		importReq.Data = []byte(archiveFiles[root])
+		importReq.Name = strings.TrimSuffix(path.Base(root), path.Ext(root))
 	}
-	return &wsdlImportRequest{
-		Data:      data,
-		RootFile:  rootFile,
-		Files:     files,
-		ProjectID: r.URL.Query().Get("project_id"),
-		Name:      name,
-		Opts:      wsdlConvertOptionsFromValue(r.URL.Query().Get),
-	}, true
+	return importReq, true
 }
 
 func wsdlConvertOptionsFromValue(value func(string) string) wsdl.ConvertOptions {
@@ -1319,68 +1151,50 @@ func wsdlConvertOptionsFromValue(value func(string) string) wsdl.ConvertOptions 
 }
 
 func readPostmanImportRequest(w http.ResponseWriter, r *http.Request) (*postmanImportRequest, bool) {
-	r.Body = http.MaxBytesReader(w, r.Body, webAPIImportMaxBodyBytes)
-	contentType := r.Header.Get("Content-Type")
-	if strings.HasPrefix(contentType, "application/json") {
-		data, ok := readImportBody(w, r)
-		if !ok {
-			return nil, false
-		}
+	upload, ok := decodeImportUpload(w, r, webAPIImportMaxBodyBytes)
+	if !ok {
+		return nil, false
+	}
+	if upload.Transport == importTransportJSON {
 		var req postman.ImportRequest
-		if err := json.Unmarshal(data, &req); err != nil {
+		if err := json.Unmarshal(upload.Data, &req); err != nil {
 			writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
 			return nil, false
 		}
-		if strings.TrimSpace(req.Content) == "" && strings.Contains(string(data), `"item"`) {
+		// A bare collection posted as JSON is not an envelope: it carries no
+		// content field but does carry an item array. Fall through and treat the
+		// body itself as the collection.
+		if strings.TrimSpace(req.Content) != "" || !strings.Contains(string(upload.Data), `"item"`) {
 			return &postmanImportRequest{
-				Data:               data,
-				CollectionFileName: archiveingest.LogicalBase(r.URL.Query().Get("filename")),
-				ProjectID:          r.URL.Query().Get("project_id"),
-				Name:               r.URL.Query().Get("name"),
-				Opts:               postmanConvertOptionsFromValue(r.URL.Query().Get),
+				Data:                []byte(req.Content),
+				CollectionFileName:  req.CollectionFileName,
+				EnvironmentData:     []byte(req.EnvironmentContent),
+				EnvironmentFileName: req.EnvironmentFileName,
+				ProjectID:           upload.jsonProjectID(req.ProjectID),
+				Name:                req.Name,
+				Opts:                req.Options,
 			}, true
 		}
-		return &postmanImportRequest{
-			Data:                []byte(req.Content),
-			CollectionFileName:  req.CollectionFileName,
-			EnvironmentData:     []byte(req.EnvironmentContent),
-			EnvironmentFileName: req.EnvironmentFileName,
-			ProjectID:           jsonImportProjectID(r, req.ProjectID),
-			Name:                req.Name,
-			Opts:                req.Options,
-		}, true
 	}
-	if strings.HasPrefix(contentType, "multipart/form-data") {
-		data, filename, ok := readImportMultipartFile(w, r, webAPIImportMaxBodyBytes)
-		if !ok {
-			return nil, false
-		}
+
+	importReq := &postmanImportRequest{
+		Data:               upload.Data,
+		CollectionFileName: upload.Filename,
+		ProjectID:          upload.ProjectID,
+		Name:               upload.bareArtifactName(),
+		Opts:               postmanConvertOptionsFromValue(upload.Value),
+	}
+	// A Postman environment is a second file, so it only travels on a multipart
+	// upload; the other transports carry the collection alone.
+	if upload.Transport == importTransportMultipart {
 		environmentData, environmentFilename, ok := readPostmanEnvironmentMultipartFile(w, r)
 		if !ok {
 			return nil, false
 		}
-		return &postmanImportRequest{
-			Data:                data,
-			CollectionFileName:  archiveingest.LogicalBase(filename),
-			EnvironmentData:     environmentData,
-			EnvironmentFileName: environmentFilename,
-			ProjectID:           authorizedImportProjectID(r),
-			Name:                strings.TrimSuffix(archiveingest.LogicalBase(filename), archiveingest.LogicalExt(filename)),
-			Opts:                postmanConvertOptionsFromValue(r.FormValue),
-		}, true
+		importReq.EnvironmentData = environmentData
+		importReq.EnvironmentFileName = environmentFilename
 	}
-	data, ok := readImportBody(w, r)
-	if !ok {
-		return nil, false
-	}
-	filename := r.URL.Query().Get("filename")
-	return &postmanImportRequest{
-		Data:               data,
-		CollectionFileName: archiveingest.LogicalBase(filename),
-		ProjectID:          r.URL.Query().Get("project_id"),
-		Name:               strings.TrimSuffix(archiveingest.LogicalBase(filename), archiveingest.LogicalExt(filename)),
-		Opts:               postmanConvertOptionsFromValue(r.URL.Query().Get),
-	}, true
+	return importReq, true
 }
 
 func postmanConvertOptionsFromValue(value func(string) string) postman.ConvertOptions {

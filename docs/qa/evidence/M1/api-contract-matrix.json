@@ -9788,7 +9788,7 @@
     {
       "method": "GET",
       "path": "/api/v1/scripts/{id}/bruno-imports/revisions",
-      "operation_id": "handleListBrunoImportRevisions",
+      "operation_id": "handleListImportSourceRevisions",
       "public": false,
       "authenticated": true,
       "state": "GREEN",
@@ -9815,7 +9815,7 @@
     {
       "method": "POST",
       "path": "/api/v1/scripts/{id}/bruno-imports/rollback",
-      "operation_id": "handleRollbackBrunoImport",
+      "operation_id": "handleRollbackImportSource",
       "public": false,
       "authenticated": true,
       "state": "GREEN",
@@ -9840,7 +9840,7 @@
     {
       "method": "GET",
       "path": "/api/v1/scripts/{id}/bruno-imports/source",
-      "operation_id": "handleGetBrunoImportSource",
+      "operation_id": "handleGetImportSource",
       "public": false,
       "authenticated": true,
       "state": "GREEN",
@@ -10096,7 +10096,7 @@
     {
       "method": "GET",
       "path": "/api/v1/scripts/{id}/imports/revisions",
-      "operation_id": "handleListBrunoImportRevisions_2",
+      "operation_id": "handleListImportSourceRevisions_2",
       "public": false,
       "authenticated": true,
       "state": "GREEN",
@@ -10123,7 +10123,7 @@
     {
       "method": "POST",
       "path": "/api/v1/scripts/{id}/imports/rollback",
-      "operation_id": "handleRollbackBrunoImport_2",
+      "operation_id": "handleRollbackImportSource_2",
       "public": false,
       "authenticated": true,
       "state": "GREEN",
@@ -10148,7 +10148,7 @@
     {
       "method": "GET",
       "path": "/api/v1/scripts/{id}/imports/source",
-      "operation_id": "handleGetBrunoImportSource_2",
+      "operation_id": "handleGetImportSource_2",
       "public": false,
       "authenticated": true,
       "state": "GREEN",

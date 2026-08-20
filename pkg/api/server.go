@@ -1086,12 +1086,14 @@ func (s *Server) routes(allowedOrigins []string) {
 	// aliases: they are a published API surface, and released dashboards and the
 	// desktop client still request them. Both spellings must resolve to the same
 	// handler with the same authorization -- see TestImportRouteAliasesMatch.
-	s.mux.Handle("GET /api/v1/scripts/{id}/imports/source", cors(log(auth(http.HandlerFunc(s.handleGetBrunoImportSource)))))
-	s.mux.Handle("GET /api/v1/scripts/{id}/imports/revisions", cors(log(auth(http.HandlerFunc(s.handleListBrunoImportRevisions)))))
-	s.mux.Handle("POST /api/v1/scripts/{id}/imports/rollback", cors(log(auth(http.HandlerFunc(s.handleRollbackBrunoImport)))))
-	s.mux.Handle("GET /api/v1/scripts/{id}/bruno-imports/source", cors(log(auth(http.HandlerFunc(s.handleGetBrunoImportSource)))))
-	s.mux.Handle("GET /api/v1/scripts/{id}/bruno-imports/revisions", cors(log(auth(http.HandlerFunc(s.handleListBrunoImportRevisions)))))
-	s.mux.Handle("POST /api/v1/scripts/{id}/bruno-imports/rollback", cors(log(auth(http.HandlerFunc(s.handleRollbackBrunoImport)))))
+	s.mux.Handle("GET /api/v1/scripts/{id}/imports/source", cors(log(auth(http.HandlerFunc(s.handleGetImportSource)))))
+	s.mux.Handle("GET /api/v1/scripts/{id}/imports/revisions", cors(log(auth(http.HandlerFunc(s.handleListImportSourceRevisions)))))
+	s.mux.Handle("POST /api/v1/scripts/{id}/imports/rollback", cors(log(auth(http.HandlerFunc(s.handleRollbackImportSource)))))
+	// The bruno-imports/* paths predate source retention generalizing to every
+	// importer. They stay as aliases for existing clients.
+	s.mux.Handle("GET /api/v1/scripts/{id}/bruno-imports/source", cors(log(auth(http.HandlerFunc(s.handleGetImportSource)))))
+	s.mux.Handle("GET /api/v1/scripts/{id}/bruno-imports/revisions", cors(log(auth(http.HandlerFunc(s.handleListImportSourceRevisions)))))
+	s.mux.Handle("POST /api/v1/scripts/{id}/bruno-imports/rollback", cors(log(auth(http.HandlerFunc(s.handleRollbackImportSource)))))
 	s.mux.Handle("POST /api/v1/scripts/{id}/bruno-projection/preview", cors(log(auth(http.HandlerFunc(s.handlePreviewBrunoProjection)))))
 	s.mux.Handle("POST /api/v1/scripts/{id}/bruno-projection/commit", cors(log(auth(http.HandlerFunc(s.handleCommitBrunoProjection)))))
 	s.mux.Handle("POST /api/v1/scripts/validate", cors(log(auth(http.HandlerFunc(s.handleValidateDraftScript)))))

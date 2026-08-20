@@ -60,7 +60,7 @@ export interface components {
       "change_summary": Record<string, unknown>;
       "created": boolean;
       "parameterization_applied": number;
-      "revision": components["schemas"]["BrunoSourceRevision"];
+      "revision": components["schemas"]["ImportSourceRevision"];
       "script": components["schemas"]["APEXScript"];
       "secret_migrations": Array<Record<string, unknown>>;
     };
@@ -332,7 +332,18 @@ export interface components {
       "role": string;
       "sha256": string;
     };
-    "BrunoSourceRevision": {
+    "BrunoSyncPreview": {
+      "active_revision"?: string;
+      "changes": Record<string, unknown>;
+      "conflicts"?: Array<components["schemas"]["BrunoImportConflict"]>;
+      "expected_updated_at": string;
+      "target_script_id": string;
+    };
+    "ErrorResponse": {
+      "code"?: string;
+      "error": string;
+    };
+    "ImportSourceRevision": {
       "active": boolean;
       "change_summary"?: Record<string, unknown>;
       "compatibility_version": string;
@@ -350,17 +361,6 @@ export interface components {
       "secret_bindings"?: Record<string, string>;
       "security_profile"?: Record<string, unknown>;
       "source_format": string;
-    };
-    "BrunoSyncPreview": {
-      "active_revision"?: string;
-      "changes": Record<string, unknown>;
-      "conflicts"?: Array<components["schemas"]["BrunoImportConflict"]>;
-      "expected_updated_at": string;
-      "target_script_id": string;
-    };
-    "ErrorResponse": {
-      "code"?: string;
-      "error": string;
     };
     "ProjectReleaseCreateRequest": {
       "application_id"?: string;
@@ -8218,7 +8218,7 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": unknown;
         };
       };
       "401": {
@@ -8227,6 +8227,11 @@ export interface operations {
         };
       };
       "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -9114,7 +9119,7 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": unknown;
         };
       };
       "401": {
@@ -9123,6 +9128,11 @@ export interface operations {
         };
       };
       "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -9201,7 +9211,7 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": unknown;
         };
       };
       "401": {
@@ -9210,6 +9220,11 @@ export interface operations {
         };
       };
       "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -23591,7 +23606,7 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": unknown;
         };
       };
       "401": {
@@ -23600,6 +23615,11 @@ export interface operations {
         };
       };
       "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -24521,7 +24541,7 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": unknown;
         };
       };
       "401": {
@@ -24530,6 +24550,11 @@ export interface operations {
         };
       };
       "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -25435,7 +25460,7 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": unknown;
         };
       };
       "401": {
@@ -25444,6 +25469,11 @@ export interface operations {
         };
       };
       "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -28312,108 +28342,6 @@ export interface operations {
       };
     };
   };
-  "handleGetBrunoImportSource": {
-    parameters: {
-      "path": {
-        "id": string;
-      };
-      "query"?: {
-        "raw"?: boolean;
-      };
-    };
-    requestBody?: never;
-    responses: {
-      "200": {
-        content: {
-          "application/json": unknown;
-        };
-      };
-      "401": {
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      "403": {
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      "404": {
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      "409": {
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      "500": {
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      "503": {
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      "default": {
-        content?: never;
-      };
-    };
-  };
-  "handleGetBrunoImportSource_2": {
-    parameters: {
-      "path": {
-        "id": string;
-      };
-      "query"?: {
-        "raw"?: boolean;
-      };
-    };
-    requestBody?: never;
-    responses: {
-      "200": {
-        content: {
-          "application/json": unknown;
-        };
-      };
-      "401": {
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      "403": {
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      "404": {
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      "409": {
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      "500": {
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      "503": {
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      "default": {
-        content?: never;
-      };
-    };
-  };
   "handleGetCIRun": {
     parameters: {
       "path": {
@@ -29661,6 +29589,108 @@ export interface operations {
         };
       };
       "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleGetImportSource": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+      "query"?: {
+        "raw"?: boolean;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": unknown;
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleGetImportSource_2": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+      "query"?: {
+        "raw"?: boolean;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": unknown;
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -41229,7 +41259,7 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": unknown;
         };
       };
       "401": {
@@ -41238,6 +41268,11 @@ export interface operations {
         };
       };
       "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -41385,6 +41420,8 @@ export interface operations {
       content: {
         "multipart/form-data": {
           "file"?: string;
+          "format"?: string;
+          "max_destinations"?: string;
           [key: string]: unknown;
         };
       };
@@ -41604,7 +41641,9 @@ export interface operations {
     requestBody: {
       content: {
         "multipart/form-data": {
+          "event_hub"?: string;
           "file"?: string;
+          "max_events"?: string;
           [key: string]: unknown;
         };
       };
@@ -41887,6 +41926,7 @@ export interface operations {
         "base_url"?: string;
         "filename"?: string;
         "include_static_assets"?: boolean;
+        "name"?: string;
         "project_id"?: string;
         "redact_sensitive"?: boolean;
         "retention_days"?: number;
@@ -42241,6 +42281,7 @@ export interface operations {
         "base_url"?: string;
         "filename"?: string;
         "include_static_assets"?: boolean;
+        "name"?: string;
         "project_id"?: string;
         "redact_sensitive"?: boolean;
         "retention_days"?: number;
@@ -42558,7 +42599,7 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": unknown;
         };
       };
       "401": {
@@ -42567,6 +42608,11 @@ export interface operations {
         };
       };
       "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -42582,7 +42628,7 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": unknown;
         };
       };
       "401": {
@@ -42591,6 +42637,11 @@ export interface operations {
         };
       };
       "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -43951,92 +44002,6 @@ export interface operations {
       };
     };
   };
-  "handleListBrunoImportRevisions": {
-    parameters: {
-      "path": {
-        "id": string;
-      };
-    };
-    requestBody?: never;
-    responses: {
-      "200": {
-        content: {
-          "application/json": Record<string, unknown>;
-        };
-      };
-      "401": {
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      "403": {
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      "404": {
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      "500": {
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      "503": {
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      "default": {
-        content?: never;
-      };
-    };
-  };
-  "handleListBrunoImportRevisions_2": {
-    parameters: {
-      "path": {
-        "id": string;
-      };
-    };
-    requestBody?: never;
-    responses: {
-      "200": {
-        content: {
-          "application/json": Record<string, unknown>;
-        };
-      };
-      "401": {
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      "403": {
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      "404": {
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      "500": {
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      "503": {
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      "default": {
-        content?: never;
-      };
-    };
-  };
   "handleListCapacityReservations": {
     parameters: {
       "query"?: {
@@ -45011,6 +44976,92 @@ export interface operations {
         };
       };
       "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleListImportSourceRevisions": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": Record<string, unknown>;
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleListImportSourceRevisions_2": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": Record<string, unknown>;
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -46647,7 +46698,7 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": unknown;
         };
       };
       "401": {
@@ -46656,6 +46707,11 @@ export interface operations {
         };
       };
       "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -50065,7 +50121,7 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": unknown;
         };
       };
       "401": {
@@ -50074,6 +50130,11 @@ export interface operations {
         };
       };
       "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -53899,7 +53960,7 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": unknown;
         };
       };
       "401": {
@@ -53908,6 +53969,11 @@ export interface operations {
         };
       };
       "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -63861,7 +63927,7 @@ export interface operations {
       };
     };
   };
-  "handleRollbackBrunoImport": {
+  "handleRollbackImportSource": {
     parameters: {
       "path": {
         "id": string;
@@ -63926,7 +63992,7 @@ export interface operations {
       };
     };
   };
-  "handleRollbackBrunoImport_2": {
+  "handleRollbackImportSource_2": {
     parameters: {
       "path": {
         "id": string;
@@ -89457,13 +89523,13 @@ export interface paths {
     "post": operations["handleStartBrowserReplayScript"];
   };
   "/api/v1/scripts/{id}/bruno-imports/revisions": {
-    "get": operations["handleListBrunoImportRevisions"];
+    "get": operations["handleListImportSourceRevisions"];
   };
   "/api/v1/scripts/{id}/bruno-imports/rollback": {
-    "post": operations["handleRollbackBrunoImport"];
+    "post": operations["handleRollbackImportSource"];
   };
   "/api/v1/scripts/{id}/bruno-imports/source": {
-    "get": operations["handleGetBrunoImportSource"];
+    "get": operations["handleGetImportSource"];
   };
   "/api/v1/scripts/{id}/bruno-projection/commit": {
     "post": operations["handleCommitBrunoProjection"];
@@ -89493,13 +89559,13 @@ export interface paths {
     "get": operations["handleScriptGitHubStatus"];
   };
   "/api/v1/scripts/{id}/imports/revisions": {
-    "get": operations["handleListBrunoImportRevisions_2"];
+    "get": operations["handleListImportSourceRevisions_2"];
   };
   "/api/v1/scripts/{id}/imports/rollback": {
-    "post": operations["handleRollbackBrunoImport_2"];
+    "post": operations["handleRollbackImportSource_2"];
   };
   "/api/v1/scripts/{id}/imports/source": {
-    "get": operations["handleGetBrunoImportSource_2"];
+    "get": operations["handleGetImportSource_2"];
   };
   "/api/v1/scripts/{id}/move": {
     "patch": operations["handleMoveScript"];

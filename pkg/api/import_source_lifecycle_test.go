@@ -33,17 +33,17 @@ type rejectedImportRevisionListStore struct {
 	reject bool
 }
 
-func (s *rejectedImportRevisionListStore) ListBrunoSourceRevisions(
+func (s *rejectedImportRevisionListStore) ListImportSourceRevisions(
 	scriptID string,
 	projectID string,
-) ([]*storage.BrunoSourceRevision, error) {
+) ([]*storage.ImportSourceRevision, error) {
 	s.mu.Lock()
 	reject := s.reject
 	s.mu.Unlock()
 	if reject {
 		return nil, errors.New("injected revision-list failure")
 	}
-	return s.SQLiteStore.ListBrunoSourceRevisions(scriptID, projectID)
+	return s.SQLiteStore.ListImportSourceRevisions(scriptID, projectID)
 }
 
 func (s *rejectedImportRevisionListStore) rejectRevisionLists() {
@@ -54,7 +54,7 @@ func (s *rejectedImportRevisionListStore) rejectRevisionLists() {
 
 func (s *rejectedImportSourceRetentionStore) RetainImportSource(
 	retention *storage.ImportSourceRetention,
-) (*storage.BrunoSourceRevision, error) {
+) (*storage.ImportSourceRevision, error) {
 	s.mu.Lock()
 	if s.failures > 0 {
 		s.failures--
@@ -294,7 +294,7 @@ func TestProtectedImportReplaceRetainsRevisionAndDeleteCleansHTTPSource(t *testi
 		t.Fatalf("replacement lost executable credential: %#v", durable)
 	}
 
-	revisions, err := store.ListBrunoSourceRevisions(created.ID, storage.DefaultProjectID)
+	revisions, err := store.ListImportSourceRevisions(created.ID, storage.DefaultProjectID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -320,7 +320,7 @@ func TestProtectedImportReplaceRetainsRevisionAndDeleteCleansHTTPSource(t *testi
 		!strings.Contains(rollback.Body.String(), "import_rollback_unsupported_source") {
 		t.Fatalf("generic rollback status = %d body=%s", rollback.Code, rollback.Body.String())
 	}
-	activeAfterRollback, err := store.GetActiveBrunoSourceRevision(
+	activeAfterRollback, err := store.GetActiveImportSourceRevision(
 		created.ID,
 		storage.DefaultProjectID,
 	)
@@ -340,7 +340,7 @@ func TestProtectedImportReplaceRetainsRevisionAndDeleteCleansHTTPSource(t *testi
 	}
 	artifactPaths := make([]string, 0, len(revisions))
 	for _, revision := range revisions {
-		artifact, err := store.GetBrunoSourceArtifact(
+		artifact, err := store.GetImportSourceArtifact(
 			revision.RawArtifactID,
 			storage.DefaultProjectID,
 		)
@@ -423,14 +423,14 @@ func TestDeleteImportedScriptRetainsRowWhenSourceCleanupCannotBePrepared(t *test
 	) {
 		t.Fatal("source retention failed")
 	}
-	active, err := baseStore.GetActiveBrunoSourceRevision(
+	active, err := baseStore.GetActiveImportSourceRevision(
 		stored.ID,
 		storage.DefaultProjectID,
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	artifact, err := baseStore.GetBrunoSourceArtifact(
+	artifact, err := baseStore.GetImportSourceArtifact(
 		active.RawArtifactID,
 		storage.DefaultProjectID,
 	)
@@ -630,7 +630,7 @@ func TestProtectedImportRetentionFailureLeavesSessionRetryable(t *testing.T) {
 	if result.Created || !result.IdempotentReplay {
 		t.Fatalf("retention retry flags = %#v, want idempotent replay", result)
 	}
-	revisions, err := baseStore.ListBrunoSourceRevisions(
+	revisions, err := baseStore.ListImportSourceRevisions(
 		scriptID,
 		storage.DefaultProjectID,
 	)
@@ -700,7 +700,7 @@ func TestProtectedImportRetentionFailureLeavesSessionRetryable(t *testing.T) {
 			reconciledReplace.UpdatedAt,
 		)
 	}
-	revisions, err = baseStore.ListBrunoSourceRevisions(
+	revisions, err = baseStore.ListImportSourceRevisions(
 		scriptID,
 		storage.DefaultProjectID,
 	)
@@ -846,7 +846,7 @@ func TestProtectedImportRetentionRetryDoesNotOverwriteInterveningEdit(t *testing
 			editedUpdatedAt,
 		)
 	}
-	revisions, err := baseStore.ListBrunoSourceRevisions(
+	revisions, err := baseStore.ListImportSourceRevisions(
 		created.ID,
 		storage.DefaultProjectID,
 	)
@@ -888,7 +888,7 @@ func TestProtectedImportRetentionRetryDoesNotOverwriteInterveningEdit(t *testing
 		durable.ID != newerStored.ID {
 		t.Fatalf("older retry displaced newer protected import: %#v", durable)
 	}
-	revisions, err = baseStore.ListBrunoSourceRevisions(
+	revisions, err = baseStore.ListImportSourceRevisions(
 		created.ID,
 		storage.DefaultProjectID,
 	)
@@ -997,7 +997,7 @@ func TestProtectedImportCreateRetentionRetryDoesNotAttachSourceAfterEdit(t *test
 		!durable.UpdatedAt.Equal(editedUpdatedAt) {
 		t.Fatalf("stale create retry rewrote intervening edit: %#v", durable)
 	}
-	revisions, err := baseStore.ListBrunoSourceRevisions(
+	revisions, err := baseStore.ListImportSourceRevisions(
 		scriptID,
 		storage.DefaultProjectID,
 	)
@@ -1050,7 +1050,7 @@ func TestRetainedImportSourceIdempotentRetryDoesNotDuplicateRevision(t *testing.
 	) {
 		t.Fatal("idempotent source retention retry failed")
 	}
-	revisions, err := store.ListBrunoSourceRevisions(
+	revisions, err := store.ListImportSourceRevisions(
 		stored.ID,
 		storage.DefaultProjectID,
 	)
@@ -1093,7 +1093,7 @@ func TestRetainedImportSourceIdempotentRetryDoesNotDuplicateRevision(t *testing.
 	) {
 		t.Fatal("same-source retention for changed script failed")
 	}
-	revisions, err = store.ListBrunoSourceRevisions(
+	revisions, err = store.ListImportSourceRevisions(
 		stored.ID,
 		storage.DefaultProjectID,
 	)

@@ -10,11 +10,11 @@ import {
   type BrunoNativeScriptCandidate,
   type BrunoProjectionPreview,
   type BrunoSecretRequirement,
-  type BrunoSourceRevision,
   type BrunoSupportMatrixResponse,
   type CommitBrunoCanonicalResponse,
   type CommitBrunoImportResponse,
   type CommitBrunoNativeBatchResponse,
+  type ImportSourceRevision,
   type SecretBindingRequirement,
   type SecretBindingSelection,
 } from '../types/scriptImports'
@@ -536,7 +536,7 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
   // here and applied server-side by the native commit rather than through the
   // generic shared-values apply endpoint.
   const [sharedValueSelections, setSharedValueSelections] = useState<Record<string, string>>({})
-  const [revisions, setRevisions] = useState<BrunoSourceRevision[]>([])
+  const [revisions, setRevisions] = useState<ImportSourceRevision[]>([])
   const [projection, setProjection] = useState<BrunoProjectionPreview | null>(null)
   const [loading, setLoading] = useState(false)
   const [rollbackLoading, setRollbackLoading] = useState('')
@@ -1246,7 +1246,7 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
     }
   }
 
-  const rollback = async (revision: BrunoSourceRevision) => {
+  const rollback = async (revision: ImportSourceRevision) => {
     const scriptId = committed && isCanonicalCommitResponse(committed) ? committed.script.id : ''
     const activeRevision = revisions.find(candidate => candidate.active)
     if (!scriptId || revision.active) return

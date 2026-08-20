@@ -23,14 +23,14 @@ func TestCommitBrunoImportPersistsAtomicRevisionAndRejectsStaleWriter(t *testing
 		t.Fatalf("bundle ref = %q", got)
 	}
 
-	active, err := store.GetActiveBrunoSourceRevision("script-bruno", "project-bruno")
+	active, err := store.GetActiveImportSourceRevision("script-bruno", "project-bruno")
 	if err != nil {
-		t.Fatalf("GetActiveBrunoSourceRevision: %v", err)
+		t.Fatalf("GetActiveImportSourceRevision: %v", err)
 	}
 	if active.ID != "revision-1" || active.CanonicalScript == nil {
 		t.Fatalf("active revision = %+v", active)
 	}
-	if _, err := store.GetBrunoSourceArtifact(active.RawArtifactID, "another-project"); !errors.Is(err, ErrBrunoRevisionNotFound) && err == nil {
+	if _, err := store.GetImportSourceArtifact(active.RawArtifactID, "another-project"); !errors.Is(err, ErrBrunoRevisionNotFound) && err == nil {
 		t.Fatal("cross-project artifact lookup unexpectedly succeeded")
 	}
 
@@ -55,7 +55,7 @@ func TestCommitBrunoImportPersistsAtomicRevisionAndRejectsStaleWriter(t *testing
 	if _, err := store.CommitBrunoImport(stale); !errors.Is(err, ErrBrunoImportConcurrentChange) {
 		t.Fatalf("stale commit error = %v, want ErrBrunoImportConcurrentChange", err)
 	}
-	revisions, err := store.ListBrunoSourceRevisions("script-bruno", "project-bruno")
+	revisions, err := store.ListImportSourceRevisions("script-bruno", "project-bruno")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -98,7 +98,7 @@ func TestCommitBrunoImportCanExecuteProtectedRawArtifact(t *testing.T) {
 	}
 }
 
-func TestActivateBrunoSourceRevisionRollsBackBindingAndPreservesTuning(t *testing.T) {
+func TestActivateImportSourceRevisionRollsBackBindingAndPreservesTuning(t *testing.T) {
 	store := newBrunoImportTestStore(t)
 	first := brunoImportCommitFixture("script-rollback", "project-bruno", "revision-1", "artifact-raw-1", "artifact-sanitized-1", "sha-raw-1", "sha-sanitized-1")
 	if _, err := store.CommitBrunoImport(first); err != nil {
@@ -124,9 +124,9 @@ func TestActivateBrunoSourceRevisionRollsBackBindingAndPreservesTuning(t *testin
 		t.Fatal(err)
 	}
 
-	revision, err := store.ActivateBrunoSourceRevision("script-rollback", "project-bruno", "revision-1", "revision-2")
+	revision, err := store.ActivateImportSourceRevision("script-rollback", "project-bruno", "revision-1", "revision-2")
 	if err != nil {
-		t.Fatalf("ActivateBrunoSourceRevision: %v", err)
+		t.Fatalf("ActivateImportSourceRevision: %v", err)
 	}
 	if !revision.Active || revision.ID != "revision-1" {
 		t.Fatalf("activated revision = %+v", revision)
@@ -154,9 +154,9 @@ func TestActivateBrunoSourceRevisionRollsBackBindingAndPreservesTuning(t *testin
 		t.Fatalf("unrelated import metadata = %#v, want operator note preserved", rolledBack.Metadata.Import.Preserved)
 	}
 
-	revision, err = store.ActivateBrunoSourceRevision("script-rollback", "project-bruno", "revision-2", "revision-1")
+	revision, err = store.ActivateImportSourceRevision("script-rollback", "project-bruno", "revision-2", "revision-1")
 	if err != nil {
-		t.Fatalf("ActivateBrunoSourceRevision(raw): %v", err)
+		t.Fatalf("ActivateImportSourceRevision(raw): %v", err)
 	}
 	if !revision.Active || revision.ID != "revision-2" {
 		t.Fatalf("activated raw revision = %+v", revision)
@@ -188,10 +188,10 @@ func TestDeleteScriptRemovesBrunoRevisionsAndArtifactMetadata(t *testing.T) {
 	if err := store.DeleteScript("script-delete"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.GetBrunoSourceRevision("revision-delete", "project-bruno"); err == nil {
+	if _, err := store.GetImportSourceRevision("revision-delete", "project-bruno"); err == nil {
 		t.Fatal("revision remains after script deletion")
 	}
-	if _, err := store.GetBrunoSourceArtifact("artifact-raw-delete", "project-bruno"); err == nil {
+	if _, err := store.GetImportSourceArtifact("artifact-raw-delete", "project-bruno"); err == nil {
 		t.Fatal("artifact metadata remains after script deletion")
 	}
 }
@@ -210,10 +210,10 @@ func TestDeleteScriptIfUnchangedRemovesBrunoDependencies(t *testing.T) {
 	if err != nil || !deleted {
 		t.Fatalf("DeleteScriptIfUnchanged deleted=%t error=%v", deleted, err)
 	}
-	if _, err := store.GetBrunoSourceRevision("revision-cas-delete", "project-bruno"); err == nil {
+	if _, err := store.GetImportSourceRevision("revision-cas-delete", "project-bruno"); err == nil {
 		t.Fatal("revision remains after conditional script deletion")
 	}
-	if _, err := store.GetBrunoSourceArtifact("artifact-raw-cas", "project-bruno"); err == nil {
+	if _, err := store.GetImportSourceArtifact("artifact-raw-cas", "project-bruno"); err == nil {
 		t.Fatal("artifact metadata remains after conditional script deletion")
 	}
 }
@@ -272,7 +272,7 @@ func brunoImportCommitFixture(scriptID, projectID, revisionID, rawID, sanitizedI
 	}
 	return &BrunoImportCommit{
 		Script: script,
-		RawArtifact: BrunoSourceArtifact{
+		RawArtifact: ImportSourceArtifact{
 			ID:                 rawID,
 			ArtifactKind:       "raw",
 			BackendKey:         "objects/" + rawSHA,
@@ -282,7 +282,7 @@ func brunoImportCommitFixture(scriptID, projectID, revisionID, rawID, sanitizedI
 			SourceFormat:       "yml",
 			EncryptionMetadata: map[string]any{"algorithm": "AES-256-GCM"},
 		},
-		SanitizedArtifact: BrunoSourceArtifact{
+		SanitizedArtifact: ImportSourceArtifact{
 			ID:                 sanitizedID,
 			ArtifactKind:       "sanitized",
 			BackendKey:         "objects/" + sanitizedSHA,
@@ -292,7 +292,7 @@ func brunoImportCommitFixture(scriptID, projectID, revisionID, rawID, sanitizedI
 			SourceFormat:       "yml",
 			EncryptionMetadata: map[string]any{"algorithm": "AES-256-GCM"},
 		},
-		Revision: BrunoSourceRevision{
+		Revision: ImportSourceRevision{
 			ID:                   revisionID,
 			SourceFormat:         "yml",
 			CompatibilityVersion: "3.5.2",

@@ -227,7 +227,7 @@ func TestNoSessionImportCommitAcceptsValidLegacyAttestationAndRetainsSource(t *t
 	if importDraftAttestationToken(durable.Script) != "" {
 		t.Fatal("legacy draft attestation entered durable storage")
 	}
-	revisions, err := store.ListBrunoSourceRevisions(
+	revisions, err := store.ListImportSourceRevisions(
 		result.StoredScript.ID,
 		storage.DefaultProjectID,
 	)
@@ -288,7 +288,7 @@ func TestNoSessionImportCommitAcceptsValidLegacyAttestationOnReplace(t *testing.
 		!strings.Contains(durable.Script.Actions[0].HeaderList[0].Value, credential) {
 		t.Fatalf("legacy attested replace lost executable credential: %#v", durable)
 	}
-	revisions, err := store.ListBrunoSourceRevisions(
+	revisions, err := store.ListImportSourceRevisions(
 		existing.ID,
 		storage.DefaultProjectID,
 	)
@@ -357,7 +357,7 @@ func TestNoSessionImportCommitLegacyAttestationRetentionRetryIsIdempotent(t *tes
 	if createResult.Created || !createResult.IdempotentReplay {
 		t.Fatalf("legacy attested create retry flags = %#v", createResult)
 	}
-	revisions, err := baseStore.ListBrunoSourceRevisions(
+	revisions, err := baseStore.ListImportSourceRevisions(
 		pendingCreate.ScriptID,
 		storage.DefaultProjectID,
 	)
@@ -427,7 +427,7 @@ func TestNoSessionImportCommitLegacyAttestationRetentionRetryIsIdempotent(t *tes
 			afterRetry.UpdatedAt,
 		)
 	}
-	revisions, err = baseStore.ListBrunoSourceRevisions(
+	revisions, err = baseStore.ListImportSourceRevisions(
 		pendingCreate.ScriptID,
 		storage.DefaultProjectID,
 	)

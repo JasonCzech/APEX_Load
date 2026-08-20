@@ -31,12 +31,18 @@ func TestImportResponseRecursivelyRedactsReviewEvidenceCopies(t *testing.T) {
 			"content": `<Argument name="Password" value="` + secret + `"/>`,
 		}},
 	}
-	artifact := map[string]any{"trueclient_archive_inspection": inspection}
+	// Mirror the production shape: the archive importer is the only producer of
+	// a review artifact, and a TrueClient inspection travels in its metadata.
+	artifact := &enterprisearchive.ReviewArtifact{
+		ID:       "review-artifact",
+		Title:    "TrueClient review",
+		Metadata: map[string]any{"trueclient_archive_inspection": inspection},
+	}
 	script := &dsl.Script{
 		Name: "review", Version: "1", Protocol: "browser", ProjectID: "project-a",
 		Metadata: &dsl.ScriptMetadata{Import: &dsl.ImportMetadata{Source: "trueclient", Preserved: map[string]any{
 			"source_review":                 review,
-			"review_artifact":               artifact,
+			"review_artifact":               artifact.Metadata,
 			"trueclient_archive_inspection": inspection,
 		}}},
 	}
@@ -49,7 +55,7 @@ func TestImportResponseRecursivelyRedactsReviewEvidenceCopies(t *testing.T) {
 		Result: map[string]any{
 			"script":          script,
 			"source_review":   review,
-			"review_artifact": artifact,
+			"review_artifact": artifact.Metadata,
 			"target":          "https://example.test/login?token={{secret.API_TOKEN}}&mode=test",
 		},
 	})

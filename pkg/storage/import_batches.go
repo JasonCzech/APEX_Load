@@ -28,7 +28,7 @@ var (
 // encrypted import source object. The bytes themselves live in the configured
 // artifact backend; BackendKey is opaque to storage callers.
 //
-// BrunoSourceArtifact remains an alias for backwards compatibility.
+// ImportSourceArtifact remains an alias for backwards compatibility.
 type ImportSourceArtifact struct {
 	ID                 string         `json:"id"`
 	ProjectID          string         `json:"project_id"`

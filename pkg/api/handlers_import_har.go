@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -36,59 +35,59 @@ func (s *Server) handleImportHAR(w http.ResponseWriter, r *http.Request) {
 		result.Diff = diff
 	}
 	if result.Script != nil {
+		// Scope the HAR draft even when a native Salesforce rewrite replaces it
+		// below: the raw conversion result still travels in the response.
 		result.Script.ProjectID = normalizeProjectID(importReq.ProjectID)
 	}
 
-	salesforceAugmentation := augmentHARImportWithSalesforce(result, importReq.Data, importReq.ProjectID, importReq.Opts.ScriptName, "har", salesforceNativeRequested(r), agentforceTransformRequested(r), true)
+	agentforceTransform := agentforceTransformRequested(r)
+	// A Salesforce HAR may ship a native rewrite instead of the raw HAR draft.
+	// Everything downstream of that choice — which script, which source profile,
+	// which sections — is the same for both outcomes.
+	salesforceAugmentation := augmentHARImportWithSalesforce(result, importReq.Data, importReq.ProjectID, importReq.Opts.ScriptName, "har", salesforceNativeRequested(r), agentforceTransform, true)
+	script := result.Script
+	source := "har"
+	sections := harImportReviewSections(result)
+	correlations := any(result.Correlations)
+	summary := harImportSummary(result)
+	preApplied := sampleCorrelationsToPreApplied(result.Correlations)
 	if salesforceAugmentation.Detected {
-		issues := validateScript(salesforceAugmentation.Script)
-		if len(issues) > 0 {
-			result.Warnings = append(result.Warnings, issues...)
-		}
-		preflight := buildReplayPreflight(salesforceAugmentation.Script, nil, issues, result.Warnings)
-		attachImportReplayPreflight(salesforceAugmentation.Script, salesforceAugmentation.Source, preflight)
-
-		preApplied := sampleCorrelationsToPreApplied(result.Correlations)
-		if salesforceAugmentation.Script != result.Script {
+		script = salesforceAugmentation.Script
+		source = salesforceAugmentation.Source
+		sections = salesforceAugmentation.ReviewSections
+		correlations = salesforceAugmentation.Correlations
+		summary = salesforceAugmentation.Summary
+		if script != result.Script {
 			preApplied = nil
 		}
-		s.writeScriptImportResponseWithSourceSecrets(w, r, http.StatusOK, scriptImportResponseOptions{
-			Result:                result,
-			Script:                salesforceAugmentation.Script,
-			Warnings:              result.Warnings,
-			Stats:                 result.Stats,
-			Correlations:          salesforceAugmentation.Correlations,
-			UnsupportedElements:   result.Unsupported.Strings(),
-			ReviewSections:        salesforceAugmentation.ReviewSections,
-			SourceReview:          result.SourceReview,
-			Summary:               salesforceAugmentation.Summary,
-			Parameterization:      buildImportParameterization(salesforceAugmentation.Script, preApplied),
-			Preflight:             preflight,
-			ProtectedRequirements: protectedRequirements,
-		})
-		return
 	}
 
-	attachSourceReviewToScript(result.Script, "har", importReq.Opts.ScriptName, result.SourceReview)
-	issues := validateScript(result.Script)
-	if len(issues) > 0 {
-		result.Warnings = append(result.Warnings, issues...)
+	draft := importDraft{
+		Source:           source,
+		SourceScriptName: importReq.Opts.ScriptName,
+		ProjectID:        importReq.ProjectID,
+		Script:           script,
+		SourceReview:     result.SourceReview,
+		Unsupported:      result.Unsupported,
+		Sections:         sections,
+		Warnings:         result.Warnings,
+		Accounting:       result.Accounting(),
 	}
-	preflight := buildReplayPreflight(result.Script, nil, issues, result.Warnings)
-	attachImportReplayPreflight(result.Script, "har", preflight)
+	augmented := draft.augmentWithAgentforceTransform(agentforceTransform)
+	result.Warnings = augmented.Warnings
 
 	s.writeScriptImportResponseWithSourceSecrets(w, r, http.StatusOK, scriptImportResponseOptions{
 		Result:                result,
-		Script:                result.Script,
+		Script:                script,
 		Warnings:              result.Warnings,
 		Stats:                 result.Stats,
-		Correlations:          result.Correlations,
+		Correlations:          correlations,
 		UnsupportedElements:   result.Unsupported.Strings(),
-		ReviewSections:        harImportReviewSections(result),
+		ReviewSections:        augmented.Sections,
 		SourceReview:          result.SourceReview,
-		Summary:               harImportSummary(result),
-		Parameterization:      buildImportParameterization(result.Script, sampleCorrelationsToPreApplied(result.Correlations)),
-		Preflight:             preflight,
+		Summary:               summary,
+		Parameterization:      buildImportParameterization(script, preApplied),
+		Preflight:             augmented.Preflight,
 		ProtectedRequirements: protectedRequirements,
 	})
 }
@@ -125,11 +124,14 @@ func harImportSummary(result *har.ConvertResult) map[string]any {
 	return summary
 }
 
+// harImportReviewSections is the HAR importer's own sections. Converter
+// diagnostics are not included: the shared augmentation pass appends those for
+// every format, and adding them here too would show each one twice.
 func harImportReviewSections(result *har.ConvertResult) []scriptImportReviewSection {
 	if result == nil {
 		return []scriptImportReviewSection{}
 	}
-	sections := importDiagnosticReviewSections(result.Unsupported)
+	sections := []scriptImportReviewSection{}
 	if result.Governance != nil {
 		items := []string{
 			fmt.Sprintf("Artifact mode: %s", result.Governance.ArtifactMode),
@@ -175,9 +177,11 @@ func harImportReviewSections(result *har.ConvertResult) []scriptImportReviewSect
 }
 
 func readHARImportRequest(w http.ResponseWriter, r *http.Request) (*harImportRequest, bool) {
-	r.Body = http.MaxBytesReader(w, r.Body, harImportMaxBodyBytes)
-	contentType := r.Header.Get("Content-Type")
-	if strings.HasPrefix(contentType, "application/json") {
+	upload, ok := decodeImportUpload(w, r, harImportMaxBodyBytes)
+	if !ok {
+		return nil, false
+	}
+	if upload.Transport == importTransportJSON {
 		var req struct {
 			Name              string             `json:"name,omitempty"`
 			ProjectID         string             `json:"project_id,omitempty"`
@@ -187,54 +191,41 @@ func readHARImportRequest(w http.ResponseWriter, r *http.Request) (*harImportReq
 			ContentB          string             `json:"content_b,omitempty"`
 			Options           har.ConvertOptions `json:"options,omitempty"`
 		}
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		if err := json.Unmarshal(upload.Data, &req); err != nil {
 			writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
 			return nil, false
 		}
 		req.Options.ScriptName = firstNonEmpty(req.Options.ScriptName, req.Name)
 		secondary := firstNonEmpty(req.SecondaryContent, req.ComparisonContent, req.ContentB)
 		req.Options.ArtifactMode = normalizeHARArtifactMode(req.Options.ArtifactMode, secondary != "")
-		return &harImportRequest{Data: []byte(req.Content), SecondaryData: []byte(secondary), ProjectID: jsonImportProjectID(r, req.ProjectID), Opts: req.Options}, true
-	}
-	if strings.HasPrefix(contentType, "multipart/form-data") {
-		data, uploadName, ok := readImportMultipartFile(w, r, harImportMaxBodyBytes)
-		if !ok {
-			return nil, false
-		}
-		secondaryData, ok := readOptionalHARComparisonFile(w, r)
-		if !ok {
-			return nil, false
-		}
-		artifactMode := normalizeHARArtifactMode(r.FormValue("artifact_mode"), len(secondaryData) > 0)
 		return &harImportRequest{
-			Data:          data,
-			SecondaryData: secondaryData,
-			ProjectID:     authorizedImportProjectID(r),
-			Opts: har.ConvertOptions{
-				ScriptName:          firstNonEmpty(r.FormValue("name"), strings.TrimSuffix(uploadName, filepath.Ext(uploadName))),
-				BaseURL:             r.FormValue("base_url"),
-				ArtifactMode:        artifactMode,
-				RetentionDays:       parseOptionalIntDefault(r.FormValue("retention_days"), 0),
-				RedactSensitive:     parseOptionalBool(r.FormValue("redact_sensitive")),
-				IncludeStaticAssets: parseOptionalBool(r.FormValue("include_static_assets")),
-			},
+			Data:          []byte(req.Content),
+			SecondaryData: []byte(secondary),
+			ProjectID:     upload.jsonProjectID(req.ProjectID),
+			Opts:          req.Options,
 		}, true
 	}
-	data, ok := readImportBody(w, r)
-	if !ok {
-		return nil, false
+
+	// A comparison HAR is a second file, so it only travels on a multipart
+	// upload; the other transports carry the baseline capture alone.
+	var secondaryData []byte
+	if upload.Transport == importTransportMultipart {
+		secondaryData, ok = readOptionalHARComparisonFile(w, r)
+		if !ok {
+			return nil, false
+		}
 	}
-	filename := r.URL.Query().Get("filename")
 	return &harImportRequest{
-		Data:      data,
-		ProjectID: r.URL.Query().Get("project_id"),
+		Data:          upload.Data,
+		SecondaryData: secondaryData,
+		ProjectID:     upload.ProjectID,
 		Opts: har.ConvertOptions{
-			ScriptName:          strings.TrimSuffix(filepath.Base(filename), filepath.Ext(filename)),
-			BaseURL:             r.URL.Query().Get("base_url"),
-			ArtifactMode:        normalizeHARArtifactMode(r.URL.Query().Get("artifact_mode"), false),
-			RetentionDays:       parseOptionalIntDefault(r.URL.Query().Get("retention_days"), 0),
-			RedactSensitive:     parseOptionalBool(r.URL.Query().Get("redact_sensitive")),
-			IncludeStaticAssets: parseOptionalBool(r.URL.Query().Get("include_static_assets")),
+			ScriptName:          firstNonEmpty(upload.Value("name"), upload.Name),
+			BaseURL:             upload.Value("base_url"),
+			ArtifactMode:        normalizeHARArtifactMode(upload.Value("artifact_mode"), len(secondaryData) > 0),
+			RetentionDays:       parseOptionalIntDefault(upload.Value("retention_days"), 0),
+			RedactSensitive:     parseOptionalBool(upload.Value("redact_sensitive")),
+			IncludeStaticAssets: parseOptionalBool(upload.Value("include_static_assets")),
 		},
 	}, true
 }

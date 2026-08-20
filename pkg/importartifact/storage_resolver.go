@@ -12,7 +12,7 @@ import (
 )
 
 type ArtifactMetadataReader interface {
-	GetBrunoSourceArtifact(id string, projectID string) (*storage.BrunoSourceArtifact, error)
+	GetImportSourceArtifact(id string, projectID string) (*storage.ImportSourceArtifact, error)
 }
 
 type StoreResolver struct {
@@ -38,7 +38,7 @@ func (r *StoreResolver) OpenBrunoArtifact(ctx context.Context, request Request) 
 	if err != nil || len(decodedDigest) != 32 {
 		return nil, 0, errors.New("Bruno artifact descriptor requires a SHA-256 digest")
 	}
-	artifact, err := r.Metadata.GetBrunoSourceArtifact(artifactID, projectID)
+	artifact, err := r.Metadata.GetImportSourceArtifact(artifactID, projectID)
 	if err != nil {
 		return nil, 0, err
 	}

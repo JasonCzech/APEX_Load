@@ -161,7 +161,7 @@ func TestSanitizedAvailabilityRoundTripsThroughScan(t *testing.T) {
 	withheld := 0
 	seedRevisionRow(t, store, "without-sanitized", "artifact-raw", "artifact-raw", &withheld)
 
-	revisions, err := store.ListBrunoSourceRevisions("script-1", DefaultProjectID)
+	revisions, err := store.ListImportSourceRevisions("script-1", DefaultProjectID)
 	if err != nil {
 		t.Fatalf("list revisions: %v", err)
 	}

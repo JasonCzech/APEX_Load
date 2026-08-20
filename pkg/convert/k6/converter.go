@@ -3,6 +3,7 @@ package k6
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/jasonczech/apexload/pkg/convert/convertresult"
 	"net/url"
 	"regexp"
 	"sort"
@@ -1257,4 +1258,18 @@ func sanitizeName(name string) string {
 	re := regexp.MustCompile(`[^A-Za-z0-9_.-]+`)
 	name = re.ReplaceAllString(name, "_")
 	return strings.Trim(name, "_")
+}
+
+// Accounting reports this conversion's completeness in the terms every importer
+// shares. See convertresult.Accounting.
+func (result *ConvertResult) Accounting() convertresult.Accounting {
+	if result == nil {
+		return convertresult.Accounting{}
+	}
+	return convertresult.New(
+		result.Stats.HTTPRequests,
+		result.Stats.ConvertedActions,
+		result.Stats.HTTPRequests-result.Stats.ConvertedActions,
+		result.SourceReview.ReviewOnlyActionCount(),
+	)
 }

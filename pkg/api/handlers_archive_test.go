@@ -61,7 +61,7 @@ func TestDesktopHandoffArtifactHandlersExtendWriteDeadline(t *testing.T) {
 	}{
 		{name: "controller recorder HAR", handler: server.handleExportRecording, path: "/api/v1/recorder/missing/export"},
 		{name: "side-car recorder HAR", handler: server.handleExportBrowserRecording, path: "/api/v1/browser-recorder/sessions/missing/export"},
-		{name: "Bruno source", handler: server.handleGetBrunoImportSource, path: "/api/v1/scripts/missing/bruno-imports/source"},
+		{name: "Bruno source", handler: server.handleGetImportSource, path: "/api/v1/scripts/missing/bruno-imports/source"},
 		{name: "archive report", handler: server.handleGetRunArchiveReport, path: "/api/v1/tests/missing/archive/report"},
 		{name: "HTML report", handler: server.handleGetTestHTMLReport, path: "/api/v1/tests/missing/report"},
 	}

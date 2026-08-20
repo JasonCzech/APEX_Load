@@ -2,6 +2,7 @@ package har
 
 import (
 	"fmt"
+	"github.com/jasonczech/apexload/pkg/convert/convertresult"
 	"strings"
 
 	"github.com/jasonczech/apexload/pkg/convert/convertutil"
@@ -176,4 +177,19 @@ func normalizeRetentionDays(value int) int {
 		return value
 	}
 	return DefaultRetentionDays
+}
+
+// Accounting reports this conversion's completeness in the terms every importer
+// shares. HAR converts through the sample request pipeline, so it counts the
+// same way that importer does. See convertresult.Accounting.
+func (result *ConvertResult) Accounting() convertresult.Accounting {
+	if result == nil {
+		return convertresult.Accounting{}
+	}
+	return convertresult.New(
+		result.Stats.TotalRequests,
+		result.Stats.ConvertedActions,
+		result.Stats.FilteredAssets+result.Stats.SkippedRequests,
+		result.SourceReview.ReviewOnlyActionCount(),
+	)
 }

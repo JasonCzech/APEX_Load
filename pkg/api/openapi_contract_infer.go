@@ -730,6 +730,7 @@ func inspectHandlerContract(name string, functions map[string]*ast.FuncDecl, fun
 	}
 
 	queryVariables := findQueryVariables(fn.Body)
+	uploadVariables := findImportUploadVariables(fn.Body)
 	variableTypes := findLocalVariableTypes(fn.Body, functionResults)
 	ast.Inspect(fn.Body, func(node ast.Node) bool {
 		if index, ok := node.(*ast.IndexExpr); ok && receiverIsQuery(index.X, queryVariables) {
@@ -767,6 +768,17 @@ func inspectHandlerContract(name string, functions map[string]*ast.FuncDecl, fun
 					analysis.formValues[value] = true
 				}
 			}
+			// An importUpload option resolves against the multipart form on a
+			// file upload and against the query string on a JSON or raw body,
+			// so one Value call documents both surfaces.
+			if selector.Sel.Name == "Value" && receiverIsImportUpload(selector.X, uploadVariables) {
+				if value, ok := stringLiteral(call.Args[0]); ok {
+					analysis.formValues[value] = true
+					if plausibleQueryName(value) {
+						analysis.queryNames[value] = true
+					}
+				}
+			}
 			if selector.Sel.Name == "FormFile" {
 				if value, ok := stringLiteral(call.Args[0]); ok {
 					analysis.multipartRequest = true
@@ -785,6 +797,16 @@ func inspectHandlerContract(name string, functions map[string]*ast.FuncDecl, fun
 		if callName == "parseLimitOffsetQuery" {
 			analysis.queryNames["limit"] = true
 			analysis.queryNames["offset"] = true
+		}
+		// decodeImportUpload resolves these itself for every import route, off
+		// fields the AST walk cannot attribute back to r.URL.Query().
+		if callName == "decodeImportUpload" {
+			analysis.queryNames["filename"] = true
+			analysis.queryNames["project_id"] = true
+		}
+		// bareArtifactName falls back to ?name= when the body is the artifact.
+		if callName == "bareArtifactName" {
+			analysis.queryNames["name"] = true
 		}
 
 		switch callName {
@@ -1690,6 +1712,33 @@ func jsonErrorResponse(description string) oasResponse {
 	}
 }
 
+// findImportUploadVariables reports the local variables bound to the result of
+// decodeImportUpload. Import readers resolve their options through that value
+// rather than touching r.URL.Query()/r.FormValue directly, so without this the
+// generator would document every import route as taking no options at all.
+func findImportUploadVariables(body *ast.BlockStmt) map[string]bool {
+	variables := map[string]bool{}
+	ast.Inspect(body, func(node ast.Node) bool {
+		assign, ok := node.(*ast.AssignStmt)
+		if !ok {
+			return true
+		}
+		for _, rhs := range assign.Rhs {
+			call, ok := rhs.(*ast.CallExpr)
+			if !ok || calledFunctionName(call.Fun) != "decodeImportUpload" {
+				continue
+			}
+			if len(assign.Lhs) > 0 {
+				if ident, ok := assign.Lhs[0].(*ast.Ident); ok && ident.Name != "_" {
+					variables[ident.Name] = true
+				}
+			}
+		}
+		return true
+	})
+	return variables
+}
+
 func findQueryVariables(body *ast.BlockStmt) map[string]bool {
 	variables := map[string]bool{"query": true, "queries": true, "values": true, "params": true, "q": true}
 	ast.Inspect(body, func(node ast.Node) bool {
@@ -1847,4 +1896,11 @@ func openAPIHTTPStatus(expr ast.Expr) (int, bool) {
 	}
 	status, ok := statuses[selector.Sel.Name]
 	return status, ok
+}
+
+// receiverIsImportUpload reports whether expr names a local bound to the result
+// of decodeImportUpload, so its option lookups can be attributed to the route.
+func receiverIsImportUpload(expr ast.Expr, variables map[string]bool) bool {
+	ident, ok := expr.(*ast.Ident)
+	return ok && variables[ident.Name]
 }

@@ -1690,7 +1690,7 @@ func TestHandleConvertBrowserRecordingRestartAdoptsStagedLocatorBeforeClaimCommi
 	if err != nil {
 		t.Fatal(err)
 	}
-	httpScript, _, err := first.createHTTPScriptFromHAR(artifact, info, req.Name)
+	httpScript, _, _, err := first.createHTTPScriptFromHAR(artifact, info, req.Name)
 	if err != nil {
 		t.Fatal(err)
 	}

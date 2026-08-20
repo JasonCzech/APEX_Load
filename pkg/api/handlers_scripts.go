@@ -214,17 +214,18 @@ func (s *Server) handleImportSample(w http.ResponseWriter, r *http.Request) {
 	}
 	protectedRequirements := result.ProtectedRequirements.Take()
 	defer clearCredentialRequirementValues(protectedRequirements)
-	if result.Script != nil {
-		result.Script.ProjectID = normalizeProjectID(req.ProjectID)
+	draft := importDraft{
+		Source:           req.Format,
+		SourceScriptName: req.Name,
+		ProjectID:        req.ProjectID,
+		Script:           result.Script,
+		SourceReview:     result.SourceReview,
+		Unsupported:      result.Unsupported,
+		Warnings:         result.Warnings,
+		Accounting:       result.Accounting(),
 	}
-	attachSourceReviewToScript(result.Script, req.Format, req.Name, result.SourceReview)
-
-	issues := validateScript(result.Script)
-	if len(issues) > 0 {
-		result.Warnings = append(result.Warnings, issues...)
-	}
-	preflight := buildReplayPreflight(result.Script, nil, issues, result.Warnings)
-	attachImportReplayPreflight(result.Script, req.Format, preflight)
+	augmented := draft.augment(r)
+	result.Warnings = augmented.Warnings
 
 	s.writeScriptImportResponseWithSourceSecrets(w, r, http.StatusOK, scriptImportResponseOptions{
 		Result:                result,
@@ -233,10 +234,10 @@ func (s *Server) handleImportSample(w http.ResponseWriter, r *http.Request) {
 		Stats:                 result.Stats,
 		Correlations:          result.Correlations,
 		UnsupportedElements:   result.Unsupported.Strings(),
-		ReviewSections:        importDiagnosticReviewSections(result.Unsupported),
+		ReviewSections:        augmented.Sections,
 		SourceReview:          result.SourceReview,
 		Parameterization:      buildImportParameterization(result.Script, sampleCorrelationsToPreApplied(result.Correlations)),
-		Preflight:             preflight,
+		Preflight:             augmented.Preflight,
 		ProtectedRequirements: protectedRequirements,
 	})
 }
@@ -468,9 +469,9 @@ func (s *Server) handleDeleteScript(w http.ResponseWriter, r *http.Request) {
 	if !requireAuthorizedProjectMatch(w, r, stored.ProjectID) {
 		return
 	}
-	var importSourceArtifacts []storage.BrunoSourceArtifact
-	if importSourceStore, ok := s.store.(storage.BrunoImportStore); ok {
-		revisions, listErr := importSourceStore.ListBrunoSourceRevisions(id, stored.ProjectID)
+	var importSourceArtifacts []storage.ImportSourceArtifact
+	if importSourceStore, ok := s.store.(storage.ImportSourceStore); ok {
+		revisions, listErr := importSourceStore.ListImportSourceRevisions(id, stored.ProjectID)
 		if listErr != nil {
 			writeError(w, http.StatusInternalServerError, "failed to prepare retained import source cleanup")
 			return
@@ -485,7 +486,7 @@ func (s *Server) handleDeleteScript(w http.ResponseWriter, r *http.Request) {
 				if _, exists := seen[artifactID]; exists {
 					continue
 				}
-				artifact, getErr := importSourceStore.GetBrunoSourceArtifact(artifactID, stored.ProjectID)
+				artifact, getErr := importSourceStore.GetImportSourceArtifact(artifactID, stored.ProjectID)
 				if getErr != nil {
 					writeError(w, http.StatusInternalServerError, "failed to prepare retained import source cleanup")
 					return

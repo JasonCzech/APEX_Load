@@ -4,6 +4,7 @@ import (
 	"encoding/xml"
 	"errors"
 	"fmt"
+	"github.com/jasonczech/apexload/pkg/convert/convertresult"
 	"path"
 	"regexp"
 	"sort"
@@ -2233,4 +2234,18 @@ func firstPositive(values ...int) int {
 		}
 	}
 	return 0
+}
+
+// Accounting reports this conversion's completeness in the terms every importer
+// shares. See convertresult.Accounting.
+func (result *ConvertResult) Accounting() convertresult.Accounting {
+	if result == nil {
+		return convertresult.Accounting{}
+	}
+	return convertresult.New(
+		result.Stats.OperationsDetected,
+		result.Stats.ConvertedActions,
+		result.Stats.OperationsDetected-result.Stats.ConvertedActions,
+		result.SourceReview.ReviewOnlyActionCount(),
+	)
 }

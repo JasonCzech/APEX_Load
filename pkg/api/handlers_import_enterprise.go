@@ -14,7 +14,6 @@ import (
 
 	"github.com/jasonczech/apexload/pkg/convert/enterprisearchive"
 	"github.com/jasonczech/apexload/pkg/convert/salesforce"
-	"github.com/jasonczech/apexload/pkg/convert/trueclient"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/internal/archiveingest"
 )
@@ -123,10 +122,6 @@ func attachSalesforceReviewToEnterpriseArchiveResult(result *enterprisearchive.C
 	if len(scripts) == 0 && result.Script != nil {
 		scripts = []*dsl.Script{result.Script}
 	}
-	for _, script := range scripts {
-		_ = attachMuleSoftReview(script, "enterprise_script_archive", nil)
-		_ = attachAgentforceReview(script, "enterprise_script_archive", nil, false)
-	}
 	if !importReq.SalesforceNative && len(importReq.HARData) == 0 {
 		return
 	}
@@ -167,33 +162,7 @@ func attachSalesforceReviewToEnterpriseArchiveResult(result *enterprisearchive.C
 }
 
 func (s *Server) handleEnterpriseArchiveSupportMatrix(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{
-		"support_matrix":             enterprisearchive.GetRTSSupportMatrix(),
-		"notes":                      enterprisearchive.GetRTSSupportMatrixNotes(),
-		"tested_examples":            enterprisearchive.GetRTSSupportMatrixExamples(),
-		"trueclient_script_types":    trueclient.ScriptTypeScopes(),
-		"trueclient_step_matrix":     trueclient.StepScopes(),
-		"trueclient_step_coverage":   trueclient.StepCoverage(),
-		"web2_profile_capabilities":  trueclient.Web2ProfileCapabilityScopes(),
-		"web2_fixture_contract":      trueclient.Web2FixtureContracts(),
-		"protocol_support_matrix":    protocolBundleSupportMatrix(),
-		"web_http_function_matrix":   enterprisearchive.WebHTTPFunctionCoverage(),
-		"java_lr_function_matrix":    enterprisearchive.JavaLRFunctionCoverage(),
-		"java_import_surface_matrix": enterprisearchive.JavaImportSurfaceCoverage(),
-		"java_http_idiom_matrix":     enterprisearchive.JavaHTTPIdiomCoverage(),
-		"java_jms_idiom_matrix":      enterprisearchive.JavaJMSIdiomCoverage(),
-		"java_jdbc_idiom_matrix":     enterprisearchive.JavaJDBCIdiomCoverage(),
-		"source_protocol_matrix": []map[string]any{
-			{
-				"canonical_source_protocol": "java_vuser",
-				"display_name":              "LoadRunner Java Vuser",
-				"apexload_protocol":         "java_vuser",
-				"status":                    "external_runner_required",
-				"promotion_gate":            "authoring approval plus an enabled governed java_vuser_jvm_runner advertising java_vuser_persistent_lifecycle_v1 and java_vuser_session_frame_token_v1 with the required classpath",
-				"notes":                     "HTTP, JDBC, JMS, SOAP, LoadRunner utility calls, and custom Java remain together in one lifecycle-preserving Java Vuser draft.",
-			},
-		},
-	})
+	s.writeImporterSupportMatrix(w, r, "enterprise_script_archive")
 }
 
 // normalizeCombinedJavaVuserImport keeps the public import envelope stable for
@@ -573,12 +542,22 @@ func (s *Server) writeEnterpriseArchiveImportResponse(w http.ResponseWriter, r *
 	}
 	parameterization := buildImportParameterization(result.Script, nil)
 	if len(scripts) > 1 {
-		attachSourceReviewToScripts(scripts, "enterprise_script_archive", "", summary.SourceReview)
 		parameterization = buildMultiScriptParameterization(scripts)
 	}
-	preflight := buildAndAttachMultiScriptImportPreflight(
-		result.Script, scripts, "enterprise_script_archive", nil, warnings,
-	)
+	// The archive handler scopes every produced script before it gets here, so
+	// the draft carries that same scope back rather than re-resolving it: this
+	// writer also serves the validate route, which has no request-time scope.
+	draft := importDraft{
+		Source:       "enterprise_script_archive",
+		ProjectID:    enterpriseArchiveDraftProjectID(scripts),
+		Script:       result.Script,
+		Scripts:      scripts,
+		SourceReview: summary.SourceReview,
+		Sections:     reviewSections,
+		Warnings:     warnings,
+	}
+	augmented := draft.augment(r)
+	warnings = augmented.Warnings
 
 	s.writeScriptImportResponseWithSourceSecrets(w, r, status, scriptImportResponseOptions{
 		Result:                result,
@@ -587,7 +566,7 @@ func (s *Server) writeEnterpriseArchiveImportResponse(w http.ResponseWriter, r *
 		Warnings:              warnings,
 		Stats:                 result.Stats,
 		UnsupportedElements:   unsupportedElements,
-		ReviewSections:        reviewSections,
+		ReviewSections:        augmented.Sections,
 		RepairSuggestions:     repairSuggestions,
 		Summary:               summary,
 		DetectedProtocol:      result.DetectedProtocol,
@@ -598,8 +577,19 @@ func (s *Server) writeEnterpriseArchiveImportResponse(w http.ResponseWriter, r *
 		ProtocolCompat:        protocolCompat,
 		Parameterization:      parameterization,
 		ProtectedRequirements: protectedRequirements,
-		Preflight:             preflight,
+		Preflight:             augmented.Preflight,
 	})
+}
+
+// enterpriseArchiveDraftProjectID is the scope already applied to the archive's
+// scripts. Every script in one archive import shares it.
+func enterpriseArchiveDraftProjectID(scripts []*dsl.Script) string {
+	for _, script := range scripts {
+		if script != nil && script.ProjectID != "" {
+			return script.ProjectID
+		}
+	}
+	return ""
 }
 
 func enterpriseArchiveImportWarnings(result *enterprisearchive.ConvertResult) []string {

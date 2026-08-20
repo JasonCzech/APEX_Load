@@ -1,18 +1,21 @@
 package api
 
 import (
-	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
 
-	"github.com/google/uuid"
 	"github.com/jasonczech/apexload/pkg/dsl"
-	"github.com/jasonczech/apexload/pkg/storage"
 )
 
 const enterpriseArchiveSaveProfile = "enterprise_script_archive"
+
+// enterpriseArchiveSaveWorkflow names this endpoint in the shared receipt helpers.
+var enterpriseArchiveSaveWorkflow = importBatchWorkflow{
+	Profile: enterpriseArchiveSaveProfile,
+	Noun:    "enterprise archive batch",
+}
 
 type saveEnterpriseArchiveImportRequest struct {
 	Scripts     []dsl.Script `json:"scripts"`
@@ -74,22 +77,10 @@ func (s *Server) handleSaveEnterpriseArchiveImport(w http.ResponseWriter, r *htt
 		writeError(w, http.StatusInternalServerError, "failed to fingerprint enterprise archive batch: "+err.Error())
 		return
 	}
-	attempt, receiptReplay, err := s.claimDirectImportAttempt(
-		projectID,
-		enterpriseArchiveSaveProfile,
-		operationID,
-		requestDigest,
+	attempt, receiptReplay, ok := s.claimImportBatchReceipt(
+		w, enterpriseArchiveSaveWorkflow, projectID, operationID, requestDigest,
 	)
-	if err != nil {
-		switch {
-		case errors.Is(err, storage.ErrDirectImportReceiptBusy):
-			w.Header().Set("Retry-After", "2")
-			writeError(w, http.StatusConflict, "this enterprise archive batch save is already in progress")
-		case errors.Is(err, storage.ErrDirectImportReceiptConflict):
-			writeError(w, http.StatusConflict, "operation_id was already used for a different enterprise archive batch")
-		default:
-			writeError(w, http.StatusInternalServerError, "failed to reserve enterprise archive batch: "+err.Error())
-		}
+	if !ok {
 		return
 	}
 	finished := false
@@ -113,39 +104,14 @@ func (s *Server) handleSaveEnterpriseArchiveImport(w http.ResponseWriter, r *htt
 		return
 	}
 
-	assetIdentitySeed := ""
-	if attempt != nil && attempt.receipt != nil {
-		assetIdentitySeed = attempt.receipt.ID
-	} else if operationID != "" {
-		assetIdentitySeed = directImportOperationHash(projectID, enterpriseArchiveSaveProfile, operationID)
-	}
-	plannedIDs := make([]string, len(requestScripts))
-	for index := range plannedIDs {
-		if assetIdentitySeed == "" {
-			plannedIDs[index] = uuid.NewString()
-		} else {
-			plannedIDs[index] = deterministicDirectImportAssetID(assetIdentitySeed, "script", index)
-		}
-	}
+	plannedIDs := importBatchPlannedAssetIDs(
+		attempt, enterpriseArchiveSaveWorkflow, projectID, operationID, len(requestScripts),
+	)
 	// Adopt only receipt-bound deterministic assets before attempting to claim
 	// browser draft capabilities. Local attestations do not survive a controller
 	// restart, while a committed batch and its request digest do.
 	if attempt != nil && !attempt.created {
-		if recoverErr := s.recoverExpiredLibraryImportClaims(); recoverErr != nil {
-			writeError(w, http.StatusInternalServerError, "failed to recover prior enterprise archive batch: "+recoverErr.Error())
-			return
-		}
-		if renewErr := attempt.renew(); renewErr != nil {
-			writeError(w, http.StatusInternalServerError, "failed to renew enterprise archive batch receipt after recovery: "+renewErr.Error())
-			return
-		}
-		if fenceErr := s.fenceDirectImportAssetAdoption(attempt, projectID, plannedIDs, ""); fenceErr != nil {
-			if errors.Is(fenceErr, errDirectImportAssetsClaimed) {
-				w.Header().Set("Retry-After", "2")
-				writeError(w, http.StatusConflict, "the prior enterprise archive batch is still finalizing; retry the save")
-			} else {
-				writeError(w, http.StatusInternalServerError, "failed to inspect prior enterprise archive batch: "+fenceErr.Error())
-			}
+		if !s.fenceImportBatchAdoption(w, enterpriseArchiveSaveWorkflow, attempt, projectID, plannedIDs, "") {
 			return
 		}
 		stored, _, loadErr := s.loadDirectImportAssetsByIDs(projectID, plannedIDs, "")
@@ -262,21 +228,7 @@ func (s *Server) handleSaveEnterpriseArchiveImport(w http.ResponseWriter, r *htt
 	}
 	allocateAtomicImportBatchScriptNames(prepared)
 	if attempt != nil && !attempt.created {
-		if recoverErr := s.recoverExpiredLibraryImportClaims(); recoverErr != nil {
-			writeError(w, http.StatusInternalServerError, "failed to recover prior enterprise archive batch: "+recoverErr.Error())
-			return
-		}
-		if renewErr := attempt.renew(); renewErr != nil {
-			writeError(w, http.StatusInternalServerError, "failed to renew enterprise archive batch receipt after recovery: "+renewErr.Error())
-			return
-		}
-		if fenceErr := s.fenceDirectImportAssetAdoption(attempt, projectID, plannedIDs, ""); fenceErr != nil {
-			if errors.Is(fenceErr, errDirectImportAssetsClaimed) {
-				w.Header().Set("Retry-After", "2")
-				writeError(w, http.StatusConflict, "the prior enterprise archive batch is still finalizing; retry the save")
-			} else {
-				writeError(w, http.StatusInternalServerError, "failed to inspect prior enterprise archive batch: "+fenceErr.Error())
-			}
+		if !s.fenceImportBatchAdoption(w, enterpriseArchiveSaveWorkflow, attempt, projectID, plannedIDs, "") {
 			return
 		}
 		stored, _, loadErr := s.loadDirectImportAssetsByIDs(projectID, plannedIDs, "")

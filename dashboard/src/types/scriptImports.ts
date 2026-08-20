@@ -1122,7 +1122,9 @@ export type BrunoSecurityFinding = BrunoAPISchemas['BrunoSecurityFinding']
 export type BrunoNativeDiagnostic = BrunoAPISchemas['BrunoNativeDiagnostic']
 export type BrunoImportConflict = BrunoAPISchemas['BrunoImportConflict']
 export type BrunoSyncPreview = BrunoAPISchemas['BrunoSyncPreview']
-export type BrunoSourceRevision = BrunoAPISchemas['BrunoSourceRevision']
+// Source retention is no longer Bruno-only: any import routed through a
+// protected session can retain its upload, and these routes serve all of them.
+export type ImportSourceRevision = BrunoAPISchemas['ImportSourceRevision']
 export type BrunoExecutionPreflight = BrunoAPISchemas['BrunoExecutionPreflight']
 export type BrunoCommitErrorResponse = BrunoAPISchemas['BrunoCommitErrorResponse']
 

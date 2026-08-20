@@ -31,7 +31,7 @@ import type {
 import { type AuthoringTemplate } from '../../types'
 import { type CorrelationDiagnoseResponse, type CorrelationStep, type ScriptDefinition, type ScriptExportResponse, type ScriptReplayResponse, type ScriptValidationResponse } from '../../types/scripts'
 import { type CloneScriptDraftResponse, type DiscardImportSecretSessionRequest, type MigrateImportSecretsRequest, type MigrateImportSecretsResponse, type RebindScriptSecretReferenceResponse, type ScriptSecretStatus } from '../../types/secrets'
-import { type BrunoInspectResponse, type BrunoProjectionPreview, type BrunoSourceRevision, type BrunoSupportMatrixResponse, type CommitBrunoImportRequest, type CommitBrunoImportResponse } from '../../types/scriptImports'
+import { type BrunoInspectResponse, type BrunoProjectionPreview, type ImportSourceRevision, type BrunoSupportMatrixResponse, type CommitBrunoImportRequest, type CommitBrunoImportResponse } from '../../types/scriptImports'
 import { downloadFilenameFromDisposition } from '../../utils/fileUtils'
 import { importFileLogicalPath } from '../../importLogicalPath'
 
@@ -1315,13 +1315,13 @@ export function useScriptApi() {
 
   const listBrunoRevisions = useCallback(
     (scriptId: string) =>
-      request<{ revisions: BrunoSourceRevision[]; count: number }>(`/scripts/${scriptId}/imports/revisions`),
+      request<{ revisions: ImportSourceRevision[]; count: number }>(`/scripts/${scriptId}/imports/revisions`),
     [],
   )
 
   const rollbackBrunoRevision = useCallback(
     (scriptId: string, revisionId: string, expectedActiveRevisionId?: string) =>
-      request<{ revision: BrunoSourceRevision }>(`/scripts/${scriptId}/imports/rollback`, {
+      request<{ revision: ImportSourceRevision }>(`/scripts/${scriptId}/imports/rollback`, {
         method: 'POST',
         body: JSON.stringify({
           revision_id: revisionId,

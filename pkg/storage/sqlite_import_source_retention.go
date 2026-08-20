@@ -44,10 +44,10 @@ type ImportSourceRetention struct {
 	CreatedBy                 string
 }
 
-// ImportSourceRetentionStore is optional, matching BrunoImportStore, so
+// ImportSourceRetentionStore is optional, matching ImportSourceStore, so
 // lightweight test stores stay source-compatible.
 type ImportSourceRetentionStore interface {
-	RetainImportSource(retention *ImportSourceRetention) (*BrunoSourceRevision, error)
+	RetainImportSource(retention *ImportSourceRetention) (*ImportSourceRevision, error)
 }
 
 // RetainImportSource stores one raw source artifact and makes it the active
@@ -58,7 +58,7 @@ type ImportSourceRetentionStore interface {
 // put there. SanitizedAvailable stays false, which is what stops the source
 // download from serving these bytes under the editor-visible sanitized gate --
 // the column being populated is deliberately not what authorizes that.
-func (s *SQLiteStore) RetainImportSource(retention *ImportSourceRetention) (*BrunoSourceRevision, error) {
+func (s *SQLiteStore) RetainImportSource(retention *ImportSourceRetention) (*ImportSourceRevision, error) {
 	if retention == nil || retention.CanonicalScript == nil {
 		return nil, errors.New("import source retention canonical script is required")
 	}
@@ -85,7 +85,7 @@ func (s *SQLiteStore) RetainImportSource(retention *ImportSourceRetention) (*Bru
 		return nil, errors.New("import source retention fingerprint does not match canonical script")
 	}
 
-	revision := BrunoSourceRevision{
+	revision := ImportSourceRevision{
 		ID:                   uuid.NewString(),
 		ScriptID:             scriptID,
 		ProjectID:            projectID,

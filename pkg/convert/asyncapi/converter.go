@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/jasonczech/apexload/pkg/convert/convertresult"
 	"sort"
 	"strings"
 	"time"
@@ -2215,4 +2216,18 @@ func sanitizeColumnName(value string) string {
 		}
 	}
 	return strings.Trim(b.String(), "_")
+}
+
+// Accounting reports this conversion's completeness in the terms every importer
+// shares. See convertresult.Accounting.
+func (result *ConvertResult) Accounting() convertresult.Accounting {
+	if result == nil {
+		return convertresult.Accounting{}
+	}
+	return convertresult.New(
+		result.Stats.TotalOperations,
+		result.Stats.ConvertedActions,
+		len(result.Stats.SkippedOperations),
+		result.SourceReview.ReviewOnlyActionCount(),
+	)
 }

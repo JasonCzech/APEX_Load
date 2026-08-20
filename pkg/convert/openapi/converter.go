@@ -6,6 +6,7 @@ import (
 	"encoding/xml"
 	"errors"
 	"fmt"
+	"github.com/jasonczech/apexload/pkg/convert/convertresult"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -4199,4 +4200,18 @@ func firstPositive(values ...int) int {
 		}
 	}
 	return 0
+}
+
+// Accounting reports this conversion's completeness in the terms every importer
+// shares. See convertresult.Accounting.
+func (result *ConvertResult) Accounting() convertresult.Accounting {
+	if result == nil {
+		return convertresult.Accounting{}
+	}
+	return convertresult.New(
+		result.Stats.TotalOperations,
+		result.Stats.ConvertedActions,
+		len(result.Stats.SkippedOperations),
+		result.SourceReview.ReviewOnlyActionCount(),
+	)
 }

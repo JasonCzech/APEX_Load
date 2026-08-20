@@ -35,13 +35,14 @@ func (s *Server) handleImportJMeter(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnprocessableEntity, "conversion failed: "+err.Error())
 		return
 	}
+	// Scope the drafts here; the shared augmentation pass in the writer reads the
+	// scope back off them and owns source review, detection, and preflight.
 	for index := range result.Scripts {
 		result.Scripts[index].ProjectID = normalizeProjectID(importReq.ProjectID)
 	}
 	if result.Script != nil {
 		result.Script.ProjectID = normalizeProjectID(importReq.ProjectID)
 	}
-	attachSourceReviewToScripts(result.Scripts, "jmeter", result.Summary.FileName, result.SourceReview)
 
 	s.writeJMeterImportResponse(w, r, http.StatusOK, result)
 }
@@ -58,26 +59,20 @@ func (s *Server) handleValidateJMeterImport(w http.ResponseWriter, r *http.Reque
 		writeError(w, http.StatusUnprocessableEntity, "validation failed: "+err.Error())
 		return
 	}
+	// Scope the drafts here; the shared augmentation pass in the writer reads the
+	// scope back off them and owns source review, detection, and preflight.
 	for index := range result.Scripts {
 		result.Scripts[index].ProjectID = normalizeProjectID(importReq.ProjectID)
 	}
 	if result.Script != nil {
 		result.Script.ProjectID = normalizeProjectID(importReq.ProjectID)
 	}
-	attachSourceReviewToScripts(result.Scripts, "jmeter", result.Summary.FileName, result.SourceReview)
 
 	s.writeJMeterImportResponse(w, r, http.StatusOK, result)
 }
 
 func (s *Server) handleJMeterSupportMatrix(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{
-		// Flat arrays retained for backward compatibility with existing clients.
-		"support_matrix": jmeter.GetSupportMatrix(),
-		// Structured entries (mirrors the AsyncAPI/k6/DevWeb importers) carry
-		// per-construct status, execution_status, and review flags.
-		"support_matrix_entries": jmeter.GetSupportMatrixEntries(),
-		"notes":                  jmeter.GetSupportMatrixNotes(),
-	})
+	s.writeImporterSupportMatrix(w, r, "jmeter")
 }
 
 func readJMeterImportRequest(w http.ResponseWriter, r *http.Request) (*jmeterImportRequest, bool) {
@@ -621,9 +616,19 @@ func (s *Server) writeJMeterImportResponse(w http.ResponseWriter, r *http.Reques
 	for _, script := range result.Scripts {
 		persistProtocolCompatReport(script, "jmeter", protocolCompat)
 	}
-	preflight := buildAndAttachMultiScriptImportPreflight(
-		result.Script, result.Scripts, "jmeter", nil, result.Warnings,
-	)
+	draft := importDraft{
+		Source:           "jmeter",
+		SourceScriptName: result.Summary.FileName,
+		ProjectID:        jmeterDraftProjectID(result),
+		Script:           result.Script,
+		Scripts:          result.Scripts,
+		SourceReview:     result.SourceReview,
+		Unsupported:      result.Unsupported,
+		Warnings:         result.Warnings,
+		Accounting:       result.Accounting(),
+	}
+	augmented := draft.augment(r)
+	result.Warnings = augmented.Warnings
 	s.writeScriptImportResponseWithSourceSecrets(w, r, status, scriptImportResponseOptions{
 		Result:                 result,
 		Scripts:                result.Scripts,
@@ -631,7 +636,7 @@ func (s *Server) writeJMeterImportResponse(w http.ResponseWriter, r *http.Reques
 		ScenarioDraft:          result.ScenarioDraft,
 		Warnings:               result.Warnings,
 		UnsupportedElements:    unsupportedElements,
-		ReviewSections:         importDiagnosticReviewSections(result.Unsupported),
+		ReviewSections:         augmented.Sections,
 		Assumptions:            result.Assumptions,
 		Stats:                  result.Stats,
 		Summary:                result.Summary,
@@ -639,11 +644,37 @@ func (s *Server) writeJMeterImportResponse(w http.ResponseWriter, r *http.Reques
 		ProtocolCompat:         protocolCompat,
 		CredentialRequirements: result.SecretRequirements,
 		Parameterization:       buildMultiScriptParameterization(result.Scripts),
-		Preflight:              preflight,
+		Preflight:              augmented.Preflight,
 	})
 }
 
+// jmeterDraftProjectID is the scope the handler already applied to the plan's
+// scripts. This writer also serves the validate route, which has no request-time
+// scope of its own, so it reads the scope back off the drafts.
+func jmeterDraftProjectID(result *jmeter.ConvertResult) string {
+	if result == nil {
+		return ""
+	}
+	if result.Script != nil && result.Script.ProjectID != "" {
+		return result.Script.ProjectID
+	}
+	for _, script := range result.Scripts {
+		if script != nil && script.ProjectID != "" {
+			return script.ProjectID
+		}
+	}
+	return ""
+}
+
 // OpenAPI-Responses: 201
+// jmeterImportWorkflow names the JMeter save in the shared receipt helpers. Its
+// batch is not committed through the generic pipeline: a JMeter plan persists a
+// scenario in the same transaction as its scripts.
+var jmeterImportWorkflow = importBatchWorkflow{
+	Profile: "jmeter",
+	Noun:    "JMeter import transaction",
+}
+
 func (s *Server) handleSaveJMeterImport(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Scripts       []dsl.Script          `json:"scripts"`
@@ -800,26 +831,7 @@ func (s *Server) handleSaveJMeterImport(w http.ResponseWriter, r *http.Request) 
 			writeError(w, http.StatusBadRequest, recoveryErr.Error())
 			return
 		}
-		if recoverErr := s.recoverExpiredLibraryImportClaims(); recoverErr != nil {
-			writeError(w, http.StatusInternalServerError, "failed to recover prior JMeter import transaction: "+recoverErr.Error())
-			return
-		}
-		if renewErr := attempt.renew(); renewErr != nil {
-			writeError(w, http.StatusConflict, "JMeter import receipt ownership was lost; retry the save")
-			return
-		}
-		if fenceErr := s.fenceDirectImportAssetAdoption(
-			attempt,
-			projectID,
-			plannedScriptIDs,
-			plannedScenarioID,
-		); fenceErr != nil {
-			if errors.Is(fenceErr, errDirectImportAssetsClaimed) {
-				w.Header().Set("Retry-After", "2")
-				writeError(w, http.StatusConflict, "the prior JMeter import transaction is still finalizing; retry the save")
-			} else {
-				writeError(w, http.StatusInternalServerError, "failed to inspect prior JMeter import transaction: "+fenceErr.Error())
-			}
+		if !s.fenceImportBatchAdoption(w, jmeterImportWorkflow, attempt, projectID, plannedScriptIDs, plannedScenarioID) {
 			return
 		}
 		storedScripts, storedScenario, loadErr := s.loadDirectImportAssetsByIDs(
@@ -983,26 +995,7 @@ func (s *Server) handleSaveJMeterImport(w http.ResponseWriter, r *http.Request) 
 		// The receipt lease is longer than the write-ahead claim lease. Recover
 		// any expired partial transaction before deciding whether its assets are
 		// a completed operation that can be adopted.
-		if recoverErr := s.recoverExpiredLibraryImportClaims(); recoverErr != nil {
-			writeError(w, http.StatusInternalServerError, "failed to recover prior JMeter import transaction: "+recoverErr.Error())
-			return
-		}
-		if renewErr := attempt.renew(); renewErr != nil {
-			writeError(w, http.StatusInternalServerError, "failed to renew JMeter import receipt after recovery: "+renewErr.Error())
-			return
-		}
-		if fenceErr := s.fenceDirectImportAssetAdoption(
-			attempt,
-			projectID,
-			deterministicScriptIDs(preparedScripts),
-			scenarioID,
-		); fenceErr != nil {
-			if errors.Is(fenceErr, errDirectImportAssetsClaimed) {
-				w.Header().Set("Retry-After", "2")
-				writeError(w, http.StatusConflict, "the prior JMeter import transaction is still finalizing; retry the save")
-			} else {
-				writeError(w, http.StatusInternalServerError, "failed to inspect prior JMeter import transaction: "+fenceErr.Error())
-			}
+		if !s.fenceImportBatchAdoption(w, jmeterImportWorkflow, attempt, projectID, deterministicScriptIDs(preparedScripts), scenarioID) {
 			return
 		}
 		storedScripts, storedScenario, loadErr := s.loadDirectImportAssetsByIDs(

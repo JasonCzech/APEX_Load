@@ -13,14 +13,10 @@ var (
 	ErrBrunoNativeBatchConflict    = errors.New("Bruno native import batch idempotency conflict")
 )
 
-// BrunoSourceArtifact is retained as the public compatibility name for the
-// importer-neutral content-addressed source artifact.
-type BrunoSourceArtifact = ImportSourceArtifact
-
-// BrunoSourceRevision binds a canonical APEX script to immutable raw and
+// ImportSourceRevision binds a canonical APEX script to immutable raw and
 // sanitized source artifacts. CanonicalScript is retained so rollback can
 // atomically restore the source binding without reparsing an untrusted upload.
-type BrunoSourceRevision struct {
+type ImportSourceRevision struct {
 	ID                  string `json:"id"`
 	ScriptID            string `json:"script_id"`
 	ProjectID           string `json:"project_id"`
@@ -50,20 +46,20 @@ type BrunoImportCommit struct {
 	Script                   *dsl.Script
 	ExpectedScriptUpdatedAt  *time.Time
 	ExpectedActiveRevisionID string
-	RawArtifact              BrunoSourceArtifact
-	SanitizedArtifact        BrunoSourceArtifact
+	RawArtifact              ImportSourceArtifact
+	SanitizedArtifact        ImportSourceArtifact
 	// UseRawArtifact keeps the imported source credential values in the
 	// execution bundle. The raw object remains protected by the artifact store
 	// and raw-source authorization; only the durable runtime reference selects
 	// it. Sanitized source remains available for ordinary review/download.
 	UseRawArtifact bool
-	Revision       BrunoSourceRevision
+	Revision       ImportSourceRevision
 }
 
 type BrunoImportCommitResult struct {
-	Script   *dsl.Script          `json:"script"`
-	Revision *BrunoSourceRevision `json:"revision"`
-	Created  bool                 `json:"created"`
+	Script   *dsl.Script           `json:"script"`
+	Revision *ImportSourceRevision `json:"revision"`
+	Created  bool                  `json:"created"`
 }
 
 // BrunoNativeImportBatch is the durable receipt for a create-only native
@@ -92,8 +88,8 @@ type BrunoNativeImportBatch struct {
 type BrunoNativeImportCommit struct {
 	Batch             BrunoNativeImportBatch
 	Scripts           []*dsl.Script
-	RawArtifact       BrunoSourceArtifact
-	SanitizedArtifact BrunoSourceArtifact
+	RawArtifact       ImportSourceArtifact
+	SanitizedArtifact ImportSourceArtifact
 	// RefKeyEnv is the environment segment used when the transaction assigns
 	// reference keys to scripts that do not already have one. Allocation lives
 	// in the same transaction as the scripts and receipt so a failed batch does
@@ -107,16 +103,16 @@ type BrunoNativeImportCommitResult struct {
 	Created bool                    `json:"created"`
 }
 
-// BrunoImportStore is intentionally optional instead of widening Store. This
+// ImportSourceStore is intentionally optional instead of widening Store. This
 // keeps lightweight test adapters source-compatible while production
 // SQLite/PostgreSQL provide the atomic import and rollback boundary.
-type BrunoImportStore interface {
+type ImportSourceStore interface {
 	CommitBrunoImport(commit *BrunoImportCommit) (*BrunoImportCommitResult, error)
-	GetBrunoSourceArtifact(id string, projectID string) (*BrunoSourceArtifact, error)
-	GetBrunoSourceRevision(id string, projectID string) (*BrunoSourceRevision, error)
-	GetActiveBrunoSourceRevision(scriptID string, projectID string) (*BrunoSourceRevision, error)
-	ListBrunoSourceRevisions(scriptID string, projectID string) ([]*BrunoSourceRevision, error)
-	ActivateBrunoSourceRevision(scriptID string, projectID string, revisionID string, expectedActiveRevisionID string) (*BrunoSourceRevision, error)
+	GetImportSourceArtifact(id string, projectID string) (*ImportSourceArtifact, error)
+	GetImportSourceRevision(id string, projectID string) (*ImportSourceRevision, error)
+	GetActiveImportSourceRevision(scriptID string, projectID string) (*ImportSourceRevision, error)
+	ListImportSourceRevisions(scriptID string, projectID string) ([]*ImportSourceRevision, error)
+	ActivateImportSourceRevision(scriptID string, projectID string, revisionID string, expectedActiveRevisionID string) (*ImportSourceRevision, error)
 }
 
 // BrunoNativeImportStore is optional so lightweight stores remain source

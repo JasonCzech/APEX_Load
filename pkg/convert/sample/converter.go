@@ -3,6 +3,7 @@ package sample
 import (
 	"errors"
 	"fmt"
+	"github.com/jasonczech/apexload/pkg/convert/convertresult"
 	"net/url"
 	"strings"
 	"time"
@@ -571,4 +572,18 @@ func defaultScriptName(exchanges []exchange) string {
 		}
 	}
 	return "Sample_Import"
+}
+
+// Accounting reports this conversion's completeness in the terms every importer
+// shares. See convertresult.Accounting.
+func (result *ConvertResult) Accounting() convertresult.Accounting {
+	if result == nil {
+		return convertresult.Accounting{}
+	}
+	return convertresult.New(
+		result.Stats.TotalRequests,
+		result.Stats.ConvertedActions,
+		result.Stats.FilteredAssets+result.Stats.SkippedRequests,
+		result.SourceReview.ReviewOnlyActionCount(),
+	)
 }

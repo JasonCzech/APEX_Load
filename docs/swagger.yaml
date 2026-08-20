@@ -203,7 +203,7 @@ components:
         parameterization_applied:
           type: integer
         revision:
-          $ref: '#/components/schemas/BrunoSourceRevision'
+          $ref: '#/components/schemas/ImportSourceRevision'
         script:
           $ref: '#/components/schemas/APEXScript'
         secret_migrations:
@@ -1010,7 +1010,40 @@ components:
         - path
         - role
         - sha256
-    BrunoSourceRevision:
+    BrunoSyncPreview:
+      type: object
+      properties:
+        active_revision:
+          type: string
+        changes:
+          type: object
+          description: Canonical synchronization change summary.
+          additionalProperties: true
+        conflicts:
+          type: array
+          items:
+            $ref: '#/components/schemas/BrunoImportConflict'
+        expected_updated_at:
+          type: string
+          format: date-time
+        target_script_id:
+          type: string
+      required:
+        - target_script_id
+        - expected_updated_at
+        - changes
+    ErrorResponse:
+      type: object
+      properties:
+        code:
+          type: string
+          description: Optional stable machine-readable error code.
+        error:
+          type: string
+          description: Human-readable error message.
+      required:
+        - error
+    ImportSourceRevision:
       type: object
       properties:
         active:
@@ -1069,39 +1102,6 @@ components:
         - compatibility_version
         - active
         - created_at
-    BrunoSyncPreview:
-      type: object
-      properties:
-        active_revision:
-          type: string
-        changes:
-          type: object
-          description: Canonical synchronization change summary.
-          additionalProperties: true
-        conflicts:
-          type: array
-          items:
-            $ref: '#/components/schemas/BrunoImportConflict'
-        expected_updated_at:
-          type: string
-          format: date-time
-        target_script_id:
-          type: string
-      required:
-        - target_script_id
-        - expected_updated_at
-        - changes
-    ErrorResponse:
-      type: object
-      properties:
-        code:
-          type: string
-          description: Optional stable machine-readable error code.
-        error:
-          type: string
-          description: Human-readable error message.
-      required:
-        - error
     ProjectReleaseCreateRequest:
       type: object
       description: Creates one logical release family joined to every application in the project.
@@ -37160,8 +37160,7 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                additionalProperties: {}
+                description: Operation-specific JSON response.
         "401":
           description: Authentication required or invalid.
           content:
@@ -37170,6 +37169,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "403":
           description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "500":
+          description: Internal Server Error
           content:
             application/json:
               schema:
@@ -106128,9 +106133,9 @@ paths:
       x-handler: handleStartBrowserReplayScript
   /api/v1/scripts/{id}/bruno-imports/revisions:
     get:
-      summary: List Bruno Import Revisions
+      summary: List Import Source Revisions
       description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read'
-      operationId: handleListBrunoImportRevisions
+      operationId: handleListImportSourceRevisions
       responses:
         "200":
           description: OK
@@ -106180,12 +106185,12 @@ paths:
             type: string
       tags:
         - Scripts
-      x-handler: handleListBrunoImportRevisions
+      x-handler: handleListImportSourceRevisions
   /api/v1/scripts/{id}/bruno-imports/rollback:
     post:
-      summary: Rollback Bruno Import
+      summary: Rollback Import Source
       description: '**Access Control:** Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: scripts:write'
-      operationId: handleRollbackBrunoImport
+      operationId: handleRollbackImportSource
       requestBody:
         required: true
         content:
@@ -106264,12 +106269,12 @@ paths:
             type: string
       tags:
         - Scripts
-      x-handler: handleRollbackBrunoImport
+      x-handler: handleRollbackImportSource
   /api/v1/scripts/{id}/bruno-imports/source:
     get:
-      summary: Get Bruno Import Source
+      summary: Get Import Source
       description: '**Access Control:** Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: read'
-      operationId: handleGetBrunoImportSource
+      operationId: handleGetImportSource
       responses:
         "200":
           description: OK
@@ -106330,7 +106335,7 @@ paths:
             type: boolean
       tags:
         - Scripts
-      x-handler: handleGetBrunoImportSource
+      x-handler: handleGetImportSource
   /api/v1/scripts/{id}/bruno-projection/commit:
     post:
       summary: Commit Bruno Projection
@@ -109722,9 +109727,9 @@ paths:
       x-handler: handleScriptGitHubStatus
   /api/v1/scripts/{id}/imports/revisions:
     get:
-      summary: List Bruno Import Revisions
+      summary: List Import Source Revisions
       description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read'
-      operationId: handleListBrunoImportRevisions_2
+      operationId: handleListImportSourceRevisions_2
       responses:
         "200":
           description: OK
@@ -109774,12 +109779,12 @@ paths:
             type: string
       tags:
         - Scripts
-      x-handler: handleListBrunoImportRevisions
+      x-handler: handleListImportSourceRevisions
   /api/v1/scripts/{id}/imports/rollback:
     post:
-      summary: Rollback Bruno Import
+      summary: Rollback Import Source
       description: '**Access Control:** Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: scripts:write'
-      operationId: handleRollbackBrunoImport_2
+      operationId: handleRollbackImportSource_2
       requestBody:
         required: true
         content:
@@ -109858,12 +109863,12 @@ paths:
             type: string
       tags:
         - Scripts
-      x-handler: handleRollbackBrunoImport
+      x-handler: handleRollbackImportSource
   /api/v1/scripts/{id}/imports/source:
     get:
-      summary: Get Bruno Import Source
+      summary: Get Import Source
       description: '**Access Control:** Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: read'
-      operationId: handleGetBrunoImportSource_2
+      operationId: handleGetImportSource_2
       responses:
         "200":
           description: OK
@@ -109924,7 +109929,7 @@ paths:
             type: boolean
       tags:
         - Scripts
-      x-handler: handleGetBrunoImportSource
+      x-handler: handleGetImportSource
   /api/v1/scripts/{id}/move:
     patch:
       summary: Move Script
@@ -140587,8 +140592,7 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                additionalProperties: {}
+                description: Operation-specific JSON response.
         "401":
           description: Authentication required or invalid.
           content:
@@ -140597,6 +140601,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "403":
           description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "500":
+          description: Internal Server Error
           content:
             application/json:
               schema:
@@ -140622,6 +140632,10 @@ paths:
                 file:
                   type: string
                   format: binary
+                format:
+                  type: string
+                max_destinations:
+                  type: string
               additionalProperties: true
       responses:
         2XX:
@@ -140697,8 +140711,7 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                additionalProperties: {}
+                description: Operation-specific JSON response.
         "401":
           description: Authentication required or invalid.
           content:
@@ -140707,6 +140720,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "403":
           description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "500":
+          description: Internal Server Error
           content:
             application/json:
               schema:
@@ -142464,8 +142483,7 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                additionalProperties: {}
+                description: Operation-specific JSON response.
         "401":
           description: Authentication required or invalid.
           content:
@@ -142474,6 +142492,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "403":
           description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "500":
+          description: Internal Server Error
           content:
             application/json:
               schema:
@@ -143853,8 +143877,7 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                additionalProperties: {}
+                description: Operation-specific JSON response.
         "401":
           description: Authentication required or invalid.
           content:
@@ -143863,6 +143886,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "403":
           description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "500":
+          description: Internal Server Error
           content:
             application/json:
               schema:
@@ -145225,8 +145254,7 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                additionalProperties: {}
+                description: Operation-specific JSON response.
         "401":
           description: Authentication required or invalid.
           content:
@@ -145235,6 +145263,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "403":
           description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "500":
+          description: Internal Server Error
           content:
             application/json:
               schema:
@@ -145343,9 +145377,13 @@ paths:
             schema:
               type: object
               properties:
+                event_hub:
+                  type: string
                 file:
                   type: string
                   format: binary
+                max_events:
+                  type: string
               additionalProperties: true
       responses:
         2XX:
@@ -145421,8 +145459,7 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                additionalProperties: {}
+                description: Operation-specific JSON response.
         "401":
           description: Authentication required or invalid.
           content:
@@ -145431,6 +145468,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "403":
           description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "500":
+          description: Internal Server Error
           content:
             application/json:
               schema:
@@ -145593,6 +145636,12 @@ paths:
           required: false
           schema:
             type: boolean
+        - name: name
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
         - name: project_id
           in: query
           description: Handler-defined query parameter.
@@ -147205,8 +147254,7 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                additionalProperties: {}
+                description: Operation-specific JSON response.
         "401":
           description: Authentication required or invalid.
           content:
@@ -147215,6 +147263,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "403":
           description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "500":
+          description: Internal Server Error
           content:
             application/json:
               schema:
@@ -147386,8 +147440,7 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                additionalProperties: {}
+                description: Operation-specific JSON response.
         "401":
           description: Authentication required or invalid.
           content:
@@ -147396,6 +147449,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "403":
           description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "500":
+          description: Internal Server Error
           content:
             application/json:
               schema:
@@ -148148,8 +148207,7 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                additionalProperties: {}
+                description: Operation-specific JSON response.
         "401":
           description: Authentication required or invalid.
           content:
@@ -148158,6 +148216,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "403":
           description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "500":
+          description: Internal Server Error
           content:
             application/json:
               schema:
@@ -152425,8 +152489,7 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                additionalProperties: {}
+                description: Operation-specific JSON response.
         "401":
           description: Authentication required or invalid.
           content:
@@ -152435,6 +152498,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "403":
           description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "500":
+          description: Internal Server Error
           content:
             application/json:
               schema:
@@ -152610,8 +152679,7 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                additionalProperties: {}
+                description: Operation-specific JSON response.
         "401":
           description: Authentication required or invalid.
           content:
@@ -152620,6 +152688,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "403":
           description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "500":
+          description: Internal Server Error
           content:
             application/json:
               schema:
@@ -152963,6 +153037,12 @@ paths:
           required: false
           schema:
             type: boolean
+        - name: name
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
         - name: project_id
           in: query
           description: Handler-defined query parameter.

@@ -65,7 +65,7 @@ func TestCommitBrunoNativeImportRollsBackEveryScriptAndReceipt(t *testing.T) {
 	if _, err := store.GetBrunoNativeImportByIdempotencyKey("native-session-rollback", "project-bruno"); !errors.Is(err, sql.ErrNoRows) {
 		t.Fatalf("receipt lookup error = %v, want sql.ErrNoRows", err)
 	}
-	if _, err := store.GetBrunoSourceArtifact("native-raw", "project-bruno"); !errors.Is(err, ErrBrunoRevisionNotFound) && !errors.Is(err, sql.ErrNoRows) {
+	if _, err := store.GetImportSourceArtifact("native-raw", "project-bruno"); !errors.Is(err, ErrBrunoRevisionNotFound) && !errors.Is(err, sql.ErrNoRows) {
 		t.Fatalf("raw artifact lookup error = %v, want not found", err)
 	}
 }
@@ -163,12 +163,12 @@ func brunoNativeImportCommitFixture(idempotencyKey, requestSHA string) *BrunoNat
 			CreatedBy:      "test",
 		},
 		Scripts: scripts,
-		RawArtifact: BrunoSourceArtifact{
+		RawArtifact: ImportSourceArtifact{
 			ID: "native-raw", BackendKey: "objects/native-raw", SHA256: "native-raw-sha",
 			SizeBytes: 10, ManifestSHA256: "native-manifest", SourceFormat: "open_collection_yaml",
 			EncryptionMetadata: map[string]any{"algorithm": "AES-256-GCM"},
 		},
-		SanitizedArtifact: BrunoSourceArtifact{
+		SanitizedArtifact: ImportSourceArtifact{
 			ID: "native-sanitized", BackendKey: "objects/native-sanitized", SHA256: "native-sanitized-sha",
 			SizeBytes: 9, ManifestSHA256: "native-manifest", SourceFormat: "open_collection_yaml",
 			EncryptionMetadata: map[string]any{"algorithm": "AES-256-GCM"},

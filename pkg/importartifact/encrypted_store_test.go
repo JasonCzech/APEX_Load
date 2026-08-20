@@ -1095,7 +1095,7 @@ func TestStoreResolverStreamsProjectScopedArtifact(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	metadata := &fakeArtifactMetadataReader{artifact: &storage.BrunoSourceArtifact{
+	metadata := &fakeArtifactMetadataReader{artifact: &storage.ImportSourceArtifact{
 		ID:             "artifact-1",
 		ProjectID:      "project-a",
 		ArtifactKind:   "sanitized",
@@ -1739,10 +1739,10 @@ func (fn roundTripperFunc) RoundTrip(request *http.Request) (*http.Response, err
 }
 
 type fakeArtifactMetadataReader struct {
-	artifact *storage.BrunoSourceArtifact
+	artifact *storage.ImportSourceArtifact
 }
 
-func (f *fakeArtifactMetadataReader) GetBrunoSourceArtifact(id string, projectID string) (*storage.BrunoSourceArtifact, error) {
+func (f *fakeArtifactMetadataReader) GetImportSourceArtifact(id string, projectID string) (*storage.ImportSourceArtifact, error) {
 	if f.artifact == nil || f.artifact.ID != id || f.artifact.ProjectID != projectID {
 		return nil, errors.New("not found")
 	}

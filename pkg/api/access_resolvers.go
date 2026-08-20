@@ -1383,7 +1383,13 @@ func authorizedImportProjectID(r *http.Request) string {
 // resolver when a JSON wrapper omits its optional project_id field. The access
 // resolver has already rejected query/body disagreement before the handler runs.
 func jsonImportProjectID(r *http.Request, bodyProjectID string) string {
-	return strings.TrimSpace(firstNonEmpty(bodyProjectID, r.URL.Query().Get("project_id")))
+	// Both sides are trimmed before the choice, so a whitespace-only body field
+	// falls through to the query string instead of winning and then collapsing
+	// to the empty default.
+	return firstNonEmpty(
+		strings.TrimSpace(bodyProjectID),
+		strings.TrimSpace(r.URL.Query().Get("project_id")),
+	)
 }
 
 func resolveImportProjectIDFromJSON(r *http.Request, _ storage.Store) (string, int, string) {

@@ -83,9 +83,9 @@ func TestBrunoNativeBatchInspectCommitAndIdempotentRetry(t *testing.T) {
 			script.Name != candidate.Script.Name || script.Protocol != "http" {
 			t.Fatalf("created script[%d] = %#v, candidate = %#v", index, script, candidate)
 		}
-		revisions, err := store.ListBrunoSourceRevisions(script.ID, brunoImportTestProject)
+		revisions, err := store.ListImportSourceRevisions(script.ID, brunoImportTestProject)
 		if err != nil {
-			t.Fatalf("ListBrunoSourceRevisions(%q): %v", script.ID, err)
+			t.Fatalf("ListImportSourceRevisions(%q): %v", script.ID, err)
 		}
 		if len(revisions) != 0 {
 			t.Fatalf("native script %q has Bruno source revisions: %#v", script.ID, revisions)
@@ -949,7 +949,7 @@ func TestBrunoNativeBatchKeepsSourceArtifactsWithoutReferenceChecker(t *testing.
 	if response.Code != http.StatusCreated {
 		t.Fatalf("native commit status = %d body=%s", response.Code, response.Body.String())
 	}
-	for _, artifact := range []storage.BrunoSourceArtifact{rawArtifact, sanitizedArtifact} {
+	for _, artifact := range []storage.ImportSourceArtifact{rawArtifact, sanitizedArtifact} {
 		reader, _, err := server.brunoArtifacts.Open(context.Background(), importartifact.OpenRequest{
 			BackendKey: artifact.BackendKey,
 			ProjectID:  artifact.ProjectID,
@@ -975,7 +975,7 @@ func TestBrunoNativeCleanupRetainsArtifactsReferencedByActiveInspection(t *testi
 	if err != nil {
 		t.Fatalf("load inspection session: %v", err)
 	}
-	artifacts := []storage.BrunoSourceArtifact{session.RawArtifact, session.SanitizedArtifact}
+	artifacts := []storage.ImportSourceArtifact{session.RawArtifact, session.SanitizedArtifact}
 
 	server.cleanupUnreferencedBrunoArtifacts(artifacts)
 

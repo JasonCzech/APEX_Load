@@ -3,10 +3,10 @@ package importcontract
 import (
 	"bytes"
 	"encoding/json"
+	"github.com/jasonczech/apexload/pkg/convert/convertresult"
 	"os"
 	"path/filepath"
 	"sort"
-	"strings"
 	"testing"
 
 	"github.com/jasonczech/apexload/pkg/convert/har"
@@ -40,12 +40,10 @@ type importerCase struct {
 	convertFixture func(t *testing.T, content []byte) converted
 }
 
-type conversionAccounting struct {
-	Detected   int `json:"detected"`
-	Converted  int `json:"converted"`
-	Skipped    int `json:"skipped"`
-	ReviewOnly int `json:"review_only"`
-}
+// conversionAccounting is the production shape. The per-format mappings that
+// used to live in this file now sit on each converter's ConvertResult, so this
+// test verifies them instead of being the only place they exist.
+type conversionAccounting = convertresult.Accounting
 
 type stableConversion struct {
 	Importer         string               `json:"importer"`
@@ -70,17 +68,11 @@ func baselineImporters() []importerCase {
 				if err != nil {
 					t.Fatalf("postman.Convert: %v", err)
 				}
-				reviewOnly := reviewOnlyActionMappingCount(result.SourceReview)
 				return converted{
 					importer:     "postman",
 					script:       result.Script,
 					publicResult: result,
-					accounting: conversionAccounting{
-						Detected:   result.Stats.TotalRequests,
-						Converted:  result.Stats.ConvertedActions - reviewOnly,
-						Skipped:    len(result.Stats.SkippedItems),
-						ReviewOnly: reviewOnly,
-					},
+					accounting:   result.Accounting(),
 					sourceReview: result.SourceReview,
 				}
 			},
@@ -100,17 +92,11 @@ func baselineImporters() []importerCase {
 				if err != nil {
 					t.Fatalf("sample.Convert(raw_http): %v", err)
 				}
-				reviewOnly := reviewOnlyActionMappingCount(result.SourceReview)
 				return converted{
 					importer:     "raw_http",
 					script:       result.Script,
 					publicResult: result,
-					accounting: conversionAccounting{
-						Detected:   result.Stats.TotalRequests,
-						Converted:  result.Stats.ConvertedActions - reviewOnly,
-						Skipped:    result.Stats.FilteredAssets + result.Stats.SkippedRequests,
-						ReviewOnly: reviewOnly,
-					},
+					accounting:   result.Accounting(),
 					sourceReview: result.SourceReview,
 				}
 			},
@@ -126,17 +112,11 @@ func baselineImporters() []importerCase {
 				if err != nil {
 					t.Fatalf("har.Convert: %v", err)
 				}
-				reviewOnly := reviewOnlyActionMappingCount(result.SourceReview)
 				return converted{
 					importer:     "har",
 					script:       result.Script,
 					publicResult: result,
-					accounting: conversionAccounting{
-						Detected:   result.Stats.TotalRequests,
-						Converted:  result.Stats.ConvertedActions - reviewOnly,
-						Skipped:    result.Stats.FilteredAssets + result.Stats.SkippedRequests,
-						ReviewOnly: reviewOnly,
-					},
+					accounting:   result.Accounting(),
 					sourceReview: result.SourceReview,
 				}
 			},
@@ -160,17 +140,11 @@ func baselineImporters() []importerCase {
 				if script == nil && len(result.Scripts) > 0 {
 					script = result.Scripts[0]
 				}
-				reviewOnly := reviewOnlyActionMappingCount(result.SourceReview)
 				return converted{
 					importer:     "jmeter",
 					script:       script,
 					publicResult: result,
-					accounting: conversionAccounting{
-						Detected:   result.Stats.TotalSamplers,
-						Converted:  result.Stats.ConvertedActions - reviewOnly,
-						Skipped:    result.Stats.SkippedSamplers,
-						ReviewOnly: reviewOnly,
-					},
+					accounting:   result.Accounting(),
 					sourceReview: result.SourceReview,
 				}
 			},
@@ -189,17 +163,11 @@ func baselineImporters() []importerCase {
 				if err != nil {
 					t.Fatalf("openapi.Convert: %v", err)
 				}
-				reviewOnly := reviewOnlyActionMappingCount(result.SourceReview)
 				return converted{
 					importer:     "openapi",
 					script:       result.Script,
 					publicResult: result,
-					accounting: conversionAccounting{
-						Detected:   result.Stats.TotalOperations,
-						Converted:  result.Stats.ConvertedActions - reviewOnly,
-						Skipped:    len(result.Stats.SkippedOperations),
-						ReviewOnly: reviewOnly,
-					},
+					accounting:   result.Accounting(),
 					sourceReview: result.SourceReview,
 				}
 			},
@@ -218,17 +186,11 @@ func baselineImporters() []importerCase {
 				if err != nil {
 					t.Fatalf("wsdl.Convert: %v", err)
 				}
-				reviewOnly := reviewOnlyActionMappingCount(result.SourceReview)
 				return converted{
 					importer:     "wsdl",
 					script:       result.Script,
 					publicResult: result,
-					accounting: conversionAccounting{
-						Detected:   result.Stats.OperationsDetected,
-						Converted:  result.Stats.ConvertedActions - reviewOnly,
-						Skipped:    result.Stats.OperationsDetected - result.Stats.ConvertedActions,
-						ReviewOnly: reviewOnly,
-					},
+					accounting:   result.Accounting(),
 					sourceReview: result.SourceReview,
 				}
 			},
@@ -247,17 +209,11 @@ func baselineImporters() []importerCase {
 				if err != nil {
 					t.Fatalf("k6.Convert: %v", err)
 				}
-				reviewOnly := reviewOnlyActionMappingCount(result.SourceReview)
 				return converted{
 					importer:     "k6",
 					script:       result.Script,
 					publicResult: result,
-					accounting: conversionAccounting{
-						Detected:   result.Stats.HTTPRequests,
-						Converted:  result.Stats.ConvertedActions - reviewOnly,
-						Skipped:    result.Stats.HTTPRequests - result.Stats.ConvertedActions,
-						ReviewOnly: reviewOnly,
-					},
+					accounting:   result.Accounting(),
 					sourceReview: result.SourceReview,
 				}
 			},
@@ -356,19 +312,4 @@ func normalizeScriptImportTimestamp(script map[string]any) {
 	if _, ok := preserved["imported_at"]; ok {
 		preserved["imported_at"] = "<generated-timestamp>"
 	}
-}
-
-func reviewOnlyActionMappingCount(review *sourceview.Review) int {
-	if review == nil {
-		return 0
-	}
-	count := 0
-	for _, mapping := range review.Mappings {
-		if strings.EqualFold(mapping.TargetKind, "action") &&
-			strings.TrimSpace(mapping.TargetPath) != "" &&
-			strings.EqualFold(mapping.Status, "review_only") {
-			count++
-		}
-	}
-	return count
 }

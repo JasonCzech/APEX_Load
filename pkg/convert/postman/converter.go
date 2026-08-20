@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/jasonczech/apexload/pkg/convert/convertresult"
 	"mime"
 	"net/url"
 	"path"
@@ -2465,4 +2466,18 @@ func firstPositive(values ...int) int {
 		}
 	}
 	return 0
+}
+
+// Accounting reports this conversion's completeness in the terms every importer
+// shares. See convertresult.Accounting.
+func (result *ConvertResult) Accounting() convertresult.Accounting {
+	if result == nil {
+		return convertresult.Accounting{}
+	}
+	return convertresult.New(
+		result.Stats.TotalRequests,
+		result.Stats.ConvertedActions,
+		len(result.Stats.SkippedItems),
+		result.SourceReview.ReviewOnlyActionCount(),
+	)
 }
