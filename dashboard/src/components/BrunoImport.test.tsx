@@ -1536,6 +1536,32 @@ describe('BrunoImport', () => {
       output_mode: 'native_requests',
       run_options: undefined,
     }))
+    const summaryTab = container.querySelector<HTMLButtonElement>('#bruno-inspection-tab-summary')
+    const sourceApisTab = container.querySelector<HTMLButtonElement>('#bruno-inspection-tab-source_apis')
+    const credentialsTab = container.querySelector<HTMLButtonElement>('#bruno-inspection-tab-credentials')
+    const summaryPanel = container.querySelector<HTMLElement>('#bruno-inspection-panel-summary')
+    const sourceApisPanel = container.querySelector<HTMLElement>('#bruno-inspection-panel-source_apis')
+    expect(summaryTab?.getAttribute('aria-selected')).toBe('true')
+    expect(summaryTab?.tabIndex).toBe(0)
+    expect(sourceApisTab?.tabIndex).toBe(-1)
+    expect(summaryPanel?.hidden).toBe(false)
+    expect(sourceApisPanel?.hidden).toBe(true)
+
+    await act(async () => sourceApisTab?.click())
+    expect(summaryTab?.getAttribute('aria-selected')).toBe('false')
+    expect(summaryTab?.tabIndex).toBe(-1)
+    expect(sourceApisTab?.getAttribute('aria-selected')).toBe('true')
+    expect(sourceApisTab?.tabIndex).toBe(0)
+    expect(summaryPanel?.hidden).toBe(true)
+    expect(sourceApisPanel?.hidden).toBe(false)
+
+    sourceApisTab?.focus()
+    await act(async () => {
+      sourceApisTab?.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }))
+    })
+    expect(credentialsTab?.getAttribute('aria-selected')).toBe('true')
+    expect(credentialsTab?.tabIndex).toBe(0)
+    expect(document.activeElement).toBe(credentialsTab)
     expect(container.textContent).toContain('2 API requests found → 2 native scripts')
     expect(container.textContent).toContain('Recommended configuration')
     expect(container.textContent).toContain('Keep all 2 APIs selected')

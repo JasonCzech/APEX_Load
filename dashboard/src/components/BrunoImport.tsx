@@ -80,6 +80,7 @@ type RunOptions = {
 }
 
 type OutputMode = 'canonical' | 'native_requests'
+type BrunoInspectionTab = 'summary' | 'source_apis' | 'credentials' | 'data' | 'import'
 type FolderCreationAccess = 'checking' | 'allowed' | 'denied' | 'unavailable'
 
 const FOLDER_CREATION_DENIED_MESSAGE = 'Your current role can import scripts but cannot create project folders. Select an existing script folder, or ask a Project Administrator to create one for this project.'
@@ -104,6 +105,13 @@ const NATIVE_CANDIDATE_PAGE_SIZE = 100
 const NATIVE_FINDING_PAGE_SIZE = 100
 const COLLECTION_TREE_PAGE_SIZE = 100
 const MAX_DETAILED_REVIEW_FINDING_BLOCKERS = 10
+const BRUNO_INSPECTION_TABS: ReadonlyArray<{ id: BrunoInspectionTab; label: string }> = [
+  { id: 'summary', label: 'Summary' },
+  { id: 'source_apis', label: 'Source APIs' },
+  { id: 'credentials', label: 'Credentials' },
+  { id: 'data', label: 'Data' },
+  { id: 'import', label: 'Import APIs' },
+]
 
 function splitList(value: string) {
   return value.split(',').map(item => item.trim()).filter(Boolean)
@@ -510,6 +518,7 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
   const [nativeNameOverrides, setNativeNameOverrides] = useState<Record<string, string>>({})
   const [acknowledgedFindingIds, setAcknowledgedFindingIds] = useState<string[]>([])
   const [nativeReviewCandidateId, setNativeReviewCandidateId] = useState<string | null>(null)
+  const [activeInspectionTab, setActiveInspectionTab] = useState<BrunoInspectionTab>('summary')
   const [migrateSecrets, setMigrateSecrets] = useState(false)
   const [preparedSecrets, setPreparedSecrets] = useState<PreparedSecretBindings | null>(null)
   const [credentialDestinationState, setCredentialDestinationState] = useState<
@@ -581,6 +590,11 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
     directoryInputRef.current?.setAttribute('webkitdirectory', '')
     directoryInputRef.current?.setAttribute('directory', '')
   }, [])
+
+  useEffect(() => {
+    if (!inspection?.import_session_id || outputMode !== 'native_requests') return
+    setActiveInspectionTab('summary')
+  }, [inspection?.import_session_id, outputMode])
 
   useEffect(() => {
     const nextFiles = initialFiles || []
@@ -1299,6 +1313,7 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
     setRunOptions(previous => ({ ...previous, [key]: value }))
     setInspection(null)
   }
+  const isNativeInspectionMode = outputMode === 'native_requests'
 
   return (
     <div className="bruno-import">
@@ -1313,7 +1328,7 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
         {onClose && <button className="btn btn-secondary" onClick={close}>Back</button>}
       </header>
 
-      {requirements.length > 0 && !committed && (
+      {!isNativeInspectionMode && requirements.length > 0 && !committed && (
         <SecretBindingReview
           ref={credentialReviewRef}
           requirements={credentialRequirements}
@@ -1331,7 +1346,7 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
         />
       )}
 
-      {projectSecretsConfiguredForReview && !committed && (
+      {!isNativeInspectionMode && projectSecretsConfiguredForReview && !committed && (
         <div className="bruno-preflight" role="status">
           Project-secret values configured during this review remain in Project Secrets independently of script saving.
           {' '}If script saving fails, retrying this save reuses those configured values. Any atomic-save promise on this page applies to scripts, not external secret-store writes.
@@ -1631,406 +1646,595 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
 
       {inspection && (
         <>
-          <section className="bruno-summary-grid">
-            <article className="bruno-card">
-              <h3>Collection</h3>
-              <strong>{inspection.result.collection.name}</strong>
-              <p>{inspection.result.fidelity.executable_items} executable items · {inspection.result.fidelity.preserved_apps} Bruno Apps preserved</p>
-              <CollectionTree items={inspection.result.collection.items} />
-            </article>
-            <article className="bruno-card">
-              <h3>Fidelity and capabilities</h3>
-              <dl className="bruno-details">
-                <div><dt>Fidelity</dt><dd>{inspection.result.fidelity.status}</dd></div>
-                <div><dt>Compatibility</dt><dd>{inspection.result.fidelity.compatibility}</dd></div>
-                <div><dt>Bundle</dt><dd>{formatBytes(inspection.result.manifest.total_bytes)}</dd></div>
-                <div><dt>Requests</dt><dd>{inspection.result.capabilities.request_types.join(', ') || 'None'}</dd></div>
-                <div><dt>Required sandbox</dt><dd>{inspection.result.capabilities.required_sandbox}</dd></div>
-              </dl>
-              <div className="bruno-capability-list">
-                {inspection.result.capabilities.has_javascript && <span>JavaScript</span>}
-                {inspection.result.capabilities.has_npm_dependencies && <span>npm dependencies</span>}
-                {inspection.result.capabilities.has_local_modules && <span>local modules</span>}
-                {inspection.result.capabilities.has_file_bodies && <span>file bodies</span>}
-                {inspection.result.capabilities.has_certificates && <span>certificates</span>}
-                {inspection.result.capabilities.has_bruno_apps && <span>Bruno Apps</span>}
-              </div>
-            </article>
-          </section>
-
-          {outputMode === 'native_requests' && (
-            <section className="bruno-card bruno-validation-guidance" aria-labelledby="bruno-validation-guidance-title">
-              <div className="bruno-card-heading">
-                <div>
-                  <h3 id="bruno-validation-guidance-title">Recommended configuration</h3>
-                  <p>Based on the validated source, complete these choices in order.</p>
-                </div>
-              </div>
-              <ol>
-                <li className={selectedNativeCandidates.length > 0 ? 'ready' : 'warning'}>
-                  <strong>Script selection</strong>
-                  <span>Keep all {nativeCandidates.length} APIs selected unless you intentionally want a partial import.</span>
-                </li>
-                <li className={destinationFolderId ? 'ready' : 'warning'}>
-                  <strong>Destination</strong>
-                  <span>{destinationFolderId
-                    ? `Save the batch in ${selectedDestinationFolderLabel || 'the selected script folder'}.`
-                    : 'Create or select a script folder; native batches cannot be saved to the project root.'}</span>
-                </li>
-                <li className={credentialsReadyForExecution ? 'ready' : 'warning'}>
-                  <strong>Credentials</strong>
-                  <span>{requirements.length === 0
-                    ? 'No credential bindings are required.'
-                    : !credentialsValid
-                      ? `Review ${requirements.length} detected credential requirement${requirements.length === 1 ? '' : 's'}. Keep preserved source values for exact replay, or explicitly bind them to project secrets.`
-                      : deferredSecretCount > 0
-                        ? `Credential review is complete, but ${deferredSecretCount} project secret${deferredSecretCount === 1 ? '' : 's'} must still be configured before execution. Saving now is allowed.`
-                        : `Credential handling is complete for ${requirements.length} detected requirement${requirements.length === 1 ? '' : 's'}.`}</span>
-                </li>
-                <li className={selectedNativeMissingVariables.length === 0 ? 'ready' : 'warning'}>
-                  <strong>Runtime variables</strong>
-                  <span>{selectedNativeMissingVariables.length === 0
-                    ? 'All referenced variables resolve from the imported source.'
-                    : `Configure ${selectedNativeMissingVariables.length} unresolved variable${selectedNativeMissingVariables.length === 1 ? '' : 's'} before execution. Saving is allowed, but replay remains blocked.`}</span>
-                </li>
-                <li className={unacknowledgedFindingIds.length === 0 ? 'ready' : 'warning'}>
-                  <strong>Review findings</strong>
-                  <span>{unacknowledgedFindingIds.length === 0
-                    ? 'No outstanding acknowledgement is required.'
-                    : `Read and acknowledge ${unacknowledgedFindingIds.length} finding${unacknowledgedFindingIds.length === 1 ? '' : 's'} before saving.`}</span>
-                </li>
-              </ol>
-            </section>
-          )}
-
-          {outputMode === 'native_requests' && (
-            <section className="bruno-card bruno-native-review">
-              <div className="bruno-card-heading">
-                <div>
-                  <h3>{nativeCandidates.length} API request{nativeCandidates.length === 1 ? '' : 's'} found → {nativeCandidates.length} native script{nativeCandidates.length === 1 ? '' : 's'}</h3>
-                  <p>Scripts stay in deterministic Bruno sequence/path order and will be committed as one atomic batch.</p>
-                </div>
-                <label className="bruno-select-all">
-                  <input
-                    type="checkbox"
-                    disabled={loading || nativeCandidates.length === 0}
-                    ref={node => {
-                      if (node) node.indeterminate = someNativeCandidatesSelected
+          {outputMode === 'native_requests' ? (
+            <>
+              <nav className="bruno-tabs" role="tablist" aria-label="Bruno native inspection panels">
+                {BRUNO_INSPECTION_TABS.map((tab, index) => (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    id={`bruno-inspection-tab-${tab.id}`}
+                    role="tab"
+                    className="bruno-tab"
+                    aria-selected={activeInspectionTab === tab.id}
+                    aria-controls={`bruno-inspection-panel-${tab.id}`}
+                    tabIndex={activeInspectionTab === tab.id ? 0 : -1}
+                    onClick={() => setActiveInspectionTab(tab.id)}
+                    onKeyDown={event => {
+                      let nextIndex: number
+                      switch (event.key) {
+                        case 'ArrowRight':
+                          nextIndex = (index + 1) % BRUNO_INSPECTION_TABS.length
+                          break
+                        case 'ArrowLeft':
+                          nextIndex = (index - 1 + BRUNO_INSPECTION_TABS.length) % BRUNO_INSPECTION_TABS.length
+                          break
+                        case 'Home':
+                          nextIndex = 0
+                          break
+                        case 'End':
+                          nextIndex = BRUNO_INSPECTION_TABS.length - 1
+                          break
+                        default:
+                          return
+                      }
+                      event.preventDefault()
+                      const nextTab = BRUNO_INSPECTION_TABS[nextIndex]
+                      setActiveInspectionTab(nextTab.id)
+                      document.getElementById(`bruno-inspection-tab-${nextTab.id}`)?.focus()
                     }}
-                    aria-checked={someNativeCandidatesSelected ? 'mixed' : undefined}
-                    checked={allNativeCandidatesSelected}
-                    onChange={event => {
-                      setCredentialDestinationState({})
-                      setNativeFindingPage(0)
-                      setSelectedCandidateIds(event.target.checked
-                        ? nativeCandidates.map(candidate => candidate.candidate_id)
-                        : [])
-                    }}
-                  />
-                  Select all
-                </label>
-              </div>
-              <div className="bruno-native-table-wrap">
-                <table className="bruno-native-table">
-                  <thead>
-                    <tr>
-                      <th aria-label="Selected" />
-                      <th>Source</th>
-                      <th>Script name</th>
-                      <th>Request</th>
-                      <th>Status</th>
-                      <th>Details</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {visibleNativeCandidates.map(candidate => {
-                      const selected = selectedCandidateIdSet.has(candidate.candidate_id)
-                      const reviewFindings = nativeCandidateReviewFindings(candidate)
-                      const diagnosticCount = (candidate.diagnostics || []).length
-                      const missingVariableCount = (candidate.missing_variables || []).length
-                      const secretCount = (candidate.secret_requirements || []).length
-                      const status = reviewFindings.length > 0
-                        ? 'review'
-                        : missingVariableCount > 0
-                          ? 'blocked'
-                          : secretCount > 0
-                            ? 'configure'
-                            : diagnosticCount > 0 ? 'warning' : 'ready'
-                      const statusLabel = status === 'review'
-                        ? 'Review required'
-                        : status === 'blocked'
-                          ? 'Execution blocked'
-                          : status === 'configure'
-                            ? 'Configure secrets'
-                            : status
-                      const inheritedSources = (candidate.source_mappings || [])
-                        .filter(mapping => mapping.role !== 'request')
-                        .map(mapping => `${mapping.role || 'source'}: ${mapping.path || ''}`)
-                      const inheritedBadges = inheritedSources
-                      return (
-                        <tr key={candidate.candidate_id}>
-                          <td>
-                            <input
-                              type="checkbox"
-                              checked={selected}
-                              disabled={loading}
-                              aria-label={`Select ${candidate.script.name}`}
-                              onChange={event => {
-                                setCredentialDestinationState({})
-                                setNativeFindingPage(0)
-                                setSelectedCandidateIds(previous => event.target.checked
-                                  ? [...previous, candidate.candidate_id]
-                                  : previous.filter(id => id !== candidate.candidate_id))
-                              }}
-                            />
-                          </td>
-                          <td>
-                            <strong>{candidate.source_path}</strong>
-                            {candidate.sequence !== undefined && <small>Sequence {candidate.sequence}</small>}
-                            {inheritedBadges.length > 0 && (
-                              <span className="bruno-native-badges">
-                                {inheritedBadges.map(field => <em key={field}>inherited {field}</em>)}
-                              </span>
-                            )}
-                          </td>
-                          <td>
-                            <input
-                              aria-label={`Name for ${candidate.source_path}`}
-                              disabled={loading || !selected}
-                              value={nativeNameOverrides[candidate.candidate_id] ?? candidate.script.name}
-                              onChange={event => setNativeNameOverrides(previous => ({ ...previous, [candidate.candidate_id]: event.target.value }))}
-                            />
-                          </td>
-                          <td><code>{nativeCandidateMethod(candidate)}</code><small>{nativeCandidateTarget(candidate)}</small></td>
-                          <td><span className={`bruno-native-status ${status}`}>{statusLabel}</span></td>
-                          <td>
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </nav>
+
+              <section
+                  className="bruno-tab-panel"
+                  role="tabpanel"
+                  id="bruno-inspection-panel-summary"
+                  aria-labelledby="bruno-inspection-tab-summary"
+                  hidden={activeInspectionTab !== 'summary'}
+                >
+                  <section className="bruno-summary-grid">
+                    <article className="bruno-card">
+                      <h3>Collection</h3>
+                      <strong>{inspection.result.collection.name}</strong>
+                      <p>{inspection.result.fidelity.executable_items} executable items · {inspection.result.fidelity.preserved_apps} Bruno Apps preserved</p>
+                      <CollectionTree items={inspection.result.collection.items} />
+                    </article>
+                    <article className="bruno-card">
+                      <h3>Fidelity and capabilities</h3>
+                      <dl className="bruno-details">
+                        <div><dt>Fidelity</dt><dd>{inspection.result.fidelity.status}</dd></div>
+                        <div><dt>Compatibility</dt><dd>{inspection.result.fidelity.compatibility}</dd></div>
+                        <div><dt>Bundle</dt><dd>{formatBytes(inspection.result.manifest.total_bytes)}</dd></div>
+                        <div><dt>Requests</dt><dd>{inspection.result.capabilities.request_types.join(', ') || 'None'}</dd></div>
+                        <div><dt>Required sandbox</dt><dd>{inspection.result.capabilities.required_sandbox}</dd></div>
+                      </dl>
+                      <div className="bruno-capability-list">
+                        {inspection.result.capabilities.has_javascript && <span>JavaScript</span>}
+                        {inspection.result.capabilities.has_npm_dependencies && <span>npm dependencies</span>}
+                        {inspection.result.capabilities.has_local_modules && <span>local modules</span>}
+                        {inspection.result.capabilities.has_file_bodies && <span>file bodies</span>}
+                        {inspection.result.capabilities.has_certificates && <span>certificates</span>}
+                        {inspection.result.capabilities.has_bruno_apps && <span>Bruno Apps</span>}
+                      </div>
+                    </article>
+                  </section>
+                  <section className="bruno-card bruno-validation-guidance" aria-labelledby="bruno-validation-guidance-title">
+                    <div className="bruno-card-heading">
+                      <div>
+                        <h3 id="bruno-validation-guidance-title">Recommended configuration</h3>
+                        <p>Based on the validated source, complete these choices in order.</p>
+                      </div>
+                    </div>
+                    <ol>
+                      <li className={selectedNativeCandidates.length > 0 ? 'ready' : 'warning'}>
+                        <strong>Script selection</strong>
+                        <span>Keep all {nativeCandidates.length} APIs selected unless you intentionally want a partial import.</span>
+                      </li>
+                      <li className={destinationFolderId ? 'ready' : 'warning'}>
+                        <strong>Destination</strong>
+                        <span>{destinationFolderId
+                          ? `Save the batch in ${selectedDestinationFolderLabel || 'the selected script folder'}.`
+                          : 'Create or select a script folder; native batches cannot be saved to the project root.'}</span>
+                      </li>
+                      <li className={credentialsReadyForExecution ? 'ready' : 'warning'}>
+                        <strong>Credentials</strong>
+                        <span>{requirements.length === 0
+                          ? 'No credential bindings are required.'
+                          : !credentialsValid
+                            ? `Review ${requirements.length} detected credential requirement${requirements.length === 1 ? '' : 's'}. Keep preserved source values for exact replay, or explicitly bind them to project secrets.`
+                            : deferredSecretCount > 0
+                              ? `Credential review is complete, but ${deferredSecretCount} project secret${deferredSecretCount === 1 ? '' : 's'} must still be configured before execution. Saving now is allowed.`
+                              : `Credential handling is complete for ${requirements.length} detected requirement${requirements.length === 1 ? '' : 's'}.`}</span>
+                      </li>
+                      <li className={selectedNativeMissingVariables.length === 0 ? 'ready' : 'warning'}>
+                        <strong>Runtime variables</strong>
+                        <span>{selectedNativeMissingVariables.length === 0
+                          ? 'All referenced variables resolve from the imported source.'
+                          : `Configure ${selectedNativeMissingVariables.length} unresolved variable${selectedNativeMissingVariables.length === 1 ? '' : 's'} before execution. Saving is allowed, but replay remains blocked.`}</span>
+                      </li>
+                      <li className={unacknowledgedFindingIds.length === 0 ? 'ready' : 'warning'}>
+                        <strong>Review findings</strong>
+                        <span>{unacknowledgedFindingIds.length === 0
+                          ? 'No outstanding acknowledgement is required.'
+                          : `Read and acknowledge ${unacknowledgedFindingIds.length} finding${unacknowledgedFindingIds.length === 1 ? '' : 's'} before saving.`}</span>
+                      </li>
+                    </ol>
+                  </section>
+
+                  {(inspection.result.security_findings || []).length > 0 && (
+                    <section className="bruno-card">
+                      <h3>Security findings</h3>
+                      <div className="bruno-findings">
+                        {(inspection.result.security_findings || []).map(finding => (
+                          <div key={`${finding.code}-${finding.path || ''}`} className={`bruno-finding ${finding.severity}`}>
+                            <strong>{finding.code}</strong>
+                            <span>{finding.summary}</span>
+                            {finding.path && <small>{finding.path}</small>}
+                          </div>
+                        ))}
+                      </div>
+                    </section>
+                  )}
+              </section>
+
+              <section
+                  className="bruno-tab-panel"
+                  role="tabpanel"
+                  id="bruno-inspection-panel-source_apis"
+                  aria-labelledby="bruno-inspection-tab-source_apis"
+                  hidden={activeInspectionTab !== 'source_apis'}
+                >
+                  <article className="bruno-card bruno-native-review">
+                    <div className="bruno-card-heading">
+                      <div>
+                        <h3>{nativeCandidates.length} API request{nativeCandidates.length === 1 ? '' : 's'} found → {nativeCandidates.length} native script{nativeCandidates.length === 1 ? '' : 's'}</h3>
+                        <p>Scripts stay in deterministic Bruno sequence/path order and will be committed as one atomic batch.</p>
+                      </div>
+                      <label className="bruno-select-all">
+                        <input
+                          type="checkbox"
+                          disabled={loading || nativeCandidates.length === 0}
+                          ref={node => {
+                            if (node) node.indeterminate = someNativeCandidatesSelected
+                          }}
+                          aria-checked={someNativeCandidatesSelected ? 'mixed' : undefined}
+                          checked={allNativeCandidatesSelected}
+                          onChange={event => {
+                            setCredentialDestinationState({})
+                            setNativeFindingPage(0)
+                            setSelectedCandidateIds(event.target.checked
+                              ? nativeCandidates.map(candidate => candidate.candidate_id)
+                              : [])
+                          }}
+                        />
+                        Select all
+                      </label>
+                    </div>
+                    <div className="bruno-native-table-wrap">
+                      <table className="bruno-native-table">
+                        <thead>
+                          <tr>
+                            <th aria-label="Selected" />
+                            <th>Source</th>
+                            <th>Script name</th>
+                            <th>Request</th>
+                            <th>Status</th>
+                            <th>Details</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {visibleNativeCandidates.map(candidate => {
+                            const selected = selectedCandidateIdSet.has(candidate.candidate_id)
+                            const reviewFindings = nativeCandidateReviewFindings(candidate)
+                            const diagnosticCount = (candidate.diagnostics || []).length
+                            const missingVariableCount = (candidate.missing_variables || []).length
+                            const secretCount = (candidate.secret_requirements || []).length
+                            const status = reviewFindings.length > 0
+                              ? 'review'
+                              : missingVariableCount > 0
+                                ? 'blocked'
+                                : secretCount > 0
+                                  ? 'configure'
+                                  : diagnosticCount > 0 ? 'warning' : 'ready'
+                            const statusLabel = status === 'review'
+                              ? 'Review required'
+                              : status === 'blocked'
+                                ? 'Execution blocked'
+                                : status === 'configure'
+                                  ? 'Configure secrets'
+                                  : status
+                            const inheritedSources = (candidate.source_mappings || [])
+                              .filter(mapping => mapping.role !== 'request')
+                              .map(mapping => `${mapping.role || 'source'}: ${mapping.path || ''}`)
+                            const inheritedBadges = inheritedSources
+                            return (
+                              <tr key={candidate.candidate_id}>
+                                <td>
+                                  <input
+                                    type="checkbox"
+                                    checked={selected}
+                                    disabled={loading}
+                                    aria-label={`Select ${candidate.script.name}`}
+                                    onChange={event => {
+                                      setCredentialDestinationState({})
+                                      setNativeFindingPage(0)
+                                      setSelectedCandidateIds(previous => event.target.checked
+                                        ? [...previous, candidate.candidate_id]
+                                        : previous.filter(id => id !== candidate.candidate_id))
+                                    }}
+                                  />
+                                </td>
+                                <td>
+                                  <strong>{candidate.source_path}</strong>
+                                  {candidate.sequence !== undefined && <small>Sequence {candidate.sequence}</small>}
+                                  {inheritedBadges.length > 0 && (
+                                    <span className="bruno-native-badges">
+                                      {inheritedBadges.map(field => <em key={field}>inherited {field}</em>)}
+                                    </span>
+                                  )}
+                                </td>
+                                <td>
+                                  <input
+                                    aria-label={`Name for ${candidate.source_path}`}
+                                    disabled={loading || !selected}
+                                    value={nativeNameOverrides[candidate.candidate_id] ?? candidate.script.name}
+                                    onChange={event => setNativeNameOverrides(previous => ({ ...previous, [candidate.candidate_id]: event.target.value }))}
+                                  />
+                                </td>
+                                <td><code>{nativeCandidateMethod(candidate)}</code><small>{nativeCandidateTarget(candidate)}</small></td>
+                                <td><span className={`bruno-native-status ${status}`}>{statusLabel}</span></td>
+                                <td>
+                                  <button
+                                    type="button"
+                                    className="btn btn-ghost bruno-native-review-button"
+                                    aria-haspopup="dialog"
+                                    aria-label={selected
+                                      ? `Review ${candidate.source_path}`
+                                      : `Preview ${candidate.source_path}; not selected for import`}
+                                    onClick={() => setNativeReviewCandidateId(candidate.candidate_id)}
+                                  >
+                                    Review
+                                  </button>
+                                </td>
+                              </tr>
+                            )
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                    {nativeCandidatePageCount > 1 && (
+                      <nav className="bruno-native-table-pagination" aria-label="Native scripts table pages">
+                        <span aria-live="polite">
+                          Showing {nativeCandidatePageStart + 1}–{Math.min(
+                            nativeCandidates.length,
+                            nativeCandidatePageStart + visibleNativeCandidates.length,
+                          )} of {nativeCandidates.length} scripts. Page {safeNativeCandidatePage + 1} of {nativeCandidatePageCount}.
+                        </span>
+                        <div role="group" aria-label="Native scripts page controls">
+                          <button
+                            type="button"
+                            className="btn btn-secondary btn-sm"
+                            disabled={safeNativeCandidatePage === 0}
+                            onClick={() => setNativeCandidatePage(Math.max(0, safeNativeCandidatePage - 1))}
+                          >
+                            Previous {NATIVE_CANDIDATE_PAGE_SIZE}
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn-secondary btn-sm"
+                            disabled={safeNativeCandidatePage >= nativeCandidatePageCount - 1}
+                            onClick={() => setNativeCandidatePage(Math.min(nativeCandidatePageCount - 1, safeNativeCandidatePage + 1))}
+                          >
+                            Next {NATIVE_CANDIDATE_PAGE_SIZE}
+                          </button>
+                        </div>
+                      </nav>
+                    )}
+                  </article>
+              </section>
+
+              <section
+                  className="bruno-tab-panel"
+                  role="tabpanel"
+                  id="bruno-inspection-panel-credentials"
+                  aria-labelledby="bruno-inspection-tab-credentials"
+                  hidden={activeInspectionTab !== 'credentials'}
+                >
+                  {!committed && (
+                    <>
+                      <h3>Credentials</h3>
+                      <SecretBindingReview
+                        ref={credentialReviewRef}
+                        requirements={credentialRequirements}
+                        reviewGeneration={credentialReviewIdentity}
+                        disabled={loading || creatingFolder || parameterizationApplying || protectedSessionExpired}
+                        projectId={projectId}
+                        sourceSecretSessionExpiresAt={inspection?.expires_at}
+                        sourceMigrationAllowed={sourceMigrationAvailable}
+                        externalSourceMigrationSelected={migrateSecrets}
+                        onExternalSourceMigrationChange={setMigrateSecrets}
+                        onApply={applyCredentialBindings}
+                        onPreparedChange={setPreparedSecrets}
+                        onRequirementDestinationStateChange={setCredentialDestinationState}
+                        onProjectSecretsConfigured={handleProjectSecretsConfigured}
+                      />
+                      {projectSecretsConfiguredForReview && (
+                        <div className="bruno-preflight" role="status">
+                          Project-secret values configured during this review remain in Project Secrets independently of script saving.
+                          {' '}If script saving fails, retrying this save reuses those configured values. Any atomic-save promise on this page applies to scripts, not external secret-store writes.
+                        </div>
+                      )}
+                    </>
+                  )}
+              </section>
+
+              <section
+                  className="bruno-tab-panel"
+                  role="tabpanel"
+                  id="bruno-inspection-panel-data"
+                  aria-labelledby="bruno-inspection-tab-data"
+                  hidden={activeInspectionTab !== 'data'}
+                >
+                  {inspection.shared_values && (inspection.shared_values.candidates?.length ?? 0) > 0 && !committed && (
+                    <section className="bruno-card">
+                      <h3>Collection values</h3>
+                      <SharedImportValues
+                        sharedValues={inspection.shared_values}
+                        collectOnly
+                        scriptCount={selectedNativeCandidates.length}
+                        onValuesChange={setSharedValueSelections}
+                        reviewGeneration={`${sourceGeneration}:${projectId || ''}`}
+                        disabled={loading || protectedSessionExpired}
+                      />
+                    </section>
+                  )}
+                  {(inspection.result.missing_variables || []).length > 0 && (
+                    <section className="bruno-card">
+                      <h3>Preflight requirements</h3>
+                      <p>These values were referenced but not defined in the uploaded source. Supply them above under Collection Values, through Bruno environments, or through APEX runtime bindings before execution.</p>
+                      <div className="bruno-capability-list">
+                        {(inspection.result.missing_variables || []).map(variable => <span key={variable}>{variable}</span>)}
+                      </div>
+                    </section>
+                  )}
+              </section>
+
+              <section
+                  className="bruno-tab-panel"
+                  role="tabpanel"
+                  id="bruno-inspection-panel-import"
+                  aria-labelledby="bruno-inspection-tab-import"
+                  hidden={activeInspectionTab !== 'import'}
+                >
+                  {nativeReviewFindingIds.length > 0 && (
+                    <section className="bruno-card bruno-native-acknowledgements">
+                      <h4>Review-gated conversions</h4>
+                      <p>Each item below is a separate finding in an affected script. To save these incomplete drafts, acknowledge that you understand each limitation. Acknowledgement records awareness only; it does not approve replay or remove the safety gate.</p>
+                      <div className="bruno-native-acknowledgement-list">
+                        {visibleNativeReviewFindings.map((finding, pageIndex) => {
+                          const index = nativeFindingPageStart + pageIndex
+                          const guidance = nativeReviewGuidance(finding.code)
+                          const detailsId = `bruno-review-finding-${index + 1}`
+                          return (
+                            <article key={finding.id} className="bruno-native-acknowledgement-card">
+                              <div className="bruno-native-acknowledgement-heading">
+                                <strong>{guidance.title}</strong>
+                                <span>{finding.sourcePath}</span>
+                              </div>
+                              <dl id={detailsId}>
+                                <div>
+                                  <dt>What was found</dt>
+                                  <dd>{finding.message}</dd>
+                                </div>
+                                <div>
+                                  <dt>Why replay is blocked</dt>
+                                  <dd>{guidance.impact}</dd>
+                                </div>
+                                <div>
+                                  <dt>Required before replay</dt>
+                                  <dd>{guidance.resolution}</dd>
+                                </div>
+                              </dl>
+                              <label>
+                                <input
+                                  type="checkbox"
+                                  disabled={loading}
+                                  checked={acknowledgedFindingIdSet.has(finding.id)}
+                                  aria-describedby={detailsId}
+                                  aria-label={`Acknowledge ${guidance.title} for ${finding.sourcePath}`}
+                                  onChange={event => setAcknowledgedFindingIds(previous => event.target.checked
+                                    ? [...previous, finding.id]
+                                    : previous.filter(id => id !== finding.id))}
+                                />
+                                I understand this draft remains blocked from replay until this finding is resolved.
+                              </label>
+                            </article>
+                          )
+                        })}
+                      </div>
+                      {nativeFindingPageCount > 1 && (
+                        <nav className="bruno-native-table-pagination" aria-label="Review-gated conversion pages">
+                          <span aria-live="polite">
+                            Showing findings {nativeFindingPageStart + 1}–{nativeFindingPageStart + visibleNativeReviewFindings.length} of {nativeReviewFindings.length}. Page {safeNativeFindingPage + 1} of {nativeFindingPageCount}.
+                          </span>
+                          <div role="group" aria-label="Review finding page controls">
                             <button
                               type="button"
-                              className="btn btn-ghost bruno-native-review-button"
-                              aria-haspopup="dialog"
-                              aria-label={selected
-                                ? `Review ${candidate.source_path}`
-                                : `Preview ${candidate.source_path}; not selected for import`}
-                              onClick={() => setNativeReviewCandidateId(candidate.candidate_id)}
+                              className="btn btn-secondary btn-sm"
+                              disabled={safeNativeFindingPage === 0}
+                              onClick={() => setNativeFindingPage(Math.max(0, safeNativeFindingPage - 1))}
                             >
-                              Review
+                              Previous {NATIVE_FINDING_PAGE_SIZE}
                             </button>
-                          </td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
-              </div>
-              {nativeCandidatePageCount > 1 && (
-                <nav className="bruno-native-table-pagination" aria-label="Native scripts table pages">
-                  <span aria-live="polite">
-                    Showing {nativeCandidatePageStart + 1}–{Math.min(
-                      nativeCandidates.length,
-                      nativeCandidatePageStart + visibleNativeCandidates.length,
-                    )} of {nativeCandidates.length} scripts. Page {safeNativeCandidatePage + 1} of {nativeCandidatePageCount}.
-                  </span>
-                  <div role="group" aria-label="Native scripts page controls">
-                    <button
-                      type="button"
-                      className="btn btn-secondary btn-sm"
-                      disabled={safeNativeCandidatePage === 0}
-                      onClick={() => setNativeCandidatePage(Math.max(0, safeNativeCandidatePage - 1))}
-                    >
-                      Previous {NATIVE_CANDIDATE_PAGE_SIZE}
-                    </button>
-                    <button
-                      type="button"
-                      className="btn btn-secondary btn-sm"
-                      disabled={safeNativeCandidatePage >= nativeCandidatePageCount - 1}
-                      onClick={() => setNativeCandidatePage(Math.min(nativeCandidatePageCount - 1, safeNativeCandidatePage + 1))}
-                    >
-                      Next {NATIVE_CANDIDATE_PAGE_SIZE}
-                    </button>
-                  </div>
-                </nav>
-              )}
-              {nativeReviewCandidate && (
-                <BrunoNativeReviewDialog
-                  candidate={nativeReviewCandidate}
-                  candidateSelected={selectedCandidateIdSet.has(nativeReviewCandidate.candidate_id)}
-                  requirementDestinationState={credentialDestinationState}
-                  onClose={() => setNativeReviewCandidateId(null)}
-                />
-              )}
-              {nativeReviewFindingIds.length > 0 && (
-                <div className="bruno-native-acknowledgements">
-                  <h4>Review-gated conversions</h4>
-                  <p>Each item below is a separate finding in an affected script. To save these incomplete drafts, acknowledge that you understand each limitation. Acknowledgement records awareness only; it does not approve replay or remove the safety gate.</p>
-                  <div className="bruno-native-acknowledgement-list">
-                    {visibleNativeReviewFindings.map((finding, pageIndex) => {
-                      const index = nativeFindingPageStart + pageIndex
-                      const guidance = nativeReviewGuidance(finding.code)
-                      const detailsId = `bruno-review-finding-${index + 1}`
-                      return (
-                        <article key={finding.id} className="bruno-native-acknowledgement-card">
-                          <div className="bruno-native-acknowledgement-heading">
-                            <strong>{guidance.title}</strong>
-                            <span>{finding.sourcePath}</span>
+                            <button
+                              type="button"
+                              className="btn btn-secondary btn-sm"
+                              disabled={safeNativeFindingPage >= nativeFindingPageCount - 1}
+                              onClick={() => setNativeFindingPage(Math.min(nativeFindingPageCount - 1, safeNativeFindingPage + 1))}
+                            >
+                              Next {NATIVE_FINDING_PAGE_SIZE}
+                            </button>
                           </div>
-                          <dl id={detailsId}>
-                            <div>
-                              <dt>What was found</dt>
-                              <dd>{finding.message}</dd>
-                            </div>
-                            <div>
-                              <dt>Why replay is blocked</dt>
-                              <dd>{guidance.impact}</dd>
-                            </div>
-                            <div>
-                              <dt>Required before replay</dt>
-                              <dd>{guidance.resolution}</dd>
-                            </div>
-                          </dl>
-                          <label>
-                            <input
-                              type="checkbox"
-                              disabled={loading}
-                              checked={acknowledgedFindingIdSet.has(finding.id)}
-                              aria-describedby={detailsId}
-                              aria-label={`Acknowledge ${guidance.title} for ${finding.sourcePath}`}
-                              onChange={event => setAcknowledgedFindingIds(previous => event.target.checked
-                                ? [...previous, finding.id]
-                                : previous.filter(id => id !== finding.id))}
-                            />
-                            I understand this draft remains blocked from replay until this finding is resolved.
-                          </label>
-                        </article>
-                      )
-                    })}
-                  </div>
-                  {nativeFindingPageCount > 1 && (
-                    <nav className="bruno-native-table-pagination" aria-label="Review-gated conversion pages">
-                      <span aria-live="polite">
-                        Showing findings {nativeFindingPageStart + 1}–{nativeFindingPageStart + visibleNativeReviewFindings.length} of {nativeReviewFindings.length}. Page {safeNativeFindingPage + 1} of {nativeFindingPageCount}.
-                      </span>
-                      <div role="group" aria-label="Review finding page controls">
-                        <button
-                          type="button"
-                          className="btn btn-secondary btn-sm"
-                          disabled={safeNativeFindingPage === 0}
-                          onClick={() => setNativeFindingPage(Math.max(0, safeNativeFindingPage - 1))}
-                        >
-                          Previous {NATIVE_FINDING_PAGE_SIZE}
-                        </button>
-                        <button
-                          type="button"
-                          className="btn btn-secondary btn-sm"
-                          disabled={safeNativeFindingPage >= nativeFindingPageCount - 1}
-                          onClick={() => setNativeFindingPage(Math.min(nativeFindingPageCount - 1, safeNativeFindingPage + 1))}
-                        >
-                          Next {NATIVE_FINDING_PAGE_SIZE}
-                        </button>
-                      </div>
-                    </nav>
+                        </nav>
+                      )}
+                    </section>
                   )}
-                </div>
+
+                  {!committed && (
+                    <section className="bruno-commit-bar">
+                      <div>
+                        <strong>{`Save ${selectedNativeCandidates.length} native script${selectedNativeCandidates.length === 1 ? '' : 's'}`}</strong>
+                        <span>{destinationFolderId
+                          ? 'All selected scripts will be saved atomically to the selected folder.'
+                          : 'Select a destination folder before saving.'}</span>
+                        {saveBlockers.length > 0 && (
+                          <div id="bruno-save-blockers" className="bruno-save-blockers" role="status">
+                            <strong>Save is unavailable for these reasons:</strong>
+                            <ul>{saveBlockers.map(blocker => <li key={blocker}>{blocker}</li>)}</ul>
+                            {deferredSecretCount > 0 && <p>{deferredSecretCount} project secret{deferredSecretCount === 1 ? ' is' : 's are'} still unconfigured, but that does not prevent saving.</p>}
+                            {selectedNativeMissingVariables.length > 0 && <p>{selectedNativeMissingVariables.length} unresolved runtime variable{selectedNativeMissingVariables.length === 1 ? ' does' : 's do'} not prevent saving, but must be configured before execution.</p>}
+                          </div>
+                        )}
+                        {error && (
+                          <div className="settings-error" role="alert">
+                            Save failed: {error}
+                          </div>
+                        )}
+                      </div>
+                      <button
+                        className="btn btn-primary"
+                        disabled={!canCommit}
+                        aria-describedby={!canCommit && saveBlockers.length > 0 ? 'bruno-save-blockers' : undefined}
+                        onClick={() => void commit()}
+                      >
+                        {commitButtonLabel}
+                      </button>
+                    </section>
+                  )}
+              </section>
+            </>
+          ) : (
+            <>
+              <section className="bruno-summary-grid">
+                <article className="bruno-card">
+                  <h3>Collection</h3>
+                  <strong>{inspection.result.collection.name}</strong>
+                  <p>{inspection.result.fidelity.executable_items} executable items · {inspection.result.fidelity.preserved_apps} Bruno Apps preserved</p>
+                  <CollectionTree items={inspection.result.collection.items} />
+                </article>
+                <article className="bruno-card">
+                  <h3>Fidelity and capabilities</h3>
+                  <dl className="bruno-details">
+                    <div><dt>Fidelity</dt><dd>{inspection.result.fidelity.status}</dd></div>
+                    <div><dt>Compatibility</dt><dd>{inspection.result.fidelity.compatibility}</dd></div>
+                    <div><dt>Bundle</dt><dd>{formatBytes(inspection.result.manifest.total_bytes)}</dd></div>
+                    <div><dt>Requests</dt><dd>{inspection.result.capabilities.request_types.join(', ') || 'None'}</dd></div>
+                    <div><dt>Required sandbox</dt><dd>{inspection.result.capabilities.required_sandbox}</dd></div>
+                  </dl>
+                  <div className="bruno-capability-list">
+                    {inspection.result.capabilities.has_javascript && <span>JavaScript</span>}
+                    {inspection.result.capabilities.has_npm_dependencies && <span>npm dependencies</span>}
+                    {inspection.result.capabilities.has_local_modules && <span>local modules</span>}
+                    {inspection.result.capabilities.has_file_bodies && <span>file bodies</span>}
+                    {inspection.result.capabilities.has_certificates && <span>certificates</span>}
+                    {inspection.result.capabilities.has_bruno_apps && <span>Bruno Apps</span>}
+                  </div>
+                </article>
+              </section>
+
+              {(inspection.result.security_findings || []).length > 0 && (
+                <section className="bruno-card">
+                  <h3>Security findings</h3>
+                  <div className="bruno-findings">
+                    {(inspection.result.security_findings || []).map(finding => (
+                      <div key={`${finding.code}-${finding.path || ''}`} className={`bruno-finding ${finding.severity}`}>
+                        <strong>{finding.code}</strong>
+                        <span>{finding.summary}</span>
+                        {finding.path && <small>{finding.path}</small>}
+                      </div>
+                    ))}
+                  </div>
+                </section>
               )}
-            </section>
-          )}
 
-          {(inspection.result.security_findings || []).length > 0 && (
-            <section className="bruno-card">
-              <h3>Security findings</h3>
-              <div className="bruno-findings">
-                {(inspection.result.security_findings || []).map(finding => (
-                  <div key={`${finding.code}-${finding.path || ''}`} className={`bruno-finding ${finding.severity}`}>
-                    <strong>{finding.code}</strong>
-                    <span>{finding.summary}</span>
-                    {finding.path && <small>{finding.path}</small>}
+              {(inspection.result.missing_variables || []).length > 0 && (
+                <section className="bruno-card">
+                  <h3>Preflight requirements</h3>
+                  <p>These values were referenced but not defined in the uploaded source. Supply them above under Collection Values, through Bruno environments, or through APEX runtime bindings before execution.</p>
+                  <div className="bruno-capability-list">
+                    {(inspection.result.missing_variables || []).map(variable => <span key={variable}>{variable}</span>)}
                   </div>
-                ))}
-              </div>
-            </section>
-          )}
-
-          {outputMode === 'native_requests' && inspection.shared_values && (inspection.shared_values.candidates?.length ?? 0) > 0 && !committed && (
-            <section className="bruno-card">
-              <SharedImportValues
-                sharedValues={inspection.shared_values}
-                collectOnly
-                scriptCount={selectedNativeCandidates.length}
-                onValuesChange={setSharedValueSelections}
-                reviewGeneration={`${sourceGeneration}:${projectId || ''}`}
-                disabled={loading || protectedSessionExpired}
-              />
-            </section>
-          )}
-
-          {(inspection.result.missing_variables || []).length > 0 && (
-            <section className="bruno-card">
-              <h3>Preflight requirements</h3>
-              <p>These values were referenced but not defined in the uploaded source. Supply them above under Collection Values, through Bruno environments, or through APEX runtime bindings before execution.</p>
-              <div className="bruno-capability-list">
-                {(inspection.result.missing_variables || []).map(variable => <span key={variable}>{variable}</span>)}
-              </div>
-            </section>
-          )}
-
-          {inspection.sync_preview && (
-            <section className="bruno-card">
-              <h3>Synchronization preview</h3>
-              <pre className="bruno-json">{JSON.stringify(inspection.sync_preview.changes, null, 2)}</pre>
-              {conflicts.length > 0 && (
-                <div className="bruno-conflicts">
-                  {conflicts.map(conflict => (
-                    <label key={conflict.id}>
-                      <input
-                        type="checkbox"
-                        disabled={loading}
-                        checked={conflictResolutions[conflict.id] === conflict.required_resolution}
-                        onChange={event => setConflictResolutions(previous => ({
-                          ...previous,
-                          [conflict.id]: event.target.checked ? conflict.required_resolution : '',
-                        }))}
-                      />
-                      <span><strong>{conflict.field}</strong>{conflict.summary}<small>Resolve with: {conflict.required_resolution}</small></span>
-                    </label>
-                  ))}
-                </div>
+                </section>
               )}
-            </section>
+
+              {inspection.sync_preview && (
+                <section className="bruno-card">
+                  <h3>Synchronization preview</h3>
+                  <pre className="bruno-json">{JSON.stringify(inspection.sync_preview.changes, null, 2)}</pre>
+                  {conflicts.length > 0 && (
+                    <div className="bruno-conflicts">
+                      {conflicts.map(conflict => (
+                        <label key={conflict.id}>
+                          <input
+                            type="checkbox"
+                            disabled={loading}
+                            checked={conflictResolutions[conflict.id] === conflict.required_resolution}
+                            onChange={event => setConflictResolutions(previous => ({
+                              ...previous,
+                              [conflict.id]: event.target.checked ? conflict.required_resolution : '',
+                            }))}
+                          />
+                          <span><strong>{conflict.field}</strong>{conflict.summary}<small>Resolve with: {conflict.required_resolution}</small></span>
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                </section>
+              )}
+
+              {!committed && (
+                <section className="bruno-commit-bar">
+                  <div>
+                    <strong>{syncScriptId ? 'Create synchronized revision' : 'Commit canonical Bruno script'}</strong>
+                    <span>Raw and sanitized source artifacts are immutable, encrypted, and content-addressed.</span>
+                    {saveBlockers.length > 0 && (
+                      <div id="bruno-save-blockers" className="bruno-save-blockers" role="status">
+                        <strong>Save is unavailable for these reasons:</strong>
+                        <ul>{saveBlockers.map(blocker => <li key={blocker}>{blocker}</li>)}</ul>
+                        {deferredSecretCount > 0 && <p>{deferredSecretCount} project secret{deferredSecretCount === 1 ? ' is' : 's are'} still unconfigured, but that does not prevent saving.</p>}
+                        {selectedNativeMissingVariables.length > 0 && <p>{selectedNativeMissingVariables.length} unresolved runtime variable{selectedNativeMissingVariables.length === 1 ? ' does' : 's do'} not prevent saving, but must be configured before execution.</p>}
+                      </div>
+                    )}
+                    {error && (
+                      <div className="settings-error" role="alert">
+                        Save failed: {error}
+                      </div>
+                    )}
+                  </div>
+                  <button
+                    className="btn btn-primary"
+                    disabled={!canCommit}
+                    aria-describedby={!canCommit && saveBlockers.length > 0 ? 'bruno-save-blockers' : undefined}
+                    onClick={() => void commit()}
+                  >
+                    {commitButtonLabel}
+                  </button>
+                </section>
+              )}
+            </>
           )}
 
-          {!committed && (
-            <section className="bruno-commit-bar">
-              <div>
-                <strong>{outputMode === 'native_requests'
-                  ? `Save ${selectedNativeCandidates.length} native script${selectedNativeCandidates.length === 1 ? '' : 's'}`
-                  : syncScriptId ? 'Create synchronized revision' : 'Commit canonical Bruno script'}</strong>
-                <span>{outputMode === 'native_requests'
-                  ? destinationFolderId
-                    ? 'All selected scripts will be saved atomically to the selected folder.'
-                    : 'Select a destination folder before saving.'
-                  : 'Raw and sanitized source artifacts are immutable, encrypted, and content-addressed.'}</span>
-                {saveBlockers.length > 0 && (
-                  <div id="bruno-save-blockers" className="bruno-save-blockers" role="status">
-                    <strong>Save is unavailable for these reasons:</strong>
-                    <ul>{saveBlockers.map(blocker => <li key={blocker}>{blocker}</li>)}</ul>
-                    {deferredSecretCount > 0 && <p>{deferredSecretCount} project secret{deferredSecretCount === 1 ? ' is' : 's are'} still unconfigured, but that does not prevent saving.</p>}
-                    {selectedNativeMissingVariables.length > 0 && <p>{selectedNativeMissingVariables.length} unresolved runtime variable{selectedNativeMissingVariables.length === 1 ? ' does' : 's do'} not prevent saving, but must be configured before execution.</p>}
-                  </div>
-                )}
-                {error && (
-                  <div className="settings-error" role="alert">
-                    Save failed: {error}
-                  </div>
-                )}
-              </div>
-              <button
-                className="btn btn-primary"
-                disabled={!canCommit}
-                aria-describedby={!canCommit && saveBlockers.length > 0 ? 'bruno-save-blockers' : undefined}
-                onClick={() => void commit()}
-              >
-                {commitButtonLabel}
-              </button>
-            </section>
+          {nativeReviewCandidate && (
+            <BrunoNativeReviewDialog
+              candidate={nativeReviewCandidate}
+              candidateSelected={selectedCandidateIdSet.has(nativeReviewCandidate.candidate_id)}
+              requirementDestinationState={credentialDestinationState}
+              onClose={() => setNativeReviewCandidateId(null)}
+            />
           )}
         </>
       )}
