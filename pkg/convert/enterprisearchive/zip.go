@@ -39,9 +39,14 @@ const (
 	MaxArchiveEntries    = maxEnterpriseArchiveEntries
 )
 
-// ConvertZip processes a ZIP archive containing enterprise C/VUser source files
-// and returns either converted APEX Load DSL or a review artifact.
-func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
+// readEnterpriseArchive opens the uploaded archive and returns its files keyed
+// by path.
+//
+// Java sources that arrived as .txt are renamed here, before any pass reads the
+// map, so protocol detection, parsing, source review, and the immutable source
+// manifest all resolve one path per source file. The lower-cased index that
+// rename needs is built and discarded here; nothing downstream reads it.
+func readEnterpriseArchive(zipData []byte) (map[string]string, error) {
 	if len(zipData) < 4 {
 		return nil, fmt.Errorf("zip file is too small (%d bytes); expected at least 4 bytes for ZIP magic header", len(zipData))
 	}
@@ -63,18 +68,23 @@ func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
 		return nil, fmt.Errorf("failed to open zip archive (size=%d bytes): %w; the file may be corrupted, incomplete, or use an unsupported ZIP compression method", len(zipData), err)
 	}
 
-	// Read all files from the zip
 	files := make(map[string]string, len(extracted))
 	normalizedFileNames := make(map[string]string, len(extracted))
 	for _, file := range extracted {
 		files[file.Name] = string(file.Data)
 		normalizedFileNames[strings.ToLower(file.Name)] = file.Name
 	}
-
-	// Java sources that arrived as .txt are renamed before any pass reads the
-	// map, so protocol detection, parsing, source review, and the immutable
-	// source manifest all resolve one path per source file.
 	if err := normalizeJavaSourceArchiveNames(files, normalizedFileNames); err != nil {
+		return nil, err
+	}
+	return files, nil
+}
+
+// ConvertZip processes a ZIP archive containing enterprise C/VUser source files
+// and returns either converted APEX Load DSL or a review artifact.
+func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
+	files, err := readEnterpriseArchive(zipData)
+	if err != nil {
 		return nil, err
 	}
 

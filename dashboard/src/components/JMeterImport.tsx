@@ -14,6 +14,7 @@ import ScriptImportReview from './ScriptImportReview'
 import { type SecretBindingReviewHandle } from './SecretBindingReview'
 import SourceMappingReview from './SourceMappingReview'
 import { withFallbackPersistedScripts } from './importSaveUtils'
+import { useImportReviewGeneration } from './importReviewGeneration'
 import { type ImportedSaveResult } from './useScriptsAuthoringState'
 import { refreshedSecretBindingRequirements, replaceSecretBindingRequirementsForScript, secretBindingRequirementsForScript } from './secretBindingUtils'
 import { credentialPreservingImportDraftRequiresSave, earliestImportDraftExpiry } from './protectedImportSession'
@@ -84,14 +85,11 @@ export default function JMeterImport({ initialFile, projectId, folderId, onImpor
   latestResultRef.current = result
   const selectedFileRef = useRef<File | null>(file)
   selectedFileRef.current = file
-  const reviewGenerationRef = useRef(0)
-  const [reviewGeneration, setReviewGeneration] = useState(0)
-  const advanceReviewGeneration = useCallback(() => {
-    const next = reviewGenerationRef.current + 1
-    reviewGenerationRef.current = next
-    setReviewGeneration(next)
-    return next
-  }, [])
+  const {
+    generation: reviewGeneration,
+    generationRef: reviewGenerationRef,
+    advance: advanceReviewGeneration,
+  } = useImportReviewGeneration()
   const reviewScope = `${reviewGeneration}:${projectId || ''}`
   const reviewProjectIdRef = useRef(projectId)
   reviewProjectIdRef.current = projectId
@@ -130,7 +128,7 @@ export default function JMeterImport({ initialFile, projectId, folderId, onImpor
     // Fence any completed persistence response from navigating over the next
     // authoring surface while still publishing it for a library refresh.
     reviewGenerationRef.current += 1
-  }, [])
+  }, [reviewGenerationRef])
   const [options, setOptions] = useState({
     name: '',
     base_url: '',

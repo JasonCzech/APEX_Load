@@ -796,6 +796,30 @@ describe('CommandCenterPrototype', () => {
     })).toBe(true)
   })
 
+  it('keeps the original Command Center and v2 available from the same dashboard route', async () => {
+    await renderPrototype()
+
+    expect(container.querySelector('[aria-label="Ops cockpit mockup"]')).not.toBeNull()
+    expect(container.querySelector('[aria-label="Command Center v2 Ops view"]')).toBeNull()
+
+    await click(buttonNamed('Command Center v2'))
+
+    expect(container.querySelector('[aria-label="Command Center v2 Ops view"]')).not.toBeNull()
+    expect(container.textContent).toContain('Target Transition')
+    expect(buttonNamed('OPS VIEW').getAttribute('aria-pressed')).toBe('true')
+
+    await click(buttonNamed('GRAPH WALL'))
+
+    expect(container.querySelector('[aria-label="Grafana wall mockup"]')).not.toBeNull()
+    expect(buttonNamed('GRAPH WALL').getAttribute('aria-pressed')).toBe('true')
+
+    await click(buttonNamed('Original'))
+    await click(buttonNamed('OPS View'))
+
+    expect(container.querySelector('[aria-label="Ops cockpit mockup"]')).not.toBeNull()
+    expect(container.querySelector('[aria-label="Command Center v2 Ops view"]')).toBeNull()
+  })
+
   it('switches between the OPS View and Graph Wall variants from the sidebar', async () => {
     await renderPrototype()
 

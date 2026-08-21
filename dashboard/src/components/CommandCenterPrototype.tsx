@@ -402,6 +402,7 @@ export default function CommandCenterPrototype({
   onOpenResults,
   prototypeMode = false,
 }: CommandCenterPrototypeProps = {}) {
+  const [experienceVersion, setExperienceVersion] = useState<'original' | 'v2'>('original')
   const api = useTestApi()
   // When the Command Center is opened without an explicit run on the route
   // (e.g. via the sidebar nav rather than from a run chip), we discover the
@@ -1224,8 +1225,44 @@ export default function CommandCenterPrototype({
     }))
   }
 
+  const experienceSwitch = (
+    <div className="command-center-experience-switch" role="group" aria-label="Command Center version and view">
+        <button
+          type="button"
+          className={experienceVersion === 'original' ? 'active' : ''}
+          aria-pressed={experienceVersion === 'original'}
+          onClick={() => setExperienceVersion('original')}
+        >
+          Original
+        </button>
+        <button
+          type="button"
+          className={experienceVersion === 'v2' ? 'active' : ''}
+          aria-pressed={experienceVersion === 'v2'}
+          onClick={() => setExperienceVersion('v2')}
+        >
+          Command Center v2
+        </button>
+        {experienceVersion === 'v2' && (
+          <>
+            <span className="command-center-switch-divider" aria-hidden="true" />
+            <button type="button" className={variant === 'ops' ? 'active' : ''} aria-pressed={variant === 'ops'} onClick={() => setVariant('ops')}>
+              OPS VIEW
+            </button>
+            <button type="button" className={variant === 'grafana' ? 'active' : ''} aria-pressed={variant === 'grafana'} onClick={() => setVariant('grafana')}>
+              GRAPH WALL
+            </button>
+          </>
+        )}
+      </div>
+  )
+  const commandCenterTopbarTarget = typeof document === 'undefined'
+    ? null
+    : document.querySelector<HTMLElement>('.main-topbar-page')
+
   return (
-    <div className="page command-center-page">
+    <div className={`page command-center-page ${experienceVersion === 'v2' ? 'command-center-v2' : 'command-center-original'}`}>
+      {commandCenterTopbarTarget ? createPortal(experienceSwitch, commandCenterTopbarTarget) : experienceSwitch}
       {emptyMode ? (
         <CommandCenterEmptyState
           onOpenResults={onOpenResults}
@@ -1349,6 +1386,7 @@ export default function CommandCenterPrototype({
 
       {variant === 'ops' && (
         <OpsCockpitView
+          experienceVersion={experienceVersion}
           variant={variant}
           onVariantChange={changeVariant}
           groups={groups}
@@ -1376,6 +1414,7 @@ export default function CommandCenterPrototype({
           onApplyTarget={applyTarget}
           onErrorSelect={selectError}
           onOpenGroupSettings={liveMode && testId ? openGroupSettings : undefined}
+          onChangeDuration={variant === 'ops' && liveMode && runStatus === 'RUNNING' ? () => setShowRuntimeAdjustment(true) : undefined}
         />
       )}
       {variant === 'grafana' && (
@@ -1697,6 +1736,7 @@ interface CommonViewProps {
 }
 
 interface OpsCockpitViewProps {
+  experienceVersion: 'original' | 'v2'
   variant: VariantId
   onVariantChange: (variant: VariantId) => void
   groups: CommandGroup[]
@@ -1724,6 +1764,7 @@ interface OpsCockpitViewProps {
   onApplyTarget: (groupName: string, value: number) => void
   onErrorSelect: (errorId: string) => void
   onOpenGroupSettings?: (groupName: string, kind: GroupSettingsDialogKind) => void
+  onChangeDuration?: () => void
 }
 
 interface GrafanaWallViewProps extends CommonViewProps {
@@ -1741,6 +1782,7 @@ interface GrafanaWallViewProps extends CommonViewProps {
 }
 
 function OpsCockpitView({
+  experienceVersion,
   variant,
   onVariantChange,
   groups,
@@ -1768,7 +1810,41 @@ function OpsCockpitView({
   onApplyTarget,
   onErrorSelect,
   onOpenGroupSettings,
+  onChangeDuration,
 }: OpsCockpitViewProps) {
+  if (experienceVersion === 'v2') {
+    return (
+      <OpsCockpitV2View
+        variant={variant}
+        onVariantChange={onVariantChange}
+        groups={groups}
+        testGroups={testGroups}
+        metrics={metrics}
+        metricsHistory={metricsHistory}
+        errorPatterns={errorPatterns}
+        selectedError={selectedError}
+        selectedErrorEvidence={selectedErrorEvidence}
+        selectedEvidenceId={selectedEvidenceId}
+        onEvidenceSelect={onEvidenceSelect}
+        activeTableTab={activeTableTab}
+        onTableTabChange={onTableTabChange}
+        evidenceLoading={evidenceLoading}
+        evidenceError={evidenceError}
+        runStatus={runStatus}
+        totalDurationSeconds={totalDurationSeconds}
+        remainingSeconds={remainingSeconds}
+        readOnly={readOnly}
+        targetTransitionMode={targetTransitionMode}
+        targetRampDuration={targetRampDuration}
+        onTargetTransitionModeChange={onTargetTransitionModeChange}
+        onTargetRampDurationChange={onTargetRampDurationChange}
+        onTargetChange={onTargetChange}
+        onApplyTarget={onApplyTarget}
+        onErrorSelect={onErrorSelect}
+        onChangeDuration={onChangeDuration}
+      />
+    )
+  }
   return (
     <section className="command-layout command-layout-ops" aria-label="Ops cockpit mockup">
       <div className="command-primary-column">
@@ -1815,6 +1891,183 @@ function OpsCockpitView({
         <ErrorDrilldown patterns={errorPatterns} selectedError={selectedError} onErrorSelect={onErrorSelect} />
         <CapacitySnapshot groups={groups} metrics={metrics} />
       </aside>
+    </section>
+  )
+}
+
+function numericCommandValue(source: unknown, ...keys: string[]) {
+  if (!source || typeof source !== 'object') return 0
+  const record = source as Record<string, unknown>
+  for (const key of keys) {
+    const value = Number(record[key])
+    if (Number.isFinite(value)) return value
+  }
+  return 0
+}
+
+type OpsCockpitV2ViewProps = Omit<OpsCockpitViewProps, 'experienceVersion' | 'onOpenGroupSettings'>
+
+function OpsCockpitV2View({
+  groups,
+  testGroups,
+  metrics,
+  metricsHistory = [],
+  errorPatterns,
+  selectedError,
+  selectedErrorEvidence,
+  selectedEvidenceId,
+  onEvidenceSelect,
+  activeTableTab,
+  onTableTabChange,
+  evidenceLoading,
+  evidenceError,
+  runStatus,
+  totalDurationSeconds,
+  remainingSeconds,
+  readOnly = false,
+  targetTransitionMode,
+  targetRampDuration,
+  onTargetTransitionModeChange,
+  onTargetRampDurationChange,
+  onTargetChange,
+  onApplyTarget,
+  onErrorSelect,
+  onChangeDuration,
+}: OpsCockpitV2ViewProps) {
+  const progressPct = loadProgressPercent(totalDurationSeconds, remainingSeconds)
+  const profile = useMemo(
+    () => buildLoadModelProfile(testGroups, groups, totalDurationSeconds),
+    [groups, testGroups, totalDurationSeconds],
+  )
+  const totalCurrent = groups.reduce((sum, group) => sum + group.current, 0)
+  const totalTarget = groups.reduce((sum, group) => sum + (group.targetMode === 'vusers' ? group.target : group.suggestedVusers ?? group.targetVusers ?? group.current), 0)
+  const plannedNow = plannedLoadAtProgress(profile, progressPct)
+  const chartProfile = profile.map(point => {
+    if (point.pct > progressPct) return { ...point, actual: null }
+    if (metricsHistory.length === 0) {
+      return { ...point, actual: point.pct === 0 ? totalCurrent : null }
+    }
+    const historyIndex = Math.min(
+      metricsHistory.length - 1,
+      Math.max(0, Math.round((point.pct / Math.max(1, progressPct)) * (metricsHistory.length - 1))),
+    )
+    return {
+      ...point,
+      actual: numericCommandValue(metricsHistory[historyIndex], 'vusers', 'activeVusers', 'active_vusers'),
+    }
+  })
+  return (
+    <section className="command-v2" aria-label="Command Center v2 Ops view">
+      <div className="command-v2-workbench">
+        <div className="command-v2-main">
+          <section className="command-v2-load-model" aria-label="Command Center v2 load model">
+            <div className="command-v2-section-header">
+              <div>
+                <h3>Load Model</h3>
+                <p>{loadPhaseAtProgress(profile, progressPct)} / tracking planned and actual VUsers</p>
+              </div>
+              <div className="command-v2-model-kpis">
+                <span>Planned <strong>{formatNumber(plannedNow)}</strong></span>
+                <span>Actual <strong>{formatNumber(totalCurrent)}</strong></span>
+                <span>Delta <strong>{totalCurrent - plannedNow >= 0 ? '+' : ''}{formatNumber(totalCurrent - plannedNow)}</strong></span>
+                <span>Elapsed <strong>{formatNumber(progressPct, 0)}%</strong></span>
+              </div>
+            </div>
+
+            <div className="command-v2-chart" aria-label="Planned and actual VUsers over test duration">
+              <ResponsiveContainer width="100%" height={230} minWidth={320}>
+                <AreaChart data={chartProfile} margin={{ top: 10, right: 18, left: -8, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
+                  <XAxis dataKey="pct" type="number" domain={[0, 100]} ticks={[0, 25, 50, 75, 100]} tickFormatter={value => `${value}%`} stroke="var(--text-muted)" tick={{ fill: 'var(--text-muted)', fontSize: 10 }} />
+                  <YAxis stroke="var(--text-muted)" tick={{ fill: 'var(--text-muted)', fontSize: 10 }} />
+                  <Tooltip contentStyle={chartTooltipContentStyle} labelStyle={chartTooltipLabelStyle} labelFormatter={value => `${formatNumber(Number(value))}% elapsed`} />
+                  <ReferenceLine x={progressPct} stroke="var(--text-primary)" strokeWidth={1.5} ifOverflow="extendDomain" />
+                  <Area type="stepAfter" dataKey="planned" name="Target VUsers" stroke="var(--accent)" strokeDasharray="5 4" fill="transparent" strokeWidth={2} dot={false} isAnimationActive={false} />
+                  <Area type="stepAfter" dataKey="actual" name="Actual VUsers" stroke="var(--chart-2)" fill="var(--accent-soft)" fillOpacity={0.32} strokeWidth={2} dot={false} isAnimationActive={false} />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+
+            <div className="command-v2-capacity" aria-label="Capacity pressure">
+              <span>Capacity</span>
+              <div><i style={{ width: `${Math.min(100, Math.max(3, (totalCurrent / Math.max(1, totalTarget * 1.35)) * 100))}%` }} /></div>
+              <strong>{totalCurrent <= totalTarget ? 'Comfort zone' : 'Watch'}</strong>
+            </div>
+
+            <div className="command-v2-group-list" role="table" aria-label="Inline group load controls">
+              <div className="command-v2-group-row header" role="row">
+                <span role="columnheader">Group</span>
+                <span role="columnheader">VUsers (actual / target)</span>
+                <span role="columnheader">TPS</span>
+                <span role="columnheader">ART</span>
+                <span role="columnheader">Errors</span>
+                <span role="columnheader">Adjust target</span>
+              </div>
+              {groups.map((group, index) => {
+                const art = numericCommandValue(group, 'art', 'artMs', 'avgResponseMs', 'avg_response_ms')
+                const errors = numericCommandValue(group, 'errorPct', 'errorRate', 'error_pct')
+                const target = Math.max(0, Math.round(group.target))
+                return (
+                  <div className="command-v2-group-row" role="row" key={group.name}>
+                    <span role="cell" className="command-v2-group-name"><i data-group-index={index} /><strong>{group.name}</strong><small>{group.protocol}</small></span>
+                    <span role="cell"><strong>{formatNumber(group.current)} / {formatNumber(target)}</strong><em>{target > 0 ? formatNumber((group.current / target) * 100, 0) : '0'}%</em></span>
+                    <span role="cell"><strong>{formatNumber(group.tps, 1)}</strong></span>
+                    <span role="cell"><strong>{formatNumber(art, 0)} ms</strong></span>
+                    <span role="cell" className={errors > 1 ? 'danger' : 'healthy'}><strong>{formatNumber(errors, 2)}%</strong></span>
+                    <span role="cell" className="command-v2-target-stepper">
+                      <button type="button" disabled={readOnly || target <= 0} aria-label={`Decrease ${group.name} target`} onClick={() => onTargetChange(group.name, Math.max(0, target - 1))}>−</button>
+                      <strong>{formatNumber(target)}</strong>
+                      <button type="button" disabled={readOnly} aria-label={`Increase ${group.name} target`} onClick={() => onTargetChange(group.name, target + 1)}>+</button>
+                      <button type="button" className="apply" disabled={readOnly} onClick={() => onApplyTarget(group.name, target)}>Apply</button>
+                    </span>
+                  </div>
+                )
+              })}
+            </div>
+          </section>
+
+          <CommandRunTables
+            groups={groups}
+            metrics={metrics}
+            patterns={errorPatterns}
+            selectedError={selectedError}
+            selectedEvidence={selectedErrorEvidence}
+            selectedEvidenceId={selectedEvidenceId}
+            onEvidenceSelect={onEvidenceSelect}
+            activeTab={activeTableTab}
+            onTabChange={onTableTabChange}
+            onErrorSelect={onErrorSelect}
+            evidenceLoading={evidenceLoading}
+            evidenceError={evidenceError}
+          />
+        </div>
+
+        <aside className="command-v2-inspector" aria-label="Change duration and target transition">
+          <section>
+            <div className="command-v2-inspector-title"><h3>Change Duration</h3><span>{formatRemaining(remainingSeconds)} left</span></div>
+            <dl>
+              <div><dt>Current duration</dt><dd>{formatRemaining(totalDurationSeconds)}</dd></div>
+              <div><dt>Elapsed</dt><dd>{formatNumber(progressPct, 0)}%</dd></div>
+            </dl>
+            <div className="command-v2-inspector-actions">
+              <button type="button" className="primary" disabled={readOnly || !onChangeDuration} onClick={onChangeDuration}>Change Duration</button>
+            </div>
+          </section>
+
+          <section className="command-v2-transition">
+            <div className="command-v2-inspector-title"><h3>Target Transition</h3></div>
+            <p>Applies to inline group target adjustments.</p>
+            <div className="command-v2-radio-row" role="radiogroup" aria-label="Target transition mode">
+              <label><input type="radio" name="command-v2-transition" checked={targetTransitionMode === 'immediate'} disabled={readOnly} onChange={() => onTargetTransitionModeChange('immediate')} /> Immediate</label>
+              <label><input type="radio" name="command-v2-transition" checked={targetTransitionMode === 'gradual'} disabled={readOnly} onChange={() => onTargetTransitionModeChange('gradual')} /> Gradual</label>
+            </div>
+            <label className="command-v2-ramp-duration">
+              <span>Ramp duration</span>
+              <input type="text" value={targetRampDuration} disabled={readOnly || targetTransitionMode !== 'gradual'} onChange={event => onTargetRampDurationChange(event.target.value)} />
+            </label>
+          </section>
+        </aside>
+      </div>
     </section>
   )
 }

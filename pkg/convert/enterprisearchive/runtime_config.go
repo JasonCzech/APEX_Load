@@ -174,6 +174,52 @@ func ParseRuntimeCfg(content string) *RuntimeConfig {
 	}
 
 	sections := ParseConfigSections(content)
+	parseRuntimeHTTPTransportSettings(rc, sections)
+
+	parseRuntimeProxySettings(rc, sections)
+
+	parseRuntimeBrowserSettings(rc, sections)
+
+	parseRuntimeTLSSettings(rc, sections)
+
+	parseRuntimeAuthSettings(rc, sections)
+
+	parseRuntimeRunLogicSettings(rc, sections)
+
+	parseRuntimeCfgPacing(rc, sections)
+
+	parseRuntimeThinkTimeSettings(rc, sections)
+
+	parseRuntimeLogSettings(rc, sections)
+
+	parseRuntimeMiscSettings(rc, sections)
+
+	parseRuntimeAdditionalAttributes(rc, sections)
+
+	parseRuntimeDownloadFilterSettings(rc, sections)
+
+	parseRuntimeContentCheckSettings(rc, sections)
+
+	parseRuntimeNetworkSimulationSettings(rc, sections)
+
+	parseRuntimeStreamingSettings(rc, sections)
+
+	parseRuntimeDataFormattingSettings(rc, sections)
+
+	parseRuntimeJavaVMSettings(rc, sections, content)
+
+	// Unmapped-key accounting happens in the protocol-aware completeness pass
+	// (classifyRuntimeSelectedSections); every selected cfg/usp key receives an
+	// explicit disposition there instead of a hand-maintained allowlist here.
+	applyRuntimeCfgCaseFoldConflicts(rc, content)
+
+	return rc
+}
+
+// parseRuntimeHTTPTransportSettings reads timeouts, protocol version, keep-alive,
+// redirects, and connection limits, with the [WEB] fallback real VuGen writes
+// for HTTP/2.
+func parseRuntimeHTTPTransportSettings(rc *RuntimeConfig, sections map[string]map[string]string) {
 	httpSection := findMergedSection(sections, "HTTP", "Internet Protocol", "Preferences", "Internet Protocol Preferences", "WEB", "Web")
 	webHTTPSection := findSection(sections, "WEB", "Web")
 	rc.ConnectTimeoutSec = parseInt(runtimeSectionValue(httpSection, "ConnectTimeout"))
@@ -221,9 +267,12 @@ func ParseRuntimeCfg(content string) *RuntimeConfig {
 		runtimeSectionValue(httpSection, "MaxConnections"),
 		runtimeSectionValue(httpSection, "MaxConnectionsPerHostHTTP"),
 	)
+}
 
-	parseRuntimeProxySettings(rc, sections)
-
+// parseRuntimeBrowserSettings reads the accept headers and resource-download
+// behaviour, sharing the browser-section to [WEB] fallback the emulation
+// toggles use.
+func parseRuntimeBrowserSettings(rc *RuntimeConfig, sections map[string]map[string]string) {
 	browserSection := findMergedSection(sections, "Browser Emulation", "Browser")
 	if len(browserSection) == 0 {
 		browserSection = findSection(sections, "WEB", "Web")
@@ -279,7 +328,11 @@ func ParseRuntimeCfg(content string) *RuntimeConfig {
 		enumDownloadResourcesOnly(runtimeSectionValue(browserSection, "DownloadNonHtmlResources")),
 	)))
 	parseBrowserEmulationRuntimeSettings(rc, browserSection, browserWebSection)
+}
 
+// parseRuntimeTLSSettings reads the source SSL/TLS version, flagging it for
+// review when APEX cannot reproduce it exactly.
+func parseRuntimeTLSSettings(rc *RuntimeConfig, sections map[string]map[string]string) {
 	sslSection := findMergedSection(sections, "SSL", "Security")
 	rc.SSLVersion = strings.TrimSpace(runtimeSectionFirstNonBlank(sslSection, "SSLVersion", "TLSVersion"))
 	if rc.SSLVersion != "" {
@@ -291,11 +344,18 @@ func ParseRuntimeCfg(content string) *RuntimeConfig {
 			})
 		}
 	}
+}
 
+// parseRuntimeAuthSettings reads the global authentication credentials.
+func parseRuntimeAuthSettings(rc *RuntimeConfig, sections map[string]map[string]string) {
 	authSection := findSection(sections, "Authentication")
 	rc.AuthUser = strings.TrimSpace(runtimeSectionFirstNonBlank(authSection, "UserName", "Username"))
 	rc.AuthPass = strings.TrimSpace(runtimeSectionValue(authSection, "Password"))
+}
 
+// parseRuntimeRunLogicSettings reads iteration counts, automatic transactions,
+// block scheduling, and the action sequence.
+func parseRuntimeRunLogicSettings(rc *RuntimeConfig, sections map[string]map[string]string) {
 	runLogicSection := findMergedSection(sections, "Run Logic", "RunLogic")
 	generalSection := findSection(sections, "General")
 	parseRuntimeCfgIterations(rc, sections)
@@ -305,9 +365,12 @@ func ParseRuntimeCfg(content string) *RuntimeConfig {
 	}
 	rc.BlockScheduling = normalizeEnum(runtimeSectionValue(runLogicSection, "BlockScheduling"))
 	rc.ActionSequence = splitList(runtimeSectionFirstNonBlank(runLogicSection, "ActionSequence", "Sequence"))
+}
 
-	parseRuntimeCfgPacing(rc, sections)
-
+// parseRuntimeThinkTimeSettings reads the native and legacy VuGen think-time
+// shapes, their multipliers and randomization ranges, and the limit flag that
+// caps replay delay.
+func parseRuntimeThinkTimeSettings(rc *RuntimeConfig, sections map[string]map[string]string) {
 	thinkTimeSection := findMergedSection(sections, "Think Time", "ThinkTime")
 	thinkValue := func(aliases ...string) string {
 		for _, alias := range aliases {
@@ -427,7 +490,11 @@ func ParseRuntimeCfg(content string) *RuntimeConfig {
 		})
 		rc.ThinkTimeLimitMs = 0
 	}
+}
 
+// parseRuntimeLogSettings reads the native LogOptions enum and the legacy
+// per-class message flags.
+func parseRuntimeLogSettings(rc *RuntimeConfig, sections map[string]map[string]string) {
 	logSection := findMergedSection(sections, "Log", "Logging")
 	nativeLogOptions, hasNativeLogOptions := sectionValueCaseInsensitive(logSection, "LogOptions")
 	if hasNativeLogOptions && strings.TrimSpace(nativeLogOptions) != "" {
@@ -481,9 +548,17 @@ func ParseRuntimeCfg(content string) *RuntimeConfig {
 		appendNativeLogClassOption(rc, logSection, "MsgClassData", "data_returned")
 		appendNativeLogClassOption(rc, logSection, "MsgClassFull", "advanced_trace")
 	}
+}
 
+// parseRuntimeMiscSettings reads continue-on-error and snapshot-on-error, each
+// of which VuGen may write in either [Misc] or the general/[WEB] sections.
+func parseRuntimeMiscSettings(rc *RuntimeConfig, sections map[string]map[string]string) {
 	miscSection := findMergedSection(sections, "Misc", "Miscellaneous")
 	webSection := findSection(sections, "WEB", "Web")
+	// VuGen writes continue-on-error in either [Misc] or [General]; re-derive
+	// the general section here rather than threading it from the run-logic
+	// parse, so each group reads only the sections it needs.
+	generalSection := findSection(sections, "General")
 	if continueOnError, ok := parseBoolExplicit(firstNonBlank(
 		runtimeSectionFirstNonBlank(miscSection, "ContinueOnError", "ErrorContinue"),
 		runtimeSectionValue(generalSection, "ContinueOnError"),
@@ -494,7 +569,11 @@ func ParseRuntimeCfg(content string) *RuntimeConfig {
 		runtimeSectionFirstNonBlank(miscSection, "SnapshotOnError", "GenerateSnapshotOnError"),
 		runtimeSectionValue(webSection, "SnapshotOnErrorActive"),
 	))
+}
 
+// parseRuntimeAdditionalAttributes reads the free-form key/value pairs a script
+// carries for its own use.
+func parseRuntimeAdditionalAttributes(rc *RuntimeConfig, sections map[string]map[string]string) {
 	attrsSection := findMergedSection(sections, "Additional Attributes", "Attributes")
 	for key, value := range attrsSection {
 		trimmedKey := strings.TrimSpace(key)
@@ -503,14 +582,22 @@ func ParseRuntimeCfg(content string) *RuntimeConfig {
 		}
 		rc.AdditionalAttributes[trimmedKey] = strings.TrimSpace(value)
 	}
+}
 
+// parseRuntimeDownloadFilterSettings reads the include/exclude host list applied
+// to resource fetches.
+func parseRuntimeDownloadFilterSettings(rc *RuntimeConfig, sections map[string]map[string]string) {
 	filtersSection := findMergedSection(sections, "Download Filters", "DownloadFilters")
 	rc.DownloadFilterMode = normalizeEnum(runtimeSectionFirstNonBlank(filtersSection, "Mode", "FilterMode"))
 	// Hosts keep their hyphens: splitList's enum normalization would corrupt
 	// hyphenated hostnames into never-matching filter entries.
 	rc.DownloadFilterHosts = splitSourceFilterHosts(rc, runtimeSectionFirstNonBlank(filtersSection, "Hosts", "IncludeHosts", "ExcludeHosts"))
 	parseSourceDownloadFiltersSection(rc, sections)
+}
 
+// parseRuntimeContentCheckSettings reads the text VuGen searches responses for,
+// and whether finding it fails the step.
+func parseRuntimeContentCheckSettings(rc *RuntimeConfig, sections map[string]map[string]string) {
 	contentCheckSection := findMergedSection(sections, "Content Check", "ContentCheck")
 	if text := strings.TrimSpace(runtimeSectionFirstNonBlank(contentCheckSection, "Text", "SearchText")); text != "" {
 		failIfFound := !hasExplicitFalse(runtimeSectionValue(contentCheckSection, "FailIfFound"))
@@ -520,7 +607,11 @@ func ParseRuntimeCfg(content string) *RuntimeConfig {
 			FailIfFound: &failIfFound,
 		})
 	}
+}
 
+// parseRuntimeNetworkSimulationSettings reads bandwidth, latency, and the named
+// network-speed presets.
+func parseRuntimeNetworkSimulationSettings(rc *RuntimeConfig, sections map[string]map[string]string) {
 	networkSection := findMergedSection(sections, "Network Speed Simulation", "NetworkSimulation")
 	rc.NetworkSimulationMode = normalizeEnum(runtimeSectionFirstNonBlank(networkSection, "Mode", "SimulationMode"))
 	rc.NetworkSimulationPreset = normalizeEnum(runtimeSectionValue(networkSection, "Preset"))
@@ -530,7 +621,11 @@ func ParseRuntimeCfg(content string) *RuntimeConfig {
 	)
 	rc.NetworkLatencyMs = parseInt(runtimeSectionValue(networkSection, "LatencyMs"))
 	parseSourceModemSpeedSection(rc, sections)
+}
 
+// parseRuntimeStreamingSettings reads buffer size, bitrate mode, and bandwidth
+// estimation for streaming playback.
+func parseRuntimeStreamingSettings(rc *RuntimeConfig, sections map[string]map[string]string) {
 	streamingSection := findSection(sections, "Streaming")
 	rc.StreamingMode = normalizeEnum(runtimeSectionValue(streamingSection, "Mode"))
 	rc.StreamingBufferSizeSeconds = firstNonZeroInt(
@@ -542,7 +637,11 @@ func ParseRuntimeCfg(content string) *RuntimeConfig {
 		runtimeSectionValue(streamingSection, "FixedBitrate"),
 	)
 	rc.StreamingBandwidthEstimation = normalizeEnum(runtimeSectionValue(streamingSection, "BandwidthEstimation"))
+}
 
+// parseRuntimeDataFormattingSettings reads the DFE auto-detect flag and
+// transform chain.
+func parseRuntimeDataFormattingSettings(rc *RuntimeConfig, sections map[string]map[string]string) {
 	dataFormattingSection := findMergedSection(sections, "Data Formatting", "DataFormatting")
 	rc.DataFormattingAutoDetect = parseBool(runtimeSectionFirstNonBlank(dataFormattingSection, "AutoDetect", "DFEAutoDetect"))
 	for _, item := range splitDelimitedItems(runtimeSectionFirstNonBlank(dataFormattingSection, "Chain", "DFEChain")) {
@@ -552,7 +651,13 @@ func ParseRuntimeCfg(content string) *RuntimeConfig {
 		}
 		rc.DataFormattingChain = append(rc.DataFormattingChain, transform)
 	}
+}
 
+// parseRuntimeJavaVMSettings reads JDK selection, classpath, and JVM arguments.
+// It also reads the raw cfg text, because the general parser decodes adjacent C
+// string literals and would silently concatenate separately quoted JVM
+// arguments.
+func parseRuntimeJavaVMSettings(rc *RuntimeConfig, sections map[string]map[string]string, content string) {
 	// Bare [Java] is the section real VuGen writes for the external-JVM
 	// selection (UseExternalJVM / ExternalJREPath), including in Web scripts.
 	javaVMSectionAliases := []string{"JavaVM:Options", "JavaVM", "Java VM", "Java Environment Settings", "Java:Options", "Java"}
@@ -736,12 +841,6 @@ func ParseRuntimeCfg(content string) *RuntimeConfig {
 			rc.JavaVMSkipParamEvalParseError = "invalid Java VM skip-parameter-evaluation boolean"
 		}
 	}
-	// Unmapped-key accounting happens in the protocol-aware completeness pass
-	// (classifyRuntimeSelectedSections); every selected cfg/usp key receives an
-	// explicit disposition there instead of a hand-maintained allowlist here.
-	applyRuntimeCfgCaseFoldConflicts(rc, content)
-
-	return rc
 }
 
 func (rc *RuntimeConfig) ToScriptConfig() *dsl.ScriptConfig {

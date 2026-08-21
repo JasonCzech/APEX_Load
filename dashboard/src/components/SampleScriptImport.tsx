@@ -29,6 +29,7 @@ import SourceMappingReview from './SourceMappingReview'
 import ReplayPreflightCard from './ReplayPreflightCard'
 import { buildLocalReplayPreflight } from './replayPreflightUtils'
 import { withFallbackPersistedScript } from './importSaveUtils'
+import { useImportReviewGeneration } from './importReviewGeneration'
 import { isValidSecretBindingName, refreshedSecretBindingRequirements, secretBindingReference } from './secretBindingUtils'
 import { credentialPreservingImportDraftRequiresSave, earliestImportDraftExpiry } from './protectedImportSession'
 import { type ImportedSaveResult } from './useScriptsAuthoringState'
@@ -461,14 +462,11 @@ export default function SampleScriptImport({ initialFiles, projectId, folderId, 
     folderId: string | null
     operationId: string
   } | null>(null)
-  const reviewGenerationRef = useRef(0)
-  const [reviewGeneration, setReviewGeneration] = useState(0)
-  const advanceReviewGeneration = useCallback(() => {
-    const next = reviewGenerationRef.current + 1
-    reviewGenerationRef.current = next
-    setReviewGeneration(next)
-    return next
-  }, [])
+  const {
+    generation: reviewGeneration,
+    generationRef: reviewGenerationRef,
+    advance: advanceReviewGeneration,
+  } = useImportReviewGeneration()
   const reviewScope = `${reviewGeneration}:${projectId || ''}`
   const reviewProjectIdRef = useRef(projectId)
   reviewProjectIdRef.current = projectId
@@ -488,7 +486,7 @@ export default function SampleScriptImport({ initialFiles, projectId, folderId, 
     // Fence any persistence response so it refreshes the library without
     // navigating over whichever authoring surface replaced this review.
     reviewGenerationRef.current += 1
-  }, [])
+  }, [reviewGenerationRef])
   const updateOption = <K extends keyof SampleImportOptions>(field: K, value: SampleImportOptions[K]) => {
     invalidateSampleSource()
     dispatchOptions({ type: 'update', field, value })
@@ -583,7 +581,7 @@ export default function SampleScriptImport({ initialFiles, projectId, folderId, 
       setMessageError(getErrorMessage(error, `Failed to read ${files[0]?.name || 'sample file'}`))
       return 'error'
     }
-  }, [format, invalidateSampleSource])
+  }, [format, invalidateSampleSource, reviewGenerationRef])
 
   // Load a set of externally-dropped files exactly ONCE, when that set changes —
   // not on every format/preset change. initialFiles is held in authoring state

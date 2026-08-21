@@ -15,6 +15,7 @@ import ScriptImportReview from './ScriptImportReview'
 import SelectorCandidatesReview, { type SelectorCandidate } from './SelectorCandidatesReview'
 import SourceMappingReview from './SourceMappingReview'
 import { withFallbackPersistedScript } from './importSaveUtils'
+import { useImportReviewGeneration } from './importReviewGeneration'
 import { useSourceSecretSessionLifecycle } from './sourceSecretSessionLifecycle'
 import { salesforceApiSurfaceBreakdown, salesforceEndpointTotal } from './salesforceReviewSummary'
 import { buildReplayStartPayload, createReplaySessionId, isDefiniteReplayStartRejection } from './scriptEditorUtils'
@@ -192,6 +193,27 @@ type SourceImportSupportState = {
   notes: string[]
 }
 
+// Every importer's support matrix answers the same {support_matrix, notes}
+// shape, and only the active kind's matrix is ever rendered. One fetcher keyed
+// by kind replaces the eight parallel state slots and eight near-identical
+// effects that each existed to hold that single value. Kinds absent here
+// publish no matrix, which mirrors the backend importer registry.
+type SourceImportSupportResponse = {
+  support_matrix?: SourceImportSupportEntry[]
+  notes?: string[]
+}
+
+const sourceImportSupportFetchers: Partial<Record<ImportKind, (api: ReturnType<typeof useApi>) => Promise<SourceImportSupportResponse>>> = {
+  'devweb': api => api.getDevWebSupportMatrix(),
+  'raml': api => api.getRAMLSupportMatrix(),
+  'openapi': api => api.getOpenAPISupportMatrix(),
+  'postman': api => api.getPostmanSupportMatrix(),
+  'asyncapi': api => api.getAsyncAPISupportMatrix(),
+  'k6': api => api.getK6SupportMatrix(),
+  'eventhubs-capture': api => api.getEventHubsCaptureSupportMatrix(),
+  'broker-config': api => api.getBrokerConfigSupportMatrix(),
+}
+
 type SourceImportCoverageSection = {
   key: string
   title: string
@@ -352,18 +374,64 @@ function summarizeSourceImportCoverage(entries: SourceImportSupportEntry[]): Sou
     .filter(section => section.items.length > 0)
 }
 
+// useReplaceTargetPicker owns the paged "which script does this replace?"
+// browser. OpenAPI and Postman are the two importers with replace semantics and
+// each carried a character-identical copy: six state slots, a reset effect on
+// kind/project change, and a paged listScripts effect.
+function useReplaceTargetPicker(
+  api: ReturnType<typeof useApi>,
+  kind: ImportKind,
+  projectId: string | undefined,
+  active: boolean,
+) {
+  const [scripts, setScripts] = useState<StoredScript[]>([])
+  const [scriptId, setScriptId] = useState('')
+  const [search, setSearch] = useState('')
+  const [offset, setOffset] = useState(0)
+  const [count, setCount] = useState(0)
+
+  // Changing importer or project invalidates both the chosen target and the
+  // page it was chosen from.
+  useEffect(() => {
+    setScripts([])
+    setScriptId('')
+    setSearch('')
+    setOffset(0)
+    setCount(0)
+  }, [kind, projectId])
+
+  useEffect(() => {
+    if (!active) return
+    let cancelled = false
+    setScripts([])
+    api.listScripts(projectId, undefined, {
+      limit: REPLACE_TARGET_PAGE_SIZE,
+      offset,
+      search,
+    })
+      .then(response => {
+        if (!cancelled) {
+          setScripts(response.scripts || [])
+          setCount(response.count || 0)
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setScripts([])
+          setCount(0)
+        }
+      })
+    return () => { cancelled = true }
+  }, [active, api, offset, projectId, search])
+
+  return { scripts, scriptId, setScriptId, search, setSearch, offset, setOffset, count }
+}
+
 function sourceImportSupportHasLimitations(support: SourceImportSupportState | null): support is SourceImportSupportState {
   if (!support || support.entries.length === 0) return false
   return support.notes.length > 0 || support.entries.some(entry => (
     sourceImportCoverageKey(entry) !== 'supported' || Boolean(entry.review_required) || Boolean(entry.notes)
   ))
-}
-
-function sourceImportSupportForKind(
-  kind: ImportKind,
-  support: Partial<Record<ImportKind, SourceImportSupportState | null>>,
-): SourceImportSupportState | null {
-  return support[kind] || null
 }
 
 function SourceImportCoveragePanel({ kind, support }: { kind: ImportKind; support: SourceImportSupportState }) {
@@ -646,20 +714,17 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
     parameterizationSelectedIds: [],
   })
   const credentialReviewRef = useRef<SecretBindingReviewHandle | null>(null)
-  const reviewGenerationRef = useRef(0)
-  const [reviewGeneration, setReviewGeneration] = useState(0)
-  const advanceReviewGeneration = useCallback(() => {
-    const next = reviewGenerationRef.current + 1
-    reviewGenerationRef.current = next
-    setReviewGeneration(next)
-    return next
-  }, [])
+  const {
+    generation: reviewGeneration,
+    generationRef: reviewGenerationRef,
+    advance: advanceReviewGeneration,
+  } = useImportReviewGeneration()
   useEffect(() => () => {
     // Route/project transitions can unmount the importer without invoking its
     // Back button. Invalidate captured save scopes synchronously so a
     // sequential Save All cannot start another commit after unmount.
     reviewGenerationRef.current += 1
-  }, [])
+  }, [reviewGenerationRef])
   const reviewScope = `${reviewGeneration}:${projectId || ''}`
   const reviewProjectIdRef = useRef(projectId)
   reviewProjectIdRef.current = projectId
@@ -770,21 +835,10 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
   recorderReplayReportRef.current = recorderReplayReport
   allowRecorderDraftSaveRef.current = allowRecorderDraftSave
   const [recorderDraftNotice, setRecorderDraftNotice] = useState('')
-  const [devWebSupport, setDevWebSupport] = useState<SourceImportSupportState | null>(null)
-  const [ramlSupport, setRamlSupport] = useState<{ entries: RAMLSupportMatrixEntry[]; notes: string[] } | null>(null)
-  const [openAPISupport, setOpenAPISupport] = useState<{ entries: OpenAPISupportMatrixEntry[]; notes: string[] } | null>(null)
-  const [postmanSupport, setPostmanSupport] = useState<SourceImportSupportState | null>(null)
-  const [asyncAPISupport, setAsyncAPISupport] = useState<{ entries: AsyncAPISupportMatrixEntry[]; notes: string[] } | null>(null)
-  const [k6Support, setK6Support] = useState<{ entries: K6SupportMatrixEntry[]; notes: string[] } | null>(null)
-  const [eventHubsCaptureSupport, setEventHubsCaptureSupport] = useState<{ entries: EventHubsCaptureSupportMatrixEntry[]; notes: string[] } | null>(null)
-  const [brokerConfigSupport, setBrokerConfigSupport] = useState<{ entries: BrokerConfigSupportMatrixEntry[]; notes: string[] } | null>(null)
+  const [sourceImportSupport, setSourceImportSupport] = useState<SourceImportSupportState | null>(null)
   const [openAPISaveMode, setOpenAPISaveMode] = useState<'create' | 'replace'>('create')
-  const [openAPIReplaceScriptId, setOpenAPIReplaceScriptId] = useState('')
   const [openAPIReplaceMode, setOpenAPIReplaceMode] = useState<'full' | 'merge_by_operation_id'>('full')
-  const [openAPIScripts, setOpenAPIScripts] = useState<StoredScript[]>([])
-  const [openAPIScriptSearch, setOpenAPIScriptSearch] = useState('')
-  const [openAPIScriptOffset, setOpenAPIScriptOffset] = useState(0)
-  const [openAPIScriptCount, setOpenAPIScriptCount] = useState(0)
+  const openAPIReplaceTarget = useReplaceTargetPicker(api, kind, projectId, kind === 'openapi' && openAPISaveMode === 'replace')
 
   useEffect(() => {
     latestResultRef.current = result || null
@@ -807,31 +861,27 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
     return () => window.clearTimeout(timeout)
   }, [importDraftExpiryGeneration, result?.import_draft_expires_at])
   const [postmanSaveMode, setPostmanSaveMode] = useState<'create' | 'replace'>('create')
-  const [postmanReplaceScriptId, setPostmanReplaceScriptId] = useState('')
-  const [postmanScripts, setPostmanScripts] = useState<StoredScript[]>([])
-  const [postmanScriptSearch, setPostmanScriptSearch] = useState('')
-  const [postmanScriptOffset, setPostmanScriptOffset] = useState(0)
-  const [postmanScriptCount, setPostmanScriptCount] = useState(0)
+  const postmanReplaceTarget = useReplaceTargetPicker(api, kind, projectId, kind === 'postman' && postmanSaveMode === 'replace')
   const openAPISaveTargetRef = useRef({
     mode: openAPISaveMode,
-    targetScriptId: openAPIReplaceScriptId,
+    targetScriptId: openAPIReplaceTarget.scriptId,
     replaceMode: openAPIReplaceMode,
   })
   const postmanSaveTargetRef = useRef({
     mode: postmanSaveMode,
-    targetScriptId: postmanReplaceScriptId,
+    targetScriptId: postmanReplaceTarget.scriptId,
   })
   const captureProtectedSaveTarget = useCallback(() => {
     openAPISaveTargetRef.current = {
       mode: openAPISaveMode,
-      targetScriptId: openAPIReplaceScriptId,
+      targetScriptId: openAPIReplaceTarget.scriptId,
       replaceMode: openAPIReplaceMode,
     }
     postmanSaveTargetRef.current = {
       mode: postmanSaveMode,
-      targetScriptId: postmanReplaceScriptId,
+      targetScriptId: postmanReplaceTarget.scriptId,
     }
-  }, [openAPISaveMode, openAPIReplaceMode, openAPIReplaceScriptId, postmanReplaceScriptId, postmanSaveMode])
+  }, [openAPISaveMode, openAPIReplaceMode, openAPIReplaceTarget.scriptId, postmanReplaceTarget.scriptId, postmanSaveMode])
   const labels = copy[kind]
   const resetConvertTask = convertTask.reset
   const resetSaveTask = saveTask.reset
@@ -849,12 +899,12 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
   if (!internalReviewBusy && !persistenceInProgress && !saveTask.pending) {
     openAPISaveTargetRef.current = {
       mode: openAPISaveMode,
-      targetScriptId: openAPIReplaceScriptId,
+      targetScriptId: openAPIReplaceTarget.scriptId,
       replaceMode: openAPIReplaceMode,
     }
     postmanSaveTargetRef.current = {
       mode: postmanSaveMode,
-      targetScriptId: postmanReplaceScriptId,
+      targetScriptId: postmanReplaceTarget.scriptId,
     }
   }
   useEffect(() => {
@@ -908,74 +958,16 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
   }, [initialFile, invalidateConversionSource])
 
   useEffect(() => {
-    if (kind !== 'devweb') return
+    // Clear before fetching, not on resolve. One slot now serves every kind, so
+    // leaving the previous format's entries in place would render them under the
+    // new format's heading until its own matrix arrived.
+    setSourceImportSupport(null)
+    const fetchSupportMatrix = sourceImportSupportFetchers[kind]
+    if (!fetchSupportMatrix) return
     let cancelled = false
-    api.getDevWebSupportMatrix()
-      .then(response => { if (!cancelled) setDevWebSupport({ entries: response.support_matrix || [], notes: response.notes || [] }) })
-      .catch(() => { if (!cancelled) setDevWebSupport(null) })
-    return () => { cancelled = true }
-  }, [api, kind])
-
-  useEffect(() => {
-    if (kind !== 'raml') return
-    let cancelled = false
-    api.getRAMLSupportMatrix()
-      .then(response => { if (!cancelled) setRamlSupport({ entries: response.support_matrix || [], notes: response.notes || [] }) })
-      .catch(() => { if (!cancelled) setRamlSupport(null) })
-    return () => { cancelled = true }
-  }, [api, kind])
-
-  useEffect(() => {
-    if (kind !== 'openapi') return
-    let cancelled = false
-    api.getOpenAPISupportMatrix()
-      .then(response => { if (!cancelled) setOpenAPISupport({ entries: response.support_matrix || [], notes: response.notes || [] }) })
-      .catch(() => { if (!cancelled) setOpenAPISupport(null) })
-    return () => { cancelled = true }
-  }, [api, kind])
-
-  useEffect(() => {
-    if (kind !== 'postman') return
-    let cancelled = false
-    api.getPostmanSupportMatrix()
-      .then(response => { if (!cancelled) setPostmanSupport({ entries: response.support_matrix || [], notes: response.notes || [] }) })
-      .catch(() => { if (!cancelled) setPostmanSupport(null) })
-    return () => { cancelled = true }
-  }, [api, kind])
-
-  useEffect(() => {
-    if (kind !== 'asyncapi') return
-    let cancelled = false
-    api.getAsyncAPISupportMatrix()
-      .then(response => { if (!cancelled) setAsyncAPISupport({ entries: response.support_matrix || [], notes: response.notes || [] }) })
-      .catch(() => { if (!cancelled) setAsyncAPISupport(null) })
-    return () => { cancelled = true }
-  }, [api, kind])
-
-  useEffect(() => {
-    if (kind !== 'k6') return
-    let cancelled = false
-    api.getK6SupportMatrix()
-      .then(response => { if (!cancelled) setK6Support({ entries: response.support_matrix || [], notes: response.notes || [] }) })
-      .catch(() => { if (!cancelled) setK6Support(null) })
-    return () => { cancelled = true }
-  }, [api, kind])
-
-  useEffect(() => {
-    if (kind !== 'eventhubs-capture') return
-    let cancelled = false
-    api.getEventHubsCaptureSupportMatrix()
-      .then(response => { if (!cancelled) setEventHubsCaptureSupport({ entries: response.support_matrix || [], notes: response.notes || [] }) })
-      .catch(() => { if (!cancelled) setEventHubsCaptureSupport(null) })
-    return () => { cancelled = true }
-  }, [api, kind])
-
-  useEffect(() => {
-    if (kind !== 'broker-config') return
-    let cancelled = false
-    api.getBrokerConfigSupportMatrix()
-      .then(response => { if (!cancelled) setBrokerConfigSupport({ entries: response.support_matrix || [], notes: response.notes || [] }) })
-      .catch(() => { if (!cancelled) setBrokerConfigSupport(null) })
+    fetchSupportMatrix(api)
+      .then(response => { if (!cancelled) setSourceImportSupport({ entries: response.support_matrix || [], notes: response.notes || [] }) })
+      .catch(() => { if (!cancelled) setSourceImportSupport(null) })
     return () => { cancelled = true }
   }, [api, kind])
 
@@ -1006,70 +998,6 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
     setAllowRecorderDraftSave(false)
     setRecorderDraftNotice('')
   }, [selectedScriptIndex, file])
-
-  useEffect(() => {
-    setOpenAPIScripts([])
-    setOpenAPIReplaceScriptId('')
-    setOpenAPIScriptSearch('')
-    setOpenAPIScriptOffset(0)
-    setOpenAPIScriptCount(0)
-  }, [kind, projectId])
-
-  useEffect(() => {
-    if (kind !== 'openapi' || openAPISaveMode !== 'replace') return
-    let cancelled = false
-    setOpenAPIScripts([])
-    api.listScripts(projectId, undefined, {
-      limit: REPLACE_TARGET_PAGE_SIZE,
-      offset: openAPIScriptOffset,
-      search: openAPIScriptSearch,
-    })
-      .then(response => {
-        if (!cancelled) {
-          setOpenAPIScripts(response.scripts || [])
-          setOpenAPIScriptCount(response.count || 0)
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setOpenAPIScripts([])
-          setOpenAPIScriptCount(0)
-        }
-      })
-    return () => { cancelled = true }
-  }, [api, kind, openAPISaveMode, openAPIScriptOffset, openAPIScriptSearch, projectId])
-
-  useEffect(() => {
-    setPostmanScripts([])
-    setPostmanReplaceScriptId('')
-    setPostmanScriptSearch('')
-    setPostmanScriptOffset(0)
-    setPostmanScriptCount(0)
-  }, [kind, projectId])
-
-  useEffect(() => {
-    if (kind !== 'postman' || postmanSaveMode !== 'replace') return
-    let cancelled = false
-    setPostmanScripts([])
-    api.listScripts(projectId, undefined, {
-      limit: REPLACE_TARGET_PAGE_SIZE,
-      offset: postmanScriptOffset,
-      search: postmanScriptSearch,
-    })
-      .then(response => {
-        if (!cancelled) {
-          setPostmanScripts(response.scripts || [])
-          setPostmanScriptCount(response.count || 0)
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setPostmanScripts([])
-          setPostmanScriptCount(0)
-        }
-      })
-    return () => { cancelled = true }
-  }, [api, kind, postmanSaveMode, postmanScriptOffset, postmanScriptSearch, projectId])
 
   const handleConvert = async (mode: 'conversion' | 'validation' = 'conversion', overrides?: { salesforceNative?: boolean }) => {
     if (!file) {
@@ -1259,9 +1187,9 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
     ? 'This generated script has already been saved. Select an unsaved generated script to continue.'
     : asyncAPIMultiScript && asyncAPIOtherPendingCredentialRequirements.length > 0 && !asyncAPISelectedNeedsCredentialPreparation
       ? 'This script has no pending credential choices. Select an affected generated script and prepare its credentials before saving the complete batch.'
-    : kind === 'postman' && postmanSaveMode === 'replace' && !postmanReplaceScriptId
+    : kind === 'postman' && postmanSaveMode === 'replace' && !postmanReplaceTarget.scriptId
       ? 'Select the existing script that this Postman import should replace.'
-      : kind === 'openapi' && openAPISaveMode === 'replace' && !openAPIReplaceScriptId
+      : kind === 'openapi' && openAPISaveMode === 'replace' && !openAPIReplaceTarget.scriptId
         ? 'Select the existing script that this OpenAPI import should replace.'
         : ''
   const asyncAPISelectedSaveDisabled = asyncAPISelectedScriptSaved
@@ -1285,16 +1213,6 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
   const selectedReplayPreflight = reviewedScript?.metadata?.import?.preserved?.replay_preflight as OpenAPIImportResult['preflight'] | undefined
   const replayPreflight = (generatedScripts.length > 1 ? selectedReplayPreflight : result?.preflight || selectedReplayPreflight) || null
   const openAPICorrelations: OpenAPICorrelation[] = kind === 'openapi' ? ((result as OpenAPIImportResult | null | undefined)?.correlations || []) : []
-  const sourceImportSupport = sourceImportSupportForKind(kind, {
-    devweb: devWebSupport,
-    openapi: openAPISupport,
-    raml: ramlSupport,
-    postman: postmanSupport,
-    asyncapi: asyncAPISupport,
-    k6: k6Support,
-    'eventhubs-capture': eventHubsCaptureSupport,
-    'broker-config': brokerConfigSupport,
-  })
 
   const handleRunRecorderReplay = async () => {
     if (kind !== 'recorder-export' || !reviewedScript) return
@@ -2358,7 +2276,7 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
             onCredentialActionStart={captureProtectedSaveTarget}
             saving={saveTask.pending || persistenceInProgress}
             reviewBusy={saveAllPreparing || saveTask.pending || persistenceInProgress}
-            saveDisabled={asyncAPISelectedSaveDisabled || (kind === 'postman' && postmanSaveMode === 'replace' && !postmanReplaceScriptId) || (kind === 'openapi' && openAPISaveMode === 'replace' && !openAPIReplaceScriptId)}
+            saveDisabled={asyncAPISelectedSaveDisabled || (kind === 'postman' && postmanSaveMode === 'replace' && !postmanReplaceTarget.scriptId) || (kind === 'openapi' && openAPISaveMode === 'replace' && !openAPIReplaceTarget.scriptId)}
             saveDisabledReason={scriptImportSaveDisabledReason}
             onSave={asyncAPIPrepareSelectedForBatch
               ? handlePrepareAsyncAPICredentialsForBatch
@@ -2560,21 +2478,21 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
                         <span>Find script</span>
                         <input
                           type="search"
-                          value={openAPIScriptSearch}
+                          value={openAPIReplaceTarget.search}
                           disabled={saveTargetLocked}
                           onChange={event => {
-                            setOpenAPIScriptSearch(event.target.value)
-                            setOpenAPIScriptOffset(0)
-                            setOpenAPIReplaceScriptId('')
+                            openAPIReplaceTarget.setSearch(event.target.value)
+                            openAPIReplaceTarget.setOffset(0)
+                            openAPIReplaceTarget.setScriptId('')
                           }}
                           placeholder="Search by name or reference"
                         />
                       </label>
                       <label className="sample-import-field">
                         <span>Script</span>
-                        <select value={openAPIReplaceScriptId} disabled={saveTargetLocked} onChange={event => setOpenAPIReplaceScriptId(event.target.value)}>
+                        <select value={openAPIReplaceTarget.scriptId} disabled={saveTargetLocked} onChange={event => openAPIReplaceTarget.setScriptId(event.target.value)}>
                           <option value="">Select script</option>
-                          {openAPIScripts.map(script => (
+                          {openAPIReplaceTarget.scripts.map(script => (
                             <option key={script.id} value={script.id}>{script.name}</option>
                           ))}
                         </select>
@@ -2582,25 +2500,25 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
                       <nav className="sample-import-script-pagination" aria-label="OpenAPI replacement script pages">
                         <button
                           type="button"
-                          disabled={saveTargetLocked || openAPIScriptOffset === 0}
+                          disabled={saveTargetLocked || openAPIReplaceTarget.offset === 0}
                           onClick={() => {
-                            setOpenAPIScriptOffset(Math.max(0, openAPIScriptOffset - REPLACE_TARGET_PAGE_SIZE))
-                            setOpenAPIReplaceScriptId('')
+                            openAPIReplaceTarget.setOffset(Math.max(0, openAPIReplaceTarget.offset - REPLACE_TARGET_PAGE_SIZE))
+                            openAPIReplaceTarget.setScriptId('')
                           }}
                         >
                           Previous
                         </button>
                         <span>
-                          {openAPIScriptCount === 0
+                          {openAPIReplaceTarget.count === 0
                             ? 'No matching scripts'
-                            : `Showing ${openAPIScriptOffset + 1}–${Math.min(openAPIScriptOffset + openAPIScripts.length, openAPIScriptCount)} of ${openAPIScriptCount}`}
+                            : `Showing ${openAPIReplaceTarget.offset + 1}–${Math.min(openAPIReplaceTarget.offset + openAPIReplaceTarget.scripts.length, openAPIReplaceTarget.count)} of ${openAPIReplaceTarget.count}`}
                         </span>
                         <button
                           type="button"
-                          disabled={saveTargetLocked || openAPIScriptOffset + openAPIScripts.length >= openAPIScriptCount}
+                          disabled={saveTargetLocked || openAPIReplaceTarget.offset + openAPIReplaceTarget.scripts.length >= openAPIReplaceTarget.count}
                           onClick={() => {
-                            setOpenAPIScriptOffset(openAPIScriptOffset + REPLACE_TARGET_PAGE_SIZE)
-                            setOpenAPIReplaceScriptId('')
+                            openAPIReplaceTarget.setOffset(openAPIReplaceTarget.offset + REPLACE_TARGET_PAGE_SIZE)
+                            openAPIReplaceTarget.setScriptId('')
                           }}
                         >
                           Next
@@ -2635,21 +2553,21 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
                         <span>Find script</span>
                         <input
                           type="search"
-                          value={postmanScriptSearch}
+                          value={postmanReplaceTarget.search}
                           disabled={saveTargetLocked}
                           onChange={event => {
-                            setPostmanScriptSearch(event.target.value)
-                            setPostmanScriptOffset(0)
-                            setPostmanReplaceScriptId('')
+                            postmanReplaceTarget.setSearch(event.target.value)
+                            postmanReplaceTarget.setOffset(0)
+                            postmanReplaceTarget.setScriptId('')
                           }}
                           placeholder="Search by name or reference"
                         />
                       </label>
                       <label className="sample-import-field">
                         <span>Script</span>
-                        <select value={postmanReplaceScriptId} disabled={saveTargetLocked} onChange={event => setPostmanReplaceScriptId(event.target.value)}>
+                        <select value={postmanReplaceTarget.scriptId} disabled={saveTargetLocked} onChange={event => postmanReplaceTarget.setScriptId(event.target.value)}>
                           <option value="">Select script</option>
-                          {postmanScripts.map(script => (
+                          {postmanReplaceTarget.scripts.map(script => (
                             <option key={script.id} value={script.id}>{script.name}</option>
                           ))}
                         </select>
@@ -2657,25 +2575,25 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
                       <nav className="sample-import-script-pagination" aria-label="Postman replacement script pages">
                         <button
                           type="button"
-                          disabled={saveTargetLocked || postmanScriptOffset === 0}
+                          disabled={saveTargetLocked || postmanReplaceTarget.offset === 0}
                           onClick={() => {
-                            setPostmanScriptOffset(Math.max(0, postmanScriptOffset - REPLACE_TARGET_PAGE_SIZE))
-                            setPostmanReplaceScriptId('')
+                            postmanReplaceTarget.setOffset(Math.max(0, postmanReplaceTarget.offset - REPLACE_TARGET_PAGE_SIZE))
+                            postmanReplaceTarget.setScriptId('')
                           }}
                         >
                           Previous
                         </button>
                         <span>
-                          {postmanScriptCount === 0
+                          {postmanReplaceTarget.count === 0
                             ? 'No matching scripts'
-                            : `Showing ${postmanScriptOffset + 1}–${Math.min(postmanScriptOffset + postmanScripts.length, postmanScriptCount)} of ${postmanScriptCount}`}
+                            : `Showing ${postmanReplaceTarget.offset + 1}–${Math.min(postmanReplaceTarget.offset + postmanReplaceTarget.scripts.length, postmanReplaceTarget.count)} of ${postmanReplaceTarget.count}`}
                         </span>
                         <button
                           type="button"
-                          disabled={saveTargetLocked || postmanScriptOffset + postmanScripts.length >= postmanScriptCount}
+                          disabled={saveTargetLocked || postmanReplaceTarget.offset + postmanReplaceTarget.scripts.length >= postmanReplaceTarget.count}
                           onClick={() => {
-                            setPostmanScriptOffset(postmanScriptOffset + REPLACE_TARGET_PAGE_SIZE)
-                            setPostmanReplaceScriptId('')
+                            postmanReplaceTarget.setOffset(postmanReplaceTarget.offset + REPLACE_TARGET_PAGE_SIZE)
+                            postmanReplaceTarget.setScriptId('')
                           }}
                         >
                           Next
