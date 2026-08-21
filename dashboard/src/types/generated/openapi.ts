@@ -42593,6 +42593,69 @@ export interface operations {
       };
     };
   };
+  "handleInspectBrunoImportSource": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+      "query"?: {
+        "path"?: string;
+        "project_id"?: string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": unknown;
+          "text/plain": string;
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "410": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
   "handleJMeterSupportMatrix": {
     parameters?: never;
     requestBody?: never;
@@ -89372,6 +89435,9 @@ export interface paths {
   };
   "/api/v1/scripts/import/bruno/inspect": {
     "post": operations["handleInspectBrunoImport"];
+  };
+  "/api/v1/scripts/import/bruno/sessions/{id}/source": {
+    "get": operations["handleInspectBrunoImportSource"];
   };
   "/api/v1/scripts/import/bruno/support-matrix": {
     "get": operations["handleBrunoSupportMatrix"];

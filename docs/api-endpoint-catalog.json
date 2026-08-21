@@ -3687,6 +3687,16 @@
     },
     {
       "method": "GET",
+      "path": "/api/v1/scripts/import/bruno/sessions/{id}/source",
+      "operationId": "handleInspectBrunoImportSource",
+      "summary": "Inspect Bruno Import Source",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin"
+    },
+    {
+      "method": "GET",
       "path": "/api/v1/scripts/import/bruno/support-matrix",
       "operationId": "handleBrunoSupportMatrix",
       "summary": "Bruno Support Matrix",

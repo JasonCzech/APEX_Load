@@ -1161,6 +1161,7 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.mux.Handle("POST /api/v1/scripts/import/openapi/commit", cors(log(auth(http.HandlerFunc(s.handleCommitOpenAPIImport)))))
 	s.mux.Handle("GET /api/v1/scripts/import/openapi/support-matrix", cors(log(auth(http.HandlerFunc(s.handleOpenAPISupportMatrix)))))
 	s.mux.Handle("POST /api/v1/scripts/import/bruno/inspect", cors(log(auth(http.HandlerFunc(s.handleInspectBrunoImport)))))
+	s.mux.Handle("GET /api/v1/scripts/import/bruno/sessions/{id}/source", cors(log(auth(http.HandlerFunc(s.handleInspectBrunoImportSource)))))
 	s.mux.Handle("POST /api/v1/scripts/import/bruno/commit", cors(log(auth(http.HandlerFunc(s.handleCommitBrunoImport)))))
 	s.mux.Handle("GET /api/v1/scripts/import/bruno/support-matrix", cors(log(auth(http.HandlerFunc(s.handleBrunoSupportMatrix)))))
 	s.mux.Handle("POST /api/v1/scripts/import/raml", cors(log(auth(http.HandlerFunc(s.handleImportRAML)))))

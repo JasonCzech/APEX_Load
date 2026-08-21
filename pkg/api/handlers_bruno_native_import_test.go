@@ -7,6 +7,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"reflect"
 	"sort"
@@ -28,6 +29,40 @@ type brunoNativeBatchTestResponse struct {
 	Count            int           `json:"count"`
 	Created          bool          `json:"created"`
 	IdempotentReplay bool          `json:"idempotent_replay"`
+}
+
+func TestBrunoNativeInspectServesAuthorizedSanitizedSourceFile(t *testing.T) {
+	server, _, _ := newBrunoImportAPITestServer(t)
+	inspection := inspectBrunoNativeFiles(t, server, brunoImportTestProject, orderedBrunoNativeFiles())
+	requestSource := func(sourcePath string) *httptest.ResponseRecorder {
+		t.Helper()
+		query := url.Values{
+			"project_id": {brunoImportTestProject},
+			"path":       {sourcePath},
+		}.Encode()
+		request := httptest.NewRequest(
+			http.MethodGet,
+			"/api/v1/scripts/import/bruno/sessions/"+url.PathEscape(inspection.ImportSessionID)+"/source?"+query,
+			nil,
+		)
+		response := httptest.NewRecorder()
+		server.mux.ServeHTTP(response, request)
+		return response
+	}
+
+	response := requestSource("z/zeta.yml")
+	if response.Code != http.StatusOK ||
+		!strings.Contains(response.Body.String(), "url: https://example.test/zeta") {
+		t.Fatalf("source response status = %d body=%s", response.Code, response.Body.String())
+	}
+	if got := response.Header().Get("Cache-Control"); got != "no-store" {
+		t.Fatalf("source Cache-Control = %q, want no-store", got)
+	}
+
+	response = requestSource("opencollection.yaml")
+	if response.Code != http.StatusNotFound {
+		t.Fatalf("non-candidate source status = %d body=%s", response.Code, response.Body.String())
+	}
 }
 
 func TestBrunoNativeBatchInspectCommitAndIdempotentRetry(t *testing.T) {

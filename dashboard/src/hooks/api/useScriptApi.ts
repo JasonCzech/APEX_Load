@@ -1289,6 +1289,20 @@ export function useScriptApi() {
     [],
   )
 
+  const getBrunoImportSessionSource = useCallback(
+    async (importSessionId: string, projectId: string, sourcePath: string): Promise<string> => {
+      const query = new URLSearchParams({ project_id: projectId, path: sourcePath })
+      const response = await apiFetch(`/scripts/import/bruno/sessions/${encodeURIComponent(importSessionId)}/source?${query.toString()}`)
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({ error: response.statusText }))
+        const message = typeof payload?.error === 'string' ? payload.error : response.statusText
+        throw new ApiError(message, response.status, payload)
+      }
+      return response.text()
+    },
+    [],
+  )
+
   const commitBrunoImport = useCallback(
     async (payload: CommitBrunoImportRequest): Promise<CommitBrunoImportResponse> => {
       const response = await apiFetch('/scripts/import/bruno/commit', {
@@ -1574,6 +1588,7 @@ export function useScriptApi() {
       importAsyncAPI,
       getBrunoSupportMatrix,
       inspectBrunoImport,
+      getBrunoImportSessionSource,
       commitBrunoImport,
       listBrunoRevisions,
       rollbackBrunoRevision,
@@ -1692,6 +1707,7 @@ export function useScriptApi() {
       importAsyncAPI,
       getBrunoSupportMatrix,
       inspectBrunoImport,
+      getBrunoImportSessionSource,
       commitBrunoImport,
       listBrunoRevisions,
       rollbackBrunoRevision,

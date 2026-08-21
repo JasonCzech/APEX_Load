@@ -77,6 +77,25 @@ const editorTheme = EditorView.theme({
     color: 'var(--text-muted)',
     fontWeight: '650',
   },
+  '.apex-yaml-key': {
+    color: 'var(--accent-hover)',
+    fontWeight: '700',
+  },
+  '.apex-yaml-comment': {
+    color: 'var(--text-muted)',
+    fontStyle: 'italic',
+  },
+  '.apex-yaml-atom': {
+    color: 'var(--warning)',
+  },
+  '.apex-embedded-xml-tag': {
+    color: 'var(--accent)',
+    fontWeight: '650',
+  },
+  '.apex-source-template-token': {
+    color: 'var(--success-text)',
+    fontWeight: '700',
+  },
   '.cm-line.apex-dsl-section-block': {
     backgroundColor: 'rgba(var(--accent-rgb), 0.028)',
   },

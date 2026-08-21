@@ -1,6 +1,7 @@
 package api
 
 import (
+	"archive/tar"
 	"context"
 	"crypto/sha256"
 	"crypto/subtle"
@@ -49,6 +50,7 @@ const (
 	defaultBrunoExpandedBytes     = 32 << 20
 	defaultBrunoMaterializedBytes = 1 << 30
 	defaultBrunoImportFileCount   = 100_000
+	maxBrunoSourceInspectBytes    = 4 << 20
 )
 
 var errBrunoImportSessionExpiredDuringCommit = errors.New("Bruno import session expired before it could be restored")
@@ -192,6 +194,87 @@ type brunoInspectJSONFile struct {
 
 func (s *Server) handleBrunoSupportMatrix(w http.ResponseWriter, r *http.Request) {
 	s.writeImporterSupportMatrix(w, r, "bruno")
+}
+
+func (s *Server) handleInspectBrunoImportSource(w http.ResponseWriter, r *http.Request) {
+	projectID := normalizeProjectID(r.URL.Query().Get("project_id"))
+	sourcePath := strings.TrimSpace(r.URL.Query().Get("path"))
+	session, err := s.loadBrunoImportSession(r, r.PathValue("id"), projectID)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "Bruno import session was not found or is no longer available")
+		return
+	}
+	defer clearBrunoImportSession(session)
+	if time.Now().UTC().After(session.ExpiresAt) {
+		writeError(w, http.StatusGone, "Bruno import session has expired; inspect the source again")
+		return
+	}
+	if sourcePath == "" || session.Result == nil {
+		writeError(w, http.StatusBadRequest, "path is required")
+		return
+	}
+	authorized := false
+	for _, candidate := range session.Result.Scripts {
+		if candidate.SourcePath == sourcePath {
+			authorized = true
+			break
+		}
+	}
+	if !authorized {
+		writeError(w, http.StatusNotFound, "source API is not part of this import inspection")
+		return
+	}
+	archivePath := pathpkg.Join(session.Result.RootPath, sourcePath)
+	if archivePath == "." || strings.HasPrefix(archivePath, "../") || pathpkg.IsAbs(archivePath) {
+		writeError(w, http.StatusBadRequest, "source API path is invalid")
+		return
+	}
+	objects, err := s.brunoArtifactStore()
+	if err != nil {
+		writeError(w, http.StatusServiceUnavailable, "import source decryption is unavailable: "+err.Error())
+		return
+	}
+	reader, _, err := objects.Open(r.Context(), brunoArtifactOpenRequest(session.SanitizedArtifact))
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "open sanitized import source: "+err.Error())
+		return
+	}
+	defer reader.Close()
+	tarReader := tar.NewReader(reader)
+	for {
+		header, nextErr := tarReader.Next()
+		if nextErr == io.EOF {
+			writeError(w, http.StatusNotFound, "source API was not found in the sanitized import bundle")
+			return
+		}
+		if nextErr != nil {
+			writeError(w, http.StatusInternalServerError, "read sanitized import source: "+nextErr.Error())
+			return
+		}
+		if pathpkg.Clean(header.Name) != archivePath || header.FileInfo().IsDir() {
+			continue
+		}
+		if header.Size < 0 || header.Size > maxBrunoSourceInspectBytes {
+			writeError(w, http.StatusRequestEntityTooLarge, "source API exceeds the inspection size limit")
+			return
+		}
+		payload, readErr := io.ReadAll(io.LimitReader(tarReader, maxBrunoSourceInspectBytes+1))
+		if readErr != nil {
+			writeError(w, http.StatusInternalServerError, "read sanitized source API: "+readErr.Error())
+			return
+		}
+		if len(payload) > maxBrunoSourceInspectBytes {
+			writeError(w, http.StatusRequestEntityTooLarge, "source API exceeds the inspection size limit")
+			return
+		}
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("Cache-Control", "no-store")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(payload)
+		clear(payload)
+		return
+	}
 }
 
 // brunoSupportMatrixPayload reports Bruno coverage together with the live

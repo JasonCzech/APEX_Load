@@ -24,6 +24,7 @@ import { useModalDialog } from '../hooks/useModalDialog'
 import { isEffectiveOperationAllowed } from '../utils/authAccessUtils'
 import { getErrorMessage } from '../utils/errorUtils'
 import DesktopApiResourceLink from './DesktopApiResourceLink'
+import SourceCodeViewer from './SourceCodeViewer'
 import SecretBindingReview, {
   type PreparedSecretBindings,
   type RequirementDestinationState,
@@ -433,6 +434,70 @@ function BrunoNativeReviewDialog({
   )
 }
 
+function BrunoNativeSourceDialog({
+  candidate,
+  importSessionId,
+  projectId,
+  loadSource,
+  onClose,
+}: {
+  candidate: BrunoNativeScriptCandidate
+  importSessionId: string
+  projectId: string
+  loadSource: (importSessionId: string, projectId: string, sourcePath: string) => Promise<string>
+  onClose: () => void
+}) {
+  const dialogRef = useRef<HTMLElement | null>(null)
+  const closeButtonRef = useRef<HTMLButtonElement | null>(null)
+  const [source, setSource] = useState<string | null>(null)
+  const [error, setError] = useState('')
+  useModalDialog({ dialogRef, initialFocusRef: closeButtonRef, onClose })
+
+  useEffect(() => {
+    let cancelled = false
+    setSource(null)
+    setError('')
+    void loadSource(importSessionId, projectId, candidate.source_path).then(content => {
+      if (!cancelled) setSource(content)
+    }).catch((sourceError: unknown) => {
+      if (!cancelled) {
+        setError(sourceError instanceof Error ? sourceError.message : 'Unable to load the sanitized source API.')
+      }
+    })
+    return () => { cancelled = true }
+  }, [candidate.candidate_id, candidate.source_path, importSessionId, loadSource, projectId])
+
+  return createPortal(
+    <div className="modal-overlay bruno-native-review-overlay" role="presentation" onClick={event => {
+      if (event.target === event.currentTarget) onClose()
+    }}>
+      <section ref={dialogRef} className="modal-content bruno-native-review-dialog bruno-native-source-dialog" role="dialog" aria-modal="true" aria-labelledby="bruno-native-source-dialog-title" aria-describedby="bruno-native-source-dialog-source">
+        <header className="bruno-native-review-dialog-header">
+          <div>
+            <h3 id="bruno-native-source-dialog-title">Inspect source API</h3>
+            <p id="bruno-native-source-dialog-source">{candidate.source_path}</p>
+          </div>
+          <button ref={closeButtonRef} type="button" className="btn btn-ghost bruno-native-review-dialog-close" aria-label={'Close source inspection for ' + candidate.source_path} onClick={onClose}>×</button>
+        </header>
+        <div className="bruno-native-review-dialog-body bruno-native-source-dialog-body">
+          <section className="bruno-native-review-section bruno-native-source-section">
+            <h4>Source API</h4>
+            {error
+              ? <p role="alert">{error}</p>
+              : source == null
+                ? <p className="bruno-native-source-loading">Loading source…</p>
+                : <SourceCodeViewer sourcePath={candidate.source_path} value={source} />}
+          </section>
+        </div>
+        <footer className="bruno-native-review-dialog-footer">
+          <button type="button" className="btn btn-secondary" onClick={onClose}>Close</button>
+        </footer>
+      </section>
+    </div>,
+    document.body,
+  )
+}
+
 function CollectionTreeItem({ item }: { item: BrunoCollectionItem }) {
   const [expanded, setExpanded] = useState(false)
   const hasChildren = Boolean(item.children?.length)
@@ -541,6 +606,7 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
   const [nativeNameOverrides, setNativeNameOverrides] = useState<Record<string, string>>({})
   const [acknowledgedFindingIds, setAcknowledgedFindingIds] = useState<string[]>([])
   const [nativeReviewCandidateId, setNativeReviewCandidateId] = useState<string | null>(null)
+  const [nativeSourceCandidateId, setNativeSourceCandidateId] = useState<string | null>(null)
   const [activeInspectionTab, setActiveInspectionTab] = useState<BrunoInspectionTab>('summary')
   const [migrateSecrets, setMigrateSecrets] = useState(false)
   const [preparedSecrets, setPreparedSecrets] = useState<PreparedSecretBindings | null>(null)
@@ -771,6 +837,10 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
   const nativeReviewCandidate = useMemo(
     () => nativeCandidates.find(candidate => candidate.candidate_id === nativeReviewCandidateId) || null,
     [nativeCandidates, nativeReviewCandidateId],
+  )
+  const nativeSourceCandidate = useMemo(
+    () => nativeCandidates.find(candidate => candidate.candidate_id === nativeSourceCandidateId) || null,
+    [nativeCandidates, nativeSourceCandidateId],
   )
   const destinationFolderOptions = useMemo(
     () => brunoDestinationFolderOptions(folders),
@@ -1943,7 +2013,7 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
                                     className="btn btn-ghost bruno-native-inspect-button"
                                     aria-haspopup="dialog"
                                     aria-label={`Inspect source API ${candidate.source_path}`}
-                                    onClick={() => setNativeReviewCandidateId(candidate.candidate_id)}
+                                    onClick={() => setNativeSourceCandidateId(candidate.candidate_id)}
                                   >
                                     Inspect
                                   </button>
@@ -2296,6 +2366,15 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
               candidateSelected={selectedCandidateIdSet.has(nativeReviewCandidate.candidate_id)}
               requirementDestinationState={credentialDestinationState}
               onClose={() => setNativeReviewCandidateId(null)}
+            />
+          )}
+          {nativeSourceCandidate && (
+            <BrunoNativeSourceDialog
+              candidate={nativeSourceCandidate}
+              importSessionId={inspection.import_session_id || ''}
+              projectId={projectId || ''}
+              loadSource={api.getBrunoImportSessionSource}
+              onClose={() => setNativeSourceCandidateId(null)}
             />
           )}
         </>

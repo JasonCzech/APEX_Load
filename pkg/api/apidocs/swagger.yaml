@@ -142472,6 +142472,93 @@ paths:
       tags:
         - Scripts
       x-handler: handleInspectBrunoImport
+  /api/v1/scripts/import/bruno/sessions/{id}/source:
+    get:
+      summary: Inspect Bruno Import Source
+      description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin'
+      operationId: handleInspectBrunoImportSource
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                description: Operation-specific JSON response.
+            text/plain:
+              schema:
+                type: string
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "404":
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "410":
+          description: Gone
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "500":
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "503":
+          description: Service Unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: path
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+        - name: project_id
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+      tags:
+        - Scripts
+      x-handler: handleInspectBrunoImportSource
   /api/v1/scripts/import/bruno/support-matrix:
     get:
       summary: Bruno Support Matrix

@@ -530,6 +530,49 @@
   max-height: 320px;
 }
 
+.bruno-native-source-dialog-body {
+  display: flex;
+  overflow: hidden;
+}
+
+.bruno-native-source-section {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.bruno-native-source-loading {
+  color: var(--text-muted);
+}
+
+.bruno-native-source-viewer {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--bg-secondary);
+}
+
+.bruno-native-source-viewer > div,
+.bruno-native-source-viewer .cm-editor {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  max-height: 100%;
+}
+
+.bruno-native-source-viewer .cm-scroller {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
+
 .bruno-native-review-dialog-footer {
   display: flex;
   flex: 0 0 auto;

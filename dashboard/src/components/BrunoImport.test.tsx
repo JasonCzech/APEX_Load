@@ -21,6 +21,7 @@ const apiMock = {
   listFolders: vi.fn(),
   createFolder: vi.fn(),
   inspectBrunoImport: vi.fn(),
+  getBrunoImportSessionSource: vi.fn(),
   commitBrunoImport: vi.fn(),
   listBrunoRevisions: vi.fn(),
   previewBrunoProjection: vi.fn(),
@@ -327,6 +328,7 @@ describe('BrunoImport', () => {
       }],
     })
     apiMock.listScripts.mockResolvedValue({ scripts: [], count: 0 })
+    apiMock.getBrunoImportSessionSource.mockResolvedValue('request:\n  url: https://example.test/source\n  body: <source-xml/>')
     apiMock.listFolders.mockResolvedValue({
       folders: [{
         id: 'folder-1',
@@ -1718,6 +1720,15 @@ describe('BrunoImport', () => {
     })
     let dialog = document.body.querySelector<HTMLElement>('[role="dialog"]')
     expect(dialog?.textContent).toContain('CTA/first.yml')
+    expect(dialog?.textContent).toContain('<source-xml/>')
+    expect(dialog?.querySelector('.bruno-native-source-viewer .cm-editor')).not.toBeNull()
+    expect(dialog?.querySelector('[aria-label="YAML source API"]')).not.toBeNull()
+    expect(dialog?.querySelector('.apex-embedded-xml-tag')).not.toBeNull()
+    expect(apiMock.getBrunoImportSessionSource).toHaveBeenCalledWith(
+      'session-1',
+      'project-1',
+      'CTA/first.yml',
+    )
     const inspectCloseButton = Array.from(dialog?.querySelectorAll<HTMLButtonElement>('button') || [])
       .find(button => button.textContent === 'Close')
     await act(async () => inspectCloseButton?.click())

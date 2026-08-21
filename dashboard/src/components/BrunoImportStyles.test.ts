@@ -62,4 +62,18 @@ describe('Bruno import responsive layout', () => {
     expect(identifiers).toContain('min-width: 0;')
     expect(identifiers).toContain('overflow-wrap: anywhere;')
   })
+
+  it('uses the full source dialog body for the syntax-highlighted viewer', async () => {
+    const css = await readStylesheet(new URL('./BrunoImport.css', import.meta.url))
+    const body = cssRule(css, '.bruno-native-source-dialog-body')
+    const section = cssRule(css, '.bruno-native-source-section')
+    const viewer = cssRule(css, '.bruno-native-source-viewer')
+
+    expect(body).toContain('display: flex;')
+    expect(body).toContain('overflow: hidden;')
+    expect(section).toContain('flex: 1 1 auto;')
+    expect(section).toContain('min-height: 0;')
+    expect(viewer).toContain('flex: 1 1 auto;')
+    expect(viewer).toContain('min-height: 0;')
+  })
 })
