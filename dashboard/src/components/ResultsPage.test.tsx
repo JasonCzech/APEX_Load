@@ -65,7 +65,7 @@ describe('ResultsPage', () => {
           name: 'iPhone Checkout',
           status: 'COMPLETE',
           total_vusers: 10,
-          duration: '5m',
+          duration: '10m',
           created_at: '2026-05-12T18:00:00Z',
           ended_at: '2026-05-12T18:05:00Z',
           groups: [{ name: 'buyers', script_id: 'script-1', script_name: 'Checkout', protocol: 'browser', vusers: 10 }],
@@ -1254,6 +1254,8 @@ describe('ResultsPage', () => {
     expect(sourceSortButton?.closest('th')?.getAttribute('aria-sort')).toBe('ascending')
     const sourceCell = sourceRowNamed(container, 'iPhone Checkout').querySelector('.results-source-cell')
     expect(sourceCell?.textContent?.trim()).toBe('Local')
+    const actualDurationCell = sourceRowNamed(container, 'iPhone Checkout').querySelectorAll('td')[7]
+    expect(actualDurationCell?.textContent?.trim()).toBe('5m')
     expect(container.textContent).not.toContain('local only')
     expect(container.textContent).not.toContain('Visible Sources')
     expect(container.querySelector('.results-selection-bar')).toBeNull()

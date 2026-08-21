@@ -1,5 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { ApplicationRepository, AuthoringCorrelationPreviewRequest, AuthoringCorrelationPreviewResponse, AuthoringSession, DashboardAuthEffectiveAccessResource, GitHubConfigResponse, GitHubPushResponse, GitHubScriptStatus, StoredScript } from '../types'
+import { ApplicationRepository, AuthoringCorrelationPreviewRequest, AuthoringCorrelationPreviewResponse, AuthoringSession, DashboardAuthEffectiveAccessResource, Folder, GitHubConfigResponse, GitHubPushResponse, GitHubScriptStatus, StoredScript } from '../types'
 import { useApi } from '../hooks/useApi'
 import { useGitHubApi } from '../hooks/api/useGitHubApi'
 import { useProject } from '../hooks/useProject'
@@ -146,6 +146,7 @@ export default function ScriptsPage({ applicationRepository, initialMode = 'list
   const activeProjectId = activeProject?.id
   const hasTopbarContributionProvider = useHasTopbarContributionProvider()
   const [scripts, setScripts] = useState<StoredScript[]>([])
+  const [scriptFolders, setScriptFolders] = useState<Folder[]>([])
   const [authoringSessions, setAuthoringSessions] = useState<AuthoringSession[]>([])
   const [correlationPreviews, setCorrelationPreviews] = useState<Record<string, AuthoringCorrelationPreviewResponse>>({})
   const [correlationErrors, setCorrelationErrors] = useState<Record<string, string>>({})
@@ -154,6 +155,7 @@ export default function ScriptsPage({ applicationRepository, initialMode = 'list
   const [libraryQuery, setLibraryQuery] = useState('')
   const [healthFilter, setHealthFilter] = useState<AuthoringHealthFilter>('all')
   const [releaseFilter, setReleaseFilter] = useState('all')
+  const [folderFilter, setFolderFilter] = useState('all')
   const [effectiveAuthAccessResources, setEffectiveAuthAccessResources] = useState<DashboardAuthEffectiveAccessResource[]>([])
   const [effectiveAccessLoaded, setEffectiveAccessLoaded] = useState(false)
   const [libraryNotice, setLibraryNotice] = useState('')
@@ -361,6 +363,20 @@ export default function ScriptsPage({ applicationRepository, initialMode = 'list
     }
   }, [activeProjectId, api, appendLibraryNotice, isProjectScopeCurrent])
 
+  useEffect(() => {
+    let cancelled = false
+    if (!activeProjectId) {
+      setScriptFolders([])
+      return () => { cancelled = true }
+    }
+    void api.listFolders(activeProjectId, 'scripts').then(response => {
+      if (!cancelled) setScriptFolders(response.folders || [])
+    }).catch(() => {
+      if (!cancelled) setScriptFolders([])
+    })
+    return () => { cancelled = true }
+  }, [activeProjectId, api])
+
   const refreshAuthoringSessions = useCallback(async () => {
     const projectId = activeProjectId
     const scope = { ...projectScopeRef.current }
@@ -392,6 +408,7 @@ export default function ScriptsPage({ applicationRepository, initialMode = 'list
     setLibraryQuery('')
     setHealthFilter('all')
     setReleaseFilter('all')
+    setFolderFilter('all')
   }, [activeProjectId])
 
   const {
@@ -446,15 +463,26 @@ export default function ScriptsPage({ applicationRepository, initialMode = 'list
     return Array.from(names).sort((a, b) => a.localeCompare(b))
   }, [scripts])
 
+  const folderOptions = useMemo(
+    () => [...scriptFolders].sort((left, right) => left.name.localeCompare(right.name)),
+    [scriptFolders],
+  )
+  const folderNameById = useMemo(
+    () => Object.fromEntries(scriptFolders.map(folder => [folder.id, folder.name])),
+    [scriptFolders],
+  )
+
   const filteredScripts = useMemo(() => {
     const query = libraryQuery.trim().toLowerCase()
     return scripts.filter(script => {
       if (!scriptMatchesHealthFilter(script, healthFilter)) return false
       if (releaseFilter !== 'all' && !(script.associated_releases || []).some(release => release.name === releaseFilter)) return false
+      if (folderFilter === 'unfiled' && script.folder_id) return false
+      if (folderFilter !== 'all' && folderFilter !== 'unfiled' && script.folder_id !== folderFilter) return false
       if (!query) return true
       return scriptSearchText(script).includes(query)
     })
-  }, [healthFilter, libraryQuery, releaseFilter, scripts])
+  }, [folderFilter, healthFilter, libraryQuery, releaseFilter, scripts])
 
   const healthFilterCounts = useMemo(() => {
     return healthFilters.reduce<Record<AuthoringHealthFilter, number>>((acc, filter) => {
@@ -489,6 +517,7 @@ export default function ScriptsPage({ applicationRepository, initialMode = 'list
     api,
     scripts: filteredScripts,
     projectId: activeProjectId,
+    folderNameById,
   })
 
   const federation = useLibraryFederation({ kind: 'script', projectId: activeProjectId, onRefreshLocal: refresh })
@@ -946,7 +975,7 @@ export default function ScriptsPage({ applicationRepository, initialMode = 'list
             federation={federation}
             projectName={activeProject?.name}
             onConfigureRemotes={openRemoteSettings}
-            summaryText={libraryQuery.trim() || releaseFilter !== 'all' ? `${sortedScripts.length} matching script${sortedScripts.length === 1 ? '' : 's'}` : 'Search by script, protocol, health, or release.'}
+            summaryText={libraryQuery.trim() || releaseFilter !== 'all' || folderFilter !== 'all' ? `${sortedScripts.length} matching script${sortedScripts.length === 1 ? '' : 's'}` : 'Search by script, protocol, health, release, or folder.'}
             filterControls={(
               <>
                 <label className="project-redaction-rule-field">
@@ -961,6 +990,21 @@ export default function ScriptsPage({ applicationRepository, initialMode = 'list
                       <option value={releaseFilter}>{releaseFilter}</option>
                     )}
                     {releaseOptions.map(name => <option key={name} value={name}>{name}</option>)}
+                  </select>
+                </label>
+                <label className="project-redaction-rule-field">
+                  <span>Folder</span>
+                  <select
+                    className="settings-input library-source-select library-folder-filter"
+                    value={folderFilter}
+                    onChange={(event) => setFolderFilter(event.target.value)}
+                  >
+                    <option value="all">All folders</option>
+                    <option value="unfiled">Unfiled</option>
+                    {folderFilter !== 'all' && folderFilter !== 'unfiled' && !folderOptions.some(folder => folder.id === folderFilter) && (
+                      <option value={folderFilter}>{folderNameById[folderFilter] || folderFilter}</option>
+                    )}
+                    {folderOptions.map(folder => <option key={folder.id} value={folder.id}>{folder.name}</option>)}
                   </select>
                 </label>
                 <label className="project-redaction-rule-field">
@@ -1008,8 +1052,9 @@ export default function ScriptsPage({ applicationRepository, initialMode = 'list
             onEdit={(id) => { void handleEdit(id) }}
             onDelete={(id) => { void handleDelete(id) }}
             canManageScripts={canManageScripts}
-            emptyMessage={libraryQuery.trim() || healthFilter !== 'all' || releaseFilter !== 'all' ? 'No scripts match these filters.' : 'No scripts yet.'}
-            onCreate={scripts.length === 0 && !libraryQuery.trim() && healthFilter === 'all' && releaseFilter === 'all' ? openCreateOptions : undefined}
+            emptyMessage={libraryQuery.trim() || healthFilter !== 'all' || releaseFilter !== 'all' || folderFilter !== 'all' ? 'No scripts match these filters.' : 'No scripts yet.'}
+            onCreate={scripts.length === 0 && !libraryQuery.trim() && healthFilter === 'all' && releaseFilter === 'all' && folderFilter === 'all' ? openCreateOptions : undefined}
+            folders={scriptFolders}
             federation={scriptFederation}
             github={canManageScripts && githubReady ? { enabled: true, onPush: setGithubPushScript, statusByScript: githubStatusByScript } : undefined}
             secretStatusByScript={secretStatusByScript}

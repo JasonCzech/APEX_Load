@@ -1388,6 +1388,13 @@ describe('ScriptsPage', () => {
   })
 
   it('filters the script library by associated release and shows release and create date columns', async () => {
+    apiMock.listFolders.mockResolvedValueOnce({
+      folders: [
+        { id: 'folder-checkout', project_id: 'project-1', name: 'Checkout APIs', category: 'scripts', created_at: '', updated_at: '' },
+        { id: 'folder-payments', project_id: 'project-1', name: 'Payments APIs', category: 'scripts', created_at: '', updated_at: '' },
+      ],
+      count: 2,
+    } as never)
     apiMock.listScripts.mockResolvedValueOnce({
       scripts: [
         {
@@ -1397,6 +1404,7 @@ describe('ScriptsPage', () => {
           version: '1.0.0',
           created_at: '2026-05-12T20:00:00Z',
           scenario_count: 1,
+          folder_id: 'folder-checkout',
           associated_releases: [{ id: 'release-29', name: 'PI29', application_id: 'app-1' }],
           scenario_run_releases: [],
           last_run_at: '',
@@ -1408,6 +1416,7 @@ describe('ScriptsPage', () => {
           version: '1.0.0',
           created_at: '2026-05-13T20:00:00Z',
           scenario_count: 1,
+          folder_id: 'folder-payments',
           associated_releases: [{ id: 'release-30', name: 'PI30', application_id: 'app-1' }],
           scenario_run_releases: [],
           last_run_at: '',
@@ -1424,6 +1433,7 @@ describe('ScriptsPage', () => {
     const headers = Array.from(container.querySelectorAll('th')).map(th => th.textContent || '')
     expect(headers.some(header => header.includes('Associated Releases'))).toBe(true)
     expect(headers.some(header => header.includes('Create Date'))).toBe(true)
+    expect(headers.some(header => header.includes('Folder'))).toBe(true)
     expect(container.textContent).toContain('Checkout Script')
     expect(container.textContent).toContain('Payments Script')
 
@@ -1447,6 +1457,22 @@ describe('ScriptsPage', () => {
 
     expect(container.textContent).toContain('Payments Script')
     expect(container.textContent).not.toContain('Checkout Script')
+
+    await act(async () => {
+      setSelectValue(container.querySelector('select.library-release-filter') as HTMLSelectElement, 'all')
+      setSelectValue(container.querySelector('select.library-folder-filter') as HTMLSelectElement, 'folder-checkout')
+    })
+    expect(container.textContent).toContain('Checkout Script')
+    expect(container.textContent).not.toContain('Payments Script')
+
+    await act(async () => {
+      setSelectValue(container.querySelector('select.library-folder-filter') as HTMLSelectElement, 'all')
+    })
+    const folderSort = Array.from(container.querySelectorAll<HTMLButtonElement>('th button'))
+      .find(button => button.textContent?.includes('Folder'))
+    await act(async () => folderSort?.click())
+    const firstScriptRow = container.querySelector<HTMLTableRowElement>('.scripts-library-table tbody tr')
+    expect(firstScriptRow?.textContent).toContain('Checkout Script')
   })
 
   it('routes script library source pills to integrations settings', async () => {

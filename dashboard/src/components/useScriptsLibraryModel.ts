@@ -10,13 +10,14 @@ type SortValue = string | number
 
 export const SCRIPT_RUN_CATALOG_CACHE_TTL_MS = 30_000
 
-export type ScriptLibrarySortField = 'name' | 'protocol' | 'version' | 'authoring_health' | 'created_at' | 'scenario_count' | 'associated_releases' | 'scenario_run_releases' | 'last_run_at'
+export type ScriptLibrarySortField = 'name' | 'protocol' | 'version' | 'folder' | 'authoring_health' | 'created_at' | 'scenario_count' | 'associated_releases' | 'scenario_run_releases' | 'last_run_at'
 export type ScriptRunSortField = 'name' | 'status' | 'scenario_id' | 'release_id' | 'start_time' | 'duration'
 
 interface UseScriptsLibraryModelOptions {
   api: ReturnType<typeof useApi>
   scripts: StoredScript[]
   projectId?: string
+  folderNameById?: Record<string, string>
 }
 
 interface ScriptsLibraryModel {
@@ -36,7 +37,7 @@ interface ScriptsLibraryModel {
   getSortedInnerRuns: (runs: TestSummary[]) => TestSummary[]
 }
 
-function getScriptSortValue(script: StoredScript, field: ScriptLibrarySortField): SortValue {
+function getScriptSortValue(script: StoredScript, field: ScriptLibrarySortField, folderNameById: Record<string, string>): SortValue {
   if (field === 'created_at' || field === 'last_run_at') {
     return new Date(script[field] || 0).getTime()
   }
@@ -52,6 +53,9 @@ function getScriptSortValue(script: StoredScript, field: ScriptLibrarySortField)
   if (field === 'authoring_health') {
     return script.authoring_health?.score ?? -1
   }
+  if (field === 'folder') {
+    return script.folder_id ? folderNameById[script.folder_id] || script.folder_id : 'Unfiled'
+  }
   return String(script[field] || '').toLowerCase()
 }
 
@@ -63,7 +67,7 @@ function getRunSortValue(run: TestSummary, field: ScriptRunSortField): SortValue
   return String(run[field] || '').toLowerCase()
 }
 
-export function useScriptsLibraryModel({ api, scripts, projectId }: UseScriptsLibraryModelOptions): ScriptsLibraryModel {
+export function useScriptsLibraryModel({ api, scripts, projectId, folderNameById = {} }: UseScriptsLibraryModelOptions): ScriptsLibraryModel {
   const [sortField, setSortField] = useState<ScriptLibrarySortField>('name')
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc')
   const [expandedScriptId, setExpandedScriptId] = useState<string | null>(null)
@@ -95,13 +99,13 @@ export function useScriptsLibraryModel({ api, scripts, projectId }: UseScriptsLi
 
   const sortedScripts = useMemo(() => {
     return [...scripts].sort((a, b) => {
-      const aValue = getScriptSortValue(a, sortField)
-      const bValue = getScriptSortValue(b, sortField)
+      const aValue = getScriptSortValue(a, sortField, folderNameById)
+      const bValue = getScriptSortValue(b, sortField, folderNameById)
       if (aValue < bValue) return sortDirection === 'asc' ? -1 : 1
       if (aValue > bValue) return sortDirection === 'asc' ? 1 : -1
       return 0
     })
-  }, [scripts, sortDirection, sortField])
+  }, [folderNameById, scripts, sortDirection, sortField])
 
   const onSort = useCallback((field: ScriptLibrarySortField) => {
     if (sortField === field) {

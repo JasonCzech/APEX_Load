@@ -1,6 +1,6 @@
 import { Fragment, lazy, Suspense, useState } from 'react'
 
-import { AuthoringHealthInput, GitHubScriptStatus, StoredScript, TestSummary } from '../types'
+import { AuthoringHealthInput, Folder, GitHubScriptStatus, StoredScript, TestSummary } from '../types'
 import type { ScriptValidationResponse } from '../types/scripts'
 import { LibraryCatalogItem, LibrarySourceFilter } from '../types/library'
 import { type ScriptSecretStatus } from '../types/secrets'
@@ -35,6 +35,7 @@ export interface ScriptLibraryGitHub {
 
 interface Props {
   scripts: StoredScript[]
+  folders?: Folder[]
   sortField: ScriptLibrarySortField
   sortDirection: 'asc' | 'desc'
   onSort: (field: ScriptLibrarySortField) => void
@@ -202,6 +203,7 @@ function prioritizeHealthInputs(inputs: AuthoringHealthInput[]) {
 
 export default function ScriptsLibraryTable({
   scripts,
+  folders = [],
   sortField,
   sortDirection,
   onSort,
@@ -307,7 +309,8 @@ export default function ScriptsLibraryTable({
     }
   }
   const showSource = Boolean(federation)
-  const columnCount = (showSource ? 1 : 0) + 7
+  const folderNameById = new Map(folders.map(folder => [folder.id, folder.name]))
+  const columnCount = (showSource ? 1 : 0) + 8
   const showLocal = !federation || federation.sourceFilter !== 'host'
   const localScripts = showLocal ? scripts : []
   const remoteRows = federation && federation.sourceFilter !== 'local' ? federation.remoteRows : []
@@ -319,6 +322,7 @@ export default function ScriptsLibraryTable({
           <tr>
             {showSource && <th>Source</th>}
             <SortHeader field="name" activeField={sortField} direction={sortDirection} label="Script" onActivate={onSort} />
+            <SortHeader field="folder" activeField={sortField} direction={sortDirection} label="Folder" onActivate={onSort} />
             <SortHeader field="authoring_health" activeField={sortField} direction={sortDirection} label="Health" onActivate={onSort} />
             <SortHeader field="scenario_count" activeField={sortField} direction={sortDirection} label="Usage" onActivate={onSort} />
             <SortHeader field="associated_releases" activeField={sortField} direction={sortDirection} label="Associated Releases" onActivate={onSort} />
@@ -383,6 +387,7 @@ export default function ScriptsLibraryTable({
                       )}
                     </div>
                   </td>
+                  <td>{script.folder_id ? folderNameById.get(script.folder_id) || script.folder_id : <span className="cell-muted">Unfiled</span>}</td>
                   <td aria-label="Scenario usage">
                     <span className={`protocol-badge ${secretStatusUnknown ? 'warning' : authoringHealthClass(script)}`}>
                       {secretStatusUnknown

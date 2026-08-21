@@ -76,6 +76,7 @@ type ResultSourceRow = {
   status: string
   startedAt?: string
   duration?: string
+  durationSeconds?: number
   applicationId?: string
   releaseId?: string
   releaseName?: string
@@ -106,6 +107,25 @@ function sortTestsByStartAscending(tests: TestSummary[]) {
 
 function rowStartedAt(row: ResultSourceRow) {
   return new Date(row.startedAt || 0).getTime()
+}
+
+function actualRunDurationSeconds(test: TestSummary) {
+  const startedAt = new Date(test.start_time || test.started_at || test.created_at || 0).getTime()
+  const endedAt = new Date(test.ended_at || 0).getTime()
+  if (Number.isFinite(startedAt) && Number.isFinite(endedAt) && endedAt >= startedAt && endedAt > 0) {
+    return (endedAt - startedAt) / 1000
+  }
+  return parseDurationToSeconds(test.duration)
+}
+
+function formatActualRunDuration(seconds: number) {
+  const totalSeconds = Math.max(0, Math.round(seconds))
+  const hours = Math.floor(totalSeconds / 3600)
+  const minutes = Math.floor((totalSeconds % 3600) / 60)
+  const remainder = totalSeconds % 60
+  if (hours > 0) return `${hours}h ${minutes}m${remainder ? ` ${remainder}s` : ''}`
+  if (minutes > 0) return `${minutes}m${remainder ? ` ${remainder}s` : ''}`
+  return `${remainder}s`
 }
 
 function resultSourceStatusTone(status?: string) {
@@ -717,7 +737,8 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onOpenTe
           name: test.name,
           status: resolveStatus(test, testStatuses),
           startedAt: test.start_time || test.started_at || test.created_at,
-          duration: test.duration,
+          duration: formatActualRunDuration(actualRunDurationSeconds(test)),
+          durationSeconds: actualRunDurationSeconds(test),
           applicationId: item.application_id || test.application_id,
           releaseId: test.release_id || item.release_id,
           releaseName: item.release_name || (test.release_id === activeRelease?.id ? activeRelease?.name : undefined),
@@ -865,8 +886,8 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onOpenTe
           bValue = rowStartedAt(b)
           break
         case 'duration':
-          aValue = parseDurationToSeconds(a.duration)
-          bValue = parseDurationToSeconds(b.duration)
+          aValue = a.durationSeconds ?? parseDurationToSeconds(a.duration)
+          bValue = b.durationSeconds ?? parseDurationToSeconds(b.duration)
           break
         case 'archive':
           aValue = a.archiveCount ?? (a.hasArchive ? 1 : 0)
