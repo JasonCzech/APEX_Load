@@ -150,6 +150,7 @@ interface Props {
   isMultiGroup: boolean
   groupNames: string[]
   groupColors: string[]
+  groupColorByName?: Readonly<Record<string, string>>
   showLoadImpact?: boolean
   loadImpactData?: MetricsHistoryPoint[]
   loadImpactLoading?: boolean
@@ -469,6 +470,7 @@ export default function TestExecutionCharts({
   isMultiGroup,
   groupNames,
   groupColors,
+  groupColorByName,
   showLoadImpact = true,
   loadImpactData = [],
   loadImpactLoading = false,
@@ -596,7 +598,10 @@ export default function TestExecutionCharts({
   const loadImpactRows = loadImpactModel.rows
   const loadImpactRowsByChartId = useMemo(() => new Map(loadImpactRows.map(row => [loadImpactChartId(row.metric.id), row])), [loadImpactRows])
   const hasLoadImpactPercentiles = useMemo(() => hasLoadImpactPercentileRows(loadImpactRows), [loadImpactRows])
-  const loadImpactPercentileData = useMemo(() => loadImpactPercentileChartData(loadImpactRows), [loadImpactRows])
+  const loadImpactPercentileData = useMemo(
+    () => loadImpactPercentileChartData(loadImpactRows, graphGroupNames),
+    [graphGroupNames, loadImpactRows],
+  )
   const loadImpactCharts = useMemo(() => buildLoadImpactCharts(loadImpactRows, graphGroupNames), [graphGroupNames, loadImpactRows])
   const prometheusGraphCharts = useMemo(() => buildPrometheusCharts(prometheusGraphs), [prometheusGraphs])
   const importedDashboardCharts = useMemo(() => buildImportedDashboardCharts(importedDashboards), [importedDashboards])
@@ -1292,7 +1297,24 @@ export default function TestExecutionCharts({
     })
   }
 
-  const metricRowsForChart = (chart: ChartConfig) => chartMetricRows(chart, graphGroupNames, latencyKeys, groupColors, false, overlayMetricKeysForChart(chart), routeLatencyMode, activeRouteLatencyKey, transactionNamesForChart(chart))
+  const metricRowsForChart = (chart: ChartConfig) => chartMetricRows(
+    chart,
+    graphGroupNames,
+    latencyKeys,
+    groupColors,
+    false,
+    overlayMetricKeysForChart(chart),
+    routeLatencyMode,
+    activeRouteLatencyKey,
+    transactionNamesForChart(chart),
+  ).map(row => {
+    const groupName = graphGroupNames.find(name => (
+      row.label === name
+      && (row.key.startsWith(`${name}_`) || isLoadImpactGroupSeriesKey(row.key))
+    ))
+    const groupColor = groupName ? groupColorByName?.[groupName] : undefined
+    return groupColor ? { ...row, color: groupColor } : row
+  })
 
   const visibleMetricKeysForChart = (chart: ChartConfig, rows = metricRowsForChart(chart)) => {
     const availableKeys = rows.map(row => row.key)

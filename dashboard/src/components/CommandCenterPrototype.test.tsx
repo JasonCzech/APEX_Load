@@ -1698,6 +1698,26 @@ describe('CommandCenterPrototype', () => {
     expect(container.textContent).not.toContain('In-flight Run Command Center')
   })
 
+  it('shows the whole-test error rate in the hero metric', async () => {
+    const liveTest = buildLiveVuserTest()
+    liveTest.live_metrics = {
+      ...liveTest.live_metrics!,
+      // Deliberately differ from the cumulative rate to prove the hero does
+      // not display a point/window rate supplied by the stream.
+      error_pct: 1,
+      total_transactions: 100,
+      total_errors: 20,
+    }
+
+    await act(async () => {
+      root.render(<CommandCenterPrototype testId={liveTest.id} initialTest={liveTest} history={[]} />)
+    })
+
+    const errorRateMetric = Array.from(container.querySelectorAll<HTMLElement>('.command-hero-metric'))
+      .find(metric => metric.querySelector('span')?.textContent === 'Error Rate')
+    expect(errorRateMetric?.querySelector('strong')?.textContent).toBe('16.67%')
+  })
+
   it('never reuses same-signature evidence across routed runs', async () => {
     const withEvidencePattern = (id: string, name: string): TestSummary => ({
       ...buildLiveVuserTest(),

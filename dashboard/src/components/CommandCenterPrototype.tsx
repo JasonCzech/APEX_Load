@@ -150,6 +150,15 @@ const UNDER_LOAD_DISPLAY_OPTIONS: Array<{ value: UnderLoadDisplayMode; label: st
   { value: 'heatmap', label: 'Heatmap' },
 ]
 
+const COMMAND_GROUP_COLORS = [
+  'var(--chart-1)',
+  'var(--chart-2)',
+  'var(--chart-3)',
+  'var(--chart-4)',
+  'var(--chart-5)',
+  'var(--chart-6)',
+] as const
+
 const EMPTY_COMMAND_CENTER_TEST: TestSummary = {
   id: 'command-center-empty',
   ref_key: 'No run selected',
@@ -246,6 +255,13 @@ function groupErrorPercent(group: GroupLiveMetrics | undefined) {
   return group.errors / group.transactions * 100
 }
 
+function wholeTestErrorPercent(metrics: LiveMetrics | undefined, groups: CommandGroup[]) {
+  const totalTransactions = metrics?.total_transactions ?? groups.reduce((sum, group) => sum + group.transactions, 0)
+  const totalErrors = metrics?.total_errors ?? groups.reduce((sum, group) => sum + group.errors, 0)
+  const attempts = totalTransactions + totalErrors
+  return attempts > 0 ? totalErrors / attempts * 100 : 0
+}
+
 function isGoalOrientedRun(test: TestSummary) {
   return test.scenario_mode === 'goal_oriented'
 }
@@ -339,7 +355,7 @@ function buildLiveGroups(test: TestSummary, targetDrafts: Record<string, number>
       p99: metrics?.p99_ms ?? aggregateFallback?.p99_ms ?? 0,
       transactions: metrics?.transactions ?? aggregateFallback?.total_transactions ?? 0,
       errors: metrics?.errors ?? aggregateFallback?.total_errors ?? 0,
-      color: `var(--chart-${index % 5 + 1})`,
+      color: COMMAND_GROUP_COLORS[index % COMMAND_GROUP_COLORS.length],
     }
   })
 }
@@ -3293,6 +3309,7 @@ function CommandRuntimeGraphs({
 }: CommandRuntimeGraphsProps) {
   const groupNames = groups.map(group => group.name)
   const groupColors = groups.map(group => group.color)
+  const groupColorByName = Object.fromEntries(groups.map(group => [group.name, group.color]))
   const performanceChartData = groupScopedChartData ?? chartData
   const activeChartData = variant === 'grafana' && activeGraphGroupTab !== 'infrastructure' ? performanceChartData : chartData
   const activeMetrics = variant === 'grafana' && activeGraphGroupTab !== 'infrastructure' ? groupScopedMetrics ?? metrics : metrics
@@ -3326,6 +3343,7 @@ function CommandRuntimeGraphs({
         isMultiGroup={groups.length > 1}
         groupNames={groupNames}
         groupColors={groupColors.length > 0 ? groupColors : ['var(--chart-1)']}
+        groupColorByName={groupColorByName}
         showLoadImpact={false}
         loadImpactData={loadImpactSourceData}
         prometheusGraphs={prometheusGraphs}
@@ -3360,8 +3378,7 @@ function HeroMetricStrip({ groups, metrics, metricsHistory = [] }: { groups: Com
   const averages = recentMetricAverages(metricsHistory)
   const totalTps = averages.tps ?? metrics?.tps ?? groups.reduce((sum, group) => sum + group.tps, 0)
   const avgArt = averages.art ?? metrics?.avg_response_ms ?? weightedArt
-  const groupedErrorPct = totalTransactions > 0 ? groups.reduce((sum, group) => sum + group.errors, 0) / totalTransactions * 100 : 0
-  const errorPct = metrics?.error_pct ?? groupedErrorPct
+  const errorPct = wholeTestErrorPercent(metrics, groups)
   const activeVUsers = metrics?.active_vusers ?? groups.reduce((sum, group) => sum + group.current, 0)
   const targetMode = groups[0]?.targetMode ?? 'vusers'
   const targetValue = groups.reduce((sum, group) => sum + group.target, 0)

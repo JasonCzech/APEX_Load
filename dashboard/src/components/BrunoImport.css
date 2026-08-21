@@ -317,6 +317,24 @@
   text-transform: uppercase;
 }
 
+.bruno-sort-button {
+  display: inline-flex;
+  align-items: center;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  cursor: pointer;
+}
+
+.bruno-sort-button:hover,
+.bruno-sort-button:focus-visible {
+  color: var(--accent);
+}
+
 .bruno-native-table td > strong,
 .bruno-native-table td > small {
   display: block;
@@ -365,6 +383,11 @@
 }
 
 .bruno-native-review-button {
+  min-width: 84px;
+  color: var(--accent);
+}
+
+.bruno-native-inspect-button {
   min-width: 84px;
   color: var(--accent);
 }

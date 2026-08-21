@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"sync/atomic"
+	"time"
 	"unicode"
 	"unicode/utf8"
 
@@ -2210,6 +2211,7 @@ func buildNativeCandidate(
 	cookiesEnabled := true
 	clearCookies := true
 	plannedID := uuid.NewString()
+	createdAt := time.Now().UTC()
 	script := &dsl.Script{
 		ID:            plannedID,
 		Name:          item.Name,
@@ -2218,6 +2220,8 @@ func buildNativeCandidate(
 		ProjectID:     input.ProjectID,
 		GeneratedBy:   nativeImporterVersion,
 		GeneratedFrom: "open_collection_yaml",
+		CreatedAt:     createdAt,
+		UpdatedAt:     createdAt,
 		Config: dsl.ScriptConfig{
 			// Native Bruno actions retain their authored absolute/template URL.
 			// APEX requires a non-empty HTTP base URL structurally; using the

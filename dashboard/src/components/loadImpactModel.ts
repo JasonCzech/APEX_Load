@@ -48,6 +48,10 @@ export interface LoadImpactRow {
   cells: LoadImpactCell[]
   minAverage?: number
   maxAverage?: number
+  // Raw per-group samples retain each group's own VUser load. Under Load line
+  // graphs re-bucket these independently from the aggregate heatmap so their
+  // x-axis reflects group load rather than total load across all groups.
+  groupPoints?: Record<string, LoadImpactPoint[]>
 }
 
 export interface LoadImpactModel {
@@ -107,9 +111,9 @@ function bucketId(minVusers: number, maxVusers: number) {
   return minVusers === maxVusers ? `vusers-${minVusers}` : `vusers-${minVusers}-${maxVusers}`
 }
 
-function createBuckets(points: MetricsHistoryPoint[], maxBuckets: number): LoadImpactBucket[] {
-  const loads = points
-    .map(point => Math.round(point.vusers))
+export function createLoadImpactBuckets(loadValues: number[], maxBuckets = 8): LoadImpactBucket[] {
+  const loads = loadValues
+    .map(load => Math.round(load))
     .filter(load => Number.isFinite(load) && load > 0)
     .sort((left, right) => left - right)
   const distinctLoads = Array.from(new Set(loads))
@@ -150,11 +154,19 @@ function createBuckets(points: MetricsHistoryPoint[], maxBuckets: number): LoadI
   })
 }
 
-function bucketForPoint(point: MetricsHistoryPoint, buckets: LoadImpactBucket[]) {
-  const load = Math.round(point.vusers)
+export function loadImpactBucketForVusers(vusers: number, buckets: LoadImpactBucket[]) {
+  const load = Math.round(vusers)
   return buckets.find(bucket => (
     bucket.exact ? load === bucket.minVusers : load >= bucket.minVusers && load <= bucket.maxVusers
   ))
+}
+
+function createBuckets(points: MetricsHistoryPoint[], maxBuckets: number): LoadImpactBucket[] {
+  return createLoadImpactBuckets(points.map(point => point.vusers), maxBuckets)
+}
+
+function bucketForPoint(point: MetricsHistoryPoint, buckets: LoadImpactBucket[]) {
+  return loadImpactBucketForVusers(point.vusers, buckets)
 }
 
 function metricValue(metric: LoadImpactMetric, point: MetricsHistoryPoint): number | undefined {
@@ -194,6 +206,24 @@ function groupAveragesForBucket(
   }, {})
 }
 
+function groupPointsForMetric(
+  metric: LoadImpactMetric,
+  groupNames: string[],
+  points: MetricsHistoryPoint[],
+): Record<string, LoadImpactPoint[]> {
+  if (metric.category !== 'performance') return {}
+  return groupNames.reduce<Record<string, LoadImpactPoint[]>>((groupPoints, groupName) => {
+    const pointsForGroup = points.flatMap((point): LoadImpactPoint[] => {
+      const vusers = point[`${groupName}_vusers`]
+      const value = groupMetricValue(metric, groupName, point)
+      if (!isFiniteNumber(vusers) || vusers <= 0 || value === undefined) return []
+      return [{ time: point.time, timestampMs: point.timestampMs, vusers, value, source: point }]
+    })
+    if (pointsForGroup.length > 0) groupPoints[groupName] = pointsForGroup
+    return groupPoints
+  }, {})
+}
+
 export function buildLoadImpactModel(
   points: MetricsHistoryPoint[] | undefined,
   maxBuckets = 8,
@@ -218,6 +248,7 @@ export function buildLoadImpactModel(
 
   const rows = metrics
     .map((metric): LoadImpactRow | null => {
+      const groupPoints = groupPointsForMetric(metric, groupNames, validPoints)
       const baseCells = buckets.map((bucket): LoadImpactCell => {
         const bucketPoints = bucketedPoints.get(bucket.id) || []
         const loadImpactPoints = bucketPoints
@@ -250,7 +281,8 @@ export function buildLoadImpactModel(
         }
       })
 
-      if (!baseCells.some(cell => cell.sampleCount > 0 || Object.keys(cell.groupAverages ?? {}).length > 0)) {
+      if (!baseCells.some(cell => cell.sampleCount > 0 || Object.keys(cell.groupAverages ?? {}).length > 0)
+        && Object.keys(groupPoints).length === 0) {
         return null
       }
 
@@ -271,7 +303,13 @@ export function buildLoadImpactModel(
             : (cell.average - minAverage) / averageRange,
       }))
 
-      return { metric, cells, minAverage, maxAverage }
+      return {
+        metric,
+        cells,
+        minAverage,
+        maxAverage,
+        groupPoints: Object.keys(groupPoints).length > 0 ? groupPoints : undefined,
+      }
     })
     .filter((row): row is LoadImpactRow => row !== null)
 

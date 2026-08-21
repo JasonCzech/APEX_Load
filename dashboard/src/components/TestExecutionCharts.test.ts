@@ -418,8 +418,8 @@ describe('chartStateForMonitorPreset', () => {
 
   it('gives every selected group its own load-under line, series row, and CSV column', () => {
     const source: MetricsHistoryPoint[] = [
-      { time: '10:00:00', vusers: 10, tps: 5, avgMs: 150, errorPct: 0, p50: 0, p90: 0, p99: 0, Checkout_avgMs: 100, Search_avgMs: 200 },
-      { time: '10:01:00', vusers: 20, tps: 9, avgMs: 300, errorPct: 0, p50: 0, p90: 0, p99: 0, Checkout_avgMs: 200, Search_avgMs: 400 },
+      { time: '10:00:00', vusers: 10, tps: 5, avgMs: 150, errorPct: 0, p50: 0, p90: 0, p99: 0, Checkout_vusers: 10, Search_vusers: 10, Checkout_avgMs: 100, Search_avgMs: 200 },
+      { time: '10:01:00', vusers: 20, tps: 9, avgMs: 300, errorPct: 0, p50: 0, p90: 0, p99: 0, Checkout_vusers: 20, Search_vusers: 20, Checkout_avgMs: 200, Search_avgMs: 400 },
     ]
     const groupNames = ['Checkout', 'Search']
     const model = buildLoadImpactModel(source, undefined, undefined, groupNames)
@@ -448,9 +448,44 @@ describe('chartStateForMonitorPreset', () => {
     ])
     expect(graphCsvForChart(chart, chartData, groupNames, [])).toBe([
       'load,Checkout__loadImpactAverage,Search__loadImpactAverage,min,max',
-      '10,150,100,200,150,150',
-      '20,300,200,400,300,300',
+      '10,100,200,100,200',
+      '20,200,400,200,400',
     ].join('\n'))
+  })
+
+  it('uses per-group VUser levels for TPS, ART, and percentile load axes', () => {
+    const groupNames = ['Checkout', 'Search', 'Browse', 'Account']
+    const source = [1, 2, 3].map((groupVusers, index): MetricsHistoryPoint => {
+      const groupMetrics = groupNames.reduce<Record<string, number>>((metrics, name, groupIndex) => {
+        metrics[`${name}_vusers`] = groupVusers
+        metrics[`${name}_tps`] = (index + 1) * 10 + groupIndex
+        metrics[`${name}_avgMs`] = (index + 1) * 100 + groupIndex
+        metrics[`${name}_p50`] = (index + 1) * 80 + groupIndex
+        metrics[`${name}_p90`] = (index + 1) * 90 + groupIndex
+        metrics[`${name}_p95`] = (index + 1) * 95 + groupIndex
+        metrics[`${name}_p99`] = (index + 1) * 99 + groupIndex
+        return metrics
+      }, {})
+      return {
+        ...groupMetrics,
+        time: `10:0${index}:00`,
+        vusers: groupVusers * groupNames.length,
+        tps: (index + 1) * 40,
+        avgMs: (index + 1) * 100,
+        errorPct: 0,
+        p50: (index + 1) * 80,
+        p90: (index + 1) * 90,
+        p95: (index + 1) * 95,
+        p99: (index + 1) * 99,
+      }
+    })
+    const model = buildLoadImpactModel(source, undefined, undefined, groupNames)
+
+    for (const metricId of ['tps', 'avgMs', 'p50', 'p90', 'p95', 'p99']) {
+      const row = model.rows.find(candidate => candidate.metric.id === metricId)
+      expect(loadImpactChartDataForRow(row, model.rows, groupNames).map(point => point.vusers)).toEqual([1, 2, 3])
+    }
+    expect(loadImpactPercentileChartData(model.rows, groupNames).map(point => point.vusers)).toEqual([1, 2, 3])
   })
 
   it('keeps the load impact heatmap chart visible by default', () => {

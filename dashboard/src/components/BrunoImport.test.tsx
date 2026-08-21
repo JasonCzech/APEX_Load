@@ -1700,6 +1700,27 @@ describe('BrunoImport', () => {
     expect(container.querySelector('.bruno-native-table details')).toBeNull()
     const reviewButtons = Array.from(container.querySelectorAll<HTMLButtonElement>('.bruno-native-review-button'))
     expect(reviewButtons).toHaveLength(2)
+    const inspectButtons = Array.from(container.querySelectorAll<HTMLButtonElement>('.bruno-native-inspect-button'))
+    expect(inspectButtons).toHaveLength(2)
+
+    const sourceSortButton = container.querySelector<HTMLButtonElement>('button[aria-label="Sort by Source"]')
+    await act(async () => sourceSortButton?.click())
+    expect(container.querySelector('.bruno-native-table tbody tr')?.textContent).toContain('CTA/second.yml')
+    await act(async () => sourceSortButton?.click())
+    expect(container.querySelector('.bruno-native-table tbody tr')?.textContent).toContain('CTA/first.yml')
+
+    await act(async () => {
+      inspectButtons[0].focus()
+      inspectButtons[0].click()
+    })
+    await act(async () => {
+      await new Promise(resolve => window.setTimeout(resolve, 0))
+    })
+    let dialog = document.body.querySelector<HTMLElement>('[role="dialog"]')
+    expect(dialog?.textContent).toContain('CTA/first.yml')
+    const inspectCloseButton = Array.from(dialog?.querySelectorAll<HTMLButtonElement>('button') || [])
+      .find(button => button.textContent === 'Close')
+    await act(async () => inspectCloseButton?.click())
 
     await act(async () => {
       reviewButtons[0].focus()
@@ -1708,7 +1729,7 @@ describe('BrunoImport', () => {
     await act(async () => {
       await new Promise(resolve => window.setTimeout(resolve, 0))
     })
-    let dialog = document.body.querySelector<HTMLElement>('[role="dialog"]')
+    dialog = document.body.querySelector<HTMLElement>('[role="dialog"]')
     expect(container.querySelector('[role="dialog"]')).toBeNull()
     expect(dialog?.parentElement?.parentElement).toBe(document.body)
     expect(dialog?.getAttribute('aria-modal')).toBe('true')
@@ -1719,7 +1740,7 @@ describe('BrunoImport', () => {
     expect(dialog?.textContent).toContain('Missing variables')
     expect(dialog?.textContent).toContain('env')
     expect(dialog?.textContent).toContain('Source mappings')
-    expect(dialog?.textContent).toContain('Masked native script')
+    expect(dialog?.textContent).toContain('Masked APEX Load DSL script')
     expect(dialog?.textContent).toContain('First API')
     expect(document.activeElement?.getAttribute('aria-label')).toBe('Close review for CTA/first.yml')
 

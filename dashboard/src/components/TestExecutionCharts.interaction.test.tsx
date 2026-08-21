@@ -93,6 +93,7 @@ vi.mock('recharts', () => {
       dataKey,
       name,
       yAxisId,
+      stroke,
       strokeWidth,
       strokeDasharray,
       strokeOpacity,
@@ -102,6 +103,7 @@ vi.mock('recharts', () => {
       dataKey?: string
       name?: string
       yAxisId?: string | number
+      stroke?: string
       strokeWidth?: number
       strokeDasharray?: string
       strokeOpacity?: number
@@ -113,6 +115,7 @@ vi.mock('recharts', () => {
         data-key={dataKey}
         data-name={name}
         data-y-axis-id={String(yAxisId ?? '')}
+        data-stroke={stroke ?? ''}
         data-stroke-width={String(strokeWidth ?? '')}
         data-stroke-dasharray={strokeDasharray ?? ''}
         data-stroke-opacity={String(strokeOpacity ?? '')}
@@ -1277,8 +1280,8 @@ describe('TestExecutionCharts context menu', () => {
       root.render(
         <TestExecutionCharts
           filteredData={[
-            { time: '10:00:00', vusers: 10, tps: 5, avgMs: 150, errorPct: 0, p50: 130, p90: 180, p95: 200, p99: 240, Checkout_avgMs: 100, Search_avgMs: 200 },
-            { time: '10:01:00', vusers: 20, tps: 9, avgMs: 300, errorPct: 0, p50: 260, p90: 360, p95: 400, p99: 480, Checkout_avgMs: 200, Search_avgMs: 400 },
+            { time: '10:00:00', vusers: 10, tps: 5, avgMs: 150, errorPct: 0, p50: 130, p90: 180, p95: 200, p99: 240, Checkout_vusers: 10, Search_vusers: 10, Checkout_avgMs: 100, Search_avgMs: 200 },
+            { time: '10:01:00', vusers: 20, tps: 9, avgMs: 300, errorPct: 0, p50: 260, p90: 360, p95: 400, p99: 480, Checkout_vusers: 20, Search_vusers: 20, Checkout_avgMs: 200, Search_avgMs: 400 },
           ]}
           expandedChart="load_impact_avgMs"
           onExpandedChartChange={vi.fn()}
@@ -1293,7 +1296,10 @@ describe('TestExecutionCharts context menu', () => {
           onTimeRangeChange={vi.fn()}
           isMultiGroup
           groupNames={['Checkout', 'Search']}
-          groupColors={['#00a3ff', '#ff8a00']}
+          // The keyed mapping is authoritative on Graph Wall; the positional
+          // fallback is deliberately reversed to catch color/order coupling.
+          groupColors={['#ff8a00', '#00a3ff']}
+          groupColorByName={{ Checkout: '#00a3ff', Search: '#ff8a00' }}
           showLoadImpact={false}
           surface="command-center"
           storageScope="apexload.commandCenter.grafana"
@@ -1309,8 +1315,10 @@ describe('TestExecutionCharts context menu', () => {
     const lineFor = (key: string) => artUnderLoad()?.querySelector(`path[data-testid="mock-line"][data-key="${key}"]`)
 
     expect(lineFor('Checkout__loadImpactAverage')?.getAttribute('data-name')).toBe('Checkout')
+    expect(lineFor('Checkout__loadImpactAverage')?.getAttribute('data-stroke')).toBe('#00a3ff')
     expect(lineFor('Checkout__loadImpactAverage')?.getAttribute('data-stroke-dasharray')).toBe('')
     expect(lineFor('Search__loadImpactAverage')?.getAttribute('data-name')).toBe('Search')
+    expect(lineFor('Search__loadImpactAverage')?.getAttribute('data-stroke')).toBe('#ff8a00')
     expect(lineFor('average')).toBeNull()
     expect(artUnderLoad()?.querySelector('[data-testid="mock-x-axis"]')?.getAttribute('data-key')).toBe('vusers')
     expect(artUnderLoad()?.querySelector('.chart-series-legend')?.textContent).toContain('Checkout')

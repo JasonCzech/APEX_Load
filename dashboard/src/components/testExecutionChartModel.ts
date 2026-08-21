@@ -7,7 +7,14 @@ import {
   routeLatencyDetailSeriesKey,
   routeLatencySeriesLabel,
 } from './latencySeries'
-import type { LoadImpactMetric, LoadImpactRow } from './loadImpactModel'
+import {
+  createLoadImpactBuckets,
+  loadImpactBucketForVusers,
+  type LoadImpactBucket,
+  type LoadImpactMetric,
+  type LoadImpactPoint,
+  type LoadImpactRow,
+} from './loadImpactModel'
 import {
   MAX_TRANSACTION_CHART_SERIES,
   isTransactionChartSeriesKey,
@@ -378,7 +385,7 @@ export function isLoadImpactGroupSeriesKey(key: string) {
 // somewhere in the model, so a chart never advertises an empty group line.
 export function loadImpactGroupSeriesNames(row: LoadImpactRow | undefined, groupNames: string[]) {
   if (!row) return []
-  return groupNames.filter(name => row.cells.some(cell => cell.groupAverages?.[name] !== undefined))
+  return groupNames.filter(name => (row.groupPoints?.[name]?.length ?? 0) > 0)
 }
 
 export function buildLoadImpactCharts(rows: LoadImpactRow[], groupNames: string[] = []): ChartConfig[] {
@@ -1704,12 +1711,71 @@ function loadImpactMetricValueForBucket(row: LoadImpactRow | undefined, bucketId
   return row?.cells.find(cell => cell.bucket.id === bucketId)?.average
 }
 
+function groupLoadPointsInBucket(row: LoadImpactRow | undefined, groupName: string, bucket: LoadImpactBucket) {
+  return (row?.groupPoints?.[groupName] ?? []).filter(point => loadImpactBucketForVusers(point.vusers, [bucket]))
+}
+
+function averageLoadImpactPoints(points: LoadImpactPoint[]) {
+  return points.length > 0 ? points.reduce((sum, point) => sum + point.value, 0) / points.length : undefined
+}
+
+function groupMetricAverageForBucket(
+  row: LoadImpactRow | undefined,
+  groupNames: string[],
+  bucket: LoadImpactBucket,
+) {
+  return averageLoadImpactPoints(groupNames.flatMap(name => groupLoadPointsInBucket(row, name, bucket)))
+}
+
+function groupedLoadImpactChartData(
+  row: LoadImpactRow,
+  rows: LoadImpactRow[],
+  groupNames: string[],
+): MetricsHistoryPoint[] {
+  const allGroupPoints = groupNames.flatMap(name => row.groupPoints?.[name] ?? [])
+  const buckets = createLoadImpactBuckets(allGroupPoints.map(point => point.vusers))
+  const avgRow = rows.find(candidate => candidate.metric.id === 'avgMs')
+  const tpsRow = rows.find(candidate => candidate.metric.id === 'tps')
+
+  return buckets.map((bucket): MetricsHistoryPoint => {
+    const groupedValues = groupNames.reduce<Record<string, number | undefined>>((series, name) => {
+      series[loadImpactGroupSeriesKey(name)] = averageLoadImpactPoints(groupLoadPointsInBucket(row, name, bucket))
+      return series
+    }, {})
+    const metricPoints = groupNames.flatMap(name => groupLoadPointsInBucket(row, name, bucket))
+    const values = metricPoints.map(point => point.value)
+    const midpointVusers = bucket.minVusers + ((bucket.maxVusers - bucket.minVusers) / 2)
+    return {
+      ...groupedValues,
+      time: String(midpointVusers),
+      timestampMs: metricPoints[0]?.timestampMs,
+      vusers: midpointVusers,
+      tps: groupMetricAverageForBucket(tpsRow, groupNames, bucket) ?? 0,
+      avgMs: groupMetricAverageForBucket(avgRow, groupNames, bucket) ?? 0,
+      errorPct: 0,
+      p50: 0,
+      p90: 0,
+      p99: 0,
+      average: averageLoadImpactPoints(metricPoints),
+      min: values.length > 0 ? Math.min(...values) : undefined,
+      max: values.length > 0 ? Math.max(...values) : undefined,
+      samples: values.length,
+      bucketMinVusers: bucket.minVusers,
+      bucketMaxVusers: bucket.maxVusers,
+      sourceSamples: values.length,
+    }
+  })
+}
+
 export function loadImpactChartDataForRow(
   row: LoadImpactRow | undefined,
   rows: LoadImpactRow[],
   groupNames: string[] = [],
 ): MetricsHistoryPoint[] {
   if (!row) return []
+  if (groupNames.some(name => (row.groupPoints?.[name]?.length ?? 0) > 0)) {
+    return groupedLoadImpactChartData(row, rows, groupNames)
+  }
   const avgRow = rows.find(candidate => candidate.metric.id === 'avgMs')
   const tpsRow = rows.find(candidate => candidate.metric.id === 'tps')
   return row.cells.map((cell): MetricsHistoryPoint => {
@@ -1741,7 +1807,7 @@ export function loadImpactChartDataForRow(
   })
 }
 
-export function loadImpactPercentileChartData(rows: LoadImpactRow[]): MetricsHistoryPoint[] {
+export function loadImpactPercentileChartData(rows: LoadImpactRow[], groupNames: string[] = []): MetricsHistoryPoint[] {
   const percentileRows = new Map(LOAD_IMPACT_PERCENTILE_KEYS.map(key => [
     key,
     rows.find(row => row.metric.id === key),
@@ -1751,12 +1817,39 @@ export function loadImpactPercentileChartData(rows: LoadImpactRow[]): MetricsHis
     .find((row): row is LoadImpactRow => Boolean(row))
   if (!referenceRow) return []
 
+  const percentileGroupNames = groupNames.filter(name => (referenceRow.groupPoints?.[name]?.length ?? 0) > 0)
+  if (percentileGroupNames.length > 0) {
+    const allGroupPoints = percentileGroupNames.flatMap(name => referenceRow.groupPoints?.[name] ?? [])
+    const buckets = createLoadImpactBuckets(allGroupPoints.map(point => point.vusers))
+    const avgRow = rows.find(candidate => candidate.metric.id === 'avgMs')
+    const tpsRow = rows.find(candidate => candidate.metric.id === 'tps')
+    return buckets.map((bucket): MetricsHistoryPoint => {
+      const referencePoints = percentileGroupNames.flatMap(name => groupLoadPointsInBucket(referenceRow, name, bucket))
+      const midpointVusers = bucket.minVusers + ((bucket.maxVusers - bucket.minVusers) / 2)
+      return {
+        time: bucket.label,
+        timestampMs: referencePoints[0]?.timestampMs,
+        vusers: midpointVusers,
+        tps: groupMetricAverageForBucket(tpsRow, percentileGroupNames, bucket) ?? 0,
+        avgMs: groupMetricAverageForBucket(avgRow, percentileGroupNames, bucket) ?? 0,
+        errorPct: 0,
+        p50: groupMetricAverageForBucket(percentileRows.get('p50'), percentileGroupNames, bucket) ?? 0,
+        p90: groupMetricAverageForBucket(percentileRows.get('p90'), percentileGroupNames, bucket) ?? 0,
+        p95: groupMetricAverageForBucket(percentileRows.get('p95'), percentileGroupNames, bucket) ?? 0,
+        p99: groupMetricAverageForBucket(percentileRows.get('p99'), percentileGroupNames, bucket) ?? 0,
+        bucketMinVusers: bucket.minVusers,
+        bucketMaxVusers: bucket.maxVusers,
+        sourceSamples: referencePoints.length,
+      }
+    })
+  }
+
   const avgRow = rows.find(candidate => candidate.metric.id === 'avgMs')
   const tpsRow = rows.find(candidate => candidate.metric.id === 'tps')
   return referenceRow.cells.map((cell): MetricsHistoryPoint => {
     const midpointVusers = cell.bucket.minVusers + ((cell.bucket.maxVusers - cell.bucket.minVusers) / 2)
     return {
-      time: String(midpointVusers),
+      time: cell.bucket.label,
       timestampMs: cell.points[0]?.timestampMs,
       vusers: midpointVusers,
       tps: loadImpactMetricValueForBucket(tpsRow, cell.bucket.id) ?? 0,

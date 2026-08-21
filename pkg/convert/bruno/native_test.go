@@ -84,6 +84,9 @@ settings: {encodeUrl: true, timeout: 0, followRedirects: true, maxRedirects: 5}
 		if candidate.Script.Protocol != "http" || len(candidate.Script.Actions) != 1 {
 			t.Fatalf("script[%d] = %#v", index, candidate.Script)
 		}
+		if candidate.Script.CreatedAt.IsZero() || candidate.Script.UpdatedAt.IsZero() {
+			t.Fatalf("script[%d] timestamps = created_at=%v updated_at=%v, want non-zero timestamps", index, candidate.Script.CreatedAt, candidate.Script.UpdatedAt)
+		}
 		action := candidate.Script.Actions[0]
 		wantBody := fmt.Sprintf(`<SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/"><SOAP-ENV:Body><%sRequest>fixture-%02d</%sRequest></SOAP-ENV:Body></SOAP-ENV:Envelope>`, wantName, sequence, wantName)
 		if action.Type != "POST" || action.Method != "POST" || action.Body != wantBody {

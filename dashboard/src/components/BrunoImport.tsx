@@ -81,6 +81,7 @@ type RunOptions = {
 
 type OutputMode = 'canonical' | 'native_requests'
 type BrunoInspectionTab = 'summary' | 'source_apis' | 'credentials' | 'data' | 'import'
+type NativeCandidateSortKey = 'source' | 'script' | 'request' | 'status' | 'details'
 type FolderCreationAccess = 'checking' | 'allowed' | 'denied' | 'unavailable'
 
 const FOLDER_CREATION_DENIED_MESSAGE = 'Your current role can import scripts but cannot create project folders. Select an existing script folder, or ask a Project Administrator to create one for this project.'
@@ -244,6 +245,27 @@ function nativeCandidateTarget(candidate: BrunoNativeScriptCandidate) {
   return candidate.target || candidate.script.actions[0]?.target || candidate.script.config?.base_url || ''
 }
 
+function nativeCandidateSortValue(candidate: BrunoNativeScriptCandidate, key: NativeCandidateSortKey) {
+  switch (key) {
+    case 'source':
+      return `${candidate.source_path || ''}\u0000${candidate.sequence ?? Number.MAX_SAFE_INTEGER}`
+    case 'script':
+      return candidate.script.name || ''
+    case 'request':
+      return `${nativeCandidateMethod(candidate)}\u0000${nativeCandidateTarget(candidate)}`
+    case 'status':
+      return nativeCandidateReviewFindings(candidate).length > 0
+        ? 'review'
+        : (candidate.missing_variables || []).length > 0
+          ? 'blocked'
+          : (candidate.secret_requirements || []).length > 0
+            ? 'configure'
+            : (candidate.diagnostics || []).length > 0 ? 'warning' : 'ready'
+    case 'details':
+      return `${nativeCandidateReviewFindings(candidate).length}\u0000${(candidate.diagnostics || []).length}`
+  }
+}
+
 function nativeSecretRequirementNoImportedValueMessage(
   requirement: BrunoSecretRequirement,
   destinationSecretName: string,
@@ -398,7 +420,7 @@ function BrunoNativeReviewDialog({
             </section>
           )}
           <section className="bruno-native-review-section">
-            <h4>Masked native script</h4>
+            <h4>Masked APEX Load DSL script</h4>
             <BrunoImportPreviewScript script={candidate.script} />
           </section>
         </div>
@@ -514,6 +536,7 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
   const [folderCreationAccess, setFolderCreationAccess] = useState<FolderCreationAccess>(projectId ? 'checking' : 'denied')
   const [selectedCandidateIds, setSelectedCandidateIds] = useState<string[]>([])
   const [nativeCandidatePage, setNativeCandidatePage] = useState(0)
+  const [nativeCandidateSort, setNativeCandidateSort] = useState<{ key: NativeCandidateSortKey; direction: 'asc' | 'desc' }>({ key: 'source', direction: 'asc' })
   const [nativeFindingPage, setNativeFindingPage] = useState(0)
   const [nativeNameOverrides, setNativeNameOverrides] = useState<Record<string, string>>({})
   const [acknowledgedFindingIds, setAcknowledgedFindingIds] = useState<string[]>([])
@@ -720,6 +743,14 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
     () => inspection?.result.output_mode === 'native_requests' ? inspection.result.scripts : [],
     [inspection],
   )
+  const sortedNativeCandidates = useMemo(() => {
+    const direction = nativeCandidateSort.direction === 'asc' ? 1 : -1
+    return [...nativeCandidates].sort((left, right) => {
+      const comparison = nativeCandidateSortValue(left, nativeCandidateSort.key)
+        .localeCompare(nativeCandidateSortValue(right, nativeCandidateSort.key), undefined, { numeric: true, sensitivity: 'base' })
+      return comparison === 0 ? left.candidate_id.localeCompare(right.candidate_id) : comparison * direction
+    })
+  }, [nativeCandidateSort, nativeCandidates])
   const selectedCandidateIdSet = useMemo(
     () => new Set(selectedCandidateIds),
     [selectedCandidateIds],
@@ -731,11 +762,11 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
   const safeNativeCandidatePage = Math.min(nativeCandidatePage, nativeCandidatePageCount - 1)
   const nativeCandidatePageStart = safeNativeCandidatePage * NATIVE_CANDIDATE_PAGE_SIZE
   const visibleNativeCandidates = useMemo(
-    () => nativeCandidates.slice(
+    () => sortedNativeCandidates.slice(
       nativeCandidatePageStart,
       nativeCandidatePageStart + NATIVE_CANDIDATE_PAGE_SIZE,
     ),
-    [nativeCandidatePageStart, nativeCandidates],
+    [nativeCandidatePageStart, sortedNativeCandidates],
   )
   const nativeReviewCandidate = useMemo(
     () => nativeCandidates.find(candidate => candidate.candidate_id === nativeReviewCandidateId) || null,
@@ -1314,6 +1345,27 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
     setInspection(null)
   }
   const isNativeInspectionMode = outputMode === 'native_requests'
+  const sortNativeCandidates = (key: NativeCandidateSortKey) => {
+    setNativeCandidatePage(0)
+    setNativeCandidateSort(previous => previous.key === key
+      ? { key, direction: previous.direction === 'asc' ? 'desc' : 'asc' }
+      : { key, direction: 'asc' })
+  }
+  const sortableHeader = (label: string, key: NativeCandidateSortKey) => {
+    const active = nativeCandidateSort.key === key
+    const indicator = active ? (nativeCandidateSort.direction === 'asc' ? ' ▲' : ' ▼') : ''
+    return (
+      <button
+        type="button"
+        className="bruno-sort-button"
+        aria-label={`Sort by ${label}`}
+        aria-pressed={active}
+        onClick={() => sortNativeCandidates(key)}
+      >
+        {label}{indicator}
+      </button>
+    )
+  }
 
   return (
     <div className="bruno-import">
@@ -1819,11 +1871,11 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
                         <thead>
                           <tr>
                             <th aria-label="Selected" />
-                            <th>Source</th>
-                            <th>Script name</th>
-                            <th>Request</th>
-                            <th>Status</th>
-                            <th>Details</th>
+                            <th aria-sort={nativeCandidateSort.key === 'source' ? (nativeCandidateSort.direction === 'asc' ? 'ascending' : 'descending') : 'none'}>{sortableHeader('Source', 'source')}</th>
+                            <th aria-sort={nativeCandidateSort.key === 'script' ? (nativeCandidateSort.direction === 'asc' ? 'ascending' : 'descending') : 'none'}>{sortableHeader('Script name', 'script')}</th>
+                            <th aria-sort={nativeCandidateSort.key === 'request' ? (nativeCandidateSort.direction === 'asc' ? 'ascending' : 'descending') : 'none'}>{sortableHeader('Request', 'request')}</th>
+                            <th aria-sort={nativeCandidateSort.key === 'status' ? (nativeCandidateSort.direction === 'asc' ? 'ascending' : 'descending') : 'none'}>{sortableHeader('Status', 'status')}</th>
+                            <th aria-sort={nativeCandidateSort.key === 'details' ? (nativeCandidateSort.direction === 'asc' ? 'ascending' : 'descending') : 'none'}>{sortableHeader('Details', 'details')}</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -1885,7 +1937,17 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
                                     onChange={event => setNativeNameOverrides(previous => ({ ...previous, [candidate.candidate_id]: event.target.value }))}
                                   />
                                 </td>
-                                <td><code>{nativeCandidateMethod(candidate)}</code><small>{nativeCandidateTarget(candidate)}</small></td>
+                                <td>
+                                  <button
+                                    type="button"
+                                    className="btn btn-ghost bruno-native-inspect-button"
+                                    aria-haspopup="dialog"
+                                    aria-label={`Inspect source API ${candidate.source_path}`}
+                                    onClick={() => setNativeReviewCandidateId(candidate.candidate_id)}
+                                  >
+                                    Inspect
+                                  </button>
+                                </td>
                                 <td><span className={`bruno-native-status ${status}`}>{statusLabel}</span></td>
                                 <td>
                                   <button
