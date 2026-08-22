@@ -65,9 +65,11 @@ describe('Bruno import responsive layout', () => {
 
   it('uses the full source dialog body for the syntax-highlighted viewer', async () => {
     const css = await readStylesheet(new URL('./BrunoImport.css', import.meta.url))
+    const viewerCss = await readStylesheet(new URL('./SourceCodeViewer.css', import.meta.url))
     const body = cssRule(css, '.bruno-native-source-dialog-body')
     const section = cssRule(css, '.bruno-native-source-section')
-    const viewer = cssRule(css, '.bruno-native-source-viewer')
+    const viewer = cssRule(viewerCss, '.source-code-viewer')
+    const reviewViewer = cssRule(css, '.bruno-native-review-code-viewer')
 
     expect(body).toContain('display: flex;')
     expect(body).toContain('overflow: hidden;')
@@ -75,5 +77,6 @@ describe('Bruno import responsive layout', () => {
     expect(section).toContain('min-height: 0;')
     expect(viewer).toContain('flex: 1 1 auto;')
     expect(viewer).toContain('min-height: 0;')
+    expect(reviewViewer).toContain('height: min(320px, 42vh);')
   })
 })

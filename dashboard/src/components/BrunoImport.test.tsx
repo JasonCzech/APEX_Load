@@ -1722,6 +1722,7 @@ describe('BrunoImport', () => {
     expect(dialog?.textContent).toContain('CTA/first.yml')
     expect(dialog?.textContent).toContain('<source-xml/>')
     expect(dialog?.querySelector('.bruno-native-source-viewer .cm-editor')).not.toBeNull()
+    expect(dialog?.querySelector('.bruno-native-source-viewer .cm-lineWrapping')).toBeNull()
     expect(dialog?.querySelector('[aria-label="YAML source API"]')).not.toBeNull()
     expect(dialog?.querySelector('.apex-embedded-xml-tag')).not.toBeNull()
     expect(apiMock.getBrunoImportSessionSource).toHaveBeenCalledWith(
@@ -1753,6 +1754,10 @@ describe('BrunoImport', () => {
     expect(dialog?.textContent).toContain('Source mappings')
     expect(dialog?.textContent).toContain('Masked APEX Load DSL script')
     expect(dialog?.textContent).toContain('First API')
+    expect(dialog?.querySelector('[aria-label="Source mappings JSON"] .cm-editor')).not.toBeNull()
+    expect(dialog?.querySelector('[aria-label="Masked APEX Load DSL script JSON"] .cm-editor')).not.toBeNull()
+    expect(dialog?.querySelector('[aria-label="Masked APEX Load DSL script JSON"] .apex-dsl-section-key')).not.toBeNull()
+    expect(dialog?.querySelectorAll('.bruno-native-review-section pre.bruno-json')).toHaveLength(0)
     expect(document.activeElement?.getAttribute('aria-label')).toBe('Close review for CTA/first.yml')
 
     const closeButton = Array.from(dialog?.querySelectorAll<HTMLButtonElement>('button') || [])

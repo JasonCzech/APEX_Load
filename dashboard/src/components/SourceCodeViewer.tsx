@@ -5,20 +5,38 @@ import { xml } from '@codemirror/lang-xml'
 import { EditorView } from '@codemirror/view'
 
 import { apexCodeMirrorTheme } from './codeMirrorTheme'
+import { apexDslSemanticHighlighting } from './apexDslSemanticHighlighting'
 import { detectSourceCodeLanguage } from './sourceCodeLanguage'
 import { yamlSyntaxHighlighting } from './yamlSyntaxHighlighting'
+import './SourceCodeViewer.css'
 
-export default function SourceCodeViewer({ sourcePath, value }: { sourcePath: string; value: string }) {
+interface Props {
+  ariaLabel?: string
+  className?: string
+  semanticMode?: 'apex-dsl'
+  sourcePath: string
+  value: string
+}
+
+export default function SourceCodeViewer({
+  ariaLabel,
+  className = '',
+  semanticMode,
+  sourcePath,
+  value,
+}: Props) {
   const language = detectSourceCodeLanguage(sourcePath, value)
   const extensions = useMemo(() => [
     apexCodeMirrorTheme,
-    EditorView.lineWrapping,
     EditorView.editable.of(false),
     ...(language === 'json' ? [json()] : language === 'xml' ? [xml()] : [xml(), yamlSyntaxHighlighting]),
-  ], [language])
+    ...(semanticMode === 'apex-dsl' ? [apexDslSemanticHighlighting()] : []),
+  ], [language, semanticMode])
+
+  const rootClassName = ['source-code-viewer', className].filter(Boolean).join(' ')
 
   return (
-    <div className="bruno-native-source-viewer" role="region" aria-label={`${language.toUpperCase()} source API`}>
+    <div className={rootClassName} role="region" aria-label={ariaLabel || `${language.toUpperCase()} source API`}>
       <CodeMirror
         value={value}
         extensions={extensions}

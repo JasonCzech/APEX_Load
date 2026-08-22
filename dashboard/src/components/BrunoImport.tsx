@@ -417,7 +417,12 @@ function BrunoNativeReviewDialog({
           {(candidate.source_mappings || []).length > 0 && (
             <section className="bruno-native-review-section">
               <h4>Source mappings</h4>
-              <pre className="bruno-json">{JSON.stringify(candidate.source_mappings, null, 2)}</pre>
+              <SourceCodeViewer
+                ariaLabel="Source mappings JSON"
+                className="bruno-native-review-code-viewer"
+                sourcePath="source-mappings.json"
+                value={JSON.stringify(candidate.source_mappings, null, 2)}
+              />
             </section>
           )}
           <section className="bruno-native-review-section">
@@ -486,7 +491,11 @@ function BrunoNativeSourceDialog({
               ? <p role="alert">{error}</p>
               : source == null
                 ? <p className="bruno-native-source-loading">Loading source…</p>
-                : <SourceCodeViewer sourcePath={candidate.source_path} value={source} />}
+                : <SourceCodeViewer
+                    className="bruno-native-source-viewer"
+                    sourcePath={candidate.source_path}
+                    value={source}
+                  />}
           </section>
         </div>
         <footer className="bruno-native-review-dialog-footer">
@@ -2454,5 +2463,13 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
 }
 
 export function BrunoImportPreviewScript({ script }: { script: ScriptDefinition }) {
-  return <pre className="bruno-json">{JSON.stringify(script, null, 2)}</pre>
+  return (
+    <SourceCodeViewer
+      ariaLabel="Masked APEX Load DSL script JSON"
+      className="bruno-native-review-code-viewer"
+      semanticMode="apex-dsl"
+      sourcePath="apex-load-script.json"
+      value={JSON.stringify(script, null, 2)}
+    />
+  )
 }
