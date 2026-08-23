@@ -113,6 +113,62 @@ describe('ScriptSecretBindingsDialog', () => {
     expect(document.body.textContent).not.toContain('one-time-value')
   })
 
+  it('shows friendly importer names while retaining exact shared binding identities', async () => {
+    const passwordName = 'PASSWORD_13860464B9306046D342E1F5'
+    const usernameName = 'USERNAME_0B2497BE76736358F5C883E7'
+    const importedScript: ScriptDefinition = {
+      ...script,
+      actions: [{
+        name: 'Login',
+        type: 'request',
+        target: '/login',
+        headers: {
+          'X-Username': `{{secret.${usernameName}}}`,
+          'X-Password': `{{secret.${passwordName}}}`,
+        },
+      }],
+    }
+    apiMock.getProjectSecretUsage.mockImplementation(async (_projectId: string, name: string) => ({
+      project_id: 'project-1', name, usage_revision: `revision-${name}`, consumer_count: 40, reference_count: 40,
+      consumers: [{ script_id: 'script-1', script_name: 'AuthenticateMobilitySubscriber_312', reference_count: 1 }],
+      limit: 50, offset: 0, has_more: false,
+    }))
+
+    await act(async () => {
+      root.render(<ScriptSecretBindingsDialog scriptId="script-1" script={importedScript} projectId="project-1" scriptName="AuthenticateMobilitySubscriber_312" onClose={vi.fn()} onRebound={vi.fn()} />)
+    })
+    await flush()
+
+    const rows = Array.from(document.body.querySelectorAll<HTMLElement>('.script-secret-binding-row'))
+    expect(rows.map(row => row.querySelector('.script-secret-binding-summary strong')?.textContent)).toEqual(['PASSWORD', 'USERNAME'])
+    expect(rows.map(row => row.querySelector<HTMLInputElement>('input[type="text"]')?.value)).toEqual(['PASSWORD', 'USERNAME'])
+    expect(rows.map(row => row.querySelector('.secret-binding-review-reference code')?.textContent)).toEqual([
+      '{{secret.PASSWORD}}',
+      '{{secret.USERNAME}}',
+    ])
+    expect(document.body.textContent).not.toContain(passwordName)
+    expect(document.body.textContent).not.toContain(usernameName)
+
+    const passwordRow = rows[0]
+    const acknowledgement = passwordRow.querySelector<HTMLLabelElement>('.script-secret-impact-acknowledgement')!
+    const checkbox = acknowledgement.querySelector<HTMLInputElement>('input[type="checkbox"]')!
+    expect(acknowledgement.firstElementChild).toBe(checkbox)
+    expect(checkbox.nextElementSibling?.textContent).toBe('Use this value for all 40 consuming scripts')
+
+    act(() => {
+      setInput(passwordRow.querySelector<HTMLInputElement>('input[type="password"]')!, 'shared-value')
+      checkbox.click()
+    })
+    const configure = Array.from(passwordRow.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Configure shared value')
+    await act(async () => configure?.click())
+
+    expect(apiMock.createProjectSecrets).toHaveBeenCalledWith('project-1', [{
+      name: passwordName,
+      value: 'shared-value',
+      expected_usage: { usage_revision: `revision-${passwordName}` },
+    }])
+  })
+
   it('rebinds every exact occurrence to an explicitly selected existing project secret', async () => {
     const onRebound = vi.fn()
     const onClose = vi.fn()

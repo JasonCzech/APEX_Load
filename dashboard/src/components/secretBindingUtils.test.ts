@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { type SecretBindingRequirement } from '../types/scriptImports'
 import { type ScriptDefinition } from '../types/scripts'
 import {
+  friendlySecretBindingName,
   refreshedSecretBindingRequirements,
   replaceSecretBindingRequirementsForScript,
   requirementsPreserveDestinationValues,
@@ -12,6 +13,19 @@ import {
 
 const first = { name: 'First' } as ScriptDefinition
 const second = { name: 'Second' } as ScriptDefinition
+
+describe('friendlySecretBindingName', () => {
+  it.each([
+    ['PASSWORD_13860464B9306046D342E1F5', 'PASSWORD'],
+    ['USERNAME_0B2497BE76736358F5C883E7', 'USERNAME'],
+    ['CLIENT_ID_12ABCDEF3456', 'CLIENT_ID'],
+    ['CLIENT_ID_12ABCDEF3456_2', 'CLIENT_ID'],
+    ['LOGIN_PASSWORD', 'LOGIN_PASSWORD'],
+    ['TOKEN_1234', 'TOKEN_1234'],
+  ])('presents %s as %s without changing ordinary names', (name, expected) => {
+    expect(friendlySecretBindingName(name)).toBe(expected)
+  })
+})
 
 function requirement(id: string, scriptIndex?: number): SecretBindingRequirement {
   return {

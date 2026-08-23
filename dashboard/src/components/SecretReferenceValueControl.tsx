@@ -1,6 +1,7 @@
 interface Props {
   id: string
   name: string
+  displayName?: string
   value: string
   onNameChange?: (name: string) => void
   onValueChange: (value: string) => void
@@ -22,6 +23,7 @@ interface Props {
 export default function SecretReferenceValueControl({
   id,
   name,
+  displayName,
   value,
   onNameChange,
   onValueChange,
@@ -38,13 +40,14 @@ export default function SecretReferenceValueControl({
 }: Props) {
   const valueId = `${id}-value`
   const referenceId = `${id}-reference`
+  const presentedName = displayName ?? name
   return (
     <>
       <label htmlFor={id}>{nameLabel}</label>
       <input
         id={id}
         type="text"
-        value={name}
+        value={presentedName}
         onChange={event => onNameChange?.(event.target.value)}
         readOnly={nameReadOnly}
         disabled={nameDisabled}
@@ -54,7 +57,7 @@ export default function SecretReferenceValueControl({
         spellCheck={false}
       />
       <span id={referenceId} className="secret-binding-review-reference">
-        {referenceKind}: <code>{name.trim() ? `{{secret.${name.trim()}}}` : '{{secret.NAME}}'}</code>
+        {referenceKind}: <code>{presentedName.trim() ? `{{secret.${presentedName.trim()}}}` : '{{secret.NAME}}'}</code>
       </span>
       <label htmlFor={valueId}>{valueLabel}</label>
       <input

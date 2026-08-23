@@ -3,6 +3,7 @@ import { type ScriptDefinition } from '../types/scripts'
 
 export const MAX_SECRET_BINDING_NAME_LENGTH = 249
 const secretBindingNamePattern = /^[A-Z0-9_]{1,249}$/
+const generatedSecretIdentitySuffixPattern = /_(?:[A-F0-9]{24}|[A-F0-9]{12}(?:_[2-9][0-9]*)?)$/
 
 export function isValidSecretBindingName(value: string): boolean {
   return secretBindingNamePattern.test(value.trim())
@@ -10,6 +11,16 @@ export function isValidSecretBindingName(value: string): boolean {
 
 export function secretBindingReference(value: string): string {
   return `{{secret.${value.trim()}}}`
+}
+
+// Importers append provenance-derived hexadecimal identities when authored
+// names would otherwise collide or lose case-sensitive source identity. Keep
+// those exact names for storage and execution while presenting the authored
+// portion in operator-facing binding controls.
+export function friendlySecretBindingName(value: string): string {
+  const name = value.trim()
+  const friendly = name.replace(generatedSecretIdentitySuffixPattern, '')
+  return friendly || name
 }
 
 export function collisionSafeSecretName(base: string, ordinal: number): string {

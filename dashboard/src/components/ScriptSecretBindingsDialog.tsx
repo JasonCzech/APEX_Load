@@ -7,7 +7,7 @@ import { type ScriptDefinition } from '../types/scripts'
 import { getErrorMessage } from '../utils/errorUtils'
 import { useModalDialog } from '../hooks/useModalDialog'
 import { dialogBackdropProps } from './dialogBackdropProps'
-import { collisionSafeSecretName, MAX_SECRET_BINDING_NAME_LENGTH } from './secretBindingUtils'
+import { collisionSafeSecretName, friendlySecretBindingName, MAX_SECRET_BINDING_NAME_LENGTH } from './secretBindingUtils'
 import { scriptSecretReferenceSummaries } from './scriptSecretReferenceModel'
 import SecretReferenceValueControl from './SecretReferenceValueControl'
 import './ScriptSecretBindingsDialog.css'
@@ -131,7 +131,7 @@ export default function ScriptSecretBindingsDialog({
         } : undefined,
       }])
       setValues(current => ({ ...current, [binding.name]: '' }))
-      setMessage(`${binding.name} is configured for the exact reference used by this script. The value cannot be viewed.`)
+      setMessage(`${friendlySecretBindingName(binding.name)} is configured for the exact reference used by this script. The value cannot be viewed.`)
       await load()
       await onConfigured?.()
     } catch (cause: unknown) {
@@ -149,7 +149,7 @@ export default function ScriptSecretBindingsDialog({
     try {
       const response = await api.rebindScriptSecretReference(script, binding.name, newName)
       await onRebound(response.script, response.changed_locations)
-      setMessage(`Rebound ${response.changed_count} occurrence${response.changed_count === 1 ? '' : 's'} from ${binding.name} to ${newName}.`)
+      setMessage(`Rebound ${response.changed_count} occurrence${response.changed_count === 1 ? '' : 's'} from ${friendlySecretBindingName(binding.name)} to ${friendlySecretBindingName(newName)}.`)
       onClose()
     } catch (cause: unknown) {
       setError(getErrorMessage(cause, 'Unable to rebind the script secret reference.'))
@@ -232,11 +232,12 @@ export default function ScriptSecretBindingsDialog({
           {bindings.map((binding, index) => {
             const shared = (binding.usage?.consumer_count || 0) > 1
             const reuseName = reuseNames[binding.name] || ''
+            const displayName = friendlySecretBindingName(binding.name)
             return (
               <section className="script-secret-binding-row" key={binding.name}>
                 <div className="script-secret-binding-summary">
                   <div>
-                    <strong>{binding.name}</strong>
+                    <strong title={displayName === binding.name ? undefined : `Internal binding: ${binding.name}`}>{displayName}</strong>
                     <span className={`script-health-token ${binding.configured ? 'healthy' : 'warning'}`}>
                       {binding.configured ? 'Configured' : 'Missing value'}
                     </span>
@@ -270,11 +271,12 @@ export default function ScriptSecretBindingsDialog({
                     <SecretReferenceValueControl
                       id={`${titleId.replace(/:/g, '')}-binding-${index}`}
                       name={binding.name}
+                      displayName={displayName}
                       value={values[binding.name] || ''}
                       onValueChange={value => setValues(current => ({ ...current, [binding.name]: value }))}
                       nameReadOnly
                       nameLabel="Current script reference"
-                      valueLabel="Secret value"
+                      valueLabel="Secret Value"
                       valueDisabled={busyName === binding.name}
                       valuePlaceholder="Enter once; it cannot be revealed later"
                     />
@@ -285,7 +287,7 @@ export default function ScriptSecretBindingsDialog({
                           checked={shareAcknowledged[binding.name] === true}
                           onChange={event => setShareAcknowledged(current => ({ ...current, [binding.name]: event.target.checked }))}
                         />
-                        Use this value for all {binding.usage?.consumer_count} consuming scripts
+                        <span>Use this value for all {binding.usage?.consumer_count} consuming scripts</span>
                       </label>
                     )}
                     <div className="settings-inline-actions">
