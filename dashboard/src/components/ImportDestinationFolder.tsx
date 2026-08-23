@@ -3,7 +3,7 @@ import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { useApi } from '../hooks/useApi'
 import { ApiError } from '../hooks/apiClient'
 import { type Folder } from '../types'
-import { isEffectiveOperationAllowed } from '../utils/authAccessUtils'
+import { canCreateScriptFolders } from '../utils/authAccessUtils'
 import { getErrorMessage } from '../utils/errorUtils'
 import { brunoDestinationFolderOptions } from './brunoFolderOptions'
 import './ImportDestinationFolder.css'
@@ -119,7 +119,7 @@ export default function ImportDestinationFolder({ projectId, value, onChange, di
     void api.getAuthEffectiveAccess(projectId)
       .then(response => {
         if (cancelled) return
-        setFolderCreationAccess(isEffectiveOperationAllowed(response.resources || [], 'manage_projects')
+        setFolderCreationAccess(canCreateScriptFolders(response.resources || [])
           ? 'allowed'
           : 'denied')
       })

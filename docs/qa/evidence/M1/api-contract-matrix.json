@@ -5892,15 +5892,17 @@
       "authenticated": true,
       "state": "GREEN",
       "enforcement": "authentication middleware and access catalog",
-      "access": "Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin",
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin",
       "anonymous_assertion": "HTTP 401 before handler",
       "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
       "allowed_roles": {
         "global": [
+          "editor",
           "project_admin",
           "system_admin"
         ],
         "project": [
+          "editor",
           "project_admin"
         ]
       },

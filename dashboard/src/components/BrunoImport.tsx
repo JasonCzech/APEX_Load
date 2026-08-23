@@ -21,7 +21,7 @@ import {
 import { useApi } from '../hooks/useApi'
 import { ApiError } from '../hooks/apiClient'
 import { useModalDialog } from '../hooks/useModalDialog'
-import { isEffectiveOperationAllowed } from '../utils/authAccessUtils'
+import { canCreateScriptFolders } from '../utils/authAccessUtils'
 import { getErrorMessage } from '../utils/errorUtils'
 import DesktopApiResourceLink from './DesktopApiResourceLink'
 import SourceCodeViewer from './SourceCodeViewer'
@@ -804,7 +804,7 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
     void api.getAuthEffectiveAccess(projectId)
       .then(response => {
         if (cancelled) return
-        setFolderCreationAccess(isEffectiveOperationAllowed(response.resources || [], 'manage_projects')
+        setFolderCreationAccess(canCreateScriptFolders(response.resources || [])
           ? 'allowed'
           : 'denied')
       })

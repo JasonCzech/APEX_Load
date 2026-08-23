@@ -17,3 +17,8 @@ export function isEffectiveOperationAllowed(
   }
   return fallback
 }
+
+export function canCreateScriptFolders(resources: DashboardAuthEffectiveAccessResource[]): boolean {
+  return isEffectiveOperationAllowed(resources, 'create_script_folders') ||
+    isEffectiveOperationAllowed(resources, 'manage_projects')
+}

@@ -1917,6 +1917,71 @@ describe('BrunoImport', () => {
     expect(container.textContent).toContain('Created and selected script folder “CTA Collection 6a”.')
   })
 
+  it('lets a non-admin editor create the required script folder and save a native collection', async () => {
+    const inspection = nativeInspectionFixture()
+    inspection.result.scripts = [inspection.result.scripts[0]]
+    inspection.result.fidelity.executable_items = 1
+    apiMock.getAuthEffectiveAccess.mockResolvedValueOnce({
+      enabled: true,
+      authenticated: true,
+      project_id: 'project-1',
+      resources: [{
+        id: 'scripts_and_imports',
+        name: 'Scripts, Imports, and Replay',
+        description: 'Script access',
+        operations: [
+          { id: 'manage_projects', label: 'Manage projects', allowed: false },
+          { id: 'create_script_folders', label: 'Create script-library folders', allowed: true },
+        ],
+      }],
+    })
+    apiMock.listFolders.mockResolvedValueOnce({ folders: [], count: 0 })
+    apiMock.createFolder.mockResolvedValueOnce({
+      id: 'folder-editor-import',
+      project_id: 'project-1',
+      parent_id: null,
+      name: 'Editor Imports',
+      category: 'scripts',
+      created_at: '2026-07-16T19:00:00Z',
+      updated_at: '2026-07-16T19:00:00Z',
+    })
+    apiMock.inspectBrunoImport.mockResolvedValueOnce(inspection)
+    const file = new File(['version: 1'], 'opencollection.yml', { type: 'application/yaml' })
+
+    await act(async () => {
+      root.render(<BrunoImport initialFiles={[file]} projectId="project-1" />)
+      await Promise.resolve()
+      await new Promise(resolve => setTimeout(resolve, 0))
+    })
+
+    const folderName = Array.from(container.querySelectorAll<HTMLInputElement>('input'))
+      .find(input => input.parentElement?.textContent?.includes('New script folder name'))
+    expect(folderName).toBeDefined()
+    expect(container.textContent).not.toContain('cannot create project folders')
+    act(() => setInput(folderName!, 'Editor Imports'))
+    const createButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent?.includes('Create and select folder'))
+    await act(async () => {
+      createButton?.click()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    const inspectButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent?.includes('Inspect source'))
+    await act(async () => {
+      inspectButton?.click()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    const saveButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent?.includes('Save 1 native script'))
+    expect(apiMock.createFolder).toHaveBeenCalledWith('project-1', { name: 'Editor Imports', category: 'scripts' })
+    expect(saveButton?.disabled).toBe(false)
+    expect(container.querySelector('#bruno-save-blockers')).toBeNull()
+  })
+
   it('blocks inspect, save, and destination changes while a replacement folder is being created', async () => {
     const inspection = nativeInspectionFixture()
     const candidate = inspection.result.scripts[0]

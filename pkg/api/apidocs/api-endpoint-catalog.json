@@ -2643,7 +2643,7 @@
       "category": "Workspace \u0026 Assets",
       "public": false,
       "authenticated": true,
-      "access": "Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin"
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin"
     },
     {
       "method": "GET",

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { type DashboardAuthEffectiveAccessResource } from '../types'
-import { isEffectiveOperationAllowed } from './authAccessUtils'
+import { canCreateScriptFolders, isEffectiveOperationAllowed } from './authAccessUtils'
 
 const resources: DashboardAuthEffectiveAccessResource[] = [
   {
@@ -25,5 +25,29 @@ describe('isEffectiveOperationAllowed', () => {
     expect(isEffectiveOperationAllowed(resources, 'missing_operation')).toBe(false)
     expect(isEffectiveOperationAllowed(resources, 'missing_operation', false)).toBe(false)
     expect(isEffectiveOperationAllowed(resources, 'missing_operation', true)).toBe(true)
+  })
+})
+
+describe('canCreateScriptFolders', () => {
+  it('allows the dedicated editor permission without project administration', () => {
+    expect(canCreateScriptFolders([{
+      id: 'scripts',
+      name: 'Scripts',
+      description: 'Script access',
+      operations: [
+        { id: 'create_script_folders', label: 'Create script folders', allowed: true },
+        { id: 'manage_projects', label: 'Manage projects', allowed: false },
+      ],
+    }])).toBe(true)
+  })
+
+  it('retains compatibility with administrators on older controllers', () => {
+    expect(canCreateScriptFolders([{
+      id: 'projects',
+      name: 'Projects',
+      description: 'Project access',
+      operations: [{ id: 'manage_projects', label: 'Manage projects', allowed: true }],
+    }])).toBe(true)
+    expect(canCreateScriptFolders([])).toBe(false)
   })
 })

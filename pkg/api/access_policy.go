@@ -221,8 +221,8 @@ func accessRequirementForRequest(r *http.Request) (accessRequirement, bool) {
 			}
 			if strings.HasSuffix(path, "/folders") {
 				return accessRequirement{
-					GlobalRoles:  []string{RoleProjectAdmin, RoleSystemAdmin},
-					ProjectRoles: []string{RoleProjectAdmin},
+					GlobalRoles:  []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
+					ProjectRoles: []string{RoleEditor, RoleProjectAdmin},
 					ProjectLookup: func(r *http.Request, _ storage.Store) (string, int, string) {
 						return normalizeProjectID(r.PathValue("pid")), 0, ""
 					},

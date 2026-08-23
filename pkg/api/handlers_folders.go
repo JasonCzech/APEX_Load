@@ -28,14 +28,33 @@ func (s *Server) handleCreateFolder(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "folder name is required")
 		return
 	}
+	projectID := normalizeProjectID(r.PathValue("pid"))
 	now := time.Now()
-	category := req.Category
+	category := strings.TrimSpace(req.Category)
 	if category == "" {
 		category = "general"
 	}
+	if !s.canManageProjectFolders(r, projectID) {
+		if !strings.EqualFold(category, "scripts") {
+			writeError(w, http.StatusForbidden, "editors may only create script folders")
+			return
+		}
+		category = "scripts"
+		if req.ParentID != nil && strings.TrimSpace(*req.ParentID) != "" {
+			parent, err := s.store.GetFolder(strings.TrimSpace(*req.ParentID))
+			if err != nil {
+				writeError(w, http.StatusBadRequest, "parent folder not found")
+				return
+			}
+			if normalizeProjectID(parent.ProjectID) != projectID || !strings.EqualFold(strings.TrimSpace(parent.Category), "scripts") {
+				writeError(w, http.StatusForbidden, "script folders may only be nested under script folders in the same project")
+				return
+			}
+		}
+	}
 	folder := &storage.Folder{
 		ID:        uuid.New().String(),
-		ProjectID: r.PathValue("pid"),
+		ProjectID: projectID,
 		ParentID:  req.ParentID,
 		Name:      strings.TrimSpace(req.Name),
 		Category:  category,
@@ -48,6 +67,19 @@ func (s *Server) handleCreateFolder(w http.ResponseWriter, r *http.Request) {
 	}
 	s.recordAuditEvent(r, "folder.create", "success", "folder", folder.ID, folder.ProjectID, map[string]any{"name": folder.Name, "category": folder.Category})
 	writeJSON(w, http.StatusCreated, folder)
+}
+
+// Editors can organize the script library without receiving the broader
+// project-governance authority required to create result/general folders or
+// rename and delete folders. Auth bypass mode has no request principal and
+// retains its established unrestricted development behavior.
+func (s *Server) canManageProjectFolders(r *http.Request, projectID string) bool {
+	user, ok := AuthenticatedUserFromContext(r.Context())
+	if !ok || user == nil {
+		return true
+	}
+	return user.hasGlobalRole(RoleProjectAdmin, RoleSystemAdmin) ||
+		userHasProjectOrParentRole(s.store, user, projectID, RoleProjectAdmin)
 }
 
 func (s *Server) handleListFolders(w http.ResponseWriter, r *http.Request) {

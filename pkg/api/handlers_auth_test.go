@@ -500,6 +500,9 @@ func TestHandleGetAuthEffectiveAccessReturnsDevUserPreviewGrants(t *testing.T) {
 	if allowed := effectiveAccessOperationAllowed(payload.Resources, "manage_scripts"); !allowed {
 		t.Fatal("expected dev user preview to allow manage_scripts")
 	}
+	if allowed := effectiveAccessOperationAllowed(payload.Resources, "create_script_folders"); !allowed {
+		t.Fatal("expected dev user preview to allow create_script_folders")
+	}
 	if allowed := effectiveAccessOperationAllowed(payload.Resources, "manage_system"); allowed {
 		t.Fatal("expected dev user preview to deny manage_system")
 	}
@@ -536,6 +539,7 @@ func TestHandleGetAuthEffectiveAccessEvaluatesProjectRoles(t *testing.T) {
 	var manageSystem AuthEffectiveAccessOperation
 	var manageRepositoryReleases AuthEffectiveAccessOperation
 	var manageApplications AuthEffectiveAccessOperation
+	var createScriptFolders AuthEffectiveAccessOperation
 	for _, resource := range payload.Resources {
 		for _, operation := range resource.Operations {
 			switch operation.ID {
@@ -547,6 +551,8 @@ func TestHandleGetAuthEffectiveAccessEvaluatesProjectRoles(t *testing.T) {
 				manageRepositoryReleases = operation
 			case "manage_applications":
 				manageApplications = operation
+			case "create_script_folders":
+				createScriptFolders = operation
 			}
 		}
 	}
@@ -561,6 +567,9 @@ func TestHandleGetAuthEffectiveAccessEvaluatesProjectRoles(t *testing.T) {
 	}
 	if !manageApplications.Allowed || manageApplications.GrantSource != "project" {
 		t.Fatalf("manage applications = %#v, want allowed via project role", manageApplications)
+	}
+	if !createScriptFolders.Allowed || createScriptFolders.GrantSource != "project" {
+		t.Fatalf("create script folders = %#v, want allowed via project role", createScriptFolders)
 	}
 }
 

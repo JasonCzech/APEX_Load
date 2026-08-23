@@ -1190,6 +1190,51 @@ func TestTrustedHeaderAuthScopesProjectFolderListToProjectRoles(t *testing.T) {
 	}
 }
 
+func TestTrustedHeaderEditorCanCreateOnlyScriptFolders(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore returned error: %v", err)
+	}
+	defer store.Close()
+
+	project := &storage.Project{ID: uuid.New().String(), Name: "Editor folders", CreatedAt: time.Now(), UpdatedAt: time.Now()}
+	if err := store.SaveProject(project); err != nil {
+		t.Fatalf("SaveProject returned error: %v", err)
+	}
+	resultsParent := &storage.Folder{ID: uuid.New().String(), ProjectID: project.ID, Name: "Results", Category: "results", CreatedAt: time.Now(), UpdatedAt: time.Now()}
+	if err := store.SaveFolder(resultsParent); err != nil {
+		t.Fatalf("SaveFolder returned error: %v", err)
+	}
+
+	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 2, Addr: ":8080"})
+	enableTrustedHeaderAuth(t, server)
+	create := func(subject, role, body string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/projects/"+project.ID+"/folders", bytes.NewBufferString(body))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("X-Auth-Request-User", subject)
+		req.Header.Set("X-APEXLoad-Project-Roles", project.ID+"="+role)
+		resp := httptest.NewRecorder()
+		server.mux.ServeHTTP(resp, req)
+		return resp
+	}
+
+	if resp := create("editor", RoleEditor, `{"name":"Imported APIs","category":"scripts"}`); resp.Code != http.StatusCreated {
+		t.Fatalf("editor script folder status = %d, want %d body=%s", resp.Code, http.StatusCreated, resp.Body.String())
+	}
+	if resp := create("editor", RoleEditor, `{"name":"Editor Results","category":"results"}`); resp.Code != http.StatusForbidden {
+		t.Fatalf("editor result folder status = %d, want %d body=%s", resp.Code, http.StatusForbidden, resp.Body.String())
+	}
+	if resp := create("editor", RoleEditor, `{"name":"Nested Wrongly","category":"scripts","parent_id":"`+resultsParent.ID+`"}`); resp.Code != http.StatusForbidden {
+		t.Fatalf("editor script folder under results status = %d, want %d body=%s", resp.Code, http.StatusForbidden, resp.Body.String())
+	}
+	if resp := create("viewer", RoleViewer, `{"name":"Viewer Scripts","category":"scripts"}`); resp.Code != http.StatusForbidden {
+		t.Fatalf("viewer script folder status = %d, want %d body=%s", resp.Code, http.StatusForbidden, resp.Body.String())
+	}
+	if resp := create("project-admin", RoleProjectAdmin, `{"name":"Admin Results","category":"results"}`); resp.Code != http.StatusCreated {
+		t.Fatalf("project admin result folder status = %d, want %d body=%s", resp.Code, http.StatusCreated, resp.Body.String())
+	}
+}
+
 func TestTrustedHeaderAuthProjectRoleGuardsStoredScriptEndpoints(t *testing.T) {
 	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
 	if err != nil {
