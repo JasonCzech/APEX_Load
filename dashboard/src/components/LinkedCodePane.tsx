@@ -119,6 +119,7 @@ interface Props {
   onLineClick?: (line: number) => void
   ariaLabel?: string
   maxHeight?: string
+  wrapLines?: boolean
 }
 
 export default function LinkedCodePane({
@@ -131,6 +132,7 @@ export default function LinkedCodePane({
   onLineClick,
   ariaLabel,
   maxHeight = '420px',
+  wrapLines = true,
 }: Props) {
   const viewRef = useRef<EditorView | null>(null)
   const clickRef = useRef(onLineClick)
@@ -146,7 +148,7 @@ export default function LinkedCodePane({
       apexCodeMirrorTheme,
       linkedRangeField,
       filterDecorationsField,
-      EditorView.lineWrapping,
+      ...(wrapLines ? [EditorView.lineWrapping] : []),
       EditorView.editable.of(false),
       EditorView.domEventHandlers({
         wheel(event, view) {
@@ -169,7 +171,7 @@ export default function LinkedCodePane({
       exts.push(statusGutter(gutterStatuses))
     }
     return exts
-  }, [language, semanticMode, gutterStatuses])
+  }, [language, semanticMode, gutterStatuses, wrapLines])
 
   // Apply the linked-line highlight and scroll it into view whenever the active
   // range (or the underlying document) changes. Depend on the range's line

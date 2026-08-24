@@ -3,10 +3,10 @@ import { describe, expect, it } from 'vitest'
 import { type SecretBindingRequirement } from '../types/scriptImports'
 import { type ScriptDefinition } from '../types/scripts'
 import {
-  friendlySecretBindingName,
   refreshedSecretBindingRequirements,
   replaceSecretBindingRequirementsForScript,
   requirementsPreserveDestinationValues,
+  secretBindingDisplayNames,
   secretBindingRequirementsForScript,
   updateSecretBindingRequirementNames,
 } from './secretBindingUtils'
@@ -14,16 +14,46 @@ import {
 const first = { name: 'First' } as ScriptDefinition
 const second = { name: 'Second' } as ScriptDefinition
 
-describe('friendlySecretBindingName', () => {
-  it.each([
-    ['PASSWORD_13860464B9306046D342E1F5', 'PASSWORD'],
-    ['USERNAME_0B2497BE76736358F5C883E7', 'USERNAME'],
-    ['CLIENT_ID_12ABCDEF3456', 'CLIENT_ID'],
-    ['CLIENT_ID_12ABCDEF3456_2', 'CLIENT_ID'],
-    ['LOGIN_PASSWORD', 'LOGIN_PASSWORD'],
-    ['TOKEN_1234', 'TOKEN_1234'],
-  ])('presents %s as %s without changing ordinary names', (name, expected) => {
-    expect(friendlySecretBindingName(name)).toBe(expected)
+describe('secretBindingDisplayNames', () => {
+  const nativeBrunoScript = {
+    ...first,
+    name: 'Imported',
+    metadata: { import: { source: 'bruno', preserved: { native_importer: 'apexload-bruno-native-importer' } } },
+  }
+
+  it('simplifies every provenance-marked native Bruno identity length', () => {
+    const names = [
+      'PASSWORD_13860464B9306046D342E1F5',
+      'USERNAME_0B2497BE76736358F5C883E7',
+      'AUTH_TOKEN_84921F7A1055',
+    ]
+
+    expect(Object.fromEntries(secretBindingDisplayNames(names, nativeBrunoScript))).toEqual({
+      PASSWORD_13860464B9306046D342E1F5: 'PASSWORD',
+      USERNAME_0B2497BE76736358F5C883E7: 'USERNAME',
+      AUTH_TOKEN_84921F7A1055: 'AUTH_TOKEN',
+    })
+  })
+
+  it('does not alter manually authored or unsupported suffix shapes', () => {
+    const names = ['TOKEN_1234567890ABCDEF12345678', 'CLIENT_ID_12ABCDEF3456', 'LOGIN_PASSWORD']
+
+    expect(Object.fromEntries(secretBindingDisplayNames(names, first))).toEqual({
+      TOKEN_1234567890ABCDEF12345678: 'TOKEN_1234567890ABCDEF12345678',
+      CLIENT_ID_12ABCDEF3456: 'CLIENT_ID_12ABCDEF3456',
+      LOGIN_PASSWORD: 'LOGIN_PASSWORD',
+    })
+    expect(secretBindingDisplayNames(['CLIENT_ID_12ABCDEF345'], nativeBrunoScript).get('CLIENT_ID_12ABCDEF345')).toBe('CLIENT_ID_12ABCDEF345')
+  })
+
+  it('keeps distinct case-sensitive Bruno variables distinguishable', () => {
+    const firstName = 'CLIENT_ID_111111111111'
+    const secondName = 'CLIENT_ID_222222222222222222222222'
+
+    expect(Object.fromEntries(secretBindingDisplayNames([secondName, firstName], nativeBrunoScript))).toEqual({
+      CLIENT_ID_111111111111: 'CLIENT_ID · source 1',
+      CLIENT_ID_222222222222222222222222: 'CLIENT_ID · source 2',
+    })
   })
 })
 

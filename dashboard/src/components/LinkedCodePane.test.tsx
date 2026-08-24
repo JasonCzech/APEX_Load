@@ -15,17 +15,23 @@ import { type LineRange } from './dslJsonPointers'
 // only attaches its EditorView asynchronously), so stand in a lightweight fake
 // editor that calls onCreateEditor once with a view exposing just the surface
 // LinkedCodePane touches: a 4-line doc and a recording dispatch.
+const { codeMirrorProps } = vi.hoisted(() => ({
+  codeMirrorProps: { extensions: [] as unknown[] },
+}))
 const dispatchSpy = vi.fn()
 vi.mock('@uiw/react-codemirror', () => ({
   default: function MockCodeMirror({
+    extensions,
     height,
     maxHeight,
     onCreateEditor,
   }: {
+    extensions?: unknown[]
     height?: string
     maxHeight?: string
     onCreateEditor?: (view: unknown) => void
   }) {
+    codeMirrorProps.extensions = extensions || []
     useEffect(() => {
       const fakeView = {
         state: {
@@ -102,6 +108,18 @@ describe('LinkedCodePane', () => {
     const editor = container.querySelector('[data-testid="mock-codemirror"]') as HTMLDivElement | null
     expect(editor?.dataset.height).toBe('100%')
     expect(editor?.dataset.maxHeight).toBe('100%')
+  })
+
+  it('allows source mapping panes to disable line wrapping', async () => {
+    await act(async () => {
+      root.render(<LinkedCodePane value="a very long source line" language="json" wrapLines />)
+    })
+    expect(codeMirrorProps.extensions).toContain(EditorView.lineWrapping)
+
+    await act(async () => {
+      root.render(<LinkedCodePane value="a very long source line" language="json" wrapLines={false} />)
+    })
+    expect(codeMirrorProps.extensions).not.toContain(EditorView.lineWrapping)
   })
 
   it('lets the linked code pane scroll while it has room in the wheel direction', () => {

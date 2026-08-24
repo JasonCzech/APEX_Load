@@ -30,6 +30,8 @@ import {
 } from './scriptCodeDecorations'
 import type { LineRange } from './dslJsonPointers'
 import { buildParameterizeSelectionRequest } from './scriptEditorUtils'
+import CodeLineWrapToggle from './CodeLineWrapToggle'
+import { useCodeLineWrapPreference } from './codeLineWrapPreference'
 import type { ScriptRepairSuggestion } from './scriptAuthoringAssist'
 import type { ImportedParameterFileMapping } from './scriptEditorImportModel'
 import type { ScriptPhaseActionRow } from './scriptEditorWorkbench'
@@ -102,6 +104,7 @@ export function ScriptCodePane({
   const parameterNavigationRef = useRef<{ name?: string; editorReadyVersion: number }>({ editorReadyVersion: -1 })
   const [jsonEditEnabled, setJsonEditEnabled] = useState(false)
   const [editorReadyVersion, setEditorReadyVersion] = useState(0)
+  const [wordWrapEnabled, setWordWrapEnabled] = useCodeLineWrapPreference()
   const activeStartLine = activeRange?.startLine ?? null
   const activeEndLine = activeRange?.endLine ?? null
   const parameterMatchKey = useMemo(
@@ -123,7 +126,8 @@ export function ScriptCodePane({
     if (!allowDirectEdit && jsonEditEnabled) setJsonEditEnabled(false)
   }, [allowDirectEdit, jsonEditEnabled])
 
-  const wrapLines = shouldWrapScriptJsonLines(value)
+  const wordWrapAvailable = shouldWrapScriptJsonLines(value)
+  const wrapLines = wordWrapEnabled && wordWrapAvailable
   const extensions = useMemo(() => [
     json(),
     apexCodeMirrorTheme,
@@ -247,6 +251,11 @@ export function ScriptCodePane({
             <span className="script-code-readonly-pill" title={allowDirectEdit ? 'The JSON mirrors the structured editor. Click Edit JSON to change it directly.' : 'Switch to Full Script JSON to edit raw JSON directly.'}>Read-only</span>
           )}
           <button type="button" className="btn btn-sm btn-ghost" onClick={handleOpenSearch} title="Find in script (⌘F / Ctrl+F)">Find</button>
+          <CodeLineWrapToggle
+            disabled={!wordWrapAvailable}
+            wrapLines={wrapLines}
+            onChange={setWordWrapEnabled}
+          />
           {onRequestParameterize && (
             <button type="button" className="btn btn-sm btn-ghost" onClick={parameterizeCurrentSelection} title="Parameterize the selected value (you can also right-click a selection)">
               Parameterize

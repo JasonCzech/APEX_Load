@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import SourceMappingReview from './SourceMappingReview'
 import { scrollMappingRowIntoTableView } from './sourceMappingScroll'
+import { CODE_LINE_WRAP_STORAGE_KEY } from './codeLineWrapPreference'
 
 const { downloadTextFileMock } = vi.hoisted(() => ({
   downloadTextFileMock: vi.fn(),
@@ -39,12 +40,14 @@ vi.mock('./LinkedCodePane', () => ({
     activeRange,
     semanticMode,
     maxHeight,
+    wrapLines,
   }: {
     value: string
     ariaLabel?: string
     activeRange?: { startLine: number; endLine: number } | null
     semanticMode?: string
     maxHeight?: string
+    wrapLines?: boolean
   }) => {
     const activeText = activeRange
       ? value.split('\n').slice(activeRange.startLine - 1, activeRange.endLine).join('\n')
@@ -55,6 +58,7 @@ vi.mock('./LinkedCodePane', () => ({
         data-active-range={activeRange ? `${activeRange.startLine}-${activeRange.endLine}` : ''}
         data-max-height={maxHeight || ''}
         data-semantic-mode={semanticMode || ''}
+        data-wrap-lines={wrapLines === false ? 'false' : 'true'}
       >
         {activeText || value}
       </pre>
@@ -153,6 +157,7 @@ describe('SourceMappingReview', () => {
     root = createRoot(container)
     downloadTextFileMock.mockReset()
     downloadTextFileMock.mockResolvedValue('saved')
+    window.localStorage.removeItem(CODE_LINE_WRAP_STORAGE_KEY)
   })
 
   afterEach(() => {
@@ -161,6 +166,7 @@ describe('SourceMappingReview', () => {
     })
     container.remove()
     vi.restoreAllMocks()
+    window.localStorage.removeItem(CODE_LINE_WRAP_STORAGE_KEY)
   })
 
   it('updates the generated DSL selection when the source file changes', async () => {
@@ -183,6 +189,25 @@ describe('SourceMappingReview', () => {
     expect(dslPane.textContent).not.toContain('"name": "Homepage"')
     expect(container.textContent).toContain('actions[1]')
     expect(container.textContent).toContain('native noop')
+  })
+
+  it('toggles word wrapping for both native source and generated DSL panes', async () => {
+    await act(async () => {
+      root.render(<SourceMappingReview sourceReview={sourceReview} script={script} />)
+    })
+    await flushPromises()
+
+    const toggle = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent === 'Word Wrap: On')
+    expect(toggle).toBeDefined()
+    expect(container.querySelectorAll('[data-wrap-lines="true"]')).toHaveLength(2)
+
+    await act(async () => {
+      toggle?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(container.querySelectorAll('[data-wrap-lines="false"]')).toHaveLength(2)
+    expect(window.localStorage.getItem(CODE_LINE_WRAP_STORAGE_KEY)).toBe('off')
   })
 
   it('selects the canonical mapped source when duplicate basenames exist regardless of file order', async () => {

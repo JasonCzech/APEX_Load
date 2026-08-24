@@ -17,6 +17,8 @@ describe('Secret Bindings dialog layout', () => {
     const css = await readStylesheet(new URL('./ScriptSecretBindingsDialog.css', import.meta.url))
     const acknowledgement = cssRule(css, '.script-secret-impact-acknowledgement')
     const checkbox = cssRule(css, ".script-secret-impact-acknowledgement input[type='checkbox']")
+    const internalReference = cssRule(css, '.script-secret-value-control .secret-binding-internal-reference')
+    const internalReferenceCode = cssRule(css, '.script-secret-value-control .secret-binding-internal-reference code')
 
     expect(css).toContain('.script-secret-value-control > input,')
     expect(acknowledgement).toContain('justify-content: flex-start;')
@@ -24,5 +26,7 @@ describe('Secret Bindings dialog layout', () => {
     expect(acknowledgement).toContain('text-align: left;')
     expect(checkbox).toContain('flex: 0 0 auto;')
     expect(checkbox).toContain('width: auto;')
+    expect(internalReference).toContain('max-width: 100%;')
+    expect(internalReferenceCode).toContain('overflow-wrap: anywhere;')
   })
 })

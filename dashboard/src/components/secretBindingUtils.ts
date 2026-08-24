@@ -3,7 +3,7 @@ import { type ScriptDefinition } from '../types/scripts'
 
 export const MAX_SECRET_BINDING_NAME_LENGTH = 249
 const secretBindingNamePattern = /^[A-Z0-9_]{1,249}$/
-const generatedSecretIdentitySuffixPattern = /_(?:[A-F0-9]{24}|[A-F0-9]{12}(?:_[2-9][0-9]*)?)$/
+const nativeBrunoSourceIdentitySuffixPattern = /^(.+)_([A-F0-9]{12}|[A-F0-9]{24})$/
 
 export function isValidSecretBindingName(value: string): boolean {
   return secretBindingNamePattern.test(value.trim())
@@ -13,14 +13,43 @@ export function secretBindingReference(value: string): string {
   return `{{secret.${value.trim()}}}`
 }
 
-// Importers append provenance-derived hexadecimal identities when authored
-// names would otherwise collide or lose case-sensitive source identity. Keep
-// those exact names for storage and execution while presenting the authored
-// portion in operator-facing binding controls.
-export function friendlySecretBindingName(value: string): string {
+function isNativeBrunoImport(script: ScriptDefinition): boolean {
+  const imported = script.metadata?.import
+  return imported?.source === 'bruno'
+    && imported.preserved?.native_importer === 'apexload-bruno-native-importer'
+}
+
+function friendlySecretBindingBaseName(value: string, script: ScriptDefinition): string {
   const name = value.trim()
-  const friendly = name.replace(generatedSecretIdentitySuffixPattern, '')
-  return friendly || name
+  if (!isNativeBrunoImport(script)) return name
+  return name.match(nativeBrunoSourceIdentitySuffixPattern)?.[1] || name
+}
+
+// Native Bruno imports append either a 48-bit or 96-bit identity to unresolved
+// source variables because Bruno names are case-sensitive. Simplify only those
+// known, provenance-marked shapes. When two exact references simplify to the
+// same label, retain a stable visible discriminator so operators cannot
+// confuse their write-only values.
+export function secretBindingDisplayNames(
+  values: readonly string[],
+  script: ScriptDefinition,
+): Map<string, string> {
+  const exactNames = Array.from(new Set(values.map(value => value.trim()).filter(Boolean)))
+  const baseByExactName = new Map(exactNames.map(name => [name, friendlySecretBindingBaseName(name, script)]))
+  const exactNamesByBase = new Map<string, string[]>()
+  for (const name of exactNames) {
+    const base = baseByExactName.get(name) || name
+    exactNamesByBase.set(base, [...(exactNamesByBase.get(base) || []), name])
+  }
+
+  const result = new Map<string, string>()
+  for (const [base, names] of exactNamesByBase) {
+    const sortedNames = names.slice().sort((left, right) => left.localeCompare(right))
+    for (const [index, name] of sortedNames.entries()) {
+      result.set(name, sortedNames.length === 1 ? base : `${base} · source ${index + 1}`)
+    }
+  }
+  return result
 }
 
 export function collisionSafeSecretName(base: string, ordinal: number): string {

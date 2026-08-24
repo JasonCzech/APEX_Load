@@ -96,9 +96,10 @@ describe('ScriptSecretBindingsDialog', () => {
     })
     await flush()
 
-    const nameInput = document.body.querySelector<HTMLInputElement>('input[type="text"]')
-    expect(nameInput?.value).toBe('LOGIN_TOKEN')
-    expect(nameInput?.readOnly).toBe(true)
+    const internalReference = document.body.querySelector<HTMLDetailsElement>('.secret-binding-internal-reference')
+    expect(internalReference?.open).toBe(false)
+    expect(internalReference?.querySelector('summary')?.textContent).toBe('Internal script reference')
+    expect(internalReference?.querySelector('code')?.textContent).toBe('{{secret.LOGIN_TOKEN}}')
     const valueInput = document.body.querySelector<HTMLInputElement>('input[type="password"]')!
     act(() => setInput(valueInput, 'one-time-value'))
     const configure = Array.from(document.body.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Configure exact reference')
@@ -118,6 +119,7 @@ describe('ScriptSecretBindingsDialog', () => {
     const usernameName = 'USERNAME_0B2497BE76736358F5C883E7'
     const importedScript: ScriptDefinition = {
       ...script,
+      metadata: { import: { source: 'bruno', preserved: { native_importer: 'apexload-bruno-native-importer' } } },
       actions: [{
         name: 'Login',
         type: 'request',
@@ -141,13 +143,11 @@ describe('ScriptSecretBindingsDialog', () => {
 
     const rows = Array.from(document.body.querySelectorAll<HTMLElement>('.script-secret-binding-row'))
     expect(rows.map(row => row.querySelector('.script-secret-binding-summary strong')?.textContent)).toEqual(['PASSWORD', 'USERNAME'])
-    expect(rows.map(row => row.querySelector<HTMLInputElement>('input[type="text"]')?.value)).toEqual(['PASSWORD', 'USERNAME'])
-    expect(rows.map(row => row.querySelector('.secret-binding-review-reference code')?.textContent)).toEqual([
-      '{{secret.PASSWORD}}',
-      '{{secret.USERNAME}}',
+    expect(rows.map(row => row.querySelector('.secret-binding-internal-reference code')?.textContent)).toEqual([
+      `{{secret.${passwordName}}}`,
+      `{{secret.${usernameName}}}`,
     ])
-    expect(document.body.textContent).not.toContain(passwordName)
-    expect(document.body.textContent).not.toContain(usernameName)
+    expect(rows.every(row => row.querySelector<HTMLDetailsElement>('.secret-binding-internal-reference')?.open === false)).toBe(true)
 
     const passwordRow = rows[0]
     const acknowledgement = passwordRow.querySelector<HTMLLabelElement>('.script-secret-impact-acknowledgement')!
@@ -167,6 +167,35 @@ describe('ScriptSecretBindingsDialog', () => {
       value: 'shared-value',
       expected_usage: { usage_revision: `revision-${passwordName}` },
     }])
+  })
+
+  it('keeps colliding friendly names visibly distinct', async () => {
+    const firstName = 'CLIENT_ID_111111111111111111111111'
+    const secondName = 'CLIENT_ID_222222222222222222222222'
+    const importedScript: ScriptDefinition = {
+      ...script,
+      metadata: { import: { source: 'bruno', preserved: { native_importer: 'apexload-bruno-native-importer' } } },
+      actions: [{
+        name: 'Login',
+        type: 'request',
+        target: `/?first={{secret.${firstName}}}&second={{secret.${secondName}}}`,
+      }],
+    }
+
+    await act(async () => {
+      root.render(<ScriptSecretBindingsDialog scriptId="script-1" script={importedScript} projectId="project-1" scriptName="Case-sensitive variables" onClose={vi.fn()} onRebound={vi.fn()} />)
+    })
+    await flush()
+
+    const rows = Array.from(document.body.querySelectorAll<HTMLElement>('.script-secret-binding-row'))
+    expect(rows.map(row => row.querySelector('.script-secret-binding-summary strong')?.textContent)).toEqual([
+      'CLIENT_ID · source 1',
+      'CLIENT_ID · source 2',
+    ])
+    expect(rows.map(row => row.querySelector('.secret-binding-internal-reference code')?.textContent)).toEqual([
+      `{{secret.${firstName}}}`,
+      `{{secret.${secondName}}}`,
+    ])
   })
 
   it('rebinds every exact occurrence to an explicitly selected existing project secret', async () => {

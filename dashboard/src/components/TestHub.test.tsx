@@ -1785,6 +1785,41 @@ describe('TestHub', () => {
     expect(document.activeElement).toBe(deleteTrigger)
   })
 
+  it('selects all visible scenarios and preserves failed rows after a partial bulk delete', async () => {
+    vi.stubGlobal('confirm', vi.fn(() => true))
+    let scenarios = [
+      scenarioFixture('scenario-delete', 'Delete Me'),
+      scenarioFixture('scenario-locked', 'Linked Results Scenario'),
+    ]
+    apiMock.listScenarios.mockImplementation(async () => ({ scenarios, count: scenarios.length }))
+    apiMock.deleteScenario.mockImplementation(async (id: string) => {
+      if (id === 'scenario-locked') throw new Error('scenario has linked results')
+      scenarios = scenarios.filter(scenario => scenario.id !== id)
+      return { deleted: id }
+    })
+
+    await act(async () => {
+      root.render(<TestHub testStatuses={{}} onSelectTest={vi.fn()} />)
+    })
+    await flushPromises()
+
+    const selectAll = container.querySelector<HTMLInputElement>('input[aria-label="Select all visible scenarios"]')
+    expect(selectAll).not.toBeNull()
+    await act(async () => {
+      selectAll?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(container.textContent).toContain('Delete Selected (2)')
+
+    await clickButton('Delete Selected (2)')
+    await flushPromises()
+
+    expect(apiMock.deleteScenario).toHaveBeenCalledTimes(2)
+    expect(container.textContent).not.toContain('Delete Me')
+    expect(container.textContent).toContain('Linked Results Scenario')
+    expect(container.querySelector<HTMLInputElement>('input[aria-label="Select Linked Results Scenario"]')?.checked).toBe(true)
+    expect(container.textContent).toContain('Deleted 1 of 2 selected scenarios')
+  })
+
   it('filters the scenario library by associated release', async () => {
     const onSelectTest = vi.fn()
     apiMock.listScenarios.mockResolvedValue({

@@ -29,6 +29,7 @@ import LibraryFederationControls from './LibraryFederationControls'
 import { useLibraryFederation } from './useLibraryFederation'
 import { shortLibraryHash } from './libraryFederationUtils'
 import ReferenceKeyBadge from './ReferenceKeyBadge'
+import SelectAllCheckbox from './SelectAllCheckbox'
 import { useHasTopbarContributionProvider, useTopbarContribution } from '../hooks/TopbarContributionProvider'
 import { clearScenarioBuilderDraft, hasScenarioBuilderProgress } from './scenarioBuilderDraft'
 import { useNavigationGuard, useNavigationGuardRunner, type NavigationGuard } from '../hooks/NavigationGuardProvider'
@@ -51,6 +52,7 @@ import {
 import { requestSettingsFocus } from './settingsSectionLayout'
 import { loadAllTestSummaries } from './testCatalogPagination'
 import { scenarioSeedFromTemplate } from './scenarioTemplateSeed'
+import { boundedAllSettled } from '../utils/boundedAllSettled'
 
 interface Props {
   applicationRepository?: ApplicationRepository | null
@@ -973,6 +975,8 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
   const [estimateError, setEstimateError] = useState('')
   const [generatorInventory, setGeneratorInventory] = useState<SystemInventoryGenerator[]>([])
   const [confirmDeleteScenarioId, setConfirmDeleteScenarioId] = useState<string | null>(null)
+  const [selectedScenarioIds, setSelectedScenarioIds] = useState<Set<string>>(new Set())
+  const [deletingScenarioIds, setDeletingScenarioIds] = useState<Set<string>>(new Set())
   // Build-from-goal (Little's Law) sizing panel state.
   const [goalSizingOpen, setGoalSizingOpen] = useState(false)
   const [goalBaselineTests, setGoalBaselineTests] = useState<TestSummary[]>([])
@@ -1036,6 +1040,8 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
     setScenarioRuns({})
     setLoadingRunsFor(null)
     setConfirmDeleteScenarioId(null)
+    setSelectedScenarioIds(new Set())
+    setDeletingScenarioIds(new Set())
     setGoalBaselineTests([])
     setGoalBaselineId('')
     setGoalBaselineQuery('')
@@ -1418,6 +1424,22 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
   }, [scenarioFederation.remoteItems, scenarioFederation.sourceFilter, knownScenarioIds, scenarioQuery, scenarioReleaseFilter])
 
   const showLocalScenarios = scenarioFederation.sourceFilter !== 'host'
+  const visibleScenarioIds = useMemo(
+    () => showLocalScenarios ? sorted.map(scenario => scenario.id) : [],
+    [showLocalScenarios, sorted],
+  )
+  const selectedVisibleScenarioIds = useMemo(
+    () => visibleScenarioIds.filter(id => selectedScenarioIds.has(id)),
+    [selectedScenarioIds, visibleScenarioIds],
+  )
+
+  useEffect(() => {
+    const visible = new Set(visibleScenarioIds)
+    setSelectedScenarioIds(current => {
+      const next = new Set(Array.from(current).filter(id => visible.has(id)))
+      return next.size === current.size ? current : next
+    })
+  }, [visibleScenarioIds])
 
   const handleSort = (field: typeof sortField) => {
     if (sortField === field) setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc')
@@ -2318,12 +2340,78 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
       setError('Current session can view scenarios but cannot delete them.')
       return
     }
+    const scopeProjectId = activeProjectId
+    setDeletingScenarioIds(current => new Set(current).add(id))
     try {
       await api.deleteScenario(id)
-      refresh()
+      if (currentProjectIdRef.current !== scopeProjectId) return
+      setScenarios(current => current.filter(scenario => scenario.id !== id))
+      setSelectedScenarioIds(current => {
+        const next = new Set(current)
+        next.delete(id)
+        return next
+      })
+      await refresh()
     } catch (err: unknown) {
-      setError(getErrorMessage(err, 'Unable to delete scenario'))
+      if (currentProjectIdRef.current === scopeProjectId) setError(getErrorMessage(err, 'Unable to delete scenario'))
+    } finally {
+      if (currentProjectIdRef.current === scopeProjectId) {
+        setDeletingScenarioIds(current => {
+          const next = new Set(current)
+          next.delete(id)
+          return next
+        })
+      }
     }
+  }
+
+  const toggleScenarioSelection = (id: string) => {
+    setSelectedScenarioIds(current => {
+      const next = new Set(current)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const toggleAllVisibleScenarios = (checked: boolean) => {
+    setSelectedScenarioIds(current => {
+      const next = new Set(current)
+      visibleScenarioIds.forEach(id => checked ? next.add(id) : next.delete(id))
+      return next
+    })
+  }
+
+  const deleteSelectedScenarios = async () => {
+    const ids = selectedVisibleScenarioIds.filter(id => !deletingScenarioIds.has(id))
+    if (!canManageTests || ids.length === 0 || !confirm(`Delete ${ids.length} selected scenario${ids.length === 1 ? '' : 's'}? Scenarios with linked results cannot be deleted.`)) return
+    const scopeProjectId = activeProjectId
+    setDeletingScenarioIds(current => new Set([...current, ...ids]))
+    setError('')
+    const outcomes = await boundedAllSettled(ids, id => api.deleteScenario(id))
+    if (currentProjectIdRef.current !== scopeProjectId) return
+    const deletedIds = ids.filter((_, index) => outcomes[index]?.status === 'fulfilled')
+    const failed = outcomes.flatMap((outcome, index) => outcome.status === 'rejected'
+      ? [{ id: ids[index], reason: getErrorMessage(outcome.reason, 'delete failed') }]
+      : [])
+    const deleted = new Set(deletedIds)
+    setScenarios(current => current.filter(scenario => !deleted.has(scenario.id)))
+    setSelectedScenarioIds(current => {
+      const next = new Set(current)
+      deletedIds.forEach(id => next.delete(id))
+      return next
+    })
+    setDeletingScenarioIds(current => {
+      const next = new Set(current)
+      ids.forEach(id => next.delete(id))
+      return next
+    })
+    if (failed.length > 0) {
+      const details = failed.slice(0, 3).map(item => `${item.id}: ${item.reason}`).join('; ')
+      const suffix = failed.length > 3 ? `; ${failed.length - 3} more failed` : ''
+      setError(`Deleted ${deletedIds.length} of ${ids.length} selected scenarios. ${details}${suffix}`)
+    }
+    await refresh()
   }
 
   const assignmentRecommendation = draftEstimate?.assignment_recommendation
@@ -3860,10 +3948,43 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
             </>
           )}
         />
+        {canManageTests && (
+          <div className="library-bulk-selection-toolbar">
+            <span>{selectedVisibleScenarioIds.length} selected</span>
+            <div className="library-bulk-selection-actions">
+              <button
+                type="button"
+                className="btn btn-ghost"
+                onClick={() => setSelectedScenarioIds(new Set())}
+                disabled={selectedVisibleScenarioIds.length === 0}
+              >
+                Clear
+              </button>
+              <button
+                type="button"
+                className="btn btn-danger"
+                onClick={() => { void deleteSelectedScenarios() }}
+                disabled={selectedVisibleScenarioIds.length === 0 || selectedVisibleScenarioIds.some(id => deletingScenarioIds.has(id))}
+              >
+                Delete Selected ({selectedVisibleScenarioIds.length})
+              </button>
+            </div>
+          </div>
+        )}
         <div className="data-table scenario-library-table">
           <table>
             <thead>
               <tr>
+                {canManageTests && (
+                  <th className="library-selection-column">
+                    <SelectAllCheckbox
+                      selectedCount={selectedVisibleScenarioIds.length}
+                      visibleCount={visibleScenarioIds.length}
+                      ariaLabel="Select all visible scenarios"
+                      onChange={toggleAllVisibleScenarios}
+                    />
+                  </th>
+                )}
                 <th>Source</th>
                 <SortHeader label="Scenario" field="name" sort={{ field: sortField, direction: sortDirection }} onSort={handleSort} />
                 <SortHeader label="Test ID" field="last_run_test_id" sort={{ field: sortField, direction: sortDirection }} onSort={handleSort} />
@@ -3884,7 +4005,19 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
                 const showScenarioMeta = Boolean(scenario.ref_key || assignment)
                 return (
                 <Fragment key={scenario.id}>
-                  <tr className="clickable-row" onClick={() => toggleScenarioRuns(scenario)}>
+                  <tr className={`clickable-row${selectedScenarioIds.has(scenario.id) ? ' selected' : ''}`} onClick={() => toggleScenarioRuns(scenario)}>
+                    {canManageTests && (
+                      <td className="library-selection-column">
+                        <input
+                          type="checkbox"
+                          aria-label={`Select ${scenario.name}`}
+                          checked={selectedScenarioIds.has(scenario.id)}
+                          disabled={deletingScenarioIds.has(scenario.id)}
+                          onClick={event => event.stopPropagation()}
+                          onChange={() => toggleScenarioSelection(scenario.id)}
+                        />
+                      </td>
+                    )}
                     <td>
                       <span className="script-health-token">Local</span>
                     </td>
@@ -3934,7 +4067,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
                           <button className="btn btn-sm btn-ghost" onClick={(event) => { event.stopPropagation(); openEdit(scenario) }}>Edit</button>
                           <button className="btn btn-sm btn-ghost" onClick={(event) => { event.stopPropagation(); duplicateScenario(scenario) }}>Duplicate</button>
                           <button className="btn btn-sm btn-ghost" onClick={(event) => { event.stopPropagation(); addScenarioToPlan(scenario.id) }} title="Seed a new execution plan with this scenario">Add to plan</button>
-                          <button className="btn btn-sm btn-ghost" style={{ color: 'var(--danger)' }} onClick={(event) => { event.stopPropagation(); setConfirmDeleteScenarioId(scenario.id) }}>Delete</button>
+                          <button className="btn btn-sm btn-ghost" style={{ color: 'var(--danger)' }} disabled={deletingScenarioIds.has(scenario.id)} onClick={(event) => { event.stopPropagation(); setConfirmDeleteScenarioId(scenario.id) }}>{deletingScenarioIds.has(scenario.id) ? 'Deleting…' : 'Delete'}</button>
                           <button
                             className="btn btn-sm btn-secondary"
                             onClick={(event) => { event.stopPropagation(); void scenarioFederation.pushLocalItem({ kind: 'scenario', id: scenario.id, name: scenario.name }) }}
@@ -3952,7 +4085,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
                   </tr>
                   {expandedScenarioId === scenario.id && (
                     <tr className="no-hover">
-                      <td colSpan={9} style={{ background: 'var(--bg-primary)' }}>
+                      <td colSpan={canManageTests ? 10 : 9} style={{ background: 'var(--bg-primary)' }}>
                         {renderScenarioRunsContent(scenario)}
                       </td>
                     </tr>
@@ -3966,6 +4099,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
                 const href = scenarioFederation.remoteItemHref(item)
                 return (
                   <tr key={`remote:${item.kind}:${item.id}`} className="no-hover">
+                    {canManageTests && <td className="library-selection-column"><span className="cell-muted">—</span></td>}
                     <td>
                       <span className="script-health-token">Remote</span>
                     </td>
@@ -4006,7 +4140,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
               })}
               {(!showLocalScenarios || sorted.length === 0) && federationRemoteScenarioRows.length === 0 && (
                 <tr>
-                  <td colSpan={9} className="cell-muted">
+                  <td colSpan={canManageTests ? 10 : 9} className="cell-muted">
                     {scenarioQuery.trim() || scenarioReleaseFilter !== 'all' ? 'No scenarios match these filters.' : 'No scenarios yet. Create a scenario from an existing script.'}
                   </td>
                 </tr>
@@ -4036,7 +4170,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
               <p style={{ color: 'var(--danger)', fontWeight: 600 }}>This action cannot be undone.</p>
               <div className="settings-inline-actions">
                 <button className="btn btn-secondary" type="button" onClick={closeDeleteScenarioDialog}>Cancel</button>
-                <button className="btn btn-danger" type="button" onClick={() => deleteScenario(confirmDeleteScenarioId)}>Delete Scenario</button>
+                <button className="btn btn-danger" type="button" disabled={deletingScenarioIds.has(confirmDeleteScenarioId)} onClick={() => deleteScenario(confirmDeleteScenarioId)}>Delete Scenario</button>
               </div>
             </div>
           </div>

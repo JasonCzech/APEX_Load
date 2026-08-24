@@ -2,11 +2,16 @@
 
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { useState } from 'react'
 import type { ScriptActionDefinition } from '../types/scripts'
 import { ActionEditor, ControlBranchEditor, ControlFlowFields } from './ScriptEditorActionEditor'
+import { CODE_LINE_WRAP_STORAGE_KEY } from './codeLineWrapPreference'
+
+vi.mock('./SourceCodeViewer', () => ({
+  default: ({ ariaLabel, value }: { ariaLabel?: string; value: string }) => <pre aria-label={ariaLabel}>{value}</pre>,
+}))
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -14,6 +19,7 @@ let container: HTMLDivElement
 let root: Root
 
 beforeEach(() => {
+  window.localStorage.removeItem(CODE_LINE_WRAP_STORAGE_KEY)
   container = document.createElement('div')
   document.body.appendChild(container)
   root = createRoot(container)
@@ -22,6 +28,7 @@ beforeEach(() => {
 afterEach(() => {
   act(() => root.unmount())
   container.remove()
+  window.localStorage.removeItem(CODE_LINE_WRAP_STORAGE_KEY)
 })
 
 const steps = (): ScriptActionDefinition[] => ([
@@ -152,7 +159,10 @@ describe('ActionEditor transaction field', () => {
       .find(l => l.querySelector('span')?.textContent === labelText)
       ?.querySelector('input') as HTMLInputElement | undefined
 
-  const renderEditor = (action: ScriptActionDefinition) => {
+  const renderEditor = (
+    action: ScriptActionDefinition,
+    options: { protocol?: string; isJmsScript?: boolean } = {},
+  ) => {
     const updates: Array<[number, string, unknown]> = []
     const noop = () => {}
     act(() => {
@@ -176,9 +186,9 @@ describe('ActionEditor transaction field', () => {
           onRemoveMetadata={noop}
           onBeginParameterEdit={noop}
           methodColor={() => '#000'}
-          protocol="http"
+          protocol={options.protocol || 'http'}
           isBrowserScript={false}
-          isJmsScript={false}
+          isJmsScript={options.isJmsScript || false}
           isSoapScript={false}
           issues={[]}
         />,
@@ -283,6 +293,95 @@ describe('ActionEditor transaction field', () => {
 
     act(() => { setSelectValue(representation, '') })
     expect(updates[updates.length - 1]).toEqual([0, 'body_encoding', undefined])
+  })
+
+  it('allows HTTP request bodies to disable word wrapping and persists the source-view preference', () => {
+    renderEditor({
+      name: 'Long request',
+      type: 'request',
+      method: 'POST',
+      target: '/policy',
+      body: '{"policy":"a very long value"}',
+    } as unknown as ScriptActionDefinition)
+
+    const textarea = container.querySelector<HTMLTextAreaElement>('.body-textarea')!
+    expect(textarea.wrap).toBe('soft')
+
+    act(() => {
+      button('Word Wrap: On')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(textarea.wrap).toBe('off')
+    expect(textarea.dataset.wordWrap).toBe('false')
+    expect(window.localStorage.getItem(CODE_LINE_WRAP_STORAGE_KEY)).toBe('off')
+  })
+
+  it.each([
+    ['WebSocket', { name: 'Send', type: 'ws_send', target: '/events', body: '{"event":"ping"}' }, { protocol: 'websocket' }],
+    ['gRPC stream', { name: 'Stream', type: 'grpc_bidi_stream', target: 'Events/Stream', params: { messages: ['{"id":1}', '{"id":2}'] } }, { protocol: 'grpc' }],
+    ['database', { name: 'Query', type: 'db_query', target: 'select * from events', params: { binds: ['{{param.id}}'] } }, { protocol: 'database' }],
+    ['network', { name: 'TCP', type: 'tcp_request', target: 'localhost:9000', body: 'ping' }, { protocol: 'network' }],
+    ['JMS', { name: 'Publish', type: 'jms_publish', target: 'events', body: '{"event":"ping"}' }, { protocol: 'jms', isJmsScript: true }],
+  ])('exposes and applies word wrapping for %s code fields', (_label, action, options) => {
+    renderEditor(action as unknown as ScriptActionDefinition, options)
+
+    const textareas = Array.from(container.querySelectorAll<HTMLTextAreaElement>('.body-textarea'))
+    expect(textareas.length).toBeGreaterThan(0)
+    expect(textareas.every(textarea => textarea.wrap === 'soft')).toBe(true)
+    expect(button('Word Wrap: On')).toBeDefined()
+
+    act(() => {
+      button('Word Wrap: On')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(textareas.every(textarea => textarea.wrap === 'off')).toBe(true)
+    expect(button('Word Wrap: Off')).toBeDefined()
+  })
+
+  it('shows a formatted XML projection without changing the executable body', () => {
+    const body = '<env:Envelope xmlns:env="urn:soap"><env:Body><Check><Username>{{secret.USERNAME}}</Username></Check></env:Body></env:Envelope>'
+    const updates = renderEditor({
+      name: 'SOAP request',
+      type: 'request',
+      method: 'POST',
+      target: '/policy',
+      headers: { 'Content-Type': 'application/xml' },
+      body,
+    } as unknown as ScriptActionDefinition)
+
+    act(() => {
+      button('Word Wrap: On')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const preview = container.querySelector<HTMLElement>('[aria-label="Formatted XML body preview"]')
+    expect(preview?.textContent).toContain('\n  <env:Body>')
+    expect(preview?.textContent).toContain('\n      <Username>{{secret.USERNAME}}</Username>')
+    expect(container.textContent).toContain('stored request body and executable DSL payload are unchanged')
+    expect(updates).toEqual([])
+
+    const rawEditor = container.querySelector<HTMLDetailsElement>('.body-xml-raw-editor')
+    expect(rawEditor?.open).toBe(false)
+    expect(rawEditor?.querySelector<HTMLTextAreaElement>('textarea')?.value).toBe(body)
+  })
+
+  it('keeps mixed-content XML in the exact raw editor when wrapping is disabled', () => {
+    const body = '<p>Hello <b>world</b> again</p>'
+    const updates = renderEditor({
+      name: 'Mixed XML request',
+      type: 'request',
+      method: 'POST',
+      target: '/message',
+      body,
+    } as unknown as ScriptActionDefinition)
+
+    act(() => {
+      button('Word Wrap: On')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(container.querySelector('[aria-label="Formatted XML body preview"]')).toBeNull()
+    expect(container.querySelector<HTMLTextAreaElement>('.body-textarea')?.value).toBe(body)
+    expect(container.querySelector<HTMLTextAreaElement>('.body-textarea')?.wrap).toBe('off')
+    expect(updates).toEqual([])
   })
 
   it('does not hide an imported body on a method that normally has no body editor', () => {

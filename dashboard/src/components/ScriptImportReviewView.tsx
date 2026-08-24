@@ -19,6 +19,8 @@ import type { MigrationAssistantSuggestion } from './scriptAuthoringAssist'
 import { formatReplayTime } from './scriptEditorUtils'
 import { useEditorDialogRef } from './useEditorDialogRef'
 import type { useScriptImportReviewController } from './useScriptImportReviewController'
+import CodeLineWrapToggle from './CodeLineWrapToggle'
+import { useCodeLineWrapPreference } from './codeLineWrapPreference'
 
 const IMPORT_JSON_PREVIEW_MAX_CHARS = 250_000
 type ImportReviewController = ReturnType<typeof useScriptImportReviewController>
@@ -31,7 +33,9 @@ export interface AssistantChangeLogItem {
 
 function MetadataJsonViewer({ metadata }: { metadata: ScriptImportMetadata }) {
   const metadataJson = useMemo(() => JSON.stringify(metadata, null, 2), [metadata])
-  const wrapLines = metadataJson.length <= IMPORT_JSON_PREVIEW_MAX_CHARS
+  const [wordWrapEnabled, setWordWrapEnabled] = useCodeLineWrapPreference()
+  const wordWrapAvailable = metadataJson.length <= IMPORT_JSON_PREVIEW_MAX_CHARS
+  const wrapLines = wordWrapEnabled && wordWrapAvailable
   const extensions = useMemo(() => [
     json(),
     apexCodeMirrorTheme,
@@ -48,6 +52,11 @@ function MetadataJsonViewer({ metadata }: { metadata: ScriptImportMetadata }) {
         </div>
         <div className="script-code-status-row">
           <span className="script-code-status synced">Read only</span>
+          <CodeLineWrapToggle
+            disabled={!wordWrapAvailable}
+            wrapLines={wrapLines}
+            onChange={setWordWrapEnabled}
+          />
         </div>
       </div>
       <div className="script-code-editor metadata-json-editor">

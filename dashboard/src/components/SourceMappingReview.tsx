@@ -10,6 +10,8 @@ import {
 } from '../types/scripts'
 import { canCopyTextToClipboard, copyTextToClipboard } from '../utils/clipboardUtils'
 import { downloadTextFile } from '../utils/fileUtils'
+import CodeLineWrapToggle from './CodeLineWrapToggle'
+import { useCodeLineWrapPreference } from './codeLineWrapPreference'
 import { scrollMappingRowIntoTableView } from './sourceMappingScroll'
 import { buildDslDocument, lineRangeForTargetPath } from './dslJsonPointers'
 import {
@@ -183,6 +185,7 @@ export default function SourceMappingReview({
   title = 'Source Mapping',
   workspaceMaximized = false,
 }: Props) {
+  const [wrapLines, setWrapLines] = useCodeLineWrapPreference()
   const files = useMemo(() => normalizeFiles(sourceReview), [sourceReview])
   const mappings = useMemo(() => normalizeMappings(sourceReview), [sourceReview])
   const omittedFiles = useMemo(
@@ -681,6 +684,7 @@ export default function SourceMappingReview({
           <input value={filter} onChange={event => setFilter(event.target.value)} placeholder="Function, target, status..." />
         </label>
         <div style={{ alignSelf: 'flex-end', marginLeft: 'auto', display: 'flex', gap: '8px' }}>
+          <CodeLineWrapToggle wrapLines={wrapLines} onChange={setWrapLines} />
           <button
             type="button"
             className="btn btn-sm btn-ghost"
@@ -797,6 +801,7 @@ export default function SourceMappingReview({
                 onLineClick={handleSourceLineClick}
                 ariaLabel={`${selectedFile.path} source`}
                 maxHeight="100%"
+                wrapLines={wrapLines}
               />
             </Suspense>
           ) : (
@@ -828,6 +833,7 @@ export default function SourceMappingReview({
                 onLineClick={handleDslLineClick}
                 ariaLabel="Generated DSL"
                 maxHeight="100%"
+                wrapLines={wrapLines}
               />
             </Suspense>
           ) : (

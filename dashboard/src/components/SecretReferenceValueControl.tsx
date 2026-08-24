@@ -1,7 +1,6 @@
 interface Props {
   id: string
   name: string
-  displayName?: string
   value: string
   onNameChange?: (name: string) => void
   onValueChange: (value: string) => void
@@ -15,6 +14,7 @@ interface Props {
   valueAriaLabel?: string
   valuePlaceholder?: string
   referenceKind?: string
+  collapseReference?: boolean
 }
 
 // Shared by import review and saved-script configuration. Keeping the
@@ -23,7 +23,6 @@ interface Props {
 export default function SecretReferenceValueControl({
   id,
   name,
-  displayName,
   value,
   onNameChange,
   onValueChange,
@@ -37,28 +36,38 @@ export default function SecretReferenceValueControl({
   valueAriaLabel,
   valuePlaceholder,
   referenceKind = 'Script reference',
+  collapseReference = false,
 }: Props) {
   const valueId = `${id}-value`
   const referenceId = `${id}-reference`
-  const presentedName = displayName ?? name
+  const reference = name.trim() ? `{{secret.${name.trim()}}}` : '{{secret.NAME}}'
   return (
     <>
-      <label htmlFor={id}>{nameLabel}</label>
-      <input
-        id={id}
-        type="text"
-        value={presentedName}
-        onChange={event => onNameChange?.(event.target.value)}
-        readOnly={nameReadOnly}
-        disabled={nameDisabled}
-        aria-describedby={[referenceId, nameDescribedBy].filter(Boolean).join(' ')}
-        aria-invalid={nameInvalid ? 'true' : 'false'}
-        autoComplete="off"
-        spellCheck={false}
-      />
-      <span id={referenceId} className="secret-binding-review-reference">
-        {referenceKind}: <code>{presentedName.trim() ? `{{secret.${presentedName.trim()}}}` : '{{secret.NAME}}'}</code>
-      </span>
+      {collapseReference ? (
+        <details id={referenceId} className="secret-binding-internal-reference">
+          <summary>{nameLabel}</summary>
+          <code>{reference}</code>
+        </details>
+      ) : (
+        <>
+          <label htmlFor={id}>{nameLabel}</label>
+          <input
+            id={id}
+            type="text"
+            value={name}
+            onChange={event => onNameChange?.(event.target.value)}
+            readOnly={nameReadOnly}
+            disabled={nameDisabled}
+            aria-describedby={[referenceId, nameDescribedBy].filter(Boolean).join(' ')}
+            aria-invalid={nameInvalid ? 'true' : 'false'}
+            autoComplete="off"
+            spellCheck={false}
+          />
+          <span id={referenceId} className="secret-binding-review-reference">
+            {referenceKind}: <code>{reference}</code>
+          </span>
+        </>
+      )}
       <label htmlFor={valueId}>{valueLabel}</label>
       <input
         id={valueId}

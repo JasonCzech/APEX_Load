@@ -720,8 +720,7 @@ describe('ResultsPage', () => {
       await Promise.resolve()
     })
 
-    expect(container.querySelector('.results-compare-select-header')?.textContent).toContain('Compare')
-    expect(container.querySelector<HTMLInputElement>('thead input[type="checkbox"]')).toBeNull()
+    expect(container.querySelector<HTMLInputElement>('input[aria-label="Select all visible results"]')).not.toBeNull()
     const rowCheckboxes = Array.from(container.querySelectorAll('tbody input[type="checkbox"]')) as HTMLInputElement[]
     expect(rowCheckboxes).toHaveLength(3)
 
@@ -924,7 +923,7 @@ describe('ResultsPage', () => {
       await Promise.resolve()
     })
 
-    expect(container.querySelector<HTMLInputElement>('thead input[type="checkbox"]')).toBeNull()
+    expect(container.querySelector<HTMLInputElement>('input[aria-label="Select all visible results"]')).not.toBeNull()
     const rowCheckboxes = Array.from(container.querySelectorAll('tbody input[type="checkbox"]')) as HTMLInputElement[]
     expect(rowCheckboxes).toHaveLength(11)
 
@@ -1241,7 +1240,7 @@ describe('ResultsPage', () => {
     expect(Array.from(container.querySelectorAll('h3.section-title')).map(header => header.textContent)).toEqual(['Library Sources'])
     const headerLabels = Array.from(container.querySelectorAll('.library-source-table thead th'))
       .map(header => (header.textContent || '').replace(/[↕↑↓]/g, '').trim())
-    expect(headerLabels).toEqual(['Compare', 'Source', 'Scenario', 'Status', 'VUsers', 'Groups', 'Started', 'Duration', 'Archive', 'Actions'])
+    expect(headerLabels).toEqual(['', 'Source', 'Scenario', 'Status', 'VUsers', 'Groups', 'Started', 'Duration', 'Archive', 'Actions'])
     const sourceSortButton = Array.from(container.querySelectorAll<HTMLButtonElement>('.library-source-table thead th.sortable > button'))
       .find(button => button.textContent?.includes('Source'))
     const startedSortButton = Array.from(container.querySelectorAll<HTMLButtonElement>('.library-source-table thead th.sortable > button'))
@@ -1294,13 +1293,12 @@ describe('ResultsPage', () => {
     })
     await flushPromises()
 
-    const checkboxes = Array.from(container.querySelectorAll<HTMLInputElement>('tbody input[type="checkbox"]'))
+    const selectAll = container.querySelector<HTMLInputElement>('input[aria-label="Select all visible results"]')
+    expect(selectAll).not.toBeNull()
     await act(async () => {
-      checkboxes.forEach(checkbox => {
-        checkbox.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-        checkbox.dispatchEvent(new Event('change', { bubbles: true }))
-      })
+      selectAll?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
+    expect(Array.from(container.querySelectorAll<HTMLInputElement>('tbody input[type="checkbox"]')).every(checkbox => checkbox.checked)).toBe(true)
     expect(buttonByText(container, 'Delete Selected (2)')).toBeDefined()
 
     await act(async () => {
@@ -1427,7 +1425,7 @@ describe('ResultsPage', () => {
     })
     await flushPromises()
 
-    const checkbox = container.querySelector<HTMLInputElement>('input[aria-label="Select iPhone Checkout for comparison"]')
+    const checkbox = container.querySelector<HTMLInputElement>('input[aria-label="Select iPhone Checkout"]')
     await act(async () => {
       checkbox?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
       checkbox?.dispatchEvent(new Event('change', { bubbles: true }))
@@ -1437,7 +1435,7 @@ describe('ResultsPage', () => {
     await changeInput(inputByPlaceholder(container, 'Find releases or results...'), 'iPad Checkout')
     await flushPromises()
 
-    expect(container.textContent).not.toContain('Delete Selected')
+    expect(buttonByText(container, 'Delete Selected (0)')?.disabled).toBe(true)
     expect(container.querySelector('.results-table-selection-toolbar')?.textContent).toContain('0 selected')
     expect(apiMock.deleteTest).not.toHaveBeenCalled()
   })

@@ -32,6 +32,7 @@ import {
 } from './scriptSecretStatusRequest'
 import { requiredScriptSecrets } from './scriptSecretReferenceModel'
 import { loadGitHubScriptStatuses } from './scriptGitHubStatusModel'
+import { boundedAllSettled } from '../utils/boundedAllSettled'
 
 const GitHubSyncModal = lazy(() => import('./GitHubSyncModal'))
 
@@ -160,6 +161,8 @@ export default function ScriptsPage({ applicationRepository, initialMode = 'list
   const [effectiveAccessLoaded, setEffectiveAccessLoaded] = useState(false)
   const [libraryNotice, setLibraryNotice] = useState('')
   const [secretDialogScript, setSecretDialogScript] = useState<StoredScript | null>(null)
+  const [selectedScriptIds, setSelectedScriptIds] = useState<Set<string>>(new Set())
+  const [deletingScriptIds, setDeletingScriptIds] = useState<Set<string>>(new Set())
   const projectScopeRef = useRef({ id: activeProjectId, generation: 0 })
   const scriptsRequestGenerationRef = useRef(0)
   const authoringSessionsRequestGenerationRef = useRef(0)
@@ -409,6 +412,8 @@ export default function ScriptsPage({ applicationRepository, initialMode = 'list
     setHealthFilter('all')
     setReleaseFilter('all')
     setFolderFilter('all')
+    setSelectedScriptIds(new Set())
+    setDeletingScriptIds(new Set())
   }, [activeProjectId])
 
   const {
@@ -521,6 +526,24 @@ export default function ScriptsPage({ applicationRepository, initialMode = 'list
   })
 
   const federation = useLibraryFederation({ kind: 'script', projectId: activeProjectId, onRefreshLocal: refresh })
+  const visibleSelectableScriptIds = useMemo(
+    () => federation.sourceFilter === 'host'
+      ? []
+      : sortedScripts.flatMap(script => isAddressableScriptId(script.id) ? [script.id] : []),
+    [federation.sourceFilter, sortedScripts],
+  )
+  const selectedVisibleScriptIds = useMemo(
+    () => visibleSelectableScriptIds.filter(id => selectedScriptIds.has(id)),
+    [selectedScriptIds, visibleSelectableScriptIds],
+  )
+
+  useEffect(() => {
+    const visible = new Set(visibleSelectableScriptIds)
+    setSelectedScriptIds(current => {
+      const next = new Set(Array.from(current).filter(id => visible.has(id)))
+      return next.size === current.size ? current : next
+    })
+  }, [visibleSelectableScriptIds])
 
   // --- GitHub script sync (config + connection gate + push/import modals) ---
   const githubApi = useGitHubApi()
@@ -740,13 +763,79 @@ export default function ScriptsPage({ applicationRepository, initialMode = 'list
     if (!canManageScripts) return
     if (!confirm('Delete this script?')) return
     const scope = { ...projectScopeRef.current }
+    setDeletingScriptIds(current => new Set(current).add(id))
     try {
       await api.deleteScript(id)
       if (!isProjectScopeCurrent(scope)) return
-      void refresh()
+      setScripts(current => current.filter(script => script.id !== id))
+      setSelectedScriptIds(current => {
+        const next = new Set(current)
+        next.delete(id)
+        return next
+      })
+      await refresh()
     } catch (error) {
       if (!isProjectScopeCurrent(scope)) return
       appendLibraryNotice(getErrorMessage(error, 'Unable to delete script.'))
+    } finally {
+      if (isProjectScopeCurrent(scope)) {
+        setDeletingScriptIds(current => {
+          const next = new Set(current)
+          next.delete(id)
+          return next
+        })
+      }
+    }
+  }
+
+  const toggleScriptSelection = (id: string) => {
+    setSelectedScriptIds(current => {
+      const next = new Set(current)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const toggleAllVisibleScripts = (checked: boolean) => {
+    setSelectedScriptIds(current => {
+      const next = new Set(current)
+      visibleSelectableScriptIds.forEach(id => checked ? next.add(id) : next.delete(id))
+      return next
+    })
+  }
+
+  const deleteSelectedScripts = async () => {
+    const ids = selectedVisibleScriptIds.filter(id => !deletingScriptIds.has(id))
+    if (!canManageScripts || ids.length === 0 || !confirm(`Delete ${ids.length} selected script${ids.length === 1 ? '' : 's'}?`)) return
+    const scope = { ...projectScopeRef.current }
+    setDeletingScriptIds(current => new Set([...current, ...ids]))
+    const outcomes = await boundedAllSettled(ids, id => api.deleteScript(id))
+    const deletedIds = ids.filter((_, index) => outcomes[index]?.status === 'fulfilled')
+    const failures = outcomes.flatMap((outcome, index) => outcome.status === 'rejected'
+      ? [{ id: ids[index], reason: getErrorMessage(outcome.reason, 'delete failed') }]
+      : [])
+    if (isProjectScopeCurrent(scope)) {
+      const deleted = new Set(deletedIds)
+      setScripts(current => current.filter(script => !script.id || !deleted.has(script.id)))
+      setSelectedScriptIds(current => {
+        const next = new Set(current)
+        deletedIds.forEach(id => next.delete(id))
+        return next
+      })
+      setDeletingScriptIds(current => {
+        const next = new Set(current)
+        ids.forEach(id => next.delete(id))
+        return next
+      })
+      if (failures.length > 0) {
+        const details = failures.slice(0, 3).map(item => `${item.id}: ${item.reason}`).join('; ')
+        const suffix = failures.length > 3 ? `; ${failures.length - 3} more failed` : ''
+        appendLibraryNotice(`Deleted ${deletedIds.length} of ${ids.length} selected scripts. ${details}${suffix}`)
+      } else {
+        appendLibraryNotice(`Deleted ${deletedIds.length} selected script${deletedIds.length === 1 ? '' : 's'}.`)
+      }
+      await refresh()
     }
   }
 
@@ -1033,6 +1122,29 @@ export default function ScriptsPage({ applicationRepository, initialMode = 'list
               </button>
             ))}
           </div>
+          {canManageScripts && (
+            <div className="library-bulk-selection-toolbar">
+              <span>{selectedVisibleScriptIds.length} selected</span>
+              <div className="library-bulk-selection-actions">
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  onClick={() => setSelectedScriptIds(new Set())}
+                  disabled={selectedVisibleScriptIds.length === 0}
+                >
+                  Clear
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-danger"
+                  onClick={() => { void deleteSelectedScripts() }}
+                  disabled={selectedVisibleScriptIds.length === 0 || selectedVisibleScriptIds.some(id => deletingScriptIds.has(id))}
+                >
+                  Delete Selected ({selectedVisibleScriptIds.length})
+                </button>
+              </div>
+            </div>
+          )}
           <ScriptsLibraryTable
             scripts={sortedScripts}
             sortField={sortField}
@@ -1051,6 +1163,10 @@ export default function ScriptsPage({ applicationRepository, initialMode = 'list
             onSelectScenario={onSelectScenario}
             onEdit={(id) => { void handleEdit(id) }}
             onDelete={(id) => { void handleDelete(id) }}
+            selectedScriptIds={selectedScriptIds}
+            onToggleScriptSelection={toggleScriptSelection}
+            onToggleAllVisibleScripts={toggleAllVisibleScripts}
+            deletingScriptIds={deletingScriptIds}
             canManageScripts={canManageScripts}
             emptyMessage={libraryQuery.trim() || healthFilter !== 'all' || releaseFilter !== 'all' || folderFilter !== 'all' ? 'No scripts match these filters.' : 'No scripts yet.'}
             onCreate={scripts.length === 0 && !libraryQuery.trim() && healthFilter === 'all' && releaseFilter === 'all' && folderFilter === 'all' ? openCreateOptions : undefined}

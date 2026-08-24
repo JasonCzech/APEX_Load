@@ -3,12 +3,16 @@
 // ScriptEditor.tsx: these are self-contained presentational components driven
 // entirely by props (no parent state, hooks, or shared mutable helpers).
 
-import { type MouseEvent as ReactMouseEvent } from 'react'
+import { type MouseEvent as ReactMouseEvent, useMemo } from 'react'
 import type {
   ScriptActionDefinition,
   ScriptAssertionDefinition,
 } from '../types/scripts'
 import { headerListToCompatibilityMap } from './scriptActionHelpers'
+import CodeLineWrapToggle from './CodeLineWrapToggle'
+import SourceCodeViewer from './SourceCodeViewer'
+import { useCodeLineWrapPreference } from './codeLineWrapPreference'
+import { formatXMLForDisplay } from './xmlDisplayFormat'
 
 type Action = ScriptActionDefinition
 type Assertion = ScriptAssertionDefinition
@@ -22,16 +26,24 @@ interface ActionBodyTextareaProps {
 }
 
 function ActionBodyTextarea({ onChange, onContextMenu, placeholder, rows, value }: ActionBodyTextareaProps) {
+  const [wrapLines] = useCodeLineWrapPreference()
   return (
     <textarea
       className="body-textarea"
+      data-word-wrap={wrapLines ? 'true' : 'false'}
       value={value}
       onChange={event => onChange(event.target.value)}
       onContextMenu={onContextMenu}
       placeholder={placeholder}
       rows={rows}
+      wrap={wrapLines ? 'soft' : 'off'}
     />
   )
+}
+
+function ActionBodyWrapToggle() {
+  const [wrapLines, setWrapLines] = useCodeLineWrapPreference()
+  return <CodeLineWrapToggle wrapLines={wrapLines} onChange={setWrapLines} />
 }
 
 export interface BrowserActionFieldsProps {
@@ -271,7 +283,10 @@ export function WebSocketActionFields({
   return (
     <>
       <div className="sub-section">
-        <div className="sub-header"><h4>WebSocket Operation</h4></div>
+        <div className="sub-header">
+          <h4>WebSocket Operation</h4>
+          {action.type === 'ws_send' && <ActionBodyWrapToggle />}
+        </div>
         <div className="form-grid">
           {(action.type === 'ws_send' || action.type === 'ws_receive') && (
             <label>
@@ -356,7 +371,7 @@ export function GrpcActionFields({
   return (
     <>
       <div className="sub-section">
-        <div className="sub-header"><h4>gRPC Message</h4></div>
+        <div className="sub-header"><h4>gRPC Message</h4><ActionBodyWrapToggle /></div>
         <div className="form-grid">
           <label>
             <span>Timeout (ms)</span>
@@ -373,10 +388,11 @@ export function GrpcActionFields({
           {(action.type === 'grpc_client_stream' || action.type === 'grpc_bidi_stream') && (
             <label className="full-width">
               <span>Stream Messages</span>
-              <textarea
+              <ActionBodyTextarea
                 rows={5}
                 value={formatActionStringList(params.messages)}
-                onChange={e => onUpdate(index, 'params', { ...params, messages: parseActionStringList(e.target.value) })}
+                onChange={value => onUpdate(index, 'params', { ...params, messages: parseActionStringList(value) })}
+                onContextMenu={onSelectionMenu}
                 placeholder={'{"id":"1"}\n{"id":"2"}'}
               />
             </label>
@@ -434,7 +450,7 @@ export function DatabaseActionFields({
     <>
       {isSQLAction && (
         <div className="sub-section">
-          <div className="sub-header"><h4>SQL And Binds</h4></div>
+          <div className="sub-header"><h4>SQL And Binds</h4><ActionBodyWrapToggle /></div>
           <div className="form-grid">
             <label className="full-width">
               <span>{action.type === 'db_procedure' ? 'Procedure / Call' : 'SQL'}</span>
@@ -448,10 +464,11 @@ export function DatabaseActionFields({
             </label>
             <label className="full-width">
               <span>Bind Parameters</span>
-              <textarea
+              <ActionBodyTextarea
                 rows={3}
                 value={formatActionStringList(params.binds)}
-                onChange={e => onUpdate(index, 'params', { ...params, binds: parseActionStringList(e.target.value) })}
+                onChange={value => onUpdate(index, 'params', { ...params, binds: parseActionStringList(value) })}
+                onContextMenu={onSelectionMenu}
                 placeholder={'{{param.user_id}}\n{{data.orders.id}}'}
               />
             </label>
@@ -501,7 +518,10 @@ export function NetworkActionFields({
   return (
     <>
       <div className="sub-section">
-        <div className="sub-header"><h4>Protocol Controls</h4></div>
+        <div className="sub-header">
+          <h4>Protocol Controls</h4>
+          {hasPayload && <ActionBodyWrapToggle />}
+        </div>
         <div className="form-grid">
           {action.type === 'dns_query' && (
             <label>
@@ -625,7 +645,10 @@ export function JmsActionFields({
   return (
     <>
       <div className="sub-section">
-        <div className="sub-header"><h4>Message</h4></div>
+        <div className="sub-header">
+          <h4>Message</h4>
+          {(action.type === 'jms_publish' || action.type === 'jms_request_reply') && <ActionBodyWrapToggle />}
+        </div>
         <div className="form-grid">
           {(action.type === 'jms_publish' || action.type === 'jms_request_reply') && (
             <label className="full-width">
@@ -750,6 +773,7 @@ export function HttpActionFields({
   onUpdateExtractor,
   onUpdateHeader,
 }: HttpActionFieldsProps) {
+  const [wrapLines, setWrapLines] = useCodeLineWrapPreference()
   const method = (action.method || action.type || '').trim().toUpperCase()
   const bodyVisible = action.body !== undefined
     || action.body_encoding !== undefined
@@ -758,6 +782,11 @@ export function HttpActionFields({
   const normalizedBodyEncoding = bodyEncoding.trim().toLowerCase()
   const bodyEncodingKnown = normalizedBodyEncoding === '' || normalizedBodyEncoding === 'base64'
   const bodyEncodingSelection = normalizedBodyEncoding === 'base64' ? 'base64' : bodyEncoding
+  const formattedXmlBody = useMemo(
+    () => wrapLines || normalizedBodyEncoding === 'base64' ? null : formatXMLForDisplay(action.body || ''),
+    [action.body, normalizedBodyEncoding, wrapLines],
+  )
+  const showFormattedXmlBody = !wrapLines && Boolean(formattedXmlBody)
 
   return (
     <>
@@ -778,7 +807,10 @@ export function HttpActionFields({
 
       {!isBrowserScript && bodyVisible && (
         <div className="sub-section">
-          <h4>Body</h4>
+          <div className="sub-header">
+            <h4>Body</h4>
+            <CodeLineWrapToggle wrapLines={wrapLines} onChange={setWrapLines} />
+          </div>
           <div className="form-grid">
             <label>
               <span>Body Representation</span>
@@ -802,13 +834,39 @@ export function HttpActionFields({
               The runtime does not decode this representation and sends the body text as authored. Select an explicit representation to remove ambiguity.
             </p>
           )}
-          <ActionBodyTextarea
-            onChange={value => onUpdate(index, 'body', value)}
-            onContextMenu={onSelectionMenu}
-            placeholder='{"key": "value"}'
-            rows={4}
-            value={action.body || ''}
-          />
+          {showFormattedXmlBody ? (
+            <>
+              <p className="body-xml-display-note" role="status">
+                Formatted XML preview only. The stored request body and executable DSL payload are unchanged.
+              </p>
+              <div className="body-xml-formatted-view">
+                <SourceCodeViewer
+                  ariaLabel="Formatted XML body preview"
+                  sourcePath="request-body.xml"
+                  value={formattedXmlBody || ''}
+                />
+              </div>
+              <details className="body-xml-raw-editor">
+                <summary>Edit raw XML payload</summary>
+                <p>Changes here update the exact request body sent by the Go engine.</p>
+                <ActionBodyTextarea
+                  onChange={value => onUpdate(index, 'body', value)}
+                  onContextMenu={onSelectionMenu}
+                  placeholder='<root />'
+                  rows={8}
+                  value={action.body || ''}
+                />
+              </details>
+            </>
+          ) : (
+            <ActionBodyTextarea
+              onChange={value => onUpdate(index, 'body', value)}
+              onContextMenu={onSelectionMenu}
+              placeholder='{"key": "value"}'
+              rows={4}
+              value={action.body || ''}
+            />
+          )}
         </div>
       )}
 

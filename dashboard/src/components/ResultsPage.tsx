@@ -10,6 +10,7 @@ import { getErrorMessage } from '../utils/errorUtils'
 import BrowserBreakdownChart from './BrowserBreakdownChart'
 import DesktopApiResourceLink from './DesktopApiResourceLink'
 import { SortHeader } from './SortHeader'
+import SelectAllCheckbox from './SelectAllCheckbox'
 import {
   BrowserBreakdown,
   BrowserBreakdownDatum,
@@ -47,6 +48,7 @@ import { loadAllExternalResultImports } from './externalResultImportPagination'
 import { loadResultTestTail } from './resultTestPagination'
 import { parseDurationToSeconds } from '../utils/timeUtils'
 import { ARCHIVE_CHART_MAX_SAMPLES } from './archiveHistorySampling'
+import { boundedAllSettled } from '../utils/boundedAllSettled'
 
 interface Props {
   testStatuses: Record<string, string>
@@ -918,18 +920,22 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onOpenTe
     ? Math.max(0, rowVirtualizer.getTotalSize() - virtualRows[virtualRows.length - 1].end)
     : 0
 
+  const visibleSelectableIds = useMemo(
+    () => sortedRows.flatMap(row => row.test ? [row.test.id] : []),
+    [sortedRows],
+  )
   const visibleSelectedIds = useMemo(
-    () => sortedRows.flatMap(row => row.test && selectedIds.has(row.test.id) ? [row.test.id] : []),
-    [selectedIds, sortedRows],
+    () => visibleSelectableIds.filter(id => selectedIds.has(id)),
+    [selectedIds, visibleSelectableIds],
   )
 
   useEffect(() => {
     setSelectedIds(current => {
-      const visible = new Set(visibleSelectedIds)
-      if (current.size === visible.size && Array.from(current).every(id => visible.has(id))) return current
-      return visible
+      const visible = new Set(visibleSelectableIds)
+      const next = new Set(Array.from(current).filter(id => visible.has(id)))
+      return next.size === current.size ? current : next
     })
-  }, [visibleSelectedIds])
+  }, [visibleSelectableIds])
 
   const selectedTests = useMemo(
     () => sortedRows.flatMap(row => (row.test && visibleSelectedIds.includes(row.test.id) ? [row.test] : [])),
@@ -1275,7 +1281,7 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onOpenTe
     ids.forEach(id => deletingResultIdsRef.current.add(id))
     setDeletingResultIds(new Set(deletingResultIdsRef.current))
     setError('')
-    const outcomes = await Promise.allSettled(ids.map(id => api.deleteTest(id)))
+    const outcomes = await boundedAllSettled(ids, id => api.deleteTest(id))
     const deletedIDs = ids.filter((_, index) => outcomes[index]?.status === 'fulfilled')
     const failed = outcomes.flatMap((outcome, index) => outcome.status === 'rejected'
       ? [{ id: ids[index], reason: getErrorMessage(outcome.reason, 'delete failed') }]
@@ -1310,11 +1316,18 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onOpenTe
     }
   }
 
+  const toggleAllVisible = (checked: boolean) => {
+    setSelectedIds(current => {
+      const next = new Set(current)
+      visibleSelectableIds.forEach(id => checked ? next.add(id) : next.delete(id))
+      return next
+    })
+  }
+
   const showResultsLoadStatus = resultsSourcesLoading || resultTailLoading || resultsRefreshing || comparisonCards.length >= 2
   const showComparisonLoadedHint = comparisonCards.length >= 2
-  const showDeleteSelectedAction = visibleSelectedIds.length > 0
   const selectedDeletePending = visibleSelectedIds.some(id => deletingResultIds.has(id))
-  const showResultsActions = showResultsLoadStatus || showComparisonLoadedHint || showDeleteSelectedAction
+  const showResultsActions = showResultsLoadStatus || showComparisonLoadedHint
 
   const toggleBaselinePin = useCallback(async (test: TestSummary, event: React.MouseEvent) => {
     event.stopPropagation()
@@ -1365,7 +1378,7 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onOpenTe
         <td className="results-compare-select-cell">
           {test ? (
             <input
-              aria-label={`Select ${row.name} for comparison`}
+              aria-label={`Select ${row.name}`}
               type="checkbox"
               checked={selectedIds.has(test.id)}
               onClick={event => event.stopPropagation()}
@@ -1535,11 +1548,6 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onOpenTe
             )}
             {showComparisonLoadedHint && (
               <span className="results-compare-hint">Comparison loaded</span>
-            )}
-            {showDeleteSelectedAction && (
-              <button className="btn btn-ghost" style={{ color: 'var(--danger)' }} onClick={deleteSelected} disabled={selectedDeletePending}>
-                Delete Selected ({visibleSelectedIds.length})
-              </button>
             )}
           </div>
         )}
@@ -1941,6 +1949,9 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onOpenTe
               <button className="btn btn-ghost" onClick={() => setSelectedIds(new Set())} disabled={visibleSelectedIds.length === 0}>
                 Clear
               </button>
+              <button className="btn btn-danger" onClick={deleteSelected} disabled={visibleSelectedIds.length === 0 || selectedDeletePending}>
+                Delete Selected ({visibleSelectedIds.length})
+              </button>
             </div>
           </div>
           {resultsSourcesLoading ? (
@@ -1979,7 +1990,12 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onOpenTe
                 <thead>
                   <tr>
                     <th className="results-compare-select-header">
-                      <span>Compare</span>
+                      <SelectAllCheckbox
+                        selectedCount={visibleSelectedIds.length}
+                        visibleCount={visibleSelectableIds.length}
+                        ariaLabel="Select all visible results"
+                        onChange={toggleAllVisible}
+                      />
                     </th>
                     <SortHeader label="Source" field="source" sort={{ field: sortField, direction: sortDirection }} onSort={handleSort} />
                     <SortHeader label="Scenario" field="name" sort={{ field: sortField, direction: sortDirection }} onSort={handleSort} />

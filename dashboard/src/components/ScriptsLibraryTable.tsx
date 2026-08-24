@@ -11,6 +11,7 @@ import ReferenceKeyBadge from './ReferenceKeyBadge'
 import { isAddressableScriptId } from './scriptIdentity'
 import type { IssueDetail } from './IssueDetailsDialog'
 import { scriptContainsSecretReferences } from './scriptSecretReferenceModel'
+import SelectAllCheckbox from './SelectAllCheckbox'
 
 const IssueDetailsDialog = lazy(() => import('./IssueDetailsDialog'))
 
@@ -52,6 +53,10 @@ interface Props {
   onSelectScenario?: (id: string) => void
   onEdit: (id: string) => void
   onDelete: (id: string) => void
+  selectedScriptIds?: Set<string>
+  onToggleScriptSelection?: (id: string) => void
+  onToggleAllVisibleScripts?: (checked: boolean) => void
+  deletingScriptIds?: Set<string>
   canManageScripts?: boolean
   emptyMessage?: string
   onCreate?: () => void
@@ -220,6 +225,10 @@ export default function ScriptsLibraryTable({
   onSelectScenario,
   onEdit,
   onDelete,
+  selectedScriptIds = new Set(),
+  onToggleScriptSelection,
+  onToggleAllVisibleScripts,
+  deletingScriptIds = new Set(),
   canManageScripts = true,
   emptyMessage = 'No scripts yet.',
   onCreate,
@@ -310,16 +319,29 @@ export default function ScriptsLibraryTable({
   }
   const showSource = Boolean(federation)
   const folderNameById = new Map(folders.map(folder => [folder.id, folder.name]))
-  const columnCount = (showSource ? 1 : 0) + 8
   const showLocal = !federation || federation.sourceFilter !== 'host'
   const localScripts = showLocal ? scripts : []
   const remoteRows = federation && federation.sourceFilter !== 'local' ? federation.remoteRows : []
+  const selectableScriptCount = localScripts.filter(script => isAddressableScriptId(script.id)).length
+  const selectedVisibleScriptCount = localScripts.filter(script => isAddressableScriptId(script.id) && selectedScriptIds.has(script.id!)).length
+  const showSelection = canManageScripts && Boolean(onToggleScriptSelection) && Boolean(onToggleAllVisibleScripts)
+  const columnCount = (showSelection ? 1 : 0) + (showSource ? 1 : 0) + 8
   const isEmpty = localScripts.length === 0 && remoteRows.length === 0
   return (
     <div className="data-table">
       <table className="scripts-library-table">
         <thead>
           <tr>
+            {showSelection && (
+              <th className="library-selection-column">
+                <SelectAllCheckbox
+                  selectedCount={selectedVisibleScriptCount}
+                  visibleCount={selectableScriptCount}
+                  ariaLabel="Select all visible scripts"
+                  onChange={checked => onToggleAllVisibleScripts?.(checked)}
+                />
+              </th>
+            )}
             {showSource && <th>Source</th>}
             <SortHeader field="name" activeField={sortField} direction={sortDirection} label="Script" onActivate={onSort} />
             <SortHeader field="folder" activeField={sortField} direction={sortDirection} label="Folder" onActivate={onSort} />
@@ -353,7 +375,21 @@ export default function ScriptsLibraryTable({
             const conflict = syncStatus === 'conflict'
             return (
               <Fragment key={rowKey}>
-                <tr>
+                <tr className={selectedScriptIds.has(scriptId) ? 'selected' : undefined}>
+                  {showSelection && (
+                    <td className="library-selection-column">
+                      {scriptAddressable ? (
+                        <input
+                          type="checkbox"
+                          aria-label={`Select ${script.name}`}
+                          checked={selectedScriptIds.has(scriptId)}
+                          disabled={deletingScriptIds.has(scriptId)}
+                          onClick={event => event.stopPropagation()}
+                          onChange={() => onToggleScriptSelection?.(scriptId)}
+                        />
+                      ) : <span className="cell-muted">—</span>}
+                    </td>
+                  )}
                   {showSource && (
                     <td>
                       <span className="script-health-token">Local</span>
@@ -513,7 +549,7 @@ export default function ScriptsLibraryTable({
                         {secretStatusUnknown && secretStatusState === 'error' && onRetrySecretStatus && (
                           <button className="btn btn-sm btn-ghost" onClick={(event) => { event.stopPropagation(); onRetrySecretStatus(script) }}>Retry secret check</button>
                         )}
-                        <button className="btn btn-sm btn-ghost" style={{ color: 'var(--danger)' }} onClick={(event) => { event.stopPropagation(); onDelete(scriptId) }}>Delete</button>
+                        <button className="btn btn-sm btn-ghost" style={{ color: 'var(--danger)' }} disabled={deletingScriptIds.has(scriptId)} onClick={(event) => { event.stopPropagation(); onDelete(scriptId) }}>{deletingScriptIds.has(scriptId) ? 'Deleting…' : 'Delete'}</button>
                         {github?.enabled && (
                           <button
                             className="btn btn-sm btn-ghost"
@@ -661,6 +697,7 @@ export default function ScriptsLibraryTable({
             const href = federation.remoteItemHref(item)
             return (
               <tr key={`remote:${item.kind}:${item.id}`} className="no-hover">
+                {showSelection && <td className="library-selection-column"><span className="cell-muted">—</span></td>}
                 <td>
                   <span className="script-health-token">Remote</span>
                 </td>

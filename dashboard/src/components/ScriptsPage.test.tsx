@@ -543,7 +543,12 @@ describe('ScriptsPage', () => {
     await act(async () => root.render(<ScriptsPage />))
     await flushPromises()
     await flushPromises()
-    await clickButton('Delete')
+    const deleteButton = Array.from(container.querySelectorAll<HTMLButtonElement>('.scripts-library-table tbody button'))
+      .find(button => button.textContent === 'Delete')
+    expect(deleteButton).toBeDefined()
+    await act(async () => {
+      deleteButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
     await flushPromises()
 
     expect(apiMock.listScripts).toHaveBeenCalledTimes(2)
@@ -1347,13 +1352,52 @@ describe('ScriptsPage', () => {
     })
 
     await flushPromises()
-    await clickButton('Delete')
+    const deleteButton = Array.from(container.querySelectorAll<HTMLButtonElement>('.scripts-library-table tbody button'))
+      .find(button => button.textContent === 'Delete')
+    expect(deleteButton).toBeDefined()
+    await act(async () => {
+      deleteButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
     await flushPromises()
 
     expect(confirmSpy).toHaveBeenCalled()
     expect(apiMock.deleteScript).toHaveBeenCalledWith('script-1')
     expect(container.querySelector('[role="alert"]')?.textContent).toContain('delete denied')
     expect(container.textContent).toContain('Existing Script')
+  })
+
+  it('selects all visible scripts and preserves failed rows after a partial bulk delete', async () => {
+    vi.stubGlobal('confirm', vi.fn(() => true))
+    let scripts = [
+      scriptRecord('script-1', 'Existing Script', 'project-1'),
+      scriptRecord('script-2', 'Locked Script', 'project-1'),
+    ]
+    apiMock.listScripts.mockImplementation(async () => ({ scripts, count: scripts.length }))
+    apiMock.deleteScript.mockImplementation(async (id: string) => {
+      if (id === 'script-2') throw new Error('script is locked')
+      scripts = scripts.filter(script => script.id !== id)
+    })
+
+    await act(async () => {
+      root.render(<ScriptsPage />)
+    })
+    await flushPromises()
+
+    const selectAll = container.querySelector<HTMLInputElement>('input[aria-label="Select all visible scripts"]')
+    expect(selectAll).not.toBeNull()
+    await act(async () => {
+      selectAll?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(container.textContent).toContain('Delete Selected (2)')
+
+    await clickButton('Delete Selected (2)')
+    await flushPromises()
+
+    expect(apiMock.deleteScript).toHaveBeenCalledTimes(2)
+    expect(container.textContent).not.toContain('Existing Script')
+    expect(container.textContent).toContain('Locked Script')
+    expect(container.querySelector<HTMLInputElement>('input[aria-label="Select Locked Script"]')?.checked).toBe(true)
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain('Deleted 1 of 2 selected scripts')
   })
 
   it('filters the script library by visible script metadata', async () => {
