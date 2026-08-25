@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"encoding/xml"
 	"fmt"
 	"os"
@@ -96,6 +97,17 @@ func buildJUnitReport(in junitInput) junitTestsuites {
 			{Name: "tps", Value: fmt.Sprintf("%.2f", in.tps)},
 			{Name: "duration_ms", Value: fmt.Sprintf("%d", in.duration.Milliseconds())},
 		},
+	}
+	if in.sla != nil {
+		for index, result := range in.sla.TransactionRuleResults {
+			encoded, err := json.Marshal(result)
+			if err != nil {
+				continue
+			}
+			suite.Properties = append(suite.Properties, junitProperty{
+				Name: fmt.Sprintf("transaction_sla_rule.%d", index), Value: string(encoded),
+			})
+		}
 	}
 
 	// Execution testcase: a transport/runtime error is an "error" (the test

@@ -47,6 +47,8 @@ func compactMetricsResult(input *protocol.Result) *protocol.Result {
 	out.SourceTransaction = ""
 	out.SourceProfile = ""
 	out.SourcePath = ""
+	out.Phase = ""
+	out.Hierarchy = ""
 	out.SourceUID = ""
 	out.RequestType = ""
 	out.OperationKind = ""
@@ -143,6 +145,7 @@ func estimateMetricsSnapshotBytes(snapshot MetricsSnapshot) int {
 	estimateActions(snapshot.ByDependencyTarget)
 	estimateActions(snapshot.BySOAPOperation)
 	estimateActions(snapshot.ByNetworkProfile)
+	estimateActions(snapshot.ByRegion)
 	for key := range snapshot.ByGroup {
 		bytes += len(key) + 256
 	}

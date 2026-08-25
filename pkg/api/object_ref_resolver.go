@@ -73,8 +73,10 @@ func actionsHaveObjectRefs(actions []dsl.Action) bool {
 			return true
 		}
 		if actions[i].Control != nil {
-			if actionsHaveObjectRefs(actions[i].Control.Steps) || actionsHaveObjectRefs(actions[i].Control.Else) {
-				return true
+			for _, branch := range actions[i].Control.ActionBranches() {
+				if actionsHaveObjectRefs(branch.Actions) {
+					return true
+				}
 			}
 		}
 	}
@@ -133,8 +135,9 @@ func resolveActionObjectRefs(actions []dsl.Action, section string, byName map[st
 	for i := range actions {
 		resolveActionObjectRef(&actions[i], fmt.Sprintf("%s[%d]", section, i), byName, byRepo, warnings, issues)
 		if actions[i].Control != nil {
-			resolveActionObjectRefs(actions[i].Control.Steps, fmt.Sprintf("%s[%d].control.steps", section, i), byName, byRepo, warnings, issues)
-			resolveActionObjectRefs(actions[i].Control.Else, fmt.Sprintf("%s[%d].control.else", section, i), byName, byRepo, warnings, issues)
+			for _, branch := range actions[i].Control.ActionBranches() {
+				resolveActionObjectRefs(branch.Actions, fmt.Sprintf("%s[%d].control.%s", section, i, branch.Path), byName, byRepo, warnings, issues)
+			}
 		}
 	}
 }

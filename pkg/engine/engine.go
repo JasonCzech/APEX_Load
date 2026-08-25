@@ -107,6 +107,9 @@ func New(cfg Config) (*Engine, error) {
 	if cfg.Script == nil {
 		return nil, fmt.Errorf("script is required")
 	}
+	if err := validateMessageDetailRuntimeSupport(cfg.Script); err != nil {
+		return nil, err
+	}
 	if err := importExecutionGateError(cfg.Script, "launch"); err != nil {
 		return nil, err
 	}
@@ -170,6 +173,9 @@ func (e *Engine) Run(ctx context.Context) (*RunResult, error) {
 	// the Script pointer, so a draft can acquire a blocker after New returns.
 	// No protocol lookup or runtime preflight may happen before this check.
 	if err := importExecutionGateError(e.script, "launch"); err != nil {
+		return nil, err
+	}
+	if err := validateMessageDetailRuntimeSupport(e.script); err != nil {
 		return nil, err
 	}
 
@@ -446,10 +452,12 @@ func javaVuserActionsHaveLegacyRunAction(actions []dsl.Action) bool {
 				return true
 			}
 		}
-		if action.Control != nil &&
-			(javaVuserActionsHaveLegacyRunAction(action.Control.Steps) ||
-				javaVuserActionsHaveLegacyRunAction(action.Control.Else)) {
-			return true
+		if action.Control != nil {
+			for _, branch := range action.Control.ActionBranches() {
+				if javaVuserActionsHaveLegacyRunAction(branch.Actions) {
+					return true
+				}
+			}
 		}
 	}
 	return false
@@ -466,8 +474,12 @@ func javaVuserActionsUsePhaseLifecycle(actions []dsl.Action) bool {
 				return true
 			}
 		}
-		if action.Control != nil && (javaVuserActionsUsePhaseLifecycle(action.Control.Steps) || javaVuserActionsUsePhaseLifecycle(action.Control.Else)) {
-			return true
+		if action.Control != nil {
+			for _, branch := range action.Control.ActionBranches() {
+				if javaVuserActionsUsePhaseLifecycle(branch.Actions) {
+					return true
+				}
+			}
 		}
 	}
 	return false

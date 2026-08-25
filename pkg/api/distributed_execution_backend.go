@@ -15,6 +15,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jasonczech/apexload/pkg/api/testexec"
 	"github.com/jasonczech/apexload/pkg/distributed/generatorrpc"
+	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/engine"
 	grpcCodes "google.golang.org/grpc/codes"
 	grpcStatus "google.golang.org/grpc/status"
@@ -27,6 +28,36 @@ const (
 	// staged and assigned concurrently during distributed startup.
 	maxDistributedStartupAssignmentWorkers = 16
 )
+
+func authoredMessageDetailMaxItems(script *dsl.Script) int {
+	if script == nil || script.Config.Results.MessageDetail == nil {
+		return 0
+	}
+	if value := script.Config.Results.MessageDetail.MaxItems; value > 0 {
+		return min(value, 4096)
+	}
+	return 128
+}
+
+func authoredMessageDetailMaxItemBytes(script *dsl.Script) int64 {
+	if script == nil || script.Config.Results.MessageDetail == nil {
+		return 0
+	}
+	if value := script.Config.Results.MessageDetail.MaxItemBytes; value > 0 {
+		return min(value, int64(16<<20))
+	}
+	return 1 << 20
+}
+
+func authoredMessageDetailMaxTotalBytes(script *dsl.Script) int64 {
+	if script == nil || script.Config.Results.MessageDetail == nil {
+		return 0
+	}
+	if value := script.Config.Results.MessageDetail.MaxTotalBytes; value > 0 {
+		return min(value, int64(1<<30))
+	}
+	return 16 << 20
+}
 
 func validateDistributedRunTargetCount(targets []string) error {
 	if len(targets) > maxDistributedTargetsPerRun {
@@ -1213,24 +1244,28 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 				ContentHash:         contentHash,
 			},
 			generatorrpc.Assignment{
-				TestID:                    test.ID,
-				ExecutionGeneration:       executionGeneration,
-				ScenarioID:                test.ScenarioID,
-				RequireTestExecutionLease: requireTestExecutionLease,
-				GroupName:                 group.Name,
-				TargetDuration:            test.Duration,
-				ScriptID:                  group.ScriptID,
-				ExpectedScriptHash:        contentHash,
-				RampUp:                    rampUp,
-				RampDown:                  rampDown,
-				InitStrategy:              initStrategy,
-				PreBaseline:               preBaseline,
-				PostBaseline:              postBaseline,
-				DataFiles:                 dataFiles,
-				RedactionRules:            group.redactionRules,
-				SecretBundle:              secretBundle,
-				SecretBundleID:            secretBundleID,
-				RunSupervisionToken:       append([]byte(nil), runSupervisionTokenBytes...),
+				TestID:                     test.ID,
+				ExecutionGeneration:        executionGeneration,
+				ScenarioID:                 test.ScenarioID,
+				RequireTestExecutionLease:  requireTestExecutionLease,
+				GroupName:                  group.Name,
+				TargetDuration:             test.Duration,
+				StartOffset:                groupStartOffsetDuration(group),
+				ScriptID:                   group.ScriptID,
+				ExpectedScriptHash:         contentHash,
+				RampUp:                     rampUp,
+				RampDown:                   rampDown,
+				InitStrategy:               initStrategy,
+				PreBaseline:                preBaseline,
+				PostBaseline:               postBaseline,
+				DataFiles:                  dataFiles,
+				RedactionRules:             group.redactionRules,
+				SecretBundle:               secretBundle,
+				SecretBundleID:             secretBundleID,
+				RunSupervisionToken:        append([]byte(nil), runSupervisionTokenBytes...),
+				MessageDetailMaxItems:      authoredMessageDetailMaxItems(group.script),
+				MessageDetailMaxItemBytes:  authoredMessageDetailMaxItemBytes(group.script),
+				MessageDetailMaxTotalBytes: authoredMessageDetailMaxTotalBytes(group.script),
 			},
 			group.ScriptName,
 			func() bool { return distributedRunStartable(tr, test) },
@@ -1446,6 +1481,7 @@ func (b *distributedExecutionBackend) assignDistributedGroupTargets(ctx context.
 				markStarted(plan.target)
 			}
 			assignment := template
+			assignment.Region = b.regionForTarget(plan.target)
 			assignment.VUserCount = int32(shard.VUsers)
 			assignment.ShardOrdinal = shard.ShardOrdinal
 			assignment.ShardCount = shard.ShardCount
@@ -1567,6 +1603,18 @@ func distributedGroupRuntimeConfig(test *ManagedTest, group TestGroup) (time.Dur
 
 func distributedEvacuationRemainingRamp(configuredRamp, steadyElapsed time.Duration) time.Duration {
 	return max(configuredRamp-steadyElapsed, time.Duration(0))
+}
+
+func groupStartOffsetDuration(group TestGroup) time.Duration {
+	value, err := time.ParseDuration(strings.TrimSpace(group.StartOffset))
+	if err != nil || value < 0 {
+		return 0
+	}
+	return value
+}
+
+func remainingGroupStartOffset(configured, steadyElapsed time.Duration) time.Duration {
+	return max(configured-steadyElapsed, time.Duration(0))
 }
 
 func distributedCommitStartLead(rpcTimeout time.Duration) time.Duration {

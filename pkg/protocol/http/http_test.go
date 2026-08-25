@@ -2561,6 +2561,26 @@ func TestHTTP_Execute_BoundsResponseBodySize(t *testing.T) {
 	}
 }
 
+func TestHTTPExecuteCapturesBoundedSuccessfulMessageDetailWhenHinted(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	defer server.Close()
+
+	client := initHTTP(t, map[string]any{})
+	result, err := client.Execute(context.Background(), &protocol.Action{
+		Name: "sample", Type: "GET", Method: http.MethodGet, Target: server.URL,
+		CaptureMessageDetail: true, DiscardResponseBodyOnSuccess: false,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Success || result.Snapshot == nil || result.Snapshot.ResponseBody != `{"ok":true}` {
+		t.Fatalf("successful detail result = %#v", result)
+	}
+}
+
 func TestHTTPMaxBodyBytesCannotBeDisabledOrRaisedByScript(t *testing.T) {
 	for _, raw := range []any{0, -1, hardHTTPMaxBodyBytes + 1, "999999999999"} {
 		if got := httpMaxBodyBytes(map[string]any{"max_body_bytes": raw}); got != hardHTTPMaxBodyBytes {

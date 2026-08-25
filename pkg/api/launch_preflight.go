@@ -95,6 +95,7 @@ type launchCapacityEvent struct {
 }
 
 type launchGroupCapacity struct {
+	StartAt             time.Time
 	EndAt               time.Time
 	VUsers              int
 	ReleaseAt           time.Time
@@ -107,7 +108,7 @@ func launchCapacityAt(event launchCapacityEvent, sample time.Time) (int, int) {
 	}
 	vusers := 0
 	for _, group := range event.Groups {
-		if sample.Before(group.EndAt) {
+		if (group.StartAt.IsZero() || !sample.Before(group.StartAt)) && sample.Before(group.EndAt) {
 			groupVUsers := group.VUsers
 			if !group.ReleaseAt.IsZero() && sample.Before(group.ReleaseAt) {
 				groupVUsers = maxInt(groupVUsers, group.BeforeReleaseVUsers)
@@ -140,13 +141,18 @@ func launchGroupCapacities(test *ManagedTest, start, now time.Time) []launchGrou
 		if group.RuntimeState == "ended" {
 			continue
 		}
-		duration := effectiveGroupDuration(group, test.Duration)
-		rampDown, _ := time.ParseDuration(group.RampDown)
+		duration, rampDown := groupCapacityDuration(group, test.Duration)
 		reserved := group.VUsers
 		if group.stageDriven && group.currentVUsers > reserved {
 			reserved = group.currentVUsers
 		}
-		capacity := launchGroupCapacity{EndAt: start.Add(offset + duration + rampDown).UTC(), VUsers: reserved}
+		groupOffset := groupStartOffsetDuration(group)
+		endOffset := minCapacityDuration(test.Duration, groupOffset+duration+rampDown)
+		capacity := launchGroupCapacity{
+			StartAt: start.Add(offset + groupOffset).UTC(),
+			EndAt:   start.Add(offset + endOffset).UTC(),
+			VUsers:  reserved,
+		}
 		if ramp, ok := test.VUserRamps[group.Name]; ok && ramp.StartVUsers > ramp.TargetVUsers {
 			rampDuration := time.Duration(ramp.RampDurationSeconds) * time.Second
 			if rampDuration <= 0 {
@@ -161,12 +167,106 @@ func launchGroupCapacities(test *ManagedTest, start, now time.Time) []launchGrou
 	return groups
 }
 
-func launchGroupPeakVUsers(groups []launchGroupCapacity) int {
-	total := 0
-	for _, group := range groups {
-		total = saturatingAddNonNegative(total, maxInt(group.VUsers, group.BeforeReleaseVUsers))
+func groupCapacityDuration(group TestGroup, scenarioDuration time.Duration) (time.Duration, time.Duration) {
+	duration := effectiveGroupDuration(group, scenarioDuration)
+	rampDown, _ := time.ParseDuration(group.RampDown)
+	if staged, ok := fixedLoadStageDuration(group.Stages); ok {
+		duration = staged
+		// A staged duration already includes authored ramp-down stages.
+		rampDown = 0
 	}
-	return total
+	offset := groupStartOffsetDuration(group)
+	remaining := max(time.Duration(0), scenarioDuration-offset)
+	return minCapacityDuration(duration, remaining), minCapacityDuration(rampDown, max(time.Duration(0), remaining-duration))
+}
+
+func fixedLoadStageDuration(stages []storage.LoadStage) (time.Duration, bool) {
+	if len(stages) == 0 {
+		return 0, false
+	}
+	var total time.Duration
+	for _, stage := range stages {
+		duration, err := time.ParseDuration(strings.TrimSpace(stage.Duration))
+		if err != nil || duration <= 0 || duration > time.Duration(math.MaxInt64)-total {
+			return 0, false
+		}
+		total += duration
+	}
+	return total, total > 0
+}
+
+func minCapacityDuration(left, right time.Duration) time.Duration {
+	if left < right {
+		return left
+	}
+	return right
+}
+
+func managedGroupPeakVUsers(groups []TestGroup, scenarioDuration time.Duration) int {
+	base := time.Unix(0, 0).UTC()
+	windows := make([]launchGroupCapacity, 0, len(groups))
+	for _, group := range groups {
+		duration, rampDown := groupCapacityDuration(group, scenarioDuration)
+		startOffset := groupStartOffsetDuration(group)
+		endOffset := minCapacityDuration(scenarioDuration, startOffset+duration+rampDown)
+		if endOffset <= startOffset {
+			continue
+		}
+		reserved := group.VUsers
+		if group.stageDriven && group.currentVUsers > reserved {
+			reserved = group.currentVUsers
+		}
+		windows = append(windows, launchGroupCapacity{
+			StartAt: base.Add(startOffset),
+			EndAt:   base.Add(endOffset),
+			VUsers:  reserved,
+		})
+	}
+	return launchGroupPeakVUsers(windows)
+}
+
+func managedTestCapacityVUsers(test *ManagedTest) int {
+	if test == nil {
+		return 0
+	}
+	peak := managedGroupPeakVUsers(test.Groups, test.Duration)
+	if peak > 0 {
+		return peak
+	}
+	return test.TotalVUsers
+}
+
+func launchGroupPeakVUsers(groups []launchGroupCapacity) int {
+	peak := 0
+	samples := make([]time.Time, 0, len(groups))
+	for _, group := range groups {
+		samples = append(samples, group.StartAt)
+	}
+	for _, sample := range samples {
+		total := 0
+		for _, group := range groups {
+			if !group.StartAt.IsZero() && sample.Before(group.StartAt) {
+				continue
+			}
+			if !group.EndAt.IsZero() && !sample.Before(group.EndAt) {
+				continue
+			}
+			groupVUsers := group.VUsers
+			if !group.ReleaseAt.IsZero() && sample.Before(group.ReleaseAt) {
+				groupVUsers = maxInt(groupVUsers, group.BeforeReleaseVUsers)
+			}
+			total = saturatingAddNonNegative(total, groupVUsers)
+		}
+		peak = maxInt(peak, total)
+	}
+	return peak
+}
+
+func launchEventPeakVUsers(groups []launchGroupCapacity, fallback int) int {
+	if len(groups) == 0 {
+		return fallback
+	}
+	return launchGroupPeakVUsers(groups)
 }
 
 // launchWindowEvidence is the durable state needed by a launch-window
@@ -897,7 +997,7 @@ func (tr *TestRunner) launchWindowConflictsWithEvidenceLocked(test *ManagedTest,
 		StartAt:            window.StartAt,
 		EndAt:              window.EndAt,
 		Generators:         recommendedGeneratorCountForTest(test),
-		VUsers:             maxInt(test.TotalVUsers, launchGroupPeakVUsers(proposalGroups)),
+		VUsers:             launchEventPeakVUsers(proposalGroups, test.TotalVUsers),
 		ApprovedQuotaBurst: hasApprovedExecutionPlanQuotaBurst(test),
 		GroupProfileKnown:  true,
 		Groups:             proposalGroups,
@@ -1020,7 +1120,7 @@ func (tr *TestRunner) launchCapacityEventForTestLocked(test *ManagedTest, now ti
 		StartAt:           start.UTC(),
 		EndAt:             end.UTC(),
 		Generators:        generators,
-		VUsers:            maxInt(test.TotalVUsers, launchGroupPeakVUsers(groups)),
+		VUsers:            launchEventPeakVUsers(groups, test.TotalVUsers),
 		GroupProfileKnown: true,
 		Groups:            groups,
 	}, true
@@ -1039,6 +1139,7 @@ func (tr *TestRunner) launchCapacityEventForScenarioLocked(schedule *storage.Sce
 			VUsers:         script.VUsers,
 			RampUp:         script.RampUp,
 			RampDown:       script.RampDown,
+			StartOffset:    script.StartOffset,
 			Stages:         append([]storage.LoadStage(nil), script.Stages...),
 			Iterations:     script.Iterations,
 			Initialization: script.Initialization,
@@ -1075,7 +1176,7 @@ func (tr *TestRunner) launchCapacityEventForScenarioLocked(schedule *storage.Sce
 		StartAt:           window.StartAt,
 		EndAt:             window.EndAt,
 		Generators:        generators,
-		VUsers:            maxInt(totalVUsers, launchGroupPeakVUsers(capacityGroups)),
+		VUsers:            launchEventPeakVUsers(capacityGroups, totalVUsers),
 		GroupProfileKnown: true,
 		Groups:            capacityGroups,
 	}
@@ -1091,6 +1192,9 @@ func launchSampleTimes(window LaunchWindow, events []launchCapacityEvent, reserv
 			values = append(values, event.EndAt)
 		}
 		for _, group := range event.Groups {
+			if !group.StartAt.IsZero() && launchInstantInWindow(group.StartAt, window) {
+				values = append(values, group.StartAt)
+			}
 			if !group.ReleaseAt.IsZero() && launchInstantInWindow(group.ReleaseAt, window) {
 				values = append(values, group.ReleaseAt)
 			}

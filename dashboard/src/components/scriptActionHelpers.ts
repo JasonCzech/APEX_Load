@@ -156,7 +156,7 @@ export function actionExecutionBlockers(action: Action): string[] {
 }
 
 export function isControlAction(action: Action) {
-  return action.type === 'control_if' || action.type === 'control_loop'
+	return action.type === 'control_if' || action.type === 'control_switch' || action.type === 'control_loop' || action.type === 'control_parallel'
 }
 
 export function isReviewGatedJavaScriptAction(action: Action) {

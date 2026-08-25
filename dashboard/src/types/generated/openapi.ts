@@ -528,6 +528,10 @@ export interface operations {
             "draft": ({
               "actions": Array<{
                 "assertions"?: Array<Record<string, unknown>>;
+                "attribution"?: ({
+                  "hierarchy_path"?: string;
+                  "page_name"?: string;
+                }) | null;
                 "auth"?: ({
                   "domain"?: string;
                   "password"?: string;
@@ -544,10 +548,15 @@ export interface operations {
                   "screenshot"?: boolean;
                 }) | null;
                 "control"?: ({
+                  "branches"?: Array<Record<string, unknown>>;
+                  "cases"?: Array<Record<string, unknown>>;
+                  "concurrency"?: number;
                   "condition"?: (Record<string, unknown>) | null;
                   "count"?: number;
+                  "default"?: Array<Record<string, unknown>>;
                   "do_while"?: boolean;
                   "else"?: Array<Record<string, unknown>>;
+                  "fail_fast"?: boolean;
                   "for_each"?: (Record<string, unknown>) | null;
                   "max_iterations"?: number;
                   "steps"?: Array<Record<string, unknown>>;
@@ -827,6 +836,9 @@ export interface operations {
                   "tps"?: number;
                   "type": string;
                 };
+                "results"?: {
+                  "message_detail"?: (Record<string, unknown>) | null;
+                };
                 "run_logic"?: {
                   "action_sequence"?: Array<string>;
                   "auto_transactions"?: string;
@@ -914,10 +926,21 @@ export interface operations {
                 "stop_on_max_errors"?: boolean;
                 "stop_on_sla_breach"?: boolean;
                 "target_average_tps"?: (number) | null;
+                "transaction_rules"?: Array<{
+                  "comparator": string;
+                  "metric": string;
+                  "severity"?: string;
+                  "threshold": number;
+                  "transaction": string;
+                }>;
               }) | null;
               "id": string;
               "init"?: Array<{
                 "assertions"?: Array<Record<string, unknown>>;
+                "attribution"?: ({
+                  "hierarchy_path"?: string;
+                  "page_name"?: string;
+                }) | null;
                 "auth"?: ({
                   "domain"?: string;
                   "password"?: string;
@@ -934,10 +957,15 @@ export interface operations {
                   "screenshot"?: boolean;
                 }) | null;
                 "control"?: ({
+                  "branches"?: Array<Record<string, unknown>>;
+                  "cases"?: Array<Record<string, unknown>>;
+                  "concurrency"?: number;
                   "condition"?: (Record<string, unknown>) | null;
                   "count"?: number;
+                  "default"?: Array<Record<string, unknown>>;
                   "do_while"?: boolean;
                   "else"?: Array<Record<string, unknown>>;
+                  "fail_fast"?: boolean;
                   "for_each"?: (Record<string, unknown>) | null;
                   "max_iterations"?: number;
                   "steps"?: Array<Record<string, unknown>>;
@@ -1027,6 +1055,10 @@ export interface operations {
               "ref_key"?: string;
               "teardown"?: Array<{
                 "assertions"?: Array<Record<string, unknown>>;
+                "attribution"?: ({
+                  "hierarchy_path"?: string;
+                  "page_name"?: string;
+                }) | null;
                 "auth"?: ({
                   "domain"?: string;
                   "password"?: string;
@@ -1043,10 +1075,15 @@ export interface operations {
                   "screenshot"?: boolean;
                 }) | null;
                 "control"?: ({
+                  "branches"?: Array<Record<string, unknown>>;
+                  "cases"?: Array<Record<string, unknown>>;
+                  "concurrency"?: number;
                   "condition"?: (Record<string, unknown>) | null;
                   "count"?: number;
+                  "default"?: Array<Record<string, unknown>>;
                   "do_while"?: boolean;
                   "else"?: Array<Record<string, unknown>>;
+                  "fail_fast"?: boolean;
                   "for_each"?: (Record<string, unknown>) | null;
                   "max_iterations"?: number;
                   "steps"?: Array<Record<string, unknown>>;
@@ -1521,6 +1558,12 @@ export interface operations {
               "interval_summaries_file"?: string;
               "interval_summaries_parquet_file"?: string;
               "interval_summary_count"?: number;
+              "message_detail_capture"?: ({
+                "dropped"?: Record<string, number>;
+                "retained_bytes"?: number;
+                "retained_items"?: number;
+                "truncated_items"?: number;
+              }) | null;
               "provenance"?: {
                 "application_id"?: string;
                 "assignment"?: (Record<string, unknown>) | null;
@@ -1567,6 +1610,13 @@ export interface operations {
               "test_name"?: string;
               "test_notes_file"?: string;
               "transaction_count"?: number;
+              "transaction_rule_results"?: Array<{
+                "matched_count"?: number;
+                "message"?: string;
+                "observed"?: (number) | null;
+                "rule"?: Record<string, unknown>;
+                "status"?: string;
+              }>;
               "transactions_file"?: string;
               "transactions_parquet_file"?: string;
             }) | null;
@@ -2107,6 +2157,13 @@ export interface operations {
               "stop_on_max_errors"?: boolean;
               "stop_on_sla_breach"?: boolean;
               "target_average_tps"?: (number) | null;
+              "transaction_rules"?: Array<{
+                "comparator"?: string;
+                "metric"?: string;
+                "severity"?: string;
+                "threshold"?: number;
+                "transaction"?: string;
+              }>;
             }) | null;
             "groups"?: Array<{
               "assignment"?: ({
@@ -2148,6 +2205,7 @@ export interface operations {
               }) | null;
               "script_id"?: string;
               "stages"?: Array<Record<string, unknown>>;
+              "start_offset"?: string;
               "vusers"?: number;
             }>;
             "name"?: string;
@@ -2303,6 +2361,10 @@ export interface operations {
           "script"?: ({
             "actions"?: Array<{
               "assertions"?: Array<Record<string, unknown>>;
+              "attribution"?: ({
+                "hierarchy_path"?: string;
+                "page_name"?: string;
+              }) | null;
               "auth"?: ({
                 "domain"?: string;
                 "password"?: string;
@@ -2319,10 +2381,15 @@ export interface operations {
                 "screenshot"?: boolean;
               }) | null;
               "control"?: ({
+                "branches"?: Array<Record<string, unknown>>;
+                "cases"?: Array<Record<string, unknown>>;
+                "concurrency"?: number;
                 "condition"?: (Record<string, unknown>) | null;
                 "count"?: number;
+                "default"?: Array<Record<string, unknown>>;
                 "do_while"?: boolean;
                 "else"?: Array<Record<string, unknown>>;
+                "fail_fast"?: boolean;
                 "for_each"?: (Record<string, unknown>) | null;
                 "max_iterations"?: number;
                 "steps"?: Array<Record<string, unknown>>;
@@ -2602,6 +2669,9 @@ export interface operations {
                 "tps"?: number;
                 "type"?: string;
               };
+              "results"?: {
+                "message_detail"?: (Record<string, unknown>) | null;
+              };
               "run_logic"?: {
                 "action_sequence"?: Array<string>;
                 "auto_transactions"?: string;
@@ -2689,10 +2759,21 @@ export interface operations {
               "stop_on_max_errors"?: boolean;
               "stop_on_sla_breach"?: boolean;
               "target_average_tps"?: (number) | null;
+              "transaction_rules"?: Array<{
+                "comparator"?: string;
+                "metric"?: string;
+                "severity"?: string;
+                "threshold"?: number;
+                "transaction"?: string;
+              }>;
             }) | null;
             "id"?: string;
             "init"?: Array<{
               "assertions"?: Array<Record<string, unknown>>;
+              "attribution"?: ({
+                "hierarchy_path"?: string;
+                "page_name"?: string;
+              }) | null;
               "auth"?: ({
                 "domain"?: string;
                 "password"?: string;
@@ -2709,10 +2790,15 @@ export interface operations {
                 "screenshot"?: boolean;
               }) | null;
               "control"?: ({
+                "branches"?: Array<Record<string, unknown>>;
+                "cases"?: Array<Record<string, unknown>>;
+                "concurrency"?: number;
                 "condition"?: (Record<string, unknown>) | null;
                 "count"?: number;
+                "default"?: Array<Record<string, unknown>>;
                 "do_while"?: boolean;
                 "else"?: Array<Record<string, unknown>>;
+                "fail_fast"?: boolean;
                 "for_each"?: (Record<string, unknown>) | null;
                 "max_iterations"?: number;
                 "steps"?: Array<Record<string, unknown>>;
@@ -2802,6 +2888,10 @@ export interface operations {
             "ref_key"?: string;
             "teardown"?: Array<{
               "assertions"?: Array<Record<string, unknown>>;
+              "attribution"?: ({
+                "hierarchy_path"?: string;
+                "page_name"?: string;
+              }) | null;
               "auth"?: ({
                 "domain"?: string;
                 "password"?: string;
@@ -2818,10 +2908,15 @@ export interface operations {
                 "screenshot"?: boolean;
               }) | null;
               "control"?: ({
+                "branches"?: Array<Record<string, unknown>>;
+                "cases"?: Array<Record<string, unknown>>;
+                "concurrency"?: number;
                 "condition"?: (Record<string, unknown>) | null;
                 "count"?: number;
+                "default"?: Array<Record<string, unknown>>;
                 "do_while"?: boolean;
                 "else"?: Array<Record<string, unknown>>;
+                "fail_fast"?: boolean;
                 "for_each"?: (Record<string, unknown>) | null;
                 "max_iterations"?: number;
                 "steps"?: Array<Record<string, unknown>>;
@@ -3001,6 +3096,10 @@ export interface operations {
           "script"?: ({
             "actions"?: Array<{
               "assertions"?: Array<Record<string, unknown>>;
+              "attribution"?: ({
+                "hierarchy_path"?: string;
+                "page_name"?: string;
+              }) | null;
               "auth"?: ({
                 "domain"?: string;
                 "password"?: string;
@@ -3017,10 +3116,15 @@ export interface operations {
                 "screenshot"?: boolean;
               }) | null;
               "control"?: ({
+                "branches"?: Array<Record<string, unknown>>;
+                "cases"?: Array<Record<string, unknown>>;
+                "concurrency"?: number;
                 "condition"?: (Record<string, unknown>) | null;
                 "count"?: number;
+                "default"?: Array<Record<string, unknown>>;
                 "do_while"?: boolean;
                 "else"?: Array<Record<string, unknown>>;
+                "fail_fast"?: boolean;
                 "for_each"?: (Record<string, unknown>) | null;
                 "max_iterations"?: number;
                 "steps"?: Array<Record<string, unknown>>;
@@ -3300,6 +3404,9 @@ export interface operations {
                 "tps"?: number;
                 "type"?: string;
               };
+              "results"?: {
+                "message_detail"?: (Record<string, unknown>) | null;
+              };
               "run_logic"?: {
                 "action_sequence"?: Array<string>;
                 "auto_transactions"?: string;
@@ -3387,10 +3494,21 @@ export interface operations {
               "stop_on_max_errors"?: boolean;
               "stop_on_sla_breach"?: boolean;
               "target_average_tps"?: (number) | null;
+              "transaction_rules"?: Array<{
+                "comparator"?: string;
+                "metric"?: string;
+                "severity"?: string;
+                "threshold"?: number;
+                "transaction"?: string;
+              }>;
             }) | null;
             "id"?: string;
             "init"?: Array<{
               "assertions"?: Array<Record<string, unknown>>;
+              "attribution"?: ({
+                "hierarchy_path"?: string;
+                "page_name"?: string;
+              }) | null;
               "auth"?: ({
                 "domain"?: string;
                 "password"?: string;
@@ -3407,10 +3525,15 @@ export interface operations {
                 "screenshot"?: boolean;
               }) | null;
               "control"?: ({
+                "branches"?: Array<Record<string, unknown>>;
+                "cases"?: Array<Record<string, unknown>>;
+                "concurrency"?: number;
                 "condition"?: (Record<string, unknown>) | null;
                 "count"?: number;
+                "default"?: Array<Record<string, unknown>>;
                 "do_while"?: boolean;
                 "else"?: Array<Record<string, unknown>>;
+                "fail_fast"?: boolean;
                 "for_each"?: (Record<string, unknown>) | null;
                 "max_iterations"?: number;
                 "steps"?: Array<Record<string, unknown>>;
@@ -3500,6 +3623,10 @@ export interface operations {
             "ref_key"?: string;
             "teardown"?: Array<{
               "assertions"?: Array<Record<string, unknown>>;
+              "attribution"?: ({
+                "hierarchy_path"?: string;
+                "page_name"?: string;
+              }) | null;
               "auth"?: ({
                 "domain"?: string;
                 "password"?: string;
@@ -3516,10 +3643,15 @@ export interface operations {
                 "screenshot"?: boolean;
               }) | null;
               "control"?: ({
+                "branches"?: Array<Record<string, unknown>>;
+                "cases"?: Array<Record<string, unknown>>;
+                "concurrency"?: number;
                 "condition"?: (Record<string, unknown>) | null;
                 "count"?: number;
+                "default"?: Array<Record<string, unknown>>;
                 "do_while"?: boolean;
                 "else"?: Array<Record<string, unknown>>;
+                "fail_fast"?: boolean;
                 "for_each"?: (Record<string, unknown>) | null;
                 "max_iterations"?: number;
                 "steps"?: Array<Record<string, unknown>>;
@@ -3601,6 +3733,10 @@ export interface operations {
             "preview_script"?: ({
               "actions": Array<{
                 "assertions"?: Array<Record<string, unknown>>;
+                "attribution"?: ({
+                  "hierarchy_path"?: string;
+                  "page_name"?: string;
+                }) | null;
                 "auth"?: ({
                   "domain"?: string;
                   "password"?: string;
@@ -3617,10 +3753,15 @@ export interface operations {
                   "screenshot"?: boolean;
                 }) | null;
                 "control"?: ({
+                  "branches"?: Array<Record<string, unknown>>;
+                  "cases"?: Array<Record<string, unknown>>;
+                  "concurrency"?: number;
                   "condition"?: (Record<string, unknown>) | null;
                   "count"?: number;
+                  "default"?: Array<Record<string, unknown>>;
                   "do_while"?: boolean;
                   "else"?: Array<Record<string, unknown>>;
+                  "fail_fast"?: boolean;
                   "for_each"?: (Record<string, unknown>) | null;
                   "max_iterations"?: number;
                   "steps"?: Array<Record<string, unknown>>;
@@ -3900,6 +4041,9 @@ export interface operations {
                   "tps"?: number;
                   "type": string;
                 };
+                "results"?: {
+                  "message_detail"?: (Record<string, unknown>) | null;
+                };
                 "run_logic"?: {
                   "action_sequence"?: Array<string>;
                   "auto_transactions"?: string;
@@ -3987,10 +4131,21 @@ export interface operations {
                 "stop_on_max_errors"?: boolean;
                 "stop_on_sla_breach"?: boolean;
                 "target_average_tps"?: (number) | null;
+                "transaction_rules"?: Array<{
+                  "comparator": string;
+                  "metric": string;
+                  "severity"?: string;
+                  "threshold": number;
+                  "transaction": string;
+                }>;
               }) | null;
               "id": string;
               "init"?: Array<{
                 "assertions"?: Array<Record<string, unknown>>;
+                "attribution"?: ({
+                  "hierarchy_path"?: string;
+                  "page_name"?: string;
+                }) | null;
                 "auth"?: ({
                   "domain"?: string;
                   "password"?: string;
@@ -4007,10 +4162,15 @@ export interface operations {
                   "screenshot"?: boolean;
                 }) | null;
                 "control"?: ({
+                  "branches"?: Array<Record<string, unknown>>;
+                  "cases"?: Array<Record<string, unknown>>;
+                  "concurrency"?: number;
                   "condition"?: (Record<string, unknown>) | null;
                   "count"?: number;
+                  "default"?: Array<Record<string, unknown>>;
                   "do_while"?: boolean;
                   "else"?: Array<Record<string, unknown>>;
+                  "fail_fast"?: boolean;
                   "for_each"?: (Record<string, unknown>) | null;
                   "max_iterations"?: number;
                   "steps"?: Array<Record<string, unknown>>;
@@ -4100,6 +4260,10 @@ export interface operations {
               "ref_key"?: string;
               "teardown"?: Array<{
                 "assertions"?: Array<Record<string, unknown>>;
+                "attribution"?: ({
+                  "hierarchy_path"?: string;
+                  "page_name"?: string;
+                }) | null;
                 "auth"?: ({
                   "domain"?: string;
                   "password"?: string;
@@ -4116,10 +4280,15 @@ export interface operations {
                   "screenshot"?: boolean;
                 }) | null;
                 "control"?: ({
+                  "branches"?: Array<Record<string, unknown>>;
+                  "cases"?: Array<Record<string, unknown>>;
+                  "concurrency"?: number;
                   "condition"?: (Record<string, unknown>) | null;
                   "count"?: number;
+                  "default"?: Array<Record<string, unknown>>;
                   "do_while"?: boolean;
                   "else"?: Array<Record<string, unknown>>;
+                  "fail_fast"?: boolean;
                   "for_each"?: (Record<string, unknown>) | null;
                   "max_iterations"?: number;
                   "steps"?: Array<Record<string, unknown>>;
@@ -4839,6 +5008,10 @@ export interface operations {
           "script"?: ({
             "actions"?: Array<{
               "assertions"?: Array<Record<string, unknown>>;
+              "attribution"?: ({
+                "hierarchy_path"?: string;
+                "page_name"?: string;
+              }) | null;
               "auth"?: ({
                 "domain"?: string;
                 "password"?: string;
@@ -4855,10 +5028,15 @@ export interface operations {
                 "screenshot"?: boolean;
               }) | null;
               "control"?: ({
+                "branches"?: Array<Record<string, unknown>>;
+                "cases"?: Array<Record<string, unknown>>;
+                "concurrency"?: number;
                 "condition"?: (Record<string, unknown>) | null;
                 "count"?: number;
+                "default"?: Array<Record<string, unknown>>;
                 "do_while"?: boolean;
                 "else"?: Array<Record<string, unknown>>;
+                "fail_fast"?: boolean;
                 "for_each"?: (Record<string, unknown>) | null;
                 "max_iterations"?: number;
                 "steps"?: Array<Record<string, unknown>>;
@@ -5138,6 +5316,9 @@ export interface operations {
                 "tps"?: number;
                 "type"?: string;
               };
+              "results"?: {
+                "message_detail"?: (Record<string, unknown>) | null;
+              };
               "run_logic"?: {
                 "action_sequence"?: Array<string>;
                 "auto_transactions"?: string;
@@ -5225,10 +5406,21 @@ export interface operations {
               "stop_on_max_errors"?: boolean;
               "stop_on_sla_breach"?: boolean;
               "target_average_tps"?: (number) | null;
+              "transaction_rules"?: Array<{
+                "comparator"?: string;
+                "metric"?: string;
+                "severity"?: string;
+                "threshold"?: number;
+                "transaction"?: string;
+              }>;
             }) | null;
             "id"?: string;
             "init"?: Array<{
               "assertions"?: Array<Record<string, unknown>>;
+              "attribution"?: ({
+                "hierarchy_path"?: string;
+                "page_name"?: string;
+              }) | null;
               "auth"?: ({
                 "domain"?: string;
                 "password"?: string;
@@ -5245,10 +5437,15 @@ export interface operations {
                 "screenshot"?: boolean;
               }) | null;
               "control"?: ({
+                "branches"?: Array<Record<string, unknown>>;
+                "cases"?: Array<Record<string, unknown>>;
+                "concurrency"?: number;
                 "condition"?: (Record<string, unknown>) | null;
                 "count"?: number;
+                "default"?: Array<Record<string, unknown>>;
                 "do_while"?: boolean;
                 "else"?: Array<Record<string, unknown>>;
+                "fail_fast"?: boolean;
                 "for_each"?: (Record<string, unknown>) | null;
                 "max_iterations"?: number;
                 "steps"?: Array<Record<string, unknown>>;
@@ -5338,6 +5535,10 @@ export interface operations {
             "ref_key"?: string;
             "teardown"?: Array<{
               "assertions"?: Array<Record<string, unknown>>;
+              "attribution"?: ({
+                "hierarchy_path"?: string;
+                "page_name"?: string;
+              }) | null;
               "auth"?: ({
                 "domain"?: string;
                 "password"?: string;
@@ -5354,10 +5555,15 @@ export interface operations {
                 "screenshot"?: boolean;
               }) | null;
               "control"?: ({
+                "branches"?: Array<Record<string, unknown>>;
+                "cases"?: Array<Record<string, unknown>>;
+                "concurrency"?: number;
                 "condition"?: (Record<string, unknown>) | null;
                 "count"?: number;
+                "default"?: Array<Record<string, unknown>>;
                 "do_while"?: boolean;
                 "else"?: Array<Record<string, unknown>>;
+                "fail_fast"?: boolean;
                 "for_each"?: (Record<string, unknown>) | null;
                 "max_iterations"?: number;
                 "steps"?: Array<Record<string, unknown>>;
@@ -5466,6 +5672,10 @@ export interface operations {
           "script"?: ({
             "actions"?: Array<{
               "assertions"?: Array<Record<string, unknown>>;
+              "attribution"?: ({
+                "hierarchy_path"?: string;
+                "page_name"?: string;
+              }) | null;
               "auth"?: ({
                 "domain"?: string;
                 "password"?: string;
@@ -5482,10 +5692,15 @@ export interface operations {
                 "screenshot"?: boolean;
               }) | null;
               "control"?: ({
+                "branches"?: Array<Record<string, unknown>>;
+                "cases"?: Array<Record<string, unknown>>;
+                "concurrency"?: number;
                 "condition"?: (Record<string, unknown>) | null;
                 "count"?: number;
+                "default"?: Array<Record<string, unknown>>;
                 "do_while"?: boolean;
                 "else"?: Array<Record<string, unknown>>;
+                "fail_fast"?: boolean;
                 "for_each"?: (Record<string, unknown>) | null;
                 "max_iterations"?: number;
                 "steps"?: Array<Record<string, unknown>>;
@@ -5765,6 +5980,9 @@ export interface operations {
                 "tps"?: number;
                 "type"?: string;
               };
+              "results"?: {
+                "message_detail"?: (Record<string, unknown>) | null;
+              };
               "run_logic"?: {
                 "action_sequence"?: Array<string>;
                 "auto_transactions"?: string;
@@ -5852,10 +6070,21 @@ export interface operations {
               "stop_on_max_errors"?: boolean;
               "stop_on_sla_breach"?: boolean;
               "target_average_tps"?: (number) | null;
+              "transaction_rules"?: Array<{
+                "comparator"?: string;
+                "metric"?: string;
+                "severity"?: string;
+                "threshold"?: number;
+                "transaction"?: string;
+              }>;
             }) | null;
             "id"?: string;
             "init"?: Array<{
               "assertions"?: Array<Record<string, unknown>>;
+              "attribution"?: ({
+                "hierarchy_path"?: string;
+                "page_name"?: string;
+              }) | null;
               "auth"?: ({
                 "domain"?: string;
                 "password"?: string;
@@ -5872,10 +6101,15 @@ export interface operations {
                 "screenshot"?: boolean;
               }) | null;
               "control"?: ({
+                "branches"?: Array<Record<string, unknown>>;
+                "cases"?: Array<Record<string, unknown>>;
+                "concurrency"?: number;
                 "condition"?: (Record<string, unknown>) | null;
                 "count"?: number;
+                "default"?: Array<Record<string, unknown>>;
                 "do_while"?: boolean;
                 "else"?: Array<Record<string, unknown>>;
+                "fail_fast"?: boolean;
                 "for_each"?: (Record<string, unknown>) | null;
                 "max_iterations"?: number;
                 "steps"?: Array<Record<string, unknown>>;
@@ -5965,6 +6199,10 @@ export interface operations {
             "ref_key"?: string;
             "teardown"?: Array<{
               "assertions"?: Array<Record<string, unknown>>;
+              "attribution"?: ({
+                "hierarchy_path"?: string;
+                "page_name"?: string;
+              }) | null;
               "auth"?: ({
                 "domain"?: string;
                 "password"?: string;
@@ -5981,10 +6219,15 @@ export interface operations {
                 "screenshot"?: boolean;
               }) | null;
               "control"?: ({
+                "branches"?: Array<Record<string, unknown>>;
+                "cases"?: Array<Record<string, unknown>>;
+                "concurrency"?: number;
                 "condition"?: (Record<string, unknown>) | null;
                 "count"?: number;
+                "default"?: Array<Record<string, unknown>>;
                 "do_while"?: boolean;
                 "else"?: Array<Record<string, unknown>>;
+                "fail_fast"?: boolean;
                 "for_each"?: (Record<string, unknown>) | null;
                 "max_iterations"?: number;
                 "steps"?: Array<Record<string, unknown>>;
@@ -6037,6 +6280,7 @@ export interface operations {
           "scripts"?: Array<({
             "actions"?: Array<{
               "assertions"?: Array<Record<string, unknown>>;
+              "attribution"?: (Record<string, unknown>) | null;
               "auth"?: (Record<string, unknown>) | null;
               "body"?: string;
               "body_encoding"?: string;
@@ -6296,6 +6540,9 @@ export interface operations {
                 "tps"?: number;
                 "type"?: string;
               };
+              "results"?: {
+                "message_detail"?: (Record<string, unknown>) | null;
+              };
               "run_logic"?: {
                 "action_sequence"?: Array<string>;
                 "auto_transactions"?: string;
@@ -6383,10 +6630,12 @@ export interface operations {
               "stop_on_max_errors"?: boolean;
               "stop_on_sla_breach"?: boolean;
               "target_average_tps"?: (number) | null;
+              "transaction_rules"?: Array<Record<string, unknown>>;
             }) | null;
             "id"?: string;
             "init"?: Array<{
               "assertions"?: Array<Record<string, unknown>>;
+              "attribution"?: (Record<string, unknown>) | null;
               "auth"?: (Record<string, unknown>) | null;
               "body"?: string;
               "body_encoding"?: string;
@@ -6456,6 +6705,7 @@ export interface operations {
             "ref_key"?: string;
             "teardown"?: Array<{
               "assertions"?: Array<Record<string, unknown>>;
+              "attribution"?: (Record<string, unknown>) | null;
               "auth"?: (Record<string, unknown>) | null;
               "body"?: string;
               "body_encoding"?: string;
@@ -6699,6 +6949,13 @@ export interface operations {
                 "stop_on_max_errors"?: boolean;
                 "stop_on_sla_breach"?: boolean;
                 "target_average_tps"?: (number) | null;
+                "transaction_rules"?: Array<{
+                  "comparator": string;
+                  "metric": string;
+                  "severity"?: string;
+                  "threshold": number;
+                  "transaction": string;
+                }>;
               }) | null;
               "id": string;
               "last_run_at"?: (string) | null;
@@ -6950,6 +7207,7 @@ export interface operations {
                 "script_id": string;
                 "script_name"?: string;
                 "stages"?: Array<Record<string, unknown>>;
+                "start_offset"?: string;
                 "vusers": number;
               }>;
               "start_delay"?: string;
@@ -7005,6 +7263,10 @@ export interface operations {
           "script": ({
             "actions"?: Array<{
               "assertions"?: Array<Record<string, unknown>>;
+              "attribution"?: ({
+                "hierarchy_path"?: string;
+                "page_name"?: string;
+              }) | null;
               "auth"?: ({
                 "domain"?: string;
                 "password"?: string;
@@ -7021,10 +7283,15 @@ export interface operations {
                 "screenshot"?: boolean;
               }) | null;
               "control"?: ({
+                "branches"?: Array<Record<string, unknown>>;
+                "cases"?: Array<Record<string, unknown>>;
+                "concurrency"?: number;
                 "condition"?: (Record<string, unknown>) | null;
                 "count"?: number;
+                "default"?: Array<Record<string, unknown>>;
                 "do_while"?: boolean;
                 "else"?: Array<Record<string, unknown>>;
+                "fail_fast"?: boolean;
                 "for_each"?: (Record<string, unknown>) | null;
                 "max_iterations"?: number;
                 "steps"?: Array<Record<string, unknown>>;
@@ -7304,6 +7571,9 @@ export interface operations {
                 "tps"?: number;
                 "type"?: string;
               };
+              "results"?: {
+                "message_detail"?: (Record<string, unknown>) | null;
+              };
               "run_logic"?: {
                 "action_sequence"?: Array<string>;
                 "auto_transactions"?: string;
@@ -7391,10 +7661,21 @@ export interface operations {
               "stop_on_max_errors"?: boolean;
               "stop_on_sla_breach"?: boolean;
               "target_average_tps"?: (number) | null;
+              "transaction_rules"?: Array<{
+                "comparator"?: string;
+                "metric"?: string;
+                "severity"?: string;
+                "threshold"?: number;
+                "transaction"?: string;
+              }>;
             }) | null;
             "id"?: string;
             "init"?: Array<{
               "assertions"?: Array<Record<string, unknown>>;
+              "attribution"?: ({
+                "hierarchy_path"?: string;
+                "page_name"?: string;
+              }) | null;
               "auth"?: ({
                 "domain"?: string;
                 "password"?: string;
@@ -7411,10 +7692,15 @@ export interface operations {
                 "screenshot"?: boolean;
               }) | null;
               "control"?: ({
+                "branches"?: Array<Record<string, unknown>>;
+                "cases"?: Array<Record<string, unknown>>;
+                "concurrency"?: number;
                 "condition"?: (Record<string, unknown>) | null;
                 "count"?: number;
+                "default"?: Array<Record<string, unknown>>;
                 "do_while"?: boolean;
                 "else"?: Array<Record<string, unknown>>;
+                "fail_fast"?: boolean;
                 "for_each"?: (Record<string, unknown>) | null;
                 "max_iterations"?: number;
                 "steps"?: Array<Record<string, unknown>>;
@@ -7504,6 +7790,10 @@ export interface operations {
             "ref_key"?: string;
             "teardown"?: Array<{
               "assertions"?: Array<Record<string, unknown>>;
+              "attribution"?: ({
+                "hierarchy_path"?: string;
+                "page_name"?: string;
+              }) | null;
               "auth"?: ({
                 "domain"?: string;
                 "password"?: string;
@@ -7520,10 +7810,15 @@ export interface operations {
                 "screenshot"?: boolean;
               }) | null;
               "control"?: ({
+                "branches"?: Array<Record<string, unknown>>;
+                "cases"?: Array<Record<string, unknown>>;
+                "concurrency"?: number;
                 "condition"?: (Record<string, unknown>) | null;
                 "count"?: number;
+                "default"?: Array<Record<string, unknown>>;
                 "do_while"?: boolean;
                 "else"?: Array<Record<string, unknown>>;
+                "fail_fast"?: boolean;
                 "for_each"?: (Record<string, unknown>) | null;
                 "max_iterations"?: number;
                 "steps"?: Array<Record<string, unknown>>;
@@ -7671,6 +7966,7 @@ export interface operations {
               "script": ({
                 "actions": Array<{
                   "assertions"?: Array<Record<string, unknown>>;
+                  "attribution"?: (Record<string, unknown>) | null;
                   "auth"?: (Record<string, unknown>) | null;
                   "body"?: string;
                   "body_encoding"?: string;
@@ -7715,6 +8011,7 @@ export interface operations {
                   "network"?: Record<string, unknown>;
                   "observability"?: Record<string, unknown>;
                   "pacing"?: Record<string, unknown>;
+                  "results"?: Record<string, unknown>;
                   "run_logic"?: Record<string, unknown>;
                   "sapgui"?: Record<string, unknown>;
                   "soap"?: Record<string, unknown>;
@@ -7753,10 +8050,12 @@ export interface operations {
                   "stop_on_max_errors"?: boolean;
                   "stop_on_sla_breach"?: boolean;
                   "target_average_tps"?: (number) | null;
+                  "transaction_rules"?: Array<Record<string, unknown>>;
                 }) | null;
                 "id": string;
                 "init"?: Array<{
                   "assertions"?: Array<Record<string, unknown>>;
+                  "attribution"?: (Record<string, unknown>) | null;
                   "auth"?: (Record<string, unknown>) | null;
                   "body"?: string;
                   "body_encoding"?: string;
@@ -7820,6 +8119,7 @@ export interface operations {
                 "ref_key"?: string;
                 "teardown"?: Array<{
                   "assertions"?: Array<Record<string, unknown>>;
+                  "attribution"?: (Record<string, unknown>) | null;
                   "auth"?: (Record<string, unknown>) | null;
                   "body"?: string;
                   "body_encoding"?: string;
@@ -7858,6 +8158,7 @@ export interface operations {
               "draft"?: ({
                 "actions": Array<{
                   "assertions"?: Array<Record<string, unknown>>;
+                  "attribution"?: (Record<string, unknown>) | null;
                   "auth"?: (Record<string, unknown>) | null;
                   "body"?: string;
                   "body_encoding"?: string;
@@ -7902,6 +8203,7 @@ export interface operations {
                   "network"?: Record<string, unknown>;
                   "observability"?: Record<string, unknown>;
                   "pacing"?: Record<string, unknown>;
+                  "results"?: Record<string, unknown>;
                   "run_logic"?: Record<string, unknown>;
                   "sapgui"?: Record<string, unknown>;
                   "soap"?: Record<string, unknown>;
@@ -7940,10 +8242,12 @@ export interface operations {
                   "stop_on_max_errors"?: boolean;
                   "stop_on_sla_breach"?: boolean;
                   "target_average_tps"?: (number) | null;
+                  "transaction_rules"?: Array<Record<string, unknown>>;
                 }) | null;
                 "id": string;
                 "init"?: Array<{
                   "assertions"?: Array<Record<string, unknown>>;
+                  "attribution"?: (Record<string, unknown>) | null;
                   "auth"?: (Record<string, unknown>) | null;
                   "body"?: string;
                   "body_encoding"?: string;
@@ -8007,6 +8311,7 @@ export interface operations {
                 "ref_key"?: string;
                 "teardown"?: Array<{
                   "assertions"?: Array<Record<string, unknown>>;
+                  "attribution"?: (Record<string, unknown>) | null;
                   "auth"?: (Record<string, unknown>) | null;
                   "body"?: string;
                   "body_encoding"?: string;
@@ -8250,6 +8555,10 @@ export interface operations {
           "scripts"?: Array<{
             "actions"?: Array<{
               "assertions"?: Array<Record<string, unknown>>;
+              "attribution"?: ({
+                "hierarchy_path"?: string;
+                "page_name"?: string;
+              }) | null;
               "auth"?: ({
                 "domain"?: string;
                 "password"?: string;
@@ -8266,10 +8575,15 @@ export interface operations {
                 "screenshot"?: boolean;
               }) | null;
               "control"?: ({
+                "branches"?: Array<Record<string, unknown>>;
+                "cases"?: Array<Record<string, unknown>>;
+                "concurrency"?: number;
                 "condition"?: (Record<string, unknown>) | null;
                 "count"?: number;
+                "default"?: Array<Record<string, unknown>>;
                 "do_while"?: boolean;
                 "else"?: Array<Record<string, unknown>>;
+                "fail_fast"?: boolean;
                 "for_each"?: (Record<string, unknown>) | null;
                 "max_iterations"?: number;
                 "steps"?: Array<Record<string, unknown>>;
@@ -8549,6 +8863,9 @@ export interface operations {
                 "tps"?: number;
                 "type"?: string;
               };
+              "results"?: {
+                "message_detail"?: (Record<string, unknown>) | null;
+              };
               "run_logic"?: {
                 "action_sequence"?: Array<string>;
                 "auto_transactions"?: string;
@@ -8636,10 +8953,21 @@ export interface operations {
               "stop_on_max_errors"?: boolean;
               "stop_on_sla_breach"?: boolean;
               "target_average_tps"?: (number) | null;
+              "transaction_rules"?: Array<{
+                "comparator"?: string;
+                "metric"?: string;
+                "severity"?: string;
+                "threshold"?: number;
+                "transaction"?: string;
+              }>;
             }) | null;
             "id"?: string;
             "init"?: Array<{
               "assertions"?: Array<Record<string, unknown>>;
+              "attribution"?: ({
+                "hierarchy_path"?: string;
+                "page_name"?: string;
+              }) | null;
               "auth"?: ({
                 "domain"?: string;
                 "password"?: string;
@@ -8656,10 +8984,15 @@ export interface operations {
                 "screenshot"?: boolean;
               }) | null;
               "control"?: ({
+                "branches"?: Array<Record<string, unknown>>;
+                "cases"?: Array<Record<string, unknown>>;
+                "concurrency"?: number;
                 "condition"?: (Record<string, unknown>) | null;
                 "count"?: number;
+                "default"?: Array<Record<string, unknown>>;
                 "do_while"?: boolean;
                 "else"?: Array<Record<string, unknown>>;
+                "fail_fast"?: boolean;
                 "for_each"?: (Record<string, unknown>) | null;
                 "max_iterations"?: number;
                 "steps"?: Array<Record<string, unknown>>;
@@ -8749,6 +9082,10 @@ export interface operations {
             "ref_key"?: string;
             "teardown"?: Array<{
               "assertions"?: Array<Record<string, unknown>>;
+              "attribution"?: ({
+                "hierarchy_path"?: string;
+                "page_name"?: string;
+              }) | null;
               "auth"?: ({
                 "domain"?: string;
                 "password"?: string;
@@ -8765,10 +9102,15 @@ export interface operations {
                 "screenshot"?: boolean;
               }) | null;
               "control"?: ({
+                "branches"?: Array<Record<string, unknown>>;
+                "cases"?: Array<Record<string, unknown>>;
+                "concurrency"?: number;
                 "condition"?: (Record<string, unknown>) | null;
                 "count"?: number;
+                "default"?: Array<Record<string, unknown>>;
                 "do_while"?: boolean;
                 "else"?: Array<Record<string, unknown>>;
+                "fail_fast"?: boolean;
                 "for_each"?: (Record<string, unknown>) | null;
                 "max_iterations"?: number;
                 "steps"?: Array<Record<string, unknown>>;
@@ -9407,6 +9749,35 @@ export interface operations {
       };
     };
   };
+  "handleCloudTestSupportMatrix": {
+    parameters?: never;
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": unknown;
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
   "handleCollectorHeartbeat": {
     parameters: {
       "path": {
@@ -9487,6 +9858,7 @@ export interface operations {
           "script"?: {
             "actions"?: Array<{
               "assertions"?: Array<Record<string, unknown>>;
+              "attribution"?: (Record<string, unknown>) | null;
               "auth"?: (Record<string, unknown>) | null;
               "body"?: string;
               "body_encoding"?: string;
@@ -9531,6 +9903,7 @@ export interface operations {
               "network"?: Record<string, unknown>;
               "observability"?: Record<string, unknown>;
               "pacing"?: Record<string, unknown>;
+              "results"?: Record<string, unknown>;
               "run_logic"?: Record<string, unknown>;
               "sapgui"?: Record<string, unknown>;
               "soap"?: Record<string, unknown>;
@@ -9569,10 +9942,12 @@ export interface operations {
               "stop_on_max_errors"?: boolean;
               "stop_on_sla_breach"?: boolean;
               "target_average_tps"?: (number) | null;
+              "transaction_rules"?: Array<Record<string, unknown>>;
             }) | null;
             "id"?: string;
             "init"?: Array<{
               "assertions"?: Array<Record<string, unknown>>;
+              "attribution"?: (Record<string, unknown>) | null;
               "auth"?: (Record<string, unknown>) | null;
               "body"?: string;
               "body_encoding"?: string;
@@ -9636,6 +10011,7 @@ export interface operations {
             "ref_key"?: string;
             "teardown"?: Array<{
               "assertions"?: Array<Record<string, unknown>>;
+              "attribution"?: (Record<string, unknown>) | null;
               "auth"?: (Record<string, unknown>) | null;
               "body"?: string;
               "body_encoding"?: string;
@@ -9736,6 +10112,7 @@ export interface operations {
           "scripts": Array<{
             "actions"?: Array<{
               "assertions"?: Array<Record<string, unknown>>;
+              "attribution"?: (Record<string, unknown>) | null;
               "auth"?: (Record<string, unknown>) | null;
               "body"?: string;
               "body_encoding"?: string;
@@ -9995,6 +10372,9 @@ export interface operations {
                 "tps"?: number;
                 "type"?: string;
               };
+              "results"?: {
+                "message_detail"?: (Record<string, unknown>) | null;
+              };
               "run_logic"?: {
                 "action_sequence"?: Array<string>;
                 "auto_transactions"?: string;
@@ -10082,10 +10462,12 @@ export interface operations {
               "stop_on_max_errors"?: boolean;
               "stop_on_sla_breach"?: boolean;
               "target_average_tps"?: (number) | null;
+              "transaction_rules"?: Array<Record<string, unknown>>;
             }) | null;
             "id"?: string;
             "init"?: Array<{
               "assertions"?: Array<Record<string, unknown>>;
+              "attribution"?: (Record<string, unknown>) | null;
               "auth"?: (Record<string, unknown>) | null;
               "body"?: string;
               "body_encoding"?: string;
@@ -10155,6 +10537,7 @@ export interface operations {
             "ref_key"?: string;
             "teardown"?: Array<{
               "assertions"?: Array<Record<string, unknown>>;
+              "attribution"?: (Record<string, unknown>) | null;
               "auth"?: (Record<string, unknown>) | null;
               "body"?: string;
               "body_encoding"?: string;
@@ -10335,10 +10718,12 @@ export interface operations {
       content: {
         "application/json": {
           "folder_id"?: (string) | null;
+          "import_session_ids"?: Array<string>;
           "operation_id": string;
           "scripts": Array<{
             "actions"?: Array<{
               "assertions"?: Array<Record<string, unknown>>;
+              "attribution"?: (Record<string, unknown>) | null;
               "auth"?: (Record<string, unknown>) | null;
               "body"?: string;
               "body_encoding"?: string;
@@ -10598,6 +10983,9 @@ export interface operations {
                 "tps"?: number;
                 "type"?: string;
               };
+              "results"?: {
+                "message_detail"?: (Record<string, unknown>) | null;
+              };
               "run_logic"?: {
                 "action_sequence"?: Array<string>;
                 "auto_transactions"?: string;
@@ -10685,10 +11073,12 @@ export interface operations {
               "stop_on_max_errors"?: boolean;
               "stop_on_sla_breach"?: boolean;
               "target_average_tps"?: (number) | null;
+              "transaction_rules"?: Array<Record<string, unknown>>;
             }) | null;
             "id"?: string;
             "init"?: Array<{
               "assertions"?: Array<Record<string, unknown>>;
+              "attribution"?: (Record<string, unknown>) | null;
               "auth"?: (Record<string, unknown>) | null;
               "body"?: string;
               "body_encoding"?: string;
@@ -10758,6 +11148,7 @@ export interface operations {
             "ref_key"?: string;
             "teardown"?: Array<{
               "assertions"?: Array<Record<string, unknown>>;
+              "attribution"?: (Record<string, unknown>) | null;
               "auth"?: (Record<string, unknown>) | null;
               "body"?: string;
               "body_encoding"?: string;
@@ -10787,7 +11178,7 @@ export interface operations {
             "updated_at"?: string;
             "version"?: string;
           }>;
-          "source_profile": "broker_config" | "browser_recorder" | "browser_recording_har" | "curl" | "devweb" | "eventhubs_capture" | "github" | "har" | "k6" | "raml" | "raw_http" | "recorder" | "recorder-export" | "recorder_export" | "rest_json" | "salesforce" | "sample" | "sample-import" | "truclient" | "wsdl";
+          "source_profile": "broker_config" | "browser_recorder" | "browser_recording_har" | "cloudtest" | "curl" | "devweb" | "eventhubs_capture" | "github" | "har" | "k6" | "raml" | "raw_http" | "recorder" | "recorder-export" | "recorder_export" | "rest_json" | "salesforce" | "sample" | "sample-import" | "truclient" | "wsdl";
           "source_recording_session_ids"?: Array<string>;
         };
       };
@@ -10824,6 +11215,11 @@ export interface operations {
         };
       };
       "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -10912,6 +11308,7 @@ export interface operations {
           "script"?: {
             "actions"?: Array<{
               "assertions"?: Array<Record<string, unknown>>;
+              "attribution"?: (Record<string, unknown>) | null;
               "auth"?: (Record<string, unknown>) | null;
               "body"?: string;
               "body_encoding"?: string;
@@ -10956,6 +11353,7 @@ export interface operations {
               "network"?: Record<string, unknown>;
               "observability"?: Record<string, unknown>;
               "pacing"?: Record<string, unknown>;
+              "results"?: Record<string, unknown>;
               "run_logic"?: Record<string, unknown>;
               "sapgui"?: Record<string, unknown>;
               "soap"?: Record<string, unknown>;
@@ -10994,10 +11392,12 @@ export interface operations {
               "stop_on_max_errors"?: boolean;
               "stop_on_sla_breach"?: boolean;
               "target_average_tps"?: (number) | null;
+              "transaction_rules"?: Array<Record<string, unknown>>;
             }) | null;
             "id"?: string;
             "init"?: Array<{
               "assertions"?: Array<Record<string, unknown>>;
+              "attribution"?: (Record<string, unknown>) | null;
               "auth"?: (Record<string, unknown>) | null;
               "body"?: string;
               "body_encoding"?: string;
@@ -11061,6 +11461,7 @@ export interface operations {
             "ref_key"?: string;
             "teardown"?: Array<{
               "assertions"?: Array<Record<string, unknown>>;
+              "attribution"?: (Record<string, unknown>) | null;
               "auth"?: (Record<string, unknown>) | null;
               "body"?: string;
               "body_encoding"?: string;
@@ -11471,6 +11872,15 @@ export interface operations {
                 "tps"?: number;
                 "type": string;
               };
+              "results"?: {
+                "message_detail"?: ({
+                  "max_item_bytes"?: number;
+                  "max_items"?: number;
+                  "max_total_bytes"?: number;
+                  "mode": string;
+                  "sample_rate"?: number;
+                }) | null;
+              };
               "run_logic"?: {
                 "action_sequence"?: Array<string>;
                 "auto_transactions"?: string;
@@ -11823,6 +12233,10 @@ export interface operations {
             "draft"?: ({
               "actions": Array<{
                 "assertions"?: Array<Record<string, unknown>>;
+                "attribution"?: ({
+                  "hierarchy_path"?: string;
+                  "page_name"?: string;
+                }) | null;
                 "auth"?: ({
                   "domain"?: string;
                   "password"?: string;
@@ -11839,10 +12253,15 @@ export interface operations {
                   "screenshot"?: boolean;
                 }) | null;
                 "control"?: ({
+                  "branches"?: Array<Record<string, unknown>>;
+                  "cases"?: Array<Record<string, unknown>>;
+                  "concurrency"?: number;
                   "condition"?: (Record<string, unknown>) | null;
                   "count"?: number;
+                  "default"?: Array<Record<string, unknown>>;
                   "do_while"?: boolean;
                   "else"?: Array<Record<string, unknown>>;
+                  "fail_fast"?: boolean;
                   "for_each"?: (Record<string, unknown>) | null;
                   "max_iterations"?: number;
                   "steps"?: Array<Record<string, unknown>>;
@@ -12122,6 +12541,9 @@ export interface operations {
                   "tps"?: number;
                   "type": string;
                 };
+                "results"?: {
+                  "message_detail"?: (Record<string, unknown>) | null;
+                };
                 "run_logic"?: {
                   "action_sequence"?: Array<string>;
                   "auto_transactions"?: string;
@@ -12209,10 +12631,21 @@ export interface operations {
                 "stop_on_max_errors"?: boolean;
                 "stop_on_sla_breach"?: boolean;
                 "target_average_tps"?: (number) | null;
+                "transaction_rules"?: Array<{
+                  "comparator": string;
+                  "metric": string;
+                  "severity"?: string;
+                  "threshold": number;
+                  "transaction": string;
+                }>;
               }) | null;
               "id": string;
               "init"?: Array<{
                 "assertions"?: Array<Record<string, unknown>>;
+                "attribution"?: ({
+                  "hierarchy_path"?: string;
+                  "page_name"?: string;
+                }) | null;
                 "auth"?: ({
                   "domain"?: string;
                   "password"?: string;
@@ -12229,10 +12662,15 @@ export interface operations {
                   "screenshot"?: boolean;
                 }) | null;
                 "control"?: ({
+                  "branches"?: Array<Record<string, unknown>>;
+                  "cases"?: Array<Record<string, unknown>>;
+                  "concurrency"?: number;
                   "condition"?: (Record<string, unknown>) | null;
                   "count"?: number;
+                  "default"?: Array<Record<string, unknown>>;
                   "do_while"?: boolean;
                   "else"?: Array<Record<string, unknown>>;
+                  "fail_fast"?: boolean;
                   "for_each"?: (Record<string, unknown>) | null;
                   "max_iterations"?: number;
                   "steps"?: Array<Record<string, unknown>>;
@@ -12322,6 +12760,10 @@ export interface operations {
               "ref_key"?: string;
               "teardown"?: Array<{
                 "assertions"?: Array<Record<string, unknown>>;
+                "attribution"?: ({
+                  "hierarchy_path"?: string;
+                  "page_name"?: string;
+                }) | null;
                 "auth"?: ({
                   "domain"?: string;
                   "password"?: string;
@@ -12338,10 +12780,15 @@ export interface operations {
                   "screenshot"?: boolean;
                 }) | null;
                 "control"?: ({
+                  "branches"?: Array<Record<string, unknown>>;
+                  "cases"?: Array<Record<string, unknown>>;
+                  "concurrency"?: number;
                   "condition"?: (Record<string, unknown>) | null;
                   "count"?: number;
+                  "default"?: Array<Record<string, unknown>>;
                   "do_while"?: boolean;
                   "else"?: Array<Record<string, unknown>>;
+                  "fail_fast"?: boolean;
                   "for_each"?: (Record<string, unknown>) | null;
                   "max_iterations"?: number;
                   "steps"?: Array<Record<string, unknown>>;
@@ -12412,6 +12859,10 @@ export interface operations {
             "draft"?: ({
               "actions": Array<{
                 "assertions"?: Array<Record<string, unknown>>;
+                "attribution"?: ({
+                  "hierarchy_path"?: string;
+                  "page_name"?: string;
+                }) | null;
                 "auth"?: ({
                   "domain"?: string;
                   "password"?: string;
@@ -12428,10 +12879,15 @@ export interface operations {
                   "screenshot"?: boolean;
                 }) | null;
                 "control"?: ({
+                  "branches"?: Array<Record<string, unknown>>;
+                  "cases"?: Array<Record<string, unknown>>;
+                  "concurrency"?: number;
                   "condition"?: (Record<string, unknown>) | null;
                   "count"?: number;
+                  "default"?: Array<Record<string, unknown>>;
                   "do_while"?: boolean;
                   "else"?: Array<Record<string, unknown>>;
+                  "fail_fast"?: boolean;
                   "for_each"?: (Record<string, unknown>) | null;
                   "max_iterations"?: number;
                   "steps"?: Array<Record<string, unknown>>;
@@ -12711,6 +13167,9 @@ export interface operations {
                   "tps"?: number;
                   "type": string;
                 };
+                "results"?: {
+                  "message_detail"?: (Record<string, unknown>) | null;
+                };
                 "run_logic"?: {
                   "action_sequence"?: Array<string>;
                   "auto_transactions"?: string;
@@ -12798,10 +13257,21 @@ export interface operations {
                 "stop_on_max_errors"?: boolean;
                 "stop_on_sla_breach"?: boolean;
                 "target_average_tps"?: (number) | null;
+                "transaction_rules"?: Array<{
+                  "comparator": string;
+                  "metric": string;
+                  "severity"?: string;
+                  "threshold": number;
+                  "transaction": string;
+                }>;
               }) | null;
               "id": string;
               "init"?: Array<{
                 "assertions"?: Array<Record<string, unknown>>;
+                "attribution"?: ({
+                  "hierarchy_path"?: string;
+                  "page_name"?: string;
+                }) | null;
                 "auth"?: ({
                   "domain"?: string;
                   "password"?: string;
@@ -12818,10 +13288,15 @@ export interface operations {
                   "screenshot"?: boolean;
                 }) | null;
                 "control"?: ({
+                  "branches"?: Array<Record<string, unknown>>;
+                  "cases"?: Array<Record<string, unknown>>;
+                  "concurrency"?: number;
                   "condition"?: (Record<string, unknown>) | null;
                   "count"?: number;
+                  "default"?: Array<Record<string, unknown>>;
                   "do_while"?: boolean;
                   "else"?: Array<Record<string, unknown>>;
+                  "fail_fast"?: boolean;
                   "for_each"?: (Record<string, unknown>) | null;
                   "max_iterations"?: number;
                   "steps"?: Array<Record<string, unknown>>;
@@ -12911,6 +13386,10 @@ export interface operations {
               "ref_key"?: string;
               "teardown"?: Array<{
                 "assertions"?: Array<Record<string, unknown>>;
+                "attribution"?: ({
+                  "hierarchy_path"?: string;
+                  "page_name"?: string;
+                }) | null;
                 "auth"?: ({
                   "domain"?: string;
                   "password"?: string;
@@ -12927,10 +13406,15 @@ export interface operations {
                   "screenshot"?: boolean;
                 }) | null;
                 "control"?: ({
+                  "branches"?: Array<Record<string, unknown>>;
+                  "cases"?: Array<Record<string, unknown>>;
+                  "concurrency"?: number;
                   "condition"?: (Record<string, unknown>) | null;
                   "count"?: number;
+                  "default"?: Array<Record<string, unknown>>;
                   "do_while"?: boolean;
                   "else"?: Array<Record<string, unknown>>;
+                  "fail_fast"?: boolean;
                   "for_each"?: (Record<string, unknown>) | null;
                   "max_iterations"?: number;
                   "steps"?: Array<Record<string, unknown>>;
@@ -13453,6 +13937,101 @@ export interface operations {
             }>;
             "source"?: string;
             "updated_at": string;
+          };
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleCreateDashboardDefinition": {
+    parameters?: never;
+    requestBody: {
+      content: {
+        "application/json": {
+          "created_at"?: string;
+          "description"?: string;
+          "id"?: string;
+          "name"?: string;
+          "owner"?: string;
+          "project_id"?: string;
+          "revision"?: number;
+          "slideshow_interval_seconds"?: number;
+          "tabs"?: Array<{
+            "id"?: string;
+            "panels"?: Array<{
+              "card_id"?: string;
+              "h"?: number;
+              "id"?: string;
+              "kind"?: string;
+              "query"?: (Record<string, unknown>) | null;
+              "title"?: string;
+              "w"?: number;
+              "x"?: number;
+              "y"?: number;
+            }>;
+            "title"?: string;
+          }>;
+          "updated_at"?: string;
+          "visibility"?: string;
+        };
+      };
+    };
+    responses: {
+      "201": {
+        content: {
+          "application/json": {
+            "created_at": string;
+            "description"?: string;
+            "id": string;
+            "name": string;
+            "owner"?: string;
+            "project_id": string;
+            "revision": number;
+            "slideshow_interval_seconds"?: number;
+            "tabs": Array<{
+              "id": string;
+              "panels": Array<{
+                "card_id"?: string;
+                "h": number;
+                "id": string;
+                "kind": string;
+                "query"?: (Record<string, unknown>) | null;
+                "title": string;
+                "w": number;
+                "x": number;
+                "y": number;
+              }>;
+              "title": string;
+            }>;
+            "updated_at": string;
+            "visibility": string;
           };
         };
       };
@@ -14536,6 +15115,13 @@ export interface operations {
           "domain_id"?: (string) | null;
           "name"?: string;
           "settings"?: {
+            "features"?: {
+              "control_parallel"?: boolean;
+              "media_stream"?: boolean;
+              "native_elastic_capacity"?: boolean;
+              "privileged_monitors"?: boolean;
+              "successful_message_detail"?: boolean;
+            };
             "github"?: {
               "actions"?: {
                 "allowed_environments"?: Array<string>;
@@ -15017,6 +15603,13 @@ export interface operations {
             "stop_on_max_errors"?: boolean;
             "stop_on_sla_breach"?: boolean;
             "target_average_tps"?: (number) | null;
+            "transaction_rules"?: Array<{
+              "comparator"?: string;
+              "metric"?: string;
+              "severity"?: string;
+              "threshold"?: number;
+              "transaction"?: string;
+            }>;
           }) | null;
           "groups"?: Array<{
             "assignment"?: ({
@@ -15058,6 +15651,7 @@ export interface operations {
             }) | null;
             "script_id"?: string;
             "stages"?: Array<Record<string, unknown>>;
+            "start_offset"?: string;
             "vusers"?: number;
           }>;
           "name"?: string;
@@ -15269,6 +15863,13 @@ export interface operations {
               "stop_on_max_errors"?: boolean;
               "stop_on_sla_breach"?: boolean;
               "target_average_tps"?: (number) | null;
+              "transaction_rules"?: Array<{
+                "comparator"?: string;
+                "metric"?: string;
+                "severity"?: string;
+                "threshold"?: number;
+                "transaction"?: string;
+              }>;
             }) | null;
             "groups"?: Array<{
               "assignment"?: ({
@@ -15310,6 +15911,7 @@ export interface operations {
               }) | null;
               "script_id"?: string;
               "stages"?: Array<Record<string, unknown>>;
+              "start_offset"?: string;
               "vusers"?: number;
             }>;
             "name"?: string;
@@ -15740,6 +16342,13 @@ export interface operations {
                 "stop_on_max_errors"?: boolean;
                 "stop_on_sla_breach"?: boolean;
                 "target_average_tps"?: (number) | null;
+                "transaction_rules"?: Array<{
+                  "comparator": string;
+                  "metric": string;
+                  "severity"?: string;
+                  "threshold": number;
+                  "transaction": string;
+                }>;
               }) | null;
               "goal_targets"?: Record<string, {
                 "group": string;
@@ -15802,6 +16411,7 @@ export interface operations {
                 "script_id": string;
                 "script_name": string;
                 "stages"?: Array<Record<string, unknown>>;
+                "start_offset"?: string;
                 "target_duration"?: string;
                 "vusers": number;
               }>;
@@ -15827,6 +16437,7 @@ export interface operations {
                   "samples": number;
                 }) | null;
                 "browser_by_device"?: Record<string, (Record<string, unknown>) | null>;
+                "by_region"?: Record<string, (Record<string, unknown>) | null>;
                 "capacity_status"?: ({
                   "allocated_vusers": number;
                   "available_generators": number;
@@ -16011,6 +16622,29 @@ export interface operations {
                   "device_profile"?: string;
                   "device_tier"?: string;
                   "samples": number;
+                }) | null>;
+                "by_region"?: Record<string, ({
+                  "avg_connect_ms"?: number;
+                  "avg_dns_ms"?: number;
+                  "avg_ms": number;
+                  "avg_tls_ms"?: number;
+                  "avg_ttfb_ms"?: number;
+                  "correlation_count"?: number;
+                  "correlation_ids"?: Array<string>;
+                  "count": number;
+                  "dependency_target"?: string;
+                  "dependency_type"?: string;
+                  "errors": number;
+                  "last_error_at"?: string;
+                  "last_error_message"?: string;
+                  "last_status_code"?: number;
+                  "name": string;
+                  "p50_ms": number;
+                  "p90_ms": number;
+                  "p95_ms"?: number;
+                  "p99_ms": number;
+                  "server_telemetry"?: (Record<string, unknown>) | null;
+                  "tps": number;
                 }) | null>;
                 "capacity_status"?: ({
                   "allocated_vusers": number;
@@ -16646,6 +17280,10 @@ export interface operations {
         "application/json": {
           "actions"?: Array<{
             "assertions"?: Array<Record<string, unknown>>;
+            "attribution"?: ({
+              "hierarchy_path"?: string;
+              "page_name"?: string;
+            }) | null;
             "auth"?: ({
               "domain"?: string;
               "password"?: string;
@@ -16662,10 +17300,15 @@ export interface operations {
               "screenshot"?: boolean;
             }) | null;
             "control"?: ({
+              "branches"?: Array<Record<string, unknown>>;
+              "cases"?: Array<Record<string, unknown>>;
+              "concurrency"?: number;
               "condition"?: (Record<string, unknown>) | null;
               "count"?: number;
+              "default"?: Array<Record<string, unknown>>;
               "do_while"?: boolean;
               "else"?: Array<Record<string, unknown>>;
+              "fail_fast"?: boolean;
               "for_each"?: (Record<string, unknown>) | null;
               "max_iterations"?: number;
               "steps"?: Array<Record<string, unknown>>;
@@ -16731,6 +17374,10 @@ export interface operations {
           "id"?: string;
           "init"?: Array<{
             "assertions"?: Array<Record<string, unknown>>;
+            "attribution"?: ({
+              "hierarchy_path"?: string;
+              "page_name"?: string;
+            }) | null;
             "auth"?: ({
               "domain"?: string;
               "password"?: string;
@@ -16747,10 +17394,15 @@ export interface operations {
               "screenshot"?: boolean;
             }) | null;
             "control"?: ({
+              "branches"?: Array<Record<string, unknown>>;
+              "cases"?: Array<Record<string, unknown>>;
+              "concurrency"?: number;
               "condition"?: (Record<string, unknown>) | null;
               "count"?: number;
+              "default"?: Array<Record<string, unknown>>;
               "do_while"?: boolean;
               "else"?: Array<Record<string, unknown>>;
+              "fail_fast"?: boolean;
               "for_each"?: (Record<string, unknown>) | null;
               "max_iterations"?: number;
               "steps"?: Array<Record<string, unknown>>;
@@ -16832,6 +17484,10 @@ export interface operations {
           "tags"?: Array<string>;
           "teardown"?: Array<{
             "assertions"?: Array<Record<string, unknown>>;
+            "attribution"?: ({
+              "hierarchy_path"?: string;
+              "page_name"?: string;
+            }) | null;
             "auth"?: ({
               "domain"?: string;
               "password"?: string;
@@ -16848,10 +17504,15 @@ export interface operations {
               "screenshot"?: boolean;
             }) | null;
             "control"?: ({
+              "branches"?: Array<Record<string, unknown>>;
+              "cases"?: Array<Record<string, unknown>>;
+              "concurrency"?: number;
               "condition"?: (Record<string, unknown>) | null;
               "count"?: number;
+              "default"?: Array<Record<string, unknown>>;
               "do_while"?: boolean;
               "else"?: Array<Record<string, unknown>>;
+              "fail_fast"?: boolean;
               "for_each"?: (Record<string, unknown>) | null;
               "max_iterations"?: number;
               "steps"?: Array<Record<string, unknown>>;
@@ -16991,6 +17652,13 @@ export interface operations {
             "stop_on_max_errors"?: boolean;
             "stop_on_sla_breach"?: boolean;
             "target_average_tps"?: (number) | null;
+            "transaction_rules"?: Array<{
+              "comparator"?: string;
+              "metric"?: string;
+              "severity"?: string;
+              "threshold"?: number;
+              "transaction"?: string;
+            }>;
           }) | null;
           "groups": Array<{
             "assignment"?: ({
@@ -17159,6 +17827,7 @@ export interface operations {
               "target_vusers"?: number;
               "type"?: string;
             }>;
+            "start_offset"?: string;
             "vusers"?: number;
           }>;
           "name": string;
@@ -17442,6 +18111,13 @@ export interface operations {
               "stop_on_max_errors"?: boolean;
               "stop_on_sla_breach"?: boolean;
               "target_average_tps"?: (number) | null;
+              "transaction_rules"?: Array<{
+                "comparator": string;
+                "metric": string;
+                "severity"?: string;
+                "threshold": number;
+                "transaction": string;
+              }>;
             }) | null;
             "id": string;
             "last_run_at"?: (string) | null;
@@ -17927,6 +18603,7 @@ export interface operations {
                 "target_vusers"?: number;
                 "type": string;
               }>;
+              "start_offset"?: string;
               "vusers": number;
             }>;
             "start_delay"?: string;
@@ -18133,6 +18810,10 @@ export interface operations {
                 "type"?: string;
                 "value"?: string;
               }>;
+              "attribution"?: ({
+                "hierarchy_path"?: string;
+                "page_name"?: string;
+              }) | null;
               "auth"?: ({
                 "domain"?: string;
                 "password"?: string;
@@ -18149,10 +18830,15 @@ export interface operations {
                 "screenshot"?: boolean;
               }) | null;
               "control"?: ({
+                "branches"?: Array<Record<string, unknown>>;
+                "cases"?: Array<Record<string, unknown>>;
+                "concurrency"?: number;
                 "condition"?: (Record<string, unknown>) | null;
                 "count"?: number;
+                "default"?: Array<Record<string, unknown>>;
                 "do_while"?: boolean;
                 "else"?: Array<Record<string, unknown>>;
+                "fail_fast"?: boolean;
                 "for_each"?: (Record<string, unknown>) | null;
                 "max_iterations"?: number;
                 "steps"?: Array<Record<string, unknown>>;
@@ -18502,6 +19188,15 @@ export interface operations {
                 "tps"?: number;
                 "type"?: string;
               };
+              "results"?: {
+                "message_detail"?: ({
+                  "max_item_bytes"?: number;
+                  "max_items"?: number;
+                  "max_total_bytes"?: number;
+                  "mode"?: string;
+                  "sample_rate"?: number;
+                }) | null;
+              };
               "run_logic"?: {
                 "action_sequence"?: Array<string>;
                 "auto_transactions"?: string;
@@ -18612,6 +19307,13 @@ export interface operations {
               "stop_on_max_errors"?: boolean;
               "stop_on_sla_breach"?: boolean;
               "target_average_tps"?: (number) | null;
+              "transaction_rules"?: Array<{
+                "comparator"?: string;
+                "metric"?: string;
+                "severity"?: string;
+                "threshold"?: number;
+                "transaction"?: string;
+              }>;
             }) | null;
             "id"?: string;
             "init"?: Array<{
@@ -18622,6 +19324,10 @@ export interface operations {
                 "type"?: string;
                 "value"?: string;
               }>;
+              "attribution"?: ({
+                "hierarchy_path"?: string;
+                "page_name"?: string;
+              }) | null;
               "auth"?: ({
                 "domain"?: string;
                 "password"?: string;
@@ -18638,10 +19344,15 @@ export interface operations {
                 "screenshot"?: boolean;
               }) | null;
               "control"?: ({
+                "branches"?: Array<Record<string, unknown>>;
+                "cases"?: Array<Record<string, unknown>>;
+                "concurrency"?: number;
                 "condition"?: (Record<string, unknown>) | null;
                 "count"?: number;
+                "default"?: Array<Record<string, unknown>>;
                 "do_while"?: boolean;
                 "else"?: Array<Record<string, unknown>>;
+                "fail_fast"?: boolean;
                 "for_each"?: (Record<string, unknown>) | null;
                 "max_iterations"?: number;
                 "steps"?: Array<Record<string, unknown>>;
@@ -18747,6 +19458,10 @@ export interface operations {
                 "type"?: string;
                 "value"?: string;
               }>;
+              "attribution"?: ({
+                "hierarchy_path"?: string;
+                "page_name"?: string;
+              }) | null;
               "auth"?: ({
                 "domain"?: string;
                 "password"?: string;
@@ -18763,10 +19478,15 @@ export interface operations {
                 "screenshot"?: boolean;
               }) | null;
               "control"?: ({
+                "branches"?: Array<Record<string, unknown>>;
+                "cases"?: Array<Record<string, unknown>>;
+                "concurrency"?: number;
                 "condition"?: (Record<string, unknown>) | null;
                 "count"?: number;
+                "default"?: Array<Record<string, unknown>>;
                 "do_while"?: boolean;
                 "else"?: Array<Record<string, unknown>>;
+                "fail_fast"?: boolean;
                 "for_each"?: (Record<string, unknown>) | null;
                 "max_iterations"?: number;
                 "steps"?: Array<Record<string, unknown>>;
@@ -18870,6 +19590,10 @@ export interface operations {
             "script": ({
               "actions": Array<{
                 "assertions"?: Array<Record<string, unknown>>;
+                "attribution"?: ({
+                  "hierarchy_path"?: string;
+                  "page_name"?: string;
+                }) | null;
                 "auth"?: ({
                   "domain"?: string;
                   "password"?: string;
@@ -18886,10 +19610,15 @@ export interface operations {
                   "screenshot"?: boolean;
                 }) | null;
                 "control"?: ({
+                  "branches"?: Array<Record<string, unknown>>;
+                  "cases"?: Array<Record<string, unknown>>;
+                  "concurrency"?: number;
                   "condition"?: (Record<string, unknown>) | null;
                   "count"?: number;
+                  "default"?: Array<Record<string, unknown>>;
                   "do_while"?: boolean;
                   "else"?: Array<Record<string, unknown>>;
+                  "fail_fast"?: boolean;
                   "for_each"?: (Record<string, unknown>) | null;
                   "max_iterations"?: number;
                   "steps"?: Array<Record<string, unknown>>;
@@ -19169,6 +19898,9 @@ export interface operations {
                   "tps"?: number;
                   "type": string;
                 };
+                "results"?: {
+                  "message_detail"?: (Record<string, unknown>) | null;
+                };
                 "run_logic"?: {
                   "action_sequence"?: Array<string>;
                   "auto_transactions"?: string;
@@ -19256,10 +19988,21 @@ export interface operations {
                 "stop_on_max_errors"?: boolean;
                 "stop_on_sla_breach"?: boolean;
                 "target_average_tps"?: (number) | null;
+                "transaction_rules"?: Array<{
+                  "comparator": string;
+                  "metric": string;
+                  "severity"?: string;
+                  "threshold": number;
+                  "transaction": string;
+                }>;
               }) | null;
               "id": string;
               "init"?: Array<{
                 "assertions"?: Array<Record<string, unknown>>;
+                "attribution"?: ({
+                  "hierarchy_path"?: string;
+                  "page_name"?: string;
+                }) | null;
                 "auth"?: ({
                   "domain"?: string;
                   "password"?: string;
@@ -19276,10 +20019,15 @@ export interface operations {
                   "screenshot"?: boolean;
                 }) | null;
                 "control"?: ({
+                  "branches"?: Array<Record<string, unknown>>;
+                  "cases"?: Array<Record<string, unknown>>;
+                  "concurrency"?: number;
                   "condition"?: (Record<string, unknown>) | null;
                   "count"?: number;
+                  "default"?: Array<Record<string, unknown>>;
                   "do_while"?: boolean;
                   "else"?: Array<Record<string, unknown>>;
+                  "fail_fast"?: boolean;
                   "for_each"?: (Record<string, unknown>) | null;
                   "max_iterations"?: number;
                   "steps"?: Array<Record<string, unknown>>;
@@ -19369,6 +20117,10 @@ export interface operations {
               "ref_key"?: string;
               "teardown"?: Array<{
                 "assertions"?: Array<Record<string, unknown>>;
+                "attribution"?: ({
+                  "hierarchy_path"?: string;
+                  "page_name"?: string;
+                }) | null;
                 "auth"?: ({
                   "domain"?: string;
                   "password"?: string;
@@ -19385,10 +20137,15 @@ export interface operations {
                   "screenshot"?: boolean;
                 }) | null;
                 "control"?: ({
+                  "branches"?: Array<Record<string, unknown>>;
+                  "cases"?: Array<Record<string, unknown>>;
+                  "concurrency"?: number;
                   "condition"?: (Record<string, unknown>) | null;
                   "count"?: number;
+                  "default"?: Array<Record<string, unknown>>;
                   "do_while"?: boolean;
                   "else"?: Array<Record<string, unknown>>;
+                  "fail_fast"?: boolean;
                   "for_each"?: (Record<string, unknown>) | null;
                   "max_iterations"?: number;
                   "steps"?: Array<Record<string, unknown>>;
@@ -19613,6 +20370,13 @@ export interface operations {
             "stop_on_max_errors"?: boolean;
             "stop_on_sla_breach"?: boolean;
             "target_average_tps"?: (number) | null;
+            "transaction_rules"?: Array<{
+              "comparator"?: string;
+              "metric"?: string;
+              "severity"?: string;
+              "threshold"?: number;
+              "transaction"?: string;
+            }>;
           }) | null;
           "groups"?: Array<{
             "assignment"?: ({
@@ -19781,6 +20545,7 @@ export interface operations {
               "target_vusers"?: number;
               "type"?: string;
             }>;
+            "start_offset"?: string;
             "vusers"?: number;
           }>;
           "name"?: string;
@@ -20325,6 +21090,13 @@ export interface operations {
               "stop_on_max_errors"?: boolean;
               "stop_on_sla_breach"?: boolean;
               "target_average_tps"?: (number) | null;
+              "transaction_rules"?: Array<{
+                "comparator": string;
+                "metric": string;
+                "severity"?: string;
+                "threshold": number;
+                "transaction": string;
+              }>;
             }) | null;
             "goal_targets"?: Record<string, {
               "group": string;
@@ -20514,6 +21286,7 @@ export interface operations {
                 "target_vusers"?: number;
                 "type": string;
               }>;
+              "start_offset"?: string;
               "target_duration"?: string;
               "vusers": number;
             }>;
@@ -20554,6 +21327,29 @@ export interface operations {
                 "device_profile"?: string;
                 "device_tier"?: string;
                 "samples": number;
+              }) | null>;
+              "by_region"?: Record<string, ({
+                "avg_connect_ms"?: number;
+                "avg_dns_ms"?: number;
+                "avg_ms": number;
+                "avg_tls_ms"?: number;
+                "avg_ttfb_ms"?: number;
+                "correlation_count"?: number;
+                "correlation_ids"?: Array<string>;
+                "count": number;
+                "dependency_target"?: string;
+                "dependency_type"?: string;
+                "errors": number;
+                "last_error_at"?: string;
+                "last_error_message"?: string;
+                "last_status_code"?: number;
+                "name": string;
+                "p50_ms": number;
+                "p90_ms": number;
+                "p95_ms"?: number;
+                "p99_ms": number;
+                "server_telemetry"?: (Record<string, unknown>) | null;
+                "tps": number;
               }) | null>;
               "capacity_status"?: ({
                 "allocated_vusers": number;
@@ -20869,6 +21665,72 @@ export interface operations {
                 "device_profile"?: string;
                 "device_tier"?: string;
                 "samples": number;
+              }) | null>;
+              "by_region"?: Record<string, ({
+                "avg_connect_ms"?: number;
+                "avg_dns_ms"?: number;
+                "avg_ms": number;
+                "avg_tls_ms"?: number;
+                "avg_ttfb_ms"?: number;
+                "correlation_count"?: number;
+                "correlation_ids"?: Array<string>;
+                "count": number;
+                "dependency_target"?: string;
+                "dependency_type"?: string;
+                "errors": number;
+                "last_error_at"?: string;
+                "last_error_message"?: string;
+                "last_status_code"?: number;
+                "name": string;
+                "p50_ms": number;
+                "p90_ms": number;
+                "p95_ms"?: number;
+                "p99_ms": number;
+                "server_telemetry"?: ({
+                  "abort_count"?: number;
+                  "avg_consumer_lag_ms"?: number;
+                  "avg_consumer_offset_lag"?: number;
+                  "avg_end_to_end_latency_ms"?: number;
+                  "avg_first_event_ms"?: number;
+                  "avg_message_latency_ms"?: number;
+                  "avg_messages_received_per_sec"?: number;
+                  "avg_messages_sent_per_sec"?: number;
+                  "avg_request_payload_kb"?: number;
+                  "avg_response_payload_kb"?: number;
+                  "avg_server_processing_ms"?: number;
+                  "avg_transfer_ms"?: number;
+                  "commit_count"?: number;
+                  "connection_reused_count"?: number;
+                  "connection_reused_pct"?: number;
+                  "dead_letter_rate_pct"?: number;
+                  "dead_lettered_count"?: number;
+                  "duplicate_count"?: number;
+                  "duplicate_rate_pct"?: number;
+                  "event_count"?: number;
+                  "max_consumer_lag_ms"?: number;
+                  "max_consumer_offset_lag"?: number;
+                  "max_end_to_end_latency_ms"?: number;
+                  "max_first_event_ms"?: number;
+                  "max_message_latency_ms"?: number;
+                  "messages_received"?: number;
+                  "messages_sent"?: number;
+                  "out_of_order_count"?: number;
+                  "partition_events"?: Record<string, number>;
+                  "partition_skew_pct"?: number;
+                  "redelivery_count"?: number;
+                  "redelivery_rate_pct"?: number;
+                  "request_payload_histogram"?: Record<string, number>;
+                  "request_size_classes"?: Record<string, number>;
+                  "response_payload_histogram"?: Record<string, number>;
+                  "response_size_classes"?: Record<string, number>;
+                  "samples": number;
+                  "send_failure_count"?: number;
+                  "total_event_too_large_count"?: number;
+                  "total_quota_exceeded_count"?: number;
+                  "total_server_busy_count"?: number;
+                  "total_throttled_requests"?: number;
+                }) | null;
+                "tps": number;
               }) | null>;
               "capacity_status"?: ({
                 "allocated_vusers": number;
@@ -22317,6 +23179,52 @@ export interface operations {
         };
       };
       "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleDeleteDashboardDefinition": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+      "query"?: {
+        "revision"?: string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": Record<string, string>;
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -24613,6 +25521,13 @@ export interface operations {
             "stop_on_max_errors"?: boolean;
             "stop_on_sla_breach"?: boolean;
             "target_average_tps"?: (number) | null;
+            "transaction_rules"?: Array<{
+              "comparator"?: string;
+              "metric"?: string;
+              "severity"?: string;
+              "threshold"?: number;
+              "transaction"?: string;
+            }>;
           }) | null;
           "groups"?: Array<{
             "assignment"?: ({
@@ -24781,6 +25696,7 @@ export interface operations {
               "target_vusers"?: number;
               "type"?: string;
             }>;
+            "start_offset"?: string;
             "vusers"?: number;
           }>;
           "name"?: string;
@@ -25303,6 +26219,7 @@ export interface operations {
                 "target_vusers"?: number;
                 "type": string;
               }>;
+              "start_offset"?: string;
               "target_duration"?: string;
               "vusers": number;
             }>;
@@ -25723,6 +26640,10 @@ export interface operations {
           "script": {
             "actions"?: Array<{
               "assertions"?: Array<Record<string, unknown>>;
+              "attribution"?: ({
+                "hierarchy_path"?: string;
+                "page_name"?: string;
+              }) | null;
               "auth"?: ({
                 "domain"?: string;
                 "password"?: string;
@@ -25739,10 +26660,15 @@ export interface operations {
                 "screenshot"?: boolean;
               }) | null;
               "control"?: ({
+                "branches"?: Array<Record<string, unknown>>;
+                "cases"?: Array<Record<string, unknown>>;
+                "concurrency"?: number;
                 "condition"?: (Record<string, unknown>) | null;
                 "count"?: number;
+                "default"?: Array<Record<string, unknown>>;
                 "do_while"?: boolean;
                 "else"?: Array<Record<string, unknown>>;
+                "fail_fast"?: boolean;
                 "for_each"?: (Record<string, unknown>) | null;
                 "max_iterations"?: number;
                 "steps"?: Array<Record<string, unknown>>;
@@ -26022,6 +26948,9 @@ export interface operations {
                 "tps"?: number;
                 "type"?: string;
               };
+              "results"?: {
+                "message_detail"?: (Record<string, unknown>) | null;
+              };
               "run_logic"?: {
                 "action_sequence"?: Array<string>;
                 "auto_transactions"?: string;
@@ -26109,10 +27038,21 @@ export interface operations {
               "stop_on_max_errors"?: boolean;
               "stop_on_sla_breach"?: boolean;
               "target_average_tps"?: (number) | null;
+              "transaction_rules"?: Array<{
+                "comparator"?: string;
+                "metric"?: string;
+                "severity"?: string;
+                "threshold"?: number;
+                "transaction"?: string;
+              }>;
             }) | null;
             "id"?: string;
             "init"?: Array<{
               "assertions"?: Array<Record<string, unknown>>;
+              "attribution"?: ({
+                "hierarchy_path"?: string;
+                "page_name"?: string;
+              }) | null;
               "auth"?: ({
                 "domain"?: string;
                 "password"?: string;
@@ -26129,10 +27069,15 @@ export interface operations {
                 "screenshot"?: boolean;
               }) | null;
               "control"?: ({
+                "branches"?: Array<Record<string, unknown>>;
+                "cases"?: Array<Record<string, unknown>>;
+                "concurrency"?: number;
                 "condition"?: (Record<string, unknown>) | null;
                 "count"?: number;
+                "default"?: Array<Record<string, unknown>>;
                 "do_while"?: boolean;
                 "else"?: Array<Record<string, unknown>>;
+                "fail_fast"?: boolean;
                 "for_each"?: (Record<string, unknown>) | null;
                 "max_iterations"?: number;
                 "steps"?: Array<Record<string, unknown>>;
@@ -26222,6 +27167,10 @@ export interface operations {
             "ref_key"?: string;
             "teardown"?: Array<{
               "assertions"?: Array<Record<string, unknown>>;
+              "attribution"?: ({
+                "hierarchy_path"?: string;
+                "page_name"?: string;
+              }) | null;
               "auth"?: ({
                 "domain"?: string;
                 "password"?: string;
@@ -26238,10 +27187,15 @@ export interface operations {
                 "screenshot"?: boolean;
               }) | null;
               "control"?: ({
+                "branches"?: Array<Record<string, unknown>>;
+                "cases"?: Array<Record<string, unknown>>;
+                "concurrency"?: number;
                 "condition"?: (Record<string, unknown>) | null;
                 "count"?: number;
+                "default"?: Array<Record<string, unknown>>;
                 "do_while"?: boolean;
                 "else"?: Array<Record<string, unknown>>;
+                "fail_fast"?: boolean;
                 "for_each"?: (Record<string, unknown>) | null;
                 "max_iterations"?: number;
                 "steps"?: Array<Record<string, unknown>>;
@@ -27309,6 +28263,10 @@ export interface operations {
             "draft"?: ({
               "actions": Array<{
                 "assertions"?: Array<Record<string, unknown>>;
+                "attribution"?: ({
+                  "hierarchy_path"?: string;
+                  "page_name"?: string;
+                }) | null;
                 "auth"?: ({
                   "domain"?: string;
                   "password"?: string;
@@ -27325,10 +28283,15 @@ export interface operations {
                   "screenshot"?: boolean;
                 }) | null;
                 "control"?: ({
+                  "branches"?: Array<Record<string, unknown>>;
+                  "cases"?: Array<Record<string, unknown>>;
+                  "concurrency"?: number;
                   "condition"?: (Record<string, unknown>) | null;
                   "count"?: number;
+                  "default"?: Array<Record<string, unknown>>;
                   "do_while"?: boolean;
                   "else"?: Array<Record<string, unknown>>;
+                  "fail_fast"?: boolean;
                   "for_each"?: (Record<string, unknown>) | null;
                   "max_iterations"?: number;
                   "steps"?: Array<Record<string, unknown>>;
@@ -27608,6 +28571,9 @@ export interface operations {
                   "tps"?: number;
                   "type": string;
                 };
+                "results"?: {
+                  "message_detail"?: (Record<string, unknown>) | null;
+                };
                 "run_logic"?: {
                   "action_sequence"?: Array<string>;
                   "auto_transactions"?: string;
@@ -27695,10 +28661,21 @@ export interface operations {
                 "stop_on_max_errors"?: boolean;
                 "stop_on_sla_breach"?: boolean;
                 "target_average_tps"?: (number) | null;
+                "transaction_rules"?: Array<{
+                  "comparator": string;
+                  "metric": string;
+                  "severity"?: string;
+                  "threshold": number;
+                  "transaction": string;
+                }>;
               }) | null;
               "id": string;
               "init"?: Array<{
                 "assertions"?: Array<Record<string, unknown>>;
+                "attribution"?: ({
+                  "hierarchy_path"?: string;
+                  "page_name"?: string;
+                }) | null;
                 "auth"?: ({
                   "domain"?: string;
                   "password"?: string;
@@ -27715,10 +28692,15 @@ export interface operations {
                   "screenshot"?: boolean;
                 }) | null;
                 "control"?: ({
+                  "branches"?: Array<Record<string, unknown>>;
+                  "cases"?: Array<Record<string, unknown>>;
+                  "concurrency"?: number;
                   "condition"?: (Record<string, unknown>) | null;
                   "count"?: number;
+                  "default"?: Array<Record<string, unknown>>;
                   "do_while"?: boolean;
                   "else"?: Array<Record<string, unknown>>;
+                  "fail_fast"?: boolean;
                   "for_each"?: (Record<string, unknown>) | null;
                   "max_iterations"?: number;
                   "steps"?: Array<Record<string, unknown>>;
@@ -27808,6 +28790,10 @@ export interface operations {
               "ref_key"?: string;
               "teardown"?: Array<{
                 "assertions"?: Array<Record<string, unknown>>;
+                "attribution"?: ({
+                  "hierarchy_path"?: string;
+                  "page_name"?: string;
+                }) | null;
                 "auth"?: ({
                   "domain"?: string;
                   "password"?: string;
@@ -27824,10 +28810,15 @@ export interface operations {
                   "screenshot"?: boolean;
                 }) | null;
                 "control"?: ({
+                  "branches"?: Array<Record<string, unknown>>;
+                  "cases"?: Array<Record<string, unknown>>;
+                  "concurrency"?: number;
                   "condition"?: (Record<string, unknown>) | null;
                   "count"?: number;
+                  "default"?: Array<Record<string, unknown>>;
                   "do_while"?: boolean;
                   "else"?: Array<Record<string, unknown>>;
+                  "fail_fast"?: boolean;
                   "for_each"?: (Record<string, unknown>) | null;
                   "max_iterations"?: number;
                   "steps"?: Array<Record<string, unknown>>;
@@ -28690,6 +29681,60 @@ export interface operations {
             "source"?: string;
             "updated_at": string;
           };
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleGetDashboardDefinition": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": ({
+            "created_at": string;
+            "description"?: string;
+            "id": string;
+            "name": string;
+            "owner"?: string;
+            "project_id": string;
+            "revision": number;
+            "slideshow_interval_seconds"?: number;
+            "tabs": Array<{
+              "id": string;
+              "panels": Array<{
+                "card_id"?: string;
+                "h": number;
+                "id": string;
+                "kind": string;
+                "query"?: (Record<string, unknown>) | null;
+                "title": string;
+                "w": number;
+                "x": number;
+                "y": number;
+              }>;
+              "title": string;
+            }>;
+            "updated_at": string;
+            "visibility": string;
+          }) | null;
         };
       };
       "401": {
@@ -29748,6 +30793,60 @@ export interface operations {
       };
     };
   };
+  "handleGetLiveTransactionDetail": {
+    parameters: {
+      "path": {
+        "event_id": string;
+        "id": string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": {
+            "action": string;
+            "duration_ms": number;
+            "error_message"?: string;
+            "group"?: string;
+            "hierarchy"?: string;
+            "id": string;
+            "network_profile"?: string;
+            "phase"?: string;
+            "region"?: string;
+            "signature": string;
+            "snapshot"?: (Record<string, unknown>) | null;
+            "status": string;
+            "status_code"?: number;
+            "timestamp": string;
+          };
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
   "handleGetMetrics": {
     parameters: {
       "path": {
@@ -29944,6 +31043,17 @@ export interface operations {
               "platform": string;
               "release_gate": boolean;
               "status": string;
+            }>;
+            "cloudtest_capabilities"?: Array<{
+              "acceptance_test": string;
+              "apex_status": string;
+              "category": string;
+              "cloudtest_evidence_url": string;
+              "evidence_confidence": string;
+              "id": string;
+              "implementation_status": string;
+              "name": string;
+              "workstream": string;
             }>;
             "competitive_parity"?: Array<{
               "competitors"?: Array<string>;
@@ -30796,6 +31906,13 @@ export interface operations {
                 "stop_on_max_errors"?: boolean;
                 "stop_on_sla_breach"?: boolean;
                 "target_average_tps"?: (number) | null;
+                "transaction_rules"?: Array<{
+                  "comparator": string;
+                  "metric": string;
+                  "severity"?: string;
+                  "threshold": number;
+                  "transaction": string;
+                }>;
               }) | null;
               "goal_targets"?: Record<string, {
                 "group": string;
@@ -30858,6 +31975,7 @@ export interface operations {
                 "script_id": string;
                 "script_name": string;
                 "stages"?: Array<Record<string, unknown>>;
+                "start_offset"?: string;
                 "target_duration"?: string;
                 "vusers": number;
               }>;
@@ -30883,6 +32001,7 @@ export interface operations {
                   "samples": number;
                 }) | null;
                 "browser_by_device"?: Record<string, (Record<string, unknown>) | null>;
+                "by_region"?: Record<string, (Record<string, unknown>) | null>;
                 "capacity_status"?: ({
                   "allocated_vusers": number;
                   "available_generators": number;
@@ -31067,6 +32186,29 @@ export interface operations {
                   "device_profile"?: string;
                   "device_tier"?: string;
                   "samples": number;
+                }) | null>;
+                "by_region"?: Record<string, ({
+                  "avg_connect_ms"?: number;
+                  "avg_dns_ms"?: number;
+                  "avg_ms": number;
+                  "avg_tls_ms"?: number;
+                  "avg_ttfb_ms"?: number;
+                  "correlation_count"?: number;
+                  "correlation_ids"?: Array<string>;
+                  "count": number;
+                  "dependency_target"?: string;
+                  "dependency_type"?: string;
+                  "errors": number;
+                  "last_error_at"?: string;
+                  "last_error_message"?: string;
+                  "last_status_code"?: number;
+                  "name": string;
+                  "p50_ms": number;
+                  "p90_ms": number;
+                  "p95_ms"?: number;
+                  "p99_ms": number;
+                  "server_telemetry"?: (Record<string, unknown>) | null;
+                  "tps": number;
                 }) | null>;
                 "capacity_status"?: ({
                   "allocated_vusers": number;
@@ -31785,15 +32927,21 @@ export interface operations {
         "dependency_type"?: string;
         "error_contains"?: string;
         "group"?: string;
+        "has_detail"?: string;
+        "hierarchy"?: string;
         "limit"?: number;
         "max_bytes"?: number;
         "max_duration_ms"?: number;
         "min_bytes"?: number;
         "min_duration_ms"?: number;
+        "network_profile"?: string;
         "offset"?: number;
+        "phase"?: string;
+        "region"?: string;
         "soap_operation"?: string;
         "sort_by"?: string;
         "sort_dir"?: string;
+        "source_transaction"?: string;
         "status"?: string;
         "success"?: boolean;
         "time_from"?: string;
@@ -32104,6 +33252,13 @@ export interface operations {
                 "stop_on_max_errors"?: boolean;
                 "stop_on_sla_breach"?: boolean;
                 "target_average_tps"?: (number) | null;
+                "transaction_rules"?: Array<{
+                  "comparator": string;
+                  "metric": string;
+                  "severity"?: string;
+                  "threshold": number;
+                  "transaction": string;
+                }>;
               }) | null;
               "governance"?: ({
                 "capacity_reservation_id"?: string;
@@ -32193,6 +33348,7 @@ export interface operations {
                 "script_id": string;
                 "script_name": string;
                 "stages"?: Array<Record<string, unknown>>;
+                "start_offset"?: string;
                 "target_duration"?: string;
                 "vusers": number;
               }>;
@@ -32395,6 +33551,12 @@ export interface operations {
             "interval_summaries_file": string;
             "interval_summaries_parquet_file"?: string;
             "interval_summary_count": number;
+            "message_detail_capture"?: ({
+              "dropped"?: Record<string, number>;
+              "retained_bytes": number;
+              "retained_items": number;
+              "truncated_items": number;
+            }) | null;
             "provenance"?: {
               "application_id"?: string;
               "assignment"?: ({
@@ -32543,6 +33705,13 @@ export interface operations {
                 "stop_on_max_errors"?: boolean;
                 "stop_on_sla_breach"?: boolean;
                 "target_average_tps"?: (number) | null;
+                "transaction_rules"?: Array<{
+                  "comparator": string;
+                  "metric": string;
+                  "severity"?: string;
+                  "threshold": number;
+                  "transaction": string;
+                }>;
               }) | null;
               "governance"?: ({
                 "capacity_reservation_id"?: string;
@@ -32632,6 +33801,7 @@ export interface operations {
                 "script_id": string;
                 "script_name": string;
                 "stages"?: Array<Record<string, unknown>>;
+                "start_offset"?: string;
                 "target_duration"?: string;
                 "vusers": number;
               }>;
@@ -32844,6 +34014,19 @@ export interface operations {
             "test_name": string;
             "test_notes_file"?: string;
             "transaction_count": number;
+            "transaction_rule_results"?: Array<{
+              "matched_count": number;
+              "message": string;
+              "observed"?: (number) | null;
+              "rule": {
+                "comparator": string;
+                "metric": string;
+                "severity"?: string;
+                "threshold": number;
+                "transaction": string;
+              };
+              "status": string;
+            }>;
             "transactions_file": string;
             "transactions_parquet_file"?: string;
           }) | null;
@@ -33239,6 +34422,7 @@ export interface operations {
                   "stop_on_max_errors"?: boolean;
                   "stop_on_sla_breach"?: boolean;
                   "target_average_tps"?: (number) | null;
+                  "transaction_rules"?: Array<Record<string, unknown>>;
                 }) | null;
                 "governance"?: ({
                   "capacity_reservation_id"?: string;
@@ -33267,6 +34451,7 @@ export interface operations {
                   "script_id": string;
                   "script_name": string;
                   "stages"?: Array<Record<string, unknown>>;
+                  "start_offset"?: string;
                   "target_duration"?: string;
                   "vusers": number;
                 }>;
@@ -33316,6 +34501,12 @@ export interface operations {
               "interval_summaries_file": string;
               "interval_summaries_parquet_file"?: string;
               "interval_summary_count": number;
+              "message_detail_capture"?: ({
+                "dropped"?: Record<string, number>;
+                "retained_bytes": number;
+                "retained_items": number;
+                "truncated_items": number;
+              }) | null;
               "provenance"?: {
                 "application_id"?: string;
                 "assignment"?: ({
@@ -33434,6 +34625,7 @@ export interface operations {
                   "stop_on_max_errors"?: boolean;
                   "stop_on_sla_breach"?: boolean;
                   "target_average_tps"?: (number) | null;
+                  "transaction_rules"?: Array<Record<string, unknown>>;
                 }) | null;
                 "governance"?: ({
                   "capacity_reservation_id"?: string;
@@ -33462,6 +34654,7 @@ export interface operations {
                   "script_id": string;
                   "script_name": string;
                   "stages"?: Array<Record<string, unknown>>;
+                  "start_offset"?: string;
                   "target_duration"?: string;
                   "vusers": number;
                 }>;
@@ -33521,6 +34714,19 @@ export interface operations {
               "test_name": string;
               "test_notes_file"?: string;
               "transaction_count": number;
+              "transaction_rule_results"?: Array<{
+                "matched_count": number;
+                "message": string;
+                "observed"?: (number) | null;
+                "rule": {
+                  "comparator": string;
+                  "metric": string;
+                  "severity"?: string;
+                  "threshold": number;
+                  "transaction": string;
+                };
+                "status": string;
+              }>;
               "transactions_file": string;
               "transactions_parquet_file"?: string;
             }) | null;
@@ -33828,6 +35034,11 @@ export interface operations {
           "application/json": components["schemas"]["ErrorResponse"];
         };
       };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
       "500": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
@@ -34044,15 +35255,21 @@ export interface operations {
         "error_contains"?: string;
         "format"?: string;
         "group"?: string;
+        "has_detail"?: string;
+        "hierarchy"?: string;
         "limit"?: number;
         "max_bytes"?: number;
         "max_duration_ms"?: number;
         "min_bytes"?: number;
         "min_duration_ms"?: number;
+        "network_profile"?: string;
         "offset"?: number;
+        "phase"?: string;
+        "region"?: string;
         "soap_operation"?: string;
         "sort_by"?: string;
         "sort_dir"?: string;
+        "source_transaction"?: string;
         "status"?: string;
         "success"?: boolean;
         "time_from"?: string;
@@ -34274,6 +35491,13 @@ export interface operations {
               "stop_on_max_errors"?: boolean;
               "stop_on_sla_breach"?: boolean;
               "target_average_tps"?: (number) | null;
+              "transaction_rules"?: Array<{
+                "comparator": string;
+                "metric": string;
+                "severity"?: string;
+                "threshold": number;
+                "transaction": string;
+              }>;
             }) | null;
             "id": string;
             "last_run_at"?: (string) | null;
@@ -34759,6 +35983,7 @@ export interface operations {
                 "target_vusers"?: number;
                 "type": string;
               }>;
+              "start_offset"?: string;
               "vusers": number;
             }>;
             "start_delay"?: string;
@@ -34880,6 +36105,10 @@ export interface operations {
             "script": ({
               "actions": Array<{
                 "assertions"?: Array<Record<string, unknown>>;
+                "attribution"?: ({
+                  "hierarchy_path"?: string;
+                  "page_name"?: string;
+                }) | null;
                 "auth"?: ({
                   "domain"?: string;
                   "password"?: string;
@@ -34896,10 +36125,15 @@ export interface operations {
                   "screenshot"?: boolean;
                 }) | null;
                 "control"?: ({
+                  "branches"?: Array<Record<string, unknown>>;
+                  "cases"?: Array<Record<string, unknown>>;
+                  "concurrency"?: number;
                   "condition"?: (Record<string, unknown>) | null;
                   "count"?: number;
+                  "default"?: Array<Record<string, unknown>>;
                   "do_while"?: boolean;
                   "else"?: Array<Record<string, unknown>>;
+                  "fail_fast"?: boolean;
                   "for_each"?: (Record<string, unknown>) | null;
                   "max_iterations"?: number;
                   "steps"?: Array<Record<string, unknown>>;
@@ -35179,6 +36413,9 @@ export interface operations {
                   "tps"?: number;
                   "type": string;
                 };
+                "results"?: {
+                  "message_detail"?: (Record<string, unknown>) | null;
+                };
                 "run_logic"?: {
                   "action_sequence"?: Array<string>;
                   "auto_transactions"?: string;
@@ -35266,10 +36503,21 @@ export interface operations {
                 "stop_on_max_errors"?: boolean;
                 "stop_on_sla_breach"?: boolean;
                 "target_average_tps"?: (number) | null;
+                "transaction_rules"?: Array<{
+                  "comparator": string;
+                  "metric": string;
+                  "severity"?: string;
+                  "threshold": number;
+                  "transaction": string;
+                }>;
               }) | null;
               "id": string;
               "init"?: Array<{
                 "assertions"?: Array<Record<string, unknown>>;
+                "attribution"?: ({
+                  "hierarchy_path"?: string;
+                  "page_name"?: string;
+                }) | null;
                 "auth"?: ({
                   "domain"?: string;
                   "password"?: string;
@@ -35286,10 +36534,15 @@ export interface operations {
                   "screenshot"?: boolean;
                 }) | null;
                 "control"?: ({
+                  "branches"?: Array<Record<string, unknown>>;
+                  "cases"?: Array<Record<string, unknown>>;
+                  "concurrency"?: number;
                   "condition"?: (Record<string, unknown>) | null;
                   "count"?: number;
+                  "default"?: Array<Record<string, unknown>>;
                   "do_while"?: boolean;
                   "else"?: Array<Record<string, unknown>>;
+                  "fail_fast"?: boolean;
                   "for_each"?: (Record<string, unknown>) | null;
                   "max_iterations"?: number;
                   "steps"?: Array<Record<string, unknown>>;
@@ -35379,6 +36632,10 @@ export interface operations {
               "ref_key"?: string;
               "teardown"?: Array<{
                 "assertions"?: Array<Record<string, unknown>>;
+                "attribution"?: ({
+                  "hierarchy_path"?: string;
+                  "page_name"?: string;
+                }) | null;
                 "auth"?: ({
                   "domain"?: string;
                   "password"?: string;
@@ -35395,10 +36652,15 @@ export interface operations {
                   "screenshot"?: boolean;
                 }) | null;
                 "control"?: ({
+                  "branches"?: Array<Record<string, unknown>>;
+                  "cases"?: Array<Record<string, unknown>>;
+                  "concurrency"?: number;
                   "condition"?: (Record<string, unknown>) | null;
                   "count"?: number;
+                  "default"?: Array<Record<string, unknown>>;
                   "do_while"?: boolean;
                   "else"?: Array<Record<string, unknown>>;
+                  "fail_fast"?: boolean;
                   "for_each"?: (Record<string, unknown>) | null;
                   "max_iterations"?: number;
                   "steps"?: Array<Record<string, unknown>>;
@@ -36954,6 +38216,13 @@ export interface operations {
               "stop_on_max_errors"?: boolean;
               "stop_on_sla_breach"?: boolean;
               "target_average_tps"?: (number) | null;
+              "transaction_rules"?: Array<{
+                "comparator": string;
+                "metric": string;
+                "severity"?: string;
+                "threshold": number;
+                "transaction": string;
+              }>;
             }) | null;
             "goal_targets"?: Record<string, {
               "group": string;
@@ -37143,6 +38412,7 @@ export interface operations {
                 "target_vusers"?: number;
                 "type": string;
               }>;
+              "start_offset"?: string;
               "target_duration"?: string;
               "vusers": number;
             }>;
@@ -37183,6 +38453,29 @@ export interface operations {
                 "device_profile"?: string;
                 "device_tier"?: string;
                 "samples": number;
+              }) | null>;
+              "by_region"?: Record<string, ({
+                "avg_connect_ms"?: number;
+                "avg_dns_ms"?: number;
+                "avg_ms": number;
+                "avg_tls_ms"?: number;
+                "avg_ttfb_ms"?: number;
+                "correlation_count"?: number;
+                "correlation_ids"?: Array<string>;
+                "count": number;
+                "dependency_target"?: string;
+                "dependency_type"?: string;
+                "errors": number;
+                "last_error_at"?: string;
+                "last_error_message"?: string;
+                "last_status_code"?: number;
+                "name": string;
+                "p50_ms": number;
+                "p90_ms": number;
+                "p95_ms"?: number;
+                "p99_ms": number;
+                "server_telemetry"?: (Record<string, unknown>) | null;
+                "tps": number;
               }) | null>;
               "capacity_status"?: ({
                 "allocated_vusers": number;
@@ -37498,6 +38791,72 @@ export interface operations {
                 "device_profile"?: string;
                 "device_tier"?: string;
                 "samples": number;
+              }) | null>;
+              "by_region"?: Record<string, ({
+                "avg_connect_ms"?: number;
+                "avg_dns_ms"?: number;
+                "avg_ms": number;
+                "avg_tls_ms"?: number;
+                "avg_ttfb_ms"?: number;
+                "correlation_count"?: number;
+                "correlation_ids"?: Array<string>;
+                "count": number;
+                "dependency_target"?: string;
+                "dependency_type"?: string;
+                "errors": number;
+                "last_error_at"?: string;
+                "last_error_message"?: string;
+                "last_status_code"?: number;
+                "name": string;
+                "p50_ms": number;
+                "p90_ms": number;
+                "p95_ms"?: number;
+                "p99_ms": number;
+                "server_telemetry"?: ({
+                  "abort_count"?: number;
+                  "avg_consumer_lag_ms"?: number;
+                  "avg_consumer_offset_lag"?: number;
+                  "avg_end_to_end_latency_ms"?: number;
+                  "avg_first_event_ms"?: number;
+                  "avg_message_latency_ms"?: number;
+                  "avg_messages_received_per_sec"?: number;
+                  "avg_messages_sent_per_sec"?: number;
+                  "avg_request_payload_kb"?: number;
+                  "avg_response_payload_kb"?: number;
+                  "avg_server_processing_ms"?: number;
+                  "avg_transfer_ms"?: number;
+                  "commit_count"?: number;
+                  "connection_reused_count"?: number;
+                  "connection_reused_pct"?: number;
+                  "dead_letter_rate_pct"?: number;
+                  "dead_lettered_count"?: number;
+                  "duplicate_count"?: number;
+                  "duplicate_rate_pct"?: number;
+                  "event_count"?: number;
+                  "max_consumer_lag_ms"?: number;
+                  "max_consumer_offset_lag"?: number;
+                  "max_end_to_end_latency_ms"?: number;
+                  "max_first_event_ms"?: number;
+                  "max_message_latency_ms"?: number;
+                  "messages_received"?: number;
+                  "messages_sent"?: number;
+                  "out_of_order_count"?: number;
+                  "partition_events"?: Record<string, number>;
+                  "partition_skew_pct"?: number;
+                  "redelivery_count"?: number;
+                  "redelivery_rate_pct"?: number;
+                  "request_payload_histogram"?: Record<string, number>;
+                  "request_size_classes"?: Record<string, number>;
+                  "response_payload_histogram"?: Record<string, number>;
+                  "response_size_classes"?: Record<string, number>;
+                  "samples": number;
+                  "send_failure_count"?: number;
+                  "total_event_too_large_count"?: number;
+                  "total_quota_exceeded_count"?: number;
+                  "total_server_busy_count"?: number;
+                  "total_throttled_requests"?: number;
+                }) | null;
+                "tps": number;
               }) | null>;
               "capacity_status"?: ({
                 "allocated_vusers": number;
@@ -39547,6 +40906,13 @@ export interface operations {
                 "stop_on_max_errors"?: boolean;
                 "stop_on_sla_breach"?: boolean;
                 "target_average_tps"?: (number) | null;
+                "transaction_rules"?: Array<{
+                  "comparator": string;
+                  "metric": string;
+                  "severity"?: string;
+                  "threshold": number;
+                  "transaction": string;
+                }>;
               }) | null;
               "groups"?: Array<{
                 "assignment"?: ({
@@ -39604,6 +40970,7 @@ export interface operations {
                 "script_id": string;
                 "script_name": string;
                 "stages"?: Array<Record<string, unknown>>;
+                "start_offset"?: string;
                 "target_duration"?: string;
                 "vusers": number;
               }>;
@@ -39866,6 +41233,13 @@ export interface operations {
                 "stop_on_max_errors"?: boolean;
                 "stop_on_sla_breach"?: boolean;
                 "target_average_tps"?: (number) | null;
+                "transaction_rules"?: Array<{
+                  "comparator": string;
+                  "metric": string;
+                  "severity"?: string;
+                  "threshold": number;
+                  "transaction": string;
+                }>;
               }) | null;
               "groups"?: Array<{
                 "assignment"?: ({
@@ -39923,6 +41297,7 @@ export interface operations {
                 "script_id": string;
                 "script_name": string;
                 "stages"?: Array<Record<string, unknown>>;
+                "start_offset"?: string;
                 "target_duration"?: string;
                 "vusers": number;
               }>;
@@ -40439,6 +41814,7 @@ export interface operations {
                 "target_vusers"?: number;
                 "type": string;
               }>;
+              "start_offset"?: string;
               "vusers"?: number;
             }>;
             "source": string;
@@ -40482,14 +41858,9 @@ export interface operations {
     };
     requestBody?: never;
     responses: {
-      "200": {
+      "2XX": {
         content: {
-          "application/json": {
-            "details"?: Array<string>;
-            "sla_breached": boolean;
-            "status": string;
-            "test_id": string;
-          };
+          "application/json": unknown;
         };
       };
       "401": {
@@ -40508,6 +41879,11 @@ export interface operations {
         };
       };
       "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -41422,6 +42798,52 @@ export interface operations {
           "file"?: string;
           "format"?: string;
           "max_destinations"?: string;
+          [key: string]: unknown;
+        };
+      };
+    };
+    responses: {
+      "2XX": {
+        content: {
+          "application/json": unknown;
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "422": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleImportCloudTest": {
+    parameters: {
+      "query"?: {
+        "filename"?: string;
+        "project_id"?: string;
+      };
+    };
+    requestBody: {
+      content: {
+        "multipart/form-data": {
+          "file"?: string;
           [key: string]: unknown;
         };
       };
@@ -43095,6 +44517,7 @@ export interface operations {
                   "network"?: Record<string, unknown>;
                   "observability"?: Record<string, unknown>;
                   "pacing"?: Record<string, unknown>;
+                  "results"?: Record<string, unknown>;
                   "run_logic"?: Record<string, unknown>;
                   "sapgui"?: Record<string, unknown>;
                   "soap"?: Record<string, unknown>;
@@ -43119,6 +44542,7 @@ export interface operations {
                   "stop_on_max_errors"?: boolean;
                   "stop_on_sla_breach"?: boolean;
                   "target_average_tps"?: (number) | null;
+                  "transaction_rules"?: Array<Record<string, unknown>>;
                 }) | null;
                 "id": string;
                 "init"?: Array<Record<string, unknown>>;
@@ -44352,6 +45776,41 @@ export interface operations {
         };
       };
       "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleListDashboardDefinitions": {
+    parameters: {
+      "query"?: {
+        "limit"?: number;
+        "offset"?: number;
+        "project_id"?: string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": Record<string, unknown>;
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -46957,6 +48416,108 @@ export interface operations {
       };
     };
   };
+  "handlePatchDashboardDefinition": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          "description"?: (string) | null;
+          "name"?: (string) | null;
+          "revision"?: number;
+          "slideshow_interval_seconds"?: (number) | null;
+          "tabs"?: (Array<{
+            "id"?: string;
+            "panels"?: Array<{
+              "card_id"?: string;
+              "h"?: number;
+              "id"?: string;
+              "kind"?: string;
+              "query"?: ({
+                "aggregation"?: string;
+                "bucket_seconds"?: number;
+                "dimensions"?: Array<string>;
+                "filters"?: Record<string, string>;
+                "max_series"?: number;
+                "metric"?: string;
+                "overlay"?: boolean;
+              }) | null;
+              "title"?: string;
+              "w"?: number;
+              "x"?: number;
+              "y"?: number;
+            }>;
+            "title"?: string;
+          }>) | null;
+          "visibility"?: (string) | null;
+        };
+      };
+    };
+    responses: {
+      "200": {
+        content: {
+          "application/json": ({
+            "created_at": string;
+            "description"?: string;
+            "id": string;
+            "name": string;
+            "owner"?: string;
+            "project_id": string;
+            "revision": number;
+            "slideshow_interval_seconds"?: number;
+            "tabs": Array<{
+              "id": string;
+              "panels": Array<{
+                "card_id"?: string;
+                "h": number;
+                "id": string;
+                "kind": string;
+                "query"?: (Record<string, unknown>) | null;
+                "title": string;
+                "w": number;
+                "x": number;
+                "y": number;
+              }>;
+              "title": string;
+            }>;
+            "updated_at": string;
+            "visibility": string;
+          }) | null;
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
   "handlePatchGeneratorMetadata": {
     parameters: {
       "path": {
@@ -48668,6 +50229,13 @@ export interface operations {
               "stop_on_max_errors"?: boolean;
               "stop_on_sla_breach"?: boolean;
               "target_average_tps"?: (number) | null;
+              "transaction_rules"?: Array<{
+                "comparator": string;
+                "metric": string;
+                "severity"?: string;
+                "threshold": number;
+                "transaction": string;
+              }>;
             }) | null;
             "goal_targets"?: Record<string, {
               "group": string;
@@ -48857,6 +50425,7 @@ export interface operations {
                 "target_vusers"?: number;
                 "type": string;
               }>;
+              "start_offset"?: string;
               "target_duration"?: string;
               "vusers": number;
             }>;
@@ -48897,6 +50466,29 @@ export interface operations {
                 "device_profile"?: string;
                 "device_tier"?: string;
                 "samples": number;
+              }) | null>;
+              "by_region"?: Record<string, ({
+                "avg_connect_ms"?: number;
+                "avg_dns_ms"?: number;
+                "avg_ms": number;
+                "avg_tls_ms"?: number;
+                "avg_ttfb_ms"?: number;
+                "correlation_count"?: number;
+                "correlation_ids"?: Array<string>;
+                "count": number;
+                "dependency_target"?: string;
+                "dependency_type"?: string;
+                "errors": number;
+                "last_error_at"?: string;
+                "last_error_message"?: string;
+                "last_status_code"?: number;
+                "name": string;
+                "p50_ms": number;
+                "p90_ms": number;
+                "p95_ms"?: number;
+                "p99_ms": number;
+                "server_telemetry"?: (Record<string, unknown>) | null;
+                "tps": number;
               }) | null>;
               "capacity_status"?: ({
                 "allocated_vusers": number;
@@ -49212,6 +50804,72 @@ export interface operations {
                 "device_profile"?: string;
                 "device_tier"?: string;
                 "samples": number;
+              }) | null>;
+              "by_region"?: Record<string, ({
+                "avg_connect_ms"?: number;
+                "avg_dns_ms"?: number;
+                "avg_ms": number;
+                "avg_tls_ms"?: number;
+                "avg_ttfb_ms"?: number;
+                "correlation_count"?: number;
+                "correlation_ids"?: Array<string>;
+                "count": number;
+                "dependency_target"?: string;
+                "dependency_type"?: string;
+                "errors": number;
+                "last_error_at"?: string;
+                "last_error_message"?: string;
+                "last_status_code"?: number;
+                "name": string;
+                "p50_ms": number;
+                "p90_ms": number;
+                "p95_ms"?: number;
+                "p99_ms": number;
+                "server_telemetry"?: ({
+                  "abort_count"?: number;
+                  "avg_consumer_lag_ms"?: number;
+                  "avg_consumer_offset_lag"?: number;
+                  "avg_end_to_end_latency_ms"?: number;
+                  "avg_first_event_ms"?: number;
+                  "avg_message_latency_ms"?: number;
+                  "avg_messages_received_per_sec"?: number;
+                  "avg_messages_sent_per_sec"?: number;
+                  "avg_request_payload_kb"?: number;
+                  "avg_response_payload_kb"?: number;
+                  "avg_server_processing_ms"?: number;
+                  "avg_transfer_ms"?: number;
+                  "commit_count"?: number;
+                  "connection_reused_count"?: number;
+                  "connection_reused_pct"?: number;
+                  "dead_letter_rate_pct"?: number;
+                  "dead_lettered_count"?: number;
+                  "duplicate_count"?: number;
+                  "duplicate_rate_pct"?: number;
+                  "event_count"?: number;
+                  "max_consumer_lag_ms"?: number;
+                  "max_consumer_offset_lag"?: number;
+                  "max_end_to_end_latency_ms"?: number;
+                  "max_first_event_ms"?: number;
+                  "max_message_latency_ms"?: number;
+                  "messages_received"?: number;
+                  "messages_sent"?: number;
+                  "out_of_order_count"?: number;
+                  "partition_events"?: Record<string, number>;
+                  "partition_skew_pct"?: number;
+                  "redelivery_count"?: number;
+                  "redelivery_rate_pct"?: number;
+                  "request_payload_histogram"?: Record<string, number>;
+                  "request_size_classes"?: Record<string, number>;
+                  "response_payload_histogram"?: Record<string, number>;
+                  "response_size_classes"?: Record<string, number>;
+                  "samples": number;
+                  "send_failure_count"?: number;
+                  "total_event_too_large_count"?: number;
+                  "total_quota_exceeded_count"?: number;
+                  "total_server_busy_count"?: number;
+                  "total_throttled_requests"?: number;
+                }) | null;
+                "tps": number;
               }) | null>;
               "capacity_status"?: ({
                 "allocated_vusers": number;
@@ -50256,6 +51914,13 @@ export interface operations {
             "stop_on_max_errors"?: boolean;
             "stop_on_sla_breach"?: boolean;
             "target_average_tps"?: (number) | null;
+            "transaction_rules"?: Array<{
+              "comparator"?: string;
+              "metric"?: string;
+              "severity"?: string;
+              "threshold"?: number;
+              "transaction"?: string;
+            }>;
           }) | null;
           "groups"?: Array<{
             "assignment"?: ({
@@ -50297,6 +51962,7 @@ export interface operations {
             }) | null;
             "script_id"?: string;
             "stages"?: Array<Record<string, unknown>>;
+            "start_offset"?: string;
             "vusers"?: number;
           }>;
           "intent"?: string;
@@ -50655,6 +52321,10 @@ export interface operations {
             "draft": ({
               "actions": Array<{
                 "assertions"?: Array<Record<string, unknown>>;
+                "attribution"?: ({
+                  "hierarchy_path"?: string;
+                  "page_name"?: string;
+                }) | null;
                 "auth"?: ({
                   "domain"?: string;
                   "password"?: string;
@@ -50671,10 +52341,15 @@ export interface operations {
                   "screenshot"?: boolean;
                 }) | null;
                 "control"?: ({
+                  "branches"?: Array<Record<string, unknown>>;
+                  "cases"?: Array<Record<string, unknown>>;
+                  "concurrency"?: number;
                   "condition"?: (Record<string, unknown>) | null;
                   "count"?: number;
+                  "default"?: Array<Record<string, unknown>>;
                   "do_while"?: boolean;
                   "else"?: Array<Record<string, unknown>>;
+                  "fail_fast"?: boolean;
                   "for_each"?: (Record<string, unknown>) | null;
                   "max_iterations"?: number;
                   "steps"?: Array<Record<string, unknown>>;
@@ -50954,6 +52629,9 @@ export interface operations {
                   "tps"?: number;
                   "type": string;
                 };
+                "results"?: {
+                  "message_detail"?: (Record<string, unknown>) | null;
+                };
                 "run_logic"?: {
                   "action_sequence"?: Array<string>;
                   "auto_transactions"?: string;
@@ -51041,10 +52719,21 @@ export interface operations {
                 "stop_on_max_errors"?: boolean;
                 "stop_on_sla_breach"?: boolean;
                 "target_average_tps"?: (number) | null;
+                "transaction_rules"?: Array<{
+                  "comparator": string;
+                  "metric": string;
+                  "severity"?: string;
+                  "threshold": number;
+                  "transaction": string;
+                }>;
               }) | null;
               "id": string;
               "init"?: Array<{
                 "assertions"?: Array<Record<string, unknown>>;
+                "attribution"?: ({
+                  "hierarchy_path"?: string;
+                  "page_name"?: string;
+                }) | null;
                 "auth"?: ({
                   "domain"?: string;
                   "password"?: string;
@@ -51061,10 +52750,15 @@ export interface operations {
                   "screenshot"?: boolean;
                 }) | null;
                 "control"?: ({
+                  "branches"?: Array<Record<string, unknown>>;
+                  "cases"?: Array<Record<string, unknown>>;
+                  "concurrency"?: number;
                   "condition"?: (Record<string, unknown>) | null;
                   "count"?: number;
+                  "default"?: Array<Record<string, unknown>>;
                   "do_while"?: boolean;
                   "else"?: Array<Record<string, unknown>>;
+                  "fail_fast"?: boolean;
                   "for_each"?: (Record<string, unknown>) | null;
                   "max_iterations"?: number;
                   "steps"?: Array<Record<string, unknown>>;
@@ -51154,6 +52848,10 @@ export interface operations {
               "ref_key"?: string;
               "teardown"?: Array<{
                 "assertions"?: Array<Record<string, unknown>>;
+                "attribution"?: ({
+                  "hierarchy_path"?: string;
+                  "page_name"?: string;
+                }) | null;
                 "auth"?: ({
                   "domain"?: string;
                   "password"?: string;
@@ -51170,10 +52868,15 @@ export interface operations {
                   "screenshot"?: boolean;
                 }) | null;
                 "control"?: ({
+                  "branches"?: Array<Record<string, unknown>>;
+                  "cases"?: Array<Record<string, unknown>>;
+                  "concurrency"?: number;
                   "condition"?: (Record<string, unknown>) | null;
                   "count"?: number;
+                  "default"?: Array<Record<string, unknown>>;
                   "do_while"?: boolean;
                   "else"?: Array<Record<string, unknown>>;
+                  "fail_fast"?: boolean;
                   "for_each"?: (Record<string, unknown>) | null;
                   "max_iterations"?: number;
                   "steps"?: Array<Record<string, unknown>>;
@@ -51387,6 +53090,10 @@ export interface operations {
           "source_browser_script"?: ({
             "actions"?: Array<{
               "assertions"?: Array<Record<string, unknown>>;
+              "attribution"?: ({
+                "hierarchy_path"?: string;
+                "page_name"?: string;
+              }) | null;
               "auth"?: ({
                 "domain"?: string;
                 "password"?: string;
@@ -51403,10 +53110,15 @@ export interface operations {
                 "screenshot"?: boolean;
               }) | null;
               "control"?: ({
+                "branches"?: Array<Record<string, unknown>>;
+                "cases"?: Array<Record<string, unknown>>;
+                "concurrency"?: number;
                 "condition"?: (Record<string, unknown>) | null;
                 "count"?: number;
+                "default"?: Array<Record<string, unknown>>;
                 "do_while"?: boolean;
                 "else"?: Array<Record<string, unknown>>;
+                "fail_fast"?: boolean;
                 "for_each"?: (Record<string, unknown>) | null;
                 "max_iterations"?: number;
                 "steps"?: Array<Record<string, unknown>>;
@@ -51686,6 +53398,9 @@ export interface operations {
                 "tps"?: number;
                 "type"?: string;
               };
+              "results"?: {
+                "message_detail"?: (Record<string, unknown>) | null;
+              };
               "run_logic"?: {
                 "action_sequence"?: Array<string>;
                 "auto_transactions"?: string;
@@ -51773,10 +53488,21 @@ export interface operations {
               "stop_on_max_errors"?: boolean;
               "stop_on_sla_breach"?: boolean;
               "target_average_tps"?: (number) | null;
+              "transaction_rules"?: Array<{
+                "comparator"?: string;
+                "metric"?: string;
+                "severity"?: string;
+                "threshold"?: number;
+                "transaction"?: string;
+              }>;
             }) | null;
             "id"?: string;
             "init"?: Array<{
               "assertions"?: Array<Record<string, unknown>>;
+              "attribution"?: ({
+                "hierarchy_path"?: string;
+                "page_name"?: string;
+              }) | null;
               "auth"?: ({
                 "domain"?: string;
                 "password"?: string;
@@ -51793,10 +53519,15 @@ export interface operations {
                 "screenshot"?: boolean;
               }) | null;
               "control"?: ({
+                "branches"?: Array<Record<string, unknown>>;
+                "cases"?: Array<Record<string, unknown>>;
+                "concurrency"?: number;
                 "condition"?: (Record<string, unknown>) | null;
                 "count"?: number;
+                "default"?: Array<Record<string, unknown>>;
                 "do_while"?: boolean;
                 "else"?: Array<Record<string, unknown>>;
+                "fail_fast"?: boolean;
                 "for_each"?: (Record<string, unknown>) | null;
                 "max_iterations"?: number;
                 "steps"?: Array<Record<string, unknown>>;
@@ -51886,6 +53617,10 @@ export interface operations {
             "ref_key"?: string;
             "teardown"?: Array<{
               "assertions"?: Array<Record<string, unknown>>;
+              "attribution"?: ({
+                "hierarchy_path"?: string;
+                "page_name"?: string;
+              }) | null;
               "auth"?: ({
                 "domain"?: string;
                 "password"?: string;
@@ -51902,10 +53637,15 @@ export interface operations {
                 "screenshot"?: boolean;
               }) | null;
               "control"?: ({
+                "branches"?: Array<Record<string, unknown>>;
+                "cases"?: Array<Record<string, unknown>>;
+                "concurrency"?: number;
                 "condition"?: (Record<string, unknown>) | null;
                 "count"?: number;
+                "default"?: Array<Record<string, unknown>>;
                 "do_while"?: boolean;
                 "else"?: Array<Record<string, unknown>>;
+                "fail_fast"?: boolean;
                 "for_each"?: (Record<string, unknown>) | null;
                 "max_iterations"?: number;
                 "steps"?: Array<Record<string, unknown>>;
@@ -51977,6 +53717,10 @@ export interface operations {
             "generated_script"?: ({
               "actions": Array<{
                 "assertions"?: Array<Record<string, unknown>>;
+                "attribution"?: ({
+                  "hierarchy_path"?: string;
+                  "page_name"?: string;
+                }) | null;
                 "auth"?: ({
                   "domain"?: string;
                   "password"?: string;
@@ -51993,10 +53737,15 @@ export interface operations {
                   "screenshot"?: boolean;
                 }) | null;
                 "control"?: ({
+                  "branches"?: Array<Record<string, unknown>>;
+                  "cases"?: Array<Record<string, unknown>>;
+                  "concurrency"?: number;
                   "condition"?: (Record<string, unknown>) | null;
                   "count"?: number;
+                  "default"?: Array<Record<string, unknown>>;
                   "do_while"?: boolean;
                   "else"?: Array<Record<string, unknown>>;
+                  "fail_fast"?: boolean;
                   "for_each"?: (Record<string, unknown>) | null;
                   "max_iterations"?: number;
                   "steps"?: Array<Record<string, unknown>>;
@@ -52276,6 +54025,9 @@ export interface operations {
                   "tps"?: number;
                   "type": string;
                 };
+                "results"?: {
+                  "message_detail"?: (Record<string, unknown>) | null;
+                };
                 "run_logic"?: {
                   "action_sequence"?: Array<string>;
                   "auto_transactions"?: string;
@@ -52363,10 +54115,21 @@ export interface operations {
                 "stop_on_max_errors"?: boolean;
                 "stop_on_sla_breach"?: boolean;
                 "target_average_tps"?: (number) | null;
+                "transaction_rules"?: Array<{
+                  "comparator": string;
+                  "metric": string;
+                  "severity"?: string;
+                  "threshold": number;
+                  "transaction": string;
+                }>;
               }) | null;
               "id": string;
               "init"?: Array<{
                 "assertions"?: Array<Record<string, unknown>>;
+                "attribution"?: ({
+                  "hierarchy_path"?: string;
+                  "page_name"?: string;
+                }) | null;
                 "auth"?: ({
                   "domain"?: string;
                   "password"?: string;
@@ -52383,10 +54146,15 @@ export interface operations {
                   "screenshot"?: boolean;
                 }) | null;
                 "control"?: ({
+                  "branches"?: Array<Record<string, unknown>>;
+                  "cases"?: Array<Record<string, unknown>>;
+                  "concurrency"?: number;
                   "condition"?: (Record<string, unknown>) | null;
                   "count"?: number;
+                  "default"?: Array<Record<string, unknown>>;
                   "do_while"?: boolean;
                   "else"?: Array<Record<string, unknown>>;
+                  "fail_fast"?: boolean;
                   "for_each"?: (Record<string, unknown>) | null;
                   "max_iterations"?: number;
                   "steps"?: Array<Record<string, unknown>>;
@@ -52476,6 +54244,10 @@ export interface operations {
               "ref_key"?: string;
               "teardown"?: Array<{
                 "assertions"?: Array<Record<string, unknown>>;
+                "attribution"?: ({
+                  "hierarchy_path"?: string;
+                  "page_name"?: string;
+                }) | null;
                 "auth"?: ({
                   "domain"?: string;
                   "password"?: string;
@@ -52492,10 +54264,15 @@ export interface operations {
                   "screenshot"?: boolean;
                 }) | null;
                 "control"?: ({
+                  "branches"?: Array<Record<string, unknown>>;
+                  "cases"?: Array<Record<string, unknown>>;
+                  "concurrency"?: number;
                   "condition"?: (Record<string, unknown>) | null;
                   "count"?: number;
+                  "default"?: Array<Record<string, unknown>>;
                   "do_while"?: boolean;
                   "else"?: Array<Record<string, unknown>>;
+                  "fail_fast"?: boolean;
                   "for_each"?: (Record<string, unknown>) | null;
                   "max_iterations"?: number;
                   "steps"?: Array<Record<string, unknown>>;
@@ -52636,6 +54413,10 @@ export interface operations {
             "source_browser_script"?: ({
               "actions": Array<{
                 "assertions"?: Array<Record<string, unknown>>;
+                "attribution"?: ({
+                  "hierarchy_path"?: string;
+                  "page_name"?: string;
+                }) | null;
                 "auth"?: ({
                   "domain"?: string;
                   "password"?: string;
@@ -52652,10 +54433,15 @@ export interface operations {
                   "screenshot"?: boolean;
                 }) | null;
                 "control"?: ({
+                  "branches"?: Array<Record<string, unknown>>;
+                  "cases"?: Array<Record<string, unknown>>;
+                  "concurrency"?: number;
                   "condition"?: (Record<string, unknown>) | null;
                   "count"?: number;
+                  "default"?: Array<Record<string, unknown>>;
                   "do_while"?: boolean;
                   "else"?: Array<Record<string, unknown>>;
+                  "fail_fast"?: boolean;
                   "for_each"?: (Record<string, unknown>) | null;
                   "max_iterations"?: number;
                   "steps"?: Array<Record<string, unknown>>;
@@ -52935,6 +54721,9 @@ export interface operations {
                   "tps"?: number;
                   "type": string;
                 };
+                "results"?: {
+                  "message_detail"?: (Record<string, unknown>) | null;
+                };
                 "run_logic"?: {
                   "action_sequence"?: Array<string>;
                   "auto_transactions"?: string;
@@ -53022,10 +54811,21 @@ export interface operations {
                 "stop_on_max_errors"?: boolean;
                 "stop_on_sla_breach"?: boolean;
                 "target_average_tps"?: (number) | null;
+                "transaction_rules"?: Array<{
+                  "comparator": string;
+                  "metric": string;
+                  "severity"?: string;
+                  "threshold": number;
+                  "transaction": string;
+                }>;
               }) | null;
               "id": string;
               "init"?: Array<{
                 "assertions"?: Array<Record<string, unknown>>;
+                "attribution"?: ({
+                  "hierarchy_path"?: string;
+                  "page_name"?: string;
+                }) | null;
                 "auth"?: ({
                   "domain"?: string;
                   "password"?: string;
@@ -53042,10 +54842,15 @@ export interface operations {
                   "screenshot"?: boolean;
                 }) | null;
                 "control"?: ({
+                  "branches"?: Array<Record<string, unknown>>;
+                  "cases"?: Array<Record<string, unknown>>;
+                  "concurrency"?: number;
                   "condition"?: (Record<string, unknown>) | null;
                   "count"?: number;
+                  "default"?: Array<Record<string, unknown>>;
                   "do_while"?: boolean;
                   "else"?: Array<Record<string, unknown>>;
+                  "fail_fast"?: boolean;
                   "for_each"?: (Record<string, unknown>) | null;
                   "max_iterations"?: number;
                   "steps"?: Array<Record<string, unknown>>;
@@ -53135,6 +54940,10 @@ export interface operations {
               "ref_key"?: string;
               "teardown"?: Array<{
                 "assertions"?: Array<Record<string, unknown>>;
+                "attribution"?: ({
+                  "hierarchy_path"?: string;
+                  "page_name"?: string;
+                }) | null;
                 "auth"?: ({
                   "domain"?: string;
                   "password"?: string;
@@ -53151,10 +54960,15 @@ export interface operations {
                   "screenshot"?: boolean;
                 }) | null;
                 "control"?: ({
+                  "branches"?: Array<Record<string, unknown>>;
+                  "cases"?: Array<Record<string, unknown>>;
+                  "concurrency"?: number;
                   "condition"?: (Record<string, unknown>) | null;
                   "count"?: number;
+                  "default"?: Array<Record<string, unknown>>;
                   "do_while"?: boolean;
                   "else"?: Array<Record<string, unknown>>;
+                  "fail_fast"?: boolean;
                   "for_each"?: (Record<string, unknown>) | null;
                   "max_iterations"?: number;
                   "steps"?: Array<Record<string, unknown>>;
@@ -54056,6 +55870,10 @@ export interface operations {
           "script"?: {
             "actions"?: Array<{
               "assertions"?: Array<Record<string, unknown>>;
+              "attribution"?: ({
+                "hierarchy_path"?: string;
+                "page_name"?: string;
+              }) | null;
               "auth"?: ({
                 "domain"?: string;
                 "password"?: string;
@@ -54072,10 +55890,15 @@ export interface operations {
                 "screenshot"?: boolean;
               }) | null;
               "control"?: ({
+                "branches"?: Array<Record<string, unknown>>;
+                "cases"?: Array<Record<string, unknown>>;
+                "concurrency"?: number;
                 "condition"?: (Record<string, unknown>) | null;
                 "count"?: number;
+                "default"?: Array<Record<string, unknown>>;
                 "do_while"?: boolean;
                 "else"?: Array<Record<string, unknown>>;
+                "fail_fast"?: boolean;
                 "for_each"?: (Record<string, unknown>) | null;
                 "max_iterations"?: number;
                 "steps"?: Array<Record<string, unknown>>;
@@ -54355,6 +56178,9 @@ export interface operations {
                 "tps"?: number;
                 "type"?: string;
               };
+              "results"?: {
+                "message_detail"?: (Record<string, unknown>) | null;
+              };
               "run_logic"?: {
                 "action_sequence"?: Array<string>;
                 "auto_transactions"?: string;
@@ -54442,10 +56268,21 @@ export interface operations {
               "stop_on_max_errors"?: boolean;
               "stop_on_sla_breach"?: boolean;
               "target_average_tps"?: (number) | null;
+              "transaction_rules"?: Array<{
+                "comparator"?: string;
+                "metric"?: string;
+                "severity"?: string;
+                "threshold"?: number;
+                "transaction"?: string;
+              }>;
             }) | null;
             "id"?: string;
             "init"?: Array<{
               "assertions"?: Array<Record<string, unknown>>;
+              "attribution"?: ({
+                "hierarchy_path"?: string;
+                "page_name"?: string;
+              }) | null;
               "auth"?: ({
                 "domain"?: string;
                 "password"?: string;
@@ -54462,10 +56299,15 @@ export interface operations {
                 "screenshot"?: boolean;
               }) | null;
               "control"?: ({
+                "branches"?: Array<Record<string, unknown>>;
+                "cases"?: Array<Record<string, unknown>>;
+                "concurrency"?: number;
                 "condition"?: (Record<string, unknown>) | null;
                 "count"?: number;
+                "default"?: Array<Record<string, unknown>>;
                 "do_while"?: boolean;
                 "else"?: Array<Record<string, unknown>>;
+                "fail_fast"?: boolean;
                 "for_each"?: (Record<string, unknown>) | null;
                 "max_iterations"?: number;
                 "steps"?: Array<Record<string, unknown>>;
@@ -54555,6 +56397,10 @@ export interface operations {
             "ref_key"?: string;
             "teardown"?: Array<{
               "assertions"?: Array<Record<string, unknown>>;
+              "attribution"?: ({
+                "hierarchy_path"?: string;
+                "page_name"?: string;
+              }) | null;
               "auth"?: ({
                 "domain"?: string;
                 "password"?: string;
@@ -54571,10 +56417,15 @@ export interface operations {
                 "screenshot"?: boolean;
               }) | null;
               "control"?: ({
+                "branches"?: Array<Record<string, unknown>>;
+                "cases"?: Array<Record<string, unknown>>;
+                "concurrency"?: number;
                 "condition"?: (Record<string, unknown>) | null;
                 "count"?: number;
+                "default"?: Array<Record<string, unknown>>;
                 "do_while"?: boolean;
                 "else"?: Array<Record<string, unknown>>;
+                "fail_fast"?: boolean;
                 "for_each"?: (Record<string, unknown>) | null;
                 "max_iterations"?: number;
                 "steps"?: Array<Record<string, unknown>>;
@@ -55215,6 +57066,13 @@ export interface operations {
                 "stop_on_max_errors"?: boolean;
                 "stop_on_sla_breach"?: boolean;
                 "target_average_tps"?: (number) | null;
+                "transaction_rules"?: Array<{
+                  "comparator": string;
+                  "metric": string;
+                  "severity"?: string;
+                  "threshold": number;
+                  "transaction": string;
+                }>;
               }) | null;
               "goal_targets"?: Record<string, {
                 "group": string;
@@ -55277,6 +57135,7 @@ export interface operations {
                 "script_id": string;
                 "script_name": string;
                 "stages"?: Array<Record<string, unknown>>;
+                "start_offset"?: string;
                 "target_duration"?: string;
                 "vusers": number;
               }>;
@@ -55302,6 +57161,7 @@ export interface operations {
                   "samples": number;
                 }) | null;
                 "browser_by_device"?: Record<string, (Record<string, unknown>) | null>;
+                "by_region"?: Record<string, (Record<string, unknown>) | null>;
                 "capacity_status"?: ({
                   "allocated_vusers": number;
                   "available_generators": number;
@@ -55486,6 +57346,29 @@ export interface operations {
                   "device_profile"?: string;
                   "device_tier"?: string;
                   "samples": number;
+                }) | null>;
+                "by_region"?: Record<string, ({
+                  "avg_connect_ms"?: number;
+                  "avg_dns_ms"?: number;
+                  "avg_ms": number;
+                  "avg_tls_ms"?: number;
+                  "avg_ttfb_ms"?: number;
+                  "correlation_count"?: number;
+                  "correlation_ids"?: Array<string>;
+                  "count": number;
+                  "dependency_target"?: string;
+                  "dependency_type"?: string;
+                  "errors": number;
+                  "last_error_at"?: string;
+                  "last_error_message"?: string;
+                  "last_status_code"?: number;
+                  "name": string;
+                  "p50_ms": number;
+                  "p90_ms": number;
+                  "p95_ms"?: number;
+                  "p99_ms": number;
+                  "server_telemetry"?: (Record<string, unknown>) | null;
+                  "tps": number;
                 }) | null>;
                 "capacity_status"?: ({
                   "allocated_vusers": number;
@@ -56330,6 +58213,13 @@ export interface operations {
                 "stop_on_max_errors"?: boolean;
                 "stop_on_sla_breach"?: boolean;
                 "target_average_tps"?: (number) | null;
+                "transaction_rules"?: Array<{
+                  "comparator": string;
+                  "metric": string;
+                  "severity"?: string;
+                  "threshold": number;
+                  "transaction": string;
+                }>;
               }) | null;
               "goal_targets"?: Record<string, {
                 "group": string;
@@ -56392,6 +58282,7 @@ export interface operations {
                 "script_id": string;
                 "script_name": string;
                 "stages"?: Array<Record<string, unknown>>;
+                "start_offset"?: string;
                 "target_duration"?: string;
                 "vusers": number;
               }>;
@@ -56417,6 +58308,7 @@ export interface operations {
                   "samples": number;
                 }) | null;
                 "browser_by_device"?: Record<string, (Record<string, unknown>) | null>;
+                "by_region"?: Record<string, (Record<string, unknown>) | null>;
                 "capacity_status"?: ({
                   "allocated_vusers": number;
                   "available_generators": number;
@@ -56601,6 +58493,29 @@ export interface operations {
                   "device_profile"?: string;
                   "device_tier"?: string;
                   "samples": number;
+                }) | null>;
+                "by_region"?: Record<string, ({
+                  "avg_connect_ms"?: number;
+                  "avg_dns_ms"?: number;
+                  "avg_ms": number;
+                  "avg_tls_ms"?: number;
+                  "avg_ttfb_ms"?: number;
+                  "correlation_count"?: number;
+                  "correlation_ids"?: Array<string>;
+                  "count": number;
+                  "dependency_target"?: string;
+                  "dependency_type"?: string;
+                  "errors": number;
+                  "last_error_at"?: string;
+                  "last_error_message"?: string;
+                  "last_status_code"?: number;
+                  "name": string;
+                  "p50_ms": number;
+                  "p90_ms": number;
+                  "p95_ms"?: number;
+                  "p99_ms": number;
+                  "server_telemetry"?: (Record<string, unknown>) | null;
+                  "tps": number;
                 }) | null>;
                 "capacity_status"?: ({
                   "allocated_vusers": number;
@@ -57445,6 +59360,13 @@ export interface operations {
                 "stop_on_max_errors"?: boolean;
                 "stop_on_sla_breach"?: boolean;
                 "target_average_tps"?: (number) | null;
+                "transaction_rules"?: Array<{
+                  "comparator": string;
+                  "metric": string;
+                  "severity"?: string;
+                  "threshold": number;
+                  "transaction": string;
+                }>;
               }) | null;
               "goal_targets"?: Record<string, {
                 "group": string;
@@ -57507,6 +59429,7 @@ export interface operations {
                 "script_id": string;
                 "script_name": string;
                 "stages"?: Array<Record<string, unknown>>;
+                "start_offset"?: string;
                 "target_duration"?: string;
                 "vusers": number;
               }>;
@@ -57532,6 +59455,7 @@ export interface operations {
                   "samples": number;
                 }) | null;
                 "browser_by_device"?: Record<string, (Record<string, unknown>) | null>;
+                "by_region"?: Record<string, (Record<string, unknown>) | null>;
                 "capacity_status"?: ({
                   "allocated_vusers": number;
                   "available_generators": number;
@@ -57716,6 +59640,29 @@ export interface operations {
                   "device_profile"?: string;
                   "device_tier"?: string;
                   "samples": number;
+                }) | null>;
+                "by_region"?: Record<string, ({
+                  "avg_connect_ms"?: number;
+                  "avg_dns_ms"?: number;
+                  "avg_ms": number;
+                  "avg_tls_ms"?: number;
+                  "avg_ttfb_ms"?: number;
+                  "correlation_count"?: number;
+                  "correlation_ids"?: Array<string>;
+                  "count": number;
+                  "dependency_target"?: string;
+                  "dependency_type"?: string;
+                  "errors": number;
+                  "last_error_at"?: string;
+                  "last_error_message"?: string;
+                  "last_status_code"?: number;
+                  "name": string;
+                  "p50_ms": number;
+                  "p90_ms": number;
+                  "p95_ms"?: number;
+                  "p99_ms": number;
+                  "server_telemetry"?: (Record<string, unknown>) | null;
+                  "tps": number;
                 }) | null>;
                 "capacity_status"?: ({
                   "allocated_vusers": number;
@@ -58560,6 +60507,13 @@ export interface operations {
                 "stop_on_max_errors"?: boolean;
                 "stop_on_sla_breach"?: boolean;
                 "target_average_tps"?: (number) | null;
+                "transaction_rules"?: Array<{
+                  "comparator": string;
+                  "metric": string;
+                  "severity"?: string;
+                  "threshold": number;
+                  "transaction": string;
+                }>;
               }) | null;
               "goal_targets"?: Record<string, {
                 "group": string;
@@ -58622,6 +60576,7 @@ export interface operations {
                 "script_id": string;
                 "script_name": string;
                 "stages"?: Array<Record<string, unknown>>;
+                "start_offset"?: string;
                 "target_duration"?: string;
                 "vusers": number;
               }>;
@@ -58647,6 +60602,7 @@ export interface operations {
                   "samples": number;
                 }) | null;
                 "browser_by_device"?: Record<string, (Record<string, unknown>) | null>;
+                "by_region"?: Record<string, (Record<string, unknown>) | null>;
                 "capacity_status"?: ({
                   "allocated_vusers": number;
                   "available_generators": number;
@@ -58831,6 +60787,29 @@ export interface operations {
                   "device_profile"?: string;
                   "device_tier"?: string;
                   "samples": number;
+                }) | null>;
+                "by_region"?: Record<string, ({
+                  "avg_connect_ms"?: number;
+                  "avg_dns_ms"?: number;
+                  "avg_ms": number;
+                  "avg_tls_ms"?: number;
+                  "avg_ttfb_ms"?: number;
+                  "correlation_count"?: number;
+                  "correlation_ids"?: Array<string>;
+                  "count": number;
+                  "dependency_target"?: string;
+                  "dependency_type"?: string;
+                  "errors": number;
+                  "last_error_at"?: string;
+                  "last_error_message"?: string;
+                  "last_status_code"?: number;
+                  "name": string;
+                  "p50_ms": number;
+                  "p90_ms": number;
+                  "p95_ms"?: number;
+                  "p99_ms": number;
+                  "server_telemetry"?: (Record<string, unknown>) | null;
+                  "tps": number;
                 }) | null>;
                 "capacity_status"?: ({
                   "allocated_vusers": number;
@@ -59675,6 +61654,13 @@ export interface operations {
                 "stop_on_max_errors"?: boolean;
                 "stop_on_sla_breach"?: boolean;
                 "target_average_tps"?: (number) | null;
+                "transaction_rules"?: Array<{
+                  "comparator": string;
+                  "metric": string;
+                  "severity"?: string;
+                  "threshold": number;
+                  "transaction": string;
+                }>;
               }) | null;
               "goal_targets"?: Record<string, {
                 "group": string;
@@ -59737,6 +61723,7 @@ export interface operations {
                 "script_id": string;
                 "script_name": string;
                 "stages"?: Array<Record<string, unknown>>;
+                "start_offset"?: string;
                 "target_duration"?: string;
                 "vusers": number;
               }>;
@@ -59762,6 +61749,7 @@ export interface operations {
                   "samples": number;
                 }) | null;
                 "browser_by_device"?: Record<string, (Record<string, unknown>) | null>;
+                "by_region"?: Record<string, (Record<string, unknown>) | null>;
                 "capacity_status"?: ({
                   "allocated_vusers": number;
                   "available_generators": number;
@@ -59946,6 +61934,29 @@ export interface operations {
                   "device_profile"?: string;
                   "device_tier"?: string;
                   "samples": number;
+                }) | null>;
+                "by_region"?: Record<string, ({
+                  "avg_connect_ms"?: number;
+                  "avg_dns_ms"?: number;
+                  "avg_ms": number;
+                  "avg_tls_ms"?: number;
+                  "avg_ttfb_ms"?: number;
+                  "correlation_count"?: number;
+                  "correlation_ids"?: Array<string>;
+                  "count": number;
+                  "dependency_target"?: string;
+                  "dependency_type"?: string;
+                  "errors": number;
+                  "last_error_at"?: string;
+                  "last_error_message"?: string;
+                  "last_status_code"?: number;
+                  "name": string;
+                  "p50_ms": number;
+                  "p90_ms": number;
+                  "p95_ms"?: number;
+                  "p99_ms": number;
+                  "server_telemetry"?: (Record<string, unknown>) | null;
+                  "tps": number;
                 }) | null>;
                 "capacity_status"?: ({
                   "allocated_vusers": number;
@@ -60604,6 +62615,10 @@ export interface operations {
           "script"?: ({
             "actions"?: Array<{
               "assertions"?: Array<Record<string, unknown>>;
+              "attribution"?: ({
+                "hierarchy_path"?: string;
+                "page_name"?: string;
+              }) | null;
               "auth"?: ({
                 "domain"?: string;
                 "password"?: string;
@@ -60620,10 +62635,15 @@ export interface operations {
                 "screenshot"?: boolean;
               }) | null;
               "control"?: ({
+                "branches"?: Array<Record<string, unknown>>;
+                "cases"?: Array<Record<string, unknown>>;
+                "concurrency"?: number;
                 "condition"?: (Record<string, unknown>) | null;
                 "count"?: number;
+                "default"?: Array<Record<string, unknown>>;
                 "do_while"?: boolean;
                 "else"?: Array<Record<string, unknown>>;
+                "fail_fast"?: boolean;
                 "for_each"?: (Record<string, unknown>) | null;
                 "max_iterations"?: number;
                 "steps"?: Array<Record<string, unknown>>;
@@ -60903,6 +62923,9 @@ export interface operations {
                 "tps"?: number;
                 "type"?: string;
               };
+              "results"?: {
+                "message_detail"?: (Record<string, unknown>) | null;
+              };
               "run_logic"?: {
                 "action_sequence"?: Array<string>;
                 "auto_transactions"?: string;
@@ -60990,10 +63013,21 @@ export interface operations {
               "stop_on_max_errors"?: boolean;
               "stop_on_sla_breach"?: boolean;
               "target_average_tps"?: (number) | null;
+              "transaction_rules"?: Array<{
+                "comparator"?: string;
+                "metric"?: string;
+                "severity"?: string;
+                "threshold"?: number;
+                "transaction"?: string;
+              }>;
             }) | null;
             "id"?: string;
             "init"?: Array<{
               "assertions"?: Array<Record<string, unknown>>;
+              "attribution"?: ({
+                "hierarchy_path"?: string;
+                "page_name"?: string;
+              }) | null;
               "auth"?: ({
                 "domain"?: string;
                 "password"?: string;
@@ -61010,10 +63044,15 @@ export interface operations {
                 "screenshot"?: boolean;
               }) | null;
               "control"?: ({
+                "branches"?: Array<Record<string, unknown>>;
+                "cases"?: Array<Record<string, unknown>>;
+                "concurrency"?: number;
                 "condition"?: (Record<string, unknown>) | null;
                 "count"?: number;
+                "default"?: Array<Record<string, unknown>>;
                 "do_while"?: boolean;
                 "else"?: Array<Record<string, unknown>>;
+                "fail_fast"?: boolean;
                 "for_each"?: (Record<string, unknown>) | null;
                 "max_iterations"?: number;
                 "steps"?: Array<Record<string, unknown>>;
@@ -61103,6 +63142,10 @@ export interface operations {
             "ref_key"?: string;
             "teardown"?: Array<{
               "assertions"?: Array<Record<string, unknown>>;
+              "attribution"?: ({
+                "hierarchy_path"?: string;
+                "page_name"?: string;
+              }) | null;
               "auth"?: ({
                 "domain"?: string;
                 "password"?: string;
@@ -61119,10 +63162,15 @@ export interface operations {
                 "screenshot"?: boolean;
               }) | null;
               "control"?: ({
+                "branches"?: Array<Record<string, unknown>>;
+                "cases"?: Array<Record<string, unknown>>;
+                "concurrency"?: number;
                 "condition"?: (Record<string, unknown>) | null;
                 "count"?: number;
+                "default"?: Array<Record<string, unknown>>;
                 "do_while"?: boolean;
                 "else"?: Array<Record<string, unknown>>;
+                "fail_fast"?: boolean;
                 "for_each"?: (Record<string, unknown>) | null;
                 "max_iterations"?: number;
                 "steps"?: Array<Record<string, unknown>>;
@@ -61279,6 +63327,10 @@ export interface operations {
           "script"?: ({
             "actions"?: Array<{
               "assertions"?: Array<Record<string, unknown>>;
+              "attribution"?: ({
+                "hierarchy_path"?: string;
+                "page_name"?: string;
+              }) | null;
               "auth"?: ({
                 "domain"?: string;
                 "password"?: string;
@@ -61295,10 +63347,15 @@ export interface operations {
                 "screenshot"?: boolean;
               }) | null;
               "control"?: ({
+                "branches"?: Array<Record<string, unknown>>;
+                "cases"?: Array<Record<string, unknown>>;
+                "concurrency"?: number;
                 "condition"?: (Record<string, unknown>) | null;
                 "count"?: number;
+                "default"?: Array<Record<string, unknown>>;
                 "do_while"?: boolean;
                 "else"?: Array<Record<string, unknown>>;
+                "fail_fast"?: boolean;
                 "for_each"?: (Record<string, unknown>) | null;
                 "max_iterations"?: number;
                 "steps"?: Array<Record<string, unknown>>;
@@ -61578,6 +63635,9 @@ export interface operations {
                 "tps"?: number;
                 "type"?: string;
               };
+              "results"?: {
+                "message_detail"?: (Record<string, unknown>) | null;
+              };
               "run_logic"?: {
                 "action_sequence"?: Array<string>;
                 "auto_transactions"?: string;
@@ -61665,10 +63725,21 @@ export interface operations {
               "stop_on_max_errors"?: boolean;
               "stop_on_sla_breach"?: boolean;
               "target_average_tps"?: (number) | null;
+              "transaction_rules"?: Array<{
+                "comparator"?: string;
+                "metric"?: string;
+                "severity"?: string;
+                "threshold"?: number;
+                "transaction"?: string;
+              }>;
             }) | null;
             "id"?: string;
             "init"?: Array<{
               "assertions"?: Array<Record<string, unknown>>;
+              "attribution"?: ({
+                "hierarchy_path"?: string;
+                "page_name"?: string;
+              }) | null;
               "auth"?: ({
                 "domain"?: string;
                 "password"?: string;
@@ -61685,10 +63756,15 @@ export interface operations {
                 "screenshot"?: boolean;
               }) | null;
               "control"?: ({
+                "branches"?: Array<Record<string, unknown>>;
+                "cases"?: Array<Record<string, unknown>>;
+                "concurrency"?: number;
                 "condition"?: (Record<string, unknown>) | null;
                 "count"?: number;
+                "default"?: Array<Record<string, unknown>>;
                 "do_while"?: boolean;
                 "else"?: Array<Record<string, unknown>>;
+                "fail_fast"?: boolean;
                 "for_each"?: (Record<string, unknown>) | null;
                 "max_iterations"?: number;
                 "steps"?: Array<Record<string, unknown>>;
@@ -61778,6 +63854,10 @@ export interface operations {
             "ref_key"?: string;
             "teardown"?: Array<{
               "assertions"?: Array<Record<string, unknown>>;
+              "attribution"?: ({
+                "hierarchy_path"?: string;
+                "page_name"?: string;
+              }) | null;
               "auth"?: ({
                 "domain"?: string;
                 "password"?: string;
@@ -61794,10 +63874,15 @@ export interface operations {
                 "screenshot"?: boolean;
               }) | null;
               "control"?: ({
+                "branches"?: Array<Record<string, unknown>>;
+                "cases"?: Array<Record<string, unknown>>;
+                "concurrency"?: number;
                 "condition"?: (Record<string, unknown>) | null;
                 "count"?: number;
+                "default"?: Array<Record<string, unknown>>;
                 "do_while"?: boolean;
                 "else"?: Array<Record<string, unknown>>;
+                "fail_fast"?: boolean;
                 "for_each"?: (Record<string, unknown>) | null;
                 "max_iterations"?: number;
                 "steps"?: Array<Record<string, unknown>>;
@@ -63234,6 +65319,10 @@ export interface operations {
           "script"?: ({
             "actions"?: Array<{
               "assertions"?: Array<Record<string, unknown>>;
+              "attribution"?: ({
+                "hierarchy_path"?: string;
+                "page_name"?: string;
+              }) | null;
               "auth"?: ({
                 "domain"?: string;
                 "password"?: string;
@@ -63250,10 +65339,15 @@ export interface operations {
                 "screenshot"?: boolean;
               }) | null;
               "control"?: ({
+                "branches"?: Array<Record<string, unknown>>;
+                "cases"?: Array<Record<string, unknown>>;
+                "concurrency"?: number;
                 "condition"?: (Record<string, unknown>) | null;
                 "count"?: number;
+                "default"?: Array<Record<string, unknown>>;
                 "do_while"?: boolean;
                 "else"?: Array<Record<string, unknown>>;
+                "fail_fast"?: boolean;
                 "for_each"?: (Record<string, unknown>) | null;
                 "max_iterations"?: number;
                 "steps"?: Array<Record<string, unknown>>;
@@ -63533,6 +65627,9 @@ export interface operations {
                 "tps"?: number;
                 "type"?: string;
               };
+              "results"?: {
+                "message_detail"?: (Record<string, unknown>) | null;
+              };
               "run_logic"?: {
                 "action_sequence"?: Array<string>;
                 "auto_transactions"?: string;
@@ -63620,10 +65717,21 @@ export interface operations {
               "stop_on_max_errors"?: boolean;
               "stop_on_sla_breach"?: boolean;
               "target_average_tps"?: (number) | null;
+              "transaction_rules"?: Array<{
+                "comparator"?: string;
+                "metric"?: string;
+                "severity"?: string;
+                "threshold"?: number;
+                "transaction"?: string;
+              }>;
             }) | null;
             "id"?: string;
             "init"?: Array<{
               "assertions"?: Array<Record<string, unknown>>;
+              "attribution"?: ({
+                "hierarchy_path"?: string;
+                "page_name"?: string;
+              }) | null;
               "auth"?: ({
                 "domain"?: string;
                 "password"?: string;
@@ -63640,10 +65748,15 @@ export interface operations {
                 "screenshot"?: boolean;
               }) | null;
               "control"?: ({
+                "branches"?: Array<Record<string, unknown>>;
+                "cases"?: Array<Record<string, unknown>>;
+                "concurrency"?: number;
                 "condition"?: (Record<string, unknown>) | null;
                 "count"?: number;
+                "default"?: Array<Record<string, unknown>>;
                 "do_while"?: boolean;
                 "else"?: Array<Record<string, unknown>>;
+                "fail_fast"?: boolean;
                 "for_each"?: (Record<string, unknown>) | null;
                 "max_iterations"?: number;
                 "steps"?: Array<Record<string, unknown>>;
@@ -63733,6 +65846,10 @@ export interface operations {
             "ref_key"?: string;
             "teardown"?: Array<{
               "assertions"?: Array<Record<string, unknown>>;
+              "attribution"?: ({
+                "hierarchy_path"?: string;
+                "page_name"?: string;
+              }) | null;
               "auth"?: ({
                 "domain"?: string;
                 "password"?: string;
@@ -63749,10 +65866,15 @@ export interface operations {
                 "screenshot"?: boolean;
               }) | null;
               "control"?: ({
+                "branches"?: Array<Record<string, unknown>>;
+                "cases"?: Array<Record<string, unknown>>;
+                "concurrency"?: number;
                 "condition"?: (Record<string, unknown>) | null;
                 "count"?: number;
+                "default"?: Array<Record<string, unknown>>;
                 "do_while"?: boolean;
                 "else"?: Array<Record<string, unknown>>;
+                "fail_fast"?: boolean;
                 "for_each"?: (Record<string, unknown>) | null;
                 "max_iterations"?: number;
                 "steps"?: Array<Record<string, unknown>>;
@@ -64527,6 +66649,7 @@ export interface operations {
           "scripts": Array<{
             "actions"?: Array<{
               "assertions"?: Array<Record<string, unknown>>;
+              "attribution"?: (Record<string, unknown>) | null;
               "auth"?: (Record<string, unknown>) | null;
               "body"?: string;
               "body_encoding"?: string;
@@ -64786,6 +66909,9 @@ export interface operations {
                 "tps"?: number;
                 "type"?: string;
               };
+              "results"?: {
+                "message_detail"?: (Record<string, unknown>) | null;
+              };
               "run_logic"?: {
                 "action_sequence"?: Array<string>;
                 "auto_transactions"?: string;
@@ -64873,10 +66999,12 @@ export interface operations {
               "stop_on_max_errors"?: boolean;
               "stop_on_sla_breach"?: boolean;
               "target_average_tps"?: (number) | null;
+              "transaction_rules"?: Array<Record<string, unknown>>;
             }) | null;
             "id"?: string;
             "init"?: Array<{
               "assertions"?: Array<Record<string, unknown>>;
+              "attribution"?: (Record<string, unknown>) | null;
               "auth"?: (Record<string, unknown>) | null;
               "body"?: string;
               "body_encoding"?: string;
@@ -64946,6 +67074,7 @@ export interface operations {
             "ref_key"?: string;
             "teardown"?: Array<{
               "assertions"?: Array<Record<string, unknown>>;
+              "attribution"?: (Record<string, unknown>) | null;
               "auth"?: (Record<string, unknown>) | null;
               "body"?: string;
               "body_encoding"?: string;
@@ -65032,6 +67161,10 @@ export interface operations {
           "scripts"?: Array<{
             "actions"?: Array<{
               "assertions"?: Array<Record<string, unknown>>;
+              "attribution"?: ({
+                "hierarchy_path"?: string;
+                "page_name"?: string;
+              }) | null;
               "auth"?: ({
                 "domain"?: string;
                 "password"?: string;
@@ -65048,10 +67181,15 @@ export interface operations {
                 "screenshot"?: boolean;
               }) | null;
               "control"?: ({
+                "branches"?: Array<Record<string, unknown>>;
+                "cases"?: Array<Record<string, unknown>>;
+                "concurrency"?: number;
                 "condition"?: (Record<string, unknown>) | null;
                 "count"?: number;
+                "default"?: Array<Record<string, unknown>>;
                 "do_while"?: boolean;
                 "else"?: Array<Record<string, unknown>>;
+                "fail_fast"?: boolean;
                 "for_each"?: (Record<string, unknown>) | null;
                 "max_iterations"?: number;
                 "steps"?: Array<Record<string, unknown>>;
@@ -65331,6 +67469,9 @@ export interface operations {
                 "tps"?: number;
                 "type"?: string;
               };
+              "results"?: {
+                "message_detail"?: (Record<string, unknown>) | null;
+              };
               "run_logic"?: {
                 "action_sequence"?: Array<string>;
                 "auto_transactions"?: string;
@@ -65418,10 +67559,21 @@ export interface operations {
               "stop_on_max_errors"?: boolean;
               "stop_on_sla_breach"?: boolean;
               "target_average_tps"?: (number) | null;
+              "transaction_rules"?: Array<{
+                "comparator"?: string;
+                "metric"?: string;
+                "severity"?: string;
+                "threshold"?: number;
+                "transaction"?: string;
+              }>;
             }) | null;
             "id"?: string;
             "init"?: Array<{
               "assertions"?: Array<Record<string, unknown>>;
+              "attribution"?: ({
+                "hierarchy_path"?: string;
+                "page_name"?: string;
+              }) | null;
               "auth"?: ({
                 "domain"?: string;
                 "password"?: string;
@@ -65438,10 +67590,15 @@ export interface operations {
                 "screenshot"?: boolean;
               }) | null;
               "control"?: ({
+                "branches"?: Array<Record<string, unknown>>;
+                "cases"?: Array<Record<string, unknown>>;
+                "concurrency"?: number;
                 "condition"?: (Record<string, unknown>) | null;
                 "count"?: number;
+                "default"?: Array<Record<string, unknown>>;
                 "do_while"?: boolean;
                 "else"?: Array<Record<string, unknown>>;
+                "fail_fast"?: boolean;
                 "for_each"?: (Record<string, unknown>) | null;
                 "max_iterations"?: number;
                 "steps"?: Array<Record<string, unknown>>;
@@ -65531,6 +67688,10 @@ export interface operations {
             "ref_key"?: string;
             "teardown"?: Array<{
               "assertions"?: Array<Record<string, unknown>>;
+              "attribution"?: ({
+                "hierarchy_path"?: string;
+                "page_name"?: string;
+              }) | null;
               "auth"?: ({
                 "domain"?: string;
                 "password"?: string;
@@ -65547,10 +67708,15 @@ export interface operations {
                 "screenshot"?: boolean;
               }) | null;
               "control"?: ({
+                "branches"?: Array<Record<string, unknown>>;
+                "cases"?: Array<Record<string, unknown>>;
+                "concurrency"?: number;
                 "condition"?: (Record<string, unknown>) | null;
                 "count"?: number;
+                "default"?: Array<Record<string, unknown>>;
                 "do_while"?: boolean;
                 "else"?: Array<Record<string, unknown>>;
+                "fail_fast"?: boolean;
                 "for_each"?: (Record<string, unknown>) | null;
                 "max_iterations"?: number;
                 "steps"?: Array<Record<string, unknown>>;
@@ -65660,6 +67826,7 @@ export interface operations {
           "script"?: {
             "actions"?: Array<{
               "assertions"?: Array<Record<string, unknown>>;
+              "attribution"?: (Record<string, unknown>) | null;
               "auth"?: (Record<string, unknown>) | null;
               "body"?: string;
               "body_encoding"?: string;
@@ -65704,6 +67871,7 @@ export interface operations {
               "network"?: Record<string, unknown>;
               "observability"?: Record<string, unknown>;
               "pacing"?: Record<string, unknown>;
+              "results"?: Record<string, unknown>;
               "run_logic"?: Record<string, unknown>;
               "sapgui"?: Record<string, unknown>;
               "soap"?: Record<string, unknown>;
@@ -65742,10 +67910,12 @@ export interface operations {
               "stop_on_max_errors"?: boolean;
               "stop_on_sla_breach"?: boolean;
               "target_average_tps"?: (number) | null;
+              "transaction_rules"?: Array<Record<string, unknown>>;
             }) | null;
             "id"?: string;
             "init"?: Array<{
               "assertions"?: Array<Record<string, unknown>>;
+              "attribution"?: (Record<string, unknown>) | null;
               "auth"?: (Record<string, unknown>) | null;
               "body"?: string;
               "body_encoding"?: string;
@@ -65809,6 +67979,7 @@ export interface operations {
             "ref_key"?: string;
             "teardown"?: Array<{
               "assertions"?: Array<Record<string, unknown>>;
+              "attribution"?: (Record<string, unknown>) | null;
               "auth"?: (Record<string, unknown>) | null;
               "body"?: string;
               "body_encoding"?: string;
@@ -66648,6 +68819,13 @@ export interface operations {
                 "stop_on_max_errors"?: boolean;
                 "stop_on_sla_breach"?: boolean;
                 "target_average_tps"?: (number) | null;
+                "transaction_rules"?: Array<{
+                  "comparator": string;
+                  "metric": string;
+                  "severity"?: string;
+                  "threshold": number;
+                  "transaction": string;
+                }>;
               }) | null;
               "groups": Array<{
                 "assignment"?: ({
@@ -66689,6 +68867,7 @@ export interface operations {
                 }) | null;
                 "script_id": string;
                 "stages"?: Array<Record<string, unknown>>;
+                "start_offset"?: string;
                 "vusers": number;
               }>;
               "name": string;
@@ -67077,6 +69256,10 @@ export interface operations {
           "script": ({
             "actions"?: Array<{
               "assertions"?: Array<Record<string, unknown>>;
+              "attribution"?: ({
+                "hierarchy_path"?: string;
+                "page_name"?: string;
+              }) | null;
               "auth"?: ({
                 "domain"?: string;
                 "password"?: string;
@@ -67093,10 +69276,15 @@ export interface operations {
                 "screenshot"?: boolean;
               }) | null;
               "control"?: ({
+                "branches"?: Array<Record<string, unknown>>;
+                "cases"?: Array<Record<string, unknown>>;
+                "concurrency"?: number;
                 "condition"?: (Record<string, unknown>) | null;
                 "count"?: number;
+                "default"?: Array<Record<string, unknown>>;
                 "do_while"?: boolean;
                 "else"?: Array<Record<string, unknown>>;
+                "fail_fast"?: boolean;
                 "for_each"?: (Record<string, unknown>) | null;
                 "max_iterations"?: number;
                 "steps"?: Array<Record<string, unknown>>;
@@ -67376,6 +69564,9 @@ export interface operations {
                 "tps"?: number;
                 "type"?: string;
               };
+              "results"?: {
+                "message_detail"?: (Record<string, unknown>) | null;
+              };
               "run_logic"?: {
                 "action_sequence"?: Array<string>;
                 "auto_transactions"?: string;
@@ -67463,10 +69654,21 @@ export interface operations {
               "stop_on_max_errors"?: boolean;
               "stop_on_sla_breach"?: boolean;
               "target_average_tps"?: (number) | null;
+              "transaction_rules"?: Array<{
+                "comparator"?: string;
+                "metric"?: string;
+                "severity"?: string;
+                "threshold"?: number;
+                "transaction"?: string;
+              }>;
             }) | null;
             "id"?: string;
             "init"?: Array<{
               "assertions"?: Array<Record<string, unknown>>;
+              "attribution"?: ({
+                "hierarchy_path"?: string;
+                "page_name"?: string;
+              }) | null;
               "auth"?: ({
                 "domain"?: string;
                 "password"?: string;
@@ -67483,10 +69685,15 @@ export interface operations {
                 "screenshot"?: boolean;
               }) | null;
               "control"?: ({
+                "branches"?: Array<Record<string, unknown>>;
+                "cases"?: Array<Record<string, unknown>>;
+                "concurrency"?: number;
                 "condition"?: (Record<string, unknown>) | null;
                 "count"?: number;
+                "default"?: Array<Record<string, unknown>>;
                 "do_while"?: boolean;
                 "else"?: Array<Record<string, unknown>>;
+                "fail_fast"?: boolean;
                 "for_each"?: (Record<string, unknown>) | null;
                 "max_iterations"?: number;
                 "steps"?: Array<Record<string, unknown>>;
@@ -67576,6 +69783,10 @@ export interface operations {
             "ref_key"?: string;
             "teardown"?: Array<{
               "assertions"?: Array<Record<string, unknown>>;
+              "attribution"?: ({
+                "hierarchy_path"?: string;
+                "page_name"?: string;
+              }) | null;
               "auth"?: ({
                 "domain"?: string;
                 "password"?: string;
@@ -67592,10 +69803,15 @@ export interface operations {
                 "screenshot"?: boolean;
               }) | null;
               "control"?: ({
+                "branches"?: Array<Record<string, unknown>>;
+                "cases"?: Array<Record<string, unknown>>;
+                "concurrency"?: number;
                 "condition"?: (Record<string, unknown>) | null;
                 "count"?: number;
+                "default"?: Array<Record<string, unknown>>;
                 "do_while"?: boolean;
                 "else"?: Array<Record<string, unknown>>;
+                "fail_fast"?: boolean;
                 "for_each"?: (Record<string, unknown>) | null;
                 "max_iterations"?: number;
                 "steps"?: Array<Record<string, unknown>>;
@@ -68069,6 +70285,10 @@ export interface operations {
           "script"?: ({
             "actions"?: Array<{
               "assertions"?: Array<Record<string, unknown>>;
+              "attribution"?: ({
+                "hierarchy_path"?: string;
+                "page_name"?: string;
+              }) | null;
               "auth"?: ({
                 "domain"?: string;
                 "password"?: string;
@@ -68085,10 +70305,15 @@ export interface operations {
                 "screenshot"?: boolean;
               }) | null;
               "control"?: ({
+                "branches"?: Array<Record<string, unknown>>;
+                "cases"?: Array<Record<string, unknown>>;
+                "concurrency"?: number;
                 "condition"?: (Record<string, unknown>) | null;
                 "count"?: number;
+                "default"?: Array<Record<string, unknown>>;
                 "do_while"?: boolean;
                 "else"?: Array<Record<string, unknown>>;
+                "fail_fast"?: boolean;
                 "for_each"?: (Record<string, unknown>) | null;
                 "max_iterations"?: number;
                 "steps"?: Array<Record<string, unknown>>;
@@ -68368,6 +70593,9 @@ export interface operations {
                 "tps"?: number;
                 "type"?: string;
               };
+              "results"?: {
+                "message_detail"?: (Record<string, unknown>) | null;
+              };
               "run_logic"?: {
                 "action_sequence"?: Array<string>;
                 "auto_transactions"?: string;
@@ -68455,10 +70683,21 @@ export interface operations {
               "stop_on_max_errors"?: boolean;
               "stop_on_sla_breach"?: boolean;
               "target_average_tps"?: (number) | null;
+              "transaction_rules"?: Array<{
+                "comparator"?: string;
+                "metric"?: string;
+                "severity"?: string;
+                "threshold"?: number;
+                "transaction"?: string;
+              }>;
             }) | null;
             "id"?: string;
             "init"?: Array<{
               "assertions"?: Array<Record<string, unknown>>;
+              "attribution"?: ({
+                "hierarchy_path"?: string;
+                "page_name"?: string;
+              }) | null;
               "auth"?: ({
                 "domain"?: string;
                 "password"?: string;
@@ -68475,10 +70714,15 @@ export interface operations {
                 "screenshot"?: boolean;
               }) | null;
               "control"?: ({
+                "branches"?: Array<Record<string, unknown>>;
+                "cases"?: Array<Record<string, unknown>>;
+                "concurrency"?: number;
                 "condition"?: (Record<string, unknown>) | null;
                 "count"?: number;
+                "default"?: Array<Record<string, unknown>>;
                 "do_while"?: boolean;
                 "else"?: Array<Record<string, unknown>>;
+                "fail_fast"?: boolean;
                 "for_each"?: (Record<string, unknown>) | null;
                 "max_iterations"?: number;
                 "steps"?: Array<Record<string, unknown>>;
@@ -68568,6 +70812,10 @@ export interface operations {
             "ref_key"?: string;
             "teardown"?: Array<{
               "assertions"?: Array<Record<string, unknown>>;
+              "attribution"?: ({
+                "hierarchy_path"?: string;
+                "page_name"?: string;
+              }) | null;
               "auth"?: ({
                 "domain"?: string;
                 "password"?: string;
@@ -68584,10 +70832,15 @@ export interface operations {
                 "screenshot"?: boolean;
               }) | null;
               "control"?: ({
+                "branches"?: Array<Record<string, unknown>>;
+                "cases"?: Array<Record<string, unknown>>;
+                "concurrency"?: number;
                 "condition"?: (Record<string, unknown>) | null;
                 "count"?: number;
+                "default"?: Array<Record<string, unknown>>;
                 "do_while"?: boolean;
                 "else"?: Array<Record<string, unknown>>;
+                "fail_fast"?: boolean;
                 "for_each"?: (Record<string, unknown>) | null;
                 "max_iterations"?: number;
                 "steps"?: Array<Record<string, unknown>>;
@@ -69134,6 +71387,10 @@ export interface operations {
           "script"?: ({
             "actions"?: Array<{
               "assertions"?: Array<Record<string, unknown>>;
+              "attribution"?: ({
+                "hierarchy_path"?: string;
+                "page_name"?: string;
+              }) | null;
               "auth"?: ({
                 "domain"?: string;
                 "password"?: string;
@@ -69150,10 +71407,15 @@ export interface operations {
                 "screenshot"?: boolean;
               }) | null;
               "control"?: ({
+                "branches"?: Array<Record<string, unknown>>;
+                "cases"?: Array<Record<string, unknown>>;
+                "concurrency"?: number;
                 "condition"?: (Record<string, unknown>) | null;
                 "count"?: number;
+                "default"?: Array<Record<string, unknown>>;
                 "do_while"?: boolean;
                 "else"?: Array<Record<string, unknown>>;
+                "fail_fast"?: boolean;
                 "for_each"?: (Record<string, unknown>) | null;
                 "max_iterations"?: number;
                 "steps"?: Array<Record<string, unknown>>;
@@ -69433,6 +71695,9 @@ export interface operations {
                 "tps"?: number;
                 "type"?: string;
               };
+              "results"?: {
+                "message_detail"?: (Record<string, unknown>) | null;
+              };
               "run_logic"?: {
                 "action_sequence"?: Array<string>;
                 "auto_transactions"?: string;
@@ -69520,10 +71785,21 @@ export interface operations {
               "stop_on_max_errors"?: boolean;
               "stop_on_sla_breach"?: boolean;
               "target_average_tps"?: (number) | null;
+              "transaction_rules"?: Array<{
+                "comparator"?: string;
+                "metric"?: string;
+                "severity"?: string;
+                "threshold"?: number;
+                "transaction"?: string;
+              }>;
             }) | null;
             "id"?: string;
             "init"?: Array<{
               "assertions"?: Array<Record<string, unknown>>;
+              "attribution"?: ({
+                "hierarchy_path"?: string;
+                "page_name"?: string;
+              }) | null;
               "auth"?: ({
                 "domain"?: string;
                 "password"?: string;
@@ -69540,10 +71816,15 @@ export interface operations {
                 "screenshot"?: boolean;
               }) | null;
               "control"?: ({
+                "branches"?: Array<Record<string, unknown>>;
+                "cases"?: Array<Record<string, unknown>>;
+                "concurrency"?: number;
                 "condition"?: (Record<string, unknown>) | null;
                 "count"?: number;
+                "default"?: Array<Record<string, unknown>>;
                 "do_while"?: boolean;
                 "else"?: Array<Record<string, unknown>>;
+                "fail_fast"?: boolean;
                 "for_each"?: (Record<string, unknown>) | null;
                 "max_iterations"?: number;
                 "steps"?: Array<Record<string, unknown>>;
@@ -69633,6 +71914,10 @@ export interface operations {
             "ref_key"?: string;
             "teardown"?: Array<{
               "assertions"?: Array<Record<string, unknown>>;
+              "attribution"?: ({
+                "hierarchy_path"?: string;
+                "page_name"?: string;
+              }) | null;
               "auth"?: ({
                 "domain"?: string;
                 "password"?: string;
@@ -69649,10 +71934,15 @@ export interface operations {
                 "screenshot"?: boolean;
               }) | null;
               "control"?: ({
+                "branches"?: Array<Record<string, unknown>>;
+                "cases"?: Array<Record<string, unknown>>;
+                "concurrency"?: number;
                 "condition"?: (Record<string, unknown>) | null;
                 "count"?: number;
+                "default"?: Array<Record<string, unknown>>;
                 "do_while"?: boolean;
                 "else"?: Array<Record<string, unknown>>;
+                "fail_fast"?: boolean;
                 "for_each"?: (Record<string, unknown>) | null;
                 "max_iterations"?: number;
                 "steps"?: Array<Record<string, unknown>>;
@@ -70194,6 +72484,10 @@ export interface operations {
           "script"?: ({
             "actions"?: Array<{
               "assertions"?: Array<Record<string, unknown>>;
+              "attribution"?: ({
+                "hierarchy_path"?: string;
+                "page_name"?: string;
+              }) | null;
               "auth"?: ({
                 "domain"?: string;
                 "password"?: string;
@@ -70210,10 +72504,15 @@ export interface operations {
                 "screenshot"?: boolean;
               }) | null;
               "control"?: ({
+                "branches"?: Array<Record<string, unknown>>;
+                "cases"?: Array<Record<string, unknown>>;
+                "concurrency"?: number;
                 "condition"?: (Record<string, unknown>) | null;
                 "count"?: number;
+                "default"?: Array<Record<string, unknown>>;
                 "do_while"?: boolean;
                 "else"?: Array<Record<string, unknown>>;
+                "fail_fast"?: boolean;
                 "for_each"?: (Record<string, unknown>) | null;
                 "max_iterations"?: number;
                 "steps"?: Array<Record<string, unknown>>;
@@ -70493,6 +72792,9 @@ export interface operations {
                 "tps"?: number;
                 "type"?: string;
               };
+              "results"?: {
+                "message_detail"?: (Record<string, unknown>) | null;
+              };
               "run_logic"?: {
                 "action_sequence"?: Array<string>;
                 "auto_transactions"?: string;
@@ -70580,10 +72882,21 @@ export interface operations {
               "stop_on_max_errors"?: boolean;
               "stop_on_sla_breach"?: boolean;
               "target_average_tps"?: (number) | null;
+              "transaction_rules"?: Array<{
+                "comparator"?: string;
+                "metric"?: string;
+                "severity"?: string;
+                "threshold"?: number;
+                "transaction"?: string;
+              }>;
             }) | null;
             "id"?: string;
             "init"?: Array<{
               "assertions"?: Array<Record<string, unknown>>;
+              "attribution"?: ({
+                "hierarchy_path"?: string;
+                "page_name"?: string;
+              }) | null;
               "auth"?: ({
                 "domain"?: string;
                 "password"?: string;
@@ -70600,10 +72913,15 @@ export interface operations {
                 "screenshot"?: boolean;
               }) | null;
               "control"?: ({
+                "branches"?: Array<Record<string, unknown>>;
+                "cases"?: Array<Record<string, unknown>>;
+                "concurrency"?: number;
                 "condition"?: (Record<string, unknown>) | null;
                 "count"?: number;
+                "default"?: Array<Record<string, unknown>>;
                 "do_while"?: boolean;
                 "else"?: Array<Record<string, unknown>>;
+                "fail_fast"?: boolean;
                 "for_each"?: (Record<string, unknown>) | null;
                 "max_iterations"?: number;
                 "steps"?: Array<Record<string, unknown>>;
@@ -70693,6 +73011,10 @@ export interface operations {
             "ref_key"?: string;
             "teardown"?: Array<{
               "assertions"?: Array<Record<string, unknown>>;
+              "attribution"?: ({
+                "hierarchy_path"?: string;
+                "page_name"?: string;
+              }) | null;
               "auth"?: ({
                 "domain"?: string;
                 "password"?: string;
@@ -70709,10 +73031,15 @@ export interface operations {
                 "screenshot"?: boolean;
               }) | null;
               "control"?: ({
+                "branches"?: Array<Record<string, unknown>>;
+                "cases"?: Array<Record<string, unknown>>;
+                "concurrency"?: number;
                 "condition"?: (Record<string, unknown>) | null;
                 "count"?: number;
+                "default"?: Array<Record<string, unknown>>;
                 "do_while"?: boolean;
                 "else"?: Array<Record<string, unknown>>;
+                "fail_fast"?: boolean;
                 "for_each"?: (Record<string, unknown>) | null;
                 "max_iterations"?: number;
                 "steps"?: Array<Record<string, unknown>>;
@@ -71255,6 +73582,10 @@ export interface operations {
           "script"?: ({
             "actions"?: Array<{
               "assertions"?: Array<Record<string, unknown>>;
+              "attribution"?: ({
+                "hierarchy_path"?: string;
+                "page_name"?: string;
+              }) | null;
               "auth"?: ({
                 "domain"?: string;
                 "password"?: string;
@@ -71271,10 +73602,15 @@ export interface operations {
                 "screenshot"?: boolean;
               }) | null;
               "control"?: ({
+                "branches"?: Array<Record<string, unknown>>;
+                "cases"?: Array<Record<string, unknown>>;
+                "concurrency"?: number;
                 "condition"?: (Record<string, unknown>) | null;
                 "count"?: number;
+                "default"?: Array<Record<string, unknown>>;
                 "do_while"?: boolean;
                 "else"?: Array<Record<string, unknown>>;
+                "fail_fast"?: boolean;
                 "for_each"?: (Record<string, unknown>) | null;
                 "max_iterations"?: number;
                 "steps"?: Array<Record<string, unknown>>;
@@ -71554,6 +73890,9 @@ export interface operations {
                 "tps"?: number;
                 "type"?: string;
               };
+              "results"?: {
+                "message_detail"?: (Record<string, unknown>) | null;
+              };
               "run_logic"?: {
                 "action_sequence"?: Array<string>;
                 "auto_transactions"?: string;
@@ -71641,10 +73980,21 @@ export interface operations {
               "stop_on_max_errors"?: boolean;
               "stop_on_sla_breach"?: boolean;
               "target_average_tps"?: (number) | null;
+              "transaction_rules"?: Array<{
+                "comparator"?: string;
+                "metric"?: string;
+                "severity"?: string;
+                "threshold"?: number;
+                "transaction"?: string;
+              }>;
             }) | null;
             "id"?: string;
             "init"?: Array<{
               "assertions"?: Array<Record<string, unknown>>;
+              "attribution"?: ({
+                "hierarchy_path"?: string;
+                "page_name"?: string;
+              }) | null;
               "auth"?: ({
                 "domain"?: string;
                 "password"?: string;
@@ -71661,10 +74011,15 @@ export interface operations {
                 "screenshot"?: boolean;
               }) | null;
               "control"?: ({
+                "branches"?: Array<Record<string, unknown>>;
+                "cases"?: Array<Record<string, unknown>>;
+                "concurrency"?: number;
                 "condition"?: (Record<string, unknown>) | null;
                 "count"?: number;
+                "default"?: Array<Record<string, unknown>>;
                 "do_while"?: boolean;
                 "else"?: Array<Record<string, unknown>>;
+                "fail_fast"?: boolean;
                 "for_each"?: (Record<string, unknown>) | null;
                 "max_iterations"?: number;
                 "steps"?: Array<Record<string, unknown>>;
@@ -71754,6 +74109,10 @@ export interface operations {
             "ref_key"?: string;
             "teardown"?: Array<{
               "assertions"?: Array<Record<string, unknown>>;
+              "attribution"?: ({
+                "hierarchy_path"?: string;
+                "page_name"?: string;
+              }) | null;
               "auth"?: ({
                 "domain"?: string;
                 "password"?: string;
@@ -71770,10 +74129,15 @@ export interface operations {
                 "screenshot"?: boolean;
               }) | null;
               "control"?: ({
+                "branches"?: Array<Record<string, unknown>>;
+                "cases"?: Array<Record<string, unknown>>;
+                "concurrency"?: number;
                 "condition"?: (Record<string, unknown>) | null;
                 "count"?: number;
+                "default"?: Array<Record<string, unknown>>;
                 "do_while"?: boolean;
                 "else"?: Array<Record<string, unknown>>;
+                "fail_fast"?: boolean;
                 "for_each"?: (Record<string, unknown>) | null;
                 "max_iterations"?: number;
                 "steps"?: Array<Record<string, unknown>>;
@@ -72315,6 +74679,10 @@ export interface operations {
           "script"?: ({
             "actions"?: Array<{
               "assertions"?: Array<Record<string, unknown>>;
+              "attribution"?: ({
+                "hierarchy_path"?: string;
+                "page_name"?: string;
+              }) | null;
               "auth"?: ({
                 "domain"?: string;
                 "password"?: string;
@@ -72331,10 +74699,15 @@ export interface operations {
                 "screenshot"?: boolean;
               }) | null;
               "control"?: ({
+                "branches"?: Array<Record<string, unknown>>;
+                "cases"?: Array<Record<string, unknown>>;
+                "concurrency"?: number;
                 "condition"?: (Record<string, unknown>) | null;
                 "count"?: number;
+                "default"?: Array<Record<string, unknown>>;
                 "do_while"?: boolean;
                 "else"?: Array<Record<string, unknown>>;
+                "fail_fast"?: boolean;
                 "for_each"?: (Record<string, unknown>) | null;
                 "max_iterations"?: number;
                 "steps"?: Array<Record<string, unknown>>;
@@ -72614,6 +74987,9 @@ export interface operations {
                 "tps"?: number;
                 "type"?: string;
               };
+              "results"?: {
+                "message_detail"?: (Record<string, unknown>) | null;
+              };
               "run_logic"?: {
                 "action_sequence"?: Array<string>;
                 "auto_transactions"?: string;
@@ -72701,10 +75077,21 @@ export interface operations {
               "stop_on_max_errors"?: boolean;
               "stop_on_sla_breach"?: boolean;
               "target_average_tps"?: (number) | null;
+              "transaction_rules"?: Array<{
+                "comparator"?: string;
+                "metric"?: string;
+                "severity"?: string;
+                "threshold"?: number;
+                "transaction"?: string;
+              }>;
             }) | null;
             "id"?: string;
             "init"?: Array<{
               "assertions"?: Array<Record<string, unknown>>;
+              "attribution"?: ({
+                "hierarchy_path"?: string;
+                "page_name"?: string;
+              }) | null;
               "auth"?: ({
                 "domain"?: string;
                 "password"?: string;
@@ -72721,10 +75108,15 @@ export interface operations {
                 "screenshot"?: boolean;
               }) | null;
               "control"?: ({
+                "branches"?: Array<Record<string, unknown>>;
+                "cases"?: Array<Record<string, unknown>>;
+                "concurrency"?: number;
                 "condition"?: (Record<string, unknown>) | null;
                 "count"?: number;
+                "default"?: Array<Record<string, unknown>>;
                 "do_while"?: boolean;
                 "else"?: Array<Record<string, unknown>>;
+                "fail_fast"?: boolean;
                 "for_each"?: (Record<string, unknown>) | null;
                 "max_iterations"?: number;
                 "steps"?: Array<Record<string, unknown>>;
@@ -72814,6 +75206,10 @@ export interface operations {
             "ref_key"?: string;
             "teardown"?: Array<{
               "assertions"?: Array<Record<string, unknown>>;
+              "attribution"?: ({
+                "hierarchy_path"?: string;
+                "page_name"?: string;
+              }) | null;
               "auth"?: ({
                 "domain"?: string;
                 "password"?: string;
@@ -72830,10 +75226,15 @@ export interface operations {
                 "screenshot"?: boolean;
               }) | null;
               "control"?: ({
+                "branches"?: Array<Record<string, unknown>>;
+                "cases"?: Array<Record<string, unknown>>;
+                "concurrency"?: number;
                 "condition"?: (Record<string, unknown>) | null;
                 "count"?: number;
+                "default"?: Array<Record<string, unknown>>;
                 "do_while"?: boolean;
                 "else"?: Array<Record<string, unknown>>;
+                "fail_fast"?: boolean;
                 "for_each"?: (Record<string, unknown>) | null;
                 "max_iterations"?: number;
                 "steps"?: Array<Record<string, unknown>>;
@@ -76005,6 +78406,13 @@ export interface operations {
               "stop_on_max_errors"?: boolean;
               "stop_on_sla_breach"?: boolean;
               "target_average_tps"?: (number) | null;
+              "transaction_rules"?: Array<{
+                "comparator": string;
+                "metric": string;
+                "severity"?: string;
+                "threshold": number;
+                "transaction": string;
+              }>;
             }) | null;
             "goal_targets"?: Record<string, {
               "group": string;
@@ -76194,6 +78602,7 @@ export interface operations {
                 "target_vusers"?: number;
                 "type": string;
               }>;
+              "start_offset"?: string;
               "target_duration"?: string;
               "vusers": number;
             }>;
@@ -76234,6 +78643,29 @@ export interface operations {
                 "device_profile"?: string;
                 "device_tier"?: string;
                 "samples": number;
+              }) | null>;
+              "by_region"?: Record<string, ({
+                "avg_connect_ms"?: number;
+                "avg_dns_ms"?: number;
+                "avg_ms": number;
+                "avg_tls_ms"?: number;
+                "avg_ttfb_ms"?: number;
+                "correlation_count"?: number;
+                "correlation_ids"?: Array<string>;
+                "count": number;
+                "dependency_target"?: string;
+                "dependency_type"?: string;
+                "errors": number;
+                "last_error_at"?: string;
+                "last_error_message"?: string;
+                "last_status_code"?: number;
+                "name": string;
+                "p50_ms": number;
+                "p90_ms": number;
+                "p95_ms"?: number;
+                "p99_ms": number;
+                "server_telemetry"?: (Record<string, unknown>) | null;
+                "tps": number;
               }) | null>;
               "capacity_status"?: ({
                 "allocated_vusers": number;
@@ -76549,6 +78981,72 @@ export interface operations {
                 "device_profile"?: string;
                 "device_tier"?: string;
                 "samples": number;
+              }) | null>;
+              "by_region"?: Record<string, ({
+                "avg_connect_ms"?: number;
+                "avg_dns_ms"?: number;
+                "avg_ms": number;
+                "avg_tls_ms"?: number;
+                "avg_ttfb_ms"?: number;
+                "correlation_count"?: number;
+                "correlation_ids"?: Array<string>;
+                "count": number;
+                "dependency_target"?: string;
+                "dependency_type"?: string;
+                "errors": number;
+                "last_error_at"?: string;
+                "last_error_message"?: string;
+                "last_status_code"?: number;
+                "name": string;
+                "p50_ms": number;
+                "p90_ms": number;
+                "p95_ms"?: number;
+                "p99_ms": number;
+                "server_telemetry"?: ({
+                  "abort_count"?: number;
+                  "avg_consumer_lag_ms"?: number;
+                  "avg_consumer_offset_lag"?: number;
+                  "avg_end_to_end_latency_ms"?: number;
+                  "avg_first_event_ms"?: number;
+                  "avg_message_latency_ms"?: number;
+                  "avg_messages_received_per_sec"?: number;
+                  "avg_messages_sent_per_sec"?: number;
+                  "avg_request_payload_kb"?: number;
+                  "avg_response_payload_kb"?: number;
+                  "avg_server_processing_ms"?: number;
+                  "avg_transfer_ms"?: number;
+                  "commit_count"?: number;
+                  "connection_reused_count"?: number;
+                  "connection_reused_pct"?: number;
+                  "dead_letter_rate_pct"?: number;
+                  "dead_lettered_count"?: number;
+                  "duplicate_count"?: number;
+                  "duplicate_rate_pct"?: number;
+                  "event_count"?: number;
+                  "max_consumer_lag_ms"?: number;
+                  "max_consumer_offset_lag"?: number;
+                  "max_end_to_end_latency_ms"?: number;
+                  "max_first_event_ms"?: number;
+                  "max_message_latency_ms"?: number;
+                  "messages_received"?: number;
+                  "messages_sent"?: number;
+                  "out_of_order_count"?: number;
+                  "partition_events"?: Record<string, number>;
+                  "partition_skew_pct"?: number;
+                  "redelivery_count"?: number;
+                  "redelivery_rate_pct"?: number;
+                  "request_payload_histogram"?: Record<string, number>;
+                  "request_size_classes"?: Record<string, number>;
+                  "response_payload_histogram"?: Record<string, number>;
+                  "response_size_classes"?: Record<string, number>;
+                  "samples": number;
+                  "send_failure_count"?: number;
+                  "total_event_too_large_count"?: number;
+                  "total_quota_exceeded_count"?: number;
+                  "total_server_busy_count"?: number;
+                  "total_throttled_requests"?: number;
+                }) | null;
+                "tps": number;
               }) | null>;
               "capacity_status"?: ({
                 "allocated_vusers": number;
@@ -77587,6 +80085,10 @@ export interface operations {
           "draft": {
             "actions"?: Array<{
               "assertions"?: Array<Record<string, unknown>>;
+              "attribution"?: ({
+                "hierarchy_path"?: string;
+                "page_name"?: string;
+              }) | null;
               "auth"?: ({
                 "domain"?: string;
                 "password"?: string;
@@ -77603,10 +80105,15 @@ export interface operations {
                 "screenshot"?: boolean;
               }) | null;
               "control"?: ({
+                "branches"?: Array<Record<string, unknown>>;
+                "cases"?: Array<Record<string, unknown>>;
+                "concurrency"?: number;
                 "condition"?: (Record<string, unknown>) | null;
                 "count"?: number;
+                "default"?: Array<Record<string, unknown>>;
                 "do_while"?: boolean;
                 "else"?: Array<Record<string, unknown>>;
+                "fail_fast"?: boolean;
                 "for_each"?: (Record<string, unknown>) | null;
                 "max_iterations"?: number;
                 "steps"?: Array<Record<string, unknown>>;
@@ -77886,6 +80393,9 @@ export interface operations {
                 "tps"?: number;
                 "type"?: string;
               };
+              "results"?: {
+                "message_detail"?: (Record<string, unknown>) | null;
+              };
               "run_logic"?: {
                 "action_sequence"?: Array<string>;
                 "auto_transactions"?: string;
@@ -77973,10 +80483,21 @@ export interface operations {
               "stop_on_max_errors"?: boolean;
               "stop_on_sla_breach"?: boolean;
               "target_average_tps"?: (number) | null;
+              "transaction_rules"?: Array<{
+                "comparator"?: string;
+                "metric"?: string;
+                "severity"?: string;
+                "threshold"?: number;
+                "transaction"?: string;
+              }>;
             }) | null;
             "id"?: string;
             "init"?: Array<{
               "assertions"?: Array<Record<string, unknown>>;
+              "attribution"?: ({
+                "hierarchy_path"?: string;
+                "page_name"?: string;
+              }) | null;
               "auth"?: ({
                 "domain"?: string;
                 "password"?: string;
@@ -77993,10 +80514,15 @@ export interface operations {
                 "screenshot"?: boolean;
               }) | null;
               "control"?: ({
+                "branches"?: Array<Record<string, unknown>>;
+                "cases"?: Array<Record<string, unknown>>;
+                "concurrency"?: number;
                 "condition"?: (Record<string, unknown>) | null;
                 "count"?: number;
+                "default"?: Array<Record<string, unknown>>;
                 "do_while"?: boolean;
                 "else"?: Array<Record<string, unknown>>;
+                "fail_fast"?: boolean;
                 "for_each"?: (Record<string, unknown>) | null;
                 "max_iterations"?: number;
                 "steps"?: Array<Record<string, unknown>>;
@@ -78086,6 +80612,10 @@ export interface operations {
             "ref_key"?: string;
             "teardown"?: Array<{
               "assertions"?: Array<Record<string, unknown>>;
+              "attribution"?: ({
+                "hierarchy_path"?: string;
+                "page_name"?: string;
+              }) | null;
               "auth"?: ({
                 "domain"?: string;
                 "password"?: string;
@@ -78102,10 +80632,15 @@ export interface operations {
                 "screenshot"?: boolean;
               }) | null;
               "control"?: ({
+                "branches"?: Array<Record<string, unknown>>;
+                "cases"?: Array<Record<string, unknown>>;
+                "concurrency"?: number;
                 "condition"?: (Record<string, unknown>) | null;
                 "count"?: number;
+                "default"?: Array<Record<string, unknown>>;
                 "do_while"?: boolean;
                 "else"?: Array<Record<string, unknown>>;
+                "fail_fast"?: boolean;
                 "for_each"?: (Record<string, unknown>) | null;
                 "max_iterations"?: number;
                 "steps"?: Array<Record<string, unknown>>;
@@ -78175,6 +80710,10 @@ export interface operations {
             "draft"?: ({
               "actions": Array<{
                 "assertions"?: Array<Record<string, unknown>>;
+                "attribution"?: ({
+                  "hierarchy_path"?: string;
+                  "page_name"?: string;
+                }) | null;
                 "auth"?: ({
                   "domain"?: string;
                   "password"?: string;
@@ -78191,10 +80730,15 @@ export interface operations {
                   "screenshot"?: boolean;
                 }) | null;
                 "control"?: ({
+                  "branches"?: Array<Record<string, unknown>>;
+                  "cases"?: Array<Record<string, unknown>>;
+                  "concurrency"?: number;
                   "condition"?: (Record<string, unknown>) | null;
                   "count"?: number;
+                  "default"?: Array<Record<string, unknown>>;
                   "do_while"?: boolean;
                   "else"?: Array<Record<string, unknown>>;
+                  "fail_fast"?: boolean;
                   "for_each"?: (Record<string, unknown>) | null;
                   "max_iterations"?: number;
                   "steps"?: Array<Record<string, unknown>>;
@@ -78474,6 +81018,9 @@ export interface operations {
                   "tps"?: number;
                   "type": string;
                 };
+                "results"?: {
+                  "message_detail"?: (Record<string, unknown>) | null;
+                };
                 "run_logic"?: {
                   "action_sequence"?: Array<string>;
                   "auto_transactions"?: string;
@@ -78561,10 +81108,21 @@ export interface operations {
                 "stop_on_max_errors"?: boolean;
                 "stop_on_sla_breach"?: boolean;
                 "target_average_tps"?: (number) | null;
+                "transaction_rules"?: Array<{
+                  "comparator": string;
+                  "metric": string;
+                  "severity"?: string;
+                  "threshold": number;
+                  "transaction": string;
+                }>;
               }) | null;
               "id": string;
               "init"?: Array<{
                 "assertions"?: Array<Record<string, unknown>>;
+                "attribution"?: ({
+                  "hierarchy_path"?: string;
+                  "page_name"?: string;
+                }) | null;
                 "auth"?: ({
                   "domain"?: string;
                   "password"?: string;
@@ -78581,10 +81139,15 @@ export interface operations {
                   "screenshot"?: boolean;
                 }) | null;
                 "control"?: ({
+                  "branches"?: Array<Record<string, unknown>>;
+                  "cases"?: Array<Record<string, unknown>>;
+                  "concurrency"?: number;
                   "condition"?: (Record<string, unknown>) | null;
                   "count"?: number;
+                  "default"?: Array<Record<string, unknown>>;
                   "do_while"?: boolean;
                   "else"?: Array<Record<string, unknown>>;
+                  "fail_fast"?: boolean;
                   "for_each"?: (Record<string, unknown>) | null;
                   "max_iterations"?: number;
                   "steps"?: Array<Record<string, unknown>>;
@@ -78674,6 +81237,10 @@ export interface operations {
               "ref_key"?: string;
               "teardown"?: Array<{
                 "assertions"?: Array<Record<string, unknown>>;
+                "attribution"?: ({
+                  "hierarchy_path"?: string;
+                  "page_name"?: string;
+                }) | null;
                 "auth"?: ({
                   "domain"?: string;
                   "password"?: string;
@@ -78690,10 +81257,15 @@ export interface operations {
                   "screenshot"?: boolean;
                 }) | null;
                 "control"?: ({
+                  "branches"?: Array<Record<string, unknown>>;
+                  "cases"?: Array<Record<string, unknown>>;
+                  "concurrency"?: number;
                   "condition"?: (Record<string, unknown>) | null;
                   "count"?: number;
+                  "default"?: Array<Record<string, unknown>>;
                   "do_while"?: boolean;
                   "else"?: Array<Record<string, unknown>>;
+                  "fail_fast"?: boolean;
                   "for_each"?: (Record<string, unknown>) | null;
                   "max_iterations"?: number;
                   "steps"?: Array<Record<string, unknown>>;
@@ -80409,6 +82981,13 @@ export interface operations {
           "domain_id"?: (string) | null;
           "name"?: string;
           "settings"?: {
+            "features"?: {
+              "control_parallel"?: boolean;
+              "media_stream"?: boolean;
+              "native_elastic_capacity"?: boolean;
+              "privileged_monitors"?: boolean;
+              "successful_message_detail"?: boolean;
+            };
             "github"?: {
               "actions"?: {
                 "allowed_environments"?: Array<string>;
@@ -80886,6 +83465,13 @@ export interface operations {
             "stop_on_max_errors"?: boolean;
             "stop_on_sla_breach"?: boolean;
             "target_average_tps"?: (number) | null;
+            "transaction_rules"?: Array<{
+              "comparator"?: string;
+              "metric"?: string;
+              "severity"?: string;
+              "threshold"?: number;
+              "transaction"?: string;
+            }>;
           }) | null;
           "groups": Array<{
             "assignment"?: ({
@@ -81054,6 +83640,7 @@ export interface operations {
               "target_vusers"?: number;
               "type"?: string;
             }>;
+            "start_offset"?: string;
             "vusers"?: number;
           }>;
           "name": string;
@@ -81337,6 +83924,13 @@ export interface operations {
               "stop_on_max_errors"?: boolean;
               "stop_on_sla_breach"?: boolean;
               "target_average_tps"?: (number) | null;
+              "transaction_rules"?: Array<{
+                "comparator": string;
+                "metric": string;
+                "severity"?: string;
+                "threshold": number;
+                "transaction": string;
+              }>;
             }) | null;
             "id": string;
             "last_run_at"?: (string) | null;
@@ -81822,6 +84416,7 @@ export interface operations {
                 "target_vusers"?: number;
                 "type": string;
               }>;
+              "start_offset"?: string;
               "vusers": number;
             }>;
             "start_delay"?: string;
@@ -82128,6 +84723,10 @@ export interface operations {
                 "type"?: string;
                 "value"?: string;
               }>;
+              "attribution"?: ({
+                "hierarchy_path"?: string;
+                "page_name"?: string;
+              }) | null;
               "auth"?: ({
                 "domain"?: string;
                 "password"?: string;
@@ -82144,10 +84743,15 @@ export interface operations {
                 "screenshot"?: boolean;
               }) | null;
               "control"?: ({
+                "branches"?: Array<Record<string, unknown>>;
+                "cases"?: Array<Record<string, unknown>>;
+                "concurrency"?: number;
                 "condition"?: (Record<string, unknown>) | null;
                 "count"?: number;
+                "default"?: Array<Record<string, unknown>>;
                 "do_while"?: boolean;
                 "else"?: Array<Record<string, unknown>>;
+                "fail_fast"?: boolean;
                 "for_each"?: (Record<string, unknown>) | null;
                 "max_iterations"?: number;
                 "steps"?: Array<Record<string, unknown>>;
@@ -82497,6 +85101,15 @@ export interface operations {
                 "tps"?: number;
                 "type"?: string;
               };
+              "results"?: {
+                "message_detail"?: ({
+                  "max_item_bytes"?: number;
+                  "max_items"?: number;
+                  "max_total_bytes"?: number;
+                  "mode"?: string;
+                  "sample_rate"?: number;
+                }) | null;
+              };
               "run_logic"?: {
                 "action_sequence"?: Array<string>;
                 "auto_transactions"?: string;
@@ -82607,6 +85220,13 @@ export interface operations {
               "stop_on_max_errors"?: boolean;
               "stop_on_sla_breach"?: boolean;
               "target_average_tps"?: (number) | null;
+              "transaction_rules"?: Array<{
+                "comparator"?: string;
+                "metric"?: string;
+                "severity"?: string;
+                "threshold"?: number;
+                "transaction"?: string;
+              }>;
             }) | null;
             "id"?: string;
             "init"?: Array<{
@@ -82617,6 +85237,10 @@ export interface operations {
                 "type"?: string;
                 "value"?: string;
               }>;
+              "attribution"?: ({
+                "hierarchy_path"?: string;
+                "page_name"?: string;
+              }) | null;
               "auth"?: ({
                 "domain"?: string;
                 "password"?: string;
@@ -82633,10 +85257,15 @@ export interface operations {
                 "screenshot"?: boolean;
               }) | null;
               "control"?: ({
+                "branches"?: Array<Record<string, unknown>>;
+                "cases"?: Array<Record<string, unknown>>;
+                "concurrency"?: number;
                 "condition"?: (Record<string, unknown>) | null;
                 "count"?: number;
+                "default"?: Array<Record<string, unknown>>;
                 "do_while"?: boolean;
                 "else"?: Array<Record<string, unknown>>;
+                "fail_fast"?: boolean;
                 "for_each"?: (Record<string, unknown>) | null;
                 "max_iterations"?: number;
                 "steps"?: Array<Record<string, unknown>>;
@@ -82742,6 +85371,10 @@ export interface operations {
                 "type"?: string;
                 "value"?: string;
               }>;
+              "attribution"?: ({
+                "hierarchy_path"?: string;
+                "page_name"?: string;
+              }) | null;
               "auth"?: ({
                 "domain"?: string;
                 "password"?: string;
@@ -82758,10 +85391,15 @@ export interface operations {
                 "screenshot"?: boolean;
               }) | null;
               "control"?: ({
+                "branches"?: Array<Record<string, unknown>>;
+                "cases"?: Array<Record<string, unknown>>;
+                "concurrency"?: number;
                 "condition"?: (Record<string, unknown>) | null;
                 "count"?: number;
+                "default"?: Array<Record<string, unknown>>;
                 "do_while"?: boolean;
                 "else"?: Array<Record<string, unknown>>;
+                "fail_fast"?: boolean;
                 "for_each"?: (Record<string, unknown>) | null;
                 "max_iterations"?: number;
                 "steps"?: Array<Record<string, unknown>>;
@@ -82864,6 +85502,10 @@ export interface operations {
             "script": ({
               "actions": Array<{
                 "assertions"?: Array<Record<string, unknown>>;
+                "attribution"?: ({
+                  "hierarchy_path"?: string;
+                  "page_name"?: string;
+                }) | null;
                 "auth"?: ({
                   "domain"?: string;
                   "password"?: string;
@@ -82880,10 +85522,15 @@ export interface operations {
                   "screenshot"?: boolean;
                 }) | null;
                 "control"?: ({
+                  "branches"?: Array<Record<string, unknown>>;
+                  "cases"?: Array<Record<string, unknown>>;
+                  "concurrency"?: number;
                   "condition"?: (Record<string, unknown>) | null;
                   "count"?: number;
+                  "default"?: Array<Record<string, unknown>>;
                   "do_while"?: boolean;
                   "else"?: Array<Record<string, unknown>>;
+                  "fail_fast"?: boolean;
                   "for_each"?: (Record<string, unknown>) | null;
                   "max_iterations"?: number;
                   "steps"?: Array<Record<string, unknown>>;
@@ -83163,6 +85810,9 @@ export interface operations {
                   "tps"?: number;
                   "type": string;
                 };
+                "results"?: {
+                  "message_detail"?: (Record<string, unknown>) | null;
+                };
                 "run_logic"?: {
                   "action_sequence"?: Array<string>;
                   "auto_transactions"?: string;
@@ -83250,10 +85900,21 @@ export interface operations {
                 "stop_on_max_errors"?: boolean;
                 "stop_on_sla_breach"?: boolean;
                 "target_average_tps"?: (number) | null;
+                "transaction_rules"?: Array<{
+                  "comparator": string;
+                  "metric": string;
+                  "severity"?: string;
+                  "threshold": number;
+                  "transaction": string;
+                }>;
               }) | null;
               "id": string;
               "init"?: Array<{
                 "assertions"?: Array<Record<string, unknown>>;
+                "attribution"?: ({
+                  "hierarchy_path"?: string;
+                  "page_name"?: string;
+                }) | null;
                 "auth"?: ({
                   "domain"?: string;
                   "password"?: string;
@@ -83270,10 +85931,15 @@ export interface operations {
                   "screenshot"?: boolean;
                 }) | null;
                 "control"?: ({
+                  "branches"?: Array<Record<string, unknown>>;
+                  "cases"?: Array<Record<string, unknown>>;
+                  "concurrency"?: number;
                   "condition"?: (Record<string, unknown>) | null;
                   "count"?: number;
+                  "default"?: Array<Record<string, unknown>>;
                   "do_while"?: boolean;
                   "else"?: Array<Record<string, unknown>>;
+                  "fail_fast"?: boolean;
                   "for_each"?: (Record<string, unknown>) | null;
                   "max_iterations"?: number;
                   "steps"?: Array<Record<string, unknown>>;
@@ -83363,6 +86029,10 @@ export interface operations {
               "ref_key"?: string;
               "teardown"?: Array<{
                 "assertions"?: Array<Record<string, unknown>>;
+                "attribution"?: ({
+                  "hierarchy_path"?: string;
+                  "page_name"?: string;
+                }) | null;
                 "auth"?: ({
                   "domain"?: string;
                   "password"?: string;
@@ -83379,10 +86049,15 @@ export interface operations {
                   "screenshot"?: boolean;
                 }) | null;
                 "control"?: ({
+                  "branches"?: Array<Record<string, unknown>>;
+                  "cases"?: Array<Record<string, unknown>>;
+                  "concurrency"?: number;
                   "condition"?: (Record<string, unknown>) | null;
                   "count"?: number;
+                  "default"?: Array<Record<string, unknown>>;
                   "do_while"?: boolean;
                   "else"?: Array<Record<string, unknown>>;
+                  "fail_fast"?: boolean;
                   "for_each"?: (Record<string, unknown>) | null;
                   "max_iterations"?: number;
                   "steps"?: Array<Record<string, unknown>>;
@@ -86347,6 +89022,10 @@ export interface operations {
                 "type"?: string;
                 "value"?: string;
               }>;
+              "attribution"?: ({
+                "hierarchy_path"?: string;
+                "page_name"?: string;
+              }) | null;
               "auth"?: ({
                 "domain"?: string;
                 "password"?: string;
@@ -86363,10 +89042,15 @@ export interface operations {
                 "screenshot"?: boolean;
               }) | null;
               "control"?: ({
+                "branches"?: Array<Record<string, unknown>>;
+                "cases"?: Array<Record<string, unknown>>;
+                "concurrency"?: number;
                 "condition"?: (Record<string, unknown>) | null;
                 "count"?: number;
+                "default"?: Array<Record<string, unknown>>;
                 "do_while"?: boolean;
                 "else"?: Array<Record<string, unknown>>;
+                "fail_fast"?: boolean;
                 "for_each"?: (Record<string, unknown>) | null;
                 "max_iterations"?: number;
                 "steps"?: Array<Record<string, unknown>>;
@@ -86716,6 +89400,15 @@ export interface operations {
                 "tps"?: number;
                 "type"?: string;
               };
+              "results"?: {
+                "message_detail"?: ({
+                  "max_item_bytes"?: number;
+                  "max_items"?: number;
+                  "max_total_bytes"?: number;
+                  "mode"?: string;
+                  "sample_rate"?: number;
+                }) | null;
+              };
               "run_logic"?: {
                 "action_sequence"?: Array<string>;
                 "auto_transactions"?: string;
@@ -86826,6 +89519,13 @@ export interface operations {
               "stop_on_max_errors"?: boolean;
               "stop_on_sla_breach"?: boolean;
               "target_average_tps"?: (number) | null;
+              "transaction_rules"?: Array<{
+                "comparator"?: string;
+                "metric"?: string;
+                "severity"?: string;
+                "threshold"?: number;
+                "transaction"?: string;
+              }>;
             }) | null;
             "id"?: string;
             "init"?: Array<{
@@ -86836,6 +89536,10 @@ export interface operations {
                 "type"?: string;
                 "value"?: string;
               }>;
+              "attribution"?: ({
+                "hierarchy_path"?: string;
+                "page_name"?: string;
+              }) | null;
               "auth"?: ({
                 "domain"?: string;
                 "password"?: string;
@@ -86852,10 +89556,15 @@ export interface operations {
                 "screenshot"?: boolean;
               }) | null;
               "control"?: ({
+                "branches"?: Array<Record<string, unknown>>;
+                "cases"?: Array<Record<string, unknown>>;
+                "concurrency"?: number;
                 "condition"?: (Record<string, unknown>) | null;
                 "count"?: number;
+                "default"?: Array<Record<string, unknown>>;
                 "do_while"?: boolean;
                 "else"?: Array<Record<string, unknown>>;
+                "fail_fast"?: boolean;
                 "for_each"?: (Record<string, unknown>) | null;
                 "max_iterations"?: number;
                 "steps"?: Array<Record<string, unknown>>;
@@ -86961,6 +89670,10 @@ export interface operations {
                 "type"?: string;
                 "value"?: string;
               }>;
+              "attribution"?: ({
+                "hierarchy_path"?: string;
+                "page_name"?: string;
+              }) | null;
               "auth"?: ({
                 "domain"?: string;
                 "password"?: string;
@@ -86977,10 +89690,15 @@ export interface operations {
                 "screenshot"?: boolean;
               }) | null;
               "control"?: ({
+                "branches"?: Array<Record<string, unknown>>;
+                "cases"?: Array<Record<string, unknown>>;
+                "concurrency"?: number;
                 "condition"?: (Record<string, unknown>) | null;
                 "count"?: number;
+                "default"?: Array<Record<string, unknown>>;
                 "do_while"?: boolean;
                 "else"?: Array<Record<string, unknown>>;
+                "fail_fast"?: boolean;
                 "for_each"?: (Record<string, unknown>) | null;
                 "max_iterations"?: number;
                 "steps"?: Array<Record<string, unknown>>;
@@ -87382,6 +90100,13 @@ export interface operations {
             "stop_on_max_errors"?: boolean;
             "stop_on_sla_breach"?: boolean;
             "target_average_tps"?: (number) | null;
+            "transaction_rules"?: Array<{
+              "comparator"?: string;
+              "metric"?: string;
+              "severity"?: string;
+              "threshold"?: number;
+              "transaction"?: string;
+            }>;
           }) | null;
           "groups"?: Array<{
             "assignment"?: ({
@@ -87550,6 +90275,7 @@ export interface operations {
               "target_vusers"?: number;
               "type"?: string;
             }>;
+            "start_offset"?: string;
             "vusers"?: number;
           }>;
           "name"?: string;
@@ -89065,6 +91791,15 @@ export interface paths {
   "/api/v1/monitoring/collectors/{id}/rotate-token": {
     "post": operations["handleRotateMonitoringCollectorToken"];
   };
+  "/api/v1/monitoring/dashboard-definitions": {
+    "get": operations["handleListDashboardDefinitions"];
+    "post": operations["handleCreateDashboardDefinition"];
+  };
+  "/api/v1/monitoring/dashboard-definitions/{id}": {
+    "get": operations["handleGetDashboardDefinition"];
+    "delete": operations["handleDeleteDashboardDefinition"];
+    "patch": operations["handlePatchDashboardDefinition"];
+  };
   "/api/v1/monitoring/dashboards": {
     "get": operations["handleListGrafanaDashboards"];
   };
@@ -89441,6 +92176,12 @@ export interface paths {
   };
   "/api/v1/scripts/import/bruno/support-matrix": {
     "get": operations["handleBrunoSupportMatrix"];
+  };
+  "/api/v1/scripts/import/cloudtest": {
+    "post": operations["handleImportCloudTest"];
+  };
+  "/api/v1/scripts/import/cloudtest/support-matrix": {
+    "get": operations["handleCloudTestSupportMatrix"];
   };
   "/api/v1/scripts/import/commit-batch": {
     "post": operations["handleCommitGenericImportBatch"];
@@ -89915,6 +92656,9 @@ export interface paths {
   };
   "/api/v1/tests/{id}/stream": {
     "get": operations["handleTestStream"];
+  };
+  "/api/v1/tests/{id}/transactions/live/{event_id}": {
+    "get": operations["handleGetLiveTransactionDetail"];
   };
   "/api/v1/tests/{id}/vusers": {
     "patch": operations["handleScaleVUsers"];

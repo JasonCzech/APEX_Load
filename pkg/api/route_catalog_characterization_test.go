@@ -221,6 +221,12 @@ func TestAuthoringCapabilitiesAccessRequirementIncludesServiceAccountScope(t *te
 // each characterization case. See TestAccessRequirementSnapshotStable.
 var accessRequirementGolden = map[string]string{
 	"POST /api/v1/desktop/browser-downloads": "auth=true global= project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=4096",
+	"GET /api/v1/tests/sample-id/transactions/live/sample-event-id": "auth=false global=viewer,editor,project_admin,system_admin project=viewer,editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"POST /api/v1/monitoring/dashboard-definitions":                   "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=1048576",
+	"GET /api/v1/monitoring/dashboard-definitions":                    "auth=false global=viewer,editor,project_admin,system_admin project=viewer,editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/monitoring/dashboard-definitions/sample-id":          "auth=false global=viewer,editor,project_admin,system_admin project=viewer,editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
+	"PATCH /api/v1/monitoring/dashboard-definitions/sample-id":        "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=1048576",
+	"DELETE /api/v1/monitoring/dashboard-definitions/sample-id":       "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
 	// Deployment maintenance lease. Human callers require system_admin; the
 	// deployment service-account path is independently pinned by the exact-scope
 	// characterization tests.
@@ -491,6 +497,7 @@ var accessRequirementGolden = map[string]string{
 	"GET /api/v1/scripts/authoring/templates":                                                                "auth=false global=viewer,editor,project_admin,system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
 	"GET /api/v1/scripts/import/asyncapi/support-matrix":                                                     "auth=false global=viewer,editor,project_admin,system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
 	"GET /api/v1/scripts/import/bruno/support-matrix":                                                        "auth=false global=viewer,editor,project_admin,system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/scripts/import/cloudtest/support-matrix":                                                    "auth=false global=viewer,editor,project_admin,system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
 	"GET /api/v1/scripts/import/bruno/sessions/sample-id/source":                                             "auth=false global=viewer,editor,project_admin,system_admin project=viewer,editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
 	"GET /api/v1/projects/sample-id/secrets":                                                                 "auth=false global=viewer,editor,project_admin,system_admin project=viewer,editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
 	"GET /api/v1/projects/sample-id/secrets/sample-name/usage":                                               "auth=false global=viewer,editor,project_admin,system_admin project=viewer,editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
@@ -660,6 +667,7 @@ var accessRequirementGolden = map[string]string{
 	"POST /api/v1/scripts/import/browser-recorder/attest":                    "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=20971520",
 	"POST /api/v1/scripts/import/bruno/commit":                               "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
 	"POST /api/v1/scripts/import/bruno/inspect":                              "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=285212672",
+	"POST /api/v1/scripts/import/cloudtest":                                  "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=20971520",
 	"POST /api/v1/scripts/import/commit-batch":                               "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=67108864",
 	"POST /api/v1/scripts/import/eventhubs-capture":                          "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=20971520",
 	"POST /api/v1/scripts/import/broker-config":                              "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=20971520",

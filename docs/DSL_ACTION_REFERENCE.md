@@ -58,6 +58,26 @@ Loop block: repeats control.steps for a fixed count, for each row of a data sour
 | `control.for_each.var` | string |  | Var-namespace prefix each iterated row binds under: row column c is available to the body as {{var.<var>.c}}. Distinct from the per-VUser {{data.source.c}} binding. |
 | `control.for_each.condition` | object |  | Optional per-row early-exit predicate {condition}. Iteration stops the first row this evaluates false (the row's columns are bound before it is checked). |
 
+### `control_parallel`
+
+Runs named, isolated protocol branches concurrently and merges extracted variables under var.parallel.<branch>.*.
+
+| Field | Kind | Required | Description |
+|-------|------|----------|-------------|
+| `control.branches` | array | yes | Two or more uniquely named branches. Each branch contains name and steps. |
+| `control.concurrency` | int |  | Maximum concurrently running branches. Defaults to 4 and cannot exceed 16. |
+| `control.fail_fast` | bool |  | Cancel sibling branches after the first failure. Defaults to false. |
+
+### `control_switch`
+
+Ordered conditional branches: executes the first matching case, or the default branch when none match.
+
+| Field | Kind | Required | Description |
+|-------|------|----------|-------------|
+| `control` | object | yes | Switch body: {cases:[{condition,steps}], default:[...]}. Cases are evaluated in declaration order with existing CEL/legacy conditions. |
+| `control.cases` | array | yes | One or more ordered first-match cases. Every case requires a condition and may contain nested actions. |
+| `control.default` | array |  | Optional actions executed when no case matches. |
+
 ### `cookie_clear`
 
 Clears every cookie in the VUser's HTTP session at this point (imported from web_cleanup_cookies). Protocols without a cookie store treat it as a no-op.

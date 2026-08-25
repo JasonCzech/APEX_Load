@@ -22,6 +22,19 @@ type approvalSnapshotBlockingBackend struct {
 	count       atomic.Int32
 }
 
+func TestScenarioPeakVUsersUsesOffsetStageWindows(t *testing.T) {
+	scenario := &StoredScenario{
+		Duration: "2m",
+		Scripts: []ScenarioScriptRef{
+			{Name: "first", VUsers: 60, Stages: []storage.LoadStage{{Type: "hold", Duration: "1m", TargetVUsers: 60}}},
+			{Name: "second", VUsers: 80, StartOffset: "1m", Stages: []storage.LoadStage{{Type: "hold", Duration: "1m", TargetVUsers: 80}}},
+		},
+	}
+	if got := scenarioPeakVUsers(scenario); got != 80 {
+		t.Fatalf("scenario peak = %d, want 80", got)
+	}
+}
+
 func (b *approvalSnapshotBlockingBackend) Run(_ *TestRunner, test *ManagedTest) {
 	b.started <- test.ID
 	if b.count.Add(1) == 1 {

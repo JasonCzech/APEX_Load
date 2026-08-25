@@ -15,6 +15,17 @@ func cloneStringMap(input map[string]string) map[string]string {
 	return cloned
 }
 
+func cloneIntMap(input map[string]int) map[string]int {
+	if len(input) == 0 {
+		return nil
+	}
+	cloned := make(map[string]int, len(input))
+	for key, value := range input {
+		cloned[key] = value
+	}
+	return cloned
+}
+
 func cloneAnyMap(input map[string]any) map[string]any {
 	return protocol.BoundProtocolEvidence(input)
 }

@@ -3456,15 +3456,30 @@ func (tr *TestRunner) startStageSchedules(ctx context.Context, test *ManagedTest
 			groups = append(groups, group)
 		}
 	}
+	preBaseline, _ := testexec.ResourceBaselineWindows(test.ResourceBaseline)
+	preBaseline += testexec.StartDelayWindow(test.StartDelay)
 	tr.mu.RUnlock()
 
 	for _, group := range groups {
 		group := group
-		go tr.runStageSchedule(ctx, testID, group.Name, group.Stages, mge)
+		startOffset := groupStartOffsetDuration(group)
+		if startOffset > time.Duration(math.MaxInt64)-preBaseline {
+			startOffset = time.Duration(math.MaxInt64)
+		} else {
+			startOffset += preBaseline
+		}
+		go tr.runStageSchedule(ctx, testID, group.Name, group.Stages, startOffset, mge)
 	}
 }
 
-func (tr *TestRunner) runStageSchedule(ctx context.Context, testID string, groupName string, stages []storage.LoadStage, mge *engine.MultiGroupEngine) {
+func (tr *TestRunner) runStageSchedule(ctx context.Context, testID string, groupName string, stages []storage.LoadStage, activeOffset time.Duration, mge *engine.MultiGroupEngine) {
+	// Stage definitions are relative to group activation, not controller
+	// admission. Anchor them to the same pause-aware run clock as generator-side
+	// StartOffset so a delayed group cannot be scaled before it activates. This
+	// is an absolute target, so readiness or commit latency does not add drift.
+	if !tr.waitTestActiveRuntime(ctx, testID, activeOffset) {
+		return
+	}
 	if mge != nil {
 		select {
 		case <-ctx.Done():
@@ -3887,7 +3902,7 @@ func (tr *TestRunner) vuserScaleProposalWithEvidenceLocked(test *ManagedTest, gr
 	if !quotaOK {
 		return nil, fmt.Errorf("project quota evidence changed while VUser scale admission was evaluated; retry")
 	}
-	if err := enforceTestQuotaWithProjectQuota(projectQuota, proposal.TotalVUsers, proposal.Duration, proposal.Status); err != nil {
+	if err := enforceTestQuotaWithProjectQuota(projectQuota, managedTestCapacityVUsers(&proposal), proposal.Duration, proposal.Status); err != nil {
 		return nil, err
 	}
 	if blocked, reason := tr.evaluateQuotaBlockWithLaunchEvidenceLocked(&proposal, test.ID, now, evidence); blocked {
@@ -4247,7 +4262,7 @@ func (tr *TestRunner) AdjustDuration(id string, newDuration time.Duration) error
 		tr.mu.Unlock()
 		return fmt.Errorf("project quota evidence changed while duration admission was evaluated; retry")
 	}
-	if err := enforceTestQuotaWithProjectQuota(projectQuota, proposal.TotalVUsers, proposal.Duration, proposal.Status); err != nil {
+	if err := enforceTestQuotaWithProjectQuota(projectQuota, managedTestCapacityVUsers(&proposal), proposal.Duration, proposal.Status); err != nil {
 		tr.mu.Unlock()
 		return err
 	}

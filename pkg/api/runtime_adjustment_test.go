@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/jasonczech/apexload/pkg/storage"
 )
 
 func TestRuntimeAdjustmentPreviewRouteReturnsRevisionAndImpact(t *testing.T) {
@@ -100,6 +102,56 @@ func TestLaunchCapacityAtReleasesCompletedGroupDemandWithoutDroppingScenario(t *
 	}
 }
 
+func TestLaunchCapacityAtHonorsDelayedGroupActivationAndOverlapPeak(t *testing.T) {
+	now := time.Now().UTC()
+	groups := []launchGroupCapacity{
+		{StartAt: now, EndAt: now.Add(10 * time.Minute), VUsers: 40},
+		{StartAt: now.Add(5 * time.Minute), EndAt: now.Add(15 * time.Minute), VUsers: 60},
+		{StartAt: now.Add(10 * time.Minute), EndAt: now.Add(20 * time.Minute), VUsers: 80},
+	}
+	event := launchCapacityEvent{
+		StartAt: now, EndAt: now.Add(20 * time.Minute), Generators: 4,
+		VUsers: launchGroupPeakVUsers(groups), GroupProfileKnown: true, Groups: groups,
+	}
+	if event.VUsers != 140 {
+		t.Fatalf("overlap peak = %d, want 140", event.VUsers)
+	}
+	if _, vusers := launchCapacityAt(event, now.Add(time.Minute)); vusers != 40 {
+		t.Fatalf("pre-offset demand = %d, want 40", vusers)
+	}
+	if _, vusers := launchCapacityAt(event, now.Add(6*time.Minute)); vusers != 100 {
+		t.Fatalf("overlap demand = %d, want 100", vusers)
+	}
+	if _, vusers := launchCapacityAt(event, now.Add(11*time.Minute)); vusers != 140 {
+		t.Fatalf("later overlap demand = %d, want 140", vusers)
+	}
+}
+
+func TestManagedGroupPeakVUsersUsesHalfOpenOffsetWindows(t *testing.T) {
+	groups := []TestGroup{
+		{Name: "first", VUsers: 60, Stages: []storage.LoadStage{{Type: "hold", Duration: "1m", TargetVUsers: 60}}},
+		{Name: "second", VUsers: 80, StartOffset: "1m", Stages: []storage.LoadStage{{Type: "hold", Duration: "1m", TargetVUsers: 80}}},
+	}
+	if got := managedGroupPeakVUsers(groups, 2*time.Minute); got != 80 {
+		t.Fatalf("non-overlapping peak = %d, want 80", got)
+	}
+}
+
+func TestLaunchGroupCapacitiesCapsOffsetGroupAtScenarioDeadline(t *testing.T) {
+	start := time.Unix(100, 0).UTC()
+	test := &ManagedTest{
+		Duration: 5 * time.Minute,
+		Groups:   []TestGroup{{Name: "late", VUsers: 10, StartOffset: "1m", TargetDuration: "5m", RampDown: "1m"}},
+	}
+	windows := launchGroupCapacities(test, start, start)
+	if len(windows) != 1 {
+		t.Fatalf("windows = %#v", windows)
+	}
+	if want := start.Add(5 * time.Minute); !windows[0].EndAt.Equal(want) {
+		t.Fatalf("offset window end = %s, want scenario deadline %s", windows[0].EndAt, want)
+	}
+}
+
 func TestLaunchCapacityAtDoesNotRestoreWholeRunDemandAfterAllGroupsEnd(t *testing.T) {
 	now := time.Now().UTC()
 	event := launchCapacityEvent{
@@ -140,6 +192,22 @@ func TestLaunchSampleTimesIncludesRampReleaseBoundary(t *testing.T) {
 		}
 	}
 	t.Fatalf("ramp release boundary %v missing from samples: %v", releaseAt, samples)
+}
+
+func TestLaunchSampleTimesIncludesGroupActivationBoundary(t *testing.T) {
+	now := time.Now().UTC().Truncate(time.Second)
+	startAt := now.Add(5 * time.Minute)
+	window := LaunchWindow{StartAt: now, EndAt: now.Add(20 * time.Minute)}
+	event := launchCapacityEvent{
+		StartAt: now, EndAt: window.EndAt, GroupProfileKnown: true,
+		Groups: []launchGroupCapacity{{StartAt: startAt, EndAt: now.Add(10 * time.Minute), VUsers: 10}},
+	}
+	for _, sample := range launchSampleTimes(window, []launchCapacityEvent{event}, nil, nil) {
+		if sample.Equal(startAt) {
+			return
+		}
+	}
+	t.Fatal("group activation boundary is absent from launch samples")
 }
 
 func TestInitializeRuntimeGroupsUsesActiveClockAndLegacyDuration(t *testing.T) {

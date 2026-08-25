@@ -201,11 +201,11 @@ export function debugSequenceKey(phase: string, actionIndex: number): string {
 }
 
 // debugContainerKind reports which container an action is, mirroring the engine's
-// replayContainerKind (http_sequence + control_if/control_loop).
-export function debugContainerKind(action: ScriptActionDefinition): '' | 'http_sequence' | 'control_if' | 'control_loop' {
+// replayContainerKind (http_sequence + control_if/control_switch/control_loop).
+export function debugContainerKind(action: ScriptActionDefinition): '' | 'http_sequence' | 'control_if' | 'control_switch' | 'control_loop' | 'control_parallel' {
   const t = (action.type || '').toLowerCase().trim()
   if (t === 'http_sequence') return 'http_sequence'
-  if (t === 'control_if' || t === 'control_loop') return t
+	if (t === 'control_if' || t === 'control_switch' || t === 'control_loop' || t === 'control_parallel') return t
   return ''
 }
 
@@ -222,7 +222,7 @@ function containerExpandKey(phase: string, actionIndex: number, stepPath: string
 
 // containerChildSteps returns the static child steps of a container action paired
 // with the step-path segment the engine assigns each (requests[i] / then[i] /
-// else[i] / loop[i]).
+// else[i] / case[n][i] / default[i] / loop[i]).
 function containerChildSteps(action: ScriptActionDefinition, kind: string): Array<{ action: ScriptActionDefinition; segment: string; requestIndex?: number }> {
   if (kind === 'http_sequence') {
     return httpSequenceRequests(action).map((child, i) => ({ action: child, segment: `requests[${i}]`, requestIndex: i }))
@@ -235,17 +235,29 @@ function containerChildSteps(action: ScriptActionDefinition, kind: string): Arra
   if (kind === 'control_loop') {
     return (action.control?.steps || []).map((child, i) => ({ action: child, segment: `loop[${i}]` }))
   }
+	if (kind === 'control_switch') {
+		const cases = (action.control?.cases || []).flatMap((switchCase, caseIndex) =>
+			(switchCase.steps || []).map((child, stepIndex) => ({ action: child, segment: `case[${caseIndex}][${stepIndex}]` })),
+		)
+		const fallback = (action.control?.default || []).map((child, stepIndex) => ({ action: child, segment: `default[${stepIndex}]` }))
+		return [...cases, ...fallback]
+	}
+	if (kind === 'control_parallel') {
+		return (action.control?.branches || []).flatMap((branch, branchIndex) =>
+			(branch.steps || []).map((child, stepIndex) => ({ action: child, segment: `branches[${branchIndex}].steps[${stepIndex}]` })),
+		)
+	}
   return []
 }
 
 // DebugRailRenderRow is the flattened, render-ready row list for the debugger's
-// ACTION LIST. Container actions (http_sequence / control_if / control_loop)
+// ACTION LIST. Container actions (http_sequence / control_if / control_switch / control_loop)
 // become collapsible `container` rows; when expanded they are followed by their
 // child steps (`leaf`, or nested `container`). Plain actions pass through as
 // `action`, so non-container scripts render exactly as before.
 export type DebugRailRenderRow =
   | { kind: 'action'; key: string; depth: number; row: ScriptPhaseActionRow }
-  | { kind: 'container'; key: string; depth: number; row: ScriptPhaseActionRow; containerType: 'http_sequence' | 'control_if' | 'control_loop'; name: string; leafCount: number; expanded: boolean; stepPath: string[] }
+	| { kind: 'container'; key: string; depth: number; row: ScriptPhaseActionRow; containerType: 'http_sequence' | 'control_if' | 'control_switch' | 'control_loop' | 'control_parallel'; name: string; leafCount: number; expanded: boolean; stepPath: string[] }
   | { kind: 'leaf'; key: string; depth: number; row: ScriptPhaseActionRow; name: string; method: string; target: string; stepPath: string[]; requestIndex?: number; childAction: ScriptActionDefinition }
 
 // countContainerLeaves counts the static leaf steps under a container (recursively).
@@ -257,13 +269,13 @@ function countContainerLeaves(action: ScriptActionDefinition): number {
 
 export function buildDebugRailRenderRows(rows: ScriptPhaseActionRow[], expandedKeys: Set<string>): DebugRailRenderRow[] {
   const out: DebugRailRenderRow[] = []
-  const emitContainer = (row: ScriptPhaseActionRow, action: ScriptActionDefinition, kind: 'http_sequence' | 'control_if' | 'control_loop', stepPath: string[], depth: number) => {
+	const emitContainer = (row: ScriptPhaseActionRow, action: ScriptActionDefinition, kind: 'http_sequence' | 'control_if' | 'control_switch' | 'control_loop' | 'control_parallel', stepPath: string[], depth: number) => {
     const expanded = expandedKeys.has(containerExpandKey(row.phase, row.actionIndex, stepPath))
     out.push({
       kind: 'container',
       key: containerExpandKey(row.phase, row.actionIndex, stepPath),
       depth, row, containerType: kind,
-      name: action.name || (kind === 'http_sequence' ? 'Sequence' : kind === 'control_if' ? 'If / Else' : 'Loop'),
+	  name: action.name || (kind === 'http_sequence' ? 'Sequence' : kind === 'control_if' ? 'If / Else' : kind === 'control_switch' ? 'Switch' : kind === 'control_parallel' ? 'Parallel' : 'Loop'),
       leafCount: countContainerLeaves(action),
       expanded, stepPath,
     })

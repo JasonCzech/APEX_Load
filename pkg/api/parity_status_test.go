@@ -33,6 +33,9 @@ func TestHandleGetParityStatusReturnsReleaseGateSummary(t *testing.T) {
 	if len(payload.CompetitiveParity) == 0 {
 		t.Fatalf("competitive parity section is empty")
 	}
+	if len(payload.CloudTestCapabilities) != 34 {
+		t.Fatalf("cloudtest capability count = %d, want 34", len(payload.CloudTestCapabilities))
+	}
 	if len(payload.BrowserBenchmarks) != 3 {
 		t.Fatalf("browser benchmark profiles = %d, want 3", len(payload.BrowserBenchmarks))
 	}
@@ -181,22 +184,26 @@ func TestHandleGetBrowserBenchmarkEvidenceReturnsProfilesAndClaimPolicy(t *testi
 
 func TestCompetitiveParityStatusExposesEvidenceAndNonGoals(t *testing.T) {
 	areas := buildCompetitiveParityStatus()
-	if len(areas) != 7 {
-		t.Fatalf("competitive area count = %d, want 7", len(areas))
+	if len(areas) != 10 {
+		t.Fatalf("competitive area count = %d, want 10", len(areas))
 	}
 
 	required := map[string]bool{
-		"developer_experience":             false,
-		"managed_scale_load_zones":         false,
-		"authoring_recording":              false,
-		"browser_testing":                  false,
-		"analysis_integrations":            false,
-		"specialized_enterprise_protocols": false,
-		"packaging_samples_trust":          false,
+		"developer_experience":              false,
+		"managed_scale_load_zones":          false,
+		"authoring_recording":               false,
+		"browser_testing":                   false,
+		"analysis_integrations":             false,
+		"specialized_enterprise_protocols":  false,
+		"packaging_samples_trust":           false,
+		"visual_composition_authoring":      false,
+		"streaming_result_drilldown":        false,
+		"agentless_infrastructure_monitors": false,
 	}
 	competitorCoverage := map[string]bool{
-		"k6":      false,
-		"NeoLoad": false,
+		"k6":        false,
+		"NeoLoad":   false,
+		"CloudTest": false,
 	}
 	for _, area := range areas {
 		if _, ok := required[area.ID]; ok {
@@ -242,6 +249,75 @@ func TestCompetitiveParityStatusExposesEvidenceAndNonGoals(t *testing.T) {
 	}
 }
 
+func TestCloudTestParityCatalogIsCompleteAndUsesControlledVocabulary(t *testing.T) {
+	capabilities := cloneCloudTestParityCatalog()
+	if len(capabilities) != 34 {
+		t.Fatalf("capability count = %d, want 34", len(capabilities))
+	}
+	validConfidence := map[string]bool{
+		"current_official": true,
+		"current_api":      true,
+		"legacy_official":  true,
+		"inferred":         true,
+	}
+	validStatus := map[string]bool{
+		"supported":    true,
+		"partial":      true,
+		"planned":      true,
+		"demand_gated": true,
+		"non_goal":     true,
+	}
+	validImplementation := map[string]bool{
+		"implemented":  true,
+		"in_progress":  true,
+		"not_started":  true,
+		"demand_gated": true,
+		"non_goal":     true,
+	}
+	seen := make(map[string]bool, len(capabilities))
+	byID := make(map[string]CloudTestCapability, len(capabilities))
+	for _, capability := range capabilities {
+		if capability.ID == "" || capability.Category == "" || capability.Name == "" ||
+			capability.CloudTestEvidenceURL == "" || capability.Workstream == "" ||
+			capability.AcceptanceTest == "" {
+			t.Errorf("under-populated capability: %#v", capability)
+		}
+		if seen[capability.ID] {
+			t.Errorf("duplicate capability id %q", capability.ID)
+		}
+		seen[capability.ID] = true
+		byID[capability.ID] = capability
+		if !validConfidence[capability.EvidenceConfidence] {
+			t.Errorf("capability %q has invalid evidence confidence %q", capability.ID, capability.EvidenceConfidence)
+		}
+		if !validStatus[capability.APEXStatus] {
+			t.Errorf("capability %q has invalid APEX status %q", capability.ID, capability.APEXStatus)
+		}
+		if !validImplementation[capability.ImplementationStatus] {
+			t.Errorf("capability %q has invalid implementation status %q", capability.ID, capability.ImplementationStatus)
+		}
+	}
+	if got := byID["native_mobile"].APEXStatus; got != "non_goal" {
+		t.Fatalf("native_mobile status = %q, want non_goal", got)
+	}
+	if got := byID["live_ramp_preview"].APEXStatus; got != "supported" {
+		t.Fatalf("live_ramp_preview status = %q, want supported", got)
+	}
+}
+
+func TestCloudTestProgramDocumentsEveryCanonicalCapability(t *testing.T) {
+	contentBytes, err := os.ReadFile(filepath.Join("..", "..", "docs", "CLOUDTEST_PARITY_PROGRAM.md"))
+	if err != nil {
+		t.Fatalf("read CloudTest parity program: %v", err)
+	}
+	content := string(contentBytes)
+	for _, capability := range cloneCloudTestParityCatalog() {
+		if !strings.Contains(content, "`"+capability.ID+"`") {
+			t.Errorf("CloudTest parity program is missing capability id %q", capability.ID)
+		}
+	}
+}
+
 func TestCompetitiveSupportMatrixDocumentsParityStatusClaims(t *testing.T) {
 	// Strip any Markdown anchor (#section) from the evidence path before opening the file.
 	docPath := strings.SplitN(competitiveSupportMatrixEvidence, "#", 2)[0]
@@ -254,6 +330,7 @@ func TestCompetitiveSupportMatrixDocumentsParityStatusClaims(t *testing.T) {
 		"Competitive Parity API Dimensions",
 		"k6",
 		"NeoLoad",
+		"CloudTest",
 		"LoadRunner",
 		"JMeter",
 		"DevWeb",

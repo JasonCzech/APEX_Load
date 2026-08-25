@@ -112,6 +112,17 @@ message WorkAssignment {
   // Opaque, controller-generated run-incarnation capability. Current
   // execution-enabled generators require exactly 32 non-zero bytes.
   bytes run_supervision_token = 28;
+  // Controller-approved load-zone label. Generators attach this value to
+  // results; script data is never accepted as a regional analytics label.
+  string region = 29;
+  // Active-test delay from the shared load epoch before this group may emit
+  // user traffic. Pause time never consumes this duration.
+  google.protobuf.Duration start_offset = 30;
+  // Assignment-local success-detail quotas. The controller partitions the
+  // authored run budget across logical shards; zero preserves script limits.
+  int32 message_detail_max_items = 31;
+  int64 message_detail_max_item_bytes = 32;
+  int64 message_detail_max_total_bytes = 33;
 }
 
 message WorkCommitRequest {
@@ -268,6 +279,7 @@ message MetricsBatch {
   // unknown (an older generator). Controllers use gaps to mark live windows
   // that a bounded subscriber queue could not deliver.
   uint64 batch_sequence = 19;
+  repeated MetricAggregate region_metrics = 20;
 }
 
 message MetricsBatchTelemetry {
@@ -401,6 +413,11 @@ message TransactionMetric {
   string soap_operation = 17;
   string snapshot_json = 18;
   string group = 19;
+  string region = 20;
+  string network_profile = 21;
+  string hierarchy = 22;
+  string phase = 23;
+  string page_name = 24;
 }
 
 message GeneratorStats {

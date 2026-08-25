@@ -79,7 +79,7 @@ describe('TestExecutionArchive', () => {
         label: 'Executive',
         description: 'Decision-focused summary.',
         best_for: 'Release sign-off and business risk.',
-        export_formats: ['html', 'csv', 'pdf'],
+        export_formats: ['html', 'csv', 'pdf', 'docx'],
         included_sections: ['verdict', 'sla_rollup'],
         section_order: ['verdict', 'sla_rollup'],
       },
@@ -88,7 +88,7 @@ describe('TestExecutionArchive', () => {
         label: 'Engineer',
         description: 'Engineering drilldown.',
         best_for: 'Bottleneck isolation.',
-        export_formats: ['html', 'pdf', 'jsonl'],
+        export_formats: ['html', 'pdf', 'docx', 'jsonl'],
         included_sections: ['actions', 'network_phases'],
         section_order: ['actions', 'network_phases'],
       },
@@ -97,7 +97,7 @@ describe('TestExecutionArchive', () => {
         label: 'Audit',
         description: 'Governance package.',
         best_for: 'Evidence integrity and approval review.',
-        export_formats: ['html', 'json', 'pdf'],
+        export_formats: ['html', 'json', 'pdf', 'docx'],
         included_sections: ['audit_identity', 'artifact_integrity'],
         section_order: ['audit_identity', 'artifact_integrity'],
       },
@@ -557,11 +557,17 @@ describe('TestExecutionArchive', () => {
     expect(profilePdfLinks).toContain('/api/v1/tests/test-1/archive/report?format=pdf&profile=executive')
     expect(profilePdfLinks).toContain('/api/v1/tests/test-1/archive/report?format=pdf&profile=engineer')
     expect(profilePdfLinks).toContain('/api/v1/tests/test-1/archive/report?format=pdf&profile=audit')
+    expect(profilePdfLinks).toContain('/api/v1/tests/test-1/archive/report?format=docx&profile=executive')
+    expect(profilePdfLinks).toContain('/api/v1/tests/test-1/archive/report?format=docx&profile=engineer')
+    expect(profilePdfLinks).toContain('/api/v1/tests/test-1/archive/report?format=docx&profile=audit')
     expect(container.textContent).toContain('Executive HTML')
     expect(container.textContent).toContain('Executive CSV')
     expect(container.textContent).toContain('Executive PDF')
     expect(container.textContent).toContain('Engineer PDF')
     expect(container.textContent).toContain('Audit PDF')
+    expect(container.textContent).toContain('Executive DOCX')
+    expect(container.textContent).toContain('Engineer DOCX')
+    expect(container.textContent).toContain('Audit DOCX')
     expect(container.textContent).toContain('Engineer JSONL')
     expect(container.textContent).toContain('SLA rollup')
     expect(container.textContent).toContain('Error Patterns')
@@ -836,6 +842,12 @@ describe('TestExecutionArchive', () => {
           archiveTransactionSort={{ key: 'duration', direction: 'desc' }}
           onArchiveTransactionSortChange={onSort}
           archiveTransactionFilters={{
+			region: '',
+			networkProfile: '',
+			sourceTransaction: '',
+			hierarchy: '',
+			phase: '',
+			detail: '',
             timeFrom: '',
             timeTo: '',
             status: '500',
@@ -1168,9 +1180,14 @@ describe('TestExecutionArchive', () => {
       group: 'Checkout',
       action_name: 'POST /checkout',
       duration_ms: 180,
+	  dns_ms: 4,
+	  connect_ms: 12,
+	  tls_ms: 18,
+	  ttfb_ms: 90,
       status_code: 200,
       success: true,
       bytes_received: 4096,
+	  network_entries: [{ url: 'https://example.test/app.js', method: 'GET', resource_type: 'script', duration_ms: 42, status_code: 200 }],
       server_telemetry: {
         server_processing_ms: 48,
         transfer_ms: 14,
@@ -1246,6 +1263,10 @@ describe('TestExecutionArchive', () => {
     expect(container.textContent).toContain('Response size class: small')
     expect(container.textContent).toContain('Envelope overhead: 0.75 KB')
     expect(container.textContent).toContain('Stream: first event 125.0 ms / 7 events')
+	expect(container.textContent).toContain('Network Waterfall')
+	expect(container.textContent).toContain('DNS')
+	expect(container.textContent).toContain('script')
+	expect(container.querySelector('[aria-label="Network waterfall"]')).not.toBeNull()
 
     const serverTelemetryCard = Array.from(container.querySelectorAll('.archive-event-detail-card')).find(card => card.textContent?.includes('Server Telemetry'))
     expect(serverTelemetryCard).toBeDefined()

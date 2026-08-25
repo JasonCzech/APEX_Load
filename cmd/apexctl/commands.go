@@ -111,6 +111,9 @@ func statusCmd() {
 		if len(report.Details) > 0 {
 			out["sla_details"] = report.Details
 		}
+		if len(report.TransactionRuleResults) > 0 {
+			out["transaction_rule_results"] = report.TransactionRuleResults
+		}
 		b, _ := json.MarshalIndent(out, "", "  ")
 		fmt.Println(string(b))
 	} else {
@@ -123,6 +126,9 @@ func statusCmd() {
 		fmt.Printf("SLA:    %s\n", sla)
 		for _, d := range report.Details {
 			fmt.Printf("  - %s\n", d)
+		}
+		for _, result := range report.TransactionRuleResults {
+			fmt.Printf("  - %s / %s: %s\n", result.Rule.Transaction, result.Rule.Metric, result.Status)
 		}
 	}
 
@@ -199,6 +205,9 @@ func waitCmd() {
 			if len(sla.Details) > 0 {
 				out["sla_details"] = sla.Details
 			}
+			if len(sla.TransactionRuleResults) > 0 {
+				out["transaction_rule_results"] = sla.TransactionRuleResults
+			}
 		}
 		if result != nil {
 			out["test_status"] = result.Status
@@ -223,6 +232,9 @@ func waitCmd() {
 			fmt.Printf("  SLA:          %s\n", status)
 			for _, d := range sla.Details {
 				fmt.Printf("    - %s\n", d)
+			}
+			for _, rule := range sla.TransactionRuleResults {
+				fmt.Printf("    - %s / %s: %s\n", rule.Rule.Transaction, rule.Rule.Metric, rule.Status)
 			}
 		}
 		if runErr != nil {

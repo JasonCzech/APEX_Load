@@ -50,6 +50,7 @@
       "pacing": {
         "type": ""
       },
+      "results": {},
       "run_logic": {},
       "sapgui": {},
       "soap": {

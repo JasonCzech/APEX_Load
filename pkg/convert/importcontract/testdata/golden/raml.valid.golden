@@ -52,6 +52,7 @@
       "pacing": {
         "type": ""
       },
+      "results": {},
       "run_logic": {
         "auto_transactions": "per_action",
         "iterations": 1

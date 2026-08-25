@@ -843,6 +843,7 @@ type ScenarioScript struct {
 	VUsers         int         `json:"vusers"`
 	RampUp         string      `json:"ramp_up,omitempty"`
 	RampDown       string      `json:"ramp_down,omitempty"`
+	StartOffset    string      `json:"start_offset,omitempty"`
 	Stages         []LoadStage `json:"stages,omitempty"`
 	Iterations     *int        `json:"iterations,omitempty"`
 	Initialization string      `json:"initialization,omitempty"`
@@ -1095,6 +1096,18 @@ type ProjectSettings struct {
 	// both the project-wide limits above and the matching pool quota here. Zero
 	// fields mean no limit; an absent key means no pool-specific cap.
 	PoolQuotas map[string]PoolProjectQuota `json:"pool_quotas,omitempty"`
+	Features   ProjectFeatureFlags         `json:"features,omitempty"`
+}
+
+// ProjectFeatureFlags are explicit preview opt-ins. They default false so a
+// script cannot silently activate higher-risk runtime behavior merely by being
+// copied into another project.
+type ProjectFeatureFlags struct {
+	SuccessfulMessageDetail bool `json:"successful_message_detail,omitempty"`
+	ControlParallel         bool `json:"control_parallel,omitempty"`
+	NativeElasticCapacity   bool `json:"native_elastic_capacity,omitempty"`
+	PrivilegedMonitors      bool `json:"privileged_monitors,omitempty"`
+	MediaStream             bool `json:"media_stream,omitempty"`
 }
 
 // PoolProjectQuota bounds a single project's concurrent footprint on one fleet

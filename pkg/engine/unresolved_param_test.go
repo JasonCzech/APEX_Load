@@ -129,8 +129,14 @@ func TestActionUnresolvedParameterScanCoversEveryStringField(t *testing.T) {
 	// Fields the scan intentionally ignores because they cannot hold a string.
 	nonStringFields := map[string]bool{
 		"TimeoutMs": true, "MaxRedirects": true, "DiscardResponseBodyOnSuccess": true,
-		"Capture":                true, // BrowserCaptureOptions is all bools
-		"ResolvedDefaultHeaders": true,
+		"Capture":                    true, // BrowserCaptureOptions is all bools
+		"CaptureMessageDetail":       true,
+		"MessageDetailMaxItems":      true,
+		"MessageDetailMaxItemBytes":  true,
+		"MessageDetailMaxTotalBytes": true,
+		"MessageDetailPriority":      true,
+		"MessageDetailRetained":      true,
+		"ResolvedDefaultHeaders":     true,
 	}
 	covered := map[string]bool{
 		"Name": true, "Type": true, "Method": true, "Target": true, "RedactedTarget": true,
@@ -139,7 +145,9 @@ func TestActionUnresolvedParameterScanCoversEveryStringField(t *testing.T) {
 		"DefaultHeaders": true, "DefaultHeaderList": true,
 		"Body": true, "BodyEncoding": true, "RedactedBody": true,
 		"Params": true, "RedactedParams": true, "Metadata": true,
-		"WaitFor": true, "Sync": true, "Extractors": true, "Assertions": true,
+		"HierarchyPath": true, "PageName": true,
+		"MessageDetailMode": true,
+		"WaitFor":           true, "Sync": true, "Extractors": true, "Assertions": true,
 		"ThinkTime": true, "Auth": true, "RedactedAuth": true, "SOAP": true, "RedactedSOAP": true,
 	}
 

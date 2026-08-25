@@ -176,7 +176,10 @@ func validateScriptStructureIssues(script *Script) []string {
 		if current.action.Control == nil {
 			continue
 		}
-		nestedCount := len(current.action.Control.Steps) + len(current.action.Control.Else)
+		nestedCount := len(current.action.Control.Steps) + len(current.action.Control.Else) + len(current.action.Control.Default)
+		for _, switchCase := range current.action.Control.Cases {
+			nestedCount += len(switchCase.Steps)
+		}
 		if definitions+len(stack)+nestedCount > MaxScriptActionDefinitions {
 			return []string{fmt.Sprintf("script action/request definitions must not exceed %d", MaxScriptActionDefinitions)}
 		}
@@ -185,6 +188,14 @@ func validateScriptStructureIssues(script *Script) []string {
 		}
 		for i := range current.action.Control.Else {
 			stack = append(stack, pendingAction{action: current.action.Control.Else[i], depth: current.depth + 1})
+		}
+		for i := range current.action.Control.Default {
+			stack = append(stack, pendingAction{action: current.action.Control.Default[i], depth: current.depth + 1})
+		}
+		for caseIndex := len(current.action.Control.Cases) - 1; caseIndex >= 0; caseIndex-- {
+			for i := range current.action.Control.Cases[caseIndex].Steps {
+				stack = append(stack, pendingAction{action: current.action.Control.Cases[caseIndex].Steps[i], depth: current.depth + 1})
+			}
 		}
 	}
 	return nil
@@ -357,6 +368,7 @@ func validateExecutionResourceIssues(script *Script) []string {
 	issues = append(issues, ValidateWorkloadSettingsIssues(script.Config.RunLogic, script.Config.Pacing)...)
 	issues = append(issues, validateThinkTimeResourceIssues("config.think_time", script.Config.ThinkTime)...)
 	issues = append(issues, validateErrorHandlingResourceIssues(script.Config.ErrorHandling)...)
+	issues = append(issues, validateMessageDetailResourceIssues(script.Config.Results.MessageDetail)...)
 	for i, action := range script.Init {
 		issues = append(issues, validateControlResourceIssues(fmt.Sprintf("init[%d]", i), action)...)
 	}
@@ -365,6 +377,38 @@ func validateExecutionResourceIssues(script *Script) []string {
 	}
 	for i, action := range script.Teardown {
 		issues = append(issues, validateControlResourceIssues(fmt.Sprintf("teardown[%d]", i), action)...)
+	}
+	return issues
+}
+
+func validateMessageDetailResourceIssues(config *MessageDetailConfig) []string {
+	if config == nil {
+		return nil
+	}
+	issues := make([]string, 0)
+	mode := strings.ToLower(strings.TrimSpace(config.Mode))
+	switch mode {
+	case "off", "errors", "sampled", "adaptive":
+	default:
+		issues = append(issues, "config.results.message_detail.mode must be off, errors, sampled, or adaptive")
+	}
+	if config.SampleRate < 0 || config.SampleRate > 1 {
+		issues = append(issues, "config.results.message_detail.sample_rate must be between 0 and 1")
+	}
+	if mode == "sampled" && config.SampleRate <= 0 {
+		issues = append(issues, "config.results.message_detail.sample_rate must be greater than 0 in sampled mode")
+	}
+	if config.MaxItems < 0 || config.MaxItems > 4096 {
+		issues = append(issues, "config.results.message_detail.max_items must be between 0 and 4096")
+	}
+	if config.MaxItemBytes < 0 || config.MaxItemBytes > 16<<20 {
+		issues = append(issues, "config.results.message_detail.max_item_bytes must be between 0 and 16777216")
+	}
+	if config.MaxTotalBytes < 0 || config.MaxTotalBytes > 1<<30 {
+		issues = append(issues, "config.results.message_detail.max_total_bytes must be between 0 and 1073741824")
+	}
+	if config.MaxItemBytes > 0 && config.MaxTotalBytes > 0 && config.MaxTotalBytes < config.MaxItemBytes {
+		issues = append(issues, "config.results.message_detail.max_total_bytes must not be smaller than max_item_bytes")
 	}
 	return issues
 }
@@ -385,6 +429,14 @@ func validateControlResourceIssues(path string, action Action) []string {
 	}
 	for i, nested := range action.Control.Else {
 		issues = append(issues, validateControlResourceIssues(fmt.Sprintf("%s.control.else[%d]", path, i), nested)...)
+	}
+	for caseIndex, switchCase := range action.Control.Cases {
+		for i, nested := range switchCase.Steps {
+			issues = append(issues, validateControlResourceIssues(fmt.Sprintf("%s.control.cases[%d].steps[%d]", path, caseIndex, i), nested)...)
+		}
+	}
+	for i, nested := range action.Control.Default {
+		issues = append(issues, validateControlResourceIssues(fmt.Sprintf("%s.control.default[%d]", path, i), nested)...)
 	}
 	return issues
 }
@@ -419,6 +471,14 @@ func validateActionForProtocolAtPath(protocol string, path string, index int, ac
 	var issues []string
 	if strings.TrimSpace(action.Name) == "" {
 		issues = append(issues, fmt.Sprintf("%s: missing name", path))
+	}
+	if action.Attribution != nil {
+		if len(action.Attribution.HierarchyPath) > 2048 {
+			issues = append(issues, fmt.Sprintf("%s: attribution hierarchy_path must not exceed 2048 bytes", actionLabel(path, action)))
+		}
+		if len(action.Attribution.PageName) > 512 {
+			issues = append(issues, fmt.Sprintf("%s: attribution page_name must not exceed 512 bytes", actionLabel(path, action)))
+		}
 	}
 	issues = append(issues, validateBodyFileIssues(path, action)...)
 	issues = append(issues, validateBase64BodyEncodingIssues(path, action)...)
@@ -812,7 +872,7 @@ func validateEngineActionIssues(protocol string, path string, index int, action 
 	switch action.Type {
 	case "rendezvous":
 		return rebaseActionIssues(fmt.Sprintf("actions[%d]", index), path, validateRendezvousActionIssues(index, action))
-	case "control_if", "control_loop":
+	case "control_if", "control_switch", "control_loop", "control_parallel":
 		return validateControlFlowIssues(protocol, path, action)
 	case "error_message":
 		label := actionLabel(path, action)
@@ -826,7 +886,7 @@ func validateEngineActionIssues(protocol string, path string, index int, action 
 	return nil
 }
 
-// validateControlFlowIssues validates a control_if / control_loop block and
+// validateControlFlowIssues validates a control_if / control_switch / control_loop block and
 // recursively validates its nested step bodies against the script protocol.
 func validateControlFlowIssues(protocol string, path string, action Action) []string {
 	label := actionLabel(path, action)
@@ -848,6 +908,34 @@ func validateControlFlowIssues(protocol string, path string, action Action) []st
 	}
 	issues = append(issues, validateConditionIssues(label, action.Control.Condition)...)
 	switch action.Type {
+	case "control_parallel":
+		if len(action.Control.Branches) < 2 {
+			issues = append(issues, fmt.Sprintf("%s: control_parallel requires at least two branches", label))
+		}
+		if action.Control.Concurrency < 0 || action.Control.Concurrency > 16 {
+			issues = append(issues, fmt.Sprintf("%s: control_parallel concurrency must be between 0 and 16", label))
+		}
+		if action.Control.Condition != nil || len(action.Control.Steps) > 0 || len(action.Control.Else) > 0 || len(action.Control.Cases) > 0 || len(action.Control.Default) > 0 || action.Control.Count != 0 || action.Control.ForEach != nil || action.Control.DoWhile {
+			issues = append(issues, fmt.Sprintf("%s: control_parallel accepts only branches, concurrency, and fail_fast", label))
+		}
+		seen := make(map[string]struct{}, len(action.Control.Branches))
+		for branchIndex, branch := range action.Control.Branches {
+			branchLabel := fmt.Sprintf("%s.control.branches[%d]", path, branchIndex)
+			name := strings.TrimSpace(branch.Name)
+			if name == "" {
+				issues = append(issues, fmt.Sprintf("%s: name is required", branchLabel))
+			} else if len(name) > 128 {
+				issues = append(issues, fmt.Sprintf("%s: name must not exceed 128 bytes", branchLabel))
+			} else if _, exists := seen[strings.ToLower(name)]; exists {
+				issues = append(issues, fmt.Sprintf("%s: branch name %q is duplicated", branchLabel, name))
+			} else {
+				seen[strings.ToLower(name)] = struct{}{}
+			}
+			if len(branch.Steps) == 0 {
+				issues = append(issues, fmt.Sprintf("%s: steps must not be empty", branchLabel))
+			}
+			issues = append(issues, validateParallelBranchRuntimeSafety(branch.Steps, branchLabel+".steps")...)
+		}
 	case "control_loop":
 		// Loop mode precedence: for_each > count > condition.
 		if action.Control.ForEach != nil {
@@ -862,12 +950,66 @@ func validateControlFlowIssues(protocol string, path string, action Action) []st
 		if len(action.Control.Steps) == 0 && len(action.Control.Else) == 0 {
 			issues = append(issues, fmt.Sprintf("%s: control_if requires steps or else", label))
 		}
+	case "control_switch":
+		if len(action.Control.Cases) == 0 {
+			issues = append(issues, fmt.Sprintf("%s: control_switch requires at least one case", label))
+		}
+		if action.Control.Condition != nil || len(action.Control.Steps) > 0 || len(action.Control.Else) > 0 || action.Control.Count != 0 || action.Control.ForEach != nil || action.Control.DoWhile {
+			issues = append(issues, fmt.Sprintf("%s: control_switch accepts only cases and default", label))
+		}
+		for caseIndex, switchCase := range action.Control.Cases {
+			caseLabel := fmt.Sprintf("%s.control.cases[%d]", path, caseIndex)
+			if switchCase.Condition == nil {
+				issues = append(issues, fmt.Sprintf("%s: condition is required", caseLabel))
+			} else {
+				issues = append(issues, validateConditionIssues(caseLabel, switchCase.Condition)...)
+			}
+			if len(switchCase.Steps) == 0 {
+				issues = append(issues, fmt.Sprintf("%s: steps must not be empty", caseLabel))
+			}
+		}
 	}
 	for j, nested := range action.Control.Steps {
 		issues = append(issues, validateActionForProtocolAtPath(protocol, fmt.Sprintf("%s.control.steps[%d]", path, j), j, nested)...)
 	}
 	for j, nested := range action.Control.Else {
 		issues = append(issues, validateActionForProtocolAtPath(protocol, fmt.Sprintf("%s.control.else[%d]", path, j), j, nested)...)
+	}
+	for caseIndex, switchCase := range action.Control.Cases {
+		for j, nested := range switchCase.Steps {
+			issues = append(issues, validateActionForProtocolAtPath(protocol, fmt.Sprintf("%s.control.cases[%d].steps[%d]", path, caseIndex, j), j, nested)...)
+		}
+	}
+	for j, nested := range action.Control.Default {
+		issues = append(issues, validateActionForProtocolAtPath(protocol, fmt.Sprintf("%s.control.default[%d]", path, j), j, nested)...)
+	}
+	for branchIndex, branch := range action.Control.Branches {
+		for j, nested := range branch.Steps {
+			issues = append(issues, validateActionForProtocolAtPath(protocol, fmt.Sprintf("%s.control.branches[%d].steps[%d]", path, branchIndex, j), j, nested)...)
+		}
+	}
+	return issues
+}
+
+// validateParallelBranchRuntimeSafety rejects control constructs whose state or
+// cancellation semantics are not defined across independently initialized
+// protocol branches. This is an admission rule; the engine repeats the check as
+// defense in depth for callers that construct scripts without validation.
+func validateParallelBranchRuntimeSafety(actions []Action, path string) []string {
+	var issues []string
+	for index, action := range actions {
+		actionPath := fmt.Sprintf("%s[%d]", path, index)
+		actionType := CanonicalActionType(strings.ToLower(strings.TrimSpace(action.Type)))
+		switch actionType {
+		case "control_parallel", "rendezvous", "control_break", "control_continue":
+			issues = append(issues, fmt.Sprintf("%s: %s is not permitted inside control_parallel", actionPath, actionType))
+		}
+		if action.Control == nil {
+			continue
+		}
+		for _, branch := range action.Control.ActionBranches() {
+			issues = append(issues, validateParallelBranchRuntimeSafety(branch.Actions, actionPath+".control."+branch.Path)...)
+		}
 	}
 	return issues
 }
@@ -968,6 +1110,36 @@ func validateGoalConfigIssues(goal *GoalConfig) []string {
 	}
 	if goal.StopOnMaxErrors && goal.MaxErrorCount == nil {
 		issues = append(issues, "goal_config.stop_on_max_errors requires goal_config.max_error_count")
+	}
+	if len(goal.TransactionRules) > 128 {
+		issues = append(issues, "goal_config.transaction_rules cannot contain more than 128 rules")
+	}
+	metrics := map[string]bool{
+		"average_duration_ms": true, "p90_duration_ms": true, "p95_duration_ms": true,
+		"min_duration_ms": true, "max_duration_ms": true, "error_count": true,
+		"error_rate_pct": true, "minimum_count": true, "bytes_sent": true,
+		"bytes_received": true, "tps": true,
+	}
+	comparators := map[string]bool{"lt": true, "lte": true, "gt": true, "gte": true, "eq": true, "neq": true}
+	for index, rule := range goal.TransactionRules {
+		path := fmt.Sprintf("goal_config.transaction_rules[%d]", index)
+		if rule.Transaction == "" || strings.TrimSpace(rule.Transaction) != rule.Transaction {
+			issues = append(issues, path+".transaction must be a non-empty exact name without surrounding whitespace")
+		} else if len(rule.Transaction) > 256 {
+			issues = append(issues, path+".transaction exceeds 256 bytes")
+		}
+		if !metrics[rule.Metric] {
+			issues = append(issues, fmt.Sprintf("%s.metric %q is not supported", path, rule.Metric))
+		}
+		if !comparators[rule.Comparator] {
+			issues = append(issues, fmt.Sprintf("%s.comparator %q is not supported", path, rule.Comparator))
+		}
+		if math.IsNaN(rule.Threshold) || math.IsInf(rule.Threshold, 0) || rule.Threshold < 0 {
+			issues = append(issues, path+".threshold must be a finite non-negative number")
+		}
+		if rule.Severity != "" && rule.Severity != "fail" && rule.Severity != "warning" {
+			issues = append(issues, path+".severity must be fail or warning")
+		}
 	}
 
 	return issues
@@ -1079,6 +1251,10 @@ func visitScriptActions(script *Script, visit func(path string, action Action)) 
 			}
 			walk(path+".control.steps", action.Control.Steps)
 			walk(path+".control.else", action.Control.Else)
+			for caseIndex, switchCase := range action.Control.Cases {
+				walk(fmt.Sprintf("%s.control.cases[%d].steps", path, caseIndex), switchCase.Steps)
+			}
+			walk(path+".control.default", action.Control.Default)
 		}
 	}
 	walk("init", script.Init)

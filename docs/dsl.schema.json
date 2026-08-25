@@ -2476,6 +2476,75 @@
             "properties": {
               "type": {
                 "enum": [
+                  "control_parallel"
+                ]
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "description": "Runs named, isolated protocol branches concurrently and merges extracted variables under var.parallel.\u003cbranch\u003e.*.",
+            "properties": {
+              "control.branches": {
+                "description": "Two or more uniquely named branches. Each branch contains name and steps.",
+                "type": "array"
+              },
+              "control.concurrency": {
+                "description": "Maximum concurrently running branches. Defaults to 4 and cannot exceed 16.",
+                "type": "integer"
+              },
+              "control.fail_fast": {
+                "description": "Cancel sibling branches after the first failure. Defaults to false.",
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "control.branches"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "enum": [
+                  "control_switch"
+                ]
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "description": "Ordered conditional branches: executes the first matching case, or the default branch when none match.",
+            "properties": {
+              "control": {
+                "description": "Switch body: {cases:[{condition,steps}], default:[...]}. Cases are evaluated in declaration order with existing CEL/legacy conditions.",
+                "type": "object"
+              },
+              "control.cases": {
+                "description": "One or more ordered first-match cases. Every case requires a condition and may contain nested actions.",
+                "type": "array"
+              },
+              "control.default": {
+                "description": "Optional actions executed when no case matches.",
+                "type": "array"
+              }
+            },
+            "required": [
+              "control",
+              "control.cases"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "enum": [
                   "cookie_clear"
                 ]
               }
@@ -6149,6 +6218,9 @@
           },
           "type": "array"
         },
+        "attribution": {
+          "$ref": "#/$defs/AnalyticsAttribution"
+        },
         "auth": {
           "$ref": "#/$defs/AuthConfig"
         },
@@ -6272,6 +6344,8 @@
             "control_continue",
             "control_if",
             "control_loop",
+            "control_parallel",
+            "control_switch",
             "cookie_clear",
             "custom_call",
             "database_begin",
@@ -6404,6 +6478,18 @@
         "name",
         "type"
       ],
+      "type": "object"
+    },
+    "AnalyticsAttribution": {
+      "additionalProperties": false,
+      "properties": {
+        "hierarchy_path": {
+          "type": "string"
+        },
+        "page_name": {
+          "type": "string"
+        }
+      },
       "type": "object"
     },
     "Assertion": {
@@ -6873,11 +6959,32 @@
     "ControlFlow": {
       "additionalProperties": false,
       "properties": {
+        "branches": {
+          "items": {
+            "$ref": "#/$defs/ParallelBranch"
+          },
+          "type": "array"
+        },
+        "cases": {
+          "items": {
+            "$ref": "#/$defs/SwitchCase"
+          },
+          "type": "array"
+        },
+        "concurrency": {
+          "type": "integer"
+        },
         "condition": {
           "$ref": "#/$defs/Condition"
         },
         "count": {
           "type": "integer"
+        },
+        "default": {
+          "items": {
+            "$ref": "#/$defs/Action"
+          },
+          "type": "array"
         },
         "do_while": {
           "type": "boolean"
@@ -6887,6 +6994,9 @@
             "$ref": "#/$defs/Action"
           },
           "type": "array"
+        },
+        "fail_fast": {
+          "type": "boolean"
         },
         "for_each": {
           "$ref": "#/$defs/ForEachLoop"
@@ -7244,6 +7354,12 @@
         },
         "target_average_tps": {
           "type": "number"
+        },
+        "transaction_rules": {
+          "items": {
+            "$ref": "#/$defs/TransactionSLARule"
+          },
+          "type": "array"
         }
       },
       "type": "object"
@@ -7728,6 +7844,41 @@
       },
       "type": "object"
     },
+    "MessageDetailConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "max_item_bytes": {
+          "maximum": 16777216,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "max_items": {
+          "maximum": 4096,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "max_total_bytes": {
+          "maximum": 1073741824,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "mode": {
+          "enum": [
+            "off",
+            "errors",
+            "sampled",
+            "adaptive"
+          ],
+          "type": "string"
+        },
+        "sample_rate": {
+          "maximum": 1,
+          "minimum": 0,
+          "type": "number"
+        }
+      },
+      "type": "object"
+    },
     "NetworkConfig": {
       "additionalProperties": false,
       "properties": {
@@ -7894,6 +8045,21 @@
       },
       "type": "object"
     },
+    "ParallelBranch": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "steps": {
+          "items": {
+            "$ref": "#/$defs/Action"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
     "Parameter": {
       "additionalProperties": false,
       "properties": {
@@ -7995,6 +8161,15 @@
         },
         "username": {
           "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "ResultsConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "message_detail": {
+          "$ref": "#/$defs/MessageDetailConfig"
         }
       },
       "type": "object"
@@ -8288,6 +8463,9 @@
         "pacing": {
           "$ref": "#/$defs/PacingConfig"
         },
+        "results": {
+          "$ref": "#/$defs/ResultsConfig"
+        },
         "run_logic": {
           "$ref": "#/$defs/RunLogicConfig"
         },
@@ -8355,6 +8533,21 @@
       },
       "type": "object"
     },
+    "SwitchCase": {
+      "additionalProperties": false,
+      "properties": {
+        "condition": {
+          "$ref": "#/$defs/Condition"
+        },
+        "steps": {
+          "items": {
+            "$ref": "#/$defs/Action"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
     "TLSConfig": {
       "additionalProperties": false,
       "properties": {
@@ -8416,6 +8609,27 @@
           "type": "number"
         },
         "type": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "TransactionSLARule": {
+      "additionalProperties": false,
+      "properties": {
+        "comparator": {
+          "type": "string"
+        },
+        "metric": {
+          "type": "string"
+        },
+        "severity": {
+          "type": "string"
+        },
+        "threshold": {
+          "type": "number"
+        },
+        "transaction": {
           "type": "string"
         }
       },

@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useAsyncTask } from '../hooks/useAsyncTask'
 import { useApi } from '../hooks/useApi'
 import { type BrowserReplayReport, type BrowserReplayStartResponse, type ReplayRepairSuggestion, type StoredScript } from '../types'
-import { type AgentforceReview, type AgentforceTransformChange, type AsyncAPIImportResult, type AsyncAPISupportMatrixEntry, type BrokerConfigImportResult, type BrokerConfigSupportMatrixEntry, type BrowserRecordingImportResult, type DevWebImportResult, type DevWebSupportMatrixEntry, type EventHubsCaptureImportResult, type EventHubsCaptureSupportMatrixEntry, type HARImportResult, type HARImportSummary, type K6ImportResult, type K6SupportMatrixEntry, type MulesoftReview, type OpenAPICorrelation, type OpenAPIImportResult, type OpenAPISupportMatrixEntry, type PostmanImportResult, type PostmanSupportMatrixEntry, type RAMLImportResult, type RAMLSupportMatrixEntry, type SalesforceImportResult, type SalesforceReview, type SecretBindingSelection, type SharedValues, type WSDLImportResult } from '../types/scriptImports'
+import { type AgentforceReview, type AgentforceTransformChange, type AsyncAPIImportResult, type AsyncAPISupportMatrixEntry, type BrokerConfigImportResult, type BrokerConfigSupportMatrixEntry, type BrowserRecordingImportResult, type CloudTestImportResult, type CloudTestSupportMatrixEntry, type DevWebImportResult, type DevWebSupportMatrixEntry, type EventHubsCaptureImportResult, type EventHubsCaptureSupportMatrixEntry, type HARImportResult, type HARImportSummary, type K6ImportResult, type K6SupportMatrixEntry, type MulesoftReview, type OpenAPICorrelation, type OpenAPIImportResult, type OpenAPISupportMatrixEntry, type PostmanImportResult, type PostmanSupportMatrixEntry, type RAMLImportResult, type RAMLSupportMatrixEntry, type SalesforceImportResult, type SalesforceReview, type SecretBindingSelection, type SharedValues, type WSDLImportResult } from '../types/scriptImports'
 import { type ScriptDefinition, type SourceReview } from '../types/scripts'
 import { getErrorMessage } from '../utils/errorUtils'
 import ImportDropzone from './ImportDropzone'
@@ -31,7 +31,7 @@ import {
 import { type ImportedSaveResult } from './useScriptsAuthoringState'
 import './SampleScriptImport.css'
 
-export type ImportKind = 'devweb' | 'har' | 'recorder-export' | 'openapi' | 'raml' | 'postman' | 'wsdl' | 'asyncapi' | 'k6' | 'eventhubs-capture' | 'broker-config'
+export type ImportKind = 'devweb' | 'har' | 'recorder-export' | 'openapi' | 'raml' | 'postman' | 'wsdl' | 'asyncapi' | 'k6' | 'cloudtest' | 'eventhubs-capture' | 'broker-config'
 
 const ASYNCAPI_SCRIPT_PAGE_SIZE = 50
 const REPLACE_TARGET_PAGE_SIZE = 100
@@ -116,6 +116,13 @@ const copy = {
     drop: 'Drop a k6 .js file here',
     button: 'Convert k6 Script',
   },
+  cloudtest: {
+    title: 'Import Akamai CloudTest Export',
+    subtitle: 'Upload a dependency-complete CloudTest XML or ZIP export. APEX classifies every source element and creates fixture-gated Clip scripts, Composition drafts, and preserved review artifacts.',
+    accept: '.xml,.zip,text/xml,application/xml,application/zip',
+    drop: 'Drop a CloudTest .xml or .zip export here',
+    button: 'Inspect CloudTest Export',
+  },
   'eventhubs-capture': {
     title: 'Import Event Hubs Capture',
     subtitle: 'Upload an Azure Event Hubs Capture Avro file and seed native eventhubs_produce actions in mock mode for review.',
@@ -179,8 +186,8 @@ function validatePostmanEnvironmentFile(file: File): string | null {
   return null
 }
 
-type ProtocolImportResult = DevWebImportResult | HARImportResult | SalesforceImportResult | BrowserRecordingImportResult | OpenAPIImportResult | RAMLImportResult | PostmanImportResult | WSDLImportResult | AsyncAPIImportResult | K6ImportResult | EventHubsCaptureImportResult | BrokerConfigImportResult
-type SourceImportSupportEntry = DevWebSupportMatrixEntry | OpenAPISupportMatrixEntry | RAMLSupportMatrixEntry | PostmanSupportMatrixEntry | AsyncAPISupportMatrixEntry | K6SupportMatrixEntry | EventHubsCaptureSupportMatrixEntry | BrokerConfigSupportMatrixEntry
+type ProtocolImportResult = DevWebImportResult | HARImportResult | SalesforceImportResult | BrowserRecordingImportResult | OpenAPIImportResult | RAMLImportResult | PostmanImportResult | WSDLImportResult | AsyncAPIImportResult | K6ImportResult | CloudTestImportResult | EventHubsCaptureImportResult | BrokerConfigImportResult
+type SourceImportSupportEntry = DevWebSupportMatrixEntry | OpenAPISupportMatrixEntry | RAMLSupportMatrixEntry | PostmanSupportMatrixEntry | AsyncAPISupportMatrixEntry | K6SupportMatrixEntry | CloudTestSupportMatrixEntry | EventHubsCaptureSupportMatrixEntry | BrokerConfigSupportMatrixEntry
 
 type ProtectedImportCommitOverrides = {
   sessionId: string
@@ -210,6 +217,7 @@ const sourceImportSupportFetchers: Partial<Record<ImportKind, (api: ReturnType<t
   'postman': api => api.getPostmanSupportMatrix(),
   'asyncapi': api => api.getAsyncAPISupportMatrix(),
   'k6': api => api.getK6SupportMatrix(),
+  'cloudtest': api => api.getCloudTestSupportMatrix(),
   'eventhubs-capture': api => api.getEventHubsCaptureSupportMatrix(),
   'broker-config': api => api.getBrokerConfigSupportMatrix(),
 }
@@ -229,6 +237,7 @@ const sourceImportProtocolTargets: Partial<Record<ImportKind, string[]>> = {
   postman: ['HTTP'],
   asyncapi: ['Kafka', 'JMS Solace for AMQP/JMS servers', 'MQTT review-only'],
   k6: ['HTTP subset'],
+  cloudtest: ['Review-only until fixture-proven'],
   'eventhubs-capture': ['Event Hubs'],
   'broker-config': ['JMS Solace', 'JMS IBM MQ review/mock'],
 }
@@ -258,6 +267,8 @@ function uploadNounForKind(kind: ImportKind): string {
       return 'an AsyncAPI document'
     case 'k6':
       return 'a k6 script'
+    case 'cloudtest':
+      return 'a CloudTest XML or ZIP export'
     case 'eventhubs-capture':
       return 'an Event Hubs Capture file'
     case 'broker-config':
@@ -283,6 +294,8 @@ function scriptNamePlaceholder(kind: ImportKind): string {
       return 'Imported WSDL Script'
     case 'k6':
       return 'Imported k6 Script'
+    case 'cloudtest':
+      return 'Imported CloudTest Clip'
     case 'eventhubs-capture':
       return 'Imported Event Hubs Capture Script'
     case 'broker-config':
@@ -310,6 +323,8 @@ function generatedFromLabel(kind: ImportKind): string {
       return 'AsyncAPI operations'
     case 'k6':
       return 'k6 HTTP calls'
+    case 'cloudtest':
+      return 'CloudTest export elements'
     case 'eventhubs-capture':
       return 'captured Event Hubs events'
     case 'broker-config':
@@ -683,6 +698,7 @@ function genericImportSourceProfile(kind: ImportKind) {
     case 'devweb':
     case 'har':
     case 'k6':
+    case 'cloudtest':
     case 'raml':
     case 'wsdl':
       return kind
@@ -1041,6 +1057,7 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
         }
         if (kind === 'devweb') return guardResponse(api.importDevWeb(file, options))
         if (kind === 'k6') return guardResponse(api.importK6(file, options))
+        if (kind === 'cloudtest') return guardResponse(api.importCloudTest(file, { project_id: sourceProjectId }))
         if (kind === 'eventhubs-capture') return guardResponse(api.importEventHubsCapture(file, { project_id: sourceProjectId }))
         if (kind === 'broker-config') return guardResponse(api.importBrokerConfig(file, { project_id: sourceProjectId }))
         if (kind === 'har') return guardResponse(api.importHAR(file, {
@@ -1097,7 +1114,6 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
   }
 
   const stats = result?.stats as Record<string, unknown> | undefined
-  const actionCount = typeof stats?.converted_actions === 'number' ? stats.converted_actions : 0
   const importedScripts = result?.scripts?.length ? result.scripts : result?.script ? [result.script] : []
   // The converted result is the sole reviewed-script state. Selector repair,
   // credential binding, parameterization, runtime edits, Save, and Edit all
@@ -1107,6 +1123,9 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
   const asyncAPIScriptPageStart = Math.floor(safeAsyncAPISelectedScriptIndex / ASYNCAPI_SCRIPT_PAGE_SIZE) * ASYNCAPI_SCRIPT_PAGE_SIZE
   const visibleAsyncAPIScripts = generatedScripts.slice(asyncAPIScriptPageStart, asyncAPIScriptPageStart + ASYNCAPI_SCRIPT_PAGE_SIZE)
   const reviewedScript = generatedScripts[selectedScriptIndex] || generatedScripts[0] || null
+  const actionCount = typeof stats?.converted_actions === 'number'
+    ? stats.converted_actions
+    : reviewedScript?.actions?.length ?? 0
   const asyncAPIMultiScript = kind === 'asyncapi' && generatedScripts.length > 1
   const asyncAPIPendingScriptIndices = asyncAPIMultiScript
     ? generatedScripts.flatMap((_script, index) => asyncAPISavedScripts[index] ? [] : [index])
@@ -1178,6 +1197,9 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
         : `Save Remaining ${asyncAPIPendingScriptIndices.length} Script${asyncAPIPendingScriptIndices.length === 1 ? '' : 's'}`
       }${configureLaterCount > 0 ? ` with ${configureLaterCount} secret${configureLaterCount === 1 ? '' : 's'} to configure` : ''}`
     : ''
+  const cloudTestSaveLabel = kind === 'cloudtest' && generatedScripts.length > 1
+    ? `Save All ${generatedScripts.length} Clip Scripts Atomically`
+    : ''
   const asyncAPISaveAllDisabledReason = asyncAPIMultiScript && asyncAPIOtherPendingCredentialRequirements.length > 0
     ? `${asyncAPIOtherPendingCredentialRequirements.length} credential ${asyncAPIOtherPendingCredentialRequirements.length === 1 ? 'choice belongs' : 'choices belong'} to another generated script. Select each affected script and prepare its named credentials; no script is saved until the atomic batch is ready.`
     : !preparedCredentialsValid
@@ -1209,6 +1231,7 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
   const agentforceReview = preservedReviewForImport<AgentforceReview>(reviewedScript, 'agentforce_review')
   const agentforceTransformChanges = (reviewedScript?.metadata?.import?.preserved?.agentforce_transform as AgentforceTransformChange[] | undefined) ?? []
   const ramlSummary = kind === 'raml' ? (result as RAMLImportResult | null | undefined)?.summary : undefined
+  const cloudTestResult = kind === 'cloudtest' ? result as CloudTestImportResult | null | undefined : undefined
   const harDiff = harSummary?.har_diff
   const selectedReplayPreflight = reviewedScript?.metadata?.import?.preserved?.replay_preflight as OpenAPIImportResult['preflight'] | undefined
   const replayPreflight = (generatedScripts.length > 1 ? selectedReplayPreflight : result?.preflight || selectedReplayPreflight) || null
@@ -1548,6 +1571,52 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
             onImported?.({ scripts: [persisted] })
           }
         }
+        return
+      }
+      if (kind === 'cloudtest') {
+        const destinationFolderID = scriptToSave.folder_id ?? folderId ?? null
+        const batchScripts = currentGeneratedScripts.map((script, index) => ({
+          ...script,
+          ...(index === sourceScriptIndex ? scriptToSave : script),
+          folder_id: script.folder_id ?? destinationFolderID,
+        }))
+        const retainedOperation = genericImportBatchSaveOperationRef.current
+        const operationID = retainedOperation
+          && retainedOperation.result === currentResult
+          && retainedOperation.scriptIndex === -1
+          && retainedOperation.kind === kind
+          && retainedOperation.projectId === sourceProjectId
+          && retainedOperation.folderId === destinationFolderID
+          ? retainedOperation.operationId
+          : createGenericImportBatchSaveOperationID()
+        genericImportBatchSaveOperationRef.current = {
+          result: currentResult,
+          scriptIndex: -1,
+          kind,
+          projectId: sourceProjectId,
+          folderId: destinationFolderID,
+          operationId: operationID,
+        }
+        let storedBatch: StoredScript[] = []
+        await saveTask.run(async () => {
+          const response = await api.commitGenericImportBatch({
+            scripts: batchScripts,
+            folder_id: destinationFolderID,
+            operation_id: operationID,
+            source_profile: 'cloudtest',
+            import_session_ids: currentResult.import_session_ids,
+          })
+          if (response.count !== batchScripts.length || response.scripts.length !== batchScripts.length) {
+            throw new Error('The CloudTest batch save did not return every Clip script. Retry the same save to reconcile its result.')
+          }
+          storedBatch = response.scripts
+          return response.scripts[0]
+        })
+        genericImportBatchSaveOperationRef.current = null
+        onImported?.({
+          scripts: storedBatch.map((stored, index) => withFallbackPersistedScript(stored, batchScripts[index])),
+          ...(!requestIsCurrent() ? { stayInImportReview: true } : {}),
+        })
         return
       }
       const sourceProfile = genericImportSourceProfile(kind)
@@ -2249,7 +2318,7 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
             title={reviewMode === 'validation' ? 'Validation Review' : 'Review Generated Script'}
             reviewGeneration={reviewScope}
             subtitle={`${actionCount} action(s) generated from ${generatedFromLabel(kind)}.${reviewMode === 'validation' ? ' This preview came from a dry-run validation; nothing has been saved. You can still save the reviewed script if the output looks correct.' : ''}`}
-            saveLabel={asyncAPISelectedSaveLabel || ((kind === 'postman' && postmanSaveMode === 'replace') || (kind === 'openapi' && openAPISaveMode === 'replace') ? 'Replace Script' : reviewMode === 'validation' ? 'Save Reviewed Script' : 'Save To Script Library')}
+            saveLabel={asyncAPISelectedSaveLabel || cloudTestSaveLabel || ((kind === 'postman' && postmanSaveMode === 'replace') || (kind === 'openapi' && openAPISaveMode === 'replace') ? 'Replace Script' : reviewMode === 'validation' ? 'Save Reviewed Script' : 'Save To Script Library')}
             script={reviewedScript}
             warnings={result.warnings}
             unsupportedElements={result.unsupported_elements}
@@ -2794,6 +2863,41 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
                   <ul className="sample-import-findings">
                     {ramlSummary!.policies!.map(policy => (
                       <li key={policy.policy}><strong>{policy.policy}</strong> — {policy.detail}{policy.scheme ? ` (${policy.scheme})` : ''}</li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
+            {kind === 'cloudtest' && cloudTestResult && (
+              <div className="sample-import-review-block">
+                <h4>CloudTest Fixture-Gated Review</h4>
+                <p className="sample-import-subtitle">
+                  Every imported element is preserved, but all Clip actions remain execution-blocked until sanitized golden fixtures prove the CloudTest wire shape.
+                </p>
+                <div className="sample-import-stats-grid">
+                  <div className="sample-stat">
+                    <span className="sample-stat-value">{cloudTestResult.stats?.clips ?? 0}</span>
+                    <span className="sample-stat-label">Clip drafts</span>
+                  </div>
+                  <div className="sample-stat">
+                    <span className="sample-stat-value">{cloudTestResult.stats?.compositions ?? 0}</span>
+                    <span className="sample-stat-label">Composition drafts</span>
+                  </div>
+                  <div className="sample-stat">
+                    <span className="sample-stat-value">{cloudTestResult.stats?.recognized_elements ?? 0}</span>
+                    <span className="sample-stat-label">recognized elements</span>
+                  </div>
+                  <div className="sample-stat">
+                    <span className="sample-stat-value">{cloudTestResult.stats?.unknown_elements ?? 0}</span>
+                    <span className="sample-stat-label">unknown elements</span>
+                  </div>
+                </div>
+                {(cloudTestResult.scenario_drafts?.length || 0) > 0 && (
+                  <ul className="sample-import-findings">
+                    {cloudTestResult.scenario_drafts!.slice(0, 8).map(scenario => (
+                      <li key={`${scenario.source_file}-${scenario.source_path}`}>
+                        <strong>{scenario.name}</strong> — {scenario.groups.length} track{scenario.groups.length === 1 ? '' : 's'}; review required
+                      </li>
                     ))}
                   </ul>
                 )}

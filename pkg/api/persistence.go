@@ -418,7 +418,8 @@ func (tr *TestRunner) buildStoredScenarioFromPartsLocked(scenario *storage.Scena
 		ref := ScenarioScriptRef{
 			Order: script.Order, Name: script.Name, ScriptID: script.ScriptID, Role: script.Role,
 			VUsers: script.VUsers, RampUp: script.RampUp, RampDown: script.RampDown,
-			Stages: cloneLoadStages(script.Stages), Iterations: script.Iterations,
+			StartOffset: script.StartOffset,
+			Stages:      cloneLoadStages(script.Stages), Iterations: script.Iterations,
 			Initialization:  script.Initialization,
 			RuntimeSettings: decodeStoredRuntimeSettings(script.RuntimeSettings),
 			Assignment:      decodeStoredGeneratorAssignment(script.Assignment),
@@ -967,6 +968,7 @@ func (tr *TestRunner) restoreManagedTestRuntime(test *ManagedTest) error {
 			VUsers:             group.VUsers,
 			RampUp:             group.RampUp,
 			RampDown:           group.RampDown,
+			StartOffset:        group.StartOffset,
 			Stages:             cloneLoadStages(group.Stages),
 			Iterations:         cloneIntPtr(iterationOverride),
 			RuntimeSettings:    cloneRuntimeSettings(group.RuntimeSettings),
@@ -1074,6 +1076,13 @@ func restoreStoredEngineGroupSpecs(test *ManagedTest) ([]engine.GroupConfig, err
 		if err != nil {
 			return nil, err
 		}
+		startOffset, err := parseOptionalGroupDuration(group.StartOffset, index, "start_offset")
+		if err != nil {
+			return nil, err
+		}
+		if startOffset > test.Duration {
+			return nil, fmt.Errorf("group[%d]: start_offset %s begins after the %s scenario deadline", index, startOffset, test.Duration)
+		}
 		stageDriven := normalizeScenarioMode(test.ScenarioMode) == "vuser_driven" && len(group.Stages) > 0
 		initialVUsers := group.VUsers
 		engineRampUp := rampUp
@@ -1125,6 +1134,7 @@ func restoreStoredEngineGroupSpecs(test *ManagedTest) ([]engine.GroupConfig, err
 		}
 		specs = append(specs, engine.GroupConfig{
 			Name:            group.Name,
+			StartOffset:     startOffset,
 			Script:          group.script,
 			VUsers:          initialVUsers,
 			RampUp:          engineRampUp,
@@ -1267,7 +1277,7 @@ func compactTerminalLiveMetricsTail(point *LiveMetrics) *LiveMetrics {
 	}
 	if point.ErrorBreakdown == nil && point.Transactions == nil && point.DependencyHealth == nil &&
 		point.DependencyMap == nil && point.ErrorPatterns == nil && point.SOAPOperations == nil &&
-		point.NetworkProfiles == nil && point.ErrorEvidence == nil {
+		point.NetworkProfiles == nil && point.ByRegion == nil && point.ErrorEvidence == nil {
 		return point
 	}
 	compacted := *point
@@ -1283,6 +1293,7 @@ func compactTerminalLiveMetricsTail(point *LiveMetrics) *LiveMetrics {
 	compacted.ErrorPatterns = nil
 	compacted.SOAPOperations = nil
 	compacted.NetworkProfiles = nil
+	compacted.ByRegion = nil
 	compacted.ErrorEvidence = nil
 	return &compacted
 }
@@ -1350,6 +1361,7 @@ func storedScenarioRefsToStorage(stored *StoredScenario) []storage.ScenarioScrip
 			VUsers:          ref.VUsers,
 			RampUp:          ref.RampUp,
 			RampDown:        ref.RampDown,
+			StartOffset:     ref.StartOffset,
 			Stages:          cloneLoadStages(ref.Stages),
 			Iterations:      ref.Iterations,
 			Initialization:  ref.Initialization,
@@ -1405,6 +1417,7 @@ func intervalSummaryRecordToLiveMetrics(record storage.IntervalSummaryRecord) *L
 		P95Ms:           record.P95Ms,
 		P99Ms:           record.P99Ms,
 		Transactions:    intervalTransactionRecordsToLiveMetrics(record.Transactions),
+		ByRegion:        intervalTransactionRecordsToLiveMetrics(record.ByRegion),
 		Browser:         browserSummaryRecordToLiveMetrics(record.Browser),
 		BrowserByDevice: browserDeviceSummaryRecordToLiveMetrics(record.BrowserByDevice),
 		Latency:         networkLatencyRecordToLiveMetrics(record.Latency),

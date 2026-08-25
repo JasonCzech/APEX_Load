@@ -11,7 +11,8 @@ export type ScenarioGroupPayload = {
   role?: 'load' | 'observer'
   vusers: number
   ramp_up?: string
-  ramp_down?: string
+	ramp_down?: string
+	start_offset?: string
   stages?: Array<{
     name?: string
     type: 'ramp_up' | 'hold' | 'ramp_down' | string
@@ -137,9 +138,13 @@ export function buildScenarioGroupPayloads(groups: ScenarioDraftGroup[]): Scenar
       payload.ramp_up = group.rampUp
     }
 
-    if (group.rampDown) {
-      payload.ramp_down = group.rampDown
-    }
+		if (group.rampDown) {
+			payload.ramp_down = group.rampDown
+		}
+
+		if (group.startOffset) {
+			payload.start_offset = group.startOffset
+		}
 
     if (group.stages && group.stages.length > 0) {
       payload.stages = group.stages
@@ -241,10 +246,11 @@ function normalizeSelectedTargets(targets?: string[]) {
 }
 
 
-export function buildGoalConfigPayload(scenarioMode: ScenarioMode, goalConfig: GoalConfig): GoalConfig | undefined {
-  if (scenarioMode !== 'goal_oriented') {
-    return undefined
-  }
+export function buildGoalConfigPayload(scenarioMode: ScenarioMode, goalConfig: GoalConfig = {}): GoalConfig | undefined {
+	const transactionRules = goalConfig.transaction_rules?.map(rule => ({ ...rule }))
+	if (scenarioMode !== 'goal_oriented') {
+		return transactionRules?.length ? { transaction_rules: transactionRules } : undefined
+	}
 
   const hasValue = (value: number | undefined) => value !== undefined && value !== null
   const payload: GoalConfig = {
@@ -264,6 +270,7 @@ export function buildGoalConfigPayload(scenarioMode: ScenarioMode, goalConfig: G
     ...(hasValue(goalConfig.max_partition_skew_pct) ? { max_partition_skew_pct: goalConfig.max_partition_skew_pct } : {}),
     ...(hasValue(goalConfig.max_redelivery_rate_pct) ? { max_redelivery_rate_pct: goalConfig.max_redelivery_rate_pct } : {}),
     ...(hasValue(goalConfig.max_dead_letter_rate_pct) ? { max_dead_letter_rate_pct: goalConfig.max_dead_letter_rate_pct } : {}),
+		...(transactionRules?.length ? { transaction_rules: transactionRules } : {}),
     ...(goalConfig.stop_on_sla_breach ? { stop_on_sla_breach: true } : {}),
     ...(goalConfig.stop_on_max_errors ? { stop_on_max_errors: true } : {}),
     ...(goalConfig.sla_breach_window ? { sla_breach_window: goalConfig.sla_breach_window } : {}),

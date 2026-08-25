@@ -113,10 +113,11 @@ func javaVuserActionLifecycleModes(actions []Action) (hasPhase, hasLegacy bool) 
 		if action.Control == nil {
 			continue
 		}
-		stepsPhase, stepsLegacy := javaVuserActionLifecycleModes(action.Control.Steps)
-		elsePhase, elseLegacy := javaVuserActionLifecycleModes(action.Control.Else)
-		hasPhase = hasPhase || stepsPhase || elsePhase
-		hasLegacy = hasLegacy || stepsLegacy || elseLegacy
+		for _, branch := range action.Control.ActionBranches() {
+			branchPhase, branchLegacy := javaVuserActionLifecycleModes(branch.Actions)
+			hasPhase = hasPhase || branchPhase
+			hasLegacy = hasLegacy || branchLegacy
+		}
 	}
 	return hasPhase, hasLegacy
 }

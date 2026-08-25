@@ -597,6 +597,7 @@ func (tr *TestRunner) runCalendarSnapshot(projectID string, from time.Time, to t
 				VUsers:         script.VUsers,
 				RampUp:         script.RampUp,
 				RampDown:       script.RampDown,
+				StartOffset:    script.StartOffset,
 				Stages:         append([]storage.LoadStage(nil), script.Stages...),
 				Iterations:     script.Iterations,
 				Initialization: script.Initialization,

@@ -66,11 +66,10 @@ func resolveBodyRefInAction(action *Action, baseDir string, label string, remain
 		action.BodyFile = ""
 	}
 	if action.Control != nil {
-		if err := resolveBodyRefsInActions(action.Control.Steps, baseDir, label+".control.steps", remaining); err != nil {
-			return err
-		}
-		if err := resolveBodyRefsInActions(action.Control.Else, baseDir, label+".control.else", remaining); err != nil {
-			return err
+		for _, branch := range action.Control.ActionBranches() {
+			if err := resolveBodyRefsInActions(branch.Actions, baseDir, label+".control."+branch.Path, remaining); err != nil {
+				return err
+			}
 		}
 	}
 	if strings.EqualFold(strings.TrimSpace(action.Type), "http_sequence") {

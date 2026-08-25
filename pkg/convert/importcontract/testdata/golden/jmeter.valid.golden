@@ -47,6 +47,7 @@
       "pacing": {
         "type": ""
       },
+      "results": {},
       "run_logic": {
         "auto_transactions": "per_action"
       },
@@ -135,6 +136,7 @@
         "pacing": {
           "type": ""
         },
+        "results": {},
         "run_logic": {
           "auto_transactions": "per_action"
         },

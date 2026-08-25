@@ -3,7 +3,9 @@ import { type ScriptDefinition } from '../types/scripts'
 
 export interface ProtectedImportCandidate {
   import_session_id?: string
+  import_session_ids?: string[]
   expires_at?: string
+  import_draft_expires_at?: string
 }
 
 export interface CredentialPreservingImportCandidate {
@@ -35,10 +37,12 @@ export function activeProtectedImportSessionId(
 }
 
 export function invalidateProtectedImportCandidate<T extends ProtectedImportCandidate>(candidate: T): T {
-  if (!candidate.import_session_id && !candidate.expires_at) return candidate
+  if (!candidate.import_session_id && !candidate.import_session_ids && !candidate.expires_at && !candidate.import_draft_expires_at) return candidate
   const next = { ...candidate }
   delete next.import_session_id
+  delete next.import_session_ids
   delete next.expires_at
+  delete next.import_draft_expires_at
   return next
 }
 

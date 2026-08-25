@@ -23,6 +23,7 @@ type validatedWorkAssignment struct {
 	requestedDurationOffset time.Duration
 	rampUp                  time.Duration
 	rampDown                time.Duration
+	startOffset             time.Duration
 	preBaseline             time.Duration
 	postBaseline            time.Duration
 	initStrategy            string
@@ -83,6 +84,13 @@ func validateWorkAssignment(assignment *pb.WorkAssignment, scriptCacheLimit int6
 	if err != nil {
 		return validatedWorkAssignment{}, status.Error(codes.InvalidArgument, err.Error())
 	}
+	startOffset, err := validatedAssignmentDuration(assignment.GetStartOffset(), 0, "start_offset", true)
+	if err != nil {
+		return validatedWorkAssignment{}, status.Error(codes.InvalidArgument, err.Error())
+	}
+	if startOffset > targetDuration {
+		return validatedWorkAssignment{}, status.Error(codes.InvalidArgument, "start_offset begins after the assignment target_duration")
+	}
 	preBaseline, err := validatedAssignmentDuration(assignment.GetPreBaseline(), 0, "pre_baseline", true)
 	if err != nil {
 		return validatedWorkAssignment{}, status.Error(codes.InvalidArgument, err.Error())
@@ -141,6 +149,7 @@ func validateWorkAssignment(assignment *pb.WorkAssignment, scriptCacheLimit int6
 		requestedDurationOffset: requestedDurationOffset,
 		rampUp:                  rampUp,
 		rampDown:                rampDown,
+		startOffset:             startOffset,
 		preBaseline:             preBaseline,
 		postBaseline:            postBaseline,
 		initStrategy:            initStrategy,

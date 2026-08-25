@@ -325,8 +325,9 @@ func qualifiedObjectRepositoryIDs(script *dsl.Script) map[string]struct{} {
 				}
 			}
 			if actions[i].Control != nil {
-				visit(actions[i].Control.Steps)
-				visit(actions[i].Control.Else)
+				for _, branch := range actions[i].Control.ActionBranches() {
+					visit(branch.Actions)
+				}
 			}
 		}
 	}

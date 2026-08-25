@@ -74,7 +74,7 @@ M4 is underway with an ordered, fingerprinted `schema_migrations` ledger shared 
 PostgreSQL. Store construction records convergence only after the full idempotent schema, backfill,
 index, foreign-key, and optional Timescale sequence succeeds; reopening is idempotent, changed
 release identities fail closed, and a database newer than the binary is rejected. Configured stores
-expose a read-only `SchemaStatusProvider`, and backend readiness now reports `apexload.schema.v1`
+expose a read-only `SchemaStatusProvider`, and backend readiness now reports `apexload.schema.v2`
 instead of the unrelated archive-manifest version. The dialect inventory, SQLite→PostgreSQL mover,
 real PostgreSQL reconciliation, and restore drill remain open.
 

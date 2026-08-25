@@ -5,6 +5,7 @@ package engine
 import (
 	"encoding/base64"
 	"fmt"
+	"hash/fnv"
 	"io"
 	"log/slog"
 	"net/url"
@@ -16,6 +17,24 @@ import (
 	"github.com/jasonczech/apexload/pkg/protocol"
 	"github.com/jasonczech/apexload/pkg/scrub"
 )
+
+func validateMessageDetailRuntimeSupport(script *dsl.Script) error {
+	if script == nil || script.Config.Results.MessageDetail == nil {
+		return nil
+	}
+	mode := strings.ToLower(strings.TrimSpace(script.Config.Results.MessageDetail.Mode))
+	switch mode {
+	case "", "off", "errors":
+		return nil
+	case "sampled", "adaptive":
+		if strings.ToLower(strings.TrimSpace(script.Protocol)) != "http" {
+			return fmt.Errorf("message detail mode %q currently requires the http protocol", mode)
+		}
+		return nil
+	default:
+		return fmt.Errorf("unsupported message detail mode %q", mode)
+	}
+}
 
 func actionParamInt(params map[string]any, key string) (int, bool) {
 	if params == nil {
@@ -218,8 +237,15 @@ func (vu *VUser) resolveAction(action dsl.Action) *protocol.Action {
 		params, redactedParams = vu.withJavaVuserRuntimeParameters(params, redactedParams)
 	}
 	discardSuccessfulResponseBody := false
+	captureMessageDetail := false
+	var detailPolicy *dsl.MessageDetailConfig
 	if vu.Script != nil {
 		discardSuccessfulResponseBody = !logConfigRetainsSuccessfulResponseBody(vu.Script.Config.Log)
+		detailPolicy = vu.Script.Config.Results.MessageDetail
+		captureMessageDetail = vu.shouldCaptureSuccessfulMessageDetail(action.Name, detailPolicy)
+		if captureMessageDetail {
+			discardSuccessfulResponseBody = false
+		}
 	}
 	resolved := &protocol.Action{
 		Name:                         action.Name,
@@ -247,6 +273,8 @@ func (vu *VUser) resolveAction(action dsl.Action) *protocol.Action {
 		Sync:                         toProtocolBrowserSyncPolicy(action.Sync, vu),
 		Capture:                      toProtocolCaptureOptions(action.Capture),
 		Metadata:                     vu.interpolateAnyMap(action.Metadata),
+		HierarchyPath:                resolvedAttributionHierarchy(action.Attribution, vu),
+		PageName:                     resolvedAttributionPage(action.Attribution, vu),
 		Extractors:                   toProtocolExtractors(action.Extractors, vu),
 		Assertions:                   toProtocolAssertions(action.Assertions, vu),
 		Auth:                         auth,
@@ -256,6 +284,13 @@ func (vu *VUser) resolveAction(action dsl.Action) *protocol.Action {
 		SOAP:                         soapAction,
 		RedactedSOAP:                 redactedSOAPAction,
 		DiscardResponseBodyOnSuccess: discardSuccessfulResponseBody,
+		CaptureMessageDetail:         captureMessageDetail,
+	}
+	if detailPolicy != nil {
+		resolved.MessageDetailMode = strings.ToLower(strings.TrimSpace(detailPolicy.Mode))
+		resolved.MessageDetailMaxItems = normalizedMessageDetailMaxItems(detailPolicy.MaxItems)
+		resolved.MessageDetailMaxItemBytes = normalizedMessageDetailMaxItemBytes(detailPolicy.MaxItemBytes)
+		resolved.MessageDetailMaxTotalBytes = normalizedMessageDetailMaxTotalBytes(detailPolicy.MaxTotalBytes)
 	}
 	// The authored action is the only place the origin of these credentials can
 	// be read; by the time the execution path sees the resolved action,
@@ -267,6 +302,73 @@ func (vu *VUser) resolveAction(action dsl.Action) *protocol.Action {
 		values: runtimeActionCompositeValues(&action, resolved),
 	}
 	return resolved
+}
+
+func resolvedAttributionHierarchy(attribution *dsl.AnalyticsAttribution, vu *VUser) string {
+	if attribution == nil {
+		return ""
+	}
+	return strings.TrimSpace(vu.interpolate(attribution.HierarchyPath))
+}
+
+func resolvedAttributionPage(attribution *dsl.AnalyticsAttribution, vu *VUser) string {
+	if attribution == nil {
+		return ""
+	}
+	return strings.TrimSpace(vu.interpolate(attribution.PageName))
+}
+
+const (
+	defaultMessageDetailMaxItems      = 128
+	defaultMessageDetailMaxItemBytes  = int64(1 << 20)
+	defaultMessageDetailMaxTotalBytes = int64(16 << 20)
+)
+
+func normalizedMessageDetailMaxItems(value int) int {
+	if value <= 0 {
+		return defaultMessageDetailMaxItems
+	}
+	return min(value, 4096)
+}
+
+func normalizedMessageDetailMaxItemBytes(value int64) int64 {
+	if value <= 0 {
+		return defaultMessageDetailMaxItemBytes
+	}
+	return min(value, int64(16<<20))
+}
+
+func normalizedMessageDetailMaxTotalBytes(value int64) int64 {
+	if value <= 0 {
+		return defaultMessageDetailMaxTotalBytes
+	}
+	return min(value, int64(1<<30))
+}
+
+func (vu *VUser) shouldCaptureSuccessfulMessageDetail(actionName string, config *dsl.MessageDetailConfig) bool {
+	if vu == nil || config == nil {
+		return false
+	}
+	mode := strings.ToLower(strings.TrimSpace(config.Mode))
+	if mode != "sampled" && mode != "adaptive" {
+		return false
+	}
+	rate := config.SampleRate
+	if mode == "adaptive" && rate <= 0 {
+		rate = 0.01
+	}
+	if rate <= 0 {
+		return false
+	}
+	if rate >= 1 {
+		vu.resultSequence++
+		return true
+	}
+	vu.resultSequence++
+	hash := fnv.New64a()
+	_, _ = fmt.Fprintf(hash, "%s\x00%d\x00%s\x00%d", vu.Group, vu.ID, actionName, vu.resultSequence)
+	const buckets = uint64(1_000_000)
+	return hash.Sum64()%buckets < uint64(rate*float64(buckets))
 }
 
 func actionBodyTemplateValueEncoding(metadata map[string]any) string {

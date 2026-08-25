@@ -7386,6 +7386,39 @@
   line-height: 1;
 }
 
+.regional-activity-list,
+.regional-activity-row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.regional-activity-row > div:first-child {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.regional-activity-row strong {
+  color: var(--text-primary);
+}
+
+.regional-activity-track {
+  height: 7px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--bg-secondary);
+}
+
+.regional-activity-track span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+}
+
 .settings-app-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));

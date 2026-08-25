@@ -36,6 +36,8 @@ interface DashboardWorkspaceProps {
   initialActiveTabId?: string
   onActiveTabChange?: (tabId: string, source: DashboardWorkspaceTabChangeSource) => void
   storageKey: string
+  onSaveToProject?: (profile: DashboardWorkspaceProfile, mode: 'save' | 'import') => Promise<void>
+  projectProfiles?: DashboardWorkspaceProfile[]
 }
 
 interface WorkspaceActiveState {
@@ -221,6 +223,8 @@ export default function DashboardWorkspace({
   initialActiveTabId,
   onActiveTabChange,
   storageKey,
+  onSaveToProject,
+  projectProfiles = [],
 }: DashboardWorkspaceProps) {
   const workspaceShortcuts = useMemo(() => [
     {
@@ -269,6 +273,8 @@ export default function DashboardWorkspace({
   const [activeTabOverride, setActiveTabOverride] = useState<string | null>(() => initialActiveTabId || null)
   const [collapsedLibraryCategories, setCollapsedLibraryCategories] = useState<Record<string, boolean>>({})
   const [newTabName, setNewTabName] = useState('')
+	const [projectSaveState, setProjectSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+	const [selectedProjectProfileId, setSelectedProjectProfileId] = useState('')
   const [tabContextMenu, setTabContextMenu] = useState<TabContextMenuState | null>(null)
   const tabButtonRefs = useRef<Record<string, HTMLButtonElement | null>>({})
   const tabMenuItemRef = useRef<HTMLButtonElement | null>(null)
@@ -418,6 +424,28 @@ export default function DashboardWorkspace({
     setProfiles(next)
     setActiveTabOverride(null)
     setActiveState({ profileId: defaultProfile.id, autoApply: true })
+  }
+
+  const saveProjectProfile = async (mode: 'save' | 'import') => {
+    if (!onSaveToProject || projectSaveState === 'saving') return
+    setProjectSaveState('saving')
+    try {
+      await onSaveToProject(selectedProfile, mode)
+      setProjectSaveState('saved')
+    } catch {
+      setProjectSaveState('error')
+    }
+  }
+
+  const openProjectProfile = () => {
+    const source = projectProfiles.find(profile => profile.id === selectedProjectProfileId)
+    if (!source) return
+    pendingTabChangeSourceRef.current = 'user'
+    const id = uniqueId(source.name, profiles.map(profile => profile.id))
+    const imported = normalizeProfile({ ...source, id, name: `${source.name} (Project)` }, defaultProfile, cardIds)
+    setProfiles([...profiles, imported])
+    setActiveTabOverride(null)
+    setActiveState({ profileId: imported.id, autoApply: false })
   }
 
   const addTab = () => {
@@ -679,6 +707,22 @@ export default function DashboardWorkspace({
           <button type="button" className="btn btn-sm btn-ghost" onClick={deleteProfile} disabled={profiles.length <= 1}>Delete Profile</button>
           <button type="button" className="btn btn-sm btn-ghost" onClick={resetActiveProfile}>Reset Layout</button>
           <button type="button" className="btn btn-sm btn-ghost" onClick={restoreDefaults}>Restore Defaults</button>
+          {onSaveToProject && <button type="button" className="btn btn-sm btn-secondary" disabled={projectSaveState === 'saving'} onClick={() => { void saveProjectProfile('save') }}>Save to project</button>}
+          {onSaveToProject && <button type="button" className="btn btn-sm btn-ghost" disabled={projectSaveState === 'saving'} onClick={() => { void saveProjectProfile('import') }}>Import local profile</button>}
+          {projectProfiles.length > 0 && (
+            <>
+              <label className="dashboard-workspace-project-picker">
+                <span>Project dashboards</span>
+                <select aria-label={`${ariaLabel} project dashboards`} value={selectedProjectProfileId} onChange={event => setSelectedProjectProfileId(event.target.value)}>
+                  <option value="">Choose shared dashboard</option>
+                  {projectProfiles.map(profile => <option key={profile.id} value={profile.id}>{profile.name}</option>)}
+                </select>
+              </label>
+              <button type="button" className="btn btn-sm btn-ghost" disabled={!selectedProjectProfileId} onClick={openProjectProfile}>Open shared</button>
+            </>
+          )}
+          {projectSaveState === 'saved' && <span role="status">Project dashboard saved</span>}
+          {projectSaveState === 'error' && <span role="alert">Project dashboard could not be saved</span>}
         </div>
       </div>
 

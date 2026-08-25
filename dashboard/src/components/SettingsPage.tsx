@@ -101,6 +101,7 @@ import { type DataPoolImportResult } from '../hooks/api/useScriptApi'
 import LibraryFederationPanel from './LibraryFederationPanel'
 import GitHubIntegrationPanel from './GitHubIntegrationPanel'
 import ImportedDashboardsPanel from './ImportedDashboardsPanel'
+import CloudTestParityDashboard from './CloudTestParityDashboard'
 import PowerBIIntegrationPanel from './PowerBIIntegrationPanel'
 import PageViewToggle from './PageViewToggle'
 import DesktopNotificationsToggle from './DesktopNotificationsToggle'
@@ -1022,11 +1023,12 @@ export default function SettingsPage({
         selectedProject.settings?.max_test_duration_minutes !== undefined ? String(selectedProject.settings.max_test_duration_minutes) : '',
         projectGitHubDraftFromPolicy(selectedProject.settings?.github),
         selectedProject.settings?.pool_quotas,
+		selectedProject.settings?.features,
       ),
     }
     const draft = {
       name: projectDraftName.trim(),
-      settings: buildProjectSettingsDraft(projectDraftRules, projectDraftMaxConcurrentTests, projectDraftMaxVUsers, projectDraftMaxVUsersPerTest, projectDraftMaxTestDurationMinutes, buildProjectGitHubDraft(selectedProject?.settings?.github), selectedProject?.settings?.pool_quotas),
+		settings: buildProjectSettingsDraft(projectDraftRules, projectDraftMaxConcurrentTests, projectDraftMaxVUsers, projectDraftMaxVUsersPerTest, projectDraftMaxTestDurationMinutes, buildProjectGitHubDraft(selectedProject?.settings?.github), selectedProject?.settings?.pool_quotas, selectedProject?.settings?.features),
     }
 
     return JSON.stringify(current) !== JSON.stringify(draft)
@@ -2178,7 +2180,7 @@ export default function SettingsPage({
     try {
       const updated = await updateProject(selectedProject.id, {
         name: projectDraftName.trim(),
-        settings: buildProjectSettingsDraft(projectDraftRules, projectDraftMaxConcurrentTests, projectDraftMaxVUsers, projectDraftMaxVUsersPerTest, projectDraftMaxTestDurationMinutes, buildProjectGitHubDraft(selectedProject?.settings?.github), selectedProject?.settings?.pool_quotas),
+		settings: buildProjectSettingsDraft(projectDraftRules, projectDraftMaxConcurrentTests, projectDraftMaxVUsers, projectDraftMaxVUsersPerTest, projectDraftMaxTestDurationMinutes, buildProjectGitHubDraft(selectedProject?.settings?.github), selectedProject?.settings?.pool_quotas, selectedProject?.settings?.features),
       })
       commitSettingsProject(updated)
       applyProjectSelection(updated)
@@ -6190,11 +6192,14 @@ export default function SettingsPage({
               aria-labelledby="settings-integrations-tab-dashboards"
               hidden={activeIntegrationSubsection !== 'dashboards'}
             >
-              <ImportedDashboardsPanel
-                projects={projects}
-                defaultProjectId={selectedProjectId}
-                prometheusConfigured={(settings.grafana?.enabled && Boolean(settings.grafana.base_url.trim()) && Boolean(settings.grafana.service_account_token_env_var.trim())) || (settings.prometheus.enabled && settings.prometheus.base_url.trim() !== '')}
-              />
+              <div className="settings-group">
+                <CloudTestParityDashboard />
+                <ImportedDashboardsPanel
+                  projects={projects}
+                  defaultProjectId={selectedProjectId}
+                  prometheusConfigured={(settings.grafana?.enabled && Boolean(settings.grafana.base_url.trim()) && Boolean(settings.grafana.service_account_token_env_var.trim())) || (settings.prometheus.enabled && settings.prometheus.base_url.trim() !== '')}
+                />
+              </div>
             </section>
 
             <section

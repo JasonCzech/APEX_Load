@@ -171,6 +171,37 @@ func TestVUser_Run_ControlIfChoosesBranch(t *testing.T) {
 	}
 }
 
+func TestVUser_Run_ControlSwitchUsesOrderedFirstMatchAndDefault(t *testing.T) {
+	for _, tc := range []struct {
+		role string
+		want string
+	}{
+		{role: "admin", want: "FirstAdmin"},
+		{role: "member", want: "Member"},
+		{role: "guest", want: "Guest"},
+	} {
+		t.Run(tc.role, func(t *testing.T) {
+			proto := &captureProtocol{}
+			vu := newControlFlowVUser(proto, map[string]string{"role": tc.role}, []dsl.Action{{
+				Name: "RoleSwitch",
+				Type: "control_switch",
+				Control: &dsl.ControlFlow{
+					Cases: []dsl.SwitchCase{
+						{Condition: &dsl.Condition{Expr: `var.role == "admin"`}, Steps: []dsl.Action{click("FirstAdmin")}},
+						{Condition: &dsl.Condition{Left: "{{var.role}}", Op: "eq", Right: "admin"}, Steps: []dsl.Action{click("ShadowedAdmin")}},
+						{Condition: &dsl.Condition{Left: "{{var.role}}", Op: "eq", Right: "member"}, Steps: []dsl.Action{click("Member")}},
+					},
+					Default: []dsl.Action{click("Guest")},
+				},
+			}})
+			vu.Run(context.Background())
+			if len(proto.names) != 1 || proto.names[0] != tc.want {
+				t.Fatalf("executed %v, want [%s]", proto.names, tc.want)
+			}
+		})
+	}
+}
+
 func TestVUser_Run_ControlLoopFixedCount(t *testing.T) {
 	proto := &captureProtocol{}
 	vu := newControlFlowVUser(proto, nil, []dsl.Action{

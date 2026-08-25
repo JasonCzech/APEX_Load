@@ -578,6 +578,26 @@ describe('scriptAuthoringAssist', () => {
       expect(issues.some((i) => i.actionIndex === 0 && /control_if needs then-steps or else-steps/.test(i.message))).toBe(true)
     })
 
+	it('validates control_switch cases and nested branches', () => {
+		const script: ScriptDefinition = {
+			...importedScript,
+			actions: [{
+				name: 'Route', type: 'control_switch', target: '',
+				control: {
+					cases: [
+						{ condition: {}, steps: [] },
+						{ condition: { expr: 'var.kind == "retry"' }, steps: [{ name: 'Nested', type: 'control_loop', control: { steps: [] } }] },
+					],
+					default: [],
+				},
+			}] as unknown as ScriptDefinition['actions'],
+		}
+		const issues = collectAuthoringIssues(script)
+		expect(issues.some(issue => /case 1 needs a condition/.test(issue.message))).toBe(true)
+		expect(issues.some(issue => /case 1 needs at least one step/.test(issue.message))).toBe(true)
+		expect(issues.some(issue => /nested step 1 → control_loop needs/.test(issue.message))).toBe(true)
+	})
+
     it('flags a for-each control_loop missing its data source', () => {
       const script: ScriptDefinition = {
         ...importedScript,

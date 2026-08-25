@@ -148,6 +148,10 @@ function collectReviewGateIssues(
     if (!action.control) return
     collectReviewGateIssues(action.control.steps || [], `${path}.control.steps`, depth + 1, script, issues)
     collectReviewGateIssues(action.control.else || [], `${path}.control.else`, depth + 1, script, issues)
+	;(action.control.cases || []).forEach((switchCase, caseIndex) => {
+		collectReviewGateIssues(switchCase.steps || [], `${path}.control.cases[${caseIndex}].steps`, depth + 1, script, issues)
+	})
+	collectReviewGateIssues(action.control.default || [], `${path}.control.default`, depth + 1, script, issues)
   })
 }
 
@@ -168,6 +172,9 @@ function controlShellAction(action: ScriptActionDefinition): ScriptActionDefinit
       condition: action.control.condition,
       count: action.control.count,
       max_iterations: action.control.max_iterations,
+	  for_each: action.control.for_each,
+	  do_while: action.control.do_while,
+	  cases: action.control.cases?.map(switchCase => ({ condition: switchCase.condition, steps: [] })),
     },
   }
 }
@@ -183,6 +190,11 @@ function actionDefinitionCount(actions: ScriptActionDefinition[], depth: number)
       case 'control_loop':
         if (!action.control || depth >= REPLAY_PREFLIGHT_MAX_CONTROL_DEPTH) return count
         return count + actionDefinitionCount(action.control.steps || [], depth + 1)
+	  case 'control_switch':
+		if (!action.control || depth >= REPLAY_PREFLIGHT_MAX_CONTROL_DEPTH) return count
+		return count
+			+ (action.control.cases || []).reduce((total, switchCase) => total + actionDefinitionCount(switchCase.steps || [], depth + 1), 0)
+			+ actionDefinitionCount(action.control.default || [], depth + 1)
       default:
         return count + 1
     }
@@ -204,6 +216,12 @@ function expectedReplayActionCount(actions: ScriptActionDefinition[], depth: num
         const passes = action.control.count && action.control.count > 0 ? action.control.count : 1
         return count + (bodyCount * passes)
       }
+	  case 'control_switch': {
+		if (!action.control || depth >= REPLAY_PREFLIGHT_MAX_CONTROL_DEPTH) return count
+		const branchCounts = (action.control.cases || []).map(switchCase => expectedReplayActionCount(switchCase.steps || [], depth + 1))
+		branchCounts.push(expectedReplayActionCount(action.control.default || [], depth + 1))
+		return count + Math.max(0, ...branchCounts)
+	  }
       default:
         return count + 1
     }
@@ -353,7 +371,8 @@ function collectReadinessRefs(actions: ScriptActionDefinition[], ctx: ReadinessV
     const type = action.type?.trim().toLowerCase()
     const isLoop = type === 'control_loop'
     const isIf = type === 'control_if'
-    const refSource = isLoop || isIf ? controlShellAction(action) : action
+	const isSwitch = type === 'control_switch'
+	const refSource = isLoop || isIf || isSwitch ? controlShellAction(action) : action
     sequenceChildExtractors(action).forEach(extractor => {
       if (extractor.name) ctx.available.add(extractor.name)
     })
@@ -367,7 +386,7 @@ function collectReadinessRefs(actions: ScriptActionDefinition[], ctx: ReadinessV
     ;(action.extractors || []).forEach(extractor => {
       if (extractor.name) ctx.available.add(extractor.name)
     })
-    if ((isLoop || isIf) && action.control) {
+	if ((isLoop || isIf || isSwitch) && action.control) {
       const childCtx: ReadinessVarContext = {
         available: ctx.available,
         missing: ctx.missing,
@@ -382,6 +401,10 @@ function collectReadinessRefs(actions: ScriptActionDefinition[], ctx: ReadinessV
       }
       collectReadinessRefs(action.control.steps || [], childCtx, depth + 1)
       if (isIf) collectReadinessRefs(action.control.else || [], childCtx, depth + 1)
+	  if (isSwitch) {
+		;(action.control.cases || []).forEach(switchCase => collectReadinessRefs(switchCase.steps || [], childCtx, depth + 1))
+		collectReadinessRefs(action.control.default || [], childCtx, depth + 1)
+	  }
     }
   })
 }

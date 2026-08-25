@@ -407,4 +407,29 @@ describe('TestExecutionStatusPanels', () => {
     expect(container.textContent).toContain('east: 800 VUsers')
     expect(container.textContent).toContain('west: 400 VUsers')
   })
+
+  it('renders geographic activity from the live regional transaction aggregation', async () => {
+    await act(async () => {
+      root.render(
+        <TestExecutionStatusPanels
+          isGoalOriented={false}
+          goalDescription=""
+          test={{ id: 'test-1', name: 'Regional', status: 'RUNNING', total_vusers: 10, duration: '1m', created_at: '2026-08-25T00:00:00Z', groups: [] } as never}
+          metrics={{
+            by_region: {
+              'us-east': { name: 'us-east', count: 120, errors: 2, avg_ms: 100, p50_ms: 90, p90_ms: 130, p95_ms: 150, p99_ms: 180 },
+              'eu-west': { name: 'eu-west', count: 80, errors: 0, avg_ms: 120, p50_ms: 100, p90_ms: 160, p95_ms: 175, p99_ms: 210 },
+            },
+          }}
+          isMultiGroup={false}
+          groupMetrics={[]}
+          groupColors={[]}
+        />,
+      )
+    })
+    expect(container.querySelector('[data-testid="live-regional-activity"]')).toBeTruthy()
+    expect(container.textContent).toContain('us-east')
+    expect(container.textContent).toContain('120 tx · 2 errors · 150.0 ms p95')
+    expect(container.querySelector('[aria-label="eu-west activity 80 transactions"]')).toBeTruthy()
+  })
 })

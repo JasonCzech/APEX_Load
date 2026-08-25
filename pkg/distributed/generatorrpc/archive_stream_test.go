@@ -91,6 +91,25 @@ func TestArchiveRecorderCarriesBusinessTransactionProvenance(t *testing.T) {
 	}
 }
 
+func TestGeneratorAdaptiveMessageDetailOneItemBudgetRetainsHighPriority(t *testing.T) {
+	var output bytes.Buffer
+	recorder := &archiveRecorder{
+		manifest:  archiveManifest{TestID: "run-adaptive", TestName: "Adaptive"},
+		txEncoder: json.NewEncoder(&output),
+	}
+	result := &protocol.Result{
+		Success: true, MessageDetailRequested: true, MessageDetailMode: "adaptive", MessageDetailPriority: 3,
+		MessageDetailMaxItems: 1, MessageDetailMaxItemBytes: 256, MessageDetailMaxTotalBytes: 256,
+		Snapshot: &protocol.ErrorSnapshot{ResponseBody: "outlier"},
+	}
+	if err := recorder.RecordResult(result); err != nil {
+		t.Fatalf("RecordResult: %v", err)
+	}
+	if !result.MessageDetailRetained || recorder.manifest.MessageDetailCapture == nil || recorder.manifest.MessageDetailCapture.RetainedItems != 1 {
+		t.Fatalf("one-item generator capture = result %#v stats %#v", result, recorder.manifest.MessageDetailCapture)
+	}
+}
+
 func TestCombinedSinkArchivesSyntheticTransactionWithoutDuplicatingActionResult(t *testing.T) {
 	var output bytes.Buffer
 	recorder := &archiveRecorder{

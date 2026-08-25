@@ -21,9 +21,11 @@ import (
 // only permitted exceptions.
 func TestEngineDispatchCoversCatalogEngineActions(t *testing.T) {
 	dispatchedElsewhere := map[string]string{
-		"control_if":      "executed by the iteration loop's control-flow handler",
-		"control_loop":    "executed by the iteration loop's control-flow handler",
-		"review_required": "authoring placeholder; resolved before launch, never dispatched",
+		"control_if":       "executed by the iteration loop's control-flow handler",
+		"control_switch":   "executed by the iteration loop's control-flow handler",
+		"control_loop":     "executed by the iteration loop's control-flow handler",
+		"control_parallel": "executed by the iteration loop's control-flow handler",
+		"review_required":  "authoring placeholder; resolved before launch, never dispatched",
 	}
 
 	for _, spec := range dsl.AllActionSpecs() {
@@ -60,7 +62,7 @@ func TestEngineDispatchTypesAreInCatalog(t *testing.T) {
 	dispatched := engineActionTypesFromHandler(t)
 	// Containers are dispatched by the iteration loop rather than
 	// handleEngineAction. Keep this small architectural exception explicit.
-	dispatched = append(dispatched, "control_if", "control_loop")
+	dispatched = append(dispatched, "control_if", "control_switch", "control_loop", "control_parallel")
 	sort.Strings(dispatched)
 	// OAuth token acquisition runs in the engine so it can publish the token to
 	// VUser variables before later actions, but it deliberately remains scoped

@@ -82,6 +82,8 @@ function protocolKindForLauncher(launcher?: string | null): ImportKind {
       return 'asyncapi'
     case 'k6':
       return 'k6'
+    case 'cloudtest':
+      return 'cloudtest'
     case 'eventhubs_capture':
       return 'eventhubs-capture'
     case 'broker_config':

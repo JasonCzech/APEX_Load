@@ -47,6 +47,7 @@ const slaThresholdFields = [
 
 export function hasGoalModeConfiguration(goalConfig: GoalConfig): boolean {
   return goalNumericFields.some(field => hasNumericValue(goalConfig[field] as number | undefined))
+		|| Boolean(goalConfig.transaction_rules?.length)
     || goalConfig.stop_on_sla_breach === true
     || goalConfig.stop_on_max_errors === true
 }
@@ -56,6 +57,17 @@ function hasSLAThreshold(goalConfig: GoalConfig): boolean {
 }
 
 export function validateGoalConfig(goalConfig: GoalConfig): string | null {
+	if ((goalConfig.transaction_rules?.length || 0) > 128) {
+		return 'Transaction SLA rules cannot contain more than 128 entries'
+	}
+	for (const [index, rule] of (goalConfig.transaction_rules || []).entries()) {
+		if (!rule.transaction || rule.transaction.trim() !== rule.transaction || new TextEncoder().encode(rule.transaction).length > 256) {
+			return `Transaction SLA rule ${index + 1} requires an exact name of at most 256 bytes without surrounding whitespace`
+		}
+		if (!Number.isFinite(rule.threshold) || rule.threshold < 0) {
+			return `Transaction SLA rule ${index + 1} requires a finite non-negative threshold`
+		}
+	}
   if (isInvalidNumber(goalConfig.target_average_tps, value => value <= 0)) {
     return 'Goal-oriented scenarios require target average TPS to be greater than 0'
   }

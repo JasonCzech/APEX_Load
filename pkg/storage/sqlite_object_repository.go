@@ -358,8 +358,12 @@ func actionJSONReferencesObjectRepository(raw string, repositoryID string) (bool
 			if qualified && strings.HasPrefix(strings.TrimSpace(prefix), "object-repo-") && strings.TrimSpace(prefix) == repositoryID {
 				return true
 			}
-			if actions[i].Control != nil && (references(actions[i].Control.Steps) || references(actions[i].Control.Else)) {
-				return true
+			if actions[i].Control != nil {
+				for _, branch := range actions[i].Control.ActionBranches() {
+					if references(branch.Actions) {
+						return true
+					}
+				}
 			}
 		}
 		return false

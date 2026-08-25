@@ -659,12 +659,13 @@ type VUserRampStatus struct {
 }
 
 type TestGroup struct {
-	Name       string `json:"name"`
-	ScriptID   string `json:"script_id"`
-	ScriptName string `json:"script_name"`
-	Protocol   string `json:"protocol"`
-	Role       string `json:"role,omitempty"`
-	VUsers     int    `json:"vusers"`
+	Name        string `json:"name"`
+	ScriptID    string `json:"script_id"`
+	ScriptName  string `json:"script_name"`
+	Protocol    string `json:"protocol"`
+	Role        string `json:"role,omitempty"`
+	VUsers      int    `json:"vusers"`
+	StartOffset string `json:"start_offset,omitempty"`
 	// TargetDuration is this group's operator-controlled active runtime. Empty
 	// legacy snapshots inherit the enclosing test duration.
 	TargetDuration string              `json:"target_duration,omitempty"`
@@ -767,6 +768,7 @@ type LiveMetrics struct {
 	ErrorPatterns          []LiveErrorPattern                    `json:"error_patterns,omitempty"`
 	SOAPOperations         map[string]*TxMetrics                 `json:"soap_operations,omitempty"`
 	NetworkProfiles        map[string]*TxMetrics                 `json:"network_profiles,omitempty"`
+	ByRegion               map[string]*TxMetrics                 `json:"by_region,omitempty"`
 	GroupMetrics           map[string]*GroupLiveMetrics          `json:"groups,omitempty"`
 	Browser                *BrowserLiveMetrics                   `json:"browser,omitempty"`
 	BrowserByDevice        map[string]*BrowserDeviceLiveMetrics  `json:"browser_by_device,omitempty"`
@@ -1102,16 +1104,20 @@ type LiveErrorPattern struct {
 }
 
 type LiveErrorEvidence struct {
-	ID           string                  `json:"id"`
-	Signature    string                  `json:"signature"`
-	Action       string                  `json:"action"`
-	Group        string                  `json:"group,omitempty"`
-	Timestamp    time.Time               `json:"timestamp"`
-	DurationMs   float64                 `json:"duration_ms"`
-	Status       string                  `json:"status"`
-	StatusCode   int                     `json:"status_code,omitempty"`
-	ErrorMessage string                  `json:"error_message,omitempty"`
-	Snapshot     *protocol.ErrorSnapshot `json:"snapshot,omitempty"`
+	ID             string                  `json:"id"`
+	Signature      string                  `json:"signature"`
+	Action         string                  `json:"action"`
+	Group          string                  `json:"group,omitempty"`
+	Timestamp      time.Time               `json:"timestamp"`
+	DurationMs     float64                 `json:"duration_ms"`
+	Status         string                  `json:"status"`
+	StatusCode     int                     `json:"status_code,omitempty"`
+	ErrorMessage   string                  `json:"error_message,omitempty"`
+	Snapshot       *protocol.ErrorSnapshot `json:"snapshot,omitempty"`
+	Region         string                  `json:"region,omitempty"`
+	NetworkProfile string                  `json:"network_profile,omitempty"`
+	Hierarchy      string                  `json:"hierarchy,omitempty"`
+	Phase          string                  `json:"phase,omitempty"`
 }
 
 type LiveDependencyMap struct {
@@ -1218,6 +1224,7 @@ type ScenarioScriptRef struct {
 	VUsers          int                          `json:"vusers"`
 	RampUp          string                       `json:"ramp_up,omitempty"`
 	RampDown        string                       `json:"ramp_down,omitempty"`
+	StartOffset     string                       `json:"start_offset,omitempty"`
 	Stages          []storage.LoadStage          `json:"stages,omitempty"`
 	Iterations      *int                         `json:"iterations,omitempty"`
 	Initialization  string                       `json:"initialization,omitempty"`
@@ -1748,6 +1755,17 @@ type GoalConfig struct {
 	StopOnSLABreach bool   `json:"stop_on_sla_breach,omitempty"`
 	StopOnMaxErrors bool   `json:"stop_on_max_errors,omitempty"`
 	SLABreachWindow string `json:"sla_breach_window,omitempty"`
+	// TransactionRules are terminal-only SLA rules evaluated from the complete
+	// archive. They do not participate in live stop-on-breach decisions.
+	TransactionRules []TransactionSLARule `json:"transaction_rules,omitempty"`
+}
+
+type TransactionSLARule struct {
+	Transaction string  `json:"transaction"`
+	Metric      string  `json:"metric"`
+	Comparator  string  `json:"comparator"`
+	Threshold   float64 `json:"threshold"`
+	Severity    string  `json:"severity,omitempty"`
 }
 
 // RuntimeSettingsOverride allows overriding script-level runtime settings at test time,
@@ -1815,6 +1833,7 @@ type CreateGroupEntry struct {
 	VUsers           int                          `json:"vusers"`
 	RampUp           string                       `json:"ramp_up,omitempty"`
 	RampDown         string                       `json:"ramp_down,omitempty"`
+	StartOffset      string                       `json:"start_offset,omitempty"`
 	Stages           []storage.LoadStage          `json:"stages,omitempty"`
 	Iterations       *int                         `json:"iterations,omitempty"`
 	RuntimeSettings  *RuntimeSettingsOverride     `json:"runtime_settings,omitempty"`

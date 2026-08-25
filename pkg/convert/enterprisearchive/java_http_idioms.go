@@ -703,8 +703,9 @@ func javaEnsureHeaderLists(script *dsl.Script) {
 				actions[i].HeaderList = javaDeterministicHeaderList(actions[i].Headers)
 			}
 			if actions[i].Control != nil {
-				walk(actions[i].Control.Steps)
-				walk(actions[i].Control.Else)
+				for _, branch := range actions[i].Control.ActionBranches() {
+					walk(branch.Actions)
+				}
 			}
 		}
 	}

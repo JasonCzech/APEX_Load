@@ -16,6 +16,8 @@ import {
 import type { BarShapeProps } from 'recharts'
 
 import { RunArchiveReport } from '../types'
+import ExportableChart from './ExportableChart'
+import { type ChartExportColumn } from './exportableChartUtils'
 
 const ACCENT = '#0f766e'
 const ACCENT_2 = '#b45309'
@@ -85,6 +87,21 @@ interface TimelinePoint {
   vusers: number
 }
 
+const timelineColumns: readonly ChartExportColumn<TimelinePoint>[] = [
+  { key: 'time', label: 'Time', value: row => row.label },
+  { key: 'tps', label: 'Actual TPS', value: row => row.tps },
+  { key: 'target', label: 'Target TPS', value: row => row.target },
+  { key: 'p95', label: 'P95 response time (ms)', value: row => row.p95 },
+  { key: 'error_pct', label: 'Error rate (%)', value: row => row.errorPct },
+  { key: 'vusers', label: 'Active VUsers', value: row => row.vusers },
+]
+
+const actionColumns: readonly ChartExportColumn<ActionBar>[] = [
+  { key: 'action', label: 'Action', value: row => row.name },
+  { key: 'avg_ms', label: 'Average response time (ms)', value: row => row.avg },
+  { key: 'above_run_average', label: 'At or above run average', value: row => row.aboveRunAverage },
+]
+
 function clock(timestamp: string): string {
   const date = new Date(timestamp)
   if (Number.isNaN(date.getTime())) return ''
@@ -125,7 +142,7 @@ export default function ReportCharts({ report }: Props) {
     <div className="report-charts">
       {hasTimeline && (
         <>
-          <ReportChartCard title="Throughput (TPS)">
+          <ExportableChart definitionId="report-throughput" title="Throughput (TPS)" description="Actual and configured target transactions per second over the archived run timeline." rows={timeline} columns={timelineColumns}>
             <ResponsiveContainer width="100%" height={220}>
               <LineChart data={timeline} margin={{ top: 8, right: 16, bottom: 4, left: 0 }}>
                 <CartesianGrid stroke={GRID} strokeDasharray="4 4" />
@@ -138,9 +155,9 @@ export default function ReportCharts({ report }: Props) {
                 )}
               </LineChart>
             </ResponsiveContainer>
-          </ReportChartCard>
+          </ExportableChart>
 
-          <ReportChartCard title="Response Time (p95, ms)">
+          <ExportableChart definitionId="report-p95-response-time" title="Response Time (p95, ms)" description="Ninety-fifth percentile response time in milliseconds over the archived run timeline." rows={timeline} columns={timelineColumns}>
             <ResponsiveContainer width="100%" height={220}>
               <AreaChart data={timeline} margin={{ top: 8, right: 16, bottom: 4, left: 0 }}>
                 <CartesianGrid stroke={GRID} strokeDasharray="4 4" />
@@ -150,9 +167,9 @@ export default function ReportCharts({ report }: Props) {
                 <Area type="monotone" dataKey="p95" name="p95 latency" stroke={ACCENT} fill={ACCENT} fillOpacity={0.15} strokeWidth={2} isAnimationActive={false} />
               </AreaChart>
             </ResponsiveContainer>
-          </ReportChartCard>
+          </ExportableChart>
 
-          <ReportChartCard title="Error Rate (%)">
+          <ExportableChart definitionId="report-error-rate" title="Error Rate (%)" description="Business-transaction error percentage over the archived run timeline." rows={timeline} columns={timelineColumns}>
             <ResponsiveContainer width="100%" height={220}>
               <LineChart data={timeline} margin={{ top: 8, right: 16, bottom: 4, left: 0 }}>
                 <CartesianGrid stroke={GRID} strokeDasharray="4 4" />
@@ -162,9 +179,9 @@ export default function ReportCharts({ report }: Props) {
                 <Line type="monotone" dataKey="errorPct" name="Error %" stroke={ACCENT_2} strokeWidth={2} dot={false} isAnimationActive={false} />
               </LineChart>
             </ResponsiveContainer>
-          </ReportChartCard>
+          </ExportableChart>
 
-          <ReportChartCard title="Active VUsers">
+          <ExportableChart definitionId="report-active-vusers" title="Active VUsers" description="Active virtual users over the archived run timeline." rows={timeline} columns={timelineColumns}>
             <ResponsiveContainer width="100%" height={220}>
               <AreaChart data={timeline} margin={{ top: 8, right: 16, bottom: 4, left: 0 }}>
                 <CartesianGrid stroke={GRID} strokeDasharray="4 4" />
@@ -174,13 +191,17 @@ export default function ReportCharts({ report }: Props) {
                 <Area type="monotone" dataKey="vusers" name="Active VUsers" stroke={ACCENT} fill={ACCENT} fillOpacity={0.15} strokeWidth={2} isAnimationActive={false} />
               </AreaChart>
             </ResponsiveContainer>
-          </ReportChartCard>
+          </ExportableChart>
         </>
       )}
 
       {actionBars.length > 0 && (
-        <ReportChartCard
+        <ExportableChart
+          definitionId="report-action-response-time"
           title="Average Response Time by Action (ms)"
+          description="Average response time by action, with actions at or above the run average highlighted."
+          rows={actionBars}
+          columns={actionColumns}
           note={highlightsSlowActions ? `Highlighted bars are at or above the run average of ${runAverageMs} ms.` : undefined}
         >
           <ResponsiveContainer width="100%" height={Math.max(160, actionBars.length * 34 + 24)}>
@@ -192,19 +213,9 @@ export default function ReportCharts({ report }: Props) {
               <Bar dataKey="avg" name="Avg ms" radius={ACTION_BAR_RADIUS} fill={ACCENT} shape={ActionBarShape} isAnimationActive={false} />
             </BarChart>
           </ResponsiveContainer>
-        </ReportChartCard>
+        </ExportableChart>
       )}
     </div>
-  )
-}
-
-function ReportChartCard({ title, note, children }: { title: string; note?: string; children: React.ReactNode }) {
-  return (
-    <figure className="report-chart-card">
-      <figcaption>{title}</figcaption>
-      {note && <p className="report-chart-note">{note}</p>}
-      {children}
-    </figure>
   )
 }
 

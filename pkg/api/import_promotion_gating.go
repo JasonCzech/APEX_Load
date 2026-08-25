@@ -109,10 +109,12 @@ func javaVuserActionsHaveEnterpriseArchiveRef(actions []dsl.Action) bool {
 			strings.EqualFold(strings.TrimSpace(fmt.Sprint(action.Params["source_archive_ref"])), "enterprise_script_archive") {
 			return true
 		}
-		if action.Control != nil &&
-			(javaVuserActionsHaveEnterpriseArchiveRef(action.Control.Steps) ||
-				javaVuserActionsHaveEnterpriseArchiveRef(action.Control.Else)) {
-			return true
+		if action.Control != nil {
+			for _, branch := range action.Control.ActionBranches() {
+				if javaVuserActionsHaveEnterpriseArchiveRef(branch.Actions) {
+					return true
+				}
+			}
 		}
 	}
 	return false
@@ -266,8 +268,12 @@ func javaVuserRunActionPresent(actions []dsl.Action) bool {
 		if strings.EqualFold(strings.TrimSpace(action.Type), "java_vuser_run") {
 			return true
 		}
-		if action.Control != nil && (javaVuserRunActionPresent(action.Control.Steps) || javaVuserRunActionPresent(action.Control.Else)) {
-			return true
+		if action.Control != nil {
+			for _, branch := range action.Control.ActionBranches() {
+				if javaVuserRunActionPresent(branch.Actions) {
+					return true
+				}
+			}
 		}
 	}
 	return false

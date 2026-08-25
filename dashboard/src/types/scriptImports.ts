@@ -251,6 +251,7 @@ export interface ScriptImportResult<
   scripts: TScript[]
   script?: TScript
   scenario_draft?: TScenarioDraft
+  scenario_drafts?: TScenarioDraft[]
   warnings: string[]
   unsupported_elements: string[]
   assumptions: string[]
@@ -278,6 +279,7 @@ export interface ScriptImportResult<
   source_secret_session_expires_at?: string
   source_secret_migration_allowed?: boolean
   import_session_id?: string
+  import_session_ids?: string[]
   expires_at?: string
   import_draft_expires_at?: string
   preflight?: ReplayPreflight
@@ -822,6 +824,41 @@ export type WSDLImportResult = ScriptImportResult<WSDLImportStats, unknown>
 export type AsyncAPIImportResult = ScriptImportResult<AsyncAPIImportStats, unknown>
 export type RecorderImportResult = ScriptImportResult<Record<string, unknown>, RecorderCorrelation>
 export type K6ImportResult = ScriptImportResult<Record<string, unknown>, unknown>
+export interface CloudTestImportStats {
+  xml_files: number
+  elements: number
+  recognized_elements: number
+  unknown_elements: number
+  clips: number
+  compositions: number
+  review_actions: number
+  truncated_actions: number
+}
+
+export interface CloudTestScenarioGroupDraft {
+  name: string
+  script_name?: string
+  start_offset?: string
+  vusers?: number
+  ramp_up?: string
+  pacing?: string
+  load_zone?: string
+  review_required: boolean
+  source_path: string
+}
+
+export interface CloudTestScenarioDraft {
+  name: string
+  duration?: string
+  groups: CloudTestScenarioGroupDraft[]
+  review_required: boolean
+  source_file: string
+  source_path: string
+}
+
+export type CloudTestImportResult = ScriptImportResult<CloudTestImportStats, unknown, ScriptDefinition, CloudTestScenarioDraft> & {
+  import_session_ids?: string[]
+}
 export type EventHubsCaptureImportResult = ScriptImportResult<Record<string, unknown>, unknown>
 export type BrokerConfigImportResult = ScriptImportResult<Record<string, unknown>, unknown>
 
@@ -881,6 +918,12 @@ export interface AsyncAPISupportMatrixResponse {
 export type DevWebSupportMatrixEntry = RAMLSupportMatrixEntry
 export type PostmanSupportMatrixEntry = RAMLSupportMatrixEntry
 export type K6SupportMatrixEntry = RAMLSupportMatrixEntry
+export interface CloudTestSupportMatrixEntry extends RAMLSupportMatrixEntry {
+  cloudtest_construct: string
+  apex_mapping: string
+  intended_disposition: 'executable_exact' | 'executable_bounded' | 'blocked_draft' | 'rejected'
+  fixture_proven: boolean
+}
 export type EventHubsCaptureSupportMatrixEntry = RAMLSupportMatrixEntry
 export type BrokerConfigSupportMatrixEntry = RAMLSupportMatrixEntry
 
@@ -897,6 +940,12 @@ export interface PostmanSupportMatrixResponse {
 export interface K6SupportMatrixResponse {
   support_matrix?: K6SupportMatrixEntry[]
   notes?: string[]
+}
+
+export interface CloudTestSupportMatrixResponse {
+  support_matrix?: CloudTestSupportMatrixEntry[]
+  notes?: string[]
+  fixture_gate?: string
 }
 
 export interface EventHubsCaptureSupportMatrixResponse {
@@ -1108,6 +1157,7 @@ export interface CommitGenericImportBatchRequest {
   folder_id?: string | null
   operation_id: string
   source_profile: GenericImportBatchSourceProfile
+  import_session_ids?: string[]
   source_recording_session_ids?: string[]
 }
 

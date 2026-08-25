@@ -252,6 +252,13 @@ var reportSectionTemplates = template.Must(template.New("run-archive-report-sect
   {{else}}<tr><td colspan="5" class="muted">No per-transaction SLA evidence was archived.</td></tr>{{end}}
   </tbody>
 </table>
+{{if .TransactionRuleResults}}
+<table>
+  <caption>Exact transaction terminal rules</caption>
+  <thead><tr><th>Transaction</th><th>Metric</th><th>Expectation</th><th class="num">Observed</th><th>Severity</th><th>Result</th></tr></thead>
+  <tbody>{{range .TransactionRuleResults}}<tr><td>{{.Rule.Transaction}}</td><td>{{.Rule.Metric}}</td><td>{{.Rule.Comparator}} {{formatFloat .Rule.Threshold}}</td><td class="num">{{optFloat .Observed}}</td><td>{{.Rule.Severity}}</td><td>{{.Status}}</td></tr>{{end}}</tbody>
+</table>
+{{end}}
 {{with index .Annotations.SectionComments "sla"}}<div class="analyst"><p>{{.}}</p></div>{{end}}
 {{end}}
 
@@ -267,6 +274,13 @@ var reportSectionTemplates = template.Must(template.New("run-archive-report-sect
 <tr><td colspan="6" class="muted">No per-transaction archive data was recorded.</td></tr>
 {{end}}
 </tbody></table>
+{{if .TransactionRuleResults}}
+<table>
+<caption>Exact transaction terminal rules</caption>
+<thead><tr><th>Transaction</th><th>Metric</th><th>Expectation</th><th class="num">Observed</th><th>Severity</th><th>Result</th></tr></thead>
+<tbody>{{range .TransactionRuleResults}}<tr><td>{{.Rule.Transaction}}</td><td>{{.Rule.Metric}}</td><td>{{.Rule.Comparator}} {{formatFloat .Rule.Threshold}}</td><td class="num">{{optFloat .Observed}}</td><td>{{.Rule.Severity}}</td><td>{{.Status}}</td></tr>{{end}}</tbody>
+</table>
+{{end}}
 {{with index .Annotations.SectionComments "sla"}}<div class="analyst"><p>{{.}}</p></div>{{end}}
 {{end}}
 

@@ -236,6 +236,41 @@ describe('buildDebugRailRenderRows', () => {
     const leaves = rendered.filter(r => r.kind === 'leaf')
     expect(leaves.map(l => (l as { stepPath: string[] }).stepPath[0])).toEqual(['then[0]', 'else[0]'])
   })
+
+	it('expands control_switch case/default branches with engine step paths', () => {
+		const branch = {
+			name: 'Route', type: 'control_switch',
+			control: {
+				cases: [
+					{ condition: { expr: 'var.kind == "a"' }, steps: [{ name: 'a0', type: 'GET', target: '/a0' }, { name: 'a1', type: 'GET', target: '/a1' }] },
+					{ condition: { expr: 'var.kind == "b"' }, steps: [{ name: 'b0', type: 'GET', target: '/b0' }] },
+				],
+				default: [{ name: 'd0', type: 'GET', target: '/default' }],
+			},
+		} as unknown as ScriptActionDefinition
+		const switchRows = buildScriptPhaseActionRows(script({ actions: [branch] }))
+		const rendered = buildDebugRailRenderRows(switchRows, new Set([debugSequenceKey('action', 0)]))
+		const leaves = rendered.filter(row => row.kind === 'leaf')
+		expect(leaves.map(row => (row as { stepPath: string[] }).stepPath[0])).toEqual([
+			'case[0][0]', 'case[0][1]', 'case[1][0]', 'default[0]',
+		])
+	})
+
+	it('expands control_parallel branches with deterministic engine step paths', () => {
+		const parallel = {
+			name: 'Fan out', type: 'control_parallel',
+			control: { branches: [
+				{ name: 'catalog', steps: [{ name: 'list', type: 'GET', target: '/catalog' }] },
+				{ name: 'account', steps: [{ name: 'profile', type: 'GET', target: '/profile' }] },
+			] },
+		} as unknown as ScriptActionDefinition
+		const rows = buildScriptPhaseActionRows(script({ actions: [parallel] }))
+		const rendered = buildDebugRailRenderRows(rows, new Set([debugSequenceKey('action', 0)]))
+		const leaves = rendered.filter(row => row.kind === 'leaf')
+		expect(leaves.map(row => (row as { stepPath: string[] }).stepPath[0])).toEqual([
+			'branches[0].steps[0]', 'branches[1].steps[0]',
+		])
+	})
 })
 
 describe('misc helpers', () => {

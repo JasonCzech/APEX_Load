@@ -79,7 +79,7 @@ func (tr *TestRunner) executionPlanGovernanceScenario(id string) (*StoredScenari
 	}
 	refs := make([]ScenarioScriptRef, 0, len(scripts))
 	for _, script := range scripts {
-		refs = append(refs, ScenarioScriptRef{VUsers: script.VUsers, Stages: cloneLoadStages(script.Stages)})
+		refs = append(refs, ScenarioScriptRef{VUsers: script.VUsers, StartOffset: script.StartOffset, Stages: cloneLoadStages(script.Stages)})
 	}
 	return &StoredScenario{
 		ID:           current.ID,
@@ -93,7 +93,8 @@ func scenarioPeakVUsers(scenario *StoredScenario) int {
 	if scenario == nil {
 		return 0
 	}
-	peak := 0
+	duration, _ := time.ParseDuration(strings.TrimSpace(scenario.Duration))
+	groups := make([]TestGroup, 0, len(scenario.Scripts))
 	for _, script := range scenario.Scripts {
 		groupPeak := script.VUsers
 		for _, stage := range script.Stages {
@@ -101,8 +102,11 @@ func scenarioPeakVUsers(scenario *StoredScenario) int {
 				groupPeak = stage.TargetVUsers
 			}
 		}
-		peak = saturatingAddNonNegative(peak, groupPeak)
+		groups = append(groups, TestGroup{
+			Name: script.Name, VUsers: groupPeak, StartOffset: script.StartOffset, Stages: cloneLoadStages(script.Stages),
+		})
 	}
+	peak := managedGroupPeakVUsers(groups, duration)
 	if strings.EqualFold(scenario.ScenarioMode, "goal_oriented") && scenario.GoalConfig != nil && scenario.GoalConfig.MaxVUsers != nil && *scenario.GoalConfig.MaxVUsers > peak {
 		peak = *scenario.GoalConfig.MaxVUsers
 	}
@@ -328,6 +332,7 @@ type executionPlanScenarioScriptFingerprint struct {
 	VUsers          int                 `json:"vusers"`
 	RampUp          string              `json:"ramp_up,omitempty"`
 	RampDown        string              `json:"ramp_down,omitempty"`
+	StartOffset     string              `json:"start_offset,omitempty"`
 	Stages          []storage.LoadStage `json:"stages,omitempty"`
 	Iterations      *int                `json:"iterations,omitempty"`
 	Initialization  string              `json:"initialization,omitempty"`
@@ -438,6 +443,7 @@ func executionPlanScenarioApprovalFingerprint(scenario *StoredScenario) *executi
 			VUsers:          script.VUsers,
 			RampUp:          strings.TrimSpace(script.RampUp),
 			RampDown:        strings.TrimSpace(script.RampDown),
+			StartOffset:     strings.TrimSpace(script.StartOffset),
 			Stages:          cloneLoadStages(script.Stages),
 			Iterations:      cloneIntPtr(script.Iterations),
 			Initialization:  strings.TrimSpace(script.Initialization),

@@ -20,6 +20,7 @@ type VUser struct {
 	ID              int
 	TotalVUsers     int
 	Group           string
+	Region          string
 	Proto           protocol.Protocol
 	Script          *dsl.Script
 	Metrics         *MetricsCollector
@@ -107,6 +108,8 @@ type VUser struct {
 	sourceTransactions map[string]*sourceTransactionRuntimeState
 	iterationThinkTime time.Duration
 	userWorkStarted    bool
+	resultPhase        string
+	resultSequence     uint64
 }
 
 // resolvedActionCredentialComposites pins credential spellings to the exact
@@ -197,6 +200,7 @@ func (vu *VUser) Run(ctx context.Context) {
 	cfg := vu.Script.Config
 	logCfg := cfg.Log
 	logger := vu.makeLogger(logCfg)
+	vu.resultPhase = "action"
 
 	vu.prepareRuntimeState()
 	// The soft Run context controls whether another iteration may start. The
@@ -588,6 +592,42 @@ func (vu *VUser) Run(ctx context.Context) {
 					return flowTeardown
 				case flowBreak, flowContinue:
 					return flow
+				}
+				if !applyActionThinkTime(action) {
+					return flowTeardown
+				}
+				return flowNext
+			case "control_switch":
+				if action.Control == nil || depth >= maxControlDepth {
+					if depth >= maxControlDepth {
+						logger.Error("control flow nesting exceeded", "action", action.Name)
+					}
+					return flowNext
+				}
+				body, _ := vu.selectSwitchBranch(action.Control)
+				switch flow := runActions(body, depth+1); flow {
+				case flowTeardown:
+					return flowTeardown
+				case flowBreak, flowContinue:
+					return flow
+				}
+				if !applyActionThinkTime(action) {
+					return flowTeardown
+				}
+				return flowNext
+			case "control_parallel":
+				if action.Control == nil || depth >= maxControlDepth {
+					iterSuccess = false
+					if !continueOnError {
+						return flowTeardown
+					}
+					return flowNext
+				}
+				if !vu.executeParallelBlock(iterCtx, action, "action") {
+					iterSuccess = false
+					if !continueOnError {
+						return flowTeardown
+					}
 				}
 				if !applyActionThinkTime(action) {
 					return flowTeardown
@@ -1041,6 +1081,9 @@ func (vu *VUser) runLifecycleActions(ctx context.Context, actions []dsl.Action, 
 }
 
 func (vu *VUser) runLifecycleActionsWithContexts(actionCtx, boundaryCtx context.Context, actions []dsl.Action, phase string, ignoreErrors bool, logger *slog.Logger, logCfg dsl.LogConfig, errCfg dsl.ErrorHandlingConfig) bool {
+	previousPhase := vu.resultPhase
+	vu.resultPhase = strings.ToLower(strings.TrimSpace(phase))
+	defer func() { vu.resultPhase = previousPhase }()
 	if ignoreErrors {
 		errCfg.ContinueOnError = dsl.ContinueOnErrorValue(true)
 	}
@@ -1103,6 +1146,41 @@ func (vu *VUser) runLifecycleActionsWithContexts(actionCtx, boundaryCtx context.
 				return flowTeardown
 			case flowBreak, flowContinue:
 				return flow
+			}
+			if !vu.applyActionThinkTime(boundaryCtx, action) {
+				return flowTeardown
+			}
+			return flowNext
+		case "control_switch":
+			vu.markUserWorkStarted()
+			if action.Control == nil {
+				return flowNext
+			}
+			if depth >= maxControlDepth {
+				logger.Error(phase+" control flow nesting exceeded", "action", action.Name)
+				return flowNext
+			}
+			body, _ := vu.selectSwitchBranch(action.Control)
+			switch flow := runActions(body, depth+1); flow {
+			case flowTeardown:
+				return flowTeardown
+			case flowBreak, flowContinue:
+				return flow
+			}
+			if !vu.applyActionThinkTime(boundaryCtx, action) {
+				return flowTeardown
+			}
+			return flowNext
+		case "control_parallel":
+			vu.markUserWorkStarted()
+			if action.Control == nil || depth >= maxControlDepth {
+				if ignoreErrors {
+					return flowNext
+				}
+				return flowTeardown
+			}
+			if !vu.executeParallelBlock(actionCtx, action, phase) && !ignoreErrors {
+				return flowTeardown
 			}
 			if !vu.applyActionThinkTime(boundaryCtx, action) {
 				return flowTeardown

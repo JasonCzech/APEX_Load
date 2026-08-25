@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/api"
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
@@ -92,6 +93,21 @@ func TestBuildJUnitReportSLABreach(t *testing.T) {
 	}
 	if !strings.Contains(slaCase.Failure.Body, "Error rate") {
 		t.Fatalf("expected breach details in body, got %q", slaCase.Failure.Body)
+	}
+}
+
+func TestBuildJUnitReportPreservesStructuredTransactionRuleEvidence(t *testing.T) {
+	observed := 912.0
+	report := buildJUnitReport(junitInput{sla: &SLASummary{
+		Evaluated: true,
+		TransactionRuleResults: []api.TransactionSLARuleResult{{
+			Rule:   api.TransactionSLARule{Transaction: "Checkout", Metric: "p95_duration_ms", Comparator: "lte", Threshold: 800, Severity: "warning"},
+			Status: "warning", Observed: &observed, MatchedCount: 42, Message: "breached",
+		}},
+	}})
+	properties := report.Suites[0].Properties
+	if got := properties[len(properties)-1]; got.Name != "transaction_sla_rule.0" || !strings.Contains(got.Value, `"transaction":"Checkout"`) || !strings.Contains(got.Value, `"status":"warning"`) {
+		t.Fatalf("transaction rule property = %#v", got)
 	}
 }
 

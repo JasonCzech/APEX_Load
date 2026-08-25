@@ -1235,8 +1235,9 @@ func redactArchiveMaskedBodyMetadata(script *dsl.Script) {
 				}
 			}
 			if actions[i].Control != nil {
-				redactActions(actions[i].Control.Steps)
-				redactActions(actions[i].Control.Else)
+				for _, branch := range actions[i].Control.ActionBranches() {
+					redactActions(branch.Actions)
+				}
 			}
 		}
 	}

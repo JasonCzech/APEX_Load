@@ -326,6 +326,15 @@ func (tr *TestRunner) storeScenarioLockedWithWriter(id string, req CreateScenari
 	if err != nil {
 		return nil, err
 	}
+	scenarioDuration, err := time.ParseDuration(req.Duration)
+	if err != nil {
+		return nil, fmt.Errorf("invalid duration: %w", err)
+	}
+	for index, group := range engineGroups {
+		if group.StartOffset > scenarioDuration {
+			return nil, fmt.Errorf("group[%d]: start_offset %s begins after the %s scenario deadline", index, group.StartOffset, scenarioDuration)
+		}
+	}
 	if tr.contentRevision != buildFence.contentRevision {
 		return nil, errScenarioConcurrentChange
 	}
@@ -378,6 +387,7 @@ func (tr *TestRunner) storeScenarioLockedWithWriter(id string, req CreateScenari
 			VUsers:          group.VUsers,
 			RampUp:          group.RampUp,
 			RampDown:        group.RampDown,
+			StartOffset:     group.StartOffset,
 			Stages:          cloneLoadStages(group.Stages),
 			Iterations:      group.Iterations,
 			Initialization:  group.InitStrategy,

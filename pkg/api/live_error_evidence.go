@@ -5,6 +5,8 @@ package api
 // via ListLiveErrorEvidence. Extracted from metrics.go.
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"net/url"
 	"sort"
@@ -121,7 +123,7 @@ func liveErrorPatternSourceFromValues(errorMessage string, statusCode int) strin
 }
 
 func liveErrorEvidenceFromResult(result *protocol.Result) LiveErrorEvidence {
-	if result == nil || result.Success || result.Snapshot == nil {
+	if result == nil || result.Snapshot == nil || result.Success && !result.MessageDetailRetained {
 		return LiveErrorEvidence{}
 	}
 	statusCode := result.StatusCode
@@ -129,26 +131,41 @@ func liveErrorEvidenceFromResult(result *protocol.Result) LiveErrorEvidence {
 		statusCode = result.Snapshot.ResponseStatus
 	}
 	source := liveErrorPatternSourceFromValues(result.ErrorMessage, statusCode)
+	status := "failed"
+	signature := normalizeArchiveErrorSignature(source)
+	if result.Success {
+		status = "success"
+		signature = "__message_detail__"
+	}
 	timestamp := result.StartTime
 	if timestamp.IsZero() {
 		timestamp = time.Now().UTC()
 	}
 	return LiveErrorEvidence{
-		ID:           "live-evidence-" + uuid.NewString(),
-		Signature:    normalizeArchiveErrorSignature(source),
-		Action:       strings.TrimSpace(result.ActionName),
-		Group:        strings.TrimSpace(result.Group),
-		Timestamp:    timestamp,
-		DurationMs:   float64(result.Duration) / float64(time.Millisecond),
-		Status:       "failed",
-		StatusCode:   statusCode,
-		ErrorMessage: strings.TrimSpace(result.ErrorMessage),
-		Snapshot:     cloneProtocolErrorSnapshot(result.Snapshot),
+		ID:             stableLiveEvidenceID(result.ActionName, result.Group, result.CorrelationID, timestamp, result.Duration),
+		Signature:      signature,
+		Action:         strings.TrimSpace(result.ActionName),
+		Group:          strings.TrimSpace(result.Group),
+		Timestamp:      timestamp,
+		DurationMs:     float64(result.Duration) / float64(time.Millisecond),
+		Status:         status,
+		StatusCode:     statusCode,
+		ErrorMessage:   strings.TrimSpace(result.ErrorMessage),
+		Snapshot:       cloneProtocolErrorSnapshot(result.Snapshot),
+		Region:         strings.TrimSpace(result.Region),
+		NetworkProfile: strings.TrimSpace(result.NetworkProfile),
+		Hierarchy:      strings.TrimSpace(result.Hierarchy),
+		Phase:          strings.TrimSpace(result.Phase),
 	}
 }
 
+func stableLiveEvidenceID(action, group, correlation string, timestamp time.Time, duration time.Duration) string {
+	hash := sha256.Sum256([]byte(fmt.Sprintf("%s\x00%s\x00%s\x00%d\x00%d", action, group, correlation, timestamp.UnixNano(), duration)))
+	return "tx_" + hex.EncodeToString(hash[:16])
+}
+
 func liveErrorEvidenceFromTransaction(tx generatorrpc.TransactionMetric) LiveErrorEvidence {
-	if tx.Success || tx.Snapshot == nil {
+	if tx.Snapshot == nil {
 		return LiveErrorEvidence{}
 	}
 	statusCode := int(tx.StatusCode)
@@ -156,21 +173,31 @@ func liveErrorEvidenceFromTransaction(tx generatorrpc.TransactionMetric) LiveErr
 		statusCode = tx.Snapshot.ResponseStatus
 	}
 	source := liveErrorPatternSourceFromValues(tx.ErrorMessage, statusCode)
+	status := "failed"
+	signature := normalizeArchiveErrorSignature(source)
+	if tx.Success {
+		status = "success"
+		signature = "__message_detail__"
+	}
 	timestamp := time.Now().UTC()
 	if tx.StartTimeUnixMs > 0 {
 		timestamp = time.UnixMilli(tx.StartTimeUnixMs)
 	}
 	return LiveErrorEvidence{
-		ID:           "live-evidence-" + uuid.NewString(),
-		Signature:    normalizeArchiveErrorSignature(source),
-		Action:       strings.TrimSpace(tx.Name),
-		Group:        strings.TrimSpace(tx.Group),
-		Timestamp:    timestamp,
-		DurationMs:   tx.DurationMs,
-		Status:       "failed",
-		StatusCode:   statusCode,
-		ErrorMessage: strings.TrimSpace(tx.ErrorMessage),
-		Snapshot:     cloneProtocolErrorSnapshot(tx.Snapshot),
+		ID:             stableLiveEvidenceID(tx.Name, tx.Group, tx.CorrelationID, timestamp, time.Duration(tx.DurationMs*float64(time.Millisecond))),
+		Signature:      signature,
+		Action:         strings.TrimSpace(tx.Name),
+		Group:          strings.TrimSpace(tx.Group),
+		Timestamp:      timestamp,
+		DurationMs:     tx.DurationMs,
+		Status:         status,
+		StatusCode:     statusCode,
+		ErrorMessage:   strings.TrimSpace(tx.ErrorMessage),
+		Snapshot:       cloneProtocolErrorSnapshot(tx.Snapshot),
+		Region:         strings.TrimSpace(tx.Region),
+		NetworkProfile: strings.TrimSpace(tx.NetworkProfile),
+		Hierarchy:      strings.TrimSpace(tx.Hierarchy),
+		Phase:          strings.TrimSpace(tx.Phase),
 	}
 }
 
@@ -382,6 +409,28 @@ func (tr *TestRunner) ListLiveErrorEvidence(testID string, signature string, act
 		filtered = append(filtered, item)
 	}
 	return filtered, true
+}
+
+func (tr *TestRunner) GetLiveTransactionDetail(testID, eventID string) (LiveErrorEvidence, bool, bool) {
+	if tr == nil {
+		return LiveErrorEvidence{}, false, false
+	}
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+	testID = tr.resolveRefKeyLocked(testID)
+	test, exists := tr.tests[testID]
+	if !exists {
+		return LiveErrorEvidence{}, false, false
+	}
+	for _, items := range test.liveErrorEvidence {
+		for _, item := range items {
+			if item.ID == eventID {
+				item.Snapshot = cloneProtocolErrorSnapshot(item.Snapshot)
+				return item, true, true
+			}
+		}
+	}
+	return LiveErrorEvidence{}, true, false
 }
 
 func cloneProtocolErrorSnapshot(snapshot *protocol.ErrorSnapshot) *protocol.ErrorSnapshot {

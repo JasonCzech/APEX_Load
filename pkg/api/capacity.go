@@ -49,7 +49,7 @@ func (tr *TestRunner) countActiveVUsersLocked() int {
 	total := 0
 	for _, test := range tr.tests {
 		if testReservesRuntimeCapacity(test) {
-			total = saturatingAddNonNegative(total, test.TotalVUsers)
+			total = saturatingAddNonNegative(total, managedTestCapacityVUsers(test))
 		}
 	}
 	return total
@@ -63,7 +63,7 @@ func (tr *TestRunner) countActiveVUsersForProjectLocked(projectID string) int {
 			continue
 		}
 		if testReservesRuntimeCapacity(test) {
-			total = saturatingAddNonNegative(total, test.TotalVUsers)
+			total = saturatingAddNonNegative(total, managedTestCapacityVUsers(test))
 		}
 	}
 	return total
@@ -115,7 +115,7 @@ func (tr *TestRunner) countActiveVUsersOnPoolForProjectLocked(poolID, projectID 
 			continue
 		}
 		if testReservesRuntimeCapacity(test) {
-			total = saturatingAddNonNegative(total, test.TotalVUsers)
+			total = saturatingAddNonNegative(total, managedTestCapacityVUsers(test))
 		}
 	}
 	return total
@@ -135,13 +135,13 @@ func (tr *TestRunner) evaluatePoolQuotaBlockWithQuotaLocked(test *ManagedTest, e
 		if existing, ok := tr.tests[excludeTestID]; ok && testReservesRuntimeCapacity(existing) &&
 			testAssignedPoolID(existing) == poolID && normalizeProjectID(existing.ProjectID) == normalizeProjectID(test.ProjectID) {
 			activeTests--
-			activeVUsers -= existing.TotalVUsers
+			activeVUsers -= managedTestCapacityVUsers(existing)
 		}
 	}
 	if quota.MaxConcurrentTests > 0 && activeTests >= quota.MaxConcurrentTests {
 		return true, fmt.Sprintf("waiting for a pool test slot on %q (%d max concurrent tests)", poolID, quota.MaxConcurrentTests)
 	}
-	if quota.MaxVUsers > 0 && nonNegativeSumExceedsLimit(activeVUsers, test.TotalVUsers, quota.MaxVUsers) {
+	if quota.MaxVUsers > 0 && nonNegativeSumExceedsLimit(activeVUsers, managedTestCapacityVUsers(test), quota.MaxVUsers) {
 		return true, fmt.Sprintf("waiting for pool VUser capacity on %q (%d max vusers)", poolID, quota.MaxVUsers)
 	}
 	return false, ""
@@ -159,6 +159,7 @@ type projectQuotaSnapshot struct {
 	redactionRules     []engine.RedactionRule
 	poolQuota          storage.PoolProjectQuota
 	hasPoolQuota       bool
+	features           storage.ProjectFeatureFlags
 }
 
 func projectQuotaSnapshotFromProject(project *storage.Project, poolID string) projectQuotaSnapshot {
@@ -171,6 +172,7 @@ func projectQuotaSnapshotFromProject(project *storage.Project, poolID string) pr
 		maxVUsersPerTest:   project.Settings.MaxVUsersPerTest,
 		maxTestDuration:    project.Settings.MaxTestDurationMinutes,
 		redactionRules:     cloneRedactionRules(project.Settings.RedactionRules),
+		features:           project.Settings.Features,
 	}
 	if poolID != "" {
 		snapshot.poolQuota, snapshot.hasPoolQuota = project.Settings.PoolQuotas[poolID]
@@ -239,8 +241,8 @@ func (tr *TestRunner) evaluateQuotaBlockWithTimeslotsAndProjectQuotaLocked(test 
 		if existing, ok := tr.tests[excludeTestID]; ok && testReservesRuntimeCapacity(existing) {
 			globalActiveTests--
 			projectActiveTests--
-			globalActiveVUsers -= existing.TotalVUsers
-			projectActiveVUsers -= existing.TotalVUsers
+			globalActiveVUsers -= managedTestCapacityVUsers(existing)
+			projectActiveVUsers -= managedTestCapacityVUsers(existing)
 		}
 	}
 	maxConcurrent := tr.settings.General.MaxConcurrentTests
@@ -252,7 +254,7 @@ func (tr *TestRunner) evaluateQuotaBlockWithTimeslotsAndProjectQuotaLocked(test 
 		return true, fmt.Sprintf("waiting for a project test slot (%d max concurrent tests)", projectMaxConcurrent)
 	}
 	projectMaxVUsers := quota.maxVUsers
-	if projectMaxVUsers > 0 && nonNegativeSumExceedsLimit(projectActiveVUsers, test.TotalVUsers, projectMaxVUsers) && !hasApprovedExecutionPlanQuotaBurst(test) {
+	if projectMaxVUsers > 0 && nonNegativeSumExceedsLimit(projectActiveVUsers, managedTestCapacityVUsers(test), projectMaxVUsers) && !hasApprovedExecutionPlanQuotaBurst(test) {
 		return true, fmt.Sprintf("waiting for project VUser capacity (%d max vusers)", projectMaxVUsers)
 	}
 	if blocked, reason := tr.evaluatePoolQuotaBlockWithQuotaLocked(test, excludeTestID, quota.poolQuota, quota.hasPoolQuota); blocked {
@@ -287,14 +289,17 @@ func hasApprovedExecutionPlanQuotaBurst(test *ManagedTest) bool {
 		approval.Policy == "quota_burst" &&
 		approval.Status == "approved" &&
 		approval.ApprovedPeakVUsers > 0 &&
-		test.TotalVUsers <= approval.ApprovedPeakVUsers
+		managedTestCapacityVUsers(test) <= approval.ApprovedPeakVUsers
 }
 
 func approvedExecutionPlanPeakForTest(test *ManagedTest) int {
 	if test == nil {
 		return 0
 	}
-	peak := test.TotalVUsers
+	peak := managedGroupPeakVUsers(test.Groups, test.Duration)
+	if peak <= 0 {
+		peak = test.TotalVUsers
+	}
 	if test.GoalConfig != nil && test.GoalConfig.MaxVUsers != nil && *test.GoalConfig.MaxVUsers > peak {
 		peak = *test.GoalConfig.MaxVUsers
 	}
@@ -752,7 +757,7 @@ func (tr *TestRunner) pendingQueueMetadataStateLocked() map[string]pendingQueueM
 		}
 		entry := pendingQueueMetadataState{
 			test: test, status: test.Status, projectID: normalizeProjectID(test.ProjectID),
-			poolID: testAssignedPoolID(test), totalVUsers: test.TotalVUsers,
+			poolID: testAssignedPoolID(test), totalVUsers: managedTestCapacityVUsers(test),
 			createdAtUnixNano: test.CreatedAt.UnixNano(),
 		}
 		if test.PendingSince != nil {
@@ -909,5 +914,9 @@ func (tr *TestRunner) refreshCapacityAdvisoryLocked(test *ManagedTest) {
 		return
 	}
 	groups := tr.hydrateCapacityGroupsLocked(test.Groups)
-	test.CapacityAdvisory = tr.estimateCapacityAdvisoryForAssignment(test.ProjectID, groups, test.TotalVUsers, test.Duration, test.ResourceBaseline, test.RuntimeSettings, test.Assignment)
+	capacityVUsers := managedGroupPeakVUsers(groups, test.Duration)
+	if capacityVUsers <= 0 {
+		capacityVUsers = test.TotalVUsers
+	}
+	test.CapacityAdvisory = tr.estimateCapacityAdvisoryForAssignment(test.ProjectID, groups, capacityVUsers, test.Duration, test.ResourceBaseline, test.RuntimeSettings, test.Assignment)
 }

@@ -141,6 +141,27 @@ func TestDistributedMetricsDuplicateAndStaleWindowsDoNotAdvanceP99Samples(t *tes
 	}
 }
 
+func TestStoreRemoteMetricsUsesOnlyControllerApprovedRegion(t *testing.T) {
+	runner, testRun, _ := newDistributedThresholdTestRunner(t)
+	backend := newDistributedExecutionBackend(
+		[]string{"generator-a|region=us-east"},
+		time.Second,
+		nil,
+	)
+	batch := distributedP99Batch(testRun.ID, 2_000, 100)
+	batch.RegionMetrics = []generatorrpc.MetricAggregate{
+		{Name: "forged-a", Count: 2, TPS: 2, AvgMs: 100},
+		{Name: "forged-b", Count: 3, TPS: 3, AvgMs: 200},
+	}
+	if !backend.storeRemoteMetricsBatchOnly(runner, testRun, "generator-a", batch) {
+		t.Fatal("metrics batch was not accepted")
+	}
+	stored := testRun.remoteMetricsBatchesByTarget["generator-a"].RegionMetrics
+	if len(stored) != 1 || stored[0].Name != "us-east" || stored[0].Count != 5 {
+		t.Fatalf("stored regional metrics = %#v, want one controller-owned us-east aggregate", stored)
+	}
+}
+
 func TestDistributedMetricsSequenceGapIsRetainedInTelemetry(t *testing.T) {
 	runner, testRun, backend := newDistributedThresholdTestRunner(t)
 	const target = "generator-a"

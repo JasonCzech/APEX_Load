@@ -1,6 +1,7 @@
 package dsl
 
 import (
+	"fmt"
 	"sort"
 	"strings"
 	"time"
@@ -98,17 +99,29 @@ type Script struct {
 }
 
 type GoalConfig struct {
-	TargetAverageTPS         *float64 `json:"target_average_tps,omitempty"`
-	P95LatencyMs             *float64 `json:"p95_latency_ms,omitempty"`
-	MaxErrorPct              *float64 `json:"max_error_pct,omitempty"`
-	MaxAvgServerProcessingMs *float64 `json:"max_avg_server_processing_ms,omitempty"`
-	MaxAvgTransferMs         *float64 `json:"max_avg_transfer_ms,omitempty"`
-	MaxErrorCount            *int     `json:"max_error_count,omitempty"`
-	MinVUsers                *int     `json:"min_vusers,omitempty"`
-	MaxVUsers                *int     `json:"max_vusers,omitempty"`
-	StopOnSLABreach          bool     `json:"stop_on_sla_breach,omitempty"`
-	StopOnMaxErrors          bool     `json:"stop_on_max_errors,omitempty"`
-	SLABreachWindow          string   `json:"sla_breach_window,omitempty"`
+	TargetAverageTPS         *float64             `json:"target_average_tps,omitempty"`
+	P95LatencyMs             *float64             `json:"p95_latency_ms,omitempty"`
+	MaxErrorPct              *float64             `json:"max_error_pct,omitempty"`
+	MaxAvgServerProcessingMs *float64             `json:"max_avg_server_processing_ms,omitempty"`
+	MaxAvgTransferMs         *float64             `json:"max_avg_transfer_ms,omitempty"`
+	MaxErrorCount            *int                 `json:"max_error_count,omitempty"`
+	MinVUsers                *int                 `json:"min_vusers,omitempty"`
+	MaxVUsers                *int                 `json:"max_vusers,omitempty"`
+	StopOnSLABreach          bool                 `json:"stop_on_sla_breach,omitempty"`
+	StopOnMaxErrors          bool                 `json:"stop_on_max_errors,omitempty"`
+	SLABreachWindow          string               `json:"sla_breach_window,omitempty"`
+	TransactionRules         []TransactionSLARule `json:"transaction_rules,omitempty"`
+}
+
+// TransactionSLARule is a terminal CI guardrail evaluated against the complete
+// archived business-transaction stream. Transaction matching is deliberately
+// exact; patterns would make migrations and automated gates ambiguous.
+type TransactionSLARule struct {
+	Transaction string  `json:"transaction"`
+	Metric      string  `json:"metric"`
+	Comparator  string  `json:"comparator"`
+	Threshold   float64 `json:"threshold"`
+	Severity    string  `json:"severity,omitempty"`
 }
 
 type ScriptMetadata struct {
@@ -157,9 +170,28 @@ type ScriptConfig struct {
 	Kafka            KafkaConfig             `json:"kafka,omitempty"`
 	EventHubs        EventHubsConfig         `json:"eventhubs,omitempty"`
 	ErrorHandling    ErrorHandlingConfig     `json:"error_handling,omitempty"`
+	Results          ResultsConfig           `json:"results,omitempty"`
 	RunLogic         RunLogicConfig          `json:"run_logic,omitempty"`
 	Observability    ObservabilityConfig     `json:"observability,omitempty"`
 	Log              LogConfig               `json:"log,omitempty"`
+}
+
+// ResultsConfig controls optional retained run evidence. It is deliberately
+// independent from ErrorHandlingConfig: snapshot_on_error remains a debugger
+// snapshot policy and does not become the archive-detail switch.
+type ResultsConfig struct {
+	MessageDetail *MessageDetailConfig `json:"message_detail,omitempty"`
+}
+
+// MessageDetailConfig is an author-requested capture envelope. Controller and
+// generator operator policy may reduce these limits but never raise them.
+// Absence preserves the legacy evidence path.
+type MessageDetailConfig struct {
+	Mode          string  `json:"mode" jsonschema:"enum=off,enum=errors,enum=sampled,enum=adaptive"`
+	SampleRate    float64 `json:"sample_rate,omitempty" jsonschema:"minimum=0,maximum=1"`
+	MaxItems      int     `json:"max_items,omitempty" jsonschema:"minimum=0,maximum=4096"`
+	MaxItemBytes  int64   `json:"max_item_bytes,omitempty" jsonschema:"minimum=0,maximum=16777216"`
+	MaxTotalBytes int64   `json:"max_total_bytes,omitempty" jsonschema:"minimum=0,maximum=1073741824"`
 }
 
 // BrunoConfig binds a canonical APEX script to an immutable Bruno source
@@ -907,23 +939,27 @@ type Action struct {
 	// plus ranked fallback candidates in Metadata; generators never see the
 	// repository. Bare "logicalName" resolves across the project's repositories;
 	// qualified "repoID:logicalName" pins to one repository.
-	ObjectRef      string                 `json:"object_ref,omitempty"`
-	Value          string                 `json:"value,omitempty"`
-	Headers        map[string]string      `json:"headers,omitempty"`
-	HeaderList     HeaderList             `json:"header_list,omitempty"`
-	Body           string                 `json:"body,omitempty"`
-	BodyFile       string                 `json:"body_file,omitempty"`
-	BodyEncoding   string                 `json:"body_encoding,omitempty"`
-	Params         map[string]any         `json:"params,omitempty"`
-	WaitFor        *WaitCondition         `json:"wait_for,omitempty"`
-	Sync           *BrowserSyncPolicy     `json:"sync,omitempty"`
-	Capture        *BrowserCaptureOptions `json:"capture,omitempty"`
-	Metadata       map[string]any         `json:"metadata,omitempty"`
-	Extractors     []Extractor            `json:"extractors,omitempty"`
-	Assertions     []Assertion            `json:"assertions,omitempty"`
-	ThinkTime      ThinkTimeConfig        `json:"think_time,omitempty"`
-	ThinkTimeAfter bool                   `json:"think_time_after,omitempty"`
-	// Control flow (for action types "control_if" and "control_loop").
+	ObjectRef    string                 `json:"object_ref,omitempty"`
+	Value        string                 `json:"value,omitempty"`
+	Headers      map[string]string      `json:"headers,omitempty"`
+	HeaderList   HeaderList             `json:"header_list,omitempty"`
+	Body         string                 `json:"body,omitempty"`
+	BodyFile     string                 `json:"body_file,omitempty"`
+	BodyEncoding string                 `json:"body_encoding,omitempty"`
+	Params       map[string]any         `json:"params,omitempty"`
+	WaitFor      *WaitCondition         `json:"wait_for,omitempty"`
+	Sync         *BrowserSyncPolicy     `json:"sync,omitempty"`
+	Capture      *BrowserCaptureOptions `json:"capture,omitempty"`
+	Metadata     map[string]any         `json:"metadata,omitempty"`
+	// Attribution is the typed, bounded analytics identity for this action.
+	// Importers and authors should prefer it over ad-hoc metadata keys; legacy
+	// source_path/hierarchy metadata remains readable for compatibility.
+	Attribution    *AnalyticsAttribution `json:"attribution,omitempty"`
+	Extractors     []Extractor           `json:"extractors,omitempty"`
+	Assertions     []Assertion           `json:"assertions,omitempty"`
+	ThinkTime      ThinkTimeConfig       `json:"think_time,omitempty"`
+	ThinkTimeAfter bool                  `json:"think_time_after,omitempty"`
+	// Control flow (for action types "control_if", "control_switch", and "control_loop").
 	Control *ControlFlow `json:"control,omitempty"`
 	// Per-action overrides
 	Auth         *AuthConfig       `json:"auth,omitempty"`                                              // override global auth
@@ -932,16 +968,28 @@ type Action struct {
 	SOAP         *SOAPActionConfig `json:"soap,omitempty"`
 }
 
-// ControlFlow carries the body and branching/looping parameters for control_if
-// and control_loop actions. It models TruClient-style If/Else and Loop/While steps
-// as nested action blocks evaluated at runtime.
+// AnalyticsAttribution assigns an action to a stable composition/page
+// hierarchy without changing its protocol semantics.
+type AnalyticsAttribution struct {
+	HierarchyPath string `json:"hierarchy_path,omitempty"`
+	PageName      string `json:"page_name,omitempty"`
+}
+
+// ControlFlow carries the body and branching/looping parameters for control_if,
+// control_switch, and control_loop actions. Cases are evaluated in declaration
+// order and only the first matching control_switch case executes.
 type ControlFlow struct {
-	Condition     *Condition   `json:"condition,omitempty"`      // branch/while predicate (nil = always true)
-	Steps         []Action     `json:"steps,omitempty"`          // body run when the condition holds / each loop pass
-	Else          []Action     `json:"else,omitempty"`           // control_if: body run when the condition is false
-	Count         int          `json:"count,omitempty"`          // control_loop: fixed pass count (0 = condition-driven)
-	MaxIterations int          `json:"max_iterations,omitempty"` // control_loop: safety cap (0 = engine default)
-	ForEach       *ForEachLoop `json:"for_each,omitempty"`       // control_loop: data-driven iteration (takes precedence over count/condition)
+	Condition     *Condition       `json:"condition,omitempty"`      // branch/while predicate (nil = always true)
+	Steps         []Action         `json:"steps,omitempty"`          // body run when the condition holds / each loop pass
+	Else          []Action         `json:"else,omitempty"`           // control_if: body run when the condition is false
+	Cases         []SwitchCase     `json:"cases,omitempty"`          // control_switch: ordered first-match cases
+	Default       []Action         `json:"default,omitempty"`        // control_switch: body run when no case matches
+	Branches      []ParallelBranch `json:"branches,omitempty"`       // control_parallel: named isolated branches
+	Concurrency   int              `json:"concurrency,omitempty"`    // control_parallel: author ceiling, default 4, maximum 16
+	FailFast      bool             `json:"fail_fast,omitempty"`      // control_parallel: cancel siblings after first failure
+	Count         int              `json:"count,omitempty"`          // control_loop: fixed pass count (0 = condition-driven)
+	MaxIterations int              `json:"max_iterations,omitempty"` // control_loop: safety cap (0 = engine default)
+	ForEach       *ForEachLoop     `json:"for_each,omitempty"`       // control_loop: data-driven iteration (takes precedence over count/condition)
 	// DoWhile makes a condition-driven control_loop run its body once BEFORE the
 	// predicate is first evaluated (post-test / run-at-least-once) instead of the
 	// default pre-test behavior. Useful when the predicate depends on a variable
@@ -949,6 +997,56 @@ type ControlFlow struct {
 	// across VUser iterations would otherwise be skipped on re-entry. Ignored for
 	// count/for_each modes (their pass counts are already determined).
 	DoWhile bool `json:"do_while,omitempty"`
+}
+
+// SwitchCase is one ordered branch in a control_switch. Condition is required;
+// a catch-all branch belongs in ControlFlow.Default so imported scripts cannot
+// accidentally shadow later cases with a nil predicate.
+type SwitchCase struct {
+	Condition *Condition `json:"condition"`
+	Steps     []Action   `json:"steps,omitempty"`
+}
+
+// ParallelBranch is one independently initialized protocol branch. Names are
+// stable extraction namespaces and therefore must be unique within a block.
+type ParallelBranch struct {
+	Name  string   `json:"name"`
+	Steps []Action `json:"steps"`
+}
+
+// ControlActionBranch exposes every nested action list in deterministic DSL
+// order. Admission, redaction, import, and readiness code should use this
+// helper so adding a new control container cannot create an unvisited branch.
+type ControlActionBranch struct {
+	Path    string
+	Actions []Action
+}
+
+func (control *ControlFlow) ActionBranches() []ControlActionBranch {
+	if control == nil {
+		return nil
+	}
+	branches := make([]ControlActionBranch, 0, 3+len(control.Cases)+len(control.Branches))
+	if len(control.Steps) > 0 {
+		branches = append(branches, ControlActionBranch{Path: "steps", Actions: control.Steps})
+	}
+	if len(control.Else) > 0 {
+		branches = append(branches, ControlActionBranch{Path: "else", Actions: control.Else})
+	}
+	for index, switchCase := range control.Cases {
+		if len(switchCase.Steps) > 0 {
+			branches = append(branches, ControlActionBranch{Path: fmt.Sprintf("cases[%d].steps", index), Actions: switchCase.Steps})
+		}
+	}
+	if len(control.Default) > 0 {
+		branches = append(branches, ControlActionBranch{Path: "default", Actions: control.Default})
+	}
+	for index, branch := range control.Branches {
+		if len(branch.Steps) > 0 {
+			branches = append(branches, ControlActionBranch{Path: fmt.Sprintf("branches[%d].steps", index), Actions: branch.Steps})
+		}
+	}
+	return branches
 }
 
 // ForEachLoop drives a data-driven control_loop: it iterates every row of a data

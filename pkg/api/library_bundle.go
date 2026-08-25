@@ -1710,6 +1710,7 @@ func createScenarioRequestFromStored(scenario *StoredScenario) CreateScenarioReq
 			VUsers:          script.VUsers,
 			RampUp:          script.RampUp,
 			RampDown:        script.RampDown,
+			StartOffset:     script.StartOffset,
 			Stages:          script.Stages,
 			Iterations:      script.Iterations,
 			RuntimeSettings: script.RuntimeSettings,

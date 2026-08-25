@@ -132,6 +132,15 @@ export default function () {
 					map[string]string{"project_id": "proj-preflight"})(t)
 			},
 		},
+		{
+			name:        "cloudtest",
+			path:        "/api/v1/scripts/import/cloudtest",
+			multiScript: true,
+			body: multipartImportBody("repository.xml", []byte(`<Repository>
+  <Clip name="Orders"><HTTP/></Clip>
+  <Composition name="Checkout"><Track name="East" clip="Orders"/></Composition>
+</Repository>`), map[string]string{"project_id": "proj-preflight"}),
+		},
 	}
 
 	for _, test := range tests {

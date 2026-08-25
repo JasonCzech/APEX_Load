@@ -214,7 +214,8 @@ export function buildDefaultScenarioGroup(scripts: StoredScript[]): ScenarioDraf
     scriptId: scripts[0]?.id || '',
     vusers: 10,
     rampUp: '',
-    rampDown: '',
+		rampDown: '',
+		startOffset: '',
     iterations: undefined,
     initialization: 'at_runtime',
     assignment: undefined,
@@ -232,6 +233,7 @@ export function buildInitialScenarioDraft(initialScenario: ScenarioDraft | undef
     assignment: cloneGeneratorAssignment(initialScenario?.assignment),
     goalConfig: {
       ...initialScenario?.goalConfig,
+			transaction_rules: initialScenario?.goalConfig?.transaction_rules?.map(rule => ({ ...rule })),
       stop_on_sla_breach: initialScenario?.goalConfig?.stop_on_sla_breach ?? false,
       stop_on_max_errors: initialScenario?.goalConfig?.stop_on_max_errors ?? false,
       sla_breach_window: initialScenario?.goalConfig?.sla_breach_window || '30s',
@@ -269,7 +271,8 @@ export function buildScenarioDraftFromTest(test: TestSummary): ScenarioDraft {
         ...(group.role ? { role: group.role } : {}),
         vusers: group.vusers,
         rampUp: group.ramp_up || '',
-        rampDown: group.ramp_down || '',
+			rampDown: group.ramp_down || '',
+			startOffset: group.start_offset || '',
         ...(group.stages ? { stages: cloneValue(group.stages) } : {}),
         // Never turn the effective summary value into a group override. New
         // snapshots identify group-owned values explicitly; legacy snapshots
@@ -286,7 +289,8 @@ export function buildScenarioDraftFromTest(test: TestSummary): ScenarioDraft {
       scriptId: test.script_id || '',
       vusers: test.total_vusers || 10,
       rampUp: '',
-      rampDown: '',
+		rampDown: '',
+		startOffset: '',
       iterations: undefined,
       initialization: 'at_runtime' as const,
     }]
@@ -301,6 +305,7 @@ export function buildScenarioDraftFromTest(test: TestSummary): ScenarioDraft {
     assignment: cloneGeneratorAssignment(test.assignment),
     goalConfig: {
       ...test.goal_config,
+			transaction_rules: test.goal_config?.transaction_rules?.map(rule => ({ ...rule })),
       sla_breach_window: test.goal_config?.sla_breach_window || '',
     },
     runtimeSettings: buildRuntimeSettingsDraft(test.runtime_settings),

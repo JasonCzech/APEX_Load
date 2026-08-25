@@ -30,7 +30,7 @@ func TestScenarioScriptIterationsRoundTripAcrossRestart(t *testing.T) {
 	iterations := 7
 	scenario := &Scenario{ID: "scn-iterations", Name: "Iteration Round Trip", Duration: "1m", CreatedAt: time.Now()}
 	if err := store.SaveScenario(scenario, []ScenarioScript{
-		{Order: 0, ScriptID: script.ID, VUsers: 10, Iterations: &iterations},
+		{Order: 0, ScriptID: script.ID, VUsers: 10, Iterations: &iterations, StartOffset: "30s"},
 		{Order: 1, ScriptID: script.ID, VUsers: 5},
 	}); err != nil {
 		t.Fatalf("SaveScenario: %v", err)
@@ -53,6 +53,9 @@ func TestScenarioScriptIterationsRoundTripAcrossRestart(t *testing.T) {
 	}
 	if groups[0].Iterations == nil || *groups[0].Iterations != iterations {
 		t.Fatalf("group 0 iterations = %#v, want %d", groups[0].Iterations, iterations)
+	}
+	if groups[0].StartOffset != "30s" {
+		t.Fatalf("group 0 start_offset = %q, want 30s", groups[0].StartOffset)
 	}
 	if groups[1].Iterations != nil {
 		t.Fatalf("group 1 iterations = %#v, want nil", groups[1].Iterations)

@@ -94,6 +94,40 @@ func TestScenarioGroupAssignmentPersistsIntoMaterializedTest(t *testing.T) {
 	}
 }
 
+func TestScenarioGroupStartOffsetPersistsIntoMaterializedTest(t *testing.T) {
+	runner := NewTestRunner(10, NewHub(), nil)
+	runner.StoreScript(&dsl.Script{
+		ID: "script-offset", Name: "Offset Flow", Protocol: "http", Version: "1.0.0",
+		Config:  dsl.ScriptConfig{BaseURL: "https://example.test"},
+		Actions: []dsl.Action{{Name: "step", Type: "request", Target: "/"}},
+	})
+	scenario, err := runner.StoreScenario(CreateScenarioRequest{
+		Name: "Timed Composition", Duration: "5m",
+		Groups: []CreateGroupEntry{{Name: "later", ScriptID: "script-offset", VUsers: 2, StartOffset: "1m"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if scenario.Scripts[0].StartOffset != "1m" {
+		t.Fatalf("stored start_offset = %q, want 1m", scenario.Scripts[0].StartOffset)
+	}
+	run, err := runner.CreateTest(CreateTestRequest{ScenarioID: scenario.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if run.Groups[0].StartOffset != "1m" || len(run.groupSpecs) != 1 || run.groupSpecs[0].StartOffset != time.Minute {
+		t.Fatalf("materialized offset = %q / %v", run.Groups[0].StartOffset, run.groupSpecs)
+	}
+
+	_, err = runner.StoreScenario(CreateScenarioRequest{
+		Name: "Invalid Timed Composition", Duration: "30s",
+		Groups: []CreateGroupEntry{{Name: "too late", ScriptID: "script-offset", VUsers: 1, StartOffset: "31s"}},
+	})
+	if err == nil || !strings.Contains(err.Error(), "begins after") {
+		t.Fatalf("invalid offset error = %v", err)
+	}
+}
+
 // TestScenarioInheritingGroupAssignmentStaysNil guards against typed-nil-in-interface
 // boxing (H1): a group with NO per-group assignment must round-trip and materialize as
 // a nil assignment (inherit scenario default), not a corrupted explicit-auto {Mode:"auto"}

@@ -43,29 +43,30 @@ type runArchiveHTMLSOAPPayloadBucketRow struct {
 // by the section registry across the HTML, PDF, and CSV renderers. Charts are
 // populated by the HTML path only.
 type runArchiveHTMLReportData struct {
-	GeneratedAt           time.Time
-	Report                *RunArchiveReport
-	Profile               RunArchiveReportProfile
-	Annotations           *ReportAnnotations
-	CommentarySections    []reportCommentarySection
-	Charts                reportCharts
-	LogoDataURI           template.URL
-	Manifest              *TestRunManifest
-	Verdict               ReportVerdict
-	Findings              []ReportFinding
-	SLARows               []SLAComplianceRow
-	GeneratorCount        int
-	InventoryRows         []GeneratorInventoryEntry
-	InventoryOverflow     int
-	ActionRows            []runArchiveHTMLActionRow
-	SOAPOperationRows     []runArchiveHTMLActionRow
-	SOAPFaultCodeRows     []runArchiveHTMLCountRow
-	SOAPFaultCategoryRows []runArchiveHTMLCountRow
-	SOAPFaultBuckets      []runArchiveHTMLSOAPFaultBucketRow
-	SOAPPayloadBuckets    []runArchiveHTMLSOAPPayloadBucketRow
-	BrowserEngineRows     []*BrowserEngineLiveMetrics
-	BrowserPlatformRows   []*BrowserPlatformLiveMetrics
-	BrowserDeviceRows     []*BrowserDeviceLiveMetrics
+	GeneratedAt            time.Time
+	Report                 *RunArchiveReport
+	Profile                RunArchiveReportProfile
+	Annotations            *ReportAnnotations
+	CommentarySections     []reportCommentarySection
+	Charts                 reportCharts
+	LogoDataURI            template.URL
+	Manifest               *TestRunManifest
+	Verdict                ReportVerdict
+	Findings               []ReportFinding
+	SLARows                []SLAComplianceRow
+	TransactionRuleResults []TransactionSLARuleResult
+	GeneratorCount         int
+	InventoryRows          []GeneratorInventoryEntry
+	InventoryOverflow      int
+	ActionRows             []runArchiveHTMLActionRow
+	SOAPOperationRows      []runArchiveHTMLActionRow
+	SOAPFaultCodeRows      []runArchiveHTMLCountRow
+	SOAPFaultCategoryRows  []runArchiveHTMLCountRow
+	SOAPFaultBuckets       []runArchiveHTMLSOAPFaultBucketRow
+	SOAPPayloadBuckets     []runArchiveHTMLSOAPPayloadBucketRow
+	BrowserEngineRows      []*BrowserEngineLiveMetrics
+	BrowserPlatformRows    []*BrowserPlatformLiveMetrics
+	BrowserDeviceRows      []*BrowserDeviceLiveMetrics
 }
 
 var profileHTMLFuncMap = template.FuncMap{
@@ -233,29 +234,37 @@ func buildRunArchiveReportRenderData(report *RunArchiveReport, profile RunArchiv
 	inventoryRows, inventoryOverflow := manifestInventoryRows(manifest, 50)
 
 	return runArchiveHTMLReportData{
-		GeneratedAt:           time.Now().UTC(),
-		Report:                report,
-		Profile:               profile,
-		Annotations:           annotations,
-		CommentarySections:    reportCommentarySectionOrder(profile.ID),
-		LogoDataURI:           reportLogoDataURI(),
-		Manifest:              manifest,
-		Verdict:               verdict,
-		Findings:              findings,
-		SLARows:               buildSLAComplianceRows(report),
-		GeneratorCount:        manifestGeneratorCount(manifest),
-		InventoryRows:         inventoryRows,
-		InventoryOverflow:     inventoryOverflow,
-		ActionRows:            actionRows,
-		SOAPOperationRows:     soapOperationRows,
-		SOAPFaultCodeRows:     buildHTMLCountRows(report.BySOAPFaultCode),
-		SOAPFaultCategoryRows: buildHTMLCountRows(report.BySOAPFaultCategory),
-		SOAPFaultBuckets:      buildHTMLSOAPFaultBuckets(report.SOAPFaultTimeline),
-		SOAPPayloadBuckets:    buildHTMLSOAPPayloadBuckets(report.SOAPPayloadTimeline),
-		BrowserEngineRows:     buildHTMLBrowserEngineRows(report.BrowserByEngine),
-		BrowserPlatformRows:   buildHTMLBrowserPlatformRows(report.BrowserByPlatform),
-		BrowserDeviceRows:     buildHTMLBrowserDeviceRows(report.BrowserByDevice),
+		GeneratedAt:            time.Now().UTC(),
+		Report:                 report,
+		Profile:                profile,
+		Annotations:            annotations,
+		CommentarySections:     reportCommentarySectionOrder(profile.ID),
+		LogoDataURI:            reportLogoDataURI(),
+		Manifest:               manifest,
+		Verdict:                verdict,
+		Findings:               findings,
+		SLARows:                buildSLAComplianceRows(report),
+		TransactionRuleResults: reportTransactionSLARuleResults(report),
+		GeneratorCount:         manifestGeneratorCount(manifest),
+		InventoryRows:          inventoryRows,
+		InventoryOverflow:      inventoryOverflow,
+		ActionRows:             actionRows,
+		SOAPOperationRows:      soapOperationRows,
+		SOAPFaultCodeRows:      buildHTMLCountRows(report.BySOAPFaultCode),
+		SOAPFaultCategoryRows:  buildHTMLCountRows(report.BySOAPFaultCategory),
+		SOAPFaultBuckets:       buildHTMLSOAPFaultBuckets(report.SOAPFaultTimeline),
+		SOAPPayloadBuckets:     buildHTMLSOAPPayloadBuckets(report.SOAPPayloadTimeline),
+		BrowserEngineRows:      buildHTMLBrowserEngineRows(report.BrowserByEngine),
+		BrowserPlatformRows:    buildHTMLBrowserPlatformRows(report.BrowserByPlatform),
+		BrowserDeviceRows:      buildHTMLBrowserDeviceRows(report.BrowserByDevice),
 	}
+}
+
+func reportTransactionSLARuleResults(report *RunArchiveReport) []TransactionSLARuleResult {
+	if report == nil || report.Manifest == nil {
+		return nil
+	}
+	return append([]TransactionSLARuleResult(nil), report.Manifest.TransactionRuleResults...)
 }
 
 // applyVerdictOverride replaces the auto-derived verdict with an analyst-set

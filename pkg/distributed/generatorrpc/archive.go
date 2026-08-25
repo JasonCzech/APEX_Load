@@ -29,51 +29,81 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-const archiveSchemaVersion = "apexload.archive.v2"
+const archiveSchemaVersion = "apexload.archive.v4"
 
 type archiveManifest struct {
-	SchemaVersion                string          `json:"schema_version"`
-	TestID                       string          `json:"test_id"`
-	TestName                     string          `json:"test_name"`
-	CreatedAt                    time.Time       `json:"created_at"`
-	CompletedAt                  time.Time       `json:"completed_at,omitempty"`
-	Status                       string          `json:"status,omitempty"`
-	Error                        string          `json:"error,omitempty"`
-	ExecutionGeneration          uint64          `json:"execution_generation,omitempty"`
-	ExecutionGroups              []string        `json:"execution_groups,omitempty"`
-	TransactionsFile             string          `json:"transactions_file"`
-	TransactionsParquetFile      string          `json:"transactions_parquet_file,omitempty"`
-	ResourceSamplesFile          string          `json:"resource_samples_file"`
-	ResourceSamplesParquetFile   string          `json:"resource_samples_parquet_file,omitempty"`
-	IntervalSummariesFile        string          `json:"interval_summaries_file"`
-	IntervalSummariesParquetFile string          `json:"interval_summaries_parquet_file,omitempty"`
-	TransactionCount             int64           `json:"transaction_count"`
-	ResourceSampleCount          int64           `json:"resource_sample_count"`
-	IntervalSummaryCount         int64           `json:"interval_summary_count"`
-	TerminalMetrics              json.RawMessage `json:"terminal_metrics,omitempty"`
+	SchemaVersion                string                       `json:"schema_version"`
+	TestID                       string                       `json:"test_id"`
+	TestName                     string                       `json:"test_name"`
+	CreatedAt                    time.Time                    `json:"created_at"`
+	CompletedAt                  time.Time                    `json:"completed_at,omitempty"`
+	Status                       string                       `json:"status,omitempty"`
+	Error                        string                       `json:"error,omitempty"`
+	ExecutionGeneration          uint64                       `json:"execution_generation,omitempty"`
+	ExecutionGroups              []string                     `json:"execution_groups,omitempty"`
+	TransactionsFile             string                       `json:"transactions_file"`
+	TransactionsParquetFile      string                       `json:"transactions_parquet_file,omitempty"`
+	ResourceSamplesFile          string                       `json:"resource_samples_file"`
+	ResourceSamplesParquetFile   string                       `json:"resource_samples_parquet_file,omitempty"`
+	IntervalSummariesFile        string                       `json:"interval_summaries_file"`
+	IntervalSummariesParquetFile string                       `json:"interval_summaries_parquet_file,omitempty"`
+	TransactionCount             int64                        `json:"transaction_count"`
+	ResourceSampleCount          int64                        `json:"resource_sample_count"`
+	IntervalSummaryCount         int64                        `json:"interval_summary_count"`
+	TerminalMetrics              json.RawMessage              `json:"terminal_metrics,omitempty"`
+	MessageDetailCapture         *archiveMessageDetailCapture `json:"message_detail_capture,omitempty"`
+}
+
+type archiveMessageDetailCapture struct {
+	RetainedItems  int64            `json:"retained_items"`
+	RetainedBytes  int64            `json:"retained_bytes"`
+	TruncatedItems int64            `json:"truncated_items"`
+	Dropped        map[string]int64 `json:"dropped,omitempty"`
 }
 
 type archiveTransactionEvent struct {
-	Timestamp           time.Time               `json:"timestamp"`
-	TestID              string                  `json:"test_id"`
-	TestName            string                  `json:"test_name"`
-	Group               string                  `json:"group,omitempty"`
-	ActionName          string                  `json:"action_name,omitempty"`
-	BusinessTransaction bool                    `json:"business_transaction,omitempty"`
-	DurationMs          float64                 `json:"duration_ms"`
-	DNSMs               float64                 `json:"dns_ms,omitempty"`
-	ConnectMs           float64                 `json:"connect_ms,omitempty"`
-	TLSMs               float64                 `json:"tls_ms,omitempty"`
-	TTFBMs              float64                 `json:"ttfb_ms,omitempty"`
-	BytesSent           int64                   `json:"bytes_sent,omitempty"`
-	BytesReceived       int64                   `json:"bytes_received,omitempty"`
-	StatusCode          int                     `json:"status_code,omitempty"`
-	Success             bool                    `json:"success"`
-	ErrorMessage        string                  `json:"error_message,omitempty"`
-	NetworkProfile      string                  `json:"network_profile,omitempty"`
-	ClientMetrics       *protocol.ClientMetrics `json:"client_metrics,omitempty"`
-	Extractions         map[string]string       `json:"extractions,omitempty"`
-	Snapshot            *protocol.ErrorSnapshot `json:"snapshot,omitempty"`
+	Timestamp             time.Time                 `json:"timestamp"`
+	TestID                string                    `json:"test_id"`
+	TestName              string                    `json:"test_name"`
+	Group                 string                    `json:"group,omitempty"`
+	Region                string                    `json:"region,omitempty"`
+	Hierarchy             string                    `json:"hierarchy,omitempty"`
+	PageName              string                    `json:"page_name,omitempty"`
+	Phase                 string                    `json:"phase,omitempty"`
+	HasDetail             bool                      `json:"has_detail"`
+	MessageDetailPriority int                       `json:"message_detail_priority,omitempty"`
+	ActionName            string                    `json:"action_name,omitempty"`
+	BusinessTransaction   bool                      `json:"business_transaction,omitempty"`
+	DurationMs            float64                   `json:"duration_ms"`
+	DNSMs                 float64                   `json:"dns_ms,omitempty"`
+	ConnectMs             float64                   `json:"connect_ms,omitempty"`
+	TLSMs                 float64                   `json:"tls_ms,omitempty"`
+	TTFBMs                float64                   `json:"ttfb_ms,omitempty"`
+	BytesSent             int64                     `json:"bytes_sent,omitempty"`
+	BytesReceived         int64                     `json:"bytes_received,omitempty"`
+	StatusCode            int                       `json:"status_code,omitempty"`
+	Success               bool                      `json:"success"`
+	ErrorMessage          string                    `json:"error_message,omitempty"`
+	NetworkProfile        string                    `json:"network_profile,omitempty"`
+	CorrelationID         string                    `json:"correlation_id,omitempty"`
+	DependencyType        string                    `json:"dependency_type,omitempty"`
+	DependencyTarget      string                    `json:"dependency_target,omitempty"`
+	SourceStepID          string                    `json:"source_step_id,omitempty"`
+	SourceStepIndex       int                       `json:"source_step_index,omitempty"`
+	SourceAction          string                    `json:"source_action,omitempty"`
+	SourceActionName      string                    `json:"source_action_name,omitempty"`
+	SourceTransaction     string                    `json:"source_transaction,omitempty"`
+	SourceProfile         string                    `json:"source_profile,omitempty"`
+	PageURL               string                    `json:"page_url,omitempty"`
+	PageTitle             string                    `json:"page_title,omitempty"`
+	ConsoleEntries        []protocol.ConsoleEntry   `json:"console_entries,omitempty"`
+	NetworkEntries        []protocol.NetworkEntry   `json:"network_entries,omitempty"`
+	DOMSummary            *protocol.DOMSummary      `json:"dom_summary,omitempty"`
+	ClientMetrics         *protocol.ClientMetrics   `json:"client_metrics,omitempty"`
+	ServerTelemetry       *protocol.ServerTelemetry `json:"server_telemetry,omitempty"`
+	ProtocolEvidence      map[string]any            `json:"protocol_evidence,omitempty"`
+	Extractions           map[string]string         `json:"extractions,omitempty"`
+	Snapshot              *protocol.ErrorSnapshot   `json:"snapshot,omitempty"`
 }
 
 type archiveResourceSample struct {
@@ -136,6 +166,7 @@ type archiveIntervalSummary struct {
 	DurationDigest  *engine.TDigestSnapshot                       `json:"duration_digest,omitempty"`
 	Groups          map[string]*archiveGroupLiveMetrics           `json:"groups,omitempty"`
 	Transactions    map[string]*archiveIntervalTransactionMetrics `json:"transactions,omitempty"`
+	ByRegion        map[string]*archiveIntervalTransactionMetrics `json:"by_region,omitempty"`
 	Browser         *archiveBrowserLiveMetrics                    `json:"browser,omitempty"`
 	BrowserByDevice map[string]*archiveBrowserDeviceMetric        `json:"browser_by_device,omitempty"`
 	Telemetry       *archiveTelemetryHealth                       `json:"telemetry,omitempty"`
@@ -306,25 +337,29 @@ type archiveTelemetryHealth struct {
 }
 
 type archiveRecorder struct {
-	mu              sync.Mutex
-	manifest        archiveManifest
-	namespace       *generatorArchiveNamespace
-	ownsNamespace   bool
-	runRoot         *os.Root
-	runIdentity     os.FileInfo
-	runName         string
-	rootDir         string
-	manifestPath    string
-	txFile          *os.File
-	resourceFile    *os.File
-	summaryFile     *os.File
-	txEncoder       *json.Encoder
-	resourceEncoder *json.Encoder
-	summaryEncoder  *json.Encoder
-	byteBudget      *generatorArchiveByteBudget
-	recordErr       error
-	failureSignaled bool
-	closed          bool
+	mu                  sync.Mutex
+	manifest            archiveManifest
+	namespace           *generatorArchiveNamespace
+	ownsNamespace       bool
+	runRoot             *os.Root
+	runIdentity         os.FileInfo
+	runName             string
+	rootDir             string
+	manifestPath        string
+	txFile              *os.File
+	resourceFile        *os.File
+	summaryFile         *os.File
+	txEncoder           *json.Encoder
+	resourceEncoder     *json.Encoder
+	summaryEncoder      *json.Encoder
+	byteBudget          *generatorArchiveByteBudget
+	recordErr           error
+	failureSignaled     bool
+	closed              bool
+	detailItems         int64
+	detailBytes         int64
+	detailPriorityItems [4]int64
+	detailPriorityBytes [4]int64
 }
 
 func (w *archiveRecorder) bindExecution(generation uint64, group string) {
@@ -518,27 +553,37 @@ func (f *generatorArchiveQuotaParquetFile) Create(name string) (source.ParquetFi
 }
 
 type parquetTransactionEvent struct {
-	TimestampUnixMs     int64   `parquet:"name=timestamp_unix_ms, type=INT64"`
-	TimestampRFC3339    string  `parquet:"name=timestamp_rfc3339, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
-	TestID              string  `parquet:"name=test_id, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
-	TestName            string  `parquet:"name=test_name, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
-	Group               string  `parquet:"name=group_name, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
-	ActionName          string  `parquet:"name=action_name, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
-	BusinessTransaction bool    `parquet:"name=business_transaction, type=BOOLEAN"`
-	DurationMs          float64 `parquet:"name=duration_ms, type=DOUBLE"`
-	DNSMs               float64 `parquet:"name=dns_ms, type=DOUBLE"`
-	ConnectMs           float64 `parquet:"name=connect_ms, type=DOUBLE"`
-	TLSMs               float64 `parquet:"name=tls_ms, type=DOUBLE"`
-	TTFBMs              float64 `parquet:"name=ttfb_ms, type=DOUBLE"`
-	BytesSent           int64   `parquet:"name=bytes_sent, type=INT64"`
-	BytesReceived       int64   `parquet:"name=bytes_received, type=INT64"`
-	StatusCode          int64   `parquet:"name=status_code, type=INT64"`
-	Success             bool    `parquet:"name=success, type=BOOLEAN"`
-	ErrorMessage        string  `parquet:"name=error_message, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
-	NetworkProfile      string  `parquet:"name=network_profile, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
-	ClientMetricsJSON   string  `parquet:"name=client_metrics_json, type=BYTE_ARRAY, convertedtype=UTF8"`
-	ExtractionsJSON     string  `parquet:"name=extractions_json, type=BYTE_ARRAY, convertedtype=UTF8"`
-	SnapshotJSON        string  `parquet:"name=snapshot_json, type=BYTE_ARRAY, convertedtype=UTF8"`
+	TimestampUnixMs      int64   `parquet:"name=timestamp_unix_ms, type=INT64"`
+	TimestampRFC3339     string  `parquet:"name=timestamp_rfc3339, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
+	TestID               string  `parquet:"name=test_id, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
+	TestName             string  `parquet:"name=test_name, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
+	Group                string  `parquet:"name=group_name, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
+	Region               string  `parquet:"name=region, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
+	Hierarchy            string  `parquet:"name=hierarchy, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
+	PageName             string  `parquet:"name=page_name, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
+	Phase                string  `parquet:"name=phase, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
+	HasDetail            bool    `parquet:"name=has_detail, type=BOOLEAN"`
+	ActionName           string  `parquet:"name=action_name, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
+	BusinessTransaction  bool    `parquet:"name=business_transaction, type=BOOLEAN"`
+	DurationMs           float64 `parquet:"name=duration_ms, type=DOUBLE"`
+	DNSMs                float64 `parquet:"name=dns_ms, type=DOUBLE"`
+	ConnectMs            float64 `parquet:"name=connect_ms, type=DOUBLE"`
+	TLSMs                float64 `parquet:"name=tls_ms, type=DOUBLE"`
+	TTFBMs               float64 `parquet:"name=ttfb_ms, type=DOUBLE"`
+	BytesSent            int64   `parquet:"name=bytes_sent, type=INT64"`
+	BytesReceived        int64   `parquet:"name=bytes_received, type=INT64"`
+	StatusCode           int64   `parquet:"name=status_code, type=INT64"`
+	Success              bool    `parquet:"name=success, type=BOOLEAN"`
+	ErrorMessage         string  `parquet:"name=error_message, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
+	NetworkProfile       string  `parquet:"name=network_profile, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
+	SourceTransaction    string  `parquet:"name=source_transaction, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
+	SourceProfile        string  `parquet:"name=source_profile, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
+	NetworkEntriesJSON   string  `parquet:"name=network_entries_json, type=BYTE_ARRAY, convertedtype=UTF8"`
+	ServerTelemetryJSON  string  `parquet:"name=server_telemetry_json, type=BYTE_ARRAY, convertedtype=UTF8"`
+	ProtocolEvidenceJSON string  `parquet:"name=protocol_evidence_json, type=BYTE_ARRAY, convertedtype=UTF8"`
+	ClientMetricsJSON    string  `parquet:"name=client_metrics_json, type=BYTE_ARRAY, convertedtype=UTF8"`
+	ExtractionsJSON      string  `parquet:"name=extractions_json, type=BYTE_ARRAY, convertedtype=UTF8"`
+	SnapshotJSON         string  `parquet:"name=snapshot_json, type=BYTE_ARRAY, convertedtype=UTF8"`
 }
 
 type parquetResourceSample struct {
@@ -603,6 +648,7 @@ type parquetIntervalSummary struct {
 	DurationDigestJSON string  `parquet:"name=duration_digest_json, type=BYTE_ARRAY, convertedtype=UTF8"`
 	GroupsJSON         string  `parquet:"name=groups_json, type=BYTE_ARRAY, convertedtype=UTF8"`
 	TransactionsJSON   string  `parquet:"name=transactions_json, type=BYTE_ARRAY, convertedtype=UTF8"`
+	ByRegionJSON       string  `parquet:"name=by_region_json, type=BYTE_ARRAY, convertedtype=UTF8"`
 	BrowserJSON        string  `parquet:"name=browser_json, type=BYTE_ARRAY, convertedtype=UTF8"`
 	BrowserDeviceJSON  string  `parquet:"name=browser_by_device_json, type=BYTE_ARRAY, convertedtype=UTF8"`
 	TelemetryJSON      string  `parquet:"name=telemetry_json, type=BYTE_ARRAY, convertedtype=UTF8"`
@@ -899,33 +945,162 @@ func (w *archiveRecorder) RecordResult(result *protocol.Result) error {
 		return w.recordErr
 	}
 	event := archiveTransactionEvent{
-		Timestamp:           result.StartTime,
-		TestID:              w.manifest.TestID,
-		TestName:            w.manifest.TestName,
-		Group:               truncateSnapshotField(result.Group, 512),
-		ActionName:          truncateSnapshotField(result.ActionName, 512),
-		BusinessTransaction: result.BusinessTransaction,
-		DurationMs:          durationMillis(result.Duration),
-		DNSMs:               durationMillis(result.DNSTime),
-		ConnectMs:           durationMillis(result.ConnectTime),
-		TLSMs:               durationMillis(result.TLSTime),
-		TTFBMs:              durationMillis(result.TTFB),
-		BytesSent:           result.BytesSent,
-		BytesReceived:       result.BytesReceived,
-		StatusCode:          result.StatusCode,
-		Success:             result.Success,
-		ErrorMessage:        truncateSnapshotField(result.ErrorMessage, 16<<10),
-		NetworkProfile:      truncateSnapshotField(result.NetworkProfile, 512),
-		ClientMetrics:       cloneArchiveClientMetrics(result.ClientMetrics),
-		Extractions:         boundedArchiveExtractions(result.Extractions),
-		Snapshot:            engine.BoundErrorSnapshot(result.Snapshot, 1<<20),
+		Timestamp:             result.StartTime,
+		TestID:                w.manifest.TestID,
+		TestName:              w.manifest.TestName,
+		Group:                 truncateSnapshotField(result.Group, 512),
+		Region:                truncateSnapshotField(result.Region, 512),
+		Hierarchy:             truncateSnapshotField(firstNonEmptyString(result.Hierarchy, result.SourcePath), 2048),
+		PageName:              truncateSnapshotField(result.PageName, 512),
+		Phase:                 truncateSnapshotField(result.Phase, 64),
+		MessageDetailPriority: result.MessageDetailPriority,
+		ActionName:            truncateSnapshotField(result.ActionName, 512),
+		BusinessTransaction:   result.BusinessTransaction,
+		DurationMs:            durationMillis(result.Duration),
+		DNSMs:                 durationMillis(result.DNSTime),
+		ConnectMs:             durationMillis(result.ConnectTime),
+		TLSMs:                 durationMillis(result.TLSTime),
+		TTFBMs:                durationMillis(result.TTFB),
+		BytesSent:             result.BytesSent,
+		BytesReceived:         result.BytesReceived,
+		StatusCode:            result.StatusCode,
+		Success:               result.Success,
+		ErrorMessage:          truncateSnapshotField(result.ErrorMessage, 16<<10),
+		NetworkProfile:        truncateSnapshotField(result.NetworkProfile, 512),
+		CorrelationID:         truncateSnapshotField(result.CorrelationID, 512),
+		DependencyType:        truncateSnapshotField(result.DependencyType, 512),
+		DependencyTarget:      truncateSnapshotField(result.DependencyTarget, 2048),
+		SourceStepID:          truncateSnapshotField(result.SourceStepID, 512),
+		SourceStepIndex:       result.SourceStepIndex,
+		SourceAction:          truncateSnapshotField(result.SourceAction, 512),
+		SourceActionName:      truncateSnapshotField(result.SourceActionName, 512),
+		SourceTransaction:     truncateSnapshotField(result.SourceTransaction, 512),
+		SourceProfile:         truncateSnapshotField(result.SourceProfile, 512),
+		PageURL:               truncateSnapshotField(result.PageURL, 2048),
+		PageTitle:             truncateSnapshotField(result.PageTitle, 512),
+		ConsoleEntries:        result.ConsoleEntries,
+		NetworkEntries:        result.NetworkEntries,
+		DOMSummary:            result.DOMSummary,
+		ClientMetrics:         cloneArchiveClientMetrics(result.ClientMetrics),
+		ServerTelemetry:       result.ServerTelemetry,
+		ProtocolEvidence:      result.ProtocolEvidence,
+		Extractions:           boundedArchiveExtractions(result.Extractions),
+		Snapshot:              engine.BoundErrorSnapshot(result.Snapshot, 1<<20),
 	}
+	event.HasDetail = event.Snapshot != nil || event.ClientMetrics != nil || event.ServerTelemetry != nil ||
+		len(event.ProtocolEvidence) > 0 || len(event.NetworkEntries) > 0 || len(event.ConsoleEntries) > 0 || event.DOMSummary != nil
+	w.applyMessageDetailBudget(&event, result)
 	if err := w.txEncoder.Encode(event); err != nil {
 		w.recordErr = fmt.Errorf("record transaction: %w", err)
 		return w.recordErr
 	}
 	w.manifest.TransactionCount++
 	return nil
+}
+
+func (w *archiveRecorder) applyMessageDetailBudget(event *archiveTransactionEvent, result *protocol.Result) {
+	if w == nil || event == nil || result == nil || !result.Success || !result.MessageDetailRequested {
+		return
+	}
+	if w.manifest.MessageDetailCapture == nil {
+		w.manifest.MessageDetailCapture = &archiveMessageDetailCapture{Dropped: make(map[string]int64)}
+	}
+	stats := w.manifest.MessageDetailCapture
+	drop := func(reason string) {
+		stats.Dropped[reason]++
+		event.Snapshot = nil
+		result.Snapshot = nil
+		result.MessageDetailRetained = false
+		event.HasDetail = event.ClientMetrics != nil || event.ServerTelemetry != nil || len(event.ProtocolEvidence) > 0 || len(event.NetworkEntries) > 0 || len(event.ConsoleEntries) > 0 || event.DOMSummary != nil
+	}
+	if event.Snapshot == nil {
+		drop("protocol_no_detail")
+		return
+	}
+	maxItems := int64(result.MessageDetailMaxItems)
+	maxItemBytes, maxTotalBytes := result.MessageDetailMaxItemBytes, result.MessageDetailMaxTotalBytes
+	if maxItems <= 0 || maxItemBytes <= 0 || maxTotalBytes <= 0 {
+		drop("invalid_budget")
+		return
+	}
+	priority := 0
+	priorityItemLimit, priorityByteLimit := maxItems, maxTotalBytes
+	if strings.EqualFold(result.MessageDetailMode, "adaptive") {
+		priority = min(max(result.MessageDetailPriority, 1), 3)
+		priorityItemLimit = adaptiveMessageDetailPriorityLimit(maxItems, priority)
+		priorityByteLimit = adaptiveMessageDetailPriorityLimit(maxTotalBytes, priority)
+		if w.detailPriorityItems[priority] >= priorityItemLimit || priorityItemLimit == 0 {
+			drop(fmt.Sprintf("priority_%d_item_limit", priority))
+			return
+		}
+		if w.detailPriorityBytes[priority] >= priorityByteLimit || priorityByteLimit == 0 {
+			drop(fmt.Sprintf("priority_%d_byte_limit", priority))
+			return
+		}
+	}
+	if w.detailItems >= maxItems {
+		drop("item_limit")
+		return
+	}
+	remaining := maxTotalBytes - w.detailBytes
+	if priority > 0 {
+		remaining = min(remaining, priorityByteLimit-w.detailPriorityBytes[priority])
+	}
+	if remaining <= 0 {
+		drop("total_byte_limit")
+		return
+	}
+	limit := min(maxItemBytes, remaining)
+	before := generatorMessageDetailSnapshotBytes(event.Snapshot)
+	if before > limit {
+		event.Snapshot = engine.BoundErrorSnapshot(event.Snapshot, int(limit))
+		stats.TruncatedItems++
+	}
+	retained := generatorMessageDetailSnapshotBytes(event.Snapshot)
+	if event.Snapshot == nil || retained <= 0 || retained > limit {
+		drop("total_byte_limit")
+		return
+	}
+	w.detailItems++
+	w.detailBytes += retained
+	if priority > 0 {
+		w.detailPriorityItems[priority]++
+		w.detailPriorityBytes[priority] += retained
+	}
+	stats.RetainedItems++
+	stats.RetainedBytes += retained
+	result.Snapshot = event.Snapshot
+	result.MessageDetailRetained = true
+	event.HasDetail = true
+}
+
+func adaptiveMessageDetailPriorityLimit(total int64, priority int) int64 {
+	if total <= 0 || priority < 1 || priority > 3 {
+		return 0
+	}
+	high := (total + 1) / 2
+	remaining := total - high
+	low := remaining / 2
+	middle := remaining - low
+	switch priority {
+	case 1:
+		return low
+	case 2:
+		return middle
+	default:
+		return high
+	}
+}
+
+func generatorMessageDetailSnapshotBytes(snapshot *protocol.ErrorSnapshot) int64 {
+	if snapshot == nil {
+		return 0
+	}
+	encoded, err := json.Marshal(snapshot)
+	if err != nil {
+		return 0
+	}
+	return int64(len(encoded))
 }
 
 // RecordTransaction persists engine-synthesized business transactions. The
@@ -1386,27 +1561,37 @@ func toParquetTransactions(items []archiveTransactionEvent) []parquetTransaction
 	rows := make([]parquetTransactionEvent, 0, len(items))
 	for _, item := range items {
 		rows = append(rows, parquetTransactionEvent{
-			TimestampUnixMs:     item.Timestamp.UnixMilli(),
-			TimestampRFC3339:    item.Timestamp.Format(time.RFC3339Nano),
-			TestID:              item.TestID,
-			TestName:            item.TestName,
-			Group:               item.Group,
-			ActionName:          item.ActionName,
-			BusinessTransaction: item.BusinessTransaction,
-			DurationMs:          item.DurationMs,
-			DNSMs:               item.DNSMs,
-			ConnectMs:           item.ConnectMs,
-			TLSMs:               item.TLSMs,
-			TTFBMs:              item.TTFBMs,
-			BytesSent:           item.BytesSent,
-			BytesReceived:       item.BytesReceived,
-			StatusCode:          int64(item.StatusCode),
-			Success:             item.Success,
-			ErrorMessage:        item.ErrorMessage,
-			NetworkProfile:      item.NetworkProfile,
-			ClientMetricsJSON:   mustJSON(item.ClientMetrics),
-			ExtractionsJSON:     mustJSON(boundedArchiveExtractions(item.Extractions)),
-			SnapshotJSON:        mustJSON(engine.BoundErrorSnapshot(item.Snapshot, 1<<20)),
+			TimestampUnixMs:      item.Timestamp.UnixMilli(),
+			TimestampRFC3339:     item.Timestamp.Format(time.RFC3339Nano),
+			TestID:               item.TestID,
+			TestName:             item.TestName,
+			Group:                item.Group,
+			Region:               item.Region,
+			Hierarchy:            item.Hierarchy,
+			PageName:             item.PageName,
+			Phase:                item.Phase,
+			HasDetail:            item.HasDetail,
+			ActionName:           item.ActionName,
+			BusinessTransaction:  item.BusinessTransaction,
+			DurationMs:           item.DurationMs,
+			DNSMs:                item.DNSMs,
+			ConnectMs:            item.ConnectMs,
+			TLSMs:                item.TLSMs,
+			TTFBMs:               item.TTFBMs,
+			BytesSent:            item.BytesSent,
+			BytesReceived:        item.BytesReceived,
+			StatusCode:           int64(item.StatusCode),
+			Success:              item.Success,
+			ErrorMessage:         item.ErrorMessage,
+			NetworkProfile:       item.NetworkProfile,
+			SourceTransaction:    item.SourceTransaction,
+			SourceProfile:        item.SourceProfile,
+			NetworkEntriesJSON:   mustJSON(item.NetworkEntries),
+			ServerTelemetryJSON:  mustJSON(item.ServerTelemetry),
+			ProtocolEvidenceJSON: mustJSON(item.ProtocolEvidence),
+			ClientMetricsJSON:    mustJSON(item.ClientMetrics),
+			ExtractionsJSON:      mustJSON(boundedArchiveExtractions(item.Extractions)),
+			SnapshotJSON:         mustJSON(engine.BoundErrorSnapshot(item.Snapshot, 1<<20)),
 		})
 	}
 	return rows
@@ -1483,6 +1668,7 @@ func toParquetSummaries(items []archiveIntervalSummary) []parquetIntervalSummary
 			DurationDigestJSON: mustJSON(item.DurationDigest),
 			GroupsJSON:         mustJSON(item.Groups),
 			TransactionsJSON:   mustJSON(item.Transactions),
+			ByRegionJSON:       mustJSON(item.ByRegion),
 			BrowserJSON:        mustJSON(item.Browser),
 			BrowserDeviceJSON:  mustJSON(item.BrowserByDevice),
 			TelemetryJSON:      mustJSON(item.Telemetry),

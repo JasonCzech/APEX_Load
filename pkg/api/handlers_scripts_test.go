@@ -4137,6 +4137,16 @@ func TestAuthoringCapabilitiesEndpoint(t *testing.T) {
 	if !containsAuthoringSourceStatus(payload.Sources, "web2_browser_profile", "active") {
 		t.Fatalf("sources = %#v, want web2_browser_profile active source", payload.Sources)
 	}
+	cloudTest, ok := payload.SourceMap["cloudtest"]
+	if !ok {
+		t.Fatal("expected cloudtest source map entry")
+	}
+	if cloudTest.Replay || !cloudTest.MultiScript || !cloudTest.ScenarioDraft || !cloudTest.ImportReview {
+		t.Fatalf("cloudtest features = %#v, want review-only multi-asset preview", cloudTest)
+	}
+	if !containsAuthoringSourceStatus(payload.Sources, "cloudtest", "preview") {
+		t.Fatalf("sources = %#v, want cloudtest preview source", payload.Sources)
+	}
 	visibleSurfaces := map[string]AuthoringImportSurface{}
 	for _, surface := range payload.ImportSurfaces {
 		if !surface.Visible {
@@ -4150,8 +4160,8 @@ func TestAuthoringCapabilitiesEndpoint(t *testing.T) {
 			t.Fatalf("import surface %q has empty category", surface.ID)
 		}
 	}
-	if len(visibleSurfaces) != 16 {
-		t.Fatalf("visible import surfaces = %d, want 16 (%#v)", len(visibleSurfaces), visibleSurfaces)
+	if len(visibleSurfaces) != 17 {
+		t.Fatalf("visible import surfaces = %d, want 17 (%#v)", len(visibleSurfaces), visibleSurfaces)
 	}
 	expectedSurfaces := map[string]string{
 		"openapi":                 "Contracts & Collections",
@@ -4167,6 +4177,7 @@ func TestAuthoringCapabilitiesEndpoint(t *testing.T) {
 		"jmeter":                  "Legacy & Tool Exports",
 		"devweb":                  "Legacy & Tool Exports",
 		"k6":                      "Legacy & Tool Exports",
+		"cloudtest":               "Legacy & Tool Exports",
 		"eventhubs_capture":       "Messaging & Cloud Artifacts",
 		"broker_config":           "Messaging & Cloud Artifacts",
 		"oracle_ebusiness_review": "Enterprise App Reviews",

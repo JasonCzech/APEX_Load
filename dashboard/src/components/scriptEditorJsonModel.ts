@@ -313,13 +313,21 @@ export function phaseActionsForScript(
   return script.actions || []
 }
 
-function parseActionStepSegment(segment: string): { name: 'requests' | 'then' | 'else' | 'loop'; index: number } | null {
-  const match = segment.match(/^(requests|then|else|loop)\[(\d+)\]$/)
-  if (!match) return null
-  return {
-    name: match[1] as 'requests' | 'then' | 'else' | 'loop',
-    index: Number.parseInt(match[2], 10),
-  }
+type ParsedActionStepSegment =
+	| { name: 'requests' | 'then' | 'else' | 'loop' | 'default'; index: number }
+	| { name: 'case'; caseIndex: number; index: number }
+
+function parseActionStepSegment(segment: string): ParsedActionStepSegment | null {
+	const branch = segment.match(/^(requests|then|else|loop|default)\[(\d+)\]$/)
+	if (branch) {
+		return {
+			name: branch[1] as 'requests' | 'then' | 'else' | 'loop' | 'default',
+			index: Number.parseInt(branch[2], 10),
+		}
+	}
+	const switchCase = segment.match(/^case\[(\d+)\]\[(\d+)\]$/)
+	if (!switchCase) return null
+	return { name: 'case', caseIndex: Number.parseInt(switchCase[1], 10), index: Number.parseInt(switchCase[2], 10) }
 }
 
 function resolveNestedAction(root: ScriptActionDefinition | undefined, stepPath?: string[]): ScriptActionDefinition | null {
@@ -331,6 +339,10 @@ function resolveNestedAction(root: ScriptActionDefinition | undefined, stepPath?
       current = rawHttpSequenceRequest(current, parsed.index) ?? undefined
     } else if (parsed.name === 'else') {
       current = current.control?.else?.[parsed.index]
+	} else if (parsed.name === 'default') {
+	  current = current.control?.default?.[parsed.index]
+	} else if (parsed.name === 'case') {
+	  current = current.control?.cases?.[parsed.caseIndex]?.steps?.[parsed.index]
     } else {
       current = current.control?.steps?.[parsed.index]
     }
@@ -344,6 +356,8 @@ export function jsonPathForActionStepPath(stepPath?: string[]): string {
     if (!parsed) return ''
     if (parsed.name === 'requests') return `.params.requests[${parsed.index}]`
     if (parsed.name === 'else') return `.control.else[${parsed.index}]`
+	if (parsed.name === 'default') return `.control.default[${parsed.index}]`
+	if (parsed.name === 'case') return `.control.cases[${parsed.caseIndex}].steps[${parsed.index}]`
     return `.control.steps[${parsed.index}]`
   }).join('')
 }

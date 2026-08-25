@@ -78,6 +78,7 @@ type MetricsSnapshot struct {
 	ByDependencyTarget map[string]*ActionMetrics `json:"by_dependency_target,omitempty"`
 	BySOAPOperation    map[string]*ActionMetrics `json:"by_soap_operation,omitempty"`
 	ByNetworkProfile   map[string]*ActionMetrics `json:"by_network_profile,omitempty"`
+	ByRegion           map[string]*ActionMetrics `json:"by_region,omitempty"`
 	ByGroup            map[string]*GroupMetrics
 	Browser            *BrowserMetricsSummary           `json:"browser,omitempty"`
 	BrowserByDevice    map[string]*BrowserDeviceMetrics `json:"browser_by_device,omitempty"`
@@ -570,6 +571,7 @@ func (mc *MetricsCollector) computeSnapshot(results []*protocol.Result, window t
 		ByDependencyTarget: make(map[string]*ActionMetrics),
 		BySOAPOperation:    make(map[string]*ActionMetrics),
 		ByNetworkProfile:   make(map[string]*ActionMetrics),
+		ByRegion:           make(map[string]*ActionMetrics),
 		ByGroup:            make(map[string]*GroupMetrics),
 		ErrorsByClass:      make(map[string]int64),
 		BrowserByDevice:    make(map[string]*BrowserDeviceMetrics),
@@ -600,6 +602,8 @@ func (mc *MetricsCollector) computeSnapshot(results []*protocol.Result, window t
 	soapDurationSum := make(map[string]time.Duration)
 	networkProfileDigests := make(map[string]*TDigest)
 	networkProfileDurationSum := make(map[string]time.Duration)
+	regionDigests := make(map[string]*TDigest)
+	regionDurationSum := make(map[string]time.Duration)
 	groupDigests := make(map[string]*TDigest)
 	groupDurationSum := make(map[string]time.Duration)
 
@@ -635,6 +639,17 @@ func (mc *MetricsCollector) computeSnapshot(results []*protocol.Result, window t
 			}
 			mergeActionResult(tm, r)
 			recordDurationSample(transactionDigests, transactionDurationSum, transactionName, r.Duration)
+
+			if region := strings.TrimSpace(r.Region); region != "" {
+				region = boundedDimensionKey(region, snap.ByRegion)
+				rm, ok := snap.ByRegion[region]
+				if !ok {
+					rm = &ActionMetrics{Name: region, MinDuration: r.Duration, MaxDuration: r.Duration}
+					snap.ByRegion[region] = rm
+				}
+				mergeActionResult(rm, r)
+				recordDurationSample(regionDigests, regionDurationSum, region, r.Duration)
+			}
 
 			if r.Group != "" {
 				groupName := boundedDimensionKey(r.Group, snap.ByGroup)
@@ -817,6 +832,12 @@ func (mc *MetricsCollector) computeSnapshot(results []*protocol.Result, window t
 	}
 	if len(snap.ByNetworkProfile) == 0 {
 		snap.ByNetworkProfile = nil
+	}
+	for name, am := range snap.ByRegion {
+		finalizeActionMetrics(am, regionDurationSum[name], regionDigests[name])
+	}
+	if len(snap.ByRegion) == 0 {
+		snap.ByRegion = nil
 	}
 	finalizeBrowserMetricsSummary(snap.Browser)
 	for _, metrics := range snap.BrowserByDevice {

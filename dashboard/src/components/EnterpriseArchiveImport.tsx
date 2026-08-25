@@ -258,6 +258,12 @@ function flattenImportScriptActions(actions: ScriptActionDefinition[]): ScriptAc
     if (action.control?.else?.length) {
       flattened.push(...flattenImportScriptActions(action.control.else))
     }
+	;(action.control?.cases || []).forEach(switchCase => {
+		if (switchCase.steps?.length) flattened.push(...flattenImportScriptActions(switchCase.steps))
+	})
+	if (action.control?.default?.length) {
+		flattened.push(...flattenImportScriptActions(action.control.default))
+	}
   })
   return flattened
 }

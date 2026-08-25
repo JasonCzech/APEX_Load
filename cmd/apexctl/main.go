@@ -14,6 +14,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/api"
 	"github.com/jasonczech/apexload/pkg/buildinfo"
 	"github.com/jasonczech/apexload/pkg/config"
 	"github.com/jasonczech/apexload/pkg/engine"
@@ -31,6 +32,7 @@ var apexctlCommandHandlers = map[string]func(){
 	"record-agent": recordAgentCmd,
 	"github":       githubCmd,
 	"import":       importCmd,
+	"library":      libraryCmd,
 }
 
 func main() {
@@ -94,6 +96,10 @@ func runTest() {
 		os.Exit(exitCodeUsageOrConfiguration)
 	}
 	goalConfig := resolveGoalConfig(script, args)
+	if args.api == "" && goalConfig != nil && len(goalConfig.TransactionRules) > 0 {
+		fmt.Fprintln(os.Stderr, "error: transaction SLA rules require --api because they are evaluated from the complete durable archive")
+		os.Exit(exitCodeUsageOrConfiguration)
+	}
 
 	var result *engine.RunResult
 	var apiResult *ApiTestResult
@@ -161,6 +167,9 @@ func runTest() {
 			if len(slaSummary.Details) > 0 {
 				out["sla_details"] = slaSummary.Details
 			}
+		}
+		if slaSummary != nil && len(slaSummary.TransactionRuleResults) > 0 {
+			out["transaction_rule_results"] = slaSummary.TransactionRuleResults
 		}
 		if slaSummary != nil && slaSummary.Breached {
 			if runErr != nil {
@@ -280,6 +289,8 @@ type runArgs struct {
 	maxAvgServerProcessingMs *float64
 	maxAvgTransferMs         *float64
 	maxErrorCount            *int
+	transactionRules         []api.TransactionSLARule
+	transactionRulesFile     string
 }
 
 type envAssignments map[string]string
@@ -337,6 +348,15 @@ func parseRunArgs(args []string) runArgs {
 		r.maxErrorCount = &value
 		return nil
 	})
+	flags.Func("transaction-rule", "exact transaction SLA rule: transaction|metric|comparator|threshold|severity", func(raw string) error {
+		rule, err := parseTransactionSLARule(raw)
+		if err != nil {
+			return err
+		}
+		r.transactionRules = append(r.transactionRules, rule)
+		return nil
+	})
+	flags.StringVar(&r.transactionRulesFile, "transaction-rules-file", "", "JSON transaction SLA rule file")
 	if err := flags.Parse(args); err != nil {
 		r.err = err
 	} else if flags.NArg() != 0 {
@@ -361,6 +381,10 @@ func parseRunArgs(args []string) runArgs {
 		r.maxErrorCount,
 	); err != nil {
 		r.err = err
+	} else if err := mergeTransactionSLARuleFile(&r); err != nil {
+		r.err = err
+	} else if err := api.ValidateTransactionSLARules(r.transactionRules); err != nil {
+		r.err = fmt.Errorf("invalid transaction SLA rule: %w", err)
 	} else if r.timeout == 0 {
 		r.timeout = r.duration + 30*time.Minute
 	}
@@ -392,6 +416,7 @@ Commands:
   record-agent  Start the localhost browser recording bridge for a remote dashboard
   github    Inspect and run GitHub Enterprise sync/check workflows
   import    Import Bruno collections or Grafana dashboards
+  library   Export or import portable project library bundles
   version   Print version information
   help      Show this help
 
@@ -413,6 +438,8 @@ Run Flags:
   --max-avg-server-processing-ms  Maximum allowed average server processing time in ms
   --max-avg-transfer-ms           Maximum allowed average transfer time in ms
   --max-error-count               Maximum allowed total error count
+  --transaction-rule              Exact terminal SLA rule: transaction|metric|comparator|threshold|severity (repeatable; requires --api)
+  --transaction-rules-file        JSON array or {"transaction_rules": [...]} rule file (requires --api)
 
 Examples:
   apexctl run --script order-flow.json --vusers 100 --duration 5m
@@ -420,12 +447,15 @@ Examples:
   apexctl script explain --script order-flow.json
   apexctl run --script order-flow.json -env target_namespace=pr-123 --base-url https://preview.example.com
   apexctl run --script order-flow.json --p95-latency-ms 800 --max-error-pct 2.5
+  apexctl run --api http://localhost:8080 --script order-flow.json --transaction-rule 'Checkout|p95_duration_ms|lte|800|fail'
   apexctl run --api http://localhost:8080 --script order-flow.json --format json
   apexctl run --script order-flow.json --p95-latency-ms 800 --junit results.xml
   apexctl wait --api http://localhost:8080 --test <id> --junit results.xml
   apexctl github diagnostics --api http://localhost:8080
   apexctl github sync --api http://localhost:8080 --project <id> --kind import
-  apexctl import bruno --api http://localhost:8080 --path ./collection --project <id> --output native --folder <id>`)
+  apexctl import bruno --api http://localhost:8080 --path ./collection --project <id> --output native --folder <id>
+  apexctl library export --api http://localhost:8080 --kind scenario --id <id> --output scenario-bundle.json
+  apexctl library import --api http://localhost:8080 --project <id> --file scenario-bundle.json`)
 	fmt.Println()
 	fmt.Println(ctlUsage())
 	fmt.Println()

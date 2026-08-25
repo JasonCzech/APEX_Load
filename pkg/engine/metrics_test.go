@@ -621,6 +621,28 @@ func TestMetricsCollector_AggregatesByNetworkProfile(t *testing.T) {
 	}
 }
 
+func TestMetricsCollector_AggregatesBusinessTransactionsByApprovedRegion(t *testing.T) {
+	mc := NewMetricsCollector(100)
+	snap := mc.computeSnapshot([]*protocol.Result{
+		{ActionName: "home", BusinessTransaction: true, Success: true, Duration: 10 * time.Millisecond, Region: "us-east"},
+		{ActionName: "checkout", BusinessTransaction: true, Success: false, Duration: 30 * time.Millisecond, Region: "us-east"},
+		{ActionName: "home", BusinessTransaction: true, Success: true, Duration: 20 * time.Millisecond, Region: "eu-west"},
+		{ActionName: "unattributed", BusinessTransaction: true, Success: true, Duration: time.Millisecond},
+	}, time.Second)
+
+	east := snap.ByRegion["us-east"]
+	if east == nil || east.Count != 2 || east.Errors != 1 || east.AvgDuration != 20*time.Millisecond {
+		t.Fatalf("us-east metrics = %#v, want count 2 errors 1 avg 20ms", east)
+	}
+	west := snap.ByRegion["eu-west"]
+	if west == nil || west.Count != 1 || west.Errors != 0 {
+		t.Fatalf("eu-west metrics = %#v, want one successful transaction", west)
+	}
+	if _, exists := snap.ByRegion["unnamed"]; exists {
+		t.Fatalf("blank regions must remain unattributed, got %#v", snap.ByRegion)
+	}
+}
+
 func TestMetricsCollector_ByActionAggregatesServerTelemetry(t *testing.T) {
 	mc := NewMetricsCollector(100)
 	snap := mc.computeSnapshot([]*protocol.Result{

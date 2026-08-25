@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import {
   MetricsHistoryPoint,
@@ -48,6 +48,8 @@ import { useImportedDashboardGraphs } from './useImportedDashboardGraphs'
 import { useExecutionScenarioPreviewModel } from './useExecutionScenarioPreviewModel'
 import { useExecutionTestManifest } from './useExecutionTestManifest'
 import './TestExecution.css'
+import { useOptionalApi } from '../hooks/useApi'
+import type { DashboardDefinition, DashboardDefinitionPanel } from '../hooks/api/useDashboardDefinitionsApi'
 
 const GROUP_COLORS = [
   'var(--chart-1)', 'var(--chart-2)', 'var(--chart-3)',
@@ -88,6 +90,84 @@ function formatRunStartTime(startedAt?: string) {
   return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
 }
 
+function sharedDashboardPanelCardId(definitionId: string, panelId: string) {
+  return `shared-dashboard:${definitionId}:${panelId}`
+}
+
+function nativeAnalyticsMetricValue(point: MetricsHistoryPoint, panel: DashboardDefinitionPanel): number | undefined {
+  const query = panel.query
+  if (!query) return undefined
+  switch (query.metric) {
+    case 'tps':
+    case 'throughput':
+      return point.tps
+    case 'response_time':
+    case 'transaction_duration':
+      switch (query.aggregation) {
+        case 'p50': return point.p50
+        case 'p90': return point.p90
+        case 'p95': return point.p95
+        case 'p99': return point.p99
+        default: return point.avgMs
+      }
+    case 'error_rate': return point.errorPct
+    case 'active_vusers': return point.vusers
+    case 'resource_cpu': return point.cpuProcess
+    case 'resource_memory': return point.memProcess
+    default: return undefined
+  }
+}
+
+function NativeAnalyticsPanel({ panel, history }: { panel: DashboardDefinitionPanel; history: MetricsHistoryPoint[] }) {
+  const query = panel.query
+  const samples = history.map(point => nativeAnalyticsMetricValue(point, panel)).filter((value): value is number => Number.isFinite(value))
+  const latest = samples.length > 0 ? samples[samples.length - 1] : undefined
+  return (
+    <div className="execution-native-analytics-panel" data-panel-kind={panel.kind}>
+      <div className="execution-native-analytics-contract">
+        <span>{query?.metric || 'unknown metric'}</span>
+        <span>{query?.aggregation || 'unknown aggregation'}</span>
+        {query?.dimensions?.length ? <span>by {query.dimensions.join(', ')}</span> : null}
+      </div>
+      <strong>{latest === undefined ? 'No matching live series' : latest.toLocaleString(undefined, { maximumFractionDigits: 2 })}</strong>
+      {query?.filters && Object.keys(query.filters).length > 0 ? (
+        <small>Filters: {Object.entries(query.filters).map(([name, value]) => `${name}=${value}`).join(', ')}</small>
+      ) : null}
+    </div>
+  )
+}
+
+export function buildProjectDashboardWorkspace(definitions: DashboardDefinition[], history: MetricsHistoryPoint[]) {
+  const panelByCardId = new Map<string, DashboardDefinitionPanel>()
+  const cards: DashboardWorkspaceCard[] = []
+  const profiles: DashboardWorkspaceProfile[] = definitions.map(definition => ({
+    id: definition.id,
+    name: definition.name,
+    activeTabId: definition.tabs[0]?.id || 'overview',
+    tabs: definition.tabs.map(tab => ({
+      id: tab.id,
+      label: tab.title,
+      cardIds: tab.panels.map(panel => {
+        if (panel.card_id) return panel.card_id
+        if (!panel.query) return ''
+        const cardId = sharedDashboardPanelCardId(definition.id, panel.id)
+        panelByCardId.set(cardId, panel)
+        cards.push({
+          id: cardId,
+          title: panel.title,
+          category: 'Project analytics',
+          description: `${panel.query.metric} · ${panel.query.aggregation}`,
+          defaultWidth: panel.w >= 16 ? 'full' : panel.w >= 8 ? 'half' : 'natural',
+          render: () => <NativeAnalyticsPanel panel={panel} history={history} />,
+        })
+        return cardId
+      }).filter(Boolean),
+    })),
+    unassignedCardIds: [],
+  }))
+  return { cards, profiles, panelByCardId }
+}
+
 function computeRunRemainingSeconds(test: TestSummary) {
   const durationSeconds = parseDurationToSeconds(test.duration)
   const startedAt = test.started_at || test.start_time
@@ -119,6 +199,8 @@ export default function TestExecution({
   onSelectTest,
   onOpenCommandCenter,
 }: Props) {
+  const api = useOptionalApi()
+  const [projectDashboardDefinitions, setProjectDashboardDefinitions] = useState<DashboardDefinition[]>([])
   const {
     test,
     setTest,
@@ -201,6 +283,21 @@ export default function TestExecution({
     importedDashboardsLoading,
     importedDashboardsError,
   } = useImportedDashboardGraphs(test, filteredData, test?.project_id)
+  useEffect(() => {
+    const projectId = test?.project_id
+    if (!projectId || !api) {
+      setProjectDashboardDefinitions([])
+      return
+    }
+    let cancelled = false
+    void api.listDashboardDefinitions(projectId).then(response => {
+      if (cancelled) return
+      setProjectDashboardDefinitions(response.dashboards)
+    }).catch(() => {
+      if (!cancelled) setProjectDashboardDefinitions([])
+    })
+    return () => { cancelled = true }
+  }, [api, test?.project_id])
   const {
     controlFeedback,
     showControlFeedback,
@@ -915,6 +1012,46 @@ export default function TestExecution({
     },
   ]
 
+  const {
+    cards: projectDashboardCards,
+    profiles: projectDashboardProfiles,
+    panelByCardId: sharedPanelByCardId,
+  } = buildProjectDashboardWorkspace(projectDashboardDefinitions, filteredData)
+
+  const allExecutionWorkspaceCards = [...executionWorkspaceCards, ...projectDashboardCards]
+
+  const saveWorkspaceToProject = async (profile: DashboardWorkspaceProfile, mode: 'save' | 'import') => {
+    const projectId = test?.project_id
+    if (!projectId || !api) throw new Error('Project dashboard service is unavailable')
+    const created = await api.createDashboardDefinition({
+      project_id: projectId,
+      name: mode === 'import' ? `${profile.name} (Imported)` : profile.name,
+      description: 'Shared from the test execution workspace.',
+      visibility: 'project',
+      tabs: profile.tabs.map(tab => ({
+        id: tab.id,
+        title: tab.label,
+        panels: tab.cardIds.map((cardId, index) => {
+          const sharedPanel = sharedPanelByCardId.get(cardId)
+          if (sharedPanel) {
+            return { ...sharedPanel, id: `${tab.id}-${sharedPanel.id}`, y: index * 8 }
+          }
+          return {
+            id: `${tab.id}-${cardId}`,
+            title: allExecutionWorkspaceCards.find(card => card.id === cardId)?.title || cardId,
+            card_id: cardId,
+            kind: 'workspace_card',
+            x: 0,
+            y: index * 8,
+            w: 24,
+            h: 8,
+          }
+        }),
+      })),
+    })
+    setProjectDashboardDefinitions(current => [...current.filter(item => item.id !== created.id), created])
+  }
+
   return (
     <div className="execution">
       <TestExecutionScenarioEditor
@@ -994,10 +1131,12 @@ export default function TestExecution({
         cardLibraryStorageKey="apexload.execution.cardLibraryCollapsed.v1"
         defaultProfile={EXECUTION_WORKSPACE_DEFAULT_PROFILE}
         defaultCardInsertions={EXECUTION_WORKSPACE_CARD_INSERTIONS}
-        cards={executionWorkspaceCards}
+        cards={allExecutionWorkspaceCards}
         context={executionWorkspaceContext}
         initialActiveTabId={initialWorkspaceTabId}
         onActiveTabChange={handleWorkspaceActiveTabChange}
+        onSaveToProject={saveWorkspaceToProject}
+        projectProfiles={projectDashboardProfiles}
       />
     </div>
   )

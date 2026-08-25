@@ -19,6 +19,7 @@ const CANONICAL_LAUNCHERS = [
   'jmeter',
   'devweb',
   'k6',
+  'cloudtest',
   'eventhubs_capture',
   'broker_config',
   'oracle_ebusiness_review',

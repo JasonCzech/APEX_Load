@@ -24,9 +24,11 @@ export function scriptRequiresJavaVuserAuthoringApproval(script: ScriptDefinitio
 function javaVuserActionsRequireRunner(actions: ScriptActionDefinition[] | undefined): boolean {
   for (const action of actions ?? []) {
     if (action?.type?.trim().toLowerCase() === 'java_vuser_run') return true
-    if (action?.control && (javaVuserActionsRequireRunner(action.control.steps) || javaVuserActionsRequireRunner(action.control.else))) {
-      return true
-    }
+	if (action?.control) {
+		if (javaVuserActionsRequireRunner(action.control.steps) || javaVuserActionsRequireRunner(action.control.else)) return true
+		if ((action.control.cases || []).some(switchCase => javaVuserActionsRequireRunner(switchCase.steps))) return true
+		if (javaVuserActionsRequireRunner(action.control.default)) return true
+	}
   }
   return false
 }

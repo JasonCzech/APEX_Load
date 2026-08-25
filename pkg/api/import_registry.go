@@ -6,6 +6,7 @@ import (
 
 	"github.com/jasonczech/apexload/pkg/convert/asyncapi"
 	"github.com/jasonczech/apexload/pkg/convert/brokerconfig"
+	"github.com/jasonczech/apexload/pkg/convert/cloudtest"
 	"github.com/jasonczech/apexload/pkg/convert/devweb"
 	"github.com/jasonczech/apexload/pkg/convert/enterprisearchive"
 	"github.com/jasonczech/apexload/pkg/convert/eventhubscapture"
@@ -101,6 +102,19 @@ var importerRegistrations = []importerRegistration{
 		// Bruno commits through its own route, which also persists the native
 		// collection and its retained source revision.
 		SupportMatrix: brunoSupportMatrixPayload,
+	},
+	{
+		Profile:     "cloudtest",
+		DisplayName: "Akamai CloudTest",
+		Route:       "cloudtest",
+		BatchCommit: true,
+		SupportMatrix: func(*Server) map[string]any {
+			return map[string]any{
+				"support_matrix": cloudtest.GetSupportMatrix(),
+				"notes":          cloudtest.GetSupportMatrixNotes(),
+				"fixture_gate":   "blocked_until_sanitized_dependency_complete_exports_are_fixture_proven",
+			}
+		},
 	},
 	{
 		Profile:       "curl",

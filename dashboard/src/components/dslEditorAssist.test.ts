@@ -159,6 +159,20 @@ describe('dslCompletionSource', () => {
     expect(labels).not.toContain('ws_connect')
   })
 
+	it('recognizes actions nested in a control_switch default branch', () => {
+		setCachedDslActionCatalog(testCatalog)
+		const source = `{
+			"name":"switch", "protocol":"browser", "actions":[{
+				"name":"route", "type":"control_switch", "control":{
+					"cases":[{"condition":{"expr":"true"},"steps":[{"name":"case","type":"browser_cl"}]}],
+					"default":[{"name":"fallback","type":"browser_cl"}]
+				}
+			}]
+		}`
+		const result = completionAt(source, '"name":"fallback","type":"browser_cl')
+		expect(result?.options.map(option => option.label)).toContain('browser_click')
+	})
+
   it('completes per-type fields and common fields in key position', () => {
     setCachedDslActionCatalog(testCatalog)
     const result = completionAt(browserScript, '"selector": "#go"'.slice(0, 4))

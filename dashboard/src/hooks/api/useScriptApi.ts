@@ -46,7 +46,7 @@ export interface ScriptRecordingStatus {
   sensitivity?: string
   captured_at?: string
 }
-import { type ApplyParameterizationRequest, type ApplyParameterizationResponse, type ApplySecretBindingsRequest, type ApplySecretBindingsResponse, type ApplySharedValuesRequest, type ApplySharedValuesResponse, type AuthoringCapabilitiesResponse, type Parameterization, type AsyncAPIImportResult, type AsyncAPISupportMatrixResponse, type BrokerConfigImportResult, type BrokerConfigSupportMatrixResponse, type BrowserRecordingImportResult, type CommitAsyncAPIImportBatchRequest, type CommitAsyncAPIImportBatchResponse, type CommitAsyncAPIImportRequest, type CommitAsyncAPIImportResponse, type CommitGenericImportBatchRequest, type CommitGenericImportBatchResponse, type CommitOpenAPIImportRequest, type CommitOpenAPIImportResponse, type DevWebImportResult, type DevWebSupportMatrixResponse, type EventHubsCaptureImportResult, type EventHubsCaptureSupportMatrixResponse, type HARImportResult, type ImportAssetUploadResponse, type JavaClasspathAssetUploadResponse, type JMeterImportResult, type JMeterSupportMatrixResponse, type K6ImportResult, type K6SupportMatrixResponse, type EnterpriseArchiveImportResult, type EnterpriseArchiveSupportMatrixResponse, type OpenAPIImportResult, type OpenAPISupportMatrixResponse, type OracleEBusinessReviewRequest, type OracleEBusinessReviewResponse, type OracleEBusinessSupportMatrixResponse, type PostmanImportResult, type PostmanSupportMatrixResponse, type RAMLImportResult, type RAMLSupportMatrixResponse, type SalesforceImportResult, type SampleImportResult, type SaveEnterpriseArchiveImportRequest, type SaveEnterpriseArchiveImportResponse, type SaveJMeterImportRequest, type SaveJMeterImportResponse, type SavePostmanImportRequest, type SavePostmanImportResponse, type WSDLImportResult } from '../../types/scriptImports'
+import { type ApplyParameterizationRequest, type ApplyParameterizationResponse, type ApplySecretBindingsRequest, type ApplySecretBindingsResponse, type ApplySharedValuesRequest, type ApplySharedValuesResponse, type AuthoringCapabilitiesResponse, type Parameterization, type AsyncAPIImportResult, type AsyncAPISupportMatrixResponse, type BrokerConfigImportResult, type BrokerConfigSupportMatrixResponse, type BrowserRecordingImportResult, type CloudTestImportResult, type CloudTestSupportMatrixResponse, type CommitAsyncAPIImportBatchRequest, type CommitAsyncAPIImportBatchResponse, type CommitAsyncAPIImportRequest, type CommitAsyncAPIImportResponse, type CommitGenericImportBatchRequest, type CommitGenericImportBatchResponse, type CommitOpenAPIImportRequest, type CommitOpenAPIImportResponse, type DevWebImportResult, type DevWebSupportMatrixResponse, type EventHubsCaptureImportResult, type EventHubsCaptureSupportMatrixResponse, type HARImportResult, type ImportAssetUploadResponse, type JavaClasspathAssetUploadResponse, type JMeterImportResult, type JMeterSupportMatrixResponse, type K6ImportResult, type K6SupportMatrixResponse, type EnterpriseArchiveImportResult, type EnterpriseArchiveSupportMatrixResponse, type OpenAPIImportResult, type OpenAPISupportMatrixResponse, type OracleEBusinessReviewRequest, type OracleEBusinessReviewResponse, type OracleEBusinessSupportMatrixResponse, type PostmanImportResult, type PostmanSupportMatrixResponse, type RAMLImportResult, type RAMLSupportMatrixResponse, type SalesforceImportResult, type SampleImportResult, type SaveEnterpriseArchiveImportRequest, type SaveEnterpriseArchiveImportResponse, type SaveJMeterImportRequest, type SaveJMeterImportResponse, type SavePostmanImportRequest, type SavePostmanImportResponse, type WSDLImportResult } from '../../types/scriptImports'
 import { type JsonRequestBody } from '../../types/generated/openapi'
 import { ApiError, apiFetch, request } from '../apiClient'
 
@@ -111,7 +111,8 @@ type ScenarioGroupPayload = {
   role?: 'load' | 'observer'
   vusers: number
   ramp_up?: string
-  ramp_down?: string
+	ramp_down?: string
+	start_offset?: string
   stages?: Array<{
     name?: string
     type: string
@@ -787,6 +788,11 @@ export function useScriptApi() {
     [],
   )
 
+  const getCloudTestSupportMatrix = useCallback(
+    () => request<CloudTestSupportMatrixResponse>('/scripts/import/cloudtest/support-matrix'),
+    [],
+  )
+
   const getRAMLSupportMatrix = useCallback(
     () => request<RAMLSupportMatrixResponse>('/scripts/import/raml/support-matrix'),
     [],
@@ -954,6 +960,21 @@ export function useScriptApi() {
         throw new Error(await errorMessageFromResponse(res))
       }
       return res.json() as Promise<K6ImportResult>
+    },
+    [],
+  )
+
+  const importCloudTest = useCallback(
+    async (file: File, options?: { project_id?: string }): Promise<CloudTestImportResult> => {
+      const formData = new FormData()
+      formData.append('file', file)
+      if (options?.project_id) formData.append('project_id', options.project_id)
+
+      const res = await apiFetch('/scripts/import/cloudtest', { method: 'POST', body: formData })
+      if (!res.ok) {
+        throw new Error(await errorMessageFromResponse(res))
+      }
+      return res.json() as Promise<CloudTestImportResult>
     },
     [],
   )
@@ -1552,7 +1573,8 @@ export function useScriptApi() {
       validateJMeterImport,
       getJMeterSupportMatrix,
       getDevWebSupportMatrix,
-      getK6SupportMatrix,
+		getK6SupportMatrix,
+		getCloudTestSupportMatrix,
       getRAMLSupportMatrix,
       getOpenAPISupportMatrix,
       getAsyncAPISupportMatrix,
@@ -1571,7 +1593,8 @@ export function useScriptApi() {
       uploadImportAsset,
       uploadJavaClasspathJar,
       importDevWeb,
-      importK6,
+		importK6,
+		importCloudTest,
       importEventHubsCapture,
       importBrokerConfig,
       importHAR,
@@ -1672,6 +1695,7 @@ export function useScriptApi() {
       getJMeterSupportMatrix,
       getDevWebSupportMatrix,
       getK6SupportMatrix,
+      getCloudTestSupportMatrix,
       getRAMLSupportMatrix,
       getOpenAPISupportMatrix,
       getAsyncAPISupportMatrix,
@@ -1691,6 +1715,7 @@ export function useScriptApi() {
       uploadJavaClasspathJar,
       importDevWeb,
       importK6,
+      importCloudTest,
       importEventHubsCapture,
       importBrokerConfig,
       importHAR,

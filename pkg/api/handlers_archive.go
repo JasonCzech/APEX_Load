@@ -309,20 +309,26 @@ func (s *Server) handleGetRunArchiveTransactions(w http.ResponseWriter, r *http.
 		"limit":        page.Limit,
 		"offset":       page.Offset,
 		"filters": map[string]any{
-			"action":          filter.Action,
-			"soap_operation":  filter.SOAPOperation,
-			"group":           filter.Group,
-			"time_from":       filter.TimeFrom,
-			"time_to":         filter.TimeTo,
-			"status":          filter.Status,
-			"min_duration_ms": filter.MinDurationMs,
-			"max_duration_ms": filter.MaxDurationMs,
-			"min_bytes":       filter.MinBytes,
-			"max_bytes":       filter.MaxBytes,
-			"error_contains":  filter.ErrorContains,
-			"success":         filter.Success,
-			"sort_by":         filter.SortBy,
-			"sort_dir":        filter.SortDir,
+			"action":             filter.Action,
+			"soap_operation":     filter.SOAPOperation,
+			"group":              filter.Group,
+			"region":             filter.Region,
+			"network_profile":    filter.NetworkProfile,
+			"source_transaction": filter.SourceTransaction,
+			"hierarchy":          filter.Hierarchy,
+			"phase":              filter.Phase,
+			"has_detail":         filter.HasDetail,
+			"time_from":          filter.TimeFrom,
+			"time_to":            filter.TimeTo,
+			"status":             filter.Status,
+			"min_duration_ms":    filter.MinDurationMs,
+			"max_duration_ms":    filter.MaxDurationMs,
+			"min_bytes":          filter.MinBytes,
+			"max_bytes":          filter.MaxBytes,
+			"error_contains":     filter.ErrorContains,
+			"success":            filter.Success,
+			"sort_by":            filter.SortBy,
+			"sort_dir":           filter.SortDir,
 		},
 	})
 }
@@ -521,6 +527,46 @@ func (s *Server) handleGetRunArchiveReport(w http.ResponseWriter, r *http.Reques
 		if err := writeRunArchiveReportPDFWithProfileAndAnnotations(report, w, profile.ID, annotations, manifest); err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to write archive report pdf: "+err.Error())
 		}
+		return
+	case "docx":
+		profileID := r.URL.Query().Get("profile")
+		profile, ok := lookupRunArchiveReportProfile(profileID)
+		if !ok {
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("unknown report profile %q", profileID))
+			return
+		}
+		if !runArchiveReportProfileSupportsFormat(profile, "docx") {
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("report profile %q does not support docx export", profile.ID))
+			return
+		}
+		s.attachReleaseTrendForProfile(report, profile.ID)
+		s.attachDashboardPanelsForProfile(report, profile.ID)
+		if profile.ID == "audit" {
+			report.Integrity = verifyRunArchiveIntegrity(record, report.Manifest)
+		}
+		testID := r.PathValue("id")
+		annotations, err := resolveReportAnnotations(s.store, report, testID, profile.ID)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to load report commentary: "+err.Error())
+			return
+		}
+		manifest, manifestErr := s.archiveDomainService().GetTestManifest(testID)
+		if manifestErr != nil {
+			manifest = nil
+		}
+		var document bytes.Buffer
+		if err := writeRunArchiveReportDOCXWithProfileAndAnnotations(report, &document, profile.ID, annotations, manifest); err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to write archive report docx: "+err.Error())
+			return
+		}
+		if document.Len() > int(maxArchiveReportBatchBytes) {
+			writeError(w, http.StatusRequestEntityTooLarge, "archive report docx exceeds the 64 MiB response limit")
+			return
+		}
+		w.Header().Set("Content-Type", docxContentType)
+		w.Header().Set("Content-Disposition", "attachment; filename=\"apexload-archive-report-"+testID+"-"+profile.ID+".docx\"")
+		w.Header().Set("Content-Length", strconv.Itoa(document.Len()))
+		_, _ = w.Write(document.Bytes())
 		return
 	}
 	// The raw JSON report carries the full model, so attach the release-over-release
@@ -1045,15 +1091,28 @@ func parseArchiveSampleLimit(w http.ResponseWriter, r *http.Request) (int, bool)
 func parseTransactionEventFilter(w http.ResponseWriter, r *http.Request) (transactionEventFilter, bool) {
 	query := r.URL.Query()
 	filter := transactionEventFilter{
-		Action:           strings.TrimSpace(query.Get("action")),
-		SOAPOperation:    strings.TrimSpace(query.Get("soap_operation")),
-		Group:            strings.TrimSpace(query.Get("group")),
-		CorrelationID:    strings.TrimSpace(query.Get("correlation_id")),
-		TraceID:          strings.TrimSpace(query.Get("trace_id")),
-		DependencyType:   strings.TrimSpace(query.Get("dependency_type")),
-		DependencyTarget: strings.TrimSpace(query.Get("dependency_target")),
-		Status:           strings.TrimSpace(query.Get("status")),
-		ErrorContains:    strings.TrimSpace(query.Get("error_contains")),
+		Action:            strings.TrimSpace(query.Get("action")),
+		SOAPOperation:     strings.TrimSpace(query.Get("soap_operation")),
+		Group:             strings.TrimSpace(query.Get("group")),
+		Region:            strings.TrimSpace(query.Get("region")),
+		NetworkProfile:    strings.TrimSpace(query.Get("network_profile")),
+		SourceTransaction: strings.TrimSpace(query.Get("source_transaction")),
+		Hierarchy:         strings.TrimSpace(query.Get("hierarchy")),
+		Phase:             strings.TrimSpace(query.Get("phase")),
+		CorrelationID:     strings.TrimSpace(query.Get("correlation_id")),
+		TraceID:           strings.TrimSpace(query.Get("trace_id")),
+		DependencyType:    strings.TrimSpace(query.Get("dependency_type")),
+		DependencyTarget:  strings.TrimSpace(query.Get("dependency_target")),
+		Status:            strings.TrimSpace(query.Get("status")),
+		ErrorContains:     strings.TrimSpace(query.Get("error_contains")),
+	}
+	if raw := query.Get("has_detail"); raw != "" {
+		parsed, err := strconv.ParseBool(raw)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid has_detail")
+			return transactionEventFilter{}, false
+		}
+		filter.HasDetail = &parsed
 	}
 	if raw := query.Get("success"); raw != "" {
 		parsed, err := strconv.ParseBool(raw)

@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/jasonczech/apexload/pkg/distributed/generatorrpc"
+	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/engine"
 	"github.com/jasonczech/apexload/pkg/protocol"
 )
@@ -704,10 +705,29 @@ func chooseGeneratorTargetForGroup(group TestGroup, loadByTarget map[string]gene
 }
 
 func groupRequiredRuntimeFeature(group TestGroup) string {
+	detail := group.script != nil && scriptRequestsSuccessfulMessageDetail(group.script)
+	parallel := group.script != nil && scriptRequestsControlParallel(group.script)
+	if detail && parallel {
+		return generatorrpc.FeatureMessageDetailControlParallelV1
+	}
+	if detail {
+		return generatorrpc.FeatureMessageDetailCaptureV1
+	}
+	if parallel {
+		return generatorrpc.FeatureControlParallelV1
+	}
 	if javaVuserCapacityPlanForGroup(group).RequiresPersistentLifecycle() {
 		return protocol.FeatureJavaVuserPersistentLifecycleV1
 	}
 	return ""
+}
+
+func scriptRequestsSuccessfulMessageDetail(script *dsl.Script) bool {
+	if script == nil || script.Config.Results.MessageDetail == nil {
+		return false
+	}
+	mode := strings.ToLower(strings.TrimSpace(script.Config.Results.MessageDetail.Mode))
+	return mode == "sampled" || mode == "adaptive"
 }
 
 func orderedLoadTargets(loadByTarget map[string]generatorLoadSnapshot, preferred []string, regionState *regionPlacementState) []string {

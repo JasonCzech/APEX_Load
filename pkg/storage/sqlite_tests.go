@@ -1659,6 +1659,10 @@ func (s *SQLiteStore) SaveHistory(testID string, timestamp time.Time, metrics an
 		if err != nil {
 			return err
 		}
+		byRegionJSON, err := marshalNullableJSON(record.ByRegion)
+		if err != nil {
+			return err
+		}
 		browserJSON, err := marshalNullableJSON(record.Browser)
 		if err != nil {
 			return err
@@ -1690,11 +1694,11 @@ func (s *SQLiteStore) SaveHistory(testID string, timestamp time.Time, metrics an
 		_, err = s.db.Exec(`INSERT INTO test_interval_summaries (
 			test_id, schema_version, timestamp, active_vusers, tps, avg_response_ms, error_pct,
 			total_transactions, total_errors, p50_ms, p90_ms, p95_ms, p99_ms,
-			transactions_json, browser_json, browser_by_device_json, latency_json,
+			transactions_json, by_region_json, browser_json, browser_by_device_json, latency_json,
 			dropped_results, websocket_clients, websocket_dropped_messages, websocket_dropped_events,
 			generator_published_at, controller_received_at, collected_at, published_at,
 			generator_processing_lag_ms, transport_lag_ms, controller_fanout_lag_ms, sample_age_ms
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			testID,
 			record.SchemaVersion,
 			record.Timestamp,
@@ -1709,6 +1713,7 @@ func (s *SQLiteStore) SaveHistory(testID string, timestamp time.Time, metrics an
 			record.P95Ms,
 			record.P99Ms,
 			transactionsJSON,
+			byRegionJSON,
 			browserJSON,
 			browserByDeviceJSON,
 			latencyJSON,
@@ -1851,6 +1856,7 @@ func (s *SQLiteStore) getTypedHistoryLimit(testID string, limit int) ([]any, err
 		p95_ms,
 		p99_ms,
 		transactions_json,
+		by_region_json,
 		browser_json,
 		browser_by_device_json,
 		latency_json,
@@ -1886,6 +1892,7 @@ func (s *SQLiteStore) getTypedHistoryLimit(testID string, limit int) ([]any, err
 	for rows.Next() {
 		var record IntervalSummaryRecord
 		var transactionsJSON sql.NullString
+		var byRegionJSON sql.NullString
 		var browserJSON sql.NullString
 		var browserByDeviceJSON sql.NullString
 		var latencyJSON sql.NullString
@@ -1916,6 +1923,7 @@ func (s *SQLiteStore) getTypedHistoryLimit(testID string, limit int) ([]any, err
 			&record.P95Ms,
 			&record.P99Ms,
 			&transactionsJSON,
+			&byRegionJSON,
 			&browserJSON,
 			&browserByDeviceJSON,
 			&latencyJSON,
@@ -1937,6 +1945,11 @@ func (s *SQLiteStore) getTypedHistoryLimit(testID string, limit int) ([]any, err
 		record.SchemaVersion = normalizeTelemetrySchemaVersion(schemaVersion.String, intervalSummarySchemaVersionV1)
 		if transactionsJSON.Valid && strings.TrimSpace(transactionsJSON.String) != "" {
 			if err := json.Unmarshal([]byte(transactionsJSON.String), &record.Transactions); err != nil {
+				return nil, err
+			}
+		}
+		if byRegionJSON.Valid && strings.TrimSpace(byRegionJSON.String) != "" {
+			if err := json.Unmarshal([]byte(byRegionJSON.String), &record.ByRegion); err != nil {
 				return nil, err
 			}
 		}
@@ -2054,6 +2067,7 @@ func intervalSummaryRecordFromMetrics(timestamp time.Time, metrics any) (Interva
 		P95Ms           float64                               `json:"p95_ms"`
 		P99Ms           float64                               `json:"p99_ms"`
 		Transactions    map[string]*IntervalTransactionRecord `json:"transactions,omitempty"`
+		ByRegion        map[string]*IntervalTransactionRecord `json:"by_region,omitempty"`
 		Browser         *browserEnvelope                      `json:"browser,omitempty"`
 		BrowserByDevice map[string]*browserDeviceEnvelope     `json:"browser_by_device,omitempty"`
 		Latency         *NetworkLatencySummaryRecord          `json:"latency,omitempty"`
@@ -2082,6 +2096,7 @@ func intervalSummaryRecordFromMetrics(timestamp time.Time, metrics any) (Interva
 		P95Ms:         summary.P95Ms,
 		P99Ms:         summary.P99Ms,
 		Transactions:  compactIntervalSummaryTransactions(summary.Transactions),
+		ByRegion:      compactIntervalSummaryTransactions(summary.ByRegion),
 	}
 	if summary.Browser != nil {
 		record.Browser = &BrowserMetricsSummaryRecord{

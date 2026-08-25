@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { MetricsHistoryPoint } from '../types'
 import { downloadTextFile } from '../utils/fileUtils'
-import TestExecutionCharts, { BoundedChartTooltipContent } from './TestExecutionCharts'
+import TestExecutionCharts, { BoundedChartTooltipContent, chartTimeAxisPresentation } from './TestExecutionCharts'
 import { transactionChartSeriesKey } from './transactionChartSeries'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
@@ -165,6 +165,23 @@ vi.mock('recharts', () => {
       </g>
     },
   }
+})
+
+describe('chartTimeAxisPresentation', () => {
+  it('converts millisecond time axes to seconds without changing non-time axes', () => {
+    const seconds = chartTimeAxisPresentation('Response time (ms)', 'seconds')
+    expect(seconds.label).toBe('Response time (s)')
+    expect(seconds.tickFormatter?.(2500)).toBe('2.5')
+
+    expect(chartTimeAxisPresentation('Fleet CPU (%)', 'seconds')).toEqual({
+      label: 'Fleet CPU (%)',
+      tickFormatter: undefined,
+    })
+    expect(chartTimeAxisPresentation('Route latency (ms)', 'milliseconds')).toEqual({
+      label: 'Route latency (ms)',
+      tickFormatter: undefined,
+    })
+  })
 })
 
 describe('TestExecutionCharts context menu', () => {

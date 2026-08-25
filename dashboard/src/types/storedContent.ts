@@ -58,7 +58,8 @@ export interface StoredScenario {
     role?: 'load' | 'observer'
     vusers: number
     ramp_up?: string
-    ramp_down?: string
+		ramp_down?: string
+		start_offset?: string
     stages?: LoadStageDraft[]
     iterations?: number
     runtime_settings?: RuntimeSettingsOverride

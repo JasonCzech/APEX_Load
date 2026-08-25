@@ -130,8 +130,19 @@ type WorkAssignment struct {
 	// Opaque, controller-generated run-incarnation capability. Current
 	// execution-enabled generators require exactly 32 non-zero bytes.
 	RunSupervisionToken []byte `protobuf:"bytes,28,opt,name=run_supervision_token,json=runSupervisionToken,proto3" json:"run_supervision_token,omitempty"`
-	unknownFields       protoimpl.UnknownFields
-	sizeCache           protoimpl.SizeCache
+	// Controller-approved load-zone label. Generators attach this value to
+	// results; script data is never accepted as a regional analytics label.
+	Region string `protobuf:"bytes,29,opt,name=region,proto3" json:"region,omitempty"`
+	// Active-test delay from the shared load epoch before this group may emit
+	// user traffic. Pause time never consumes this duration.
+	StartOffset *durationpb.Duration `protobuf:"bytes,30,opt,name=start_offset,json=startOffset,proto3" json:"start_offset,omitempty"`
+	// Assignment-local success-detail quotas. The controller partitions the
+	// authored run budget across logical shards; zero preserves script limits.
+	MessageDetailMaxItems      int32 `protobuf:"varint,31,opt,name=message_detail_max_items,json=messageDetailMaxItems,proto3" json:"message_detail_max_items,omitempty"`
+	MessageDetailMaxItemBytes  int64 `protobuf:"varint,32,opt,name=message_detail_max_item_bytes,json=messageDetailMaxItemBytes,proto3" json:"message_detail_max_item_bytes,omitempty"`
+	MessageDetailMaxTotalBytes int64 `protobuf:"varint,33,opt,name=message_detail_max_total_bytes,json=messageDetailMaxTotalBytes,proto3" json:"message_detail_max_total_bytes,omitempty"`
+	unknownFields              protoimpl.UnknownFields
+	sizeCache                  protoimpl.SizeCache
 }
 
 func (x *WorkAssignment) Reset() {
@@ -358,6 +369,41 @@ func (x *WorkAssignment) GetRunSupervisionToken() []byte {
 		return x.RunSupervisionToken
 	}
 	return nil
+}
+
+func (x *WorkAssignment) GetRegion() string {
+	if x != nil {
+		return x.Region
+	}
+	return ""
+}
+
+func (x *WorkAssignment) GetStartOffset() *durationpb.Duration {
+	if x != nil {
+		return x.StartOffset
+	}
+	return nil
+}
+
+func (x *WorkAssignment) GetMessageDetailMaxItems() int32 {
+	if x != nil {
+		return x.MessageDetailMaxItems
+	}
+	return 0
+}
+
+func (x *WorkAssignment) GetMessageDetailMaxItemBytes() int64 {
+	if x != nil {
+		return x.MessageDetailMaxItemBytes
+	}
+	return 0
+}
+
+func (x *WorkAssignment) GetMessageDetailMaxTotalBytes() int64 {
+	if x != nil {
+		return x.MessageDetailMaxTotalBytes
+	}
+	return 0
 }
 
 type WorkCommitRequest struct {
@@ -1428,7 +1474,8 @@ type MetricsBatch struct {
 	// batch_sequence is monotonic for one test execution generation. Zero means
 	// unknown (an older generator). Controllers use gaps to mark live windows
 	// that a bounded subscriber queue could not deliver.
-	BatchSequence uint64 `protobuf:"varint,19,opt,name=batch_sequence,json=batchSequence,proto3" json:"batch_sequence,omitempty"`
+	BatchSequence uint64             `protobuf:"varint,19,opt,name=batch_sequence,json=batchSequence,proto3" json:"batch_sequence,omitempty"`
+	RegionMetrics []*MetricAggregate `protobuf:"bytes,20,rep,name=region_metrics,json=regionMetrics,proto3" json:"region_metrics,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1594,6 +1641,13 @@ func (x *MetricsBatch) GetBatchSequence() uint64 {
 		return x.BatchSequence
 	}
 	return 0
+}
+
+func (x *MetricsBatch) GetRegionMetrics() []*MetricAggregate {
+	if x != nil {
+		return x.RegionMetrics
+	}
+	return nil
 }
 
 type MetricsBatchTelemetry struct {
@@ -2566,6 +2620,11 @@ type TransactionMetric struct {
 	SoapOperation    string                 `protobuf:"bytes,17,opt,name=soap_operation,json=soapOperation,proto3" json:"soap_operation,omitempty"`
 	SnapshotJson     string                 `protobuf:"bytes,18,opt,name=snapshot_json,json=snapshotJson,proto3" json:"snapshot_json,omitempty"`
 	Group            string                 `protobuf:"bytes,19,opt,name=group,proto3" json:"group,omitempty"`
+	Region           string                 `protobuf:"bytes,20,opt,name=region,proto3" json:"region,omitempty"`
+	NetworkProfile   string                 `protobuf:"bytes,21,opt,name=network_profile,json=networkProfile,proto3" json:"network_profile,omitempty"`
+	Hierarchy        string                 `protobuf:"bytes,22,opt,name=hierarchy,proto3" json:"hierarchy,omitempty"`
+	Phase            string                 `protobuf:"bytes,23,opt,name=phase,proto3" json:"phase,omitempty"`
+	PageName         string                 `protobuf:"bytes,24,opt,name=page_name,json=pageName,proto3" json:"page_name,omitempty"`
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
 }
@@ -2729,6 +2788,41 @@ func (x *TransactionMetric) GetSnapshotJson() string {
 func (x *TransactionMetric) GetGroup() string {
 	if x != nil {
 		return x.Group
+	}
+	return ""
+}
+
+func (x *TransactionMetric) GetRegion() string {
+	if x != nil {
+		return x.Region
+	}
+	return ""
+}
+
+func (x *TransactionMetric) GetNetworkProfile() string {
+	if x != nil {
+		return x.NetworkProfile
+	}
+	return ""
+}
+
+func (x *TransactionMetric) GetHierarchy() string {
+	if x != nil {
+		return x.Hierarchy
+	}
+	return ""
+}
+
+func (x *TransactionMetric) GetPhase() string {
+	if x != nil {
+		return x.Phase
+	}
+	return ""
+}
+
+func (x *TransactionMetric) GetPageName() string {
+	if x != nil {
+		return x.PageName
 	}
 	return ""
 }
@@ -4056,7 +4150,7 @@ var File_api_proto_generator_proto protoreflect.FileDescriptor
 
 const file_api_proto_generator_proto_rawDesc = "" +
 	"\n" +
-	"\x19api/proto/generator.proto\x12\vapexload.v1\x1a\x1egoogle/protobuf/duration.proto\"\xfa\v\n" +
+	"\x19api/proto/generator.proto\x12\vapexload.v1\x1a\x1egoogle/protobuf/duration.proto\"\x8f\x0e\n" +
 	"\x0eWorkAssignment\x12\x17\n" +
 	"\atest_id\x18\x01 \x01(\tR\x06testId\x12\x1d\n" +
 	"\n" +
@@ -4091,7 +4185,12 @@ const file_api_proto_generator_proto_rawDesc = "" +
 	"\vscenario_id\x18\x1a \x01(\tR\n" +
 	"scenarioId\x12?\n" +
 	"\x1crequire_test_execution_lease\x18\x1b \x01(\bR\x19requireTestExecutionLease\x122\n" +
-	"\x15run_supervision_token\x18\x1c \x01(\fR\x13runSupervisionToken\x1a>\n" +
+	"\x15run_supervision_token\x18\x1c \x01(\fR\x13runSupervisionToken\x12\x16\n" +
+	"\x06region\x18\x1d \x01(\tR\x06region\x12<\n" +
+	"\fstart_offset\x18\x1e \x01(\v2\x19.google.protobuf.DurationR\vstartOffset\x127\n" +
+	"\x18message_detail_max_items\x18\x1f \x01(\x05R\x15messageDetailMaxItems\x12@\n" +
+	"\x1dmessage_detail_max_item_bytes\x18  \x01(\x03R\x19messageDetailMaxItemBytes\x12B\n" +
+	"\x1emessage_detail_max_total_bytes\x18! \x01(\x03R\x1amessageDetailMaxTotalBytes\x1a>\n" +
 	"\x10EnvironmentEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\x1a?\n" +
@@ -4174,7 +4273,7 @@ const file_api_proto_generator_proto_rawDesc = "" +
 	"\x15run_supervision_token\x18\x04 \x01(\fR\x13runSupervisionToken\"T\n" +
 	"\aStopAck\x12\"\n" +
 	"\facknowledged\x18\x01 \x01(\bR\facknowledged\x12%\n" +
-	"\x0epending_vusers\x18\x02 \x01(\x05R\rpendingVusers\"\xbf\b\n" +
+	"\x0epending_vusers\x18\x02 \x01(\x05R\rpendingVusers\"\x84\t\n" +
 	"\fMetricsBatch\x12\x17\n" +
 	"\atest_id\x18\x01 \x01(\tR\x06testId\x12!\n" +
 	"\fgenerator_id\x18\x02 \x01(\tR\vgeneratorId\x12*\n" +
@@ -4195,7 +4294,8 @@ const file_api_proto_generator_proto_rawDesc = "" +
 	"\x0fbrowser_metrics\x18\x10 \x01(\v2\x1b.apexload.v1.BrowserMetricsR\x0ebrowserMetrics\x12W\n" +
 	"\x16browser_device_metrics\x18\x11 \x03(\v2!.apexload.v1.BrowserDeviceMetricsR\x14browserDeviceMetrics\x121\n" +
 	"\x14execution_generation\x18\x12 \x01(\x04R\x13executionGeneration\x12%\n" +
-	"\x0ebatch_sequence\x18\x13 \x01(\x04R\rbatchSequence\"\x98\x03\n" +
+	"\x0ebatch_sequence\x18\x13 \x01(\x04R\rbatchSequence\x12C\n" +
+	"\x0eregion_metrics\x18\x14 \x03(\v2\x1c.apexload.v1.MetricAggregateR\rregionMetrics\"\x98\x03\n" +
 	"\x15MetricsBatchTelemetry\x12'\n" +
 	"\x0fdropped_results\x18\x01 \x01(\x03R\x0edroppedResults\x12/\n" +
 	"\x14collected_at_unix_ms\x18\x02 \x01(\x03R\x11collectedAtUnixMs\x12/\n" +
@@ -4299,7 +4399,7 @@ const file_api_proto_generator_proto_rawDesc = "" +
 	"\x14quota_exceeded_count\x18\x1a \x01(\x05R\x12quotaExceededCount\x121\n" +
 	"\x15event_too_large_count\x18\x1b \x01(\x05R\x12eventTooLargeCount\x120\n" +
 	"\x15end_to_end_latency_ms\x18\x1c \x01(\x01R\x11endToEndLatencyMs\x12!\n" +
-	"\fpartition_id\x18\x1d \x01(\tR\vpartitionId\"\xa9\x05\n" +
+	"\fpartition_id\x18\x1d \x01(\tR\vpartitionId\"\xbb\x06\n" +
 	"\x11TransactionMetric\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12+\n" +
 	"\x12start_time_unix_ms\x18\x02 \x01(\x03R\x0fstartTimeUnixMs\x12\x1f\n" +
@@ -4324,7 +4424,12 @@ const file_api_proto_generator_proto_rawDesc = "" +
 	"\x10server_telemetry\x18\x10 \x01(\v2\x1c.apexload.v1.ServerTelemetryR\x0fserverTelemetry\x12%\n" +
 	"\x0esoap_operation\x18\x11 \x01(\tR\rsoapOperation\x12#\n" +
 	"\rsnapshot_json\x18\x12 \x01(\tR\fsnapshotJson\x12\x14\n" +
-	"\x05group\x18\x13 \x01(\tR\x05group\"\xc4\r\n" +
+	"\x05group\x18\x13 \x01(\tR\x05group\x12\x16\n" +
+	"\x06region\x18\x14 \x01(\tR\x06region\x12'\n" +
+	"\x0fnetwork_profile\x18\x15 \x01(\tR\x0enetworkProfile\x12\x1c\n" +
+	"\thierarchy\x18\x16 \x01(\tR\thierarchy\x12\x14\n" +
+	"\x05phase\x18\x17 \x01(\tR\x05phase\x12\x1b\n" +
+	"\tpage_name\x18\x18 \x01(\tR\bpageName\"\xc4\r\n" +
 	"\x0eGeneratorStats\x12#\n" +
 	"\ractive_vusers\x18\x01 \x01(\x05R\factiveVusers\x12\x1f\n" +
 	"\vcpu_percent\x18\x02 \x01(\x01R\n" +
@@ -4538,65 +4643,67 @@ var file_api_proto_generator_proto_depIdxs = []int32{
 	42, // 7: apexload.v1.WorkAssignment.post_baseline:type_name -> google.protobuf.Duration
 	42, // 8: apexload.v1.WorkAssignment.duration_offset:type_name -> google.protobuf.Duration
 	41, // 9: apexload.v1.WorkAssignment.secret_bundle:type_name -> apexload.v1.WorkAssignment.SecretBundleEntry
-	0,  // 10: apexload.v1.RunSupervisionAck.state:type_name -> apexload.v1.RunSupervisionState
-	42, // 11: apexload.v1.VUserAdjustment.ramp_duration:type_name -> google.protobuf.Duration
-	42, // 12: apexload.v1.DurationAdjustment.target_duration:type_name -> google.protobuf.Duration
-	42, // 13: apexload.v1.DurationAck.current_duration:type_name -> google.protobuf.Duration
-	26, // 14: apexload.v1.MetricsBatch.transactions:type_name -> apexload.v1.TransactionMetric
-	27, // 15: apexload.v1.MetricsBatch.stats:type_name -> apexload.v1.GeneratorStats
-	19, // 16: apexload.v1.MetricsBatch.groups:type_name -> apexload.v1.GroupMetric
-	18, // 17: apexload.v1.MetricsBatch.telemetry:type_name -> apexload.v1.MetricsBatchTelemetry
-	22, // 18: apexload.v1.MetricsBatch.transaction_metrics:type_name -> apexload.v1.MetricAggregate
-	22, // 19: apexload.v1.MetricsBatch.dependency_metrics:type_name -> apexload.v1.MetricAggregate
-	22, // 20: apexload.v1.MetricsBatch.soap_metrics:type_name -> apexload.v1.MetricAggregate
-	22, // 21: apexload.v1.MetricsBatch.network_profile_metrics:type_name -> apexload.v1.MetricAggregate
-	22, // 22: apexload.v1.MetricsBatch.fleet_metrics:type_name -> apexload.v1.MetricAggregate
-	23, // 23: apexload.v1.MetricsBatch.browser_metrics:type_name -> apexload.v1.BrowserMetrics
-	24, // 24: apexload.v1.MetricsBatch.browser_device_metrics:type_name -> apexload.v1.BrowserDeviceMetrics
-	22, // 25: apexload.v1.GroupMetric.metrics:type_name -> apexload.v1.MetricAggregate
-	20, // 26: apexload.v1.TDigestSnapshot.centroids:type_name -> apexload.v1.TDigestCentroid
-	21, // 27: apexload.v1.MetricAggregate.duration_digest:type_name -> apexload.v1.TDigestSnapshot
-	23, // 28: apexload.v1.BrowserDeviceMetrics.metrics:type_name -> apexload.v1.BrowserMetrics
-	25, // 29: apexload.v1.TransactionMetric.server_telemetry:type_name -> apexload.v1.ServerTelemetry
-	11, // 30: apexload.v1.ControlSignal.adjust:type_name -> apexload.v1.VUserAdjustment
-	15, // 31: apexload.v1.ControlSignal.stop:type_name -> apexload.v1.StopRequest
-	29, // 32: apexload.v1.ControlSignal.pause:type_name -> apexload.v1.PauseRequest
-	27, // 33: apexload.v1.HeartbeatPing.stats:type_name -> apexload.v1.GeneratorStats
-	27, // 34: apexload.v1.HeartbeatPong.stats:type_name -> apexload.v1.GeneratorStats
-	32, // 35: apexload.v1.HeartbeatPong.runtime_capacities:type_name -> apexload.v1.ProtocolRuntimeCapacity
-	33, // 36: apexload.v1.HeartbeatPong.last_safety_exit:type_name -> apexload.v1.GeneratorSafetyExitEvidence
-	33, // 37: apexload.v1.HeartbeatPong.safety_exits:type_name -> apexload.v1.GeneratorSafetyExitEvidence
-	6,  // 38: apexload.v1.GeneratorControl.ClaimExecutionEpoch:input_type -> apexload.v1.ExecutionEpochClaim
-	4,  // 39: apexload.v1.GeneratorControl.ClaimRunSupervision:input_type -> apexload.v1.RunSupervisionClaim
-	1,  // 40: apexload.v1.GeneratorControl.AssignWork:input_type -> apexload.v1.WorkAssignment
-	2,  // 41: apexload.v1.GeneratorControl.CommitWork:input_type -> apexload.v1.WorkCommitRequest
-	11, // 42: apexload.v1.GeneratorControl.AdjustVUsers:input_type -> apexload.v1.VUserAdjustment
-	13, // 43: apexload.v1.GeneratorControl.AdjustDuration:input_type -> apexload.v1.DurationAdjustment
-	29, // 44: apexload.v1.GeneratorControl.SetPaused:input_type -> apexload.v1.PauseRequest
-	15, // 45: apexload.v1.GeneratorControl.StopTest:input_type -> apexload.v1.StopRequest
-	28, // 46: apexload.v1.GeneratorControl.StreamMetrics:input_type -> apexload.v1.ControlSignal
-	31, // 47: apexload.v1.GeneratorControl.Heartbeat:input_type -> apexload.v1.HeartbeatPing
-	35, // 48: apexload.v1.GeneratorControl.DistributeScript:input_type -> apexload.v1.ScriptPayload
-	37, // 49: apexload.v1.GeneratorControl.GetArchiveArtifact:input_type -> apexload.v1.ArchiveArtifactRequest
-	37, // 50: apexload.v1.GeneratorControl.StreamArchiveArtifact:input_type -> apexload.v1.ArchiveArtifactRequest
-	7,  // 51: apexload.v1.GeneratorControl.ClaimExecutionEpoch:output_type -> apexload.v1.ExecutionEpochAck
-	5,  // 52: apexload.v1.GeneratorControl.ClaimRunSupervision:output_type -> apexload.v1.RunSupervisionAck
-	10, // 53: apexload.v1.GeneratorControl.AssignWork:output_type -> apexload.v1.AssignmentAck
-	3,  // 54: apexload.v1.GeneratorControl.CommitWork:output_type -> apexload.v1.WorkCommitAck
-	12, // 55: apexload.v1.GeneratorControl.AdjustVUsers:output_type -> apexload.v1.AdjustmentAck
-	14, // 56: apexload.v1.GeneratorControl.AdjustDuration:output_type -> apexload.v1.DurationAck
-	30, // 57: apexload.v1.GeneratorControl.SetPaused:output_type -> apexload.v1.PauseAck
-	16, // 58: apexload.v1.GeneratorControl.StopTest:output_type -> apexload.v1.StopAck
-	17, // 59: apexload.v1.GeneratorControl.StreamMetrics:output_type -> apexload.v1.MetricsBatch
-	34, // 60: apexload.v1.GeneratorControl.Heartbeat:output_type -> apexload.v1.HeartbeatPong
-	36, // 61: apexload.v1.GeneratorControl.DistributeScript:output_type -> apexload.v1.ScriptAck
-	38, // 62: apexload.v1.GeneratorControl.GetArchiveArtifact:output_type -> apexload.v1.ArchiveArtifact
-	39, // 63: apexload.v1.GeneratorControl.StreamArchiveArtifact:output_type -> apexload.v1.ArchiveArtifactChunk
-	51, // [51:64] is the sub-list for method output_type
-	38, // [38:51] is the sub-list for method input_type
-	38, // [38:38] is the sub-list for extension type_name
-	38, // [38:38] is the sub-list for extension extendee
-	0,  // [0:38] is the sub-list for field type_name
+	42, // 10: apexload.v1.WorkAssignment.start_offset:type_name -> google.protobuf.Duration
+	0,  // 11: apexload.v1.RunSupervisionAck.state:type_name -> apexload.v1.RunSupervisionState
+	42, // 12: apexload.v1.VUserAdjustment.ramp_duration:type_name -> google.protobuf.Duration
+	42, // 13: apexload.v1.DurationAdjustment.target_duration:type_name -> google.protobuf.Duration
+	42, // 14: apexload.v1.DurationAck.current_duration:type_name -> google.protobuf.Duration
+	26, // 15: apexload.v1.MetricsBatch.transactions:type_name -> apexload.v1.TransactionMetric
+	27, // 16: apexload.v1.MetricsBatch.stats:type_name -> apexload.v1.GeneratorStats
+	19, // 17: apexload.v1.MetricsBatch.groups:type_name -> apexload.v1.GroupMetric
+	18, // 18: apexload.v1.MetricsBatch.telemetry:type_name -> apexload.v1.MetricsBatchTelemetry
+	22, // 19: apexload.v1.MetricsBatch.transaction_metrics:type_name -> apexload.v1.MetricAggregate
+	22, // 20: apexload.v1.MetricsBatch.dependency_metrics:type_name -> apexload.v1.MetricAggregate
+	22, // 21: apexload.v1.MetricsBatch.soap_metrics:type_name -> apexload.v1.MetricAggregate
+	22, // 22: apexload.v1.MetricsBatch.network_profile_metrics:type_name -> apexload.v1.MetricAggregate
+	22, // 23: apexload.v1.MetricsBatch.fleet_metrics:type_name -> apexload.v1.MetricAggregate
+	23, // 24: apexload.v1.MetricsBatch.browser_metrics:type_name -> apexload.v1.BrowserMetrics
+	24, // 25: apexload.v1.MetricsBatch.browser_device_metrics:type_name -> apexload.v1.BrowserDeviceMetrics
+	22, // 26: apexload.v1.MetricsBatch.region_metrics:type_name -> apexload.v1.MetricAggregate
+	22, // 27: apexload.v1.GroupMetric.metrics:type_name -> apexload.v1.MetricAggregate
+	20, // 28: apexload.v1.TDigestSnapshot.centroids:type_name -> apexload.v1.TDigestCentroid
+	21, // 29: apexload.v1.MetricAggregate.duration_digest:type_name -> apexload.v1.TDigestSnapshot
+	23, // 30: apexload.v1.BrowserDeviceMetrics.metrics:type_name -> apexload.v1.BrowserMetrics
+	25, // 31: apexload.v1.TransactionMetric.server_telemetry:type_name -> apexload.v1.ServerTelemetry
+	11, // 32: apexload.v1.ControlSignal.adjust:type_name -> apexload.v1.VUserAdjustment
+	15, // 33: apexload.v1.ControlSignal.stop:type_name -> apexload.v1.StopRequest
+	29, // 34: apexload.v1.ControlSignal.pause:type_name -> apexload.v1.PauseRequest
+	27, // 35: apexload.v1.HeartbeatPing.stats:type_name -> apexload.v1.GeneratorStats
+	27, // 36: apexload.v1.HeartbeatPong.stats:type_name -> apexload.v1.GeneratorStats
+	32, // 37: apexload.v1.HeartbeatPong.runtime_capacities:type_name -> apexload.v1.ProtocolRuntimeCapacity
+	33, // 38: apexload.v1.HeartbeatPong.last_safety_exit:type_name -> apexload.v1.GeneratorSafetyExitEvidence
+	33, // 39: apexload.v1.HeartbeatPong.safety_exits:type_name -> apexload.v1.GeneratorSafetyExitEvidence
+	6,  // 40: apexload.v1.GeneratorControl.ClaimExecutionEpoch:input_type -> apexload.v1.ExecutionEpochClaim
+	4,  // 41: apexload.v1.GeneratorControl.ClaimRunSupervision:input_type -> apexload.v1.RunSupervisionClaim
+	1,  // 42: apexload.v1.GeneratorControl.AssignWork:input_type -> apexload.v1.WorkAssignment
+	2,  // 43: apexload.v1.GeneratorControl.CommitWork:input_type -> apexload.v1.WorkCommitRequest
+	11, // 44: apexload.v1.GeneratorControl.AdjustVUsers:input_type -> apexload.v1.VUserAdjustment
+	13, // 45: apexload.v1.GeneratorControl.AdjustDuration:input_type -> apexload.v1.DurationAdjustment
+	29, // 46: apexload.v1.GeneratorControl.SetPaused:input_type -> apexload.v1.PauseRequest
+	15, // 47: apexload.v1.GeneratorControl.StopTest:input_type -> apexload.v1.StopRequest
+	28, // 48: apexload.v1.GeneratorControl.StreamMetrics:input_type -> apexload.v1.ControlSignal
+	31, // 49: apexload.v1.GeneratorControl.Heartbeat:input_type -> apexload.v1.HeartbeatPing
+	35, // 50: apexload.v1.GeneratorControl.DistributeScript:input_type -> apexload.v1.ScriptPayload
+	37, // 51: apexload.v1.GeneratorControl.GetArchiveArtifact:input_type -> apexload.v1.ArchiveArtifactRequest
+	37, // 52: apexload.v1.GeneratorControl.StreamArchiveArtifact:input_type -> apexload.v1.ArchiveArtifactRequest
+	7,  // 53: apexload.v1.GeneratorControl.ClaimExecutionEpoch:output_type -> apexload.v1.ExecutionEpochAck
+	5,  // 54: apexload.v1.GeneratorControl.ClaimRunSupervision:output_type -> apexload.v1.RunSupervisionAck
+	10, // 55: apexload.v1.GeneratorControl.AssignWork:output_type -> apexload.v1.AssignmentAck
+	3,  // 56: apexload.v1.GeneratorControl.CommitWork:output_type -> apexload.v1.WorkCommitAck
+	12, // 57: apexload.v1.GeneratorControl.AdjustVUsers:output_type -> apexload.v1.AdjustmentAck
+	14, // 58: apexload.v1.GeneratorControl.AdjustDuration:output_type -> apexload.v1.DurationAck
+	30, // 59: apexload.v1.GeneratorControl.SetPaused:output_type -> apexload.v1.PauseAck
+	16, // 60: apexload.v1.GeneratorControl.StopTest:output_type -> apexload.v1.StopAck
+	17, // 61: apexload.v1.GeneratorControl.StreamMetrics:output_type -> apexload.v1.MetricsBatch
+	34, // 62: apexload.v1.GeneratorControl.Heartbeat:output_type -> apexload.v1.HeartbeatPong
+	36, // 63: apexload.v1.GeneratorControl.DistributeScript:output_type -> apexload.v1.ScriptAck
+	38, // 64: apexload.v1.GeneratorControl.GetArchiveArtifact:output_type -> apexload.v1.ArchiveArtifact
+	39, // 65: apexload.v1.GeneratorControl.StreamArchiveArtifact:output_type -> apexload.v1.ArchiveArtifactChunk
+	53, // [53:66] is the sub-list for method output_type
+	40, // [40:53] is the sub-list for method input_type
+	40, // [40:40] is the sub-list for extension type_name
+	40, // [40:40] is the sub-list for extension extendee
+	0,  // [0:40] is the sub-list for field type_name
 }
 
 func init() { file_api_proto_generator_proto_init() }

@@ -11,24 +11,24 @@ const mib = (value) => value * 1024 * 1024
 // compressed aggregate and route-specific limits remain the transfer/startup
 // regression guards. They are not an assertion that the current bundle has
 // reached its long-term size target. The aggregate ceilings were recalibrated
-// after the deterministic 2026-08-13 import-governance and multi-target
-// management expansion; modal-only dependencies were first moved off the
-// Scripts route, leaving less than four percent aggregate headroom while the
-// tighter per-asset and route budgets continue to catch loading regressions.
+// after the deterministic 2026-08-25 CloudTest parity, composition-timeline,
+// and report-export expansion. Modal-only dependencies remain off the Scripts
+// route, and the tighter per-asset and route budgets continue to catch loading
+// regressions independently of intentionally deferred feature chunks.
 export const DEFAULT_BUNDLE_BUDGETS = Object.freeze({
   '.js': Object.freeze({
     label: 'JavaScript',
     maxAssetBytes: kib(650),
     maxAssetGzipBytes: kib(220),
-    maxTotalBytes: mib(5.1),
-    maxTotalGzipBytes: mib(1.38),
+    maxTotalBytes: mib(5.2),
+    maxTotalGzipBytes: mib(1.4),
   }),
   '.css': Object.freeze({
     label: 'CSS',
     maxAssetBytes: kib(210),
     maxAssetGzipBytes: kib(34),
-    maxTotalBytes: kib(690),
-    maxTotalGzipBytes: kib(118),
+    maxTotalBytes: kib(700),
+    maxTotalGzipBytes: kib(121),
   }),
 })
 

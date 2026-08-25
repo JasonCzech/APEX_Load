@@ -4424,6 +4424,9 @@
 .control-step-add { align-self: flex-start; }
 .control-step-add-row { display: flex; gap: 4px; flex-wrap: wrap; align-self: flex-start; margin-top: 2px; }
 .control-foreach-hint { font-size: 11px; color: var(--text-muted); margin: 2px 0; }
+.control-switch-case { padding: 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-secondary); }
+.control-switch-case-header { display: flex; align-items: center; gap: 4px; margin-bottom: 6px; }
+.control-switch-case-header strong { margin-right: auto; font-size: 12px; }
 .control-branch-badge { display: inline-flex; align-items: center; padding: 0 5px; font-size: 9px; font-weight: 700; letter-spacing: 0.03em; border-radius: 3px; margin-left: 6px; }
 .control-branch-badge.taken { color: var(--success); background: rgba(var(--success-rgb), 0.14); border: 1px solid rgba(var(--success-rgb), 0.45); }
 .control-branch-badge.skipped { color: var(--text-muted); background: var(--bg-secondary); border: 1px solid var(--border); }

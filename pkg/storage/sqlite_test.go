@@ -1417,6 +1417,15 @@ func TestSQLiteStoreSaveHistoryUsesTypedIntervalSummaries(t *testing.T) {
 				"avg_ms": 125.25,
 			},
 		},
+		"by_region": map[string]any{
+			"us-east": map[string]any{
+				"name":   "us-east",
+				"tps":    18.75,
+				"count":  120,
+				"errors": 2,
+				"avg_ms": 220.5,
+			},
+		},
 		"browser": map[string]any{
 			"samples":                2,
 			"avg_fcp_ms":             120.0,
@@ -1521,6 +1530,10 @@ func TestSQLiteStoreSaveHistoryUsesTypedIntervalSummaries(t *testing.T) {
 	search := record.Transactions["search"]
 	if search == nil || search.Name != "search" || search.TPS != 7.5 || search.Count != 40 || search.Errors != 1 || search.AvgMs != 125.25 {
 		t.Fatalf("unexpected search transaction summary: %#v", search)
+	}
+	region := record.ByRegion["us-east"]
+	if region == nil || region.Count != 120 || region.Errors != 2 || region.TPS != 18.75 {
+		t.Fatalf("unexpected regional summary: %#v", region)
 	}
 	if record.Browser == nil || record.Browser.Samples != 2 || record.Browser.AvgCLSScore != 0.031 {
 		t.Fatalf("unexpected browser summary: %#v", record.Browser)

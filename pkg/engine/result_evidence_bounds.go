@@ -73,6 +73,8 @@ func boundResultMetadata(result *protocol.Result) {
 	result.SourceTransaction = cloneBoundedResultString(result.SourceTransaction, maxResultMetadataBytes)
 	result.SourceProfile = cloneBoundedResultString(result.SourceProfile, maxResultMetadataBytes)
 	result.SourcePath = cloneBoundedResultString(result.SourcePath, maxResultMetadataBytes)
+	result.Phase = cloneBoundedResultString(result.Phase, maxResultMetadataBytes)
+	result.Hierarchy = cloneBoundedResultString(result.Hierarchy, maxResultMetadataBytes)
 	result.SourceUID = cloneBoundedResultString(result.SourceUID, maxResultMetadataBytes)
 	result.RequestType = cloneBoundedResultString(result.RequestType, maxResultMetadataBytes)
 	result.OperationKind = cloneBoundedResultString(result.OperationKind, maxResultMetadataBytes)

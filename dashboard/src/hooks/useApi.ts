@@ -18,6 +18,7 @@ import { useMonitoringCollectorsApi } from './api/useMonitoringCollectorsApi'
 import { useObjectRepositoryApi } from './api/useObjectRepositoryApi'
 import { useCorrelationRulesetApi } from './api/useCorrelationRulesetApi'
 import { useEntitlementsApi } from './api/useEntitlementsApi'
+import { useDashboardDefinitionsApi } from './api/useDashboardDefinitionsApi'
 
 export { ApiError }
 
@@ -38,6 +39,7 @@ function useApiServices() {
   const objectRepositories = useObjectRepositoryApi()
   const correlationRulesets = useCorrelationRulesetApi()
   const entitlements = useEntitlementsApi()
+  const dashboardDefinitions = useDashboardDefinitionsApi()
 
   // Spread order is preserved by mergeApiServiceGroups; the group names are the
   // labels a collision report points at.
@@ -59,9 +61,10 @@ function useApiServices() {
         monitoringCollectors,
         objectRepositories,
         correlationRulesets,
-        entitlements,
+		entitlements,
+		dashboardDefinitions,
       }),
-    [tests, applications, projects, repository, scripts, system, recorder, browserRecorder, library, capacity, fleet, executionPlans, monitoringCollectors, objectRepositories, correlationRulesets, entitlements],
+    [tests, applications, projects, repository, scripts, system, recorder, browserRecorder, library, capacity, fleet, executionPlans, monitoringCollectors, objectRepositories, correlationRulesets, entitlements, dashboardDefinitions],
   )
 }
 
@@ -80,4 +83,11 @@ export function useApi(): ApiServices {
     throw new Error('useApi must be used within ApiProvider')
   }
   return services
+}
+
+// Leaf surfaces that are also rendered in isolated component tests may opt out
+// of API-backed enhancements when no provider is present. Core application
+// routes still use useApi() and fail closed on a missing provider.
+export function useOptionalApi(): ApiServices | null {
+  return useContext(ApiContext)
 }

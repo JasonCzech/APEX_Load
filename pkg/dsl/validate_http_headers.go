@@ -74,17 +74,13 @@ func validateHTTPHeaderContractIssues(script *Script) []string {
 		issues = append(issues, validateHTTPActionHeaderContractIssues(label, current.action, version)...)
 
 		if current.action.Control != nil {
-			for index, nested := range current.action.Control.Steps {
-				pending = append(pending, pendingAction{
-					path:   fmt.Sprintf("%s.control.steps[%d]", current.path, index),
-					action: nested,
-				})
-			}
-			for index, nested := range current.action.Control.Else {
-				pending = append(pending, pendingAction{
-					path:   fmt.Sprintf("%s.control.else[%d]", current.path, index),
-					action: nested,
-				})
+			for _, branch := range current.action.Control.ActionBranches() {
+				for index, nested := range branch.Actions {
+					pending = append(pending, pendingAction{
+						path:   fmt.Sprintf("%s.control.%s[%d]", current.path, branch.Path, index),
+						action: nested,
+					})
+				}
 			}
 		}
 		if strings.EqualFold(strings.TrimSpace(current.action.Type), "http_sequence") {

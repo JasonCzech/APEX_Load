@@ -1710,6 +1710,7 @@ func TestImportMultipartProjectLookupHonorsRouteBodyLimits(t *testing.T) {
 		{name: "salesforce import", path: "/api/v1/scripts/import/salesforce", limit: harImportMaxBodyBytes},
 		{name: "jmeter import", path: "/api/v1/scripts/import/jmeter", limit: jmeterImportMaxBodyBytes},
 		{name: "enterprise archive import", path: "/api/v1/scripts/import/enterprise-script-archive", limit: enterpriseArchiveImportMaxBodyBytes},
+		{name: "cloudtest import", path: "/api/v1/scripts/import/cloudtest", limit: webAPIImportMaxBodyBytes},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -1742,6 +1743,7 @@ func TestRequestBodyLimitsUseSmallDefaultAndExplicitImportEnvelopes(t *testing.T
 		{name: "AsyncAPI commit", method: http.MethodPost, path: "/api/v1/scripts/import/asyncapi/commit", want: webAPIImportCommitMaxBodyBytes},
 		{name: "AsyncAPI batch commit", method: http.MethodPost, path: "/api/v1/scripts/import/asyncapi/commit-batch", want: webAPIImportCommitMaxBodyBytes},
 		{name: "generic import batch commit", method: http.MethodPost, path: "/api/v1/scripts/import/commit-batch", want: webAPIImportCommitMaxBodyBytes},
+		{name: "CloudTest import", method: http.MethodPost, path: "/api/v1/scripts/import/cloudtest", want: webAPIImportMaxBodyBytes},
 		{name: "OpenAPI commit", method: http.MethodPost, path: "/api/v1/scripts/import/openapi/commit", want: webAPIImportCommitMaxBodyBytes},
 		{name: "Postman save", method: http.MethodPost, path: "/api/v1/scripts/import/postman/save", want: webAPIImportCommitMaxBodyBytes},
 	}

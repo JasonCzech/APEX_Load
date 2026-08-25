@@ -1,5 +1,21 @@
 export type ScenarioMode = 'vuser_driven' | 'goal_oriented'
 
+export interface TransactionSLARule {
+  transaction: string
+  metric: 'average_duration_ms' | 'p90_duration_ms' | 'p95_duration_ms' | 'min_duration_ms' | 'max_duration_ms' | 'error_count' | 'error_rate_pct' | 'minimum_count' | 'bytes_sent' | 'bytes_received' | 'tps'
+  comparator: 'lt' | 'lte' | 'gt' | 'gte' | 'eq' | 'neq'
+  threshold: number
+  severity?: 'fail' | 'warning'
+}
+
+export interface TransactionSLARuleResult {
+  rule: TransactionSLARule
+  status: 'pass' | 'fail' | 'warning' | 'not_evaluated'
+  observed?: number
+  matched_count: number
+  message: string
+}
+
 /** Goal-oriented load targets and their live controller status. */
 export interface GoalConfig {
   target_average_tps?: number
@@ -21,6 +37,7 @@ export interface GoalConfig {
   stop_on_sla_breach?: boolean
   stop_on_max_errors?: boolean
   sla_breach_window?: string
+  transaction_rules?: TransactionSLARule[]
 }
 
 export interface GoalStatus {

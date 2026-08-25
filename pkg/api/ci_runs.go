@@ -1513,11 +1513,10 @@ func validateCIScriptAssets(script *dsl.Script) error {
 				}
 			}
 			if action.Control != nil {
-				if err := visit(action.Control.Steps); err != nil {
-					return err
-				}
-				if err := visit(action.Control.Else); err != nil {
-					return err
+				for _, branch := range action.Control.ActionBranches() {
+					if err := visit(branch.Actions); err != nil {
+						return err
+					}
 				}
 			}
 		}
@@ -1771,11 +1770,10 @@ func collectCITargetHosts(script *dsl.Script, baseURLOverride string, resolvers 
 				}
 			}
 			if action.Control != nil {
-				if err := visit(action.Control.Steps); err != nil {
-					return err
-				}
-				if err := visit(action.Control.Else); err != nil {
-					return err
+				for _, branch := range action.Control.ActionBranches() {
+					if err := visit(branch.Actions); err != nil {
+						return err
+					}
 				}
 			}
 		}

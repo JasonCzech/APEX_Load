@@ -36,9 +36,11 @@ const apiMock = {
   createScript: vi.fn(),
   deleteScript: vi.fn(),
   importK6: vi.fn(),
+  importCloudTest: vi.fn(),
   importEventHubsCapture: vi.fn(),
   importBrokerConfig: vi.fn(),
   getK6SupportMatrix: vi.fn().mockResolvedValue({ support_matrix: [], notes: [] }),
+  getCloudTestSupportMatrix: vi.fn().mockResolvedValue({ support_matrix: [], notes: [] }),
   getEventHubsCaptureSupportMatrix: vi.fn().mockResolvedValue({ support_matrix: [], notes: [] }),
   getBrokerConfigSupportMatrix: vi.fn().mockResolvedValue({ support_matrix: [], notes: [] }),
   applySecretBindings: vi.fn(),
@@ -109,6 +111,7 @@ describe('ProtocolAssetImport', () => {
     apiMock.getAsyncAPISupportMatrix.mockResolvedValue({ support_matrix: [], notes: [] })
     apiMock.getPostmanSupportMatrix.mockResolvedValue({ support_matrix: [], notes: [] })
     apiMock.getK6SupportMatrix.mockResolvedValue({ support_matrix: [], notes: [] })
+    apiMock.getCloudTestSupportMatrix.mockResolvedValue({ support_matrix: [], notes: [] })
     apiMock.getEventHubsCaptureSupportMatrix.mockResolvedValue({ support_matrix: [], notes: [] })
     apiMock.getBrokerConfigSupportMatrix.mockResolvedValue({ support_matrix: [], notes: [] })
     apiMock.getProjectSecretStatuses.mockResolvedValue({
@@ -4051,6 +4054,80 @@ describe('ProtocolAssetImport', () => {
 
     expect(apiMock.importK6).toHaveBeenCalledWith(file, expect.objectContaining({ project_id: 'project-1' }))
     expect(container.textContent).toContain('Review Generated Script')
+  })
+
+  it('reviews and atomically saves all fixture-gated CloudTest Clip drafts with protected source sessions', async () => {
+    const onImported = vi.fn()
+    const clip = (name: string) => ({
+      name,
+      version: '1.0.0',
+      protocol: 'http',
+      project_id: 'project-1',
+      generated_from: 'cloudtest',
+      config: { base_url: '' },
+      actions: [{ name: `${name} source review`, type: 'source_review', metadata: { execution_blocker: 'cloudtest_fixture_mapping_unproven' } }],
+    })
+    const scripts = [clip('Checkout'), clip('Browse')]
+    apiMock.importCloudTest.mockResolvedValueOnce({
+      scripts,
+      script: scripts[0],
+      import_session_ids: ['protected-cloudtest-source', ''],
+      warnings: ['Fixture proof is required before execution.'],
+      unsupported_elements: [],
+      assumptions: [],
+      review_sections: [],
+      repair_suggestions: [],
+      correlations: [],
+      stats: { clips: 2, compositions: 1, elements: 7, recognized_elements: 6, unknown_elements: 1 },
+      summary: { fixture_gate: 'blocked' },
+      scenario_drafts: [{
+        name: 'Holiday sale',
+        source_file: 'repository.xml',
+        source_path: '/Repository[1]/Composition[1]',
+        review_required: true,
+        groups: [{ name: 'East', script_ref: 'Checkout', start_offset: '60s' }],
+      }],
+    })
+
+    await act(async () => root.render(<ProtocolAssetImport kind="cloudtest" projectId="project-1" onImported={onImported} />))
+    await flushPromises()
+    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"]')!
+    const file = new File(['<Repository/>'], 'repository.xml', { type: 'application/xml' })
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', { configurable: true, value: [file] })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    const inspect = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent?.includes('Inspect CloudTest Export'))!
+    await act(async () => inspect.click())
+    await flushPromises()
+
+    expect(apiMock.importCloudTest).toHaveBeenCalledWith(file, { project_id: 'project-1' })
+    expect(container.textContent).toContain('1 action(s) generated from CloudTest export elements.')
+    expect(container.textContent).not.toContain('0 action(s) generated from CloudTest export elements.')
+    expect(container.textContent).toContain('CloudTest Fixture-Gated Review')
+    expect(container.textContent).toContain('2Clip drafts')
+    expect(container.textContent).toContain('Holiday sale')
+
+    const save = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent?.includes('Save All 2 Clip Scripts Atomically'))!
+    await act(async () => save.click())
+    await flushPromises()
+
+    expect(apiMock.commitGenericImportBatch).toHaveBeenCalledWith(expect.objectContaining({
+      source_profile: 'cloudtest',
+      import_session_ids: ['protected-cloudtest-source', ''],
+      scripts: expect.arrayContaining([
+        expect.objectContaining({ name: 'Checkout' }),
+        expect.objectContaining({ name: 'Browse' }),
+      ]),
+    }))
+    expect(onImported).toHaveBeenCalledWith(expect.objectContaining({
+      scripts: expect.arrayContaining([
+        expect.objectContaining({ name: 'Checkout' }),
+        expect.objectContaining({ name: 'Browse' }),
+      ]),
+    }))
   })
 
   it('does not publish or save stale credential bindings after a newer k6 conversion', async () => {

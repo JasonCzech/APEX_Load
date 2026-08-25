@@ -675,6 +675,13 @@ func TestBuildLiveMetricsFromDistributedBatchCarriesNetworkAndBrowserAggregates(
 			AvgMs: 120,
 			P95Ms: 120,
 		}},
+		RegionMetrics: []generatorrpc.MetricAggregate{{
+			Name:  "us-east",
+			Count: 1,
+			AvgMs: 120,
+			P95Ms: 120,
+			TPS:   1,
+		}},
 		Browser: &generatorrpc.BrowserMetrics{
 			Samples:  1,
 			AvgLCPMs: 240,
@@ -692,6 +699,9 @@ func TestBuildLiveMetricsFromDistributedBatchCarriesNetworkAndBrowserAggregates(
 
 	if live.NetworkProfiles["preset:dsl"] == nil || live.NetworkProfiles["preset:dsl"].AvgMs != 120 {
 		t.Fatalf("network profiles = %#v, want preset:dsl aggregate", live.NetworkProfiles)
+	}
+	if live.ByRegion["us-east"] == nil || live.ByRegion["us-east"].AvgMs != 120 {
+		t.Fatalf("regional metrics = %#v, want us-east aggregate", live.ByRegion)
 	}
 	if live.Browser == nil || live.Browser.AvgLCPMs != 240 {
 		t.Fatalf("browser metrics = %#v, want LCP 240", live.Browser)

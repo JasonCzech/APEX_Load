@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useActiveTopbarContribution } from '../hooks/TopbarContributionProvider'
 import { TopbarContributionProvider } from '../hooks/TopbarContributionRoot'
 import type { TestSummary } from '../types'
-import TestExecution from './TestExecution'
+import TestExecution, { buildProjectDashboardWorkspace } from './TestExecution'
 
 const hookMocks = vi.hoisted(() => ({
   useExecutionTestPolling: vi.fn(),
@@ -113,6 +113,24 @@ describe('TestExecution workspace layout', () => {
     container.remove()
     window.localStorage.clear()
     vi.clearAllMocks()
+  })
+
+  it('preserves and renders native analytics query panels from project dashboards', async () => {
+    const model = buildProjectDashboardWorkspace([{
+      id: 'shared-analytics', project_id: 'project-1', name: 'Regional latency', visibility: 'project', revision: 1,
+      created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z',
+      tabs: [{ id: 'latency', title: 'Latency', panels: [{
+        id: 'p95', title: 'P95 latency', kind: 'line', x: 0, y: 0, w: 12, h: 8,
+        query: { metric: 'response_time', aggregation: 'p95', dimensions: ['region'] },
+      }] }],
+    }], [{ time: '00:01', vusers: 10, tps: 2, avgMs: 100, errorPct: 0, p50: 80, p90: 120, p95: 150, p99: 200 }])
+
+    expect(model.profiles[0]?.tabs[0]?.cardIds).toEqual(['shared-dashboard:shared-analytics:p95'])
+    expect(model.panelByCardId.get('shared-dashboard:shared-analytics:p95')?.query?.metric).toBe('response_time')
+    await act(async () => { root.render(model.cards[0]?.render()) })
+    expect(container.textContent).toContain('response_time')
+    expect(container.textContent).toContain('p95')
+    expect(container.textContent).toContain('150')
   })
 
   it('renders default execution tabs with grouped cards for a queued run', async () => {

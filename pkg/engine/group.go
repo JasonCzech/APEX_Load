@@ -20,7 +20,13 @@ const maxMultiGroupRuntimeSecretRedactionBytes = 32 << 20
 var ErrInitialRampInProgress = errors.New("initial vuser ramp is still in progress")
 
 type GroupConfig struct {
-	Name   string
+	Name string
+	// StartOffset delays group activation from the common load epoch. It is
+	// measured in active test time, so Pause/Resume never consumes the delay.
+	StartOffset time.Duration
+	// Region is a controller-approved load-zone label attached before metrics
+	// and archive sinks observe a result. Scripts cannot create this dimension.
+	Region string
 	Script *dsl.Script
 	// ScenarioID is the managed execution identity exposed to protocol
 	// runtimes. Direct/library callers may leave it empty to fall back to the
@@ -244,6 +250,15 @@ func NewMultiGroup(cfg MultiGroupConfig) (*MultiGroupEngine, error) {
 	for i, g := range cfg.Groups {
 		if g.Script == nil {
 			return nil, fmt.Errorf("group[%d] %q: script is required", i, g.Name)
+		}
+		if err := validateMessageDetailRuntimeSupport(g.Script); err != nil {
+			return nil, fmt.Errorf("group[%d] %q: %w", i, g.Name, err)
+		}
+		if g.StartOffset < 0 {
+			return nil, fmt.Errorf("group[%d] %q: start offset must be non-negative", i, g.Name)
+		}
+		if g.StartOffset > cfg.Duration {
+			return nil, fmt.Errorf("group[%d] %q: start offset %s begins after the %s scenario deadline", i, g.Name, g.StartOffset, cfg.Duration)
 		}
 		if err := importExecutionGateError(g.Script, "launch"); err != nil {
 			return nil, fmt.Errorf("group[%d] %q: %w", i, g.Name, err)
@@ -921,7 +936,7 @@ groupLoop:
 			go func() {
 				defer wg.Done()
 				defer launcherWG.Done()
-				if !mge.waitUntilActive(mge.launchCtx, loadEpochActive) {
+				if !mge.waitUntilActive(mge.launchCtx, loadEpochActive+group.StartOffset) {
 					return
 				}
 				// A replacement joining a paused distributed run must not execute
@@ -978,7 +993,7 @@ groupLoop:
 					rampDelay = preparedGroup.group.RampUp / time.Duration(len(preparedGroup.users))
 				}
 				for index, prepared := range preparedGroup.users {
-					deadline := loadEpochActive + time.Duration(index)*rampDelay
+					deadline := loadEpochActive + preparedGroup.group.StartOffset + time.Duration(index)*rampDelay
 					if !mge.waitUntilActive(mge.launchCtx, deadline) {
 						mge.abortPreparedVUsers(preparedGroup.users[index:])
 						return
@@ -1000,7 +1015,7 @@ groupLoop:
 				defer wg.Done()
 				defer launcherWG.Done()
 				group := deferredGroup.group
-				deferredEpoch := loadEpochActive
+				deferredEpoch := loadEpochActive + group.StartOffset
 				if gate := atOnceGates[group.Name]; gate != nil {
 					select {
 					case <-mge.launchCtx.Done():
@@ -1059,7 +1074,7 @@ groupLoop:
 				epochReady := false
 				waitForEpoch := func(ctx context.Context) error {
 					epochOnce.Do(func() {
-						epochReady = mge.waitUntilActive(ctx, loadEpochActive)
+						epochReady = mge.waitUntilActive(ctx, loadEpochActive+plan.group.StartOffset)
 					})
 					if !epochReady {
 						if err := ctx.Err(); err != nil {
@@ -1093,7 +1108,7 @@ groupLoop:
 				var initializedWorkers int64
 				var firstInitErr error
 				activeSinceEpoch := func() time.Duration {
-					elapsed := mge.ActiveElapsed() - loadEpochActive
+					elapsed := mge.ActiveElapsed() - loadEpochActive - plan.group.StartOffset
 					if elapsed < 0 {
 						return 0
 					}
@@ -1593,9 +1608,10 @@ func sourceTransactionsInNonlinearControlFlow(actions []dsl.Action, nonlinear bo
 			return true
 		}
 		if action.Control != nil {
-			if sourceTransactionsInNonlinearControlFlow(action.Control.Steps, true) ||
-				sourceTransactionsInNonlinearControlFlow(action.Control.Else, true) {
-				return true
+			for _, branch := range action.Control.ActionBranches() {
+				if sourceTransactionsInNonlinearControlFlow(branch.Actions, true) {
+					return true
+				}
 			}
 		}
 	}
@@ -1655,6 +1671,7 @@ func (mge *MultiGroupEngine) runGroupLifecycleBlock(actionCtx, boundaryCtx conte
 		ID:                           -1,
 		TotalVUsers:                  group.VUsers,
 		Group:                        group.Name,
+		Region:                       group.Region,
 		Proto:                        vuProto,
 		Script:                       group.Script,
 		Metrics:                      mge.metrics,
@@ -1902,6 +1919,7 @@ func (mge *MultiGroupEngine) activatePreparedVUserWithAdmission(prepared *prepar
 			ID:                           prepared.runtimeID,
 			TotalVUsers:                  prepared.group.VUsers,
 			Group:                        prepared.group.Name,
+			Region:                       prepared.group.Region,
 			Proto:                        prepared.proto,
 			Script:                       prepared.group.Script,
 			Metrics:                      mge.metrics,
@@ -2404,6 +2422,7 @@ func (mge *MultiGroupEngine) spawnOpenWorker(identity vuserIdentity, group Group
 		vu = &VUser{
 			ID:                           runtimeVUserID,
 			Group:                        group.Name,
+			Region:                       group.Region,
 			Proto:                        vuProto,
 			Script:                       iterationScript,
 			Metrics:                      mge.metrics,

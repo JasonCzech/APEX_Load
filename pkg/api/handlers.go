@@ -886,6 +886,26 @@ func (s *Server) handleListScripts(w http.ResponseWriter, r *http.Request) {
 		}
 		scripts = filtered
 	}
+	// Pagination must never inherit Go map iteration order from the in-memory
+	// runner. Use a complete, deterministic ordering so repeated replacement
+	// searches cannot skip or duplicate records when timestamps are equal.
+	sort.Slice(scripts, func(i, j int) bool {
+		left, right := scripts[i], scripts[j]
+		if left == nil || right == nil {
+			return right == nil && left != nil
+		}
+		leftName, rightName := strings.ToLower(left.Name), strings.ToLower(right.Name)
+		if leftName != rightName {
+			return leftName < rightName
+		}
+		if left.Name != right.Name {
+			return left.Name < right.Name
+		}
+		if left.RefKey != right.RefKey {
+			return left.RefKey < right.RefKey
+		}
+		return left.ID < right.ID
+	})
 	total := len(scripts)
 	response := map[string]any{"count": total}
 	if r.URL.Query().Has("limit") || r.URL.Query().Has("offset") || query != "" {
@@ -1830,10 +1850,12 @@ func newErrorReference() string {
 }
 
 type SLABreachReport struct {
-	TestID      string   `json:"test_id"`
-	Status      string   `json:"status"`
-	SLABreached bool     `json:"sla_breached"`
-	Details     []string `json:"details,omitempty"`
+	TestID                 string                     `json:"test_id"`
+	Status                 string                     `json:"status"`
+	SLAEvaluated           bool                       `json:"sla_evaluated"`
+	SLABreached            bool                       `json:"sla_breached"`
+	Details                []string                   `json:"details,omitempty"`
+	TransactionRuleResults []TransactionSLARuleResult `json:"transaction_rule_results,omitempty"`
 }
 
 func (s *Server) handleGetTestSLAStatus(w http.ResponseWriter, r *http.Request) {
@@ -1842,6 +1864,17 @@ func (s *Server) handleGetTestSLAStatus(w http.ResponseWriter, r *http.Request) 
 	// First check memory
 	test, ok := s.runner.GetTest(id)
 	if ok {
+		if isTerminalTestStatus(test.Status) {
+			manifest, err := s.runner.GetRunArchiveManifest(id)
+			if err == nil {
+				s.writeArchivedSLAReport(w, id, manifest)
+				return
+			}
+			if test.GoalConfig != nil && len(test.GoalConfig.TransactionRules) > 0 {
+				writeError(w, http.StatusServiceUnavailable, "terminal transaction SLA evidence is not yet available")
+				return
+			}
+		}
 		s.writeSLAReport(w, id, test.Status, test.GoalConfig, test.LiveMetrics)
 		return
 	}
@@ -1860,11 +1893,21 @@ func (s *Server) handleGetTestSLAStatus(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	s.writeArchivedSLAReport(w, id, manifest)
+}
+
+func (s *Server) writeArchivedSLAReport(w http.ResponseWriter, id string, manifest *RunArchiveManifest) {
+	status := "COMPLETE"
+	if manifest != nil && strings.TrimSpace(manifest.Status) != "" {
+		status = manifest.Status
+	}
 	writeJSON(w, http.StatusOK, SLABreachReport{
-		TestID:      id,
-		Status:      "COMPLETE",
-		SLABreached: manifest.SLABreached,
-		Details:     manifest.SLADetails,
+		TestID:                 id,
+		Status:                 status,
+		SLAEvaluated:           manifest.SLAEvaluated,
+		SLABreached:            manifest.SLABreached,
+		Details:                manifest.SLADetails,
+		TransactionRuleResults: manifest.TransactionRuleResults,
 	})
 }
 
@@ -1897,9 +1940,10 @@ func (s *Server) writeSLAReport(w http.ResponseWriter, id, status string, cfg *G
 	}
 
 	writeJSON(w, http.StatusOK, SLABreachReport{
-		TestID:      id,
-		Status:      status,
-		SLABreached: breach,
-		Details:     details,
+		TestID:       id,
+		Status:       status,
+		SLAEvaluated: cfg != nil && hasGoalConfig(cfg),
+		SLABreached:  breach,
+		Details:      details,
 	})
 }

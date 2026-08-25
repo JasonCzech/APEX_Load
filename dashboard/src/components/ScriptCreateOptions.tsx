@@ -243,6 +243,16 @@ export const defaultImportSurfaces: AuthoringImportSurface[] = [
     visible: true,
   },
   {
+    id: 'cloudtest',
+    title: 'Akamai CloudTest Export',
+    description: 'Inspect CloudTest XML/ZIP exports into fixture-gated Clip scripts, Composition scenarios, and preserved review artifacts.',
+    badge: 'CT',
+    category: 'Legacy & Tool Exports',
+    order: 240,
+    launcher: 'cloudtest',
+    visible: true,
+  },
+  {
     id: 'eventhubs_capture',
     title: 'Event Hubs Capture',
     description: 'Seed native Event Hubs producer actions from Azure Event Hubs Capture Avro files.',

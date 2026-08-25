@@ -58,6 +58,20 @@ describe('useScriptApi import wrappers', () => {
     expect(body.get('file')).toBeInstanceOf(File)
   })
 
+  it('posts CloudTest exports as multipart and fetches the fixture-gated support matrix', async () => {
+    const file = new File(['<Repository/>'], 'repository.xml', { type: 'application/xml' })
+    await api.importCloudTest(file, { project_id: 'p1' })
+
+    const [url, options] = (apiFetch as Mock).mock.calls[0]
+    expect(url).toBe('/scripts/import/cloudtest')
+    expect(options.method).toBe('POST')
+    expect((options.body as FormData).get('project_id')).toBe('p1')
+    expect((options.body as FormData).get('file')).toBe(file)
+
+    await api.getCloudTestSupportMatrix()
+    expect(request).toHaveBeenCalledWith('/scripts/import/cloudtest/support-matrix')
+  })
+
   it('posts Event Hubs Capture imports with event_hub/max_events query params', async () => {
     const file = new File(['avro'], 'capture.avro')
     await api.importEventHubsCapture(file, { project_id: 'p1', event_hub: 'orders', max_events: 5 })

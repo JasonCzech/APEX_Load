@@ -31,7 +31,7 @@ import type {
   ScenarioFootprint,
   TestGroup,
 } from './types/testConfiguration'
-import type { GoalConfig, GoalStatus, GoalTargetStatus, ScenarioMode } from './types/goals'
+import type { GoalConfig, GoalStatus, GoalTargetStatus, ScenarioMode, TransactionSLARuleResult } from './types/goals'
 import type { AuthoringHealth } from './types/authoring'
 
 export type { ReplayPreflight, ReplayPreflightCheck } from './types/scripts'
@@ -297,7 +297,7 @@ export type {
   ScenarioFootprint,
   TestGroup,
 } from './types/testConfiguration'
-export type { GoalConfig, GoalStatus, GoalTargetStatus, ScenarioMode } from './types/goals'
+export type { GoalConfig, GoalStatus, GoalTargetStatus, ScenarioMode, TransactionSLARule, TransactionSLARuleResult } from './types/goals'
 export type { AuthoringHealth, AuthoringHealthInput } from './types/authoring'
 export type { ReleaseRef, ScenarioRef, StoredScenario, StoredScript } from './types/storedContent'
 
@@ -349,6 +349,15 @@ export interface ProjectSettings {
   // pool_quotas caps this project's footprint on a specific fleet pool (keyed by
   // fleet-pool id). Additive to the project-wide limits above.
   pool_quotas?: Record<string, PoolProjectQuota>
+	features?: ProjectFeatureFlags
+}
+
+export interface ProjectFeatureFlags {
+	successful_message_detail?: boolean
+	control_parallel?: boolean
+	native_elastic_capacity?: boolean
+	privileged_monitors?: boolean
+	media_stream?: boolean
 }
 
 export interface PoolProjectQuota {
@@ -867,6 +876,7 @@ export interface RunArchiveManifest {
   interval_summary_count: number
   sla_breached?: boolean
   sla_details?: string[]
+  transaction_rule_results?: TransactionSLARuleResult[]
 }
 
 export interface RunArchiveArtifact {
@@ -955,7 +965,8 @@ export interface TestRunManifestScript {
   protocol?: string
   vusers?: number
   ramp_up?: string
-  ramp_down?: string
+	ramp_down?: string
+	start_offset?: string
   stages?: LoadStageDraft[]
   iterations?: number
   runtime_settings?: RuntimeSettingsOverride
@@ -1124,15 +1135,21 @@ export interface TestGroupParametersUpdateResult {
 }
 
 export interface TransactionEvent {
+	event_id?: string
   timestamp: string
   test_id: string
   test_name: string
   group?: string
+	region?: string
+	network_profile?: string
+	source_transaction?: string
+	hierarchy?: string
+	phase?: string
+	has_detail?: boolean
   action_name?: string
   correlation_id?: string
   trace_id?: string
   span_id?: string
-  network_profile?: string
   dependency_type?: string
   dependency_target?: string
   duration_ms: number
@@ -1788,7 +1805,8 @@ export interface ScenarioDraftGroup {
   role?: 'load' | 'observer'
   vusers: number
   rampUp: string
-  rampDown: string
+	rampDown: string
+	startOffset?: string
   stages?: LoadStageDraft[]
   iterations?: number
   /** Keeps a displayed canonical runtime iteration from being duplicated as a compact override. */
@@ -1866,6 +1884,7 @@ export interface LiveMetrics {
   error_patterns?: LiveErrorPattern[]
   soap_operations?: Record<string, TxMetrics>
   network_profiles?: Record<string, TxMetrics>
+  by_region?: Record<string, TxMetrics>
   groups?: Record<string, GroupLiveMetrics>
   browser?: BrowserLiveMetrics
   browser_by_device?: Record<string, BrowserDeviceLiveMetrics>

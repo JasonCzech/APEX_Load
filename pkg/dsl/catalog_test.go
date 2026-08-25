@@ -83,7 +83,7 @@ func TestActionCatalogHasNoDuplicateTypesOrAliases(t *testing.T) {
 // drift against the pre-catalog isEngineActionType list is caught.
 func TestEngineActionTypeMembership(t *testing.T) {
 	expected := []string{
-		"control_if", "control_loop", "control_break", "control_continue",
+		"control_if", "control_switch", "control_loop", "control_parallel", "control_break", "control_continue",
 		"rendezvous", "cookie_clear", "cache_clear", "http_connections_close", "error_message",
 		"source_message", "source_runtime", "source_transaction", "source_timer",
 		"source_metric", "source_parameter", "source_json", "source_xml",

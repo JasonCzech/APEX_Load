@@ -27,6 +27,12 @@ export type ArchiveTransactionSort = {
 export type ArchiveTransactionFilterField = keyof ArchiveTransactionFilters
 
 export interface ArchiveTransactionFilters {
+	region: string
+	networkProfile: string
+	sourceTransaction: string
+	hierarchy: string
+	phase: string
+	detail: string
   timeFrom: string
   timeTo: string
   status: string
@@ -38,6 +44,12 @@ export interface ArchiveTransactionFilters {
 }
 
 export const DEFAULT_ARCHIVE_TRANSACTION_FILTERS: ArchiveTransactionFilters = {
+	region: '',
+	networkProfile: '',
+	sourceTransaction: '',
+	hierarchy: '',
+	phase: '',
+	detail: '',
   timeFrom: '',
   timeTo: '',
   status: '',
@@ -144,6 +156,12 @@ export function useExecutionArchiveModel(test: TestSummary | null): ExecutionArc
     action: selectedArchiveAction,
     soap_operation: selectedArchiveSOAPOperation || undefined,
     group: selectedArchiveGroup || undefined,
+	region: committedArchiveTransactionFilters.region.trim() || undefined,
+	network_profile: committedArchiveTransactionFilters.networkProfile.trim() || undefined,
+	source_transaction: committedArchiveTransactionFilters.sourceTransaction.trim() || undefined,
+	hierarchy: committedArchiveTransactionFilters.hierarchy.trim() || undefined,
+	phase: committedArchiveTransactionFilters.phase.trim() || undefined,
+	has_detail: committedArchiveTransactionFilters.detail === 'true' ? true : committedArchiveTransactionFilters.detail === 'false' ? false : undefined,
     success: archiveErrorsOnly ? false : undefined,
     time_from: parseTimeFilter(committedArchiveTransactionFilters.timeFrom),
     time_to: parseTimeFilter(committedArchiveTransactionFilters.timeTo),

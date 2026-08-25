@@ -26,6 +26,8 @@ type schemaRelease struct {
 // different schema is the same version.
 var schemaReleases = []schemaRelease{
 	{Version: 1, Name: "idempotent-schema-baseline", Fingerprint: "60c5d967d6f0543361fa8842fac8a0e157b118bcef49d2c6310a7cee19a15832"},
+	{Version: 2, Name: "cloudtest-outcome-parity-foundations", Fingerprint: "9a70267c0b98361c2563e0339c17b3eaa1d5595ef6fea06b9f94eb62c696fb28"},
+	{Version: 3, Name: "shared-dashboard-definitions", Fingerprint: "59f38c09909ddb93e6e1ad362595a5436a9942fe8befd861ba9ed4636759d3ad"},
 }
 
 type SchemaMigrationRecord struct {

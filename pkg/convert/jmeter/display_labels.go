@@ -168,14 +168,9 @@ func appendJMeterActionReviewMetadataRefs(
 			}
 		}
 		if actions[index].Control != nil {
-			appendJMeterActionReviewMetadataRefs(
-				actions[index].Control.Steps,
-				refs,
-			)
-			appendJMeterActionReviewMetadataRefs(
-				actions[index].Control.Else,
-				refs,
-			)
+			for _, branch := range actions[index].Control.ActionBranches() {
+				appendJMeterActionReviewMetadataRefs(branch.Actions, refs)
+			}
 		}
 	}
 }
@@ -217,8 +212,9 @@ func appendJMeterActionLabelRefs(
 			fallback: fmt.Sprintf("JMeter Action %d", *ordinal),
 		})
 		if actions[index].Control != nil {
-			appendJMeterActionLabelRefs(actions[index].Control.Steps, refs, ordinal)
-			appendJMeterActionLabelRefs(actions[index].Control.Else, refs, ordinal)
+			for _, branch := range actions[index].Control.ActionBranches() {
+				appendJMeterActionLabelRefs(branch.Actions, refs, ordinal)
+			}
 		}
 	}
 }

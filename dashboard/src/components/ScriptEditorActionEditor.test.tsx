@@ -139,6 +139,20 @@ describe('ControlFlowFields', () => {
     expect(labelSelectIn(container, 'Loop Mode')).toBeFalsy()
   })
 
+	it('edits named parallel branches and bounded concurrency', () => {
+		act(() => { root.render(<Controlled initial={{
+			name: 'Fan out', type: 'control_parallel', target: '',
+			control: { concurrency: 4, branches: [{ name: 'one', steps: [] }, { name: 'two', steps: [] }] },
+		} as unknown as ScriptActionDefinition} />) })
+		expect(container.querySelector('.control-flow-section h4')?.textContent).toBe('Parallel branches')
+		expect(container.querySelectorAll('.control-switch-case')).toHaveLength(2)
+		const concurrency = labelInputIn(container, 'Concurrency')!
+		act(() => { setInputValue(concurrency, '99') })
+		expect(concurrency.value).toBe('16')
+		act(() => { button('+ Branch')?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+		expect(container.querySelectorAll('.control-switch-case')).toHaveLength(3)
+	})
+
   it('offers Count / While / For-each loop modes and reveals foreach inputs', () => {
     act(() => { root.render(<Controlled initial={{ name: 'Loop', type: 'control_loop', target: '', control: { count: 3, steps: [] } } as unknown as ScriptActionDefinition} />) })
     const modeSelect = labelSelectIn(container, 'Loop Mode')!
@@ -151,6 +165,26 @@ describe('ControlFlowFields', () => {
     expect(labelInputIn(container, 'Row Variable')).toBeTruthy()
     expect(labelInputIn(container, 'Loop Count')).toBeFalsy()
   })
+
+	it('authors ordered control_switch cases and a default branch', () => {
+		act(() => {
+			root.render(<Controlled initial={{
+				name: 'Route', type: 'control_switch', target: '',
+				control: {
+					cases: [{ condition: { expr: 'var.kind == "a"' }, steps: [{ name: 'A', type: 'GET', target: '/a' }] }],
+					default: [{ name: 'Fallback', type: 'GET', target: '/fallback' }],
+				},
+			} as unknown as ScriptActionDefinition} />)
+		})
+		expect(container.querySelector('.control-flow-section h4')?.textContent).toBe('Switch')
+		expect(labelInputIn(container, 'CEL Expression (optional)')?.value).toBe('var.kind == "a"')
+		expect(container.textContent).toContain('Case 1 steps')
+		expect(container.textContent).toContain('Default steps')
+		act(() => { button('+ Case')?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+		expect(container.querySelectorAll('.control-switch-case')).toHaveLength(2)
+		act(() => { container.querySelector<HTMLButtonElement>('button[aria-label="Remove case 1"]')?.click() })
+		expect(container.querySelectorAll('.control-switch-case')).toHaveLength(1)
+	})
 })
 
 describe('ActionEditor transaction field', () => {

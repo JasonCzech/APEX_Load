@@ -121,6 +121,8 @@ var (
 
 func (h *HTTP) Name() string { return "http" }
 
+func (h *HTTP) ParallelSafe() bool { return true }
+
 func (h *HTTP) Init(ctx context.Context, config map[string]any) error {
 	if err := validateHTTPRuntimeConfigBounds(config); err != nil {
 		return err
@@ -746,7 +748,7 @@ extractors:
 			result.ErrorMessage = err.Error()
 		}
 	}
-	if !result.Success {
+	if !result.Success || action.CaptureMessageDetail {
 		result.Snapshot = buildHTTPSnapshot(method, targetURL, req.Header, requestBody, action.RedactedTarget, redactedRequestHeaders, redactedRequestBody, resp.StatusCode, responseHeaders, respBody)
 	}
 	if !result.Success || !action.DiscardResponseBodyOnSuccess {

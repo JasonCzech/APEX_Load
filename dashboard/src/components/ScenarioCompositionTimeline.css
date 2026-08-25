@@ -1,0 +1,87 @@
+.composition-timeline {
+  display: grid;
+  gap: .65rem;
+  padding: 1rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  background: var(--bg-card);
+}
+
+.composition-timeline-heading,
+.composition-track {
+  display: grid;
+  grid-template-columns: minmax(9rem, 15rem) minmax(0, 1fr);
+  gap: .9rem;
+  align-items: center;
+}
+
+.composition-timeline-heading > div,
+.composition-track-label {
+  display: grid;
+  gap: .15rem;
+}
+
+.composition-timeline-heading span,
+.composition-track-label span,
+.composition-clip small {
+  color: var(--text-secondary);
+  font-size: .75rem;
+}
+
+.composition-timeline-ruler {
+  display: flex;
+  justify-content: space-between;
+  margin-left: min(15.9rem, 42%);
+  color: var(--text-muted);
+  font-size: .68rem;
+}
+
+.composition-track-lane {
+  position: relative;
+  min-height: 3rem;
+  overflow: hidden;
+  border-radius: 8px;
+  background: repeating-linear-gradient(90deg, var(--bg-secondary) 0, var(--bg-secondary) calc(25% - 1px), var(--border-subtle) 25%);
+}
+
+.composition-clip {
+  position: absolute;
+  inset-block: .35rem;
+  display: grid;
+  align-content: center;
+  min-width: 2rem;
+  padding: .25rem .55rem;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--accent) 65%, transparent);
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--accent) 18%, var(--bg-card));
+  pointer-events: none;
+}
+
+.composition-clip span,
+.composition-clip small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composition-track-slider {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: ew-resize;
+}
+
+.composition-track-lane:focus-within {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+@media (max-width: 760px) {
+  .composition-timeline-heading,
+  .composition-track { grid-template-columns: 1fr; }
+  .composition-timeline-ruler { margin-left: 0; }
+}

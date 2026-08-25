@@ -1080,6 +1080,7 @@ func cloneLiveMetrics(metrics *LiveMetrics) *LiveMetrics {
 	cloned.ErrorPatterns = cloneLiveErrorPatterns(metrics.ErrorPatterns)
 	cloned.SOAPOperations = cloneTxMetricsMap(metrics.SOAPOperations)
 	cloned.NetworkProfiles = cloneTxMetricsMap(metrics.NetworkProfiles)
+	cloned.ByRegion = cloneTxMetricsMap(metrics.ByRegion)
 	cloned.GroupMetrics = cloneGroupLiveMetricsMap(metrics.GroupMetrics)
 	cloned.Browser = cloneBrowserLiveMetrics(metrics.Browser)
 	cloned.BrowserByDevice = cloneBrowserByDeviceMetrics(metrics.BrowserByDevice)

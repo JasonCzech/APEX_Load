@@ -15,6 +15,26 @@ func engineActionSpecs() []ActionSpec {
 	}
 	return []ActionSpec{
 		{
+			Type:      "control_parallel",
+			Protocols: []string{"*"},
+			Summary:   "Runs named, isolated protocol branches concurrently and merges extracted variables under var.parallel.<branch>.*.",
+			Fields: []FieldSpec{
+				{Name: "control.branches", Required: true, Kind: FieldKindArray, Doc: "Two or more uniquely named branches. Each branch contains name and steps."},
+				{Name: "control.concurrency", Kind: FieldKindInt, Doc: "Maximum concurrently running branches. Defaults to 4 and cannot exceed 16."},
+				{Name: "control.fail_fast", Kind: FieldKindBool, Doc: "Cancel sibling branches after the first failure. Defaults to false."},
+			},
+		},
+		{
+			Type:      "control_switch",
+			Protocols: []string{"*"},
+			Summary:   "Ordered conditional branches: executes the first matching case, or the default branch when none match.",
+			Fields: []FieldSpec{
+				{Name: "control", Required: true, Kind: FieldKindObject, Doc: "Switch body: {cases:[{condition,steps}], default:[...]}. Cases are evaluated in declaration order with existing CEL/legacy conditions."},
+				{Name: "control.cases", Required: true, Kind: FieldKindArray, Doc: "One or more ordered first-match cases. Every case requires a condition and may contain nested actions."},
+				{Name: "control.default", Kind: FieldKindArray, Doc: "Optional actions executed when no case matches."},
+			},
+		},
+		{
 			Type:      "control_if",
 			Protocols: []string{"*"},
 			Summary:   "Conditional block: runs control.steps when the condition holds, control.else otherwise.",

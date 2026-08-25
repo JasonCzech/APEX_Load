@@ -58,7 +58,7 @@ type optionalSchemaMigration struct {
 
 const (
 	intervalSummarySchemaVersionV1 = "apexload.interval-summary.v1"
-	intervalSummarySchemaVersion   = "apexload.interval-summary.v5"
+	intervalSummarySchemaVersion   = "apexload.interval-summary.v7"
 	archiveRecordSchemaVersion     = "apexload.archive.v1"
 	scriptRecordingSchemaVersion   = "apexload.recording.v2"
 )
@@ -135,6 +135,7 @@ type IntervalSummaryRecord struct {
 	P95Ms                    float64                                `json:"p95_ms"`
 	P99Ms                    float64                                `json:"p99_ms"`
 	Transactions             map[string]*IntervalTransactionRecord  `json:"transactions,omitempty"`
+	ByRegion                 map[string]*IntervalTransactionRecord  `json:"by_region,omitempty"`
 	Browser                  *BrowserMetricsSummaryRecord           `json:"browser,omitempty"`
 	BrowserByDevice          map[string]*BrowserDeviceMetricsRecord `json:"browser_by_device,omitempty"`
 	Latency                  *NetworkLatencySummaryRecord           `json:"latency,omitempty"`

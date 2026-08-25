@@ -549,14 +549,16 @@ export function ScriptReplayDebuggerView({
                                 const wholeActive = isTopLevel && debugBreakpointKeys.has(debugBreakpointKey(phase, actionIndex))
                                 const childBpCount = isTopLevel ? childBreakpointsByAction.get(`${phase}#${actionIndex}`) || 0 : 0
                                 const gutterState = wholeActive ? 'active' : childBpCount > 0 ? 'partial' : ''
-                                const typeLabel = item.containerType === 'http_sequence' ? 'SEQ' : item.containerType === 'control_if' ? 'IF' : 'LOOP'
+								const typeLabel = item.containerType === 'http_sequence' ? 'SEQ' : item.containerType === 'control_if' ? 'IF' : item.containerType === 'control_switch' ? 'SWITCH' : 'LOOP'
                                 const unitWord = item.containerType === 'http_sequence' ? 'request' : 'step'
-                                const controlEvidence = item.containerType === 'control_if' || item.containerType === 'control_loop'
+								const controlEvidence = item.containerType === 'control_if' || item.containerType === 'control_switch' || item.containerType === 'control_loop'
                                   ? conditionEvidenceFor(phase, actionIndex, item.stepPath)
                                   : undefined
-                                const branchBadge = item.containerType === 'control_if' && controlEvidence
-                                  ? (controlEvidence.branch === 'then' ? 'THEN' : 'ELSE')
-                                  : null
+								const branchBadge = item.containerType === 'control_if' && controlEvidence
+								  ? (controlEvidence.branch === 'then' ? 'THEN' : 'ELSE')
+								  : item.containerType === 'control_switch' && controlEvidence?.branch
+									? controlEvidence.branch.toUpperCase()
+									: null
                                 if (isTopLevel) {
                                   const parentVisible = debugRailFailuresOnly
                                     ? anyFail
@@ -593,7 +595,7 @@ export function ScriptReplayDebuggerView({
                                       </span>
                                       <strong>{item.name}</strong>
                                       {branchBadge && (
-                                        <span className={`control-branch-badge ${branchBadge === 'THEN' ? 'taken' : 'skipped'}`} title={`Condition was ${controlEvidence?.result ? 'true' : 'false'} → ${branchBadge.toLowerCase()} branch`}>{branchBadge}</span>
+										<span className={`control-branch-badge ${controlEvidence?.result ? 'taken' : 'skipped'}`} title={`Condition was ${controlEvidence?.result ? 'true' : 'false'} → ${branchBadge.toLowerCase()} branch`}>{branchBadge}</span>
                                       )}
                                       <small>{typeLabel} · {item.leafCount} {unitWord}{item.leafCount === 1 ? '' : 's'}{childBpCount > 0 ? ` · ${childBpCount} BP` : ''}{controlEvidence ? ` · ${formatConditionEvidence(controlEvidence)}` : ''}</small>
                                     </button>

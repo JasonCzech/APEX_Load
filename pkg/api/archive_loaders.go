@@ -137,6 +137,7 @@ func readJSONLSortedTransactionPageFrom(ctx context.Context, reader io.Reader, p
 	budget := newArchiveScanBudget(ctx, maxArchiveQueryRecords, maxArchiveQueryBytes)
 	items := make([]TransactionEvent, 0, min(keep, limit*2))
 	total := 0
+	var sourceOrdinal int64
 	for scanner.Scan() {
 		if err := budget.Observe(scanner.Bytes()); err != nil {
 			return nil, 0, err
@@ -145,7 +146,8 @@ func readJSONLSortedTransactionPageFrom(ctx context.Context, reader io.Reader, p
 		if err := json.Unmarshal(scanner.Bytes(), &item); err != nil {
 			return nil, 0, err
 		}
-		sanitizeArchiveDecodedRecord(&item)
+		sanitizeArchiveDecodedRecordAt(&item, sourceOrdinal)
+		sourceOrdinal++
 		if predicate != nil && !predicate(&item) {
 			continue
 		}
@@ -177,6 +179,24 @@ func transactionMatchesArchiveFilter(item *TransactionEvent, filter transactionE
 		return false
 	}
 	if filter.Group != "" && !strings.EqualFold(item.Group, filter.Group) {
+		return false
+	}
+	if filter.Region != "" && !strings.EqualFold(item.Region, filter.Region) {
+		return false
+	}
+	if filter.NetworkProfile != "" && !strings.EqualFold(item.NetworkProfile, filter.NetworkProfile) {
+		return false
+	}
+	if filter.SourceTransaction != "" && !strings.EqualFold(item.SourceTransaction, filter.SourceTransaction) {
+		return false
+	}
+	if filter.Hierarchy != "" && !strings.EqualFold(item.Hierarchy, filter.Hierarchy) {
+		return false
+	}
+	if filter.Phase != "" && !strings.EqualFold(item.Phase, filter.Phase) {
+		return false
+	}
+	if filter.HasDetail != nil && item.HasDetail != *filter.HasDetail {
 		return false
 	}
 	if filter.CorrelationID != "" && !strings.EqualFold(item.CorrelationID, filter.CorrelationID) {
@@ -911,6 +931,7 @@ func readJSONLPageFrom[T any](ctx context.Context, reader io.Reader, page archiv
 
 	items := make([]T, 0, limit)
 	matched := 0
+	var sourceOrdinal int64
 	for scanner.Scan() {
 		if err := budget.Observe(scanner.Bytes()); err != nil {
 			return nil, 0, err
@@ -921,13 +942,15 @@ func readJSONLPageFrom[T any](ctx context.Context, reader io.Reader, page archiv
 		if len(bytes.TrimSpace(scanner.Bytes())) == 0 {
 			continue
 		}
+		ordinal := sourceOrdinal
+		sourceOrdinal++
 		if predicate == nil {
 			if matched >= page.Offset && len(items) < limit {
 				var item T
 				if err := json.Unmarshal(scanner.Bytes(), &item); err != nil {
 					return nil, 0, err
 				}
-				sanitizeArchiveDecodedRecord(&item)
+				sanitizeArchiveDecodedRecordAt(&item, ordinal)
 				items = append(items, item)
 			} else if !json.Valid(scanner.Bytes()) {
 				// Validate rows outside the requested page too (cheap syntactic
@@ -944,7 +967,7 @@ func readJSONLPageFrom[T any](ctx context.Context, reader io.Reader, page archiv
 		if err := json.Unmarshal(scanner.Bytes(), &item); err != nil {
 			return nil, 0, err
 		}
-		sanitizeArchiveDecodedRecord(&item)
+		sanitizeArchiveDecodedRecordAt(&item, ordinal)
 		if !predicate(&item) {
 			continue
 		}

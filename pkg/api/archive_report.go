@@ -660,7 +660,7 @@ func buildRunArchiveReportProfiles() []RunArchiveReportProfile {
 			Description:   "Decision-focused summary with analyst commentary, supporting graphs, SLA verdict, error rate, throughput, release trend, and run context.",
 			Audience:      "Business stakeholders, release owners, and sign-off authorities.",
 			BestFor:       "Ship/no-ship decisions, business risk, SLA posture, and executive sign-off.",
-			ExportFormats: []string{"html", "json", "csv", "pdf"},
+			ExportFormats: []string{"html", "json", "csv", "pdf", "docx"},
 			// "release_trend" renders real release-over-release data: buildRunArchiveReport
 			// stays a pure single-record function, so the multi-run trend is attached at the
 			// storage-aware handler layer ((*Server).attachReleaseTrend) and the section
@@ -675,7 +675,7 @@ func buildRunArchiveReportProfiles() []RunArchiveReportProfile {
 			Description:      "Engineering drilldown with analyst commentary, supporting graphs, timelines, action stats, browser diagnostics, resource peaks, and error patterns.",
 			Audience:         "Performance engineers, SREs, developers, and test analysts.",
 			BestFor:          "Bottleneck isolation, regression diagnosis, resource saturation, and remediation planning.",
-			ExportFormats:    []string{"html", "json", "csv", "pdf", "jsonl", "parquet"},
+			ExportFormats:    []string{"html", "json", "csv", "pdf", "docx", "jsonl", "parquet"},
 			IncludedSections: []string{"verdict", "technical_overview", "sla_detail", "graphs", "dashboard_panels", "root_cause", "recommendations", "test_setup", "raw_exports", "generator_manifest", "completeness", "schema_compatibility", "change_attribution", "summary_timeline", "errors", "resources", "actions", "browser", "soap", "network_phases", "web2_migration"},
 			SectionOrder:     []string{"verdict", "technical_overview", "sla_detail", "graphs", "dashboard_panels", "root_cause", "recommendations", "test_setup", "raw_exports", "generator_manifest", "completeness", "schema_compatibility", "change_attribution", "summary_timeline", "errors", "resources", "actions", "browser", "soap", "network_phases", "web2_migration"},
 		},
@@ -685,7 +685,7 @@ func buildRunArchiveReportProfiles() []RunArchiveReportProfile {
 			Description:      "Governance package with schema compatibility, evidence tiers, completeness findings, provenance, and artifact inventory.",
 			Audience:         "Compliance, governance, change-control, and QA gatekeepers.",
 			BestFor:          "Evidence integrity, authorization traceability, reproducibility, and audit review.",
-			ExportFormats:    []string{"html", "json", "csv", "pdf"},
+			ExportFormats:    []string{"html", "json", "csv", "pdf", "docx"},
 			IncludedSections: []string{"official_outcome", "audit_identity", "authorization", "governance", "provenance", "schema_compatibility", "evidence_tiers", "completeness", "change_attribution", "artifact_integrity", "report_authorship"},
 			SectionOrder:     []string{"official_outcome", "audit_identity", "authorization", "governance", "provenance", "schema_compatibility", "evidence_tiers", "completeness", "change_attribution", "artifact_integrity", "report_authorship"},
 		},
@@ -911,7 +911,7 @@ func buildRunArchiveReportCompatibility(record *storage.RunArchiveRecord, manife
 	compatibility := RunArchiveReportCompatibility{
 		Status:                   "compatible",
 		ReportSchemaVersion:      runArchiveReportSchemaVersion,
-		SupportedManifestSchemas: []string{archiveSchemaVersionV1, archiveSchemaVersion},
+		SupportedManifestSchemas: []string{archiveSchemaVersionV1, archiveSchemaVersionV2, archiveSchemaVersionV3, archiveSchemaVersion},
 	}
 	if manifest != nil {
 		compatibility.ManifestSchemaVersion = manifest.SchemaVersion
@@ -937,6 +937,7 @@ func buildRunArchiveReportCompatibility(record *storage.RunArchiveRecord, manife
 		archiveFileOutputCompatibility(record, manifestField(manifest, "interval_summaries_parquet"), "interval_summaries_parquet", "interval_summaries.parquet", archiveSchemaVersion),
 		reportOutputCompatibility("csv", "archive/report?format=csv", runArchiveReportSchemaVersion, manifestOK, "CSV report export is generated from the archive report schema."),
 		reportOutputCompatibility("pdf", "archive/report?format=pdf", runArchiveReportSchemaVersion, manifestOK, "PDF report export is generated from the archive report schema for profile-shaped reports."),
+		reportOutputCompatibility("docx", "archive/report?format=docx", runArchiveReportSchemaVersion, manifestOK, "DOCX report export is generated directly from the shared profile and section registry."),
 	}
 	for _, output := range compatibility.Outputs {
 		switch output.Status {
@@ -960,7 +961,7 @@ func buildRunArchiveReportCompatibility(record *storage.RunArchiveRecord, manife
 
 func supportedArchiveManifestSchema(version string) bool {
 	switch version {
-	case archiveSchemaVersion, archiveSchemaVersionV1:
+	case archiveSchemaVersion, archiveSchemaVersionV3, archiveSchemaVersionV2, archiveSchemaVersionV1:
 		return true
 	default:
 		return false

@@ -176,6 +176,45 @@ func TestReplay_EmitsConditionEvidence(t *testing.T) {
 	}
 }
 
+func TestReplay_ControlSwitchMatchesLiveFirstMatchSemantics(t *testing.T) {
+	proto := registerReplayProtocol(t, func(action *protocol.Action) (*protocol.Result, error) {
+		return &protocol.Result{ActionName: action.Name, Success: true, StatusCode: 200}, nil
+	})
+	var conditions []ConditionEvidence
+	report, err := ReplayScript(context.Background(), &dsl.Script{
+		Name:     "Switch",
+		Protocol: proto,
+		Actions: []dsl.Action{{
+			Name: "RoleSwitch",
+			Type: "control_switch",
+			Control: &dsl.ControlFlow{
+				Cases: []dsl.SwitchCase{
+					{Condition: &dsl.Condition{Expr: `var.role == "admin"`}, Steps: []dsl.Action{{Name: "Admin", Type: "GET", Target: "/admin"}}},
+					{Condition: &dsl.Condition{Expr: `var.role == "member"`}, Steps: []dsl.Action{{Name: "Member", Type: "GET", Target: "/member"}}},
+				},
+				Default: []dsl.Action{{Name: "Guest", Type: "GET", Target: "/guest"}},
+			},
+		}},
+	}, ReplayOptions{
+		IgnoreThinkTime: true,
+		Variables:       map[string]string{"role": "member"},
+		OnProgress: func(ev ReplayProgressEvent) {
+			if ev.Type == ReplayProgressCondition && ev.Condition != nil {
+				conditions = append(conditions, *ev.Condition)
+			}
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := replayLeafNames(report); !equalStrings(got, []string{"Member"}) {
+		t.Fatalf("replay leaves = %v, want [Member]", got)
+	}
+	if len(conditions) != 2 || conditions[0].Result || !conditions[1].Result || conditions[1].Branch != "case[1]" {
+		t.Fatalf("condition evidence = %+v", conditions)
+	}
+}
+
 func TestReplay_BreakOutsideLoopIsNoOp(t *testing.T) {
 	proto := registerReplayProtocol(t, func(action *protocol.Action) (*protocol.Result, error) {
 		return &protocol.Result{ActionName: action.Name, Success: true, StatusCode: 200}, nil

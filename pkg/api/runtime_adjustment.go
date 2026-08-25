@@ -298,7 +298,7 @@ func (tr *TestRunner) runtimeAdjustmentConflictsLocked(proposal *ManagedTest, wi
 	if !quotaOK {
 		return append(conflicts, LaunchConflict{Code: "project_quota_evidence_unavailable", Severity: "blocking", Source: "project", Message: "Project quota evidence changed while the adjustment was evaluated; retry."})
 	}
-	if quotaErr := enforceTestQuotaWithProjectQuota(projectQuota, proposal.TotalVUsers, proposal.Duration, proposal.Status); quotaErr != nil {
+	if quotaErr := enforceTestQuotaWithProjectQuota(projectQuota, managedTestCapacityVUsers(proposal), proposal.Duration, proposal.Status); quotaErr != nil {
 		return append(conflicts, LaunchConflict{Code: "project_quota", Severity: "blocking", Source: "project", Message: quotaErr.Error()})
 	}
 	return conflicts

@@ -31,6 +31,10 @@ func TestValidateWorkAssignmentTable(t *testing.T) {
 		{name: "missing test", mutate: func(request *pb.WorkAssignment) { request.TestId = "" }, allowSecret: true, wantCode: codes.InvalidArgument, want: "test_id is required"},
 		{name: "negative users", mutate: func(request *pb.WorkAssignment) { request.VuserCount = -1 }, allowSecret: true, wantCode: codes.InvalidArgument, want: "must not be negative"},
 		{name: "offset needs duration", mutate: func(request *pb.WorkAssignment) { request.DurationOffset = durationpb.New(time.Second) }, allowSecret: true, wantCode: codes.InvalidArgument, want: "requires a positive target_duration"},
+		{name: "group offset after duration", mutate: func(request *pb.WorkAssignment) {
+			request.TargetDuration = durationpb.New(time.Second)
+			request.StartOffset = durationpb.New(2 * time.Second)
+		}, allowSecret: true, wantCode: codes.InvalidArgument, want: "start_offset begins after"},
 		{name: "invalid init strategy", mutate: func(request *pb.WorkAssignment) { request.InitStrategy = "eager" }, allowSecret: true, wantCode: codes.InvalidArgument, want: "at_runtime or at_once"},
 		{name: "ordinal needs shard count", mutate: func(request *pb.WorkAssignment) { request.ShardOrdinal = 1 }, allowSecret: true, wantCode: codes.InvalidArgument, want: "requires a positive shard_count"},
 		{name: "ordinal outside shard count", mutate: func(request *pb.WorkAssignment) { request.ShardOrdinal, request.ShardCount = 2, 2 }, allowSecret: true, wantCode: codes.InvalidArgument, want: "smaller than shard_count"},
@@ -72,6 +76,7 @@ func TestValidateWorkAssignmentNormalizesPreciseTiming(t *testing.T) {
 		DurationOffset: durationpb.New(2 * time.Second),
 		RampUp:         durationpb.New(3 * time.Second),
 		RampDown:       durationpb.New(4 * time.Second),
+		StartOffset:    durationpb.New(6 * time.Second),
 		PreBaseline:    durationpb.New(time.Second),
 		PostBaseline:   durationpb.New(5 * time.Second),
 		InitStrategy:   " AT_ONCE ",
@@ -82,7 +87,7 @@ func TestValidateWorkAssignmentNormalizesPreciseTiming(t *testing.T) {
 		t.Fatal(err)
 	}
 	if validated.targetDuration != 10*time.Second || validated.logicalTargetDuration != 12*time.Second || validated.requestedDurationOffset != 2*time.Second ||
-		validated.rampUp != 3*time.Second || validated.rampDown != 4*time.Second || validated.preBaseline != time.Second || validated.postBaseline != 5*time.Second ||
+		validated.rampUp != 3*time.Second || validated.rampDown != 4*time.Second || validated.startOffset != 6*time.Second || validated.preBaseline != time.Second || validated.postBaseline != 5*time.Second ||
 		validated.initStrategy != "at_once" || validated.shardCount != 3 {
 		t.Fatalf("normalized timing = %+v", validated)
 	}

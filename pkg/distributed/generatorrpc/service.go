@@ -113,6 +113,7 @@ const (
 	maxGeneratorGroupNameBytes         = 512
 	maxGeneratorScriptIDBytes          = 512
 	maxGeneratorScenarioIDBytes        = 512
+	maxGeneratorRegionBytes            = 512
 	maxGeneratorHashBytes              = 128
 	maxGeneratorOperationIDBytes       = 512
 	maxAssignmentEnvironmentEntries    = 1024
@@ -136,6 +137,9 @@ func validateAssignmentMetadataBounds(assignment *pb.WorkAssignment) error {
 		return err
 	}
 	if err := validateGeneratorFieldBytes(assignment.GetScenarioId(), "scenario_id", maxGeneratorScenarioIDBytes); err != nil {
+		return err
+	}
+	if err := validateGeneratorFieldBytes(assignment.GetRegion(), "region", maxGeneratorRegionBytes); err != nil {
 		return err
 	}
 	if err := validateGeneratorFieldBytes(assignment.GetExpectedScriptHash(), "expected_script_hash", maxGeneratorHashBytes); err != nil {
@@ -233,6 +237,7 @@ type metricsAggregateSet struct {
 	Dependencies    []MetricAggregate
 	SOAP            []MetricAggregate
 	NetworkProfiles []MetricAggregate
+	Regions         []MetricAggregate
 	Browser         *BrowserMetrics
 	BrowserByDevice []BrowserDeviceMetrics
 	Groups          []GroupMetric
@@ -531,6 +536,11 @@ func (b *transactionBuffer) RecordTransaction(result *protocol.Result) error {
 		Name:             result.ActionName,
 		StartTimeUnixMs:  resultStartTimeUnixMs(result.StartTime),
 		Group:            result.Group,
+		Region:           result.Region,
+		NetworkProfile:   result.NetworkProfile,
+		Hierarchy:        result.Hierarchy,
+		Phase:            result.Phase,
+		PageName:         result.PageName,
 		DurationMs:       float64(result.Duration) / float64(time.Millisecond),
 		DNSMs:            float64(result.DNSTime) / float64(time.Millisecond),
 		ConnectMs:        float64(result.ConnectTime) / float64(time.Millisecond),
@@ -1385,7 +1395,7 @@ func runtimeAdvertisementWithCapacities(ctx context.Context, requireHealthy bool
 	names := protocol.List()
 	sort.Strings(names)
 	available := make([]string, 0, len(names))
-	features := []string{FeatureEvacuationAssignmentStateV1, FeatureSecretBundleV1, FeatureRunSupervisionV1}
+	features := []string{FeatureEvacuationAssignmentStateV1, FeatureSecretBundleV1, FeatureRunSupervisionV1, FeatureMessageDetailCaptureV1, FeatureControlParallelV1, FeatureMessageDetailControlParallelV1}
 	runtimeCapacities := make([]*pb.ProtocolRuntimeCapacity, 0)
 	for _, name := range names {
 		normalized := strings.ToLower(strings.TrimSpace(name))
@@ -1789,6 +1799,7 @@ func (s *Service) recordMetricsBatch(testID string, writer *archiveRecorder, bat
 		DurationDigest:  tdigestSnapshotFromProto(batch.GetFleetMetrics().GetDurationDigest()),
 		Groups:          archiveSummaryGroupsFromBatch(batch),
 		Transactions:    archiveSummaryTransactionsFromBatch(batch.GetTransactionMetrics()),
+		ByRegion:        archiveSummaryTransactionsFromBatch(batch.GetRegionMetrics()),
 		Browser:         archiveSummaryBrowserFromBatch(batch),
 		BrowserByDevice: archiveSummaryBrowserDevicesFromBatch(batch),
 		Telemetry:       archiveSummaryTelemetryFromBatch(batch),
@@ -2156,6 +2167,11 @@ func (s *Service) metricsBatchForMetrics(testID string, executionGeneration uint
 			Name:             tx.Name,
 			StartTimeUnixMs:  tx.StartTimeUnixMs,
 			Group:            tx.Group,
+			Region:           tx.Region,
+			NetworkProfile:   tx.NetworkProfile,
+			Hierarchy:        tx.Hierarchy,
+			Phase:            tx.Phase,
+			PageName:         tx.PageName,
 			DurationMs:       tx.DurationMs,
 			DnsMs:            tx.DNSMs,
 			ConnectMs:        tx.ConnectMs,
@@ -2205,6 +2221,7 @@ func (s *Service) metricsBatchForMetrics(testID string, executionGeneration uint
 		DependencyMetrics:     metricAggregatesToProto(aggregates.Dependencies),
 		SoapMetrics:           metricAggregatesToProto(aggregates.SOAP),
 		NetworkProfileMetrics: metricAggregatesToProto(aggregates.NetworkProfiles),
+		RegionMetrics:         metricAggregatesToProto(aggregates.Regions),
 		FleetMetrics:          metricAggregateToProto(aggregates.Fleet),
 		BrowserMetrics:        browserMetricsToProto(aggregates.Browser),
 		BrowserDeviceMetrics:  browserDeviceMetricsToProto(aggregates.BrowserByDevice),
@@ -2575,7 +2592,7 @@ func storeExecutionMetrics(exec *groupExecution, metrics executionMetricsSnapsho
 }
 
 func metricsAggregateSetHasEvidence(aggregates metricsAggregateSet) bool {
-	return aggregates.Fleet != nil || len(aggregates.Transactions) > 0 || len(aggregates.Dependencies) > 0 || len(aggregates.SOAP) > 0 || len(aggregates.NetworkProfiles) > 0 || aggregates.Browser != nil || len(aggregates.BrowserByDevice) > 0 || len(aggregates.Groups) > 0
+	return aggregates.Fleet != nil || len(aggregates.Transactions) > 0 || len(aggregates.Dependencies) > 0 || len(aggregates.SOAP) > 0 || len(aggregates.NetworkProfiles) > 0 || len(aggregates.Regions) > 0 || aggregates.Browser != nil || len(aggregates.BrowserByDevice) > 0 || len(aggregates.Groups) > 0
 }
 
 func applyExecutionMetricsToAssignment(assignment *assignedTest, groupName string, metrics executionMetricsSnapshot) {
@@ -2801,6 +2818,7 @@ func mergeSnapshotSideChannelAggregates(out *metricsAggregateSet, snapshot engin
 		return
 	}
 	out.NetworkProfiles = engineActionMetricsToAggregates(snapshot.ByNetworkProfile)
+	out.Regions = engineActionMetricsToAggregates(snapshot.ByRegion)
 	out.Browser = browserMetricsFromEngine(snapshot.Browser)
 	out.BrowserByDevice = browserDeviceMetricsFromEngine(snapshot.BrowserByDevice)
 }
@@ -2909,6 +2927,7 @@ func mergeMetricsAggregateSets(values map[string]metricsAggregateSet) metricsAgg
 	dependencyMetrics := make([]MetricAggregate, 0)
 	soapMetrics := make([]MetricAggregate, 0)
 	networkProfileMetrics := make([]MetricAggregate, 0)
+	regionMetrics := make([]MetricAggregate, 0)
 	groupMetrics := make([]GroupMetric, 0)
 	browsers := make([]*BrowserMetrics, 0)
 	browserDevices := make([]BrowserDeviceMetrics, 0)
@@ -2920,6 +2939,7 @@ func mergeMetricsAggregateSets(values map[string]metricsAggregateSet) metricsAgg
 		dependencyMetrics = append(dependencyMetrics, value.Dependencies...)
 		soapMetrics = append(soapMetrics, value.SOAP...)
 		networkProfileMetrics = append(networkProfileMetrics, value.NetworkProfiles...)
+		regionMetrics = append(regionMetrics, value.Regions...)
 		groupMetrics = append(groupMetrics, value.Groups...)
 		if value.Browser != nil {
 			browsers = append(browsers, value.Browser)
@@ -2931,6 +2951,7 @@ func mergeMetricsAggregateSets(values map[string]metricsAggregateSet) metricsAgg
 	out.Dependencies = mergeMetricAggregateSeries(dependencyMetrics)
 	out.SOAP = mergeMetricAggregateSeries(soapMetrics)
 	out.NetworkProfiles = mergeMetricAggregateSeries(networkProfileMetrics)
+	out.Regions = mergeMetricAggregateSeries(regionMetrics)
 	out.Groups = mergeGroupMetricSeries(groupMetrics)
 	out.Browser = mergeBrowserMetricSeries(browsers)
 	out.BrowserByDevice = mergeBrowserDeviceMetricSeries(browserDevices)

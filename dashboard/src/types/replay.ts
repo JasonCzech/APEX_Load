@@ -155,7 +155,7 @@ export interface BrowserReplayEvent {
   diagnosis?: ReplayDiagnosis
   repair_suggestions?: ReplayRepairSuggestion[]
   // Sub-request / sub-step identity for leaves of a container action
-  // (http_sequence / control_if / control_loop). Absent for a plain action.
+	// (http_sequence / control_if / control_switch / control_loop). Absent for a plain action.
   parent_action_name?: string
   request_index?: number
   request_count?: number
@@ -271,8 +271,8 @@ export interface ScriptDebugAction {
   iteration_path?: number[]
 }
 
-// ConditionEvidence captures the evaluated operands and outcome of a control_if /
-// control_loop predicate so the debugger can show why a branch was taken.
+// ConditionEvidence captures the evaluated operands and outcome of a control_if,
+// control_switch, or control_loop predicate so the debugger can explain routing.
 export interface ConditionEvidence {
   expr?: string
   left?: string

@@ -17,6 +17,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
 func TestMain(m *testing.M) {
@@ -38,6 +40,20 @@ func TestMain(m *testing.M) {
 		_ = os.Unsetenv(name)
 	}
 	os.Exit(m.Run())
+}
+
+func TestInspectCILocalActionsTraversesSwitchBranches(t *testing.T) {
+	script := &dsl.Script{Actions: []dsl.Action{{
+		Type: "control_switch",
+		Control: &dsl.ControlFlow{
+			Cases:   []dsl.SwitchCase{{Steps: []dsl.Action{{Type: "POST", BodyFile: "payload.json"}}}},
+			Default: []dsl.Action{{Type: "browser_set_files"}},
+		},
+	}}}
+	bodyFile, browserInput := inspectCILocalActions(script)
+	if !bodyFile || !browserInput {
+		t.Fatalf("switch local-file detection = body:%t browser:%t", bodyFile, browserInput)
+	}
 }
 
 func TestParseCIArgsControllerAndLocalValidation(t *testing.T) {

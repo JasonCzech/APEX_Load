@@ -125,6 +125,7 @@ type TestRunManifestScript struct {
 	VUsers          int                          `json:"vusers,omitempty"`
 	RampUp          string                       `json:"ramp_up,omitempty"`
 	RampDown        string                       `json:"ramp_down,omitempty"`
+	StartOffset     string                       `json:"start_offset,omitempty"`
 	Stages          []storage.LoadStage          `json:"stages,omitempty"`
 	Iterations      *int                         `json:"iterations,omitempty"`
 	RuntimeSettings *RuntimeSettingsOverride     `json:"runtime_settings,omitempty"`
@@ -510,6 +511,7 @@ func manifestScriptsFromGroups(groups []TestGroup) []TestRunManifestScript {
 			VUsers:          group.VUsers,
 			RampUp:          group.RampUp,
 			RampDown:        group.RampDown,
+			StartOffset:     group.StartOffset,
 			Stages:          append([]storage.LoadStage(nil), group.Stages...),
 			Iterations:      cloneIntPtr(group.Iterations),
 			RuntimeSettings: maskRuntimeSettings(group.RuntimeSettings),

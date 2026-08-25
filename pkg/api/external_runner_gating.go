@@ -708,8 +708,10 @@ func javaVuserActionsRequirePhaseLifecycle(actions []dsl.Action) bool {
 			}
 		}
 		if action.Control != nil {
-			if javaVuserActionsRequirePhaseLifecycle(action.Control.Steps) || javaVuserActionsRequirePhaseLifecycle(action.Control.Else) {
-				return true
+			for _, branch := range action.Control.ActionBranches() {
+				if javaVuserActionsRequirePhaseLifecycle(branch.Actions) {
+					return true
+				}
 			}
 		}
 	}
@@ -722,8 +724,10 @@ func javaVuserActionsRequireRunner(actions []dsl.Action) bool {
 			return true
 		}
 		if action.Control != nil {
-			if javaVuserActionsRequireRunner(action.Control.Steps) || javaVuserActionsRequireRunner(action.Control.Else) {
-				return true
+			for _, branch := range action.Control.ActionBranches() {
+				if javaVuserActionsRequireRunner(branch.Actions) {
+					return true
+				}
 			}
 		}
 	}

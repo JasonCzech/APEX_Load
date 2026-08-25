@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/jasonczech/apexload/pkg/convert/importreview"
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
@@ -27,6 +28,7 @@ type genericImportBatchCommitRequest struct {
 	FolderID                  *string      `json:"folder_id,omitempty"`
 	OperationID               string       `json:"operation_id"`
 	SourceProfile             string       `json:"source_profile"`
+	ImportSessionIDs          []string     `json:"import_session_ids,omitempty"`
 	SourceRecordingSessionIDs []string     `json:"source_recording_session_ids,omitempty"`
 }
 
@@ -52,6 +54,19 @@ func (s *Server) handleCommitGenericImportBatch(w http.ResponseWriter, r *http.R
 	if len(req.SourceRecordingSessionIDs) != 0 && len(req.SourceRecordingSessionIDs) != len(req.Scripts) {
 		writeError(w, http.StatusBadRequest, "source_recording_session_ids must be omitted or contain one entry per script")
 		return
+	}
+	if len(req.ImportSessionIDs) != 0 && len(req.ImportSessionIDs) != len(req.Scripts) {
+		writeError(w, http.StatusBadRequest, "import_session_ids must be omitted or contain one entry per script")
+		return
+	}
+	importSessionIDs := make([]string, len(req.Scripts))
+	for index, raw := range req.ImportSessionIDs {
+		sessionID := strings.TrimSpace(raw)
+		if len(sessionID) > genericImportRecordingSessionIDMaxBytes {
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("import session %d must be at most %d bytes", index+1, genericImportRecordingSessionIDMaxBytes))
+			return
+		}
+		importSessionIDs[index] = sessionID
 	}
 	var sourceRecordingSessionIDs []string
 	if len(req.SourceRecordingSessionIDs) > 0 {
@@ -126,6 +141,7 @@ func (s *Server) handleCommitGenericImportBatch(w http.ResponseWriter, r *http.R
 	requestDigest, err := s.directImportScriptsRequestDigest(requestScripts, map[string]any{
 		"profile":                      requestedProfile,
 		"folder":                       req.FolderID,
+		"import_session_ids":           importSessionIDs,
 		"source_recording_session_ids": sourceRecordingSessionIDs,
 	})
 	if err != nil {
@@ -168,7 +184,7 @@ func (s *Server) handleCommitGenericImportBatch(w http.ResponseWriter, r *http.R
 	// in-memory credential attestation intentionally does not survive restart.
 	// This branch can only adopt existing assets for the exact durable request
 	// digest; it never authorizes a new create with an invalid token.
-	if attempt != nil && !attempt.created {
+	if attempt != nil && !attempt.created && !anyNonEmpty(importSessionIDs) {
 		if !s.fenceImportBatchAdoption(w, genericImportBatchWorkflow, attempt, projectID, plannedIDs, "") {
 			return
 		}
@@ -223,10 +239,11 @@ func (s *Server) handleCommitGenericImportBatch(w http.ResponseWriter, r *http.R
 	}
 
 	claims := make([]*importDraftAttestationClaim, len(requestScripts))
+	sourceRetentionPending := false
 	defer func() {
 		for _, claim := range claims {
 			if claim != nil {
-				if assetsCommitted {
+				if assetsCommitted && !sourceRetentionPending {
 					s.retainCommittedImportDraftAttestation(claim)
 				} else {
 					s.releaseImportDraftAttestation(claim)
@@ -246,29 +263,89 @@ func (s *Server) handleCommitGenericImportBatch(w http.ResponseWriter, r *http.R
 		}
 		requestedName := draft.Name
 		profile := genericImportDraftProfile(draft, requestedProfile)
+		if importSessionIDs[index] != "" {
+			candidate, protectedClaim, claimErr := s.claimProtectedImportCandidateSession(
+				r,
+				requestedProfile,
+				importSessionIDs[index],
+				draft.ProjectID,
+			)
+			if claimErr != nil || candidate == nil || candidate.Script == nil || protectedClaim == nil {
+				clearProtectedImportCandidate(candidate)
+				if protectedClaim != nil {
+					s.releaseImportCandidateClaim(protectedClaim)
+				}
+				writeError(w, http.StatusConflict, fmt.Sprintf("imported script %d protected candidate is invalid, expired, or already claimed; run the conversion again", index+1))
+				return
+			}
+			candidateDigest, candidateErr := scriptCorrelationActionGraphDigest(candidate.Script)
+			submittedDigest, submittedErr := scriptCorrelationActionGraphDigest(draft)
+			if candidateErr != nil || submittedErr != nil || candidateDigest != submittedDigest {
+				clearProtectedImportCandidate(candidate)
+				s.releaseImportCandidateClaim(protectedClaim)
+				writeError(w, http.StatusConflict, fmt.Sprintf("imported script %d changed executable behavior after protected inspection; run the conversion again", index+1))
+				return
+			}
+			lease := s.startImportCandidateClaimLease(protectedClaim)
+			if leaseErr := lease.assertOwned(); leaseErr != nil {
+				lease.stop()
+				clearProtectedImportCandidate(candidate)
+				s.releaseImportCandidateClaim(protectedClaim)
+				writeError(w, http.StatusConflict, fmt.Sprintf("imported script %d protected candidate claim was lost", index+1))
+				return
+			}
+			profile = requestedProfile
+			claims[index] = &importDraftAttestationClaim{
+				Token:                         importDraftProtectedTokenPrefix + importSessionIDs[index],
+				Profile:                       profile,
+				Context:                       r.Context(),
+				ProtectedClaim:                protectedClaim,
+				ProtectedLease:                lease,
+				RawSource:                     candidate.RawSource,
+				Script:                        candidate.Script,
+				AttestedExecutionGraphDigest:  candidateDigest,
+				SubmittedExecutionGraphDigest: submittedDigest,
+			}
+			candidate.RawSource = nil
+			candidate.Script = nil
+			clearProtectedImportCandidate(candidate)
+			draft = claims[index].Script
+			draft.Name = requestedName
+		}
 		fingerprint, fingerprintErr := fingerprintImportDraftCredentials(draft)
 		if fingerprintErr != nil {
 			writeError(w, http.StatusBadRequest, fmt.Sprintf("script %d credential state is invalid", index+1))
 			return
 		}
-		if token := importDraftAttestationToken(draft); token != "" {
-			claim, claimErr := s.claimImportDraftAttestation(r, draft)
-			if claimErr != nil || claim == nil || claim.Script == nil {
-				if claim != nil {
-					s.releaseImportDraftAttestation(claim)
+		if claims[index] == nil {
+			if token := importDraftAttestationToken(draft); token != "" {
+				claim, claimErr := s.claimImportDraftAttestation(r, draft)
+				if claimErr != nil || claim == nil || claim.Script == nil {
+					if claim != nil {
+						s.releaseImportDraftAttestation(claim)
+					}
+					writeError(w, http.StatusConflict, fmt.Sprintf("imported script %d draft is invalid or expired; run the conversion again", index+1))
+					return
 				}
-				writeError(w, http.StatusConflict, fmt.Sprintf("imported script %d draft is invalid or expired; run the conversion again", index+1))
+				profile = normalizeGenericImportSourceProfile(claim.Profile)
+				if !genericImportSourceProfilesCompatible(requestedProfile, profile) {
+					s.releaseImportDraftAttestation(claim)
+					writeError(w, http.StatusConflict, fmt.Sprintf("imported script %d does not belong to this save workflow", index+1))
+					return
+				}
+				claims[index] = claim
+				draft = claim.Script
+			}
+		} else {
+			stripImportDraftAttestation(draft)
+		}
+		if requestedProfile == "cloudtest" && claims[index] == nil {
+			if err := validateUnattestedCloudTestDraft(draft); err != nil {
+				writeError(w, http.StatusConflict, fmt.Sprintf("imported script %d: %v", index+1, err))
 				return
 			}
-			profile = normalizeGenericImportSourceProfile(claim.Profile)
-			if !genericImportSourceProfilesCompatible(requestedProfile, profile) {
-				s.releaseImportDraftAttestation(claim)
-				writeError(w, http.StatusConflict, fmt.Sprintf("imported script %d does not belong to this save workflow", index+1))
-				return
-			}
-			claims[index] = claim
-			draft = claim.Script
-		} else if fingerprint.HasRawCredentials || scriptHasUnavailableImportCredentialValues(draft) {
+		}
+		if claims[index] == nil && (fingerprint.HasRawCredentials || scriptHasUnavailableImportCredentialValues(draft)) {
 			writeError(w, http.StatusConflict, fmt.Sprintf("imported script %d is missing its server capability; run the conversion again", index+1))
 			return
 		}
@@ -351,6 +428,16 @@ func (s *Server) handleCommitGenericImportBatch(w http.ResponseWriter, r *http.R
 				writeError(w, http.StatusConflict, message)
 				return
 			}
+			if !s.retainGenericImportBatchSources(r, stored, claims, profiles, true) {
+				sourceRetentionPending = true
+				writeJSON(w, http.StatusServiceUnavailable, map[string]any{
+					"error":     "scripts committed but protected import source retention is pending; retry with the same operation_id and import_session_ids",
+					"code":      importSourceRetentionPendingCode,
+					"committed": true,
+					"retryable": true,
+				})
+				return
+			}
 			if completeErr := attempt.complete(stored, nil); completeErr != nil {
 				writeError(w, http.StatusInternalServerError, "failed to reconcile import batch receipt")
 				return
@@ -396,6 +483,16 @@ func (s *Server) handleCommitGenericImportBatch(w http.ResponseWriter, r *http.R
 		writeError(w, http.StatusConflict, "The scripts were committed, but their recording evidence could not be finalized. Retry this save with the same operation_id.")
 		return
 	}
+	if !s.retainGenericImportBatchSources(r, stored, claims, profiles, false) {
+		sourceRetentionPending = true
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{
+			"error":     "scripts committed but protected import source retention is pending; retry with the same operation_id and import_session_ids",
+			"code":      importSourceRetentionPendingCode,
+			"committed": true,
+			"retryable": true,
+		})
+		return
+	}
 	if err := attempt.complete(stored, nil); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to finalize import batch receipt")
 		return
@@ -403,6 +500,22 @@ func (s *Server) handleCommitGenericImportBatch(w http.ResponseWriter, r *http.R
 	completeGenericImportBatchDraftClaims(s, claims, stored)
 	finished = true
 	writeGenericImportBatchCommitResponse(w, stored)
+}
+
+func validateUnattestedCloudTestDraft(script *dsl.Script) error {
+	readiness, err := importreview.EvaluateScript(script, importreview.EvaluationInput{})
+	if err != nil {
+		return fmt.Errorf("CloudTest review evidence is invalid: %w", err)
+	}
+	if readiness.State != importreview.Blocked {
+		return fmt.Errorf("CloudTest fixture-gated drafts must retain their execution blocker; run the inspection again")
+	}
+	for _, code := range readiness.BlockingCodes {
+		if code == "cloudtest_fixture_mapping_unproven" {
+			return nil
+		}
+	}
+	return fmt.Errorf("CloudTest fixture-gated drafts must retain the cloudtest_fixture_mapping_unproven blocker; run the inspection again")
 }
 
 func genericImportDraftProfile(script *dsl.Script, fallback string) string {
@@ -600,6 +713,48 @@ func anyTrue(values []bool) bool {
 		}
 	}
 	return false
+}
+
+func anyNonEmpty(values []string) bool {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return true
+		}
+	}
+	return false
+}
+
+// retainGenericImportBatchSources publishes any raw source carried by a
+// protected generic-import candidate after the atomic script batch commits but
+// before its receipt and one-shot sessions are completed. Empty-source claims
+// retain their existing credential/recording behavior.
+func (s *Server) retainGenericImportBatchSources(
+	r *http.Request,
+	stored []*StoredScript,
+	claims []*importDraftAttestationClaim,
+	profiles []string,
+	skipMatchingActive bool,
+) bool {
+	_, actor, _ := s.resolveAuditActor(r)
+	for index, claim := range claims {
+		if claim == nil || len(claim.RawSource) == 0 {
+			continue
+		}
+		if index >= len(stored) || stored[index] == nil || stored[index].Script == nil || index >= len(profiles) {
+			return false
+		}
+		if !s.retainProtectedImportSource(
+			r.Context(),
+			stored[index].Script,
+			profiles[index],
+			claim.RawSource,
+			actor,
+			skipMatchingActive,
+		) {
+			return false
+		}
+	}
+	return true
 }
 
 func completeGenericImportBatchDraftClaims(s *Server, claims []*importDraftAttestationClaim, stored []*StoredScript) {

@@ -294,6 +294,7 @@ func (tr *TestRunner) validateScenarioRuntimeMutationLocked(scenario *StoredScen
 			VUsers:          ref.VUsers,
 			RampUp:          ref.RampUp,
 			RampDown:        ref.RampDown,
+			StartOffset:     ref.StartOffset,
 			Stages:          cloneLoadStages(ref.Stages),
 			Iterations:      ref.Iterations,
 			InitStrategy:    ref.Initialization,
@@ -304,6 +305,10 @@ func (tr *TestRunner) validateScenarioRuntimeMutationLocked(scenario *StoredScen
 	groups, err := normalizeCreateTestGroups(CreateTestRequest{Groups: entries})
 	if err != nil {
 		return err
+	}
+	duration, err := time.ParseDuration(scenario.Duration)
+	if err != nil || duration <= 0 {
+		return fmt.Errorf("invalid scenario duration %q", scenario.Duration)
 	}
 	for index := range groups {
 		groups[index].runtimeSecretScope = scenario.ID
@@ -316,6 +321,11 @@ func (tr *TestRunner) validateScenarioRuntimeMutationLocked(scenario *StoredScen
 	)
 	if err != nil {
 		return err
+	}
+	for index, group := range engineGroups {
+		if group.StartOffset > duration {
+			return fmt.Errorf("group[%d]: start_offset %s begins after the %s scenario deadline", index, group.StartOffset, duration)
+		}
 	}
 	if review := buildRuntimeSettingsScenarioReview(testGroups, engineGroups); review != nil && review.Status == "blocked" {
 		return fmt.Errorf("runtime settings blocked: %s", review.Summary)

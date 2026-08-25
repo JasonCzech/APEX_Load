@@ -53,6 +53,7 @@ import { requestSettingsFocus } from './settingsSectionLayout'
 import { loadAllTestSummaries } from './testCatalogPagination'
 import { scenarioSeedFromTemplate } from './scenarioTemplateSeed'
 import { boundedAllSettled } from '../utils/boundedAllSettled'
+import { ScenarioCompositionTimeline } from './ScenarioCompositionTimeline'
 
 interface Props {
   applicationRepository?: ApplicationRepository | null
@@ -124,7 +125,8 @@ export interface ScenarioFormGroup {
   role?: 'load' | 'observer'
   vusers: number
   ramp_up: string
-  ramp_down: string
+	ramp_down: string
+	start_offset?: string
   stages: LoadStageDraft[]
   iterations?: number
   initialization: 'at_runtime' | 'at_once'
@@ -161,7 +163,8 @@ function emptyScenarioGroup(scriptId = '', index = 0): ScenarioFormGroup {
     script_id: scriptId,
     vusers: 10,
     ramp_up: '',
-    ramp_down: '',
+		ramp_down: '',
+		start_offset: '',
     stages: [],
     initialization: 'at_runtime',
   }
@@ -326,7 +329,8 @@ function normalizeGroupForPayload(group: ScenarioFormGroup) {
     role: group.role,
     vusers: maxStageVUsers(group.stages) || Number(group.vusers) || 10,
     rampUp: group.ramp_up,
-    rampDown: group.ramp_down,
+		rampDown: group.ramp_down,
+		startOffset: group.start_offset,
     stages: group.stages.map(normalizeStageForPayload),
     // A runtime iteration override and the compact legacy field are alternate
     // representations of the same setting. Never serialize both: the backend
@@ -3115,7 +3119,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
                 >
                   <div className="scenario-script-group-title">
                     <strong>{group.name || `Group ${index + 1}`}</strong>
-                    {formGroups.length > 1 && (
+		  {formGroups.length > 1 && (
                       <button type="button" className="btn btn-sm btn-ghost" onClick={() => removeScenarioGroup(index)}>Remove</button>
                     )}
                   </div>
@@ -3267,8 +3271,13 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
                 )
               })}
             </div>
-          )}
-          <div className="scenario-subpanel">
+		  )}
+		  <ScenarioCompositionTimeline
+			duration={form.duration}
+			groups={formGroups}
+			onOffsetChange={(index, value) => updateScenarioGroup(index, { start_offset: value })}
+		  />
+		  <div className="scenario-subpanel">
             <div className="scenario-assignment-header">
               <div>
                 <h4>Load Per Group</h4>
@@ -3314,9 +3323,17 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
                         />
                       </div>
                     </label>
-                    <DurationField
-                      className="scenario-field"
-                      label="Ramp Up"
+					<DurationField
+						className="scenario-field"
+						label="Start Offset"
+						value={activeStageGroup.start_offset || ''}
+						allowEmpty
+						compact
+						onChange={value => updateScenarioGroup(activeGroupIndex, { start_offset: value })}
+					/>
+					<DurationField
+						className="scenario-field"
+						label="Ramp Up"
                       value={activeStageGroup.ramp_up}
                       allowEmpty
                       compact

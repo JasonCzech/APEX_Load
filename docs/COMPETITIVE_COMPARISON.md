@@ -13,6 +13,7 @@ This document consolidates all competitor positioning, support matrices, and mig
 - [Support Matrix](#support-matrix)
 - [Per-Competitor Comparison](#per-competitor-comparison)
   - [LoadRunner / LRE](#loadrunner)
+  - [Akamai CloudTest](#akamai-cloudtest)
   - [k6](#k6)
   - [NeoLoad](#neoload)
   - [JMeter](#jmeter)
@@ -35,7 +36,7 @@ This document consolidates all competitor positioning, support matrices, and mig
 
 ## Support Matrix
 
-Evidence last rechecked 2026-06-02. External baselines: Grafana Cloud k6, Tricentis NeoLoad 2025.3, OpenText LoadRunner Enterprise 26.x.
+Evidence last rechecked 2026-08-25. External baselines: Grafana Cloud k6, Tricentis NeoLoad 2025.3, OpenText LoadRunner Enterprise 26.x, and current Akamai CloudTest product/documentation pages.
 
 **Status vocabulary:**
 
@@ -61,6 +62,9 @@ These dimensions are returned by `GET /api/v1/system/parity-status` in the `comp
 | Analysis, APM, And Root-Cause Integrations | Supported | [APM Observability Correlation](#apm-observability-correlation) |
 | Specialized Enterprise Protocol Breadth | Gap | [Specialized Enterprise Protocols](#specialized-enterprise-protocols) |
 | Packaging, Samples, And Trust | Partial | [Packaging, Samples, and Trust](#packaging-samples-and-trust) |
+| Visual Composition And Timed Tracks | Partial | [CloudTest — composition](#akamai-cloudtest) |
+| Streaming Analytics And Safe Result Drill-Down | Partial | [CloudTest — analytics](#akamai-cloudtest) |
+| Run-Bound Private-Network Monitoring | Partial | [CloudTest — monitoring](#akamai-cloudtest) |
 
 ### Source and Authoring Flows
 
@@ -133,6 +137,64 @@ These dimensions are returned by `GET /api/v1/system/parity-status` in the `comp
 
 ## Per-Competitor Comparison
 
+### Akamai CloudTest
+
+**Positioning:** APEX targets CloudTest outcome parity: preserve high-value
+composition, execution, analytics, monitoring, automation, and migration
+workflows using APEX's scripts, scenario groups, collectors, archives, and
+Kubernetes-native capacity model. It does not copy CloudTest repository types or
+its Band/Maestro/alpha-instance architecture. The canonical status and evidence
+ledger is [CloudTest Outcome-Parity and Migration
+Program](CLOUDTEST_PARITY_PROGRAM.md) and is also published by
+`GET /api/v1/system/parity-status`.
+
+Current official evidence confirms visual composition, reusable Clips,
+automated Grids, Preview Mode, adjustable live load, live analytics, multi-CDN
+testing, HLS/HDS/CMAF claims, SCommand automation, and Word/HTML reporting. The
+[CloudTest HTTP target documentation](https://techdocs.akamai.com/cloudtest/docs/edit-target-information)
+also documents HTTP/2; APEX must not claim CloudTest lacks it.
+
+| Outcome | CloudTest | APEX Load now | Status / decision |
+| --- | --- | --- | --- |
+| HTTP/2 load | Documented target option | Native HTTP protocol support | **Supported / parity** |
+| Visual multi-track composition | Compositions, Tracks, Clips, timing | Scripts are reusable clips; scenario groups carry active-time offsets, round-trip through the draggable composition timeline, and use overlap-aware launch admission; richer track editing remains | **Partial** |
+| Conditional and parallel containers | Repository control elements | If/loop, ordered CEL switch, and project-gated bounded parallel execution exist with isolated protocol instances, deterministic extraction namespaces, replay, and safety admission | **Partial** |
+| Page/resource execution | Page and resource hierarchy | HTTP document action already loads static/dynamic resources and emits network entries; typed page hierarchy remains | **Partial** |
+| Preview and live ramp adjustment | Preview Mode and adjustable load | Tentative runtime-adjustment preview and apply are implemented | **Supported** |
+| Regional live analytics | Location dimensions and live dashboards | Bounded `by_region` is carried through local/distributed live metrics, archives, and the regional activity view; geographic polish remains | **Partial** |
+| Message drill-down and waterfall | Request/response and waterfall analysis | The transaction archive supports bounded success/detail capture, regional/hierarchy filters, redacted inspection, and network waterfalls; formal annotation phases remain | **Partial** |
+| Shared dashboards | Composable dashboards and slideshows | Versioned project dashboards support optimistic revisions, bounded analytics definitions, save/import from private workspace drafts, and viewer-visible shared reopening; Grafana imports remain intact | **Supported** |
+| Private infrastructure monitoring | CloudTest monitors | Authenticated collector agent and host metric packs exist; run-bound durable jobs/connectors remain | **Partial** |
+| Elastic cloud grid | Automated multi-cloud Grid | Kubernetes/KEDA, Azure and AWS capacity backends exist; test-scoped prepare/ephemeral policy remains | **Partial** |
+| HTTP media streaming | HLS/HDS/CMAF and multi-CDN marketing claims | Streaming-response pacing exists; bounded HLS/DASH playback metrics remain | **Partial** |
+| CLI and transaction thresholds | SCommand repository/run/monitor/report workflows | Run/wait/status, JSON/JUnit, global and exact archived transaction rules, and library export/import exist; run-bound monitor verbs remain | **Partial** |
+| Report output | Word/HTML and widget image/CSV export | HTML/PDF/DOCX/CSV/JSON/JSONL/Parquet exist; report charts export accessible CSV/SVG, while remaining operational charts still need the shared export wrapper | **Partial** |
+| Native mobile automation | TouchTest remains in current terminology | Browser device emulation and observer canaries only | **Non-goal by product fit** |
+
+#### CloudTest outcome-parity implementation rules
+
+- A CloudTest Clip maps to a stored APEX script referenced by a scenario group.
+  Do not add a generator-side repository lookup or runtime `call_script` without
+  a fixture proving irreducible nested launch semantics.
+- Extend `/archive/transactions` and the current inspector; do not create a
+  duplicate message archive/viewer.
+- Add hierarchy to the existing HTTP resource loader; do not add a duplicate
+  Page transport action.
+- Keep optional message-detail capture independent from
+  `error_handling.snapshot_on_error`, and never globally broadcast bodies.
+- Extend the restricted-network collector for monitors. The controller must not
+  dial arbitrary customer endpoints.
+- Spot capacity uses an availability-oriented on-demand floor and spot ceiling;
+  no non-spot alpha role exists in APEX's topology.
+- HDS, raw OpenStack VM provisioning, CA Introscope, unrestricted commands, and
+  arbitrary imported JavaScript are demand-gated or non-goals.
+
+**Evidence/fixture gate:** current docs establish product outcomes, not export
+wire shapes. XML/ZIP mappings remain provisional until sanitized,
+dependency-complete exports prove them. Each recognized import element must be
+classified `executable_exact`, `executable_bounded`, `blocked_draft`, or
+`rejected`.
+
 ### LoadRunner
 
 > Source: June 2026 repository reality-check across the protocol support matrix, import coverage docs, API comparison, and evaluator trust pack. Deliberately unvarnished. Protocol breadth is excluded from this comparison — APEX Load is treated as having sufficient protocol coverage.
@@ -178,7 +240,7 @@ Legend: **▲ APEX leads** · **= parity** · **▼ APEX trails** · **▼▼ AP
 | --- | --- | --- | --- |
 | Offline analysis depth | Archive report/comparison plus merged graph and transaction drilldown (`/api/v1/tests/{id}/archive/analysis`); still lighter than Analysis | Analysis: graph merge, page diagnostics, deep drill-down | **▼** |
 | Multi-run trending | Release trend cards; `GET /api/v1/releases/{id}/trend` | Rich trend reports | **▼** |
-| Report output | HTML + archive comparison + baseline pin + executive/engineer PDF; no Word export | HTML/PDF/Word, custom templates | **▼** |
+| Report output | HTML + archive comparison + baseline pin + executive/engineer PDF and DOCX; custom templates remain narrower | HTML/PDF/Word, custom templates | **▼** |
 | Open results format | Parquet/JSONL | Proprietary .lrr/.lra | **▲** |
 | Root-cause | Deterministic correlation summary | APM-correlated diagnostics | **▼** |
 
@@ -342,7 +404,7 @@ A comprehensive audit of APEX Load against enterprise performance testing platfo
 | Correlation intelligence depth | High | Response-family rule packs + replay stale-literal evidence delivered; full VuGen-class parity pending |
 | Named load zones with benchmark envelopes | High | Named self-hosted zones delivered; benchmark envelopes pending |
 | Browser/SPA recording fidelity | Medium | DOM-aware embedded recorder (Playwright-Go + CDP) + replay self-heal delivered; high-density browser *load* execution remains canary-scoped (separate effort) |
-| PDF/Word report export | Medium | Executive/engineer PDF export emitted from archive report profiles; Word export deferred |
+| PDF/Word report export | Medium | Executive/engineer PDF and DOCX export emitted from the common archive report profiles; richer custom report tooling remains |
 | Vault / mTLS | Medium | Template refs + redaction exist; Vault/mTLS not started |
 | OpenTelemetry signal expansion | Low | Opt-in OTLP traces cover control-plane and sampled action paths; metrics/log export and desktop OTLP export remain |
 | SAML | Medium | OIDC + trusted-header is the recommended path; SAML out of scope |

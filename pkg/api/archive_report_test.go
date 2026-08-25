@@ -453,6 +453,9 @@ func TestBuildRunArchiveReportDeclaresSchemaCompatibility(t *testing.T) {
 	if !runArchiveReportProfileSupportsFormat(report.ReportProfiles[0], "pdf") || !runArchiveReportProfileSupportsFormat(report.ReportProfiles[1], "pdf") || !runArchiveReportProfileSupportsFormat(report.ReportProfiles[2], "pdf") {
 		t.Fatalf("report profile pdf formats = %#v, want executive+engineer+audit pdf", report.ReportProfiles)
 	}
+	if !runArchiveReportProfileSupportsFormat(report.ReportProfiles[0], "docx") || !runArchiveReportProfileSupportsFormat(report.ReportProfiles[1], "docx") || !runArchiveReportProfileSupportsFormat(report.ReportProfiles[2], "docx") {
+		t.Fatalf("report profile docx formats = %#v, want executive+engineer+audit docx", report.ReportProfiles)
+	}
 	if report.ReportProfiles[2].BestFor == "" || len(report.ReportProfiles[2].SectionOrder) == 0 {
 		t.Fatalf("audit profile metadata = %#v, want best_for and section_order", report.ReportProfiles[2])
 	}
@@ -466,7 +469,7 @@ func TestBuildRunArchiveReportDeclaresSchemaCompatibility(t *testing.T) {
 	for _, output := range report.Compatibility.Outputs {
 		outputs[output.Format] = output
 	}
-	for _, format := range []string{"json", "standalone_html", "csv", "pdf", "transaction_jsonl", "resource_jsonl", "interval_summary_jsonl", "transactions_parquet", "resources_parquet", "interval_summaries_parquet"} {
+	for _, format := range []string{"json", "standalone_html", "csv", "pdf", "docx", "transaction_jsonl", "resource_jsonl", "interval_summary_jsonl", "transactions_parquet", "resources_parquet", "interval_summaries_parquet"} {
 		if outputs[format].Status != "compatible" {
 			t.Fatalf("output %q = %#v, want compatible", format, outputs[format])
 		}

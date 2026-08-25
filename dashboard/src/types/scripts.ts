@@ -135,6 +135,7 @@ export interface ScriptActionDefinition {
   sync?: ScriptBrowserSyncPolicy
   capture?: BrowserCaptureOptions
   control?: ScriptControlFlow
+  attribution?: ScriptAnalyticsAttribution
   extractors?: ScriptExtractorDefinition[]
   assertions?: ScriptAssertionDefinition[]
   think_time?: ThinkTimeConfig
@@ -147,6 +148,11 @@ export interface ScriptActionDefinition {
     operation?: string
     body_mode?: string
   }
+}
+
+export interface ScriptAnalyticsAttribution {
+  hierarchy_path?: string
+  page_name?: string
 }
 
 export interface ScriptCondition {
@@ -167,15 +173,32 @@ export interface ScriptForEachLoop {
 }
 
 export interface ScriptControlFlow {
-  condition?: ScriptCondition
-  steps?: ScriptActionDefinition[]
-  else?: ScriptActionDefinition[]
+	condition?: ScriptCondition
+	steps?: ScriptActionDefinition[]
+	else?: ScriptActionDefinition[]
+	cases?: Array<{ condition: ScriptCondition; steps?: ScriptActionDefinition[] }>
+	default?: ScriptActionDefinition[]
+	branches?: Array<{ name: string; steps?: ScriptActionDefinition[] }>
+	concurrency?: number
+	fail_fast?: boolean
   count?: number
   max_iterations?: number
   /** control_loop data-driven mode; takes precedence over count/condition. */
   for_each?: ScriptForEachLoop
   /** Run a condition-driven loop body once before evaluating its predicate. */
   do_while?: boolean
+}
+
+export interface ScriptMessageDetailConfig {
+	mode?: 'off' | 'errors' | 'sampled' | 'adaptive'
+	sample_rate?: number
+	max_items?: number
+	max_item_bytes?: number
+	max_total_bytes?: number
+}
+
+export interface ScriptResultsConfig {
+	message_detail?: ScriptMessageDetailConfig
 }
 
 export interface ThinkTimeConfig {
@@ -723,8 +746,9 @@ export interface ScriptConfig {
   sapgui?: SAPGUIConfig
   kafka?: KafkaConfig
   eventhubs?: EventHubsConfig
-  bruno?: BrunoConfig
-  observability?: ObservabilityConfig
+	bruno?: BrunoConfig
+	observability?: ObservabilityConfig
+	results?: ScriptResultsConfig
 }
 
 export interface BrunoConfig {

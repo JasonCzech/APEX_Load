@@ -301,19 +301,22 @@ func restoreNativeActionDynamicValues(
 		if original[index].Control == nil {
 			continue
 		}
-		if err := restoreNativeActionDynamicValues(
-			projected[index].Control.Steps,
-			original[index].Control.Steps,
-			label+".control.steps",
-		); err != nil {
-			return err
+		projectedBranches := projected[index].Control.ActionBranches()
+		originalBranches := original[index].Control.ActionBranches()
+		if len(projectedBranches) != len(originalBranches) {
+			return fmt.Errorf("native script %s changed control-flow branch shape during credential projection", label)
 		}
-		if err := restoreNativeActionDynamicValues(
-			projected[index].Control.Else,
-			original[index].Control.Else,
-			label+".control.else",
-		); err != nil {
-			return err
+		for branchIndex := range projectedBranches {
+			if projectedBranches[branchIndex].Path != originalBranches[branchIndex].Path {
+				return fmt.Errorf("native script %s changed control-flow branch ordering during credential projection", label)
+			}
+			if err := restoreNativeActionDynamicValues(
+				projectedBranches[branchIndex].Actions,
+				originalBranches[branchIndex].Actions,
+				label+".control."+projectedBranches[branchIndex].Path,
+			); err != nil {
+				return err
+			}
 		}
 	}
 	return nil

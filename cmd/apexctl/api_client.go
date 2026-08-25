@@ -502,9 +502,10 @@ func (c *ApiClient) pollTestContext(ctx context.Context, testID string, format s
 				}
 				if sla != nil {
 					res.SLASummary = &SLASummary{
-						Evaluated: true,
-						Breached:  sla.SLABreached,
-						Details:   append([]string(nil), sla.Details...),
+						Evaluated:              sla.SLAEvaluated,
+						Breached:               sla.SLABreached,
+						Details:                append([]string(nil), sla.Details...),
+						TransactionRuleResults: append([]api.TransactionSLARuleResult(nil), sla.TransactionRuleResults...),
 					}
 					if sla.SLABreached {
 						return res, fmt.Errorf("SLA breached: %s", strings.Join(sla.Details, "; "))
@@ -668,9 +669,10 @@ func (c *ApiClient) resolveTestResultContext(ctx context.Context, testID string,
 	}
 	if sla != nil {
 		res.SLASummary = &SLASummary{
-			Evaluated: true,
-			Breached:  sla.SLABreached,
-			Details:   append([]string(nil), sla.Details...),
+			Evaluated:              sla.SLAEvaluated,
+			Breached:               sla.SLABreached,
+			Details:                append([]string(nil), sla.Details...),
+			TransactionRuleResults: append([]api.TransactionSLARuleResult(nil), sla.TransactionRuleResults...),
 		}
 	}
 	if isFailedTestStatus(test.Status) {

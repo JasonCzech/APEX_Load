@@ -391,6 +391,13 @@ func flattenReplayActionsForReadiness(actions []dsl.Action, depth int) []dsl.Act
 				ordered = append(ordered, flattenReplayActionsForReadiness(action.Control.Steps, depth+1)...)
 				ordered = append(ordered, flattenReplayActionsForReadiness(action.Control.Else, depth+1)...)
 			}
+		case "control_switch":
+			ordered = append(ordered, replayControlShell(action))
+			if action.Control != nil && depth < replayPreflightMaxControlDepth {
+				for _, branch := range action.Control.ActionBranches() {
+					ordered = append(ordered, flattenReplayActionsForReadiness(branch.Actions, depth+1)...)
+				}
+			}
 		case "control_loop":
 			ordered = append(ordered, replayControlShell(action))
 			if action.Control != nil && depth < replayPreflightMaxControlDepth {
@@ -411,6 +418,11 @@ func replayControlShell(action dsl.Action) dsl.Action {
 	control := *action.Control
 	control.Steps = nil
 	control.Else = nil
+	control.Cases = append([]dsl.SwitchCase(nil), action.Control.Cases...)
+	for index := range control.Cases {
+		control.Cases[index].Steps = nil
+	}
+	control.Default = nil
 	clone.Control = &control
 	return clone
 }
@@ -423,6 +435,12 @@ func replayDefinitionCount(actions []dsl.Action, depth int) int {
 			if action.Control != nil && depth < replayPreflightMaxControlDepth {
 				count += replayDefinitionCount(action.Control.Steps, depth+1)
 				count += replayDefinitionCount(action.Control.Else, depth+1)
+			}
+		case "control_switch":
+			if action.Control != nil && depth < replayPreflightMaxControlDepth {
+				for _, branch := range action.Control.ActionBranches() {
+					count += replayDefinitionCount(branch.Actions, depth+1)
+				}
 			}
 		case "control_loop":
 			if action.Control != nil && depth < replayPreflightMaxControlDepth {
@@ -450,6 +468,18 @@ func replayExpectedCount(actions []dsl.Action, depth int) int {
 			} else {
 				count += thenCount
 			}
+		case "control_switch":
+			if action.Control == nil || depth >= replayPreflightMaxControlDepth {
+				continue
+			}
+			maxBranchCount := 0
+			for _, branch := range action.Control.ActionBranches() {
+				branchCount := replayExpectedCount(branch.Actions, depth+1)
+				if branchCount > maxBranchCount {
+					maxBranchCount = branchCount
+				}
+			}
+			count += maxBranchCount
 		case "control_loop":
 			if action.Control == nil || depth >= replayPreflightMaxControlDepth {
 				continue

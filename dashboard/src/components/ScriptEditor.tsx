@@ -6144,7 +6144,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
                           const indent = { paddingLeft: `${item.depth * 14}px` } as React.CSSProperties
                           const containerActive = expandedAuthorContainers.has(item.key)
                           const containerSelected = authorCodeFocus?.key === item.key
-                          const typeLabel = item.containerType === 'http_sequence' ? 'SEQ' : item.containerType === 'control_if' ? 'IF' : 'LOOP'
+						  const typeLabel = item.containerType === 'http_sequence' ? 'SEQ' : item.containerType === 'control_if' ? 'IF' : item.containerType === 'control_switch' ? 'SWITCH' : 'LOOP'
                           return (
                             <div key={item.key} {...virtualRowProps} className={`action-item action-item-nested lifecycle-action ${containerSelected ? 'active' : ''}`} {...interactiveElementProps(() => selectAuthorNestedItem(item), `Select ${item.name}`)}>
                               <div className="action-cell action-cell-gutter">

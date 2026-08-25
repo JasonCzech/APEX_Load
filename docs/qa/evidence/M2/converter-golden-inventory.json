@@ -3,8 +3,8 @@
   "source": "pkg/api/authoring_capabilities.go:authoringImportSurfaces",
   "totals": {
     "covered": 15,
-    "registered": 16,
-    "review_only": 1
+    "registered": 17,
+    "review_only": 2
   },
   "surfaces": [
     {
@@ -97,6 +97,11 @@
       "valid_golden": "k6.valid.golden",
       "diagnostic_golden": "k6.invalid.golden",
       "state": "covered"
+    },
+    {
+      "surface": "cloudtest",
+      "state": "review_only",
+      "rationale": "The converter remains fixture-gated until sanitized dependency-complete CloudTest exports establish stable wire-shape goldens."
     },
     {
       "surface": "eventhubs_capture",

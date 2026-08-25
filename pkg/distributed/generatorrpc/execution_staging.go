@@ -839,6 +839,7 @@ func (service *Service) prepareAssignmentStage(ctx context.Context, plan *assign
 	if err := json.Unmarshal(plan.scriptContent, &script); err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "decode script: %v", err)
 	}
+	applyAssignmentMessageDetailBudget(&script, request)
 	if instance, getErr := protocol.Get(strings.ToLower(strings.TrimSpace(script.Protocol))); getErr == nil {
 		if strings.EqualFold(script.Protocol, "java_vuser") {
 			observation := prepared.javaCapacity
@@ -996,6 +997,8 @@ func (service *Service) prepareAssignmentStage(ctx context.Context, plan *assign
 	mge, err := engine.NewMultiGroup(engine.MultiGroupConfig{
 		Groups: []engine.GroupConfig{{
 			Name:            request.GetGroupName(),
+			StartOffset:     plan.validated.startOffset,
+			Region:          strings.TrimSpace(request.GetRegion()),
 			ScenarioID:      request.GetScenarioId(),
 			Script:          &script,
 			VUsers:          int(request.GetVuserCount()),
@@ -1010,7 +1013,7 @@ func (service *Service) prepareAssignmentStage(ctx context.Context, plan *assign
 			StagedDataFiles: stagedDataFiles,
 			VUserIDOffset:   int(request.GetVuserIdOffset()),
 			VUserIDSpan:     int(maxGeneratorVUsers),
-			ResultSink:      combineSinks(results, writer),
+			ResultSink:      combineSinks(writer, results),
 			RedactionConfig: redactionConfig,
 			SecretResolver:  runtimeSecrets,
 		}},
@@ -1040,6 +1043,32 @@ func (service *Service) prepareAssignmentStage(ctx context.Context, plan *assign
 	return prepared, nil
 }
 
+func applyAssignmentMessageDetailBudget(script *dsl.Script, request *pb.WorkAssignment) {
+	if script == nil || request == nil || script.Config.Results.MessageDetail == nil {
+		return
+	}
+	detail := script.Config.Results.MessageDetail
+	if value := int(request.GetMessageDetailMaxItems()); value > 0 {
+		detail.MaxItems = min(detail.MaxItems, value)
+		if detail.MaxItems <= 0 {
+			detail.MaxItems = value
+		}
+	}
+	if value := request.GetMessageDetailMaxItemBytes(); value > 0 {
+		detail.MaxItemBytes = minPositiveInt64(detail.MaxItemBytes, value)
+	}
+	if value := request.GetMessageDetailMaxTotalBytes(); value > 0 {
+		detail.MaxTotalBytes = minPositiveInt64(detail.MaxTotalBytes, value)
+	}
+}
+
+func minPositiveInt64(current, ceiling int64) int64 {
+	if current <= 0 || current > ceiling {
+		return ceiling
+	}
+	return current
+}
+
 func javaVuserDistributedContainmentError(capabilities protocol.RuntimeCapabilities, supported bool) error {
 	if !supported {
 		return fmt.Errorf("java_vuser runtime does not advertise governed capabilities")
@@ -1054,7 +1083,27 @@ func javaVuserDistributedContainmentError(capabilities protocol.RuntimeCapabilit
 }
 
 func requiredRuntimeFeature(script *dsl.Script) string {
-	if script == nil || !strings.EqualFold(strings.TrimSpace(script.Protocol), "java_vuser") {
+	if script == nil {
+		return ""
+	}
+	detailRequested := false
+	if detail := script.Config.Results.MessageDetail; detail != nil {
+		mode := strings.ToLower(strings.TrimSpace(detail.Mode))
+		if mode == "sampled" || mode == "adaptive" {
+			detailRequested = true
+		}
+	}
+	parallelRequested := scriptRequestsControlParallel(script)
+	if detailRequested && parallelRequested {
+		return FeatureMessageDetailControlParallelV1
+	}
+	if detailRequested {
+		return FeatureMessageDetailCaptureV1
+	}
+	if parallelRequested {
+		return FeatureControlParallelV1
+	}
+	if !strings.EqualFold(strings.TrimSpace(script.Protocol), "java_vuser") {
 		return ""
 	}
 	if javaVuserActionsRequirePhaseLifecycle(script.Init) ||
@@ -1063,6 +1112,26 @@ func requiredRuntimeFeature(script *dsl.Script) string {
 		return protocol.FeatureJavaVuserPersistentLifecycleV1
 	}
 	return ""
+}
+
+func scriptRequestsControlParallel(script *dsl.Script) bool {
+	if script == nil {
+		return false
+	}
+	stack := append(append(append([]dsl.Action(nil), script.Init...), script.Actions...), script.Teardown...)
+	for len(stack) > 0 {
+		action := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
+		if dsl.CanonicalActionType(strings.ToLower(strings.TrimSpace(action.Type))) == "control_parallel" {
+			return true
+		}
+		if action.Control != nil {
+			for _, branch := range action.Control.ActionBranches() {
+				stack = append(stack, branch.Actions...)
+			}
+		}
+	}
+	return false
 }
 
 func javaVuserActionsRequirePhaseLifecycle(actions []dsl.Action) bool {
@@ -1077,8 +1146,10 @@ func javaVuserActionsRequirePhaseLifecycle(actions []dsl.Action) bool {
 			}
 		}
 		if action.Control != nil {
-			if javaVuserActionsRequirePhaseLifecycle(action.Control.Steps) || javaVuserActionsRequirePhaseLifecycle(action.Control.Else) {
-				return true
+			for _, branch := range action.Control.ActionBranches() {
+				if javaVuserActionsRequirePhaseLifecycle(branch.Actions) {
+					return true
+				}
 			}
 		}
 	}

@@ -19,8 +19,10 @@ import (
 	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
-const archiveSchemaVersion = "apexload.archive.v2"
+const archiveSchemaVersion = "apexload.archive.v4"
 const archiveSchemaVersionV1 = "apexload.archive.v1"
+const archiveSchemaVersionV2 = "apexload.archive.v2"
+const archiveSchemaVersionV3 = "apexload.archive.v3"
 const runArchiveReportSchemaVersion = "apexload.archive_report.v1"
 const browserDiagnosticsSchemaVersion = "apexload.browser_diagnostics.v1"
 const runArchiveManifestFileName = "manifest.json"
@@ -45,22 +47,39 @@ type RunArchiveManifest struct {
 	// InitialProvenance is captured once when archive recording begins and is
 	// never refreshed by runtime controls. Provenance remains the final enriched
 	// execution snapshot for generator inventory, actors, and governance.
-	InitialProvenance            *RunArchiveProvenance `json:"initial_provenance,omitempty"`
-	TransactionsFile             string                `json:"transactions_file"`
-	TransactionsParquetFile      string                `json:"transactions_parquet_file,omitempty"`
-	ResourceSamplesFile          string                `json:"resource_samples_file"`
-	ResourceSamplesParquetFile   string                `json:"resource_samples_parquet_file,omitempty"`
-	IntervalSummariesFile        string                `json:"interval_summaries_file"`
-	IntervalSummariesParquetFile string                `json:"interval_summaries_parquet_file,omitempty"`
-	TestManifestFile             string                `json:"test_manifest_file,omitempty"`
-	TestNotesFile                string                `json:"test_notes_file,omitempty"`
-	Artifacts                    []RunArchiveArtifact  `json:"artifacts,omitempty"`
-	TransactionCount             int64                 `json:"transaction_count"`
-	ResourceSampleCount          int64                 `json:"resource_sample_count"`
-	IntervalSummaryCount         int64                 `json:"interval_summary_count"`
-	SLAEvaluated                 bool                  `json:"sla_evaluated,omitempty"`
-	SLABreached                  bool                  `json:"sla_breached"`
-	SLADetails                   []string              `json:"sla_details,omitempty"`
+	InitialProvenance            *RunArchiveProvenance           `json:"initial_provenance,omitempty"`
+	TransactionsFile             string                          `json:"transactions_file"`
+	TransactionsParquetFile      string                          `json:"transactions_parquet_file,omitempty"`
+	ResourceSamplesFile          string                          `json:"resource_samples_file"`
+	ResourceSamplesParquetFile   string                          `json:"resource_samples_parquet_file,omitempty"`
+	IntervalSummariesFile        string                          `json:"interval_summaries_file"`
+	IntervalSummariesParquetFile string                          `json:"interval_summaries_parquet_file,omitempty"`
+	TestManifestFile             string                          `json:"test_manifest_file,omitempty"`
+	TestNotesFile                string                          `json:"test_notes_file,omitempty"`
+	Artifacts                    []RunArchiveArtifact            `json:"artifacts,omitempty"`
+	TransactionCount             int64                           `json:"transaction_count"`
+	ResourceSampleCount          int64                           `json:"resource_sample_count"`
+	IntervalSummaryCount         int64                           `json:"interval_summary_count"`
+	SLAEvaluated                 bool                            `json:"sla_evaluated,omitempty"`
+	SLABreached                  bool                            `json:"sla_breached"`
+	SLADetails                   []string                        `json:"sla_details,omitempty"`
+	TransactionRuleResults       []TransactionSLARuleResult      `json:"transaction_rule_results,omitempty"`
+	MessageDetailCapture         *RunArchiveMessageDetailCapture `json:"message_detail_capture,omitempty"`
+}
+
+type TransactionSLARuleResult struct {
+	Rule         TransactionSLARule `json:"rule"`
+	Status       string             `json:"status"`
+	Observed     *float64           `json:"observed,omitempty"`
+	MatchedCount int64              `json:"matched_count"`
+	Message      string             `json:"message"`
+}
+
+type RunArchiveMessageDetailCapture struct {
+	RetainedItems  int64            `json:"retained_items"`
+	RetainedBytes  int64            `json:"retained_bytes"`
+	TruncatedItems int64            `json:"truncated_items"`
+	Dropped        map[string]int64 `json:"dropped,omitempty"`
 }
 
 type RunArchiveArtifact struct {
@@ -148,45 +167,51 @@ type RunArchiveExecutionPlanApprovalSnapshot struct {
 }
 
 type TransactionEvent struct {
-	Timestamp           time.Time                 `json:"timestamp"`
-	TestID              string                    `json:"test_id"`
-	TestName            string                    `json:"test_name"`
-	Group               string                    `json:"group,omitempty"`
-	Region              string                    `json:"region,omitempty"`
-	ActionName          string                    `json:"action_name,omitempty"`
-	BusinessTransaction bool                      `json:"business_transaction,omitempty"`
-	CorrelationID       string                    `json:"correlation_id,omitempty"`
-	TraceID             string                    `json:"trace_id,omitempty"`
-	SpanID              string                    `json:"span_id,omitempty"`
-	NetworkProfile      string                    `json:"network_profile,omitempty"`
-	DependencyType      string                    `json:"dependency_type,omitempty"`
-	DependencyTarget    string                    `json:"dependency_target,omitempty"`
-	DurationMs          float64                   `json:"duration_ms"`
-	DNSMs               float64                   `json:"dns_ms,omitempty"`
-	ConnectMs           float64                   `json:"connect_ms,omitempty"`
-	TLSMs               float64                   `json:"tls_ms,omitempty"`
-	TTFBMs              float64                   `json:"ttfb_ms,omitempty"`
-	BytesSent           int64                     `json:"bytes_sent,omitempty"`
-	BytesReceived       int64                     `json:"bytes_received,omitempty"`
-	StatusCode          int                       `json:"status_code,omitempty"`
-	Success             bool                      `json:"success"`
-	ErrorMessage        string                    `json:"error_message,omitempty"`
-	Extractions         map[string]string         `json:"extractions,omitempty"`
-	PageURL             string                    `json:"page_url,omitempty"`
-	PageTitle           string                    `json:"page_title,omitempty"`
-	ConsoleEntries      []protocol.ConsoleEntry   `json:"console_entries,omitempty"`
-	NetworkEntries      []protocol.NetworkEntry   `json:"network_entries,omitempty"`
-	DOMSummary          *protocol.DOMSummary      `json:"dom_summary,omitempty"`
-	ClientMetrics       *protocol.ClientMetrics   `json:"client_metrics,omitempty"`
-	ServerTelemetry     *protocol.ServerTelemetry `json:"server_telemetry,omitempty"`
-	ProtocolEvidence    map[string]any            `json:"protocol_evidence,omitempty"`
-	Snapshot            *protocol.ErrorSnapshot   `json:"snapshot,omitempty"`
-	SourceStepID        string                    `json:"source_step_id,omitempty"`
-	SourceStepIndex     int                       `json:"source_step_index,omitempty"`
-	SourceAction        string                    `json:"source_action,omitempty"`
-	SourceActionName    string                    `json:"source_action_name,omitempty"`
-	SourceTransaction   string                    `json:"source_transaction,omitempty"`
-	SourceProfile       string                    `json:"source_profile,omitempty"`
+	EventID               string                    `json:"event_id"`
+	Timestamp             time.Time                 `json:"timestamp"`
+	TestID                string                    `json:"test_id"`
+	TestName              string                    `json:"test_name"`
+	Group                 string                    `json:"group,omitempty"`
+	Region                string                    `json:"region,omitempty"`
+	NetworkProfile        string                    `json:"network_profile,omitempty"`
+	SourceTransaction     string                    `json:"source_transaction,omitempty"`
+	Hierarchy             string                    `json:"hierarchy,omitempty"`
+	PageName              string                    `json:"page_name,omitempty"`
+	Phase                 string                    `json:"phase,omitempty"`
+	HasDetail             bool                      `json:"has_detail"`
+	MessageDetailPriority int                       `json:"message_detail_priority,omitempty"`
+	ActionName            string                    `json:"action_name,omitempty"`
+	BusinessTransaction   bool                      `json:"business_transaction,omitempty"`
+	CorrelationID         string                    `json:"correlation_id,omitempty"`
+	TraceID               string                    `json:"trace_id,omitempty"`
+	SpanID                string                    `json:"span_id,omitempty"`
+	DependencyType        string                    `json:"dependency_type,omitempty"`
+	DependencyTarget      string                    `json:"dependency_target,omitempty"`
+	DurationMs            float64                   `json:"duration_ms"`
+	DNSMs                 float64                   `json:"dns_ms,omitempty"`
+	ConnectMs             float64                   `json:"connect_ms,omitempty"`
+	TLSMs                 float64                   `json:"tls_ms,omitempty"`
+	TTFBMs                float64                   `json:"ttfb_ms,omitempty"`
+	BytesSent             int64                     `json:"bytes_sent,omitempty"`
+	BytesReceived         int64                     `json:"bytes_received,omitempty"`
+	StatusCode            int                       `json:"status_code,omitempty"`
+	Success               bool                      `json:"success"`
+	ErrorMessage          string                    `json:"error_message,omitempty"`
+	Extractions           map[string]string         `json:"extractions,omitempty"`
+	PageURL               string                    `json:"page_url,omitempty"`
+	PageTitle             string                    `json:"page_title,omitempty"`
+	ConsoleEntries        []protocol.ConsoleEntry   `json:"console_entries,omitempty"`
+	NetworkEntries        []protocol.NetworkEntry   `json:"network_entries,omitempty"`
+	DOMSummary            *protocol.DOMSummary      `json:"dom_summary,omitempty"`
+	ClientMetrics         *protocol.ClientMetrics   `json:"client_metrics,omitempty"`
+	ServerTelemetry       *protocol.ServerTelemetry `json:"server_telemetry,omitempty"`
+	ProtocolEvidence      map[string]any            `json:"protocol_evidence,omitempty"`
+	Snapshot              *protocol.ErrorSnapshot   `json:"snapshot,omitempty"`
+	SourceStepID          string                    `json:"source_step_id,omitempty"`
+	SourceStepIndex       int                       `json:"source_step_index,omitempty"`
+	SourceAction          string                    `json:"source_action,omitempty"`
+	SourceActionName      string                    `json:"source_action_name,omitempty"`
+	SourceProfile         string                    `json:"source_profile,omitempty"`
 }
 
 type ResourceSample struct {
@@ -269,6 +294,7 @@ type IntervalSummaryRecord struct {
 	PercentileQuality string                                 `json:"percentile_quality,omitempty"`
 	Groups            map[string]*GroupLiveMetrics           `json:"groups,omitempty"`
 	Transactions      map[string]*IntervalTransactionMetrics `json:"transactions,omitempty"`
+	ByRegion          map[string]*IntervalTransactionMetrics `json:"by_region,omitempty"`
 	Browser           *BrowserLiveMetrics                    `json:"browser,omitempty"`
 	BrowserByDevice   map[string]*BrowserDeviceLiveMetrics   `json:"browser_by_device,omitempty"`
 	Telemetry         *TelemetryHealth                       `json:"telemetry,omitempty"`
@@ -293,24 +319,30 @@ type archivePage struct {
 }
 
 type transactionEventFilter struct {
-	Action           string
-	SOAPOperation    string
-	Group            string
-	CorrelationID    string
-	TraceID          string
-	DependencyType   string
-	DependencyTarget string
-	TimeFrom         *time.Time
-	TimeTo           *time.Time
-	Status           string
-	MinDurationMs    *float64
-	MaxDurationMs    *float64
-	MinBytes         *int64
-	MaxBytes         *int64
-	ErrorContains    string
-	Success          *bool
-	SortBy           string
-	SortDir          string
+	Action            string
+	SOAPOperation     string
+	Group             string
+	Region            string
+	NetworkProfile    string
+	SourceTransaction string
+	Hierarchy         string
+	Phase             string
+	HasDetail         *bool
+	CorrelationID     string
+	TraceID           string
+	DependencyType    string
+	DependencyTarget  string
+	TimeFrom          *time.Time
+	TimeTo            *time.Time
+	Status            string
+	MinDurationMs     *float64
+	MaxDurationMs     *float64
+	MinBytes          *int64
+	MaxBytes          *int64
+	ErrorContains     string
+	Success           *bool
+	SortBy            string
+	SortDir           string
 }
 
 type RunArchiveReport struct {
@@ -744,23 +776,27 @@ var archiveErrorWhitespacePattern = regexp.MustCompile(`\s+`)
 var archiveSnapshotLeadingTemplateBasePattern = regexp.MustCompile(`^\{\{\s*(?:var|param)\.[^{}]+\s*\}\}\s*(.*)$`)
 
 type runArchiveWriter struct {
-	mu              sync.Mutex
-	manifest        RunArchiveManifest
-	region          string
-	rootDir         string
-	manifestPath    string
-	txFile          *os.File
-	resourceFile    *os.File
-	summaryFile     *os.File
-	txBuf           *bufio.Writer
-	resourceBuf     *bufio.Writer
-	summaryBuf      *bufio.Writer
-	txEncoder       *json.Encoder
-	resourceEncoder *json.Encoder
-	summaryEncoder  *json.Encoder
-	flushStop       chan struct{}
-	flushStopped    chan struct{}
-	flushErr        error
+	mu                  sync.Mutex
+	manifest            RunArchiveManifest
+	region              string
+	rootDir             string
+	manifestPath        string
+	txFile              *os.File
+	resourceFile        *os.File
+	summaryFile         *os.File
+	txBuf               *bufio.Writer
+	resourceBuf         *bufio.Writer
+	summaryBuf          *bufio.Writer
+	txEncoder           *json.Encoder
+	resourceEncoder     *json.Encoder
+	summaryEncoder      *json.Encoder
+	flushStop           chan struct{}
+	flushStopped        chan struct{}
+	flushErr            error
+	detailItems         int64
+	detailBytes         int64
+	detailPriorityItems [4]int64
+	detailPriorityBytes [4]int64
 }
 
 func cloneArchiveTestGroups(groups []TestGroup) []TestGroup {

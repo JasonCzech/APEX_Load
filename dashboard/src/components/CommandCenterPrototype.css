@@ -366,6 +366,9 @@
 
 .command-sidebar-graph-options .time-range-selector {
   justify-content: flex-start;
+  justify-self: start;
+  width: fit-content;
+  max-width: 100%;
 }
 
 .command-group-select-toggle {

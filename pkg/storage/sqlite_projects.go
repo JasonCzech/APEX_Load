@@ -1674,6 +1674,7 @@ func deleteProjectGraphTx(tx *storeTx, id string) error {
 		{`DELETE FROM correlation_rulesets WHERE project_id = ?`, []any{id}},
 		{`DELETE FROM monitoring_collectors WHERE project_id = ?`, []any{id}},
 		{`DELETE FROM grafana_dashboards WHERE project_id = ?`, []any{id}},
+		{`DELETE FROM dashboard_definitions WHERE project_id = ?`, []any{id}},
 		{`DELETE FROM grafana_import_sessions WHERE project_id = ?`, []any{id}},
 
 		// Execution-plan schedules, approvals, occurrences, and run state.

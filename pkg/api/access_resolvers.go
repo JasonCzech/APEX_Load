@@ -1050,6 +1050,22 @@ var resolveGrafanaDashboardProjectID = entityProjectIDResolver("grafana dashboar
 
 var resolveGrafanaDashboardCommitProjectID = bodyProjectIDResolver("project_id is required for grafana dashboard import commit")
 
+var resolveDashboardDefinitionCreateProjectID = bodyProjectIDResolver("project_id is required for project dashboard creation")
+
+var resolveDashboardDefinitionProjectID = entityProjectIDResolver("dashboard definition not found", "failed to load dashboard definition", func(store storage.Store, id string) (string, error) {
+	nativeStore, ok := store.(interface {
+		GetDashboardDefinition(string) (*storage.DashboardDefinition, error)
+	})
+	if !ok {
+		return "", sql.ErrNoRows
+	}
+	dashboard, err := nativeStore.GetDashboardDefinition(id)
+	if err != nil {
+		return "", err
+	}
+	return dashboard.ProjectID, nil
+})
+
 var resolveReusableBlockProjectID = entityProjectIDResolver("reusable block not found", "failed to load reusable block", func(store storage.Store, id string) (string, error) {
 	block, err := store.GetReusableBlock(id)
 	if err != nil {

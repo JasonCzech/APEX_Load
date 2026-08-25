@@ -599,7 +599,7 @@ func runReplayPhase(
 // (vuser.go: http_sequence + control_if/control_loop) exactly.
 func replayContainerKind(action dsl.Action) string {
 	switch strings.ToLower(strings.TrimSpace(action.Type)) {
-	case "http_sequence", "control_if", "control_loop":
+	case "http_sequence", "control_if", "control_switch", "control_loop", "control_parallel":
 		return strings.ToLower(strings.TrimSpace(action.Type))
 	default:
 		return ""
@@ -757,6 +757,103 @@ func expandReplayAction(
 		}
 		if !applyReplayContainerThinkTime(ctx, vu, action, ignoreThinkTime, globalThinkCfg, report) {
 			return replayStop, true
+		}
+		return replayNext, false
+	case "control_switch":
+		if action.Control == nil || depth >= maxControlDepth {
+			return replayNext, false
+		}
+		body := action.Control.Default
+		branch := "default"
+		for caseIndex, switchCase := range action.Control.Cases {
+			ok, evidence := vu.evalConditionEvidence(switchCase.Condition)
+			evidence.Branch = fmt.Sprintf("case[%d]", caseIndex)
+			publishConditionEvidence(onProgress, report, action, phase, actionIndex, stepPath, iterationPath, evidence)
+			if ok {
+				body = switchCase.Steps
+				branch = evidence.Branch
+				break
+			}
+		}
+		for stepIndex, child := range body {
+			childPath := appendStepPath(stepPath, fmt.Sprintf("%s[%d]", branch, stepIndex))
+			flow, abort := expandReplayAction(ctx, vu, child, phase, actionIndex, depth+1, childPath, iterationPath, leafCounter, continueOnError, ignoreThinkTime, globalThinkCfg, report, onProgress, debugController)
+			if abort {
+				return replayStop, true
+			}
+			switch flow {
+			case replayStop:
+				if !continueOnError {
+					return replayStop, false
+				}
+			case replayBreak, replayContinue, replayExitIteration:
+				return flow, false
+			}
+		}
+		if !applyReplayContainerThinkTime(ctx, vu, action, ignoreThinkTime, globalThinkCfg, report) {
+			return replayStop, true
+		}
+		return replayNext, false
+	case "control_parallel":
+		if action.Control == nil || depth >= maxControlDepth || !parallelActionsRuntimeSafe(action.Control.Branches) {
+			return replayStop, false
+		}
+		parentVariables := cloneStringMap(vu.Variables)
+		parentExtracted := cloneIntMap(vu.extractedVariables)
+		parentExtractedBytes := vu.extractedVariableBytes
+		type branchExtractions struct {
+			name   string
+			values map[string]string
+		}
+		merged := make([]branchExtractions, 0, len(action.Control.Branches))
+		success := true
+		for branchIndex, branch := range action.Control.Branches {
+			vu.Variables = cloneStringMap(parentVariables)
+			vu.extractedVariables = make(map[string]int)
+			vu.extractedVariableBytes = 0
+			for stepIndex, child := range branch.Steps {
+				childPath := appendStepPath(stepPath, fmt.Sprintf("branches[%d].steps[%d]", branchIndex, stepIndex))
+				flow, abort := expandReplayAction(ctx, vu, child, phase, actionIndex, depth+1, childPath, iterationPath, leafCounter, continueOnError, ignoreThinkTime, globalThinkCfg, report, onProgress, debugController)
+				if abort {
+					return replayStop, true
+				}
+				if flow == replayStop {
+					success = false
+					if !continueOnError {
+						break
+					}
+				}
+				if flow == replayBreak || flow == replayContinue || flow == replayExitIteration {
+					success = false
+					break
+				}
+			}
+			values := make(map[string]string, len(vu.extractedVariables))
+			for key := range vu.extractedVariables {
+				if value, ok := vu.Variables[key]; ok {
+					values[key] = value
+				}
+			}
+			merged = append(merged, branchExtractions{name: strings.TrimSpace(branch.Name), values: values})
+			if !success && !continueOnError {
+				break
+			}
+		}
+		vu.Variables = parentVariables
+		vu.extractedVariables = parentExtracted
+		vu.extractedVariableBytes = parentExtractedBytes
+		for _, branch := range merged {
+			for key, value := range branch.values {
+				if err := vu.mergeExtractions(&protocol.Result{Extractions: map[string]string{"parallel." + branch.name + "." + key: value}}); err != nil {
+					success = false
+				}
+			}
+		}
+		if !applyReplayContainerThinkTime(ctx, vu, action, ignoreThinkTime, globalThinkCfg, report) {
+			return replayStop, true
+		}
+		if !success {
+			return replayStop, false
 		}
 		return replayNext, false
 	case "control_loop":

@@ -138,6 +138,7 @@
       "pacing": {
         "type": ""
       },
+      "results": {},
       "run_logic": {
         "auto_transactions": "none"
       },

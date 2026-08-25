@@ -8,7 +8,7 @@ interface Props {
   lens: ReportLens
   testName?: string
   downloadHTML: (id: string, lens: string) => Promise<Blob>
-  downloadFormat: (id: string, lens: string, format: 'pdf' | 'csv') => Promise<Blob>
+  downloadFormat: (id: string, lens: string, format: 'pdf' | 'csv' | 'docx') => Promise<Blob>
 }
 
 function safeName(value: string | undefined, fallback: string) {
@@ -19,7 +19,7 @@ export default function RunReportExportActions({ testId, lens, testName, downloa
   const [busy, setBusy] = useState<string>('')
   const [error, setError] = useState('')
 
-  const exportReport = async (format: 'html' | 'pdf' | 'csv') => {
+  const exportReport = async (format: 'html' | 'pdf' | 'csv' | 'docx') => {
     setBusy(format)
     setError('')
     try {
@@ -43,7 +43,7 @@ export default function RunReportExportActions({ testId, lens, testName, downloa
         </div>
       </div>
       <div className="run-report-export-actions">
-        {(['html', 'pdf', 'csv'] as const).map(format => (
+        {(['html', 'pdf', 'csv', 'docx'] as const).map(format => (
           <button
             key={format}
             className="btn btn-sm btn-secondary"

@@ -141,6 +141,7 @@ func importSupportMatrixRoutePaths() []string {
 		"/api/v1/scripts/import/asyncapi/support-matrix",
 		"/api/v1/scripts/import/broker-config/support-matrix",
 		"/api/v1/scripts/import/bruno/support-matrix",
+		"/api/v1/scripts/import/cloudtest/support-matrix",
 		"/api/v1/scripts/import/devweb/support-matrix",
 		"/api/v1/scripts/import/enterprise-script-archive/support-matrix",
 		"/api/v1/scripts/import/eventhubs-capture/support-matrix",

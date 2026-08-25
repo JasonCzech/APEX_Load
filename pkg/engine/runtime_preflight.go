@@ -94,11 +94,10 @@ func runtimePreflightTargets(ctx context.Context, script *dsl.Script, resolver S
 				}
 			}
 			if action.Control != nil {
-				if err := visit(action.Control.Steps); err != nil {
-					return err
-				}
-				if err := visit(action.Control.Else); err != nil {
-					return err
+				for _, branch := range action.Control.ActionBranches() {
+					if err := visit(branch.Actions); err != nil {
+						return err
+					}
 				}
 			}
 		}

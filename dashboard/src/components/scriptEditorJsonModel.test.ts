@@ -172,6 +172,22 @@ describe('Script JSON path and line navigation', () => {
     })
   })
 
+	it('resolves control_switch case and default focus paths', () => {
+		const switchScript = script({ actions: [{
+			name: 'Route', type: 'control_switch', target: '',
+			control: {
+				cases: [{ condition: { expr: 'var.kind == "a"' }, steps: [{ name: 'Case A', type: 'GET', target: '/a' }] }],
+				default: [{ name: 'Fallback', type: 'GET', target: '/fallback' }],
+			},
+		}] })
+		const caseFocus = authorFocusFromKey('action:0#case[0][0]')
+		expect(codePathForAuthorFocus(caseFocus)).toBe('script.actions[0].control.cases[0].steps[0]')
+		expect(resolveAuthorJsonScope(switchScript, caseFocus)).toMatchObject({ action: { name: 'Case A' } })
+		const defaultFocus = authorFocusFromKey('action:0#default[0]')
+		expect(codePathForAuthorFocus(defaultFocus)).toBe('script.actions[0].control.default[0]')
+		expect(resolveAuthorJsonScope(switchScript, defaultFocus)).toMatchObject({ action: { name: 'Fallback' } })
+	})
+
   it('maps parameter references and candidate literals to stable lines and offsets', () => {
     const text = [
       '{',

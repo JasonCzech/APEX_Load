@@ -501,6 +501,7 @@ func cloneDSLGoalConfig(in *dsl.GoalConfig) *dsl.GoalConfig {
 		return nil
 	}
 	out := *in
+	out.TransactionRules = append([]dsl.TransactionSLARule(nil), in.TransactionRules...)
 	return &out
 }
 

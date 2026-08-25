@@ -344,8 +344,9 @@ func walkScriptActions(script *dsl.Script, visit func(action *dsl.Action)) {
 			action := &actions[index]
 			visit(action)
 			if action.Control != nil {
-				walk(action.Control.Steps)
-				walk(action.Control.Else)
+				for _, branch := range action.Control.ActionBranches() {
+					walk(branch.Actions)
+				}
 			}
 		}
 	}

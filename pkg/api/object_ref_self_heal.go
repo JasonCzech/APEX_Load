@@ -307,8 +307,9 @@ func objectRefBindingsByActionName(script *dsl.Script) map[string]objectRefBindi
 				}
 			}
 			if action.Control != nil {
-				walk(action.Control.Steps)
-				walk(action.Control.Else)
+				for _, branch := range action.Control.ActionBranches() {
+					walk(branch.Actions)
+				}
 			}
 		}
 	}

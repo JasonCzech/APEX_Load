@@ -14,7 +14,8 @@ export interface TestGroup {
   runtime_state?: 'scheduled' | 'running' | 'stopping' | 'ended' | string
   ended_at?: string
   ramp_up?: string
-  ramp_down?: string
+	ramp_down?: string
+	start_offset?: string
   stages?: LoadStageDraft[]
   iterations?: number
   iteration_override?: number

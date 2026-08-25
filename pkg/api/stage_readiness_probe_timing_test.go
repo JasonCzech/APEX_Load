@@ -77,7 +77,7 @@ func TestDistributedStageReadinessProbePreservesFirstHoldAndRateLimitsRetries(t 
 	go func() {
 		runner.runStageSchedule(ctx, "slow-initial-ramp", "buyers", []storage.LoadStage{{
 			Type: "hold", Duration: holdDuration.String(), TargetVUsers: 1,
-		}}, nil)
+		}}, 0, nil)
 		completed <- time.Now()
 	}()
 

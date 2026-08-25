@@ -47,6 +47,11 @@ func TestConverterGoldenInventoryFreshness(t *testing.T) {
 		"k6":                 coveredGolden("k6", "k6"),
 		"eventhubs_capture":  coveredGolden("eventhubs_capture", "eventhubscapture"),
 		"broker_config":      coveredGolden("broker_config", "brokerconfig"),
+		"cloudtest": {
+			Surface:   "cloudtest",
+			State:     "review_only",
+			Rationale: "The converter remains fixture-gated until sanitized dependency-complete CloudTest exports establish stable wire-shape goldens.",
+		},
 		"oracle_ebusiness_review": {
 			Surface:   "oracle_ebusiness_review",
 			State:     "review_only",

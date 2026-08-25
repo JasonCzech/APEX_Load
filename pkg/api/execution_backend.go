@@ -486,7 +486,7 @@ type liveErrorEvidenceSink struct {
 }
 
 func (sink liveErrorEvidenceSink) RecordResult(result *protocol.Result) error {
-	if sink.runner == nil || result == nil || result.Success || result.Snapshot == nil {
+	if sink.runner == nil || result == nil || result.Snapshot == nil || result.Success && !result.MessageDetailRetained {
 		return nil
 	}
 	evidence := liveErrorEvidenceFromResult(result)
@@ -502,6 +502,15 @@ func (sink liveErrorEvidenceSink) RecordResult(result *protocol.Result) error {
 		sink.runner.appendLiveErrorEvidenceLocked(test, []LiveErrorEvidence{evidence})
 	}
 	sink.runner.mu.Unlock()
+	if evidence.Status == "success" && sink.runner.hub != nil && test != nil {
+		sink.runner.hub.BroadcastScopedJSON(test.ID, test.ProjectID, map[string]any{
+			"type": "transaction_sample", "test_id": test.ID, "event_id": evidence.ID,
+			"action": evidence.Action, "group": evidence.Group, "region": evidence.Region,
+			"network_profile": evidence.NetworkProfile, "hierarchy": evidence.Hierarchy,
+			"phase": evidence.Phase, "duration_ms": evidence.DurationMs, "status_code": evidence.StatusCode,
+			"has_detail": true,
+		})
+	}
 	return nil
 }
 

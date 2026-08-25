@@ -446,6 +446,38 @@ func TestValidateScriptIssues_ControlConditionCELExpr(t *testing.T) {
 	assertIssueContains(t, issues, `expression must return bool`)
 }
 
+func TestValidateScriptIssues_ControlSwitch(t *testing.T) {
+	script := &Script{
+		Name:     "switch",
+		Protocol: "http",
+		Config:   ScriptConfig{BaseURL: "https://example.test"},
+		Actions: []Action{{
+			Name: "route",
+			Type: "control_switch",
+			Control: &ControlFlow{
+				Cases: []SwitchCase{
+					{Condition: &Condition{Expr: `var.role == "admin"`}, Steps: []Action{{Name: "admin", Type: "GET", Target: "/admin"}}},
+					{Condition: &Condition{Left: "{{var.role}}", Op: "eq", Right: "member"}, Steps: []Action{{Name: "member", Type: "GET", Target: "/member"}}},
+				},
+				Default: []Action{{Name: "guest", Type: "GET", Target: "/guest"}},
+			},
+		}},
+	}
+	if issues := ValidateScriptIssues(script); len(issues) != 0 {
+		t.Fatalf("issues = %v, want none", issues)
+	}
+
+	script.Actions[0].Control.Cases[0].Condition = nil
+	script.Actions[0].Control.Cases[1].Steps = nil
+	issues := ValidateScriptIssues(script)
+	assertIssue(t, issues, `actions[0].control.cases[0]: condition is required`)
+	assertIssue(t, issues, `actions[0].control.cases[1]: steps must not be empty`)
+
+	script.Actions[0].Control.Cases = nil
+	issues = ValidateScriptIssues(script)
+	assertIssueContains(t, issues, `control_switch requires at least one case`)
+}
+
 func TestValidateScriptIssues_ControlFlowLifecyclePaths(t *testing.T) {
 	script := &Script{
 		Name:     "browser-lifecycle-control",
@@ -1665,5 +1697,37 @@ func TestValidateScriptIssues_NestedJMSHonorsConfigDestination(t *testing.T) {
 		if strings.Contains(issue, "missing target") {
 			t.Fatalf("nested jms_publish with config destination flagged missing target: %v", ValidateScriptIssues(script))
 		}
+	}
+}
+
+func TestValidateParallelBranchRuntimeSafetyRejectsUnsafeNestedControl(t *testing.T) {
+	tests := []struct {
+		name   string
+		action Action
+		want   string
+	}{
+		{name: "nested parallel", action: Action{Type: "control_parallel"}, want: "control_parallel is not permitted"},
+		{name: "rendezvous", action: Action{Type: "rendezvous"}, want: "rendezvous is not permitted"},
+		{name: "break nested in loop", action: Action{Type: "control_loop", Control: &ControlFlow{Count: 1, Steps: []Action{{Type: "control_break"}}}}, want: "control_break is not permitted"},
+		{name: "continue nested in condition", action: Action{Type: "control_if", Control: &ControlFlow{Condition: &Condition{Left: "x", Op: "exists"}, Steps: []Action{{Type: "control_continue"}}}}, want: "control_continue is not permitted"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			issues := validateParallelBranchRuntimeSafety([]Action{test.action}, "actions[0].control.branches[0].steps")
+			assertIssueContains(t, issues, test.want)
+		})
+	}
+}
+
+func TestValidateParallelBranchRuntimeSafetyAllowsBoundedControl(t *testing.T) {
+	actions := []Action{{
+		Type: "control_if",
+		Control: &ControlFlow{
+			Condition: &Condition{Left: "{{var.ready}}", Op: "exists"},
+			Steps:     []Action{{Name: "request", Type: "GET", Method: "GET", Target: "/ready"}},
+		},
+	}}
+	if issues := validateParallelBranchRuntimeSafety(actions, "actions[0].control.branches[0].steps"); len(issues) != 0 {
+		t.Fatalf("safe nested control rejected: %v", issues)
 	}
 }

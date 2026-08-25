@@ -110,11 +110,11 @@ func dedupeActionList(actions []dsl.Action, seen map[string]int, renames *[]Rena
 		applyRename(&actions[i].Name, seen, renames)
 
 		if actions[i].Control != nil {
-			// control_if Steps/Else (and control_loop Steps) are siblings within
-			// the same block, so they share one scope.
+			// Every branch in one control container shares a scope.
 			child := map[string]int{}
-			dedupeActionList(actions[i].Control.Steps, child, renames)
-			dedupeActionList(actions[i].Control.Else, child, renames)
+			for _, branch := range actions[i].Control.ActionBranches() {
+				dedupeActionList(branch.Actions, child, renames)
+			}
 		}
 		dedupeSequenceRequests(actions[i], renames)
 	}

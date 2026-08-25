@@ -178,6 +178,31 @@ func csvSLARows(write reportCSVWriteFunc, section string, rows []SLAComplianceRo
 	return nil
 }
 
+func csvTransactionSLARules(write reportCSVWriteFunc, section string, results []TransactionSLARuleResult) error {
+	for _, result := range results {
+		observed := "n/a"
+		if result.Observed != nil {
+			observed = formatCSVFloat(*result.Observed)
+		}
+		entries := [][2]string{
+			{"metric", result.Rule.Metric},
+			{"comparator", result.Rule.Comparator},
+			{"threshold", formatCSVFloat(result.Rule.Threshold)},
+			{"observed", observed},
+			{"severity", firstNonEmptyReportText(result.Rule.Severity, "fail")},
+			{"status", result.Status},
+			{"matched_count", formatCSVInt(result.MatchedCount)},
+			{"message", result.Message},
+		}
+		for _, entry := range entries {
+			if err := write(section, result.Rule.Transaction, "transaction_rule_"+entry[0], entry[1]); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 // pdfFindingsLines appends findings as PDF lines.
 func pdfFindingsLines(lines *[]string, findings []ReportFinding) {
 	if len(findings) == 0 {
@@ -209,6 +234,22 @@ func pdfSLALines(lines *[]string, rows []SLAComplianceRow) {
 		}
 		*lines = append(*lines, fmt.Sprintf("- %s: %s tx, p95 %.0f ms, SLA %s, %.2f%% errors - %s",
 			row.Name, formatPDFInt(row.Volume), row.P95Ms, sla, row.ErrorPct, row.Result))
+	}
+}
+
+func pdfTransactionSLARuleLines(lines *[]string, results []TransactionSLARuleResult) {
+	if len(results) == 0 {
+		return
+	}
+	*lines = append(*lines, "Exact transaction terminal rules")
+	for _, result := range results {
+		observed := "n/a"
+		if result.Observed != nil {
+			observed = fmt.Sprintf("%.6g", *result.Observed)
+		}
+		*lines = append(*lines, fmt.Sprintf("- %s / %s: observed %s, expected %s %.6g [%s] - %s",
+			result.Rule.Transaction, result.Rule.Metric, observed, result.Rule.Comparator, result.Rule.Threshold,
+			firstNonEmptyReportText(result.Rule.Severity, "fail"), result.Status))
 	}
 }
 
@@ -309,19 +350,27 @@ func buildReportSectionRegistry() map[string]reportSectionRenderer {
 		PDF: func(d *runArchiveHTMLReportData, lines *[]string) {
 			pdfHeading(lines, "SLA Scorecard")
 			pdfSLALines(lines, d.SLARows)
+			pdfTransactionSLARuleLines(lines, d.TransactionRuleResults)
 			*lines = append(*lines, "")
 		},
 		CSV: func(d *runArchiveHTMLReportData, write reportCSVWriteFunc) error {
-			return csvSLARows(write, "sla", d.SLARows)
+			if err := csvSLARows(write, "sla", d.SLARows); err != nil {
+				return err
+			}
+			return csvTransactionSLARules(write, "sla", d.TransactionRuleResults)
 		}})
 	add(reportSectionRenderer{ID: "sla_detail", Label: "SLA Compliance",
 		PDF: func(d *runArchiveHTMLReportData, lines *[]string) {
 			pdfHeading(lines, "SLA Compliance")
 			pdfSLALines(lines, d.SLARows)
+			pdfTransactionSLARuleLines(lines, d.TransactionRuleResults)
 			*lines = append(*lines, "")
 		},
 		CSV: func(d *runArchiveHTMLReportData, write reportCSVWriteFunc) error {
-			return csvSLARows(write, "sla", d.SLARows)
+			if err := csvSLARows(write, "sla", d.SLARows); err != nil {
+				return err
+			}
+			return csvTransactionSLARules(write, "sla", d.TransactionRuleResults)
 		}})
 
 	// --- Performance graphs ------------------------------------------------

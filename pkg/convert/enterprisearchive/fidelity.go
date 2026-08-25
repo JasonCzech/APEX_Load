@@ -128,8 +128,9 @@ func countCSourceParseFailureGates(script *dsl.Script) int {
 				count++
 			}
 			if action.Control != nil {
-				walk(action.Control.Steps)
-				walk(action.Control.Else)
+				for _, branch := range action.Control.ActionBranches() {
+					walk(branch.Actions)
+				}
 			}
 		}
 	}
@@ -200,8 +201,12 @@ func fidelityHasJavaVuserRun(actions []dsl.Action) bool {
 		if strings.EqualFold(strings.TrimSpace(action.Type), "java_vuser_run") {
 			return true
 		}
-		if action.Control != nil && (fidelityHasJavaVuserRun(action.Control.Steps) || fidelityHasJavaVuserRun(action.Control.Else)) {
-			return true
+		if action.Control != nil {
+			for _, branch := range action.Control.ActionBranches() {
+				if fidelityHasJavaVuserRun(branch.Actions) {
+					return true
+				}
+			}
 		}
 	}
 	return false
@@ -324,8 +329,9 @@ func countSecretGatedActions(script *dsl.Script) int {
 				count++
 			}
 			if action.Control != nil {
-				walk(action.Control.Steps)
-				walk(action.Control.Else)
+				for _, branch := range action.Control.ActionBranches() {
+					walk(branch.Actions)
+				}
 			}
 		}
 	}

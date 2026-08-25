@@ -853,8 +853,12 @@ func scriptHasPromotionBlocker(script *dsl.Script) bool {
 			if metadataBool(action.Metadata, "review_required") || metadataBool(action.Metadata, "promotion_blocker") {
 				return true
 			}
-			if action.Control != nil && (visit(action.Control.Steps) || visit(action.Control.Else)) {
-				return true
+			if action.Control != nil {
+				for _, branch := range action.Control.ActionBranches() {
+					if visit(branch.Actions) {
+						return true
+					}
+				}
 			}
 		}
 		return false
@@ -2217,9 +2221,12 @@ func brunoNativeResponseHasProjectionGate(script *dsl.Script) bool {
 					}
 				}
 			}
-			if action.Control != nil &&
-				(visit(action.Control.Steps) || visit(action.Control.Else)) {
-				return true
+			if action.Control != nil {
+				for _, branch := range action.Control.ActionBranches() {
+					if visit(branch.Actions) {
+						return true
+					}
+				}
 			}
 		}
 		return false

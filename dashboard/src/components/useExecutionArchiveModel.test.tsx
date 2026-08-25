@@ -815,6 +815,12 @@ describe('useExecutionArchiveModel', () => {
 
 function defaultArchiveTransactionQuery(overrides: Record<string, string | undefined> = {}) {
   return {
+	region: undefined,
+	network_profile: undefined,
+	source_transaction: undefined,
+	hierarchy: undefined,
+	phase: undefined,
+	has_detail: undefined,
     time_from: undefined,
     time_to: undefined,
     status: undefined,

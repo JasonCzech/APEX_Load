@@ -169,6 +169,40 @@ function formatBrowserWaterfall(metrics?: TransactionEvent['client_metrics']): s
   return lines.join('\n')
 }
 
+function TransactionNetworkWaterfall({ event }: { event: TransactionEvent }) {
+	const phases = [
+		{ label: 'DNS', value: event.dns_ms || 0 },
+		{ label: 'Connect', value: event.connect_ms || 0 },
+		{ label: 'TLS', value: event.tls_ms || 0 },
+		{ label: 'TTFB', value: event.ttfb_ms || 0 },
+		{ label: 'Transfer', value: Math.max(0, event.duration_ms - (event.ttfb_ms || 0)) },
+	].filter(item => item.value > 0)
+	const resources = (event.network_entries || []).slice(0, 64)
+	if (phases.length === 0 && resources.length === 0) return null
+	const maxDuration = Math.max(1, event.duration_ms, ...resources.map(resource => resource.duration_ms || 0))
+	return (
+		<div className="archive-waterfall" aria-label="Network waterfall">
+			{phases.map((phase) => (
+				<div className="archive-waterfall-row" key={phase.label}>
+					<span className="archive-waterfall-label">{phase.label}</span>
+					<span className="archive-waterfall-track"><span className="archive-waterfall-bar phase" style={{ width: `${Math.max(2, (phase.value / maxDuration) * 100)}%` }} /></span>
+					<span className="archive-waterfall-value">{phase.value.toFixed(1)} ms</span>
+				</div>
+			))}
+			{resources.map((resource, index) => {
+				const duration = resource.duration_ms || 0
+				return (
+					<div className="archive-waterfall-row" key={`${resource.url || 'resource'}-${index}`}>
+						<span className="archive-waterfall-label" title={resource.url}>{resource.resource_type || resource.method || 'Resource'}</span>
+						<span className="archive-waterfall-track"><span className="archive-waterfall-bar resource" style={{ width: `${Math.max(2, (duration / maxDuration) * 100)}%` }} /></span>
+						<span className="archive-waterfall-value">{duration.toFixed(1)} ms</span>
+					</div>
+				)
+			})}
+		</div>
+	)
+}
+
 function formatBrowserResourceBytes(value?: number): string {
   if (value === undefined) return 'n/a'
   if (value >= 1024 * 1024) return `${(value / 1024 / 1024).toFixed(2)} MB`
@@ -969,6 +1003,9 @@ export default function TestExecutionArchive({
                       )}
                       {profile.export_formats.includes('pdf') && (
                         <DesktopApiResourceLink className="btn btn-secondary btn-sm" href={buildArchiveReportHref(test.id, 'pdf', profile.id)} target="_blank" rel="noreferrer" filename={`${test.id}-${profile.id}-report.pdf`}>{profile.label} PDF</DesktopApiResourceLink>
+                      )}
+                      {profile.export_formats.includes('docx') && (
+                        <DesktopApiResourceLink className="btn btn-secondary btn-sm" href={buildArchiveReportHref(test.id, 'docx', profile.id)} target="_blank" rel="noreferrer" filename={`${test.id}-${profile.id}-report.docx`}>{profile.label} DOCX</DesktopApiResourceLink>
                       )}
                       {profile.export_formats.includes('jsonl') && (
                         <button className="btn btn-secondary btn-sm" onClick={() => onDownloadArchiveArtifact(archiveReport.manifest.transactions_file || 'transactions.jsonl')}>{profile.label} JSONL</button>
@@ -1801,6 +1838,18 @@ export default function TestExecutionArchive({
                     Errors only
                   </label>
                 </div>
+				<div className="archive-filter-bar archive-dimension-filter-bar" aria-label="Transaction dimensions">
+					<input className="archive-column-filter-input" type="search" placeholder="Region" aria-label="Filter transactions by region" value={archiveTransactionFilters.region} onChange={(event) => onArchiveTransactionFilterChange('region', event.target.value)} />
+					<input className="archive-column-filter-input" type="search" placeholder="Network profile" aria-label="Filter transactions by network profile" value={archiveTransactionFilters.networkProfile} onChange={(event) => onArchiveTransactionFilterChange('networkProfile', event.target.value)} />
+					<input className="archive-column-filter-input" type="search" placeholder="Source transaction" aria-label="Filter transactions by source transaction" value={archiveTransactionFilters.sourceTransaction} onChange={(event) => onArchiveTransactionFilterChange('sourceTransaction', event.target.value)} />
+					<input className="archive-column-filter-input" type="search" placeholder="Hierarchy" aria-label="Filter transactions by hierarchy" value={archiveTransactionFilters.hierarchy} onChange={(event) => onArchiveTransactionFilterChange('hierarchy', event.target.value)} />
+					<select className="archive-action-select archive-filter-select" aria-label="Filter transactions by phase" value={archiveTransactionFilters.phase} onChange={(event) => onArchiveTransactionFilterChange('phase', event.target.value)}>
+						<option value="">All phases</option><option value="init">Init</option><option value="action">Action</option><option value="teardown">Teardown</option>
+					</select>
+					<select className="archive-action-select archive-filter-select" aria-label="Filter transactions by retained detail" value={archiveTransactionFilters.detail} onChange={(event) => onArchiveTransactionFilterChange('detail', event.target.value)}>
+						<option value="">All detail states</option><option value="true">Has detail</option><option value="false">No detail</option>
+					</select>
+				</div>
               </div>
 
               {selectedActionStats && (
@@ -1958,10 +2007,10 @@ export default function TestExecutionArchive({
                     </thead>
                     <tbody>
                       {archiveTransactions.map((event, index) => {
-                        const rowKey = `${event.timestamp}-${index}`
+						const rowKey = event.event_id || `${event.timestamp}-${index}`
                         const hasSnapshot = Boolean(event.snapshot)
                         const hasProtocolEvidence = Boolean(event.protocol_evidence)
-                        const hasInspectDetails = hasSnapshot || Boolean(event.client_metrics) || Boolean(event.server_telemetry) || hasProtocolEvidence
+						const hasInspectDetails = event.has_detail || hasSnapshot || Boolean(event.client_metrics) || Boolean(event.server_telemetry) || hasProtocolEvidence || Boolean(event.network_entries?.length)
                         const browserWaterfall = formatBrowserWaterfall(event.client_metrics)
                         const isExpanded = expandedArchiveEvent === rowKey
                         const soapFault = extractSOAPFaultSummaryFromBody(event.snapshot?.response_body)
@@ -2029,6 +2078,12 @@ export default function TestExecutionArchive({
                                       <pre className="archive-event-detail-pre">Code: {soapFault.code}{'\n'}Reason: {soapFault.reason}</pre>
                                     </div>
                                   )}
+									{(event.network_entries?.length || event.dns_ms || event.connect_ms || event.tls_ms || event.ttfb_ms) ? (
+										<div className="archive-event-detail-card archive-waterfall-card">
+											<div className="archive-event-detail-header"><span className="scenario-script-detail-label">Network Waterfall</span></div>
+											<TransactionNetworkWaterfall event={event} />
+										</div>
+									) : null}
                                   {event.client_metrics && (
                                     <div className="archive-event-detail-card">
                                       <div className="archive-event-detail-header">

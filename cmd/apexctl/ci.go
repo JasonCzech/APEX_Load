@@ -856,8 +856,9 @@ func inspectCILocalActions(script *dsl.Script) (bodyFile, browserInputFile bool)
 			browserInputFile = true
 		}
 		if action.Control != nil {
-			pending = append(pending, action.Control.Steps...)
-			pending = append(pending, action.Control.Else...)
+			for _, branch := range action.Control.ActionBranches() {
+				pending = append(pending, branch.Actions...)
+			}
 		}
 		if requests, ok := action.Params["requests"].([]any); ok {
 			for _, value := range requests {

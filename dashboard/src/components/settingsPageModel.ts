@@ -7,6 +7,7 @@ import type {
   DashboardSystemSettings,
   GitHubProjectPolicy,
   PoolProjectQuota,
+	ProjectSettings,
   RedactionRule,
   SystemInventoryResponse,
 } from '../types'
@@ -237,6 +238,7 @@ export function buildProjectSettingsDraft(
   // they are passed through here so saving the governance defaults never drops
   // quotas that were set elsewhere.
   poolQuotas?: Record<string, PoolProjectQuota>,
+	features?: ProjectSettings['features'],
 ) {
   const settings: {
     redaction_rules?: RedactionRule[]
@@ -246,12 +248,16 @@ export function buildProjectSettingsDraft(
     max_test_duration_minutes?: number
     github?: GitHubProjectPolicy
     pool_quotas?: Record<string, PoolProjectQuota>
+	features?: ProjectSettings['features']
   } = {
     redaction_rules: normalizeProjectRedactionRules(rules),
   }
   if (poolQuotas && Object.keys(poolQuotas).length > 0) {
     settings.pool_quotas = poolQuotas
   }
+	if (features && Object.values(features).some(Boolean)) {
+		settings.features = { ...features }
+	}
   const parsedConcurrent = parseOptionalWholeNumber(maxConcurrentTests)
   if (parsedConcurrent !== undefined) {
     settings.max_concurrent_tests = parsedConcurrent

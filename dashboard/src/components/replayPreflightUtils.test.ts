@@ -444,6 +444,28 @@ describe('buildLocalReplayPreflight', () => {
     expect(preflight.missing_variables).not.toContain('cart_id')
   })
 
+	it('walks control_switch conditions, branches, review gates, and replay counts', () => {
+		const preflight = buildLocalReplayPreflight({
+			...baseScript,
+			actions: [{
+				name: 'Route', type: 'control_switch', target: '',
+				control: {
+					cases: [
+						{ condition: { expr: 'var.route == "fast"' }, steps: [{ name: 'Fast', type: 'GET', target: '/fast/{{var.fast_id}}' }] },
+						{ condition: { left: '{{var.route}}', op: 'eq', right: 'slow' }, steps: [{ name: 'Blocked', type: 'GET', target: '/slow', metadata: { execution_blocker: 'switch_gate' } }] },
+					],
+					default: [{ name: 'Fallback', type: 'GET', target: '/fallback' }],
+				},
+			}],
+		}, { route: 'fast' })
+
+		expect(preflight.valid).toBe(false)
+		expect(preflight.issues).toEqual(expect.arrayContaining([expect.stringContaining('switch_gate')]))
+		expect(preflight.action_count).toBe(3)
+		expect(preflight.expected_action_count).toBe(1)
+		expect(preflight.missing_variables).toEqual(['fast_id'])
+	})
+
   it('treats http_sequence child extractors as available replay variables', () => {
     const preflight = buildLocalReplayPreflight({
       ...baseScript,

@@ -3865,7 +3865,7 @@ func TestRunStageScheduleDrivesRampHoldAndDrain(t *testing.T) {
 		{Name: "Hold", Type: "hold", Duration: "10ms", TargetVUsers: 2},
 		{Name: "Drain", Type: "ramp_down", Duration: "20ms", TargetVUsers: 0},
 	}
-	runner.runStageSchedule(context.Background(), "test-1", "buyers", stages, nil)
+	runner.runStageSchedule(context.Background(), "test-1", "buyers", stages, 0, nil)
 
 	got := drainScaleCalls(t, backend.calls, 4)
 	want := []int{1, 2, 1, 0}
@@ -3902,7 +3902,7 @@ func TestRunStageScheduleRetriesDistributedInitialRampRejection(t *testing.T) {
 		runner.runStageSchedule(context.Background(), "test-retry-initial-ramp", "buyers", []storage.LoadStage{
 			{Type: "hold", Duration: "1ms", TargetVUsers: 1},
 			{Type: "hold", Duration: "1ms", TargetVUsers: 2},
-		}, nil)
+		}, 0, nil)
 		close(done)
 	}()
 
@@ -3956,7 +3956,7 @@ func TestRunStageScheduleAppliesConsecutiveHoldTargets(t *testing.T) {
 		{Name: "Level 1", Type: "hold", Duration: "5ms", TargetVUsers: 1},
 		{Name: "Level 2", Type: "hold", Duration: "5ms", TargetVUsers: 3},
 		{Name: "Level 3", Type: "hold", Duration: "5ms", TargetVUsers: 5},
-	}, nil)
+	}, 0, nil)
 
 	got := drainScaleCalls(t, backend.calls, 2)
 	want := []int{3, 5}
@@ -4103,7 +4103,7 @@ func TestRunStageScheduleWaitsForRampCompletionBeforeAdvancing(t *testing.T) {
 			{Name: "Step", Type: "ramp_up", Duration: "20ms", TargetVUsers: 2},
 			{Name: "Hold", Type: "hold", Duration: "10ms", TargetVUsers: 2},
 			{Name: "Drain", Type: "ramp_down", Duration: "20ms", TargetVUsers: 0},
-		}, nil)
+		}, 0, nil)
 		close(done)
 	}()
 
@@ -4217,7 +4217,7 @@ func TestStageHoldSuspendsWhileTestPaused(t *testing.T) {
 			{Type: "ramp_up", Duration: "20ms", TargetVUsers: 1},
 			{Type: "hold", Duration: "80ms", TargetVUsers: 1},
 			{Type: "ramp_down", Duration: "20ms", TargetVUsers: 0},
-		}, nil)
+		}, 0, nil)
 		close(done)
 	}()
 	select {
@@ -4326,6 +4326,55 @@ func TestDistributedZeroBaselineStageWaitsForCoordinatedStart(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("zero-baseline stage did not start after coordinated epoch")
+	}
+}
+
+func TestStartStageSchedulesWaitsForGroupActiveOffsetAcrossPause(t *testing.T) {
+	runner := NewTestRunner(1, NewHub(), nil)
+	backend := &scalableExecutionBackendSpy{calls: make(chan scaleBackendCall, 4)}
+	runner.setExecutionBackend(backend)
+	startedAt := time.Now().UTC()
+	test := &ManagedTest{
+		ID: "test-offset-stage", Status: "RUNNING", StartedAt: &startedAt,
+		ScenarioMode: "vuser_driven", ProjectID: storage.DefaultProjectID, TotalVUsers: 1,
+		Groups: []TestGroup{{
+			Name: "later", VUsers: 1, StartOffset: "120ms", stageDriven: true, initialVUsers: 0, currentVUsers: 0,
+			Stages: []storage.LoadStage{{Type: "hold", Duration: "1ms", TargetVUsers: 1}},
+		}},
+	}
+	runner.tests[test.ID] = test
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	runner.startStageSchedules(ctx, test, nil)
+
+	time.Sleep(30 * time.Millisecond)
+	pausedAt := time.Now().UTC()
+	runner.mu.Lock()
+	test.Status = "PAUSED"
+	test.PausedAt = &pausedAt
+	runner.mu.Unlock()
+	select {
+	case call := <-backend.calls:
+		t.Fatalf("offset stage adjusted while paused before activation: %+v", call)
+	case <-time.After(140 * time.Millisecond):
+	}
+
+	resumedAt := time.Now().UTC()
+	runner.mu.Lock()
+	test.CumulativePause += resumedAt.Sub(pausedAt)
+	test.PausedAt = nil
+	test.Status = "RUNNING"
+	runner.mu.Unlock()
+	select {
+	case call := <-backend.calls:
+		if call.target != 1 {
+			t.Fatalf("post-offset hold target = %d, want 1", call.target)
+		}
+		if elapsed := time.Since(resumedAt); elapsed < 60*time.Millisecond {
+			t.Fatalf("stage adjusted %s after resume; paused time consumed the active start offset", elapsed)
+		}
+	case <-ctx.Done():
+		t.Fatalf("offset stage did not activate after resume: %v", ctx.Err())
 	}
 }
 

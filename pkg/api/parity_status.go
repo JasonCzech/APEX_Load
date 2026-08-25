@@ -1,6 +1,8 @@
 package api
 
 import (
+	_ "embed"
+	"encoding/json"
 	"net/http"
 	"time"
 )
@@ -8,13 +10,49 @@ import (
 const competitiveSupportMatrixEvidence = "docs/COMPETITIVE_COMPARISON.md#support-matrix"
 const apiComparisonEvidence = "docs/APEX_LOAD_REST_API_COMPARISON.md"
 
+//go:embed cloudtest_parity_catalog.json
+var cloudTestParityCatalogJSON []byte
+
 type ParityStatusResponse struct {
-	GeneratedAt       time.Time                 `json:"generated_at"`
-	Overall           string                    `json:"overall"`
-	Areas             []ParityStatusArea        `json:"areas"`
-	CompetitiveParity []CompetitiveParityArea   `json:"competitive_parity,omitempty"`
-	APIParityProgram  []ParityStatusArea        `json:"api_parity_program,omitempty"`
-	BrowserBenchmarks []BrowserBenchmarkProfile `json:"browser_benchmarks,omitempty"`
+	GeneratedAt           time.Time                 `json:"generated_at"`
+	Overall               string                    `json:"overall"`
+	Areas                 []ParityStatusArea        `json:"areas"`
+	CompetitiveParity     []CompetitiveParityArea   `json:"competitive_parity,omitempty"`
+	CloudTestCapabilities []CloudTestCapability     `json:"cloudtest_capabilities,omitempty"`
+	APIParityProgram      []ParityStatusArea        `json:"api_parity_program,omitempty"`
+	BrowserBenchmarks     []BrowserBenchmarkProfile `json:"browser_benchmarks,omitempty"`
+}
+
+// CloudTestCapability is the canonical, machine-readable outcome-parity ledger
+// row. Documentation and dashboard views consume this contract rather than
+// maintaining independent capability claims.
+type CloudTestCapability struct {
+	ID                   string `json:"id"`
+	Category             string `json:"category"`
+	Name                 string `json:"name"`
+	CloudTestEvidenceURL string `json:"cloudtest_evidence_url"`
+	EvidenceConfidence   string `json:"evidence_confidence"`
+	APEXStatus           string `json:"apex_status"`
+	Workstream           string `json:"workstream"`
+	AcceptanceTest       string `json:"acceptance_test"`
+	ImplementationStatus string `json:"implementation_status"`
+}
+
+var cloudTestParityCatalog = loadCloudTestParityCatalog()
+
+func loadCloudTestParityCatalog() []CloudTestCapability {
+	var capabilities []CloudTestCapability
+	if err := json.Unmarshal(cloudTestParityCatalogJSON, &capabilities); err != nil {
+		panic("decode embedded CloudTest parity catalog: " + err.Error())
+	}
+	if len(capabilities) == 0 {
+		panic("embedded CloudTest parity catalog is empty")
+	}
+	return capabilities
+}
+
+func cloneCloudTestParityCatalog() []CloudTestCapability {
+	return append([]CloudTestCapability(nil), cloudTestParityCatalog...)
 }
 
 type ParityStatusArea struct {
@@ -124,9 +162,9 @@ func buildParityStatus(now time.Time) ParityStatusResponse {
 			ID:          "reporting",
 			Name:        "Historical Reporting",
 			Status:      "partial",
-			Summary:     "Archives, standalone reports, comparison baselines, merged archive analysis graph/drilldown, usage CSV export, archive dataset CSV export, profile-shaped CSV reports, comparison CSV export, release trend CSV export, usage snapshots, cadence capture, and retention apply workflow are implemented.",
-			Evidence:    []string{"/api/v1/tests/{id}/archive/analysis", "/api/v1/system/usage/export", "/api/v1/system/usage/snapshots", "/api/v1/archives/retention/apply", "/api/v1/releases/{id}/trend/export"},
-			Remaining:   []string{"Complete dashboard graph UX, PDF report export, and final historical reporting benchmark evidence."},
+			Summary:     "Archives, standalone HTML, PDF, and DOCX reports, comparison baselines, merged archive analysis graph/drilldown, dataset/profile CSV, report-chart CSV/SVG exports, release trends, usage snapshots, cadence capture, and retention workflows are implemented.",
+			Evidence:    []string{"/api/v1/tests/{id}/archive/analysis", "/api/v1/tests/{id}/archive/report?format=pdf", "/api/v1/tests/{id}/archive/report?format=docx", "/api/v1/system/usage/export", "/api/v1/system/usage/snapshots", "/api/v1/archives/retention/apply", "/api/v1/releases/{id}/trend/export"},
+			Remaining:   []string{"Apply bounded CSV/SVG export to remaining operational charts, complete dashboard graph UX, and publish final historical reporting benchmark evidence."},
 			ReleaseGate: true,
 		},
 		{
@@ -140,12 +178,13 @@ func buildParityStatus(now time.Time) ParityStatusResponse {
 		},
 	}
 	return ParityStatusResponse{
-		GeneratedAt:       now,
-		Overall:           aggregateParityStatus(areas),
-		Areas:             areas,
-		CompetitiveParity: buildCompetitiveParityStatus(),
-		APIParityProgram:  buildAPIParityProgram(),
-		BrowserBenchmarks: browserBenchmarks.Profiles,
+		GeneratedAt:           now,
+		Overall:               aggregateParityStatus(areas),
+		Areas:                 areas,
+		CompetitiveParity:     buildCompetitiveParityStatus(),
+		CloudTestCapabilities: cloneCloudTestParityCatalog(),
+		APIParityProgram:      buildAPIParityProgram(),
+		BrowserBenchmarks:     browserBenchmarks.Profiles,
 	}
 }
 
@@ -246,7 +285,7 @@ func buildCompetitiveParityStatus() []CompetitiveParityArea {
 			ID:          "managed_scale_load_zones",
 			Name:        "Managed Scale And Load Zones",
 			Status:      "partial",
-			Competitors: []string{"k6", "NeoLoad"},
+			Competitors: []string{"k6", "NeoLoad", "CloudTest"},
 			Summary:     "APEX Load exposes regional generator inventory, named self-hosted load zones, capacity APIs, placement rejection visibility, and autoscaling guidance, but still needs published benchmark evidence per zone.",
 			Evidence: []string{
 				competitiveSupportMatrixEvidence,
@@ -267,7 +306,7 @@ func buildCompetitiveParityStatus() []CompetitiveParityArea {
 			ID:          "authoring_recording",
 			Name:        "Authoring, Recording, And Guided Repair",
 			Status:      "supported",
-			Competitors: []string{"k6", "NeoLoad"},
+			Competitors: []string{"k6", "NeoLoad", "CloudTest"},
 			Summary:     "APEX Load now supports the current C5 authoring scope: guided script and scenario creation, imports, templates, validation, replay evidence, authoring sessions, review approval, response-family correlation repair, provenance review, and reusable components.",
 			Evidence: []string{
 				competitiveSupportMatrixEvidence,
@@ -291,7 +330,7 @@ func buildCompetitiveParityStatus() []CompetitiveParityArea {
 			ID:          "browser_testing",
 			Name:        "Browser Testing And Client UX Evidence",
 			Status:      "partial",
-			Competitors: []string{"k6", "NeoLoad"},
+			Competitors: []string{"k6", "NeoLoad", "CloudTest"},
 			Summary:     "APEX Load has browser replay, mobile web profile guidance, client metrics, and archive evidence, while deliberately treating browser VUsers as diagnostic canaries until benchmark data supports broader claims.",
 			Evidence: []string{
 				competitiveSupportMatrixEvidence,
@@ -374,6 +413,59 @@ func buildCompetitiveParityStatus() []CompetitiveParityArea {
 			},
 			Decision:      "evidence_gate",
 			EvidenceLevel: "docs+samples+release_artifacts",
+		},
+		{
+			ID:          "visual_composition_authoring",
+			Name:        "Visual Composition And Timed Tracks",
+			Status:      "partial",
+			Competitors: []string{"CloudTest"},
+			Summary:     "APEX scripts already provide reusable ordered action clips and scenario groups provide multi-script composition, while active-time group offsets, a shared visual timeline, switch branching, and bounded parallel containers remain staged work.",
+			Evidence: []string{
+				competitiveSupportMatrixEvidence,
+				"docs/CLOUDTEST_PARITY_PROGRAM.md",
+				"https://techdocs.akamai.com/cloudtest/docs/test-composition",
+			},
+			Remaining: []string{
+				"Ship offset runtime semantics, immutable provenance, peak-window capacity planning, visual timeline round-trip, and branch safety gates.",
+			},
+			Decision:      "outcome_parity",
+			EvidenceLevel: "current_official+repo_verified",
+		},
+		{
+			ID:          "streaming_result_drilldown",
+			Name:        "Streaming Analytics And Safe Result Drill-Down",
+			Status:      "partial",
+			Competitors: []string{"CloudTest"},
+			Summary:     "APEX has live metrics, archived transaction filtering and redacted request/response inspection, HTTP page resources, network timing entries, streaming-response pacing, and PDF reporting; regional live aggregation and policy-bounded success detail are not yet complete.",
+			Evidence: []string{
+				competitiveSupportMatrixEvidence,
+				"docs/CLOUDTEST_PARITY_PROGRAM.md",
+				"https://techdocs.akamai.com/cloudtest/docs/analytics",
+				"/api/v1/tests/{id}/archive/transactions",
+			},
+			Remaining: []string{
+				"Add bounded regional aggregation, capture admission and quotas, hierarchy/phase attribution, live metadata notifications, and bucket-to-waterfall navigation.",
+			},
+			Decision:      "outcome_parity",
+			EvidenceLevel: "current_official+repo_verified",
+		},
+		{
+			ID:          "agentless_infrastructure_monitors",
+			Name:        "Run-Bound Private-Network Monitoring",
+			Status:      "partial",
+			Competitors: []string{"CloudTest"},
+			Summary:     "APEX already has authenticated restricted-network collector registration, heartbeat metric packs, and live visibility. The outcome-parity design extends that collector instead of allowing the controller to dial customer infrastructure.",
+			Evidence: []string{
+				competitiveSupportMatrixEvidence,
+				"docs/CLOUDTEST_PARITY_PROGRAM.md",
+				"/api/v1/monitoring/collectors",
+				"cmd/apexload-collector-agent",
+			},
+			Remaining: []string{
+				"Persist run-bound samples and add signed, revisioned, destination-allowlisted connector jobs with sealed expiring secrets.",
+			},
+			Decision:      "outcome_parity",
+			EvidenceLevel: "current_official+repo_verified",
 		},
 	}
 }

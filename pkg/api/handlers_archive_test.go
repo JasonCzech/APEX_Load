@@ -1,6 +1,8 @@
 package api
 
 import (
+	"archive/zip"
+	"bytes"
 	"context"
 	"encoding/csv"
 	"encoding/json"
@@ -307,7 +309,14 @@ func TestArchiveQueryEndpoints(t *testing.T) {
 		if err != nil {
 			t.Fatalf("read transactions csv: %v", err)
 		}
-		if len(rows) < 2 || rows[0][4] != "action_name" || rows[1][4] != "step-1" {
+		actionColumn := -1
+		for index, header := range rows[0] {
+			if header == "action_name" {
+				actionColumn = index
+				break
+			}
+		}
+		if len(rows) < 2 || actionColumn < 0 || rows[1][actionColumn] != "step-1" {
 			t.Fatalf("transactions csv rows = %#v, want action_name step-1", rows)
 		}
 		if got := resp.Header().Get("Content-Disposition"); !strings.Contains(got, "archive-transactions") {
@@ -687,6 +696,30 @@ func TestArchiveQueryEndpoints(t *testing.T) {
 		}
 		if strings.Contains(body, "Top Actions") {
 			t.Fatalf("audit pdf report should omit action drilldown:\n%s", body)
+		}
+	})
+
+	t.Run("docx report is a downloadable OOXML package", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/tests/"+testRun.ID+"/archive/report?format=docx&profile=engineer", nil)
+		resp := httptest.NewRecorder()
+		server.mux.ServeHTTP(resp, req)
+
+		if resp.Code != http.StatusOK {
+			t.Fatalf("docx report status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+		}
+		if got := resp.Header().Get("Content-Type"); got != docxContentType {
+			t.Fatalf("docx content type = %q, want %q", got, docxContentType)
+		}
+		if got := resp.Header().Get("Content-Disposition"); !strings.Contains(got, "apexload-archive-report-"+testRun.ID+"-engineer.docx") {
+			t.Fatalf("docx content disposition = %q", got)
+		}
+		archive, err := zip.NewReader(bytes.NewReader(resp.Body.Bytes()), int64(resp.Body.Len()))
+		if err != nil {
+			t.Fatalf("open DOCX response: %v", err)
+		}
+		document := string(readDOCXTestPart(t, archive, "word/document.xml"))
+		if !strings.Contains(document, "APEX Load Archive Report") || !strings.Contains(document, "Top Actions") {
+			t.Fatalf("DOCX response missing engineer report content: %s", document)
 		}
 	})
 

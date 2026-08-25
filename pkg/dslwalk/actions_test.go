@@ -58,6 +58,36 @@ func TestWalkActionsVisitsEveryPhaseAndNestedBranchInPreOrder(t *testing.T) {
 	}
 }
 
+func TestWalkActionsVisitsSwitchCasesAndDefaultInOrder(t *testing.T) {
+	t.Parallel()
+	script := &dsl.Script{Actions: []dsl.Action{{
+		Name: "switch",
+		Control: &dsl.ControlFlow{
+			Cases: []dsl.SwitchCase{
+				{Steps: []dsl.Action{{Name: "case-zero"}}},
+				{Steps: []dsl.Action{{Name: "case-one"}}},
+			},
+			Default: []dsl.Action{{Name: "default"}},
+		},
+	}}}
+	var got []string
+	if err := WalkActions(script, func(ref ActionRef) error {
+		got = append(got, ref.Path+"="+ref.Action.Name)
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{
+		"actions[0]=switch",
+		"actions[0].control.cases[0].steps[0]=case-zero",
+		"actions[0].control.cases[1].steps[0]=case-one",
+		"actions[0].control.default[0]=default",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("walk order:\n got %#v\nwant %#v", got, want)
+	}
+}
+
 func TestWalkActionsSupportsFieldMutation(t *testing.T) {
 	t.Parallel()
 	script := &dsl.Script{

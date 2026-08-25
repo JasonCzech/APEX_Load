@@ -28,6 +28,12 @@ func (vu *VUser) recordResult(result *protocol.Result, errCfg dsl.ErrorHandlingC
 	// ResultSink implementation may retain it, even accidentally in-process.
 	result.CorrelationEvidence = nil
 	result.Group = vu.Group
+	if result.Region == "" {
+		result.Region = vu.Region
+	}
+	if result.Phase == "" {
+		result.Phase = vu.resultPhase
+	}
 	if result.NetworkProfile == "" && vu.Script != nil {
 		result.NetworkProfile = networkProfileLabel(vu.Script.Config.WebRuntime.NetworkSimulation)
 	}
@@ -90,6 +96,7 @@ func clearUnredactableResultEvidence(result *protocol.Result) {
 	result.SourceActionName = ""
 	result.SourceTransaction = ""
 	result.SourcePath = ""
+	result.Hierarchy = ""
 	result.SourceUID = ""
 	result.OperationKind = ""
 }
@@ -128,6 +135,8 @@ func (vu *VUser) recordTransaction(name string, duration time.Duration, success 
 		ActionName:          name,
 		BusinessTransaction: true,
 		Group:               vu.Group,
+		Region:              vu.Region,
+		Phase:               vu.resultPhase,
 		StartTime:           time.Now().Add(-duration),
 		Duration:            duration,
 		Success:             success,
@@ -158,6 +167,11 @@ func (vu *VUser) recordTransaction(name string, duration time.Duration, success 
 		tx.SourceActionName = source.SourceActionName
 		tx.SourceTransaction = source.SourceTransaction
 		tx.SourceProfile = source.SourceProfile
+		tx.SourcePath = source.SourcePath
+		tx.Hierarchy = source.Hierarchy
+		if source.Phase != "" {
+			tx.Phase = source.Phase
+		}
 	}
 	if !success && tx.ErrorMessage == "" {
 		tx.ErrorMessage = "transaction failed"
@@ -229,8 +243,12 @@ func actionsHaveExplicitTransactions(actions []dsl.Action) bool {
 			// double-count or suppress the sequence aggregate.
 			return true
 		}
-		if action.Control != nil && (actionsHaveExplicitTransactions(action.Control.Steps) || actionsHaveExplicitTransactions(action.Control.Else)) {
-			return true
+		if action.Control != nil {
+			for _, branch := range action.Control.ActionBranches() {
+				if actionsHaveExplicitTransactions(branch.Actions) {
+					return true
+				}
+			}
 		}
 	}
 	return false
@@ -246,10 +264,12 @@ func actionsMayEmitBusinessTransactions(actions []dsl.Action) bool {
 		if actionEmitsBusinessTransactions(action) {
 			return true
 		}
-		if action.Control != nil &&
-			(actionsMayEmitBusinessTransactions(action.Control.Steps) ||
-				actionsMayEmitBusinessTransactions(action.Control.Else)) {
-			return true
+		if action.Control != nil {
+			for _, branch := range action.Control.ActionBranches() {
+				if actionsMayEmitBusinessTransactions(branch.Actions) {
+					return true
+				}
+			}
 		}
 	}
 	return false
@@ -268,11 +288,13 @@ func actionsMayRecordActionTransaction(actions []dsl.Action) bool {
 	for _, action := range actions {
 		actionType := strings.TrimSpace(action.Type)
 		switch strings.ToLower(actionType) {
-		case "control_if", "control_loop":
-			if action.Control != nil &&
-				(actionsMayRecordActionTransaction(action.Control.Steps) ||
-					actionsMayRecordActionTransaction(action.Control.Else)) {
-				return true
+		case "control_if", "control_switch", "control_loop":
+			if action.Control != nil {
+				for _, branch := range action.Control.ActionBranches() {
+					if actionsMayRecordActionTransaction(branch.Actions) {
+						return true
+					}
+				}
 			}
 			continue
 		case "http_sequence":
@@ -296,10 +318,12 @@ func actionsMayRecordHTTPSequenceTransaction(actions []dsl.Action) bool {
 		if strings.EqualFold(strings.TrimSpace(action.Type), "http_sequence") {
 			return true
 		}
-		if action.Control != nil &&
-			(actionsMayRecordHTTPSequenceTransaction(action.Control.Steps) ||
-				actionsMayRecordHTTPSequenceTransaction(action.Control.Else)) {
-			return true
+		if action.Control != nil {
+			for _, branch := range action.Control.ActionBranches() {
+				if actionsMayRecordHTTPSequenceTransaction(branch.Actions) {
+					return true
+				}
+			}
 		}
 	}
 	return false
@@ -315,10 +339,12 @@ func actionsMayRecordSourceTransaction(actions []dsl.Action) bool {
 			sourceTransactionRecordsImmediate(action) {
 			return true
 		}
-		if action.Control != nil &&
-			(actionsMayRecordSourceTransaction(action.Control.Steps) ||
-				actionsMayRecordSourceTransaction(action.Control.Else)) {
-			return true
+		if action.Control != nil {
+			for _, branch := range action.Control.ActionBranches() {
+				if actionsMayRecordSourceTransaction(branch.Actions) {
+					return true
+				}
+			}
 		}
 	}
 	return false
@@ -547,6 +573,8 @@ func actionContainsUnresolvedParameter(action *protocol.Action) bool {
 		action.Target, action.RedactedTarget,
 		action.Selector, action.RedactedSelector,
 		action.Value, action.RedactedValue,
+		action.HierarchyPath, action.PageName,
+		action.MessageDetailMode,
 		action.ThinkTime.Type,
 	) {
 		return true
@@ -735,6 +763,8 @@ func (vu *VUser) executeWithRetryStream(
 				}
 				child.Attempt = attempt + 1
 				applyProtocolResultSourceMetadata(child, action.Metadata)
+				applyProtocolResultAttribution(child, action)
+				applyMessageDetailRequest(child, action)
 				if emit == nil {
 					return nil
 				}
@@ -764,6 +794,8 @@ func (vu *VUser) executeWithRetryStream(
 			result.Attempt = attempt + 1
 		}
 		applyProtocolResultSourceMetadata(result, action.Metadata)
+		applyProtocolResultAttribution(result, action)
+		applyMessageDetailRequest(result, action)
 		lastResult = result
 
 		if result.Success {
@@ -777,6 +809,34 @@ func (vu *VUser) executeWithRetryStream(
 	}
 
 	return lastResult, nil
+}
+
+func applyMessageDetailRequest(result *protocol.Result, action *protocol.Action) {
+	if result == nil || action == nil || !action.CaptureMessageDetail {
+		return
+	}
+	result.MessageDetailRequested = true
+	result.MessageDetailMode = action.MessageDetailMode
+	result.MessageDetailPriority = messageDetailPriority(result, action)
+	result.MessageDetailMaxItems = action.MessageDetailMaxItems
+	result.MessageDetailMaxItemBytes = action.MessageDetailMaxItemBytes
+	result.MessageDetailMaxTotalBytes = action.MessageDetailMaxTotalBytes
+}
+
+func messageDetailPriority(result *protocol.Result, action *protocol.Action) int {
+	if result == nil || action == nil || !action.CaptureMessageDetail {
+		return 0
+	}
+	if !result.Success {
+		return 4
+	}
+	if result.StatusCode >= 300 || result.ServerTelemetry != nil && (result.ServerTelemetry.SOAPFaultCode != "" || result.ServerTelemetry.SendFailureCount > 0) {
+		return 3
+	}
+	if result.Duration >= time.Second || result.TTFB >= 750*time.Millisecond || result.ConnectTime >= 500*time.Millisecond {
+		return 2
+	}
+	return 1
 }
 
 func javaVuserPersistentAction(action *protocol.Action) bool {
@@ -842,6 +902,10 @@ func (vu *VUser) executeHTTPSequenceAction(ctx context.Context, action dsl.Actio
 	var measuredDuration time.Duration
 	if len(action.Metadata) > 0 {
 		applyProtocolResultSourceMetadata(aggregate, vu.interpolateAnyMap(action.Metadata))
+	}
+	if action.Attribution != nil {
+		aggregate.Hierarchy = strings.TrimSpace(vu.interpolate(action.Attribution.HierarchyPath))
+		aggregate.PageName = strings.TrimSpace(vu.interpolate(action.Attribution.PageName))
 	}
 	if err != nil {
 		aggregate.Success = false
@@ -1038,6 +1102,9 @@ func copySequenceSourceResult(target *protocol.Result, source *protocol.Result) 
 	target.SourceActionName = source.SourceActionName
 	target.SourceTransaction = firstEngineValue(target.SourceTransaction, source.SourceTransaction)
 	target.SourceProfile = source.SourceProfile
+	target.SourcePath = source.SourcePath
+	target.Hierarchy = source.Hierarchy
+	target.Phase = source.Phase
 	if source.ErrorMessage != "" {
 		target.ErrorMessage = source.ErrorMessage
 	}
@@ -1064,6 +1131,24 @@ func applyProtocolResultSourceMetadata(result *protocol.Result, metadata map[str
 	}
 	if result.SourceProfile == "" {
 		result.SourceProfile = sourceMetadataString(metadata, "source_profile")
+	}
+	if result.SourcePath == "" {
+		result.SourcePath = sourceMetadataString(metadata, "source_path")
+	}
+	if result.Hierarchy == "" {
+		result.Hierarchy = sourceMetadataString(metadata, "hierarchy")
+	}
+}
+
+func applyProtocolResultAttribution(result *protocol.Result, action *protocol.Action) {
+	if result == nil || action == nil {
+		return
+	}
+	if result.Hierarchy == "" {
+		result.Hierarchy = action.HierarchyPath
+	}
+	if result.PageName == "" {
+		result.PageName = action.PageName
 	}
 }
 

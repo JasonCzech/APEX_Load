@@ -915,7 +915,7 @@ describe('ScriptsPage', () => {
     expect(container.textContent).toContain('Contracts & Collections')
     expect(container.textContent).toContain('Traffic & Samples')
     expect(container.textContent).toContain('Messaging & Cloud Artifacts')
-    expect(container.querySelectorAll('.script-create-import-groups .script-create-option')).toHaveLength(16)
+    expect(container.querySelectorAll('.script-create-import-groups .script-create-option')).toHaveLength(17)
     expect(container.textContent).toContain('HAR Traffic')
     expect(container.textContent).toContain('Oracle E-Business / Siebel Review')
     expect(container.textContent).not.toContain('No import sources are available from this controller.')

@@ -1650,6 +1650,27 @@ func TestResolveActionRequestsOnlyConfiguredSuccessfulResponseBodies(t *testing.
 	}
 }
 
+func TestResolveActionRequestsSuccessfulMessageDetailDeterministically(t *testing.T) {
+	vu := &VUser{ID: 3, Group: "checkout", Script: &dsl.Script{Config: dsl.ScriptConfig{
+		Results: dsl.ResultsConfig{MessageDetail: &dsl.MessageDetailConfig{
+			Mode: "sampled", SampleRate: 1, MaxItems: 4, MaxItemBytes: 2048, MaxTotalBytes: 4096,
+		}},
+	}}}
+	resolved := vu.resolveAction(dsl.Action{Name: "submit", Type: "GET", Target: "/"})
+	if !resolved.CaptureMessageDetail || resolved.DiscardResponseBodyOnSuccess {
+		t.Fatalf("capture=%v discard=%v, want capture without discard", resolved.CaptureMessageDetail, resolved.DiscardResponseBodyOnSuccess)
+	}
+	if resolved.MessageDetailMaxItems != 4 || resolved.MessageDetailMaxItemBytes != 2048 || resolved.MessageDetailMaxTotalBytes != 4096 {
+		t.Fatalf("resolved detail budget = %#v", resolved)
+	}
+
+	vu.Script.Config.Results.MessageDetail.Mode = "errors"
+	resolved = vu.resolveAction(dsl.Action{Name: "submit", Type: "GET", Target: "/"})
+	if resolved.CaptureMessageDetail || !resolved.DiscardResponseBodyOnSuccess {
+		t.Fatalf("errors-mode capture=%v discard=%v, want legacy success-body behavior", resolved.CaptureMessageDetail, resolved.DiscardResponseBodyOnSuccess)
+	}
+}
+
 func TestVUser_Run_HTTPSequencePropagatesExtractionsAndRecordsOneTransaction(t *testing.T) {
 	protoStub := &sequenceProtocol{}
 	sink := &sequenceCaptureSink{}

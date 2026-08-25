@@ -87,6 +87,20 @@ describe('DashboardWorkspace', () => {
     expect(onActiveTabChange).toHaveBeenLastCalledWith('overview', 'user')
   })
 
+	it('opens a project-shared dashboard as an editable local profile', async () => {
+		await renderWorkspace({ projectProfiles: [{
+			id: 'shared-1', name: 'Shared latency', activeTabId: 'shared',
+			tabs: [{ id: 'shared', label: 'Regional latency', cardIds: ['beta'] }],
+			unassignedCardIds: ['alpha', 'gamma'],
+		}] })
+		const sharedSelect = container.querySelector('select[aria-label="Test workspace project dashboards"]') as HTMLSelectElement
+		await changeSelect(sharedSelect, 'shared-1')
+		await click(buttonNamed('Open shared'))
+		expect(profileSelect().selectedOptions[0]?.textContent).toBe('Shared latency (Project)')
+		expect(selectedTabLabel()).toBe('Regional latency')
+		expect(container.textContent).toContain('Beta body')
+	})
+
   it('collapses and expands card library categories from the header', async () => {
     await renderWorkspace()
 

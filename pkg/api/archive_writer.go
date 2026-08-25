@@ -209,55 +209,170 @@ func (w *runArchiveWriter) RecordResult(result *protocol.Result) error {
 		return w.flushErr
 	}
 	event := TransactionEvent{
-		Timestamp:           result.StartTime,
-		TestID:              w.manifest.TestID,
-		TestName:            w.manifest.TestName,
-		Group:               result.Group,
-		Region:              firstNonEmpty(result.Region, w.region),
-		ActionName:          result.ActionName,
-		BusinessTransaction: result.BusinessTransaction,
-		CorrelationID:       result.CorrelationID,
-		TraceID:             traceIDFromCorrelationID(result.CorrelationID),
-		SpanID:              spanIDFromCorrelationID(result.CorrelationID),
-		NetworkProfile:      result.NetworkProfile,
-		DependencyType:      result.DependencyType,
-		DependencyTarget:    result.DependencyTarget,
-		DurationMs:          durationMillis(result.Duration),
-		DNSMs:               durationMillis(result.DNSTime),
-		ConnectMs:           durationMillis(result.ConnectTime),
-		TLSMs:               durationMillis(result.TLSTime),
-		TTFBMs:              durationMillis(result.TTFB),
-		BytesSent:           result.BytesSent,
-		BytesReceived:       result.BytesReceived,
-		StatusCode:          result.StatusCode,
-		Success:             result.Success,
-		ErrorMessage:        result.ErrorMessage,
-		Extractions:         result.Extractions,
-		PageURL:             result.PageURL,
-		PageTitle:           result.PageTitle,
-		ConsoleEntries:      cloneProtocolConsoleEntries(result.ConsoleEntries),
-		NetworkEntries:      cloneProtocolNetworkEntries(result.NetworkEntries),
-		DOMSummary:          cloneProtocolDOMSummary(result.DOMSummary),
-		ClientMetrics:       result.ClientMetrics,
-		ServerTelemetry:     result.ServerTelemetry,
-		ProtocolEvidence:    cloneAnyMap(result.ProtocolEvidence),
-		Snapshot:            result.Snapshot,
-		SourceStepID:        result.SourceStepID,
-		SourceStepIndex:     result.SourceStepIndex,
-		SourceAction:        result.SourceAction,
-		SourceActionName:    result.SourceActionName,
-		SourceTransaction:   result.SourceTransaction,
-		SourceProfile:       result.SourceProfile,
+		Timestamp:             result.StartTime,
+		TestID:                w.manifest.TestID,
+		TestName:              w.manifest.TestName,
+		Group:                 result.Group,
+		Region:                firstNonEmpty(result.Region, w.region),
+		NetworkProfile:        result.NetworkProfile,
+		SourceTransaction:     result.SourceTransaction,
+		Hierarchy:             firstNonEmpty(result.Hierarchy, result.SourcePath),
+		PageName:              result.PageName,
+		Phase:                 result.Phase,
+		MessageDetailPriority: result.MessageDetailPriority,
+		ActionName:            result.ActionName,
+		BusinessTransaction:   result.BusinessTransaction,
+		CorrelationID:         result.CorrelationID,
+		TraceID:               traceIDFromCorrelationID(result.CorrelationID),
+		SpanID:                spanIDFromCorrelationID(result.CorrelationID),
+		DependencyType:        result.DependencyType,
+		DependencyTarget:      result.DependencyTarget,
+		DurationMs:            durationMillis(result.Duration),
+		DNSMs:                 durationMillis(result.DNSTime),
+		ConnectMs:             durationMillis(result.ConnectTime),
+		TLSMs:                 durationMillis(result.TLSTime),
+		TTFBMs:                durationMillis(result.TTFB),
+		BytesSent:             result.BytesSent,
+		BytesReceived:         result.BytesReceived,
+		StatusCode:            result.StatusCode,
+		Success:               result.Success,
+		ErrorMessage:          result.ErrorMessage,
+		Extractions:           result.Extractions,
+		PageURL:               result.PageURL,
+		PageTitle:             result.PageTitle,
+		ConsoleEntries:        cloneProtocolConsoleEntries(result.ConsoleEntries),
+		NetworkEntries:        cloneProtocolNetworkEntries(result.NetworkEntries),
+		DOMSummary:            cloneProtocolDOMSummary(result.DOMSummary),
+		ClientMetrics:         result.ClientMetrics,
+		ServerTelemetry:       result.ServerTelemetry,
+		ProtocolEvidence:      cloneAnyMap(result.ProtocolEvidence),
+		Snapshot:              result.Snapshot,
+		SourceStepID:          result.SourceStepID,
+		SourceStepIndex:       result.SourceStepIndex,
+		SourceAction:          result.SourceAction,
+		SourceActionName:      result.SourceActionName,
+		SourceProfile:         result.SourceProfile,
 	}
 	// Defense in depth for callers that record protocol results without going
 	// through the VUser projection seam. This also detaches nested evidence from
 	// the live result before the encoder observes it.
 	sanitizeArchivedTransaction(&event)
+	w.applyMessageDetailBudget(&event, result)
+	finalizeTransactionEventDerivedFields(&event, w.manifest.TransactionCount)
 	if err := w.txEncoder.Encode(event); err != nil {
 		return err
 	}
 	w.manifest.TransactionCount++
 	return nil
+}
+
+func (w *runArchiveWriter) applyMessageDetailBudget(event *TransactionEvent, result *protocol.Result) {
+	if w == nil || event == nil || result == nil || !result.Success || !result.MessageDetailRequested {
+		return
+	}
+	if w.manifest.MessageDetailCapture == nil {
+		w.manifest.MessageDetailCapture = &RunArchiveMessageDetailCapture{Dropped: make(map[string]int64)}
+	}
+	stats := w.manifest.MessageDetailCapture
+	drop := func(reason string) {
+		stats.Dropped[reason]++
+		event.Snapshot = nil
+		result.Snapshot = nil
+		result.MessageDetailRetained = false
+	}
+	if event.Snapshot == nil {
+		drop("protocol_no_detail")
+		return
+	}
+	maxItems := int64(result.MessageDetailMaxItems)
+	maxItemBytes := result.MessageDetailMaxItemBytes
+	maxTotalBytes := result.MessageDetailMaxTotalBytes
+	if maxItems <= 0 || maxItemBytes <= 0 || maxTotalBytes <= 0 {
+		drop("invalid_budget")
+		return
+	}
+	priority := 0
+	priorityItemLimit, priorityByteLimit := maxItems, maxTotalBytes
+	if strings.EqualFold(result.MessageDetailMode, "adaptive") {
+		priority = min(max(result.MessageDetailPriority, 1), 3)
+		priorityItemLimit = adaptiveMessageDetailPriorityLimit(maxItems, priority)
+		priorityByteLimit = adaptiveMessageDetailPriorityLimit(maxTotalBytes, priority)
+		if w.detailPriorityItems[priority] >= priorityItemLimit || priorityItemLimit == 0 {
+			drop(fmt.Sprintf("priority_%d_item_limit", priority))
+			return
+		}
+		if w.detailPriorityBytes[priority] >= priorityByteLimit || priorityByteLimit == 0 {
+			drop(fmt.Sprintf("priority_%d_byte_limit", priority))
+			return
+		}
+	}
+	if w.detailItems >= maxItems {
+		drop("item_limit")
+		return
+	}
+	remaining := maxTotalBytes - w.detailBytes
+	if priority > 0 {
+		remaining = min(remaining, priorityByteLimit-w.detailPriorityBytes[priority])
+	}
+	if remaining <= 0 {
+		drop("total_byte_limit")
+		return
+	}
+	limit := min(maxItemBytes, remaining)
+	before := archiveMessageDetailSnapshotBytes(event.Snapshot)
+	if before > limit {
+		event.Snapshot = engine.BoundErrorSnapshot(event.Snapshot, int(limit))
+		stats.TruncatedItems++
+	}
+	retained := archiveMessageDetailSnapshotBytes(event.Snapshot)
+	if event.Snapshot == nil || retained <= 0 || retained > limit {
+		drop("total_byte_limit")
+		return
+	}
+	w.detailItems++
+	w.detailBytes += retained
+	if priority > 0 {
+		w.detailPriorityItems[priority]++
+		w.detailPriorityBytes[priority] += retained
+	}
+	stats.RetainedItems++
+	stats.RetainedBytes += retained
+	result.Snapshot = event.Snapshot
+	result.MessageDetailRetained = true
+}
+
+// adaptiveMessageDetailPriorityLimit divides a finite budget into the authored
+// 25/25/50 low/mid/high shares without losing units to integer rounding. The
+// highest priority receives the odd unit first, followed by the middle class;
+// this keeps a one-item adaptive budget useful while the three limits always
+// sum to the original total.
+func adaptiveMessageDetailPriorityLimit(total int64, priority int) int64 {
+	if total <= 0 || priority < 1 || priority > 3 {
+		return 0
+	}
+	high := (total + 1) / 2
+	remaining := total - high
+	low := remaining / 2
+	middle := remaining - low
+	switch priority {
+	case 1:
+		return low
+	case 2:
+		return middle
+	default:
+		return high
+	}
+}
+
+func archiveMessageDetailSnapshotBytes(snapshot *protocol.ErrorSnapshot) int64 {
+	if snapshot == nil {
+		return 0
+	}
+	encoded, err := json.Marshal(snapshot)
+	if err != nil {
+		return 0
+	}
+	return int64(len(encoded))
 }
 
 // RecordTransaction persists synthetic business transactions emitted by the
@@ -361,6 +476,7 @@ func (w *runArchiveWriter) RecordIntervalSummary(live *LiveMetrics) error {
 		P99Ms:                  live.P99Ms,
 		Groups:                 cloneGroupLiveMetricsMap(live.GroupMetrics),
 		Transactions:           intervalTransactionsFromLive(live.Transactions),
+		ByRegion:               intervalTransactionsFromLive(live.ByRegion),
 		Browser:                cloneBrowserLiveMetrics(live.Browser),
 		BrowserByDevice:        cloneBrowserByDeviceMetrics(live.BrowserByDevice),
 		Telemetry:              cloneTelemetryHealth(live.Telemetry),
@@ -388,6 +504,9 @@ func (w *runArchiveWriter) Finalize(status string, completedAt time.Time, errStr
 	w.manifest.SLADetails = slaDetails
 
 	if err := errors.Join(w.flushBuffersLocked(), w.syncAndCloseDataFilesLocked()); err != nil {
+		return nil, err
+	}
+	if err := applyTransactionSLARules(w.rootDir, &w.manifest); err != nil {
 		return nil, err
 	}
 	if err := validateArchiveArtifactTargets(w.rootDir,

@@ -2277,6 +2277,56 @@
     },
     {
       "method": "GET",
+      "path": "/api/v1/monitoring/dashboard-definitions",
+      "operationId": "handleListDashboardDefinitions",
+      "summary": "List Dashboard Definitions",
+      "category": "Operations \u0026 Observability",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/monitoring/dashboard-definitions",
+      "operationId": "handleCreateDashboardDefinition",
+      "summary": "Create Dashboard Definition",
+      "category": "Operations \u0026 Observability",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/monitoring/dashboard-definitions/{id}",
+      "operationId": "handleDeleteDashboardDefinition",
+      "summary": "Delete Dashboard Definition",
+      "category": "Operations \u0026 Observability",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/monitoring/dashboard-definitions/{id}",
+      "operationId": "handleGetDashboardDefinition",
+      "summary": "Get Dashboard Definition",
+      "category": "Operations \u0026 Observability",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/monitoring/dashboard-definitions/{id}",
+      "operationId": "handlePatchDashboardDefinition",
+      "summary": "Patch Dashboard Definition",
+      "category": "Operations \u0026 Observability",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write"
+    },
+    {
+      "method": "GET",
       "path": "/api/v1/monitoring/dashboards",
       "operationId": "handleListGrafanaDashboards",
       "summary": "List Grafana Dashboards",
@@ -3700,6 +3750,26 @@
       "path": "/api/v1/scripts/import/bruno/support-matrix",
       "operationId": "handleBrunoSupportMatrix",
       "summary": "Bruno Support Matrix",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; service-account scope: read"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/scripts/import/cloudtest",
+      "operationId": "handleImportCloudTest",
+      "summary": "Import Cloud Test",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: scripts:write"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/scripts/import/cloudtest/support-matrix",
+      "operationId": "handleCloudTestSupportMatrix",
+      "summary": "Cloud Test Support Matrix",
       "category": "Script Authoring",
       "public": false,
       "authenticated": true,
@@ -5444,6 +5514,16 @@
       "public": false,
       "authenticated": true,
       "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/tests/{id}/transactions/live/{event_id}",
+      "operationId": "handleGetLiveTransactionDetail",
+      "summary": "Get Live Transaction Detail",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: results:read"
     },
     {
       "method": "PATCH",

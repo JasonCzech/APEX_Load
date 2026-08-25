@@ -11,9 +11,10 @@ import (
 )
 
 type SLASummary struct {
-	Evaluated bool     `json:"evaluated"`
-	Breached  bool     `json:"breached"`
-	Details   []string `json:"details,omitempty"`
+	Evaluated              bool                           `json:"evaluated"`
+	Breached               bool                           `json:"breached"`
+	Details                []string                       `json:"details,omitempty"`
+	TransactionRuleResults []api.TransactionSLARuleResult `json:"transaction_rule_results,omitempty"`
 }
 
 func resolveGoalConfig(script *dsl.Script, args runArgs) *api.GoalConfig {
@@ -21,7 +22,7 @@ func resolveGoalConfig(script *dsl.Script, args runArgs) *api.GoalConfig {
 }
 
 func buildGoalConfigFromArgs(args runArgs) *api.GoalConfig {
-	if args.p95LatencyMs == nil && args.maxErrorPct == nil && args.maxAvgServerProcessingMs == nil && args.maxAvgTransferMs == nil && args.maxErrorCount == nil {
+	if args.p95LatencyMs == nil && args.maxErrorPct == nil && args.maxAvgServerProcessingMs == nil && args.maxAvgTransferMs == nil && args.maxErrorCount == nil && len(args.transactionRules) == 0 {
 		return nil
 	}
 	return &api.GoalConfig{
@@ -30,6 +31,7 @@ func buildGoalConfigFromArgs(args runArgs) *api.GoalConfig {
 		MaxAvgServerProcessingMs: args.maxAvgServerProcessingMs,
 		MaxAvgTransferMs:         args.maxAvgTransferMs,
 		MaxErrorCount:            args.maxErrorCount,
+		TransactionRules:         append([]api.TransactionSLARule(nil), args.transactionRules...),
 	}
 }
 
@@ -50,6 +52,7 @@ func goalConfigFromScript(script *dsl.Script) *api.GoalConfig {
 		StopOnSLABreach:          goal.StopOnSLABreach,
 		StopOnMaxErrors:          goal.StopOnMaxErrors,
 		SLABreachWindow:          goal.SLABreachWindow,
+		TransactionRules:         convertDSLTransactionSLARules(goal.TransactionRules),
 	}
 	if !hasGoalConfig(resolved) {
 		return nil
@@ -74,11 +77,14 @@ func mergeGoalConfigs(base, override *api.GoalConfig) *api.GoalConfig {
 	merged.MaxAvgServerProcessingMs = firstFloat64(override.MaxAvgServerProcessingMs, merged.MaxAvgServerProcessingMs)
 	merged.MaxAvgTransferMs = firstFloat64(override.MaxAvgTransferMs, merged.MaxAvgTransferMs)
 	merged.MaxErrorCount = firstInt(override.MaxErrorCount, merged.MaxErrorCount)
+	if len(override.TransactionRules) > 0 {
+		merged.TransactionRules = append([]api.TransactionSLARule(nil), override.TransactionRules...)
+	}
 	return merged
 }
 
 func hasGoalConfig(goal *api.GoalConfig) bool {
-	return goal != nil && (goal.TargetAverageTPS != nil || goal.P95LatencyMs != nil || goal.MaxErrorPct != nil || goal.MaxAvgServerProcessingMs != nil || goal.MaxAvgTransferMs != nil || goal.MaxErrorCount != nil || goal.MinVUsers != nil || goal.MaxVUsers != nil || goal.StopOnSLABreach || goal.StopOnMaxErrors)
+	return goal != nil && (goal.TargetAverageTPS != nil || goal.P95LatencyMs != nil || goal.MaxErrorPct != nil || goal.MaxAvgServerProcessingMs != nil || goal.MaxAvgTransferMs != nil || goal.MaxErrorCount != nil || goal.MinVUsers != nil || goal.MaxVUsers != nil || len(goal.TransactionRules) > 0 || goal.StopOnSLABreach || goal.StopOnMaxErrors)
 }
 
 func cloneGoalConfig(goal *api.GoalConfig) *api.GoalConfig {
@@ -97,7 +103,25 @@ func cloneGoalConfig(goal *api.GoalConfig) *api.GoalConfig {
 		StopOnSLABreach:          goal.StopOnSLABreach,
 		StopOnMaxErrors:          goal.StopOnMaxErrors,
 		SLABreachWindow:          goal.SLABreachWindow,
+		TransactionRules:         append([]api.TransactionSLARule(nil), goal.TransactionRules...),
 	}
+}
+
+func convertDSLTransactionSLARules(rules []dsl.TransactionSLARule) []api.TransactionSLARule {
+	if len(rules) == 0 {
+		return nil
+	}
+	converted := make([]api.TransactionSLARule, len(rules))
+	for index, rule := range rules {
+		converted[index] = api.TransactionSLARule{
+			Transaction: rule.Transaction,
+			Metric:      rule.Metric,
+			Comparator:  rule.Comparator,
+			Threshold:   rule.Threshold,
+			Severity:    rule.Severity,
+		}
+	}
+	return converted
 }
 
 func cloneFloat64(value *float64) *float64 {

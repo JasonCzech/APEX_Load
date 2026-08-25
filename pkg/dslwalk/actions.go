@@ -113,7 +113,8 @@ type SurfaceVisitFunc func(SurfaceRef) error
 
 // Walk visits init, actions, and teardown in that order. Each typed action is
 // visited before its ordered http_sequence child requests. control.steps is
-// then visited before control.else and before the next sibling.
+// then visited before control.else, ordered switch cases, control.default, and
+// before the next sibling.
 //
 // Traversal is iterative and enforces the shared combined definition and
 // control-depth budgets. Malformed sequence entries count toward the
@@ -196,7 +197,17 @@ func Walk(script *dsl.Script, visit SurfaceVisitFunc) error {
 				})
 			}
 		}
-		// LIFO: else is pushed first so steps is visited first.
+		// LIFO: push reverse semantic order so traversal remains deterministic:
+		// steps, else, cases[0..n], default, parallel branches[0..n].
+		for branchIndex := len(action.Control.Branches) - 1; branchIndex >= 0; branchIndex-- {
+			name := fmt.Sprintf("branches[%d].steps", branchIndex)
+			pushBranch(name, action.Control.Branches[branchIndex].Steps)
+		}
+		pushBranch("default", action.Control.Default)
+		for caseIndex := len(action.Control.Cases) - 1; caseIndex >= 0; caseIndex-- {
+			name := fmt.Sprintf("cases[%d].steps", caseIndex)
+			pushBranch(name, action.Control.Cases[caseIndex].Steps)
+		}
 		pushBranch("else", action.Control.Else)
 		pushBranch("steps", action.Control.Steps)
 	}

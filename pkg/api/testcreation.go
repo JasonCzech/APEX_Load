@@ -25,6 +25,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/distributed/generatorrpc"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/engine"
+	"github.com/jasonczech/apexload/pkg/protocol"
 	"github.com/jasonczech/apexload/pkg/refkey"
 	"github.com/jasonczech/apexload/pkg/secretstore"
 	"github.com/jasonczech/apexload/pkg/storage"
@@ -246,6 +247,7 @@ func cloneManagedTestCapacitySnapshotLocked(test *ManagedTest) *ManagedTest {
 			EndedAt:                    cloneTimePtr(group.EndedAt),
 			RampUp:                     group.RampUp,
 			RampDown:                   group.RampDown,
+			StartOffset:                group.StartOffset,
 			Stages:                     cloneLoadStages(group.Stages),
 			Initialization:             group.Initialization,
 			Assignment:                 cloneGeneratorAssignmentSettings(group.Assignment),
@@ -1320,6 +1322,11 @@ func (tr *TestRunner) buildManagedTestLocked(req CreateTestRequest, id string, s
 	if err != nil {
 		return nil, err
 	}
+	for index, group := range engineGroups {
+		if group.StartOffset > dur {
+			return nil, fmt.Errorf("group[%d]: start_offset %s begins after the %s scenario deadline", index, group.StartOffset, dur)
+		}
+	}
 	runtimeSettingsReview := buildRuntimeSettingsScenarioReview(testGroups, engineGroups)
 	if status != "DRAFT" && runtimeSettingsReview != nil && runtimeSettingsReview.Status == "blocked" {
 		return nil, fmt.Errorf("runtime settings blocked: %s", runtimeSettingsReview.Summary)
@@ -1328,7 +1335,8 @@ func (tr *TestRunner) buildManagedTestLocked(req CreateTestRequest, id string, s
 	testName := deriveManagedTestName(req.Name, testGroups)
 	for index := range testGroups {
 		if strings.TrimSpace(testGroups[index].TargetDuration) == "" {
-			testGroups[index].TargetDuration = dur.String()
+			remaining := max(time.Duration(0), dur-groupStartOffsetDuration(testGroups[index]))
+			testGroups[index].TargetDuration = remaining.String()
 		}
 		if testGroups[index].RuntimeState == "" {
 			testGroups[index].RuntimeState = "scheduled"
@@ -1338,7 +1346,11 @@ func (tr *TestRunner) buildManagedTestLocked(req CreateTestRequest, id string, s
 	if err := tr.projectDeletionErrorLocked(projectID); err != nil {
 		return nil, err
 	}
-	if err := enforceTestQuotaWithProjectQuota(projectQuota, totalVUsers, dur, status); err != nil {
+	capacityVUsers := managedGroupPeakVUsers(testGroups, dur)
+	if capacityVUsers <= 0 {
+		capacityVUsers = totalVUsers
+	}
+	if err := enforceTestQuotaWithProjectQuota(projectQuota, capacityVUsers, dur, status); err != nil {
 		return nil, err
 	}
 	effectiveRuntimeSettings, err := resolveEffectiveRuntimeSettingsWithProjectQuota(req.RuntimeSettings, projectQuota)
@@ -1379,7 +1391,7 @@ func (tr *TestRunner) buildManagedTestLocked(req CreateTestRequest, id string, s
 		DataPools:                    cloneScenarioDataPoolBindings(req.DataPools),
 		Groups:                       testGroups,
 		Assignment:                   cloneGeneratorAssignmentSettings(req.Assignment),
-		CapacityAdvisory:             tr.estimateCapacityAdvisoryForAssignment(projectID, testGroups, totalVUsers, dur, req.ResourceBaseline, effectiveRuntimeSettings, req.Assignment),
+		CapacityAdvisory:             tr.estimateCapacityAdvisoryForAssignment(projectID, testGroups, capacityVUsers, dur, req.ResourceBaseline, effectiveRuntimeSettings, req.Assignment),
 		RuntimeSettingsReview:        cloneRuntimeSettingsReview(runtimeSettingsReview),
 		expectedProjectUpdatedAt:     req.projectQuotaEvidence.updatedAt,
 		expectedApplicationUpdatedAt: req.releaseContextEvidence.applicationUpdatedAt,
@@ -1874,6 +1886,7 @@ func createGroupEntriesFromStoredScenario(scenario *StoredScenario) []CreateGrou
 			VUsers:          script.VUsers,
 			RampUp:          script.RampUp,
 			RampDown:        script.RampDown,
+			StartOffset:     script.StartOffset,
 			Stages:          cloneLoadStages(script.Stages),
 			Iterations:      cloneIntPtr(script.Iterations),
 			InitStrategy:    script.Initialization,
@@ -1903,6 +1916,7 @@ func createGroupEntriesFromManagedTest(test *ManagedTest) []CreateGroupEntry {
 			VUsers:                   group.VUsers,
 			RampUp:                   group.RampUp,
 			RampDown:                 group.RampDown,
+			StartOffset:              group.StartOffset,
 			Stages:                   cloneLoadStages(group.Stages),
 			Iterations:               iterationOverride,
 			InitStrategy:             group.Initialization,
@@ -2094,6 +2108,11 @@ func setRuntimeSettingsIteration(settings *RuntimeSettingsOverride, iterations i
 
 func validateScenarioRequest(req CreateTestRequest) (string, error) {
 	scenarioMode := normalizeScenarioMode(req.ScenarioMode)
+	if req.GoalConfig != nil {
+		if err := ValidateTransactionSLARules(req.GoalConfig.TransactionRules); err != nil {
+			return "", fmt.Errorf("invalid goal_config: %w", err)
+		}
+	}
 	if strings.TrimSpace(req.Duration) != "" {
 		duration, err := time.ParseDuration(req.Duration)
 		if err != nil {
@@ -2426,6 +2445,10 @@ func (tr *TestRunner) compileManagedTestGroupForModeWithRevisionLocked(index int
 	if err != nil {
 		return TestGroup{}, engine.GroupConfig{}, err
 	}
+	startOffset, err := parseOptionalGroupDuration(group.StartOffset, index, "start_offset")
+	if err != nil {
+		return TestGroup{}, engine.GroupConfig{}, err
+	}
 	engineVUsers := vusers
 	engineRampUp := rampUp
 	engineRampDown := rampDown
@@ -2484,6 +2507,7 @@ func (tr *TestRunner) compileManagedTestGroupForModeWithRevisionLocked(index int
 		Protocol:               script.Protocol,
 		Role:                   role,
 		VUsers:                 vusers,
+		StartOffset:            group.StartOffset,
 		RampUp:                 rampUpValue,
 		RampDown:               rampDownValue,
 		Stages:                 cloneLoadStages(group.Stages),
@@ -2603,6 +2627,12 @@ func (tr *TestRunner) compileManagedTestGroupForModeWithRevisionLocked(index int
 		}
 		return TestGroup{}, engine.GroupConfig{}, fmt.Errorf("group[%d]: script must have at least one action", index)
 	}
+	if err := validateSuccessfulMessageDetailFeature(&scriptCopy, projectQuotas); err != nil {
+		return TestGroup{}, engine.GroupConfig{}, fmt.Errorf("group[%d]: %w", index, err)
+	}
+	if err := validateControlParallelFeature(&scriptCopy, projectQuotas); err != nil {
+		return TestGroup{}, engine.GroupConfig{}, fmt.Errorf("group[%d]: %w", index, err)
+	}
 	if runtimeAlreadyApplied && revisionGroup != nil {
 		testGroup.Iterations = cloneIntPtr(revisionGroup.Iterations)
 		testGroup.IterationOverride = cloneIntPtr(revisionGroup.IterationOverride)
@@ -2690,6 +2720,7 @@ func (tr *TestRunner) compileManagedTestGroupForModeWithRevisionLocked(index int
 
 	engineGroup := engine.GroupConfig{
 		Name:            name,
+		StartOffset:     startOffset,
 		Script:          &scriptCopy,
 		VUsers:          engineVUsers,
 		RampUp:          engineRampUp,
@@ -2701,6 +2732,60 @@ func (tr *TestRunner) compileManagedTestGroupForModeWithRevisionLocked(index int
 	}
 
 	return testGroup, engineGroup, nil
+}
+
+func validateSuccessfulMessageDetailFeature(script *dsl.Script, projectQuotas []projectQuotaSnapshot) error {
+	if !scriptRequestsSuccessfulMessageDetail(script) {
+		return nil
+	}
+	if !strings.EqualFold(strings.TrimSpace(script.Protocol), "http") {
+		return fmt.Errorf("successful message detail capture currently supports the http protocol only")
+	}
+	if len(projectQuotas) == 0 || !projectQuotas[0].features.SuccessfulMessageDetail {
+		return fmt.Errorf("successful message detail capture is disabled for this project; enable settings.features.successful_message_detail before launch")
+	}
+	return nil
+}
+
+func validateControlParallelFeature(script *dsl.Script, projectQuotas []projectQuotaSnapshot) error {
+	if !scriptRequestsControlParallel(script) {
+		return nil
+	}
+	if len(projectQuotas) == 0 || !projectQuotas[0].features.ControlParallel {
+		return fmt.Errorf("control_parallel is disabled for this project; enable settings.features.control_parallel before launch")
+	}
+	instance, err := protocol.Get(strings.TrimSpace(script.Protocol))
+	if err != nil {
+		return err
+	}
+	safety, ok := instance.(protocol.ParallelSafetyProvider)
+	if !ok || !safety.ParallelSafe() {
+		return fmt.Errorf("protocol %q does not advertise parallel branch safety", script.Protocol)
+	}
+	return nil
+}
+
+func scriptRequestsControlParallel(script *dsl.Script) bool {
+	if script == nil {
+		return false
+	}
+	stack := make([]dsl.Action, 0, len(script.Init)+len(script.Actions)+len(script.Teardown))
+	stack = append(stack, script.Init...)
+	stack = append(stack, script.Actions...)
+	stack = append(stack, script.Teardown...)
+	for len(stack) > 0 {
+		action := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
+		if dsl.CanonicalActionType(strings.ToLower(strings.TrimSpace(action.Type))) == "control_parallel" {
+			return true
+		}
+		if action.Control != nil {
+			for _, branch := range action.Control.ActionBranches() {
+				stack = append(stack, branch.Actions...)
+			}
+		}
+	}
+	return false
 }
 
 func (tr *TestRunner) buildSharedDataSourcesLocked(bindings []storage.ScenarioDataPoolBinding) ([]dsl.DataSource, error) {

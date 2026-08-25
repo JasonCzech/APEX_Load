@@ -27,7 +27,7 @@ import {
 
 type JsonPathSegment = string | number
 
-const ACTION_LIST_KEYS = new Set(['actions', 'init', 'teardown', 'steps', 'else'])
+const ACTION_LIST_KEYS = new Set(['actions', 'init', 'teardown', 'steps', 'else', 'default'])
 
 // Lezer JSON trees include punctuation tokens as siblings; only these node
 // names are values for array-index counting and property-value extraction.
@@ -149,7 +149,7 @@ interface ActionContext {
 
 /**
  * If `node` sits inside an action object (an element of actions/init/
- * teardown or a nested control steps/else array), return that object and
+ * teardown or a nested control steps/else/case/default array), return that object and
  * its declared type. Detects whether the cursor is inside the action's
  * params object.
  */

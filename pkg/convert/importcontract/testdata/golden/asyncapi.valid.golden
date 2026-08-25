@@ -60,6 +60,7 @@
       "pacing": {
         "type": "none"
       },
+      "results": {},
       "run_logic": {
         "auto_transactions": "none"
       },
@@ -150,6 +151,7 @@
         "pacing": {
           "type": "none"
         },
+        "results": {},
         "run_logic": {
           "auto_transactions": "none"
         },

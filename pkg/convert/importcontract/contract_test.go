@@ -62,13 +62,13 @@ func TestBaselineNormalizedContracts(t *testing.T) {
 // converter's complete JSON-visible ConvertResult plus shared validation and
 // accounting. Any update must be reviewed as an intentional importer delta.
 var frozenImportContractHashes = map[string]string{
-	"har":      "2941c93093c9a2fd2e98a15499f3890b751eaf3dbc3cb4ab99a5170da9cd051f",
-	"jmeter":   "4dc8ac1a0a6512eb5d6d32a6dfa2b3e1f9911457fa748b274307833f6f854162",
-	"k6":       "3f92bb0162d595533f7ada6cfcf49603ec6bc6d1c4a98fcaf147f4a003a669dd",
-	"openapi":  "5e2c943038817074188f11976ea67241a63c3509acfc9dbb204735856aba6ba3",
-	"postman":  "f6391b42793e50b60a44f6b77e9a6086b81cf67f3c2b9edbcf9e271e831b34dd",
-	"raw_http": "9db5248a05074b18cf32f05634c12b826cf5c4974978c2e53e98feef886aad19",
-	"wsdl":     "06ccb7e2fc6fdd9c96cff016c486dfafc29816a9aea2b21de93f305f1f9badae",
+	"har":      "ef67cdad2a59cf421d3f862bf907f86a3ef1b68cddd7e87d244ecb56f59fd220",
+	"jmeter":   "7219c9c4b6d8dbb7bb66ff2fcd3d96e63a79bac520817717839b0a1a49bfde92",
+	"k6":       "83fa7df58e867e39d7544c6b4c0a5124ede5ae3b4a3ebcfb51de6a7736b69c59",
+	"openapi":  "7dc359421e0e9513a5dad8c5ed955dcdd3bd6a92f16fa84a11a05b1ea3cdf5a0",
+	"postman":  "fa2639cd6e22229d0b471fc02dc9a79a29c21ed7a6bb13e23e00b368e17ca38a",
+	"raw_http": "753109927bceb2da9bbd6dcff345c41a7d6ea87f6e0582d780cd896c06ce0e7e",
+	"wsdl":     "ab668d0db72d276a0c6f7fd526f08c274278225ea025e2e9a4ac574c804b160e",
 }
 
 func TestFrozenImportContractsAreExactAndDeterministic(t *testing.T) {
@@ -93,6 +93,7 @@ func TestFrozenImportContractsAreExactAndDeterministic(t *testing.T) {
 				requireIntentionalDelta(t, "postman_source_file_provenance")
 			}
 			requireIntentionalDelta(t, "credential_preserving_import_marker")
+			requireIntentionalDelta(t, "script_results_contract")
 			if importer.name != "wsdl" {
 				requireIntentionalDelta(t, "http_imports_disable_implicit_traceparent")
 			}
@@ -580,6 +581,7 @@ var intentionalDeltaAllowlist = map[string]string{
 	"raw_http_explicit_http11_runtime_mode":          "A raw capture containing only HTTP/1.1 requests now selects exact native HTTP/1.1 mode so connection-specific header semantics remain faithful.",
 	"har_request_http_version_fidelity":              "HAR request protocol versions now reach the shared request model and select an exact script-wide native version when every request agrees.",
 	"http_imports_disable_implicit_traceparent":      "HTTP-producing imports without an explicit source choice persist traceparent=false so runtime defaults cannot add an unauthored wire header.",
+	"script_results_contract":                        "The optional bounded result-detail policy adds an empty results object to imported script configuration while preserving legacy runtime behavior.",
 }
 
 func requireIntentionalDelta(t *testing.T, key string) {

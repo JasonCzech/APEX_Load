@@ -74,6 +74,7 @@
       "pacing": {
         "type": "none"
       },
+      "results": {},
       "run_logic": {
         "auto_transactions": "none"
       },

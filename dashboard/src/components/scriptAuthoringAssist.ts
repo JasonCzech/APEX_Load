@@ -197,7 +197,9 @@ function legacyActionNeedsExplicitTarget(actionType: string): boolean {
     'source_review',
     'custom_call',
     'control_if',
+	'control_switch',
     'control_loop',
+	'control_parallel',
     'control_break',
     'control_continue',
     'rendezvous',
@@ -284,7 +286,8 @@ function sanitizeRepairName(value: string, fallback: string): string {
 
 // collectControlFlowIssues mirrors the server control-flow rules (validate.go):
 // a control_loop needs a positive count, a condition, or a for_each source; a
-// control_if needs then-steps or else-steps. Nested control blocks are checked
+// control_if needs then-steps or else-steps, while control_switch requires
+// ordered, conditioned, non-empty cases. Nested control blocks are checked
 // recursively and reported against the enclosing top-level action.
 function collectControlFlowIssues(action: ScriptActionDefinition, phase: AuthoringIssuePhase, actionIndex: number, issues: AuthoringIssue[]): void {
   const conditionPresent = (condition?: ScriptCondition): boolean =>
@@ -326,16 +329,68 @@ function collectControlFlowIssues(action: ScriptActionDefinition, phase: Authori
           message: `${pathLabel}control_if needs then-steps or else-steps.`,
         })
       }
+	} else if (node.type === 'control_switch') {
+		const cases = control.cases || []
+		if (cases.length === 0) {
+			pushIssue(issues, {
+				id: `${phasePrefix}:${actionIndex}:control:${pathKey}:switch-empty`,
+				severity: 'error', phase, actionIndex,
+				message: `${pathLabel}control_switch needs at least one case.`,
+			})
+		}
+		cases.forEach((switchCase, caseIndex) => {
+			if (!conditionPresent(switchCase.condition)) {
+				pushIssue(issues, {
+					id: `${phasePrefix}:${actionIndex}:control:${pathKey}:case-${caseIndex}-condition`,
+					severity: 'error', phase, actionIndex,
+					message: `${pathLabel}control_switch case ${caseIndex + 1} needs a condition.`,
+				})
+			}
+			if ((switchCase.steps || []).length === 0) {
+				pushIssue(issues, {
+					id: `${phasePrefix}:${actionIndex}:control:${pathKey}:case-${caseIndex}-steps`,
+					severity: 'error', phase, actionIndex,
+					message: `${pathLabel}control_switch case ${caseIndex + 1} needs at least one step.`,
+				})
+			}
+		})
+	} else if (node.type === 'control_parallel') {
+		const branches = control.branches || []
+		if (branches.length < 2) {
+			pushIssue(issues, {
+				id: `${phasePrefix}:${actionIndex}:control:${pathKey}:parallel-branches`,
+				severity: 'error', phase, actionIndex,
+				message: `${pathLabel}control_parallel needs at least two named branches.`,
+			})
+		}
+		const names = new Set<string>()
+		branches.forEach((branch, branchIndex) => {
+			const name = (branch.name || '').trim()
+			if (!name || names.has(name) || (branch.steps || []).length === 0) {
+				pushIssue(issues, {
+					id: `${phasePrefix}:${actionIndex}:control:${pathKey}:parallel-${branchIndex}`,
+					severity: 'error', phase, actionIndex,
+					message: `${pathLabel}parallel branch ${branchIndex + 1} needs a unique name and at least one step.`,
+				})
+			}
+			names.add(name)
+		})
     }
-    const children = [...(control.steps || []), ...(control.else || [])]
+	const children = [
+		...(control.steps || []),
+		...(control.else || []),
+		...(control.cases || []).flatMap(switchCase => switchCase.steps || []),
+		...(control.default || []),
+		...(control.branches || []).flatMap(branch => branch.steps || []),
+	]
     children.forEach((child, childIndex) => {
-      if (child && (child.type === 'control_if' || child.type === 'control_loop')) {
+	  if (child && (child.type === 'control_if' || child.type === 'control_switch' || child.type === 'control_loop' || child.type === 'control_parallel')) {
         recurse(child, `${pathKey}.${childIndex}`, `${pathLabel}nested step ${childIndex + 1} → `)
       }
     })
   }
 
-  if (action.type === 'control_if' || action.type === 'control_loop') {
+	if (action.type === 'control_if' || action.type === 'control_switch' || action.type === 'control_loop' || action.type === 'control_parallel') {
     recurse(action, '0', '')
   }
 }

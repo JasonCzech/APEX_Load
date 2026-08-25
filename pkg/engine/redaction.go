@@ -891,6 +891,8 @@ func scrubSensitiveResultMetadata(result *protocol.Result, config *RedactionConf
 	result.SourceTransaction = scrubSensitiveIdentityWithConfig(result.SourceTransaction, config)
 	result.SourceProfile = scrubSensitiveTextWithConfig(result.SourceProfile, config)
 	result.SourcePath = scrubSensitiveTextWithConfig(result.SourcePath, config)
+	result.Phase = scrubSensitiveTextWithConfig(result.Phase, config)
+	result.Hierarchy = scrubSensitiveTextWithConfig(result.Hierarchy, config)
 	result.SourceUID = scrubSensitiveTextWithConfig(result.SourceUID, config)
 	result.RequestType = scrubSensitiveTextWithConfig(result.RequestType, config)
 	result.OperationKind = scrubSensitiveTextWithConfig(result.OperationKind, config)

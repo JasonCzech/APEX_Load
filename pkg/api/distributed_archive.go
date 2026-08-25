@@ -93,7 +93,10 @@ func (b *distributedExecutionBackend) stageRemoteArchiveWithTargetHistory(tr *Te
 	}
 	defer func() { _ = removeArchiveSubdirectory(archiveParent, workingDir) }()
 
-	if err := writeMergedRemoteArchiveFiles(workingDir, &manifest, bundles, targetHistory); err != nil {
+	if err := writeMergedRemoteArchiveFiles(workingDir, &manifest, bundles, targetHistory, test); err != nil {
+		return nil, err
+	}
+	if err := applyTransactionSLARules(workingDir, &manifest); err != nil {
 		return nil, err
 	}
 	if err := writeArchiveParquetFiles(workingDir, &manifest); err != nil {
@@ -140,6 +143,7 @@ func (b *distributedExecutionBackend) stageRemoteArchiveWithTargetHistory(tr *Te
 
 type remoteArchiveBundle struct {
 	target            string
+	region            string
 	manifest          RunArchiveManifest
 	transactionsPath  string
 	resourcesPath     string
@@ -365,7 +369,7 @@ func (b *distributedExecutionBackend) fetchRemoteArchiveBundleTarget(ctx context
 			return remoteArchiveBundle{}, false, fmt.Errorf("fetch %s archive from %s: %w", labels[i], target, err)
 		}
 	}
-	return remoteArchiveBundle{target: target, manifest: manifest, transactionsPath: paths[0], resourcesPath: paths[1], summariesPath: paths[2], transferStageRoot: transferStageRoot}, false, nil
+	return remoteArchiveBundle{target: target, region: strings.TrimSpace(b.regionForTarget(target)), manifest: manifest, transactionsPath: paths[0], resourcesPath: paths[1], summariesPath: paths[2], transferStageRoot: transferStageRoot}, false, nil
 }
 
 func remoteArchiveTargetTimeout(base time.Duration) time.Duration {
@@ -533,12 +537,32 @@ func mergeRemoteArchiveManifest(tr *TestRunner, test *ManagedTest, bundles []rem
 		manifest.TransactionCount += bundle.manifest.TransactionCount
 		manifest.ResourceSampleCount += bundle.manifest.ResourceSampleCount
 		manifest.IntervalSummaryCount += bundle.manifest.IntervalSummaryCount
+		mergeRunArchiveMessageDetailCapture(&manifest, bundle.manifest.MessageDetailCapture)
 		if manifest.InitialProvenance == nil && bundle.manifest.InitialProvenance != nil {
 			initial := maskRunArchiveProvenance(*bundle.manifest.InitialProvenance)
 			manifest.InitialProvenance = &initial
 		}
 	}
 	return manifest
+}
+
+func mergeRunArchiveMessageDetailCapture(manifest *RunArchiveManifest, incoming *RunArchiveMessageDetailCapture) {
+	if manifest == nil || incoming == nil {
+		return
+	}
+	if manifest.MessageDetailCapture == nil {
+		manifest.MessageDetailCapture = &RunArchiveMessageDetailCapture{Dropped: make(map[string]int64)}
+	}
+	destination := manifest.MessageDetailCapture
+	destination.RetainedItems += incoming.RetainedItems
+	destination.RetainedBytes += incoming.RetainedBytes
+	destination.TruncatedItems += incoming.TruncatedItems
+	if destination.Dropped == nil {
+		destination.Dropped = make(map[string]int64)
+	}
+	for reason, count := range incoming.Dropped {
+		destination.Dropped[reason] += count
+	}
 }
 
 func distributedArchiveSLA(tr *TestRunner, test *ManagedTest) (bool, bool, []string) {
@@ -649,18 +673,25 @@ func snapshotRemoteArchiveTargetHistory(tr *TestRunner, test *ManagedTest) []rem
 	return compacted
 }
 
-func writeMergedRemoteArchiveFiles(rootDir string, manifest *RunArchiveManifest, bundles []remoteArchiveBundle, targetHistory []remoteArchiveTargetSnapshot) error {
+func writeMergedRemoteArchiveFiles(rootDir string, manifest *RunArchiveManifest, bundles []remoteArchiveBundle, targetHistory []remoteArchiveTargetSnapshot, tests ...*ManagedTest) error {
+	transactionsPath, err := archiveArtifactPath(rootDir, manifest.TransactionsFile)
+	if err != nil {
+		return err
+	}
+	var test *ManagedTest
+	if len(tests) > 0 {
+		test = tests[0]
+	}
+	if err := mergeRemoteArchiveTransactions(transactionsPath, manifest, bundles, messageDetailBudgetsForTest(test)); err != nil {
+		return err
+	}
+
 	for _, dataset := range []struct {
 		name          string
 		kind          string
 		path          func(remoteArchiveBundle) string
 		expectedCount func(remoteArchiveBundle) int64
 	}{
-		{
-			name: manifest.TransactionsFile, kind: "transaction",
-			path:          func(bundle remoteArchiveBundle) string { return bundle.transactionsPath },
-			expectedCount: func(bundle remoteArchiveBundle) int64 { return bundle.manifest.TransactionCount },
-		},
 		{
 			name: manifest.ResourceSamplesFile, kind: "resource sample",
 			path:          func(bundle remoteArchiveBundle) string { return bundle.resourcesPath },
@@ -687,12 +718,206 @@ func writeMergedRemoteArchiveFiles(rootDir string, manifest *RunArchiveManifest,
 	return nil
 }
 
+const (
+	controllerMessageDetailDefaultMaxItems      = int64(128)
+	controllerMessageDetailDefaultMaxItemBytes  = int64(1 << 20)
+	controllerMessageDetailDefaultMaxTotalBytes = int64(16 << 20)
+)
+
+type controllerMessageDetailBudget struct {
+	maxItems      int64
+	maxItemBytes  int64
+	maxTotalBytes int64
+	adaptive      bool
+	retainedItems int64
+	retainedBytes int64
+	priorityItems map[int]int64
+	priorityBytes map[int]int64
+}
+
+func messageDetailBudgetsForTest(test *ManagedTest) map[string]*controllerMessageDetailBudget {
+	if test == nil {
+		return nil
+	}
+	budgets := make(map[string]*controllerMessageDetailBudget)
+	for _, group := range test.Groups {
+		if group.script == nil || group.script.Config.Results.MessageDetail == nil {
+			continue
+		}
+		policy := group.script.Config.Results.MessageDetail
+		mode := strings.ToLower(strings.TrimSpace(policy.Mode))
+		if mode != "sampled" && mode != "adaptive" {
+			continue
+		}
+		budget := &controllerMessageDetailBudget{
+			maxItems:      int64(policy.MaxItems),
+			maxItemBytes:  policy.MaxItemBytes,
+			maxTotalBytes: policy.MaxTotalBytes,
+			adaptive:      mode == "adaptive",
+			priorityItems: make(map[int]int64),
+			priorityBytes: make(map[int]int64),
+		}
+		if budget.maxItems <= 0 {
+			budget.maxItems = controllerMessageDetailDefaultMaxItems
+		}
+		if budget.maxItemBytes <= 0 {
+			budget.maxItemBytes = controllerMessageDetailDefaultMaxItemBytes
+		}
+		if budget.maxTotalBytes <= 0 {
+			budget.maxTotalBytes = controllerMessageDetailDefaultMaxTotalBytes
+		}
+		budgets[strings.TrimSpace(group.Name)] = budget
+	}
+	return budgets
+}
+
+func messageDetailBudgetForEvent(budgets map[string]*controllerMessageDetailBudget, group string) *controllerMessageDetailBudget {
+	if len(budgets) == 0 {
+		return nil
+	}
+	if budget := budgets[strings.TrimSpace(group)]; budget != nil {
+		return budget
+	}
+	if strings.TrimSpace(group) == "" && len(budgets) == 1 {
+		for _, budget := range budgets {
+			return budget
+		}
+	}
+	return nil
+}
+
+func mergeRemoteArchiveTransactions(destinationPath string, manifest *RunArchiveManifest, bundles []remoteArchiveBundle, budgets map[string]*controllerMessageDetailBudget) (err error) {
+	destination, err := createArchiveArtifactExclusive(filepath.Dir(destinationPath), filepath.Base(destinationPath), 0o644, false)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if closeErr := destination.Close(); err == nil && closeErr != nil {
+			err = closeErr
+		}
+	}()
+	encoder := json.NewEncoder(destination)
+	var ordinal int64
+	if len(budgets) > 0 {
+		if manifest.MessageDetailCapture == nil {
+			manifest.MessageDetailCapture = &RunArchiveMessageDetailCapture{}
+		}
+		manifest.MessageDetailCapture.RetainedItems = 0
+		manifest.MessageDetailCapture.RetainedBytes = 0
+		if manifest.MessageDetailCapture.Dropped == nil {
+			manifest.MessageDetailCapture.Dropped = make(map[string]int64)
+		}
+	}
+	for _, bundle := range bundles {
+		source, _, openErr := openArchiveArtifactForRead(filepath.Dir(bundle.transactionsPath), filepath.Base(bundle.transactionsPath))
+		if openErr != nil {
+			return openErr
+		}
+		scanner := newArchiveJSONLScanner(source)
+		var count int64
+		for scanner.Scan() {
+			var event TransactionEvent
+			if decodeErr := json.Unmarshal(scanner.Bytes(), &event); decodeErr != nil {
+				_ = source.Close()
+				return fmt.Errorf("decode remote transaction record for target %q: %w", bundle.target, decodeErr)
+			}
+			sanitizeArchivedTransaction(&event)
+			// Region is controller-owned placement metadata. Never accept a label
+			// supplied by a generator archive, even when that label looks valid.
+			event.Region = bundle.region
+			if event.Success && event.Snapshot != nil && len(budgets) > 0 {
+				if budget := messageDetailBudgetForEvent(budgets, event.Group); budget != nil {
+					enforceControllerMessageDetailBudget(&event, budget, manifest.MessageDetailCapture)
+				} else {
+					manifest.MessageDetailCapture.Dropped["controller_unknown_group"]++
+					event.Snapshot = nil
+				}
+			}
+			finalizeTransactionEventDerivedFields(&event, ordinal)
+			if encodeErr := encoder.Encode(&event); encodeErr != nil {
+				_ = source.Close()
+				return encodeErr
+			}
+			ordinal++
+			count++
+		}
+		if scanErr := scanner.Err(); scanErr != nil {
+			_ = source.Close()
+			return fmt.Errorf("scan remote transaction records for target %q: %w", bundle.target, scanErr)
+		}
+		if closeErr := source.Close(); closeErr != nil {
+			return closeErr
+		}
+		if count != bundle.manifest.TransactionCount {
+			return fmt.Errorf("remote transaction count for target %q is %d, manifest declares %d", bundle.target, count, bundle.manifest.TransactionCount)
+		}
+	}
+	return destination.Sync()
+}
+
+func enforceControllerMessageDetailBudget(event *TransactionEvent, budget *controllerMessageDetailBudget, stats *RunArchiveMessageDetailCapture) {
+	if event == nil || budget == nil || stats == nil || event.Snapshot == nil {
+		return
+	}
+	drop := func(reason string) {
+		stats.Dropped[reason]++
+		event.Snapshot = nil
+	}
+	priority := 0
+	priorityItemLimit, priorityByteLimit := budget.maxItems, budget.maxTotalBytes
+	if budget.adaptive {
+		priority = min(max(event.MessageDetailPriority, 1), 3)
+		priorityItemLimit = adaptiveMessageDetailPriorityLimit(budget.maxItems, priority)
+		priorityByteLimit = adaptiveMessageDetailPriorityLimit(budget.maxTotalBytes, priority)
+		if priorityItemLimit == 0 || budget.priorityItems[priority] >= priorityItemLimit {
+			drop(fmt.Sprintf("controller_priority_%d_item_limit", priority))
+			return
+		}
+		if priorityByteLimit == 0 || budget.priorityBytes[priority] >= priorityByteLimit {
+			drop(fmt.Sprintf("controller_priority_%d_byte_limit", priority))
+			return
+		}
+	}
+	if budget.retainedItems >= budget.maxItems {
+		drop("controller_item_limit")
+		return
+	}
+	remaining := budget.maxTotalBytes - budget.retainedBytes
+	if priority > 0 {
+		remaining = min(remaining, priorityByteLimit-budget.priorityBytes[priority])
+	}
+	if remaining <= 0 {
+		drop("controller_total_byte_limit")
+		return
+	}
+	limit := min(budget.maxItemBytes, remaining)
+	before := archiveMessageDetailSnapshotBytes(event.Snapshot)
+	if before > limit {
+		event.Snapshot = engine.BoundErrorSnapshot(event.Snapshot, int(limit))
+		stats.TruncatedItems++
+	}
+	retained := archiveMessageDetailSnapshotBytes(event.Snapshot)
+	if event.Snapshot == nil || retained <= 0 || retained > limit {
+		drop("controller_item_byte_limit")
+		return
+	}
+	budget.retainedItems++
+	budget.retainedBytes += retained
+	if priority > 0 {
+		budget.priorityItems[priority]++
+		budget.priorityBytes[priority] += retained
+	}
+	stats.RetainedItems++
+	stats.RetainedBytes += retained
+}
+
 type remoteArchiveSummaryCursor struct {
 	file      *os.File
 	decoder   *json.Decoder
 	record    IntervalSummaryRecord
 	timestamp time.Time
 	index     int
+	region    string
 	decoded   int64
 }
 
@@ -770,7 +995,7 @@ func mergeRemoteArchiveIntervalSummariesWithTargets(destinationPath string, bund
 			return 0, openErr
 		}
 		openedFiles = append(openedFiles, file)
-		cursor := &remoteArchiveSummaryCursor{file: file, decoder: json.NewDecoder(file), index: index}
+		cursor := &remoteArchiveSummaryCursor{file: file, decoder: json.NewDecoder(file), index: index, region: bundle.region}
 		if decodeErr := cursor.decoder.Decode(&cursor.record); decodeErr != nil {
 			if decodeErr == io.EOF {
 				_ = file.Close()
@@ -783,6 +1008,7 @@ func mergeRemoteArchiveIntervalSummariesWithTargets(destinationPath string, bund
 			return 0, decodeErr
 		}
 		cursor.decoded = 1
+		cursor.record.ByRegion = controllerApprovedIntervalRegion(cursor.record.ByRegion, cursor.region)
 		cursor.timestamp = cursor.record.Timestamp.UTC()
 		cursors = append(cursors, cursor)
 	}
@@ -904,6 +1130,7 @@ func mergeRemoteArchiveIntervalSummariesWithTargets(destinationPath string, bund
 			sourceThroughputMissed = sourceThroughputMissed || record.ThroughputTargetMissed
 			aggregate.Groups = mergeRemoteArchiveSummaryGroups(aggregate.Groups, record.Groups)
 			aggregate.Transactions = mergeIntervalTransactions(aggregate.Transactions, record.Transactions)
+			aggregate.ByRegion = mergeIntervalTransactions(aggregate.ByRegion, record.ByRegion)
 			aggregate.Browser = mergeRemoteArchiveSummaryBrowser(aggregate.Browser, record.Browser)
 			aggregate.BrowserByDevice = mergeRemoteArchiveSummaryBrowserByDevice(aggregate.BrowserByDevice, record.BrowserByDevice)
 			aggregate.Telemetry = mergeRemoteArchiveSummaryTelemetry(aggregate.Telemetry, record.Telemetry)
@@ -943,6 +1170,7 @@ func mergeRemoteArchiveIntervalSummariesWithTargets(destinationPath string, bund
 			}
 		}
 		aggregate.Transactions = compactIntervalTransactions(aggregate.Transactions)
+		aggregate.ByRegion = compactIntervalTransactions(aggregate.ByRegion)
 		aggregate.TotalTx = cumulativeTx
 		aggregate.TotalErrors = cumulativeErrors
 		if attempts > 0 {
@@ -1293,6 +1521,7 @@ func advanceRemoteArchiveSummaryCursor(cursor *remoteArchiveSummaryCursor, bundl
 		return false, err
 	}
 	cursor.decoded++
+	next.ByRegion = controllerApprovedIntervalRegion(next.ByRegion, cursor.region)
 	nextTimestamp := next.Timestamp.UTC()
 	if nextTimestamp.Before(previousTimestamp) {
 		return false, fmt.Errorf("remote interval summaries for target %q are not time ordered", bundles[cursor.index].target)
@@ -1300,6 +1529,18 @@ func advanceRemoteArchiveSummaryCursor(cursor *remoteArchiveSummaryCursor, bundl
 	cursor.record = next
 	cursor.timestamp = nextTimestamp
 	return true, nil
+}
+
+func controllerApprovedIntervalRegion(in map[string]*IntervalTransactionMetrics, region string) map[string]*IntervalTransactionMetrics {
+	region = strings.TrimSpace(region)
+	if region == "" || len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]*IntervalTransactionMetrics, 1)
+	for _, metric := range in {
+		mergeIntervalTransactionMetric(out, region, metric)
+	}
+	return out
 }
 
 // remoteArchiveFleetIntervalMetrics recomputes interval evidence only while the

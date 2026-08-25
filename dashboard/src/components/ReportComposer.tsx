@@ -430,6 +430,27 @@ export default function ReportComposer({ testId, testName, profile, onClose }: P
               </section>
             )}
 
+			{(manifest?.transaction_rule_results?.length ?? 0) > 0 && (
+			  <section className="report-section">
+				<h2>Transaction SLA Rules</h2>
+				<table className="report-table">
+				  <thead><tr><th>Transaction</th><th>Metric</th><th>Expectation</th><th>Observed</th><th>Severity</th><th>Result</th></tr></thead>
+				  <tbody>
+					{manifest?.transaction_rule_results?.map((result, index) => (
+					  <tr key={`${result.rule.transaction}-${result.rule.metric}-${index}`}>
+						<td>{result.rule.transaction}</td>
+						<td>{result.rule.metric}</td>
+						<td>{result.rule.comparator} {result.rule.threshold}</td>
+						<td>{result.observed ?? 'Not evaluated'}</td>
+						<td>{result.rule.severity || 'fail'}</td>
+						<td>{result.status}</td>
+					  </tr>
+					))}
+				  </tbody>
+				</table>
+			  </section>
+			)}
+
             {has('actions', isEngineer) && topActions.length > 0 && (
               <section className="report-section">
                 <h2>Action Summary</h2>

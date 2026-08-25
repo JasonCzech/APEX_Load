@@ -14,18 +14,24 @@ import (
 )
 
 type parquetTransactionEvent struct {
+	EventID             string  `parquet:"name=event_id, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
 	TimestampUnixMs     int64   `parquet:"name=timestamp_unix_ms, type=INT64"`
 	TimestampRFC3339    string  `parquet:"name=timestamp_rfc3339, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
 	TestID              string  `parquet:"name=test_id, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
 	TestName            string  `parquet:"name=test_name, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
 	Group               string  `parquet:"name=group_name, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
 	Region              string  `parquet:"name=region, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
+	Hierarchy           string  `parquet:"name=hierarchy, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
+	PageName            string  `parquet:"name=page_name, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
+	Phase               string  `parquet:"name=phase, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
+	HasDetail           bool    `parquet:"name=has_detail, type=BOOLEAN"`
 	ActionName          string  `parquet:"name=action_name, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
 	BusinessTransaction bool    `parquet:"name=business_transaction, type=BOOLEAN"`
 	CorrelationID       string  `parquet:"name=correlation_id, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
 	TraceID             string  `parquet:"name=trace_id, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
 	SpanID              string  `parquet:"name=span_id, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
 	NetworkProfile      string  `parquet:"name=network_profile, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
+	SourceTransaction   string  `parquet:"name=source_transaction, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
 	DependencyType      string  `parquet:"name=dependency_type, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
 	DependencyTarget    string  `parquet:"name=dependency_target, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
 	DurationMs          float64 `parquet:"name=duration_ms, type=DOUBLE"`
@@ -115,6 +121,7 @@ type parquetIntervalSummary struct {
 	PercentileQuality      string  `parquet:"name=percentile_quality, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
 	GroupsJSON             string  `parquet:"name=groups_json, type=BYTE_ARRAY, convertedtype=UTF8"`
 	TransactionsJSON       string  `parquet:"name=transactions_json, type=BYTE_ARRAY, convertedtype=UTF8"`
+	ByRegionJSON           string  `parquet:"name=by_region_json, type=BYTE_ARRAY, convertedtype=UTF8"`
 	BrowserJSON            string  `parquet:"name=browser_json, type=BYTE_ARRAY, convertedtype=UTF8"`
 	BrowserDeviceJSON      string  `parquet:"name=browser_by_device_json, type=BYTE_ARRAY, convertedtype=UTF8"`
 	TelemetryJSON          string  `parquet:"name=telemetry_json, type=BYTE_ARRAY, convertedtype=UTF8"`
@@ -217,18 +224,24 @@ func toParquetTransactions(items []TransactionEvent) []parquetTransactionEvent {
 	rows := make([]parquetTransactionEvent, 0, len(items))
 	for _, item := range items {
 		rows = append(rows, parquetTransactionEvent{
+			EventID:             item.EventID,
 			TimestampUnixMs:     item.Timestamp.UnixMilli(),
 			TimestampRFC3339:    item.Timestamp.Format(time.RFC3339Nano),
 			TestID:              item.TestID,
 			TestName:            item.TestName,
 			Group:               item.Group,
 			Region:              item.Region,
+			Hierarchy:           item.Hierarchy,
+			PageName:            item.PageName,
+			Phase:               item.Phase,
+			HasDetail:           item.HasDetail,
 			ActionName:          item.ActionName,
 			BusinessTransaction: item.BusinessTransaction,
 			CorrelationID:       item.CorrelationID,
 			TraceID:             item.TraceID,
 			SpanID:              item.SpanID,
 			NetworkProfile:      item.NetworkProfile,
+			SourceTransaction:   item.SourceTransaction,
 			DependencyType:      item.DependencyType,
 			DependencyTarget:    item.DependencyTarget,
 			DurationMs:          item.DurationMs,
@@ -330,6 +343,7 @@ func toParquetSummaries(items []IntervalSummaryRecord) []parquetIntervalSummary 
 			PercentileQuality:      item.PercentileQuality,
 			GroupsJSON:             mustJSON(item.Groups),
 			TransactionsJSON:       mustJSON(item.Transactions),
+			ByRegionJSON:           mustJSON(item.ByRegion),
 			BrowserJSON:            mustJSON(item.Browser),
 			BrowserDeviceJSON:      mustJSON(item.BrowserByDevice),
 			TelemetryJSON:          mustJSON(item.Telemetry),

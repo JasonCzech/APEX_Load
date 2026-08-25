@@ -83,8 +83,13 @@ func writeSanitizedArchiveTransactions(ctx context.Context, record *storage.RunA
 }
 
 func sanitizeArchiveDecodedRecord(value any) {
+	sanitizeArchiveDecodedRecordAt(value, 0)
+}
+
+func sanitizeArchiveDecodedRecordAt(value any, ordinal int64) {
 	if item, ok := value.(*TransactionEvent); ok {
 		sanitizeArchivedTransaction(item)
+		finalizeTransactionEventDerivedFields(item, ordinal)
 	}
 }
 
@@ -100,6 +105,9 @@ func sanitizeArchivedTransaction(item *TransactionEvent) {
 	// retain the full defense-in-depth scrub for direct and legacy archive input.
 	item.Group = scrub.ValueLabel(item.Group, policy)
 	item.Region = scrub.Value(item.Region, policy)
+	item.Hierarchy = scrub.ValueLabel(item.Hierarchy, policy)
+	item.PageName = scrub.ValueLabel(item.PageName, policy)
+	item.Phase = scrub.ValueLabel(item.Phase, policy)
 	if item.BusinessTransaction {
 		item.ActionName = scrub.ValueLabel(item.ActionName, policy)
 	} else {

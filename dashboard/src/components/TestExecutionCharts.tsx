@@ -239,11 +239,29 @@ const PRIMARY_Y_AXIS_WIDTH = 60
 const OVERLAY_Y_AXIS_WIDTH = 64
 const COMMAND_CENTER_PRIMARY_Y_AXIS_WIDTH = 52
 const COMMAND_CENTER_OVERLAY_Y_AXIS_WIDTH = 34
+type ChartTimeUnit = 'seconds' | 'milliseconds'
 
 function readStoredTimeAxisMode(storageKey: string): ChartTimeAxisMode {
   return readStoredString(storageKey) === 'relative'
     ? 'relative'
     : 'clock'
+}
+
+function readStoredChartTimeUnit(storageKey: string): ChartTimeUnit {
+  return readStoredString(storageKey) === 'seconds' ? 'seconds' : 'milliseconds'
+}
+
+export function chartTimeAxisPresentation(label: string, unit: ChartTimeUnit) {
+  const isMillisecondAxis = /\(ms\)|^ms$/i.test(label.trim())
+  if (!isMillisecondAxis || unit === 'milliseconds') return { label, tickFormatter: undefined }
+  return {
+    label: label.trim().toLowerCase() === 'ms' ? 's' : label.replace(/\(ms\)/gi, '(s)'),
+    tickFormatter: (value: number | string) => {
+      const numericValue = Number(value)
+      if (!Number.isFinite(numericValue)) return String(value)
+      return Number((numericValue / 1000).toFixed(3)).toLocaleString()
+    },
+  }
 }
 
 function readStoredChartDensity(storageKey: string, fallback: ChartDensityMode = 'standard'): ChartDensityMode {
@@ -506,6 +524,7 @@ export default function TestExecutionCharts({
   const tpsOverlayStorageKey = storageKeyFor('tpsOverlayCharts')
   const chartMetricFiltersStorageKey = storageKeyFor('chartMetricFilters')
   const timeAxisModeStorageKey = storageKeyFor('chartTimeAxisMode')
+  const chartTimeUnitStorageKey = storageKeyFor('chartTimeUnit')
   const chartDensityStorageKey = storageKeyFor('chartDensity')
   const graphTableRowsStorageKey = storageKeyFor('graphTableRows')
   const cursorLabelsStorageKey = storageKeyFor('cursorLabels')
@@ -526,6 +545,7 @@ export default function TestExecutionCharts({
   const [tpsOverlayChartIds, setTpsOverlayChartIds] = useState<string[]>(() => readStoredStringArray(tpsOverlayStorageKey))
   const [chartMetricFilters, setChartMetricFilters] = useState<Record<string, string[]>>(() => readStoredStringArrayRecord(chartMetricFiltersStorageKey))
   const [timeAxisMode, setTimeAxisMode] = useState<ChartTimeAxisMode>(() => readStoredTimeAxisMode(timeAxisModeStorageKey))
+  const [chartTimeUnit, setChartTimeUnit] = useState<ChartTimeUnit>(() => readStoredChartTimeUnit(chartTimeUnitStorageKey))
   const [chartDensity, setChartDensity] = useState<ChartDensityMode>(() => {
     const storedDensity = readStoredChartDensity(chartDensityStorageKey, densityFallback)
     return surface === 'command-center' && storedDensity === 'six_up' ? 'command_center' : storedDensity
@@ -708,6 +728,10 @@ export default function TestExecutionCharts({
   useEffect(() => {
     writeStoredString(timeAxisModeStorageKey, timeAxisMode)
   }, [timeAxisMode, timeAxisModeStorageKey])
+
+  useEffect(() => {
+    writeStoredString(chartTimeUnitStorageKey, chartTimeUnit)
+  }, [chartTimeUnit, chartTimeUnitStorageKey])
 
   useEffect(() => {
     writeStoredString(chartDensityStorageKey, chartDensity)
@@ -1766,6 +1790,31 @@ export default function TestExecutionCharts({
           </button>
         </div>
       </div>
+      {commandCenterSurface && (
+        <div className="charts-config-panel-section">
+          <div>
+            <h4>Time Units</h4>
+          </div>
+          <div className="time-range-selector chart-time-axis-toggle chart-time-unit-toggle" role="group" aria-label="Graph time units">
+            <button
+              className={`btn-chip ${chartTimeUnit === 'seconds' ? 'active' : ''}`}
+              type="button"
+              onClick={() => setChartTimeUnit('seconds')}
+              aria-pressed={chartTimeUnit === 'seconds'}
+            >
+              Seconds
+            </button>
+            <button
+              className={`btn-chip ${chartTimeUnit === 'milliseconds' ? 'active' : ''}`}
+              type="button"
+              onClick={() => setChartTimeUnit('milliseconds')}
+              aria-pressed={chartTimeUnit === 'milliseconds'}
+            >
+              Milliseconds
+            </button>
+          </div>
+        </div>
+      )}
       <div className="charts-config-panel-section">
         <div>
           <h4>Cursor Labels</h4>
@@ -1889,7 +1938,8 @@ export default function TestExecutionCharts({
   }
 
   const renderMetricAxis = (chart: ChartConfig, visibleMetricKeys: string[], domain?: ChartDomain) => {
-    const label = chart.id === 'network_latency' && routeLatencyMode === 'stability' ? 'Jitter (ms)' : chartPrimaryYAxisLabel(chart)
+    const rawLabel = chart.id === 'network_latency' && routeLatencyMode === 'stability' ? 'Jitter (ms)' : chartPrimaryYAxisLabel(chart)
+    const { label, tickFormatter } = chartTimeAxisPresentation(rawLabel, chartTimeUnit)
     return (
       <YAxis
         yAxisId={metricYAxisId(chart, visibleMetricKeys)}
@@ -1898,6 +1948,7 @@ export default function TestExecutionCharts({
         width={commandCenterSurface ? COMMAND_CENTER_PRIMARY_Y_AXIS_WIDTH : PRIMARY_Y_AXIS_WIDTH}
         tickMargin={2}
         domain={domain}
+        tickFormatter={tickFormatter}
         {...axisInteractionProps(label)}
       />
     )

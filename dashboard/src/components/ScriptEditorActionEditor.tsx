@@ -71,6 +71,19 @@ export function ActionEditor({ action, index, parameters, onUpdate, onAddExtract
             isJmsScript={isJmsScript}
             onUpdate={onUpdate}
           />
+		  <div className="sub-section">
+			<div className="sub-header"><h4>Analytics attribution</h4></div>
+			<div className="form-grid">
+			  <label>
+				<span>Hierarchy path</span>
+				<input value={action.attribution?.hierarchy_path || ''} placeholder="checkout/payment/submit" onChange={event => onUpdate(index, 'attribution', { ...(action.attribution || {}), hierarchy_path: event.target.value })} />
+			  </label>
+			  <label>
+				<span>Page name</span>
+				<input value={action.attribution?.page_name || ''} placeholder="Checkout" onChange={event => onUpdate(index, 'attribution', { ...(action.attribution || {}), page_name: event.target.value })} />
+			  </label>
+			</div>
+		  </div>
 
           {isHTTPRuntimeControl ? (
             <div className="sub-section http-runtime-action-card" role="note">
@@ -202,7 +215,7 @@ export function ActionEditor({ action, index, parameters, onUpdate, onAddExtract
 
 // Control-flow blocks run for any protocol (the engine declares Protocols:["*"]),
 // so they are offered in every protocol's action menu, not just browser scripts.
-const CONTROL_ACTION_TYPES = ['control_if', 'control_loop']
+const CONTROL_ACTION_TYPES = ['control_if', 'control_switch', 'control_loop', 'control_parallel']
 const BROWSER_ACTION_TYPES = [
   'browser_navigate',
   'browser_click',
@@ -376,7 +389,7 @@ const CONDITION_OPERATORS: Array<{ value: string; label: string }> = [
 ]
 
 function isControlContainerType(type?: string): boolean {
-  return type === 'control_if' || type === 'control_loop'
+	return type === 'control_if' || type === 'control_switch' || type === 'control_loop' || type === 'control_parallel'
 }
 
 interface ConditionEditorProps {
@@ -390,21 +403,26 @@ interface ConditionEditorProps {
 // editable through the JSON escape hatch.)
 function ConditionEditor({ condition, onChange, leftLabel = 'Condition Left' }: ConditionEditorProps) {
   const unary = condition.op === 'exists' || condition.op === 'not_exists'
+	const hasExpression = Boolean(String(condition.expr || '').trim())
   return (
     <>
+		<label className="full-width">
+			<span>CEL Expression (optional)</span>
+			<input value={condition.expr || ''} onChange={e => onChange({ expr: e.target.value })} placeholder="var.status == 'ready'" />
+		</label>
       <label className="full-width">
         <span>{leftLabel}</span>
-        <input value={condition.left || ''} onChange={e => onChange({ left: e.target.value })} placeholder="{{var.status}}" />
+		<input value={condition.left || ''} disabled={hasExpression} onChange={e => onChange({ left: e.target.value })} placeholder="{{var.status}}" />
       </label>
       <label>
         <span>Operator</span>
-        <select value={condition.op || 'exists'} onChange={e => onChange({ op: e.target.value })}>
+		<select value={condition.op || 'exists'} disabled={hasExpression} onChange={e => onChange({ op: e.target.value })}>
           {CONDITION_OPERATORS.map(op => <option key={op.value} value={op.value}>{op.label}</option>)}
         </select>
       </label>
       <label>
         <span>Condition Right</span>
-        <input value={condition.right || ''} disabled={unary} onChange={e => onChange({ right: e.target.value })} placeholder="ready" />
+		<input value={condition.right || ''} disabled={hasExpression || unary} onChange={e => onChange({ right: e.target.value })} placeholder="ready" />
       </label>
     </>
   )
@@ -419,7 +437,7 @@ interface ControlBranchEditorProps {
 
 // Structured editor for a control block's child steps (then/else/loop). Each step
 // is an editable row (type / name / target) with add / remove / reorder. A step
-// whose type is control_if/control_loop expands inline into a nested control
+// whose type is control_if/control_switch/control_loop expands inline into a nested control
 // editor (bounded by MAX_CONTROL_UI_DEPTH); control_break / control_continue render
 // as leaf rows. A per-branch "JSON" toggle is the escape hatch for anything the
 // row form can't express. Step edits preserve unknown keys (R1).
@@ -495,6 +513,7 @@ export function ControlBranchEditor({ label, steps, onChange, depth = 0 }: Contr
             {canNest && (
               <>
                 <button type="button" className="btn btn-sm btn-ghost" onClick={() => addStep({ name: '', type: 'control_if', target: '', control: { steps: [] } } as Action)}>+ If</button>
+				<button type="button" className="btn btn-sm btn-ghost" onClick={() => addStep({ name: '', type: 'control_switch', target: '', control: { cases: [{ condition: { op: 'exists' }, steps: [] }], default: [] } } as Action)}>+ Switch</button>
                 <button type="button" className="btn btn-sm btn-ghost" onClick={() => addStep({ name: '', type: 'control_loop', target: '', control: { steps: [] } } as Action)}>+ Loop</button>
               </>
             )}
@@ -531,7 +550,11 @@ interface ControlFlowFieldsProps {
 export function ControlFlowFields({ action, index, onUpdate, depth = 0 }: ControlFlowFieldsProps) {
   const control = (action.control || {}) as Record<string, any>
   const condition = (control.condition || {}) as Record<string, any>
-  const isLoop = action.type === 'control_loop'
+	const isLoop = action.type === 'control_loop'
+	const isSwitch = action.type === 'control_switch'
+	const isParallel = action.type === 'control_parallel'
+	const cases = Array.isArray(control.cases) ? control.cases as Array<Record<string, any>> : []
+	const branches = Array.isArray(control.branches) ? control.branches as Array<Record<string, any>> : []
   const loopMode = loopModeOf(control)
   const forEach = (control.for_each || {}) as Record<string, any>
   const forEachCondition = (forEach.condition || {}) as Record<string, any>
@@ -557,11 +580,78 @@ export function ControlFlowFields({ action, index, onUpdate, depth = 0 }: Contro
       updateControl({ count: 0, for_each: control.for_each || { source: '', var: 'row' } })
     }
   }
+	const updateCase = (caseIndex: number, patch: Record<string, unknown>) => {
+		updateControl({ cases: cases.map((item, current) => current === caseIndex ? { ...item, ...patch } : item) })
+	}
+	const moveCase = (caseIndex: number, delta: number) => {
+		const target = caseIndex + delta
+		if (target < 0 || target >= cases.length) return
+		const next = [...cases]
+		;[next[caseIndex], next[target]] = [next[target], next[caseIndex]]
+		updateControl({ cases: next })
+	}
+	const updateBranch = (branchIndex: number, patch: Record<string, unknown>) => {
+		updateControl({ branches: branches.map((item, current) => current === branchIndex ? { ...item, ...patch } : item) })
+	}
+	const moveBranch = (branchIndex: number, delta: number) => {
+		const target = branchIndex + delta
+		if (target < 0 || target >= branches.length) return
+		const next = [...branches]
+		;[next[branchIndex], next[target]] = [next[target], next[branchIndex]]
+		updateControl({ branches: next })
+	}
 
   return (
     <div className="sub-section control-flow-section">
-      <div className="sub-header"><h4>{isLoop ? 'Loop' : 'Condition'}</h4></div>
+	  <div className="sub-header"><h4>{isLoop ? 'Loop' : isSwitch ? 'Switch' : isParallel ? 'Parallel branches' : 'Condition'}</h4></div>
       <div className="form-grid">
+		{isParallel && (
+			<>
+				<label>
+					<span>Concurrency</span>
+					<input type="number" min="1" max="16" value={control.concurrency ?? 4} onChange={event => updateControl({ concurrency: Math.min(16, Math.max(1, Number(event.target.value) || 4)) })} />
+				</label>
+				<label className="dashboard-workspace-check">
+					<input type="checkbox" checked={Boolean(control.fail_fast)} onChange={event => updateControl({ fail_fast: event.target.checked })} />
+					<span>Fail fast</span>
+				</label>
+				{branches.map((branch, branchIndex) => (
+					<div className="control-switch-case full-width" key={branchIndex}>
+						<div className="control-switch-case-header">
+							<input aria-label={`Parallel branch ${branchIndex + 1} name`} value={branch.name || ''} placeholder={`branch_${branchIndex + 1}`} onChange={event => updateBranch(branchIndex, { name: event.target.value })} />
+							<button type="button" className="btn-icon" disabled={branchIndex === 0} aria-label={`Move branch ${branchIndex + 1} up`} onClick={() => moveBranch(branchIndex, -1)}>↑</button>
+							<button type="button" className="btn-icon" disabled={branchIndex === branches.length - 1} aria-label={`Move branch ${branchIndex + 1} down`} onClick={() => moveBranch(branchIndex, 1)}>↓</button>
+							<button type="button" className="btn-icon danger" disabled={branches.length <= 2} aria-label={`Remove branch ${branchIndex + 1}`} onClick={() => updateControl({ branches: branches.filter((_, current) => current !== branchIndex) })}>✕</button>
+						</div>
+						<ControlBranchEditor label={`${branch.name || `Branch ${branchIndex + 1}`} steps`} steps={branch.steps} onChange={steps => updateBranch(branchIndex, { steps })} depth={depth} />
+					</div>
+				))}
+				<button type="button" className="btn btn-sm btn-ghost" disabled={branches.length >= 16} onClick={() => updateControl({ branches: [...branches, { name: `branch_${branches.length + 1}`, steps: [] }] })}>+ Branch</button>
+			</>
+		)}
+		{isSwitch && (
+			<>
+				{cases.map((switchCase, caseIndex) => {
+					const caseCondition = (switchCase.condition || {}) as Record<string, any>
+					return (
+						<div className="control-switch-case full-width" key={caseIndex}>
+							<div className="control-switch-case-header">
+								<strong>Case {caseIndex + 1}</strong>
+								<button type="button" className="btn-icon" disabled={caseIndex === 0} aria-label={`Move case ${caseIndex + 1} up`} onClick={() => moveCase(caseIndex, -1)}>↑</button>
+								<button type="button" className="btn-icon" disabled={caseIndex === cases.length - 1} aria-label={`Move case ${caseIndex + 1} down`} onClick={() => moveCase(caseIndex, 1)}>↓</button>
+								<button type="button" className="btn-icon danger" aria-label={`Remove case ${caseIndex + 1}`} onClick={() => updateControl({ cases: cases.filter((_, current) => current !== caseIndex) })}>✕</button>
+							</div>
+							<div className="form-grid">
+								<ConditionEditor condition={caseCondition} onChange={patch => updateCase(caseIndex, { condition: { ...caseCondition, ...patch } })} />
+								<ControlBranchEditor label={`Case ${caseIndex + 1} steps`} steps={switchCase.steps} onChange={steps => updateCase(caseIndex, { steps })} depth={depth} />
+							</div>
+						</div>
+					)
+				})}
+				<button type="button" className="btn btn-sm btn-ghost" onClick={() => updateControl({ cases: [...cases, { condition: { op: 'exists' }, steps: [] }] })}>+ Case</button>
+				<ControlBranchEditor label="Default steps" steps={control.default} onChange={steps => updateControl({ default: steps })} depth={depth} />
+			</>
+		)}
         {isLoop && (
           <label>
             <span>Loop Mode</span>
@@ -574,7 +664,7 @@ export function ControlFlowFields({ action, index, onUpdate, depth = 0 }: Contro
         )}
 
         {/* control_if branch predicate, or the while-loop predicate. */}
-        {(!isLoop || loopMode === 'while') && (
+		{!isSwitch && !isParallel && (!isLoop || loopMode === 'while') && (
           <ConditionEditor condition={condition} onChange={updateCondition} />
         )}
 
@@ -607,7 +697,7 @@ export function ControlFlowFields({ action, index, onUpdate, depth = 0 }: Contro
           </label>
         )}
 
-        <ControlBranchEditor label={isLoop ? 'Loop steps' : 'Then steps'} steps={control.steps} onChange={steps => updateControl({ steps })} depth={depth} />
+		{!isSwitch && !isParallel && <ControlBranchEditor label={isLoop ? 'Loop steps' : 'Then steps'} steps={control.steps} onChange={steps => updateControl({ steps })} depth={depth} />}
         {action.type === 'control_if' && (
           <ControlBranchEditor label="Else steps" steps={control.else} onChange={steps => updateControl({ else: steps })} depth={depth} />
         )}
@@ -689,12 +779,22 @@ function ActionCoreFields({ action, index, protocol, isBrowserScript, isJmsScrip
   const oauthStr = (key: string, fallback = '') => (typeof oauthParams[key] === 'string' ? (oauthParams[key] as string) : fallback)
   const setOAuthParam = (key: string, value: string) => onUpdate(index, 'params', { ...oauthParams, [key]: value })
   const oauthGrant = oauthStr('grant_type', 'client_credentials')
+	const changeActionType = (nextType: string) => {
+		onUpdate(index, 'type', nextType)
+		if (nextType === 'control_parallel' && !(action.control?.branches?.length)) {
+			onUpdate(index, 'control', {
+				branches: [{ name: 'branch_1', steps: [] }, { name: 'branch_2', steps: [] }],
+				concurrency: 4,
+				fail_fast: false,
+			})
+		}
+	}
 
   return (
     <div className="form-grid">
       <label><span>Name</span><input value={action.name} onChange={e => onUpdate(index, 'name', e.target.value)} /></label>
       <label><span>{actionTypeLabel}</span>
-        <select value={action.type} onChange={e => onUpdate(index, 'type', e.target.value)}>
+        <select value={action.type} onChange={e => changeActionType(e.target.value)}>
           {selectableActionTypes.map(type => <option key={type}>{type}</option>)}
         </select>
       </label>

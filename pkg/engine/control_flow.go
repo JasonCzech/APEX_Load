@@ -80,7 +80,23 @@ type ConditionEvidence struct {
 	Op     string `json:"op,omitempty"`     // normalized operator
 	Right  string `json:"right,omitempty"`  // interpolated right operand
 	Result bool   `json:"result"`           // evaluation outcome
-	Branch string `json:"branch,omitempty"` // "then"/"else" for control_if; "" otherwise
+	Branch string `json:"branch,omitempty"` // then/else, case[n]/default, or empty for loops
+}
+
+// selectSwitchBranch evaluates ordered cases and returns the first matching
+// body. A nil condition never matches: validation rejects it, and the runtime
+// stays fail-closed if an older or externally constructed script bypasses
+// admission.
+func (vu *VUser) selectSwitchBranch(control *dsl.ControlFlow) ([]dsl.Action, int) {
+	if control == nil {
+		return nil, -1
+	}
+	for index, switchCase := range control.Cases {
+		if switchCase.Condition != nil && vu.evalCondition(switchCase.Condition) {
+			return switchCase.Steps, index
+		}
+	}
+	return control.Default, -1
 }
 
 // evalConditionEvidence mirrors evalCondition but additionally returns the

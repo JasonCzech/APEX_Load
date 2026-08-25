@@ -1,4 +1,4 @@
-import { BrowserDeviceLiveMetrics, BrowserLiveMetrics, CapacityAdvisory, GoalStatus, GroupLiveMetrics, LiveCapacityStatus, TelemetryHealth, TestSummary } from '../types'
+import { BrowserDeviceLiveMetrics, BrowserLiveMetrics, CapacityAdvisory, GoalStatus, GroupLiveMetrics, LiveCapacityStatus, TelemetryHealth, TestSummary, TxMetrics } from '../types'
 import { formatTimeCompact } from '../utils/timeUtils'
 import { formatBrowserEngineLabel, formatDevicePlatformLabel } from './browserBreakdownModel'
 
@@ -12,6 +12,7 @@ interface LiveMetricsSummary {
   browser?: BrowserLiveMetrics
   browser_by_device?: Record<string, BrowserDeviceLiveMetrics>
   capacity_status?: LiveCapacityStatus
+  by_region?: Record<string, TxMetrics>
 }
 
 interface Props {
@@ -192,6 +193,10 @@ export default function TestExecutionStatusPanels({
   const capacityStatus = metrics?.capacity_status
   const protocolRows = capacityProtocolRows(test, capacityStatus)
   const regionRows = capacityRegionRows(test, capacityStatus)
+  const regionalActivity = Object.entries(metrics?.by_region ?? {}).sort((left, right) => (
+    (right[1].count ?? 0) - (left[1].count ?? 0) || left[0].localeCompare(right[0])
+  ))
+  const regionalActivityMax = Math.max(1, ...regionalActivity.map(([, value]) => value.count ?? 0))
 
   return (
     <>
@@ -243,6 +248,32 @@ export default function TestExecutionStatusPanels({
               <span className="capacity-live-heading">By Region</span>
               {regionRows.map(([region, vusers]) => <span key={region}>{region}: {formatCapacityNumber(vusers)} VUsers</span>)}
             </div>
+          </div>
+        </div>
+      )}
+
+      {regionalActivity.length > 0 && (
+        <div className="goal-status-card regional-activity-card" data-testid="live-regional-activity">
+          <div className="goal-status-header">
+            <div>
+              <h3 className="goal-status-title">Regional Activity</h3>
+              <p className="goal-status-subtitle">The same bounded load-zone aggregation used by live metrics and terminal archives.</p>
+            </div>
+            <div className="goal-status-badge healthy">{regionalActivity.length} active</div>
+          </div>
+          <div className="regional-activity-list">
+            {regionalActivity.map(([region, value]) => {
+              const attempts = value.count ?? 0
+              const errors = value.errors ?? 0
+              return (
+                <div className="regional-activity-row" key={region}>
+                  <div><strong>{region}</strong><span>{attempts.toLocaleString()} tx · {errors.toLocaleString()} errors · {(value.p95_ms ?? 0).toFixed(1)} ms p95</span></div>
+                  <div className="regional-activity-track" aria-label={`${region} activity ${attempts} transactions`}>
+                    <span style={{ width: `${Math.max(2, attempts / regionalActivityMax * 100)}%` }} />
+                  </div>
+                </div>
+              )
+            })}
           </div>
         </div>
       )}

@@ -68,6 +68,13 @@ type StreamingProtocol interface {
 	) (*Result, error)
 }
 
+// ParallelSafetyProvider explicitly opts a protocol into isolated concurrent
+// branch execution. Absence is fail-closed: the engine never assumes that an
+// adapter's connection/session state can be duplicated safely.
+type ParallelSafetyProvider interface {
+	ParallelSafe() bool
+}
+
 // RuntimeCapabilityProvider lets optional sidecar-backed protocols advertise
 // availability, scheduler features, and a protocol-specific VUser ceiling
 // without teaching the distributed service protocol names.
@@ -348,6 +355,8 @@ type Action struct {
 	Sync                   *BrowserSyncPolicy     `json:"sync,omitempty"`
 	Capture                *BrowserCaptureOptions `json:"capture,omitempty"`
 	Metadata               map[string]any         `json:"metadata,omitempty"`
+	HierarchyPath          string                 `json:"hierarchy_path,omitempty"`
+	PageName               string                 `json:"page_name,omitempty"`
 	Extractors             []Extractor            `json:"extractors,omitempty"`
 	Assertions             []Assertion            `json:"assertions,omitempty"`
 	ThinkTime              ThinkTimeConfig        `json:"think_time,omitempty"`
@@ -361,6 +370,14 @@ type Action struct {
 	// second full payload copy after extractors/assertions have completed. Error
 	// responses still retain their bounded body evidence.
 	DiscardResponseBodyOnSuccess bool `json:"-"`
+	// CaptureMessageDetail is an engine-only execution hint. Protocols that can
+	// produce bounded request/response evidence may retain it for this one
+	// successful result; archive sinks still enforce the run-wide budget.
+	CaptureMessageDetail       bool   `json:"-"`
+	MessageDetailMode          string `json:"-"`
+	MessageDetailMaxItems      int    `json:"-"`
+	MessageDetailMaxItemBytes  int64  `json:"-"`
+	MessageDetailMaxTotalBytes int64  `json:"-"`
 }
 
 type AuthConfig struct {
@@ -604,6 +621,9 @@ type Result struct {
 	Attempt             int           // 1-based execution attempt, including retries
 	Group               string        // Group/transaction name for metrics
 	Region              string        // Generator region that produced this result (per-result override; empty = use writer region)
+	Phase               string        // init, action, or teardown lifecycle phase assigned by the engine
+	Hierarchy           string        // Bounded author/import hierarchy path used for analytics attribution
+	PageName            string        // Stable authored/imported page label used for rollups
 	StartTime           time.Time     // When the action started
 	Duration            time.Duration // Time to execute action
 	CorrelationID       string        // Correlation or request id when the protocol exposes one
@@ -631,28 +651,35 @@ type Result struct {
 	// sensitive (scrub.SensitiveName — "session_token" and the like) IS
 	// registered for redaction by the engine, so do not place a value here
 	// expecting it to pass through run evidence untouched.
-	Extractions       map[string]string
-	PageURL           string
-	PageTitle         string
-	HTML              string
-	ScreenshotBase64  string
-	ConsoleEntries    []ConsoleEntry
-	NetworkEntries    []NetworkEntry
-	DOMSummary        *DOMSummary
-	ClientMetrics     *ClientMetrics
-	ServerTelemetry   *ServerTelemetry
-	ProtocolEvidence  map[string]any
-	Snapshot          *ErrorSnapshot // populated when snapshot_on_error is enabled
-	SourceStepID      string
-	SourceStepIndex   int
-	SourceAction      string
-	SourceActionName  string
-	SourceTransaction string
-	SourceProfile     string
-	SourcePath        string
-	SourceUID         string
-	RequestType       string
-	OperationKind     string
+	Extractions                map[string]string
+	PageURL                    string
+	PageTitle                  string
+	HTML                       string
+	ScreenshotBase64           string
+	ConsoleEntries             []ConsoleEntry
+	NetworkEntries             []NetworkEntry
+	DOMSummary                 *DOMSummary
+	ClientMetrics              *ClientMetrics
+	ServerTelemetry            *ServerTelemetry
+	ProtocolEvidence           map[string]any
+	Snapshot                   *ErrorSnapshot // populated when snapshot_on_error is enabled
+	SourceStepID               string
+	SourceStepIndex            int
+	SourceAction               string
+	SourceActionName           string
+	SourceTransaction          string
+	SourceProfile              string
+	SourcePath                 string
+	SourceUID                  string
+	RequestType                string
+	OperationKind              string
+	MessageDetailRequested     bool   `json:"-"`
+	MessageDetailMode          string `json:"-"`
+	MessageDetailPriority      int    `json:"-"`
+	MessageDetailRetained      bool   `json:"-"`
+	MessageDetailMaxItems      int    `json:"-"`
+	MessageDetailMaxItemBytes  int64  `json:"-"`
+	MessageDetailMaxTotalBytes int64  `json:"-"`
 }
 
 const (

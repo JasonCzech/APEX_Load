@@ -30,34 +30,39 @@ type DataFile struct {
 const DistributedVUserIDNamespaceSize = uint64(^uint32(0) >> 1)
 
 type Assignment struct {
-	TestID                    string
-	ExecutionGeneration       uint64
-	ScenarioID                string
-	RequireTestExecutionLease bool
-	GroupName                 string
-	TargetDuration            time.Duration
-	TargetDurationSeconds     int64
-	DurationOffset            time.Duration
-	ScriptID                  string
-	ExpectedScriptHash        string
-	ScriptContent             []byte
-	VUserCount                int32
-	RampUp                    time.Duration
-	RampUpSeconds             int32
-	RampDown                  time.Duration
-	InitStrategy              string
-	PreBaseline               time.Duration
-	PostBaseline              time.Duration
-	ShardOrdinal              uint32
-	ShardCount                uint32
-	VUserIDOffset             uint64
-	StartPaused               bool
-	Environment               map[string]string
-	DataFiles                 []DataFile
-	RedactionRules            []engine.RedactionRule
-	SecretBundle              map[string]string
-	SecretBundleID            string
-	RunSupervisionToken       []byte
+	TestID                     string
+	ExecutionGeneration        uint64
+	ScenarioID                 string
+	RequireTestExecutionLease  bool
+	GroupName                  string
+	TargetDuration             time.Duration
+	TargetDurationSeconds      int64
+	DurationOffset             time.Duration
+	ScriptID                   string
+	ExpectedScriptHash         string
+	ScriptContent              []byte
+	VUserCount                 int32
+	RampUp                     time.Duration
+	RampUpSeconds              int32
+	RampDown                   time.Duration
+	InitStrategy               string
+	PreBaseline                time.Duration
+	PostBaseline               time.Duration
+	ShardOrdinal               uint32
+	ShardCount                 uint32
+	VUserIDOffset              uint64
+	StartPaused                bool
+	Environment                map[string]string
+	DataFiles                  []DataFile
+	RedactionRules             []engine.RedactionRule
+	SecretBundle               map[string]string
+	SecretBundleID             string
+	RunSupervisionToken        []byte
+	Region                     string
+	StartOffset                time.Duration
+	MessageDetailMaxItems      int
+	MessageDetailMaxItemBytes  int64
+	MessageDetailMaxTotalBytes int64
 }
 
 type AssignmentResult struct {
@@ -151,6 +156,7 @@ type MetricsBatch struct {
 	DependencyMetrics     []MetricAggregate
 	SOAPMetrics           []MetricAggregate
 	NetworkProfileMetrics []MetricAggregate
+	RegionMetrics         []MetricAggregate
 	Browser               *BrowserMetrics
 	BrowserByDevice       []BrowserDeviceMetrics
 	Groups                []GroupMetric
@@ -264,6 +270,11 @@ type TransactionMetric struct {
 	Name             string
 	StartTimeUnixMs  int64
 	Group            string
+	Region           string
+	NetworkProfile   string
+	Hierarchy        string
+	Phase            string
+	PageName         string
 	DurationMs       float64
 	DNSMs            float64
 	ConnectMs        float64
@@ -384,6 +395,17 @@ const FeatureEvacuationAssignmentStateV1 = "evacuation_assignment_state_v1"
 // FeatureSecretBundleV1 means AssignWork accepts a bounded, memory-only map of
 // referenced secret values and injects it as the assignment's runtime resolver.
 const FeatureSecretBundleV1 = "secret_bundle_v1"
+
+// FeatureMessageDetailCaptureV1 means the generator honors deterministic
+// per-execution success-capture hints and enforces cumulative item/byte budgets
+// in its archive recorder.
+const FeatureMessageDetailCaptureV1 = "message_detail_capture_v1"
+
+const FeatureControlParallelV1 = "control_parallel_v1"
+
+// FeatureMessageDetailControlParallelV1 is advertised by generators that can
+// enforce both contracts on the same immutable assignment.
+const FeatureMessageDetailControlParallelV1 = "message_detail_control_parallel_v1"
 
 type GeneratorStats struct {
 	ActiveVUsers int32
@@ -1235,6 +1257,11 @@ func (s *MetricsStream) Receive() (MetricsBatch, error) {
 			Name:             tx.GetName(),
 			StartTimeUnixMs:  tx.GetStartTimeUnixMs(),
 			Group:            tx.GetGroup(),
+			Region:           tx.GetRegion(),
+			NetworkProfile:   tx.GetNetworkProfile(),
+			Hierarchy:        tx.GetHierarchy(),
+			Phase:            tx.GetPhase(),
+			PageName:         tx.GetPageName(),
 			DurationMs:       tx.GetDurationMs(),
 			DNSMs:            tx.GetDnsMs(),
 			ConnectMs:        tx.GetConnectMs(),
@@ -1292,6 +1319,7 @@ func (s *MetricsStream) Receive() (MetricsBatch, error) {
 		DependencyMetrics:     metricAggregatesFromProto(batch.GetDependencyMetrics()),
 		SOAPMetrics:           metricAggregatesFromProto(batch.GetSoapMetrics()),
 		NetworkProfileMetrics: metricAggregatesFromProto(batch.GetNetworkProfileMetrics()),
+		RegionMetrics:         metricAggregatesFromProto(batch.GetRegionMetrics()),
 		Browser:               browserMetricsFromProto(batch.GetBrowserMetrics()),
 		BrowserByDevice:       browserDeviceMetricsFromProto(batch.GetBrowserDeviceMetrics()),
 		Groups:                groups,
@@ -1343,7 +1371,30 @@ func toProtoAssignment(assignment Assignment) *pb.WorkAssignment {
 		SecretBundle:              cloneSecretBundle(assignment.SecretBundle),
 		SecretBundleId:            assignment.SecretBundleID,
 		RunSupervisionToken:       append([]byte(nil), assignment.RunSupervisionToken...),
+		Region:                    assignment.Region,
+		StartOffset:               preciseDurationProto(assignment.StartOffset, 0),
+		MessageDetailMaxItems:     int32(partitionAssignmentInt(assignment.MessageDetailMaxItems, assignment.ShardCount, assignment.ShardOrdinal)),
+		// The per-item ceiling applies independently on every generator. Only the
+		// run-wide item count and total-byte budget are partitioned among shards.
+		MessageDetailMaxItemBytes:  assignment.MessageDetailMaxItemBytes,
+		MessageDetailMaxTotalBytes: partitionAssignmentInt64(assignment.MessageDetailMaxTotalBytes, assignment.ShardCount, assignment.ShardOrdinal),
 	}
+}
+
+func partitionAssignmentInt(value int, shardCount, shardOrdinal uint32) int {
+	return int(partitionAssignmentInt64(int64(value), shardCount, shardOrdinal))
+}
+
+func partitionAssignmentInt64(value int64, shardCount, shardOrdinal uint32) int64 {
+	if value <= 0 || shardCount <= 1 {
+		return value
+	}
+	count := int64(shardCount)
+	base, remainder := value/count, value%count
+	if int64(shardOrdinal) < remainder {
+		base++
+	}
+	return base
 }
 
 func resolvedPreciseDuration(precise time.Duration, legacySeconds int64) time.Duration {

@@ -212,6 +212,18 @@ export interface CompetitiveParityArea {
   evidence_level?: string
 }
 
+export interface CloudTestCapability {
+  id: string
+  category: string
+  name: string
+  cloudtest_evidence_url: string
+  evidence_confidence: 'current_official' | 'current_api' | 'legacy_official' | 'inferred'
+  apex_status: 'supported' | 'partial' | 'planned' | 'demand_gated' | 'non_goal'
+  workstream: string
+  acceptance_test: string
+  implementation_status: 'implemented' | 'in_progress' | 'not_started' | 'demand_gated' | 'non_goal'
+}
+
 export interface BrowserBenchmarkAcceptance {
   launch_p50_target_ms: number
   action_overhead_target_ms: number
@@ -276,6 +288,7 @@ export interface ParityStatusResponse {
   overall: 'complete' | 'partial' | 'blocked' | string
   areas: ParityStatusArea[]
   competitive_parity?: CompetitiveParityArea[]
+  cloudtest_capabilities?: CloudTestCapability[]
   browser_benchmarks?: BrowserBenchmarkProfile[]
 }
 

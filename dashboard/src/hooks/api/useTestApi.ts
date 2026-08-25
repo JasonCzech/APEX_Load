@@ -53,6 +53,12 @@ type ArchiveTransactionsParams = {
   action?: string
   soap_operation?: string
   group?: string
+	region?: string
+	network_profile?: string
+	source_transaction?: string
+	hierarchy?: string
+	phase?: string
+	has_detail?: boolean
   success?: boolean
   time_from?: string
   time_to?: string
@@ -693,7 +699,7 @@ export function useTestApi() {
   )
 
   const downloadTestReportFormat = useCallback(
-    (id: string, profile: string, format: 'pdf' | 'csv', options?: ApiCallOptions) =>
+    (id: string, profile: string, format: 'pdf' | 'csv' | 'docx', options?: ApiCallOptions) =>
       fetchBlob(`/tests/${id}/archive/report${buildQuery({ format, profile })}`, options),
     [],
   )

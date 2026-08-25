@@ -1190,6 +1190,7 @@ func stageDistributedGoalErrorWindowLocked(tr *TestRunner, test *ManagedTest, ta
 }
 
 func (b *distributedExecutionBackend) storeRemoteMetricsBatchOnly(tr *TestRunner, test *ManagedTest, target string, batch generatorrpc.MetricsBatch, fences ...distributedMetricsConsumerFence) bool {
+	batch.RegionMetrics = controllerApprovedRegionMetrics(batch.RegionMetrics, b.regionForTarget(target))
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
 	if len(fences) > 0 && !distributedMetricsConsumerFenceCurrentLocked(tr, test, target, fences[0], isTerminalRemoteLifecycle(batch.LifecycleState)) {
@@ -1217,6 +1218,9 @@ func (b *distributedExecutionBackend) storeRemoteMetricsBatchOnly(tr *TestRunner
 			}
 			if len(batch.NetworkProfileMetrics) == 0 {
 				batch.NetworkProfileMetrics = prior.NetworkProfileMetrics
+			}
+			if len(batch.RegionMetrics) == 0 {
+				batch.RegionMetrics = prior.RegionMetrics
 			}
 			if batch.Browser == nil {
 				batch.Browser = prior.Browser
@@ -1338,6 +1342,9 @@ func (b *distributedExecutionBackend) applyStoredRemoteMetricsBatch(tr *TestRunn
 // returns the current aggregate for compatibility with direct callers, but
 // fresh=false keeps it out of threshold alert and stop evaluation.
 func (b *distributedExecutionBackend) applyRemoteMetricsBatchWithFreshness(tr *TestRunner, test *ManagedTest, target string, batch generatorrpc.MetricsBatch, alreadyStored bool, fences ...distributedMetricsConsumerFence) (*LiveMetrics, string, string, bool, distributedMetricsPublication) {
+	if !alreadyStored {
+		batch.RegionMetrics = controllerApprovedRegionMetrics(batch.RegionMetrics, b.regionForTarget(target))
+	}
 	tr.mu.Lock()
 	accepted := false
 	revision := uint64(0)
@@ -1389,6 +1396,9 @@ func (b *distributedExecutionBackend) applyRemoteMetricsBatchWithFreshness(tr *T
 				}
 				if len(batch.NetworkProfileMetrics) == 0 {
 					batch.NetworkProfileMetrics = prior.NetworkProfileMetrics
+				}
+				if len(batch.RegionMetrics) == 0 {
+					batch.RegionMetrics = prior.RegionMetrics
 				}
 				if batch.Browser == nil {
 					batch.Browser = prior.Browser
@@ -1504,6 +1514,19 @@ func (b *distributedExecutionBackend) applyRemoteMetricsBatchWithFreshness(tr *T
 	tr.mu.Unlock()
 	live.GeneratorResources = b.buildGeneratorResourceSnapshots(test, batches)
 	return live, finalStatus, finalError, accepted, publication
+}
+
+func controllerApprovedRegionMetrics(in []generatorrpc.MetricAggregate, region string) []generatorrpc.MetricAggregate {
+	region = strings.TrimSpace(region)
+	if region == "" || len(in) == 0 {
+		return nil
+	}
+	normalized := make([]generatorrpc.MetricAggregate, 0, len(in))
+	for _, aggregate := range in {
+		aggregate.Name = region
+		normalized = append(normalized, aggregate)
+	}
+	return mergeGeneratorMetricAggregateSeries(normalized)
 }
 
 func distributedBatchErrorCount(batch generatorrpc.MetricsBatch) int64 {

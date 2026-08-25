@@ -168,6 +168,35 @@ func analyzeVariableActions(actions []dsl.Action, prefix string, state *variable
 			elseState := state.clone()
 			analyzeVariableActions(action.Control.Else, path+".control.else", elseState, configRefs, result)
 			intersectVariableStates(state, thenState, elseState)
+		case "control_switch":
+			shell := *action
+			shell.Control = cloneControlShell(action.Control)
+			shell.Extractors = nil
+			recordMissingVariableRefs(shell, path, state, configVariableRefs{}, result)
+			if action.Control == nil {
+				continue
+			}
+			branchStates := make([]*variableState, 0, len(action.Control.Cases)+1)
+			for caseIndex, switchCase := range action.Control.Cases {
+				caseState := state.clone()
+				analyzeVariableActions(switchCase.Steps, fmt.Sprintf("%s.control.cases[%d].steps", path, caseIndex), caseState, configRefs, result)
+				branchStates = append(branchStates, caseState)
+			}
+			if len(action.Control.Default) > 0 {
+				defaultState := state.clone()
+				analyzeVariableActions(action.Control.Default, path+".control.default", defaultState, configRefs, result)
+				branchStates = append(branchStates, defaultState)
+			} else {
+				// No case is guaranteed to match.
+				branchStates = append(branchStates, state.clone())
+			}
+			if len(branchStates) > 0 {
+				merged := branchStates[0]
+				for _, branchState := range branchStates[1:] {
+					intersectVariableStates(merged, merged, branchState)
+				}
+				replaceVariableState(state, merged)
+			}
 		case "control_loop":
 			shell := *action
 			shell.Control = cloneControlShell(action.Control)
@@ -382,6 +411,11 @@ func cloneControlShell(control *dsl.ControlFlow) *dsl.ControlFlow {
 	cloned := *control
 	cloned.Steps = nil
 	cloned.Else = nil
+	cloned.Default = nil
+	cloned.Cases = append([]dsl.SwitchCase(nil), control.Cases...)
+	for index := range cloned.Cases {
+		cloned.Cases[index].Steps = nil
+	}
 	return &cloned
 }
 

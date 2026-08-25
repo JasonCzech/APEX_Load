@@ -197,8 +197,8 @@ func replaceScenarioScriptsTx(tx *storeTx, scenarioID string, scripts []Scenario
 		if err != nil {
 			return fmt.Errorf("marshal scenario %s script %d assignment_json: %w", scenarioID, i, err)
 		}
-		if _, err := tx.Exec(`INSERT INTO scenario_scripts (scenario_id, sort_order, name, script_id, vusers, ramp_up, ramp_down, stages_json, iterations, initialization, role, runtime_settings_json, assignment_json)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, script.ScenarioID, script.Order, script.Name, script.ScriptID, script.VUsers, script.RampUp, script.RampDown, string(stagesJSON), script.Iterations, script.Initialization, script.Role, string(runtimeJSON), string(assignmentJSON)); err != nil {
+		if _, err := tx.Exec(`INSERT INTO scenario_scripts (scenario_id, sort_order, name, script_id, vusers, ramp_up, ramp_down, start_offset, stages_json, iterations, initialization, role, runtime_settings_json, assignment_json)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, script.ScenarioID, script.Order, script.Name, script.ScriptID, script.VUsers, script.RampUp, script.RampDown, script.StartOffset, string(stagesJSON), script.Iterations, script.Initialization, script.Role, string(runtimeJSON), string(assignmentJSON)); err != nil {
 			return err
 		}
 	}
@@ -377,7 +377,7 @@ func decodeScenarioJSON(scenario *Scenario, assignmentJSON, goalJSON, runtimeJSO
 }
 
 func (s *SQLiteStore) listScenarioScripts(scenarioID string) ([]ScenarioScript, error) {
-	rows, err := s.db.Query(`SELECT scenario_id, sort_order, COALESCE(name, ''), script_id, COALESCE(vusers, 0), COALESCE(ramp_up, ''), COALESCE(ramp_down, ''), COALESCE(stages_json, ''), iterations, COALESCE(initialization, ''), COALESCE(role, ''), COALESCE(runtime_settings_json, ''), COALESCE(assignment_json, '') FROM scenario_scripts WHERE scenario_id = ? ORDER BY sort_order ASC`, scenarioID)
+	rows, err := s.db.Query(`SELECT scenario_id, sort_order, COALESCE(name, ''), script_id, COALESCE(vusers, 0), COALESCE(ramp_up, ''), COALESCE(ramp_down, ''), COALESCE(start_offset, ''), COALESCE(stages_json, ''), iterations, COALESCE(initialization, ''), COALESCE(role, ''), COALESCE(runtime_settings_json, ''), COALESCE(assignment_json, '') FROM scenario_scripts WHERE scenario_id = ? ORDER BY sort_order ASC`, scenarioID)
 	if err != nil {
 		return nil, err
 	}
@@ -387,7 +387,7 @@ func (s *SQLiteStore) listScenarioScripts(scenarioID string) ([]ScenarioScript, 
 		var script ScenarioScript
 		var iterations sql.NullInt64
 		var stagesJSON, runtimeSettingsJSON, assignmentJSON string
-		if err := rows.Scan(&script.ScenarioID, &script.Order, &script.Name, &script.ScriptID, &script.VUsers, &script.RampUp, &script.RampDown, &stagesJSON, &iterations, &script.Initialization, &script.Role, &runtimeSettingsJSON, &assignmentJSON); err != nil {
+		if err := rows.Scan(&script.ScenarioID, &script.Order, &script.Name, &script.ScriptID, &script.VUsers, &script.RampUp, &script.RampDown, &script.StartOffset, &stagesJSON, &iterations, &script.Initialization, &script.Role, &runtimeSettingsJSON, &assignmentJSON); err != nil {
 			return nil, err
 		}
 		if iterations.Valid {

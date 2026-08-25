@@ -113,6 +113,7 @@ not the source of truth for current API or DSL contracts.
 | [RUNTIME_TELEMETRY_SLA_PLAN.md](RUNTIME_TELEMETRY_SLA_PLAN.md) | Roadmap/detail |
 | [RUN_REPORT_IMPLEMENTATION_PLAN.md](RUN_REPORT_IMPLEMENTATION_PLAN.md) | Proposed implementation plan |
 | [SCRIPT_EDITOR_INTERACTION_MODEL.md](SCRIPT_EDITOR_INTERACTION_MODEL.md) | Approved design direction and phased plan |
+| [CLOUDTEST_PARITY_PROGRAM.md](CLOUDTEST_PARITY_PROGRAM.md) | CloudTest outcome-parity evidence ledger, implementation sequencing, and migration gates |
 | [qa/TEST_PROGRAM.md](qa/TEST_PROGRAM.md) | Nine-month progressive test and infrastructure-readiness program; scope of record |
 | [qa/STATUS.md](qa/STATUS.md) | Live milestone state and headline metrics for the test program (tracker-enforced) |
 | [qa/TIER0_JOURNEY.md](qa/TIER0_JOURNEY.md) | The twelve-step end-to-end user journey the M1 Playwright suite implements |

@@ -44,6 +44,7 @@ func cloneGoalConfig(config *GoalConfig) *GoalConfig {
 		return nil
 	}
 	clone := *config
+	clone.TransactionRules = append([]TransactionSLARule(nil), config.TransactionRules...)
 	if config.TargetAverageTPS != nil {
 		value := *config.TargetAverageTPS
 		clone.TargetAverageTPS = &value
@@ -138,6 +139,7 @@ func hasGoalConfig(config *GoalConfig) bool {
 		config.MaxPartitionSkewPct != nil ||
 		config.MaxRedeliveryRatePct != nil ||
 		config.MaxDeadLetterRatePct != nil ||
+		len(config.TransactionRules) > 0 ||
 		config.StopOnSLABreach ||
 		config.StopOnMaxErrors
 }

@@ -58,6 +58,17 @@ describe('scriptRequiresJavaVuserAuthoringApproval', () => {
         control: { steps: [], else: [{ name: 'Java action', type: 'JAVA_VUSER_RUN', target: '' }] },
       }],
     })).toBe(true)
+
+	expect(scriptRequiresJavaVuserAuthoringApproval({
+		...baseScript,
+		actions: [{
+			name: 'Switch', type: 'control_switch', target: '',
+			control: {
+				cases: [{ condition: { expr: 'var.route == "java"' }, steps: [{ name: 'Java action', type: 'java_vuser_run', target: '' }] }],
+				default: [],
+			},
+		}],
+	})).toBe(true)
   })
 
   it('tolerates missing and malformed input', () => {
