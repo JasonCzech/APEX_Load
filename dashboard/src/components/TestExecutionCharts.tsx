@@ -264,6 +264,12 @@ export function chartTimeAxisPresentation(label: string, unit: ChartTimeUnit) {
   }
 }
 
+export function formatChartTimeMetricValue(value: unknown, metricUnit: string | undefined, unit: ChartTimeUnit): string {
+  if (metricUnit !== 'ms' || typeof value !== 'number') return String(formatGraphOverlayMetricValue(value))
+  const converted = unit === 'seconds' ? value / 1000 : value
+  return `${formatGraphOverlayMetricValue(converted)} ${unit === 'seconds' ? 's' : 'ms'}`
+}
+
 function readStoredChartDensity(storageKey: string, fallback: ChartDensityMode = 'standard'): ChartDensityMode {
   const stored = readStoredString(storageKey)
   if (stored === 'six_up' || stored === 'command_center' || stored === 'standard') {
@@ -411,6 +417,7 @@ export interface BoundedChartTooltipContentProps {
   payload?: ReadonlyArray<ChartTooltipEntry>
   label?: string | number
   showLabel?: boolean
+  valueFormatter?: (entry: ChartTooltipEntry) => string
 }
 
 export function BoundedChartTooltipContent({
@@ -418,6 +425,7 @@ export function BoundedChartTooltipContent({
   payload = [],
   label,
   showLabel = true,
+  valueFormatter,
 }: BoundedChartTooltipContentProps) {
   if (!active) return null
   const presentEntries = payload.filter(entry => entry.value !== undefined && entry.value !== null)
@@ -434,7 +442,7 @@ export function BoundedChartTooltipContent({
             <div className="bounded-chart-tooltip-item" key={`${String(entry.dataKey ?? name)}-${index}`}>
               <span className="bounded-chart-tooltip-swatch" style={{ background: color }} />
               <span className="bounded-chart-tooltip-name">{name}</span>
-              <strong>{formatGraphOverlayMetricValue(rawTooltipMetricValue(entry.value, entry))}</strong>
+              <strong>{valueFormatter ? valueFormatter(entry) : formatGraphOverlayMetricValue(rawTooltipMetricValue(entry.value, entry))}</strong>
             </div>
           )
         })}
@@ -1141,11 +1149,17 @@ export default function TestExecutionCharts({
     />
   )
 
-  const renderTooltip = (chartId: string) => {
+  const renderTooltip = (chart: ChartConfig) => {
     if (!showCursorLabels) {
       return <Tooltip content={() => null} itemSorter={preserveChartItemOrder} isAnimationActive={false} />
     }
-    const showTimeLabel = showCursorLabels && hoveredChartId === chartId
+    const showTimeLabel = showCursorLabels && hoveredChartId === chart.id
+    const rowUnits = new Map(metricRowsForChart(chart).map(row => [row.key, row.unit]))
+    const formatTooltipEntry = (entry: ChartTooltipEntry) => {
+      const value = rawTooltipMetricValue(entry.value, entry)
+      const dataKey = rawGraphMetricKey(String(entry.dataKey ?? ''))
+      return formatChartTimeMetricValue(value, rowUnits.get(dataKey), chartTimeUnit)
+    }
     return (
       <Tooltip
         content={props => (
@@ -1154,6 +1168,7 @@ export default function TestExecutionCharts({
             payload={props.payload}
             label={props.label === undefined ? undefined : formatXAxisLabel(props.label)}
             showLabel={showTimeLabel}
+            valueFormatter={formatTooltipEntry}
           />
         )}
         labelStyle={{ display: showTimeLabel ? undefined : 'none' }}
@@ -2697,7 +2712,10 @@ export default function TestExecutionCharts({
               includeArtStdDevBand ? [...displayMetricKeysForDomain, ART_STD_DEV_BAND_KEY] : displayMetricKeysForDomain,
               chart.domain,
             )
-            const chartTitle = chartTitleWithOverlays(chart, visibleOverlayKeysForTitle)
+            const chartTitle = chartTimeAxisPresentation(
+              chartTitleWithOverlays(chart, visibleOverlayKeysForTitle),
+              chartTimeUnit,
+            ).label
             const baseChartMargin = chartMarginForOverlayKeys(visibleOverlayKeysForTitle, commandCenterSurface) ?? {}
             const chartMargin = chart.id === 'network_latency' && routeLatencyMode === 'stability' && visibleMetricKeys.includes(routeLatencySuccessRateKey)
               ? { ...baseChartMargin, right: Math.max(baseChartMargin.right ?? 0, commandCenterSurface ? 4 : 70) }
@@ -2850,7 +2868,7 @@ export default function TestExecutionCharts({
                 {renderTimeAxis()}
                 {renderMetricAxis(chart, visibleMetricKeys, metricAxisDomain)}
                 {renderOverlayAxes(chart, visibleMetricKeys)}
-                {renderTooltip(chart.id)}
+                {renderTooltip(chart)}
                 {renderSharedCursor(displayChartData, metricAxisIdForChart)}
                 {renderChartGradientDefs(chart, metricRows, visibleMetricKeys)}
                 {chart.dataKey && showMetric(chart.dataKey) && (
@@ -2948,7 +2966,7 @@ export default function TestExecutionCharts({
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                 {renderTimeAxis()}
                 {renderMetricAxis(chart, visibleMetricKeys, metricAxisDomain)}
-                {renderTooltip(chart.id)}
+                {renderTooltip(chart)}
                 {renderSharedCursor(displayChartData, metricAxisIdForChart)}
                 {metricRows.length > 1 && <Legend verticalAlign="bottom" itemSorter={preserveChartItemOrder} />}
                 {renderChartGradientDefs(chart, metricRows, visibleMetricKeys)}
@@ -2981,7 +2999,7 @@ export default function TestExecutionCharts({
                 {renderTimeAxis()}
                 {renderMetricAxis(chart, visibleMetricKeys, metricAxisDomain)}
                 {renderOverlayAxes(chart, visibleMetricKeys)}
-                {renderTooltip(chart.id)}
+                {renderTooltip(chart)}
                 {renderSharedCursor(displayChartData, metricAxisIdForChart)}
                 {renderChartGradientDefs(chart, metricRows, visibleMetricKeys)}
                 {showGradientUnderlays && renderGradientUnderlays(chart, metricRows, visibleMetricKeys, displayMetricKey, metricAxisIdForChart)}
@@ -3028,7 +3046,7 @@ export default function TestExecutionCharts({
                 {renderTimeAxis()}
                 {renderMetricAxis(chart, visibleMetricKeys, metricAxisDomain)}
                 {renderOverlayAxes(chart, visibleMetricKeys)}
-                {renderTooltip(chart.id)}
+                {renderTooltip(chart)}
                 {renderSharedCursor(displayChartData, metricAxisIdForChart)}
                 {renderChartGradientDefs(chart, metricRows, visibleMetricKeys, includeArtStdDevBand)}
                 {renderArtStdDevBand(chart, includeArtStdDevBand, metricAxisIdForChart)}
@@ -3093,7 +3111,7 @@ export default function TestExecutionCharts({
                 {renderTimeAxis()}
                 {renderMetricAxis(chart, visibleMetricKeys, metricAxisDomain)}
                 {renderOverlayAxes(chart, visibleMetricKeys)}
-                {renderTooltip(chart.id)}
+                {renderTooltip(chart)}
                 {renderSharedCursor(displayChartData, metricAxisIdForChart)}
                 <Legend verticalAlign="bottom" itemSorter={preserveChartItemOrder} />
                 {renderChartGradientDefs(chart, metricRows, visibleMetricKeys)}
@@ -3119,7 +3137,7 @@ export default function TestExecutionCharts({
                 {renderTimeAxis()}
                 {renderMetricAxis(chart, visibleMetricKeys, metricAxisDomain)}
                 {renderOverlayAxes(chart, visibleMetricKeys)}
-                {renderTooltip(chart.id)}
+                {renderTooltip(chart)}
                 {renderSharedCursor(displayChartData, metricAxisIdForChart)}
                 {renderChartGradientDefs(chart, metricRows, visibleMetricKeys)}
                 {showGradientUnderlays && renderGradientUnderlays(chart, metricRows, visibleMetricKeys, displayMetricKey, metricAxisIdForChart)}
@@ -3156,7 +3174,7 @@ export default function TestExecutionCharts({
                 {renderMetricAxis(chart, visibleMetricKeys, metricAxisDomain)}
                 {renderRouteLatencySuccessAxis(visibleMetricKeys)}
                 {renderOverlayAxes(chart, visibleMetricKeys)}
-                {renderTooltip(chart.id)}
+                {renderTooltip(chart)}
                 {renderSharedCursor(displayChartData, metricAxisIdForChart)}
                 <Legend verticalAlign="bottom" itemSorter={preserveChartItemOrder} />
                 {renderChartGradientDefs(chart, metricRows, visibleMetricKeys)}
@@ -3193,7 +3211,7 @@ export default function TestExecutionCharts({
                 {renderTimeAxis()}
                 {renderMetricAxis(chart, visibleMetricKeys, metricAxisDomain)}
                 {renderOverlayAxes(chart, visibleMetricKeys)}
-                {renderTooltip(chart.id)}
+                {renderTooltip(chart)}
                 {renderSharedCursor(displayChartData, metricAxisIdForChart)}
                 <Legend itemSorter={preserveChartItemOrder} />
                 {renderChartGradientDefs(chart, metricRows, visibleMetricKeys)}

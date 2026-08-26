@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { MetricsHistoryPoint } from '../types'
 import { downloadTextFile } from '../utils/fileUtils'
-import TestExecutionCharts, { BoundedChartTooltipContent, chartTimeAxisPresentation } from './TestExecutionCharts'
+import TestExecutionCharts, { BoundedChartTooltipContent, chartTimeAxisPresentation, formatChartTimeMetricValue } from './TestExecutionCharts'
 import { transactionChartSeriesKey } from './transactionChartSeries'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
@@ -172,6 +172,8 @@ describe('chartTimeAxisPresentation', () => {
     const seconds = chartTimeAxisPresentation('Response time (ms)', 'seconds')
     expect(seconds.label).toBe('Response time (s)')
     expect(seconds.tickFormatter?.(2500)).toBe('2.5')
+    expect(formatChartTimeMetricValue(2500, 'ms', 'seconds')).toBe('2.5 s')
+    expect(formatChartTimeMetricValue(2500, 'ms', 'milliseconds')).toBe('2,500 ms')
 
     expect(chartTimeAxisPresentation('Fleet CPU (%)', 'seconds')).toEqual({
       label: 'Fleet CPU (%)',
@@ -1698,6 +1700,29 @@ describe('TestExecutionCharts context menu', () => {
     expect(onTimeRangeChange).toHaveBeenLastCalledWith('all')
   })
 
+  it('applies seconds to the live response-time graph title and axis', async () => {
+    await renderCharts(null, true, true)
+    const responseChart = () => Array.from(container.querySelectorAll<HTMLElement>('.chart-card'))
+      .find(chart => chart.querySelector('.chart-title')?.textContent === 'Response Time (ms)')
+
+    expect(responseChart()).not.toBeNull()
+    await act(async () => {
+      buttonByText('Configure Graphs')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    const drawer = container.querySelector('.charts-config-drawer')
+    const secondsButton = Array.from(drawer?.querySelectorAll('button') ?? [])
+      .find(button => button.textContent?.trim() === 'Seconds')
+    expect(secondsButton).toBeDefined()
+    await act(async () => {
+      secondsButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await new Promise(resolve => window.setTimeout(resolve, 0))
+    })
+
+    const secondsResponseChart = Array.from(container.querySelectorAll<HTMLElement>('.chart-card'))
+      .find(chart => chart.querySelector('.chart-title')?.textContent === 'Response Time (s)')
+    expect(secondsResponseChart).not.toBeNull()
+  })
+
   it('switches the route latency graph between total, phase, and stability diagnostics', async () => {
     await renderCharts()
 
@@ -2106,7 +2131,7 @@ describe('TestExecutionCharts context menu', () => {
     element.dispatchEvent(event)
   }
 
-  async function renderCharts(expandedChart: string | null = null, showLoadImpact = true) {
+  async function renderCharts(expandedChart: string | null = null, showLoadImpact = true, commandCenter = false) {
     await act(async () => {
       root.render(
         <TestExecutionCharts
@@ -2177,6 +2202,7 @@ describe('TestExecutionCharts context menu', () => {
           groupNames={[]}
           groupColors={['#00a3ff']}
           showLoadImpact={showLoadImpact}
+          surface={commandCenter ? 'command-center' : 'execution'}
           latestLatency={{
             targets: [{
               name: 'edge',

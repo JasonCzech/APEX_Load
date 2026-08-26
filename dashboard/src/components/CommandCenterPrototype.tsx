@@ -2610,7 +2610,7 @@ function ErrorEvidencePanel({
   }
 
   return (
-    <div className="command-evidence-panel" aria-label="Live error evidence">
+    <div className="command-evidence-panel" aria-label="Live error evidence" aria-busy={loading}>
       <div className="command-evidence-header">
         <div>
           <span>Selected Signature</span>
@@ -2618,7 +2618,6 @@ function ErrorEvidencePanel({
         </div>
         <small>{selectedError.evidenceCount ?? evidence.length} captured samples</small>
       </div>
-      {loading && <p className="command-table-status">Loading live evidence...</p>}
       {error && <p className="command-table-status danger">{error}</p>}
       {!loading && !error && evidence.length === 0 && (
         <p className="command-table-status">

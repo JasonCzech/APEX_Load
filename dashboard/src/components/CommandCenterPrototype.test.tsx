@@ -1816,7 +1816,8 @@ describe('CommandCenterPrototype', () => {
     })
 
     expect(container.textContent).not.toContain('RUN A EVIDENCE')
-    expect(container.textContent).toContain('Loading live evidence')
+    expect(container.textContent).not.toContain('Loading live evidence')
+    expect(container.querySelector('[aria-label="Live error evidence"]')?.getAttribute('aria-busy')).toBe('true')
 
     await act(async () => {
       resolveRunB?.(jsonResponse({ evidence: [{
