@@ -193,6 +193,10 @@
   gap: 8px;
 }
 
+.command-run-stats.with-tps {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
 .command-metric-pill {
   min-width: 0;
   min-height: 48px;
@@ -472,69 +476,6 @@
 
 .command-group-select-toggle:not(.active) .command-group-select-status {
   border-style: dashed;
-}
-
-.command-hero-strip {
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 10px;
-}
-
-.command-hero-metric {
-  min-width: 0;
-  min-height: var(--command-view-switch-height);
-  display: grid;
-  align-content: center;
-  gap: 4px;
-  padding: 10px 14px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--bg-card);
-}
-
-.command-hero-metric span {
-  color: var(--text-muted);
-  font-size: 10px;
-  font-weight: 800;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-
-/* Keep the averaged label + "10s avg" hint on one line without affecting the
-   other (un-hinted) metric labels. */
-.command-hero-metric.has-hint span {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.command-hero-metric .command-hero-hint {
-  margin-left: 6px;
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 0.01em;
-  text-transform: none;
-  color: var(--text-muted);
-  opacity: 0.7;
-}
-
-.command-hero-metric strong {
-  color: var(--text-primary);
-  font-size: 21px;
-  font-variant-numeric: tabular-nums;
-}
-
-.command-hero-metric.accent strong,
-.command-hero-metric.info strong {
-  color: var(--accent);
-}
-
-.command-hero-metric.success strong {
-  color: var(--success);
-}
-
-.command-hero-metric.danger strong {
-  color: var(--danger);
 }
 
 .command-load-model-row {
@@ -1681,6 +1622,20 @@ button.command-group-name:focus-visible {
   max-height: 300px;
 }
 
+.command-error-table {
+  table-layout: fixed;
+}
+
+.command-error-table th:nth-child(1) { width: 25%; }
+.command-error-table th:nth-child(2) { width: 7%; }
+.command-error-table th:nth-child(3) { width: 7%; }
+.command-error-table th:nth-child(4) { width: 7%; }
+.command-error-table th:nth-child(5) { width: 14%; }
+.command-error-table th:nth-child(6) { width: 14%; }
+.command-error-table th:nth-child(7) { width: 9%; }
+.command-error-table th:nth-child(8) { width: 9%; }
+.command-error-table th:nth-child(9) { width: 8%; }
+
 .command-evidence-panel {
   min-width: 0;
   display: grid;
@@ -2296,7 +2251,7 @@ button.command-group-name:focus-visible {
   }
 
   .command-run-stats,
-  .command-hero-strip {
+  .command-run-stats.with-tps {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
@@ -2418,7 +2373,7 @@ button.command-group-name:focus-visible {
   }
 
   .command-run-stats,
-  .command-hero-strip,
+  .command-run-stats.with-tps,
   .command-graph-grid.standard,
   .command-graph-grid.dense,
   .command-load-model-stats,

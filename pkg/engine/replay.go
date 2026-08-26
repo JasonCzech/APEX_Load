@@ -2090,10 +2090,9 @@ func scrubReplayActionEvent(event *ReplayActionEvent, config *RedactionConfig) {
 	if event == nil {
 		return
 	}
-	// Transaction names are stable identity labels, not protocol evidence.
-	// Applying generic token-shape guesses can split one transaction into a
-	// second, redacted label. Exact secrets and explicit policy matches still
-	// redact; ordinary actions and non-transaction parents retain the full scrubber.
+	// Transaction names are authored identity labels, not protocol evidence, and
+	// must remain visible exactly as configured. Ordinary actions and
+	// non-transaction parents retain the full scrubber.
 	if replayActionHasTransactionIdentity(event.ActionType) {
 		event.ActionName = scrubSensitiveIdentityWithConfig(event.ActionName, config)
 	} else {

@@ -8,6 +8,8 @@ import CommandCenterPrototype, {
   buildSelectedGroupChartHistoryFromTransactions,
   historicalGroupSummaryQuery,
   selectedGroupLoadImpactData,
+  stabilizeErrorRowOrder,
+  type ErrorPattern,
 } from './CommandCenterPrototype'
 import { buildLoadModelProfile, plannedGroupLoadAt } from './commandCenterLoadModel'
 import { buildScenarioRunRows, type CommandGroup } from './commandCenterScenarioRows'
@@ -36,6 +38,38 @@ describe('CommandCenterPrototype', () => {
     vi.restoreAllMocks()
     vi.useRealTimers()
     container.remove()
+  })
+
+  it('keeps error rows stationary while live counts refresh', () => {
+    const pattern = (id: string, count: number): ErrorPattern => ({
+      id,
+      signature: id,
+      title: id,
+      group: 'Checkout',
+      transaction: id,
+      count,
+      rate: count,
+      firstSeen: '10:00:00',
+      latestSeen: '10:00:01',
+      severity: 'warning',
+      sample: `${id} failed`,
+      actions: [id],
+      affectedGroups: ['Checkout'],
+    })
+
+    const refreshedByCount = [pattern('error-b', 12), pattern('error-a', 11), pattern('error-c', 1)]
+    const stable = stabilizeErrorRowOrder(refreshedByCount, 'count-desc', {
+      viewKey: 'count-desc',
+      ids: ['error-a', 'error-b'],
+    })
+    expect(stable.map(row => row.id)).toEqual(['error-a', 'error-b', 'error-c'])
+    expect(stable[0].count).toBe(11)
+
+    const explicitlyResorted = stabilizeErrorRowOrder([refreshedByCount[2], refreshedByCount[1], refreshedByCount[0]], 'count-asc', {
+      viewKey: 'count-desc',
+      ids: stable.map(row => row.id),
+    })
+    expect(explicitlyResorted.map(row => row.id)).toEqual(['error-c', 'error-a', 'error-b'])
   })
 
   it('requests one bounded sampled series for historical group charts', () => {
@@ -857,7 +891,8 @@ describe('CommandCenterPrototype', () => {
     expect(progressPct).toBeGreaterThanOrEqual(0)
     expect(progressPct).toBeLessThanOrEqual(100)
     expect(opsLoadModelPanel?.getAttribute('data-target-vusers')).toBe('2140')
-    expect(Array.from(opsPrimaryColumn!.children).indexOf(opsLoadModelRow!)).toBeGreaterThan(0)
+    expect(Array.from(opsPrimaryColumn!.children).indexOf(opsLoadModelRow!)).toBe(0)
+    expect(opsPrimaryColumn?.querySelector('.command-hero-strip')).toBeNull()
 
     await click(buttonNamed('Graph Wall'))
 
@@ -1704,7 +1739,7 @@ describe('CommandCenterPrototype', () => {
     expect(container.textContent).not.toContain('In-flight Run Command Center')
   })
 
-  it('shows the whole-test error rate in the hero metric', async () => {
+  it('moves TPS into the primary run summary and removes the redundant hero row', async () => {
     const liveTest = buildLiveVuserTest()
     liveTest.live_metrics = {
       ...liveTest.live_metrics!,
@@ -1719,9 +1754,13 @@ describe('CommandCenterPrototype', () => {
       root.render(<CommandCenterPrototype testId={liveTest.id} initialTest={liveTest} history={[]} />)
     })
 
-    const errorRateMetric = Array.from(container.querySelectorAll<HTMLElement>('.command-hero-metric'))
+    const summaryMetrics = Array.from(container.querySelectorAll<HTMLElement>('.command-metric-pill'))
+    const errorRateMetric = summaryMetrics
       .find(metric => metric.querySelector('span')?.textContent === 'Error Rate')
     expect(errorRateMetric?.querySelector('strong')?.textContent).toBe('16.67%')
+    const tpsMetric = summaryMetrics.find(metric => metric.querySelector('span')?.textContent?.startsWith('TPS'))
+    expect(tpsMetric?.querySelector('strong')?.textContent).toBe('75.4')
+    expect(container.querySelector('.command-hero-strip')).toBeNull()
   })
 
   it('never reuses same-signature evidence across routed runs', async () => {

@@ -98,53 +98,101 @@ func sanitizeArchivedTransaction(item *TransactionEvent) {
 		return
 	}
 	policy := scrub.Policy{}
-	item.TestName = scrub.Value(item.TestName, policy)
-	// Group and proven business-transaction names are stable identities used as
-	// report aggregation keys. ValueLabel skips only generic entropy/JWT guesses;
-	// structured credentials and policy rules still apply. Ordinary action names
-	// retain the full defense-in-depth scrub for direct and legacy archive input.
-	item.Group = scrub.ValueLabel(item.Group, policy)
-	item.Region = scrub.Value(item.Region, policy)
+	item.TestName = scrub.ValueLabel(item.TestName, policy)
+	// Group and proven business-transaction names are authored identities used as
+	// report aggregation keys. They must remain visible exactly as configured.
+	// Ordinary action names retain the full defense-in-depth scrub for direct and
+	// legacy archive input.
+	item.Region = scrub.ValueLabel(item.Region, policy)
 	item.Hierarchy = scrub.ValueLabel(item.Hierarchy, policy)
 	item.PageName = scrub.ValueLabel(item.PageName, policy)
 	item.Phase = scrub.ValueLabel(item.Phase, policy)
 	if item.BusinessTransaction {
-		item.ActionName = scrub.ValueLabel(item.ActionName, policy)
+		// Preserve the authored transaction name.
 	} else {
-		item.ActionName = scrub.Value(item.ActionName, policy)
+		item.ActionName = scrub.ValueLabel(item.ActionName, policy)
 	}
-	item.CorrelationID = scrub.Value(item.CorrelationID, policy)
-	item.TraceID = scrub.Value(item.TraceID, policy)
-	item.SpanID = scrub.Value(item.SpanID, policy)
-	item.NetworkProfile = scrub.Value(item.NetworkProfile, policy)
-	item.DependencyType = scrub.Value(item.DependencyType, policy)
+	item.CorrelationID = scrub.ValueLabel(item.CorrelationID, policy)
+	item.TraceID = scrub.ValueLabel(item.TraceID, policy)
+	item.SpanID = scrub.ValueLabel(item.SpanID, policy)
+	item.NetworkProfile = scrub.ValueLabel(item.NetworkProfile, policy)
+	item.DependencyType = scrub.ValueLabel(item.DependencyType, policy)
 	item.DependencyTarget = scrubArchiveTarget(item.DependencyTarget, policy)
-	item.ErrorMessage = scrub.Value(item.ErrorMessage, policy)
-	item.Extractions = scrub.StringMap(item.Extractions, policy)
+	item.ErrorMessage = scrub.ValueLabel(item.ErrorMessage, policy)
+	item.Extractions = sanitizeArchivedStringMap(item.Extractions, policy)
 	item.PageURL = scrub.ValueURL(item.PageURL, policy)
-	item.PageTitle = scrub.Value(item.PageTitle, policy)
+	item.PageTitle = scrub.ValueLabel(item.PageTitle, policy)
 	item.ConsoleEntries = sanitizeArchivedConsoleEntries(item.ConsoleEntries, policy)
 	item.NetworkEntries = sanitizeArchivedNetworkEntries(item.NetworkEntries, policy)
 	item.DOMSummary = sanitizeArchivedDOMSummary(item.DOMSummary, policy)
-	if structured, ok := scrub.Structured(item.ProtocolEvidence, policy).(map[string]any); ok {
+	if structured, ok := sanitizeArchivedEvidenceValue(item.ProtocolEvidence, policy).(map[string]any); ok {
 		item.ProtocolEvidence = structured
 	} else {
 		item.ProtocolEvidence = nil
 	}
 	item.Snapshot = sanitizeArchivedSnapshot(item.Snapshot, policy)
-	item.SourceStepID = scrub.Value(item.SourceStepID, policy)
-	item.SourceAction = scrub.Value(item.SourceAction, policy)
-	item.SourceActionName = scrub.Value(item.SourceActionName, policy)
-	item.SourceTransaction = scrub.ValueLabel(item.SourceTransaction, policy)
-	item.SourceProfile = scrub.Value(item.SourceProfile, policy)
+	item.SourceStepID = scrub.ValueLabel(item.SourceStepID, policy)
+	item.SourceAction = scrub.ValueLabel(item.SourceAction, policy)
+	item.SourceActionName = scrub.ValueLabel(item.SourceActionName, policy)
+	// Preserve the authored source transaction name.
+	item.SourceProfile = scrub.ValueLabel(item.SourceProfile, policy)
 	if item.ServerTelemetry != nil {
 		cloned := *item.ServerTelemetry
-		cloned.PartitionID = scrub.Value(cloned.PartitionID, policy)
-		cloned.SOAPFaultCode = scrub.Value(cloned.SOAPFaultCode, policy)
-		cloned.SOAPFaultCategory = scrub.Value(cloned.SOAPFaultCategory, policy)
-		cloned.SOAPNamespaceConflict = scrub.Value(cloned.SOAPNamespaceConflict, policy)
+		cloned.PartitionID = scrub.ValueLabel(cloned.PartitionID, policy)
+		cloned.SOAPFaultCode = scrub.ValueLabel(cloned.SOAPFaultCode, policy)
+		cloned.SOAPFaultCategory = scrub.ValueLabel(cloned.SOAPFaultCategory, policy)
+		cloned.SOAPNamespaceConflict = scrub.ValueLabel(cloned.SOAPNamespaceConflict, policy)
 		item.ServerTelemetry = &cloned
 	}
+}
+
+func sanitizeArchivedStringMap(values map[string]string, policy scrub.Policy) map[string]string {
+	out := make(map[string]string, len(values))
+	for key, value := range values {
+		if scrub.SensitiveName(key) {
+			out[key] = scrub.Redacted
+		} else {
+			out[key] = scrub.ValueLabel(value, policy)
+		}
+	}
+	return out
+}
+
+func sanitizeArchivedEvidenceValue(value any, policy scrub.Policy) any {
+	switch typed := value.(type) {
+	case string:
+		return scrub.ValueLabel(typed, policy)
+	case []any:
+		out := make([]any, len(typed))
+		for index, item := range typed {
+			out[index] = sanitizeArchivedEvidenceValue(item, policy)
+		}
+		return out
+	case map[string]any:
+		out := make(map[string]any, len(typed))
+		for key, item := range typed {
+			if scrub.SensitiveName(key) {
+				out[key] = scrub.Redacted
+			} else {
+				out[key] = sanitizeArchivedEvidenceValue(item, policy)
+			}
+		}
+		return out
+	default:
+		return value
+	}
+}
+
+func sanitizeArchivedHeaders(headers map[string]string, policy scrub.Policy) map[string]string {
+	out := make(map[string]string, len(headers))
+	for key, value := range headers {
+		if scrub.SensitiveName(key) {
+			out[key] = scrub.Redacted
+		} else {
+			out[key] = scrub.ValueLabel(value, policy)
+		}
+	}
+	return out
 }
 
 func scrubArchiveTarget(value string, policy scrub.Policy) string {
@@ -152,7 +200,7 @@ func scrubArchiveTarget(value string, policy scrub.Policy) string {
 	if strings.Contains(trimmed, "://") {
 		return scrub.ValueURL(value, policy)
 	}
-	return scrub.Value(value, policy)
+	return scrub.ValueLabel(value, policy)
 }
 
 func sanitizeArchivedConsoleEntries(entries []protocol.ConsoleEntry, policy scrub.Policy) []protocol.ConsoleEntry {
@@ -162,8 +210,8 @@ func sanitizeArchivedConsoleEntries(entries []protocol.ConsoleEntry, policy scru
 	out := make([]protocol.ConsoleEntry, len(entries))
 	copy(out, entries)
 	for index := range out {
-		out[index].Level = scrub.Value(out[index].Level, policy)
-		out[index].Text = scrub.Value(out[index].Text, policy)
+		out[index].Level = scrub.ValueLabel(out[index].Level, policy)
+		out[index].Text = scrub.ValueLabel(out[index].Text, policy)
 		out[index].Source = scrubArchiveTarget(out[index].Source, policy)
 	}
 	return out
@@ -173,11 +221,11 @@ func sanitizeArchivedNetworkEntries(entries []protocol.NetworkEntry, policy scru
 	out := protocol.CloneNetworkEntries(entries)
 	for index := range out {
 		out[index].URL = scrub.ValueURL(out[index].URL, policy)
-		out[index].Method = scrub.Value(out[index].Method, policy)
-		out[index].ResourceType = scrub.Value(out[index].ResourceType, policy)
-		out[index].RequestHeaders = scrub.Headers(out[index].RequestHeaders, policy)
-		out[index].RequestBody = scrub.Value(out[index].RequestBody, policy)
-		out[index].ResponseHeaders = scrub.Headers(out[index].ResponseHeaders, policy)
+		out[index].Method = scrub.ValueLabel(out[index].Method, policy)
+		out[index].ResourceType = scrub.ValueLabel(out[index].ResourceType, policy)
+		out[index].RequestHeaders = sanitizeArchivedHeaders(out[index].RequestHeaders, policy)
+		out[index].RequestBody = scrub.ValueLabel(out[index].RequestBody, policy)
+		out[index].ResponseHeaders = sanitizeArchivedHeaders(out[index].ResponseHeaders, policy)
 	}
 	return out
 }
@@ -187,11 +235,11 @@ func sanitizeArchivedDOMSummary(summary *protocol.DOMSummary, policy scrub.Polic
 		return nil
 	}
 	out := *summary
-	out.Title = scrub.Value(out.Title, policy)
-	out.ReadyState = scrub.Value(out.ReadyState, policy)
+	out.Title = scrub.ValueLabel(out.Title, policy)
+	out.ReadyState = scrub.ValueLabel(out.ReadyState, policy)
 	out.VisibleText = append([]string(nil), summary.VisibleText...)
 	for index := range out.VisibleText {
-		out.VisibleText[index] = scrub.Value(out.VisibleText[index], policy)
+		out.VisibleText[index] = scrub.ValueLabel(out.VisibleText[index], policy)
 	}
 	return &out
 }
@@ -201,15 +249,15 @@ func sanitizeArchivedSnapshot(snapshot *protocol.ErrorSnapshot, policy scrub.Pol
 		return nil
 	}
 	out := *snapshot
-	out.RequestMethod = scrub.Value(out.RequestMethod, policy)
+	out.RequestMethod = scrub.ValueLabel(out.RequestMethod, policy)
 	out.RequestURL = scrub.ValueURL(out.RequestURL, policy)
-	out.RequestHeaders = scrub.Headers(out.RequestHeaders, policy)
-	out.RequestBody = scrub.Value(out.RequestBody, policy)
-	out.ResponseHeaders = scrub.Headers(out.ResponseHeaders, policy)
-	out.ResponseBody = scrub.Value(out.ResponseBody, policy)
+	out.RequestHeaders = sanitizeArchivedHeaders(out.RequestHeaders, policy)
+	out.RequestBody = scrub.ValueLabel(out.RequestBody, policy)
+	out.ResponseHeaders = sanitizeArchivedHeaders(out.ResponseHeaders, policy)
+	out.ResponseBody = scrub.ValueLabel(out.ResponseBody, policy)
 	out.PageURL = scrub.ValueURL(out.PageURL, policy)
-	out.PageTitle = scrub.Value(out.PageTitle, policy)
-	out.HTML = scrub.Value(out.HTML, policy)
+	out.PageTitle = scrub.ValueLabel(out.PageTitle, policy)
+	out.HTML = scrub.ValueLabel(out.HTML, policy)
 	out.ConsoleEntries = sanitizeArchivedConsoleEntries(out.ConsoleEntries, policy)
 	out.NetworkEntries = sanitizeArchivedNetworkEntries(out.NetworkEntries, policy)
 	out.DOMSummary = sanitizeArchivedDOMSummary(out.DOMSummary, policy)

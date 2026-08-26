@@ -42,9 +42,9 @@ func TestScrubSensitiveText(t *testing.T) {
 		want string
 	}{
 		{
-			name: "redacts structured fields",
+			name: "redacts secrets but preserves ordinary personal data",
 			in:   `{"access_token":"abc123","status":"ok","ssn":"123-45-6789"}`,
-			want: `{"access_token":"[REDACTED]","status":"ok","ssn":"[REDACTED]"}`,
+			want: `{"access_token":"[REDACTED]","ssn":"123-45-6789","status":"ok"}`,
 		},
 		{
 			name: "redacts xml and query payloads",
@@ -52,9 +52,9 @@ func TestScrubSensitiveText(t *testing.T) {
 			want: `<token>[REDACTED]</token> https://example.test?session_id=[REDACTED]`,
 		},
 		{
-			name: "redacts high entropy tokens",
+			name: "preserves unclassified high entropy text",
 			in:   `eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.signature`,
-			want: `[REDACTED]`,
+			want: `eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.signature`,
 		},
 		{
 			name: "does not redact ordinary hostnames",
@@ -231,13 +231,13 @@ func TestVUser_RecordResultScrubsSensitivePayloads(t *testing.T) {
 	if strings.Contains(sink.result.ErrorMessage, "hunter2") || strings.Contains(sink.result.ErrorMessage, "abc123") {
 		t.Fatalf("error message = %q, want secrets redacted", sink.result.ErrorMessage)
 	}
-	if strings.Contains(sink.result.PageURL, "abc123") || strings.Contains(sink.result.PageTitle, "123-45-6789") {
+	if strings.Contains(sink.result.PageURL, "abc123") || sink.result.PageTitle != "Account 123-45-6789" {
 		t.Fatalf("page evidence leaked: url=%q title=%q", sink.result.PageURL, sink.result.PageTitle)
 	}
 	if strings.Contains(sink.result.ConsoleEntries[0].Text, "console-secret") || strings.Contains(sink.result.ConsoleEntries[0].Source, "source-secret") {
-		t.Fatalf("console entries leaked: %#v", sink.result.ConsoleEntries)
+		t.Fatalf("named console secrets survived: %#v", sink.result.ConsoleEntries)
 	}
-	if strings.Contains(sink.result.DOMSummary.Title, "123-45-6789") || strings.Contains(strings.Join(sink.result.DOMSummary.VisibleText, " "), "visible-secret") {
+	if sink.result.DOMSummary.Title != "Profile 123-45-6789" || strings.Contains(strings.Join(sink.result.DOMSummary.VisibleText, " "), "visible-secret") {
 		t.Fatalf("DOM summary leaked: %#v", sink.result.DOMSummary)
 	}
 	if sink.result.Snapshot.RequestHeaders["Authorization"] != redactedPayloadValue {
@@ -261,23 +261,23 @@ func TestVUser_RecordResultScrubsSensitivePayloads(t *testing.T) {
 	if sink.result.Snapshot.ResponseHeaders["Set-Cookie"] != redactedPayloadValue {
 		t.Fatalf("set-cookie header = %q, want %q", sink.result.Snapshot.ResponseHeaders["Set-Cookie"], redactedPayloadValue)
 	}
-	if !strings.Contains(sink.result.Snapshot.ResponseBody, `"patient_id":"[REDACTED]"`) {
-		t.Fatalf("response body = %q, want patient id redacted", sink.result.Snapshot.ResponseBody)
+	if !strings.Contains(sink.result.Snapshot.ResponseBody, `"patient_id":"p-123"`) {
+		t.Fatalf("response body = %q, want non-secret patient id preserved", sink.result.Snapshot.ResponseBody)
 	}
 	if !strings.Contains(sink.result.ResponseBody, `"access_token":"[REDACTED]"`) {
 		t.Fatalf("result response body = %q, want access token redacted", sink.result.ResponseBody)
 	}
-	if strings.Contains(sink.result.Snapshot.HTML, "123-45-6789") {
-		t.Fatalf("html = %q, want SSN redacted", sink.result.Snapshot.HTML)
+	if !strings.Contains(sink.result.Snapshot.HTML, "123-45-6789") {
+		t.Fatalf("html = %q, want ordinary evidence preserved", sink.result.Snapshot.HTML)
 	}
-	if strings.Contains(sink.result.Snapshot.PageURL, "snapshot-secret") || strings.Contains(sink.result.Snapshot.PageTitle, "123-45-6789") {
+	if strings.Contains(sink.result.Snapshot.PageURL, "snapshot-secret") || sink.result.Snapshot.PageTitle != "Failure 123-45-6789" {
 		t.Fatalf("snapshot page evidence leaked: url=%q title=%q", sink.result.Snapshot.PageURL, sink.result.Snapshot.PageTitle)
 	}
 	if strings.Contains(sink.result.Snapshot.ConsoleEntries[0].Text, "snapshot-console-secret") ||
 		strings.Contains(sink.result.Snapshot.ConsoleEntries[0].Source, "snapshot-source-secret") {
 		t.Fatalf("snapshot console leaked: %#v", sink.result.Snapshot.ConsoleEntries)
 	}
-	if strings.Contains(sink.result.Snapshot.DOMSummary.Title, "123-45-6789") ||
+	if sink.result.Snapshot.DOMSummary.Title != "Snapshot 123-45-6789" ||
 		strings.Contains(strings.Join(sink.result.Snapshot.DOMSummary.VisibleText, " "), "snapshot-visible-secret") {
 		t.Fatalf("snapshot DOM summary leaked: %#v", sink.result.Snapshot.DOMSummary)
 	}
@@ -402,7 +402,7 @@ func TestVUserRecordResultPreservesIdentityAndScrubsEvidenceMetadata(t *testing.
 	}
 }
 
-func TestCustomPolicyStillRedactsIdentityDimensions(t *testing.T) {
+func TestCustomPolicyDoesNotRedactIdentityDimensions(t *testing.T) {
 	config, err := NewRedactionConfig([]RedactionRule{{Pattern: `customer-[0-9]+`}})
 	if err != nil {
 		t.Fatal(err)
@@ -416,13 +416,13 @@ func TestCustomPolicyStillRedactsIdentityDimensions(t *testing.T) {
 
 	scrubSensitiveResult(result, config)
 
-	for name, value := range map[string]string{
-		"transaction":        result.ActionName,
-		"group":              result.Group,
-		"source transaction": result.SourceTransaction,
+	for name, values := range map[string][2]string{
+		"transaction":        {result.ActionName, "transaction-customer-1234"},
+		"group":              {result.Group, "group-customer-1234"},
+		"source transaction": {result.SourceTransaction, "source-customer-1234"},
 	} {
-		if strings.Contains(value, "customer-1234") || !strings.Contains(value, redactedPayloadValue) {
-			t.Fatalf("%s identity did not apply the explicit policy: %q", name, value)
+		if values[0] != values[1] {
+			t.Fatalf("%s identity = %q, want %q", name, values[0], values[1])
 		}
 	}
 }
@@ -592,9 +592,7 @@ func TestHarvestedCookieSubstringLeavesDimensionsAndEvidenceIntact(t *testing.T)
 	}
 }
 
-// Platform-managed values remain redacted even in stable identity labels; only
-// generic token-shape guesses are skipped for those fields.
-func TestPlatformManagedSecretStillRedactsIdentityDimensions(t *testing.T) {
+func TestPlatformManagedSecretDoesNotRedactIdentityDimensions(t *testing.T) {
 	const credential = "resolved-secret-4821"
 	vu := &VUser{
 		Group:           "group-" + credential,
@@ -612,22 +610,23 @@ func TestPlatformManagedSecretStillRedactsIdentityDimensions(t *testing.T) {
 	}
 
 	vu.recordResult(result, dsl.ErrorHandlingConfig{}, dsl.LogConfig{})
-	for name, value := range map[string]string{
-		"action":             result.ActionName,
-		"parent action":      result.ParentActionName,
-		"group":              result.Group,
-		"source transaction": result.SourceTransaction,
-		"target":             result.DependencyTarget,
+	for name, values := range map[string][2]string{
+		"action":             {result.ActionName, "transaction-" + credential},
+		"group":              {result.Group, "group-" + credential},
+		"source transaction": {result.SourceTransaction, "source-transaction-" + credential},
 	} {
+		if values[0] != values[1] {
+			t.Fatalf("%s identity = %q, want %q", name, values[0], values[1])
+		}
+	}
+	for name, value := range map[string]string{"parent action": result.ParentActionName, "target": result.DependencyTarget} {
 		if strings.Contains(value, credential) {
-			t.Fatalf("%s dimension retained a platform-managed secret: %q", name, value)
+			t.Fatalf("%s evidence retained a platform-managed secret: %q", name, value)
 		}
 	}
 }
 
-// A sensitively named extraction is suppressed from every output dimension,
-// including identity labels, regardless of where it came from.
-func TestSensitivelyNamedExtractionStillRedactsIdentityDimensions(t *testing.T) {
+func TestSensitivelyNamedExtractionDoesNotRedactGroupIdentity(t *testing.T) {
 	const extracted = "harvested-bearer-3390"
 	vu := &VUser{
 		Group:     "group-" + extracted,
@@ -642,13 +641,12 @@ func TestSensitivelyNamedExtractionStillRedactsIdentityDimensions(t *testing.T) 
 	}
 
 	vu.recordResult(result, dsl.ErrorHandlingConfig{}, dsl.LogConfig{})
-	for name, value := range map[string]string{
-		"action": result.ActionName,
-		"group":  result.Group,
-		"target": result.DependencyTarget,
-	} {
+	if result.Group != "group-"+extracted {
+		t.Fatalf("group identity = %q, want authored name preserved", result.Group)
+	}
+	for name, value := range map[string]string{"action": result.ActionName, "target": result.DependencyTarget} {
 		if strings.Contains(value, extracted) {
-			t.Fatalf("%s dimension retained a sensitively named extraction: %q", name, value)
+			t.Fatalf("%s evidence retained a sensitively named extraction: %q", name, value)
 		}
 	}
 	if got := vu.Variables["session_token"]; got != extracted {
@@ -715,15 +713,15 @@ func TestRuntimeSecretRedactionPreservesPreexistingNULBytes(t *testing.T) {
 	}
 }
 
-func TestGenericJWTRedactionRequiresStructuredHeaderAndPayload(t *testing.T) {
+func TestGenericJWTTextIsPreservedWithoutSecretClassification(t *testing.T) {
 	valid := "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.c2lnbmF0dXJl"
 	invalid := "documents.example.invalid.assets.bundle123456789"
 	missingAlgorithm := "eyJ0eXAiOiJKV1QifQ.eyJzdWIiOiIxMjM0NTY3ODkwIn0.c2lnbmF0dXJl"
 	nonStringAlgorithm := "eyJhbGciOjEyM30.eyJzdWIiOiIxMjM0NTY3ODkwIn0.c2lnbmF0dXJl"
 	invalidSignature := "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.signature"
 	got := scrubSensitiveText(valid + " " + invalid)
-	if strings.Contains(got, valid) {
-		t.Fatalf("valid JWT survived: %q", got)
+	if !strings.Contains(got, valid) {
+		t.Fatalf("unclassified JWT text was rewritten: %q", got)
 	}
 	if !strings.Contains(got, invalid) {
 		t.Fatalf("non-JWT dotted token was redacted: %q", got)

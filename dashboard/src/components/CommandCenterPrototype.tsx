@@ -876,6 +876,10 @@ export default function CommandCenterPrototype({
   const totalCurrent = groups.reduce((sum, group) => sum + group.current, 0)
   const totalTarget = groups.reduce((sum, group) => sum + group.target, 0)
   const targetMode = groups[0]?.targetMode ?? 'vusers'
+  const runSummaryAverages = recentMetricAverages(liveMode ? localMetricsHistory : [])
+  const runSummaryTps = runSummaryAverages.tps
+    ?? displayTest.live_metrics?.tps
+    ?? groups.reduce((sum, group) => sum + group.tps, 0)
   const totalDurationSeconds = parseDurationToSeconds(displayTest.duration)
   const remainingSeconds = liveMode
     ? computeRemainingSeconds(displayTest, runStatus)
@@ -1295,7 +1299,9 @@ export default function CommandCenterPrototype({
         totalCurrent={totalCurrent}
         totalTarget={totalTarget}
         targetMode={targetMode}
-        errorPct={displayTest.live_metrics?.error_pct}
+        errorPct={wholeTestErrorPercent(displayTest.live_metrics, groups)}
+        tps={variant === 'ops' && experienceVersion === 'original' ? runSummaryTps : undefined}
+        tpsHint={runSummaryAverages.tps !== undefined ? '10s avg' : undefined}
         feedback={feedback}
         historicalRun={historicalRun || (hasLiveRoute && !liveMode)}
         onStart={confirmRunAction('start', startRun)}
@@ -1543,6 +1549,8 @@ interface RunControlShelfProps {
   totalTarget: number
   targetMode: CommandGroup['targetMode']
   errorPct?: number
+  tps?: number
+  tpsHint?: string
   feedback: string
   historicalRun?: boolean
   onStart: () => void
@@ -1563,6 +1571,8 @@ function RunControlShelf({
   totalTarget,
   targetMode,
   errorPct,
+  tps,
+  tpsHint,
   feedback,
   historicalRun = false,
   onStart,
@@ -1590,8 +1600,9 @@ function RunControlShelf({
         </div>
       </div>
 
-      <div className="command-run-stats" aria-label="Run summary">
+      <div className={`command-run-stats${tps !== undefined ? ' with-tps' : ''}`} aria-label="Run summary">
         <MetricPill label="Remaining" value={formatRemaining(remainingSeconds)} tone={remainingSeconds <= 60 ? 'warning' : 'default'} />
+        {tps !== undefined && <MetricPill label={tpsHint ? `TPS (${tpsHint})` : 'TPS'} value={formatNumber(tps, 1)} tone="accent" />}
         <MetricPill label="Current Load" value={`${formatNumber(totalCurrent)} VU`} tone="info" />
         <MetricPill
           label={targetMode === 'tps' ? 'Target TPS' : 'Target Load'}
@@ -1864,7 +1875,6 @@ function OpsCockpitView({
   return (
     <section className="command-layout command-layout-ops" aria-label="Ops cockpit mockup">
       <div className="command-primary-column">
-        <HeroMetricStrip groups={groups} metrics={metrics} metricsHistory={metricsHistory} />
         <div className="command-load-model-row">
           <GroupLoadTable
             groups={groups}
@@ -2323,6 +2333,7 @@ function CommandRunTables({
     infrastructure: { key: 'type', direction: 'asc' },
   })
   const [transactionSnapshot, setTransactionSnapshot] = useState<Record<string, TxMetrics>>({})
+  const errorRowOrderRef = useRef<{ viewKey: string; ids: string[] }>({ viewKey: '', ids: [] })
   useEffect(() => {
     const incoming = metrics?.transactions
     if (!incoming || Object.keys(incoming).length === 0) return
@@ -2349,10 +2360,13 @@ function CommandRunTables({
     () => filterAndSortRows(scenarioRows, filter, activeSort),
     [activeSort, filter, scenarioRows],
   )
-  const filteredErrorRows = useMemo(
+  const sortedErrorRows = useMemo(
     () => filterAndSortRows(patterns, filter, activeSort),
     [activeSort, filter, patterns],
   )
+  const errorViewKey = `${filter.trim().toLowerCase()}\u001f${activeSort.key}\u001f${activeSort.direction}`
+  const filteredErrorRows = stabilizeErrorRowOrder(sortedErrorRows, errorViewKey, errorRowOrderRef.current)
+  errorRowOrderRef.current = { viewKey: errorViewKey, ids: filteredErrorRows.map(row => row.id) }
   const filteredInfrastructureRows = useMemo(
     () => filterAndSortRows(infrastructureRows, filter, activeSort),
     [activeSort, filter, infrastructureRows],
@@ -2411,6 +2425,25 @@ function CommandRunTables({
       </div>
     </section>
   )
+}
+
+export function stabilizeErrorRowOrder(
+  sortedRows: ErrorPattern[],
+  viewKey: string,
+  previous: { viewKey: string; ids: string[] },
+): ErrorPattern[] {
+  if (previous.viewKey !== viewKey || previous.ids.length === 0) return sortedRows
+  const byId = new Map(sortedRows.map(row => [row.id, row]))
+  const stable = previous.ids.flatMap(id => {
+    const row = byId.get(id)
+    if (!row) return []
+    byId.delete(id)
+    return [row]
+  })
+  for (const row of sortedRows) {
+    if (byId.delete(row.id)) stable.push(row)
+  }
+  return stable
 }
 
 function ScenarioRunTable({
@@ -3366,38 +3399,6 @@ function CommandRuntimeGraphs({
         underLoadDisplayMode={underLoadDisplayMode}
         externalControlsTarget={externalControlsTarget}
       />
-    </div>
-  )
-}
-
-function HeroMetricStrip({ groups, metrics, metricsHistory = [] }: { groups: CommandGroup[]; metrics?: LiveMetrics; metricsHistory?: MetricsHistoryPoint[] }) {
-  const totalTransactions = groups.reduce((sum, group) => sum + group.transactions, 0)
-  const weightedArt = totalTransactions > 0 ? groups.reduce((sum, group) => sum + group.art * group.transactions, 0) / totalTransactions : 0
-  // TPS and ART read as a trailing 10-second average (smoother than a single 1s
-  // sample), falling back to the instantaneous value before any history exists.
-  const averages = recentMetricAverages(metricsHistory)
-  const totalTps = averages.tps ?? metrics?.tps ?? groups.reduce((sum, group) => sum + group.tps, 0)
-  const avgArt = averages.art ?? metrics?.avg_response_ms ?? weightedArt
-  const errorPct = wholeTestErrorPercent(metrics, groups)
-  const activeVUsers = metrics?.active_vusers ?? groups.reduce((sum, group) => sum + group.current, 0)
-  const targetMode = groups[0]?.targetMode ?? 'vusers'
-  const targetValue = groups.reduce((sum, group) => sum + group.target, 0)
-  return (
-    <div className="command-hero-strip" aria-label="Top line live metrics">
-      <HeroMetric label="TPS" value={formatNumber(totalTps, 1)} tone="accent" hint={averages.tps !== undefined ? '10s avg' : undefined} />
-      <HeroMetric label="ART" value={`${formatNumber(avgArt)} ms`} tone="default" hint={averages.art !== undefined ? '10s avg' : undefined} />
-      <HeroMetric label="Error Rate" value={formatPercent(errorPct)} tone="danger" />
-      <HeroMetric label="Active VUsers" value={formatNumber(activeVUsers)} tone="info" />
-      <HeroMetric label={targetMode === 'tps' ? 'Target TPS' : 'Target VUsers'} value={formatNumber(targetValue, targetMode === 'tps' ? 1 : 0)} tone="success" />
-    </div>
-  )
-}
-
-function HeroMetric({ label, value, tone, hint }: { label: string; value: string; tone: 'default' | 'accent' | 'danger' | 'info' | 'success'; hint?: string }) {
-  return (
-    <div className={`command-hero-metric ${tone}${hint ? ' has-hint' : ''}`} title={hint ? `${label} — ${hint}` : undefined}>
-      <span>{label}{hint ? <small className="command-hero-hint">{hint}</small> : null}</span>
-      <strong>{value}</strong>
     </div>
   )
 }

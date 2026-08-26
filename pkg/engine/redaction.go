@@ -854,12 +854,10 @@ func scrubSensitiveResultWithOptions(result *protocol.Result, config *RedactionC
 
 // scrubSensitiveResultMetadata covers the scalar dimensions copied into live
 // metrics and generator archives. Business-transaction ActionName values,
-// Group, and SourceTransaction are stable identities: they avoid only the
-// generic JWT/high-entropy heuristic so metrics, debugger events, and reports
-// continue to join back to the configured script and group. Exact runtime
-// secrets, structured credential patterns, and explicit custom policies still
-// apply. Ordinary and parent action names remain fully scrubbed because
-// adapters can supply them dynamically.
+// Group, and SourceTransaction are authored identities and must remain exactly
+// as configured so metrics, debugger events, and reports always join back to
+// the configured script and group. Ordinary and parent action names remain
+// fully scrubbed because adapters can supply them dynamically.
 //
 // The remaining fields bypass response/snapshot evidence handling, so leaving
 // them untouched would let a resolved secret in a correlation header,
@@ -973,19 +971,31 @@ func scrubSensitiveEvidenceMap(input map[string]any, config *RedactionConfig) ma
 	if len(input) == 0 {
 		return input
 	}
-	// Apply exact runtime variants before the generic structured scrubber. A
-	// high-entropy pre-pass can otherwise redact only the unpadded portion of a
-	// base64 value, preventing the exact composite variant from matching while
-	// leaving encoding punctuation behind.
-	runtimeSafe, _ := scrubRuntimeSecretEvidenceValue(input, config).(map[string]any)
-	builtIn, _ := scrub.Structured(runtimeSafe, scrub.Policy{}).(map[string]any)
-	if len(builtIn) == 0 {
+	out := make(map[string]any, len(input))
+	for key, value := range input {
+		if scrub.SensitiveName(key) {
+			out[key] = redactedPayloadValue
+			continue
+		}
+		out[key] = scrubSensitiveEvidenceValue(normalizeEvidenceValue(value), config)
+	}
+	return out
+}
+
+func normalizeEvidenceValue(value any) any {
+	switch value.(type) {
+	case nil, string, bool, float64, map[string]any, map[string]string, []any:
+		return value
+	}
+	encoded, err := json.Marshal(value)
+	if err != nil {
 		return nil
 	}
-	for key, value := range builtIn {
-		builtIn[key] = scrubSensitiveEvidenceValue(value, config)
+	var normalized any
+	if err := json.Unmarshal(encoded, &normalized); err != nil {
+		return nil
 	}
-	return builtIn
+	return normalized
 }
 
 func scrubRuntimeSecretEvidenceValue(value any, config *RedactionConfig) any {
@@ -1092,42 +1102,24 @@ func scrubSensitiveTextWithConfig(value string, config *RedactionConfig) string 
 	// example, at an escaped JSON quote) and prevent the exact matcher from
 	// finding the remaining secret.
 	redacted := scrubRuntimeSecretText(value, config)
-	for _, pattern := range payloadRedactionPatterns {
-		redacted = pattern.re.ReplaceAllString(redacted, pattern.repl)
-	}
-	redacted = scrubStructurallyValidJWTs(redacted)
 	if config != nil {
 		for _, pattern := range config.compiled {
 			redacted = pattern.re.ReplaceAllString(redacted, pattern.repl)
 		}
 	}
 	redacted = scrubRuntimeSecretText(redacted, config)
-	// The shared scrubber performs URL-aware bare-token redaction. Keeping a
-	// second context-free high-entropy pass here caused ordinary URL paths such
-	// as :443/Services/... to be mistaken for credentials before the URL-aware
-	// layer could preserve their structure.
-	return scrub.Value(redacted, scrub.Policy{})
+	// Preserve ordinary evidence verbatim. The label-mode scrubber removes
+	// values in explicitly sensitive fields and URL credentials without applying
+	// generic high-entropy or JWT guesses to unrelated evidence.
+	return scrub.ValueLabel(redacted, scrub.Policy{})
 }
 
-// scrubSensitiveIdentityWithConfig protects stable authored labels without
-// applying the blanket JWT/high-entropy heuristic that can rewrite legitimate
-// transaction and group names. Exact runtime values, structured credential/PII
-// patterns, and explicit custom rules remain mandatory.
+// scrubSensitiveIdentityWithConfig marks an explicit no-redaction boundary for
+// authored transaction and group identities. These names are user-visible
+// aggregation keys and must never be rewritten, including when their text
+// resembles a credential or matches a project redaction rule.
 func scrubSensitiveIdentityWithConfig(value string, config *RedactionConfig) string {
-	if strings.TrimSpace(value) == "" {
-		return value
-	}
-	redacted := scrubRuntimeSecretText(value, config)
-	for _, pattern := range payloadRedactionPatterns {
-		redacted = pattern.re.ReplaceAllString(redacted, pattern.repl)
-	}
-	if config != nil {
-		for _, pattern := range config.compiled {
-			redacted = pattern.re.ReplaceAllString(redacted, pattern.repl)
-		}
-	}
-	redacted = scrubRuntimeSecretText(redacted, config)
-	return scrub.ValueLabel(redacted, scrub.Policy{})
+	return value
 }
 
 func scrubStructurallyValidJWTs(value string) string {

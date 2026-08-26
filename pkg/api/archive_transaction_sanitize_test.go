@@ -322,17 +322,17 @@ func TestSanitizeArchivedTransactionPreservesReportIdentityNames(t *testing.T) {
 			t.Fatalf("%s identity = %q, want authored name preserved", name, value)
 		}
 	}
-	if strings.Contains(item.ErrorMessage, tokenLikeName) || !strings.Contains(item.ErrorMessage, "[REDACTED]") {
-		t.Fatalf("error evidence was not scrubbed: %q", item.ErrorMessage)
+	if item.ErrorMessage != "request failed with token "+tokenLikeName {
+		t.Fatalf("ordinary error evidence was rewritten: %q", item.ErrorMessage)
 	}
-	if strings.Contains(item.TestName, tokenLikeName) || strings.Contains(item.SourceActionName, tokenLikeName) {
-		t.Fatalf("non-transaction metadata was not scrubbed: test=%q source_action=%q", item.TestName, item.SourceActionName)
+	if item.TestName != "test-"+tokenLikeName || item.SourceActionName != "action-"+tokenLikeName {
+		t.Fatalf("ordinary metadata was rewritten: test=%q source_action=%q", item.TestName, item.SourceActionName)
 	}
 
 	ordinary := &TransactionEvent{ActionName: "action-" + tokenLikeName}
 	sanitizeArchivedTransaction(ordinary)
-	if strings.Contains(ordinary.ActionName, tokenLikeName) || !strings.Contains(ordinary.ActionName, scrub.Redacted) {
-		t.Fatalf("ordinary archived action bypassed defense-in-depth scrubbing: %q", ordinary.ActionName)
+	if ordinary.ActionName != "action-"+tokenLikeName {
+		t.Fatalf("ordinary archived action was rewritten: %q", ordinary.ActionName)
 	}
 
 	structured := &TransactionEvent{
@@ -342,12 +342,8 @@ func TestSanitizeArchivedTransactionPreservesReportIdentityNames(t *testing.T) {
 		SourceTransaction:   "source token=abc123",
 	}
 	sanitizeArchivedTransaction(structured)
-	encoded, err := json.Marshal(structured)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.Contains(string(encoded), "abc123") {
-		t.Fatalf("structured credential survived archive identity scrubbing: %s", encoded)
+	if structured.Group != "group token=abc123" || structured.ActionName != "transaction token=abc123" || structured.SourceTransaction != "source token=abc123" {
+		t.Fatalf("structured-looking archive identities were rewritten: %#v", structured)
 	}
 }
 

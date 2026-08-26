@@ -1213,14 +1213,14 @@ func TestReplayScrubbingPreservesDebuggerIdentityNames(t *testing.T) {
 			t.Fatalf("%s identity = %q, want authored name preserved", name, value)
 		}
 	}
-	if strings.Contains(event.Body, identity) || !strings.Contains(event.Body, redactedPayloadValue) {
-		t.Fatalf("event evidence was not scrubbed: %q", event.Body)
+	if event.Body != "response token "+identity {
+		t.Fatalf("ordinary event evidence was rewritten: %q", event.Body)
 	}
-	if strings.Contains(event.SourceActionName, identity) || !strings.Contains(event.SourceActionName, redactedPayloadValue) {
-		t.Fatalf("adapter source action was not scrubbed: %q", event.SourceActionName)
+	if event.SourceActionName != "source-action-"+identity {
+		t.Fatalf("adapter source action was rewritten: %q", event.SourceActionName)
 	}
-	if strings.Contains(event.ParentActionName, identity) || !strings.Contains(event.ParentActionName, redactedPayloadValue) {
-		t.Fatalf("ordinary parent action was not scrubbed: %q", event.ParentActionName)
+	if event.ParentActionName != "parent-"+identity {
+		t.Fatalf("ordinary parent action was rewritten: %q", event.ParentActionName)
 	}
 	if len(event.StepPath) != 1 || event.StepPath[0] != "requests[0]" {
 		t.Fatalf("structural step path was rewritten: %#v", event.StepPath)
@@ -1237,11 +1237,11 @@ func TestReplayScrubbingPreservesDebuggerIdentityNames(t *testing.T) {
 	if debugAction.ActionName != "transaction-"+identity || debugAction.StepPath[0] != "requests[0]" {
 		t.Fatalf("debug identity names were rewritten: %#v", debugAction)
 	}
-	if strings.Contains(debugAction.ParentActionName, identity) || !strings.Contains(debugAction.ParentActionName, redactedPayloadValue) {
-		t.Fatalf("debug parent action was not scrubbed: %q", debugAction.ParentActionName)
+	if debugAction.ParentActionName != "parent-"+identity {
+		t.Fatalf("debug parent action was rewritten: %q", debugAction.ParentActionName)
 	}
-	if strings.Contains(debugAction.Target, identity) || !strings.Contains(debugAction.Target, redactedPayloadValue) {
-		t.Fatalf("debug target evidence was not scrubbed: %q", debugAction.Target)
+	if debugAction.Target != "/customers/"+identity {
+		t.Fatalf("debug target evidence was rewritten: %q", debugAction.Target)
 	}
 
 	transactionParent := &ReplayActionEvent{
@@ -1268,8 +1268,8 @@ func TestReplayScrubbingPreservesDebuggerIdentityNames(t *testing.T) {
 		SourceTransaction: "source-transaction-" + identity,
 	}
 	scrubReplayActionEvent(secretEvent, governed)
-	if strings.Contains(secretEvent.ActionName, identity) || strings.Contains(secretEvent.SourceTransaction, identity) {
-		t.Fatalf("exact runtime secret survived replay identity fields: %#v", secretEvent)
+	if secretEvent.ActionName != "transaction-"+identity || secretEvent.SourceTransaction != "source-transaction-"+identity {
+		t.Fatalf("replay transaction identities were rewritten: %#v", secretEvent)
 	}
 }
 
@@ -1283,8 +1283,8 @@ func TestReplayGroupNameUsesIdentityScrubbing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := scrubReplayGroupName(group, governed); strings.Contains(got, identity) {
-		t.Fatalf("runtime secret survived replay group identity: %q", got)
+	if got := scrubReplayGroupName(group, governed); got != group {
+		t.Fatalf("replay group identity = %q, want %q", got, group)
 	}
 }
 
