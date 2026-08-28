@@ -229,7 +229,7 @@ func managedTestCapacityVUsers(test *ManagedTest) int {
 	if test == nil {
 		return 0
 	}
-	peak := managedGroupPeakVUsers(test.Groups, test.Duration)
+	peak := trafficProfileCapacityVUsers(test.TrafficProfile, test.Groups, test.Duration, test.GoalConfig)
 	if peak > 0 {
 		return peak
 	}

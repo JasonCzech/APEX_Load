@@ -558,6 +558,7 @@ func maskTestGroupsRuntimeSettings(groups []TestGroup) []TestGroup {
 // Provenance is long-lived evidence and may be downloaded by project viewers,
 // so it must never retain runnable credentials.
 func maskRunArchiveProvenance(provenance RunArchiveProvenance) RunArchiveProvenance {
+	provenance.TrafficProfile = cloneTrafficProfile(provenance.TrafficProfile)
 	provenance.RuntimeSettings = maskRuntimeSettings(provenance.RuntimeSettings)
 	provenance.Groups = maskTestGroupsRuntimeSettings(provenance.Groups)
 	return provenance

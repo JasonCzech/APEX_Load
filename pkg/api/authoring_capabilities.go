@@ -14,6 +14,7 @@ type AuthoringCapabilityResponse struct {
 	Sources         []AuthoringSourceCapability  `json:"sources"`
 	SourceMap       map[string]AuthoringFeatures `json:"source_map"`
 	ImportSurfaces  []AuthoringImportSurface     `json:"import_surfaces"`
+	FeaturePolicy   *domainFeaturePolicyResponse `json:"feature_policy,omitempty"`
 }
 
 type AuthoringSourceCapability struct {

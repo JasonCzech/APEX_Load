@@ -327,6 +327,7 @@ func buildRunArchiveProvenance(tr *TestRunner, test *ManagedTest) RunArchiveProv
 	provenance.Assignment = cloneGeneratorAssignmentSettings(snapshot.Assignment)
 	provenance.GeneratorShards = cloneGeneratorShardSummaries(snapshot.GeneratorShards)
 	provenance.GoalConfig = cloneGoalConfig(snapshot.GoalConfig)
+	provenance.TrafficProfile = cloneTrafficProfile(snapshot.TrafficProfile)
 	provenance.RuntimeSettings = maskRuntimeSettings(snapshot.RuntimeSettings)
 	provenance.RuntimeSettingsReview = cloneRuntimeSettingsReview(snapshot.RuntimeSettingsReview)
 	provenance.Groups = maskTestGroupsRuntimeSettings(snapshot.Groups)

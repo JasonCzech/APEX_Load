@@ -6,6 +6,28 @@ import { buildCreateTestPayload, buildGoalConfigPayload, buildScenarioGroupPaylo
 import { buildInitialScenarioDraft, buildScenarioDraftFromTest, scenarioDraftReducer } from './scenarioDraftUtils'
 
 describe('scenarioPayloadUtils', () => {
+  it('round-trips a full-resolution traffic profile without converting it to stages', () => {
+    const trafficProfile = {
+      version: 1,
+      source: { kind: 'file' as const, file: { filename: 'production.xlsx', timestamp_column: 'time', value_columns: ['orders'] } },
+      value_semantics: 'tps' as const,
+      runtime_target: 'tps' as const,
+      interpolation: 'step' as const,
+      source_duration: '24h0m0s',
+      target_duration: '24h0m0s',
+      gap_policy: 'hold' as const,
+      mappings: [{ series_key: 'orders', series_name: 'Orders', group_name: 'checkout', peak_target: 20, points: [{ offset_ms: 0, target: 10 }, { offset_ms: 15000, target: 20 }] }],
+      refreshed_at: '2026-08-27T12:00:00Z',
+    }
+    const payload = buildScenarioUpsertPayload({
+      name: 'Production replay', duration: '24h', startDelay: '', scenarioMode: 'goal_oriented', scriptShakeout: false, resourceBaseline: false,
+      groups: [{ name: 'checkout', scriptId: 'script-1', vusers: 10, rampUp: '', rampDown: '', stages: [], initialization: 'at_runtime' }],
+      goalConfig: { min_vusers: 1, max_vusers: 100 }, runtimeSettings: { log_level: '', auto_transactions: '' }, trafficProfile,
+    })
+    expect(payload.traffic_profile).toEqual(trafficProfile)
+    expect(payload.groups[0].stages).toBeUndefined()
+  })
+
   it('keeps a single unnamed group in the canonical groups payload', () => {
     const payload = buildCreateTestPayload({
       name: '',

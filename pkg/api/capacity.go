@@ -296,7 +296,7 @@ func approvedExecutionPlanPeakForTest(test *ManagedTest) int {
 	if test == nil {
 		return 0
 	}
-	peak := managedGroupPeakVUsers(test.Groups, test.Duration)
+	peak := trafficProfileCapacityVUsers(test.TrafficProfile, test.Groups, test.Duration, test.GoalConfig)
 	if peak <= 0 {
 		peak = test.TotalVUsers
 	}
@@ -914,7 +914,7 @@ func (tr *TestRunner) refreshCapacityAdvisoryLocked(test *ManagedTest) {
 		return
 	}
 	groups := tr.hydrateCapacityGroupsLocked(test.Groups)
-	capacityVUsers := managedGroupPeakVUsers(groups, test.Duration)
+	capacityVUsers := trafficProfileCapacityVUsers(test.TrafficProfile, groups, test.Duration, test.GoalConfig)
 	if capacityVUsers <= 0 {
 		capacityVUsers = test.TotalVUsers
 	}

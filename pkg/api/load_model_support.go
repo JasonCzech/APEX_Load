@@ -1,7 +1,9 @@
 package api
 
 import (
+	"errors"
 	"net/http"
+	"strings"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/storage"
@@ -46,8 +48,34 @@ type LoadModelTemplateGroup struct {
 	StartDelay string              `json:"start_delay,omitempty"`
 }
 
+// productionReplayShapeID is the workload shape backed by the traffic-profile
+// contract. Its catalog feature gates the analyze/derive endpoints as well as
+// scenario persistence, so the whole workflow is governed, not just the save.
+const productionReplayShapeID = "production-replay"
+
+func workloadShapeFeatureID(shapeID string) string {
+	return "workload_shape." + strings.TrimSpace(shapeID)
+}
+
 func (s *Server) handleLoadModelSupportMatrix(w http.ResponseWriter, r *http.Request) {
 	matrix := loadModelSupportMatrix()
+	projectID := strings.TrimSpace(r.URL.Query().Get("project_id"))
+	if projectID != "" {
+		// Resolve the policy once. Asking per entry re-read the project row, the
+		// policy row, and rebuilt the whole feature catalog for every shape.
+		policy, err := s.domainFeaturePolicyForProject(projectID)
+		if err != nil {
+			writeError(w, http.StatusServiceUnavailable, "domain feature policy is unavailable")
+			return
+		}
+		filtered := make([]LoadModelSupportEntry, 0, len(matrix))
+		for _, entry := range matrix {
+			if policy.featureEnabled(workloadShapeFeatureID(entry.ID)) {
+				filtered = append(filtered, entry)
+			}
+		}
+		matrix = filtered
+	}
 	counts := map[string]int{}
 	for _, entry := range matrix {
 		counts[entry.Status]++
@@ -65,15 +93,65 @@ func (s *Server) handleLoadModelSupportMatrix(w http.ResponseWriter, r *http.Req
 
 func (s *Server) handleLoadModelTemplates(w http.ResponseWriter, r *http.Request) {
 	shapeID := r.URL.Query().Get("shape_id")
+	projectID := strings.TrimSpace(r.URL.Query().Get("project_id"))
 	templates := loadModelTemplates()
+	var policy *domainFeaturePolicyResponse
+	if projectID != "" {
+		resolved, err := s.domainFeaturePolicyForProject(projectID)
+		if err != nil {
+			writeError(w, http.StatusServiceUnavailable, "domain feature policy is unavailable")
+			return
+		}
+		policy = resolved
+	}
 	filtered := make([]LoadModelTemplate, 0, len(templates))
 	for _, template := range templates {
 		if shapeID != "" && template.ShapeID != shapeID {
 			continue
 		}
+		if projectID != "" && !policy.featureEnabled(workloadShapeFeatureID(template.ShapeID)) {
+			continue
+		}
 		filtered = append(filtered, template)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"templates": filtered, "count": len(filtered)})
+}
+
+func knownWorkloadShape(shapeID string) bool {
+	shapeID = strings.TrimSpace(shapeID)
+	for _, entry := range loadModelSupportMatrix() {
+		if entry.ID == shapeID {
+			return true
+		}
+	}
+	return false
+}
+
+var errUnknownWorkloadShape = errors.New("unknown workload shape")
+
+func (s *Server) validateScenarioWorkloadShape(req CreateScenarioRequest, projectID, grandfatheredShapeID string) (string, string, error) {
+	if req.WorkloadShapeID == nil {
+		return "", "", nil
+	}
+	shapeID := strings.TrimSpace(*req.WorkloadShapeID)
+	if shapeID == "" {
+		return "", "", nil
+	}
+	if !knownWorkloadShape(shapeID) {
+		return "", "", errUnknownWorkloadShape
+	}
+	if shapeID == strings.TrimSpace(grandfatheredShapeID) {
+		return "", "", nil
+	}
+	featureID := workloadShapeFeatureID(shapeID)
+	policy, err := s.domainFeaturePolicyForProject(projectID)
+	if err != nil {
+		return "", "", err
+	}
+	if !policy.featureEnabled(featureID) {
+		return policy.DomainID, featureID, nil
+	}
+	return "", "", nil
 }
 
 func loadModelSupportMatrix() []LoadModelSupportEntry {
@@ -104,6 +182,15 @@ func loadModelSupportMatrix() []LoadModelSupportEntry {
 			APEXLoadShape: "First-class staged segments with ramp-up, hold, ramp-down, target VUsers, and target TPS.",
 			Fields:        []string{"groups[].stages[].type", "groups[].stages[].duration", "groups[].stages[].target_vusers", "groups[].stages[].target_tps"},
 			Notes:         "Stage lists round-trip through API/storage, derive compatible runtime ramps, and appear in archive load-model goal evidence.",
+		},
+		{
+			ID:            "production-replay",
+			Name:          "Production Traffic Profile",
+			Category:      "traffic-profile",
+			Status:        "executed",
+			APEXLoadShape: "Full-resolution step profiles derived from CSV, XLSX, Prometheus, or OpenSearch time series.",
+			Fields:        []string{"traffic_profile", "traffic_profile.mappings[].points", "scenario_mode", "goal_config.min_vusers", "goal_config.max_vusers"},
+			Notes:         "VUser targets are applied directly; TPS targets use closed-loop adaptive control and may lag short or abrupt production changes.",
 		},
 		{
 			ID:            "spike-rendezvous",

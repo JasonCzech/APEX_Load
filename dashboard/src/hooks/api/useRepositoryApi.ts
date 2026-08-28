@@ -2,6 +2,7 @@ import { useCallback, useMemo } from 'react'
 
 import { ApplicationRepository, Domain, RepositoryCategory, Release } from '../../types'
 import { request } from '../apiClient'
+import type { DomainFeaturePolicy } from '../../types/domainFeatures'
 import { withCallOptions, type ApiCallOptions } from './requestOptions'
 
 type DeleteEntityResponse = {
@@ -36,6 +37,20 @@ export function useRepositoryApi() {
   )
 
   const deleteDomain = useCallback((id: string, options?: ApiCallOptions) => request<DeleteEntityResponse>(`/domains/${id}`, withCallOptions({ method: 'DELETE' }, options)), [])
+
+  const getDomainFeatures = useCallback(
+    (id: string, options?: ApiCallOptions) => request<DomainFeaturePolicy>(`/domains/${id}/features`, withCallOptions(undefined, options)),
+    [],
+  )
+
+  const updateDomainFeatures = useCallback(
+    (id: string, disabledFeatureIds: string[], revision: string, options?: ApiCallOptions) => request<DomainFeaturePolicy>(`/domains/${id}/features`, withCallOptions({
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', 'If-Match': `"${revision}"` },
+      body: JSON.stringify({ disabled_feature_ids: disabledFeatureIds }),
+    }, options)),
+    [],
+  )
 
   const getApplicationRepository = useCallback(
     (domainId: string, options?: ApiCallOptions) => request<ApplicationRepository>(`/domains/${domainId}/application-repository`, withCallOptions(undefined, options)),
@@ -89,6 +104,8 @@ export function useRepositoryApi() {
       createDomain,
       updateDomain,
       deleteDomain,
+      getDomainFeatures,
+      updateDomainFeatures,
       getApplicationRepository,
       updateApplicationRepository,
       listRepositoryCategories,
@@ -105,6 +122,8 @@ export function useRepositoryApi() {
       createDomain,
       updateDomain,
       deleteDomain,
+      getDomainFeatures,
+      updateDomainFeatures,
       getApplicationRepository,
       updateApplicationRepository,
       listRepositoryCategories,

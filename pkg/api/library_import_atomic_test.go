@@ -25,6 +25,22 @@ type libraryAtomicForwardingStore struct {
 	storage.Store
 }
 
+func (s *libraryAtomicForwardingStore) GetDomainFeaturePolicy(domainID string) (*storage.DomainFeaturePolicy, error) {
+	policyStore, ok := s.Store.(storage.DomainFeaturePolicyStore)
+	if !ok {
+		return nil, errors.New("domain feature policy storage is not configured")
+	}
+	return policyStore.GetDomainFeaturePolicy(domainID)
+}
+
+func (s *libraryAtomicForwardingStore) UpdateDomainFeaturePolicyIfRevision(domainID string, disabledFeatureIDs []string, expectedRevision string) (*storage.DomainFeaturePolicy, bool, error) {
+	policyStore, ok := s.Store.(storage.DomainFeaturePolicyStore)
+	if !ok {
+		return nil, false, errors.New("domain feature policy storage is not configured")
+	}
+	return policyStore.UpdateDomainFeaturePolicyIfRevision(domainID, disabledFeatureIDs, expectedRevision)
+}
+
 func newLibraryAtomicTestServerAfterStartupRecovery(t *testing.T, store storage.Store) *Server {
 	t.Helper()
 	now := time.Now().UTC()

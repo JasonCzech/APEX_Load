@@ -1133,6 +1133,25 @@ func (s *Server) importLibraryScenario(item LibraryBundleItem, projectID string,
 			return "", "", &LibraryConflict{Kind: "scenario", SourceInstanceID: item.SourceInstanceID, SourceItemID: item.SourceItemID, Reason: "referenced script content does not match dependency hash: " + sourceScriptID}
 		}
 	}
+	grandfatheredShapeID := ""
+	if prior != nil {
+		grandfatheredShapeID = prior.WorkloadShapeID
+	}
+	domainID, featureID, shapeErr := s.validateScenarioWorkloadShape(req, projectID, grandfatheredShapeID)
+	if shapeErr != nil {
+		reason := "failed to validate workload shape: " + shapeErr.Error()
+		if errors.Is(shapeErr, errUnknownWorkloadShape) {
+			reason = "workload_shape_id is not recognized"
+		}
+		return "", "", &LibraryConflict{Kind: "scenario", SourceInstanceID: item.SourceInstanceID, SourceItemID: item.SourceItemID, LocalItemID: localID, Reason: reason}
+	}
+	if featureID != "" {
+		return "", "", &LibraryConflict{
+			Kind: "scenario", SourceInstanceID: item.SourceInstanceID, SourceItemID: item.SourceItemID,
+			LocalItemID: localID, Reason: "the selected workload shape is disabled by the destination domain administrator",
+			Code: "domain_feature_disabled", FeatureID: featureID, DomainID: domainID,
+		}
+	}
 	if localID == "" {
 		importID, err := deterministicLibraryImportID(remoteID, projectID, item)
 		if err != nil {
@@ -1699,8 +1718,12 @@ func createScenarioRequestFromStored(scenario *StoredScenario) CreateScenarioReq
 		ResourceBaseline: scenario.ResourceBaseline,
 		Assignment:       scenario.Assignment,
 		GoalConfig:       scenario.GoalConfig,
+		TrafficProfile:   cloneTrafficProfile(scenario.TrafficProfile),
 		RuntimeSettings:  scenario.RuntimeSettings,
 		DataPools:        scenario.DataPools,
+	}
+	if shapeID := strings.TrimSpace(scenario.WorkloadShapeID); shapeID != "" {
+		req.WorkloadShapeID = &shapeID
 	}
 	for _, script := range scenario.Scripts {
 		req.Groups = append(req.Groups, CreateGroupEntry{

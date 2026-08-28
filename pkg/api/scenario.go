@@ -306,6 +306,9 @@ func (tr *TestRunner) storeScenarioLockedWithWriter(id string, req CreateScenari
 	if err != nil {
 		return nil, err
 	}
+	if err := validateTrafficProfile(req.TrafficProfile, groups, req.Duration, req.ScenarioMode, req.GoalConfig); err != nil {
+		return nil, err
+	}
 	for index := range groups {
 		groups[index].runtimeSecretScope = id
 	}
@@ -324,6 +327,9 @@ func (tr *TestRunner) storeScenarioLockedWithWriter(id string, req CreateScenari
 	)
 	tr.mu.Lock()
 	if err != nil {
+		return nil, err
+	}
+	if err := validateTrafficProfileCompiledGroups(req.TrafficProfile, testGroups); err != nil {
 		return nil, err
 	}
 	scenarioDuration, err := time.ParseDuration(req.Duration)
@@ -350,6 +356,12 @@ func (tr *TestRunner) storeScenarioLockedWithWriter(id string, req CreateScenari
 	if existing != nil {
 		refKey = existing.RefKey
 	}
+	workloadShapeID := ""
+	if req.WorkloadShapeID != nil {
+		workloadShapeID = strings.TrimSpace(*req.WorkloadShapeID)
+	} else if existing != nil {
+		workloadShapeID = existing.WorkloadShapeID
+	}
 	if refKey == "" {
 		tr.mu.Unlock()
 		sequence, err := tr.nextScenarioSeqOutsideRunnerLock()
@@ -363,6 +375,7 @@ func (tr *TestRunner) storeScenarioLockedWithWriter(id string, req CreateScenari
 		ID:               id,
 		RefKey:           refKey,
 		Name:             req.Name,
+		WorkloadShapeID:  workloadShapeID,
 		Duration:         req.Duration,
 		StartDelay:       req.StartDelay,
 		ScenarioMode:     normalizeScenarioMode(req.ScenarioMode),
@@ -370,6 +383,7 @@ func (tr *TestRunner) storeScenarioLockedWithWriter(id string, req CreateScenari
 		ResourceBaseline: req.ResourceBaseline,
 		Assignment:       generatorAssignmentForStorage(req.Assignment),
 		GoalConfig:       goalConfigForStorage(req.GoalConfig),
+		TrafficProfile:   trafficProfileForStorage(req.TrafficProfile),
 		RuntimeSettings:  runtimeSettingsForStorage(req.RuntimeSettings),
 		CreatedAt:        createdAt,
 		UpdatedAt:        now,
@@ -498,6 +512,7 @@ func scenarioRuntimeCommitFingerprint(scenario *storage.Scenario, scripts []stor
 		ID               string
 		RefKey           string
 		Name             string
+		WorkloadShapeID  string
 		Duration         string
 		StartDelay       string
 		ScenarioMode     string
@@ -505,12 +520,14 @@ func scenarioRuntimeCommitFingerprint(scenario *storage.Scenario, scripts []stor
 		ResourceBaseline bool
 		Assignment       any
 		GoalConfig       any
+		TrafficProfile   any
 		RuntimeSettings  any
 		Scripts          []storage.ScenarioScript
 	}{
 		ID:               scenario.ID,
 		RefKey:           scenario.RefKey,
 		Name:             scenario.Name,
+		WorkloadShapeID:  scenario.WorkloadShapeID,
 		Duration:         scenario.Duration,
 		StartDelay:       scenario.StartDelay,
 		ScenarioMode:     scenario.ScenarioMode,
@@ -518,6 +535,7 @@ func scenarioRuntimeCommitFingerprint(scenario *storage.Scenario, scripts []stor
 		ResourceBaseline: scenario.ResourceBaseline,
 		Assignment:       scenario.Assignment,
 		GoalConfig:       scenario.GoalConfig,
+		TrafficProfile:   scenario.TrafficProfile,
 		RuntimeSettings:  scenario.RuntimeSettings,
 		Scripts:          scripts,
 	})
@@ -1397,6 +1415,7 @@ func cloneStoredScenarioForReadLocked(scenario *StoredScenario) *StoredScenario 
 	cloned := *scenario
 	cloned.Assignment = cloneGeneratorAssignmentSettings(scenario.Assignment)
 	cloned.GoalConfig = cloneGoalConfig(scenario.GoalConfig)
+	cloned.TrafficProfile = cloneTrafficProfile(scenario.TrafficProfile)
 	cloned.RuntimeSettings = cloneRuntimeSettings(scenario.RuntimeSettings)
 	cloned.Scripts = cloneScenarioScriptRefs(scenario.Scripts)
 	cloned.Schedules = make([]*storage.ScenarioSchedule, len(scenario.Schedules))

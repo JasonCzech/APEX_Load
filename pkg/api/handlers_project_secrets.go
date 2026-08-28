@@ -62,12 +62,13 @@ type cloneScriptDraftRequest struct {
 }
 
 type sourceSecretSession struct {
-	ID        string
-	ProjectID string
-	Actor     string
-	Values    map[string]string
-	ExpiresAt time.Time
-	Timer     *time.Timer
+	ID         string
+	ProjectID  string
+	Actor      string
+	Values     map[string]string
+	ExpiresAt  time.Time
+	FeatureIDs []string
+	Timer      *time.Timer
 }
 
 type sourceSecretMigrationSelection struct {
@@ -535,7 +536,7 @@ func (s *Server) handleCloneScriptDraft(w http.ResponseWriter, r *http.Request) 
 		}
 		sort.Strings(sourceAvailable)
 		var err error
-		sessionID, err = s.registerSourceSecretSession(r, stored.ProjectID, values)
+		sessionID, err = s.registerSourceSecretSession(r, stored.ProjectID, values, "script_builder.existing_scripts")
 		if err != nil {
 			writeError(w, http.StatusBadRequest, err.Error())
 			return
@@ -578,7 +579,7 @@ func (s *Server) handleCloneScriptDraft(w http.ResponseWriter, r *http.Request) 
 // in-memory fallback is retained for single-controller/test configurations;
 // HA fails closed rather than creating a replica-local migration handle.
 // Policy or caller authority denial intentionally returns an empty ID.
-func (s *Server) registerSourceSecretSession(r *http.Request, projectID string, values map[string]string) (string, error) {
+func (s *Server) registerSourceSecretSession(r *http.Request, projectID string, values map[string]string, featureIDs ...string) (string, error) {
 	projectID = normalizeProjectID(projectID)
 	if len(values) == 0 || !secretstore.SupportsCreate(s.projectSecretStore) || !s.sourceSecretMigrationAuthorized(r, projectID) {
 		return "", nil
@@ -621,14 +622,30 @@ func (s *Server) registerSourceSecretSession(r *http.Request, projectID string, 
 		Values:    copied,
 		ExpiresAt: now.Add(lifetime),
 	}
+	if len(featureIDs) > 0 {
+		seenFeatures := make(map[string]struct{}, len(featureIDs))
+		for _, featureID := range featureIDs {
+			featureID = strings.TrimSpace(featureID)
+			if featureID == "" {
+				continue
+			}
+			if _, duplicate := seenFeatures[featureID]; duplicate {
+				continue
+			}
+			seenFeatures[featureID] = struct{}{}
+			session.FeatureIDs = append(session.FeatureIDs, featureID)
+		}
+		sort.Strings(session.FeatureIDs)
+	}
 	if s.protectedSourceSessions != nil && s.protectedSourceSessions.Available() {
 		defer clearSourceSecretSession(session)
 		if err := s.protectedSourceSessions.Create(r.Context(), secretstore.ProtectedSourceSession{
-			ID:        session.ID,
-			ProjectID: session.ProjectID,
-			Actor:     session.Actor,
-			Values:    session.Values,
-			ExpiresAt: session.ExpiresAt,
+			ID:         session.ID,
+			ProjectID:  session.ProjectID,
+			Actor:      session.Actor,
+			Values:     session.Values,
+			ExpiresAt:  session.ExpiresAt,
+			FeatureIDs: session.FeatureIDs,
 		}); err != nil {
 			return "", err
 		}
@@ -681,11 +698,20 @@ func (s *Server) handleMigrateSourceSecrets(w http.ResponseWriter, r *http.Reque
 		writeError(w, http.StatusBadRequest, fmt.Sprintf("secrets must contain 1-%d selections", projectSecretMaxBatchItems))
 		return
 	}
-	session, err := s.consumeSourceSecretSession(r, projectID, req.SourceSecretSessionID)
+	session, err := s.consumeSourceSecretSessionIf(r, projectID, req.SourceSecretSessionID, func(featureIDs []string) error {
+		return s.validateDomainFeaturesForProject(projectID, featureIDs)
+	})
 	if err != nil {
+		var disabled *domainFeatureDisabledError
+		if errors.As(err, &disabled) {
+			writeDomainFeatureDisabled(w, disabled.domainID, disabled.featureID)
+			return
+		}
 		status := http.StatusConflict
 		if errors.Is(err, sql.ErrNoRows) {
 			status = http.StatusNotFound
+		} else if errors.Is(err, errDomainFeaturePolicyUnavailable) {
+			status = http.StatusServiceUnavailable
 		}
 		writeError(w, status, err.Error())
 		return
@@ -948,22 +974,27 @@ func writeProjectSecretAuditUnavailable(w http.ResponseWriter) {
 }
 
 func (s *Server) consumeSourceSecretSession(r *http.Request, projectID, sessionID string) (*sourceSecretSession, error) {
+	return s.consumeSourceSecretSessionIf(r, projectID, sessionID, nil)
+}
+
+func (s *Server) consumeSourceSecretSessionIf(r *http.Request, projectID, sessionID string, validate func([]string) error) (*sourceSecretSession, error) {
 	sessionID = strings.TrimSpace(sessionID)
 	if sessionID == "" {
 		return nil, errors.New("source_secret_session_id is required")
 	}
 	_, actor, _ := s.resolveAuditActor(r)
 	if s.protectedSourceSessions != nil && s.protectedSourceSessions.Available() {
-		protected, err := s.protectedSourceSessions.Consume(r.Context(), sessionID, projectID, actor)
+		protected, err := s.protectedSourceSessions.ConsumeIf(r.Context(), sessionID, projectID, actor, validate)
 		if err != nil {
 			return nil, err
 		}
 		session := &sourceSecretSession{
-			ID:        protected.ID,
-			ProjectID: protected.ProjectID,
-			Actor:     protected.Actor,
-			Values:    protected.Values,
-			ExpiresAt: protected.ExpiresAt,
+			ID:         protected.ID,
+			ProjectID:  protected.ProjectID,
+			Actor:      protected.Actor,
+			Values:     protected.Values,
+			ExpiresAt:  protected.ExpiresAt,
+			FeatureIDs: protected.FeatureIDs,
 		}
 		if err := validateRecoverableSourceSecretSession(session); err != nil {
 			clearSourceSecretSession(session)
@@ -989,14 +1020,20 @@ func (s *Server) consumeSourceSecretSession(r *http.Request, projectID, sessionI
 	if session.ProjectID != projectID || session.Actor != actor {
 		return nil, sql.ErrNoRows
 	}
+	if err := validateRecoverableSourceSecretSession(session); err != nil {
+		delete(s.sourceSecretSessions, sessionID)
+		clearSourceSecretSession(session)
+		return nil, err
+	}
+	if validate != nil {
+		if err := validate(append([]string(nil), session.FeatureIDs...)); err != nil {
+			return nil, err
+		}
+	}
 	delete(s.sourceSecretSessions, sessionID)
 	if session.Timer != nil {
 		session.Timer.Stop()
 		session.Timer = nil
-	}
-	if err := validateRecoverableSourceSecretSession(session); err != nil {
-		clearSourceSecretSession(session)
-		return nil, err
 	}
 	return session, nil
 }

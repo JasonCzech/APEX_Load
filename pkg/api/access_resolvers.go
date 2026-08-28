@@ -626,10 +626,24 @@ func resolveScenarioCreateProjectID(r *http.Request, store storage.Store) (strin
 		return "", http.StatusBadRequest, "invalid request body: " + err.Error()
 	}
 	scripts := make([]storage.ScenarioScript, 0, len(req.Groups))
+	hasScript := false
 	for index, group := range req.Groups {
 		scripts = append(scripts, storage.ScenarioScript{Order: index, ScriptID: group.ScriptID})
+		hasScript = hasScript || strings.TrimSpace(group.ScriptID) != ""
 	}
-	return resolveProjectIDFromScenarioScripts(scripts, store)
+	resolved, status, message := resolveProjectIDFromScenarioScripts(scripts, store)
+	requested := strings.TrimSpace(req.ProjectID)
+	if requested == "" {
+		return resolved, status, message
+	}
+	requested = normalizeProjectID(requested)
+	if status != 0 {
+		return "", status, message
+	}
+	if hasScript && resolved != requested {
+		return "", http.StatusBadRequest, "scenario scripts do not belong to project_id"
+	}
+	return requested, 0, ""
 }
 
 func resolveProjectIDFromScenarioScripts(scripts []storage.ScenarioScript, store storage.Store) (string, int, string) {

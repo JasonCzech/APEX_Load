@@ -3055,14 +3055,22 @@ func (tr *TestRunner) ScaleVUsersWithOptions(id string, groupName string, target
 }
 
 func (tr *TestRunner) UpdateGoalTargetTPS(id string, groupName string, targetTPS float64) (*GoalTargetUpdate, error) {
+	return tr.updateGoalTargetTPS(id, groupName, targetTPS, false)
+}
+
+func (tr *TestRunner) updateGoalTargetTPS(id string, groupName string, targetTPS float64, profileOwned bool) (*GoalTargetUpdate, error) {
 	if !tr.isExecutionLeader() {
 		return nil, errNotExecutionLeader
 	}
 	if strings.TrimSpace(groupName) == "" {
 		return nil, fmt.Errorf("group name is required")
 	}
-	if targetTPS <= 0 || math.IsNaN(targetTPS) || math.IsInf(targetTPS, 0) {
-		return nil, fmt.Errorf("target_tps must be greater than zero")
+	if targetTPS < 0 || (!profileOwned && targetTPS == 0) || math.IsNaN(targetTPS) || math.IsInf(targetTPS, 0) {
+		bound := "greater than zero"
+		if profileOwned {
+			bound = "zero or greater"
+		}
+		return nil, fmt.Errorf("target_tps must be %s", bound)
 	}
 
 	now := time.Now().UTC()
@@ -3111,7 +3119,7 @@ func (tr *TestRunner) UpdateGoalTargetTPS(id string, groupName string, targetTPS
 		UpdatedAt: now,
 	}
 	totalTargetTPS := sumGoalTargetTPS(targets)
-	if totalTargetTPS <= 0 {
+	if totalTargetTPS <= 0 && !profileOwned {
 		tr.mu.Unlock()
 		return nil, fmt.Errorf("target_average_tps must be greater than zero")
 	}
@@ -3149,8 +3157,13 @@ func (tr *TestRunner) UpdateGoalTargetTPS(id string, groupName string, targetTPS
 	}
 	tr.mu.Unlock()
 
+	eventType, targetKind := "goal_target_changed", "manual"
+	if profileOwned {
+		eventType, targetKind = "traffic_profile_target_changed", "tps"
+	}
 	tr.hub.BroadcastJSON(map[string]any{
-		"type":               "goal_target_changed",
+		"type":               eventType,
+		"target_kind":        targetKind,
 		"test_id":            id,
 		"project_id":         projectID,
 		"test_name":          testName,
@@ -5206,7 +5219,7 @@ func applyGoalControllerUpdateWithScaler(tr *TestRunner, test *ManagedTest, live
 	targetStatuses := currentGoalTargetStatuses(test, live.Timestamp)
 	tr.mu.RUnlock()
 
-	targets := distributeTargetVUsersForGoal(groups, groupVUsers, update.TargetTotal, targetStatuses)
+	targets := distributeTrafficProfileTargetVUsers(groups, groupVUsers, update.TargetTotal, targetStatuses, test.TrafficProfile)
 	scaledAny := false
 	appliedTargets := make(map[string]int)
 	scaleFailureReason := ""
@@ -5376,6 +5389,7 @@ func (tr *TestRunner) startManagedTestRun(test *ManagedTest, mge *engine.MultiGr
 	tr.cacheRunSnapshot(snapshot)
 	tr.broadcastEvent("test_started", eventSnapshot)
 	tr.startStageSchedules(ctx, test, mge)
+	tr.startTrafficProfileSchedules(ctx, test, mge)
 	tr.scheduleRuntimeGroupDeadlines(eventSnapshot)
 
 	metricsDone := make(chan struct{})

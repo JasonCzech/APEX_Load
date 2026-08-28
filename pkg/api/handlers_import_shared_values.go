@@ -98,6 +98,25 @@ func (s *Server) handleApplyImportSharedValues(w http.ResponseWriter, r *http.Re
 		claims[index] = claim
 	}
 
+	checkedFeatures := map[string]struct{}{}
+	for index, script := range scripts {
+		policyScript := script
+		profile := genericImportDraftProfile(script, "")
+		if claims[index] != nil {
+			policyScript = claims[index].Script
+			profile = normalizeGenericImportSourceProfile(claims[index].Profile)
+		}
+		featureID := featureIDForImportProfile(profile)
+		key := policyScript.ProjectID + "\x00" + featureID
+		if _, checked := checkedFeatures[key]; checked {
+			continue
+		}
+		if !s.requireDomainFeatureForProject(w, policyScript.ProjectID, featureID) {
+			return
+		}
+		checkedFeatures[key] = struct{}{}
+	}
+
 	// Project before deriving instructions. A caller cannot smuggle an inline
 	// credential into a replacement, and when the exact draft was authenticated
 	// above the mutation lands on that draft so unrelated imported credentials

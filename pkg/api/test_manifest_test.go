@@ -32,16 +32,17 @@ func TestGetTestManifestBuildsLiveConfigurationAndRuntimeChanges(t *testing.T) {
 		RampDown:   "30s",
 	}}
 	if err := store.SaveTest(&storage.TestRecord{
-		ID:          "test-live-manifest",
-		RefKey:      "RUN-20260607-001",
-		Name:        "Checkout Run",
-		Status:      "RUNNING",
-		ProjectID:   "project-1",
-		TotalVUsers: 10,
-		Duration:    int64(5 * time.Minute),
-		StartTime:   createdAt,
-		Groups:      initialGroups,
-		Assignment:  &GeneratorAssignmentSettings{Mode: "specific_hosts", SelectedTargets: []string{"generator-a"}},
+		ID:             "test-live-manifest",
+		RefKey:         "RUN-20260607-001",
+		Name:           "Checkout Run",
+		Status:         "RUNNING",
+		ProjectID:      "project-1",
+		TotalVUsers:    10,
+		Duration:       int64(5 * time.Minute),
+		StartTime:      createdAt,
+		Groups:         initialGroups,
+		Assignment:     &GeneratorAssignmentSettings{Mode: "specific_hosts", SelectedTargets: []string{"generator-a"}},
+		TrafficProfile: trafficProfileForStorage(testTrafficProfile("tps")),
 	}); err != nil {
 		t.Fatalf("SaveTest returned error: %v", err)
 	}
@@ -92,6 +93,9 @@ func TestGetTestManifestBuildsLiveConfigurationAndRuntimeChanges(t *testing.T) {
 	}
 	if manifest.InitialConfiguration.TotalVUsers != 10 {
 		t.Fatalf("initial total vusers = %d, want 10", manifest.InitialConfiguration.TotalVUsers)
+	}
+	if manifest.InitialConfiguration.TrafficProfile == nil || manifest.CurrentConfiguration.TrafficProfile == nil {
+		t.Fatalf("traffic profile missing from manifest configurations: %#v", manifest)
 	}
 	if manifest.InitialConfigurationProvenance.Source != testRunManifestInitialConfigurationStoredTestRecord || manifest.InitialConfigurationProvenance.Immutable {
 		t.Fatalf("initial configuration provenance = %#v, want mutable stored test record", manifest.InitialConfigurationProvenance)

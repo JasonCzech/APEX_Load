@@ -1768,6 +1768,34 @@ describe('ScriptsPage', () => {
     expect(container.textContent).toContain('script-id:imported-script-1')
   })
 
+  it('exits an active importer when domain feature policy cannot be verified', async () => {
+    await act(async () => {
+      root.render(<ScriptsPage initialMode="create-options" />)
+    })
+    await flushPromises()
+    await clickButton('Import From Source')
+    await flushPromises()
+
+    apiMock.listAuthoringCapabilities.mockRejectedValue(new Error('policy unavailable'))
+    await clickButton('Import Loadrunner Script Archive')
+    await flushPromises()
+
+    expect(container.querySelector('[data-testid="enterprise-archive-import"]')).toBeNull()
+    expect(container.textContent).toContain('Unable to verify domain feature access')
+  })
+
+  it('keeps policy retry visible when initial authoring capabilities fail', async () => {
+    apiMock.listAuthoringCapabilities.mockRejectedValue(new Error('policy unavailable'))
+    await act(async () => {
+      root.render(<ScriptsPage initialMode="create-options" />)
+    })
+    await flushPromises()
+
+    expect(container.textContent).toContain('policy unavailable')
+    expect(Array.from(container.querySelectorAll('button')).some(button => button.textContent === 'Retry')).toBe(true)
+    expect(container.querySelectorAll('.script-workflow-card')).toHaveLength(0)
+  })
+
   it('refreshes the library without leaving an enterprise archive that still has unsaved lanes', async () => {
     await act(async () => {
       root.render(<ScriptsPage initialMode="create-options" />)

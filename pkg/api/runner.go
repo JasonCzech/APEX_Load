@@ -462,6 +462,7 @@ type ManagedTest struct {
 	StartDelay            string                                   `json:"start_delay,omitempty"`
 	GoalConfig            *GoalConfig                              `json:"goal_config,omitempty"`
 	GoalTargets           map[string]GoalTargetStatus              `json:"goal_targets,omitempty"`
+	TrafficProfile        *TrafficProfile                          `json:"traffic_profile,omitempty"`
 	RuntimeSettings       *RuntimeSettingsOverride                 `json:"runtime_settings,omitempty"`
 	TotalVUsers           int                                      `json:"total_vusers"`
 	GeneratorShards       []GeneratorShardSummary                  `json:"generator_shards,omitempty"`
@@ -1192,6 +1193,7 @@ type StoredScenario struct {
 	ID                 string                            `json:"id"`
 	RefKey             string                            `json:"ref_key,omitempty"`
 	Name               string                            `json:"name"`
+	WorkloadShapeID    string                            `json:"workload_shape_id,omitempty"`
 	ProjectID          string                            `json:"project_id,omitempty"`
 	Duration           string                            `json:"duration"`
 	StartDelay         string                            `json:"start_delay,omitempty"`
@@ -1200,6 +1202,7 @@ type StoredScenario struct {
 	ResourceBaseline   bool                              `json:"resource_baseline,omitempty"`
 	Assignment         *GeneratorAssignmentSettings      `json:"assignment,omitempty"`
 	GoalConfig         *GoalConfig                       `json:"goal_config,omitempty"`
+	TrafficProfile     *TrafficProfile                   `json:"traffic_profile,omitempty"`
 	RuntimeSettings    *RuntimeSettingsOverride          `json:"runtime_settings,omitempty"`
 	Scripts            []ScenarioScriptRef               `json:"scripts"`
 	Schedules          []*storage.ScenarioSchedule       `json:"schedules,omitempty"`
@@ -1692,6 +1695,7 @@ type CreateTestRequest struct {
 	ResourceBaseline bool                              `json:"resource_baseline,omitempty"`
 	Assignment       *GeneratorAssignmentSettings      `json:"assignment,omitempty"`
 	GoalConfig       *GoalConfig                       `json:"goal_config,omitempty"`
+	TrafficProfile   *TrafficProfile                   `json:"traffic_profile,omitempty"`
 	Groups           []CreateGroupEntry                `json:"groups,omitempty"`
 	DataPools        []storage.ScenarioDataPoolBinding `json:"data_pools,omitempty"`
 	// Single-script shorthand (backwards compatible)
@@ -1715,6 +1719,8 @@ type CreateTestRequest struct {
 
 type CreateScenarioRequest struct {
 	Name             string                            `json:"name"`
+	ProjectID        string                            `json:"project_id,omitempty"`
+	WorkloadShapeID  *string                           `json:"workload_shape_id,omitempty"`
 	Duration         string                            `json:"duration"`
 	StartDelay       string                            `json:"start_delay,omitempty"`
 	ScenarioMode     string                            `json:"scenario_mode,omitempty"`
@@ -1722,6 +1728,7 @@ type CreateScenarioRequest struct {
 	ResourceBaseline bool                              `json:"resource_baseline,omitempty"`
 	Assignment       *GeneratorAssignmentSettings      `json:"assignment,omitempty"`
 	GoalConfig       *GoalConfig                       `json:"goal_config,omitempty"`
+	TrafficProfile   *TrafficProfile                   `json:"traffic_profile,omitempty"`
 	RuntimeSettings  *RuntimeSettingsOverride          `json:"runtime_settings,omitempty"`
 	Groups           []CreateGroupEntry                `json:"groups"`
 	DataPools        []storage.ScenarioDataPoolBinding `json:"data_pools,omitempty"`

@@ -981,7 +981,11 @@ describe('CommandCenterPrototype', () => {
     expect(tabNamed('Infrastructure')?.getAttribute('aria-selected')).toBe('true')
     expect(runtimeGraphs?.textContent).toContain('CPU Usage — Fleet (%)')
     expect(runtimeGraphs?.textContent).toContain('Memory — Fleet total (MB)')
-    expect(runtimeGraphs?.textContent).toContain('Route Latency (ms)')
+    // The Seconds toggle selected earlier in this test rescales every
+    // millisecond axis, so the millisecond titles follow the chosen unit.
+    // Non-time units are unaffected.
+    expect(runtimeGraphs?.textContent).toContain('Route Latency (s)')
+    expect(runtimeGraphs?.textContent).not.toContain('Route Latency (ms)')
 
     expect(runtimeGraphs?.getAttribute('data-visible-groups')).toContain('browse')
     const initialLoadImpactRange = runtimeGraphs?.getAttribute('data-load-impact-vuser-range')

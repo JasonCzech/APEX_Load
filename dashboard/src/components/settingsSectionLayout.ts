@@ -3,6 +3,7 @@ export const SETTINGS_SECTIONS = [
   { id: 'thresholds', title: 'Performance Thresholds' },
   { id: 'capacity', title: 'Capacity Planning' },
   { id: 'domains', title: 'Domains' },
+  { id: 'feature-access', title: 'Feature Access' },
   { id: 'projects', title: 'Projects & Compliance' },
   { id: 'applications', title: 'Applications & Releases' },
   { id: 'data-pools', title: 'Data Pools' },
@@ -134,6 +135,7 @@ export function readSettingsSubsectionId(
 
 export function mergeSettingsOrder(order: SettingsSectionId[]) {
   const retained = order.filter(id => SETTINGS_SECTION_IDS.includes(id))
+  const featureAccessWasPersisted = retained.includes('feature-access')
   const result = [...retained]
   SETTINGS_SECTION_IDS.forEach((id) => {
     if (result.includes(id)) return
@@ -151,6 +153,12 @@ export function mergeSettingsOrder(order: SettingsSectionId[]) {
   if (projectIndex !== -1 && applicationIndex !== -1 && projectIndex !== applicationIndex - 1) {
     result.splice(projectIndex, 1)
     result.splice(result.indexOf('applications'), 0, 'projects')
+  }
+  if (!featureAccessWasPersisted) {
+    const existingIndex = result.indexOf('feature-access')
+    if (existingIndex !== -1) result.splice(existingIndex, 1)
+    const domainIndex = result.indexOf('domains')
+    result.splice(domainIndex === -1 ? result.length : domainIndex + 1, 0, 'feature-access')
   }
   return result
 }

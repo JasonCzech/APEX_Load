@@ -523,7 +523,8 @@ export async function requestFromOrigin<T>(
   options?: ApiRequestOptions,
 ): Promise<T> {
   const headers = new Headers(options?.headers);
-  if (!headers.has("Content-Type")) {
+  const formBody = typeof FormData !== "undefined" && options?.body instanceof FormData;
+  if (!headers.has("Content-Type") && !formBody) {
     headers.set("Content-Type", "application/json");
   }
   const { timeoutMs, signal, ...init } = options ?? {};

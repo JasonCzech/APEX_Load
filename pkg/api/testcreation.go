@@ -276,6 +276,7 @@ func cloneManagedTestCapacitySnapshotLocked(test *ManagedTest) *ManagedTest {
 		ResourceBaseline:      test.ResourceBaseline,
 		StartDelay:            test.StartDelay,
 		GoalConfig:            cloneGoalConfig(test.GoalConfig),
+		TrafficProfile:        cloneTrafficProfile(test.TrafficProfile),
 		TotalVUsers:           test.TotalVUsers,
 		Duration:              test.Duration,
 		DurationStr:           test.DurationStr,
@@ -1283,6 +1284,9 @@ func (tr *TestRunner) buildManagedTestLocked(req CreateTestRequest, id string, s
 	if err != nil {
 		return nil, err
 	}
+	if err := validateTrafficProfile(req.TrafficProfile, groups, req.Duration, scenarioMode, req.GoalConfig); err != nil {
+		return nil, err
+	}
 	for index := range groups {
 		groups[index].runtimeSecretScope = id
 	}
@@ -1322,6 +1326,9 @@ func (tr *TestRunner) buildManagedTestLocked(req CreateTestRequest, id string, s
 	if err != nil {
 		return nil, err
 	}
+	if err := validateTrafficProfileCompiledGroups(req.TrafficProfile, testGroups); err != nil {
+		return nil, err
+	}
 	for index, group := range engineGroups {
 		if group.StartOffset > dur {
 			return nil, fmt.Errorf("group[%d]: start_offset %s begins after the %s scenario deadline", index, group.StartOffset, dur)
@@ -1346,13 +1353,14 @@ func (tr *TestRunner) buildManagedTestLocked(req CreateTestRequest, id string, s
 	if err := tr.projectDeletionErrorLocked(projectID); err != nil {
 		return nil, err
 	}
-	capacityVUsers := managedGroupPeakVUsers(testGroups, dur)
+	capacityVUsers := trafficProfileCapacityVUsers(req.TrafficProfile, testGroups, dur, req.GoalConfig)
 	if capacityVUsers <= 0 {
 		capacityVUsers = totalVUsers
 	}
 	if err := enforceTestQuotaWithProjectQuota(projectQuota, capacityVUsers, dur, status); err != nil {
 		return nil, err
 	}
+	totalVUsers = applyTrafficProfileInitialTargets(req.TrafficProfile, testGroups, engineGroups)
 	effectiveRuntimeSettings, err := resolveEffectiveRuntimeSettingsWithProjectQuota(req.RuntimeSettings, projectQuota)
 	if err != nil {
 		return nil, err
@@ -1401,6 +1409,7 @@ func (tr *TestRunner) buildManagedTestLocked(req CreateTestRequest, id string, s
 		ResourceBaseline:             req.ResourceBaseline,
 		StartDelay:                   req.StartDelay,
 		GoalConfig:                   cloneGoalConfig(req.GoalConfig),
+		TrafficProfile:               cloneTrafficProfile(req.TrafficProfile),
 		RuntimeSettings:              cloneRuntimeSettings(protectedRuntimeSettings),
 		TotalVUsers:                  totalVUsers,
 		Duration:                     dur,
@@ -1801,6 +1810,9 @@ func createTestRequestFromScenarioRevision(req CreateTestRequest, scenario *Stor
 		if req.GoalConfig == nil {
 			req.GoalConfig = cloneGoalConfig(revisionSource.GoalConfig)
 		}
+		if req.TrafficProfile == nil {
+			req.TrafficProfile = cloneTrafficProfile(revisionSource.TrafficProfile)
+		}
 		if req.Assignment == nil {
 			req.Assignment = cloneGeneratorAssignmentSettings(revisionSource.Assignment)
 		}
@@ -1822,6 +1834,9 @@ func createTestRequestFromScenarioRevision(req CreateTestRequest, scenario *Stor
 		}
 		if req.GoalConfig == nil {
 			req.GoalConfig = cloneGoalConfig(scenario.GoalConfig)
+		}
+		if req.TrafficProfile == nil {
+			req.TrafficProfile = cloneTrafficProfile(scenario.TrafficProfile)
 		}
 		if req.Assignment == nil {
 			req.Assignment = cloneGeneratorAssignmentSettings(scenario.Assignment)

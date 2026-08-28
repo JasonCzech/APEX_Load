@@ -115,6 +115,7 @@ type RunArchiveProvenance struct {
 	Assignment            *GeneratorAssignmentSettings        `json:"assignment,omitempty"`
 	GeneratorShards       []GeneratorShardSummary             `json:"generator_shards,omitempty"`
 	GoalConfig            *GoalConfig                         `json:"goal_config,omitempty"`
+	TrafficProfile        *TrafficProfile                     `json:"traffic_profile,omitempty"`
 	RuntimeSettings       *RuntimeSettingsOverride            `json:"runtime_settings,omitempty"`
 	RuntimeSettingsReview *RuntimeSettingsReview              `json:"runtime_settings_review,omitempty"`
 	Groups                []TestGroup                         `json:"groups,omitempty"`

@@ -1,4 +1,4 @@
-import { GeneratorAssignmentSettings, GoalConfig, RuntimeJavaVuserSettings, ScenarioDataPoolBinding, ScenarioDraftGroup, ScenarioMode } from '../types'
+import { GeneratorAssignmentSettings, GoalConfig, RuntimeJavaVuserSettings, ScenarioDataPoolBinding, ScenarioDraftGroup, ScenarioMode, TrafficProfile } from '../types'
 import { normalizeRequiredLabels } from './assignmentLabels'
 import { ScenarioRuntimeSettings } from './scenarioDraftUtils'
 import { BrowserConfig, BrowserEmulationConfig, ErrorHandlingConfig, HTTPConfig, LogConfig, PacingConfig, RunLogicConfig, ThinkTimeConfig, WebRuntimeConfig } from '../types/scripts'
@@ -28,6 +28,8 @@ export type ScenarioGroupPayload = {
 
 export type ScenarioUpsertPayload = {
   name: string
+  project_id?: string
+  workload_shape_id?: string
   duration: string
   start_delay?: string
   scenario_mode: ScenarioMode
@@ -36,6 +38,7 @@ export type ScenarioUpsertPayload = {
   assignment?: GeneratorAssignmentSettings
   groups: ScenarioGroupPayload[]
   goal_config?: GoalConfig
+  traffic_profile?: TrafficProfile
   runtime_settings?: {
     iterations?: number
     pacing?: PacingConfig
@@ -79,6 +82,7 @@ export type CreateTestPayload = {
   initialization?: ScenarioDraftGroup['initialization']
   groups?: ScenarioGroupPayload[]
   goal_config?: GoalConfig
+  traffic_profile?: TrafficProfile
   runtime_settings?: ScenarioUpsertPayload['runtime_settings']
   data_pools?: ScenarioDataPoolBinding[]
 }
@@ -93,10 +97,13 @@ type ScenarioPayloadInput = {
   groups: ScenarioDraftGroup[]
   goalConfig: GoalConfig
   runtimeSettings: ScenarioRuntimeSettings
+  trafficProfile?: TrafficProfile
 }
 
 type ScenarioUpsertPayloadInput = ScenarioPayloadInput & {
   name: string
+  projectId?: string
+  workloadShapeId?: string
   dataPools?: ScenarioDataPoolBinding[]
 }
 
@@ -367,6 +374,8 @@ export function buildRuntimeSettingsPayload(runtimeSettings: ScenarioRuntimeSett
 
 export function buildScenarioUpsertPayload({
   name,
+  projectId,
+  workloadShapeId,
   duration,
   startDelay,
   scenarioMode,
@@ -376,12 +385,15 @@ export function buildScenarioUpsertPayload({
   groups,
   goalConfig,
   runtimeSettings,
+  trafficProfile,
   dataPools,
 }: ScenarioUpsertPayloadInput): ScenarioUpsertPayload {
   const resolvedAssignment = buildRootAssignmentPayload(assignment)
 
   const payload: ScenarioUpsertPayload = {
     name: name.trim(),
+    ...(projectId ? { project_id: projectId } : {}),
+    ...(workloadShapeId !== undefined ? { workload_shape_id: workloadShapeId } : {}),
     duration,
     scenario_mode: scenarioMode,
     script_shakeout: scriptShakeout,
@@ -397,6 +409,10 @@ export function buildScenarioUpsertPayload({
   const goalConfigPayload = buildGoalConfigPayload(scenarioMode, goalConfig)
   if (goalConfigPayload) {
     payload.goal_config = goalConfigPayload
+  }
+
+  if (trafficProfile) {
+    payload.traffic_profile = structuredClone(trafficProfile)
   }
 
   const runtimeSettingsPayload = buildRuntimeSettingsPayload(runtimeSettings)
@@ -422,6 +438,7 @@ export function buildCreateTestPayload({
   groups,
   goalConfig,
   runtimeSettings,
+  trafficProfile,
   applicationId,
   releaseId,
   scenarioId,
@@ -451,6 +468,10 @@ export function buildCreateTestPayload({
   const goalConfigPayload = buildGoalConfigPayload(scenarioMode, goalConfig)
   if (goalConfigPayload) {
     payload.goal_config = goalConfigPayload
+  }
+
+  if (trafficProfile) {
+    payload.traffic_profile = structuredClone(trafficProfile)
   }
 
   const runtimeSettingsPayload = buildRuntimeSettingsPayload(runtimeSettings)

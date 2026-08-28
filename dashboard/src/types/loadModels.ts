@@ -1,3 +1,6 @@
+import type { CapacityAdvisory } from './capacity'
+import type { AssignmentRecommendation } from './testConfiguration'
+
 /** One phase in a scenario's staged ramp/hold timeline. */
 export interface LoadStageDraft {
   name?: string
@@ -5,4 +8,25 @@ export interface LoadStageDraft {
   duration: string
   target_vusers?: number
   target_tps?: number
+}
+
+export interface LoadModelValidationItem {
+  dimension: string
+  group?: string
+  status: 'ready' | 'needs_review' | 'blocked' | string
+  summary: string
+  required_rows?: number
+  available_rows?: number
+  target_vusers?: number
+  target_tps?: number
+}
+
+export interface LoadModelValidationReport {
+  status: 'ready' | 'needs_review' | 'blocked' | string
+  status_counts: Record<string, number>
+  items: LoadModelValidationItem[]
+  total_vusers: number
+  peak_target_tps?: number
+  capacity_advisory?: CapacityAdvisory
+  assignment_recommendation?: AssignmentRecommendation
 }

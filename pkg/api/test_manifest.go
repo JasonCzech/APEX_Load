@@ -107,6 +107,7 @@ type TestRunManifestConfiguration struct {
 	Assignment            *GeneratorAssignmentSettings `json:"assignment,omitempty"`
 	GeneratorShards       []GeneratorShardSummary      `json:"generator_shards,omitempty"`
 	GoalConfig            *GoalConfig                  `json:"goal_config,omitempty"`
+	TrafficProfile        *TrafficProfile              `json:"traffic_profile,omitempty"`
 	RuntimeSettings       *RuntimeSettingsOverride     `json:"runtime_settings,omitempty"`
 	RuntimeSettingsReview *RuntimeSettingsReview       `json:"runtime_settings_review,omitempty"`
 	Groups                []TestGroup                  `json:"groups,omitempty"`
@@ -206,6 +207,7 @@ func maskTestRunManifestArchive(archive *TestRunManifestArchive) *TestRunManifes
 }
 
 func maskTestRunManifestConfiguration(configuration TestRunManifestConfiguration) TestRunManifestConfiguration {
+	configuration.TrafficProfile = cloneTrafficProfile(configuration.TrafficProfile)
 	configuration.RuntimeSettings = maskRuntimeSettings(configuration.RuntimeSettings)
 	configuration.Groups = maskTestGroupsRuntimeSettings(configuration.Groups)
 	return configuration
@@ -437,6 +439,7 @@ func manifestConfigurationFromManagedTest(test *ManagedTest) TestRunManifestConf
 		Assignment:            cloneGeneratorAssignmentSettings(test.Assignment),
 		GeneratorShards:       cloneGeneratorShardSummaries(test.GeneratorShards),
 		GoalConfig:            cloneGoalConfig(test.GoalConfig),
+		TrafficProfile:        cloneTrafficProfile(test.TrafficProfile),
 		RuntimeSettings:       maskRuntimeSettings(test.RuntimeSettings),
 		RuntimeSettingsReview: cloneRuntimeSettingsReview(test.RuntimeSettingsReview),
 		Groups:                maskTestGroupsRuntimeSettings(test.Groups),
@@ -462,6 +465,7 @@ func manifestConfigurationFromTestRecord(record *storage.TestRecord) TestRunMani
 		ResourceBaseline: record.ResourceBaseline,
 		Assignment:       decodeStoredGeneratorAssignment(record.Assignment),
 		GoalConfig:       decodeStoredGoalConfig(record.GoalConfig),
+		TrafficProfile:   decodeStoredTrafficProfile(record.TrafficProfile),
 		RuntimeSettings:  maskRuntimeSettings(decodeStoredRuntimeSettings(record.RuntimeSettings)),
 		Groups:           maskTestGroupsRuntimeSettings(decodeStoredGroups(record.Groups)),
 		BaselinePinned:   record.BaselinePinned,
@@ -487,6 +491,7 @@ func manifestConfigurationFromProvenance(provenance RunArchiveProvenance, status
 		Assignment:            cloneGeneratorAssignmentSettings(provenance.Assignment),
 		GeneratorShards:       cloneGeneratorShardSummaries(provenance.GeneratorShards),
 		GoalConfig:            cloneGoalConfig(provenance.GoalConfig),
+		TrafficProfile:        cloneTrafficProfile(provenance.TrafficProfile),
 		RuntimeSettings:       maskRuntimeSettings(provenance.RuntimeSettings),
 		RuntimeSettingsReview: cloneRuntimeSettingsReview(provenance.RuntimeSettingsReview),
 		Groups:                maskTestGroupsRuntimeSettings(provenance.Groups),

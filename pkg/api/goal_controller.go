@@ -312,16 +312,32 @@ func currentGoalTargetStatuses(test *ManagedTest, now time.Time) map[string]Goal
 	liveTargets := liveGoalTargetsByGroup(test.LiveMetrics)
 	defaultTargets := defaultGoalTargetsByGroup(test)
 
+	managedByProfile := map[string]struct{}(nil)
+	if test.TrafficProfile != nil && test.TrafficProfile.RuntimeTarget == "tps" {
+		managedByProfile = make(map[string]struct{}, len(test.TrafficProfile.Mappings))
+		for _, mapping := range test.TrafficProfile.Mappings {
+			managedByProfile[normalizeEffectiveGroupName(mapping.GroupName)] = struct{}{}
+		}
+	}
 	targets := make(map[string]GoalTargetStatus, len(test.Groups))
 	for _, group := range test.Groups {
 		name := group.Name
+		if managedByProfile != nil {
+			if _, managed := managedByProfile[normalizeEffectiveGroupName(name)]; !managed {
+				continue
+			}
+		}
 		target := 0.0
 		updatedAt := now
-		if existing, ok := test.GoalTargets[name]; ok && existing.TargetTPS > 0 {
+		profileTargetSet := false
+		if existing, ok := test.GoalTargets[name]; ok && (existing.TargetTPS > 0 || managedByProfile != nil) {
 			target = existing.TargetTPS
+			profileTargetSet = managedByProfile != nil
 			if !existing.UpdatedAt.IsZero() {
 				updatedAt = existing.UpdatedAt
 			}
+		} else if managedByProfile != nil {
+			profileTargetSet = true
 		} else if stagedTargets[name] > 0 {
 			target = stagedTargets[name]
 		} else if liveTargets[name] > 0 {
@@ -329,7 +345,7 @@ func currentGoalTargetStatuses(test *ManagedTest, now time.Time) map[string]Goal
 		} else if defaultTargets[name] > 0 {
 			target = defaultTargets[name]
 		}
-		if target <= 0 {
+		if target <= 0 && !profileTargetSet {
 			continue
 		}
 		targets[name] = GoalTargetStatus{
@@ -404,6 +420,53 @@ func sumGoalTargetTPS(targets map[string]GoalTargetStatus) float64 {
 	return total
 }
 
+func evaluateGoalControllerForTest(test *ManagedTest, now time.Time, currentTotalVUsers int, live *LiveMetrics) goalControllerUpdate {
+	if test == nil {
+		return goalControllerUpdate{}
+	}
+	controllerLive := live
+	if managedTPS, profileOwned := trafficProfileManagedTPS(test, live); profileOwned {
+		managedLive := *live
+		managedLive.TPS = managedTPS
+		controllerLive = &managedLive
+	}
+	update := evaluateGoalController(now, currentTotalVUsers, controllerLive, test.GoalConfig, test.goalControl)
+	if test.TrafficProfile == nil || test.TrafficProfile.RuntimeTarget != "tps" {
+		return update
+	}
+	// A profile-owned aggregate target of zero is a deliberate suspension.
+	// The boundary scheduler has already moved every zero-target group to zero;
+	// do not let the ordinary minimum-VUser clamp immediately wake it again.
+	if sumGoalTargetTPS(currentGoalTargetStatuses(test, now)) == 0 {
+		update.ShouldScale = false
+		update.TargetTotal = currentTotalVUsers
+		if update.Status != nil {
+			update.Status.SuggestedTotalVUsers = currentTotalVUsers
+		}
+	}
+	return update
+}
+
+func trafficProfileManagedTPS(test *ManagedTest, live *LiveMetrics) (float64, bool) {
+	if test == nil || live == nil || test.TrafficProfile == nil || test.TrafficProfile.RuntimeTarget != "tps" {
+		return 0, false
+	}
+	managed := make(map[string]struct{}, len(test.TrafficProfile.Mappings))
+	for _, mapping := range test.TrafficProfile.Mappings {
+		managed[normalizeEffectiveGroupName(mapping.GroupName)] = struct{}{}
+	}
+	total := 0.0
+	for name, metrics := range live.GroupMetrics {
+		if metrics == nil {
+			continue
+		}
+		if _, ok := managed[normalizeEffectiveGroupName(name)]; ok {
+			total += metrics.TPS
+		}
+	}
+	return total, true
+}
+
 func liveGroupVUsers(test *ManagedTest, live *LiveMetrics) map[string]int {
 	groupVUsers := make(map[string]int)
 	if test != nil {
@@ -427,18 +490,23 @@ func applyRuntimeGoalTargetsToLiveMetrics(test *ManagedTest, live *LiveMetrics) 
 	}
 	targets := currentGoalTargetStatuses(test, live.Timestamp)
 	totalTargetTPS := sumGoalTargetTPS(targets)
-	if totalTargetTPS <= 0 {
+	profileOwned := test.TrafficProfile != nil && test.TrafficProfile.RuntimeTarget == "tps"
+	if totalTargetTPS <= 0 && !profileOwned {
 		return
 	}
 
+	achievedTPS := live.TPS
+	if managedTPS, ok := trafficProfileManagedTPS(test, live); ok {
+		achievedTPS = managedTPS
+	}
 	live.TargetTPS = totalTargetTPS
-	live.ThroughputGapPct, live.ThroughputTargetMissed = throughputGap(live.TPS, totalTargetTPS)
+	live.ThroughputGapPct, live.ThroughputTargetMissed = throughputGap(achievedTPS, totalTargetTPS)
 	if live.GroupMetrics == nil {
 		live.GroupMetrics = make(map[string]*GroupLiveMetrics)
 	}
 	for _, group := range test.Groups {
 		target, ok := targets[group.Name]
-		if !ok || target.TargetTPS <= 0 {
+		if !ok || (target.TargetTPS <= 0 && !profileOwned) {
 			continue
 		}
 		metrics := live.GroupMetrics[group.Name]
@@ -714,6 +782,37 @@ func distributeTargetVUsersForGoal(groups []TestGroup, current map[string]int, d
 	}
 	for name, vusers := range observerTargets {
 		targets[name] = vusers
+	}
+	return targets
+}
+
+func distributeTrafficProfileTargetVUsers(groups []TestGroup, current map[string]int, desiredTotal int, goalTargets map[string]GoalTargetStatus, profile *TrafficProfile) map[string]int {
+	if profile == nil || profile.RuntimeTarget != "tps" {
+		return distributeTargetVUsersForGoal(groups, current, desiredTotal, goalTargets)
+	}
+	managedNames := make(map[string]struct{}, len(profile.Mappings))
+	for _, mapping := range profile.Mappings {
+		managedNames[normalizeEffectiveGroupName(mapping.GroupName)] = struct{}{}
+	}
+	managed := make([]TestGroup, 0, len(managedNames))
+	targets := make(map[string]int, len(groups))
+	staticTotal := 0
+	for _, group := range groups {
+		if _, ok := managedNames[normalizeEffectiveGroupName(group.Name)]; ok {
+			managed = append(managed, group)
+			continue
+		}
+		pinned := max(0, current[group.Name])
+		targets[group.Name] = pinned
+		staticTotal = saturatingAddNonNegative(staticTotal, pinned)
+	}
+	managedTotal := max(0, desiredTotal-staticTotal)
+	managedTargets := distributeTargetVUsersByWeights(managed, managedTotal, goalTargets)
+	if len(managedTargets) == 0 && len(managed) > 0 {
+		managedTargets = distributeTargetVUsers(managed, current, managedTotal)
+	}
+	for name, target := range managedTargets {
+		targets[name] = target
 	}
 	return targets
 }

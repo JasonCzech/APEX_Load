@@ -50,6 +50,7 @@ interface Props {
   onSelectScenario?: (id: string) => void
   onNavigate?: (page: NavPage) => void
   onAuthoringStateChange?: (state: { subView: ScriptsAuthoringSubView; editingId: string | null }) => void
+  featurePolicySignal?: number
 }
 
 type AuthoringHealthFilter = 'all' | 'blocked' | 'needs_replay' | 'missing_data' | 'runtime_warning' | 'ai_guardrail'
@@ -141,7 +142,7 @@ function scriptSearchText(script: StoredScript) {
   ].filter(Boolean).join(' ').toLowerCase()
 }
 
-export default function ScriptsPage({ applicationRepository, initialMode = 'list', initialEditId, nativeImportRequest, onNativeImportRequestHandled, onSelectScenario, onNavigate, onAuthoringStateChange }: Props) {
+export default function ScriptsPage({ applicationRepository, initialMode = 'list', initialEditId, nativeImportRequest, onNativeImportRequestHandled, onSelectScenario, onNavigate, onAuthoringStateChange, featurePolicySignal = 0 }: Props) {
   const api = useApi()
   const { activeProject } = useProject()
   const activeProjectId = activeProject?.id
@@ -420,6 +421,7 @@ export default function ScriptsPage({ applicationRepository, initialMode = 'list
     authoringState,
     openLibrary,
     openCreateOptions,
+    openCreateOptionsWithNotice,
     handleEdit,
     handleSavedScript,
     handleDraftEdit,
@@ -430,6 +432,29 @@ export default function ScriptsPage({ applicationRepository, initialMode = 'list
     initialMode,
     initialEditId,
   })
+
+  useEffect(() => {
+    const projectId = activeProjectId
+    if (!projectId) return
+    const importerActive = Boolean(authoringState.importLauncher)
+    const recorderActive = authoringState.subView === 'recorder'
+    if (!importerActive && !recorderActive) return
+    let cancelled = false
+    void api.listAuthoringCapabilities(projectId).then(capabilities => {
+      if (cancelled) return
+      const enabled = recorderActive
+        ? !capabilities.feature_policy || capabilities.feature_policy.features.some(feature => feature.id === 'script_builder.browser_recording' && feature.effective_enabled)
+        : capabilities.import_surfaces == null || capabilities.import_surfaces.some(surface => surface.launcher === authoringState.importLauncher)
+      if (!enabled) {
+        openCreateOptionsWithNotice('That authoring feature was disabled by an administrator. Choose another Script Builder workflow.')
+      }
+    }).catch(() => {
+      if (!cancelled) {
+        openCreateOptionsWithNotice('Unable to verify domain feature access. Retry from the Script Builder source selection when the service is available.')
+      }
+    })
+    return () => { cancelled = true }
+  }, [activeProjectId, api, authoringState.importLauncher, authoringState.subView, featurePolicySignal, openCreateOptionsWithNotice])
   const authoringProjectIdRef = useRef(activeProjectId)
   useLayoutEffect(() => {
     if (authoringProjectIdRef.current === activeProjectId) return
@@ -995,7 +1020,7 @@ export default function ScriptsPage({ applicationRepository, initialMode = 'list
           <button className="btn btn-ghost btn-sm" type="button" onClick={() => setLibraryNotice('')}>Dismiss</button>
         </p>
       )}
-      {authoringState.subView === 'list' && authoringState.authoringNotice && (
+      {(authoringState.subView === 'list' || authoringState.subView === 'create-options') && authoringState.authoringNotice && (
         <p className="settings-notice form-error" role="alert">
           {authoringState.authoringNotice}
         </p>
@@ -1003,6 +1028,7 @@ export default function ScriptsPage({ applicationRepository, initialMode = 'list
       <ScriptsAuthoringShell
         authoringState={authoringState}
         projectId={activeProject?.id}
+        policyRefreshSignal={featurePolicySignal}
         activeProject={activeProject}
         scripts={scripts}
         createOptionActions={createOptionActions}

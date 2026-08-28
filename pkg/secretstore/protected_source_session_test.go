@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"errors"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -122,6 +123,43 @@ func TestProtectedSourceSessionTransientDecryptFailureReleasesDurableClaim(t *te
 	clearStringMap(session.Values)
 	if _, err := consumer.Consume(context.Background(), "retry-session", projectID, "admin"); !errors.Is(err, sql.ErrNoRows) {
 		t.Fatalf("finalized session replay error = %v, want not found", err)
+	}
+}
+
+func TestProtectedSourceSessionValidationFailureRetainsSession(t *testing.T) {
+	records, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer records.Close()
+	wrapper, err := importartifact.NewLocalAESKeyWrapper(importartifact.LocalKeyOptions{Key: bytes.Repeat([]byte{0x37}, 32)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	store := &ProtectedSourceSessionStore{Records: records, Wrapper: wrapper}
+	session := ProtectedSourceSession{
+		ID: "policy-retained", ProjectID: storage.DefaultProjectID, Actor: "operator",
+		Values:    map[string]string{"requirement": "source-secret-value"},
+		ExpiresAt: time.Now().UTC().Add(time.Minute), FeatureIDs: []string{"script_import.postman"},
+	}
+	if err := store.Create(context.Background(), session); err != nil {
+		t.Fatal(err)
+	}
+	wantErr := errors.New("feature disabled")
+	if _, err := store.ConsumeIf(context.Background(), session.ID, session.ProjectID, session.Actor, func(featureIDs []string) error {
+		if !reflect.DeepEqual(featureIDs, session.FeatureIDs) {
+			t.Fatalf("feature IDs = %#v, want %#v", featureIDs, session.FeatureIDs)
+		}
+		return wantErr
+	}); !errors.Is(err, wantErr) {
+		t.Fatalf("ConsumeIf error = %v, want validation failure", err)
+	}
+	consumed, err := store.Consume(context.Background(), session.ID, session.ProjectID, session.Actor)
+	if err != nil {
+		t.Fatalf("retry consume: %v", err)
+	}
+	if consumed.Values["requirement"] != "source-secret-value" {
+		t.Fatalf("retry value = %q", consumed.Values["requirement"])
 	}
 }
 

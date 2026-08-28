@@ -82,10 +82,11 @@ func (tr *TestRunner) executionPlanGovernanceScenario(id string) (*StoredScenari
 		refs = append(refs, ScenarioScriptRef{VUsers: script.VUsers, StartOffset: script.StartOffset, Stages: cloneLoadStages(script.Stages)})
 	}
 	return &StoredScenario{
-		ID:           current.ID,
-		ScenarioMode: normalizeScenarioMode(current.ScenarioMode),
-		GoalConfig:   decodeStoredGoalConfig(current.GoalConfig),
-		Scripts:      refs,
+		ID:             current.ID,
+		ScenarioMode:   normalizeScenarioMode(current.ScenarioMode),
+		GoalConfig:     decodeStoredGoalConfig(current.GoalConfig),
+		TrafficProfile: decodeStoredTrafficProfile(current.TrafficProfile),
+		Scripts:        refs,
 	}, true
 }
 
@@ -106,7 +107,7 @@ func scenarioPeakVUsers(scenario *StoredScenario) int {
 			Name: script.Name, VUsers: groupPeak, StartOffset: script.StartOffset, Stages: cloneLoadStages(script.Stages),
 		})
 	}
-	peak := managedGroupPeakVUsers(groups, duration)
+	peak := trafficProfileCapacityVUsers(scenario.TrafficProfile, groups, duration, scenario.GoalConfig)
 	if strings.EqualFold(scenario.ScenarioMode, "goal_oriented") && scenario.GoalConfig != nil && scenario.GoalConfig.MaxVUsers != nil && *scenario.GoalConfig.MaxVUsers > peak {
 		peak = *scenario.GoalConfig.MaxVUsers
 	}

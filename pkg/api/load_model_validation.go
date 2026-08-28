@@ -100,6 +100,7 @@ func createTestRequestFromScenarioDraft(req CreateScenarioRequest) CreateTestReq
 		ResourceBaseline: req.ResourceBaseline,
 		Assignment:       cloneGeneratorAssignmentSettings(req.Assignment),
 		GoalConfig:       cloneGoalConfig(req.GoalConfig),
+		TrafficProfile:   cloneTrafficProfile(req.TrafficProfile),
 		RuntimeSettings:  cloneRuntimeSettings(req.RuntimeSettings),
 		Groups:           append([]CreateGroupEntry(nil), req.Groups...),
 	}

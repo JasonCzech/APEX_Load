@@ -1327,6 +1327,26 @@
     },
     {
       "method": "GET",
+      "path": "/api/v1/domains/{id}/features",
+      "operationId": "handleGetDomainFeatures",
+      "summary": "Get Domain Features",
+      "category": "Workspace \u0026 Assets",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; domain roles: Viewer, Editor, ProjectAdmin"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/domains/{id}/features",
+      "operationId": "handleUpdateDomainFeatures",
+      "summary": "Update Domain Features",
+      "category": "Workspace \u0026 Assets",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: SystemAdmin"
+    },
+    {
+      "method": "GET",
       "path": "/api/v1/downloads/desktop/latest",
       "operationId": "handleDownloadDesktopApp",
       "summary": "Download Desktop App",
@@ -3153,7 +3173,7 @@
       "category": "Test Execution",
       "public": false,
       "authenticated": true,
-      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; service-account scope: results:read"
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; service-account scope: results:read; when project_id is supplied, project roles: Viewer, Editor, ProjectAdmin"
     },
     {
       "method": "GET",
@@ -3163,7 +3183,7 @@
       "category": "Test Execution",
       "public": false,
       "authenticated": true,
-      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; service-account scope: results:read"
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; service-account scope: results:read; when project_id is supplied, project roles: Viewer, Editor, ProjectAdmin"
     },
     {
       "method": "POST",
@@ -3174,6 +3194,36 @@
       "public": false,
       "authenticated": true,
       "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: tests:run"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/scenarios/traffic-profile/analyze",
+      "operationId": "handleAnalyzeTrafficProfile",
+      "summary": "Analyze Traffic Profile",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: tests:run"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/scenarios/traffic-profile/derive",
+      "operationId": "handleDeriveTrafficProfile",
+      "summary": "Derive Traffic Profile",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: tests:run"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/scenarios/traffic-profile/sources",
+      "operationId": "handleTrafficProfileSources",
+      "summary": "Traffic Profile Sources",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; service-account scope: results:read"
     },
     {
       "method": "POST",
@@ -3503,7 +3553,7 @@
       "category": "Script Authoring",
       "public": false,
       "authenticated": true,
-      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; service-account scope: read"
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; service-account scope: read; when project_id is supplied, project roles: Viewer, Editor, ProjectAdmin"
     },
     {
       "method": "POST",
@@ -3603,7 +3653,7 @@
       "category": "Script Authoring",
       "public": false,
       "authenticated": true,
-      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; service-account scope: read"
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; service-account scope: read; when project_id is supplied, project roles: Viewer, Editor, ProjectAdmin"
     },
     {
       "method": "POST",

@@ -25,11 +25,12 @@ const protectedSourceSessionClaimTTL = time.Minute
 var ErrProtectedSourceSessionExpired = errors.New("source secret session expired")
 
 type ProtectedSourceSession struct {
-	ID        string
-	ProjectID string
-	Actor     string
-	Values    map[string]string
-	ExpiresAt time.Time
+	ID         string
+	ProjectID  string
+	Actor      string
+	Values     map[string]string
+	ExpiresAt  time.Time
+	FeatureIDs []string
 }
 
 // ProtectedSourceSessionStore uses the same envelope-key foundation as Bruno
@@ -115,6 +116,14 @@ func (s *ProtectedSourceSessionStore) Create(ctx context.Context, session Protec
 }
 
 func (s *ProtectedSourceSessionStore) Consume(ctx context.Context, id, projectID, actor string) (*ProtectedSourceSession, error) {
+	return s.ConsumeIf(ctx, id, projectID, actor, nil)
+}
+
+// ConsumeIf atomically claims and decrypts a session, but finalizes deletion
+// only after validate accepts its server-owned feature metadata. A rejected or
+// transiently unavailable policy releases the claim so the one-shot secret
+// values remain available for a later authorized retry.
+func (s *ProtectedSourceSessionStore) ConsumeIf(ctx context.Context, id, projectID, actor string, validate func([]string) error) (*ProtectedSourceSession, error) {
 	if !s.Available() {
 		return nil, errors.New("durable protected source secret sessions are unavailable")
 	}
@@ -197,6 +206,12 @@ func (s *ProtectedSourceSessionStore) Consume(ctx context.Context, id, projectID
 		!session.ExpiresAt.Equal(record.ExpiresAt) || len(session.Values) == 0 {
 		clearStringMap(session.Values)
 		return nil, release(errors.New("protected source secret session scope mismatch"))
+	}
+	if validate != nil {
+		if err := validate(append([]string(nil), session.FeatureIDs...)); err != nil {
+			clearStringMap(session.Values)
+			return nil, release(err)
+		}
 	}
 	finalized, err := s.Records.FinalizeProtectedSourceSecretSession(id, projectID, actor, claimToken)
 	if err != nil || !finalized {

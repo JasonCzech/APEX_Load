@@ -11,6 +11,7 @@ const ScriptsAuthoringSurface = lazy(() => import('./ScriptsAuthoringSurface'))
 interface Props {
   authoringState: AuthoringState
   projectId?: string
+  policyRefreshSignal?: number
   activeProject?: Project | null
   scripts?: StoredScript[]
   createOptionActions: ScriptsCreateOptionActions
@@ -30,6 +31,7 @@ interface Props {
 export default function ScriptsAuthoringShell({
   authoringState,
   projectId,
+  policyRefreshSignal,
   activeProject,
   scripts = [],
   createOptionActions,
@@ -66,6 +68,8 @@ export default function ScriptsAuthoringShell({
   if (authoringState.subView === 'create-options') {
     return (
       <ScriptCreateOptions
+        projectId={projectId}
+        policyRefreshSignal={policyRefreshSignal}
         onBack={onOpenLibrary}
         onStartApiScript={createOptionActions.startApiScript}
         onStartSoapScript={createOptionActions.startSoapScript}

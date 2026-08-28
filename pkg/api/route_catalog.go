@@ -58,6 +58,9 @@ var legacyRouteCatalogAuthRules = []apiRouteAuthRule{
 	routeAuth(http.MethodPost, "/api/v1/tests/preflight", accessRequirement{GlobalRoles: []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin}, ProjectRoles: []string{RoleEditor, RoleProjectAdmin}, ProjectLookup: resolveTestCreateProjectID}),
 	routeAuth(http.MethodPost, "/api/v1/scenarios/validate-load-model", accessRequirement{GlobalRoles: []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin}, ProjectRoles: []string{RoleEditor, RoleProjectAdmin}, ProjectLookup: resolveScenarioCreateProjectID}),
 	routeAuth(http.MethodPost, "/api/v1/scenarios/size-from-goal", accessRequirement{GlobalRoles: []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin}, ProjectRoles: []string{RoleEditor, RoleProjectAdmin}, ProjectLookup: resolveGoalSizingBaselineProjectID}),
+	routeAuth(http.MethodGet, "/api/v1/scenarios/traffic-profile/sources", viewerGlobalAccess()),
+	routeAuth(http.MethodPost, "/api/v1/scenarios/traffic-profile/analyze", withDomainFeature(editorImportAccess(resolveImportProjectIDFromJSONOrForm, trafficProfileUploadMaxBytes), workloadShapeFeatureID(productionReplayShapeID))),
+	routeAuth(http.MethodPost, "/api/v1/scenarios/traffic-profile/derive", withDomainFeature(editorProjectAccessWithBodyLimit(resolveImportProjectIDFromJSONOrForm, trafficProfileDeriveMaxBytes), workloadShapeFeatureID(productionReplayShapeID))),
 	routeAuth(http.MethodGet, "/api/v1/scenarios/load-models/support-matrix", viewerGlobalAccess()),
 	routeAuth(http.MethodGet, "/api/v1/scenarios/load-models/templates", viewerGlobalAccess()),
 	routeAuth(http.MethodGet, "/api/v1/tests/{id}/report/annotations", accessRequirement{GlobalRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}, ProjectRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin}, ProjectLookup: resolveTestProjectID}),
@@ -108,10 +111,11 @@ var legacyRouteCatalogAuthRules = []apiRouteAuthRule{
 	}),
 	routeAuth(http.MethodGet, "/api/v1/scripts/{id}/secret-status", viewerProjectAccess(resolveScriptProjectID)),
 	routeAuth(http.MethodPost, "/api/v1/scripts/{id}/clone-draft", accessRequirement{
-		GlobalRoles:   []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
-		ProjectRoles:  []string{RoleEditor, RoleProjectAdmin},
-		ProjectLookup: resolveScriptProjectID,
-		MaxBodyBytes:  65536,
+		GlobalRoles:     []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
+		ProjectRoles:    []string{RoleEditor, RoleProjectAdmin},
+		ProjectLookup:   resolveScriptProjectID,
+		MaxBodyBytes:    65536,
+		DomainFeatureID: "script_builder.existing_scripts",
 	}),
 	routeAuth(http.MethodPost, "/api/v1/scripts/replay/sessions", accessRequirement{GlobalRoles: []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin}, ProjectRoles: []string{RoleEditor, RoleProjectAdmin}, ProjectLookup: resolveDraftScriptProjectID}),
 	routeAuth(http.MethodPost, "/api/v1/scripts/browser-to-http/preview", accessRequirement{GlobalRoles: []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin}, ProjectRoles: []string{RoleEditor, RoleProjectAdmin}, ProjectLookup: resolveBrowserToHTTPPreviewProjectID}),
@@ -265,10 +269,10 @@ var legacyRouteCatalogAuthRules = []apiRouteAuthRule{
 	routeAuth(http.MethodGet, "/api/v1/scripts/import/openapi/support-matrix", viewerGlobalAccess()),
 	routeAuth(http.MethodGet, "/api/v1/scripts/import/bruno/support-matrix", viewerGlobalAccess()),
 	routeAuth(http.MethodGet, "/api/v1/scripts/import/cloudtest/support-matrix", viewerGlobalAccess()),
-	routeAuth(http.MethodGet, "/api/v1/scripts/authoring/templates", viewerGlobalAccess()),
-	routeAuth(http.MethodGet, "/api/v1/scripts/authoring/components", viewerGlobalAccess()),
-	routeAuth(http.MethodPost, "/api/v1/scripts/authoring/components", editorProjectAccess(resolveReusableBlockCreateProjectID)),
-	routeAuth(http.MethodDelete, "/api/v1/scripts/authoring/components/{id}", editorProjectAccess(resolveReusableBlockProjectID)),
+	routeAuth(http.MethodGet, "/api/v1/scripts/authoring/templates", withDomainFeature(viewerGlobalAccess(), "script_builder.starter_templates")),
+	routeAuth(http.MethodGet, "/api/v1/scripts/authoring/components", withDomainFeature(viewerGlobalAccess(), "script_builder.reusable_blocks")),
+	routeAuth(http.MethodPost, "/api/v1/scripts/authoring/components", withDomainFeature(editorProjectAccess(resolveReusableBlockCreateProjectID), "script_builder.reusable_blocks")),
+	routeAuth(http.MethodDelete, "/api/v1/scripts/authoring/components/{id}", withDomainFeature(editorProjectAccess(resolveReusableBlockProjectID), "script_builder.reusable_blocks")),
 
 	// Script importers (write-level, with per-format upload limits).
 	routeAuth(http.MethodPost, "/api/v1/scripts/import/jmeter/save", editorProjectAccessWithBodyLimit(resolveJMeterSaveProjectID, jmeterImportSaveMaxBodyBytes)),
@@ -280,8 +284,8 @@ var legacyRouteCatalogAuthRules = []apiRouteAuthRule{
 	routeAuth(http.MethodPost, "/api/v1/scripts/import/jmeter/validate", editorImportAccess(resolveImportProjectIDFromForm, jmeterImportMaxBodyBytes)),
 	routeAuth(http.MethodPost, "/api/v1/scripts/import/github", editorProjectAccess(resolveImportProjectIDFromJSON)),
 	routeAuth(http.MethodPost, "/api/v1/scripts/import/sample", editorProjectAccess(resolveImportProjectIDFromJSON)),
-	routeAuth(http.MethodPost, "/api/v1/scripts/import/{id}/assets/upload", editorImportAccess(resolveImportProjectIDFromForm, harImportMaxBodyBytes)),
-	routeAuth(http.MethodPost, "/api/v1/scripts/import/{id}/java-classpath/upload", editorImportAccess(resolveImportProjectIDFromForm, javaClasspathUploadMaxBodyBytes)),
+	routeAuth(http.MethodPost, "/api/v1/scripts/import/{id}/assets/upload", withDomainFeature(editorImportAccess(resolveImportProjectIDFromForm, harImportMaxBodyBytes), "script_builder.imports")),
+	routeAuth(http.MethodPost, "/api/v1/scripts/import/{id}/java-classpath/upload", withDomainFeature(editorImportAccess(resolveImportProjectIDFromForm, javaClasspathUploadMaxBodyBytes), "script_builder.imports")),
 	routeAuth(http.MethodPost, "/api/v1/scripts/import/oracle-ebusiness/review", editorImportAccess(resolveImportProjectIDFromJSONOrForm, oracleReviewImportMaxBodyBytes)),
 	routeAuth(http.MethodPost, "/api/v1/scripts/import/k6", editorImportAccess(resolveImportProjectIDFromJSONOrForm, k6ImportMaxBodyBytes)),
 	routeAuth(http.MethodPost, "/api/v1/scripts/import/har", editorImportAccess(resolveImportProjectIDFromJSONOrForm, harImportMaxBodyBytes)),
@@ -404,6 +408,11 @@ func withRouteServiceAccountScope(method string, path string, requirement access
 
 func viewerGlobalAccess() accessRequirement {
 	return accessRequirement{GlobalRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}}
+}
+
+func withDomainFeature(requirement accessRequirement, featureID string) accessRequirement {
+	requirement.DomainFeatureID = featureID
+	return requirement
 }
 
 // unrestrictedViewerGlobalAccess marks a read surface that returns data across

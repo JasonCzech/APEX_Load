@@ -129,6 +129,15 @@ export interface DashboardGrafanaSettings {
   timeout_seconds: number
 }
 
+export interface DashboardOpenSearchSettings {
+  enabled: boolean
+  base_url: string
+  timeout_seconds: number
+  username?: string
+  password_env_var?: string
+  bearer_token_env_var?: string
+}
+
 export interface DashboardPowerBISettings {
   enabled: boolean
   tenant_id?: string
@@ -210,6 +219,7 @@ export interface DashboardSystemSettings {
   auth: DashboardAuthSettings
   github: DashboardGitHubSettings
   prometheus: DashboardPrometheusSettings
+  opensearch?: DashboardOpenSearchSettings
   grafana?: DashboardGrafanaSettings
   powerbi?: DashboardPowerBISettings
   client_app: DashboardClientAppSettings

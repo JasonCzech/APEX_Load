@@ -1,6 +1,6 @@
 import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Area, CartesianGrid, ComposedChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
-import { ApplicationRepository, DashboardAuthEffectiveAccessResource, DraftCapacityEstimate, GeneratorAssignmentSettings, GoalConfig, GoalSizingReport, LoadModelSupportEntry, LoadModelTemplate, LoadModelValidationReport, LoadStageDraft, RunArchiveActionStats, RunArchiveReport, RuntimeSettingsOverride, ScenarioDataPoolBinding, ScenarioMode, ScenarioRuntimeSettingsDraft, SharedDataPool, StoredScenario, StoredScript, SystemInventoryGenerator, TestSummary } from '../types'
+import { ApplicationRepository, DashboardAuthEffectiveAccessResource, DraftCapacityEstimate, GeneratorAssignmentSettings, GoalConfig, GoalSizingReport, LoadModelSupportEntry, LoadModelTemplate, LoadModelValidationReport, LoadStageDraft, RunArchiveActionStats, RunArchiveReport, RuntimeSettingsOverride, ScenarioDataPoolBinding, ScenarioMode, ScenarioRuntimeSettingsDraft, SharedDataPool, StoredScenario, StoredScript, SystemInventoryGenerator, TestSummary, TrafficProfile, TrafficProfileDeriveResponse } from '../types'
 import { type ScriptConfig } from '../types/scripts'
 import { useApi } from '../hooks/useApi'
 import { useProject } from '../hooks/useProject'
@@ -54,6 +54,7 @@ import { loadAllTestSummaries } from './testCatalogPagination'
 import { scenarioSeedFromTemplate } from './scenarioTemplateSeed'
 import { boundedAllSettled } from '../utils/boundedAllSettled'
 import { ScenarioCompositionTimeline } from './ScenarioCompositionTimeline'
+import TrafficProfileSourcePanel from './TrafficProfileSourcePanel'
 
 interface Props {
   applicationRepository?: ApplicationRepository | null
@@ -64,6 +65,7 @@ interface Props {
   onNavigate?: (page: NavPage) => void
   onScenarioViewChange?: (view: 'library' | 'builder' | 'plans') => void
   initialView?: 'library' | 'builder' | 'plans'
+  featurePolicySignal?: number
 }
 
 export interface ScenarioFormState {
@@ -81,6 +83,7 @@ export interface ScenarioFormState {
   goal_p95_latency_ms?: number
   goal_max_error_pct?: number
   goal_config?: GoalConfig
+  traffic_profile?: TrafficProfile
   continue_on_error?: boolean
   snapshot_on_error?: boolean
   runtime_iterations?: number
@@ -139,6 +142,10 @@ type ScenarioSortField = 'name' | 'scripts' | 'data_pools' | 'created_at' | 'ass
 type ScriptLibrarySortField = 'name' | 'created_at' | 'last_run_at' | 'associated_scenarios' | 'associated_releases' | 'protocol'
 type GoalBaselineSortField = 'name' | 'id' | 'started_at' | 'duration' | 'vusers' | 'peak_tps' | 'art' | 'error_rate'
 export type ScenarioStartChoice = ScenarioSourceMode | 'goal' | ''
+
+// Workload shape backing the production traffic-profile workflow. Its domain
+// feature gates the workflow's entry points and its analyze/derive endpoints.
+const PRODUCTION_REPLAY_SHAPE_ID = 'production-replay'
 type RunSettingsTab = 'scenario' | 'runtime' | 'infrastructure'
 
 const scenarioWizardSteps: Array<{ id: ScenarioWizardStep, label: string }> = [
@@ -926,7 +933,7 @@ function ScenarioModelPreviewPanel({
   )
 }
 
-function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, onNavigate, onScenarioViewChange, initialView = 'library' }: Props) {
+function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onCreateTestFromScenario, onNavigate, onScenarioViewChange, initialView = 'library', featurePolicySignal = 0 }: Props) {
   const api = useApi()
   const { activeProject } = useProject()
   const activeProjectId = activeProject?.id
@@ -1093,6 +1100,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
   )
   const activeGroupIndex = Math.min(stageGroupIndex, formGroups.length - 1)
   const activeStageGroup = formGroups[activeGroupIndex] || formGroups[0]
+  const activeProfileMapping = form.traffic_profile?.mappings.find(mapping => mapping.group_name === (activeStageGroup?.name || `Group ${activeGroupIndex + 1}`))
   const activeStageTimeline = useMemo(
     () => validateStageTimeline(form.duration, activeStageGroup?.stages || []),
     [activeStageGroup?.stages, form.duration],
@@ -1224,6 +1232,8 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
 
     return buildScenarioUpsertPayload({
       name: draftForm.name || 'Draft scenario',
+      projectId: activeProjectId,
+      workloadShapeId: selectedShapeId,
       duration: draftForm.duration || '1m',
       startDelay: draftForm.start_delay,
       scenarioMode: draftForm.scenario_mode,
@@ -1233,9 +1243,10 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
       groups: draftForm.groups.map(normalizeGroupForPayload),
       goalConfig: goalConfigFromForm(draftForm),
       runtimeSettings: runtimeSettingsFromForm(draftForm, showBrowserRuntimeSettings),
+      trafficProfile: draftForm.traffic_profile,
       dataPools: dataPoolsPayload,
     })
-  }, [dataPools, form, showBrowserRuntimeSettings])
+  }, [activeProjectId, dataPools, form, selectedShapeId, showBrowserRuntimeSettings])
 
   const refresh = useCallback(async () => {
     const projectId = activeProjectId
@@ -1246,8 +1257,8 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
         api.listScenarios(projectId),
         api.listScripts(projectId),
         api.listDataPools(projectId),
-        api.listLoadModelTemplates(),
-        api.getLoadModelSupportMatrix(),
+        api.listLoadModelTemplates({ project_id: projectId }),
+        api.getLoadModelSupportMatrix(projectId),
       ])
       if (requestGeneration !== refreshGenerationRef.current || currentProjectIdRef.current !== projectId) return
       const nextScenarios = scenarioRes.scenarios || []
@@ -1271,7 +1282,36 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
     }
   }, [activeProjectId, api])
 
-  useEffect(() => { void refresh() }, [refresh])
+  useEffect(() => { void refresh() }, [featurePolicySignal, refresh])
+
+  useEffect(() => {
+    if (!featurePolicySignal) return
+    const grandfatheredShapeId = editingId
+      ? scenarios.find(scenario => scenario.id === editingId)?.workload_shape_id || ''
+      : ''
+    if (!selectedShapeId || loadModelSupportMatrix.some(shape => shape.id === selectedShapeId)) return
+    if (selectedShapeId === grandfatheredShapeId) return
+    setSelectedShapeId('')
+    setSelectedLoadModelTemplateId('')
+    setError('The selected workload shape was disabled by an administrator. Compatible draft values were retained as a Custom Workload.')
+  }, [editingId, featurePolicySignal, loadModelSupportMatrix, scenarios, selectedShapeId])
+
+  // The production-replay workflow has its own entry points and its own
+  // analyze/derive endpoints, so it has to honour the shape's feature policy
+  // itself rather than relying on the shape catalog it never reads. An empty
+  // matrix means "not loaded yet", not "disabled", so the card does not flicker.
+  const trafficProfileShapeEnabled = useMemo(
+    () => loadModelSupportMatrix.length === 0 || loadModelSupportMatrix.some(shape => shape.id === PRODUCTION_REPLAY_SHAPE_ID),
+    [loadModelSupportMatrix],
+  )
+
+  useEffect(() => {
+    // A scenario saved before the shape was disabled keeps its profile and stays
+    // editable; only an in-progress draft is moved off the hidden workflow.
+    if (trafficProfileShapeEnabled || form.traffic_profile) return
+    setScenarioSourceMode(current => (current === 'traffic_profile' ? 'shape' : current))
+    setScenarioStartChoice(current => (current === 'traffic_profile' ? 'shape' : current))
+  }, [form.traffic_profile, trafficProfileShapeEnabled])
   // Engine config defaults are static app-wide; fetch once so the runtime editor can
   // show the actual inherited value (never a blank placeholder) for unset fields.
   useEffect(() => {
@@ -1627,10 +1667,10 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
     setForm(nextForm)
     setStageGroupIndex(0)
     setSelectedLoadModelTemplateId('')
-    setSelectedShapeId('')
+    setSelectedShapeId(scenario.workload_shape_id || '')
     setSelectedCloneScenarioId(scenario.id)
-    setScenarioSourceMode('existing')
-    setScenarioStartChoice('existing')
+    setScenarioSourceMode(scenario.traffic_profile ? 'traffic_profile' : 'existing')
+    setScenarioStartChoice(scenario.traffic_profile ? 'traffic_profile' : 'existing')
     setScenarioCloneQuery('')
     setScriptSelectionTargetIndex(null)
     setRunSettingsTab('scenario')
@@ -1676,10 +1716,10 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
     setForm(scenarioFormStateFromStoredScenario(scenario, fallbackScriptId, true))
     setStageGroupIndex(0)
     setSelectedLoadModelTemplateId('')
-    setSelectedShapeId('')
+    setSelectedShapeId(scenario.workload_shape_id || '')
     setSelectedCloneScenarioId(scenario.id)
-    setScenarioSourceMode('existing')
-    setScenarioStartChoice('existing')
+    setScenarioSourceMode(scenario.traffic_profile ? 'traffic_profile' : 'existing')
+    setScenarioStartChoice(scenario.traffic_profile ? 'traffic_profile' : 'existing')
     setScriptSelectionTargetIndex(null)
     setRunSettingsTab('scenario')
     setLoadModelValidation(null)
@@ -2930,6 +2970,11 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
               <strong>Unified Catalog</strong>
               <small>Select a supported workload model and optionally apply one of its starter templates.</small>
             </button>
+            {trafficProfileShapeEnabled && <button type="button" className={`scenario-source-card ${scenarioSourceMode === 'traffic_profile' ? 'selected' : ''}`} onClick={() => selectScenarioSourceMode('traffic_profile')}>
+              <span>Production Traffic Profile</span>
+              <strong>CSV, XLSX, Prometheus, OpenSearch</strong>
+              <small>Preserve the production series at full resolution and replay it as adaptive TPS or direct VUser targets.</small>
+            </button>}
             <button type="button" className="scenario-source-card" onClick={() => void openGoalSizing()}>
               <span>Build from Goal</span>
               <strong>Little&apos;s Law Sizing</strong>
@@ -2945,15 +2990,46 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
         <section className="scenario-wizard-panel">
           <div className="scenario-wizard-panel-header">
             <div>
-              <h4>{scenarioSourceMode === 'existing' ? 'Choose Scenario To Model' : 'Choose Workload Shape'}</h4>
-              <p>{scenarioSourceMode === 'existing' ? 'The selected scenario becomes an editable copy; the original remains unchanged.' : 'Supported workload models and starter templates are combined into one actionable catalog.'}</p>
+              <h4>{scenarioSourceMode === 'existing' ? 'Choose Scenario To Model' : scenarioSourceMode === 'traffic_profile' ? 'Build From Production Traffic' : 'Choose Workload Shape'}</h4>
+              <p>{scenarioSourceMode === 'existing' ? 'The selected scenario becomes an editable copy; the original remains unchanged.' : scenarioSourceMode === 'traffic_profile' ? 'Analyze a file or production query, map series to groups, and preview the exact runtime targets before applying.' : 'Supported workload models and starter templates are combined into one actionable catalog.'}</p>
             </div>
             <div className="scenario-source-toggle">
               <button type="button" className={`mode-chip ${scenarioSourceMode === 'shape' ? 'active' : ''}`} onClick={() => selectScenarioSourceMode('shape')}>Shapes</button>
               <button type="button" className={`mode-chip ${scenarioSourceMode === 'existing' ? 'active' : ''}`} onClick={() => selectScenarioSourceMode('existing')}>Existing</button>
+              {trafficProfileShapeEnabled && <button type="button" className={`mode-chip ${scenarioSourceMode === 'traffic_profile' ? 'active' : ''}`} onClick={() => selectScenarioSourceMode('traffic_profile')}>Production profile</button>}
             </div>
           </div>
-          {scenarioSourceMode === 'existing' ? (
+          {scenarioSourceMode === 'traffic_profile' ? (
+            <TrafficProfileSourcePanel
+              projectId={activeProjectId}
+              groupNames={form.groups.map((group, index) => group.name.trim() || findScriptById(scripts, group.script_id)?.name || `Group ${index + 1}`)}
+              scenarioDraft={buildScenarioDraftPayload()}
+              existingProfile={form.traffic_profile}
+              onApply={(result: TrafficProfileDeriveResponse) => {
+                const managed = new Map(result.traffic_profile.mappings.map(mapping => [mapping.group_name, mapping]))
+                const goal = result.scenario_draft.goal_config
+                setForm(previous => ({
+                  ...previous,
+                  duration: result.traffic_profile.target_duration,
+                  scenario_mode: result.traffic_profile.runtime_target === 'vusers' ? 'vuser_driven' : 'goal_oriented',
+                  traffic_profile: result.traffic_profile,
+                  goal_config: goal ? structuredClone(goal) : undefined,
+                  goal_target_average_tps: goal?.target_average_tps,
+                  goal_min_vusers: goal?.min_vusers,
+                  goal_max_vusers: goal?.max_vusers,
+                  goal_p95_latency_ms: goal?.p95_latency_ms,
+                  goal_max_error_pct: goal?.max_error_pct,
+                  groups: previous.groups.map((group, index) => {
+                    const name = group.name.trim() || findScriptById(scripts, group.script_id)?.name || `Group ${index + 1}`
+                    const mapping = managed.get(name)
+                    return mapping ? { ...group, name, stages: [], ramp_up: '', ramp_down: '', start_offset: '', vusers: result.traffic_profile.runtime_target === 'vusers' ? mapping.peak_target : group.vusers } : group
+                  }),
+                }))
+                setSelectedShapeId(PRODUCTION_REPLAY_SHAPE_ID)
+                setLoadModelValidation(result.load_model_validation || null)
+              }}
+            />
+          ) : scenarioSourceMode === 'existing' ? (
             <>
               <label className="library-search scenario-clone-search">
                 <span>Search existing scenarios</span>
@@ -3392,6 +3468,14 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
             </div>
           )}
           <div className="scenario-subpanel">
+            {activeProfileMapping && (
+              <div className="scenario-shape-guidance">
+                <strong>Managed by production traffic profile</strong>
+                <p>{activeProfileMapping.points.length.toLocaleString()} {form.traffic_profile?.runtime_target.toUpperCase()} target changes · peak {activeProfileMapping.peak_target}</p>
+                <button type="button" className="btn btn-secondary" onClick={() => { setForm(previous => ({ ...previous, traffic_profile: undefined })); setSelectedShapeId('') }}>Remove profile</button>
+              </div>
+            )}
+            <div hidden={Boolean(activeProfileMapping)}>
             <div className="scenario-assignment-header">
               <div>
                 <h4>Advanced Stair-Step Ramp</h4>
@@ -3462,6 +3546,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
             ) : (
               <p className="scenario-assignment-copy secondary">Simple ramp is active for this group. Enable advanced stages to define stair-step intervals and per-step VUser/TPS targets.</p>
             )}
+            </div>
           </div>
               </>
             )}

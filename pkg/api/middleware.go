@@ -163,6 +163,9 @@ type accessRequirement struct {
 	ServiceAccountScope       string
 	ServiceAccountScopeLookup func(*http.Request) string
 	MaxBodyBytes              int64
+	// DomainFeatureID is a second authorization gate applied after RBAC. Unlike
+	// roles, global administrators do not bypass a disabled domain feature.
+	DomainFeatureID string
 }
 
 type requestProjectLookup func(*http.Request) (string, int, string)
@@ -246,6 +249,9 @@ func authMiddleware(settings func() AuthSettings, store storage.Store, coordinat
 			}
 			if isAuthBypassMode(current.Mode) {
 				bindMutationRequirementProjectBestEffort(r, store, requirement)
+				if !domainFeatureAllowsRequest(w, r, store, requirement) {
+					return
+				}
 				next.ServeHTTP(w, r)
 				return
 			}
@@ -472,12 +478,12 @@ func authorizeAccessRequirement(w http.ResponseWriter, r *http.Request, store st
 
 	if userHasGlobalGrantForRequirement(user, requirement) {
 		bindMutationRequirementProjectBestEffort(r, store, requirement)
-		return grantIfScopeAllows(w, r, resolution)
+		return grantIfScopeAllows(w, r, store, resolution, requirement)
 	}
 
 	if requirement.AuthenticatedOnly {
 		bindMutationRequirementProjectBestEffort(r, store, requirement)
-		return grantIfScopeAllows(w, r, resolution)
+		return grantIfScopeAllows(w, r, store, resolution, requirement)
 	}
 
 	if requirement.ProjectLookup != nil {
@@ -491,7 +497,7 @@ func authorizeAccessRequirement(w http.ResponseWriter, r *http.Request, store st
 		}
 		bindMutationProjectToRequest(r, projectID)
 		if userHasProjectOrParentRole(store, user, projectID, requirement.ProjectRoles...) {
-			allowed := grantIfScopeAllows(w, r, resolution)
+			allowed := grantIfScopeAllows(w, r, store, resolution, requirement)
 			if allowed {
 				bindAuthorizedProjectToRequest(r, projectID)
 			}
@@ -507,7 +513,7 @@ func authorizeAccessRequirement(w http.ResponseWriter, r *http.Request, store st
 			return false
 		}
 		if user.hasDomainRole(domainID, requirement.DomainRoles...) {
-			return grantIfScopeAllows(w, r, resolution)
+			return grantIfScopeAllows(w, r, store, resolution, requirement)
 		}
 	}
 
@@ -519,7 +525,7 @@ func authorizeAccessRequirement(w http.ResponseWriter, r *http.Request, store st
 			return false
 		}
 		if user.hasRepositoryRole(repositoryID, requirement.RepositoryRoles...) {
-			return grantIfScopeAllows(w, r, resolution)
+			return grantIfScopeAllows(w, r, store, resolution, requirement)
 		}
 	}
 
@@ -625,9 +631,12 @@ func scopedLookupFailureResponse(status int, msg string) (int, string) {
 // grantIfScopeAllows authorizes a request whose RBAC role check has already
 // passed, enforcing that any service-account token scope permits the operation.
 // It writes a 403 and returns false when the scope disallows the request.
-func grantIfScopeAllows(w http.ResponseWriter, r *http.Request, resolution authResolution) bool {
+func grantIfScopeAllows(w http.ResponseWriter, r *http.Request, store storage.Store, resolution authResolution, requirement accessRequirement) bool {
 	if !serviceAccountAllowsRequest(resolution.ServiceAccount, r) {
 		writeError(w, http.StatusForbidden, "service account token scope does not allow this operation")
+		return false
+	}
+	if !domainFeatureAllowsRequest(w, r, store, requirement) {
 		return false
 	}
 	return true

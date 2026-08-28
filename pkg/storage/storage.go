@@ -778,6 +778,18 @@ type Domain struct {
 	UpdatedAt   time.Time `json:"updated_at"`
 }
 
+// DomainFeaturePolicy stores the domain-level feature configuration. An absent
+// row is represented by callers as revision "0" with no disabled features.
+// DisabledFeatureIDs may contain identifiers introduced by a newer controller;
+// writers must preserve those identifiers during mixed-version upgrades.
+type DomainFeaturePolicy struct {
+	DomainID           string    `json:"domain_id"`
+	DisabledFeatureIDs []string  `json:"disabled_feature_ids"`
+	Revision           string    `json:"revision"`
+	CreatedAt          time.Time `json:"created_at,omitempty"`
+	UpdatedAt          time.Time `json:"updated_at,omitempty"`
+}
+
 type ApplicationRepository struct {
 	ID          string    `json:"id"`
 	DomainID    string    `json:"domain_id"`
@@ -823,6 +835,7 @@ type Scenario struct {
 	ID               string    `json:"id"`
 	RefKey           string    `json:"ref_key,omitempty"`
 	Name             string    `json:"name"`
+	WorkloadShapeID  string    `json:"workload_shape_id,omitempty"`
 	Duration         string    `json:"duration"`
 	StartDelay       string    `json:"start_delay,omitempty"`
 	ScenarioMode     string    `json:"scenario_mode,omitempty"`
@@ -831,6 +844,7 @@ type Scenario struct {
 	Assignment       any       `json:"assignment,omitempty"`
 	GoalConfig       any       `json:"goal_config,omitempty"`
 	RuntimeSettings  any       `json:"runtime_settings,omitempty"`
+	TrafficProfile   any       `json:"traffic_profile,omitempty"`
 	CreatedAt        time.Time `json:"created_at"`
 	UpdatedAt        time.Time `json:"updated_at"`
 }
@@ -1337,6 +1351,7 @@ type TestRecord struct {
 	DataPools             []ScenarioDataPoolBinding `json:"data_pools,omitempty"`              // JSON blob
 	RuntimeSettings       any                       `json:"runtime_settings,omitempty"`        // JSON blob
 	GoalConfig            any                       `json:"goal_config,omitempty"`             // JSON blob
+	TrafficProfile        any                       `json:"traffic_profile,omitempty"`         // JSON blob
 	StartAuthorization    any                       `json:"start_authorization,omitempty"`     // JSON blob
 	ExecutionPlanApproval any                       `json:"execution_plan_approval,omitempty"` // JSON blob
 	// InitialProvenance is the immutable, masked start-of-run archive snapshot.

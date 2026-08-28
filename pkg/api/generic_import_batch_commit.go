@@ -118,6 +118,9 @@ func (s *Server) handleCommitGenericImportBatch(w http.ResponseWriter, r *http.R
 	if authorized, scoped := authorizedProjectFromRequest(r); scoped {
 		projectID = normalizeProjectID(authorized)
 	}
+	if !s.requireDomainFeatureForProject(w, projectID, featureIDForImportProfile(requestedProfile)) {
+		return
+	}
 	requestScripts := make([]*dsl.Script, 0, len(req.Scripts))
 	requestedFolderIDs := make([]*string, len(req.Scripts))
 	for index := range req.Scripts {

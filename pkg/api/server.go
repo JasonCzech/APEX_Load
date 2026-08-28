@@ -917,6 +917,13 @@ func (s *Server) routes(allowedOrigins []string) {
 		withAuthAuditRecorder(s),
 		withLocalAuthGeneration(s.activeLocalAuthGeneration),
 	))
+	recorderViewAuth = s.domainFeatureScopedAuth(recorderViewAuth, "script_builder.browser_recording", resolveRecorderListProjectID)
+	recorderCreateAuth = s.domainFeatureScopedAuth(recorderCreateAuth, "script_builder.browser_recording", resolveRecorderCreateProjectID)
+	recorderSessionViewAuth = s.domainFeatureScopedAuth(recorderSessionViewAuth, "script_builder.browser_recording", resolveRecorderSessionProjectID(s.recorder))
+	recorderSessionEditAuth = s.domainFeatureScopedAuth(recorderSessionEditAuth, "script_builder.browser_recording", resolveRecorderSessionProjectID(s.recorder))
+	browserRecordingCreateAuth = s.domainFeatureScopedAuth(browserRecordingCreateAuth, "script_builder.browser_recording", resolveRecorderCreateProjectID)
+	browserRecordingSessionViewAuth = s.domainFeatureScopedAuth(browserRecordingSessionViewAuth, "script_builder.browser_recording", resolveBrowserRecordingSessionProjectID(s))
+	browserRecordingSessionEditAuth = s.domainFeatureScopedAuth(browserRecordingSessionEditAuth, "script_builder.browser_recording", resolveBrowserRecordingSessionProjectID(s))
 
 	// Controller-native GitHub Actions discovery, authentication, and run API.
 	s.mux.Handle("GET /.well-known/apexload-ci", cors(log(http.HandlerFunc(s.handleCIWellKnown))))
@@ -929,6 +936,8 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.mux.Handle("POST /api/v1/domains", cors(log(auth(http.HandlerFunc(s.handleCreateDomain)))))
 	s.mux.Handle("GET /api/v1/domains", cors(log(auth(http.HandlerFunc(s.handleListDomains)))))
 	s.mux.Handle("GET /api/v1/domains/{id}", cors(log(auth(http.HandlerFunc(s.handleGetDomain)))))
+	s.mux.Handle("GET /api/v1/domains/{id}/features", cors(log(auth(http.HandlerFunc(s.handleGetDomainFeatures)))))
+	s.mux.Handle("PUT /api/v1/domains/{id}/features", cors(log(auth(http.HandlerFunc(s.handleUpdateDomainFeatures)))))
 	s.mux.Handle("PUT /api/v1/domains/{id}", cors(log(auth(http.HandlerFunc(s.handleUpdateDomain)))))
 	s.mux.Handle("DELETE /api/v1/domains/{id}", cors(log(auth(http.HandlerFunc(s.handleDeleteDomain)))))
 	s.mux.Handle("GET /api/v1/domains/{id}/application-repository", cors(log(auth(http.HandlerFunc(s.handleGetApplicationRepository)))))
@@ -1018,6 +1027,9 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.mux.Handle("GET /api/v1/scenarios", cors(log(auth(http.HandlerFunc(s.handleListScenarios)))))
 	s.mux.Handle("POST /api/v1/scenarios/validate-load-model", cors(log(auth(http.HandlerFunc(s.handleValidateScenarioLoadModel)))))
 	s.mux.Handle("POST /api/v1/scenarios/size-from-goal", cors(log(auth(http.HandlerFunc(s.handleSizeScenarioFromGoal)))))
+	s.mux.Handle("GET /api/v1/scenarios/traffic-profile/sources", cors(log(auth(http.HandlerFunc(s.handleTrafficProfileSources)))))
+	s.mux.Handle("POST /api/v1/scenarios/traffic-profile/analyze", cors(log(auth(http.HandlerFunc(s.handleAnalyzeTrafficProfile)))))
+	s.mux.Handle("POST /api/v1/scenarios/traffic-profile/derive", cors(log(auth(http.HandlerFunc(s.handleDeriveTrafficProfile)))))
 	s.mux.Handle("GET /api/v1/scenarios/{id}", cors(log(auth(http.HandlerFunc(s.handleGetScenario)))))
 	s.mux.Handle("PUT /api/v1/scenarios/{id}", cors(log(auth(http.HandlerFunc(s.handleUpdateScenario)))))
 	s.mux.Handle("DELETE /api/v1/scenarios/{id}", cors(log(auth(http.HandlerFunc(s.handleDeleteScenario)))))

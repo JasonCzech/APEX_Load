@@ -43,6 +43,7 @@ type SystemSettings struct {
 	Auth             AuthSettings             `json:"auth"`
 	GitHub           GitHubSettings           `json:"github"`
 	Prometheus       PrometheusSettings       `json:"prometheus"`
+	OpenSearch       OpenSearchSettings       `json:"opensearch"`
 	Grafana          GrafanaSettings          `json:"grafana"`
 	PowerBI          PowerBISettings          `json:"powerbi"`
 	ClientApp        ClientAppSettings        `json:"client_app"`
@@ -90,6 +91,42 @@ type PrometheusSettings struct {
 	TimeoutSeconds    int    `json:"timeout_seconds,omitempty"`
 	BearerTokenEnvVar string `json:"bearer_token_env_var,omitempty"`
 	AllowLabelValues  bool   `json:"allow_label_values"`
+}
+
+type OpenSearchSettings struct {
+	Enabled           bool   `json:"enabled"`
+	BaseURL           string `json:"base_url,omitempty"`
+	TimeoutSeconds    int    `json:"timeout_seconds,omitempty"`
+	Username          string `json:"username,omitempty"`
+	PasswordEnvVar    string `json:"password_env_var,omitempty"`
+	BearerTokenEnvVar string `json:"bearer_token_env_var,omitempty"`
+}
+
+func normalizeOpenSearchSettings(in OpenSearchSettings) OpenSearchSettings {
+	in.BaseURL = strings.TrimRight(strings.TrimSpace(in.BaseURL), "/")
+	in.Username = strings.TrimSpace(in.Username)
+	in.PasswordEnvVar = strings.TrimSpace(in.PasswordEnvVar)
+	in.BearerTokenEnvVar = strings.TrimSpace(in.BearerTokenEnvVar)
+	if in.TimeoutSeconds == 0 {
+		in.TimeoutSeconds = 10
+	}
+	return in
+}
+
+func (o OpenSearchSettings) allowlistHosts() []string {
+	parsed, err := url.Parse(strings.TrimSpace(o.BaseURL))
+	if err != nil || parsed.Hostname() == "" {
+		return nil
+	}
+	return []string{parsed.Hostname()}
+}
+
+func (o OpenSearchSettings) bearerToken() string {
+	return strings.TrimSpace(envValue(o.BearerTokenEnvVar))
+}
+
+func (o OpenSearchSettings) password() string {
+	return strings.TrimSpace(envValue(o.PasswordEnvVar))
 }
 
 type GrafanaSettings struct {
@@ -732,6 +769,7 @@ func defaultSystemSettings(maxConcurrent int) SystemSettings {
 		Auth:             defaultAuthSettings(),
 		GitHub:           defaultGitHubSettings(),
 		Prometheus:       defaultPrometheusSettings(),
+		OpenSearch:       normalizeOpenSearchSettings(OpenSearchSettings{}),
 		Grafana:          normalizeGrafanaSettings(GrafanaSettings{}),
 		PowerBI:          defaultPowerBISettings(),
 		ClientApp:        defaultClientAppSettings(),
@@ -810,6 +848,7 @@ func cloneSystemSettings(in SystemSettings) SystemSettings {
 		out.GitHub.Scopes = append([]string(nil), in.GitHub.Scopes...)
 	}
 	out.Prometheus = in.Prometheus
+	out.OpenSearch = in.OpenSearch
 	out.Grafana = in.Grafana
 	out.PowerBI = in.PowerBI
 	out.ClientApp = in.ClientApp
@@ -867,6 +906,7 @@ func normalizeLoadedSystemSettings(in SystemSettings, raw string, defaultMaxConc
 	out.Auth = normalizeAuthSettings(out.Auth)
 	out.GitHub = normalizeGitHubSettings(out.GitHub)
 	out.Prometheus = normalizePrometheusSettings(out.Prometheus)
+	out.OpenSearch = normalizeOpenSearchSettings(out.OpenSearch)
 	out.Grafana = normalizeGrafanaSettings(out.Grafana)
 	out.PowerBI = normalizePowerBISettings(out.PowerBI)
 	out.ClientApp = normalizeClientAppSettings(out.ClientApp)
@@ -1024,6 +1064,9 @@ func validateSystemSettings(settings SystemSettings) error {
 	if err := validatePrometheusSettings(settings.Prometheus); err != nil {
 		return err
 	}
+	if err := validateOpenSearchSettings(settings.OpenSearch); err != nil {
+		return err
+	}
 	if err := validateGrafanaSettings(settings.Grafana); err != nil {
 		return err
 	}
@@ -1135,6 +1178,45 @@ func validatePrometheusSettings(settings PrometheusSettings) error {
 		parsed, _ := url.Parse(normalized.BaseURL)
 		if parsed == nil || !strings.EqualFold(parsed.Scheme, "https") {
 			return fmt.Errorf("prometheus.base_url must use https when bearer authentication is configured in production")
+		}
+	}
+	return nil
+}
+
+func validateOpenSearchSettings(settings OpenSearchSettings) error {
+	normalized := normalizeOpenSearchSettings(settings)
+	if !validSecretEnvVarName(normalized.PasswordEnvVar) || !validSecretEnvVarName(normalized.BearerTokenEnvVar) {
+		return fmt.Errorf("opensearch credential environment-variable names are invalid")
+	}
+	if normalized.TimeoutSeconds <= 0 || normalized.TimeoutSeconds > 60 {
+		return fmt.Errorf("opensearch.timeout_seconds must be between 1 and 60")
+	}
+	if normalized.Username != "" && normalized.PasswordEnvVar == "" {
+		return fmt.Errorf("opensearch.password_env_var is required when username is configured")
+	}
+	if normalized.PasswordEnvVar != "" && normalized.Username == "" {
+		return fmt.Errorf("opensearch.username is required when password_env_var is configured")
+	}
+	if normalized.BearerTokenEnvVar != "" && normalized.Username != "" {
+		return fmt.Errorf("opensearch basic and bearer authentication are mutually exclusive")
+	}
+	if !normalized.Enabled && normalized.BaseURL == "" {
+		return nil
+	}
+	if normalized.BaseURL == "" {
+		return fmt.Errorf("opensearch.base_url is required when opensearch is enabled")
+	}
+	allow := map[string]struct{}{}
+	for _, host := range normalized.allowlistHosts() {
+		allow[strings.ToLower(host)] = struct{}{}
+	}
+	if err := validateOutboundURLAllowingHosts(normalized.BaseURL, allow); err != nil {
+		return fmt.Errorf("opensearch.base_url %w", err)
+	}
+	if productionMode() && (normalized.Username != "" || normalized.BearerTokenEnvVar != "") {
+		parsed, _ := url.Parse(normalized.BaseURL)
+		if parsed == nil || !strings.EqualFold(parsed.Scheme, "https") {
+			return fmt.Errorf("opensearch.base_url must use https when authentication is configured in production")
 		}
 	}
 	return nil
@@ -1963,6 +2045,7 @@ func (tr *TestRunner) updateSystemSettings(settings SystemSettings, expectedRevi
 	normalized.ArchiveRetention = normalizeArchiveRetentionSettings(normalized.ArchiveRetention)
 	normalized.Auth = normalizeAuthSettings(normalized.Auth)
 	normalized.Prometheus = normalizePrometheusSettings(normalized.Prometheus)
+	normalized.OpenSearch = normalizeOpenSearchSettings(normalized.OpenSearch)
 	normalized.Grafana = normalizeGrafanaSettings(normalized.Grafana)
 	normalized.PowerBI = normalizePowerBISettings(normalized.PowerBI)
 	normalized.ClientApp = normalizeClientAppSettings(normalized.ClientApp)

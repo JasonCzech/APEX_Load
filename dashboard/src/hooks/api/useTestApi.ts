@@ -28,6 +28,10 @@ import {
   TestNote,
   TestRunManifest,
   TestSummary,
+  TrafficProfileAnalyzeResponse,
+  TrafficProfileDeriveRequest,
+  TrafficProfileDeriveResponse,
+  TrafficProfileSourcesResponse,
   RuntimeAdjustmentPreview,
   RuntimeAdjustmentRequest,
   TransactionEvent,
@@ -377,13 +381,13 @@ export function useTestApi() {
   )
 
   const listLoadModelTemplates = useCallback(
-    (params?: { shape_id?: string }, options?: ApiCallOptions) =>
-      request<LoadModelTemplatesResponse>(`/scenarios/load-models/templates${buildQuery({ shape_id: params?.shape_id })}`, withCallOptions(undefined, options)),
+    (params?: { shape_id?: string; project_id?: string }, options?: ApiCallOptions) =>
+      request<LoadModelTemplatesResponse>(`/scenarios/load-models/templates${buildQuery({ shape_id: params?.shape_id, project_id: params?.project_id })}`, withCallOptions(undefined, options)),
     [],
   )
 
   const getLoadModelSupportMatrix = useCallback(
-    (options?: ApiCallOptions) => request<LoadModelSupportMatrixResponse>('/scenarios/load-models/support-matrix', withCallOptions(undefined, options)),
+    (projectId?: string, options?: ApiCallOptions) => request<LoadModelSupportMatrixResponse>(`/scenarios/load-models/support-matrix${buildQuery({ project_id: projectId })}`, withCallOptions(undefined, options)),
     [],
   )
 
@@ -394,6 +398,21 @@ export function useTestApi() {
 
   const sizeScenarioFromGoal = useCallback(
     (data: GoalSizingRequest, options?: ApiCallOptions) => request<GoalSizingReport>('/scenarios/size-from-goal', withCallOptions({ method: 'POST', body: JSON.stringify(data) }, options)),
+    [],
+  )
+
+  const getTrafficProfileSources = useCallback(
+    (options?: ApiCallOptions) => request<TrafficProfileSourcesResponse>('/scenarios/traffic-profile/sources', withCallOptions(undefined, options)),
+    [],
+  )
+
+  const analyzeTrafficProfile = useCallback(
+    (data: FormData | { project_id?: string; source: unknown }, options?: ApiCallOptions) => request<TrafficProfileAnalyzeResponse>('/scenarios/traffic-profile/analyze', withCallOptions({ method: 'POST', body: data instanceof FormData ? data : JSON.stringify(data) }, options)),
+    [],
+  )
+
+  const deriveTrafficProfile = useCallback(
+    (data: TrafficProfileDeriveRequest, options?: ApiCallOptions) => request<TrafficProfileDeriveResponse>('/scenarios/traffic-profile/derive', withCallOptions({ method: 'POST', body: JSON.stringify(data) }, options)),
     [],
   )
 
@@ -808,6 +827,9 @@ export function useTestApi() {
       listLoadModelTemplates,
       validateScenarioLoadModel,
       sizeScenarioFromGoal,
+      getTrafficProfileSources,
+      analyzeTrafficProfile,
+      deriveTrafficProfile,
       startTest,
       pinComparisonBaseline,
       unpinComparisonBaseline,
@@ -879,6 +901,9 @@ export function useTestApi() {
       listLoadModelTemplates,
       validateScenarioLoadModel,
       sizeScenarioFromGoal,
+      getTrafficProfileSources,
+      analyzeTrafficProfile,
+      deriveTrafficProfile,
       startTest,
       pinComparisonBaseline,
       unpinComparisonBaseline,

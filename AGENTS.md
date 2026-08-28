@@ -51,6 +51,7 @@ pkg/
   collectoragent/ — Dependency-free monitoring-collector agent (token auth, heartbeat + host metric packs)
   compute/       — Provider-neutral async capacity backends (Kubernetes, Azure Container Apps/Jobs, ECS Fargate)
   telemetry/     — Opt-in OpenTelemetry tracing setup + HTTP instrumentation (off unless APEXLOAD_OTEL_ENABLED)
+  trafficprofile/ — Production time-series parsing, normalization, shaping, and runtime profile contracts
   debugserver/   — Optional net/http/pprof listener, gated by APEXLOAD_PPROF_ADDR
   runtimetuning/ — GOMAXPROCS/GOMEMLIMIT resolution from cgroup limits
   perfevidence/  — Controlled local performance probes + component evidence reports

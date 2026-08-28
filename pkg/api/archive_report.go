@@ -630,6 +630,11 @@ func buildRunArchiveGoalCompletion(provenance RunArchiveProvenance, overview Run
 			}
 		}
 	}
+	if provenance.TrafficProfile != nil && provenance.TrafficProfile.RuntimeTarget == "tps" {
+		if peak := trafficProfilePeakAggregateTarget(provenance.TrafficProfile); peak > goals.TargetTPS {
+			goals.TargetTPS = peak
+		}
+	}
 	if overview.PeakTargetTPS > goals.TargetTPS {
 		goals.TargetTPS = overview.PeakTargetTPS
 	}

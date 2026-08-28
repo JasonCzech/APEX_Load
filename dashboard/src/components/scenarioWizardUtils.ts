@@ -12,7 +12,7 @@ import { formatTimeCompact, parseDurationToNanoseconds, parseDurationToSeconds }
 
 export type ScenarioWizardStep = 'start' | 'source' | 'scripts' | 'run' | 'data' | 'review'
 
-export type ScenarioSourceMode = 'shape' | 'existing'
+export type ScenarioSourceMode = 'shape' | 'existing' | 'traffic_profile'
 
 export interface ScenarioShapeCatalogOption {
   id: string

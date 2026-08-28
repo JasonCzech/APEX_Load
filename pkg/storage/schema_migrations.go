@@ -28,6 +28,9 @@ var schemaReleases = []schemaRelease{
 	{Version: 1, Name: "idempotent-schema-baseline", Fingerprint: "60c5d967d6f0543361fa8842fac8a0e157b118bcef49d2c6310a7cee19a15832"},
 	{Version: 2, Name: "cloudtest-outcome-parity-foundations", Fingerprint: "9a70267c0b98361c2563e0339c17b3eaa1d5595ef6fea06b9f94eb62c696fb28"},
 	{Version: 3, Name: "shared-dashboard-definitions", Fingerprint: "59f38c09909ddb93e6e1ad362595a5436a9942fe8befd861ba9ed4636759d3ad"},
+	{Version: 4, Name: "domain-feature-access-controls", Fingerprint: "86c06ad55fe5e62f1e8e9956738a8b42080e5a63988c9b2903e1f03b9eb0a13a"},
+	{Version: 5, Name: "production-traffic-profiles", Fingerprint: "6d3bff068cfb95b5ac82283cc3794af6941f3d3f9df9c4c329d3fdc9a2133ada"},
+	{Version: 6, Name: "production-traffic-run-snapshots", Fingerprint: "b77be774c8f129230d348c391e3cf34ab356f7900446bf9244f09e3d852ff462"},
 }
 
 type SchemaMigrationRecord struct {

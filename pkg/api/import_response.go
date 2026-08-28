@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"reflect"
+	"sort"
 	"strings"
 	"time"
 
@@ -722,6 +723,19 @@ func (s *Server) newScriptImportResponseWithSourceSecrets(r *http.Request, opts 
 	protectedRequirements := opts.ProtectedRequirements
 	defer clearCredentialRequirementValues(protectedRequirements)
 	scriptsForCredentialReview := uniqueImportDraftScripts(importDraftScriptPointers(opts.Script, opts.Scripts))
+	featureIDs := make([]string, 0, 1)
+	seenFeatureIDs := map[string]struct{}{}
+	for _, script := range scriptsForCredentialReview {
+		candidate := featureIDForImportProfile(genericImportDraftProfile(script, ""))
+		if candidate == "" {
+			continue
+		}
+		if _, exists := seenFeatureIDs[candidate]; !exists {
+			seenFeatureIDs[candidate] = struct{}{}
+			featureIDs = append(featureIDs, candidate)
+		}
+	}
+	sort.Strings(featureIDs)
 	// Protected requirements are authoritative when the converter supplied the
 	// same stable requirement through both channels, but they are not the whole
 	// review. A draft can contain an exact protected source value and additional
@@ -802,7 +816,7 @@ func (s *Server) newScriptImportResponseWithSourceSecrets(r *http.Request, opts 
 	if len(values) == 0 {
 		return response
 	}
-	sessionID, err := s.registerSourceSecretSession(r, projectID, values)
+	sessionID, err := s.registerSourceSecretSession(r, projectID, values, featureIDs...)
 	if err != nil {
 		warnings, _ := response["warnings"].([]string)
 		response["warnings"] = append(warnings, optionalCredentialMigrationUnavailableWarning)

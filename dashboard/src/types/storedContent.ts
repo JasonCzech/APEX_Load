@@ -6,6 +6,7 @@ import type { RuntimeSettingsOverride } from './runtimeSettings'
 import type { ScenarioSchedule } from './scheduling'
 import type { ScriptDefinition } from './scripts'
 import type { GeneratorAssignmentSettings } from './testConfiguration'
+import type { TrafficProfile } from './trafficProfiles'
 
 export interface ReleaseRef {
   id: string
@@ -40,6 +41,7 @@ export interface StoredScenario {
   id: string
   ref_key?: string
   name: string
+  workload_shape_id?: string
   project_id?: string
   duration: string
   start_delay?: string
@@ -48,6 +50,7 @@ export interface StoredScenario {
   resource_baseline?: boolean
   assignment?: GeneratorAssignmentSettings
   goal_config?: GoalConfig
+  traffic_profile?: TrafficProfile
   runtime_settings?: RuntimeSettingsOverride
   scripts: Array<{
     order: number

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { type AuthoringComponent, type AuthoringTemplate, type StoredScript } from '../types'
 import { type AuthoringImportSurface } from '../types/scriptImports'
 import { type ScriptDefinition } from '../types/scripts'
@@ -8,6 +8,8 @@ import PageViewToggle from './PageViewToggle'
 import ReferenceKeyBadge from './ReferenceKeyBadge'
 
 interface Props {
+  projectId?: string
+  policyRefreshSignal?: number
   onBack: () => void
   onStartApiScript: () => void
   onStartSoapScript: () => void
@@ -291,6 +293,22 @@ function importSurfacesFromCapabilities(response: { import_surfaces?: AuthoringI
   return defaultImportSurfaces
 }
 
+function policyAllowsFeature(
+  policy: { features: Array<{ id: string; effective_enabled: boolean }> } | null | undefined,
+  featureId: string,
+) {
+  return policy?.features.some(feature => feature.id === featureId && feature.effective_enabled) === true
+}
+
+function policyFilteredImportSurfaces(
+  response: { import_surfaces?: AuthoringImportSurface[]; feature_policy?: { features: Array<{ id: string; effective_enabled: boolean }> } },
+  projectId?: string,
+) {
+  const surfaces = importSurfacesFromCapabilities(response)
+  if (!projectId || !response.feature_policy) return surfaces
+  return surfaces.filter(surface => policyAllowsFeature(response.feature_policy, `script_import.${surface.id}`))
+}
+
 function groupImportSurfaces(surfaces: AuthoringImportSurface[]): Array<{ category: string; surfaces: AuthoringImportSurface[] }> {
   const groups = new Map<string, AuthoringImportSurface[]>()
   surfaces
@@ -364,6 +382,8 @@ function compareExistingScripts(a: StoredScript, b: StoredScript, key: ExistingS
 }
 
 export default function ScriptCreateOptions({
+  projectId,
+  policyRefreshSignal,
   onBack,
   onStartApiScript,
   onStartSoapScript,
@@ -390,8 +410,10 @@ export default function ScriptCreateOptions({
   const [templates, setTemplates] = useState<AuthoringTemplate[]>([])
   const [components, setComponents] = useState<AuthoringComponent[]>([])
   const [importSurfaces, setImportSurfaces] = useState<AuthoringImportSurface[]>([])
-  const [importSurfacesLoading, setImportSurfacesLoading] = useState(false)
+  const [importSurfacesLoading, setImportSurfacesLoading] = useState(Boolean(projectId))
   const [importSurfacesError, setImportSurfacesError] = useState('')
+  const [featurePolicy, setFeaturePolicy] = useState<{ features: Array<{ id: string; effective_enabled: boolean }> } | null>(null)
+  const [featurePolicyResolved, setFeaturePolicyResolved] = useState(!projectId)
   const [internalWorkflow, setInternalWorkflow] = useState<CreateWorkflow>('existing')
   const [existingScriptQuery, setExistingScriptQuery] = useState('')
   const [existingScriptProtocol, setExistingScriptProtocol] = useState('all')
@@ -401,13 +423,13 @@ export default function ScriptCreateOptions({
   const [sourceSecretMigrationAllowed, setSourceSecretMigrationAllowed] = useState(false)
   const [migrateExistingSecrets, setMigrateExistingSecrets] = useState(false)
   const activeWorkflow = workflow ?? internalWorkflow
-  const setActiveWorkflow = (nextWorkflow: CreateWorkflow) => {
+  const setActiveWorkflow = useCallback((nextWorkflow: CreateWorkflow) => {
     if (onWorkflowChange) {
       onWorkflowChange(nextWorkflow)
       return
     }
     setInternalWorkflow(nextWorkflow)
-  }
+  }, [onWorkflowChange])
 
   const existingScriptProtocols = useMemo(() => {
     return Array.from(new Set(scripts.map(script => script.protocol).filter(Boolean))).sort((a, b) => a.localeCompare(b))
@@ -452,6 +474,7 @@ export default function ScriptCreateOptions({
     setExistingScriptSort({ key: 'name', direction: 'asc' })
   }
 
+  const featureEnabled = useCallback((id: string) => !projectId || (featurePolicyResolved && (!featurePolicy || policyAllowsFeature(featurePolicy, id))), [featurePolicy, featurePolicyResolved, projectId])
   const blankEditorRows: Array<{
     id: string
     type: string
@@ -545,18 +568,39 @@ export default function ScriptCreateOptions({
       primary: true,
       onSelect: onStartKafkaScript,
     },
-  ]
-  const startNewCategoryTabs: Array<{ id: StartNewCategory, label: string, count: number }> = [
-    { id: 'templates', label: 'Starter Templates', count: templates.length },
-    { id: 'editors', label: 'Blank & Assisted Editors', count: blankEditorRows.length },
-    { id: 'blocks', label: 'Reusable Blocks', count: components.length },
-  ]
+  ].filter(row => featureEnabled(row.id === 'java-http'
+    ? 'script_editor.java_http'
+    : row.id === 'web'
+      ? 'script_editor.browser'
+      : row.id === 'sample'
+        ? 'script_import.sample'
+        : `script_editor.${row.id}`))
+  const startNewCategoryTabs: Array<{ id: StartNewCategory, label: string, count: number }> = useMemo(() => [
+    ...(featureEnabled('script_builder.starter_templates') ? [{ id: 'templates' as const, label: 'Starter Templates', count: templates.length }] : []),
+    ...(featureEnabled('script_builder.blank_editors') ? [{ id: 'editors' as const, label: 'Blank & Assisted Editors', count: blankEditorRows.length }] : []),
+    ...(featureEnabled('script_builder.reusable_blocks') ? [{ id: 'blocks' as const, label: 'Reusable Blocks', count: components.length }] : []),
+  ], [blankEditorRows.length, components.length, featureEnabled, templates.length])
+
+  useEffect(() => {
+    if (!projectId || !featurePolicy) return
+    const availableWorkflows: CreateWorkflow[] = [
+      ...(featureEnabled('script_builder.existing_scripts') ? ['existing' as const] : []),
+      ...(startNewCategoryTabs.length > 0 ? ['start-new' as const] : []),
+      ...(featureEnabled('script_builder.imports') ? ['source' as const] : []),
+    ]
+    if (!availableWorkflows.includes(activeWorkflow) && availableWorkflows[0]) {
+      setActiveWorkflow(availableWorkflows[0])
+    }
+    if (!startNewCategoryTabs.some(tab => tab.id === startNewCategory) && startNewCategoryTabs[0]) {
+      setStartNewCategory(startNewCategoryTabs[0].id)
+    }
+  }, [activeWorkflow, featureEnabled, featurePolicy, projectId, setActiveWorkflow, startNewCategory, startNewCategoryTabs])
 
   useEffect(() => {
     let cancelled = false
     Promise.all([
-      api.listAuthoringTemplates(),
-      api.listAuthoringComponents(),
+      api.listAuthoringTemplates(projectId ? { projectId } : undefined),
+      api.listAuthoringComponents(projectId ? { projectId } : undefined),
     ])
       .then(([templateResponse, componentResponse]) => {
         if (!cancelled) {
@@ -573,7 +617,7 @@ export default function ScriptCreateOptions({
     return () => {
       cancelled = true
     }
-  }, [api])
+  }, [api, projectId])
 
   useEffect(() => {
     if (!canMigrateSecrets || typeof api.getSystemSettings !== 'function') {
@@ -609,41 +653,39 @@ export default function ScriptCreateOptions({
     onStartExistingScript(script)
   }
 
-  const loadImportSurfaces = () => {
+  // One fetch shared by the mount/refresh effect and the Retry button. They
+  // previously duplicated this call and cleared different state on failure,
+  // leaving Retry with a stale feature policy behind an unresolved flag.
+  const loadImportSurfaces = useCallback((isCancelled: () => boolean = () => false) => {
     setImportSurfacesLoading(true)
     setImportSurfacesError('')
-    api.listAuthoringCapabilities()
+    setFeaturePolicyResolved(false)
+    return api.listAuthoringCapabilities(projectId)
       .then(response => {
-        setImportSurfaces(importSurfacesFromCapabilities(response))
+        if (isCancelled()) return
+        setImportSurfaces(policyFilteredImportSurfaces(response, projectId))
+        setFeaturePolicy(response.feature_policy || null)
+        setFeaturePolicyResolved(true)
       })
       .catch(error => {
+        if (isCancelled()) return
         setImportSurfaces([])
+        setFeaturePolicy(null)
+        setFeaturePolicyResolved(false)
         setImportSurfacesError(error instanceof Error ? error.message : 'Unable to load import source capabilities.')
       })
-      .finally(() => setImportSurfacesLoading(false))
-  }
+      .finally(() => {
+        if (!isCancelled()) setImportSurfacesLoading(false)
+      })
+  }, [api, projectId])
 
   useEffect(() => {
     let cancelled = false
-    setImportSurfacesLoading(true)
-    setImportSurfacesError('')
-    api.listAuthoringCapabilities()
-      .then(response => {
-        if (!cancelled) setImportSurfaces(importSurfacesFromCapabilities(response))
-      })
-      .catch(error => {
-        if (!cancelled) {
-          setImportSurfaces([])
-          setImportSurfacesError(error instanceof Error ? error.message : 'Unable to load import source capabilities.')
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setImportSurfacesLoading(false)
-      })
+    void loadImportSurfaces(() => cancelled)
     return () => {
       cancelled = true
     }
-  }, [api])
+  }, [loadImportSurfaces, policyRefreshSignal])
 
   const importSurfaceGroups = useMemo(() => groupImportSurfaces(importSurfaces), [importSurfaces])
 
@@ -670,27 +712,36 @@ export default function ScriptCreateOptions({
         )}
       </div>
 
+      {projectId && !featurePolicyResolved && (
+        importSurfacesLoading
+          ? <div className="script-create-empty" role="status">Loading domain feature access…</div>
+          : <div className="script-create-empty" role="alert">
+              <p>{importSurfacesError || 'Unable to load domain feature access.'}</p>
+              <button type="button" className="btn btn-sm btn-secondary" onClick={() => void loadImportSurfaces()}>Retry</button>
+            </div>
+      )}
+
       <div className="script-workflow-picker" aria-label="Script creation workflows">
-        <button type="button" className={`script-workflow-card ${activeWorkflow === 'existing' ? 'active' : ''}`} onClick={() => setActiveWorkflow('existing')}>
+        {featureEnabled('script_builder.existing_scripts') && <button type="button" className={`script-workflow-card ${activeWorkflow === 'existing' ? 'active' : ''}`} onClick={() => setActiveWorkflow('existing')}>
           <span>1</span>
           <strong>Model Existing</strong>
           <small>Clone a saved script into a new editable draft.</small>
-        </button>
-        <button type="button" className={`script-workflow-card ${activeWorkflow === 'start-new' ? 'active' : ''}`} onClick={() => setActiveWorkflow('start-new')}>
+        </button>}
+        {startNewCategoryTabs.length > 0 && <button type="button" className={`script-workflow-card ${activeWorkflow === 'start-new' ? 'active' : ''}`} onClick={() => setActiveWorkflow('start-new')}>
           <span>2</span>
           <strong>Start New Script</strong>
           <small>Use templates, reusable blocks, or blank protocol editors.</small>
-        </button>
-        <button type="button" className="script-workflow-card" onClick={onOpenRecorder}>
+        </button>}
+        {featureEnabled('script_builder.browser_recording') && <button type="button" className="script-workflow-card" onClick={onOpenRecorder}>
           <span>3</span>
           <strong>Record Browser</strong>
           <small>Capture a user journey and review it before save.</small>
-        </button>
-        <button type="button" className={`script-workflow-card ${activeWorkflow === 'source' ? 'active' : ''}`} onClick={() => setActiveWorkflow('source')}>
+        </button>}
+        {featureEnabled('script_builder.imports') && <button type="button" className={`script-workflow-card ${activeWorkflow === 'source' ? 'active' : ''}`} onClick={() => setActiveWorkflow('source')}>
           <span>4</span>
           <strong>Import From Source</strong>
           <small>Generate or migrate scripts from contracts, collections, traffic captures, source archives, and legacy tool exports.</small>
-        </button>
+        </button>}
       </div>
 
       <div className="script-create-lanes compact">
@@ -996,7 +1047,7 @@ export default function ScriptCreateOptions({
               {importSurfacesError && (
                 <div className="script-create-empty" role="alert">
                   <p>{importSurfacesError}</p>
-                  <button type="button" className="btn btn-sm btn-secondary" onClick={loadImportSurfaces}>Retry</button>
+                  <button type="button" className="btn btn-sm btn-secondary" onClick={() => void loadImportSurfaces()}>Retry</button>
                 </div>
               )}
               {!importSurfacesLoading && !importSurfacesError && importSurfaceGroups.length === 0 && (

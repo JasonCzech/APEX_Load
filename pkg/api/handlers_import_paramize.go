@@ -76,6 +76,15 @@ func (s *Server) handleApplyImportParameterization(w http.ResponseWriter, r *htt
 			}
 		}()
 	}
+	policyScript := req.Script
+	profile := genericImportDraftProfile(req.Script, "")
+	if mutationClaim != nil {
+		policyScript = mutationClaim.Script
+		profile = normalizeGenericImportSourceProfile(mutationClaim.Profile)
+	}
+	if policyScript == nil || !s.requireDomainFeatureForProject(w, policyScript.ProjectID, featureIDForImportProfile(profile)) {
+		return
+	}
 
 	// Project before deriving instructions. This accepts deferred [REDACTED]
 	// placeholders while ensuring a caller cannot smuggle an inline credential

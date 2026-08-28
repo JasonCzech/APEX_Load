@@ -298,6 +298,9 @@ func mergeOmittedSystemSettingsSections(requested SystemSettings, current System
 	if !rawJSONHasKey(raw, "prometheus") {
 		merged.Prometheus = current.Prometheus
 	}
+	if !rawJSONHasKey(raw, "opensearch") {
+		merged.OpenSearch = current.OpenSearch
+	}
 	if !rawJSONHasKey(raw, "client_app") {
 		merged.ClientApp = current.ClientApp
 	}

@@ -114,12 +114,14 @@ import { useFleetApi } from '../hooks/api/useFleetApi'
 import type { FleetPool } from '../types/fleet'
 import { consumeProjectSecretsSettingsProjectId } from './projectSecretsNavigation'
 import { reconcileSettingsProjectSnapshots } from './settingsProjectCatalog'
+import FeatureAccessPanel, { type FeatureAccessController } from './FeatureAccessPanel'
 
 const SETTINGS_SECTION_TOPBAR_LABELS: Record<SettingsSectionId, string> = {
   general: 'General',
   thresholds: 'Thresholds',
   capacity: 'Capacity',
   domains: 'Domains',
+  'feature-access': 'Feature Access',
   applications: 'Apps & Releases',
   projects: 'Projects',
   'data-pools': 'Data Pools',
@@ -532,6 +534,7 @@ export default function SettingsPage({
   const activeDataPoolProjectIdRef = useRef(activeProject?.id)
   const activeApplicationIdRef = useRef(activeApplication?.id)
   const poolQuotaDraftRef = useRef<ProjectPoolQuotasDraftController | null>(null)
+  const featureAccessRef = useRef<FeatureAccessController | null>(null)
   const committedManagedReleasesRef = useRef(new Map<string, Release>())
   const managedReleaseTombstonesRef = useRef(new Set<string>())
   const committedProjectsRef = useRef(new Map<string, Project>())
@@ -540,6 +543,7 @@ export default function SettingsPage({
   // the effect must not re-run on every selection.
   const selectedProjectIdRef = useRef('')
   const [poolQuotaDraftDirty, setPoolQuotaDraftDirty] = useState(false)
+  const [featureAccessDirty, setFeatureAccessDirty] = useState(false)
   activeDataPoolProjectIdRef.current = activeProject?.id
   activeApplicationIdRef.current = activeApplication?.id
 
@@ -929,6 +933,12 @@ export default function SettingsPage({
   const canManageScripts = capabilityAllowed('manage_scripts')
   const canManageServiceAccounts = capabilityAllowed('manage_service_accounts')
   const canViewAudit = capabilityAllowed('view_audit')
+
+  useEffect(() => {
+    if (!canManageSystem && activeSection === 'feature-access') {
+      setActiveSection('general')
+    }
+  }, [activeSection, canManageSystem])
   const canSave = validationErrors.length === 0 && !loading && !loadFailed && !settingsMutationBusy && hasUnsavedChanges && canManageSystem
   const formDisabled = loading || loadFailed || settingsMutationBusy || effectiveAuthAccessLoading || !canManageSystem
   const renderFieldIssues = (field: string) => settingsIssuesForField(validationIssues, field).map(message => (
@@ -2232,6 +2242,7 @@ export default function SettingsPage({
     || projectCreateDraftDirty
     || dataPoolCreateDraftDirty
     || poolQuotaDraftDirty
+    || featureAccessDirty
   const canSaveAllSettingsChanges = hasAnyUnsavedChanges
     && (!hasUnsavedChanges || canSave)
     && (!domainHasUnsavedChanges || (canManageDomains && !domainDraftValidationError))
@@ -2241,6 +2252,7 @@ export default function SettingsPage({
     && (!projectCreateDraftDirty || canManageProjects)
     && (!dataPoolCreateDraftDirty || (Boolean(dataPoolName.trim()) && Boolean(dataPoolCreateProjectId)))
     && (!poolQuotaDraftDirty || canManageProjects)
+    && (!featureAccessDirty || canManageSystem)
   const saveAllSettingsChanges = async (): Promise<boolean> => {
     if (hasUnsavedChanges && !(await saveSettings())) return false
     if (domainHasUnsavedChanges && !(await saveDomain())) return false
@@ -2251,6 +2263,7 @@ export default function SettingsPage({
 			authoritativeProject = savedProject
 		}
 		if (poolQuotaDraftDirty && !(await poolQuotaDraftRef.current?.save(authoritativeProject))) return false
+		if (featureAccessDirty && !(await featureAccessRef.current?.save())) return false
     if (applicationRenameDraftDirty && !(await confirmRenameApplication())) return false
     if (releaseRenameDraftDirty && !(await confirmRenameRelease())) return false
     if (applicationCreateDraftDirty && !(await createApplication())) return false
@@ -2265,6 +2278,7 @@ export default function SettingsPage({
     discardDomainChanges()
     discardProjectChanges()
     poolQuotaDraftRef.current?.discard()
+    featureAccessRef.current?.discard()
     setNewApplicationName('')
     setNewApplicationProjectId('')
     applicationProjectPinExplicitRef.current = false
@@ -2952,6 +2966,21 @@ export default function SettingsPage({
     setRequestError('')
   }
 
+  const updateOpenSearch = (updates: Partial<NonNullable<DashboardSystemSettings['opensearch']>>) => {
+    setSettings(current => ({
+      ...current,
+      opensearch: {
+        enabled: false,
+        base_url: '',
+        timeout_seconds: 10,
+        ...current.opensearch,
+        ...updates,
+      },
+    }))
+    setSaveMessage('')
+    setRequestError('')
+  }
+
   const deleteDataPoolRow = async (row: SharedDataPoolRow) => {
     const poolId = row.pool_id
     if (!poolId || dataPoolRowDeleteBusyRef.current) return
@@ -3028,6 +3057,7 @@ export default function SettingsPage({
       thresholds: { notices: [], errors: [] },
       capacity: { notices: [], errors: [] },
       domains: { notices: [], errors: [] },
+      'feature-access': { notices: [], errors: [] },
       applications: { notices: [], errors: [] },
       projects: { notices: [], errors: [] },
       'data-pools': { notices: [], errors: [] },
@@ -3053,7 +3083,7 @@ export default function SettingsPage({
         value={activeSection}
         ariaLabel="Settings sections"
         className="settings-section-toggle settings-topbar-section-toggle new-test-view-toggle"
-        options={SETTINGS_SECTION_TOPBAR_OPTIONS.map(option => ({
+        options={SETTINGS_SECTION_TOPBAR_OPTIONS.filter(option => option.value !== 'feature-access' || canManageSystem).map(option => ({
           ...option,
           badge: issuesBySection[option.value]?.length || undefined,
         }))}
@@ -3083,7 +3113,7 @@ export default function SettingsPage({
       },
     ],
     priority: 20,
-  }), [activeSection, canSaveAllSettingsChanges, hasAnyUnsavedChanges, issuesBySection, settingsMutationBusy])
+  }), [activeSection, canManageSystem, canSaveAllSettingsChanges, hasAnyUnsavedChanges, issuesBySection, settingsMutationBusy])
 
   useTopbarContribution(settingsTopbarContribution)
 
@@ -4879,6 +4909,20 @@ export default function SettingsPage({
           </div>
         </div>
 
+        {canManageSystem && <div
+          id="settings-section-feature-access"
+          className={sectionClass}
+          hidden={activeSection !== 'feature-access'}
+          style={{ order: getSectionOrder('feature-access') }}
+        >
+          <FeatureAccessPanel
+            ref={featureAccessRef}
+            domains={domains}
+            initialDomainId={activeDomain?.id}
+            onDirtyChange={setFeatureAccessDirty}
+          />
+        </div>}
+
         <div
           id="settings-section-domains"
           className={sectionClass}
@@ -6173,6 +6217,16 @@ export default function SettingsPage({
                       <span>Allowed</span>
                     </label>
                   </div>
+                  <div className="settings-manager-summary">
+                    <div><span className="setting-label">OpenSearch traffic profiles</span><span className="setting-desc">Run guided, bounded date-histogram queries for production workload profiles.</span></div>
+                    <strong>{settings.opensearch?.enabled ? 'Enabled' : 'Disabled'}</strong>
+                  </div>
+                  <div className="setting-row"><div className="setting-info"><span className="setting-label">Enable OpenSearch</span></div><label className="settings-checkbox-label"><input type="checkbox" checked={Boolean(settings.opensearch?.enabled)} onChange={event => updateOpenSearch({ enabled: event.target.checked })} /><span>Enabled</span></label></div>
+                  <div className="setting-row"><div className="setting-info"><span className="setting-label">OpenSearch server URL</span><span className="setting-desc">HTTPS is required for authenticated production connections.</span></div><input className="settings-input cell-mono" aria-label="OpenSearch server URL" value={settings.opensearch?.base_url || ''} onChange={event => updateOpenSearch({ base_url: event.target.value })} placeholder="https://opensearch.example.com" /></div>
+                  <div className="setting-row"><div className="setting-info"><span className="setting-label">Username</span></div><input className="settings-input" aria-label="OpenSearch username" value={settings.opensearch?.username || ''} onChange={event => updateOpenSearch({ username: event.target.value })} /></div>
+                  <div className="setting-row"><div className="setting-info"><span className="setting-label">Password environment variable</span><span className="setting-desc">Store only the environment-variable name, never the password.</span></div><input className="settings-input cell-mono" aria-label="OpenSearch password environment variable" value={settings.opensearch?.password_env_var || ''} onChange={event => updateOpenSearch({ password_env_var: event.target.value })} placeholder="APEXLOAD_OPENSEARCH_PASSWORD" /></div>
+                  <div className="setting-row"><div className="setting-info"><span className="setting-label">Bearer token environment variable</span><span className="setting-desc">Mutually exclusive with username/password authentication.</span></div><input className="settings-input cell-mono" aria-label="OpenSearch bearer token environment variable" value={settings.opensearch?.bearer_token_env_var || ''} onChange={event => updateOpenSearch({ bearer_token_env_var: event.target.value })} placeholder="APEXLOAD_OPENSEARCH_TOKEN" /></div>
+                  <div className="setting-row"><div className="setting-info"><span className="setting-label">OpenSearch timeout (seconds)</span></div><input className="settings-input settings-input-number" aria-label="OpenSearch timeout seconds" type="number" min={1} max={60} value={settings.opensearch?.timeout_seconds || 10} onChange={event => updateOpenSearch({ timeout_seconds: Number(event.target.value) })} /></div>
                   <div className="settings-manager-summary">
                     <div><span className="setting-label">Grafana datasource proxy</span><span className="setting-desc">Route imported panels through Grafana using their datasource UIDs.</span></div>
                     <strong>{settings.grafana?.enabled ? 'Enabled' : 'Disabled'}</strong>

@@ -22,7 +22,8 @@ import type {
   RuntimeSettingsReview,
   ScenarioRuntimeSettingsDraft,
 } from './types/runtimeSettings'
-import type { LoadStageDraft } from './types/loadModels'
+import type { CapacityAdvisory } from './types/capacity'
+import type { LoadModelValidationReport, LoadStageDraft } from './types/loadModels'
 import type {
   AssignmentRecommendation,
   ContinueOnErrorResolution,
@@ -86,11 +87,15 @@ export type {
   GitHubSyncJob,
 } from './types/github'
 export type {
+  CapacityAdvisory,
+  CapacityDimensionRecommendations,
   CapacityReservation,
+  CapacityResourceEstimate,
   CapacityTimeslot,
   CapacityTimeslotAvailabilityResponse,
   CapacityTimeslotListResponse,
   CapacityTimeslotRequest,
+  ProtocolDensityEnvelope,
 } from './types/capacity'
 export type {
   FleetAlert,
@@ -178,6 +183,7 @@ export type {
   DashboardNotificationsSettings,
   DashboardNotificationWebhook,
   DashboardPrometheusSettings,
+  DashboardOpenSearchSettings,
   DashboardScheduleDefaultsSettings,
   DashboardScriptImportSettings,
   DashboardSystemSettings,
@@ -288,7 +294,7 @@ export type {
   RuntimeSettingsReview,
   ScenarioRuntimeSettingsDraft,
 } from './types/runtimeSettings'
-export type { LoadStageDraft } from './types/loadModels'
+export type { LoadModelValidationItem, LoadModelValidationReport, LoadStageDraft } from './types/loadModels'
 export type {
   AssignmentRecommendation,
   ContinueOnErrorResolution,
@@ -300,6 +306,21 @@ export type {
 export type { GoalConfig, GoalStatus, GoalTargetStatus, ScenarioMode, TransactionSLARule, TransactionSLARuleResult } from './types/goals'
 export type { AuthoringHealth, AuthoringHealthInput } from './types/authoring'
 export type { ReleaseRef, ScenarioRef, StoredScenario, StoredScript } from './types/storedContent'
+export type {
+  TrafficProfile,
+  TrafficProfileAnalyzeResponse,
+  TrafficProfileDeriveRequest,
+  TrafficProfileDeriveResponse,
+  TrafficProfileGapPolicy,
+  TrafficProfileMapping,
+  TrafficProfilePoint,
+  TrafficProfileRuntimePoint,
+  TrafficProfileSeries,
+  TrafficProfileSource,
+  TrafficProfileSourcesResponse,
+  TrafficProfileStats,
+  TrafficProfileValueSemantics,
+} from './types/trafficProfiles'
 
 export interface Project {
   id: string
@@ -2500,44 +2521,6 @@ export interface ArchiveRetentionPlanResponse {
   }
 }
 
-export interface CapacityResourceEstimate {
-  cpu_cores: number
-  memory_mb: number
-  network_mbps: number
-}
-
-export interface CapacityDimensionRecommendations {
-  cpu: number
-  memory: number
-  network: number
-  vusers: number
-}
-
-export interface CapacityAdvisory {
-  total_vusers: number
-  duration_seconds: number
-  baseline_window_enabled: boolean
-  workload_class?: 'http' | 'browser' | 'mixed' | string
-  browser_vusers?: number
-  max_browser_vusers_per_generator?: number
-  protocol_densities?: ProtocolDensityEnvelope[]
-  headroom_pct: number
-  complexity_score: number
-  bottleneck: 'cpu' | 'memory' | 'network' | 'vusers'
-  availability_source?: 'configured' | 'configured_plus_live'
-  configured_available_generators?: number
-  live_available_generators?: number
-  recommended_generators: number
-  available_generators: number
-  shortfall_generators?: number
-  requires_override?: boolean
-  estimated_per_vuser: CapacityResourceEstimate
-  estimated_total: CapacityResourceEstimate
-  usable_per_generator: CapacityResourceEstimate
-  dimension_recommendations: CapacityDimensionRecommendations
-  warnings?: string[]
-}
-
 export interface LaunchWindow {
   start_at: string
   end_at: string
@@ -2568,20 +2551,6 @@ export interface LaunchPreflightResponse {
   blocking_conflicts?: LaunchConflict[]
   warnings?: LaunchConflict[]
   recommended_assignment?: AssignmentRecommendation
-}
-
-export interface ProtocolDensityEnvelope {
-  protocol: string
-  vusers: number
-  max_vusers_per_generator: number
-  cpu_cores_per_vuser: number
-  memory_mb_per_vuser: number
-  network_mbps_per_vuser: number
-  compatibility_confidence?: string
-  benchmark_profile?: string
-  benchmark_evidence?: string
-  calibration_source?: string
-  calibrated_at?: string
 }
 
 export interface LoadModelTemplateGroup {
@@ -2630,27 +2599,6 @@ export interface LoadModelSupportMatrixResponse {
 export interface LoadModelTemplatesResponse {
   templates: LoadModelTemplate[]
   count: number
-}
-
-export interface LoadModelValidationItem {
-  dimension: string
-  group?: string
-  status: 'ready' | 'needs_review' | 'blocked' | string
-  summary: string
-  required_rows?: number
-  available_rows?: number
-  target_vusers?: number
-  target_tps?: number
-}
-
-export interface LoadModelValidationReport {
-  status: 'ready' | 'needs_review' | 'blocked' | string
-  status_counts: Record<string, number>
-  items: LoadModelValidationItem[]
-  total_vusers: number
-  peak_target_tps?: number
-  capacity_advisory?: CapacityAdvisory
-  assignment_recommendation?: AssignmentRecommendation
 }
 
 export interface GoalSizingGroupTarget {

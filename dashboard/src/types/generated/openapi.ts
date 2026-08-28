@@ -1554,6 +1554,7 @@ export interface operations {
                 "stopped_by_display_name"?: string;
                 "stopped_by_subject"?: string;
                 "total_vusers"?: number;
+                "traffic_profile"?: (Record<string, unknown>) | null;
               }) | null;
               "interval_summaries_file"?: string;
               "interval_summaries_parquet_file"?: string;
@@ -1596,6 +1597,7 @@ export interface operations {
                 "stopped_by_display_name"?: string;
                 "stopped_by_subject"?: string;
                 "total_vusers"?: number;
+                "traffic_profile"?: (Record<string, unknown>) | null;
               };
               "resource_sample_count"?: number;
               "resource_samples_file"?: string;
@@ -2209,6 +2211,7 @@ export interface operations {
               "vusers"?: number;
             }>;
             "name"?: string;
+            "project_id"?: string;
             "resource_baseline"?: boolean;
             "runtime_settings"?: ({
               "auto_transactions"?: string;
@@ -2357,6 +2360,42 @@ export interface operations {
             "scenario_mode"?: string;
             "script_shakeout"?: boolean;
             "start_delay"?: string;
+            "traffic_profile"?: ({
+              "amplitude"?: {
+                "mode"?: string;
+                "value"?: number;
+              };
+              "gap_policy"?: string;
+              "interpolation"?: string;
+              "mappings"?: Array<{
+                "group_name"?: string;
+                "peak_target"?: number;
+                "points"?: Array<Record<string, unknown>>;
+                "series_key"?: string;
+                "series_name"?: string;
+              }>;
+              "refreshed_at"?: string;
+              "runtime_target"?: string;
+              "source"?: {
+                "file"?: (Record<string, unknown>) | null;
+                "kind"?: string;
+                "name"?: string;
+                "opensearch"?: (Record<string, unknown>) | null;
+                "prometheus"?: (Record<string, unknown>) | null;
+              };
+              "source_duration"?: string;
+              "target_duration"?: string;
+              "value_semantics"?: string;
+              "version"?: number;
+              "warnings"?: Array<string>;
+              "window"?: {
+                "duration"?: string;
+                "end"?: string;
+                "mode"?: string;
+                "start"?: string;
+              };
+            }) | null;
+            "workload_shape_id"?: (string) | null;
           }) | null;
           "script"?: ({
             "actions"?: Array<{
@@ -4853,6 +4892,124 @@ export interface operations {
       };
     };
   };
+  "handleAnalyzeTrafficProfile": {
+    parameters?: never;
+    requestBody: {
+      content: {
+        "multipart/form-data": {
+          "file"?: string;
+          "series_column"?: string;
+          "sheet"?: string;
+          "timestamp_column"?: string;
+          "timezone"?: string;
+          "value_columns"?: string;
+          [key: string]: unknown;
+        };
+      };
+    };
+    responses: {
+      "200": {
+        content: {
+          "application/json": {
+            "limits": {
+              "derive_bytes": number;
+              "points_per_profile": number;
+              "points_per_series": number;
+              "upload_bytes": number;
+              "upstream_bytes": number;
+            };
+            "series"?: Array<{
+              "series": Record<string, unknown>;
+              "stats": Record<string, unknown>;
+            }>;
+            "sheets"?: Array<Record<string, unknown>>;
+            "source": {
+              "file"?: ({
+                "filename": string;
+                "series_column"?: string;
+                "sheet"?: string;
+                "timestamp_column": string;
+                "timezone"?: string;
+                "value_columns": Array<string>;
+              }) | null;
+              "kind": string;
+              "name"?: string;
+              "opensearch"?: ({
+                "filter"?: unknown;
+                "index": string;
+                "interval": string;
+                "metric": string;
+                "metric_field"?: string;
+                "range": {
+                  "end"?: string;
+                  "lookback"?: string;
+                  "mode": string;
+                  "start"?: string;
+                  "step_seconds": number;
+                };
+                "timestamp_field": string;
+              }) | null;
+              "prometheus"?: ({
+                "label_fields"?: Array<string>;
+                "query": string;
+                "range": {
+                  "end"?: string;
+                  "lookback"?: string;
+                  "mode": string;
+                  "start"?: string;
+                  "step_seconds": number;
+                };
+              }) | null;
+            };
+            "warnings"?: Array<string>;
+          };
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "415": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "422": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "502": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
   "handleApplyArchiveRetention": {
     parameters?: never;
     requestBody?: never;
@@ -7211,7 +7368,43 @@ export interface operations {
                 "vusers": number;
               }>;
               "start_delay"?: string;
+              "traffic_profile"?: ({
+                "amplitude"?: {
+                  "mode"?: string;
+                  "value"?: number;
+                };
+                "gap_policy"?: string;
+                "interpolation": string;
+                "mappings": Array<{
+                  "group_name": string;
+                  "peak_target": number;
+                  "points": Array<Record<string, unknown>>;
+                  "series_key": string;
+                  "series_name": string;
+                }>;
+                "refreshed_at": string;
+                "runtime_target": string;
+                "source": {
+                  "file"?: (Record<string, unknown>) | null;
+                  "kind": string;
+                  "name"?: string;
+                  "opensearch"?: (Record<string, unknown>) | null;
+                  "prometheus"?: (Record<string, unknown>) | null;
+                };
+                "source_duration": string;
+                "target_duration": string;
+                "value_semantics": string;
+                "version": number;
+                "warnings"?: Array<string>;
+                "window"?: {
+                  "duration"?: string;
+                  "end"?: string;
+                  "mode"?: string;
+                  "start"?: string;
+                };
+              }) | null;
               "updated_at": string;
+              "workload_shape_id"?: string;
             }) | null;
             "skipped"?: Array<{
               "fields": Array<string>;
@@ -9252,6 +9445,27 @@ export interface operations {
           "application/json": {
             "contract_version": string;
             "draft_lifecycle": Array<string>;
+            "feature_policy"?: ({
+              "catalog_version": string;
+              "categories": Array<{
+                "description": string;
+                "id": string;
+                "name": string;
+              }>;
+              "disabled_feature_ids": Array<string>;
+              "domain_id": string;
+              "features": Array<{
+                "category": string;
+                "configured_enabled": boolean;
+                "description"?: string;
+                "effective_enabled": boolean;
+                "id": string;
+                "name": string;
+                "parent_id"?: string;
+              }>;
+              "revision": string;
+              "updated_at"?: (string) | null;
+            }) | null;
             "health_inputs": Array<string>;
             "import_surfaces": Array<{
               "badge": string;
@@ -9312,6 +9526,16 @@ export interface operations {
         };
       };
       "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -16073,9 +16297,79 @@ export interface operations {
             "script_shakeout"?: boolean;
             "start_delay"?: string;
             "timeslot_id"?: (string) | null;
+            "traffic_profile"?: ({
+              "amplitude"?: {
+                "mode"?: string;
+                "value"?: number;
+              };
+              "gap_policy"?: string;
+              "interpolation"?: string;
+              "mappings"?: Array<{
+                "group_name"?: string;
+                "peak_target"?: number;
+                "points"?: Array<Record<string, unknown>>;
+                "series_key"?: string;
+                "series_name"?: string;
+              }>;
+              "refreshed_at"?: string;
+              "runtime_target"?: string;
+              "source"?: {
+                "file"?: (Record<string, unknown>) | null;
+                "kind"?: string;
+                "name"?: string;
+                "opensearch"?: (Record<string, unknown>) | null;
+                "prometheus"?: (Record<string, unknown>) | null;
+              };
+              "source_duration"?: string;
+              "target_duration"?: string;
+              "value_semantics"?: string;
+              "version"?: number;
+              "warnings"?: Array<string>;
+              "window"?: {
+                "duration"?: string;
+                "end"?: string;
+                "mode"?: string;
+                "start"?: string;
+              };
+            }) | null;
             "vusers"?: number;
           }) | null;
           "timeslot_id"?: (string) | null;
+          "traffic_profile"?: ({
+            "amplitude"?: {
+              "mode"?: string;
+              "value"?: number;
+            };
+            "gap_policy"?: string;
+            "interpolation"?: string;
+            "mappings"?: Array<{
+              "group_name"?: string;
+              "peak_target"?: number;
+              "points"?: Array<Record<string, unknown>>;
+              "series_key"?: string;
+              "series_name"?: string;
+            }>;
+            "refreshed_at"?: string;
+            "runtime_target"?: string;
+            "source"?: {
+              "file"?: (Record<string, unknown>) | null;
+              "kind"?: string;
+              "name"?: string;
+              "opensearch"?: (Record<string, unknown>) | null;
+              "prometheus"?: (Record<string, unknown>) | null;
+            };
+            "source_duration"?: string;
+            "target_duration"?: string;
+            "value_semantics"?: string;
+            "version"?: number;
+            "warnings"?: Array<string>;
+            "window"?: {
+              "duration"?: string;
+              "end"?: string;
+              "mode"?: string;
+              "start"?: string;
+            };
+          }) | null;
           "vusers"?: number;
         };
       };
@@ -17165,6 +17459,41 @@ export interface operations {
               }) | null;
               "timeslot_id"?: (string) | null;
               "total_vusers": number;
+              "traffic_profile"?: ({
+                "amplitude"?: {
+                  "mode"?: string;
+                  "value"?: number;
+                };
+                "gap_policy"?: string;
+                "interpolation": string;
+                "mappings": Array<{
+                  "group_name": string;
+                  "peak_target": number;
+                  "points": Array<Record<string, unknown>>;
+                  "series_key": string;
+                  "series_name": string;
+                }>;
+                "refreshed_at": string;
+                "runtime_target": string;
+                "source": {
+                  "file"?: (Record<string, unknown>) | null;
+                  "kind": string;
+                  "name"?: string;
+                  "opensearch"?: (Record<string, unknown>) | null;
+                  "prometheus"?: (Record<string, unknown>) | null;
+                };
+                "source_duration": string;
+                "target_duration": string;
+                "value_semantics": string;
+                "version": number;
+                "warnings"?: Array<string>;
+                "window"?: {
+                  "duration"?: string;
+                  "end"?: string;
+                  "mode"?: string;
+                  "start"?: string;
+                };
+              }) | null;
               "vuser_ramps"?: Record<string, {
                 "group": string;
                 "ramp_duration": string;
@@ -17831,6 +18160,7 @@ export interface operations {
             "vusers"?: number;
           }>;
           "name": string;
+          "project_id"?: string;
           "resource_baseline"?: boolean;
           "runtime_settings"?: ({
             "auto_transactions"?: string;
@@ -18056,6 +18386,61 @@ export interface operations {
           "scenario_mode"?: string;
           "script_shakeout"?: boolean;
           "start_delay"?: string;
+          "traffic_profile"?: ({
+            "amplitude"?: {
+              "mode"?: string;
+              "value"?: number;
+            };
+            "gap_policy"?: string;
+            "interpolation"?: string;
+            "mappings"?: Array<{
+              "group_name"?: string;
+              "peak_target"?: number;
+              "points"?: Array<Record<string, unknown>>;
+              "series_key"?: string;
+              "series_name"?: string;
+            }>;
+            "refreshed_at"?: string;
+            "runtime_target"?: string;
+            "source"?: {
+              "file"?: ({
+                "filename"?: string;
+                "series_column"?: string;
+                "sheet"?: string;
+                "timestamp_column"?: string;
+                "timezone"?: string;
+                "value_columns"?: Array<string>;
+              }) | null;
+              "kind"?: string;
+              "name"?: string;
+              "opensearch"?: ({
+                "filter"?: unknown;
+                "index"?: string;
+                "interval"?: string;
+                "metric"?: string;
+                "metric_field"?: string;
+                "range"?: Record<string, unknown>;
+                "timestamp_field"?: string;
+              }) | null;
+              "prometheus"?: ({
+                "label_fields"?: Array<string>;
+                "query"?: string;
+                "range"?: Record<string, unknown>;
+              }) | null;
+            };
+            "source_duration"?: string;
+            "target_duration"?: string;
+            "value_semantics"?: string;
+            "version"?: number;
+            "warnings"?: Array<string>;
+            "window"?: {
+              "duration"?: string;
+              "end"?: string;
+              "mode"?: string;
+              "start"?: string;
+            };
+          }) | null;
+          "workload_shape_id"?: (string) | null;
         };
       };
     };
@@ -18607,7 +18992,62 @@ export interface operations {
               "vusers": number;
             }>;
             "start_delay"?: string;
+            "traffic_profile"?: ({
+              "amplitude"?: {
+                "mode"?: string;
+                "value"?: number;
+              };
+              "gap_policy"?: string;
+              "interpolation": string;
+              "mappings": Array<{
+                "group_name": string;
+                "peak_target": number;
+                "points": Array<Record<string, unknown>>;
+                "series_key": string;
+                "series_name": string;
+              }>;
+              "refreshed_at": string;
+              "runtime_target": string;
+              "source": {
+                "file"?: ({
+                  "filename": string;
+                  "series_column"?: string;
+                  "sheet"?: string;
+                  "timestamp_column": string;
+                  "timezone"?: string;
+                  "value_columns": Array<string>;
+                }) | null;
+                "kind": string;
+                "name"?: string;
+                "opensearch"?: ({
+                  "filter"?: unknown;
+                  "index": string;
+                  "interval": string;
+                  "metric": string;
+                  "metric_field"?: string;
+                  "range": Record<string, unknown>;
+                  "timestamp_field": string;
+                }) | null;
+                "prometheus"?: ({
+                  "label_fields"?: Array<string>;
+                  "query": string;
+                  "range": Record<string, unknown>;
+                }) | null;
+              };
+              "source_duration": string;
+              "target_duration": string;
+              "value_semantics": string;
+              "version": number;
+              "warnings"?: Array<string>;
+              "window"?: {
+                "duration"?: string;
+                "end"?: string;
+                "mode"?: string;
+                "start"?: string;
+              };
+            }) | null;
             "updated_at": string;
+            "workload_shape_id"?: string;
           }) | null;
         };
       };
@@ -18627,6 +19067,11 @@ export interface operations {
         };
       };
       "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -20784,6 +21229,60 @@ export interface operations {
           "script_shakeout"?: boolean;
           "start_delay"?: string;
           "timeslot_id"?: (string) | null;
+          "traffic_profile"?: ({
+            "amplitude"?: {
+              "mode"?: string;
+              "value"?: number;
+            };
+            "gap_policy"?: string;
+            "interpolation"?: string;
+            "mappings"?: Array<{
+              "group_name"?: string;
+              "peak_target"?: number;
+              "points"?: Array<Record<string, unknown>>;
+              "series_key"?: string;
+              "series_name"?: string;
+            }>;
+            "refreshed_at"?: string;
+            "runtime_target"?: string;
+            "source"?: {
+              "file"?: ({
+                "filename"?: string;
+                "series_column"?: string;
+                "sheet"?: string;
+                "timestamp_column"?: string;
+                "timezone"?: string;
+                "value_columns"?: Array<string>;
+              }) | null;
+              "kind"?: string;
+              "name"?: string;
+              "opensearch"?: ({
+                "filter"?: unknown;
+                "index"?: string;
+                "interval"?: string;
+                "metric"?: string;
+                "metric_field"?: string;
+                "range"?: Record<string, unknown>;
+                "timestamp_field"?: string;
+              }) | null;
+              "prometheus"?: ({
+                "label_fields"?: Array<string>;
+                "query"?: string;
+                "range"?: Record<string, unknown>;
+              }) | null;
+            };
+            "source_duration"?: string;
+            "target_duration"?: string;
+            "value_semantics"?: string;
+            "version"?: number;
+            "warnings"?: Array<string>;
+            "window"?: {
+              "duration"?: string;
+              "end"?: string;
+              "mode"?: string;
+              "start"?: string;
+            };
+          }) | null;
           "vusers"?: number;
         };
       };
@@ -22591,6 +23090,60 @@ export interface operations {
             }) | null;
             "timeslot_id"?: (string) | null;
             "total_vusers": number;
+            "traffic_profile"?: ({
+              "amplitude"?: {
+                "mode"?: string;
+                "value"?: number;
+              };
+              "gap_policy"?: string;
+              "interpolation": string;
+              "mappings": Array<{
+                "group_name": string;
+                "peak_target": number;
+                "points": Array<Record<string, unknown>>;
+                "series_key": string;
+                "series_name": string;
+              }>;
+              "refreshed_at": string;
+              "runtime_target": string;
+              "source": {
+                "file"?: ({
+                  "filename": string;
+                  "series_column"?: string;
+                  "sheet"?: string;
+                  "timestamp_column": string;
+                  "timezone"?: string;
+                  "value_columns": Array<string>;
+                }) | null;
+                "kind": string;
+                "name"?: string;
+                "opensearch"?: ({
+                  "filter"?: unknown;
+                  "index": string;
+                  "interval": string;
+                  "metric": string;
+                  "metric_field"?: string;
+                  "range": Record<string, unknown>;
+                  "timestamp_field": string;
+                }) | null;
+                "prometheus"?: ({
+                  "label_fields"?: Array<string>;
+                  "query": string;
+                  "range": Record<string, unknown>;
+                }) | null;
+              };
+              "source_duration": string;
+              "target_duration": string;
+              "value_semantics": string;
+              "version": number;
+              "warnings"?: Array<string>;
+              "window"?: {
+                "duration"?: string;
+                "end"?: string;
+                "mode"?: string;
+                "start"?: string;
+              };
+            }) | null;
             "vuser_ramps"?: Record<string, {
               "group": string;
               "ramp_duration": string;
@@ -24380,6 +24933,863 @@ export interface operations {
       };
     };
   };
+  "handleDeriveTrafficProfile": {
+    parameters?: never;
+    requestBody: {
+      content: {
+        "application/json": {
+          "amplitude"?: {
+            "mode"?: string;
+            "value"?: number;
+          };
+          "gap_policy"?: Record<string, unknown>;
+          "mappings"?: Array<{
+            "group_name"?: string;
+            "series_key"?: string;
+          }>;
+          "project_id"?: string;
+          "scenario_draft"?: {
+            "assignment"?: ({
+              "load_zone_weights"?: Record<string, number>;
+              "mode"?: string;
+              "pool_id"?: string;
+              "region_weights"?: Record<string, number>;
+              "required_labels"?: Record<string, string>;
+              "selected_targets"?: Array<string>;
+              "shard_strategy"?: string;
+              "tolerate_generator_loss"?: boolean;
+            }) | null;
+            "data_pools"?: Array<{
+              "access_mode"?: string;
+              "alias"?: string;
+              "created_at"?: string;
+              "id"?: string;
+              "pool_id"?: string;
+              "pool_name"?: string;
+              "scenario_id"?: string;
+              "selection_strategy"?: string;
+              "updated_at"?: string;
+            }>;
+            "duration"?: string;
+            "goal_config"?: ({
+              "max_avg_server_processing_ms"?: (number) | null;
+              "max_avg_transfer_ms"?: (number) | null;
+              "max_cls"?: (number) | null;
+              "max_dead_letter_rate_pct"?: (number) | null;
+              "max_end_to_end_latency_ms"?: (number) | null;
+              "max_error_count"?: (number) | null;
+              "max_error_pct"?: (number) | null;
+              "max_inp_ms"?: (number) | null;
+              "max_lcp_ms"?: (number) | null;
+              "max_partition_skew_pct"?: (number) | null;
+              "max_redelivery_rate_pct"?: (number) | null;
+              "max_throttled_requests"?: (number) | null;
+              "max_vusers"?: (number) | null;
+              "min_vusers"?: (number) | null;
+              "p95_latency_ms"?: (number) | null;
+              "sla_breach_window"?: string;
+              "stop_on_max_errors"?: boolean;
+              "stop_on_sla_breach"?: boolean;
+              "target_average_tps"?: (number) | null;
+              "transaction_rules"?: Array<{
+                "comparator"?: string;
+                "metric"?: string;
+                "severity"?: string;
+                "threshold"?: number;
+                "transaction"?: string;
+              }>;
+            }) | null;
+            "groups"?: Array<{
+              "assignment"?: ({
+                "load_zone_weights"?: Record<string, number>;
+                "mode"?: string;
+                "pool_id"?: string;
+                "region_weights"?: Record<string, number>;
+                "required_labels"?: Record<string, string>;
+                "selected_targets"?: Array<string>;
+                "shard_strategy"?: string;
+                "tolerate_generator_loss"?: boolean;
+              }) | null;
+              "initialization"?: string;
+              "iterations"?: (number) | null;
+              "name"?: string;
+              "ramp_down"?: string;
+              "ramp_up"?: string;
+              "revision_new_group"?: boolean;
+              "revision_source_group_index"?: (number) | null;
+              "role"?: string;
+              "runtime_settings"?: ({
+                "auto_transactions"?: string;
+                "base_url"?: string;
+                "browser"?: (Record<string, unknown>) | null;
+                "browser_config"?: (Record<string, unknown>) | null;
+                "browser_emulation"?: (Record<string, unknown>) | null;
+                "env"?: Record<string, string>;
+                "error_handling"?: (Record<string, unknown>) | null;
+                "http"?: (Record<string, unknown>) | null;
+                "iterations"?: (number) | null;
+                "java_vuser"?: (Record<string, unknown>) | null;
+                "log"?: (Record<string, unknown>) | null;
+                "log_level"?: string;
+                "pacing"?: (Record<string, unknown>) | null;
+                "redaction_rules"?: Array<Record<string, unknown>>;
+                "run_logic"?: (Record<string, unknown>) | null;
+                "think_time"?: (Record<string, unknown>) | null;
+                "web_runtime"?: (Record<string, unknown>) | null;
+              }) | null;
+              "script_id"?: string;
+              "stages"?: Array<Record<string, unknown>>;
+              "start_offset"?: string;
+              "vusers"?: number;
+            }>;
+            "name"?: string;
+            "project_id"?: string;
+            "resource_baseline"?: boolean;
+            "runtime_settings"?: ({
+              "auto_transactions"?: string;
+              "base_url"?: string;
+              "browser"?: ({
+                "device_profile"?: string;
+                "headless"?: (boolean) | null;
+                "orientation"?: string;
+                "touch_mode"?: (boolean) | null;
+              }) | null;
+              "browser_config"?: ({
+                "cache_content_urls"?: (boolean) | null;
+                "cache_enabled"?: (boolean) | null;
+                "capture_screenshots"?: string;
+                "check_newer_versions"?: (boolean) | null;
+                "client_certificates"?: Array<Record<string, unknown>>;
+                "client_metrics"?: (boolean) | null;
+                "device_profile"?: string;
+                "download_resources"?: string;
+                "engine"?: string;
+                "experience_canary"?: boolean;
+                "geolocation"?: Record<string, unknown>;
+                "har_artifact_dir"?: string;
+                "har_capture"?: string;
+                "har_capture_policy"?: string;
+                "har_sla_threshold_ms"?: number;
+                "headless"?: (boolean) | null;
+                "http_credentials"?: Record<string, unknown>;
+                "locale"?: string;
+                "new_user_per_iteration"?: (boolean) | null;
+                "orientation"?: string;
+                "proxy"?: Record<string, unknown>;
+                "review_policy"?: Record<string, unknown>;
+                "slow_mo_ms"?: number;
+                "timezone"?: string;
+                "touch_mode"?: (boolean) | null;
+                "traceparent"?: (boolean) | null;
+                "user_agent"?: string;
+                "viewport"?: Record<string, unknown>;
+              }) | null;
+              "browser_emulation"?: ({
+                "browser_type"?: string;
+                "browser_version"?: string;
+                "cache"?: (Record<string, unknown>) | null;
+                "custom_user_agent"?: string;
+                "language"?: string;
+                "mode"?: string;
+                "platform"?: string;
+              }) | null;
+              "env"?: Record<string, string>;
+              "error_handling"?: ({
+                "continue_on_error"?: (boolean) | null;
+                "max_retries"?: number;
+                "retry_backoff"?: string;
+                "retry_delay_ms"?: number;
+                "snapshot_on_error"?: boolean;
+              }) | null;
+              "http"?: ({
+                "accept_encoding"?: string;
+                "accept_language"?: string;
+                "auth"?: Record<string, unknown>;
+                "cache_enabled"?: (boolean) | null;
+                "clear_cookies_per_iteration"?: (boolean) | null;
+                "connect_timeout_ms"?: number;
+                "cookies_enabled"?: (boolean) | null;
+                "default_header_list"?: Array<Record<string, unknown>>;
+                "default_headers"?: Record<string, string>;
+                "idle_timeout_ms"?: number;
+                "keep_alive"?: (boolean) | null;
+                "max_conns_per_host"?: number;
+                "max_idle_conns"?: number;
+                "max_redirects"?: (number) | null;
+                "proxy"?: Record<string, unknown>;
+                "proxy_mode"?: string;
+                "request_timeout_ms"?: number;
+                "tls"?: Record<string, unknown>;
+                "tls_timeout_ms"?: number;
+                "traceparent"?: (boolean) | null;
+                "traceparent_sampled"?: (boolean) | null;
+                "user_agent"?: string;
+                "version"?: string;
+              }) | null;
+              "iterations"?: (number) | null;
+              "java_vuser"?: ({
+                "additional_vm_parameters"?: Array<string>;
+                "classpath"?: Array<string>;
+                "dedicated_class_loader"?: (boolean) | null;
+                "jdk_home"?: string;
+                "jdk_selection"?: string;
+                "skip_parameter_evaluation"?: (boolean) | null;
+                "use_xbootclasspath"?: (boolean) | null;
+              }) | null;
+              "log"?: ({
+                "extended_options"?: Array<string>;
+                "level"?: string;
+                "on_error_only"?: boolean;
+                "redact_run_evidence"?: (boolean) | null;
+              }) | null;
+              "log_level"?: string;
+              "pacing"?: ({
+                "delay_ms"?: number;
+                "interval_ms"?: number;
+                "max_delay_ms"?: number;
+                "max_interval_ms"?: number;
+                "min_delay_ms"?: number;
+                "min_interval_ms"?: number;
+                "tps"?: number;
+                "type"?: string;
+              }) | null;
+              "redaction_rules"?: Array<{
+                "name"?: string;
+                "pattern"?: string;
+                "replacement"?: string;
+              }>;
+              "run_logic"?: ({
+                "action_sequence"?: Array<string>;
+                "auto_transactions"?: string;
+                "block_scheduling"?: string;
+                "global_iterations"?: number;
+                "iterations"?: number;
+                "max_in_flight"?: number;
+                "max_transactions"?: number;
+                "workload_model"?: string;
+              }) | null;
+              "think_time"?: ({
+                "ignore"?: boolean;
+                "limit_ms"?: number;
+                "max_ms"?: number;
+                "mean_ms"?: number;
+                "min_ms"?: number;
+                "multiplier"?: number;
+                "std_ms"?: number;
+                "type"?: string;
+              }) | null;
+              "web_runtime"?: ({
+                "additional_attributes"?: Record<string, string>;
+                "content_checks"?: Array<Record<string, unknown>>;
+                "data_formatting"?: Record<string, unknown>;
+                "download_filters"?: Record<string, unknown>;
+                "network_profiles"?: Array<Record<string, unknown>>;
+                "network_simulation"?: Record<string, unknown>;
+                "source_ips"?: Array<string>;
+                "streaming"?: Record<string, unknown>;
+              }) | null;
+            }) | null;
+            "scenario_mode"?: string;
+            "script_shakeout"?: boolean;
+            "start_delay"?: string;
+            "traffic_profile"?: ({
+              "amplitude"?: {
+                "mode"?: string;
+                "value"?: number;
+              };
+              "gap_policy"?: string;
+              "interpolation"?: string;
+              "mappings"?: Array<{
+                "group_name"?: string;
+                "peak_target"?: number;
+                "points"?: Array<Record<string, unknown>>;
+                "series_key"?: string;
+                "series_name"?: string;
+              }>;
+              "refreshed_at"?: string;
+              "runtime_target"?: string;
+              "source"?: {
+                "file"?: (Record<string, unknown>) | null;
+                "kind"?: string;
+                "name"?: string;
+                "opensearch"?: (Record<string, unknown>) | null;
+                "prometheus"?: (Record<string, unknown>) | null;
+              };
+              "source_duration"?: string;
+              "target_duration"?: string;
+              "value_semantics"?: string;
+              "version"?: number;
+              "warnings"?: Array<string>;
+              "window"?: {
+                "duration"?: string;
+                "end"?: string;
+                "mode"?: string;
+                "start"?: string;
+              };
+            }) | null;
+            "workload_shape_id"?: (string) | null;
+          };
+          "series"?: Array<Record<string, unknown>>;
+          "source"?: {
+            "file"?: ({
+              "filename"?: string;
+              "series_column"?: string;
+              "sheet"?: string;
+              "timestamp_column"?: string;
+              "timezone"?: string;
+              "value_columns"?: Array<string>;
+            }) | null;
+            "kind"?: string;
+            "name"?: string;
+            "opensearch"?: ({
+              "filter"?: unknown;
+              "index"?: string;
+              "interval"?: string;
+              "metric"?: string;
+              "metric_field"?: string;
+              "range"?: {
+                "end"?: string;
+                "lookback"?: string;
+                "mode"?: string;
+                "start"?: string;
+                "step_seconds"?: number;
+              };
+              "timestamp_field"?: string;
+            }) | null;
+            "prometheus"?: ({
+              "label_fields"?: Array<string>;
+              "query"?: string;
+              "range"?: {
+                "end"?: string;
+                "lookback"?: string;
+                "mode"?: string;
+                "start"?: string;
+                "step_seconds"?: number;
+              };
+            }) | null;
+          };
+          "target_duration"?: string;
+          "value_semantics"?: Record<string, unknown>;
+          "window"?: {
+            "duration"?: string;
+            "end"?: string;
+            "mode"?: string;
+            "start"?: string;
+          };
+        };
+      };
+    };
+    responses: {
+      "200": {
+        content: {
+          "application/json": {
+            "load_model_validation"?: ({
+              "assignment_recommendation"?: ({
+                "available_labels"?: Record<string, Array<string>>;
+                "available_regions"?: Array<string>;
+                "available_targets"?: Array<string>;
+                "mode": string;
+                "recommended_targets"?: Array<string>;
+                "summary"?: string;
+                "warnings"?: Array<string>;
+              }) | null;
+              "capacity_advisory"?: ({
+                "availability_source"?: string;
+                "available_generators": number;
+                "baseline_window_enabled": boolean;
+                "bottleneck": string;
+                "browser_benchmark_evidence"?: string;
+                "browser_benchmark_evidence_attached"?: boolean;
+                "browser_benchmark_evidence_required"?: boolean;
+                "browser_claim_policy"?: string;
+                "browser_density_override_requested"?: boolean;
+                "browser_density_override_required"?: boolean;
+                "browser_density_release_gate"?: string;
+                "browser_density_tier"?: string;
+                "browser_vusers"?: number;
+                "complexity_score": number;
+                "configured_available_generators"?: number;
+                "dimension_recommendations": {
+                  "cpu": number;
+                  "memory": number;
+                  "network": number;
+                  "vusers": number;
+                };
+                "duration_seconds": number;
+                "estimated_per_vuser": {
+                  "cpu_cores": number;
+                  "memory_mb": number;
+                  "network_mbps": number;
+                };
+                "estimated_total": {
+                  "cpu_cores": number;
+                  "memory_mb": number;
+                  "network_mbps": number;
+                };
+                "headroom_pct": number;
+                "live_available_generators"?: (number) | null;
+                "max_browser_canary_vusers_per_generator"?: number;
+                "max_browser_vusers_per_generator"?: number;
+                "protocol_densities"?: Array<{
+                  "benchmark_evidence"?: string;
+                  "benchmark_profile"?: string;
+                  "calibrated_at"?: string;
+                  "calibration_source"?: string;
+                  "compatibility_confidence"?: string;
+                  "cpu_cores_per_vuser": number;
+                  "max_vusers_per_generator": number;
+                  "memory_mb_per_vuser": number;
+                  "network_mbps_per_vuser": number;
+                  "protocol": string;
+                  "vusers": number;
+                }>;
+                "recommended_generators": number;
+                "requires_override"?: boolean;
+                "reservation_project_id"?: string;
+                "reserved_generators"?: number;
+                "shared_available_generators"?: number;
+                "shortfall_generators"?: number;
+                "total_vusers": number;
+                "usable_per_generator": {
+                  "cpu_cores": number;
+                  "memory_mb": number;
+                  "network_mbps": number;
+                };
+                "warnings"?: Array<string>;
+                "workload_class"?: string;
+              }) | null;
+              "items": Array<{
+                "available_rows"?: number;
+                "dimension": string;
+                "group"?: string;
+                "required_rows"?: number;
+                "status": string;
+                "summary": string;
+                "target_tps"?: number;
+                "target_vusers"?: number;
+              }>;
+              "peak_target_tps"?: number;
+              "runtime_settings_review"?: ({
+                "blocking_findings"?: Array<{
+                  "area"?: string;
+                  "concept"?: string;
+                  "evidence"?: Array<string>;
+                  "group"?: string;
+                  "id": string;
+                  "protocol"?: string;
+                  "recommended_action"?: string;
+                  "scope": string;
+                  "script_id"?: string;
+                  "script_name"?: string;
+                  "severity": string;
+                  "status": string;
+                  "summary": string;
+                }>;
+                "findings"?: Array<{
+                  "area"?: string;
+                  "concept"?: string;
+                  "evidence"?: Array<string>;
+                  "group"?: string;
+                  "id": string;
+                  "protocol"?: string;
+                  "recommended_action"?: string;
+                  "scope": string;
+                  "script_id"?: string;
+                  "script_name"?: string;
+                  "severity": string;
+                  "status": string;
+                  "summary": string;
+                }>;
+                "status": string;
+                "status_counts"?: Record<string, number>;
+                "summary"?: string;
+                "warnings"?: Array<string>;
+              }) | null;
+              "status": string;
+              "status_counts": Record<string, number>;
+              "total_vusers": number;
+            }) | null;
+            "preview": Array<{
+              "group_name": string;
+              "peak_target": number;
+              "points": Array<Record<string, unknown>>;
+              "series_key": string;
+              "series_name": string;
+            }>;
+            "scenario_draft": {
+              "assignment"?: ({
+                "load_zone_weights"?: Record<string, number>;
+                "mode"?: string;
+                "pool_id"?: string;
+                "region_weights"?: Record<string, number>;
+                "required_labels"?: Record<string, string>;
+                "selected_targets"?: Array<string>;
+                "shard_strategy"?: string;
+                "tolerate_generator_loss"?: boolean;
+              }) | null;
+              "data_pools"?: Array<{
+                "access_mode": string;
+                "alias": string;
+                "created_at"?: string;
+                "id": string;
+                "pool_id": string;
+                "pool_name"?: string;
+                "scenario_id"?: string;
+                "selection_strategy": string;
+                "updated_at"?: string;
+              }>;
+              "duration": string;
+              "goal_config"?: ({
+                "max_avg_server_processing_ms"?: (number) | null;
+                "max_avg_transfer_ms"?: (number) | null;
+                "max_cls"?: (number) | null;
+                "max_dead_letter_rate_pct"?: (number) | null;
+                "max_end_to_end_latency_ms"?: (number) | null;
+                "max_error_count"?: (number) | null;
+                "max_error_pct"?: (number) | null;
+                "max_inp_ms"?: (number) | null;
+                "max_lcp_ms"?: (number) | null;
+                "max_partition_skew_pct"?: (number) | null;
+                "max_redelivery_rate_pct"?: (number) | null;
+                "max_throttled_requests"?: (number) | null;
+                "max_vusers"?: (number) | null;
+                "min_vusers"?: (number) | null;
+                "p95_latency_ms"?: (number) | null;
+                "sla_breach_window"?: string;
+                "stop_on_max_errors"?: boolean;
+                "stop_on_sla_breach"?: boolean;
+                "target_average_tps"?: (number) | null;
+                "transaction_rules"?: Array<{
+                  "comparator": string;
+                  "metric": string;
+                  "severity"?: string;
+                  "threshold": number;
+                  "transaction": string;
+                }>;
+              }) | null;
+              "groups": Array<{
+                "assignment"?: ({
+                  "load_zone_weights"?: Record<string, number>;
+                  "mode"?: string;
+                  "pool_id"?: string;
+                  "region_weights"?: Record<string, number>;
+                  "required_labels"?: Record<string, string>;
+                  "selected_targets"?: Array<string>;
+                  "shard_strategy"?: string;
+                  "tolerate_generator_loss"?: boolean;
+                }) | null;
+                "initialization"?: string;
+                "iterations"?: (number) | null;
+                "name": string;
+                "ramp_down"?: string;
+                "ramp_up"?: string;
+                "revision_new_group"?: boolean;
+                "revision_source_group_index"?: (number) | null;
+                "role"?: string;
+                "runtime_settings"?: ({
+                  "auto_transactions"?: string;
+                  "base_url"?: string;
+                  "browser"?: (Record<string, unknown>) | null;
+                  "browser_config"?: (Record<string, unknown>) | null;
+                  "browser_emulation"?: (Record<string, unknown>) | null;
+                  "env"?: Record<string, string>;
+                  "error_handling"?: (Record<string, unknown>) | null;
+                  "http"?: (Record<string, unknown>) | null;
+                  "iterations"?: (number) | null;
+                  "java_vuser"?: (Record<string, unknown>) | null;
+                  "log"?: (Record<string, unknown>) | null;
+                  "log_level"?: string;
+                  "pacing"?: (Record<string, unknown>) | null;
+                  "redaction_rules"?: Array<Record<string, unknown>>;
+                  "run_logic"?: (Record<string, unknown>) | null;
+                  "think_time"?: (Record<string, unknown>) | null;
+                  "web_runtime"?: (Record<string, unknown>) | null;
+                }) | null;
+                "script_id": string;
+                "stages"?: Array<Record<string, unknown>>;
+                "start_offset"?: string;
+                "vusers": number;
+              }>;
+              "name": string;
+              "project_id"?: string;
+              "resource_baseline"?: boolean;
+              "runtime_settings"?: ({
+                "auto_transactions"?: string;
+                "base_url"?: string;
+                "browser"?: ({
+                  "device_profile"?: string;
+                  "headless"?: (boolean) | null;
+                  "orientation"?: string;
+                  "touch_mode"?: (boolean) | null;
+                }) | null;
+                "browser_config"?: ({
+                  "cache_content_urls"?: (boolean) | null;
+                  "cache_enabled"?: (boolean) | null;
+                  "capture_screenshots"?: string;
+                  "check_newer_versions"?: (boolean) | null;
+                  "client_certificates"?: Array<Record<string, unknown>>;
+                  "client_metrics"?: (boolean) | null;
+                  "device_profile"?: string;
+                  "download_resources"?: string;
+                  "engine"?: string;
+                  "experience_canary"?: boolean;
+                  "geolocation"?: Record<string, unknown>;
+                  "har_artifact_dir"?: string;
+                  "har_capture"?: string;
+                  "har_capture_policy"?: string;
+                  "har_sla_threshold_ms"?: number;
+                  "headless"?: (boolean) | null;
+                  "http_credentials"?: Record<string, unknown>;
+                  "locale"?: string;
+                  "new_user_per_iteration"?: (boolean) | null;
+                  "orientation"?: string;
+                  "proxy"?: Record<string, unknown>;
+                  "review_policy"?: Record<string, unknown>;
+                  "slow_mo_ms"?: number;
+                  "timezone"?: string;
+                  "touch_mode"?: (boolean) | null;
+                  "traceparent"?: (boolean) | null;
+                  "user_agent"?: string;
+                  "viewport"?: Record<string, unknown>;
+                }) | null;
+                "browser_emulation"?: ({
+                  "browser_type"?: string;
+                  "browser_version"?: string;
+                  "cache"?: (Record<string, unknown>) | null;
+                  "custom_user_agent"?: string;
+                  "language"?: string;
+                  "mode"?: string;
+                  "platform"?: string;
+                }) | null;
+                "env"?: Record<string, string>;
+                "error_handling"?: ({
+                  "continue_on_error"?: (boolean) | null;
+                  "max_retries"?: number;
+                  "retry_backoff"?: string;
+                  "retry_delay_ms"?: number;
+                  "snapshot_on_error"?: boolean;
+                }) | null;
+                "http"?: ({
+                  "accept_encoding"?: string;
+                  "accept_language"?: string;
+                  "auth"?: Record<string, unknown>;
+                  "cache_enabled"?: (boolean) | null;
+                  "clear_cookies_per_iteration"?: (boolean) | null;
+                  "connect_timeout_ms"?: number;
+                  "cookies_enabled"?: (boolean) | null;
+                  "default_header_list"?: Array<Record<string, unknown>>;
+                  "default_headers"?: Record<string, string>;
+                  "idle_timeout_ms"?: number;
+                  "keep_alive"?: (boolean) | null;
+                  "max_conns_per_host"?: number;
+                  "max_idle_conns"?: number;
+                  "max_redirects"?: (number) | null;
+                  "proxy"?: Record<string, unknown>;
+                  "proxy_mode"?: string;
+                  "request_timeout_ms"?: number;
+                  "tls"?: Record<string, unknown>;
+                  "tls_timeout_ms"?: number;
+                  "traceparent"?: (boolean) | null;
+                  "traceparent_sampled"?: (boolean) | null;
+                  "user_agent"?: string;
+                  "version"?: string;
+                }) | null;
+                "iterations"?: (number) | null;
+                "java_vuser"?: ({
+                  "additional_vm_parameters"?: Array<string>;
+                  "classpath"?: Array<string>;
+                  "dedicated_class_loader"?: (boolean) | null;
+                  "jdk_home"?: string;
+                  "jdk_selection"?: string;
+                  "skip_parameter_evaluation"?: (boolean) | null;
+                  "use_xbootclasspath"?: (boolean) | null;
+                }) | null;
+                "log"?: ({
+                  "extended_options"?: Array<string>;
+                  "level"?: string;
+                  "on_error_only"?: boolean;
+                  "redact_run_evidence"?: (boolean) | null;
+                }) | null;
+                "log_level"?: string;
+                "pacing"?: ({
+                  "delay_ms"?: number;
+                  "interval_ms"?: number;
+                  "max_delay_ms"?: number;
+                  "max_interval_ms"?: number;
+                  "min_delay_ms"?: number;
+                  "min_interval_ms"?: number;
+                  "tps"?: number;
+                  "type": string;
+                }) | null;
+                "redaction_rules"?: Array<{
+                  "name"?: string;
+                  "pattern": string;
+                  "replacement"?: string;
+                }>;
+                "run_logic"?: ({
+                  "action_sequence"?: Array<string>;
+                  "auto_transactions"?: string;
+                  "block_scheduling"?: string;
+                  "global_iterations"?: number;
+                  "iterations"?: number;
+                  "max_in_flight"?: number;
+                  "max_transactions"?: number;
+                  "workload_model"?: string;
+                }) | null;
+                "think_time"?: ({
+                  "ignore"?: boolean;
+                  "limit_ms"?: number;
+                  "max_ms"?: number;
+                  "mean_ms": number;
+                  "min_ms"?: number;
+                  "multiplier"?: number;
+                  "std_ms"?: number;
+                  "type": string;
+                }) | null;
+                "web_runtime"?: ({
+                  "additional_attributes"?: Record<string, string>;
+                  "content_checks"?: Array<Record<string, unknown>>;
+                  "data_formatting"?: Record<string, unknown>;
+                  "download_filters"?: Record<string, unknown>;
+                  "network_profiles"?: Array<Record<string, unknown>>;
+                  "network_simulation"?: Record<string, unknown>;
+                  "source_ips"?: Array<string>;
+                  "streaming"?: Record<string, unknown>;
+                }) | null;
+              }) | null;
+              "scenario_mode"?: string;
+              "script_shakeout"?: boolean;
+              "start_delay"?: string;
+              "traffic_profile"?: ({
+                "amplitude"?: {
+                  "mode"?: string;
+                  "value"?: number;
+                };
+                "gap_policy"?: string;
+                "interpolation": string;
+                "mappings": Array<{
+                  "group_name": string;
+                  "peak_target": number;
+                  "points": Array<Record<string, unknown>>;
+                  "series_key": string;
+                  "series_name": string;
+                }>;
+                "refreshed_at": string;
+                "runtime_target": string;
+                "source": {
+                  "file"?: (Record<string, unknown>) | null;
+                  "kind": string;
+                  "name"?: string;
+                  "opensearch"?: (Record<string, unknown>) | null;
+                  "prometheus"?: (Record<string, unknown>) | null;
+                };
+                "source_duration": string;
+                "target_duration": string;
+                "value_semantics": string;
+                "version": number;
+                "warnings"?: Array<string>;
+                "window"?: {
+                  "duration"?: string;
+                  "end"?: string;
+                  "mode"?: string;
+                  "start"?: string;
+                };
+              }) | null;
+              "workload_shape_id"?: (string) | null;
+            };
+            "traffic_profile": ({
+              "amplitude"?: {
+                "mode"?: string;
+                "value"?: number;
+              };
+              "gap_policy"?: string;
+              "interpolation": string;
+              "mappings": Array<{
+                "group_name": string;
+                "peak_target": number;
+                "points": Array<Record<string, unknown>>;
+                "series_key": string;
+                "series_name": string;
+              }>;
+              "refreshed_at": string;
+              "runtime_target": string;
+              "source": {
+                "file"?: ({
+                  "filename": string;
+                  "series_column"?: string;
+                  "sheet"?: string;
+                  "timestamp_column": string;
+                  "timezone"?: string;
+                  "value_columns": Array<string>;
+                }) | null;
+                "kind": string;
+                "name"?: string;
+                "opensearch"?: ({
+                  "filter"?: unknown;
+                  "index": string;
+                  "interval": string;
+                  "metric": string;
+                  "metric_field"?: string;
+                  "range": Record<string, unknown>;
+                  "timestamp_field": string;
+                }) | null;
+                "prometheus"?: ({
+                  "label_fields"?: Array<string>;
+                  "query": string;
+                  "range": Record<string, unknown>;
+                }) | null;
+              };
+              "source_duration": string;
+              "target_duration": string;
+              "value_semantics": string;
+              "version": number;
+              "warnings"?: Array<string>;
+              "window"?: {
+                "duration"?: string;
+                "end"?: string;
+                "mode"?: string;
+                "start"?: string;
+              };
+            }) | null;
+            "warnings"?: Array<string>;
+          };
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "422": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
   "handleDesktopAppChecksum": {
     parameters?: never;
     requestBody?: never;
@@ -25935,6 +27345,60 @@ export interface operations {
           "script_shakeout"?: boolean;
           "start_delay"?: string;
           "timeslot_id"?: (string) | null;
+          "traffic_profile"?: ({
+            "amplitude"?: {
+              "mode"?: string;
+              "value"?: number;
+            };
+            "gap_policy"?: string;
+            "interpolation"?: string;
+            "mappings"?: Array<{
+              "group_name"?: string;
+              "peak_target"?: number;
+              "points"?: Array<Record<string, unknown>>;
+              "series_key"?: string;
+              "series_name"?: string;
+            }>;
+            "refreshed_at"?: string;
+            "runtime_target"?: string;
+            "source"?: {
+              "file"?: ({
+                "filename"?: string;
+                "series_column"?: string;
+                "sheet"?: string;
+                "timestamp_column"?: string;
+                "timezone"?: string;
+                "value_columns"?: Array<string>;
+              }) | null;
+              "kind"?: string;
+              "name"?: string;
+              "opensearch"?: ({
+                "filter"?: unknown;
+                "index"?: string;
+                "interval"?: string;
+                "metric"?: string;
+                "metric_field"?: string;
+                "range"?: Record<string, unknown>;
+                "timestamp_field"?: string;
+              }) | null;
+              "prometheus"?: ({
+                "label_fields"?: Array<string>;
+                "query"?: string;
+                "range"?: Record<string, unknown>;
+              }) | null;
+            };
+            "source_duration"?: string;
+            "target_duration"?: string;
+            "value_semantics"?: string;
+            "version"?: number;
+            "warnings"?: Array<string>;
+            "window"?: {
+              "duration"?: string;
+              "end"?: string;
+              "mode"?: string;
+              "start"?: string;
+            };
+          }) | null;
           "vusers"?: number;
         };
       };
@@ -29973,6 +31437,64 @@ export interface operations {
       };
     };
   };
+  "handleGetDomainFeatures": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": {
+            "catalog_version": string;
+            "categories": Array<{
+              "description": string;
+              "id": string;
+              "name": string;
+            }>;
+            "disabled_feature_ids": Array<string>;
+            "domain_id": string;
+            "features": Array<{
+              "category": string;
+              "configured_enabled": boolean;
+              "description"?: string;
+              "effective_enabled": boolean;
+              "id": string;
+              "name": string;
+              "parent_id"?: string;
+            }>;
+            "revision": string;
+            "updated_at"?: (string) | null;
+          };
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
   "handleGetEntitlements": {
     parameters?: never;
     requestBody?: never;
@@ -32729,6 +34251,41 @@ export interface operations {
               }) | null;
               "timeslot_id"?: (string) | null;
               "total_vusers": number;
+              "traffic_profile"?: ({
+                "amplitude"?: {
+                  "mode"?: string;
+                  "value"?: number;
+                };
+                "gap_policy"?: string;
+                "interpolation": string;
+                "mappings": Array<{
+                  "group_name": string;
+                  "peak_target": number;
+                  "points": Array<Record<string, unknown>>;
+                  "series_key": string;
+                  "series_name": string;
+                }>;
+                "refreshed_at": string;
+                "runtime_target": string;
+                "source": {
+                  "file"?: (Record<string, unknown>) | null;
+                  "kind": string;
+                  "name"?: string;
+                  "opensearch"?: (Record<string, unknown>) | null;
+                  "prometheus"?: (Record<string, unknown>) | null;
+                };
+                "source_duration": string;
+                "target_duration": string;
+                "value_semantics": string;
+                "version": number;
+                "warnings"?: Array<string>;
+                "window"?: {
+                  "duration"?: string;
+                  "end"?: string;
+                  "mode"?: string;
+                  "start"?: string;
+                };
+              }) | null;
               "vuser_ramps"?: Record<string, {
                 "group": string;
                 "ramp_duration": string;
@@ -33547,6 +35104,41 @@ export interface operations {
               "stopped_by_display_name"?: string;
               "stopped_by_subject"?: string;
               "total_vusers"?: number;
+              "traffic_profile"?: ({
+                "amplitude"?: {
+                  "mode"?: string;
+                  "value"?: number;
+                };
+                "gap_policy"?: string;
+                "interpolation": string;
+                "mappings": Array<{
+                  "group_name": string;
+                  "peak_target": number;
+                  "points": Array<Record<string, unknown>>;
+                  "series_key": string;
+                  "series_name": string;
+                }>;
+                "refreshed_at": string;
+                "runtime_target": string;
+                "source": {
+                  "file"?: (Record<string, unknown>) | null;
+                  "kind": string;
+                  "name"?: string;
+                  "opensearch"?: (Record<string, unknown>) | null;
+                  "prometheus"?: (Record<string, unknown>) | null;
+                };
+                "source_duration": string;
+                "target_duration": string;
+                "value_semantics": string;
+                "version": number;
+                "warnings"?: Array<string>;
+                "window"?: {
+                  "duration"?: string;
+                  "end"?: string;
+                  "mode"?: string;
+                  "start"?: string;
+                };
+              }) | null;
             }) | null;
             "interval_summaries_file": string;
             "interval_summaries_parquet_file"?: string;
@@ -34000,6 +35592,41 @@ export interface operations {
               "stopped_by_display_name"?: string;
               "stopped_by_subject"?: string;
               "total_vusers"?: number;
+              "traffic_profile"?: ({
+                "amplitude"?: {
+                  "mode"?: string;
+                  "value"?: number;
+                };
+                "gap_policy"?: string;
+                "interpolation": string;
+                "mappings": Array<{
+                  "group_name": string;
+                  "peak_target": number;
+                  "points": Array<Record<string, unknown>>;
+                  "series_key": string;
+                  "series_name": string;
+                }>;
+                "refreshed_at": string;
+                "runtime_target": string;
+                "source": {
+                  "file"?: (Record<string, unknown>) | null;
+                  "kind": string;
+                  "name"?: string;
+                  "opensearch"?: (Record<string, unknown>) | null;
+                  "prometheus"?: (Record<string, unknown>) | null;
+                };
+                "source_duration": string;
+                "target_duration": string;
+                "value_semantics": string;
+                "version": number;
+                "warnings"?: Array<string>;
+                "window"?: {
+                  "duration"?: string;
+                  "end"?: string;
+                  "mode"?: string;
+                  "start"?: string;
+                };
+              }) | null;
             };
             "resource_sample_count": number;
             "resource_samples_file": string;
@@ -34497,6 +36124,21 @@ export interface operations {
                 "stopped_by_display_name"?: string;
                 "stopped_by_subject"?: string;
                 "total_vusers"?: number;
+                "traffic_profile"?: ({
+                  "amplitude"?: Record<string, unknown>;
+                  "gap_policy"?: string;
+                  "interpolation": string;
+                  "mappings": Array<Record<string, unknown>>;
+                  "refreshed_at": string;
+                  "runtime_target": string;
+                  "source": Record<string, unknown>;
+                  "source_duration": string;
+                  "target_duration": string;
+                  "value_semantics": string;
+                  "version": number;
+                  "warnings"?: Array<string>;
+                  "window"?: Record<string, unknown>;
+                }) | null;
               }) | null;
               "interval_summaries_file": string;
               "interval_summaries_parquet_file"?: string;
@@ -34700,6 +36342,21 @@ export interface operations {
                 "stopped_by_display_name"?: string;
                 "stopped_by_subject"?: string;
                 "total_vusers"?: number;
+                "traffic_profile"?: ({
+                  "amplitude"?: Record<string, unknown>;
+                  "gap_policy"?: string;
+                  "interpolation": string;
+                  "mappings": Array<Record<string, unknown>>;
+                  "refreshed_at": string;
+                  "runtime_target": string;
+                  "source": Record<string, unknown>;
+                  "source_duration": string;
+                  "target_duration": string;
+                  "value_semantics": string;
+                  "version": number;
+                  "warnings"?: Array<string>;
+                  "window"?: Record<string, unknown>;
+                }) | null;
               };
               "resource_sample_count": number;
               "resource_samples_file": string;
@@ -35987,7 +37644,62 @@ export interface operations {
               "vusers": number;
             }>;
             "start_delay"?: string;
+            "traffic_profile"?: ({
+              "amplitude"?: {
+                "mode"?: string;
+                "value"?: number;
+              };
+              "gap_policy"?: string;
+              "interpolation": string;
+              "mappings": Array<{
+                "group_name": string;
+                "peak_target": number;
+                "points": Array<Record<string, unknown>>;
+                "series_key": string;
+                "series_name": string;
+              }>;
+              "refreshed_at": string;
+              "runtime_target": string;
+              "source": {
+                "file"?: ({
+                  "filename": string;
+                  "series_column"?: string;
+                  "sheet"?: string;
+                  "timestamp_column": string;
+                  "timezone"?: string;
+                  "value_columns": Array<string>;
+                }) | null;
+                "kind": string;
+                "name"?: string;
+                "opensearch"?: ({
+                  "filter"?: unknown;
+                  "index": string;
+                  "interval": string;
+                  "metric": string;
+                  "metric_field"?: string;
+                  "range": Record<string, unknown>;
+                  "timestamp_field": string;
+                }) | null;
+                "prometheus"?: ({
+                  "label_fields"?: Array<string>;
+                  "query": string;
+                  "range": Record<string, unknown>;
+                }) | null;
+              };
+              "source_duration": string;
+              "target_duration": string;
+              "value_semantics": string;
+              "version": number;
+              "warnings"?: Array<string>;
+              "window"?: {
+                "duration"?: string;
+                "end"?: string;
+                "mode"?: string;
+                "start"?: string;
+              };
+            }) | null;
             "updated_at": string;
+            "workload_shape_id"?: string;
           }) | null;
         };
       };
@@ -37842,6 +39554,14 @@ export interface operations {
                 "timeout_minutes"?: number;
                 "url": string;
               }>;
+            };
+            "opensearch": {
+              "base_url"?: string;
+              "bearer_token_env_var"?: string;
+              "enabled": boolean;
+              "password_env_var"?: string;
+              "timeout_seconds"?: number;
+              "username"?: string;
             };
             "powerbi": {
               "api_base_url"?: string;
@@ -39717,6 +41437,60 @@ export interface operations {
             }) | null;
             "timeslot_id"?: (string) | null;
             "total_vusers": number;
+            "traffic_profile"?: ({
+              "amplitude"?: {
+                "mode"?: string;
+                "value"?: number;
+              };
+              "gap_policy"?: string;
+              "interpolation": string;
+              "mappings": Array<{
+                "group_name": string;
+                "peak_target": number;
+                "points": Array<Record<string, unknown>>;
+                "series_key": string;
+                "series_name": string;
+              }>;
+              "refreshed_at": string;
+              "runtime_target": string;
+              "source": {
+                "file"?: ({
+                  "filename": string;
+                  "series_column"?: string;
+                  "sheet"?: string;
+                  "timestamp_column": string;
+                  "timezone"?: string;
+                  "value_columns": Array<string>;
+                }) | null;
+                "kind": string;
+                "name"?: string;
+                "opensearch"?: ({
+                  "filter"?: unknown;
+                  "index": string;
+                  "interval": string;
+                  "metric": string;
+                  "metric_field"?: string;
+                  "range": Record<string, unknown>;
+                  "timestamp_field": string;
+                }) | null;
+                "prometheus"?: ({
+                  "label_fields"?: Array<string>;
+                  "query": string;
+                  "range": Record<string, unknown>;
+                }) | null;
+              };
+              "source_duration": string;
+              "target_duration": string;
+              "value_semantics": string;
+              "version": number;
+              "warnings"?: Array<string>;
+              "window"?: {
+                "duration"?: string;
+                "end"?: string;
+                "mode"?: string;
+                "start"?: string;
+              };
+            }) | null;
             "vuser_ramps"?: Record<string, {
               "group": string;
               "ramp_duration": string;
@@ -41161,6 +42935,41 @@ export interface operations {
               "started_at"?: (string) | null;
               "status"?: string;
               "total_vusers"?: number;
+              "traffic_profile"?: ({
+                "amplitude"?: {
+                  "mode"?: string;
+                  "value"?: number;
+                };
+                "gap_policy"?: string;
+                "interpolation": string;
+                "mappings": Array<{
+                  "group_name": string;
+                  "peak_target": number;
+                  "points": Array<Record<string, unknown>>;
+                  "series_key": string;
+                  "series_name": string;
+                }>;
+                "refreshed_at": string;
+                "runtime_target": string;
+                "source": {
+                  "file"?: (Record<string, unknown>) | null;
+                  "kind": string;
+                  "name"?: string;
+                  "opensearch"?: (Record<string, unknown>) | null;
+                  "prometheus"?: (Record<string, unknown>) | null;
+                };
+                "source_duration": string;
+                "target_duration": string;
+                "value_semantics": string;
+                "version": number;
+                "warnings"?: Array<string>;
+                "window"?: {
+                  "duration"?: string;
+                  "end"?: string;
+                  "mode"?: string;
+                  "start"?: string;
+                };
+              }) | null;
               "vuser_ramps"?: Record<string, {
                 "group": string;
                 "ramp_duration": string;
@@ -41488,6 +43297,41 @@ export interface operations {
               "started_at"?: (string) | null;
               "status"?: string;
               "total_vusers"?: number;
+              "traffic_profile"?: ({
+                "amplitude"?: {
+                  "mode"?: string;
+                  "value"?: number;
+                };
+                "gap_policy"?: string;
+                "interpolation": string;
+                "mappings": Array<{
+                  "group_name": string;
+                  "peak_target": number;
+                  "points": Array<Record<string, unknown>>;
+                  "series_key": string;
+                  "series_name": string;
+                }>;
+                "refreshed_at": string;
+                "runtime_target": string;
+                "source": {
+                  "file"?: (Record<string, unknown>) | null;
+                  "kind": string;
+                  "name"?: string;
+                  "opensearch"?: (Record<string, unknown>) | null;
+                  "prometheus"?: (Record<string, unknown>) | null;
+                };
+                "source_duration": string;
+                "target_duration": string;
+                "value_semantics": string;
+                "version": number;
+                "warnings"?: Array<string>;
+                "window"?: {
+                  "duration"?: string;
+                  "end"?: string;
+                  "mode"?: string;
+                  "start"?: string;
+                };
+              }) | null;
               "vuser_ramps"?: Record<string, {
                 "group": string;
                 "ramp_duration": string;
@@ -44478,6 +46322,7 @@ export interface operations {
                   "telemetry_health"?: (Record<string, unknown>) | null;
                   "timeslot_id"?: (string) | null;
                   "total_vusers": number;
+                  "traffic_profile"?: (Record<string, unknown>) | null;
                   "vuser_ramps"?: Record<string, Record<string, unknown>>;
                 }) | null;
               }) | null;
@@ -44490,11 +46335,14 @@ export interface operations {
                   "goal_config"?: (Record<string, unknown>) | null;
                   "groups": Array<Record<string, unknown>>;
                   "name": string;
+                  "project_id"?: string;
                   "resource_baseline"?: boolean;
                   "runtime_settings"?: (Record<string, unknown>) | null;
                   "scenario_mode"?: string;
                   "script_shakeout"?: boolean;
                   "start_delay"?: string;
+                  "traffic_profile"?: (Record<string, unknown>) | null;
+                  "workload_shape_id"?: (string) | null;
                 };
               }) | null;
               "script"?: ({
@@ -47557,7 +49405,11 @@ export interface operations {
     };
   };
   "handleLoadModelSupportMatrix": {
-    parameters?: never;
+    parameters: {
+      "query"?: {
+        "project_id"?: string;
+      };
+    };
     requestBody?: never;
     responses: {
       "200": {
@@ -47575,6 +49427,11 @@ export interface operations {
           "application/json": components["schemas"]["ErrorResponse"];
         };
       };
+      "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
       "default": {
         content?: never;
       };
@@ -47583,6 +49440,7 @@ export interface operations {
   "handleLoadModelTemplates": {
     parameters: {
       "query"?: {
+        "project_id"?: string;
         "shape_id"?: string;
       };
     };
@@ -47599,6 +49457,11 @@ export interface operations {
         };
       };
       "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -51730,6 +53593,60 @@ export interface operations {
             }) | null;
             "timeslot_id"?: (string) | null;
             "total_vusers": number;
+            "traffic_profile"?: ({
+              "amplitude"?: {
+                "mode"?: string;
+                "value"?: number;
+              };
+              "gap_policy"?: string;
+              "interpolation": string;
+              "mappings": Array<{
+                "group_name": string;
+                "peak_target": number;
+                "points": Array<Record<string, unknown>>;
+                "series_key": string;
+                "series_name": string;
+              }>;
+              "refreshed_at": string;
+              "runtime_target": string;
+              "source": {
+                "file"?: ({
+                  "filename": string;
+                  "series_column"?: string;
+                  "sheet"?: string;
+                  "timestamp_column": string;
+                  "timezone"?: string;
+                  "value_columns": Array<string>;
+                }) | null;
+                "kind": string;
+                "name"?: string;
+                "opensearch"?: ({
+                  "filter"?: unknown;
+                  "index": string;
+                  "interval": string;
+                  "metric": string;
+                  "metric_field"?: string;
+                  "range": Record<string, unknown>;
+                  "timestamp_field": string;
+                }) | null;
+                "prometheus"?: ({
+                  "label_fields"?: Array<string>;
+                  "query": string;
+                  "range": Record<string, unknown>;
+                }) | null;
+              };
+              "source_duration": string;
+              "target_duration": string;
+              "value_semantics": string;
+              "version": number;
+              "warnings"?: Array<string>;
+              "window"?: {
+                "duration"?: string;
+                "end"?: string;
+                "mode"?: string;
+                "start"?: string;
+              };
+            }) | null;
             "vuser_ramps"?: Record<string, {
               "group": string;
               "ramp_duration": string;
@@ -52125,6 +54042,41 @@ export interface operations {
           "script_shakeout"?: boolean;
           "start_delay"?: string;
           "timeslot_id"?: (string) | null;
+          "traffic_profile"?: ({
+            "amplitude"?: {
+              "mode"?: string;
+              "value"?: number;
+            };
+            "gap_policy"?: string;
+            "interpolation"?: string;
+            "mappings"?: Array<{
+              "group_name"?: string;
+              "peak_target"?: number;
+              "points"?: Array<Record<string, unknown>>;
+              "series_key"?: string;
+              "series_name"?: string;
+            }>;
+            "refreshed_at"?: string;
+            "runtime_target"?: string;
+            "source"?: {
+              "file"?: (Record<string, unknown>) | null;
+              "kind"?: string;
+              "name"?: string;
+              "opensearch"?: (Record<string, unknown>) | null;
+              "prometheus"?: (Record<string, unknown>) | null;
+            };
+            "source_duration"?: string;
+            "target_duration"?: string;
+            "value_semantics"?: string;
+            "version"?: number;
+            "warnings"?: Array<string>;
+            "window"?: {
+              "duration"?: string;
+              "end"?: string;
+              "mode"?: string;
+              "start"?: string;
+            };
+          }) | null;
           "vusers"?: number;
         };
       };
@@ -57889,6 +59841,41 @@ export interface operations {
               }) | null;
               "timeslot_id"?: (string) | null;
               "total_vusers": number;
+              "traffic_profile"?: ({
+                "amplitude"?: {
+                  "mode"?: string;
+                  "value"?: number;
+                };
+                "gap_policy"?: string;
+                "interpolation": string;
+                "mappings": Array<{
+                  "group_name": string;
+                  "peak_target": number;
+                  "points": Array<Record<string, unknown>>;
+                  "series_key": string;
+                  "series_name": string;
+                }>;
+                "refreshed_at": string;
+                "runtime_target": string;
+                "source": {
+                  "file"?: (Record<string, unknown>) | null;
+                  "kind": string;
+                  "name"?: string;
+                  "opensearch"?: (Record<string, unknown>) | null;
+                  "prometheus"?: (Record<string, unknown>) | null;
+                };
+                "source_duration": string;
+                "target_duration": string;
+                "value_semantics": string;
+                "version": number;
+                "warnings"?: Array<string>;
+                "window"?: {
+                  "duration"?: string;
+                  "end"?: string;
+                  "mode"?: string;
+                  "start"?: string;
+                };
+              }) | null;
               "vuser_ramps"?: Record<string, {
                 "group": string;
                 "ramp_duration": string;
@@ -59036,6 +61023,41 @@ export interface operations {
               }) | null;
               "timeslot_id"?: (string) | null;
               "total_vusers": number;
+              "traffic_profile"?: ({
+                "amplitude"?: {
+                  "mode"?: string;
+                  "value"?: number;
+                };
+                "gap_policy"?: string;
+                "interpolation": string;
+                "mappings": Array<{
+                  "group_name": string;
+                  "peak_target": number;
+                  "points": Array<Record<string, unknown>>;
+                  "series_key": string;
+                  "series_name": string;
+                }>;
+                "refreshed_at": string;
+                "runtime_target": string;
+                "source": {
+                  "file"?: (Record<string, unknown>) | null;
+                  "kind": string;
+                  "name"?: string;
+                  "opensearch"?: (Record<string, unknown>) | null;
+                  "prometheus"?: (Record<string, unknown>) | null;
+                };
+                "source_duration": string;
+                "target_duration": string;
+                "value_semantics": string;
+                "version": number;
+                "warnings"?: Array<string>;
+                "window"?: {
+                  "duration"?: string;
+                  "end"?: string;
+                  "mode"?: string;
+                  "start"?: string;
+                };
+              }) | null;
               "vuser_ramps"?: Record<string, {
                 "group": string;
                 "ramp_duration": string;
@@ -60183,6 +62205,41 @@ export interface operations {
               }) | null;
               "timeslot_id"?: (string) | null;
               "total_vusers": number;
+              "traffic_profile"?: ({
+                "amplitude"?: {
+                  "mode"?: string;
+                  "value"?: number;
+                };
+                "gap_policy"?: string;
+                "interpolation": string;
+                "mappings": Array<{
+                  "group_name": string;
+                  "peak_target": number;
+                  "points": Array<Record<string, unknown>>;
+                  "series_key": string;
+                  "series_name": string;
+                }>;
+                "refreshed_at": string;
+                "runtime_target": string;
+                "source": {
+                  "file"?: (Record<string, unknown>) | null;
+                  "kind": string;
+                  "name"?: string;
+                  "opensearch"?: (Record<string, unknown>) | null;
+                  "prometheus"?: (Record<string, unknown>) | null;
+                };
+                "source_duration": string;
+                "target_duration": string;
+                "value_semantics": string;
+                "version": number;
+                "warnings"?: Array<string>;
+                "window"?: {
+                  "duration"?: string;
+                  "end"?: string;
+                  "mode"?: string;
+                  "start"?: string;
+                };
+              }) | null;
               "vuser_ramps"?: Record<string, {
                 "group": string;
                 "ramp_duration": string;
@@ -61330,6 +63387,41 @@ export interface operations {
               }) | null;
               "timeslot_id"?: (string) | null;
               "total_vusers": number;
+              "traffic_profile"?: ({
+                "amplitude"?: {
+                  "mode"?: string;
+                  "value"?: number;
+                };
+                "gap_policy"?: string;
+                "interpolation": string;
+                "mappings": Array<{
+                  "group_name": string;
+                  "peak_target": number;
+                  "points": Array<Record<string, unknown>>;
+                  "series_key": string;
+                  "series_name": string;
+                }>;
+                "refreshed_at": string;
+                "runtime_target": string;
+                "source": {
+                  "file"?: (Record<string, unknown>) | null;
+                  "kind": string;
+                  "name"?: string;
+                  "opensearch"?: (Record<string, unknown>) | null;
+                  "prometheus"?: (Record<string, unknown>) | null;
+                };
+                "source_duration": string;
+                "target_duration": string;
+                "value_semantics": string;
+                "version": number;
+                "warnings"?: Array<string>;
+                "window"?: {
+                  "duration"?: string;
+                  "end"?: string;
+                  "mode"?: string;
+                  "start"?: string;
+                };
+              }) | null;
               "vuser_ramps"?: Record<string, {
                 "group": string;
                 "ramp_duration": string;
@@ -62477,6 +64569,41 @@ export interface operations {
               }) | null;
               "timeslot_id"?: (string) | null;
               "total_vusers": number;
+              "traffic_profile"?: ({
+                "amplitude"?: {
+                  "mode"?: string;
+                  "value"?: number;
+                };
+                "gap_policy"?: string;
+                "interpolation": string;
+                "mappings": Array<{
+                  "group_name": string;
+                  "peak_target": number;
+                  "points": Array<Record<string, unknown>>;
+                  "series_key": string;
+                  "series_name": string;
+                }>;
+                "refreshed_at": string;
+                "runtime_target": string;
+                "source": {
+                  "file"?: (Record<string, unknown>) | null;
+                  "kind": string;
+                  "name"?: string;
+                  "opensearch"?: (Record<string, unknown>) | null;
+                  "prometheus"?: (Record<string, unknown>) | null;
+                };
+                "source_duration": string;
+                "target_duration": string;
+                "value_semantics": string;
+                "version": number;
+                "warnings"?: Array<string>;
+                "window"?: {
+                  "duration"?: string;
+                  "end"?: string;
+                  "mode"?: string;
+                  "start"?: string;
+                };
+              }) | null;
               "vuser_ramps"?: Record<string, {
                 "group": string;
                 "ramp_duration": string;
@@ -68871,6 +70998,7 @@ export interface operations {
                 "vusers": number;
               }>;
               "name": string;
+              "project_id"?: string;
               "resource_baseline"?: boolean;
               "runtime_settings"?: ({
                 "auto_transactions"?: string;
@@ -69019,6 +71147,42 @@ export interface operations {
               "scenario_mode"?: string;
               "script_shakeout"?: boolean;
               "start_delay"?: string;
+              "traffic_profile"?: ({
+                "amplitude"?: {
+                  "mode"?: string;
+                  "value"?: number;
+                };
+                "gap_policy"?: string;
+                "interpolation": string;
+                "mappings": Array<{
+                  "group_name": string;
+                  "peak_target": number;
+                  "points": Array<Record<string, unknown>>;
+                  "series_key": string;
+                  "series_name": string;
+                }>;
+                "refreshed_at": string;
+                "runtime_target": string;
+                "source": {
+                  "file"?: (Record<string, unknown>) | null;
+                  "kind": string;
+                  "name"?: string;
+                  "opensearch"?: (Record<string, unknown>) | null;
+                  "prometheus"?: (Record<string, unknown>) | null;
+                };
+                "source_duration": string;
+                "target_duration": string;
+                "value_semantics": string;
+                "version": number;
+                "warnings"?: Array<string>;
+                "window"?: {
+                  "duration"?: string;
+                  "end"?: string;
+                  "mode"?: string;
+                  "start"?: string;
+                };
+              }) | null;
+              "workload_shape_id"?: (string) | null;
             };
             "total_target_tps": number;
             "total_vusers": number;
@@ -78054,6 +80218,44 @@ export interface operations {
       };
     };
   };
+  "handleTrafficProfileSources": {
+    parameters?: never;
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": {
+            "limits": {
+              "derive_bytes": number;
+              "points_per_profile": number;
+              "points_per_series": number;
+              "upload_bytes": number;
+              "upstream_bytes": number;
+            };
+            "sources": Array<{
+              "configured": boolean;
+              "enabled": boolean;
+              "formats"?: Array<string>;
+              "kind": string;
+            }>;
+          };
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
   "handleUncordonGenerator": {
     parameters: {
       "path": {
@@ -79907,6 +82109,60 @@ export interface operations {
             }) | null;
             "timeslot_id"?: (string) | null;
             "total_vusers": number;
+            "traffic_profile"?: ({
+              "amplitude"?: {
+                "mode"?: string;
+                "value"?: number;
+              };
+              "gap_policy"?: string;
+              "interpolation": string;
+              "mappings": Array<{
+                "group_name": string;
+                "peak_target": number;
+                "points": Array<Record<string, unknown>>;
+                "series_key": string;
+                "series_name": string;
+              }>;
+              "refreshed_at": string;
+              "runtime_target": string;
+              "source": {
+                "file"?: ({
+                  "filename": string;
+                  "series_column"?: string;
+                  "sheet"?: string;
+                  "timestamp_column": string;
+                  "timezone"?: string;
+                  "value_columns": Array<string>;
+                }) | null;
+                "kind": string;
+                "name"?: string;
+                "opensearch"?: ({
+                  "filter"?: unknown;
+                  "index": string;
+                  "interval": string;
+                  "metric": string;
+                  "metric_field"?: string;
+                  "range": Record<string, unknown>;
+                  "timestamp_field": string;
+                }) | null;
+                "prometheus"?: ({
+                  "label_fields"?: Array<string>;
+                  "query": string;
+                  "range": Record<string, unknown>;
+                }) | null;
+              };
+              "source_duration": string;
+              "target_duration": string;
+              "value_semantics": string;
+              "version": number;
+              "warnings"?: Array<string>;
+              "window"?: {
+                "duration"?: string;
+                "end"?: string;
+                "mode"?: string;
+                "start"?: string;
+              };
+            }) | null;
             "vuser_ramps"?: Record<string, {
               "group": string;
               "ramp_duration": string;
@@ -82070,6 +84326,96 @@ export interface operations {
       };
     };
   };
+  "handleUpdateDomainFeatures": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          "disabled_feature_ids"?: Array<string>;
+          "expected_revision"?: string;
+        };
+      };
+    };
+    responses: {
+      "200": {
+        content: {
+          "application/json": {
+            "catalog_version": string;
+            "categories": Array<{
+              "description": string;
+              "id": string;
+              "name": string;
+            }>;
+            "disabled_feature_ids": Array<string>;
+            "domain_id": string;
+            "features": Array<{
+              "category": string;
+              "configured_enabled": boolean;
+              "description"?: string;
+              "effective_enabled": boolean;
+              "id": string;
+              "name": string;
+              "parent_id"?: string;
+            }>;
+            "revision": string;
+            "updated_at"?: (string) | null;
+          };
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "428": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
   "handleUpdateExecutionPlan": {
     parameters: {
       "path": {
@@ -83644,6 +85990,7 @@ export interface operations {
             "vusers"?: number;
           }>;
           "name": string;
+          "project_id"?: string;
           "resource_baseline"?: boolean;
           "runtime_settings"?: ({
             "auto_transactions"?: string;
@@ -83869,6 +86216,61 @@ export interface operations {
           "scenario_mode"?: string;
           "script_shakeout"?: boolean;
           "start_delay"?: string;
+          "traffic_profile"?: ({
+            "amplitude"?: {
+              "mode"?: string;
+              "value"?: number;
+            };
+            "gap_policy"?: string;
+            "interpolation"?: string;
+            "mappings"?: Array<{
+              "group_name"?: string;
+              "peak_target"?: number;
+              "points"?: Array<Record<string, unknown>>;
+              "series_key"?: string;
+              "series_name"?: string;
+            }>;
+            "refreshed_at"?: string;
+            "runtime_target"?: string;
+            "source"?: {
+              "file"?: ({
+                "filename"?: string;
+                "series_column"?: string;
+                "sheet"?: string;
+                "timestamp_column"?: string;
+                "timezone"?: string;
+                "value_columns"?: Array<string>;
+              }) | null;
+              "kind"?: string;
+              "name"?: string;
+              "opensearch"?: ({
+                "filter"?: unknown;
+                "index"?: string;
+                "interval"?: string;
+                "metric"?: string;
+                "metric_field"?: string;
+                "range"?: Record<string, unknown>;
+                "timestamp_field"?: string;
+              }) | null;
+              "prometheus"?: ({
+                "label_fields"?: Array<string>;
+                "query"?: string;
+                "range"?: Record<string, unknown>;
+              }) | null;
+            };
+            "source_duration"?: string;
+            "target_duration"?: string;
+            "value_semantics"?: string;
+            "version"?: number;
+            "warnings"?: Array<string>;
+            "window"?: {
+              "duration"?: string;
+              "end"?: string;
+              "mode"?: string;
+              "start"?: string;
+            };
+          }) | null;
+          "workload_shape_id"?: (string) | null;
         };
       };
     };
@@ -84420,7 +86822,62 @@ export interface operations {
               "vusers": number;
             }>;
             "start_delay"?: string;
+            "traffic_profile"?: ({
+              "amplitude"?: {
+                "mode"?: string;
+                "value"?: number;
+              };
+              "gap_policy"?: string;
+              "interpolation": string;
+              "mappings": Array<{
+                "group_name": string;
+                "peak_target": number;
+                "points": Array<Record<string, unknown>>;
+                "series_key": string;
+                "series_name": string;
+              }>;
+              "refreshed_at": string;
+              "runtime_target": string;
+              "source": {
+                "file"?: ({
+                  "filename": string;
+                  "series_column"?: string;
+                  "sheet"?: string;
+                  "timestamp_column": string;
+                  "timezone"?: string;
+                  "value_columns": Array<string>;
+                }) | null;
+                "kind": string;
+                "name"?: string;
+                "opensearch"?: ({
+                  "filter"?: unknown;
+                  "index": string;
+                  "interval": string;
+                  "metric": string;
+                  "metric_field"?: string;
+                  "range": Record<string, unknown>;
+                  "timestamp_field": string;
+                }) | null;
+                "prometheus"?: ({
+                  "label_fields"?: Array<string>;
+                  "query": string;
+                  "range": Record<string, unknown>;
+                }) | null;
+              };
+              "source_duration": string;
+              "target_duration": string;
+              "value_semantics": string;
+              "version": number;
+              "warnings"?: Array<string>;
+              "window"?: {
+                "duration"?: string;
+                "end"?: string;
+                "mode"?: string;
+                "start"?: string;
+              };
+            }) | null;
             "updated_at": string;
+            "workload_shape_id"?: string;
           }) | null;
         };
       };
@@ -84445,6 +86902,11 @@ export interface operations {
         };
       };
       "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -87814,6 +90276,14 @@ export interface operations {
               "url"?: string;
             }>;
           };
+          "opensearch"?: {
+            "base_url"?: string;
+            "bearer_token_env_var"?: string;
+            "enabled"?: boolean;
+            "password_env_var"?: string;
+            "timeout_seconds"?: number;
+            "username"?: string;
+          };
           "powerbi"?: {
             "api_base_url"?: string;
             "auth_base_url"?: string;
@@ -87983,6 +90453,14 @@ export interface operations {
                 "timeout_minutes"?: number;
                 "url": string;
               }>;
+            };
+            "opensearch": {
+              "base_url"?: string;
+              "bearer_token_env_var"?: string;
+              "enabled": boolean;
+              "password_env_var"?: string;
+              "timeout_seconds"?: number;
+              "username"?: string;
             };
             "powerbi": {
               "api_base_url"?: string;
@@ -90279,6 +92757,7 @@ export interface operations {
             "vusers"?: number;
           }>;
           "name"?: string;
+          "project_id"?: string;
           "resource_baseline"?: boolean;
           "runtime_settings"?: ({
             "auto_transactions"?: string;
@@ -90504,6 +92983,61 @@ export interface operations {
           "scenario_mode"?: string;
           "script_shakeout"?: boolean;
           "start_delay"?: string;
+          "traffic_profile"?: ({
+            "amplitude"?: {
+              "mode"?: string;
+              "value"?: number;
+            };
+            "gap_policy"?: string;
+            "interpolation"?: string;
+            "mappings"?: Array<{
+              "group_name"?: string;
+              "peak_target"?: number;
+              "points"?: Array<Record<string, unknown>>;
+              "series_key"?: string;
+              "series_name"?: string;
+            }>;
+            "refreshed_at"?: string;
+            "runtime_target"?: string;
+            "source"?: {
+              "file"?: ({
+                "filename"?: string;
+                "series_column"?: string;
+                "sheet"?: string;
+                "timestamp_column"?: string;
+                "timezone"?: string;
+                "value_columns"?: Array<string>;
+              }) | null;
+              "kind"?: string;
+              "name"?: string;
+              "opensearch"?: ({
+                "filter"?: unknown;
+                "index"?: string;
+                "interval"?: string;
+                "metric"?: string;
+                "metric_field"?: string;
+                "range"?: Record<string, unknown>;
+                "timestamp_field"?: string;
+              }) | null;
+              "prometheus"?: ({
+                "label_fields"?: Array<string>;
+                "query"?: string;
+                "range"?: Record<string, unknown>;
+              }) | null;
+            };
+            "source_duration"?: string;
+            "target_duration"?: string;
+            "value_semantics"?: string;
+            "version"?: number;
+            "warnings"?: Array<string>;
+            "window"?: {
+              "duration"?: string;
+              "end"?: string;
+              "mode"?: string;
+              "start"?: string;
+            };
+          }) | null;
+          "workload_shape_id"?: (string) | null;
         };
       };
     };
@@ -90654,6 +93188,11 @@ export interface operations {
         };
       };
       "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -91544,6 +94083,10 @@ export interface paths {
     "get": operations["handleListRepositoryCategories"];
     "post": operations["handleCreateRepositoryCategory"];
   };
+  "/api/v1/domains/{id}/features": {
+    "get": operations["handleGetDomainFeatures"];
+    "put": operations["handleUpdateDomainFeatures"];
+  };
   "/api/v1/downloads/desktop/latest": {
     "get": operations["handleDownloadDesktopApp"];
   };
@@ -92022,6 +94565,15 @@ export interface paths {
   };
   "/api/v1/scenarios/size-from-goal": {
     "post": operations["handleSizeScenarioFromGoal"];
+  };
+  "/api/v1/scenarios/traffic-profile/analyze": {
+    "post": operations["handleAnalyzeTrafficProfile"];
+  };
+  "/api/v1/scenarios/traffic-profile/derive": {
+    "post": operations["handleDeriveTrafficProfile"];
+  };
+  "/api/v1/scenarios/traffic-profile/sources": {
+    "get": operations["handleTrafficProfileSources"];
   };
   "/api/v1/scenarios/validate-load-model": {
     "post": operations["handleValidateScenarioLoadModel"];

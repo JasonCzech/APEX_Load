@@ -23,6 +23,24 @@ func (s *Server) handleCreateScenario(w http.ResponseWriter, r *http.Request) {
 	}
 	actorType, actorSubject, actorDisplayName := s.resolveAuditActor(r)
 	req.creationActor = testCreationActor{Type: actorType, Subject: actorSubject, DisplayName: actorDisplayName}
+	projectID, projectErr := s.scenarioRequestProjectID(req)
+	if projectErr != nil {
+		writeError(w, http.StatusBadRequest, projectErr.Error())
+		return
+	}
+	domainID, featureID, shapeErr := s.validateScenarioWorkloadShape(req, projectID, "")
+	if errors.Is(shapeErr, errUnknownWorkloadShape) {
+		writeError(w, http.StatusBadRequest, "unknown workload_shape_id")
+		return
+	}
+	if shapeErr != nil {
+		writeError(w, http.StatusServiceUnavailable, "domain feature policy is unavailable")
+		return
+	}
+	if featureID != "" {
+		writeDomainFeatureDisabled(w, domainID, featureID)
+		return
+	}
 	scenario, err := s.runner.StoreScenario(req)
 	if err != nil {
 		if errors.Is(err, errServiceAccountRuntimeSecretWrite) || errors.Is(err, errUnattributedRuntimeSecretWrite) {
@@ -77,6 +95,19 @@ func (s *Server) handleUpdateScenario(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "scenario scripts must remain in the scenario project")
 		return
 	}
+	domainID, featureID, shapeErr := s.validateScenarioWorkloadShape(req, existing.ProjectID, existing.WorkloadShapeID)
+	if errors.Is(shapeErr, errUnknownWorkloadShape) {
+		writeError(w, http.StatusBadRequest, "unknown workload_shape_id")
+		return
+	}
+	if shapeErr != nil {
+		writeError(w, http.StatusServiceUnavailable, "domain feature policy is unavailable")
+		return
+	}
+	if featureID != "" {
+		writeDomainFeatureDisabled(w, domainID, featureID)
+		return
+	}
 	scenario, ok, err := s.runner.UpdateScenario(r.PathValue("id"), req)
 	if err != nil {
 		status := http.StatusBadRequest
@@ -97,7 +128,11 @@ func (s *Server) handleUpdateScenario(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) scenarioRequestProjectID(req CreateScenarioRequest) (string, error) {
-	projectID := ""
+	projectID := strings.TrimSpace(req.ProjectID)
+	hasExplicitProject := projectID != ""
+	if projectID != "" {
+		projectID = normalizeProjectID(projectID)
+	}
 	for _, group := range req.Groups {
 		script, ok := s.runner.GetScript(strings.TrimSpace(group.ScriptID))
 		if !ok || script == nil {
@@ -105,7 +140,10 @@ func (s *Server) scenarioRequestProjectID(req CreateScenarioRequest) (string, er
 		}
 		candidate := normalizeProjectID(script.ProjectID)
 		if projectID != "" && candidate != projectID {
-			return "", fmt.Errorf("scenario scripts span multiple projects")
+			if !hasExplicitProject {
+				return "", fmt.Errorf("scenario scripts span multiple projects")
+			}
+			return "", fmt.Errorf("scenario scripts do not belong to project_id")
 		}
 		projectID = candidate
 	}
@@ -115,6 +153,24 @@ func (s *Server) scenarioRequestProjectID(req CreateScenarioRequest) (string, er
 func (s *Server) handleValidateScenarioLoadModel(w http.ResponseWriter, r *http.Request) {
 	var req CreateScenarioRequest
 	if !decodeJSONBody(w, r, &req) {
+		return
+	}
+	projectID, projectErr := s.scenarioRequestProjectID(req)
+	if projectErr != nil {
+		writeError(w, http.StatusBadRequest, projectErr.Error())
+		return
+	}
+	domainID, featureID, shapeErr := s.validateScenarioWorkloadShape(req, projectID, "")
+	if errors.Is(shapeErr, errUnknownWorkloadShape) {
+		writeError(w, http.StatusBadRequest, "unknown workload_shape_id")
+		return
+	}
+	if shapeErr != nil {
+		writeError(w, http.StatusServiceUnavailable, "domain feature policy is unavailable")
+		return
+	}
+	if featureID != "" {
+		writeDomainFeatureDisabled(w, domainID, featureID)
 		return
 	}
 	report, err := s.runner.ValidateScenarioLoadModel(req)

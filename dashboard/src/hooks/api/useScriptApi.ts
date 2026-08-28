@@ -443,15 +443,16 @@ export function useScriptApi() {
   )
 
   const listAuthoringCapabilities = useCallback(
-    () => request<AuthoringCapabilitiesResponse>('/scripts/authoring/capabilities'),
+    (projectId?: string) => request<AuthoringCapabilitiesResponse>(`/scripts/authoring/capabilities${projectId ? `?project_id=${encodeURIComponent(projectId)}` : ''}`),
     [],
   )
 
   const listAuthoringTemplates = useCallback(
-    (params?: { protocol?: string; use_case?: string }) => {
+    (params?: { protocol?: string; use_case?: string; projectId?: string }) => {
       const query = new URLSearchParams()
       if (params?.protocol) query.set('protocol', params.protocol)
       if (params?.use_case) query.set('use_case', params.use_case)
+      if (params?.projectId) query.set('project_id', params.projectId)
       const suffix = query.toString()
       return request<AuthoringTemplatesResponse>(`/scripts/authoring/templates${suffix ? `?${suffix}` : ''}`)
     },

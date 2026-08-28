@@ -2,6 +2,58 @@
 // separate from component state so they can migrate to generated OpenAPI
 // aliases without changing feature code.
 
+export interface CapacityResourceEstimate {
+  cpu_cores: number
+  memory_mb: number
+  network_mbps: number
+}
+
+export interface CapacityDimensionRecommendations {
+  cpu: number
+  memory: number
+  network: number
+  vusers: number
+}
+
+export interface ProtocolDensityEnvelope {
+  protocol: string
+  vusers: number
+  max_vusers_per_generator: number
+  cpu_cores_per_vuser: number
+  memory_mb_per_vuser: number
+  network_mbps_per_vuser: number
+  compatibility_confidence?: string
+  benchmark_profile?: string
+  benchmark_evidence?: string
+  calibration_source?: string
+  calibrated_at?: string
+}
+
+export interface CapacityAdvisory {
+  total_vusers: number
+  duration_seconds: number
+  baseline_window_enabled: boolean
+  workload_class?: 'http' | 'browser' | 'mixed' | string
+  browser_vusers?: number
+  max_browser_vusers_per_generator?: number
+  protocol_densities?: ProtocolDensityEnvelope[]
+  headroom_pct: number
+  complexity_score: number
+  bottleneck: 'cpu' | 'memory' | 'network' | 'vusers'
+  availability_source?: 'configured' | 'configured_plus_live'
+  configured_available_generators?: number
+  live_available_generators?: number
+  recommended_generators: number
+  available_generators: number
+  shortfall_generators?: number
+  requires_override?: boolean
+  estimated_per_vuser: CapacityResourceEstimate
+  estimated_total: CapacityResourceEstimate
+  usable_per_generator: CapacityResourceEstimate
+  dimension_recommendations: CapacityDimensionRecommendations
+  warnings?: string[]
+}
+
 export interface CapacityReservation {
   project_id: string
   reserved_generators: number

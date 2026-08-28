@@ -161,6 +161,9 @@ type LibraryConflict struct {
 	SourceItemID     string `json:"source_item_id"`
 	LocalItemID      string `json:"local_item_id,omitempty"`
 	Reason           string `json:"reason"`
+	Code             string `json:"code,omitempty"`
+	FeatureID        string `json:"feature_id,omitempty"`
+	DomainID         string `json:"domain_id,omitempty"`
 }
 
 type LibraryRemote struct {

@@ -1,0 +1,503 @@
+package api
+
+import (
+	"encoding/json"
+	"errors"
+	"fmt"
+	"math"
+	"sort"
+	"strings"
+	"time"
+
+	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/engine"
+	"github.com/jasonczech/apexload/pkg/trafficprofile"
+)
+
+const trafficProfileVersion = 1
+
+type TrafficProfile struct {
+	Version        int                     `json:"version"`
+	Source         TrafficProfileSource    `json:"source"`
+	ValueSemantics string                  `json:"value_semantics"`
+	RuntimeTarget  string                  `json:"runtime_target"`
+	Interpolation  string                  `json:"interpolation"`
+	SourceDuration string                  `json:"source_duration"`
+	TargetDuration string                  `json:"target_duration"`
+	GapPolicy      string                  `json:"gap_policy,omitempty"`
+	Window         TrafficProfileWindow    `json:"window,omitempty"`
+	Amplitude      TrafficProfileAmplitude `json:"amplitude,omitempty"`
+	Mappings       []TrafficProfileMapping `json:"mappings"`
+	Warnings       []string                `json:"warnings,omitempty"`
+	RefreshedAt    time.Time               `json:"refreshed_at"`
+}
+
+type TrafficProfileSource struct {
+	Kind       string                          `json:"kind"`
+	Name       string                          `json:"name,omitempty"`
+	File       *TrafficProfileFileSource       `json:"file,omitempty"`
+	Prometheus *TrafficProfilePrometheusSource `json:"prometheus,omitempty"`
+	OpenSearch *TrafficProfileOpenSearchSource `json:"opensearch,omitempty"`
+}
+
+type TrafficProfileFileSource struct {
+	Filename        string   `json:"filename"`
+	Sheet           string   `json:"sheet,omitempty"`
+	TimestampColumn string   `json:"timestamp_column"`
+	ValueColumns    []string `json:"value_columns"`
+	SeriesColumn    string   `json:"series_column,omitempty"`
+	Timezone        string   `json:"timezone,omitempty"`
+}
+
+type TrafficProfileQueryRange struct {
+	Mode        string    `json:"mode"`
+	Start       time.Time `json:"start,omitempty"`
+	End         time.Time `json:"end,omitempty"`
+	Lookback    string    `json:"lookback,omitempty"`
+	StepSeconds int       `json:"step_seconds"`
+}
+
+type TrafficProfilePrometheusSource struct {
+	Query       string                   `json:"query"`
+	Range       TrafficProfileQueryRange `json:"range"`
+	LabelFields []string                 `json:"label_fields,omitempty"`
+}
+
+type TrafficProfileOpenSearchSource struct {
+	Index          string                   `json:"index"`
+	TimestampField string                   `json:"timestamp_field"`
+	Filter         json.RawMessage          `json:"filter,omitempty"`
+	Interval       string                   `json:"interval"`
+	Metric         string                   `json:"metric"`
+	MetricField    string                   `json:"metric_field,omitempty"`
+	Range          TrafficProfileQueryRange `json:"range"`
+}
+
+type TrafficProfileWindow struct {
+	Mode     string    `json:"mode,omitempty"`
+	Start    time.Time `json:"start,omitempty"`
+	End      time.Time `json:"end,omitempty"`
+	Duration string    `json:"duration,omitempty"`
+}
+
+type TrafficProfileAmplitude struct {
+	Mode  string  `json:"mode,omitempty"`
+	Value float64 `json:"value,omitempty"`
+}
+
+type TrafficProfileMapping struct {
+	SeriesKey  string                        `json:"series_key"`
+	SeriesName string                        `json:"series_name"`
+	GroupName  string                        `json:"group_name"`
+	Points     []trafficprofile.RuntimePoint `json:"points"`
+	PeakTarget float64                       `json:"peak_target"`
+}
+
+func cloneTrafficProfile(profile *TrafficProfile) *TrafficProfile {
+	if profile == nil {
+		return nil
+	}
+	data, err := json.Marshal(profile)
+	if err != nil {
+		return nil
+	}
+	var cloned TrafficProfile
+	if json.Unmarshal(data, &cloned) != nil {
+		return nil
+	}
+	return &cloned
+}
+
+func trafficProfileForStorage(profile *TrafficProfile) any {
+	if profile == nil {
+		return nil
+	}
+	return cloneTrafficProfile(profile)
+}
+
+func decodeStoredTrafficProfile(value any) *TrafficProfile {
+	if value == nil {
+		return nil
+	}
+	if profile, ok := value.(*TrafficProfile); ok {
+		return cloneTrafficProfile(profile)
+	}
+	data, err := json.Marshal(value)
+	if err != nil || string(data) == "null" {
+		return nil
+	}
+	var profile TrafficProfile
+	if json.Unmarshal(data, &profile) != nil || (profile.Version == 0 && len(profile.Mappings) == 0) {
+		return nil
+	}
+	return &profile
+}
+
+func validateTrafficProfile(profile *TrafficProfile, groups []CreateGroupEntry, duration, scenarioMode string, goalConfig *GoalConfig) error {
+	if profile == nil {
+		return nil
+	}
+	if profile.Version != trafficProfileVersion {
+		return fmt.Errorf("traffic_profile.version must be %d", trafficProfileVersion)
+	}
+	if err := validateTrafficProfileSource(profile.Source); err != nil {
+		return err
+	}
+	if profile.RefreshedAt.IsZero() {
+		return errors.New("traffic_profile.refreshed_at is required")
+	}
+	if profile.Interpolation != "step" {
+		return errors.New("traffic_profile.interpolation must be step")
+	}
+	if sourceDuration, err := time.ParseDuration(profile.SourceDuration); err != nil || sourceDuration <= 0 {
+		return errors.New("traffic_profile.source_duration must be a positive Go duration")
+	}
+	window, err := trafficProfileWindowSpec(profile.Window)
+	if err != nil {
+		return err
+	}
+	switch window.Mode {
+	case "", "full":
+	case "explicit":
+		if !window.End.After(window.Start) {
+			return errors.New("traffic_profile explicit window end must be after start")
+		}
+	case "peak":
+		if window.Duration <= 0 {
+			return errors.New("traffic_profile peak window duration must be positive")
+		}
+	default:
+		return fmt.Errorf("unsupported traffic_profile.window.mode %q", window.Mode)
+	}
+	if profile.Amplitude.Value < 0 || math.IsNaN(profile.Amplitude.Value) || math.IsInf(profile.Amplitude.Value, 0) {
+		return errors.New("traffic_profile.amplitude.value must be finite and nonnegative")
+	}
+	if profile.Amplitude.Mode != "" && profile.Amplitude.Mode != "factor" && profile.Amplitude.Mode != "peak" {
+		return fmt.Errorf("unsupported traffic_profile.amplitude.mode %q", profile.Amplitude.Mode)
+	}
+	switch trafficprofile.GapPolicy(profile.GapPolicy) {
+	case trafficprofile.GapHold, trafficprofile.GapZero, trafficprofile.GapDrop:
+	default:
+		return errors.New("traffic_profile.gap_policy must be hold, zero, or drop")
+	}
+	semantics := trafficprofile.ValueSemantics(profile.ValueSemantics)
+	expectedTarget := "tps"
+	if semantics == trafficprofile.SemanticsVUsers {
+		expectedTarget = "vusers"
+	}
+	switch semantics {
+	case trafficprofile.SemanticsTransactionsPerBucket, trafficprofile.SemanticsCumulativeCounter, trafficprofile.SemanticsTPS, trafficprofile.SemanticsVUsers:
+	default:
+		return fmt.Errorf("unsupported traffic_profile.value_semantics %q", profile.ValueSemantics)
+	}
+	if profile.RuntimeTarget != expectedTarget {
+		return fmt.Errorf("traffic_profile.runtime_target must be %s", expectedTarget)
+	}
+	profileDuration, err := time.ParseDuration(profile.TargetDuration)
+	if err != nil || profileDuration <= 0 {
+		return errors.New("traffic_profile.target_duration must be a positive Go duration")
+	}
+	scenarioDuration, err := time.ParseDuration(duration)
+	if err != nil || scenarioDuration != profileDuration {
+		return errors.New("scenario duration must equal traffic_profile.target_duration")
+	}
+	if expectedTarget == "tps" && normalizeScenarioMode(scenarioMode) != "goal_oriented" {
+		return errors.New("TPS traffic profiles require scenario_mode goal_oriented")
+	}
+	if expectedTarget == "tps" && (goalConfig == nil || goalConfig.MinVUsers == nil || goalConfig.MaxVUsers == nil) {
+		return errors.New("TPS traffic profiles require goal_config.min_vusers and goal_config.max_vusers guardrails")
+	}
+	if expectedTarget == "vusers" && normalizeScenarioMode(scenarioMode) != "vuser_driven" {
+		return errors.New("VUser traffic profiles require scenario_mode vuser_driven")
+	}
+	groupByName := make(map[string]CreateGroupEntry, len(groups))
+	for _, group := range groups {
+		groupByName[normalizeEffectiveGroupName(group.Name)] = group
+	}
+	if len(profile.Mappings) == 0 {
+		return errors.New("traffic_profile requires at least one series mapping")
+	}
+	seenSeries, seenGroups, totalPoints := map[string]struct{}{}, map[string]struct{}{}, 0
+	for index := range profile.Mappings {
+		mapping := &profile.Mappings[index]
+		seriesKey := strings.TrimSpace(mapping.SeriesKey)
+		groupKey := normalizeEffectiveGroupName(mapping.GroupName)
+		if seriesKey == "" || groupKey == "" {
+			return fmt.Errorf("traffic_profile.mappings[%d] requires series_key and group_name", index)
+		}
+		if _, exists := seenSeries[seriesKey]; exists {
+			return fmt.Errorf("traffic_profile series %q is mapped more than once", seriesKey)
+		}
+		if _, exists := seenGroups[groupKey]; exists {
+			return fmt.Errorf("traffic_profile group %q is mapped more than once", mapping.GroupName)
+		}
+		group, exists := groupByName[groupKey]
+		if !exists {
+			return fmt.Errorf("traffic_profile group %q was not found", mapping.GroupName)
+		}
+		// Runtime scale primitives use the compiled group's exact name. Accept
+		// case-insensitive authoring input, then canonicalize it once here so a
+		// valid profile cannot fail only when its first boundary executes.
+		mapping.GroupName = group.Name
+		if len(group.Stages) > 0 {
+			return fmt.Errorf("traffic_profile group %q cannot also use stages", mapping.GroupName)
+		}
+		if strings.TrimSpace(group.RampUp) != "" || strings.TrimSpace(group.RampDown) != "" {
+			return fmt.Errorf("traffic_profile group %q cannot also use simple ramp settings", mapping.GroupName)
+		}
+		offset, offsetErr := parseOptionalGroupDuration(group.StartOffset, index, "start_offset")
+		if offsetErr != nil || offset > 0 {
+			return fmt.Errorf("traffic_profile group %q cannot use a nonzero start_offset", mapping.GroupName)
+		}
+		if len(mapping.Points) < 2 || len(mapping.Points) > trafficprofile.MaxPointsPerSeries {
+			return fmt.Errorf("traffic_profile mapping %q must contain 2..%d points", mapping.SeriesName, trafficprofile.MaxPointsPerSeries)
+		}
+		previous := int64(-1)
+		mapping.PeakTarget = 0
+		minimumIntervalMS := int64(1000)
+		if expectedTarget == "tps" {
+			minimumIntervalMS = 5000
+		}
+		for pointIndex, point := range mapping.Points {
+			if pointIndex == 0 && point.OffsetMS != 0 {
+				return fmt.Errorf("traffic_profile mapping %q must begin at offset_ms 0", mapping.SeriesName)
+			}
+			if point.OffsetMS < 0 || point.OffsetMS <= previous {
+				return fmt.Errorf("traffic_profile mapping %q point %d offset_ms must increase", mapping.SeriesName, pointIndex)
+			}
+			if previous >= 0 && point.OffsetMS-previous < minimumIntervalMS {
+				return fmt.Errorf("traffic_profile mapping %q point %d interval is below the %dms minimum", mapping.SeriesName, pointIndex, minimumIntervalMS)
+			}
+			if point.OffsetMS >= profileDuration.Milliseconds() {
+				return fmt.Errorf("traffic_profile mapping %q point %d is outside target duration", mapping.SeriesName, pointIndex)
+			}
+			if point.Target < 0 || math.IsNaN(point.Target) || math.IsInf(point.Target, 0) {
+				return fmt.Errorf("traffic_profile mapping %q point %d target must be finite and nonnegative", mapping.SeriesName, pointIndex)
+			}
+			if expectedTarget == "vusers" && (point.Target != math.Trunc(point.Target) || point.Target > maxManagedTestVUsers) {
+				return fmt.Errorf("traffic_profile mapping %q point %d target_vusers is invalid", mapping.SeriesName, pointIndex)
+			}
+			mapping.PeakTarget = math.Max(mapping.PeakTarget, point.Target)
+			previous = point.OffsetMS
+		}
+		if profileDuration.Milliseconds()-previous < minimumIntervalMS {
+			return fmt.Errorf("traffic_profile mapping %q final interval is below the %dms minimum", mapping.SeriesName, minimumIntervalMS)
+		}
+		if expectedTarget == "vusers" && group.VUsers != int(mapping.PeakTarget) {
+			return fmt.Errorf("traffic_profile group %q vusers must equal its peak target %d", mapping.GroupName, int(mapping.PeakTarget))
+		}
+		totalPoints += len(mapping.Points)
+		seenSeries[seriesKey] = struct{}{}
+		seenGroups[groupKey] = struct{}{}
+	}
+	if totalPoints > trafficprofile.MaxPointsPerProfile {
+		return fmt.Errorf("traffic_profile contains %d points; limit is %d", totalPoints, trafficprofile.MaxPointsPerProfile)
+	}
+	return nil
+}
+
+func validateTrafficProfileSource(source TrafficProfileSource) error {
+	kind := strings.ToLower(strings.TrimSpace(source.Kind))
+	switch kind {
+	case "file":
+		if source.File == nil || source.Prometheus != nil || source.OpenSearch != nil {
+			return errors.New("traffic_profile file source must contain only source.file")
+		}
+		if strings.TrimSpace(source.File.Filename) == "" || strings.TrimSpace(source.File.TimestampColumn) == "" || len(source.File.ValueColumns) == 0 {
+			return errors.New("traffic_profile file source requires filename, timestamp_column, and value_columns")
+		}
+		seenColumns := make(map[string]struct{}, len(source.File.ValueColumns))
+		for _, column := range source.File.ValueColumns {
+			if strings.TrimSpace(column) == "" {
+				return errors.New("traffic_profile file value_columns cannot contain an empty name")
+			}
+			key := strings.ToLower(strings.TrimSpace(column))
+			if _, exists := seenColumns[key]; exists {
+				return errors.New("traffic_profile file value_columns must be unique")
+			}
+			seenColumns[key] = struct{}{}
+		}
+		if source.File.Timezone != "" {
+			if _, err := time.LoadLocation(source.File.Timezone); err != nil {
+				return errors.New("traffic_profile file timezone is invalid")
+			}
+		}
+	case "prometheus":
+		if source.Prometheus == nil || source.File != nil || source.OpenSearch != nil {
+			return errors.New("traffic_profile Prometheus source must contain only source.prometheus")
+		}
+		if strings.TrimSpace(source.Prometheus.Query) == "" {
+			return errors.New("traffic_profile Prometheus query is required")
+		}
+		if err := validateTrafficProfileQueryRange(source.Prometheus.Range); err != nil {
+			return fmt.Errorf("traffic_profile Prometheus %w", err)
+		}
+	case "opensearch":
+		if source.OpenSearch == nil || source.File != nil || source.Prometheus != nil {
+			return errors.New("traffic_profile OpenSearch source must contain only source.opensearch")
+		}
+		value := source.OpenSearch
+		if !openSearchIndexPattern.MatchString(strings.TrimSpace(value.Index)) || strings.TrimSpace(value.TimestampField) == "" {
+			return errors.New("traffic_profile OpenSearch index and timestamp_field are required")
+		}
+		interval, err := time.ParseDuration(value.Interval)
+		if err != nil || interval <= 0 {
+			return errors.New("traffic_profile OpenSearch interval must be a positive duration")
+		}
+		if err := validateTrafficProfileQueryRange(value.Range); err != nil {
+			return fmt.Errorf("traffic_profile OpenSearch %w", err)
+		}
+		if interval != time.Duration(value.Range.StepSeconds)*time.Second {
+			return errors.New("traffic_profile OpenSearch interval must equal range.step_seconds")
+		}
+		metric := strings.ToLower(strings.TrimSpace(value.Metric))
+		if metric != "count" && metric != "sum" && metric != "avg" {
+			return errors.New("traffic_profile OpenSearch metric must be count, sum, or avg")
+		}
+		if metric != "count" && strings.TrimSpace(value.MetricField) == "" {
+			return errors.New("traffic_profile OpenSearch metric_field is required for sum or avg")
+		}
+		if len(value.Filter) > 0 && string(value.Filter) != "null" {
+			var filter map[string]any
+			if err := json.Unmarshal(value.Filter, &filter); err != nil || filter == nil {
+				return errors.New("traffic_profile OpenSearch filter must be a JSON object")
+			}
+		}
+	default:
+		return errors.New("traffic_profile.source.kind must be file, prometheus, or opensearch")
+	}
+	return nil
+}
+
+func validateTrafficProfileQueryRange(value TrafficProfileQueryRange) error {
+	mode := strings.ToLower(strings.TrimSpace(value.Mode))
+	if mode != "absolute" && mode != "relative" {
+		return errors.New("range.mode must be absolute or relative")
+	}
+	if value.StepSeconds <= 0 {
+		return errors.New("range.step_seconds must be positive")
+	}
+	if mode == "relative" {
+		lookback, err := time.ParseDuration(value.Lookback)
+		if err != nil || lookback <= 0 {
+			return errors.New("relative range requires a positive lookback")
+		}
+		return nil
+	}
+	if value.Start.IsZero() || value.End.IsZero() || !value.End.After(value.Start) {
+		return errors.New("absolute range requires end after start")
+	}
+	return nil
+}
+
+func validateTrafficProfileCompiledGroups(profile *TrafficProfile, groups []TestGroup) error {
+	if profile == nil || profile.RuntimeTarget != "tps" {
+		return nil
+	}
+	managed := make(map[string]struct{}, len(profile.Mappings))
+	for _, mapping := range profile.Mappings {
+		managed[normalizeEffectiveGroupName(mapping.GroupName)] = struct{}{}
+	}
+	for _, group := range groups {
+		if _, ok := managed[normalizeEffectiveGroupName(group.Name)]; !ok || group.script == nil {
+			continue
+		}
+		if dsl.CanonicalWorkloadModel(group.script.Config.RunLogic.WorkloadModel) == "open" {
+			return fmt.Errorf("traffic-profile TPS group %q cannot use an open-arrival script", group.Name)
+		}
+	}
+	return nil
+}
+
+func trafficProfileCapacityVUsers(profile *TrafficProfile, groups []TestGroup, duration time.Duration, goal *GoalConfig) int {
+	peak := managedGroupPeakVUsers(groups, duration)
+	if profile == nil {
+		return peak
+	}
+	if profile.RuntimeTarget == "tps" {
+		if goal != nil && goal.MaxVUsers != nil && *goal.MaxVUsers > peak {
+			return *goal.MaxVUsers
+		}
+		return peak
+	}
+	if profile.RuntimeTarget != "vusers" {
+		return peak
+	}
+	managed := make(map[string]struct{}, len(profile.Mappings))
+	profilePeak := 0
+	for _, mapping := range profile.Mappings {
+		managed[normalizeEffectiveGroupName(mapping.GroupName)] = struct{}{}
+		mappingPeak := mapping.PeakTarget
+		for _, point := range mapping.Points {
+			mappingPeak = math.Max(mappingPeak, point.Target)
+		}
+		profilePeak = saturatingAddNonNegative(profilePeak, int(mappingPeak))
+	}
+	staticGroups := make([]TestGroup, 0, len(groups))
+	for _, group := range groups {
+		if _, ok := managed[normalizeEffectiveGroupName(group.Name)]; !ok {
+			staticGroups = append(staticGroups, group)
+		}
+	}
+	return saturatingAddNonNegative(profilePeak, managedGroupPeakVUsers(staticGroups, duration))
+}
+
+func trafficProfilePeakAggregateTarget(profile *TrafficProfile) float64 {
+	if profile == nil {
+		return 0
+	}
+	type targetEvent struct {
+		offset       int64
+		mappingIndex int
+		target       float64
+	}
+	events := make([]targetEvent, 0)
+	for mappingIndex, mapping := range profile.Mappings {
+		for _, point := range mapping.Points {
+			events = append(events, targetEvent{offset: point.OffsetMS, mappingIndex: mappingIndex, target: point.Target})
+		}
+	}
+	sort.SliceStable(events, func(i, j int) bool { return events[i].offset < events[j].offset })
+	current := make([]float64, len(profile.Mappings))
+	aggregate, peak := 0.0, 0.0
+	for index := 0; index < len(events); {
+		offset := events[index].offset
+		for index < len(events) && events[index].offset == offset {
+			event := events[index]
+			aggregate += event.target - current[event.mappingIndex]
+			current[event.mappingIndex] = event.target
+			index++
+		}
+		peak = math.Max(peak, aggregate)
+	}
+	return peak
+}
+
+func applyTrafficProfileInitialTargets(profile *TrafficProfile, groups []TestGroup, engineGroups []engine.GroupConfig) int {
+	if profile == nil {
+		return capacityVUsersForGroups(groups)
+	}
+	initialByGroup := make(map[string]float64, len(profile.Mappings))
+	for _, mapping := range profile.Mappings {
+		if len(mapping.Points) > 0 {
+			initialByGroup[normalizeEffectiveGroupName(mapping.GroupName)] = mapping.Points[0].Target
+		}
+	}
+	for index := range groups {
+		initial, managed := initialByGroup[normalizeEffectiveGroupName(groups[index].Name)]
+		if !managed || (profile.RuntimeTarget == "tps" && initial > 0) {
+			continue
+		}
+		target := int(math.Round(initial))
+		groups[index].VUsers = target
+		groups[index].initialVUsers = target
+		groups[index].currentVUsers = target
+		if index < len(engineGroups) {
+			engineGroups[index].VUsers = target
+			engineGroups[index].RampUp = 0
+			engineGroups[index].RampDown = 0
+			engineGroups[index].AllowZeroVUsers = target == 0
+		}
+	}
+	return capacityVUsersForGroups(groups)
+}

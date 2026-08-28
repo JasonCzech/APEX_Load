@@ -38,6 +38,11 @@ export interface AuthoringCapabilitiesResponse {
   sources: unknown[]
   source_map: Record<string, unknown>
   import_surfaces?: AuthoringImportSurface[]
+  feature_policy?: {
+    domain_id: string
+    revision: string
+    features: Array<{ id: string; configured_enabled: boolean; effective_enabled: boolean }>
+  }
 }
 
 export interface ImportReviewSection {

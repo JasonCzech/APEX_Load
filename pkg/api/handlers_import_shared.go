@@ -34,7 +34,42 @@ func attachImportReplayPreflight(script *dsl.Script, source string, preflight *R
 }
 
 func (s *Server) handleAuthoringCapabilities(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, authoringCapabilityResponse(r.URL.Query().Get("project_id")))
+	projectID := strings.TrimSpace(r.URL.Query().Get("project_id"))
+	response := authoringCapabilityResponse(projectID)
+	// A storage-less development/test server cannot persist restrictions, so it
+	// keeps the catalog default of every feature enabled, matching what
+	// domainFeatureAllowsRequest and requireDomainFeatureForProject already do.
+	// Without this guard the project lookup below nil-dereferenced s.store.
+	if projectID != "" && s.store != nil {
+		project, err := s.store.GetProject(normalizeProjectID(projectID))
+		if err != nil || project == nil {
+			writeError(w, http.StatusNotFound, "project not found")
+			return
+		}
+		policy, err := s.loadDomainFeaturePolicy(project.DomainID)
+		if err != nil {
+			writeError(w, http.StatusServiceUnavailable, "domain feature policy is unavailable")
+			return
+		}
+		featurePolicy := domainFeatureResponse(policy)
+		response.FeaturePolicy = &featurePolicy
+		filtered := make([]AuthoringImportSurface, 0, len(response.ImportSurfaces))
+		for _, surface := range response.ImportSurfaces {
+			enabled := false
+			featureID := "script_import." + surface.ID
+			for _, feature := range featurePolicy.Features {
+				if feature.ID == featureID {
+					enabled = feature.EffectiveEnabled
+					break
+				}
+			}
+			if enabled {
+				filtered = append(filtered, surface)
+			}
+		}
+		response.ImportSurfaces = filtered
+	}
+	writeJSON(w, http.StatusOK, response)
 }
 
 func parseBoolDefault(value string, defaultValue bool) bool {

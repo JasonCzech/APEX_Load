@@ -243,6 +243,7 @@ func (tr *TestRunner) startDistributedStageSchedulesAfterBaseline(ctx context.Co
 		return
 	}
 	tr.startStageSchedules(ctx, test, nil)
+	tr.startTrafficProfileSchedules(ctx, test, nil)
 }
 
 // waitTestActiveRuntime waits until the run has consumed required active time
@@ -1088,7 +1089,7 @@ func (b *distributedExecutionBackend) publishDistributedMetricsRevision(ctx cont
 			}
 			goalGroupVUsers = liveGroupVUsers(test, live)
 			currentTotalVUsers := totalGroupVUsers(goalGroupVUsers)
-			goalUpdate = evaluateGoalController(live.Timestamp, currentTotalVUsers, live, test.GoalConfig, test.goalControl)
+			goalUpdate = evaluateGoalControllerForTest(test, live.Timestamp, currentTotalVUsers, live)
 			live.GoalStatus = goalUpdate.Status
 			if !publication.terminal && goalUpdate.ShouldScale && !test.remoteGoalUpdateRunning {
 				test.remoteGoalUpdateRunning = true

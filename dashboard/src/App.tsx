@@ -452,6 +452,7 @@ function AppShell({
   // Bumped by the content-free `access_review_changed` WebSocket ping so the Access page
   // refetches its (admin-gated) review when the posture changes server-side.
   const [accessReviewSignal, setAccessReviewSignal] = useState(0);
+  const [featurePolicySignal, setFeaturePolicySignal] = useState(0);
   const testApi = useTestApi();
   const scriptApi = useScriptApi();
   const runReportEnabled = useMemo(() => isRunReportEnabled(), []);
@@ -502,6 +503,11 @@ function AppShell({
 
       if (msg.type === "access_review_changed") {
         setAccessReviewSignal((n) => n + 1);
+        return;
+      }
+
+      if (msg.type === "domain_feature_policy_changed") {
+        setFeaturePolicySignal((n) => n + 1);
         return;
       }
 
@@ -741,8 +747,37 @@ function AppShell({
     (message: WSMessage) => handleWSMessage(message, activeProject?.id),
     [activeProject?.id, handleWSMessage],
   );
+  // A dropped socket may have missed a `domain_feature_policy_changed`
+  // broadcast, so the policy is resynced when it comes back. The very first
+  // open is skipped because mount already fetched, and rapid reconnects are
+  // coalesced: consumers of this signal refetch whole pages, and one of them
+  // abandons an in-progress importer when its probe fails, so a flaky link must
+  // not turn into a request storm.
+  const featurePolicyResyncRef = useRef<{
+    opened: boolean;
+    timer: ReturnType<typeof setTimeout> | null;
+  }>({ opened: false, timer: null });
+  const handleProjectWSOpen = useCallback(() => {
+    const resync = featurePolicyResyncRef.current;
+    if (!resync.opened) {
+      resync.opened = true;
+      return;
+    }
+    if (resync.timer) return;
+    resync.timer = setTimeout(() => {
+      resync.timer = null;
+      setFeaturePolicySignal((n) => n + 1);
+    }, 2000);
+  }, []);
+  useEffect(() => {
+    const resync = featurePolicyResyncRef.current;
+    return () => {
+      if (resync.timer) clearTimeout(resync.timer);
+    };
+  }, []);
   const { connectionState } = useWebSocket({
     onMessage: handleProjectWSMessage,
+    onOpen: handleProjectWSOpen,
     projectId: activeProject?.id,
     // Keep an unfiltered global socket alive before a project is selected so
     // connection health and global events remain observable.
@@ -3328,6 +3363,7 @@ function AppShell({
               )}
               {view.page === "tests" && !routeAssetScopeBlocked && (
                 <TestHub
+                  featurePolicySignal={featurePolicySignal}
                   applicationRepository={applicationRepository}
                   initialView={view.scenarioView}
                   testStatuses={testStatuses}
@@ -3390,6 +3426,7 @@ function AppShell({
               )}
               {view.page === "scripts" && !routeAssetScopeBlocked && (
                 <ScriptsPage
+                  featurePolicySignal={featurePolicySignal}
                   key={`scripts-${scriptsNavigationVersion}-${scriptMode || "list"}-${scriptEditId || ""}`}
                   applicationRepository={applicationRepository}
                   initialMode={scriptMode}

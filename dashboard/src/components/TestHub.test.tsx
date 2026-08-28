@@ -885,10 +885,12 @@ describe('TestHub', () => {
 
     expect(apiMock.createScenario).toHaveBeenCalledWith({
       name: 'Checkout Scenario',
+      project_id: 'project-1',
       duration: '5m',
       scenario_mode: 'vuser_driven',
       script_shakeout: false,
       resource_baseline: false,
+      workload_shape_id: '',
       assignment: { mode: 'auto' },
       groups: [
         {
@@ -2745,6 +2747,37 @@ describe('TestHub', () => {
     expect(container.textContent).toContain('script_shakeout')
     expect(container.querySelectorAll('.scenario-shape-visual')).toHaveLength(4)
     expect(container.querySelector('[aria-label="Closed VUser workload shape"]')).toBeTruthy()
+  })
+
+  it('converts a newly disabled selected shape to Custom Workload', async () => {
+    const onSelectTest = vi.fn()
+
+    await act(async () => {
+      root.render(<TestHub testStatuses={{}} onSelectTest={onSelectTest} featurePolicySignal={0} />)
+    })
+    await flushPromises()
+    await clickWizardStep('Shape / Source')
+    await clickButton('Open API Arrival Rate')
+
+    apiMock.getLoadModelSupportMatrix.mockResolvedValueOnce({
+      support_matrix: [{
+        id: 'closed-vuser',
+        name: 'Closed VUser',
+        category: 'vuser',
+        status: 'executed',
+        apexload_shape: 'Scenario groups with fixed VUsers and duration.',
+        fields: ['groups[].vusers'],
+        notes: 'Primary execution model.',
+      }],
+      status_counts: { executed: 1 },
+      notes: [],
+    })
+    await act(async () => {
+      root.render(<TestHub testStatuses={{}} onSelectTest={onSelectTest} featurePolicySignal={1} />)
+    })
+    await flushPromises()
+
+    expect(container.textContent).toContain('Compatible draft values were retained as a Custom Workload.')
   })
 
   it('toggles between the scenario library and builder wizard views', async () => {

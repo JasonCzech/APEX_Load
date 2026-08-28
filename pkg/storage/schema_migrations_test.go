@@ -23,7 +23,7 @@ func TestSQLiteSchemaStatusRecordsConvergenceIdempotently(t *testing.T) {
 	if err != nil {
 		t.Fatalf("schema status: %v", err)
 	}
-	if status.CurrentVersion != 3 || status.AppliedVersion != 3 || len(status.Applied) != 3 || len(status.Pending) != 0 {
+	if status.CurrentVersion != 6 || status.AppliedVersion != 6 || len(status.Applied) != 6 || len(status.Pending) != 0 {
 		t.Fatalf("schema status after init = %#v", status)
 	}
 	firstAppliedAt := status.Applied[0].AppliedAt
@@ -40,7 +40,7 @@ func TestSQLiteSchemaStatusRecordsConvergenceIdempotently(t *testing.T) {
 	if err != nil {
 		t.Fatalf("schema status after reopen: %v", err)
 	}
-	if len(reopenedStatus.Applied) != 3 || !reopenedStatus.Applied[0].AppliedAt.Equal(firstAppliedAt) {
+	if len(reopenedStatus.Applied) != 6 || !reopenedStatus.Applied[0].AppliedAt.Equal(firstAppliedAt) {
 		t.Fatalf("idempotent reopen changed ledger: first=%#v reopened=%#v", status, reopenedStatus)
 	}
 }
@@ -65,6 +65,34 @@ func TestConfiguredStoreExposesSchemaStatus(t *testing.T) {
 	}
 }
 
+func TestProductionTrafficSnapshotReleaseUpgradesPriorProfileRelease(t *testing.T) {
+	path := t.TempDir() + "/traffic-profile-v5.db"
+	raw, err := sql.Open("sqlite", sqliteDSN(path))
+	if err != nil {
+		t.Fatalf("open raw db: %v", err)
+	}
+	if _, err := raw.Exec(schemaMigrationLedgerDDL); err != nil {
+		t.Fatalf("create ledger: %v", err)
+	}
+	prior := schemaReleases[4]
+	if _, err := raw.Exec(`INSERT INTO schema_migrations (version, name, fingerprint, applied_at) VALUES (?, ?, ?, CURRENT_TIMESTAMP)`, prior.Version, prior.Name, prior.Fingerprint); err != nil {
+		t.Fatalf("seed prior release: %v", err)
+	}
+	if err := raw.Close(); err != nil {
+		t.Fatalf("close raw db: %v", err)
+	}
+
+	store, err := NewSQLiteStore(path)
+	if err != nil {
+		t.Fatalf("upgrade prior traffic-profile release: %v", err)
+	}
+	defer store.Close()
+	status, err := store.SchemaStatus()
+	if err != nil || status.AppliedVersion != 6 || len(status.Pending) != 0 {
+		t.Fatalf("upgraded status = %#v, %v", status, err)
+	}
+}
+
 func TestSchemaLedgerRejectsNewerAndChangedReleases(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -73,7 +101,7 @@ func TestSchemaLedgerRejectsNewerAndChangedReleases(t *testing.T) {
 		fingerprint string
 		wantError   string
 	}{
-		{name: "newer", version: 4, releaseName: "future", fingerprint: "future", wantError: "newer than supported"},
+		{name: "newer", version: 7, releaseName: "future", fingerprint: "future", wantError: "newer than supported"},
 		{name: "changed", version: 1, releaseName: "changed", fingerprint: "changed", wantError: "identity mismatch"},
 	}
 	for _, test := range tests {

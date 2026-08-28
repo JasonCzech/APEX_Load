@@ -160,6 +160,11 @@ func sanitizeArchivedStringMap(values map[string]string, policy scrub.Policy) ma
 
 func sanitizeArchivedEvidenceValue(value any, policy scrub.Policy) any {
 	switch typed := value.(type) {
+	case nil, bool, json.Number,
+		int, int8, int16, int32, int64,
+		uint, uint8, uint16, uint32, uint64,
+		float32, float64:
+		return value
 	case string:
 		return scrub.ValueLabel(typed, policy)
 	case []any:
@@ -179,8 +184,32 @@ func sanitizeArchivedEvidenceValue(value any, policy scrub.Policy) any {
 		}
 		return out
 	default:
-		return value
+		return sanitizeArchivedTypedEvidence(value, policy)
 	}
+}
+
+// sanitizeArchivedTypedEvidence scrubs evidence a protocol adapter recorded as a
+// concrete Go value — a struct, a pointer, a typed map or slice — rather than as
+// the JSON-native shapes above. Such a value used to be returned untouched, so a
+// sensitive field name inside it reached the archive verbatim even though the
+// encoder was about to serialize it as an ordinary JSON object.
+//
+// It is normalized to exactly the JSON the encoder would have produced and then
+// scrubbed through the same recursion, so field-name redaction and label
+// scrubbing apply uniformly regardless of how the adapter typed its evidence.
+// A value that cannot be represented as JSON is dropped: it would otherwise have
+// failed the whole transaction encode, and losing one evidence blob is better
+// than losing the archived transaction or emitting it unscrubbed.
+func sanitizeArchivedTypedEvidence(value any, policy scrub.Policy) any {
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		return nil
+	}
+	var normalized any
+	if err := json.Unmarshal(encoded, &normalized); err != nil {
+		return nil
+	}
+	return sanitizeArchivedEvidenceValue(normalized, policy)
 }
 
 func sanitizeArchivedHeaders(headers map[string]string, policy scrub.Policy) map[string]string {

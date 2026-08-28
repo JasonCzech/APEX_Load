@@ -1231,6 +1231,55 @@ func TestSourceSecretSessionDiscardClearsLocalMaterialAndIsIdempotent(t *testing
 	}
 }
 
+func TestDisabledDomainFeatureDoesNotConsumeSourceSecretSession(t *testing.T) {
+	server, records, _, projectID := newProjectSecretAPIServer(t)
+	server.protectedSourceSessions = nil
+	settings := server.runner.GetSystemSettings()
+	settings.ScriptImports.AllowSourceSecretMigration = true
+	if _, err := server.runner.UpdateSystemSettings(settings); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok, err := records.UpdateDomainFeaturePolicyIfRevision(storage.DefaultDomainID, []string{"script_import.sample"}, "0"); err != nil || !ok {
+		t.Fatalf("disable sample importer = %t, %v", ok, err)
+	}
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/sample", nil)
+	sessionID, err := server.registerSourceSecretSession(request, projectID, map[string]string{
+		"requirement": "retained-source-secret-value",
+	}, "script_import.sample")
+	if err != nil || sessionID == "" {
+		t.Fatalf("register source session = %q, %v", sessionID, err)
+	}
+	body := map[string]any{
+		"project_id":               projectID,
+		"source_secret_session_id": sessionID,
+		"secrets": []map[string]string{{
+			"requirement_id": "requirement",
+			"secret_name":    "RETAINED_SECRET",
+		}},
+	}
+	blocked := secretAPIRequest(t, server, http.MethodPost, "/api/v1/scripts/import/secrets/migrate", body)
+	if blocked.Code != http.StatusForbidden || !strings.Contains(blocked.Body.String(), `"code":"domain_feature_disabled"`) {
+		t.Fatalf("blocked migration = %d %s", blocked.Code, blocked.Body.String())
+	}
+	if _, exists := server.sourceSecretSessions[sessionID]; !exists {
+		t.Fatal("disabled migration consumed its one-shot source secret session")
+	}
+	current, err := records.GetDomainFeaturePolicy(storage.DefaultDomainID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok, err := records.UpdateDomainFeaturePolicyIfRevision(storage.DefaultDomainID, nil, current.Revision); err != nil || !ok {
+		t.Fatalf("re-enable sample importer = %t, %v", ok, err)
+	}
+	retry := secretAPIRequest(t, server, http.MethodPost, "/api/v1/scripts/import/secrets/migrate", body)
+	if retry.Code != http.StatusCreated {
+		t.Fatalf("retry migration = %d %s", retry.Code, retry.Body.String())
+	}
+	if _, exists := server.sourceSecretSessions[sessionID]; exists {
+		t.Fatal("successful retry retained the consumed source secret session")
+	}
+}
+
 func TestSourceSecretSessionIsNotRetainedOrAdvertisedWithoutAtomicCreate(t *testing.T) {
 	server, _, managed, projectID := newProjectSecretAPIServer(t)
 	settings := server.runner.GetSystemSettings()

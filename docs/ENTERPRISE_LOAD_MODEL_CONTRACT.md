@@ -45,6 +45,48 @@ Scenario and test group payloads can now carry staged load segments. The dashboa
 
 Supported stage types are `ramp_up`, `hold`, and `ramp_down`. Each stage requires `duration` plus either `target_vusers` or `target_tps`. The runtime derives compatible `ramp_up`, `ramp_down`, and group VUsers from the staged model while preserving the full stage list in API, SQLite scenario records, run provenance, archive reports, and the dashboard archive overview.
 
+### Production traffic profiles
+
+`workload_shape_id: production-replay` uses a separate, versioned
+`traffic_profile` contract. It does not expand production buckets into
+`groups[].stages`: a mapped series may retain up to 10,000 normalized points,
+and one scenario may retain up to 50,000 mapped points. This keeps a 24-hour,
+15-second profile (5,760 points) intact while leaving the manual stage editor
+usable for unmapped groups.
+
+Traffic profiles can be analyzed from CSV, XLSX, Prometheus range queries, or
+guided OpenSearch date-histogram queries. Analysis and derivation are stateless;
+uploaded originals are not retained. Saved query provenance contains the query
+and non-secret connection metadata, but launches never refresh from production.
+An operator must explicitly refresh and apply a new result. Queued, scheduled,
+running, and archived tests retain their immutable profile snapshot.
+
+The profile uses step interpolation and records source semantics
+(`transactions_per_bucket`, `cumulative_counter`, `tps`, or `vusers`), gap and
+window policy, time/amplitude transforms, warnings, and series-to-group
+mappings. Profile-managed groups cannot also carry manual stages or a nonzero
+start offset. Unmapped groups keep their static/manual workload.
+
+VUser profiles apply each target directly through the normal local or
+distributed scaling backend, including zero. TPS profiles run in
+`goal_oriented` mode: each boundary changes the per-group adaptive target while
+configured minimum/maximum VUser guardrails remain authoritative. A zero TPS
+target suspends the mapped group at zero VUsers; a later positive target seeds
+one VUser before closed-loop scaling resumes. Open-arrival scripts cannot be
+mapped to adaptive TPS profiles.
+
+Adaptive TPS replay is a convergent closed-loop approximation, not an exact
+arrival schedule. The goal controller evaluates on a five-second cadence and
+uses bounded scale steps. TPS buckets below five seconds are rejected; buckets
+from five to sixty seconds are allowed with trackability warnings, and large
+adjacent target ratios warn that achieved TPS may lag the requested curve.
+
+The scheduler restores the active point when generator readiness or controller
+activation attaches late to an already-started run. A controller process
+restart does not resume an active run: the platform's existing fail-closed
+reconciliation marks ambiguous in-flight runs failed. Their immutable profile,
+target/achieved interval evidence, and archive provenance remain available.
+
 Scripts can also set shared run goals in `config.run_logic`. The dashboard script editor exposes these fields in Runtime Settings > Run Logic:
 
 - `global_iterations`: maximum total started iterations across all VUsers in the executing script group
@@ -113,6 +155,7 @@ The first backend matrix covers:
 | Closed VUser | Executed | Scenario groups with fixed VUsers, duration, ramp-up, and ramp-down. |
 | Open arrival-rate | Executed | Open workload runtime with TPS targets and throughput-gap telemetry. |
 | Stepped ramp | Executed | First-class `groups[].stages` with ramp-up, hold, ramp-down, target VUsers, target TPS, compatible runtime derivation, and archive/report provenance for staged evidence. |
+| Production traffic profile | Executed | Full-resolution CSV/XLSX/Prometheus/OpenSearch step profiles with direct VUser or adaptive-TPS scheduling and immutable run provenance. |
 | Rendezvous spike | Executed | `rendezvous` actions synchronize VUsers before a target transaction. |
 | Soak | Executed | Long-duration closed or open workload. |
 | Stress | Executed | High VUser/TPS targets with capacity advice, staged escalation, goal control, pre-run validation, and archived goal completion. |

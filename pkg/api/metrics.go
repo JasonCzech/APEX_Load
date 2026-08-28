@@ -1002,7 +1002,7 @@ func (tr *TestRunner) evaluateGoalControllerSnapshotAssumingLocked(test *Managed
 		}
 		recordGoalErrorWindow(test.goalControl, "local", live.Timestamp, live.TotalErrors)
 		currentTotalVUsers := totalGroupVUsers(groupVUsers)
-		return evaluateGoalController(live.Timestamp, currentTotalVUsers, live, test.GoalConfig, test.goalControl), true
+		return evaluateGoalControllerForTest(test, live.Timestamp, currentTotalVUsers, live), true
 	}
 	return goalControllerUpdate{}, false
 }

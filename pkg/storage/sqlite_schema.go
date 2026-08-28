@@ -27,6 +27,14 @@ func schemaCreateTableStatements() []string {
 			created_at DATETIME NOT NULL,
 			updated_at DATETIME NOT NULL
 		)`,
+		`CREATE TABLE IF NOT EXISTS domain_feature_policies (
+			domain_id TEXT PRIMARY KEY,
+			disabled_feature_ids_json TEXT NOT NULL,
+			revision TEXT NOT NULL,
+			created_at DATETIME NOT NULL,
+			updated_at DATETIME NOT NULL,
+			FOREIGN KEY(domain_id) REFERENCES domains(id)
+		)`,
 		`CREATE TABLE IF NOT EXISTS application_repositories (
 			id TEXT PRIMARY KEY,
 			domain_id TEXT NOT NULL,
@@ -85,6 +93,7 @@ func schemaCreateTableStatements() []string {
 			ref_key TEXT,
 			materialization_key TEXT,
 			name TEXT NOT NULL,
+			workload_shape_id TEXT,
 			duration TEXT NOT NULL,
 			start_delay TEXT,
 			scenario_mode TEXT,
@@ -93,6 +102,7 @@ func schemaCreateTableStatements() []string {
 			assignment_json TEXT,
 			goal_config_json TEXT,
 			runtime_settings_json TEXT,
+			traffic_profile_json TEXT,
 			created_at DATETIME NOT NULL,
 			updated_at DATETIME NOT NULL
 		)`,
@@ -468,6 +478,7 @@ func schemaCreateTableStatements() []string {
 			groups_json TEXT,
 			data_pools_json TEXT,
 			goal_config_json TEXT,
+			traffic_profile_json TEXT,
 			start_authorization_json TEXT,
 			execution_plan_approval_json TEXT,
 			initial_provenance_json TEXT,
@@ -1400,6 +1411,7 @@ func schemaColumnMigrations() []optionalSchemaMigration {
 		{name: "tests.capacity_window_end_at", query: `ALTER TABLE tests ADD COLUMN capacity_window_end_at DATETIME`},
 		{name: "tests.scenario_mode", query: `ALTER TABLE tests ADD COLUMN scenario_mode TEXT`},
 		{name: "tests.goal_config_json", query: `ALTER TABLE tests ADD COLUMN goal_config_json TEXT`},
+		{name: "tests.traffic_profile_json", query: `ALTER TABLE tests ADD COLUMN traffic_profile_json TEXT`},
 		{name: "tests.start_authorization_json", query: `ALTER TABLE tests ADD COLUMN start_authorization_json TEXT`},
 		{name: "tests.timeslot_id", query: `ALTER TABLE tests ADD COLUMN timeslot_id TEXT`},
 		{name: "tests.shakeout_enabled", query: `ALTER TABLE tests ADD COLUMN shakeout_enabled INTEGER DEFAULT 0`},
@@ -1408,6 +1420,7 @@ func schemaColumnMigrations() []optionalSchemaMigration {
 		{name: "tests.initial_provenance_json", query: `ALTER TABLE tests ADD COLUMN initial_provenance_json TEXT`},
 		{name: "scenarios.assignment_json", query: `ALTER TABLE scenarios ADD COLUMN assignment_json TEXT`},
 		{name: "scenarios.start_delay", query: `ALTER TABLE scenarios ADD COLUMN start_delay TEXT`},
+		{name: "scenarios.traffic_profile_json", query: `ALTER TABLE scenarios ADD COLUMN traffic_profile_json TEXT`},
 		{name: "tests.assignment_json", query: `ALTER TABLE tests ADD COLUMN assignment_json TEXT`},
 		{name: "scripts.metadata_json", query: `ALTER TABLE scripts ADD COLUMN metadata_json TEXT`},
 		{name: "object_repositories.auto_promote_on_heal", query: `ALTER TABLE object_repositories ADD COLUMN auto_promote_on_heal INTEGER DEFAULT 0`},
@@ -1509,6 +1522,7 @@ func schemaColumnMigrations() []optionalSchemaMigration {
 		{name: "scenario_schedules.disabled_until", query: `ALTER TABLE scenario_schedules ADD COLUMN disabled_until DATETIME`},
 		{name: "scripts.ref_key", query: `ALTER TABLE scripts ADD COLUMN ref_key TEXT`},
 		{name: "scenarios.ref_key", query: `ALTER TABLE scenarios ADD COLUMN ref_key TEXT`},
+		{name: "scenarios.workload_shape_id", query: `ALTER TABLE scenarios ADD COLUMN workload_shape_id TEXT`},
 		{name: "tests.ref_key", query: `ALTER TABLE tests ADD COLUMN ref_key TEXT`},
 		{name: "run_archives.ref_key", query: `ALTER TABLE run_archives ADD COLUMN ref_key TEXT`},
 		{name: "grafana_import_sessions.source_sha256", query: `ALTER TABLE grafana_import_sessions ADD COLUMN source_sha256 TEXT NOT NULL DEFAULT ''`},

@@ -38,6 +38,11 @@ func accessRequirementForRequest(r *http.Request) (accessRequirement, bool) {
 			requirement.ProjectLookup = resolveProjectIDFromQuery
 			requirement.RequireUnrestrictedViewer = false
 		}
+		if requirement.DomainFeatureID == "" {
+			if inferredFeatureID := domainFeatureIDForRequest(r); inferredFeatureID != "" {
+				requirement.DomainFeatureID = inferredFeatureID
+			}
+		}
 		return requirement, true
 	}
 
@@ -121,6 +126,14 @@ func accessRequirementForRequest(r *http.Request) (accessRequirement, bool) {
 	}
 
 	if strings.HasPrefix(path, "/api/v1/domains/") {
+		if strings.HasSuffix(path, "/features") {
+			switch method {
+			case http.MethodGet:
+				return accessRequirement{GlobalRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}, DomainRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin}, DomainLookup: resolveDomainIDFromPath}, true
+			case http.MethodPut:
+				return accessRequirement{GlobalRoles: []string{RoleSystemAdmin}}, true
+			}
+		}
 		if strings.HasSuffix(path, "/application-repository/categories") {
 			switch method {
 			case http.MethodGet:
@@ -553,7 +566,11 @@ func projectFilterNarrowsGlobalCollection(path string) bool {
 		"/api/v1/system/usage",
 		"/api/v1/system/usage/export",
 		"/api/v1/system/usage/snapshots",
-		"/api/v1/run-calendar":
+		"/api/v1/run-calendar",
+		"/api/v1/scenarios/load-models/support-matrix",
+		"/api/v1/scenarios/load-models/templates",
+		"/api/v1/scripts/authoring/templates",
+		"/api/v1/scripts/authoring/components":
 		return true
 	default:
 		return false

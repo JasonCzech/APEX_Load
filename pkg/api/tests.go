@@ -1019,6 +1019,7 @@ func cloneManagedTestFieldsLocked(test *ManagedTest) *ManagedTest {
 	cloned.Assignment = cloneGeneratorAssignmentSettings(test.Assignment)
 	cloned.GoalConfig = cloneGoalConfig(test.GoalConfig)
 	cloned.GoalTargets = cloneGoalTargetStatusMap(test.GoalTargets)
+	cloned.TrafficProfile = cloneTrafficProfile(test.TrafficProfile)
 	cloned.RuntimeSettings = cloneRuntimeSettings(test.RuntimeSettings)
 	cloned.GeneratorShards = cloneGeneratorShardSummaries(test.GeneratorShards)
 	cloned.ScheduledStartAt = cloneTimePtr(test.ScheduledStartAt)

@@ -87,6 +87,7 @@ interface ScriptsAuthoringStateModel {
   setSubview: (subView: ScriptsAuthoringSubView) => void
   openLibrary: () => void
   openCreateOptions: () => void
+  openCreateOptionsWithNotice: (notice: string) => void
   handleEdit: (id: string) => Promise<void>
   handleSavedScript: (script: StoredScript, notice?: string | null) => void
   handleDraftEdit: (script: ScriptDefinition, focus?: DraftEditorFocus, returnTarget?: AuthoringReturnTarget | null, options?: { initiallyDirty?: boolean }) => void
@@ -411,6 +412,14 @@ export function useScriptsAuthoringState({
     }))
   }, [invalidateEditRequest])
 
+  const openCreateOptionsWithNotice = useCallback((notice: string) => {
+    invalidateEditRequest()
+    setAuthoringState({
+      ...createAuthoringState('create-options'),
+      authoringNotice: notice.trim() || null,
+    })
+  }, [invalidateEditRequest])
+
   const returnToDraftSource = useCallback(() => {
     invalidateEditRequest()
     setAuthoringState(previous => {
@@ -448,6 +457,7 @@ export function useScriptsAuthoringState({
     setSubview,
     openLibrary,
     openCreateOptions,
+    openCreateOptionsWithNotice,
     handleEdit,
     handleSavedScript,
     handleDraftEdit: openDraftEditor,

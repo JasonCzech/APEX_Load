@@ -226,6 +226,9 @@ func (s *SQLiteStore) DeleteDomain(id string) error {
 	if _, err := tx.Exec(`DELETE FROM application_repositories WHERE domain_id = ?`, id); err != nil {
 		return err
 	}
+	if _, err := tx.Exec(`DELETE FROM domain_feature_policies WHERE domain_id = ?`, id); err != nil {
+		return err
+	}
 	if _, err := tx.Exec(`DELETE FROM domains WHERE id = ?`, id); err != nil {
 		return err
 	}
