@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { TopbarContributionProvider } from '../hooks/TopbarContributionRoot'
 import { type LoadModelTemplate, type StoredScenario } from '../types'
 import TestHub from './TestHub'
+import { scenarioGroupNameAfterScriptSelection } from './scenarioGroupUtils'
 import { scenarioSeedFromTemplate } from './scenarioTemplateSeed'
 import {
   replaceScenarioRuntimeDefaults,
@@ -85,6 +86,17 @@ vi.mock('recharts', () => {
   }
 })
 
+describe('scenarioGroupNameAfterScriptSelection', () => {
+  it.each([
+    ['', 0, 'Checkout Flow', '', 'Checkout Flow'],
+    ['Group 2', 1, 'Payments Flow', '', 'Payments Flow'],
+    ['Checkout Flow', 0, 'Payments Flow', 'Checkout Flow', 'Payments Flow'],
+    ['Peak Buyers', 0, 'Payments Flow', 'Checkout Flow', 'Peak Buyers'],
+  ])('resolves %j for group %i', (currentName, groupIndex, nextScriptName, previousScriptName, expected) => {
+    expect(scenarioGroupNameAfterScriptSelection(currentName, groupIndex, nextScriptName, previousScriptName)).toBe(expected)
+  })
+})
+
 describe('TestHub', () => {
   let container: HTMLDivElement
   let root: Root
@@ -133,6 +145,7 @@ describe('TestHub', () => {
   )
 
   const chooseLibraryScriptForGroup = async (scriptName = 'Checkout Flow', groupIndex = 0) => {
+    await clickWizardStep('Scripts')
     const groupCard = Array.from(container.querySelectorAll('.scenario-script-group-list-spacious .scenario-script-group-card'))[groupIndex]
       || Array.from(container.querySelectorAll('.scenario-script-group-card'))[groupIndex]
     expect(groupCard).toBeDefined()
@@ -166,6 +179,7 @@ describe('TestHub', () => {
   }
 
   const selectManualShapeByName = async (shapeName: string) => {
+    await clickWizardStep('Shape / Source')
     const card = Array.from(container.querySelectorAll('.scenario-shape-catalog-card')).find(item => (
       item.querySelector('.scenario-support-card-header')?.textContent?.includes(shapeName)
     ))
@@ -748,6 +762,15 @@ describe('TestHub', () => {
           notes: 'Dedicated staged segments are available in scenario authoring.',
         },
         {
+          id: 'production-replay',
+          name: 'Production Traffic Profile',
+          category: 'profile',
+          status: 'executed',
+          apexload_shape: 'Production-shaped traffic replay.',
+          fields: ['traffic_profile.mappings[].points'],
+          notes: 'Preserves the gradual daily traffic curve.',
+        },
+        {
           id: 'chaos-resilience',
           name: 'Chaos Resilience',
           category: 'resilience',
@@ -757,7 +780,7 @@ describe('TestHub', () => {
           notes: 'Preserves shakeout evidence before full load.',
         },
       ],
-      status_counts: { executed: 4 },
+      status_counts: { executed: 5 },
       notes: [],
     })
     apiMock.validateScenarioLoadModel.mockResolvedValue({
@@ -894,6 +917,7 @@ describe('TestHub', () => {
       assignment: { mode: 'auto' },
       groups: [
         {
+          name: 'Checkout Flow',
           script_id: 'script-1',
           vusers: 25,
           initialization: 'at_runtime',
@@ -1032,6 +1056,7 @@ describe('TestHub', () => {
     expect(apiMock.createScenario).toHaveBeenCalledWith(expect.objectContaining({
       name: 'Payments Scenario',
       groups: [expect.objectContaining({
+        name: 'Payments Flow',
         script_id: 'script-2',
       })],
     }))
@@ -1086,8 +1111,8 @@ describe('TestHub', () => {
     await clickWizardStep('Scripts')
 
     expect(wizardStepMarker('Start')).toBe('1')
-    expect(wizardStepMarker('Shape / Source')).toBe('2')
-    expect(wizardStepMarker('Scripts')).toBe('3')
+    expect(wizardStepMarker('Scripts')).toBe('2')
+    expect(wizardStepMarker('Shape / Source')).toBe('3')
     expect(wizardStepComplete('Start')).toBe(false)
     expect(wizardStepComplete('Shape / Source')).toBe(false)
     expect(wizardStepComplete('Scripts')).toBe(false)
@@ -1103,13 +1128,7 @@ describe('TestHub', () => {
     await clickButton('Build from Workload Shape')
     expect(wizardStepMarker('Start')).toBe('✓')
     expect(wizardStepComplete('Start')).toBe(true)
-    expect(wizardStepMarker('Shape / Source')).toBe('2')
-    expect(wizardStepComplete('Shape / Source')).toBe(false)
-
-    await clickButton('Use Manual Shape')
-    expect(wizardStepMarker('Shape / Source')).toBe('✓')
-    expect(wizardStepComplete('Shape / Source')).toBe(true)
-    expect(wizardStepMarker('Scripts')).toBe('3')
+    expect(wizardStepMarker('Scripts')).toBe('2')
     expect(wizardStepComplete('Scripts')).toBe(false)
 
     const nameInput = Array.from(container.querySelectorAll('input')).find(input => input.placeholder === 'Scenario name')
@@ -1123,7 +1142,13 @@ describe('TestHub', () => {
 
     expect(wizardStepMarker('Scripts')).toBe('✓')
     expect(wizardStepComplete('Scripts')).toBe(true)
-    expect(wizardStepMarker('Run Settings')).toBe('4')
+    expect(wizardStepMarker('Shape / Source')).toBe('3')
+
+    await selectManualShapeByName('Closed VUser')
+    expect(wizardStepMarker('Shape / Source')).toBe('✓')
+    expect(wizardStepComplete('Shape / Source')).toBe(true)
+    expect(wizardStepMarker('Run Settings')).toBe('✓')
+    expect(wizardStepComplete('Run Settings')).toBe(true)
 
     await clickWizardStep('Run Settings')
     expect(wizardStepMarker('Run Settings')).toBe('✓')
@@ -1164,7 +1189,7 @@ describe('TestHub', () => {
     expect(reviewGroups).not.toBeNull()
     expect(container.querySelector('.scenario-review-grid')?.textContent).toContain('Duration3m')
     const reviewCells = Array.from(reviewGroups?.querySelectorAll('tbody td') || []).map(cell => cell.textContent)
-    expect(reviewCells).toEqual(['Group 1', 'Checkout Flow', 'Load', '17', 'None', 'None', 'Per VUser'])
+    expect(reviewCells).toEqual(['Checkout Flow', 'Checkout Flow', 'Load', '17', 'None', 'None', 'Per VUser'])
   })
 
   it('seeds goal-oriented run settings and shows shape guidance when an open-arrival-rate shape is selected manually', async () => {
@@ -1263,6 +1288,7 @@ describe('TestHub', () => {
 
     await clickButton('Build from Workload Shape')
     await selectManualShapeByName('Stepped Ramp')
+    await clickWizardStep('Scripts')
 
     const nameInput = Array.from(container.querySelectorAll('input')).find(input => input.placeholder === 'Scenario name')
     expect(nameInput).toBeDefined()
@@ -1331,6 +1357,7 @@ describe('TestHub', () => {
     await selectManualShapeByName('Stepped Ramp')
 
     // Script selection survives the re-seed.
+    await clickWizardStep('Scripts')
     const groupCard = container.querySelector('.scenario-script-group-list-spacious .scenario-script-group-card')
     expect(groupCard?.textContent).toContain('Checkout Flow')
 
@@ -1411,6 +1438,27 @@ describe('TestHub', () => {
     expect(container.querySelector('.scenario-load-group-panel')?.textContent).toContain('Group 1')
     expect(container.querySelector('.scenario-load-group-panel')?.textContent).not.toContain('Group 2')
     expect(Array.from(container.querySelectorAll('.scenario-group-tab'))[0].getAttribute('aria-selected')).toBe('true')
+  })
+
+  it('renumbers a generated group name before assigning its script after an earlier group is removed', async () => {
+    await act(async () => {
+      root.render(<TestHub initialView="builder" testStatuses={{}} onSelectTest={vi.fn()} />)
+    })
+    await flushPromises()
+    await clickWizardStep('Scripts')
+    await clickButton('Add Group')
+
+    const removeButtons = Array.from(container.querySelectorAll<HTMLButtonElement>('.scenario-script-group-card button'))
+      .filter(button => button.textContent === 'Remove')
+    expect(removeButtons).toHaveLength(2)
+    await act(async () => {
+      removeButtons[0].dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const remainingGroup = container.querySelector('.scenario-script-group-card')
+    expect((remainingGroup?.querySelector('input[placeholder="Group 1"]') as HTMLInputElement | null)?.value).toBe('Group 1')
+    await chooseLibraryScriptForGroup()
+    expect(container.querySelector('.scenario-script-group-card strong')?.textContent).toBe('Checkout Flow')
   })
 
   it('persists script runtime settings from the Browser/Script Runtime tab', async () => {
@@ -1924,6 +1972,13 @@ describe('TestHub', () => {
   it('clones an existing scenario draft with data pool bindings from the wizard source step', async () => {
     const onSelectTest = vi.fn()
     const onOpenCommandCenter = vi.fn()
+    apiMock.listScripts.mockResolvedValue({
+      scripts: [
+        { id: 'script-1', name: 'Checkout Flow', protocol: 'http', version: '1.0.0', created_at: '2026-05-12T00:00:00Z' },
+        { id: 'script-2', name: 'Payments Flow', protocol: 'http', version: '1.0.0', created_at: '2026-05-12T00:00:00Z' },
+      ],
+      count: 2,
+    })
     apiMock.listDataPools.mockResolvedValue({
       data_pools: [{ id: 'pool-1', name: 'Customers', project_id: 'project-1', created_at: '', updated_at: '' }],
       count: 1,
@@ -1970,6 +2025,15 @@ describe('TestHub', () => {
 
     await clickButton('Scenario Builder')
     await clickButton('Model from Existing Scenario')
+    const authoredName = Array.from(container.querySelectorAll<HTMLInputElement>('input'))
+      .find(input => input.placeholder === 'Scenario name')
+    expect(authoredName).toBeDefined()
+    if (!authoredName) return
+    await act(async () => {
+      setInputValue(authoredName, 'Payments Against Checkout Model')
+    })
+    await chooseLibraryScriptForGroup('Payments Flow')
+    await clickWizardStep('Shape / Source')
     const cloneRow = Array.from(container.querySelectorAll('.scenario-clone-table tbody tr')).find(row => row.textContent?.includes('Pinned Checkout'))
     expect(cloneRow).toBeDefined()
     await act(async () => {
@@ -2027,9 +2091,9 @@ describe('TestHub', () => {
 
     expect(onOpenCommandCenter).toHaveBeenCalledWith('run-1')
 
-    await clickButton('Next')
+    await clickWizardStep('Scripts')
 
-    expect(Array.from(container.querySelectorAll('input')).some(input => input.value === 'Pinned Checkout (Copy)')).toBe(true)
+    expect(Array.from(container.querySelectorAll('input')).some(input => input.value === 'Payments Against Checkout Model')).toBe(true)
     expect(container.textContent).not.toContain('Choose Scenario To Model')
     expect(container.textContent).toContain('Existing Scripts Library')
 
@@ -2037,11 +2101,11 @@ describe('TestHub', () => {
     await flushPromises()
 
     expect(apiMock.createScenario).toHaveBeenCalledWith(expect.objectContaining({
-      name: 'Pinned Checkout (Copy)',
+      name: 'Payments Against Checkout Model',
       duration: '7m',
       groups: [expect.objectContaining({
-        name: 'Checkout',
-        script_id: 'script-1',
+        name: 'Payments Flow',
+        script_id: 'script-2',
         vusers: 20,
         ramp_up: '1m',
       })],
@@ -2672,6 +2736,7 @@ describe('TestHub', () => {
 
     await clickWizardStep('Shape / Source')
     await clickButton('Chaos Resilience With Shakeout Gate')
+    await clickWizardStep('Scripts')
 
     const nameInput = Array.from(container.querySelectorAll('input')).find(input => input.placeholder === 'Scenario name')
     expect(nameInput).toBeDefined()
@@ -2745,8 +2810,11 @@ describe('TestHub', () => {
     expect(container.textContent).toContain('groups[].stages[].target_vusers')
     expect(container.textContent).toContain('Chaos Resilience')
     expect(container.textContent).toContain('script_shakeout')
-    expect(container.querySelectorAll('.scenario-shape-visual')).toHaveLength(4)
+    expect(container.querySelectorAll('.scenario-shape-visual')).toHaveLength(5)
     expect(container.querySelector('[aria-label="Closed VUser workload shape"]')).toBeTruthy()
+    const productionProfileVisual = container.querySelector('[aria-label="Production Traffic Profile workload shape"]')
+    expect(productionProfileVisual?.querySelector('.scenario-shape-line')?.getAttribute('d'))
+      .toBe('M12 50C22 49 29 45 36 38C44 29 51 20 62 17C74 14 84 20 91 29C99 38 103 45 108 49')
   })
 
   it('converts a newly disabled selected shape to Custom Workload', async () => {

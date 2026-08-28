@@ -237,8 +237,9 @@ describe('TestHub build-from-goal', () => {
     await flush()
 
     expect(container.querySelector('[data-testid="goal-sizing-panel"]')).toBeNull()
-    const numberInputs = Array.from(container.querySelectorAll('input[type="number"]')) as HTMLInputElement[]
-    expect(numberInputs.some(input => input.value === '300')).toBe(true)
+    expect(container.querySelector('.scenario-wizard-step.active')?.textContent).toContain('Scripts')
+    expect(container.textContent).toContain('Scripts And Groups')
+    expect(container.textContent).toContain('Checkout')
   })
 
   it('drains bounded test pages so older completed baselines remain selectable', async () => {

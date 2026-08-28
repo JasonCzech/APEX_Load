@@ -52,6 +52,7 @@ import {
 import { requestSettingsFocus } from './settingsSectionLayout'
 import { loadAllTestSummaries } from './testCatalogPagination'
 import { scenarioSeedFromTemplate } from './scenarioTemplateSeed'
+import { scenarioGroupNameAfterScriptSelection } from './scenarioGroupUtils'
 import { boundedAllSettled } from '../utils/boundedAllSettled'
 import { ScenarioCompositionTimeline } from './ScenarioCompositionTimeline'
 import TrafficProfileSourcePanel from './TrafficProfileSourcePanel'
@@ -150,8 +151,8 @@ type RunSettingsTab = 'scenario' | 'runtime' | 'infrastructure'
 
 const scenarioWizardSteps: Array<{ id: ScenarioWizardStep, label: string }> = [
   { id: 'start', label: 'Start' },
-  { id: 'source', label: 'Shape / Source' },
   { id: 'scripts', label: 'Scripts' },
+  { id: 'source', label: 'Shape / Source' },
   { id: 'run', label: 'Run Settings' },
   { id: 'data', label: 'Data' },
   { id: 'review', label: 'Review' },
@@ -201,6 +202,28 @@ function emptyScenarioForm(scriptId = ''): ScenarioFormState {
     data_pool_alias: '',
     data_pool_access_mode: 'read_only',
     data_pool_selection_strategy: 'sequential',
+  }
+}
+
+function mergeCloneWithScriptSelections(current: ScenarioFormState, cloned: ScenarioFormState): ScenarioFormState {
+  const groups = cloned.groups.map((clonedGroup, index) => {
+    const authoredGroup = current.groups[index]
+    if (!authoredGroup?.script_id) return clonedGroup
+    return {
+      ...clonedGroup,
+      name: authoredGroup.name,
+      script_id: authoredGroup.script_id,
+      initialization: authoredGroup.initialization,
+      role: authoredGroup.role,
+    }
+  })
+  for (const authoredGroup of current.groups.slice(cloned.groups.length)) {
+    if (authoredGroup.script_id) groups.push(authoredGroup)
+  }
+  return {
+    ...cloned,
+    name: current.name.trim() ? current.name : cloned.name,
+    groups: ensureScenarioGroups(groups),
   }
 }
 
@@ -443,6 +466,16 @@ function WorkloadShapeVisual({ entry }: { entry: LoadModelSupportEntry }) {
         <path className="scenario-shape-grid" d="M10 48H110M10 34H110M10 20H110" />
         <path className="scenario-shape-fill" d="M12 52L28 46L43 39L58 31L72 23L86 18L100 15L108 18V52Z" />
         <path className="scenario-shape-line" d="M12 52L28 46L43 39L58 31L72 23L86 18L100 15L108 18" />
+      </svg>
+    )
+  }
+
+  if (entry.id === PRODUCTION_REPLAY_SHAPE_ID) {
+    return (
+      <svg className="scenario-shape-visual" viewBox="0 0 120 62" role="img" aria-label={title}>
+        <path className="scenario-shape-grid" d="M10 48H110M10 34H110M10 20H110" />
+        <path className="scenario-shape-fill" d="M12 50C22 49 29 45 36 38C44 29 51 20 62 17C74 14 84 20 91 29C99 38 103 45 108 49V52H12Z" />
+        <path className="scenario-shape-line" d="M12 50C22 49 29 45 36 38C44 29 51 20 62 17C74 14 84 20 91 29C99 38 103 45 108 49" />
       </svg>
     )
   }
@@ -1675,7 +1708,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
     setScriptSelectionTargetIndex(null)
     setRunSettingsTab('scenario')
     setWizardStep('scripts')
-    setMaxVisitedWizardIndex(2)
+    setMaxVisitedWizardIndex(scenarioWizardSteps.findIndex(step => step.id === 'source'))
     setLoadModelValidation(null)
     setLoadModelValidationError('')
     setShowForm(true)
@@ -1706,14 +1739,15 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
     setScenarioSourceMode(mode)
     setScenarioStartChoice(mode)
     if (mode === 'shape') setSelectedCloneScenarioId('')
-    setWizardStep('source')
+    setWizardStep('scripts')
   }
 
   const cloneScenarioDraft = (scenario: StoredScenario) => {
     const fallbackScriptId = scripts[0]?.id || ''
+    const clonedForm = scenarioFormStateFromStoredScenario(scenario, fallbackScriptId, true)
     setEditingId(null)
     editingBaselineFormRef.current = ''
-    setForm(scenarioFormStateFromStoredScenario(scenario, fallbackScriptId, true))
+    setForm(current => mergeCloneWithScriptSelections(current, clonedForm))
     setStageGroupIndex(0)
     setSelectedLoadModelTemplateId('')
     setSelectedShapeId(scenario.workload_shape_id || '')
@@ -1799,7 +1833,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
     setStageGroupIndex(0)
     setRunSettingsTab(preset?.recommendedRunTab ?? 'scenario')
     markWizardStepVisited('source')
-    setWizardStep('scripts')
+    setWizardStep('run')
   }
 
   const applyLoadModelTemplate = (templateId: string) => {
@@ -1815,7 +1849,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
     setScriptSelectionTargetIndex(null)
     setStageGroupIndex(0)
     markWizardStepVisited('source')
-    setWizardStep('scripts')
+    setWizardStep('run')
     const seed = adaptScenarioShapeDefaults(template.shape_id, scenarioSeedFromTemplate(template), {
       duration: form.duration,
       groups: form.groups,
@@ -2020,7 +2054,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
     setGoalSizingOpen(false)
     setRunSettingsTab('scenario')
     markWizardStepVisited('source')
-    setWizardStep('run')
+    setWizardStep('scripts')
   }
 
   const closeGoalSizing = () => {
@@ -2127,9 +2161,12 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
   const selectScriptFromLibrary = (script: StoredScript) => {
     if (scriptSelectionTargetIndex !== null && formGroups[scriptSelectionTargetIndex]) {
       const targetIndex = scriptSelectionTargetIndex
+      const targetGroup = formGroups[targetIndex]
+      const previousScriptName = findScriptById(scripts, targetGroup.script_id)?.name || ''
       updateScenarioGroup(targetIndex, {
         script_id: script.id,
-        ...(formGroups[targetIndex].role === 'observer' && script.protocol !== 'browser'
+        name: scenarioGroupNameAfterScriptSelection(targetGroup.name, targetIndex, script.name, previousScriptName),
+        ...(targetGroup.role === 'observer' && script.protocol !== 'browser'
           ? { role: 'load' as const }
           : {}),
       })
@@ -2144,7 +2181,14 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
 
   const removeScenarioGroup = (index: number) => {
     setForm(prev => {
-      const nextGroups = prev.groups.filter((_, groupIndex) => groupIndex !== index)
+      const nextGroups = prev.groups
+        .filter((_, groupIndex) => groupIndex !== index)
+        .map((group, nextIndex) => {
+          const previousIndex = nextIndex >= index ? nextIndex + 1 : nextIndex
+          return group.name.trim() === `Group ${previousIndex + 1}`
+            ? { ...group, name: `Group ${nextIndex + 1}` }
+            : group
+        })
       return { ...prev, groups: ensureScenarioGroups(nextGroups) }
     })
     setScriptSelectionTargetIndex(current => {
@@ -3831,7 +3875,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
             <div>
               {form.name.trim()
                 ? <p className="scenario-builder-name" aria-label="Scenario name">{form.name.trim()}</p>
-                : <p className="page-subtitle">Choose a source, compose scripts, tune run settings, attach data, and validate the planned model.</p>}
+                : <p className="page-subtitle">Compose scripts, choose a workload source, tune run settings, attach data, and validate the planned model.</p>}
             </div>
             <div className="scenario-builder-progress">
               <span className={requiredDraftReady ? 'ready' : ''}>Draft</span>
