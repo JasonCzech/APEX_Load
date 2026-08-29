@@ -262,6 +262,88 @@ func TestValidateTrafficProfileSourceProvenance(t *testing.T) {
 	}
 }
 
+func TestValidateTrafficProfileSupportsSharedAndPerGroupSources(t *testing.T) {
+	minimum, maximum := 1, 20
+	goal := &GoalConfig{MinVUsers: &minimum, MaxVUsers: &maximum}
+	groups := []CreateGroupEntry{{Name: "checkout", VUsers: 5}, {Name: "search", VUsers: 5}}
+
+	shared := testTrafficProfile("tps")
+	shared.Mappings = append(shared.Mappings, TrafficProfileMapping{
+		SeriesKey: "orders", SeriesName: "Orders", GroupName: "search",
+		Points: []trafficprofile.RuntimePoint{{OffsetMS: 0, Target: 0}, {OffsetMS: 5000, Target: 5}},
+	})
+	if err := validateTrafficProfile(shared, groups, "10s", "goal_oriented", goal); err != nil {
+		t.Fatalf("shared series fan-out: %v", err)
+	}
+
+	checkoutSource := TrafficProfileSource{Kind: "file", File: &TrafficProfileFileSource{Filename: "checkout.csv", TimestampColumn: "timestamp", ValueColumns: []string{"orders"}}}
+	searchSource := TrafficProfileSource{Kind: "file", File: &TrafficProfileFileSource{Filename: "search.xlsx", Sheet: "Traffic", TimestampColumn: "when", ValueColumns: []string{"queries"}}}
+	checkoutEntry, searchEntry := trafficProfileSourceEntry(checkoutSource), trafficProfileSourceEntry(searchSource)
+	separate := testTrafficProfile("tps")
+	separate.Source = TrafficProfileSource{Kind: "multiple", Name: "Per-group files", Sources: []TrafficProfileSourceEntry{checkoutEntry, searchEntry}}
+	separate.Mappings[0].Source = &checkoutEntry
+	separate.Mappings[0].SourceDuration = "10s"
+	separate.Mappings = append(separate.Mappings, TrafficProfileMapping{
+		SeriesKey: "queries", SeriesName: "Queries", GroupName: "search", Source: &searchEntry, SourceDuration: "10s",
+		Points: []trafficprofile.RuntimePoint{{OffsetMS: 0, Target: 1}, {OffsetMS: 5000, Target: 4}},
+	})
+	if err := validateTrafficProfile(separate, groups, "10s", "goal_oriented", goal); err != nil {
+		t.Fatalf("per-group sources: %v", err)
+	}
+	unlistedSource := TrafficProfileSource{Kind: "file", File: &TrafficProfileFileSource{Filename: "other.csv", TimestampColumn: "timestamp", ValueColumns: []string{"value"}}}
+	unlistedEntry := trafficProfileSourceEntry(unlistedSource)
+	separate.Mappings[1].Source = &unlistedEntry
+	if err := validateTrafficProfile(separate, groups, "10s", "goal_oriented", goal); err == nil || !strings.Contains(err.Error(), "not listed") {
+		t.Fatalf("unexpected mismatched source error: %v", err)
+	}
+}
+
+func TestDeriveTrafficProfileAlignsPerGroupFileSpans(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	start := time.Date(2026, 8, 27, 0, 0, 0, 0, time.UTC)
+	checkoutSource := TrafficProfileSource{Kind: "file", File: &TrafficProfileFileSource{Filename: "checkout.csv", TimestampColumn: "timestamp", ValueColumns: []string{"orders"}}}
+	searchSource := TrafficProfileSource{Kind: "file", File: &TrafficProfileFileSource{Filename: "search.xlsx", Sheet: "Traffic", TimestampColumn: "timestamp", ValueColumns: []string{"queries"}}}
+	checkoutEntry, searchEntry := trafficProfileSourceEntry(checkoutSource), trafficProfileSourceEntry(searchSource)
+	request := trafficProfileDeriveRequest{
+		Source: TrafficProfileSource{Kind: "multiple", Name: "Per-group production traffic files", Sources: []TrafficProfileSourceEntry{checkoutEntry, searchEntry}},
+		Series: []trafficprofile.Series{
+			{Key: "checkout:orders", Name: "Orders", Points: []trafficprofile.Point{{Timestamp: start, Value: 10}, {Timestamp: start.Add(10 * time.Second), Value: 20}}},
+			{Key: "search:queries", Name: "Queries", Points: []trafficprofile.Point{{Timestamp: start, Value: 5}, {Timestamp: start.Add(20 * time.Second), Value: 15}}},
+		},
+		Mappings: []trafficProfileSeriesMappingRequest{
+			{SeriesKey: "checkout:orders", GroupName: "checkout", Source: &checkoutEntry},
+			{SeriesKey: "search:queries", GroupName: "search", Source: &searchEntry},
+		},
+		ValueSemantics: trafficprofile.SemanticsTPS,
+		GapPolicy:      trafficprofile.GapHold,
+		Window:         TrafficProfileWindow{Mode: "full"},
+		Amplitude:      TrafficProfileAmplitude{Mode: "factor", Value: 1},
+		ScenarioDraft: CreateScenarioRequest{
+			Name: "Per-group replay", Duration: "1m", ScenarioMode: "vuser_driven",
+			Groups: []CreateGroupEntry{{Name: "checkout", VUsers: 5}, {Name: "search", VUsers: 5}},
+		},
+	}
+	body, err := json.Marshal(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	recorder := httptest.NewRecorder()
+	server.handleDeriveTrafficProfile(recorder, httptest.NewRequest(http.MethodPost, "/api/v1/scenarios/traffic-profile/derive", bytes.NewReader(body)))
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("derive = %d %s", recorder.Code, recorder.Body.String())
+	}
+	var response trafficProfileDeriveResponse
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.TrafficProfile.TargetDuration != "40s" || response.TrafficProfile.SourceDuration != "40s" || len(response.TrafficProfile.Mappings) != 2 {
+		t.Fatalf("profile = %#v", response.TrafficProfile)
+	}
+	if response.TrafficProfile.Mappings[0].SourceDuration != "20s" || response.TrafficProfile.Mappings[0].Points[1].OffsetMS != 20_000 || response.TrafficProfile.Mappings[1].Source == nil {
+		t.Fatalf("aligned mappings = %#v", response.TrafficProfile.Mappings)
+	}
+}
+
 // Derivation authorizes on the declared project_id but compiles a
 // caller-supplied draft, so the draft must be pinned to that project or the
 // endpoint becomes a cross-project read of another tenant's scripts.

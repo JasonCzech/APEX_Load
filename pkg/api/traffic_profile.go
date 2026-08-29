@@ -38,6 +38,17 @@ type TrafficProfileSource struct {
 	File       *TrafficProfileFileSource       `json:"file,omitempty"`
 	Prometheus *TrafficProfilePrometheusSource `json:"prometheus,omitempty"`
 	OpenSearch *TrafficProfileOpenSearchSource `json:"opensearch,omitempty"`
+	Sources    []TrafficProfileSourceEntry     `json:"sources,omitempty"`
+}
+
+// TrafficProfileSourceEntry is deliberately non-recursive. Composite sources
+// may contain primitive source entries, but never another composite source.
+type TrafficProfileSourceEntry struct {
+	Kind       string                          `json:"kind"`
+	Name       string                          `json:"name,omitempty"`
+	File       *TrafficProfileFileSource       `json:"file,omitempty"`
+	Prometheus *TrafficProfilePrometheusSource `json:"prometheus,omitempty"`
+	OpenSearch *TrafficProfileOpenSearchSource `json:"opensearch,omitempty"`
 }
 
 type TrafficProfileFileSource struct {
@@ -86,11 +97,13 @@ type TrafficProfileAmplitude struct {
 }
 
 type TrafficProfileMapping struct {
-	SeriesKey  string                        `json:"series_key"`
-	SeriesName string                        `json:"series_name"`
-	GroupName  string                        `json:"group_name"`
-	Points     []trafficprofile.RuntimePoint `json:"points"`
-	PeakTarget float64                       `json:"peak_target"`
+	SeriesKey      string                        `json:"series_key"`
+	SeriesName     string                        `json:"series_name"`
+	GroupName      string                        `json:"group_name"`
+	Source         *TrafficProfileSourceEntry    `json:"source,omitempty"`
+	SourceDuration string                        `json:"source_duration,omitempty"`
+	Points         []trafficprofile.RuntimePoint `json:"points"`
+	PeakTarget     float64                       `json:"peak_target"`
 }
 
 func cloneTrafficProfile(profile *TrafficProfile) *TrafficProfile {
@@ -217,16 +230,20 @@ func validateTrafficProfile(profile *TrafficProfile, groups []CreateGroupEntry, 
 	if len(profile.Mappings) == 0 {
 		return errors.New("traffic_profile requires at least one series mapping")
 	}
-	seenSeries, seenGroups, totalPoints := map[string]struct{}{}, map[string]struct{}{}, 0
+	seenGroups, totalPoints := map[string]struct{}{}, 0
+	compositeSource := strings.EqualFold(strings.TrimSpace(profile.Source.Kind), "multiple")
+	allowedSources := map[string]struct{}{}
+	if compositeSource {
+		for _, source := range profile.Source.Sources {
+			allowedSources[trafficProfileSourceIdentity(source)] = struct{}{}
+		}
+	}
 	for index := range profile.Mappings {
 		mapping := &profile.Mappings[index]
 		seriesKey := strings.TrimSpace(mapping.SeriesKey)
 		groupKey := normalizeEffectiveGroupName(mapping.GroupName)
 		if seriesKey == "" || groupKey == "" {
 			return fmt.Errorf("traffic_profile.mappings[%d] requires series_key and group_name", index)
-		}
-		if _, exists := seenSeries[seriesKey]; exists {
-			return fmt.Errorf("traffic_profile series %q is mapped more than once", seriesKey)
 		}
 		if _, exists := seenGroups[groupKey]; exists {
 			return fmt.Errorf("traffic_profile group %q is mapped more than once", mapping.GroupName)
@@ -239,6 +256,22 @@ func validateTrafficProfile(profile *TrafficProfile, groups []CreateGroupEntry, 
 		// case-insensitive authoring input, then canonicalize it once here so a
 		// valid profile cannot fail only when its first boundary executes.
 		mapping.GroupName = group.Name
+		if compositeSource {
+			if mapping.Source == nil {
+				return fmt.Errorf("traffic_profile mapping %q requires source provenance for a multiple source profile", mapping.SeriesName)
+			}
+			if err := validateTrafficProfileSource(mapping.Source.asSource()); err != nil {
+				return fmt.Errorf("traffic_profile mapping %q source: %w", mapping.SeriesName, err)
+			}
+			if _, exists := allowedSources[trafficProfileSourceIdentity(*mapping.Source)]; !exists {
+				return fmt.Errorf("traffic_profile mapping %q source is not listed in traffic_profile.source.sources", mapping.SeriesName)
+			}
+			if sourceDuration, err := time.ParseDuration(mapping.SourceDuration); err != nil || sourceDuration <= 0 {
+				return fmt.Errorf("traffic_profile mapping %q source_duration must be a positive Go duration", mapping.SeriesName)
+			}
+		} else if mapping.Source != nil && trafficProfileSourceIdentity(*mapping.Source) != trafficProfileSourceIdentity(profile.Source) {
+			return fmt.Errorf("traffic_profile mapping %q source must match traffic_profile.source", mapping.SeriesName)
+		}
 		if len(group.Stages) > 0 {
 			return fmt.Errorf("traffic_profile group %q cannot also use stages", mapping.GroupName)
 		}
@@ -287,7 +320,6 @@ func validateTrafficProfile(profile *TrafficProfile, groups []CreateGroupEntry, 
 			return fmt.Errorf("traffic_profile group %q vusers must equal its peak target %d", mapping.GroupName, int(mapping.PeakTarget))
 		}
 		totalPoints += len(mapping.Points)
-		seenSeries[seriesKey] = struct{}{}
 		seenGroups[groupKey] = struct{}{}
 	}
 	if totalPoints > trafficprofile.MaxPointsPerProfile {
@@ -299,8 +331,20 @@ func validateTrafficProfile(profile *TrafficProfile, groups []CreateGroupEntry, 
 func validateTrafficProfileSource(source TrafficProfileSource) error {
 	kind := strings.ToLower(strings.TrimSpace(source.Kind))
 	switch kind {
+	case "multiple":
+		if source.File != nil || source.Prometheus != nil || source.OpenSearch != nil {
+			return errors.New("traffic_profile multiple source must contain only source.sources")
+		}
+		if len(source.Sources) < 2 || len(source.Sources) > 100 {
+			return errors.New("traffic_profile multiple source requires 2..100 source entries")
+		}
+		for index, child := range source.Sources {
+			if err := validateTrafficProfileSource(child.asSource()); err != nil {
+				return fmt.Errorf("traffic_profile multiple source entry %d: %w", index, err)
+			}
+		}
 	case "file":
-		if source.File == nil || source.Prometheus != nil || source.OpenSearch != nil {
+		if source.File == nil || source.Prometheus != nil || source.OpenSearch != nil || len(source.Sources) > 0 {
 			return errors.New("traffic_profile file source must contain only source.file")
 		}
 		if strings.TrimSpace(source.File.Filename) == "" || strings.TrimSpace(source.File.TimestampColumn) == "" || len(source.File.ValueColumns) == 0 {
@@ -323,7 +367,7 @@ func validateTrafficProfileSource(source TrafficProfileSource) error {
 			}
 		}
 	case "prometheus":
-		if source.Prometheus == nil || source.File != nil || source.OpenSearch != nil {
+		if source.Prometheus == nil || source.File != nil || source.OpenSearch != nil || len(source.Sources) > 0 {
 			return errors.New("traffic_profile Prometheus source must contain only source.prometheus")
 		}
 		if strings.TrimSpace(source.Prometheus.Query) == "" {
@@ -333,7 +377,7 @@ func validateTrafficProfileSource(source TrafficProfileSource) error {
 			return fmt.Errorf("traffic_profile Prometheus %w", err)
 		}
 	case "opensearch":
-		if source.OpenSearch == nil || source.File != nil || source.Prometheus != nil {
+		if source.OpenSearch == nil || source.File != nil || source.Prometheus != nil || len(source.Sources) > 0 {
 			return errors.New("traffic_profile OpenSearch source must contain only source.opensearch")
 		}
 		value := source.OpenSearch
@@ -364,9 +408,22 @@ func validateTrafficProfileSource(source TrafficProfileSource) error {
 			}
 		}
 	default:
-		return errors.New("traffic_profile.source.kind must be file, prometheus, or opensearch")
+		return errors.New("traffic_profile.source.kind must be file, prometheus, opensearch, or multiple")
 	}
 	return nil
+}
+
+func (source TrafficProfileSourceEntry) asSource() TrafficProfileSource {
+	return TrafficProfileSource{Kind: source.Kind, Name: source.Name, File: source.File, Prometheus: source.Prometheus, OpenSearch: source.OpenSearch}
+}
+
+func trafficProfileSourceEntry(source TrafficProfileSource) TrafficProfileSourceEntry {
+	return TrafficProfileSourceEntry{Kind: source.Kind, Name: source.Name, File: source.File, Prometheus: source.Prometheus, OpenSearch: source.OpenSearch}
+}
+
+func trafficProfileSourceIdentity(source any) string {
+	data, _ := json.Marshal(source)
+	return string(data)
 }
 
 func validateTrafficProfileQueryRange(value TrafficProfileQueryRange) error {

@@ -10,7 +10,7 @@ export interface TrafficProfileSeries { key: string; name: string; labels?: Reco
 export interface TrafficProfileStats { count: number; start: string; end: string; min: number; max: number; mean: number; detected_bucket: number; gaps: number }
 export interface TrafficProfileQueryRange { mode: 'absolute' | 'relative'; start?: string; end?: string; lookback?: string; step_seconds: number }
 
-export interface TrafficProfileSource {
+export interface TrafficProfileSourceEntry {
   kind: 'file' | 'prometheus' | 'opensearch'
   name?: string
   file?: { filename: string; sheet?: string; timestamp_column: string; value_columns: string[]; series_column?: string; timezone?: string }
@@ -18,10 +18,17 @@ export interface TrafficProfileSource {
   opensearch?: { index: string; timestamp_field: string; filter?: unknown; interval: string; metric: 'count' | 'sum' | 'avg'; metric_field?: string; range: TrafficProfileQueryRange }
 }
 
+export interface TrafficProfileSource extends Omit<TrafficProfileSourceEntry, 'kind'> {
+  kind: TrafficProfileSourceEntry['kind'] | 'multiple'
+  sources?: TrafficProfileSourceEntry[]
+}
+
 export interface TrafficProfileMapping {
   series_key: string
   series_name: string
   group_name: string
+  source?: TrafficProfileSourceEntry
+  source_duration?: string
   points: TrafficProfileRuntimePoint[]
   peak_target: number
 }
@@ -48,7 +55,7 @@ export interface TrafficProfileSourcesResponse {
 }
 
 export interface TrafficProfileAnalyzeResponse {
-  source: TrafficProfileSource
+  source: TrafficProfileSourceEntry
   sheets?: Array<{ name: string; columns: string[]; samples?: string[][] }>
   series?: Array<{ series: TrafficProfileSeries; stats: TrafficProfileStats }>
   warnings?: string[]
@@ -58,7 +65,7 @@ export interface TrafficProfileDeriveRequest {
   project_id?: string
   source: TrafficProfileSource
   series: TrafficProfileSeries[]
-  mappings: Array<{ series_key: string; group_name: string }>
+  mappings: Array<{ series_key: string; group_name: string; source?: TrafficProfileSourceEntry }>
   value_semantics: TrafficProfileValueSemantics
   gap_policy: TrafficProfileGapPolicy
   window: { mode: 'full' | 'explicit' | 'peak'; start?: string; end?: string; duration?: string }

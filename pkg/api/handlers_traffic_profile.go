@@ -67,8 +67,9 @@ type trafficProfileAnalyzeResponse struct {
 }
 
 type trafficProfileSeriesMappingRequest struct {
-	SeriesKey string `json:"series_key"`
-	GroupName string `json:"group_name"`
+	SeriesKey string                     `json:"series_key"`
+	GroupName string                     `json:"group_name"`
+	Source    *TrafficProfileSourceEntry `json:"source,omitempty"`
 }
 
 type trafficProfileDeriveRequest struct {
@@ -340,36 +341,89 @@ func (s *Server) handleDeriveTrafficProfile(w http.ResponseWriter, r *http.Reque
 			return
 		}
 	}
-	profile := &TrafficProfile{Version: trafficProfileVersion, Source: request.Source, ValueSemantics: string(request.ValueSemantics), Interpolation: "step", GapPolicy: string(request.GapPolicy), Window: request.Window, Amplitude: request.Amplitude, RefreshedAt: time.Now().UTC()}
-	var sourceEnd time.Time
-	if request.Window.Mode == "" || request.Window.Mode == "full" {
-		_, sourceEnd, _ = resolveTrafficProfileRange(request.Source)
+	if err := validateTrafficProfileSource(request.Source); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
 	}
-	warnings := make([]string, 0)
+	type normalizationCandidate struct {
+		mapping    trafficProfileSeriesMappingRequest
+		series     trafficprofile.Series
+		source     TrafficProfileSource
+		sourceEnd  time.Time
+		normalized trafficprofile.NormalizedSeries
+	}
+	candidates := make([]normalizationCandidate, 0, len(request.Mappings))
+	resolvedTargetDuration := targetDuration
+	maximumSourceDuration := time.Duration(0)
 	for _, mapping := range request.Mappings {
 		series, ok := seriesByKey[mapping.SeriesKey]
 		if !ok {
 			writeError(w, http.StatusBadRequest, "mapped series "+mapping.SeriesKey+" was not analyzed")
 			return
 		}
+		mappingSource := request.Source
+		if strings.EqualFold(strings.TrimSpace(request.Source.Kind), "multiple") && mapping.Source == nil {
+			writeError(w, http.StatusBadRequest, "every mapped series requires source provenance when source.kind is multiple")
+			return
+		}
+		if mapping.Source != nil {
+			mappingSource = mapping.Source.asSource()
+		}
+		if err := validateTrafficProfileSource(mappingSource); err != nil {
+			writeError(w, http.StatusBadRequest, "mapped series "+mapping.SeriesKey+" source: "+err.Error())
+			return
+		}
+		var sourceEnd time.Time
+		if request.Window.Mode == "" || request.Window.Mode == "full" {
+			kind := strings.ToLower(strings.TrimSpace(mappingSource.Kind))
+			if kind == "prometheus" || kind == "opensearch" {
+				_, sourceEnd, err = resolveTrafficProfileRange(mappingSource)
+				if err != nil {
+					writeError(w, http.StatusBadRequest, err.Error())
+					return
+				}
+			}
+		}
 		normalized, normalizeErr := trafficprofile.Normalize(series, trafficprofile.NormalizeOptions{Semantics: request.ValueSemantics, GapPolicy: request.GapPolicy, Window: window, SourceEnd: sourceEnd, TargetDuration: targetDuration, AmplitudeMode: request.Amplitude.Mode, Amplitude: request.Amplitude.Value})
 		if normalizeErr != nil {
 			writeError(w, http.StatusUnprocessableEntity, normalizeErr.Error())
 			return
 		}
-		if profile.SourceDuration == "" {
-			profile.SourceDuration = normalized.SourceDuration.String()
-			profile.TargetDuration = normalized.TargetDuration.String()
+		if normalized.SourceDuration > maximumSourceDuration {
+			maximumSourceDuration = normalized.SourceDuration
+		}
+		if targetDuration == 0 && normalized.TargetDuration > resolvedTargetDuration {
+			resolvedTargetDuration = normalized.TargetDuration
+		}
+		candidates = append(candidates, normalizationCandidate{mapping: mapping, series: series, source: mappingSource, sourceEnd: sourceEnd, normalized: normalized})
+	}
+	profile := &TrafficProfile{Version: trafficProfileVersion, Source: request.Source, ValueSemantics: string(request.ValueSemantics), Interpolation: "step", GapPolicy: string(request.GapPolicy), Window: request.Window, Amplitude: request.Amplitude, SourceDuration: maximumSourceDuration.String(), TargetDuration: resolvedTargetDuration.String(), RefreshedAt: time.Now().UTC()}
+	warnings := make([]string, 0)
+	for index := range candidates {
+		candidate := &candidates[index]
+		if candidate.normalized.TargetDuration != resolvedTargetDuration {
+			normalized, normalizeErr := trafficprofile.Normalize(candidate.series, trafficprofile.NormalizeOptions{Semantics: request.ValueSemantics, GapPolicy: request.GapPolicy, Window: window, SourceEnd: candidate.sourceEnd, TargetDuration: resolvedTargetDuration, AmplitudeMode: request.Amplitude.Mode, Amplitude: request.Amplitude.Value})
+			if normalizeErr != nil {
+				writeError(w, http.StatusUnprocessableEntity, normalizeErr.Error())
+				return
+			}
+			candidate.normalized = normalized
+			warnings = append(warnings, fmt.Sprintf("%s was proportionally aligned from %s to the shared test duration %s", candidate.series.Name, normalized.SourceDuration, resolvedTargetDuration))
+		}
+		normalized := candidate.normalized
+		if profile.RuntimeTarget == "" {
 			profile.RuntimeTarget = normalized.RuntimeTarget
-		} else if profile.TargetDuration != normalized.TargetDuration.String() || profile.SourceDuration != normalized.SourceDuration.String() {
-			writeError(w, http.StatusUnprocessableEntity, "all mapped series must produce the same source and target durations")
-			return
 		}
 		peak := 0.0
 		for _, point := range normalized.Points {
 			peak = math.Max(peak, point.Target)
 		}
-		profile.Mappings = append(profile.Mappings, TrafficProfileMapping{SeriesKey: series.Key, SeriesName: series.Name, GroupName: mapping.GroupName, Points: normalized.Points, PeakTarget: peak})
+		resultMapping := TrafficProfileMapping{SeriesKey: candidate.series.Key, SeriesName: candidate.series.Name, GroupName: candidate.mapping.GroupName, SourceDuration: normalized.SourceDuration.String(), Points: normalized.Points, PeakTarget: peak}
+		if strings.EqualFold(strings.TrimSpace(request.Source.Kind), "multiple") {
+			source := trafficProfileSourceEntry(candidate.source)
+			resultMapping.Source = &source
+		}
+		profile.Mappings = append(profile.Mappings, resultMapping)
 		warnings = append(warnings, normalized.Warnings...)
 	}
 	draft := request.ScenarioDraft

@@ -6505,6 +6505,13 @@ paths:
                                 type: string
                               series_name:
                                 type: string
+                              source:
+                                type: object
+                                description: 'Go type: TrafficProfileSourceEntry'
+                                additionalProperties: true
+                                nullable: true
+                              source_duration:
+                                type: string
                         refreshed_at:
                           type: string
                           format: date-time
@@ -6529,6 +6536,12 @@ paths:
                               type: object
                               additionalProperties: true
                               nullable: true
+                            sources:
+                              type: array
+                              items:
+                                type: object
+                                description: 'Go type: TrafficProfileSourceEntry'
+                                additionalProperties: true
                         source_duration:
                           type: string
                         target_duration:
@@ -45357,6 +45370,13 @@ paths:
                                 type: string
                               series_name:
                                 type: string
+                              source:
+                                type: object
+                                description: 'Go type: TrafficProfileSourceEntry'
+                                additionalProperties: true
+                                nullable: true
+                              source_duration:
+                                type: string
                         refreshed_at:
                           type: string
                           format: date-time
@@ -45381,6 +45401,12 @@ paths:
                               type: object
                               additionalProperties: true
                               nullable: true
+                            sources:
+                              type: array
+                              items:
+                                type: object
+                                description: 'Go type: TrafficProfileSourceEntry'
+                                additionalProperties: true
                         source_duration:
                           type: string
                         target_duration:
@@ -45450,6 +45476,13 @@ paths:
                             type: string
                           series_name:
                             type: string
+                          source:
+                            type: object
+                            description: 'Go type: TrafficProfileSourceEntry'
+                            additionalProperties: true
+                            nullable: true
+                          source_duration:
+                            type: string
                     refreshed_at:
                       type: string
                       format: date-time
@@ -45474,6 +45507,12 @@ paths:
                           type: object
                           additionalProperties: true
                           nullable: true
+                        sources:
+                          type: array
+                          items:
+                            type: object
+                            description: 'Go type: TrafficProfileSourceEntry'
+                            additionalProperties: true
                     source_duration:
                       type: string
                     target_duration:
@@ -48877,6 +48916,13 @@ paths:
                                   type: string
                                 series_name:
                                   type: string
+                                source:
+                                  type: object
+                                  description: 'Go type: TrafficProfileSourceEntry'
+                                  additionalProperties: true
+                                  nullable: true
+                                source_duration:
+                                  type: string
                               required:
                                 - group_name
                                 - peak_target
@@ -48907,6 +48953,12 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                              sources:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: TrafficProfileSourceEntry'
+                                  additionalProperties: true
                             required:
                               - kind
                           source_duration:
@@ -52419,6 +52471,13 @@ paths:
                                   type: string
                                 series_name:
                                   type: string
+                                source:
+                                  type: object
+                                  description: 'Go type: TrafficProfileSourceEntry'
+                                  additionalProperties: true
+                                  nullable: true
+                                source_duration:
+                                  type: string
                               required:
                                 - group_name
                                 - peak_target
@@ -52449,6 +52508,12 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                              sources:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: TrafficProfileSourceEntry'
+                                  additionalProperties: true
                             required:
                               - kind
                           source_duration:
@@ -55958,6 +56023,13 @@ paths:
                                   type: string
                                 series_name:
                                   type: string
+                                source:
+                                  type: object
+                                  description: 'Go type: TrafficProfileSourceEntry'
+                                  additionalProperties: true
+                                  nullable: true
+                                source_duration:
+                                  type: string
                               required:
                                 - group_name
                                 - peak_target
@@ -55988,6 +56060,12 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                              sources:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: TrafficProfileSourceEntry'
+                                  additionalProperties: true
                             required:
                               - kind
                           source_duration:
@@ -59509,6 +59587,13 @@ paths:
                                   type: string
                                 series_name:
                                   type: string
+                                source:
+                                  type: object
+                                  description: 'Go type: TrafficProfileSourceEntry'
+                                  additionalProperties: true
+                                  nullable: true
+                                source_duration:
+                                  type: string
                               required:
                                 - group_name
                                 - peak_target
@@ -59539,6 +59624,12 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                              sources:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: TrafficProfileSourceEntry'
+                                  additionalProperties: true
                             required:
                               - kind
                           source_duration:
@@ -63060,6 +63151,13 @@ paths:
                                   type: string
                                 series_name:
                                   type: string
+                                source:
+                                  type: object
+                                  description: 'Go type: TrafficProfileSourceEntry'
+                                  additionalProperties: true
+                                  nullable: true
+                                source_duration:
+                                  type: string
                               required:
                                 - group_name
                                 - peak_target
@@ -63090,6 +63188,12 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                              sources:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: TrafficProfileSourceEntry'
+                                  additionalProperties: true
                             required:
                               - kind
                           source_duration:
@@ -66611,6 +66715,13 @@ paths:
                                   type: string
                                 series_name:
                                   type: string
+                                source:
+                                  type: object
+                                  description: 'Go type: TrafficProfileSourceEntry'
+                                  additionalProperties: true
+                                  nullable: true
+                                source_duration:
+                                  type: string
                               required:
                                 - group_name
                                 - peak_target
@@ -66641,6 +66752,12 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                              sources:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: TrafficProfileSourceEntry'
+                                  additionalProperties: true
                             required:
                               - kind
                           source_duration:
@@ -70162,6 +70279,13 @@ paths:
                                   type: string
                                 series_name:
                                   type: string
+                                source:
+                                  type: object
+                                  description: 'Go type: TrafficProfileSourceEntry'
+                                  additionalProperties: true
+                                  nullable: true
+                                source_duration:
+                                  type: string
                               required:
                                 - group_name
                                 - peak_target
@@ -70192,6 +70316,12 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                              sources:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: TrafficProfileSourceEntry'
+                                  additionalProperties: true
                             required:
                               - kind
                           source_duration:
@@ -79867,6 +79997,31 @@ paths:
                             type: string
                           series_name:
                             type: string
+                          source:
+                            type: object
+                            properties:
+                              file:
+                                type: object
+                                description: 'Go type: TrafficProfileFileSource'
+                                additionalProperties: true
+                                nullable: true
+                              kind:
+                                type: string
+                              name:
+                                type: string
+                              opensearch:
+                                type: object
+                                description: 'Go type: TrafficProfileOpenSearchSource'
+                                additionalProperties: true
+                                nullable: true
+                              prometheus:
+                                type: object
+                                description: 'Go type: TrafficProfilePrometheusSource'
+                                additionalProperties: true
+                                nullable: true
+                            nullable: true
+                          source_duration:
+                            type: string
                     refreshed_at:
                       type: string
                       format: date-time
@@ -79928,6 +80083,30 @@ paths:
                               type: object
                               additionalProperties: true
                           nullable: true
+                        sources:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              file:
+                                type: object
+                                description: 'Go type: TrafficProfileFileSource'
+                                additionalProperties: true
+                                nullable: true
+                              kind:
+                                type: string
+                              name:
+                                type: string
+                              opensearch:
+                                type: object
+                                description: 'Go type: TrafficProfileOpenSearchSource'
+                                additionalProperties: true
+                                nullable: true
+                              prometheus:
+                                type: object
+                                description: 'Go type: TrafficProfilePrometheusSource'
+                                additionalProperties: true
+                                nullable: true
                     source_duration:
                       type: string
                     target_duration:
@@ -81480,6 +81659,33 @@ paths:
                               type: string
                             series_name:
                               type: string
+                            source:
+                              type: object
+                              properties:
+                                file:
+                                  type: object
+                                  description: 'Go type: TrafficProfileFileSource'
+                                  additionalProperties: true
+                                  nullable: true
+                                kind:
+                                  type: string
+                                name:
+                                  type: string
+                                opensearch:
+                                  type: object
+                                  description: 'Go type: TrafficProfileOpenSearchSource'
+                                  additionalProperties: true
+                                  nullable: true
+                                prometheus:
+                                  type: object
+                                  description: 'Go type: TrafficProfilePrometheusSource'
+                                  additionalProperties: true
+                                  nullable: true
+                              required:
+                                - kind
+                              nullable: true
+                            source_duration:
+                              type: string
                           required:
                             - group_name
                             - peak_target
@@ -81560,6 +81766,32 @@ paths:
                               - query
                               - range
                             nullable: true
+                          sources:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                file:
+                                  type: object
+                                  description: 'Go type: TrafficProfileFileSource'
+                                  additionalProperties: true
+                                  nullable: true
+                                kind:
+                                  type: string
+                                name:
+                                  type: string
+                                opensearch:
+                                  type: object
+                                  description: 'Go type: TrafficProfileOpenSearchSource'
+                                  additionalProperties: true
+                                  nullable: true
+                                prometheus:
+                                  type: object
+                                  description: 'Go type: TrafficProfilePrometheusSource'
+                                  additionalProperties: true
+                                  nullable: true
+                              required:
+                                - kind
                         required:
                           - kind
                       source_duration:
@@ -83221,6 +83453,33 @@ paths:
                               type: string
                             series_name:
                               type: string
+                            source:
+                              type: object
+                              properties:
+                                file:
+                                  type: object
+                                  description: 'Go type: TrafficProfileFileSource'
+                                  additionalProperties: true
+                                  nullable: true
+                                kind:
+                                  type: string
+                                name:
+                                  type: string
+                                opensearch:
+                                  type: object
+                                  description: 'Go type: TrafficProfileOpenSearchSource'
+                                  additionalProperties: true
+                                  nullable: true
+                                prometheus:
+                                  type: object
+                                  description: 'Go type: TrafficProfilePrometheusSource'
+                                  additionalProperties: true
+                                  nullable: true
+                              required:
+                                - kind
+                              nullable: true
+                            source_duration:
+                              type: string
                           required:
                             - group_name
                             - peak_target
@@ -83301,6 +83560,32 @@ paths:
                               - query
                               - range
                             nullable: true
+                          sources:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                file:
+                                  type: object
+                                  description: 'Go type: TrafficProfileFileSource'
+                                  additionalProperties: true
+                                  nullable: true
+                                kind:
+                                  type: string
+                                name:
+                                  type: string
+                                opensearch:
+                                  type: object
+                                  description: 'Go type: TrafficProfileOpenSearchSource'
+                                  additionalProperties: true
+                                  nullable: true
+                                prometheus:
+                                  type: object
+                                  description: 'Go type: TrafficProfilePrometheusSource'
+                                  additionalProperties: true
+                                  nullable: true
+                              required:
+                                - kind
                         required:
                           - kind
                       source_duration:
@@ -84596,6 +84881,31 @@ paths:
                             type: string
                           series_name:
                             type: string
+                          source:
+                            type: object
+                            properties:
+                              file:
+                                type: object
+                                description: 'Go type: TrafficProfileFileSource'
+                                additionalProperties: true
+                                nullable: true
+                              kind:
+                                type: string
+                              name:
+                                type: string
+                              opensearch:
+                                type: object
+                                description: 'Go type: TrafficProfileOpenSearchSource'
+                                additionalProperties: true
+                                nullable: true
+                              prometheus:
+                                type: object
+                                description: 'Go type: TrafficProfilePrometheusSource'
+                                additionalProperties: true
+                                nullable: true
+                            nullable: true
+                          source_duration:
+                            type: string
                     refreshed_at:
                       type: string
                       format: date-time
@@ -84657,6 +84967,30 @@ paths:
                               type: object
                               additionalProperties: true
                           nullable: true
+                        sources:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              file:
+                                type: object
+                                description: 'Go type: TrafficProfileFileSource'
+                                additionalProperties: true
+                                nullable: true
+                              kind:
+                                type: string
+                              name:
+                                type: string
+                              opensearch:
+                                type: object
+                                description: 'Go type: TrafficProfileOpenSearchSource'
+                                additionalProperties: true
+                                nullable: true
+                              prometheus:
+                                type: object
+                                description: 'Go type: TrafficProfilePrometheusSource'
+                                additionalProperties: true
+                                nullable: true
                     source_duration:
                       type: string
                     target_duration:
@@ -86209,6 +86543,33 @@ paths:
                               type: string
                             series_name:
                               type: string
+                            source:
+                              type: object
+                              properties:
+                                file:
+                                  type: object
+                                  description: 'Go type: TrafficProfileFileSource'
+                                  additionalProperties: true
+                                  nullable: true
+                                kind:
+                                  type: string
+                                name:
+                                  type: string
+                                opensearch:
+                                  type: object
+                                  description: 'Go type: TrafficProfileOpenSearchSource'
+                                  additionalProperties: true
+                                  nullable: true
+                                prometheus:
+                                  type: object
+                                  description: 'Go type: TrafficProfilePrometheusSource'
+                                  additionalProperties: true
+                                  nullable: true
+                              required:
+                                - kind
+                              nullable: true
+                            source_duration:
+                              type: string
                           required:
                             - group_name
                             - peak_target
@@ -86289,6 +86650,32 @@ paths:
                               - query
                               - range
                             nullable: true
+                          sources:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                file:
+                                  type: object
+                                  description: 'Go type: TrafficProfileFileSource'
+                                  additionalProperties: true
+                                  nullable: true
+                                kind:
+                                  type: string
+                                name:
+                                  type: string
+                                opensearch:
+                                  type: object
+                                  description: 'Go type: TrafficProfileOpenSearchSource'
+                                  additionalProperties: true
+                                  nullable: true
+                                prometheus:
+                                  type: object
+                                  description: 'Go type: TrafficProfilePrometheusSource'
+                                  additionalProperties: true
+                                  nullable: true
+                              required:
+                                - kind
                         required:
                           - kind
                       source_duration:
@@ -87643,6 +88030,13 @@ paths:
                                   type: string
                                 series_name:
                                   type: string
+                                source:
+                                  type: object
+                                  description: 'Go type: TrafficProfileSourceEntry'
+                                  additionalProperties: true
+                                  nullable: true
+                                source_duration:
+                                  type: string
                               required:
                                 - group_name
                                 - peak_target
@@ -87673,6 +88067,12 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                              sources:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: TrafficProfileSourceEntry'
+                                  additionalProperties: true
                             required:
                               - kind
                           source_duration:
@@ -90571,6 +90971,13 @@ paths:
                                   type: string
                                 series_name:
                                   type: string
+                                source:
+                                  type: object
+                                  description: 'Go type: TrafficProfileSourceEntry'
+                                  additionalProperties: true
+                                  nullable: true
+                                source_duration:
+                                  type: string
                               required:
                                 - group_name
                                 - peak_target
@@ -90601,6 +91008,12 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                              sources:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: TrafficProfileSourceEntry'
+                                  additionalProperties: true
                             required:
                               - kind
                           source_duration:
@@ -90883,6 +91296,81 @@ paths:
                           - query
                           - range
                         nullable: true
+                      sources:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            file:
+                              type: object
+                              properties:
+                                filename:
+                                  type: string
+                                series_column:
+                                  type: string
+                                sheet:
+                                  type: string
+                                timestamp_column:
+                                  type: string
+                                timezone:
+                                  type: string
+                                value_columns:
+                                  type: array
+                                  items:
+                                    type: string
+                              required:
+                                - filename
+                                - timestamp_column
+                                - value_columns
+                              nullable: true
+                            kind:
+                              type: string
+                            name:
+                              type: string
+                            opensearch:
+                              type: object
+                              properties:
+                                filter: {}
+                                index:
+                                  type: string
+                                interval:
+                                  type: string
+                                metric:
+                                  type: string
+                                metric_field:
+                                  type: string
+                                range:
+                                  type: object
+                                  description: 'Go type: TrafficProfileQueryRange'
+                                  additionalProperties: true
+                                timestamp_field:
+                                  type: string
+                              required:
+                                - index
+                                - interval
+                                - metric
+                                - range
+                                - timestamp_field
+                              nullable: true
+                            prometheus:
+                              type: object
+                              properties:
+                                label_fields:
+                                  type: array
+                                  items:
+                                    type: string
+                                query:
+                                  type: string
+                                range:
+                                  type: object
+                                  description: 'Go type: TrafficProfileQueryRange'
+                                  additionalProperties: true
+                              required:
+                                - query
+                                - range
+                              nullable: true
+                          required:
+                            - kind
                     required:
                       - kind
                   warnings:
@@ -90979,6 +91467,65 @@ paths:
                         type: string
                       series_key:
                         type: string
+                      source:
+                        type: object
+                        properties:
+                          file:
+                            type: object
+                            properties:
+                              filename:
+                                type: string
+                              series_column:
+                                type: string
+                              sheet:
+                                type: string
+                              timestamp_column:
+                                type: string
+                              timezone:
+                                type: string
+                              value_columns:
+                                type: array
+                                items:
+                                  type: string
+                            nullable: true
+                          kind:
+                            type: string
+                          name:
+                            type: string
+                          opensearch:
+                            type: object
+                            properties:
+                              filter: {}
+                              index:
+                                type: string
+                              interval:
+                                type: string
+                              metric:
+                                type: string
+                              metric_field:
+                                type: string
+                              range:
+                                type: object
+                                description: 'Go type: TrafficProfileQueryRange'
+                                additionalProperties: true
+                              timestamp_field:
+                                type: string
+                            nullable: true
+                          prometheus:
+                            type: object
+                            properties:
+                              label_fields:
+                                type: array
+                                items:
+                                  type: string
+                              query:
+                                type: string
+                              range:
+                                type: object
+                                description: 'Go type: TrafficProfileQueryRange'
+                                additionalProperties: true
+                            nullable: true
+                        nullable: true
                 project_id:
                   type: string
                 scenario_draft:
@@ -91701,6 +92248,13 @@ paths:
                                 type: string
                               series_name:
                                 type: string
+                              source:
+                                type: object
+                                description: 'Go type: TrafficProfileSourceEntry'
+                                additionalProperties: true
+                                nullable: true
+                              source_duration:
+                                type: string
                         refreshed_at:
                           type: string
                           format: date-time
@@ -91725,6 +92279,12 @@ paths:
                               type: object
                               additionalProperties: true
                               nullable: true
+                            sources:
+                              type: array
+                              items:
+                                type: object
+                                description: 'Go type: TrafficProfileSourceEntry'
+                                additionalProperties: true
                         source_duration:
                           type: string
                         target_duration:
@@ -91843,6 +92403,66 @@ paths:
                               type: integer
                               format: int64
                       nullable: true
+                    sources:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          file:
+                            type: object
+                            properties:
+                              filename:
+                                type: string
+                              series_column:
+                                type: string
+                              sheet:
+                                type: string
+                              timestamp_column:
+                                type: string
+                              timezone:
+                                type: string
+                              value_columns:
+                                type: array
+                                items:
+                                  type: string
+                            nullable: true
+                          kind:
+                            type: string
+                          name:
+                            type: string
+                          opensearch:
+                            type: object
+                            properties:
+                              filter: {}
+                              index:
+                                type: string
+                              interval:
+                                type: string
+                              metric:
+                                type: string
+                              metric_field:
+                                type: string
+                              range:
+                                type: object
+                                description: 'Go type: TrafficProfileQueryRange'
+                                additionalProperties: true
+                              timestamp_field:
+                                type: string
+                            nullable: true
+                          prometheus:
+                            type: object
+                            properties:
+                              label_fields:
+                                type: array
+                                items:
+                                  type: string
+                              query:
+                                type: string
+                              range:
+                                type: object
+                                description: 'Go type: TrafficProfileQueryRange'
+                                additionalProperties: true
+                            nullable: true
                 target_duration:
                   type: string
                 value_semantics:
@@ -92268,6 +92888,82 @@ paths:
                         series_key:
                           type: string
                         series_name:
+                          type: string
+                        source:
+                          type: object
+                          properties:
+                            file:
+                              type: object
+                              properties:
+                                filename:
+                                  type: string
+                                series_column:
+                                  type: string
+                                sheet:
+                                  type: string
+                                timestamp_column:
+                                  type: string
+                                timezone:
+                                  type: string
+                                value_columns:
+                                  type: array
+                                  items:
+                                    type: string
+                              required:
+                                - filename
+                                - timestamp_column
+                                - value_columns
+                              nullable: true
+                            kind:
+                              type: string
+                            name:
+                              type: string
+                            opensearch:
+                              type: object
+                              properties:
+                                filter: {}
+                                index:
+                                  type: string
+                                interval:
+                                  type: string
+                                metric:
+                                  type: string
+                                metric_field:
+                                  type: string
+                                range:
+                                  type: object
+                                  description: 'Go type: TrafficProfileQueryRange'
+                                  additionalProperties: true
+                                timestamp_field:
+                                  type: string
+                              required:
+                                - index
+                                - interval
+                                - metric
+                                - range
+                                - timestamp_field
+                              nullable: true
+                            prometheus:
+                              type: object
+                              properties:
+                                label_fields:
+                                  type: array
+                                  items:
+                                    type: string
+                                query:
+                                  type: string
+                                range:
+                                  type: object
+                                  description: 'Go type: TrafficProfileQueryRange'
+                                  additionalProperties: true
+                              required:
+                                - query
+                                - range
+                              nullable: true
+                          required:
+                            - kind
+                          nullable: true
+                        source_duration:
                           type: string
                       required:
                         - group_name
@@ -93017,6 +93713,13 @@ paths:
                                   type: string
                                 series_name:
                                   type: string
+                                source:
+                                  type: object
+                                  description: 'Go type: TrafficProfileSourceEntry'
+                                  additionalProperties: true
+                                  nullable: true
+                                source_duration:
+                                  type: string
                               required:
                                 - group_name
                                 - peak_target
@@ -93047,6 +93750,12 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                              sources:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: TrafficProfileSourceEntry'
+                                  additionalProperties: true
                             required:
                               - kind
                           source_duration:
@@ -93128,6 +93837,33 @@ paths:
                               type: string
                             series_name:
                               type: string
+                            source:
+                              type: object
+                              properties:
+                                file:
+                                  type: object
+                                  description: 'Go type: TrafficProfileFileSource'
+                                  additionalProperties: true
+                                  nullable: true
+                                kind:
+                                  type: string
+                                name:
+                                  type: string
+                                opensearch:
+                                  type: object
+                                  description: 'Go type: TrafficProfileOpenSearchSource'
+                                  additionalProperties: true
+                                  nullable: true
+                                prometheus:
+                                  type: object
+                                  description: 'Go type: TrafficProfilePrometheusSource'
+                                  additionalProperties: true
+                                  nullable: true
+                              required:
+                                - kind
+                              nullable: true
+                            source_duration:
+                              type: string
                           required:
                             - group_name
                             - peak_target
@@ -93208,6 +93944,32 @@ paths:
                               - query
                               - range
                             nullable: true
+                          sources:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                file:
+                                  type: object
+                                  description: 'Go type: TrafficProfileFileSource'
+                                  additionalProperties: true
+                                  nullable: true
+                                kind:
+                                  type: string
+                                name:
+                                  type: string
+                                opensearch:
+                                  type: object
+                                  description: 'Go type: TrafficProfileOpenSearchSource'
+                                  additionalProperties: true
+                                  nullable: true
+                                prometheus:
+                                  type: object
+                                  description: 'Go type: TrafficProfilePrometheusSource'
+                                  additionalProperties: true
+                                  nullable: true
+                              required:
+                                - kind
                         required:
                           - kind
                       source_duration:
@@ -94587,6 +95349,31 @@ paths:
                             type: string
                           series_name:
                             type: string
+                          source:
+                            type: object
+                            properties:
+                              file:
+                                type: object
+                                description: 'Go type: TrafficProfileFileSource'
+                                additionalProperties: true
+                                nullable: true
+                              kind:
+                                type: string
+                              name:
+                                type: string
+                              opensearch:
+                                type: object
+                                description: 'Go type: TrafficProfileOpenSearchSource'
+                                additionalProperties: true
+                                nullable: true
+                              prometheus:
+                                type: object
+                                description: 'Go type: TrafficProfilePrometheusSource'
+                                additionalProperties: true
+                                nullable: true
+                            nullable: true
+                          source_duration:
+                            type: string
                     refreshed_at:
                       type: string
                       format: date-time
@@ -94648,6 +95435,30 @@ paths:
                               type: object
                               additionalProperties: true
                           nullable: true
+                        sources:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              file:
+                                type: object
+                                description: 'Go type: TrafficProfileFileSource'
+                                additionalProperties: true
+                                nullable: true
+                              kind:
+                                type: string
+                              name:
+                                type: string
+                              opensearch:
+                                type: object
+                                description: 'Go type: TrafficProfileOpenSearchSource'
+                                additionalProperties: true
+                                nullable: true
+                              prometheus:
+                                type: object
+                                description: 'Go type: TrafficProfilePrometheusSource'
+                                additionalProperties: true
+                                nullable: true
                     source_duration:
                       type: string
                     target_duration:
@@ -185887,6 +186698,31 @@ paths:
                             type: string
                           series_name:
                             type: string
+                          source:
+                            type: object
+                            properties:
+                              file:
+                                type: object
+                                description: 'Go type: TrafficProfileFileSource'
+                                additionalProperties: true
+                                nullable: true
+                              kind:
+                                type: string
+                              name:
+                                type: string
+                              opensearch:
+                                type: object
+                                description: 'Go type: TrafficProfileOpenSearchSource'
+                                additionalProperties: true
+                                nullable: true
+                              prometheus:
+                                type: object
+                                description: 'Go type: TrafficProfilePrometheusSource'
+                                additionalProperties: true
+                                nullable: true
+                            nullable: true
+                          source_duration:
+                            type: string
                     refreshed_at:
                       type: string
                       format: date-time
@@ -185948,6 +186784,30 @@ paths:
                               type: object
                               additionalProperties: true
                           nullable: true
+                        sources:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              file:
+                                type: object
+                                description: 'Go type: TrafficProfileFileSource'
+                                additionalProperties: true
+                                nullable: true
+                              kind:
+                                type: string
+                              name:
+                                type: string
+                              opensearch:
+                                type: object
+                                description: 'Go type: TrafficProfileOpenSearchSource'
+                                additionalProperties: true
+                                nullable: true
+                              prometheus:
+                                type: object
+                                description: 'Go type: TrafficProfilePrometheusSource'
+                                additionalProperties: true
+                                nullable: true
                     source_duration:
                       type: string
                     target_duration:
@@ -191443,6 +192303,33 @@ paths:
                               type: string
                             series_name:
                               type: string
+                            source:
+                              type: object
+                              properties:
+                                file:
+                                  type: object
+                                  description: 'Go type: TrafficProfileFileSource'
+                                  additionalProperties: true
+                                  nullable: true
+                                kind:
+                                  type: string
+                                name:
+                                  type: string
+                                opensearch:
+                                  type: object
+                                  description: 'Go type: TrafficProfileOpenSearchSource'
+                                  additionalProperties: true
+                                  nullable: true
+                                prometheus:
+                                  type: object
+                                  description: 'Go type: TrafficProfilePrometheusSource'
+                                  additionalProperties: true
+                                  nullable: true
+                              required:
+                                - kind
+                              nullable: true
+                            source_duration:
+                              type: string
                           required:
                             - group_name
                             - peak_target
@@ -191523,6 +192410,32 @@ paths:
                               - query
                               - range
                             nullable: true
+                          sources:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                file:
+                                  type: object
+                                  description: 'Go type: TrafficProfileFileSource'
+                                  additionalProperties: true
+                                  nullable: true
+                                kind:
+                                  type: string
+                                name:
+                                  type: string
+                                opensearch:
+                                  type: object
+                                  description: 'Go type: TrafficProfileOpenSearchSource'
+                                  additionalProperties: true
+                                  nullable: true
+                                prometheus:
+                                  type: object
+                                  description: 'Go type: TrafficProfilePrometheusSource'
+                                  additionalProperties: true
+                                  nullable: true
+                              required:
+                                - kind
                         required:
                           - kind
                       source_duration:
@@ -197161,6 +198074,33 @@ paths:
                               type: string
                             series_name:
                               type: string
+                            source:
+                              type: object
+                              properties:
+                                file:
+                                  type: object
+                                  description: 'Go type: TrafficProfileFileSource'
+                                  additionalProperties: true
+                                  nullable: true
+                                kind:
+                                  type: string
+                                name:
+                                  type: string
+                                opensearch:
+                                  type: object
+                                  description: 'Go type: TrafficProfileOpenSearchSource'
+                                  additionalProperties: true
+                                  nullable: true
+                                prometheus:
+                                  type: object
+                                  description: 'Go type: TrafficProfilePrometheusSource'
+                                  additionalProperties: true
+                                  nullable: true
+                              required:
+                                - kind
+                              nullable: true
+                            source_duration:
+                              type: string
                           required:
                             - group_name
                             - peak_target
@@ -197241,6 +198181,32 @@ paths:
                               - query
                               - range
                             nullable: true
+                          sources:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                file:
+                                  type: object
+                                  description: 'Go type: TrafficProfileFileSource'
+                                  additionalProperties: true
+                                  nullable: true
+                                kind:
+                                  type: string
+                                name:
+                                  type: string
+                                opensearch:
+                                  type: object
+                                  description: 'Go type: TrafficProfileOpenSearchSource'
+                                  additionalProperties: true
+                                  nullable: true
+                                prometheus:
+                                  type: object
+                                  description: 'Go type: TrafficProfilePrometheusSource'
+                                  additionalProperties: true
+                                  nullable: true
+                              required:
+                                - kind
                         required:
                           - kind
                       source_duration:
@@ -199570,6 +200536,13 @@ paths:
                                   type: string
                                 series_name:
                                   type: string
+                                source:
+                                  type: object
+                                  description: 'Go type: TrafficProfileSourceEntry'
+                                  additionalProperties: true
+                                  nullable: true
+                                source_duration:
+                                  type: string
                               required:
                                 - group_name
                                 - peak_target
@@ -199600,6 +200573,12 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                              sources:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: TrafficProfileSourceEntry'
+                                  additionalProperties: true
                             required:
                               - kind
                           source_duration:
@@ -201014,6 +201993,13 @@ paths:
                                   type: string
                                 series_name:
                                   type: string
+                                source:
+                                  type: object
+                                  description: 'Go type: TrafficProfileSourceEntry'
+                                  additionalProperties: true
+                                  nullable: true
+                                source_duration:
+                                  type: string
                               required:
                                 - group_name
                                 - peak_target
@@ -201044,6 +202030,12 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                              sources:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: TrafficProfileSourceEntry'
+                                  additionalProperties: true
                             required:
                               - kind
                           source_duration:
@@ -210489,6 +211481,33 @@ paths:
                               type: string
                             series_name:
                               type: string
+                            source:
+                              type: object
+                              properties:
+                                file:
+                                  type: object
+                                  description: 'Go type: TrafficProfileFileSource'
+                                  additionalProperties: true
+                                  nullable: true
+                                kind:
+                                  type: string
+                                name:
+                                  type: string
+                                opensearch:
+                                  type: object
+                                  description: 'Go type: TrafficProfileOpenSearchSource'
+                                  additionalProperties: true
+                                  nullable: true
+                                prometheus:
+                                  type: object
+                                  description: 'Go type: TrafficProfilePrometheusSource'
+                                  additionalProperties: true
+                                  nullable: true
+                              required:
+                                - kind
+                              nullable: true
+                            source_duration:
+                              type: string
                           required:
                             - group_name
                             - peak_target
@@ -210569,6 +211588,32 @@ paths:
                               - query
                               - range
                             nullable: true
+                          sources:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                file:
+                                  type: object
+                                  description: 'Go type: TrafficProfileFileSource'
+                                  additionalProperties: true
+                                  nullable: true
+                                kind:
+                                  type: string
+                                name:
+                                  type: string
+                                opensearch:
+                                  type: object
+                                  description: 'Go type: TrafficProfileOpenSearchSource'
+                                  additionalProperties: true
+                                  nullable: true
+                                prometheus:
+                                  type: object
+                                  description: 'Go type: TrafficProfilePrometheusSource'
+                                  additionalProperties: true
+                                  nullable: true
+                              required:
+                                - kind
                         required:
                           - kind
                       source_duration:
@@ -216151,6 +217196,33 @@ paths:
                               type: string
                             series_name:
                               type: string
+                            source:
+                              type: object
+                              properties:
+                                file:
+                                  type: object
+                                  description: 'Go type: TrafficProfileFileSource'
+                                  additionalProperties: true
+                                  nullable: true
+                                kind:
+                                  type: string
+                                name:
+                                  type: string
+                                opensearch:
+                                  type: object
+                                  description: 'Go type: TrafficProfileOpenSearchSource'
+                                  additionalProperties: true
+                                  nullable: true
+                                prometheus:
+                                  type: object
+                                  description: 'Go type: TrafficProfilePrometheusSource'
+                                  additionalProperties: true
+                                  nullable: true
+                              required:
+                                - kind
+                              nullable: true
+                            source_duration:
+                              type: string
                           required:
                             - group_name
                             - peak_target
@@ -216231,6 +217303,32 @@ paths:
                               - query
                               - range
                             nullable: true
+                          sources:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                file:
+                                  type: object
+                                  description: 'Go type: TrafficProfileFileSource'
+                                  additionalProperties: true
+                                  nullable: true
+                                kind:
+                                  type: string
+                                name:
+                                  type: string
+                                opensearch:
+                                  type: object
+                                  description: 'Go type: TrafficProfileOpenSearchSource'
+                                  additionalProperties: true
+                                  nullable: true
+                                prometheus:
+                                  type: object
+                                  description: 'Go type: TrafficProfilePrometheusSource'
+                                  additionalProperties: true
+                                  nullable: true
+                              required:
+                                - kind
                         required:
                           - kind
                       source_duration:
@@ -221554,6 +222652,13 @@ paths:
                                   type: string
                                 series_name:
                                   type: string
+                                source:
+                                  type: object
+                                  description: 'Go type: TrafficProfileSourceEntry'
+                                  additionalProperties: true
+                                  nullable: true
+                                source_duration:
+                                  type: string
                               required:
                                 - group_name
                                 - peak_target
@@ -221584,6 +222689,12 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                              sources:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: TrafficProfileSourceEntry'
+                                  additionalProperties: true
                             required:
                               - kind
                           source_duration:
@@ -222595,6 +223706,13 @@ paths:
                                   type: string
                                 series_name:
                                   type: string
+                                source:
+                                  type: object
+                                  description: 'Go type: TrafficProfileSourceEntry'
+                                  additionalProperties: true
+                                  nullable: true
+                                source_duration:
+                                  type: string
                               required:
                                 - group_name
                                 - peak_target
@@ -222625,6 +223743,12 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                              sources:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: TrafficProfileSourceEntry'
+                                  additionalProperties: true
                             required:
                               - kind
                           source_duration:
@@ -226839,6 +227963,31 @@ paths:
                             type: string
                           series_name:
                             type: string
+                          source:
+                            type: object
+                            properties:
+                              file:
+                                type: object
+                                description: 'Go type: TrafficProfileFileSource'
+                                additionalProperties: true
+                                nullable: true
+                              kind:
+                                type: string
+                              name:
+                                type: string
+                              opensearch:
+                                type: object
+                                description: 'Go type: TrafficProfileOpenSearchSource'
+                                additionalProperties: true
+                                nullable: true
+                              prometheus:
+                                type: object
+                                description: 'Go type: TrafficProfilePrometheusSource'
+                                additionalProperties: true
+                                nullable: true
+                            nullable: true
+                          source_duration:
+                            type: string
                     refreshed_at:
                       type: string
                       format: date-time
@@ -226900,6 +228049,30 @@ paths:
                               type: object
                               additionalProperties: true
                           nullable: true
+                        sources:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              file:
+                                type: object
+                                description: 'Go type: TrafficProfileFileSource'
+                                additionalProperties: true
+                                nullable: true
+                              kind:
+                                type: string
+                              name:
+                                type: string
+                              opensearch:
+                                type: object
+                                description: 'Go type: TrafficProfileOpenSearchSource'
+                                additionalProperties: true
+                                nullable: true
+                              prometheus:
+                                type: object
+                                description: 'Go type: TrafficProfilePrometheusSource'
+                                additionalProperties: true
+                                nullable: true
                     source_duration:
                       type: string
                     target_duration:
@@ -228656,6 +229829,13 @@ paths:
                             type: string
                           series_name:
                             type: string
+                          source:
+                            type: object
+                            description: 'Go type: TrafficProfileSourceEntry'
+                            additionalProperties: true
+                            nullable: true
+                          source_duration:
+                            type: string
                     refreshed_at:
                       type: string
                       format: date-time
@@ -228680,6 +229860,12 @@ paths:
                           type: object
                           additionalProperties: true
                           nullable: true
+                        sources:
+                          type: array
+                          items:
+                            type: object
+                            description: 'Go type: TrafficProfileSourceEntry'
+                            additionalProperties: true
                     source_duration:
                       type: string
                     target_duration:

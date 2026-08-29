@@ -67,6 +67,14 @@ window policy, time/amplitude transforms, warnings, and series-to-group
 mappings. Profile-managed groups cannot also carry manual stages or a nonzero
 start offset. Unmapped groups keep their static/manual workload.
 
+For scenarios with multiple groups, the builder supports either one analyzed
+series fanned out to every group or a separate CSV/XLSX upload per group. A
+per-group profile stores a composite, non-secret source descriptor plus the
+specific file provenance and original span on each mapping. If source spans
+differ, derivation proportionally aligns them to the requested test duration,
+or to the longest selected span when no duration is supplied. Uploaded file
+contents are still not retained.
+
 VUser profiles apply each target directly through the normal local or
 distributed scaling backend, including zero. TPS profiles run in
 `goal_oriented` mode: each boundary changes the per-group adaptive target while

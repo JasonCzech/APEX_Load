@@ -2373,6 +2373,8 @@ export interface operations {
                 "points"?: Array<Record<string, unknown>>;
                 "series_key"?: string;
                 "series_name"?: string;
+                "source"?: (Record<string, unknown>) | null;
+                "source_duration"?: string;
               }>;
               "refreshed_at"?: string;
               "runtime_target"?: string;
@@ -2382,6 +2384,7 @@ export interface operations {
                 "name"?: string;
                 "opensearch"?: (Record<string, unknown>) | null;
                 "prometheus"?: (Record<string, unknown>) | null;
+                "sources"?: Array<Record<string, unknown>>;
               };
               "source_duration"?: string;
               "target_duration"?: string;
@@ -4960,6 +4963,32 @@ export interface operations {
                   "step_seconds": number;
                 };
               }) | null;
+              "sources"?: Array<{
+                "file"?: ({
+                  "filename": string;
+                  "series_column"?: string;
+                  "sheet"?: string;
+                  "timestamp_column": string;
+                  "timezone"?: string;
+                  "value_columns": Array<string>;
+                }) | null;
+                "kind": string;
+                "name"?: string;
+                "opensearch"?: ({
+                  "filter"?: unknown;
+                  "index": string;
+                  "interval": string;
+                  "metric": string;
+                  "metric_field"?: string;
+                  "range": Record<string, unknown>;
+                  "timestamp_field": string;
+                }) | null;
+                "prometheus"?: ({
+                  "label_fields"?: Array<string>;
+                  "query": string;
+                  "range": Record<string, unknown>;
+                }) | null;
+              }>;
             };
             "warnings"?: Array<string>;
           };
@@ -7381,6 +7410,8 @@ export interface operations {
                   "points": Array<Record<string, unknown>>;
                   "series_key": string;
                   "series_name": string;
+                  "source"?: (Record<string, unknown>) | null;
+                  "source_duration"?: string;
                 }>;
                 "refreshed_at": string;
                 "runtime_target": string;
@@ -7390,6 +7421,7 @@ export interface operations {
                   "name"?: string;
                   "opensearch"?: (Record<string, unknown>) | null;
                   "prometheus"?: (Record<string, unknown>) | null;
+                  "sources"?: Array<Record<string, unknown>>;
                 };
                 "source_duration": string;
                 "target_duration": string;
@@ -16310,6 +16342,8 @@ export interface operations {
                 "points"?: Array<Record<string, unknown>>;
                 "series_key"?: string;
                 "series_name"?: string;
+                "source"?: (Record<string, unknown>) | null;
+                "source_duration"?: string;
               }>;
               "refreshed_at"?: string;
               "runtime_target"?: string;
@@ -16319,6 +16353,7 @@ export interface operations {
                 "name"?: string;
                 "opensearch"?: (Record<string, unknown>) | null;
                 "prometheus"?: (Record<string, unknown>) | null;
+                "sources"?: Array<Record<string, unknown>>;
               };
               "source_duration"?: string;
               "target_duration"?: string;
@@ -16348,6 +16383,8 @@ export interface operations {
               "points"?: Array<Record<string, unknown>>;
               "series_key"?: string;
               "series_name"?: string;
+              "source"?: (Record<string, unknown>) | null;
+              "source_duration"?: string;
             }>;
             "refreshed_at"?: string;
             "runtime_target"?: string;
@@ -16357,6 +16394,7 @@ export interface operations {
               "name"?: string;
               "opensearch"?: (Record<string, unknown>) | null;
               "prometheus"?: (Record<string, unknown>) | null;
+              "sources"?: Array<Record<string, unknown>>;
             };
             "source_duration"?: string;
             "target_duration"?: string;
@@ -17472,6 +17510,8 @@ export interface operations {
                   "points": Array<Record<string, unknown>>;
                   "series_key": string;
                   "series_name": string;
+                  "source"?: (Record<string, unknown>) | null;
+                  "source_duration"?: string;
                 }>;
                 "refreshed_at": string;
                 "runtime_target": string;
@@ -17481,6 +17521,7 @@ export interface operations {
                   "name"?: string;
                   "opensearch"?: (Record<string, unknown>) | null;
                   "prometheus"?: (Record<string, unknown>) | null;
+                  "sources"?: Array<Record<string, unknown>>;
                 };
                 "source_duration": string;
                 "target_duration": string;
@@ -18399,6 +18440,14 @@ export interface operations {
               "points"?: Array<Record<string, unknown>>;
               "series_key"?: string;
               "series_name"?: string;
+              "source"?: ({
+                "file"?: (Record<string, unknown>) | null;
+                "kind"?: string;
+                "name"?: string;
+                "opensearch"?: (Record<string, unknown>) | null;
+                "prometheus"?: (Record<string, unknown>) | null;
+              }) | null;
+              "source_duration"?: string;
             }>;
             "refreshed_at"?: string;
             "runtime_target"?: string;
@@ -18427,6 +18476,13 @@ export interface operations {
                 "query"?: string;
                 "range"?: Record<string, unknown>;
               }) | null;
+              "sources"?: Array<{
+                "file"?: (Record<string, unknown>) | null;
+                "kind"?: string;
+                "name"?: string;
+                "opensearch"?: (Record<string, unknown>) | null;
+                "prometheus"?: (Record<string, unknown>) | null;
+              }>;
             };
             "source_duration"?: string;
             "target_duration"?: string;
@@ -19005,6 +19061,14 @@ export interface operations {
                 "points": Array<Record<string, unknown>>;
                 "series_key": string;
                 "series_name": string;
+                "source"?: ({
+                  "file"?: (Record<string, unknown>) | null;
+                  "kind": string;
+                  "name"?: string;
+                  "opensearch"?: (Record<string, unknown>) | null;
+                  "prometheus"?: (Record<string, unknown>) | null;
+                }) | null;
+                "source_duration"?: string;
               }>;
               "refreshed_at": string;
               "runtime_target": string;
@@ -19033,6 +19097,13 @@ export interface operations {
                   "query": string;
                   "range": Record<string, unknown>;
                 }) | null;
+                "sources"?: Array<{
+                  "file"?: (Record<string, unknown>) | null;
+                  "kind": string;
+                  "name"?: string;
+                  "opensearch"?: (Record<string, unknown>) | null;
+                  "prometheus"?: (Record<string, unknown>) | null;
+                }>;
               };
               "source_duration": string;
               "target_duration": string;
@@ -21242,6 +21313,14 @@ export interface operations {
               "points"?: Array<Record<string, unknown>>;
               "series_key"?: string;
               "series_name"?: string;
+              "source"?: ({
+                "file"?: (Record<string, unknown>) | null;
+                "kind"?: string;
+                "name"?: string;
+                "opensearch"?: (Record<string, unknown>) | null;
+                "prometheus"?: (Record<string, unknown>) | null;
+              }) | null;
+              "source_duration"?: string;
             }>;
             "refreshed_at"?: string;
             "runtime_target"?: string;
@@ -21270,6 +21349,13 @@ export interface operations {
                 "query"?: string;
                 "range"?: Record<string, unknown>;
               }) | null;
+              "sources"?: Array<{
+                "file"?: (Record<string, unknown>) | null;
+                "kind"?: string;
+                "name"?: string;
+                "opensearch"?: (Record<string, unknown>) | null;
+                "prometheus"?: (Record<string, unknown>) | null;
+              }>;
             };
             "source_duration"?: string;
             "target_duration"?: string;
@@ -23103,6 +23189,14 @@ export interface operations {
                 "points": Array<Record<string, unknown>>;
                 "series_key": string;
                 "series_name": string;
+                "source"?: ({
+                  "file"?: (Record<string, unknown>) | null;
+                  "kind": string;
+                  "name"?: string;
+                  "opensearch"?: (Record<string, unknown>) | null;
+                  "prometheus"?: (Record<string, unknown>) | null;
+                }) | null;
+                "source_duration"?: string;
               }>;
               "refreshed_at": string;
               "runtime_target": string;
@@ -23131,6 +23225,13 @@ export interface operations {
                   "query": string;
                   "range": Record<string, unknown>;
                 }) | null;
+                "sources"?: Array<{
+                  "file"?: (Record<string, unknown>) | null;
+                  "kind": string;
+                  "name"?: string;
+                  "opensearch"?: (Record<string, unknown>) | null;
+                  "prometheus"?: (Record<string, unknown>) | null;
+                }>;
               };
               "source_duration": string;
               "target_duration": string;
@@ -24946,6 +25047,32 @@ export interface operations {
           "mappings"?: Array<{
             "group_name"?: string;
             "series_key"?: string;
+            "source"?: ({
+              "file"?: ({
+                "filename"?: string;
+                "series_column"?: string;
+                "sheet"?: string;
+                "timestamp_column"?: string;
+                "timezone"?: string;
+                "value_columns"?: Array<string>;
+              }) | null;
+              "kind"?: string;
+              "name"?: string;
+              "opensearch"?: ({
+                "filter"?: unknown;
+                "index"?: string;
+                "interval"?: string;
+                "metric"?: string;
+                "metric_field"?: string;
+                "range"?: Record<string, unknown>;
+                "timestamp_field"?: string;
+              }) | null;
+              "prometheus"?: ({
+                "label_fields"?: Array<string>;
+                "query"?: string;
+                "range"?: Record<string, unknown>;
+              }) | null;
+            }) | null;
           }>;
           "project_id"?: string;
           "scenario_draft"?: {
@@ -25205,6 +25332,8 @@ export interface operations {
                 "points"?: Array<Record<string, unknown>>;
                 "series_key"?: string;
                 "series_name"?: string;
+                "source"?: (Record<string, unknown>) | null;
+                "source_duration"?: string;
               }>;
               "refreshed_at"?: string;
               "runtime_target"?: string;
@@ -25214,6 +25343,7 @@ export interface operations {
                 "name"?: string;
                 "opensearch"?: (Record<string, unknown>) | null;
                 "prometheus"?: (Record<string, unknown>) | null;
+                "sources"?: Array<Record<string, unknown>>;
               };
               "source_duration"?: string;
               "target_duration"?: string;
@@ -25267,6 +25397,32 @@ export interface operations {
                 "step_seconds"?: number;
               };
             }) | null;
+            "sources"?: Array<{
+              "file"?: ({
+                "filename"?: string;
+                "series_column"?: string;
+                "sheet"?: string;
+                "timestamp_column"?: string;
+                "timezone"?: string;
+                "value_columns"?: Array<string>;
+              }) | null;
+              "kind"?: string;
+              "name"?: string;
+              "opensearch"?: ({
+                "filter"?: unknown;
+                "index"?: string;
+                "interval"?: string;
+                "metric"?: string;
+                "metric_field"?: string;
+                "range"?: Record<string, unknown>;
+                "timestamp_field"?: string;
+              }) | null;
+              "prometheus"?: ({
+                "label_fields"?: Array<string>;
+                "query"?: string;
+                "range"?: Record<string, unknown>;
+              }) | null;
+            }>;
           };
           "target_duration"?: string;
           "value_semantics"?: Record<string, unknown>;
@@ -25415,6 +25571,33 @@ export interface operations {
               "points": Array<Record<string, unknown>>;
               "series_key": string;
               "series_name": string;
+              "source"?: ({
+                "file"?: ({
+                  "filename": string;
+                  "series_column"?: string;
+                  "sheet"?: string;
+                  "timestamp_column": string;
+                  "timezone"?: string;
+                  "value_columns": Array<string>;
+                }) | null;
+                "kind": string;
+                "name"?: string;
+                "opensearch"?: ({
+                  "filter"?: unknown;
+                  "index": string;
+                  "interval": string;
+                  "metric": string;
+                  "metric_field"?: string;
+                  "range": Record<string, unknown>;
+                  "timestamp_field": string;
+                }) | null;
+                "prometheus"?: ({
+                  "label_fields"?: Array<string>;
+                  "query": string;
+                  "range": Record<string, unknown>;
+                }) | null;
+              }) | null;
+              "source_duration"?: string;
             }>;
             "scenario_draft": {
               "assignment"?: ({
@@ -25673,6 +25856,8 @@ export interface operations {
                   "points": Array<Record<string, unknown>>;
                   "series_key": string;
                   "series_name": string;
+                  "source"?: (Record<string, unknown>) | null;
+                  "source_duration"?: string;
                 }>;
                 "refreshed_at": string;
                 "runtime_target": string;
@@ -25682,6 +25867,7 @@ export interface operations {
                   "name"?: string;
                   "opensearch"?: (Record<string, unknown>) | null;
                   "prometheus"?: (Record<string, unknown>) | null;
+                  "sources"?: Array<Record<string, unknown>>;
                 };
                 "source_duration": string;
                 "target_duration": string;
@@ -25710,6 +25896,14 @@ export interface operations {
                 "points": Array<Record<string, unknown>>;
                 "series_key": string;
                 "series_name": string;
+                "source"?: ({
+                  "file"?: (Record<string, unknown>) | null;
+                  "kind": string;
+                  "name"?: string;
+                  "opensearch"?: (Record<string, unknown>) | null;
+                  "prometheus"?: (Record<string, unknown>) | null;
+                }) | null;
+                "source_duration"?: string;
               }>;
               "refreshed_at": string;
               "runtime_target": string;
@@ -25738,6 +25932,13 @@ export interface operations {
                   "query": string;
                   "range": Record<string, unknown>;
                 }) | null;
+                "sources"?: Array<{
+                  "file"?: (Record<string, unknown>) | null;
+                  "kind": string;
+                  "name"?: string;
+                  "opensearch"?: (Record<string, unknown>) | null;
+                  "prometheus"?: (Record<string, unknown>) | null;
+                }>;
               };
               "source_duration": string;
               "target_duration": string;
@@ -27358,6 +27559,14 @@ export interface operations {
               "points"?: Array<Record<string, unknown>>;
               "series_key"?: string;
               "series_name"?: string;
+              "source"?: ({
+                "file"?: (Record<string, unknown>) | null;
+                "kind"?: string;
+                "name"?: string;
+                "opensearch"?: (Record<string, unknown>) | null;
+                "prometheus"?: (Record<string, unknown>) | null;
+              }) | null;
+              "source_duration"?: string;
             }>;
             "refreshed_at"?: string;
             "runtime_target"?: string;
@@ -27386,6 +27595,13 @@ export interface operations {
                 "query"?: string;
                 "range"?: Record<string, unknown>;
               }) | null;
+              "sources"?: Array<{
+                "file"?: (Record<string, unknown>) | null;
+                "kind"?: string;
+                "name"?: string;
+                "opensearch"?: (Record<string, unknown>) | null;
+                "prometheus"?: (Record<string, unknown>) | null;
+              }>;
             };
             "source_duration"?: string;
             "target_duration"?: string;
@@ -34264,6 +34480,8 @@ export interface operations {
                   "points": Array<Record<string, unknown>>;
                   "series_key": string;
                   "series_name": string;
+                  "source"?: (Record<string, unknown>) | null;
+                  "source_duration"?: string;
                 }>;
                 "refreshed_at": string;
                 "runtime_target": string;
@@ -34273,6 +34491,7 @@ export interface operations {
                   "name"?: string;
                   "opensearch"?: (Record<string, unknown>) | null;
                   "prometheus"?: (Record<string, unknown>) | null;
+                  "sources"?: Array<Record<string, unknown>>;
                 };
                 "source_duration": string;
                 "target_duration": string;
@@ -35117,6 +35336,8 @@ export interface operations {
                   "points": Array<Record<string, unknown>>;
                   "series_key": string;
                   "series_name": string;
+                  "source"?: (Record<string, unknown>) | null;
+                  "source_duration"?: string;
                 }>;
                 "refreshed_at": string;
                 "runtime_target": string;
@@ -35126,6 +35347,7 @@ export interface operations {
                   "name"?: string;
                   "opensearch"?: (Record<string, unknown>) | null;
                   "prometheus"?: (Record<string, unknown>) | null;
+                  "sources"?: Array<Record<string, unknown>>;
                 };
                 "source_duration": string;
                 "target_duration": string;
@@ -35605,6 +35827,8 @@ export interface operations {
                   "points": Array<Record<string, unknown>>;
                   "series_key": string;
                   "series_name": string;
+                  "source"?: (Record<string, unknown>) | null;
+                  "source_duration"?: string;
                 }>;
                 "refreshed_at": string;
                 "runtime_target": string;
@@ -35614,6 +35838,7 @@ export interface operations {
                   "name"?: string;
                   "opensearch"?: (Record<string, unknown>) | null;
                   "prometheus"?: (Record<string, unknown>) | null;
+                  "sources"?: Array<Record<string, unknown>>;
                 };
                 "source_duration": string;
                 "target_duration": string;
@@ -37657,6 +37882,14 @@ export interface operations {
                 "points": Array<Record<string, unknown>>;
                 "series_key": string;
                 "series_name": string;
+                "source"?: ({
+                  "file"?: (Record<string, unknown>) | null;
+                  "kind": string;
+                  "name"?: string;
+                  "opensearch"?: (Record<string, unknown>) | null;
+                  "prometheus"?: (Record<string, unknown>) | null;
+                }) | null;
+                "source_duration"?: string;
               }>;
               "refreshed_at": string;
               "runtime_target": string;
@@ -37685,6 +37918,13 @@ export interface operations {
                   "query": string;
                   "range": Record<string, unknown>;
                 }) | null;
+                "sources"?: Array<{
+                  "file"?: (Record<string, unknown>) | null;
+                  "kind": string;
+                  "name"?: string;
+                  "opensearch"?: (Record<string, unknown>) | null;
+                  "prometheus"?: (Record<string, unknown>) | null;
+                }>;
               };
               "source_duration": string;
               "target_duration": string;
@@ -41450,6 +41690,14 @@ export interface operations {
                 "points": Array<Record<string, unknown>>;
                 "series_key": string;
                 "series_name": string;
+                "source"?: ({
+                  "file"?: (Record<string, unknown>) | null;
+                  "kind": string;
+                  "name"?: string;
+                  "opensearch"?: (Record<string, unknown>) | null;
+                  "prometheus"?: (Record<string, unknown>) | null;
+                }) | null;
+                "source_duration"?: string;
               }>;
               "refreshed_at": string;
               "runtime_target": string;
@@ -41478,6 +41726,13 @@ export interface operations {
                   "query": string;
                   "range": Record<string, unknown>;
                 }) | null;
+                "sources"?: Array<{
+                  "file"?: (Record<string, unknown>) | null;
+                  "kind": string;
+                  "name"?: string;
+                  "opensearch"?: (Record<string, unknown>) | null;
+                  "prometheus"?: (Record<string, unknown>) | null;
+                }>;
               };
               "source_duration": string;
               "target_duration": string;
@@ -42948,6 +43203,8 @@ export interface operations {
                   "points": Array<Record<string, unknown>>;
                   "series_key": string;
                   "series_name": string;
+                  "source"?: (Record<string, unknown>) | null;
+                  "source_duration"?: string;
                 }>;
                 "refreshed_at": string;
                 "runtime_target": string;
@@ -42957,6 +43214,7 @@ export interface operations {
                   "name"?: string;
                   "opensearch"?: (Record<string, unknown>) | null;
                   "prometheus"?: (Record<string, unknown>) | null;
+                  "sources"?: Array<Record<string, unknown>>;
                 };
                 "source_duration": string;
                 "target_duration": string;
@@ -43310,6 +43568,8 @@ export interface operations {
                   "points": Array<Record<string, unknown>>;
                   "series_key": string;
                   "series_name": string;
+                  "source"?: (Record<string, unknown>) | null;
+                  "source_duration"?: string;
                 }>;
                 "refreshed_at": string;
                 "runtime_target": string;
@@ -43319,6 +43579,7 @@ export interface operations {
                   "name"?: string;
                   "opensearch"?: (Record<string, unknown>) | null;
                   "prometheus"?: (Record<string, unknown>) | null;
+                  "sources"?: Array<Record<string, unknown>>;
                 };
                 "source_duration": string;
                 "target_duration": string;
@@ -53606,6 +53867,14 @@ export interface operations {
                 "points": Array<Record<string, unknown>>;
                 "series_key": string;
                 "series_name": string;
+                "source"?: ({
+                  "file"?: (Record<string, unknown>) | null;
+                  "kind": string;
+                  "name"?: string;
+                  "opensearch"?: (Record<string, unknown>) | null;
+                  "prometheus"?: (Record<string, unknown>) | null;
+                }) | null;
+                "source_duration"?: string;
               }>;
               "refreshed_at": string;
               "runtime_target": string;
@@ -53634,6 +53903,13 @@ export interface operations {
                   "query": string;
                   "range": Record<string, unknown>;
                 }) | null;
+                "sources"?: Array<{
+                  "file"?: (Record<string, unknown>) | null;
+                  "kind": string;
+                  "name"?: string;
+                  "opensearch"?: (Record<string, unknown>) | null;
+                  "prometheus"?: (Record<string, unknown>) | null;
+                }>;
               };
               "source_duration": string;
               "target_duration": string;
@@ -54055,6 +54331,8 @@ export interface operations {
               "points"?: Array<Record<string, unknown>>;
               "series_key"?: string;
               "series_name"?: string;
+              "source"?: (Record<string, unknown>) | null;
+              "source_duration"?: string;
             }>;
             "refreshed_at"?: string;
             "runtime_target"?: string;
@@ -54064,6 +54342,7 @@ export interface operations {
               "name"?: string;
               "opensearch"?: (Record<string, unknown>) | null;
               "prometheus"?: (Record<string, unknown>) | null;
+              "sources"?: Array<Record<string, unknown>>;
             };
             "source_duration"?: string;
             "target_duration"?: string;
@@ -59854,6 +60133,8 @@ export interface operations {
                   "points": Array<Record<string, unknown>>;
                   "series_key": string;
                   "series_name": string;
+                  "source"?: (Record<string, unknown>) | null;
+                  "source_duration"?: string;
                 }>;
                 "refreshed_at": string;
                 "runtime_target": string;
@@ -59863,6 +60144,7 @@ export interface operations {
                   "name"?: string;
                   "opensearch"?: (Record<string, unknown>) | null;
                   "prometheus"?: (Record<string, unknown>) | null;
+                  "sources"?: Array<Record<string, unknown>>;
                 };
                 "source_duration": string;
                 "target_duration": string;
@@ -61036,6 +61318,8 @@ export interface operations {
                   "points": Array<Record<string, unknown>>;
                   "series_key": string;
                   "series_name": string;
+                  "source"?: (Record<string, unknown>) | null;
+                  "source_duration"?: string;
                 }>;
                 "refreshed_at": string;
                 "runtime_target": string;
@@ -61045,6 +61329,7 @@ export interface operations {
                   "name"?: string;
                   "opensearch"?: (Record<string, unknown>) | null;
                   "prometheus"?: (Record<string, unknown>) | null;
+                  "sources"?: Array<Record<string, unknown>>;
                 };
                 "source_duration": string;
                 "target_duration": string;
@@ -62218,6 +62503,8 @@ export interface operations {
                   "points": Array<Record<string, unknown>>;
                   "series_key": string;
                   "series_name": string;
+                  "source"?: (Record<string, unknown>) | null;
+                  "source_duration"?: string;
                 }>;
                 "refreshed_at": string;
                 "runtime_target": string;
@@ -62227,6 +62514,7 @@ export interface operations {
                   "name"?: string;
                   "opensearch"?: (Record<string, unknown>) | null;
                   "prometheus"?: (Record<string, unknown>) | null;
+                  "sources"?: Array<Record<string, unknown>>;
                 };
                 "source_duration": string;
                 "target_duration": string;
@@ -63400,6 +63688,8 @@ export interface operations {
                   "points": Array<Record<string, unknown>>;
                   "series_key": string;
                   "series_name": string;
+                  "source"?: (Record<string, unknown>) | null;
+                  "source_duration"?: string;
                 }>;
                 "refreshed_at": string;
                 "runtime_target": string;
@@ -63409,6 +63699,7 @@ export interface operations {
                   "name"?: string;
                   "opensearch"?: (Record<string, unknown>) | null;
                   "prometheus"?: (Record<string, unknown>) | null;
+                  "sources"?: Array<Record<string, unknown>>;
                 };
                 "source_duration": string;
                 "target_duration": string;
@@ -64582,6 +64873,8 @@ export interface operations {
                   "points": Array<Record<string, unknown>>;
                   "series_key": string;
                   "series_name": string;
+                  "source"?: (Record<string, unknown>) | null;
+                  "source_duration"?: string;
                 }>;
                 "refreshed_at": string;
                 "runtime_target": string;
@@ -64591,6 +64884,7 @@ export interface operations {
                   "name"?: string;
                   "opensearch"?: (Record<string, unknown>) | null;
                   "prometheus"?: (Record<string, unknown>) | null;
+                  "sources"?: Array<Record<string, unknown>>;
                 };
                 "source_duration": string;
                 "target_duration": string;
@@ -71160,6 +71454,8 @@ export interface operations {
                   "points": Array<Record<string, unknown>>;
                   "series_key": string;
                   "series_name": string;
+                  "source"?: (Record<string, unknown>) | null;
+                  "source_duration"?: string;
                 }>;
                 "refreshed_at": string;
                 "runtime_target": string;
@@ -71169,6 +71465,7 @@ export interface operations {
                   "name"?: string;
                   "opensearch"?: (Record<string, unknown>) | null;
                   "prometheus"?: (Record<string, unknown>) | null;
+                  "sources"?: Array<Record<string, unknown>>;
                 };
                 "source_duration": string;
                 "target_duration": string;
@@ -82122,6 +82419,14 @@ export interface operations {
                 "points": Array<Record<string, unknown>>;
                 "series_key": string;
                 "series_name": string;
+                "source"?: ({
+                  "file"?: (Record<string, unknown>) | null;
+                  "kind": string;
+                  "name"?: string;
+                  "opensearch"?: (Record<string, unknown>) | null;
+                  "prometheus"?: (Record<string, unknown>) | null;
+                }) | null;
+                "source_duration"?: string;
               }>;
               "refreshed_at": string;
               "runtime_target": string;
@@ -82150,6 +82455,13 @@ export interface operations {
                   "query": string;
                   "range": Record<string, unknown>;
                 }) | null;
+                "sources"?: Array<{
+                  "file"?: (Record<string, unknown>) | null;
+                  "kind": string;
+                  "name"?: string;
+                  "opensearch"?: (Record<string, unknown>) | null;
+                  "prometheus"?: (Record<string, unknown>) | null;
+                }>;
               };
               "source_duration": string;
               "target_duration": string;
@@ -86229,6 +86541,14 @@ export interface operations {
               "points"?: Array<Record<string, unknown>>;
               "series_key"?: string;
               "series_name"?: string;
+              "source"?: ({
+                "file"?: (Record<string, unknown>) | null;
+                "kind"?: string;
+                "name"?: string;
+                "opensearch"?: (Record<string, unknown>) | null;
+                "prometheus"?: (Record<string, unknown>) | null;
+              }) | null;
+              "source_duration"?: string;
             }>;
             "refreshed_at"?: string;
             "runtime_target"?: string;
@@ -86257,6 +86577,13 @@ export interface operations {
                 "query"?: string;
                 "range"?: Record<string, unknown>;
               }) | null;
+              "sources"?: Array<{
+                "file"?: (Record<string, unknown>) | null;
+                "kind"?: string;
+                "name"?: string;
+                "opensearch"?: (Record<string, unknown>) | null;
+                "prometheus"?: (Record<string, unknown>) | null;
+              }>;
             };
             "source_duration"?: string;
             "target_duration"?: string;
@@ -86835,6 +87162,14 @@ export interface operations {
                 "points": Array<Record<string, unknown>>;
                 "series_key": string;
                 "series_name": string;
+                "source"?: ({
+                  "file"?: (Record<string, unknown>) | null;
+                  "kind": string;
+                  "name"?: string;
+                  "opensearch"?: (Record<string, unknown>) | null;
+                  "prometheus"?: (Record<string, unknown>) | null;
+                }) | null;
+                "source_duration"?: string;
               }>;
               "refreshed_at": string;
               "runtime_target": string;
@@ -86863,6 +87198,13 @@ export interface operations {
                   "query": string;
                   "range": Record<string, unknown>;
                 }) | null;
+                "sources"?: Array<{
+                  "file"?: (Record<string, unknown>) | null;
+                  "kind": string;
+                  "name"?: string;
+                  "opensearch"?: (Record<string, unknown>) | null;
+                  "prometheus"?: (Record<string, unknown>) | null;
+                }>;
               };
               "source_duration": string;
               "target_duration": string;
@@ -92996,6 +93338,14 @@ export interface operations {
               "points"?: Array<Record<string, unknown>>;
               "series_key"?: string;
               "series_name"?: string;
+              "source"?: ({
+                "file"?: (Record<string, unknown>) | null;
+                "kind"?: string;
+                "name"?: string;
+                "opensearch"?: (Record<string, unknown>) | null;
+                "prometheus"?: (Record<string, unknown>) | null;
+              }) | null;
+              "source_duration"?: string;
             }>;
             "refreshed_at"?: string;
             "runtime_target"?: string;
@@ -93024,6 +93374,13 @@ export interface operations {
                 "query"?: string;
                 "range"?: Record<string, unknown>;
               }) | null;
+              "sources"?: Array<{
+                "file"?: (Record<string, unknown>) | null;
+                "kind"?: string;
+                "name"?: string;
+                "opensearch"?: (Record<string, unknown>) | null;
+                "prometheus"?: (Record<string, unknown>) | null;
+              }>;
             };
             "source_duration"?: string;
             "target_duration"?: string;

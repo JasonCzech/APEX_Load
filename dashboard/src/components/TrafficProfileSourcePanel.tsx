@@ -26,6 +26,12 @@ interface Props {
 }
 
 const previewLimit = 1000
+const allGroupsMapping = '__all_groups__'
+
+interface GroupUploadSelection {
+  analysis: TrafficProfileAnalyzeResponse
+  seriesKey: string
+}
 
 function sample<T>(values: T[], limit = previewLimit): T[] {
   if (values.length <= limit) return values
@@ -66,8 +72,10 @@ export default function TrafficProfileSourcePanel({ projectId, groupNames, scena
   const savedOpenSearch = savedSource?.opensearch
   const savedRange = savedQuery?.range || savedOpenSearch?.range
   const [capabilities, setCapabilities] = useState<TrafficProfileSourcesResponse | null>(null)
-  const [sourceKind, setSourceKind] = useState<'file' | 'prometheus' | 'opensearch'>(savedSource?.kind || 'file')
+  const [assignmentMode, setAssignmentMode] = useState<'shared' | 'per_group'>(savedSource?.kind === 'multiple' ? 'per_group' : 'shared')
+  const [sourceKind, setSourceKind] = useState<'file' | 'prometheus' | 'opensearch'>(savedSource?.kind === 'prometheus' || savedSource?.kind === 'opensearch' ? savedSource.kind : 'file')
   const [file, setFile] = useState<File | null>(null)
+  const [groupUploads, setGroupUploads] = useState<Record<string, GroupUploadSelection>>({})
   const [analysis, setAnalysis] = useState<TrafficProfileAnalyzeResponse | null>(null)
   const [sheet, setSheet] = useState(savedSource?.file?.sheet || '')
   const [timestampColumn, setTimestampColumn] = useState(savedSource?.file?.timestamp_column || '')
@@ -108,7 +116,7 @@ export default function TrafficProfileSourcePanel({ projectId, groupNames, scena
 
   useEffect(() => {
     setDerived(null)
-  }, [amplitude, amplitudeMode, gapPolicy, mappings, peakDuration, semantics, targetDuration, windowEnd, windowMode, windowStart])
+  }, [amplitude, amplitudeMode, assignmentMode, gapPolicy, groupUploads, mappings, peakDuration, semantics, targetDuration, windowEnd, windowMode, windowStart])
 
   const selectedSheet = analysis?.sheets?.find(candidate => candidate.name === sheet) || analysis?.sheets?.[0]
 
@@ -145,6 +153,9 @@ export default function TrafficProfileSourcePanel({ projectId, groupNames, scena
 
   const seedMappings = (series: TrafficProfileSeries[]) => {
     setMappings(current => {
+      if (assignmentMode === 'shared' && groupNames.length > 1) {
+        return series[0] ? { [series[0].key]: allGroupsMapping } : {}
+      }
       const next = { ...current }
       series.forEach((item, position) => { if (!next[item.key] && groupNames[position]) next[item.key] = groupNames[position] })
       return next
@@ -164,8 +175,31 @@ export default function TrafficProfileSourcePanel({ projectId, groupNames, scena
   }
 
   const derive = async () => {
-    const series = (analysis?.series || []).map(item => item.series)
-    const selectedMappings = series.flatMap(item => mappings[item.key] ? [{ series_key: item.key, group_name: mappings[item.key] }] : [])
+    let source: TrafficProfileSource
+    let series: TrafficProfileSeries[]
+    let selectedMappings: TrafficProfileDeriveRequest['mappings']
+    if (assignmentMode === 'per_group') {
+      const selections = groupNames.flatMap((groupName, position) => {
+        const upload = groupUploads[groupName]
+        const selected = upload?.analysis.series?.find(item => item.series.key === upload.seriesKey)?.series
+        if (!upload || !selected) return []
+        const keyedSeries = { ...selected, key: `group-${position + 1}:${selected.key}` }
+        return [{ groupName, source: upload.analysis.source, series: keyedSeries }]
+      })
+      if (selections.length !== groupNames.length) { setError('Analyze and select a workload series for every scenario group.'); return }
+      source = { kind: 'multiple', name: 'Per-group production traffic files', sources: selections.map(item => item.source) }
+      series = selections.map(item => item.series)
+      selectedMappings = selections.map(item => ({ series_key: item.series.key, group_name: item.groupName, source: item.source }))
+    } else {
+      source = analysis?.source || querySource()
+      series = (analysis?.series || []).map(item => item.series)
+      selectedMappings = series.flatMap(item => {
+        const target = mappings[item.key]
+        if (!target) return []
+        if (target === allGroupsMapping) return groupNames.map(groupName => ({ series_key: item.key, group_name: groupName }))
+        return [{ series_key: item.key, group_name: target }]
+      })
+    }
     if (!selectedMappings.length) { setError('Map at least one series to a scenario group.'); return }
     if (new Set(selectedMappings.map(item => item.group_name)).size !== selectedMappings.length) { setError('Each scenario group can be mapped from only one series.'); return }
     const mappedGroups = new Set(selectedMappings.map(item => item.group_name))
@@ -181,7 +215,7 @@ export default function TrafficProfileSourcePanel({ projectId, groupNames, scena
       if (!Number.isFinite(amplitude) || amplitude < 0) throw new Error('Amplitude must be zero or greater.')
       const payload: TrafficProfileDeriveRequest = {
         project_id: projectId,
-        source: analysis?.source || querySource(),
+        source,
         series,
         mappings: selectedMappings,
         value_semantics: semantics,
@@ -196,7 +230,9 @@ export default function TrafficProfileSourcePanel({ projectId, groupNames, scena
   }
 
   const chartData = useMemo(() => {
-    const raw = analysis?.series?.[0]?.series.points || []
+    const firstGroupUpload = groupNames.map(name => groupUploads[name]).find(Boolean)
+    const selectedGroupSeries = firstGroupUpload?.analysis.series?.find(item => item.series.key === firstGroupUpload.seriesKey)?.series
+    const raw = (assignmentMode === 'per_group' ? selectedGroupSeries : analysis?.series?.[0]?.series)?.points || []
     const points = derived?.preview?.[0]?.points || []
     const oldPoints = existingProfile?.mappings?.[0]?.points || []
     if (!raw.length && !points.length && !oldPoints.length) return []
@@ -207,7 +243,13 @@ export default function TrafficProfileSourcePanel({ projectId, groupNames, scena
     sample(points).forEach(point => rows.push({ elapsed: point.offset_ms, target: point.target }))
     sample(oldPoints).forEach(point => rows.push({ elapsed: point.offset_ms, oldTarget: point.target }))
     return rows.sort((left, right) => left.elapsed - right.elapsed)
-  }, [analysis, derived, existingProfile])
+  }, [analysis, assignmentMode, derived, existingProfile, groupNames, groupUploads])
+
+  const perGroupReady = groupNames.length > 1 && groupNames.every(name => {
+    const upload = groupUploads[name]
+    return Boolean(upload?.analysis.series?.some(item => item.series.key === upload.seriesKey))
+  })
+  const hasAnalyzedData = assignmentMode === 'per_group' ? perGroupReady : Boolean(analysis?.series?.length)
 
   const sourceAvailable = (kind: string) => {
     if (kind === 'file') return true
@@ -217,40 +259,60 @@ export default function TrafficProfileSourcePanel({ projectId, groupNames, scena
 
   return (
     <div className="traffic-profile-panel">
-      <div className="scenario-source-toggle" aria-label="Traffic profile source">
-        {(['file', 'prometheus', 'opensearch'] as const).map(kind => (
-          <button key={kind} type="button" className={`mode-chip ${sourceKind === kind ? 'active' : ''}`} disabled={!sourceAvailable(kind)} onClick={() => { setSourceKind(kind); setAnalysis(null); setDerived(null) }}>{kind === 'file' ? 'CSV / XLSX' : kind === 'prometheus' ? 'Prometheus' : 'OpenSearch'}</button>
-        ))}
-      </div>
+      {groupNames.length > 1 && <div className="traffic-profile-assignment-mode">
+        <span className="traffic-profile-section-label">Workload assignment</span>
+        <div className="scenario-source-toggle" aria-label="Workload assignment mode">
+          <button type="button" className={`mode-chip ${assignmentMode === 'shared' ? 'active' : ''}`} onClick={() => setAssignmentMode('shared')}>One profile for all groups</button>
+          <button type="button" className={`mode-chip ${assignmentMode === 'per_group' ? 'active' : ''}`} onClick={() => setAssignmentMode('per_group')}>Separate file per group</button>
+        </div>
+        <p className="secondary">{assignmentMode === 'shared' ? `The selected series will be copied to all ${groupNames.length} groups.` : 'Upload and select an independent production series for each group.'}</p>
+      </div>}
 
-      {sourceKind === 'file' ? (
-        <>
-          <ImportDropzone accept=".csv,.tsv,.txt,.xlsx" file={file} onFile={next => {
-            setFile(next)
-            setAnalysis(null)
-            setDerived(null)
-            setSheet('')
-            setTimestampColumn('')
-            setValueColumns([])
-            setSeriesColumn('')
-            setError('')
-          }} dropHint="Drop a production traffic CSV or XLSX file" onError={setError} disabled={busy} />
-          {analysis?.sheets?.length ? <div className="settings-grid compact-grid">
-            <label><span>Worksheet</span><select value={sheet} onChange={event => { setSheet(event.target.value); setTimestampColumn(''); setValueColumns([]); setSeriesColumn('') }}>{analysis.sheets.map(item => <option key={item.name}>{item.name}</option>)}</select></label>
-            <label><span>Timestamp column</span><select value={timestampColumn} onChange={event => setTimestampColumn(event.target.value)}><option value="">Select…</option>{selectedSheet?.columns.map(column => <option key={column}>{column}</option>)}</select></label>
-            <label><span>Value columns (select one or more)</span><select multiple size={Math.min(5, Math.max(2, selectedSheet?.columns.length || 2))} value={valueColumns} onChange={event => setValueColumns(Array.from(event.currentTarget.selectedOptions, option => option.value))}>{selectedSheet?.columns.map(column => <option key={column}>{column}</option>)}</select></label>
-            <label><span>Optional series column</span><select value={seriesColumn} onChange={event => setSeriesColumn(event.target.value)}><option value="">None</option>{selectedSheet?.columns.map(column => <option key={column}>{column}</option>)}</select></label>
-            <label><span>Timezone for naive timestamps</span><input value={timezone} onChange={event => setTimezone(event.target.value)} placeholder="America/New_York" /></label>
-          </div> : null}
-        </>
-      ) : sourceKind === 'prometheus' ? (
-        <div className="settings-grid compact-grid"><label className="span-2"><span>PromQL</span><textarea value={query} onChange={event => setQuery(event.target.value)} /></label><QueryRangeFields mode={rangeMode} setMode={setRangeMode} lookback={lookback} setLookback={setLookback} start={rangeStart} setStart={setRangeStart} end={rangeEnd} setEnd={setRangeEnd} stepSeconds={stepSeconds} setStepSeconds={setStepSeconds} /></div>
-      ) : (
-        <div className="settings-grid compact-grid"><label><span>Index</span><input value={index} onChange={event => setIndex(event.target.value)} /></label><label><span>Timestamp field</span><input value={timestampField} onChange={event => setTimestampField(event.target.value)} /></label><label><span>Metric</span><select value={metric} onChange={event => setMetric(event.target.value as typeof metric)}><option value="count">Count</option><option value="sum">Sum</option><option value="avg">Average</option></select></label>{metric !== 'count' && <label><span>Metric field</span><input value={metricField} onChange={event => setMetricField(event.target.value)} /></label>}<label className="span-2"><span>Optional filter Query DSL</span><textarea value={openSearchFilter} onChange={event => setOpenSearchFilter(event.target.value)} placeholder={'{"term":{"environment":"production"}}'} /></label><QueryRangeFields mode={rangeMode} setMode={setRangeMode} lookback={lookback} setLookback={setLookback} start={rangeStart} setStart={setRangeStart} end={rangeEnd} setEnd={setRangeEnd} stepSeconds={stepSeconds} setStepSeconds={setStepSeconds} /></div>
-      )}
-      <button type="button" className="btn btn-secondary" onClick={() => void analyze()} disabled={busy || !sourceAvailable(sourceKind) || (sourceKind === 'file' && !file)}>{busy ? 'Working…' : analysis?.series?.length ? 'Re-analyze' : 'Analyze source'}</button>
+      {assignmentMode === 'per_group' ? (
+        <div className="traffic-profile-group-uploads">
+          {groupNames.map(groupName => <GroupFileUploadCard key={groupName} groupName={groupName} projectId={projectId} onReady={selection => setGroupUploads(current => {
+            const next = { ...current }
+            if (selection) next[groupName] = selection
+            else delete next[groupName]
+            return next
+          })} />)}
+        </div>
+      ) : <>
+        <div className="scenario-source-toggle" aria-label="Traffic profile source">
+          {(['file', 'prometheus', 'opensearch'] as const).map(kind => (
+            <button key={kind} type="button" className={`mode-chip ${sourceKind === kind ? 'active' : ''}`} disabled={!sourceAvailable(kind)} onClick={() => { setSourceKind(kind); setAnalysis(null); setDerived(null) }}>{kind === 'file' ? 'CSV / XLSX' : kind === 'prometheus' ? 'Prometheus' : 'OpenSearch'}</button>
+          ))}
+        </div>
 
-      {analysis?.series?.length ? <>
+        {sourceKind === 'file' ? (
+          <>
+            <ImportDropzone accept=".csv,.tsv,.txt,.xlsx" file={file} onFile={next => {
+              setFile(next)
+              setAnalysis(null)
+              setDerived(null)
+              setSheet('')
+              setTimestampColumn('')
+              setValueColumns([])
+              setSeriesColumn('')
+              setError('')
+            }} dropHint="Drop a production traffic CSV or XLSX file" onError={setError} disabled={busy} />
+            {analysis?.sheets?.length ? <div className="settings-grid compact-grid">
+              <label><span>Worksheet</span><select value={sheet} onChange={event => { setSheet(event.target.value); setTimestampColumn(''); setValueColumns([]); setSeriesColumn('') }}>{analysis.sheets.map(item => <option key={item.name}>{item.name}</option>)}</select></label>
+              <label><span>Timestamp column</span><select value={timestampColumn} onChange={event => setTimestampColumn(event.target.value)}><option value="">Select…</option>{selectedSheet?.columns.map(column => <option key={column}>{column}</option>)}</select></label>
+              <label><span>Value columns (select one or more)</span><select multiple size={Math.min(5, Math.max(2, selectedSheet?.columns.length || 2))} value={valueColumns} onChange={event => setValueColumns(Array.from(event.currentTarget.selectedOptions, option => option.value))}>{selectedSheet?.columns.map(column => <option key={column}>{column}</option>)}</select></label>
+              <label><span>Optional series column</span><select value={seriesColumn} onChange={event => setSeriesColumn(event.target.value)}><option value="">None</option>{selectedSheet?.columns.map(column => <option key={column}>{column}</option>)}</select></label>
+              <label><span>Timezone for naive timestamps</span><input value={timezone} onChange={event => setTimezone(event.target.value)} placeholder="America/New_York" /></label>
+            </div> : null}
+          </>
+        ) : sourceKind === 'prometheus' ? (
+          <div className="settings-grid compact-grid"><label className="span-2"><span>PromQL</span><textarea value={query} onChange={event => setQuery(event.target.value)} /></label><QueryRangeFields mode={rangeMode} setMode={setRangeMode} lookback={lookback} setLookback={setLookback} start={rangeStart} setStart={setRangeStart} end={rangeEnd} setEnd={setRangeEnd} stepSeconds={stepSeconds} setStepSeconds={setStepSeconds} /></div>
+        ) : (
+          <div className="settings-grid compact-grid"><label><span>Index</span><input value={index} onChange={event => setIndex(event.target.value)} /></label><label><span>Timestamp field</span><input value={timestampField} onChange={event => setTimestampField(event.target.value)} /></label><label><span>Metric</span><select value={metric} onChange={event => setMetric(event.target.value as typeof metric)}><option value="count">Count</option><option value="sum">Sum</option><option value="avg">Average</option></select></label>{metric !== 'count' && <label><span>Metric field</span><input value={metricField} onChange={event => setMetricField(event.target.value)} /></label>}<label className="span-2"><span>Optional filter Query DSL</span><textarea value={openSearchFilter} onChange={event => setOpenSearchFilter(event.target.value)} placeholder={'{"term":{"environment":"production"}}'} /></label><QueryRangeFields mode={rangeMode} setMode={setRangeMode} lookback={lookback} setLookback={setLookback} start={rangeStart} setStart={setRangeStart} end={rangeEnd} setEnd={setRangeEnd} stepSeconds={stepSeconds} setStepSeconds={setStepSeconds} /></div>
+        )}
+        <button type="button" className="btn btn-secondary" onClick={() => void analyze()} disabled={busy || !sourceAvailable(sourceKind) || (sourceKind === 'file' && !file)}>{busy ? 'Working…' : analysis?.series?.length ? 'Re-analyze' : 'Analyze source'}</button>
+      </>}
+
+      {hasAnalyzedData ? <>
         <div className="settings-grid compact-grid">
           <label><span>Values represent</span><select value={semantics} onChange={event => setSemantics(event.target.value as TrafficProfileValueSemantics)}><option value="transactions_per_bucket">Transactions per bucket</option><option value="cumulative_counter">Cumulative counter</option><option value="tps">TPS</option><option value="vusers">VUsers</option></select></label>
           <label><span>Gap policy</span><select value={gapPolicy} onChange={event => setGapPolicy(event.target.value as TrafficProfileGapPolicy)}><option value="hold">Hold previous</option><option value="zero">Insert zero</option><option value="drop">Drop missing</option></select></label>
@@ -260,7 +322,7 @@ export default function TrafficProfileSourcePanel({ projectId, groupNames, scena
           <label><span>Test duration (blank = 1:1)</span><input value={targetDuration} onChange={event => setTargetDuration(event.target.value)} placeholder="8h" /></label>
           <label><span>Amplitude</span><select value={amplitudeMode} onChange={event => setAmplitudeMode(event.target.value as typeof amplitudeMode)}><option value="factor">Multiply by</option><option value="peak">Scale peak to</option></select><input type="number" min={0} step="any" value={amplitude} onChange={event => setAmplitude(Number(event.target.value))} /></label>
         </div>
-        <div className="data-table"><table><thead><tr><th>Series</th><th>Points</th><th>Cadence</th><th>Source peak</th><th>Scenario group</th></tr></thead><tbody>{analysis.series.map(item => <tr key={item.series.key}><td>{item.series.name}</td><td>{item.stats.count.toLocaleString()}</td><td>{Math.round(item.stats.detected_bucket / 1e9)}s</td><td>{item.stats.max}</td><td><select value={mappings[item.series.key] || ''} onChange={event => setMappings(current => ({ ...current, [item.series.key]: event.target.value }))}><option value="">Ignore</option>{groupNames.map(name => <option key={name}>{name}</option>)}</select></td></tr>)}</tbody></table></div>
+        {assignmentMode === 'shared' && analysis?.series?.length ? <div className="data-table"><table><thead><tr><th>Series</th><th>Points</th><th>Cadence</th><th>Source peak</th><th>Apply to</th></tr></thead><tbody>{analysis.series.map(item => <tr key={item.series.key}><td>{item.series.name}</td><td>{item.stats.count.toLocaleString()}</td><td>{Math.round(item.stats.detected_bucket / 1e9)}s</td><td>{item.stats.max}</td><td><select aria-label={`Apply ${item.series.name} to`} value={mappings[item.series.key] || ''} onChange={event => setMappings(current => ({ ...current, [item.series.key]: event.target.value }))}><option value="">Ignore</option>{groupNames.length > 1 && <option value={allGroupsMapping}>All groups</option>}{groupNames.map(name => <option key={name}>{name}</option>)}</select></td></tr>)}</tbody></table></div> : null}
         <button type="button" className="btn btn-primary" disabled={busy} onClick={() => void derive()}>Build profile preview</button>
       </> : null}
 
@@ -269,6 +331,90 @@ export default function TrafficProfileSourcePanel({ projectId, groupNames, scena
       {error && <div className="form-error" role="alert">{error}</div>}
     </div>
   )
+}
+
+interface GroupFileUploadCardProps {
+  groupName: string
+  projectId?: string
+  onReady: (selection: GroupUploadSelection | null) => void
+}
+
+function GroupFileUploadCard({ groupName, projectId, onReady }: GroupFileUploadCardProps) {
+  const api = useApi()
+  const [file, setFile] = useState<File | null>(null)
+  const [analysis, setAnalysis] = useState<TrafficProfileAnalyzeResponse | null>(null)
+  const [sheet, setSheet] = useState('')
+  const [timestampColumn, setTimestampColumn] = useState('')
+  const [valueColumns, setValueColumns] = useState<string[]>([])
+  const [seriesColumn, setSeriesColumn] = useState('')
+  const [timezone, setTimezone] = useState('UTC')
+  const [seriesKey, setSeriesKey] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const selectedSheet = analysis?.sheets?.find(candidate => candidate.name === sheet) || analysis?.sheets?.[0]
+  const ready = Boolean(seriesKey && analysis?.series?.some(item => item.series.key === seriesKey))
+
+  const clearSelection = () => {
+    setAnalysis(null)
+    setSheet('')
+    setTimestampColumn('')
+    setValueColumns([])
+    setSeriesColumn('')
+    setSeriesKey('')
+    setError('')
+    onReady(null)
+  }
+
+  const analyze = async () => {
+    if (!file) return
+    const form = new FormData()
+    if (projectId) form.set('project_id', projectId)
+    form.set('file', file)
+    if (sheet) form.set('sheet', sheet)
+    if (timestampColumn) form.set('timestamp_column', timestampColumn)
+    valueColumns.forEach(column => form.append('value_column', column))
+    if (seriesColumn) form.set('series_column', seriesColumn)
+    if (timezone) form.set('timezone', timezone)
+    setBusy(true)
+    setError('')
+    onReady(null)
+    try {
+      const result = await api.analyzeTrafficProfile(form)
+      setAnalysis(result)
+      const firstSheet = result.sheets?.find(candidate => candidate.name === sheet) || result.sheets?.[0]
+      if (firstSheet && !sheet) setSheet(firstSheet.name)
+      const firstSeries = result.series?.[0]?.series.key || ''
+      setSeriesKey(firstSeries)
+      if (firstSeries) onReady({ analysis: result, seriesKey: firstSeries })
+    } catch (cause) {
+      setError(getErrorMessage(cause, `Unable to analyze the workload for ${groupName}.`))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const invalidateColumns = () => {
+    setSeriesKey('')
+    onReady(null)
+  }
+
+  return <section className="traffic-profile-group-upload" aria-label={`${groupName} workload file`}>
+    <div className="traffic-profile-group-upload-header">
+      <div><span className="traffic-profile-section-label">Scenario group</span><strong>{groupName}</strong></div>
+      {ready ? <span className="status-badge success">Ready</span> : <span className="status-badge">File required</span>}
+    </div>
+    <ImportDropzone accept=".csv,.tsv,.txt,.xlsx" file={file} onFile={next => { setFile(next); clearSelection() }} dropHint={`Drop CSV/XLSX for ${groupName}`} onError={setError} disabled={busy} />
+    {analysis?.sheets?.length ? <div className="settings-grid compact-grid">
+      <label><span>{groupName} worksheet</span><select aria-label={`${groupName} worksheet`} value={sheet} onChange={event => { setSheet(event.target.value); setTimestampColumn(''); setValueColumns([]); setSeriesColumn(''); invalidateColumns() }}>{analysis.sheets.map(item => <option key={item.name}>{item.name}</option>)}</select></label>
+      <label><span>{groupName} timestamp column</span><select aria-label={`${groupName} timestamp column`} value={timestampColumn} onChange={event => { setTimestampColumn(event.target.value); invalidateColumns() }}><option value="">Select…</option>{selectedSheet?.columns.map(column => <option key={column}>{column}</option>)}</select></label>
+      <label><span>{groupName} value columns</span><select aria-label={`${groupName} value columns`} multiple size={Math.min(5, Math.max(2, selectedSheet?.columns.length || 2))} value={valueColumns} onChange={event => { setValueColumns(Array.from(event.currentTarget.selectedOptions, option => option.value)); invalidateColumns() }}>{selectedSheet?.columns.map(column => <option key={column}>{column}</option>)}</select></label>
+      <label><span>{groupName} optional series column</span><select aria-label={`${groupName} optional series column`} value={seriesColumn} onChange={event => { setSeriesColumn(event.target.value); invalidateColumns() }}><option value="">None</option>{selectedSheet?.columns.map(column => <option key={column}>{column}</option>)}</select></label>
+      <label><span>{groupName} timezone</span><input aria-label={`${groupName} timezone`} value={timezone} onChange={event => { setTimezone(event.target.value); invalidateColumns() }} placeholder="America/New_York" /></label>
+    </div> : null}
+    <button type="button" className="btn btn-secondary" onClick={() => void analyze()} disabled={busy || !file}>{busy ? 'Working…' : analysis?.series?.length ? `Re-analyze ${groupName}` : `Analyze ${groupName}`}</button>
+    {analysis?.series?.length ? <label className="traffic-profile-group-series"><span>Workload series for {groupName}</span><select aria-label={`Workload series for ${groupName}`} value={seriesKey} onChange={event => { const next = event.target.value; setSeriesKey(next); onReady(next ? { analysis, seriesKey: next } : null) }}><option value="">Select…</option>{analysis.series.map(item => <option key={item.series.key} value={item.series.key}>{item.series.name} · {item.stats.count.toLocaleString()} points · peak {item.stats.max}</option>)}</select></label> : null}
+    {error && <div className="form-error" role="alert">{error}</div>}
+  </section>
 }
 
 interface QueryRangeFieldsProps {
