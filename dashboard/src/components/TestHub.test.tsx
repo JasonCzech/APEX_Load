@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { TopbarContributionProvider } from '../hooks/TopbarContributionRoot'
 import { type LoadModelTemplate, type StoredScenario } from '../types'
 import TestHub from './TestHub'
-import { scenarioGroupNameAfterScriptSelection } from './scenarioGroupUtils'
+import { duplicateScenarioGroupNameIndexes, scenarioGroupNameAfterScriptSelection } from './scenarioGroupUtils'
 import { scenarioSeedFromTemplate } from './scenarioTemplateSeed'
 import {
   replaceScenarioRuntimeDefaults,
@@ -94,6 +94,17 @@ describe('scenarioGroupNameAfterScriptSelection', () => {
     ['Peak Buyers', 0, 'Payments Flow', 'Checkout Flow', 'Peak Buyers'],
   ])('resolves %j for group %i', (currentName, groupIndex, nextScriptName, previousScriptName, expected) => {
     expect(scenarioGroupNameAfterScriptSelection(currentName, groupIndex, nextScriptName, previousScriptName)).toBe(expected)
+  })
+
+  it('differentiates generated names when the same script is assigned more than once', () => {
+    expect(scenarioGroupNameAfterScriptSelection('Group 2', 1, 'Checkout Flow', '', ['Checkout Flow', 'Group 2']))
+      .toBe('Checkout Flow (#2)')
+    expect(scenarioGroupNameAfterScriptSelection('Group 3', 2, 'Checkout Flow', '', ['Checkout Flow', 'Checkout Flow (#3)', 'Group 3']))
+      .toBe('Checkout Flow (#4)')
+  })
+
+  it('finds duplicate names using the controller normalization rules', () => {
+    expect([...duplicateScenarioGroupNameIndexes([' Buyers  East ', 'buyers east', 'Sellers'])]).toEqual([0, 1])
   })
 })
 
@@ -1414,13 +1425,14 @@ describe('TestHub', () => {
 
     await flushPromises()
     await clickWizardStep('Scripts')
+    await chooseLibraryScriptForGroup()
     await clickButton('Add Group')
     await clickWizardStep('Run Settings')
 
     const groupTabs = Array.from(container.querySelectorAll('.scenario-group-tab'))
     expect(groupTabs).toHaveLength(2)
     expect(groupTabs.map(tab => tab.textContent)).toEqual([
-      'Group 1Unassigned script · 10 VUsers',
+      'Checkout FlowCheckout Flow · 10 VUsers',
       'Group 2Unassigned script · 10 VUsers',
     ])
     expect(groupTabs[1].getAttribute('aria-selected')).toBe('true')
@@ -1435,7 +1447,7 @@ describe('TestHub', () => {
     })
 
     expect(container.querySelectorAll('.scenario-load-group-panel .scenario-script-group-card')).toHaveLength(1)
-    expect(container.querySelector('.scenario-load-group-panel')?.textContent).toContain('Group 1')
+    expect(container.querySelector('.scenario-load-group-panel')?.textContent).toContain('Checkout Flow')
     expect(container.querySelector('.scenario-load-group-panel')?.textContent).not.toContain('Group 2')
     expect(Array.from(container.querySelectorAll('.scenario-group-tab'))[0].getAttribute('aria-selected')).toBe('true')
   })
@@ -1446,6 +1458,7 @@ describe('TestHub', () => {
     })
     await flushPromises()
     await clickWizardStep('Scripts')
+    await chooseLibraryScriptForGroup()
     await clickButton('Add Group')
 
     const removeButtons = Array.from(container.querySelectorAll<HTMLButtonElement>('.scenario-script-group-card button'))
@@ -2911,7 +2924,7 @@ describe('TestHub', () => {
     expect(container.querySelector('.scenario-builder')).toBeNull()
   })
 
-  it('renders script groups in the spacious multi-card list on the Scripts step', async () => {
+  it('only enables adding another group after every existing group has a script', async () => {
     const onSelectTest = vi.fn()
 
     await act(async () => {
@@ -2921,18 +2934,40 @@ describe('TestHub', () => {
     await flushPromises()
     await clickWizardStep('Scripts')
 
-    await clickButton('Add Group')
-    await clickButton('Add Group')
-    await clickButton('Add Group')
-
     const groupList = container.querySelector('.scenario-script-group-list.scenario-script-group-list-spacious')
     expect(groupList).toBeDefined()
-    expect(groupList?.querySelectorAll('.scenario-script-group-card')).toHaveLength(4)
-    Array.from(groupList?.querySelectorAll('.scenario-script-group-card') || []).forEach(groupCard => {
-      expect(groupCard.textContent).toContain('Add Script')
-      expect(groupCard.textContent).not.toContain('Checkout Flow')
+    const addGroupButton = groupList?.querySelector<HTMLButtonElement>('.scenario-add-group-card')
+    expect(addGroupButton?.disabled).toBe(true)
+    expect(addGroupButton?.textContent).toContain('Add a script to every existing group first')
+
+    const libraryAddButton = Array.from(container.querySelectorAll<HTMLButtonElement>('.scenario-existing-script-library button'))
+      .find(button => button.textContent?.includes('Add Group'))
+    expect(libraryAddButton?.disabled).toBe(true)
+
+    await clickButton('Add Group')
+    expect(groupList?.querySelectorAll('.scenario-script-group-card')).toHaveLength(1)
+
+    await chooseLibraryScriptForGroup()
+    expect(addGroupButton?.disabled).toBe(false)
+
+    await clickButton('Add Group')
+    expect(groupList?.querySelectorAll('.scenario-script-group-card')).toHaveLength(2)
+    expect(addGroupButton?.disabled).toBe(true)
+
+    await chooseLibraryScriptForGroup('Checkout Flow', 1)
+    expect(addGroupButton?.disabled).toBe(false)
+    const groupNameInputs = Array.from(groupList?.querySelectorAll<HTMLInputElement>('input[placeholder^="Group"]') || [])
+    expect(groupNameInputs.map(input => input.value)).toEqual(['Checkout Flow', 'Checkout Flow (#2)'])
+
+    await act(async () => {
+      setInputValue(groupNameInputs[1], '  checkout   flow ')
     })
-    expect(groupList?.querySelector('.scenario-add-group-card')?.textContent).toContain('Add Group')
+    expect(groupNameInputs.every(input => input.getAttribute('aria-invalid') === 'true')).toBe(true)
+    expect(container.textContent).toContain('Group names must be unique. Rename duplicate groups before continuing.')
+    expect(addGroupButton?.disabled).toBe(true)
+    const saveButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent?.includes('Save Scenario'))
+    expect(saveButton?.disabled).toBe(true)
   })
 
   it('saves from review and opens a new test run for the saved scenario', async () => {

@@ -1435,6 +1435,16 @@
   outline: none;
 }
 
+.scenario-add-group-card:disabled {
+  cursor: not-allowed;
+  opacity: 0.62;
+}
+
+.scenario-add-group-card:disabled:hover {
+  border-color: var(--border);
+  background: var(--bg-secondary);
+}
+
 .scenario-add-group-card span {
   width: 34px;
   height: 34px;
@@ -1452,12 +1462,23 @@
   font-size: 15px;
 }
 
+.scenario-add-group-card small {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
 .scenario-field > span {
   color: var(--text-muted);
   font-size: 11px;
   font-weight: 800;
   letter-spacing: 0.04em;
   text-transform: uppercase;
+}
+
+.scenario-field-error {
+  color: var(--danger);
+  font-size: 12px;
+  font-weight: 600;
 }
 
 .scenario-support-panel.compact {

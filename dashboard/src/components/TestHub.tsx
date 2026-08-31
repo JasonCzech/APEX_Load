@@ -52,7 +52,7 @@ import {
 import { requestSettingsFocus } from './settingsSectionLayout'
 import { loadAllTestSummaries } from './testCatalogPagination'
 import { scenarioSeedFromTemplate } from './scenarioTemplateSeed'
-import { scenarioGroupNameAfterScriptSelection } from './scenarioGroupUtils'
+import { duplicateScenarioGroupNameIndexes, scenarioGroupNameAfterScriptSelection } from './scenarioGroupUtils'
 import { boundedAllSettled } from '../utils/boundedAllSettled'
 import { ScenarioCompositionTimeline } from './ScenarioCompositionTimeline'
 import TrafficProfileSourcePanel from './TrafficProfileSourcePanel'
@@ -1131,6 +1131,16 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
     () => form.groups.length > 0 ? form.groups : [emptyScenarioGroup()],
     [form.groups],
   )
+  const allScenarioGroupsHaveScripts = formGroups.every(group => Boolean(group.script_id.trim()))
+  const duplicateGroupNameIndexes = useMemo(
+    () => duplicateScenarioGroupNameIndexes(formGroups.map(group => group.name)),
+    [formGroups],
+  )
+  const scenarioGroupNameError = duplicateGroupNameIndexes.size > 0
+    ? 'Group names must be unique. Rename duplicate groups before continuing.'
+    : ''
+  const canAddScenarioGroup = allScenarioGroupsHaveScripts && !scenarioGroupNameError
+  const addScenarioGroupBlockedReason = scenarioGroupNameError || 'Add a script to every existing group before adding another group.'
   const activeGroupIndex = Math.min(stageGroupIndex, formGroups.length - 1)
   const activeStageGroup = formGroups[activeGroupIndex] || formGroups[0]
   const activeProfileMapping = form.traffic_profile?.mappings.find(mapping => mapping.group_name === (activeStageGroup?.name || `Group ${activeGroupIndex + 1}`))
@@ -2126,7 +2136,9 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
   }
 
   const addScenarioGroup = () => {
+    if (!canAddScenarioGroup) return
     setForm(prev => {
+      if (prev.groups.some(group => !group.script_id.trim()) || duplicateScenarioGroupNameIndexes(prev.groups.map(group => group.name)).size > 0) return prev
       const nextGroups = [...prev.groups, emptyScenarioGroup('', prev.groups.length)]
       return { ...prev, groups: nextGroups }
     })
@@ -2135,12 +2147,20 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
   }
 
   const addScenarioGroupFromScript = (script: StoredScript) => {
+    if (!canAddScenarioGroup) return
     setForm(prev => {
+      if (prev.groups.some(group => !group.script_id.trim()) || duplicateScenarioGroupNameIndexes(prev.groups.map(group => group.name)).size > 0) return prev
       const nextGroups = [
         ...prev.groups,
         {
           ...emptyScenarioGroup(script.id, prev.groups.length),
-          name: script.name,
+          name: scenarioGroupNameAfterScriptSelection(
+            '',
+            prev.groups.length,
+            script.name,
+            '',
+            prev.groups.map(group => group.name),
+          ),
           script_id: script.id,
         },
       ]
@@ -2165,7 +2185,13 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
       const previousScriptName = findScriptById(scripts, targetGroup.script_id)?.name || ''
       updateScenarioGroup(targetIndex, {
         script_id: script.id,
-        name: scenarioGroupNameAfterScriptSelection(targetGroup.name, targetIndex, script.name, previousScriptName),
+        name: scenarioGroupNameAfterScriptSelection(
+          targetGroup.name,
+          targetIndex,
+          script.name,
+          previousScriptName,
+          formGroups.map(group => group.name),
+        ),
         ...(targetGroup.role === 'observer' && script.protocol !== 'browser'
           ? { role: 'load' as const }
           : {}),
@@ -2298,6 +2324,11 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
       setLoadModelValidationError('Set a positive scenario duration before validating the load model.')
       return
     }
+    if (scenarioGroupNameError) {
+      setLoadModelValidationError(scenarioGroupNameError)
+      setWizardStep('scripts')
+      return
+    }
     if (blockingStageTimelineMessage) {
       setLoadModelValidationError(blockingStageTimelineMessage)
       return
@@ -2340,6 +2371,11 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
     }
     if (form.groups.length === 0 || form.groups.some(group => !group.script_id)) {
       setError('At least one script group with a selected script is required.')
+      return null
+    }
+    if (scenarioGroupNameError) {
+      setError(scenarioGroupNameError)
+      setWizardStep('scripts')
       return null
     }
     if (!isValidDurationInput(form.duration)) {
@@ -2580,7 +2616,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
     : 'No data pool'
   const shapeLabel = selectedTemplate?.name || selectedShape?.support.name || (scenarioSourceMode === 'existing' ? 'Modeled from scenario' : 'Manual shape')
   const validationLabel = loadModelValidation ? formatLoadModelDimension(loadModelValidation.status) : 'Not validated'
-  const requiredDraftReady = Boolean(form.name.trim() && isValidDurationInput(form.duration) && formGroups.every(group => group.script_id))
+  const requiredDraftReady = Boolean(form.name.trim() && isValidDurationInput(form.duration) && formGroups.every(group => group.script_id) && !scenarioGroupNameError)
   const sourceStepComplete = scenarioStartChoice === 'goal'
     ? Boolean(goalSizingResult)
     : scenarioSourceMode === 'existing'
@@ -2589,7 +2625,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
   const wizardStepCompletion: Record<ScenarioWizardStep, boolean> = {
     start: Boolean(scenarioStartChoice),
     source: sourceStepComplete,
-    scripts: Boolean(form.name.trim() && formGroups.length > 0 && formGroups.every(group => group.script_id)),
+    scripts: Boolean(form.name.trim() && formGroups.length > 0 && formGroups.every(group => group.script_id) && !scenarioGroupNameError),
     run: Boolean(isValidDurationInput(form.duration) && !blockingStageTimelineMessage),
     data: true,
     review: Boolean(requiredDraftReady && !blockingStageTimelineMessage),
@@ -3246,7 +3282,14 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
                   <div className="settings-grid scenario-group-grid">
                     <label className="scenario-field">
                       <span>Group Name</span>
-                      <input className="settings-input" value={group.name} onChange={event => updateScenarioGroup(index, { name: event.target.value })} placeholder={`Group ${index + 1}`} />
+                      <input
+                        className="settings-input"
+                        value={group.name}
+                        onChange={event => updateScenarioGroup(index, { name: event.target.value })}
+                        placeholder={`Group ${index + 1}`}
+                        aria-invalid={duplicateGroupNameIndexes.has(index)}
+                      />
+                      {duplicateGroupNameIndexes.has(index) && <small className="scenario-field-error">Group names must be unique.</small>}
                     </label>
                     <div className="scenario-field scenario-script-picker-field">
                       <span>Script</span>
@@ -3303,9 +3346,16 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
                 </div>
               )
             })}
-            <button type="button" className="scenario-add-group-card" onClick={addScenarioGroup}>
+            <button
+              type="button"
+              className="scenario-add-group-card"
+              onClick={addScenarioGroup}
+              disabled={!canAddScenarioGroup}
+              title={!canAddScenarioGroup ? addScenarioGroupBlockedReason : undefined}
+            >
               <span>+</span>
               <strong>Add Group</strong>
+              {!canAddScenarioGroup && <small>{scenarioGroupNameError || 'Add a script to every existing group first'}</small>}
             </button>
           </div>
         </section>
@@ -3925,6 +3975,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
           {observerEnvelopeError && <div className="settings-error-inline">{observerEnvelopeError}</div>}
           {aggregateEnvelopeError && <div className="settings-error-inline">{aggregateEnvelopeError}</div>}
           {assignmentValidationError && <div className="settings-error-inline">{assignmentValidationError}</div>}
+          {scenarioGroupNameError && <div className="settings-error-inline">{scenarioGroupNameError}</div>}
 
           <div className="scenario-builder-actions">
             <button className="btn btn-secondary" onClick={guardedOpenScenarioLibrary}>Cancel</button>
@@ -3956,14 +4007,14 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
                 const nextIndex = Math.min(scenarioWizardSteps.length - 1, currentWizardIndex + 1)
                 setWizardStep(scenarioWizardSteps[nextIndex].id)
               }}
-              disabled={currentWizardIndex === scenarioWizardSteps.length - 1}
+              disabled={currentWizardIndex === scenarioWizardSteps.length - 1 || (wizardStep === 'scripts' && Boolean(scenarioGroupNameError))}
             >
               Next
             </button>
             {wizardStep === 'review' && onCreateTestFromScenario && (
-              <button className="btn btn-secondary" onClick={saveScenarioAndCreateTest} disabled={Boolean(blockingStageTimelineMessage || observerEnvelopeError || aggregateEnvelopeError || assignmentValidationError)}>Save &amp; Create Test Run</button>
+              <button className="btn btn-secondary" onClick={saveScenarioAndCreateTest} disabled={Boolean(blockingStageTimelineMessage || observerEnvelopeError || aggregateEnvelopeError || assignmentValidationError || scenarioGroupNameError)}>Save &amp; Create Test Run</button>
             )}
-            <button className="btn btn-primary" onClick={saveScenario} disabled={Boolean(blockingStageTimelineMessage || observerEnvelopeError || aggregateEnvelopeError || assignmentValidationError)}>Save Scenario</button>
+            <button className="btn btn-primary" onClick={saveScenario} disabled={Boolean(blockingStageTimelineMessage || observerEnvelopeError || aggregateEnvelopeError || assignmentValidationError || scenarioGroupNameError)}>Save Scenario</button>
           </div>
 
         </div>
@@ -4037,7 +4088,15 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
                         </div>
                       </td>
                       <td style={{ textAlign: 'right' }}>
-                        <button className="btn btn-sm btn-secondary" type="button" onClick={() => selectScriptFromLibrary(script)}>
+                        <button
+                          className="btn btn-sm btn-secondary"
+                          type="button"
+                          onClick={() => selectScriptFromLibrary(script)}
+                          disabled={scriptSelectionTargetIndex === null && !canAddScenarioGroup}
+                          title={scriptSelectionTargetIndex === null && !canAddScenarioGroup
+                            ? addScenarioGroupBlockedReason
+                            : undefined}
+                        >
                           {scriptSelectionTargetIndex !== null ? `Use for Group ${scriptSelectionTargetIndex + 1}` : 'Add Group'}
                         </button>
                       </td>
