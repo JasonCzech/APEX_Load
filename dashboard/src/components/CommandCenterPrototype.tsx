@@ -2734,6 +2734,7 @@ function EvidenceSnapshotDetail({ evidence }: { evidence: LiveErrorEvidence }) {
               headers={snapshot.response_headers}
               emptyMessage="No response body captured"
               preClassName="command-snapshot-pre"
+              copyFieldName="conversationId"
             />
           </section>
         </div>

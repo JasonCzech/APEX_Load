@@ -87,6 +87,69 @@ describe('SnapshotBodyPreview', () => {
     expect(document.body.querySelector('.snapshot-full-dialog[role="dialog"]')).toBeNull()
   })
 
+  it('keeps the full-body dialog open when a live response body refreshes', async () => {
+    await act(async () => {
+      root.render(<SnapshotBodyPreview body={JSON.stringify({ status: 'first' })} headers={{ 'Content-Type': 'application/json' }} />)
+    })
+
+    const openButton = Array.from(container.querySelectorAll('button')).find(node => node.textContent?.includes('Open full body'))
+    expect(openButton).not.toBeNull()
+    await act(async () => {
+      openButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    await act(async () => {
+      root.render(<SnapshotBodyPreview body={JSON.stringify({ status: 'refreshed' })} headers={{ 'Content-Type': 'application/json' }} />)
+    })
+
+    const dialog = document.body.querySelector('.snapshot-full-dialog[role="dialog"]')
+    expect(dialog).not.toBeNull()
+    expect(dialog?.textContent).toContain('refreshed')
+  })
+
+  it('copies a nested conversationId value from a JSON response body', async () => {
+    await act(async () => {
+      root.render(
+        <SnapshotBodyPreview
+          body={JSON.stringify({ response: { conversationId: 'conversation-123' } })}
+          headers={{ 'Content-Type': 'application/json' }}
+          copyFieldName="conversationId"
+        />,
+      )
+    })
+
+    const copyFieldButton = Array.from(container.querySelectorAll('button'))
+      .find(node => node.textContent === 'Copy conversationId')
+    expect(copyFieldButton).not.toBeNull()
+    await act(async () => {
+      copyFieldButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+
+    expect(writeText).toHaveBeenCalledWith('conversation-123')
+    expect(container.textContent).toContain('conversationId copied')
+
+    const openButton = Array.from(container.querySelectorAll('button')).find(node => node.textContent?.includes('Open full body'))
+    await act(async () => {
+      openButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(document.body.querySelector('.snapshot-full-dialog[role="dialog"]')?.textContent).toContain('conversationId copied')
+  })
+
+  it('does not offer conversationId copying when the field is absent', async () => {
+    await act(async () => {
+      root.render(
+        <SnapshotBodyPreview
+          body={JSON.stringify({ status: 'failed' })}
+          headers={{ 'Content-Type': 'application/json' }}
+          copyFieldName="conversationId"
+        />,
+      )
+    })
+
+    expect(Array.from(container.querySelectorAll('button')).some(node => node.textContent === 'Copy conversationId')).toBe(false)
+  })
+
   it('renders short bodies with copy and full-body actions', async () => {
     await act(async () => {
       root.render(<SnapshotBodyPreview body="<root><value>ok</value></root>" headers={{ 'Content-Type': 'application/xml' }} />)

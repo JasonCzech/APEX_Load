@@ -389,6 +389,17 @@ function formatMetricValue(value: number | undefined, unit?: string) {
   return unit === '%' || unit === 'ms' ? `${formatted}${unit}` : `${formatted} ${unit}`
 }
 
+export function formatMetricTableValue(value: number | undefined, unit: string | undefined, timeUnit: ChartTimeUnit) {
+  if (unit !== 'ms' || timeUnit === 'milliseconds') return formatMetricValue(value, unit)
+  if (value === undefined || !Number.isFinite(value)) return 'n/a'
+  const seconds = value / 1000
+  // Preserve useful precision for sub-millisecond measurements after conversion;
+  // the general metric formatter intentionally rounds to two decimals and would
+  // otherwise turn values such as 0.7 ms into a misleading 0 s.
+  const maximumFractionDigits = Math.abs(seconds) > 0 && Math.abs(seconds) < 0.001 ? 6 : 3
+  return `${seconds.toLocaleString(undefined, { maximumFractionDigits })} s`
+}
+
 function routeLatencyTargetForKey(latency: NetworkLatency | undefined, key?: string): LatencyTarget | undefined {
   if (!latency?.targets?.length || !key) return undefined
   return latency.targets.find(target => latencySeriesKeyForTarget(target) === key)
@@ -2301,10 +2312,10 @@ export default function TestExecutionCharts({
                       <span>{row.label}</span>
                     </button>
                   </td>
-                  <td>{formatMetricValue(summary.latest, row.unit)}</td>
-                  <td>{formatMetricValue(summary.average, row.unit)}</td>
-                  <td>{formatMetricValue(summary.min, row.unit)}</td>
-                  <td>{formatMetricValue(summary.max, row.unit)}</td>
+                  <td>{formatMetricTableValue(summary.latest, row.unit, chartTimeUnit)}</td>
+                  <td>{formatMetricTableValue(summary.average, row.unit, chartTimeUnit)}</td>
+                  <td>{formatMetricTableValue(summary.min, row.unit, chartTimeUnit)}</td>
+                  <td>{formatMetricTableValue(summary.max, row.unit, chartTimeUnit)}</td>
                 </tr>
               )
             })}
@@ -2341,10 +2352,10 @@ export default function TestExecutionCharts({
             return (
               <tr key={row.key}>
                 <th>{row.label}</th>
-                <td>{formatMetricValue(summary.latest, row.unit)}</td>
-                <td>{formatMetricValue(summary.average, row.unit)}</td>
-                <td>{formatMetricValue(summary.min, row.unit)}</td>
-                <td>{formatMetricValue(summary.max, row.unit)}</td>
+                <td>{formatMetricTableValue(summary.latest, row.unit, chartTimeUnit)}</td>
+                <td>{formatMetricTableValue(summary.average, row.unit, chartTimeUnit)}</td>
+                <td>{formatMetricTableValue(summary.min, row.unit, chartTimeUnit)}</td>
+                <td>{formatMetricTableValue(summary.max, row.unit, chartTimeUnit)}</td>
               </tr>
             )
           })}
@@ -2452,11 +2463,11 @@ export default function TestExecutionCharts({
                     </td>
                     <td>{formatMetricValue(row.activeVusers)}</td>
                     <td>{formatMetricValue(row.tps)}</td>
-                    <td>{formatMetricValue(row.p95Ms, 'ms')}</td>
+                    <td>{formatMetricTableValue(row.p95Ms, 'ms', chartTimeUnit)}</td>
                     <td>{formatMetricValue(row.errorPct, '%')}</td>
                     <td>{formatMetricValue(row.metrics.containerCPUThrottledSecondsRate, 's/s')}</td>
                     <td>{formatMetricValue(row.metrics.containerMemoryUsagePct, '%')}</td>
-                    <td>{formatMetricValue(row.metrics.gcPauseMs, 'ms')}</td>
+                    <td>{formatMetricTableValue(row.metrics.gcPauseMs, 'ms', chartTimeUnit)}</td>
                     <td>{formatMetricValue(netLossValue, '/s')}</td>
                     <td>{formatMetricValue(row.metrics.diskIOTimePct, '%')}</td>
                     <td>{row.reasons.length > 0 ? row.reasons.join(', ') : 'None'}</td>

@@ -18,7 +18,29 @@ interface Props {
   preClassName?: string
   expanded?: boolean
   autoExpandPaths?: string[]
+  copyFieldName?: string
   onExpandedChange?: (expanded: boolean) => void
+}
+
+function findNamedJsonValue(value: unknown, fieldName: string): unknown {
+  if (!value || typeof value !== 'object') return undefined
+
+  if (!Array.isArray(value) && Object.prototype.hasOwnProperty.call(value, fieldName)) {
+    return (value as Record<string, unknown>)[fieldName]
+  }
+
+  const children = Array.isArray(value) ? value : Object.values(value as Record<string, unknown>)
+  for (const child of children) {
+    const match = findNamedJsonValue(child, fieldName)
+    if (match !== undefined) return match
+  }
+  return undefined
+}
+
+function formatCopiedJsonValue(value: unknown): string | undefined {
+  if (value === undefined || value === null) return undefined
+  if (typeof value === 'object') return JSON.stringify(value, null, 2)
+  return String(value)
 }
 
 function buildPreviewBody(value: string): string {
@@ -187,6 +209,7 @@ export default function SnapshotBodyPreview({
   preClassName,
   expanded,
   autoExpandPaths,
+  copyFieldName,
 }: Props) {
   const formattedBody = useMemo(() => {
     if (!body) return emptyMessage
@@ -198,6 +221,8 @@ export default function SnapshotBodyPreview({
   }, [body, headers])
   const [copied, setCopied] = useState(false)
   const [copyFailed, setCopyFailed] = useState(false)
+  const [copiedField, setCopiedField] = useState(false)
+  const [copyFieldFailed, setCopyFieldFailed] = useState(false)
   const [fullDialogOpen, setFullDialogOpen] = useState(false)
   const isExpanded = expanded === true
   const largeBody = formattedBody.length > MAX_HIGHLIGHTED_BODY_CHARS
@@ -213,11 +238,16 @@ export default function SnapshotBodyPreview({
     }
     return undefined
   }, [body, bodyFormat])
+  const copyFieldValue = useMemo(
+    () => copyFieldName ? formatCopiedJsonValue(findNamedJsonValue(parsedJson, copyFieldName)) : undefined,
+    [copyFieldName, parsedJson],
+  )
 
   useEffect(() => {
     setCopied(false)
     setCopyFailed(false)
-    setFullDialogOpen(false)
+    setCopiedField(false)
+    setCopyFieldFailed(false)
   }, [formattedBody])
 
   const canOpenFull = Boolean(body)
@@ -242,6 +272,24 @@ export default function SnapshotBodyPreview({
     setFullDialogOpen(true)
   }
 
+  const handleCopyField = async () => {
+    if (copyFieldValue === undefined || !copySupported) return
+    const copiedText = await copyTextToClipboard(copyFieldValue)
+    setCopiedField(copiedText)
+    setCopyFieldFailed(!copiedText)
+  }
+
+  const copyFieldButton = copyFieldName && copyFieldValue !== undefined ? (
+    <button
+      type="button"
+      className="btn btn-sm btn-secondary"
+      onClick={() => void handleCopyField()}
+      disabled={!copySupported}
+    >
+      {copyFieldFailed ? `${copyFieldName} copy failed` : copiedField ? `${copyFieldName} copied` : `Copy ${copyFieldName}`}
+    </button>
+  ) : null
+
   return (
     <>
       {isExpanded && parsedJson !== undefined && !largeBody ? (
@@ -256,6 +304,7 @@ export default function SnapshotBodyPreview({
       {isExpanded && largeBody && <p className="snapshot-body-render-note">Syntax highlighting is disabled for this large body. Copy or open it to inspect the complete plain text.</p>}
       {(canOpenFull || canCopy) && (
         <div className="snapshot-body-actions">
+          {copyFieldButton}
           {canCopy && (
             <button
               type="button"
@@ -284,6 +333,7 @@ export default function SnapshotBodyPreview({
         copyFailed={copyFailed}
         copyDisabled={!copySupported || !canCopy}
         manualCopyText={formattedBody}
+        additionalActions={copyFieldButton}
         onCopy={() => void handleCopy()}
         onClose={() => setFullDialogOpen(false)}
       >

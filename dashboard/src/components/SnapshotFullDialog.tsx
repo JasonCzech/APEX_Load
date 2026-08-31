@@ -11,6 +11,7 @@ interface Props {
   copyFailed?: boolean
   copyDisabled: boolean
   manualCopyText?: string
+  additionalActions?: ReactNode
   onCopy: () => void
   onClose: () => void
   children: ReactNode
@@ -23,6 +24,7 @@ export default function SnapshotFullDialog({
   copyFailed = false,
   copyDisabled,
   manualCopyText,
+  additionalActions,
   onCopy,
   onClose,
   children,
@@ -78,6 +80,7 @@ export default function SnapshotFullDialog({
         <header className="snapshot-full-dialog-header">
           <h3 id={titleId}>{title}</h3>
           <div className="snapshot-full-dialog-actions">
+            {additionalActions}
             <button
               type="button"
               className="btn btn-sm btn-secondary"

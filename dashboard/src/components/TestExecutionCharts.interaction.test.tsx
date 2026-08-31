@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { MetricsHistoryPoint } from '../types'
 import { downloadTextFile } from '../utils/fileUtils'
-import TestExecutionCharts, { BoundedChartTooltipContent, chartTimeAxisPresentation, formatChartTimeMetricValue } from './TestExecutionCharts'
+import TestExecutionCharts, { BoundedChartTooltipContent, chartTimeAxisPresentation, formatChartTimeMetricValue, formatMetricTableValue } from './TestExecutionCharts'
 import { transactionChartSeriesKey } from './transactionChartSeries'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
@@ -183,6 +183,13 @@ describe('chartTimeAxisPresentation', () => {
       label: 'Route latency (ms)',
       tickFormatter: undefined,
     })
+  })
+
+  it('converts response-time table values without rounding positive seconds to zero', () => {
+    expect(formatMetricTableValue(0.7, 'ms', 'seconds')).toBe('0.0007 s')
+    expect(formatMetricTableValue(110, 'ms', 'seconds')).toBe('0.11 s')
+    expect(formatMetricTableValue(110, 'ms', 'milliseconds')).toBe('110ms')
+    expect(formatMetricTableValue(12, '%', 'seconds')).toBe('12%')
   })
 })
 
@@ -1794,6 +1801,25 @@ describe('TestExecutionCharts context menu', () => {
       .find(chart => chart.querySelector('.chart-title')?.textContent === 'Response Time (s)')
     expect(secondsResponseChart).not.toBeNull()
     expect(secondsResponseChart?.querySelector('[data-testid="mock-y-axis"]')?.textContent).toContain('0.1')
+    expect(secondsResponseChart?.textContent).toContain('0.11 s')
+    expect(secondsResponseChart?.textContent).not.toContain('110ms')
+
+    const underLoadTab = Array.from(container.querySelectorAll('button'))
+      .find(button => button.textContent?.includes('Under Load'))
+    await act(async () => {
+      underLoadTab?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    const secondsArtUnderLoad = Array.from(container.querySelectorAll<HTMLElement>('.chart-card'))
+      .find(chart => chart.querySelector('.chart-title')?.textContent === 'ART Under Load')
+    expect(secondsArtUnderLoad?.textContent).toContain('0.11 s')
+
+    const millisecondsButton = Array.from(drawer?.querySelectorAll('button') ?? [])
+      .find(button => button.textContent?.trim() === 'Milliseconds')
+    await act(async () => {
+      millisecondsButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await new Promise(resolve => window.setTimeout(resolve, 0))
+    })
+    expect(secondsArtUnderLoad?.textContent).toContain('110ms')
   })
 
   it('switches the route latency graph between total, phase, and stability diagnostics', async () => {
