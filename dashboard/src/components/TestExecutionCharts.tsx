@@ -1470,7 +1470,10 @@ export default function TestExecutionCharts({
     })
   }
 
-  const axisInteractionProps = (label: string) => ({
+  const axisInteractionProps = (
+    label: string,
+    tickFormatter?: (value: number | string) => string,
+  ) => ({
     tick: ({ x = 0, y = 0, index = -1, fill = 'var(--text-muted)', textAnchor = 'end', payload }: YAxisTickContentProps) => {
       const keyboardTarget = index === 0
       return (
@@ -1489,7 +1492,9 @@ export default function TestExecutionCharts({
             if (event.key === 'Enter' || event.key === ' ') openAxisLabelPopover(event, label)
           } : undefined}
         >
-          {payload?.value ?? ''}
+          {payload?.value === undefined
+            ? ''
+            : tickFormatter?.(payload.value) ?? payload.value}
         </text>
       )
     },
@@ -1969,7 +1974,7 @@ export default function TestExecutionCharts({
         tickMargin={2}
         domain={domain}
         tickFormatter={tickFormatter}
-        {...axisInteractionProps(label)}
+        {...axisInteractionProps(label, tickFormatter)}
       />
     )
   }
@@ -2195,6 +2200,7 @@ export default function TestExecutionCharts({
           dot={false}
           strokeWidth={1.75}
           strokeDasharray="5 3"
+          connectNulls={key === 'vusers'}
           isAnimationActive={false}
         />
       )
@@ -2877,7 +2883,7 @@ export default function TestExecutionCharts({
                 {renderSharedCursor(displayChartData, metricAxisIdForChart)}
                 {renderChartGradientDefs(chart, metricRows, visibleMetricKeys)}
                 {chart.dataKey && showMetric(chart.dataKey) && (
-                  <Area yAxisId={metricAxisIdForChart} type="monotone" dataKey={displayMetricKey(chart.dataKey)} name="Total" stroke={chart.color!} fill={chartGradientFill(chart, chart.dataKey)} fillOpacity={1} isAnimationActive={false} />
+                  <Area yAxisId={metricAxisIdForChart} type="monotone" dataKey={displayMetricKey(chart.dataKey)} name="Total" stroke={chart.color!} fill={chartGradientFill(chart, chart.dataKey)} fillOpacity={1} connectNulls={chart.dataKey === 'vusers'} isAnimationActive={false} />
                 )}
                 {renderOverlayLines(chart, visibleMetricKeys, displayMetricKey)}
                 {renderSelectedSeriesEmphasis(chart, metricRows, visibleMetricKeys, displayMetricKey, metricAxisIdForChart)}

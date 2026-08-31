@@ -83,8 +83,8 @@ vi.mock('recharts', () => {
   }
 
   return {
-    Area: ({ dataKey, name, yAxisId, fill }: { dataKey?: string; name?: string; yAxisId?: string | number; fill?: string }) => (
-      <path data-testid="mock-area" data-key={dataKey} data-name={name} data-y-axis-id={String(yAxisId ?? '')} data-fill={fill ?? ''} />
+    Area: ({ dataKey, name, yAxisId, fill, connectNulls }: { dataKey?: string; name?: string; yAxisId?: string | number; fill?: string; connectNulls?: boolean }) => (
+      <path data-testid="mock-area" data-key={dataKey} data-name={name} data-y-axis-id={String(yAxisId ?? '')} data-fill={fill ?? ''} data-connect-nulls={String(connectNulls ?? false)} />
     ),
     CartesianGrid: Mock,
     ComposedChart: MockChart,
@@ -335,7 +335,9 @@ describe('TestExecutionCharts context menu', () => {
     })
 
     expect(container.querySelector('.chart-context-menu')).toBeNull()
-    expect(container.querySelector('path[data-testid="mock-line"][data-name="Active VUsers"]')).not.toBeNull()
+    const vuserOverlay = container.querySelector('path[data-testid="mock-line"][data-name="Active VUsers"]')
+    expect(vuserOverlay).not.toBeNull()
+    expect(vuserOverlay?.getAttribute('data-connect-nulls')).toBe('true')
     expect(container.querySelector('path[data-testid="mock-area"][data-name="Active VUsers"]')).toBeNull()
     expect(tpsChart?.textContent).toContain('Active VUsers')
     expect(window.localStorage.getItem('apexload.execution.vuserOverlayCharts')).toBe('["tps"]')
@@ -357,6 +359,7 @@ describe('TestExecutionCharts context menu', () => {
     expect(axisAriaLabels(vusersChart)).toContain('Show VUsers axis label')
     const vuserAxis = vusersChart?.querySelector('[data-testid="mock-y-axis"]')
     expect(vuserAxis?.querySelectorAll('[role="button"][tabindex="0"]')).toHaveLength(1)
+    expect(vusersChart?.querySelector('path[data-testid="mock-area"][data-key="vusers"]')?.getAttribute('data-connect-nulls')).toBe('true')
 
     await act(async () => {
       vuserAxis?.querySelector<SVGTextElement>('[role="button"]')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
@@ -1756,6 +1759,7 @@ describe('TestExecutionCharts context menu', () => {
     const secondsResponseChart = Array.from(container.querySelectorAll<HTMLElement>('.chart-card'))
       .find(chart => chart.querySelector('.chart-title')?.textContent === 'Response Time (s)')
     expect(secondsResponseChart).not.toBeNull()
+    expect(secondsResponseChart?.querySelector('[data-testid="mock-y-axis"]')?.textContent).toContain('0.1')
   })
 
   it('switches the route latency graph between total, phase, and stability diagnostics', async () => {

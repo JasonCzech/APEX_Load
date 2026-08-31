@@ -189,20 +189,20 @@
 .command-run-stats {
   min-width: 0;
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
 }
 
 .command-run-stats.with-tps {
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
 .command-run-stats.with-highest-error {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
 .command-run-stats.with-tps.with-highest-error {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
 }
 
 .command-metric-pill {
@@ -2258,13 +2258,6 @@ button.command-group-name:focus-visible {
     grid-template-columns: 1fr;
   }
 
-  .command-run-stats,
-  .command-run-stats.with-tps,
-  .command-run-stats.with-highest-error,
-  .command-run-stats.with-tps.with-highest-error {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
   .command-graph-grid.dense {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -2382,10 +2375,6 @@ button.command-group-name:focus-visible {
     position: static;
   }
 
-  .command-run-stats,
-  .command-run-stats.with-tps,
-  .command-run-stats.with-highest-error,
-  .command-run-stats.with-tps.with-highest-error,
   .command-graph-grid.standard,
   .command-graph-grid.dense,
   .command-load-model-stats,
