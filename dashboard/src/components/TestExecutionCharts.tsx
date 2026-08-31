@@ -111,6 +111,7 @@ import {
   type ResponseTimeNetworkMode,
   type RouteLatencyMode,
 } from './testExecutionChartModel'
+import { carryForwardPositiveResponseTimes } from './testExecutionMetricsModel'
 import {
   latencySeriesKeyForTarget,
   routeLatencyDetailSeriesKey,
@@ -618,7 +619,11 @@ export default function TestExecutionCharts({
     () => graphGroupNamesSignature ? graphGroupNamesSignature.split('\u001f') : [],
     [graphGroupNamesSignature],
   )
-  const loadImpactSourceData = loadImpactData.length > 0 ? loadImpactData : filteredData
+  const rawLoadImpactSourceData = loadImpactData.length > 0 ? loadImpactData : filteredData
+  const loadImpactSourceData = useMemo(
+    () => carryForwardPositiveResponseTimes(rawLoadImpactSourceData),
+    [rawLoadImpactSourceData],
+  )
   const loadImpactModel = useMemo(
     () => buildLoadImpactModel(loadImpactSourceData, undefined, undefined, graphGroupNames),
     [graphGroupNames, loadImpactSourceData],

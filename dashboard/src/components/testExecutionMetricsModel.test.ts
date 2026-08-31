@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import {
   buildExecutionChartData,
+  carryForwardPositiveResponseTimes,
   estimateSampleIntervalMs,
   filterExecutionChartData,
   mapArchiveResourceSamples,
@@ -18,6 +19,72 @@ import { transactionChartSeriesKey } from './transactionChartSeries'
 import type { MetricsHistoryPoint } from '../types'
 
 describe('testExecutionMetricsModel', () => {
+  it('carries the last positive response time through intervals without samples', () => {
+    const transactionAvgKey = transactionChartSeriesKey('Checkout', 'avgMs')
+    const point = (time: string, values: Partial<MetricsHistoryPoint>): MetricsHistoryPoint => ({
+      time,
+      vusers: 1,
+      tps: 1,
+      avgMs: 0,
+      errorPct: 0,
+      p50: 0,
+      p90: 0,
+      p99: 0,
+      ...values,
+    })
+    const points = [
+      point('0', { avgMs: 0, Checkout_avgMs: 0, [transactionAvgKey]: 0 }),
+      point('1', { avgMs: 120, p95: 180, Checkout_avgMs: 90, [transactionAvgKey]: 80 }),
+      point('2', { tps: 0, avgMs: 0, p95: 0, Checkout_avgMs: Number.NaN }),
+      point('3', { tps: 0, avgMs: Number.NaN, Checkout_avgMs: 110, [transactionAvgKey]: 0 }),
+      point('4', { avgMs: 140, Checkout_avgMs: 0, [transactionAvgKey]: 95 }),
+    ]
+
+    const filled = carryForwardPositiveResponseTimes(points)
+
+    expect(filled.map(point => point.avgMs)).toEqual([0, 120, 120, 120, 140])
+    expect(filled.map(point => point.p95)).toEqual([undefined, 180, 180, 180, 180])
+    expect(filled.map(point => point.Checkout_avgMs)).toEqual([0, 90, 90, 110, 110])
+    expect(filled.map(point => point[transactionAvgKey])).toEqual([0, 80, 80, 80, 95])
+    expect(filled[0]).toBe(points[0])
+    expect(filled[1]).toBe(points[1])
+  })
+
+  it('preserves a measured zero response time when the interval has throughput', () => {
+    const points = [
+      { time: '1', vusers: 1, tps: 1, avgMs: 120, errorPct: 0, p50: 100, p90: 140, p99: 180 },
+      { time: '2', vusers: 1, tps: 1, avgMs: 0, errorPct: 0, p50: 0, p90: 0, p99: 0 },
+    ]
+
+    const filled = carryForwardPositiveResponseTimes(points)
+
+    expect(filled[1]).toBe(points[1])
+    expect(filled[1]).toMatchObject({ avgMs: 0, p50: 0, p90: 0, p99: 0 })
+  })
+
+  it('forward-fills empty response-time intervals in final chart data', () => {
+    const point = (timestampMs: number, avgMs: number): MetricsHistoryPoint => ({
+      time: String(timestampMs),
+      timestampMs,
+      vusers: 2,
+      tps: avgMs > 0 ? 1 : 0,
+      avgMs,
+      errorPct: 0,
+      p50: avgMs,
+      p90: avgMs,
+      p99: avgMs,
+    })
+    const chartData = buildExecutionChartData({
+      mappedBackendHistory: [point(1, 100), point(2, 0), point(3, 0), point(4, 130)],
+      localMetricsHistory: [],
+      fallbackHistory: [],
+    })
+
+    expect(chartData.map(sample => sample.avgMs)).toEqual([100, 100, 100, 130])
+    // Throughput zero remains meaningful and is not forward-filled with latency.
+    expect(chartData.map(sample => sample.tps)).toEqual([1, 0, 0, 1])
+  })
+
   it('maps backend execution history into chart points with group and latency metrics', () => {
     const mapped = mapExecutionHistory([{
       timestamp: '2026-05-12T20:00:00Z',

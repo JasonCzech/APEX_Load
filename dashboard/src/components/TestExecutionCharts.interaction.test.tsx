@@ -1026,6 +1026,41 @@ describe('TestExecutionCharts context menu', () => {
     expect(window.localStorage.getItem('apexload.execution.chartMetricFilters')).toContain('"load_impact_percentiles":["p50","p95","p99"]')
   })
 
+  it('carries empty response intervals into explicit Under Load data', async () => {
+    await act(async () => {
+      root.render(
+        <TestExecutionCharts
+          filteredData={[]}
+          loadImpactData={[
+            { time: '10:00:00', vusers: 5, tps: 1, avgMs: 100, errorPct: 0, p50: 90, p90: 120, p95: 140, p99: 160 },
+            { time: '10:00:01', vusers: 5, tps: 0, avgMs: 0, errorPct: 0, p50: 0, p90: 0, p95: 0, p99: 0 },
+          ]}
+          expandedChart={null}
+          onExpandedChartChange={vi.fn()}
+          onChartMouseDown={vi.fn()}
+          onChartMouseMove={vi.fn()}
+          onZoom={vi.fn()}
+          onResetZoom={vi.fn()}
+          showRefArea={false}
+          refAreaLeft=""
+          refAreaEnd=""
+          timeRange="all"
+          onTimeRangeChange={vi.fn()}
+          isMultiGroup={false}
+          groupNames={[]}
+          groupColors={['#00a3ff']}
+          showLoadImpact={false}
+        />,
+      )
+    })
+
+    const artUnderLoad = Array.from(container.querySelectorAll('.chart-card'))
+      .find(chart => chart.textContent?.includes('ART Under Load'))
+    const averageRow = Array.from(artUnderLoad?.querySelectorAll('tbody tr') ?? [])
+      .find(row => row.querySelector('th')?.textContent === 'Average')
+    expect(averageRow?.textContent).toContain('100ms100ms100ms100ms')
+  })
+
   it('scopes the Configure Graphs card list to the graph page in view', async () => {
     await act(async () => {
       root.render(

@@ -467,7 +467,8 @@ export function buildExecutionChartData({
   }
 
   const resourceEnrichedPoints = mergeArchiveResourceHistory(deduped, archiveResourceHistory)
-  const pointsWithRelativeRunTime = addRelativeRunTime(resourceEnrichedPoints)
+  const responseTimeFilledPoints = carryForwardPositiveResponseTimes(resourceEnrichedPoints)
+  const pointsWithRelativeRunTime = addRelativeRunTime(responseTimeFilledPoints)
 
   if (status === 'PAUSED' && pointsWithRelativeRunTime.length > 0) {
     const lastPoint = pointsWithRelativeRunTime[pointsWithRelativeRunTime.length - 1]
@@ -487,6 +488,63 @@ export function buildExecutionChartData({
   }
 
   return markDataGaps(pointsWithRelativeRunTime)
+}
+
+const RESPONSE_TIME_METRICS = ['avgMs', 'p50', 'p90', 'p95', 'p99'] as const
+
+function responseTimeMetricSuffix(key: string) {
+  return RESPONSE_TIME_METRICS.find(metric => (
+    key === metric
+    || key.endsWith(`_${metric}`)
+    || (key.startsWith('transaction:') && key.endsWith(`:${metric}`))
+  ))
+}
+
+function responseTimeActivityKey(key: string, metric: typeof RESPONSE_TIME_METRICS[number]) {
+  if (key === metric) return 'tps'
+  if (key.startsWith('transaction:')) return `${key.slice(0, -(metric.length))}tps`
+  return `${key.slice(0, -(metric.length))}tps`
+}
+
+// Empty engine intervals carry 0 ms (and resource-only archive rows carry NaN)
+// because no response-time samples were observed. Those are absence sentinels,
+// not measured zero-duration responses. Keep each response-time line at its last
+// positive observation until a new positive sample arrives. This runs before
+// markDataGaps, so an actual missing sampling window still receives a value-less
+// gap-boundary row and remains visibly disconnected.
+export function carryForwardPositiveResponseTimes(points: MetricsHistoryPoint[]): MetricsHistoryPoint[] {
+  if (points.length === 0) return points
+
+  const responseTimeKeys = Array.from(new Set(points.flatMap(point => Object.keys(point).filter(key => responseTimeMetricSuffix(key) !== undefined))))
+  if (responseTimeKeys.length === 0) return points
+
+  const previousPositive = new Map<string, number>()
+  let changed = false
+  const filled = points.map(point => {
+    let next = point
+    responseTimeKeys.forEach(key => {
+      const value = point[key]
+      if (typeof value === 'number' && Number.isFinite(value) && value > 0) {
+        previousPositive.set(key, value)
+        return
+      }
+      const metric = responseTimeMetricSuffix(key)
+      if (!metric) return
+      const activity = point[responseTimeActivityKey(key, metric)]
+      // A finite zero with positive throughput is a measured sub-millisecond
+      // value after display rounding, not an empty-interval sentinel.
+      if (value === 0 && typeof activity === 'number' && Number.isFinite(activity) && activity > 0) return
+      const previous = previousPositive.get(key)
+      if (previous === undefined) return
+      if (next === point) {
+        next = { ...point }
+        changed = true
+      }
+      next[key] = previous
+    })
+    return next
+  })
+  return changed ? filled : points
 }
 
 const GAP_DETECTION_MIN_POINTS = 6
