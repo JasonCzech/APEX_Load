@@ -1759,12 +1759,57 @@ describe('CommandCenterPrototype', () => {
     })
 
     const summaryMetrics = Array.from(container.querySelectorAll<HTMLElement>('.command-metric-pill'))
+    expect(summaryMetrics[0].querySelector('span')?.textContent).toBe('Current / Target Load')
+    expect(summaryMetrics[0].querySelector('strong')?.textContent).toBe('42 / 50 VU')
     const errorRateMetric = summaryMetrics
-      .find(metric => metric.querySelector('span')?.textContent === 'Error Rate')
+      .find(metric => metric.querySelector('span')?.textContent === 'Overall Error Rate')
     expect(errorRateMetric?.querySelector('strong')?.textContent).toBe('16.67%')
+    expect(summaryMetrics.some(metric => metric.querySelector('span')?.textContent === 'Highest Error Rate')).toBe(false)
     const tpsMetric = summaryMetrics.find(metric => metric.querySelector('span')?.textContent?.startsWith('TPS'))
     expect(tpsMetric?.querySelector('strong')?.textContent).toBe('75.4')
     expect(container.querySelector('.command-hero-strip')).toBeNull()
+  })
+
+  it('shows the highest cumulative group error rate only for multi-group runs', async () => {
+    const liveTest = buildLiveVuserTest()
+    liveTest.groups = [
+      liveTest.groups[0],
+      { ...liveTest.groups[0], name: 'Search', script_name: 'Search Script', vusers: 25 },
+    ]
+    liveTest.live_metrics = {
+      ...liveTest.live_metrics!,
+      total_transactions: 180,
+      total_errors: 20,
+      // The latest streamed point deliberately differs from the cumulative
+      // rate used by the run-summary cards.
+      error_pct: 1,
+      groups: {
+        'Live Checkout': {
+          ...liveTest.live_metrics!.groups!['Live Checkout'],
+          transactions: 90,
+          errors: 10,
+        },
+        Search: {
+          ...liveTest.live_metrics!.groups!['Live Checkout'],
+          name: 'Search',
+          vusers: 25,
+          transactions: 40,
+          errors: 10,
+        },
+      },
+    }
+
+    await act(async () => {
+      root.render(<CommandCenterPrototype testId={liveTest.id} initialTest={liveTest} history={[]} />)
+    })
+
+    const summaryMetrics = Array.from(container.querySelectorAll<HTMLElement>('.command-metric-pill'))
+    expect(summaryMetrics[0].querySelector('span')?.textContent).toBe('Current / Target Load')
+    expect(summaryMetrics[0].querySelector('strong')?.textContent).toBe('67 / 75 VU')
+    const overall = summaryMetrics.find(metric => metric.querySelector('span')?.textContent === 'Overall Error Rate')
+    const highest = summaryMetrics.find(metric => metric.querySelector('span')?.textContent === 'Highest Error Rate')
+    expect(overall?.querySelector('strong')?.textContent).toBe('10.00%')
+    expect(highest?.querySelector('strong')?.textContent).toBe('20.00% · Search')
   })
 
   it('never reuses same-signature evidence across routed runs', async () => {
@@ -2190,6 +2235,9 @@ describe('CommandCenterPrototype', () => {
     expect(container.textContent).toContain('suggested 56 VU')
     expect(container.textContent).toContain('guardrail 10-200 VU')
     expect(container.querySelector('[aria-label="Group load transition controls"]')).toBeNull()
+    const combinedLoad = Array.from(container.querySelectorAll<HTMLElement>('.command-metric-pill'))
+      .find(metric => metric.querySelector('span')?.textContent === 'Current / Target Load')
+    expect(combinedLoad?.querySelector('strong')?.textContent).toBe('42 VU / 90.0 TPS')
 
     const targetInput = inputByLabel('Live Checkout target TPS')
     const targetSlider = inputByLabel('Live Checkout target TPS slider')

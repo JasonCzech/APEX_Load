@@ -251,8 +251,9 @@ function isHistoricalRunStatus(status: TestStatus | string | undefined) {
 }
 
 function groupErrorPercent(group: GroupLiveMetrics | undefined) {
-  if (!group || group.transactions <= 0) return 0
-  return group.errors / group.transactions * 100
+  if (!group) return 0
+  const attempts = group.transactions + group.errors
+  return attempts > 0 ? group.errors / attempts * 100 : 0
 }
 
 function wholeTestErrorPercent(metrics: LiveMetrics | undefined, groups: CommandGroup[]) {
@@ -260,6 +261,17 @@ function wholeTestErrorPercent(metrics: LiveMetrics | undefined, groups: Command
   const totalErrors = metrics?.total_errors ?? groups.reduce((sum, group) => sum + group.errors, 0)
   const attempts = totalTransactions + totalErrors
   return attempts > 0 ? totalErrors / attempts * 100 : 0
+}
+
+function highestGroupErrorRate(groups: CommandGroup[]) {
+  if (groups.length <= 1) return undefined
+  return groups.reduce((highest, group) => {
+    const attempts = group.transactions + group.errors
+    const errorPct = attempts > 0 ? group.errors / attempts * 100 : 0
+    return !highest || errorPct > highest.errorPct
+      ? { name: group.name, errorPct }
+      : highest
+  }, undefined as { name: string; errorPct: number } | undefined)
 }
 
 function isGoalOrientedRun(test: TestSummary) {
@@ -1300,6 +1312,7 @@ export default function CommandCenterPrototype({
         totalTarget={totalTarget}
         targetMode={targetMode}
         errorPct={wholeTestErrorPercent(displayTest.live_metrics, groups)}
+        highestErrorGroup={highestGroupErrorRate(groups)}
         tps={variant === 'ops' && experienceVersion === 'original' ? runSummaryTps : undefined}
         tpsHint={runSummaryAverages.tps !== undefined ? '10s avg' : undefined}
         feedback={feedback}
@@ -1549,6 +1562,7 @@ interface RunControlShelfProps {
   totalTarget: number
   targetMode: CommandGroup['targetMode']
   errorPct?: number
+  highestErrorGroup?: { name: string; errorPct: number }
   tps?: number
   tpsHint?: string
   feedback: string
@@ -1571,6 +1585,7 @@ function RunControlShelf({
   totalTarget,
   targetMode,
   errorPct,
+  highestErrorGroup,
   tps,
   tpsHint,
   feedback,
@@ -1600,16 +1615,24 @@ function RunControlShelf({
         </div>
       </div>
 
-      <div className={`command-run-stats${tps !== undefined ? ' with-tps' : ''}`} aria-label="Run summary">
+      <div className={`command-run-stats${tps !== undefined ? ' with-tps' : ''}${highestErrorGroup ? ' with-highest-error' : ''}`} aria-label="Run summary">
+        <MetricPill
+          label="Current / Target Load"
+          value={targetMode === 'tps'
+            ? `${formatNumber(totalCurrent)} VU / ${formatNumber(totalTarget, 1)} TPS`
+            : `${formatNumber(totalCurrent)} / ${formatNumber(totalTarget)} VU`}
+          tone="info"
+        />
         <MetricPill label="Remaining" value={formatRemaining(remainingSeconds)} tone={remainingSeconds <= 60 ? 'warning' : 'default'} />
         {tps !== undefined && <MetricPill label={tpsHint ? `TPS (${tpsHint})` : 'TPS'} value={formatNumber(tps, 1)} tone="accent" />}
-        <MetricPill label="Current Load" value={`${formatNumber(totalCurrent)} VU`} tone="info" />
-        <MetricPill
-          label={targetMode === 'tps' ? 'Target TPS' : 'Target Load'}
-          value={targetMode === 'tps' ? formatNumber(totalTarget, 1) : `${formatNumber(totalTarget)} VU`}
-          tone="accent"
-        />
-        <MetricPill label="Error Rate" value={formatOptionalPercent(errorPct)} tone="danger" />
+        <MetricPill label="Overall Error Rate" value={formatOptionalPercent(errorPct)} tone="danger" />
+        {highestErrorGroup && (
+          <MetricPill
+            label="Highest Error Rate"
+            value={`${formatOptionalPercent(highestErrorGroup.errorPct)} · ${highestErrorGroup.name}`}
+            tone="danger"
+          />
+        )}
       </div>
 
       <div className="command-run-actions">
