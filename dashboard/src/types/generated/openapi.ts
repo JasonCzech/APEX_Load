@@ -2394,8 +2394,10 @@ export interface operations {
               "window"?: {
                 "duration"?: string;
                 "end"?: string;
+                "end_offset"?: string;
                 "mode"?: string;
                 "start"?: string;
+                "start_offset"?: string;
               };
             }) | null;
             "workload_shape_id"?: (string) | null;
@@ -4901,9 +4903,11 @@ export interface operations {
       content: {
         "multipart/form-data": {
           "file"?: string;
+          "relative_start_time"?: string;
           "series_column"?: string;
           "sheet"?: string;
           "timestamp_column"?: string;
+          "timestamp_mode"?: string;
           "timezone"?: string;
           "value_columns"?: string;
           [key: string]: unknown;
@@ -4929,9 +4933,11 @@ export interface operations {
             "source": {
               "file"?: ({
                 "filename": string;
+                "relative_start_time"?: string;
                 "series_column"?: string;
                 "sheet"?: string;
                 "timestamp_column": string;
+                "timestamp_mode"?: string;
                 "timezone"?: string;
                 "value_columns": Array<string>;
               }) | null;
@@ -4966,9 +4972,11 @@ export interface operations {
               "sources"?: Array<{
                 "file"?: ({
                   "filename": string;
+                  "relative_start_time"?: string;
                   "series_column"?: string;
                   "sheet"?: string;
                   "timestamp_column": string;
+                  "timestamp_mode"?: string;
                   "timezone"?: string;
                   "value_columns": Array<string>;
                 }) | null;
@@ -7431,8 +7439,10 @@ export interface operations {
                 "window"?: {
                   "duration"?: string;
                   "end"?: string;
+                  "end_offset"?: string;
                   "mode"?: string;
                   "start"?: string;
+                  "start_offset"?: string;
                 };
               }) | null;
               "updated_at": string;
@@ -16363,8 +16373,10 @@ export interface operations {
               "window"?: {
                 "duration"?: string;
                 "end"?: string;
+                "end_offset"?: string;
                 "mode"?: string;
                 "start"?: string;
+                "start_offset"?: string;
               };
             }) | null;
             "vusers"?: number;
@@ -16404,8 +16416,10 @@ export interface operations {
             "window"?: {
               "duration"?: string;
               "end"?: string;
+              "end_offset"?: string;
               "mode"?: string;
               "start"?: string;
+              "start_offset"?: string;
             };
           }) | null;
           "vusers"?: number;
@@ -17531,8 +17545,10 @@ export interface operations {
                 "window"?: {
                   "duration"?: string;
                   "end"?: string;
+                  "end_offset"?: string;
                   "mode"?: string;
                   "start"?: string;
+                  "start_offset"?: string;
                 };
               }) | null;
               "vuser_ramps"?: Record<string, {
@@ -18454,9 +18470,11 @@ export interface operations {
             "source"?: {
               "file"?: ({
                 "filename"?: string;
+                "relative_start_time"?: string;
                 "series_column"?: string;
                 "sheet"?: string;
                 "timestamp_column"?: string;
+                "timestamp_mode"?: string;
                 "timezone"?: string;
                 "value_columns"?: Array<string>;
               }) | null;
@@ -18492,8 +18510,10 @@ export interface operations {
             "window"?: {
               "duration"?: string;
               "end"?: string;
+              "end_offset"?: string;
               "mode"?: string;
               "start"?: string;
+              "start_offset"?: string;
             };
           }) | null;
           "workload_shape_id"?: (string) | null;
@@ -19075,9 +19095,11 @@ export interface operations {
               "source": {
                 "file"?: ({
                   "filename": string;
+                  "relative_start_time"?: string;
                   "series_column"?: string;
                   "sheet"?: string;
                   "timestamp_column": string;
+                  "timestamp_mode"?: string;
                   "timezone"?: string;
                   "value_columns": Array<string>;
                 }) | null;
@@ -19113,8 +19135,10 @@ export interface operations {
               "window"?: {
                 "duration"?: string;
                 "end"?: string;
+                "end_offset"?: string;
                 "mode"?: string;
                 "start"?: string;
+                "start_offset"?: string;
               };
             }) | null;
             "updated_at": string;
@@ -21327,9 +21351,11 @@ export interface operations {
             "source"?: {
               "file"?: ({
                 "filename"?: string;
+                "relative_start_time"?: string;
                 "series_column"?: string;
                 "sheet"?: string;
                 "timestamp_column"?: string;
+                "timestamp_mode"?: string;
                 "timezone"?: string;
                 "value_columns"?: Array<string>;
               }) | null;
@@ -21365,8 +21391,10 @@ export interface operations {
             "window"?: {
               "duration"?: string;
               "end"?: string;
+              "end_offset"?: string;
               "mode"?: string;
               "start"?: string;
+              "start_offset"?: string;
             };
           }) | null;
           "vusers"?: number;
@@ -23203,9 +23231,11 @@ export interface operations {
               "source": {
                 "file"?: ({
                   "filename": string;
+                  "relative_start_time"?: string;
                   "series_column"?: string;
                   "sheet"?: string;
                   "timestamp_column": string;
+                  "timestamp_mode"?: string;
                   "timezone"?: string;
                   "value_columns": Array<string>;
                 }) | null;
@@ -23241,8 +23271,10 @@ export interface operations {
               "window"?: {
                 "duration"?: string;
                 "end"?: string;
+                "end_offset"?: string;
                 "mode"?: string;
                 "start"?: string;
+                "start_offset"?: string;
               };
             }) | null;
             "vuser_ramps"?: Record<string, {
@@ -25050,9 +25082,11 @@ export interface operations {
             "source"?: ({
               "file"?: ({
                 "filename"?: string;
+                "relative_start_time"?: string;
                 "series_column"?: string;
                 "sheet"?: string;
                 "timestamp_column"?: string;
+                "timestamp_mode"?: string;
                 "timezone"?: string;
                 "value_columns"?: Array<string>;
               }) | null;
@@ -25353,8 +25387,10 @@ export interface operations {
               "window"?: {
                 "duration"?: string;
                 "end"?: string;
+                "end_offset"?: string;
                 "mode"?: string;
                 "start"?: string;
+                "start_offset"?: string;
               };
             }) | null;
             "workload_shape_id"?: (string) | null;
@@ -25363,9 +25399,11 @@ export interface operations {
           "source"?: {
             "file"?: ({
               "filename"?: string;
+              "relative_start_time"?: string;
               "series_column"?: string;
               "sheet"?: string;
               "timestamp_column"?: string;
+              "timestamp_mode"?: string;
               "timezone"?: string;
               "value_columns"?: Array<string>;
             }) | null;
@@ -25400,9 +25438,11 @@ export interface operations {
             "sources"?: Array<{
               "file"?: ({
                 "filename"?: string;
+                "relative_start_time"?: string;
                 "series_column"?: string;
                 "sheet"?: string;
                 "timestamp_column"?: string;
+                "timestamp_mode"?: string;
                 "timezone"?: string;
                 "value_columns"?: Array<string>;
               }) | null;
@@ -25429,8 +25469,10 @@ export interface operations {
           "window"?: {
             "duration"?: string;
             "end"?: string;
+            "end_offset"?: string;
             "mode"?: string;
             "start"?: string;
+            "start_offset"?: string;
           };
         };
       };
@@ -25574,9 +25616,11 @@ export interface operations {
               "source"?: ({
                 "file"?: ({
                   "filename": string;
+                  "relative_start_time"?: string;
                   "series_column"?: string;
                   "sheet"?: string;
                   "timestamp_column": string;
+                  "timestamp_mode"?: string;
                   "timezone"?: string;
                   "value_columns": Array<string>;
                 }) | null;
@@ -25877,8 +25921,10 @@ export interface operations {
                 "window"?: {
                   "duration"?: string;
                   "end"?: string;
+                  "end_offset"?: string;
                   "mode"?: string;
                   "start"?: string;
+                  "start_offset"?: string;
                 };
               }) | null;
               "workload_shape_id"?: (string) | null;
@@ -25910,9 +25956,11 @@ export interface operations {
               "source": {
                 "file"?: ({
                   "filename": string;
+                  "relative_start_time"?: string;
                   "series_column"?: string;
                   "sheet"?: string;
                   "timestamp_column": string;
+                  "timestamp_mode"?: string;
                   "timezone"?: string;
                   "value_columns": Array<string>;
                 }) | null;
@@ -25948,8 +25996,10 @@ export interface operations {
               "window"?: {
                 "duration"?: string;
                 "end"?: string;
+                "end_offset"?: string;
                 "mode"?: string;
                 "start"?: string;
+                "start_offset"?: string;
               };
             }) | null;
             "warnings"?: Array<string>;
@@ -27573,9 +27623,11 @@ export interface operations {
             "source"?: {
               "file"?: ({
                 "filename"?: string;
+                "relative_start_time"?: string;
                 "series_column"?: string;
                 "sheet"?: string;
                 "timestamp_column"?: string;
+                "timestamp_mode"?: string;
                 "timezone"?: string;
                 "value_columns"?: Array<string>;
               }) | null;
@@ -27611,8 +27663,10 @@ export interface operations {
             "window"?: {
               "duration"?: string;
               "end"?: string;
+              "end_offset"?: string;
               "mode"?: string;
               "start"?: string;
+              "start_offset"?: string;
             };
           }) | null;
           "vusers"?: number;
@@ -34501,8 +34555,10 @@ export interface operations {
                 "window"?: {
                   "duration"?: string;
                   "end"?: string;
+                  "end_offset"?: string;
                   "mode"?: string;
                   "start"?: string;
+                  "start_offset"?: string;
                 };
               }) | null;
               "vuser_ramps"?: Record<string, {
@@ -35357,8 +35413,10 @@ export interface operations {
                 "window"?: {
                   "duration"?: string;
                   "end"?: string;
+                  "end_offset"?: string;
                   "mode"?: string;
                   "start"?: string;
+                  "start_offset"?: string;
                 };
               }) | null;
             }) | null;
@@ -35848,8 +35906,10 @@ export interface operations {
                 "window"?: {
                   "duration"?: string;
                   "end"?: string;
+                  "end_offset"?: string;
                   "mode"?: string;
                   "start"?: string;
+                  "start_offset"?: string;
                 };
               }) | null;
             };
@@ -37896,9 +37956,11 @@ export interface operations {
               "source": {
                 "file"?: ({
                   "filename": string;
+                  "relative_start_time"?: string;
                   "series_column"?: string;
                   "sheet"?: string;
                   "timestamp_column": string;
+                  "timestamp_mode"?: string;
                   "timezone"?: string;
                   "value_columns": Array<string>;
                 }) | null;
@@ -37934,8 +37996,10 @@ export interface operations {
               "window"?: {
                 "duration"?: string;
                 "end"?: string;
+                "end_offset"?: string;
                 "mode"?: string;
                 "start"?: string;
+                "start_offset"?: string;
               };
             }) | null;
             "updated_at": string;
@@ -41704,9 +41768,11 @@ export interface operations {
               "source": {
                 "file"?: ({
                   "filename": string;
+                  "relative_start_time"?: string;
                   "series_column"?: string;
                   "sheet"?: string;
                   "timestamp_column": string;
+                  "timestamp_mode"?: string;
                   "timezone"?: string;
                   "value_columns": Array<string>;
                 }) | null;
@@ -41742,8 +41808,10 @@ export interface operations {
               "window"?: {
                 "duration"?: string;
                 "end"?: string;
+                "end_offset"?: string;
                 "mode"?: string;
                 "start"?: string;
+                "start_offset"?: string;
               };
             }) | null;
             "vuser_ramps"?: Record<string, {
@@ -43224,8 +43292,10 @@ export interface operations {
                 "window"?: {
                   "duration"?: string;
                   "end"?: string;
+                  "end_offset"?: string;
                   "mode"?: string;
                   "start"?: string;
+                  "start_offset"?: string;
                 };
               }) | null;
               "vuser_ramps"?: Record<string, {
@@ -43589,8 +43659,10 @@ export interface operations {
                 "window"?: {
                   "duration"?: string;
                   "end"?: string;
+                  "end_offset"?: string;
                   "mode"?: string;
                   "start"?: string;
+                  "start_offset"?: string;
                 };
               }) | null;
               "vuser_ramps"?: Record<string, {
@@ -53881,9 +53953,11 @@ export interface operations {
               "source": {
                 "file"?: ({
                   "filename": string;
+                  "relative_start_time"?: string;
                   "series_column"?: string;
                   "sheet"?: string;
                   "timestamp_column": string;
+                  "timestamp_mode"?: string;
                   "timezone"?: string;
                   "value_columns": Array<string>;
                 }) | null;
@@ -53919,8 +53993,10 @@ export interface operations {
               "window"?: {
                 "duration"?: string;
                 "end"?: string;
+                "end_offset"?: string;
                 "mode"?: string;
                 "start"?: string;
+                "start_offset"?: string;
               };
             }) | null;
             "vuser_ramps"?: Record<string, {
@@ -54352,8 +54428,10 @@ export interface operations {
             "window"?: {
               "duration"?: string;
               "end"?: string;
+              "end_offset"?: string;
               "mode"?: string;
               "start"?: string;
+              "start_offset"?: string;
             };
           }) | null;
           "vusers"?: number;
@@ -60154,8 +60232,10 @@ export interface operations {
                 "window"?: {
                   "duration"?: string;
                   "end"?: string;
+                  "end_offset"?: string;
                   "mode"?: string;
                   "start"?: string;
+                  "start_offset"?: string;
                 };
               }) | null;
               "vuser_ramps"?: Record<string, {
@@ -61339,8 +61419,10 @@ export interface operations {
                 "window"?: {
                   "duration"?: string;
                   "end"?: string;
+                  "end_offset"?: string;
                   "mode"?: string;
                   "start"?: string;
+                  "start_offset"?: string;
                 };
               }) | null;
               "vuser_ramps"?: Record<string, {
@@ -62524,8 +62606,10 @@ export interface operations {
                 "window"?: {
                   "duration"?: string;
                   "end"?: string;
+                  "end_offset"?: string;
                   "mode"?: string;
                   "start"?: string;
+                  "start_offset"?: string;
                 };
               }) | null;
               "vuser_ramps"?: Record<string, {
@@ -63709,8 +63793,10 @@ export interface operations {
                 "window"?: {
                   "duration"?: string;
                   "end"?: string;
+                  "end_offset"?: string;
                   "mode"?: string;
                   "start"?: string;
+                  "start_offset"?: string;
                 };
               }) | null;
               "vuser_ramps"?: Record<string, {
@@ -64894,8 +64980,10 @@ export interface operations {
                 "window"?: {
                   "duration"?: string;
                   "end"?: string;
+                  "end_offset"?: string;
                   "mode"?: string;
                   "start"?: string;
+                  "start_offset"?: string;
                 };
               }) | null;
               "vuser_ramps"?: Record<string, {
@@ -71475,8 +71563,10 @@ export interface operations {
                 "window"?: {
                   "duration"?: string;
                   "end"?: string;
+                  "end_offset"?: string;
                   "mode"?: string;
                   "start"?: string;
+                  "start_offset"?: string;
                 };
               }) | null;
               "workload_shape_id"?: (string) | null;
@@ -82433,9 +82523,11 @@ export interface operations {
               "source": {
                 "file"?: ({
                   "filename": string;
+                  "relative_start_time"?: string;
                   "series_column"?: string;
                   "sheet"?: string;
                   "timestamp_column": string;
+                  "timestamp_mode"?: string;
                   "timezone"?: string;
                   "value_columns": Array<string>;
                 }) | null;
@@ -82471,8 +82563,10 @@ export interface operations {
               "window"?: {
                 "duration"?: string;
                 "end"?: string;
+                "end_offset"?: string;
                 "mode"?: string;
                 "start"?: string;
+                "start_offset"?: string;
               };
             }) | null;
             "vuser_ramps"?: Record<string, {
@@ -86555,9 +86649,11 @@ export interface operations {
             "source"?: {
               "file"?: ({
                 "filename"?: string;
+                "relative_start_time"?: string;
                 "series_column"?: string;
                 "sheet"?: string;
                 "timestamp_column"?: string;
+                "timestamp_mode"?: string;
                 "timezone"?: string;
                 "value_columns"?: Array<string>;
               }) | null;
@@ -86593,8 +86689,10 @@ export interface operations {
             "window"?: {
               "duration"?: string;
               "end"?: string;
+              "end_offset"?: string;
               "mode"?: string;
               "start"?: string;
+              "start_offset"?: string;
             };
           }) | null;
           "workload_shape_id"?: (string) | null;
@@ -87176,9 +87274,11 @@ export interface operations {
               "source": {
                 "file"?: ({
                   "filename": string;
+                  "relative_start_time"?: string;
                   "series_column"?: string;
                   "sheet"?: string;
                   "timestamp_column": string;
+                  "timestamp_mode"?: string;
                   "timezone"?: string;
                   "value_columns": Array<string>;
                 }) | null;
@@ -87214,8 +87314,10 @@ export interface operations {
               "window"?: {
                 "duration"?: string;
                 "end"?: string;
+                "end_offset"?: string;
                 "mode"?: string;
                 "start"?: string;
+                "start_offset"?: string;
               };
             }) | null;
             "updated_at": string;
@@ -93352,9 +93454,11 @@ export interface operations {
             "source"?: {
               "file"?: ({
                 "filename"?: string;
+                "relative_start_time"?: string;
                 "series_column"?: string;
                 "sheet"?: string;
                 "timestamp_column"?: string;
+                "timestamp_mode"?: string;
                 "timezone"?: string;
                 "value_columns"?: Array<string>;
               }) | null;
@@ -93390,8 +93494,10 @@ export interface operations {
             "window"?: {
               "duration"?: string;
               "end"?: string;
+              "end_offset"?: string;
               "mode"?: string;
               "start"?: string;
+              "start_offset"?: string;
             };
           }) | null;
           "workload_shape_id"?: (string) | null;

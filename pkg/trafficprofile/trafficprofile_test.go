@@ -68,6 +68,81 @@ func TestParseXLSXAndNaiveTimestampTimezone(t *testing.T) {
 	}
 }
 
+func TestSeriesFromSheetRelativeTimestamps(t *testing.T) {
+	sheet, err := ParseCSV([]byte("elapsed,orders\n0:00,10\n0:15,20\n25:00:30.5,30\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	location, err := time.LoadLocation("America/New_York")
+	if err != nil {
+		t.Fatal(err)
+	}
+	start := time.Date(2000, time.January, 1, 12, 0, 0, 0, location)
+	series, err := SeriesFromSheet(sheet, TableOptions{TimestampColumn: "elapsed", TimestampMode: "relative", RelativeStart: start, ValueColumns: []string{"orders"}, Timezone: location})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := series[0].Points[0].Timestamp.Format(time.RFC3339); got != "2000-01-01T17:00:00Z" {
+		t.Fatalf("relative zero timestamp = %s", got)
+	}
+	if got := series[0].Points[2].Timestamp.Sub(series[0].Points[0].Timestamp); got != 25*time.Hour+30*time.Second+500*time.Millisecond {
+		t.Fatalf("relative span = %s", got)
+	}
+}
+
+func TestParseRelativeTimestamp(t *testing.T) {
+	for _, test := range []struct {
+		value string
+		want  time.Duration
+		valid bool
+	}{
+		{value: "0:00", want: 0, valid: true},
+		{value: "1:02:03.5", want: time.Hour + 2*time.Minute + 3500*time.Millisecond, valid: true},
+		{value: "90m", want: 90 * time.Minute, valid: true},
+		{value: "-0:01", valid: false},
+		{value: "1:60", valid: false},
+		{value: "1:02:60", valid: false},
+		{value: "yesterday", valid: false},
+	} {
+		got, err := ParseRelativeTimestamp(test.value)
+		if test.valid && (err != nil || got != test.want) {
+			t.Errorf("ParseRelativeTimestamp(%q) = %s, %v; want %s", test.value, got, err, test.want)
+		}
+		if !test.valid && err == nil {
+			t.Errorf("ParseRelativeTimestamp(%q) unexpectedly succeeded", test.value)
+		}
+	}
+}
+
+func TestNormalizeExplicitWindowWithRelativeOffsets(t *testing.T) {
+	start := time.Date(2000, time.January, 1, 17, 0, 0, 0, time.UTC)
+	series := Series{Points: []Point{
+		{Timestamp: start, Value: 10},
+		{Timestamp: start.Add(15 * time.Minute), Value: 20},
+		{Timestamp: start.Add(30 * time.Minute), Value: 30},
+		{Timestamp: start.Add(45 * time.Minute), Value: 40},
+	}}
+	got, err := Normalize(series, NormalizeOptions{
+		Semantics: SemanticsTPS,
+		GapPolicy: GapHold,
+		Window: WindowSpec{
+			Mode:            "explicit",
+			RelativeOffsets: true,
+			StartOffset:     15 * time.Minute,
+			EndOffset:       45 * time.Minute,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Source.Points) != 2 || !got.Source.Points[0].Timestamp.Equal(start.Add(15*time.Minute)) {
+		t.Fatalf("selected points = %#v", got.Source.Points)
+	}
+	if got.SourceDuration != 30*time.Minute {
+		t.Fatalf("source duration = %s, want 30m", got.SourceDuration)
+	}
+}
+
 func TestNormalizeGapPolicies(t *testing.T) {
 	start := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	series := Series{Points: []Point{{start, 1}, {start.Add(10 * time.Second), 2}, {start.Add(30 * time.Second), 3}, {start.Add(40 * time.Second), 4}}}

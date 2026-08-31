@@ -121,6 +121,102 @@ describe('TrafficProfileSourcePanel', () => {
     container.remove()
   })
 
+  it('supports relative elapsed timestamps and restores the saved timezone', async () => {
+    apiMock.analyzeTrafficProfile.mockResolvedValue({
+      source: { kind: 'file', file: { filename: 'relative.csv', sheet: 'CSV', timestamp_column: '', timestamp_mode: 'relative', relative_start_time: '12:00', value_columns: [], timezone: 'America/Chicago' } },
+      sheets: [{ name: 'CSV', columns: ['elapsed', 'transactions'], samples: [['0:00', '10']] }],
+      series: [],
+    })
+    const existingProfile: TrafficProfile = {
+      version: 1,
+      source: { kind: 'file', file: { filename: 'relative.csv', sheet: 'CSV', timestamp_column: 'elapsed', timestamp_mode: 'relative', relative_start_time: '12:00', value_columns: ['transactions'], timezone: 'America/Chicago' } },
+      value_semantics: 'tps', runtime_target: 'tps', interpolation: 'step', source_duration: '15m', target_duration: '15m', gap_policy: 'hold',
+      mappings: [{ series_key: 'requests', series_name: 'requests', group_name: 'Checkout', peak_target: 30, points: [{ offset_ms: 0, target: 15 }, { offset_ms: 15_000, target: 30 }] }],
+      refreshed_at: '2026-08-27T00:00:00Z',
+    }
+    const draft = { name: 'Replay', duration: '15m', scenario_mode: 'goal_oriented', script_shakeout: false, resource_baseline: false, groups: [{ name: 'Checkout', script_id: 'script-1', vusers: 10 }] } as ScenarioUpsertPayload
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    await act(async () => { root.render(<TrafficProfileSourcePanel groupNames={['Checkout']} scenarioDraft={draft} existingProfile={existingProfile} onApply={vi.fn()} />) })
+
+    const input = container.querySelector('input[type="file"]') as HTMLInputElement
+    Object.defineProperty(input, 'files', { configurable: true, value: [new File(['elapsed,transactions\n0:00,10\n'], 'relative.csv')] })
+    await act(async () => { input.dispatchEvent(new Event('change', { bubbles: true })) })
+    const analyze = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Analyze source')
+    await act(async () => { analyze?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+
+    expect((container.querySelector('[aria-label="Timestamp values"]') as HTMLSelectElement).value).toBe('relative')
+    expect((container.querySelector('[aria-label="Relative 0:00 starts at"]') as HTMLInputElement).value).toBe('12:00')
+    expect((container.querySelector('[aria-label="Timezone"]') as HTMLSelectElement).value).toBe('America/Chicago')
+    const uploadCalls = apiMock.analyzeTrafficProfile.mock.calls
+    const upload = uploadCalls[uploadCalls.length - 1]?.[0] as FormData
+    expect(upload.get('timestamp_mode')).toBe('relative')
+    expect(upload.get('relative_start_time')).toBe('12:00')
+    expect(upload.get('timezone')).toBe('America/Chicago')
+
+    await act(async () => root.unmount())
+    container.remove()
+  })
+
+  it('requires file re-analysis after timestamp settings change', async () => {
+    const fileAnalysis = {
+      source: { kind: 'file', file: { filename: 'traffic.csv', sheet: 'CSV', timestamp_column: 'timestamp', timestamp_mode: 'absolute', value_columns: ['transactions'], timezone: 'UTC' } },
+      sheets: [{ name: 'CSV', columns: ['timestamp', 'transactions'], samples: [['2026-08-26T00:00:00Z', '15']] }],
+      series: defaultAnalysis.series,
+    } as const
+    apiMock.analyzeTrafficProfile.mockResolvedValue(fileAnalysis)
+    const draft = { name: 'Replay', duration: '15m', scenario_mode: 'goal_oriented', script_shakeout: false, resource_baseline: false, groups: [{ name: 'Checkout', script_id: 'script-1', vusers: 10 }] } as ScenarioUpsertPayload
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    await act(async () => { root.render(<TrafficProfileSourcePanel groupNames={['Checkout']} scenarioDraft={draft} onApply={vi.fn()} />) })
+
+    const input = container.querySelector('input[type="file"]') as HTMLInputElement
+    Object.defineProperty(input, 'files', { configurable: true, value: [new File(['timestamp,transactions\n'], 'traffic.csv')] })
+    await act(async () => { input.dispatchEvent(new Event('change', { bubbles: true })) })
+    const analyze = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Analyze source')
+    await act(async () => { analyze?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+    expect(Array.from(container.querySelectorAll('button')).some(button => button.textContent === 'Build profile preview')).toBe(true)
+
+    let resolveReanalysis: ((value: typeof fileAnalysis) => void) | undefined
+    apiMock.analyzeTrafficProfile.mockReturnValueOnce(new Promise(resolve => { resolveReanalysis = resolve }))
+    const reanalyze = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Re-analyze')
+    await act(async () => { reanalyze?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+    const timestampMode = container.querySelector('[aria-label="Timestamp values"]') as HTMLSelectElement
+    await act(async () => {
+      timestampMode.value = 'relative'
+      timestampMode.dispatchEvent(new Event('change', { bubbles: true }))
+      resolveReanalysis?.(fileAnalysis)
+    })
+    expect(Array.from(container.querySelectorAll('button')).some(button => button.textContent === 'Build profile preview')).toBe(false)
+    expect(Array.from(container.querySelectorAll('button')).some(button => button.textContent === 'Re-analyze')).toBe(true)
+
+    const latestReanalyze = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Re-analyze')
+    await act(async () => { latestReanalyze?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+    const windowMode = Array.from(container.querySelectorAll('label')).find(label => label.querySelector('span')?.textContent === 'Window')?.querySelector('select') as HTMLSelectElement
+    await act(async () => {
+      windowMode.value = 'explicit'
+      windowMode.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    const startOffset = container.querySelector('[aria-label="Window start offset"]') as HTMLInputElement
+    const endOffset = container.querySelector('[aria-label="Window end offset"]') as HTMLInputElement
+    expect(startOffset).not.toBeNull()
+    expect(endOffset).not.toBeNull()
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(startOffset, '15m')
+      startOffset.dispatchEvent(new Event('input', { bubbles: true }))
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(endOffset, '45m')
+      endOffset.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    const preview = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Build profile preview')
+    await act(async () => { preview?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+    expect(apiMock.deriveTrafficProfile).toHaveBeenCalledWith(expect.objectContaining({ window: { mode: 'explicit', start_offset: '15m', end_offset: '45m' } }))
+
+    await act(async () => root.unmount())
+    container.remove()
+  })
+
   it('fans one selected workload series out to every scenario group', async () => {
     const derived: TrafficProfileDeriveResponse = {
       traffic_profile: {
@@ -161,6 +257,7 @@ describe('TrafficProfileSourcePanel', () => {
       const group = filename.startsWith('checkout') ? 'checkout' : 'search'
       return {
         source: { kind: 'file' as const, file: { filename, sheet: 'CSV', timestamp_column: 'timestamp', value_columns: ['transactions'], timezone: 'UTC' } },
+        sheets: [{ name: 'CSV', columns: ['timestamp', 'transactions'], samples: [[point.timestamp, '15']] }],
         series: [{ series: { ...analyzedSeries, key: `${group}-requests`, name: `${group} requests` }, stats: { count: 2, start: point.timestamp, end: '2026-08-26T00:00:15Z', min: 15, max: 30, mean: 22.5, detected_bucket: 15_000_000_000, gaps: 0 } }],
       }
     })
@@ -190,6 +287,30 @@ describe('TrafficProfileSourcePanel', () => {
       searchAnalyze?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
     expect(Array.from(container.querySelectorAll('.status-badge.success')).map(item => item.textContent)).toEqual(['Ready', 'Ready'])
+    apiMock.analyzeTrafficProfile.mockRejectedValueOnce(new Error('temporary analysis failure'))
+    await act(async () => { checkoutAnalyze?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+    expect(container.querySelectorAll('.status-badge.success')).toHaveLength(2)
+    expect(container.textContent).toContain('temporary analysis failure')
+
+    apiMock.analyzeTrafficProfile.mockResolvedValueOnce({
+      source: { kind: 'file' as const, file: { filename: 'checkout.csv', sheet: 'CSV', timestamp_column: 'timestamp', value_columns: ['transactions'], timezone: 'UTC' } },
+      sheets: [{ name: 'CSV', columns: ['timestamp', 'transactions'], samples: [] }],
+      series: [],
+    })
+    await act(async () => { checkoutAnalyze?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+    expect(container.querySelectorAll('.status-badge.success')).toHaveLength(1)
+    expect(container.querySelector('[aria-label="Workload series for Checkout"]')).toBeNull()
+
+    const checkoutTimestampMode = container.querySelector('[aria-label="Checkout timestamp values"]') as HTMLSelectElement
+    await act(async () => {
+      checkoutTimestampMode.value = 'relative'
+      checkoutTimestampMode.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    expect(container.querySelectorAll('.status-badge.success')).toHaveLength(1)
+    expect(container.querySelector('[aria-label="Workload series for Checkout"]')).toBeNull()
+    await act(async () => { checkoutAnalyze?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+    expect(container.querySelectorAll('.status-badge.success')).toHaveLength(2)
+
     const seriesSelects = Array.from(container.querySelectorAll('[aria-label^="Workload series for"]')) as HTMLSelectElement[]
     const firstSeries = seriesSelects[0].value
     await act(async () => {

@@ -13,7 +13,7 @@ export interface TrafficProfileQueryRange { mode: 'absolute' | 'relative'; start
 export interface TrafficProfileSourceEntry {
   kind: 'file' | 'prometheus' | 'opensearch'
   name?: string
-  file?: { filename: string; sheet?: string; timestamp_column: string; value_columns: string[]; series_column?: string; timezone?: string }
+  file?: { filename: string; sheet?: string; timestamp_column: string; timestamp_mode?: 'absolute' | 'relative'; relative_start_time?: string; value_columns: string[]; series_column?: string; timezone?: string }
   prometheus?: { query: string; range: TrafficProfileQueryRange; label_fields?: string[] }
   opensearch?: { index: string; timestamp_field: string; filter?: unknown; interval: string; metric: 'count' | 'sum' | 'avg'; metric_field?: string; range: TrafficProfileQueryRange }
 }
@@ -42,7 +42,7 @@ export interface TrafficProfile {
   source_duration: string
   target_duration: string
   gap_policy?: TrafficProfileGapPolicy
-  window?: { mode?: 'full' | 'explicit' | 'peak'; start?: string; end?: string; duration?: string }
+  window?: { mode?: 'full' | 'explicit' | 'peak'; start?: string; end?: string; start_offset?: string; end_offset?: string; duration?: string }
   amplitude?: { mode?: 'factor' | 'peak'; value?: number }
   mappings: TrafficProfileMapping[]
   warnings?: string[]
@@ -68,7 +68,7 @@ export interface TrafficProfileDeriveRequest {
   mappings: Array<{ series_key: string; group_name: string; source?: TrafficProfileSourceEntry }>
   value_semantics: TrafficProfileValueSemantics
   gap_policy: TrafficProfileGapPolicy
-  window: { mode: 'full' | 'explicit' | 'peak'; start?: string; end?: string; duration?: string }
+  window: { mode: 'full' | 'explicit' | 'peak'; start?: string; end?: string; start_offset?: string; end_offset?: string; duration?: string }
   target_duration?: string
   amplitude: { mode: 'factor' | 'peak'; value: number }
   scenario_draft: ScenarioUpsertPayload

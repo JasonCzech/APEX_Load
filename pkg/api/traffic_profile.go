@@ -52,12 +52,14 @@ type TrafficProfileSourceEntry struct {
 }
 
 type TrafficProfileFileSource struct {
-	Filename        string   `json:"filename"`
-	Sheet           string   `json:"sheet,omitempty"`
-	TimestampColumn string   `json:"timestamp_column"`
-	ValueColumns    []string `json:"value_columns"`
-	SeriesColumn    string   `json:"series_column,omitempty"`
-	Timezone        string   `json:"timezone,omitempty"`
+	Filename          string   `json:"filename"`
+	Sheet             string   `json:"sheet,omitempty"`
+	TimestampColumn   string   `json:"timestamp_column"`
+	TimestampMode     string   `json:"timestamp_mode,omitempty"`
+	RelativeStartTime string   `json:"relative_start_time,omitempty"`
+	ValueColumns      []string `json:"value_columns"`
+	SeriesColumn      string   `json:"series_column,omitempty"`
+	Timezone          string   `json:"timezone,omitempty"`
 }
 
 type TrafficProfileQueryRange struct {
@@ -85,10 +87,12 @@ type TrafficProfileOpenSearchSource struct {
 }
 
 type TrafficProfileWindow struct {
-	Mode     string    `json:"mode,omitempty"`
-	Start    time.Time `json:"start,omitempty"`
-	End      time.Time `json:"end,omitempty"`
-	Duration string    `json:"duration,omitempty"`
+	Mode        string    `json:"mode,omitempty"`
+	Start       time.Time `json:"start,omitempty"`
+	End         time.Time `json:"end,omitempty"`
+	StartOffset string    `json:"start_offset,omitempty"`
+	EndOffset   string    `json:"end_offset,omitempty"`
+	Duration    string    `json:"duration,omitempty"`
 }
 
 type TrafficProfileAmplitude struct {
@@ -172,7 +176,11 @@ func validateTrafficProfile(profile *TrafficProfile, groups []CreateGroupEntry, 
 	switch window.Mode {
 	case "", "full":
 	case "explicit":
-		if !window.End.After(window.Start) {
+		if window.RelativeOffsets {
+			if window.StartOffset < 0 || window.EndOffset <= window.StartOffset {
+				return errors.New("traffic_profile explicit offset window end must be after start")
+			}
+		} else if !window.End.After(window.Start) {
 			return errors.New("traffic_profile explicit window end must be after start")
 		}
 	case "peak":
@@ -350,6 +358,28 @@ func validateTrafficProfileSource(source TrafficProfileSource) error {
 		if strings.TrimSpace(source.File.Filename) == "" || strings.TrimSpace(source.File.TimestampColumn) == "" || len(source.File.ValueColumns) == 0 {
 			return errors.New("traffic_profile file source requires filename, timestamp_column, and value_columns")
 		}
+		timestampMode := strings.ToLower(strings.TrimSpace(source.File.TimestampMode))
+		if timestampMode == "" {
+			timestampMode = "absolute"
+		}
+		if timestampMode != "absolute" && timestampMode != "relative" {
+			return errors.New("traffic_profile file timestamp_mode must be absolute or relative")
+		}
+		if source.File.Timezone != "" {
+			if _, err := time.LoadLocation(source.File.Timezone); err != nil {
+				return errors.New("traffic_profile file timezone is invalid")
+			}
+		}
+		if timestampMode == "relative" {
+			if source.File.Timezone == "" {
+				return errors.New("traffic_profile relative timestamps require a timezone")
+			}
+			if _, err := parseTrafficProfileRelativeStartTime(source.File.RelativeStartTime, time.UTC); err != nil {
+				return fmt.Errorf("traffic_profile file relative_start_time: %w", err)
+			}
+		} else if strings.TrimSpace(source.File.RelativeStartTime) != "" {
+			return errors.New("traffic_profile file relative_start_time requires timestamp_mode relative")
+		}
 		seenColumns := make(map[string]struct{}, len(source.File.ValueColumns))
 		for _, column := range source.File.ValueColumns {
 			if strings.TrimSpace(column) == "" {
@@ -360,11 +390,6 @@ func validateTrafficProfileSource(source TrafficProfileSource) error {
 				return errors.New("traffic_profile file value_columns must be unique")
 			}
 			seenColumns[key] = struct{}{}
-		}
-		if source.File.Timezone != "" {
-			if _, err := time.LoadLocation(source.File.Timezone); err != nil {
-				return errors.New("traffic_profile file timezone is invalid")
-			}
 		}
 	case "prometheus":
 		if source.Prometheus == nil || source.File != nil || source.OpenSearch != nil || len(source.Sources) > 0 {
@@ -419,6 +444,23 @@ func (source TrafficProfileSourceEntry) asSource() TrafficProfileSource {
 
 func trafficProfileSourceEntry(source TrafficProfileSource) TrafficProfileSourceEntry {
 	return TrafficProfileSourceEntry{Kind: source.Kind, Name: source.Name, File: source.File, Prometheus: source.Prometheus, OpenSearch: source.OpenSearch}
+}
+
+func parseTrafficProfileRelativeStartTime(value string, location *time.Location) (time.Time, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return time.Time{}, errors.New("is required")
+	}
+	if location == nil {
+		return time.Time{}, errors.New("requires a timezone")
+	}
+	for _, layout := range []string{"15:04:05", "15:04"} {
+		parsed, err := time.ParseInLocation(layout, value, location)
+		if err == nil {
+			return time.Date(2000, time.January, 1, parsed.Hour(), parsed.Minute(), parsed.Second(), parsed.Nanosecond(), location), nil
+		}
+	}
+	return time.Time{}, errors.New("must use HH:MM or HH:MM:SS")
 }
 
 func trafficProfileSourceIdentity(source any) string {

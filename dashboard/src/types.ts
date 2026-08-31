@@ -317,6 +317,7 @@ export type {
   TrafficProfileRuntimePoint,
   TrafficProfileSeries,
   TrafficProfileSource,
+  TrafficProfileSourceEntry,
   TrafficProfileSourcesResponse,
   TrafficProfileStats,
   TrafficProfileValueSemantics,

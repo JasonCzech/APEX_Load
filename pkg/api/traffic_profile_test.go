@@ -262,6 +262,51 @@ func TestValidateTrafficProfileSourceProvenance(t *testing.T) {
 	}
 }
 
+func TestValidateTrafficProfileRelativeFileSource(t *testing.T) {
+	valid := TrafficProfileSource{Kind: "file", File: &TrafficProfileFileSource{Filename: "traffic.csv", TimestampColumn: "elapsed", TimestampMode: "relative", RelativeStartTime: "12:00", ValueColumns: []string{"orders"}, Timezone: "America/New_York"}}
+	if err := validateTrafficProfileSource(valid); err != nil {
+		t.Fatalf("valid relative file source: %v", err)
+	}
+	for name, mutate := range map[string]func(*TrafficProfileFileSource){
+		"missing timezone": func(source *TrafficProfileFileSource) { source.Timezone = "" },
+		"invalid timezone": func(source *TrafficProfileFileSource) { source.Timezone = "Mars/Olympus" },
+		"missing start":    func(source *TrafficProfileFileSource) { source.RelativeStartTime = "" },
+		"invalid start":    func(source *TrafficProfileFileSource) { source.RelativeStartTime = "25:00" },
+	} {
+		t.Run(name, func(t *testing.T) {
+			candidate := valid
+			file := *valid.File
+			candidate.File = &file
+			mutate(candidate.File)
+			if err := validateTrafficProfileSource(candidate); err == nil {
+				t.Fatal("expected validation error")
+			}
+		})
+	}
+}
+
+func TestTrafficProfileWindowSpecRelativeOffsets(t *testing.T) {
+	window, err := trafficProfileWindowSpec(TrafficProfileWindow{Mode: "explicit", StartOffset: "15m", EndOffset: "45m"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !window.RelativeOffsets || window.StartOffset != 15*time.Minute || window.EndOffset != 45*time.Minute {
+		t.Fatalf("window = %#v", window)
+	}
+	for name, value := range map[string]TrafficProfileWindow{
+		"missing end":  {Mode: "explicit", StartOffset: "15m"},
+		"reversed":     {Mode: "explicit", StartOffset: "45m", EndOffset: "15m"},
+		"mixed":        {Mode: "explicit", Start: time.Now(), StartOffset: "15m", EndOffset: "45m"},
+		"not explicit": {Mode: "full", StartOffset: "15m", EndOffset: "45m"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := trafficProfileWindowSpec(value); err == nil {
+				t.Fatal("expected validation error")
+			}
+		})
+	}
+}
+
 func TestValidateTrafficProfileSupportsSharedAndPerGroupSources(t *testing.T) {
 	minimum, maximum := 1, 20
 	goal := &GoalConfig{MinVUsers: &minimum, MaxVUsers: &maximum}

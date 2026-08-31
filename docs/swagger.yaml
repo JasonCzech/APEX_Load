@@ -6563,11 +6563,15 @@ paths:
                             end:
                               type: string
                               format: date-time
+                            end_offset:
+                              type: string
                             mode:
                               type: string
                             start:
                               type: string
                               format: date-time
+                            start_offset:
+                              type: string
                       nullable: true
                     workload_shape_id:
                       type: string
@@ -45428,11 +45432,15 @@ paths:
                             end:
                               type: string
                               format: date-time
+                            end_offset:
+                              type: string
                             mode:
                               type: string
                             start:
                               type: string
                               format: date-time
+                            start_offset:
+                              type: string
                       nullable: true
                     vusers:
                       type: integer
@@ -45534,11 +45542,15 @@ paths:
                         end:
                           type: string
                           format: date-time
+                        end_offset:
+                          type: string
                         mode:
                           type: string
                         start:
                           type: string
                           format: date-time
+                        start_offset:
+                          type: string
                   nullable: true
                 vusers:
                   type: integer
@@ -48982,11 +48994,15 @@ paths:
                               end:
                                 type: string
                                 format: date-time
+                              end_offset:
+                                type: string
                               mode:
                                 type: string
                               start:
                                 type: string
                                 format: date-time
+                              start_offset:
+                                type: string
                         required:
                           - interpolation
                           - mappings
@@ -52537,11 +52553,15 @@ paths:
                               end:
                                 type: string
                                 format: date-time
+                              end_offset:
+                                type: string
                               mode:
                                 type: string
                               start:
                                 type: string
                                 format: date-time
+                              start_offset:
+                                type: string
                         required:
                           - interpolation
                           - mappings
@@ -56089,11 +56109,15 @@ paths:
                               end:
                                 type: string
                                 format: date-time
+                              end_offset:
+                                type: string
                               mode:
                                 type: string
                               start:
                                 type: string
                                 format: date-time
+                              start_offset:
+                                type: string
                         required:
                           - interpolation
                           - mappings
@@ -59653,11 +59677,15 @@ paths:
                               end:
                                 type: string
                                 format: date-time
+                              end_offset:
+                                type: string
                               mode:
                                 type: string
                               start:
                                 type: string
                                 format: date-time
+                              start_offset:
+                                type: string
                         required:
                           - interpolation
                           - mappings
@@ -63217,11 +63245,15 @@ paths:
                               end:
                                 type: string
                                 format: date-time
+                              end_offset:
+                                type: string
                               mode:
                                 type: string
                               start:
                                 type: string
                                 format: date-time
+                              start_offset:
+                                type: string
                         required:
                           - interpolation
                           - mappings
@@ -66781,11 +66813,15 @@ paths:
                               end:
                                 type: string
                                 format: date-time
+                              end_offset:
+                                type: string
                               mode:
                                 type: string
                               start:
                                 type: string
                                 format: date-time
+                              start_offset:
+                                type: string
                         required:
                           - interpolation
                           - mappings
@@ -70345,11 +70381,15 @@ paths:
                               end:
                                 type: string
                                 format: date-time
+                              end_offset:
+                                type: string
                               mode:
                                 type: string
                               start:
                                 type: string
                                 format: date-time
+                              start_offset:
+                                type: string
                         required:
                           - interpolation
                           - mappings
@@ -80035,11 +80075,15 @@ paths:
                           properties:
                             filename:
                               type: string
+                            relative_start_time:
+                              type: string
                             series_column:
                               type: string
                             sheet:
                               type: string
                             timestamp_column:
+                              type: string
+                            timestamp_mode:
                               type: string
                             timezone:
                               type: string
@@ -80128,11 +80172,15 @@ paths:
                         end:
                           type: string
                           format: date-time
+                        end_offset:
+                          type: string
                         mode:
                           type: string
                         start:
                           type: string
                           format: date-time
+                        start_offset:
+                          type: string
                   nullable: true
                 workload_shape_id:
                   type: string
@@ -81705,11 +81753,15 @@ paths:
                             properties:
                               filename:
                                 type: string
+                              relative_start_time:
+                                type: string
                               series_column:
                                 type: string
                               sheet:
                                 type: string
                               timestamp_column:
+                                type: string
+                              timestamp_mode:
                                 type: string
                               timezone:
                                 type: string
@@ -81815,11 +81867,15 @@ paths:
                           end:
                             type: string
                             format: date-time
+                          end_offset:
+                            type: string
                           mode:
                             type: string
                           start:
                             type: string
                             format: date-time
+                          start_offset:
+                            type: string
                     required:
                       - interpolation
                       - mappings
@@ -83499,11 +83555,15 @@ paths:
                             properties:
                               filename:
                                 type: string
+                              relative_start_time:
+                                type: string
                               series_column:
                                 type: string
                               sheet:
                                 type: string
                               timestamp_column:
+                                type: string
+                              timestamp_mode:
                                 type: string
                               timezone:
                                 type: string
@@ -83609,11 +83669,15 @@ paths:
                           end:
                             type: string
                             format: date-time
+                          end_offset:
+                            type: string
                           mode:
                             type: string
                           start:
                             type: string
                             format: date-time
+                          start_offset:
+                            type: string
                     required:
                       - interpolation
                       - mappings
@@ -84919,11 +84983,15 @@ paths:
                           properties:
                             filename:
                               type: string
+                            relative_start_time:
+                              type: string
                             series_column:
                               type: string
                             sheet:
                               type: string
                             timestamp_column:
+                              type: string
+                            timestamp_mode:
                               type: string
                             timezone:
                               type: string
@@ -85012,11 +85080,15 @@ paths:
                         end:
                           type: string
                           format: date-time
+                        end_offset:
+                          type: string
                         mode:
                           type: string
                         start:
                           type: string
                           format: date-time
+                        start_offset:
+                          type: string
                   nullable: true
                 workload_shape_id:
                   type: string
@@ -86589,11 +86661,15 @@ paths:
                             properties:
                               filename:
                                 type: string
+                              relative_start_time:
+                                type: string
                               series_column:
                                 type: string
                               sheet:
                                 type: string
                               timestamp_column:
+                                type: string
+                              timestamp_mode:
                                 type: string
                               timezone:
                                 type: string
@@ -86699,11 +86775,15 @@ paths:
                           end:
                             type: string
                             format: date-time
+                          end_offset:
+                            type: string
                           mode:
                             type: string
                           start:
                             type: string
                             format: date-time
+                          start_offset:
+                            type: string
                     required:
                       - interpolation
                       - mappings
@@ -88096,11 +88176,15 @@ paths:
                               end:
                                 type: string
                                 format: date-time
+                              end_offset:
+                                type: string
                               mode:
                                 type: string
                               start:
                                 type: string
                                 format: date-time
+                              start_offset:
+                                type: string
                         required:
                           - interpolation
                           - mappings
@@ -91037,11 +91121,15 @@ paths:
                               end:
                                 type: string
                                 format: date-time
+                              end_offset:
+                                type: string
                               mode:
                                 type: string
                               start:
                                 type: string
                                 format: date-time
+                              start_offset:
+                                type: string
                         required:
                           - interpolation
                           - mappings
@@ -91130,11 +91218,15 @@ paths:
                 file:
                   type: string
                   format: binary
+                relative_start_time:
+                  type: string
                 series_column:
                   type: string
                 sheet:
                   type: string
                 timestamp_column:
+                  type: string
+                timestamp_mode:
                   type: string
                 timezone:
                   type: string
@@ -91203,11 +91295,15 @@ paths:
                         properties:
                           filename:
                             type: string
+                          relative_start_time:
+                            type: string
                           series_column:
                             type: string
                           sheet:
                             type: string
                           timestamp_column:
+                            type: string
+                          timestamp_mode:
                             type: string
                           timezone:
                             type: string
@@ -91306,11 +91402,15 @@ paths:
                               properties:
                                 filename:
                                   type: string
+                                relative_start_time:
+                                  type: string
                                 series_column:
                                   type: string
                                 sheet:
                                   type: string
                                 timestamp_column:
+                                  type: string
+                                timestamp_mode:
                                   type: string
                                 timezone:
                                   type: string
@@ -91475,11 +91575,15 @@ paths:
                             properties:
                               filename:
                                 type: string
+                              relative_start_time:
+                                type: string
                               series_column:
                                 type: string
                               sheet:
                                 type: string
                               timestamp_column:
+                                type: string
+                              timestamp_mode:
                                 type: string
                               timezone:
                                 type: string
@@ -92306,11 +92410,15 @@ paths:
                             end:
                               type: string
                               format: date-time
+                            end_offset:
+                              type: string
                             mode:
                               type: string
                             start:
                               type: string
                               format: date-time
+                            start_offset:
+                              type: string
                       nullable: true
                     workload_shape_id:
                       type: string
@@ -92329,11 +92437,15 @@ paths:
                       properties:
                         filename:
                           type: string
+                        relative_start_time:
+                          type: string
                         series_column:
                           type: string
                         sheet:
                           type: string
                         timestamp_column:
+                          type: string
+                        timestamp_mode:
                           type: string
                         timezone:
                           type: string
@@ -92413,11 +92525,15 @@ paths:
                             properties:
                               filename:
                                 type: string
+                              relative_start_time:
+                                type: string
                               series_column:
                                 type: string
                               sheet:
                                 type: string
                               timestamp_column:
+                                type: string
+                              timestamp_mode:
                                 type: string
                               timezone:
                                 type: string
@@ -92477,11 +92593,15 @@ paths:
                     end:
                       type: string
                       format: date-time
+                    end_offset:
+                      type: string
                     mode:
                       type: string
                     start:
                       type: string
                       format: date-time
+                    start_offset:
+                      type: string
       responses:
         "200":
           description: OK
@@ -92897,11 +93017,15 @@ paths:
                               properties:
                                 filename:
                                   type: string
+                                relative_start_time:
+                                  type: string
                                 series_column:
                                   type: string
                                 sheet:
                                   type: string
                                 timestamp_column:
+                                  type: string
+                                timestamp_mode:
                                   type: string
                                 timezone:
                                   type: string
@@ -93779,11 +93903,15 @@ paths:
                               end:
                                 type: string
                                 format: date-time
+                              end_offset:
+                                type: string
                               mode:
                                 type: string
                               start:
                                 type: string
                                 format: date-time
+                              start_offset:
+                                type: string
                         required:
                           - interpolation
                           - mappings
@@ -93883,11 +94011,15 @@ paths:
                             properties:
                               filename:
                                 type: string
+                              relative_start_time:
+                                type: string
                               series_column:
                                 type: string
                               sheet:
                                 type: string
                               timestamp_column:
+                                type: string
+                              timestamp_mode:
                                 type: string
                               timezone:
                                 type: string
@@ -93993,11 +94125,15 @@ paths:
                           end:
                             type: string
                             format: date-time
+                          end_offset:
+                            type: string
                           mode:
                             type: string
                           start:
                             type: string
                             format: date-time
+                          start_offset:
+                            type: string
                     required:
                       - interpolation
                       - mappings
@@ -95387,11 +95523,15 @@ paths:
                           properties:
                             filename:
                               type: string
+                            relative_start_time:
+                              type: string
                             series_column:
                               type: string
                             sheet:
                               type: string
                             timestamp_column:
+                              type: string
+                            timestamp_mode:
                               type: string
                             timezone:
                               type: string
@@ -95480,11 +95620,15 @@ paths:
                         end:
                           type: string
                           format: date-time
+                        end_offset:
+                          type: string
                         mode:
                           type: string
                         start:
                           type: string
                           format: date-time
+                        start_offset:
+                          type: string
                   nullable: true
                 workload_shape_id:
                   type: string
@@ -186736,11 +186880,15 @@ paths:
                           properties:
                             filename:
                               type: string
+                            relative_start_time:
+                              type: string
                             series_column:
                               type: string
                             sheet:
                               type: string
                             timestamp_column:
+                              type: string
+                            timestamp_mode:
                               type: string
                             timezone:
                               type: string
@@ -186829,11 +186977,15 @@ paths:
                         end:
                           type: string
                           format: date-time
+                        end_offset:
+                          type: string
                         mode:
                           type: string
                         start:
                           type: string
                           format: date-time
+                        start_offset:
+                          type: string
                   nullable: true
                 vusers:
                   type: integer
@@ -192349,11 +192501,15 @@ paths:
                             properties:
                               filename:
                                 type: string
+                              relative_start_time:
+                                type: string
                               series_column:
                                 type: string
                               sheet:
                                 type: string
                               timestamp_column:
+                                type: string
+                              timestamp_mode:
                                 type: string
                               timezone:
                                 type: string
@@ -192459,11 +192615,15 @@ paths:
                           end:
                             type: string
                             format: date-time
+                          end_offset:
+                            type: string
                           mode:
                             type: string
                           start:
                             type: string
                             format: date-time
+                          start_offset:
+                            type: string
                     required:
                       - interpolation
                       - mappings
@@ -198120,11 +198280,15 @@ paths:
                             properties:
                               filename:
                                 type: string
+                              relative_start_time:
+                                type: string
                               series_column:
                                 type: string
                               sheet:
                                 type: string
                               timestamp_column:
+                                type: string
+                              timestamp_mode:
                                 type: string
                               timezone:
                                 type: string
@@ -198230,11 +198394,15 @@ paths:
                           end:
                             type: string
                             format: date-time
+                          end_offset:
+                            type: string
                           mode:
                             type: string
                           start:
                             type: string
                             format: date-time
+                          start_offset:
+                            type: string
                     required:
                       - interpolation
                       - mappings
@@ -200602,11 +200770,15 @@ paths:
                               end:
                                 type: string
                                 format: date-time
+                              end_offset:
+                                type: string
                               mode:
                                 type: string
                               start:
                                 type: string
                                 format: date-time
+                              start_offset:
+                                type: string
                         required:
                           - interpolation
                           - mappings
@@ -202059,11 +202231,15 @@ paths:
                               end:
                                 type: string
                                 format: date-time
+                              end_offset:
+                                type: string
                               mode:
                                 type: string
                               start:
                                 type: string
                                 format: date-time
+                              start_offset:
+                                type: string
                         required:
                           - interpolation
                           - mappings
@@ -211527,11 +211703,15 @@ paths:
                             properties:
                               filename:
                                 type: string
+                              relative_start_time:
+                                type: string
                               series_column:
                                 type: string
                               sheet:
                                 type: string
                               timestamp_column:
+                                type: string
+                              timestamp_mode:
                                 type: string
                               timezone:
                                 type: string
@@ -211637,11 +211817,15 @@ paths:
                           end:
                             type: string
                             format: date-time
+                          end_offset:
+                            type: string
                           mode:
                             type: string
                           start:
                             type: string
                             format: date-time
+                          start_offset:
+                            type: string
                     required:
                       - interpolation
                       - mappings
@@ -217242,11 +217426,15 @@ paths:
                             properties:
                               filename:
                                 type: string
+                              relative_start_time:
+                                type: string
                               series_column:
                                 type: string
                               sheet:
                                 type: string
                               timestamp_column:
+                                type: string
+                              timestamp_mode:
                                 type: string
                               timezone:
                                 type: string
@@ -217352,11 +217540,15 @@ paths:
                           end:
                             type: string
                             format: date-time
+                          end_offset:
+                            type: string
                           mode:
                             type: string
                           start:
                             type: string
                             format: date-time
+                          start_offset:
+                            type: string
                     required:
                       - interpolation
                       - mappings
@@ -222718,11 +222910,15 @@ paths:
                               end:
                                 type: string
                                 format: date-time
+                              end_offset:
+                                type: string
                               mode:
                                 type: string
                               start:
                                 type: string
                                 format: date-time
+                              start_offset:
+                                type: string
                         required:
                           - interpolation
                           - mappings
@@ -223772,11 +223968,15 @@ paths:
                               end:
                                 type: string
                                 format: date-time
+                              end_offset:
+                                type: string
                               mode:
                                 type: string
                               start:
                                 type: string
                                 format: date-time
+                              start_offset:
+                                type: string
                         required:
                           - interpolation
                           - mappings
@@ -228001,11 +228201,15 @@ paths:
                           properties:
                             filename:
                               type: string
+                            relative_start_time:
+                              type: string
                             series_column:
                               type: string
                             sheet:
                               type: string
                             timestamp_column:
+                              type: string
+                            timestamp_mode:
                               type: string
                             timezone:
                               type: string
@@ -228094,11 +228298,15 @@ paths:
                         end:
                           type: string
                           format: date-time
+                        end_offset:
+                          type: string
                         mode:
                           type: string
                         start:
                           type: string
                           format: date-time
+                        start_offset:
+                          type: string
                   nullable: true
                 vusers:
                   type: integer
@@ -229887,11 +230095,15 @@ paths:
                         end:
                           type: string
                           format: date-time
+                        end_offset:
+                          type: string
                         mode:
                           type: string
                         start:
                           type: string
                           format: date-time
+                        start_offset:
+                          type: string
                   nullable: true
                 vusers:
                   type: integer

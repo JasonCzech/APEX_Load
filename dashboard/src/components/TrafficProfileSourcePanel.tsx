@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { CartesianGrid, ComposedChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 
 import type {
@@ -9,6 +9,7 @@ import type {
   TrafficProfileGapPolicy,
   TrafficProfileSeries,
   TrafficProfileSource,
+  TrafficProfileSourceEntry,
   TrafficProfileSourcesResponse,
   TrafficProfileValueSemantics,
 } from '../types'
@@ -27,6 +28,24 @@ interface Props {
 
 const previewLimit = 1000
 const allGroupsMapping = '__all_groups__'
+const fallbackTimezones = ['UTC', 'America/New_York', 'America/Chicago', 'America/Denver', 'America/Los_Angeles', 'Europe/London', 'Europe/Paris', 'Asia/Tokyo', 'Asia/Kolkata', 'Australia/Sydney']
+
+const browserTimezones = (() => {
+  const extendedIntl = Intl as typeof Intl & { supportedValuesOf?: (key: 'timeZone') => string[] }
+  try {
+    return extendedIntl.supportedValuesOf?.('timeZone') || fallbackTimezones
+  } catch {
+    return fallbackTimezones
+  }
+})()
+
+function timezoneOptions(current: string): string[] {
+  return Array.from(new Set(['UTC', current, ...browserTimezones].filter(Boolean)))
+}
+
+function TimezoneSelect({ value, onChange, ariaLabel }: { value: string; onChange: (value: string) => void; ariaLabel?: string }) {
+  return <select aria-label={ariaLabel} value={value} onChange={event => onChange(event.target.value)}>{timezoneOptions(value).map(zone => <option key={zone} value={zone}>{zone}</option>)}</select>
+}
 
 interface GroupUploadSelection {
   analysis: TrafficProfileAnalyzeResponse
@@ -77,8 +96,13 @@ export default function TrafficProfileSourcePanel({ projectId, groupNames, scena
   const [file, setFile] = useState<File | null>(null)
   const [groupUploads, setGroupUploads] = useState<Record<string, GroupUploadSelection>>({})
   const [analysis, setAnalysis] = useState<TrafficProfileAnalyzeResponse | null>(null)
+  const [fileAnalysisDirty, setFileAnalysisDirty] = useState(false)
+  const fileConfigRevisionRef = useRef(0)
+  const fileRequestRef = useRef(0)
   const [sheet, setSheet] = useState(savedSource?.file?.sheet || '')
   const [timestampColumn, setTimestampColumn] = useState(savedSource?.file?.timestamp_column || '')
+  const [timestampMode, setTimestampMode] = useState<'absolute' | 'relative'>(savedSource?.file?.timestamp_mode === 'relative' ? 'relative' : 'absolute')
+  const [relativeStartTime, setRelativeStartTime] = useState(savedSource?.file?.relative_start_time || '00:00')
   const [valueColumns, setValueColumns] = useState<string[]>(savedSource?.file?.value_columns || [])
   const [seriesColumn, setSeriesColumn] = useState(savedSource?.file?.series_column || '')
   const [timezone, setTimezone] = useState(savedSource?.file?.timezone || 'UTC')
@@ -99,6 +123,8 @@ export default function TrafficProfileSourcePanel({ projectId, groupNames, scena
   const [peakDuration, setPeakDuration] = useState(existingProfile?.window?.duration || '1h')
   const [windowStart, setWindowStart] = useState(localDateTimeValue(existingProfile?.window?.start))
   const [windowEnd, setWindowEnd] = useState(localDateTimeValue(existingProfile?.window?.end))
+  const [windowStartOffset, setWindowStartOffset] = useState(existingProfile?.window?.start_offset || '0s')
+  const [windowEndOffset, setWindowEndOffset] = useState(existingProfile?.window?.end_offset || existingProfile?.source_duration || '1h')
   const [targetDuration, setTargetDuration] = useState(existingProfile?.target_duration || '')
   const [amplitudeMode, setAmplitudeMode] = useState<'factor' | 'peak'>(existingProfile?.amplitude?.mode || 'factor')
   const [amplitude, setAmplitude] = useState(existingProfile?.amplitude?.value ?? 1)
@@ -116,12 +142,22 @@ export default function TrafficProfileSourcePanel({ projectId, groupNames, scena
 
   useEffect(() => {
     setDerived(null)
-  }, [amplitude, amplitudeMode, assignmentMode, gapPolicy, groupUploads, mappings, peakDuration, semantics, targetDuration, windowEnd, windowMode, windowStart])
+  }, [amplitude, amplitudeMode, assignmentMode, gapPolicy, groupUploads, mappings, peakDuration, semantics, targetDuration, windowEnd, windowEndOffset, windowMode, windowStart, windowStartOffset])
 
   const selectedSheet = analysis?.sheets?.find(candidate => candidate.name === sheet) || analysis?.sheets?.[0]
+  const usesRelativeWindow = assignmentMode === 'per_group'
+    ? Object.values(groupUploads).some(upload => upload.analysis.source.file?.timestamp_mode === 'relative')
+    : sourceKind === 'file' && timestampMode === 'relative'
+  const invalidateFileAnalysis = () => {
+    fileConfigRevisionRef.current += 1
+    setFileAnalysisDirty(true)
+    setDerived(null)
+  }
 
   const analyzeFile = async () => {
     if (!file) return
+    const requestID = ++fileRequestRef.current
+    const configRevision = fileConfigRevisionRef.current
     const form = new FormData()
     // project_id must precede the file part: the server peeks only the leading
     // scalar fields and stops at the first file, so a trailing project_id is
@@ -130,11 +166,21 @@ export default function TrafficProfileSourcePanel({ projectId, groupNames, scena
     form.set('file', file)
     if (sheet) form.set('sheet', sheet)
     if (timestampColumn) form.set('timestamp_column', timestampColumn)
+    form.set('timestamp_mode', timestampMode)
+    if (timestampMode === 'relative') form.set('relative_start_time', relativeStartTime)
     valueColumns.forEach(column => form.append('value_column', column))
     if (seriesColumn) form.set('series_column', seriesColumn)
     if (timezone) form.set('timezone', timezone)
-    const result = await api.analyzeTrafficProfile(form)
+    let result: TrafficProfileAnalyzeResponse
+    try {
+      result = await api.analyzeTrafficProfile(form)
+    } catch (cause) {
+      if (requestID !== fileRequestRef.current || configRevision !== fileConfigRevisionRef.current) return
+      throw cause
+    }
+    if (requestID !== fileRequestRef.current || configRevision !== fileConfigRevisionRef.current) return
     setAnalysis(result)
+    setFileAnalysisDirty(false)
     const firstSheet = result.sheets?.find(candidate => candidate.name === sheet) || result.sheets?.[0]
     if (firstSheet && !sheet) setSheet(firstSheet.name)
     if (result.series?.length) seedMappings(result.series.map(item => item.series))
@@ -220,7 +266,13 @@ export default function TrafficProfileSourcePanel({ projectId, groupNames, scena
         mappings: selectedMappings,
         value_semantics: semantics,
         gap_policy: gapPolicy,
-        window: windowMode === 'peak' ? { mode: 'peak', duration: peakDuration } : windowMode === 'explicit' ? { mode: 'explicit', start: requiredISOString(windowStart, 'Window start'), end: requiredISOString(windowEnd, 'Window end') } : { mode: 'full' },
+        window: windowMode === 'peak'
+          ? { mode: 'peak', duration: peakDuration }
+          : windowMode === 'explicit'
+            ? usesRelativeWindow
+              ? { mode: 'explicit', start_offset: windowStartOffset, end_offset: windowEndOffset }
+              : { mode: 'explicit', start: requiredISOString(windowStart, 'Window start'), end: requiredISOString(windowEnd, 'Window end') }
+            : { mode: 'full' },
         ...(targetDuration ? { target_duration: targetDuration } : {}),
         amplitude: { mode: amplitudeMode, value: amplitude },
         scenario_draft: draft,
@@ -249,7 +301,9 @@ export default function TrafficProfileSourcePanel({ projectId, groupNames, scena
     const upload = groupUploads[name]
     return Boolean(upload?.analysis.series?.some(item => item.series.key === upload.seriesKey))
   })
-  const hasAnalyzedData = assignmentMode === 'per_group' ? perGroupReady : Boolean(analysis?.series?.length)
+  const hasAnalyzedData = assignmentMode === 'per_group'
+    ? perGroupReady
+    : Boolean(analysis?.series?.length) && !(sourceKind === 'file' && fileAnalysisDirty)
 
   const sourceAvailable = (kind: string) => {
     if (kind === 'file') return true
@@ -270,7 +324,7 @@ export default function TrafficProfileSourcePanel({ projectId, groupNames, scena
 
       {assignmentMode === 'per_group' ? (
         <div className="traffic-profile-group-uploads">
-          {groupNames.map(groupName => <GroupFileUploadCard key={groupName} groupName={groupName} projectId={projectId} onReady={selection => setGroupUploads(current => {
+          {groupNames.map(groupName => <GroupFileUploadCard key={groupName} groupName={groupName} projectId={projectId} savedFile={existingProfile?.mappings.find(mapping => mapping.group_name.trim().toLowerCase() === groupName.trim().toLowerCase())?.source?.file} onReady={selection => setGroupUploads(current => {
             const next = { ...current }
             if (selection) next[groupName] = selection
             else delete next[groupName]
@@ -280,15 +334,17 @@ export default function TrafficProfileSourcePanel({ projectId, groupNames, scena
       ) : <>
         <div className="scenario-source-toggle" aria-label="Traffic profile source">
           {(['file', 'prometheus', 'opensearch'] as const).map(kind => (
-            <button key={kind} type="button" className={`mode-chip ${sourceKind === kind ? 'active' : ''}`} disabled={!sourceAvailable(kind)} onClick={() => { setSourceKind(kind); setAnalysis(null); setDerived(null) }}>{kind === 'file' ? 'CSV / XLSX' : kind === 'prometheus' ? 'Prometheus' : 'OpenSearch'}</button>
+            <button key={kind} type="button" className={`mode-chip ${sourceKind === kind ? 'active' : ''}`} disabled={!sourceAvailable(kind)} onClick={() => { fileConfigRevisionRef.current += 1; setSourceKind(kind); setAnalysis(null); setFileAnalysisDirty(false); setDerived(null) }}>{kind === 'file' ? 'CSV / XLSX' : kind === 'prometheus' ? 'Prometheus' : 'OpenSearch'}</button>
           ))}
         </div>
 
         {sourceKind === 'file' ? (
           <>
             <ImportDropzone accept=".csv,.tsv,.txt,.xlsx" file={file} onFile={next => {
+              fileConfigRevisionRef.current += 1
               setFile(next)
               setAnalysis(null)
+              setFileAnalysisDirty(false)
               setDerived(null)
               setSheet('')
               setTimestampColumn('')
@@ -297,11 +353,13 @@ export default function TrafficProfileSourcePanel({ projectId, groupNames, scena
               setError('')
             }} dropHint="Drop a production traffic CSV or XLSX file" onError={setError} disabled={busy} />
             {analysis?.sheets?.length ? <div className="settings-grid compact-grid">
-              <label><span>Worksheet</span><select value={sheet} onChange={event => { setSheet(event.target.value); setTimestampColumn(''); setValueColumns([]); setSeriesColumn('') }}>{analysis.sheets.map(item => <option key={item.name}>{item.name}</option>)}</select></label>
-              <label><span>Timestamp column</span><select value={timestampColumn} onChange={event => setTimestampColumn(event.target.value)}><option value="">Select…</option>{selectedSheet?.columns.map(column => <option key={column}>{column}</option>)}</select></label>
-              <label><span>Value columns (select one or more)</span><select multiple size={Math.min(5, Math.max(2, selectedSheet?.columns.length || 2))} value={valueColumns} onChange={event => setValueColumns(Array.from(event.currentTarget.selectedOptions, option => option.value))}>{selectedSheet?.columns.map(column => <option key={column}>{column}</option>)}</select></label>
-              <label><span>Optional series column</span><select value={seriesColumn} onChange={event => setSeriesColumn(event.target.value)}><option value="">None</option>{selectedSheet?.columns.map(column => <option key={column}>{column}</option>)}</select></label>
-              <label><span>Timezone for naive timestamps</span><input value={timezone} onChange={event => setTimezone(event.target.value)} placeholder="America/New_York" /></label>
+              <label><span>Worksheet</span><select value={sheet} onChange={event => { setSheet(event.target.value); setTimestampColumn(''); setValueColumns([]); setSeriesColumn(''); invalidateFileAnalysis() }}>{analysis.sheets.map(item => <option key={item.name}>{item.name}</option>)}</select></label>
+              <label><span>Timestamp column</span><select value={timestampColumn} onChange={event => { setTimestampColumn(event.target.value); invalidateFileAnalysis() }}><option value="">Select…</option>{selectedSheet?.columns.map(column => <option key={column}>{column}</option>)}</select></label>
+              <label><span>Timestamp values</span><select aria-label="Timestamp values" value={timestampMode} onChange={event => { setTimestampMode(event.target.value as typeof timestampMode); invalidateFileAnalysis() }}><option value="absolute">Absolute date/time</option><option value="relative">Relative elapsed time</option></select></label>
+              {timestampMode === 'relative' && <label><span>Relative 0:00 starts at</span><input aria-label="Relative 0:00 starts at" type="time" step={1} value={relativeStartTime} onChange={event => { setRelativeStartTime(event.target.value); invalidateFileAnalysis() }} /></label>}
+              <label><span>Value columns (select one or more)</span><select multiple size={Math.min(5, Math.max(2, selectedSheet?.columns.length || 2))} value={valueColumns} onChange={event => { setValueColumns(Array.from(event.currentTarget.selectedOptions, option => option.value)); invalidateFileAnalysis() }}>{selectedSheet?.columns.map(column => <option key={column}>{column}</option>)}</select></label>
+              <label><span>Optional series column</span><select value={seriesColumn} onChange={event => { setSeriesColumn(event.target.value); invalidateFileAnalysis() }}><option value="">None</option>{selectedSheet?.columns.map(column => <option key={column}>{column}</option>)}</select></label>
+              <label><span>Timezone</span><TimezoneSelect ariaLabel="Timezone" value={timezone} onChange={value => { setTimezone(value); invalidateFileAnalysis() }} /></label>
             </div> : null}
           </>
         ) : sourceKind === 'prometheus' ? (
@@ -318,7 +376,9 @@ export default function TrafficProfileSourcePanel({ projectId, groupNames, scena
           <label><span>Gap policy</span><select value={gapPolicy} onChange={event => setGapPolicy(event.target.value as TrafficProfileGapPolicy)}><option value="hold">Hold previous</option><option value="zero">Insert zero</option><option value="drop">Drop missing</option></select></label>
           <label><span>Window</span><select value={windowMode} onChange={event => setWindowMode(event.target.value as typeof windowMode)}><option value="full">Full range</option><option value="explicit">Explicit range</option><option value="peak">Peak window</option></select></label>
           {windowMode === 'peak' && <label><span>Peak window duration</span><input value={peakDuration} onChange={event => setPeakDuration(event.target.value)} /></label>}
-          {windowMode === 'explicit' && <><label><span>Window start</span><input type="datetime-local" value={windowStart} onChange={event => setWindowStart(event.target.value)} /></label><label><span>Window end</span><input type="datetime-local" value={windowEnd} onChange={event => setWindowEnd(event.target.value)} /></label></>}
+          {windowMode === 'explicit' && (usesRelativeWindow
+            ? <><label><span>Window start offset</span><input aria-label="Window start offset" value={windowStartOffset} onChange={event => setWindowStartOffset(event.target.value)} placeholder="0s" /></label><label><span>Window end offset</span><input aria-label="Window end offset" value={windowEndOffset} onChange={event => setWindowEndOffset(event.target.value)} placeholder="1h" /></label></>
+            : <><label><span>Window start</span><input type="datetime-local" value={windowStart} onChange={event => setWindowStart(event.target.value)} /></label><label><span>Window end</span><input type="datetime-local" value={windowEnd} onChange={event => setWindowEnd(event.target.value)} /></label></>)}
           <label><span>Test duration (blank = 1:1)</span><input value={targetDuration} onChange={event => setTargetDuration(event.target.value)} placeholder="8h" /></label>
           <label><span>Amplitude</span><select value={amplitudeMode} onChange={event => setAmplitudeMode(event.target.value as typeof amplitudeMode)}><option value="factor">Multiply by</option><option value="peak">Scale peak to</option></select><input type="number" min={0} step="any" value={amplitude} onChange={event => setAmplitude(Number(event.target.value))} /></label>
         </div>
@@ -336,26 +396,34 @@ export default function TrafficProfileSourcePanel({ projectId, groupNames, scena
 interface GroupFileUploadCardProps {
   groupName: string
   projectId?: string
+  savedFile?: TrafficProfileSourceEntry['file']
   onReady: (selection: GroupUploadSelection | null) => void
 }
 
-function GroupFileUploadCard({ groupName, projectId, onReady }: GroupFileUploadCardProps) {
+function GroupFileUploadCard({ groupName, projectId, savedFile, onReady }: GroupFileUploadCardProps) {
   const api = useApi()
   const [file, setFile] = useState<File | null>(null)
   const [analysis, setAnalysis] = useState<TrafficProfileAnalyzeResponse | null>(null)
+  const [analysisDirty, setAnalysisDirty] = useState(false)
+  const configRevisionRef = useRef(0)
+  const requestRef = useRef(0)
   const [sheet, setSheet] = useState('')
   const [timestampColumn, setTimestampColumn] = useState('')
+  const [timestampMode, setTimestampMode] = useState<'absolute' | 'relative'>(savedFile?.timestamp_mode === 'relative' ? 'relative' : 'absolute')
+  const [relativeStartTime, setRelativeStartTime] = useState(savedFile?.relative_start_time || '00:00')
   const [valueColumns, setValueColumns] = useState<string[]>([])
   const [seriesColumn, setSeriesColumn] = useState('')
-  const [timezone, setTimezone] = useState('UTC')
+  const [timezone, setTimezone] = useState(savedFile?.timezone || 'UTC')
   const [seriesKey, setSeriesKey] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const selectedSheet = analysis?.sheets?.find(candidate => candidate.name === sheet) || analysis?.sheets?.[0]
-  const ready = Boolean(seriesKey && analysis?.series?.some(item => item.series.key === seriesKey))
+  const ready = Boolean(!analysisDirty && seriesKey && analysis?.series?.some(item => item.series.key === seriesKey))
 
   const clearSelection = () => {
+    configRevisionRef.current += 1
     setAnalysis(null)
+    setAnalysisDirty(false)
     setSheet('')
     setTimestampColumn('')
     setValueColumns([])
@@ -367,26 +435,33 @@ function GroupFileUploadCard({ groupName, projectId, onReady }: GroupFileUploadC
 
   const analyze = async () => {
     if (!file) return
+    const requestID = ++requestRef.current
+    const configRevision = configRevisionRef.current
     const form = new FormData()
     if (projectId) form.set('project_id', projectId)
     form.set('file', file)
     if (sheet) form.set('sheet', sheet)
     if (timestampColumn) form.set('timestamp_column', timestampColumn)
+    form.set('timestamp_mode', timestampMode)
+    if (timestampMode === 'relative') form.set('relative_start_time', relativeStartTime)
     valueColumns.forEach(column => form.append('value_column', column))
     if (seriesColumn) form.set('series_column', seriesColumn)
     if (timezone) form.set('timezone', timezone)
     setBusy(true)
     setError('')
-    onReady(null)
     try {
       const result = await api.analyzeTrafficProfile(form)
+      if (requestID !== requestRef.current || configRevision !== configRevisionRef.current) return
       setAnalysis(result)
+      setAnalysisDirty(false)
       const firstSheet = result.sheets?.find(candidate => candidate.name === sheet) || result.sheets?.[0]
       if (firstSheet && !sheet) setSheet(firstSheet.name)
       const firstSeries = result.series?.[0]?.series.key || ''
       setSeriesKey(firstSeries)
       if (firstSeries) onReady({ analysis: result, seriesKey: firstSeries })
+      else onReady(null)
     } catch (cause) {
+      if (requestID !== requestRef.current || configRevision !== configRevisionRef.current) return
       setError(getErrorMessage(cause, `Unable to analyze the workload for ${groupName}.`))
     } finally {
       setBusy(false)
@@ -394,6 +469,8 @@ function GroupFileUploadCard({ groupName, projectId, onReady }: GroupFileUploadC
   }
 
   const invalidateColumns = () => {
+    configRevisionRef.current += 1
+    setAnalysisDirty(true)
     setSeriesKey('')
     onReady(null)
   }
@@ -407,12 +484,14 @@ function GroupFileUploadCard({ groupName, projectId, onReady }: GroupFileUploadC
     {analysis?.sheets?.length ? <div className="settings-grid compact-grid">
       <label><span>{groupName} worksheet</span><select aria-label={`${groupName} worksheet`} value={sheet} onChange={event => { setSheet(event.target.value); setTimestampColumn(''); setValueColumns([]); setSeriesColumn(''); invalidateColumns() }}>{analysis.sheets.map(item => <option key={item.name}>{item.name}</option>)}</select></label>
       <label><span>{groupName} timestamp column</span><select aria-label={`${groupName} timestamp column`} value={timestampColumn} onChange={event => { setTimestampColumn(event.target.value); invalidateColumns() }}><option value="">Select…</option>{selectedSheet?.columns.map(column => <option key={column}>{column}</option>)}</select></label>
+      <label><span>{groupName} timestamp values</span><select aria-label={`${groupName} timestamp values`} value={timestampMode} onChange={event => { setTimestampMode(event.target.value as typeof timestampMode); invalidateColumns() }}><option value="absolute">Absolute date/time</option><option value="relative">Relative elapsed time</option></select></label>
+      {timestampMode === 'relative' && <label><span>{groupName} relative 0:00 starts at</span><input aria-label={`${groupName} relative 0:00 starts at`} type="time" step={1} value={relativeStartTime} onChange={event => { setRelativeStartTime(event.target.value); invalidateColumns() }} /></label>}
       <label><span>{groupName} value columns</span><select aria-label={`${groupName} value columns`} multiple size={Math.min(5, Math.max(2, selectedSheet?.columns.length || 2))} value={valueColumns} onChange={event => { setValueColumns(Array.from(event.currentTarget.selectedOptions, option => option.value)); invalidateColumns() }}>{selectedSheet?.columns.map(column => <option key={column}>{column}</option>)}</select></label>
       <label><span>{groupName} optional series column</span><select aria-label={`${groupName} optional series column`} value={seriesColumn} onChange={event => { setSeriesColumn(event.target.value); invalidateColumns() }}><option value="">None</option>{selectedSheet?.columns.map(column => <option key={column}>{column}</option>)}</select></label>
-      <label><span>{groupName} timezone</span><input aria-label={`${groupName} timezone`} value={timezone} onChange={event => { setTimezone(event.target.value); invalidateColumns() }} placeholder="America/New_York" /></label>
+      <label><span>{groupName} timezone</span><TimezoneSelect ariaLabel={`${groupName} timezone`} value={timezone} onChange={value => { setTimezone(value); invalidateColumns() }} /></label>
     </div> : null}
     <button type="button" className="btn btn-secondary" onClick={() => void analyze()} disabled={busy || !file}>{busy ? 'Working…' : analysis?.series?.length ? `Re-analyze ${groupName}` : `Analyze ${groupName}`}</button>
-    {analysis?.series?.length ? <label className="traffic-profile-group-series"><span>Workload series for {groupName}</span><select aria-label={`Workload series for ${groupName}`} value={seriesKey} onChange={event => { const next = event.target.value; setSeriesKey(next); onReady(next ? { analysis, seriesKey: next } : null) }}><option value="">Select…</option>{analysis.series.map(item => <option key={item.series.key} value={item.series.key}>{item.series.name} · {item.stats.count.toLocaleString()} points · peak {item.stats.max}</option>)}</select></label> : null}
+    {analysis?.series?.length && !analysisDirty ? <label className="traffic-profile-group-series"><span>Workload series for {groupName}</span><select aria-label={`Workload series for ${groupName}`} value={seriesKey} onChange={event => { const next = event.target.value; setSeriesKey(next); onReady(next ? { analysis, seriesKey: next } : null) }}><option value="">Select…</option>{analysis.series.map(item => <option key={item.series.key} value={item.series.key}>{item.series.name} · {item.stats.count.toLocaleString()} points · peak {item.stats.max}</option>)}</select></label> : null}
     {error && <div className="form-error" role="alert">{error}</div>}
   </section>
 }

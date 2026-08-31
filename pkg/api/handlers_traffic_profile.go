@@ -212,7 +212,11 @@ func (s *Server) handleAnalyzeTrafficProfileFile(w http.ResponseWriter, r *http.
 	if selected == "" && len(sheets) == 1 {
 		selected = sheets[0].Name
 	}
-	source := TrafficProfileSource{Kind: "file", Name: header.Filename, File: &TrafficProfileFileSource{Filename: header.Filename, Sheet: selected, TimestampColumn: r.FormValue("timestamp_column"), SeriesColumn: r.FormValue("series_column"), Timezone: r.FormValue("timezone")}}
+	timestampMode := strings.ToLower(strings.TrimSpace(r.FormValue("timestamp_mode")))
+	if timestampMode == "" {
+		timestampMode = "absolute"
+	}
+	source := TrafficProfileSource{Kind: "file", Name: header.Filename, File: &TrafficProfileFileSource{Filename: header.Filename, Sheet: selected, TimestampColumn: r.FormValue("timestamp_column"), TimestampMode: timestampMode, RelativeStartTime: strings.TrimSpace(r.FormValue("relative_start_time")), SeriesColumn: r.FormValue("series_column"), Timezone: r.FormValue("timezone")}}
 	valueColumns := append([]string(nil), r.MultipartForm.Value["value_column"]...)
 	if len(valueColumns) == 0 {
 		for _, value := range strings.Split(r.FormValue("value_columns"), ",") {
@@ -245,7 +249,22 @@ func (s *Server) handleAnalyzeTrafficProfileFile(w http.ResponseWriter, r *http.
 			return
 		}
 	}
-	series, err := trafficprofile.SeriesFromSheet(sheet, trafficprofile.TableOptions{TimestampColumn: source.File.TimestampColumn, ValueColumns: valueColumns, SeriesColumn: source.File.SeriesColumn, Timezone: location})
+	var relativeStart time.Time
+	if timestampMode == "relative" {
+		if location == nil {
+			writeError(w, http.StatusBadRequest, "relative timestamps require a timezone")
+			return
+		}
+		relativeStart, err = parseTrafficProfileRelativeStartTime(source.File.RelativeStartTime, location)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "relative start time "+err.Error())
+			return
+		}
+	} else if timestampMode != "absolute" {
+		writeError(w, http.StatusBadRequest, "timestamp mode must be absolute or relative")
+		return
+	}
+	series, err := trafficprofile.SeriesFromSheet(sheet, trafficprofile.TableOptions{TimestampColumn: source.File.TimestampColumn, TimestampMode: timestampMode, RelativeStart: relativeStart, ValueColumns: valueColumns, SeriesColumn: source.File.SeriesColumn, Timezone: location})
 	if err != nil {
 		writeError(w, http.StatusUnprocessableEntity, err.Error())
 		return
@@ -575,6 +594,29 @@ func resolveTrafficProfileRange(source TrafficProfileSource) (time.Time, time.Ti
 
 func trafficProfileWindowSpec(window TrafficProfileWindow) (trafficprofile.WindowSpec, error) {
 	result := trafficprofile.WindowSpec{Mode: window.Mode, Start: window.Start, End: window.End}
+	startOffset := strings.TrimSpace(window.StartOffset)
+	endOffset := strings.TrimSpace(window.EndOffset)
+	if startOffset != "" || endOffset != "" {
+		if strings.TrimSpace(window.Mode) != "explicit" {
+			return result, errors.New("window offsets require mode explicit")
+		}
+		if startOffset == "" || endOffset == "" {
+			return result, errors.New("explicit offset window requires start_offset and end_offset")
+		}
+		if !window.Start.IsZero() || !window.End.IsZero() {
+			return result, errors.New("explicit window cannot mix timestamps and offsets")
+		}
+		var err error
+		result.StartOffset, err = time.ParseDuration(startOffset)
+		if err != nil || result.StartOffset < 0 {
+			return result, errors.New("explicit window start_offset must be a nonnegative duration")
+		}
+		result.EndOffset, err = time.ParseDuration(endOffset)
+		if err != nil || result.EndOffset <= result.StartOffset {
+			return result, errors.New("explicit window end_offset must be after start_offset")
+		}
+		result.RelativeOffsets = true
+	}
 	if strings.TrimSpace(window.Duration) != "" {
 		duration, err := time.ParseDuration(window.Duration)
 		if err != nil {

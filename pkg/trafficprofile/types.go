@@ -53,10 +53,13 @@ type RuntimePoint struct {
 }
 
 type WindowSpec struct {
-	Mode     string        `json:"mode,omitempty"`
-	Start    time.Time     `json:"start,omitempty"`
-	End      time.Time     `json:"end,omitempty"`
-	Duration time.Duration `json:"duration,omitempty"`
+	Mode            string        `json:"mode,omitempty"`
+	Start           time.Time     `json:"start,omitempty"`
+	End             time.Time     `json:"end,omitempty"`
+	RelativeOffsets bool          `json:"relative_offsets,omitempty"`
+	StartOffset     time.Duration `json:"start_offset,omitempty"`
+	EndOffset       time.Duration `json:"end_offset,omitempty"`
+	Duration        time.Duration `json:"duration,omitempty"`
 }
 
 type NormalizeOptions struct {
@@ -88,6 +91,8 @@ type Sheet struct {
 
 type TableOptions struct {
 	TimestampColumn string
+	TimestampMode   string
+	RelativeStart   time.Time
 	ValueColumns    []string
 	SeriesColumn    string
 	Timezone        *time.Location

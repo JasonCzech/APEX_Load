@@ -54,6 +54,10 @@ func Normalize(series Series, opts NormalizeOptions) (NormalizedSeries, error) {
 		return NormalizedSeries{}, fmt.Errorf("gap expansion produced %d points; limit is %d", len(points), MaxPointsPerSeries)
 	}
 	series.Points = points
+	var explicitWindowEnd time.Time
+	if opts.Window.Mode == "explicit" && opts.Window.RelativeOffsets {
+		explicitWindowEnd = series.Points[0].Timestamp.Add(opts.Window.EndOffset)
+	}
 	series, err = selectWindow(series, opts.Window, opts.Semantics)
 	if err != nil {
 		return NormalizedSeries{}, err
@@ -64,7 +68,11 @@ func Normalize(series Series, opts NormalizeOptions) (NormalizedSeries, error) {
 	}
 	sourceEnd := opts.SourceEnd
 	if opts.Window.Mode == "explicit" {
-		sourceEnd = opts.Window.End
+		if opts.Window.RelativeOffsets {
+			sourceEnd = explicitWindowEnd
+		} else {
+			sourceEnd = opts.Window.End
+		}
 	} else if opts.Window.Mode == "peak" && len(series.Points) > 0 {
 		sourceEnd = series.Points[0].Timestamp.Add(opts.Window.Duration)
 	}
@@ -305,10 +313,17 @@ func selectWindow(series Series, spec WindowSpec, semantics ValueSemantics) (Ser
 		return series, nil
 	}
 	if mode == "explicit" {
-		if !spec.End.After(spec.Start) {
+		start, end := spec.Start, spec.End
+		if spec.RelativeOffsets {
+			if spec.StartOffset < 0 || spec.EndOffset <= spec.StartOffset {
+				return Series{}, errors.New("explicit offset window end must be after start")
+			}
+			start = series.Points[0].Timestamp.Add(spec.StartOffset)
+			end = series.Points[0].Timestamp.Add(spec.EndOffset)
+		} else if !end.After(start) {
 			return Series{}, errors.New("explicit window end must be after start")
 		}
-		return filterWindow(series, spec.Start, spec.End)
+		return filterWindow(series, start, end)
 	}
 	if mode != "peak" {
 		return Series{}, fmt.Errorf("unsupported window mode %q", mode)

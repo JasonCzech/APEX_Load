@@ -87,6 +87,13 @@ func SeriesFromSheet(sheet *Sheet, opts TableOptions) ([]Series, error) {
 		return nil, errors.New("at least one value column is required")
 	}
 	location := opts.Timezone
+	timestampMode := strings.ToLower(strings.TrimSpace(opts.TimestampMode))
+	if timestampMode == "" {
+		timestampMode = "absolute"
+	}
+	if timestampMode != "absolute" && timestampMode != "relative" {
+		return nil, errors.New("timestamp mode must be absolute or relative")
+	}
 	seriesColumnIndex := -1
 	if opts.SeriesColumn != "" {
 		seriesColumnIndex = columnIndex(sheet.Columns, opts.SeriesColumn)
@@ -100,7 +107,20 @@ func SeriesFromSheet(sheet *Sheet, opts TableOptions) ([]Series, error) {
 		if timestampIndex >= len(row) || strings.TrimSpace(row[timestampIndex]) == "" {
 			continue
 		}
-		timestamp, err := ParseTimestamp(row[timestampIndex], location)
+		var timestamp time.Time
+		var err error
+		if timestampMode == "relative" {
+			if opts.RelativeStart.IsZero() {
+				return nil, errors.New("relative timestamp mode requires a start time")
+			}
+			var offset time.Duration
+			offset, err = ParseRelativeTimestamp(row[timestampIndex])
+			if err == nil {
+				timestamp = opts.RelativeStart.Add(offset)
+			}
+		} else {
+			timestamp, err = ParseTimestamp(row[timestampIndex], location)
+		}
 		if err != nil {
 			return nil, fmt.Errorf("row %d timestamp: %w", rowIndex+2, err)
 		}
@@ -209,4 +229,44 @@ func ParseTimestamp(raw string, location *time.Location) (time.Time, error) {
 		}
 	}
 	return time.Time{}, fmt.Errorf("%q is not RFC3339, ISO local time, Unix seconds, or Unix milliseconds", raw)
+}
+
+// ParseRelativeTimestamp accepts elapsed clock values such as 0:00,
+// 12:34:56.5, or Go durations such as 90m. Clock hours may exceed 23 because
+// the value is an offset, not a time of day.
+func ParseRelativeTimestamp(raw string) (time.Duration, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return 0, errors.New("relative timestamp is empty")
+	}
+	if duration, err := time.ParseDuration(raw); err == nil {
+		if duration < 0 {
+			return 0, errors.New("relative timestamp must not be negative")
+		}
+		return duration, nil
+	}
+	parts := strings.Split(raw, ":")
+	if len(parts) != 2 && len(parts) != 3 {
+		return 0, fmt.Errorf("%q is not an elapsed H:MM, H:MM:SS, or Go duration value", raw)
+	}
+	hours, err := strconv.ParseUint(parts[0], 10, 31)
+	if err != nil {
+		return 0, fmt.Errorf("%q has invalid elapsed hours", raw)
+	}
+	minutes, err := strconv.ParseUint(parts[1], 10, 6)
+	if err != nil || minutes >= 60 {
+		return 0, fmt.Errorf("%q has invalid elapsed minutes", raw)
+	}
+	seconds := 0.0
+	if len(parts) == 3 {
+		seconds, err = strconv.ParseFloat(parts[2], 64)
+		if err != nil || math.IsNaN(seconds) || math.IsInf(seconds, 0) || seconds < 0 || seconds >= 60 {
+			return 0, fmt.Errorf("%q has invalid elapsed seconds", raw)
+		}
+	}
+	totalSeconds := float64(hours)*3600 + float64(minutes)*60 + seconds
+	if totalSeconds > float64(math.MaxInt64)/float64(time.Second) {
+		return 0, errors.New("relative timestamp is outside the supported range")
+	}
+	return time.Duration(totalSeconds * float64(time.Second)), nil
 }

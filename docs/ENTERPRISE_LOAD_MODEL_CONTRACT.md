@@ -75,6 +75,17 @@ differ, derivation proportionally aligns them to the requested test duration,
 or to the longest selected span when no duration is supplied. Uploaded file
 contents are still not retained.
 
+File timestamp columns may contain absolute timestamps or relative elapsed
+values such as `0:00`, `0:15`, and `1:30:00`. Relative values are added to an
+operator-selected local start clock (for example, `0:00` mapped to `12:00`) in
+the selected IANA timezone before normalization. The timestamp mode, relative
+start clock, and timezone are retained as non-secret source provenance; the
+builder restores those saved selections when the profile is edited.
+Explicit windows for relative sources are stored as `start_offset` and
+`end_offset` Go durations measured from each selected series' first point.
+This keeps per-group files independent of the browser timezone and avoids
+exposing the internal calendar anchor used during tabular parsing.
+
 VUser profiles apply each target directly through the normal local or
 distributed scaling backend, including zero. TPS profiles run in
 `goal_oriented` mode: each boundary changes the per-group adaptive target while
