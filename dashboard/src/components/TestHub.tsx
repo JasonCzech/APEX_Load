@@ -856,17 +856,19 @@ function ScenarioModelPreviewPanel({
 }) {
   const groupSeries = model.series.filter(series => series.kind === 'group')
   const totalSeries = model.series.find(series => series.kind === 'total')
-  const tpsSeries = model.series.find(series => series.kind === 'tps')
+  const tpsSeries = model.series.filter(series => series.kind === 'tps')
+  const includesTps = tpsSeries.length > 0
 
   return (
     <section className="scenario-model-preview-panel">
       <div className="scenario-model-preview-header">
         <div>
           <h4>Model Preview</h4>
-          <p>Planned VUsers over time by script group, calculated from the current wizard draft.</p>
+          <p>{includesTps ? 'Planned adaptive TPS targets and configured VUsers over time, calculated from the current wizard draft.' : 'Planned VUsers over time by script group, calculated from the current wizard draft.'}</p>
         </div>
         <div className="scenario-model-summary">
           <span><strong>{model.peakVusers}</strong> peak VUsers</span>
+          {model.peakTps !== undefined && <span><strong>{model.peakTps}</strong> peak TPS</span>}
           <span><strong>{formatModelTimeLabel(model.durationSeconds)}</strong> duration</span>
           <span><strong>{groupSeries.length}</strong> groups</span>
           <span>{shapeLabel}</span>
@@ -876,7 +878,7 @@ function ScenarioModelPreviewPanel({
       </div>
       <div className="scenario-model-chart">
         <ResponsiveContainer width="100%" height={340}>
-          <ComposedChart data={model.points} margin={{ top: 16, right: tpsSeries ? 92 : 24, bottom: 18, left: 24 }}>
+          <ComposedChart data={model.points} margin={{ top: 16, right: includesTps ? 92 : 24, bottom: 18, left: 24 }}>
             <CartesianGrid stroke="var(--border-subtle, var(--border))" strokeDasharray="3 3" vertical={false} />
             <XAxis
               dataKey="elapsedSeconds"
@@ -897,7 +899,7 @@ function ScenarioModelPreviewPanel({
               axisLine={false}
               label={{ value: 'VUsers', angle: -90, position: 'left', fill: 'var(--text-muted)', fontSize: 11 }}
             />
-            {tpsSeries && (
+            {includesTps && (
               <YAxis
                 yAxisId="tps"
                 orientation="right"
@@ -914,7 +916,7 @@ function ScenarioModelPreviewPanel({
               <Area
                 key={series.key}
                 yAxisId="vusers"
-                type="linear"
+                type={series.interpolation || 'linear'}
                 dataKey={series.key}
                 name={series.label}
                 stackId="vusers"
@@ -929,7 +931,7 @@ function ScenarioModelPreviewPanel({
             {totalSeries && (
               <Line
                 yAxisId="vusers"
-                type="linear"
+                type={totalSeries.interpolation || 'linear'}
                 dataKey={totalSeries.key}
                 name={totalSeries.label}
                 stroke={totalSeries.color}
@@ -938,19 +940,20 @@ function ScenarioModelPreviewPanel({
                 isAnimationActive={false}
               />
             )}
-            {tpsSeries && (
+            {tpsSeries.map(series => (
               <Line
+                key={series.key}
                 yAxisId="tps"
-                type="linear"
-                dataKey={tpsSeries.key}
-                name={tpsSeries.label}
-                stroke={tpsSeries.color}
-                strokeWidth={2}
-                strokeDasharray="6 5"
+                type={series.interpolation || 'linear'}
+                dataKey={series.key}
+                name={series.label}
+                stroke={series.color}
+                strokeWidth={series.key === 'totalTps' ? 3 : 2}
+                strokeDasharray={series.key === 'totalTps' ? '6 5' : undefined}
                 dot={false}
                 isAnimationActive={false}
               />
-            )}
+            ))}
           </ComposedChart>
         </ResponsiveContainer>
       </div>
@@ -1219,8 +1222,9 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
         stages: group.stages,
       })),
       goalTargetTps: form.goal_target_average_tps,
+      trafficProfile: form.traffic_profile,
     }),
-    [form.duration, form.goal_target_average_tps, formGroups, scripts],
+    [form.duration, form.goal_target_average_tps, form.traffic_profile, formGroups, scripts],
   )
   const filteredCloneScenarios = useMemo(() => {
     const query = scenarioCloneQuery.trim().toLowerCase()

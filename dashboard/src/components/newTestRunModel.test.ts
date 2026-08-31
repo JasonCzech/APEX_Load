@@ -30,7 +30,7 @@ import {
   type ClearableRuntimeSection,
   type GroupRunOverride,
 } from './newTestRunModel'
-import { type RuntimeSettingsOverride, type StoredScenario, type SystemInventoryGenerator } from '../types'
+import { type RuntimeSettingsOverride, type StoredScenario, type SystemInventoryGenerator, type TrafficProfile } from '../types'
 
 function scenarioFixture(): StoredScenario {
   return {
@@ -804,6 +804,43 @@ describe('newTestRunModel', () => {
     expect(preview.points.find(point => point.second === 120)?.group0).toBe(20)
     expect(preview.points.find(point => point.second === 180)?.group0).toBe(0)
     expect(preview.peakVUsers).toBe(20)
+  })
+
+  it('includes the production TPS curve in the New Test load preview', () => {
+    const group = { ...scenarioFixture().scripts[0], vusers: 9, ramp_up: '', ramp_down: '' }
+    const trafficProfile: TrafficProfile = {
+      version: 1,
+      source: { kind: 'file', file: { filename: 'traffic.csv', timestamp_column: 'time', value_columns: ['transactions'] } },
+      value_semantics: 'transactions_per_bucket', runtime_target: 'tps', interpolation: 'step', source_duration: '3m', target_duration: '3m', refreshed_at: '2026-08-31T00:00:00Z',
+      mappings: [{ series_key: 'requests', series_name: 'Requests', group_name: 'Browse', peak_target: 12, points: [{ offset_ms: 0, target: 3 }, { offset_ms: 60_000, target: 12 }, { offset_ms: 120_000, target: 5 }] }],
+    }
+
+    const preview = buildRunLoadProfilePreview([group], '3m', undefined, false, trafficProfile)
+
+    expect(preview.points.find(point => point.second === 0)).toMatchObject({ total: 9, totalTps: 3 })
+    expect(preview.points.find(point => point.second === 60)?.totalTps).toBe(12)
+    expect(preview.points.find(point => point.second === 120)?.totalTps).toBe(5)
+    expect(preview.points.find(point => point.second === 180)?.totalTps).toBe(0)
+    expect(preview.peakTps).toBe(12)
+    expect(preview.tpsGroupIndexes).toEqual([0])
+
+    const delayedPreview = buildRunLoadProfilePreview([group], '3m', '30s', true, trafficProfile)
+    expect(delayedPreview.points.find(point => point.second === 0)?.totalTps).toBe(0)
+    expect(delayedPreview.points.find(point => point.second === 330)?.totalTps).toBe(3)
+
+    const staleRampPreview = buildRunLoadProfilePreview([{ ...group, ramp_down: '2m' }], '3m', undefined, false, trafficProfile)
+    expect(staleRampPreview.totalSeconds).toBe(180)
+
+    const multiGroupProfile: TrafficProfile = {
+      ...trafficProfile,
+      mappings: [
+        ...trafficProfile.mappings,
+        { series_key: 'search', series_name: 'Search', group_name: 'Search', peak_target: 7, points: [{ offset_ms: 0, target: 2 }, { offset_ms: 60_000, target: 7 }, { offset_ms: 120_000, target: 4 }] },
+      ],
+    }
+    const multiGroupPreview = buildRunLoadProfilePreview([group, { ...group, name: 'Search', vusers: 4 }], '3m', undefined, false, multiGroupProfile)
+    expect(multiGroupPreview.points.find(point => point.second === 60)).toMatchObject({ group0Tps: 12, group1Tps: 7, totalTps: 19 })
+    expect(multiGroupPreview.tpsGroupIndexes).toEqual([0, 1])
   })
 
   it('formats placement summaries and generator eligibility', () => {

@@ -75,7 +75,7 @@ vi.mock('recharts', () => ({
   Area: () => <span data-testid="mock-area" />,
   AreaChart: ({ children }: { children?: ReactNode }) => <div data-testid="mock-load-profile-chart">{children}</div>,
   CartesianGrid: () => <span data-testid="mock-cartesian-grid" />,
-  Line: () => <span data-testid="mock-line" />,
+  Line: ({ dataKey, name }: { dataKey?: string; name?: string }) => <span data-testid="mock-line" data-key={dataKey || ''} data-name={name || ''} />,
   ReferenceArea: () => <span data-testid="mock-reference-area" />,
   ResponsiveContainer: ({ children }: { children?: ReactNode }) => <div data-testid="mock-responsive-container">{children}</div>,
   Tooltip: () => <span data-testid="mock-tooltip" />,
@@ -87,8 +87,8 @@ vi.mock('recharts', () => ({
       data-domain={domain?.join(',') || ''}
     />
   ),
-  YAxis: ({ label }: { label?: string | { value?: string } }) => (
-    <span data-testid="mock-y-axis" data-label={typeof label === 'string' ? label : label?.value ?? ''} />
+  YAxis: ({ label, orientation }: { label?: string | { value?: string }; orientation?: string }) => (
+    <span data-testid="mock-y-axis" data-label={typeof label === 'string' ? label : label?.value ?? ''} data-orientation={orientation || 'left'} />
   ),
 }))
 
@@ -1345,6 +1345,41 @@ describe('NewTestPage', () => {
     }))
     expect(apiMock.startTest).not.toHaveBeenCalled()
     expect(selectTest).toHaveBeenCalledWith('test-1')
+  })
+
+  it('renders a production traffic TPS curve in the modeled load profile', async () => {
+    apiMock.listScenarios.mockResolvedValue({
+      scenarios: [{
+        id: 'scenario-profile', name: 'Production Replay', duration: '3m', scenario_mode: 'goal_oriented', script_shakeout: false, resource_baseline: false,
+        traffic_profile: {
+          version: 1,
+          source: { kind: 'file', file: { filename: 'traffic.csv', timestamp_column: 'time', value_columns: ['transactions'] } },
+          value_semantics: 'transactions_per_bucket', runtime_target: 'tps', interpolation: 'step', source_duration: '3m', target_duration: '3m', refreshed_at: '2026-08-31T00:00:00Z',
+          mappings: [{ series_key: 'requests', series_name: 'Requests', group_name: 'Checkout', peak_target: 12, points: [{ offset_ms: 0, target: 3 }, { offset_ms: 60_000, target: 12 }, { offset_ms: 120_000, target: 5 }] }],
+        },
+        scripts: [{ order: 1, name: 'Checkout', script_id: 'script-1', script_name: 'Checkout Script', protocol: 'http', vusers: 9 }],
+        script_count: 1, created_at: '2026-08-31T00:00:00Z', updated_at: '2026-08-31T00:00:00Z', associated_releases: [],
+      }],
+    })
+
+    await act(async () => {
+      root.render(
+        <NewTestPage
+          activeApplication={{ id: 'app-1', name: 'ACC', created_at: '', updated_at: '' }}
+          activeRelease={{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }}
+          releases={[{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }]}
+          onSelectTest={vi.fn()}
+          onCreateRelease={vi.fn().mockResolvedValue(null)}
+        />,
+      )
+    })
+    await flushPromises()
+
+    const profileCard = container.querySelector('.new-test-profile-card')
+    expect(profileCard?.textContent).toContain('Production-derived adaptive TPS targets')
+    expect(profileCard?.textContent).toContain('12peak TPS')
+    expect(profileCard?.querySelector('[data-key="totalTps"]')?.getAttribute('data-name')).toBe('Production target TPS')
+    expect(Array.from(profileCard?.querySelectorAll('[data-testid="mock-y-axis"]') || []).map(axis => axis.getAttribute('data-label'))).toEqual(['VUsers', 'TPS'])
   })
 
   it('saves per-script runtime settings as run-only group overrides', async () => {

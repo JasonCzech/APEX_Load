@@ -956,8 +956,8 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
   const effectiveResourceBaseline = useMemo(() => getEffectiveResourceBaseline(scenario, runDefaultOverrides), [scenario, runDefaultOverrides])
   const effectiveScenarioGroups = useMemo(() => buildEffectiveScenarioGroups(scenario, groupRunOverrides), [groupRunOverrides, scenario])
   const runLoadProfilePreview = useMemo(
-    () => buildRunLoadProfilePreview(effectiveScenarioGroups, effectiveRunDuration, scenario?.start_delay, effectiveResourceBaseline),
-    [effectiveResourceBaseline, effectiveRunDuration, effectiveScenarioGroups, scenario?.start_delay],
+    () => buildRunLoadProfilePreview(effectiveScenarioGroups, effectiveRunDuration, scenario?.start_delay, effectiveResourceBaseline, scenario?.traffic_profile),
+    [effectiveResourceBaseline, effectiveRunDuration, effectiveScenarioGroups, scenario?.start_delay, scenario?.traffic_profile],
   )
   const runDefaultCards = useMemo(() => buildRunDefaultCards(scenario, runDefaultOverrides), [scenario, runDefaultOverrides])
   const globalRunDefaultCards = useMemo(
@@ -3197,11 +3197,11 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
             <div className="new-test-profile-header">
               <div>
                 <h3>Modeled Load Profile</h3>
-                <p>Planned VUsers for this run.</p>
+                <p>{runLoadProfilePreview.runtimeTarget === 'tps' ? 'Production-derived adaptive TPS targets and configured VUsers for this run.' : 'Planned VUsers for this run.'}</p>
               </div>
               <div className="new-test-profile-stat">
-                <strong>{runLoadProfilePreview.peakVUsers}</strong>
-                <span>peak</span>
+                <strong>{runLoadProfilePreview.peakTps !== undefined ? runLoadProfilePreview.peakTps.toLocaleString() : runLoadProfilePreview.peakVUsers}</strong>
+                <span>{runLoadProfilePreview.peakTps !== undefined ? 'peak TPS' : 'peak VUsers'}</span>
               </div>
             </div>
             {runLoadProfilePreview.points.length > 0 ? (
@@ -3222,6 +3222,7 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
                         label={{ value: 'Elapsed time', position: 'insideBottom', offset: -4, fill: 'var(--text-muted)', fontSize: 10 }}
                       />
                       <YAxis
+                        yAxisId="vusers"
                         stroke="var(--text-muted)"
                         fontSize={10}
                         width={66}
@@ -3229,6 +3230,17 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
                         allowDecimals={false}
                         label={{ value: 'VUsers', angle: -90, position: 'left', fill: 'var(--text-muted)', fontSize: 10 }}
                       />
+                      {runLoadProfilePreview.peakTps !== undefined && (
+                        <YAxis
+                          yAxisId="tps"
+                          orientation="right"
+                          stroke="var(--warning)"
+                          fontSize={10}
+                          width={66}
+                          tickLine={false}
+                          label={{ value: 'TPS', angle: 90, position: 'right', fill: 'var(--warning)', fontSize: 10 }}
+                        />
+                      )}
                       <Tooltip
                         itemSorter={preserveChartItemOrder}
                         labelFormatter={(value) => `Time: ${formatTimeCompact(Number(value))}`}
@@ -3239,6 +3251,7 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
                       {effectiveScenarioGroups.map((group, index) => (
                         <Area
                           key={`${group.order}-${group.script_id}`}
+                          yAxisId="vusers"
                           type="monotone"
                           dataKey={`group${index}`}
                           name={group.name || group.script_name || `Group ${index + 1}`}
@@ -3250,6 +3263,7 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
                         />
                       ))}
                       <Line
+                        yAxisId="vusers"
                         type="monotone"
                         dataKey="total"
                         name="Total"
@@ -3258,7 +3272,34 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
                         dot={false}
                         isAnimationActive={false}
                       />
+                      {(runLoadProfilePreview.tpsGroupIndexes || []).length > 1 && (runLoadProfilePreview.tpsGroupIndexes || []).map(index => (
+                        <Line
+                          key={`group-${index}-tps`}
+                          yAxisId="tps"
+                          type="stepAfter"
+                          dataKey={`group${index}Tps`}
+                          name={`${effectiveScenarioGroups[index]?.name || effectiveScenarioGroups[index]?.script_name || `Group ${index + 1}`} TPS`}
+                          stroke={LOAD_PROFILE_COLORS[index % LOAD_PROFILE_COLORS.length]}
+                          strokeWidth={1.5}
+                          dot={false}
+                          isAnimationActive={false}
+                        />
+                      ))}
+                      {runLoadProfilePreview.peakTps !== undefined && (
+                        <Line
+                          yAxisId="tps"
+                          type="stepAfter"
+                          dataKey="totalTps"
+                          name="Production target TPS"
+                          stroke="var(--warning)"
+                          strokeWidth={2.5}
+                          strokeDasharray="6 5"
+                          dot={false}
+                          isAnimationActive={false}
+                        />
+                      )}
                       <ReferenceArea
+                        yAxisId="vusers"
                         x1={runLoadProfilePreview.preBaselineSeconds}
                         x2={runLoadProfilePreview.preBaselineSeconds + runLoadProfilePreview.steadySeconds}
                         fill="var(--accent)"
@@ -3267,6 +3308,7 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
                       />
                       {runLoadProfilePreview.preBaselineSeconds > 0 && (
                         <ReferenceArea
+                          yAxisId="vusers"
                           x1={0}
                           x2={runLoadProfilePreview.preBaselineSeconds}
                           fill="var(--warning)"
@@ -3276,6 +3318,7 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
                       )}
                       {runLoadProfilePreview.postBaselineSeconds > 0 && (
                         <ReferenceArea
+                          yAxisId="vusers"
                           x1={runLoadProfilePreview.totalSeconds - runLoadProfilePreview.postBaselineSeconds}
                           x2={runLoadProfilePreview.totalSeconds}
                           fill="var(--warning)"
@@ -3293,6 +3336,7 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
                       {group.name || group.script_name || `Group ${index + 1}`}
                     </span>
                   ))}
+                  {runLoadProfilePreview.peakTps !== undefined && <span><i style={{ background: 'var(--warning)' }} />Production target TPS</span>}
                 </div>
                 <div className="new-test-profile-meta">
                   <span>{formatTimeCompact(runLoadProfilePreview.totalSeconds)} total</span>

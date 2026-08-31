@@ -6,9 +6,11 @@ import {
   RuntimeSettingsOverride,
   ScenarioMode,
   StageTimelineValidationResult,
+  TrafficProfile,
 } from '../types'
 import { type PacingConfig, type ThinkTimeConfig } from '../types/scripts'
 import { formatTimeCompact, parseDurationToNanoseconds, parseDurationToSeconds } from '../utils/timeUtils'
+import { trafficProfileMappingForGroup, trafficProfileTargetAt, trafficProfileTimelineSeconds } from './trafficProfilePreviewModel'
 
 export type ScenarioWizardStep = 'start' | 'source' | 'scripts' | 'run' | 'data' | 'review'
 
@@ -41,6 +43,7 @@ export interface ScenarioModelSeries {
   label: string
   color: string
   kind: 'group' | 'total' | 'tps'
+  interpolation?: 'linear' | 'stepAfter'
 }
 
 export interface ScenarioModelPreview {
@@ -703,7 +706,7 @@ function stageTimelineSeconds(stages: LoadStageDraft[]): number[] {
   return timeline
 }
 
-function collectTimeline(steadySeconds: number, totalSeconds: number, groups: ScenarioModelGroupInput[]): number[] {
+function collectTimeline(steadySeconds: number, totalSeconds: number, groups: ScenarioModelGroupInput[], trafficProfile?: TrafficProfile): number[] {
   const step = Math.max(1, Math.ceil(totalSeconds / 24))
   const values = new Set<number>([0, steadySeconds, totalSeconds])
   for (let second = step; second < totalSeconds; second += step) {
@@ -722,6 +725,7 @@ function collectTimeline(steadySeconds: number, totalSeconds: number, groups: Sc
       stageTimelineSeconds(group.stages).forEach(second => values.add(Math.min(steadySeconds, second)))
     }
   })
+  trafficProfileTimelineSeconds(trafficProfile).forEach(second => values.add(Math.min(steadySeconds, second)))
   return Array.from(values).filter(second => second >= 0 && second <= totalSeconds).sort((left, right) => left - right)
 }
 
@@ -729,23 +733,31 @@ export function buildScenarioModelPreview(params: {
   duration: string
   groups: ScenarioModelGroupInput[]
   goalTargetTps?: number
+  trafficProfile?: TrafficProfile
 }): ScenarioModelPreview {
   const steadySeconds = parseDurationSeconds(params.duration, 60)
   const groups = params.groups.length > 0 ? params.groups : [{ vusers: 0 }]
+  const profileMappings = groups.map(group => trafficProfileMappingForGroup(params.trafficProfile, group.name))
+  const profileVUsers = params.trafficProfile?.runtime_target === 'vusers'
+  const profileTps = params.trafficProfile?.runtime_target === 'tps'
   const maxRampDownSeconds = groups.reduce(
-    (max, group) => group.stages?.length ? max : Math.max(max, parseDurationSeconds(group.ramp_down, 0)),
+    (max, group, index) => (profileMappings[index] || group.stages?.length) ? max : Math.max(max, parseDurationSeconds(group.ramp_down, 0)),
     0,
   )
   const durationSeconds = steadySeconds + maxRampDownSeconds
-  const timeline = collectTimeline(steadySeconds, durationSeconds, groups)
+  const timeline = collectTimeline(steadySeconds, durationSeconds, groups, params.trafficProfile)
   const groupSeries: ScenarioModelSeries[] = groups.map((group, index) => ({
     key: safeSeriesKey(index),
     label: group.name || `Group ${index + 1}`,
     color: GROUP_COLORS[index % GROUP_COLORS.length],
     kind: 'group',
+    interpolation: profileVUsers && profileMappings[index] ? 'stepAfter' : 'linear',
   }))
-  const hasGroupTps = groups.some(group => group.stages?.some(stage => Number(stage.target_tps) > 0))
-  const hasGoalTps = Number(params.goalTargetTps) > 0
+  const tpsGroupIndexes = groups.flatMap((group, index) => (
+    (profileTps && profileMappings[index]) || group.stages?.some(stage => Number(stage.target_tps) > 0) ? [index] : []
+  ))
+  const hasGroupTps = tpsGroupIndexes.length > 0
+  const hasGoalTps = !profileTps && Number(params.goalTargetTps) > 0
   const includeTps = hasGroupTps || hasGoalTps
 
   let peakVusers = 0
@@ -760,14 +772,21 @@ export function buildScenarioModelPreview(params: {
     groups.forEach((group, index) => {
       const groupKey = safeSeriesKey(index)
       const tpsKey = tpsSeriesKey(index)
-      const value = group.stages?.length
-        ? (elapsedSeconds < steadySeconds ? stagedValue(group.stages, elapsedSeconds, 'target_vusers') : 0)
-        : simpleGroupValue(group, elapsedSeconds, steadySeconds)
+      const profileMapping = profileMappings[index]
+      const value = profileVUsers && profileMapping
+        ? (elapsedSeconds < steadySeconds ? trafficProfileTargetAt(profileMapping, elapsedSeconds) : 0)
+        : group.stages?.length
+          ? (elapsedSeconds < steadySeconds ? stagedValue(group.stages, elapsedSeconds, 'target_vusers') : 0)
+          : simpleGroupValue(group, elapsedSeconds, steadySeconds)
       point[groupKey] = Math.round(value * 100) / 100
       point.totalVusers += value
 
-      if (group.stages?.some(stage => Number(stage.target_tps) > 0)) {
-        const tps = elapsedSeconds < steadySeconds ? stagedValue(group.stages, elapsedSeconds, 'target_tps') : 0
+      if ((profileTps && profileMapping) || group.stages?.some(stage => Number(stage.target_tps) > 0)) {
+        const tps = elapsedSeconds < steadySeconds
+          ? profileTps && profileMapping
+            ? trafficProfileTargetAt(profileMapping, elapsedSeconds)
+            : stagedValue(group.stages || [], elapsedSeconds, 'target_tps')
+          : 0
         point[tpsKey] = Math.round(tps * 100) / 100
         point.totalTps = (point.totalTps || 0) + tps
       }
@@ -793,8 +812,15 @@ export function buildScenarioModelPreview(params: {
     durationSeconds,
     series: [
       ...groupSeries,
-      { key: 'totalVusers', label: 'Total VUsers', color: 'var(--text-primary)', kind: 'total' },
-      ...(includeTps ? [{ key: 'totalTps', label: 'Target TPS', color: 'var(--warning)', kind: 'tps' } as ScenarioModelSeries] : []),
+      { key: 'totalVusers', label: 'Total VUsers', color: 'var(--text-primary)', kind: 'total', interpolation: profileVUsers ? 'stepAfter' : 'linear' },
+      ...(tpsGroupIndexes.length > 1 ? tpsGroupIndexes.map(index => ({
+        key: tpsSeriesKey(index),
+        label: `${groups[index].name || `Group ${index + 1}`} TPS`,
+        color: GROUP_COLORS[index % GROUP_COLORS.length],
+        kind: 'tps' as const,
+        interpolation: profileTps && profileMappings[index] ? 'stepAfter' as const : 'linear' as const,
+      })) : []),
+      ...(includeTps ? [{ key: 'totalTps', label: profileTps ? 'Production target TPS' : 'Target TPS', color: 'var(--warning)', kind: 'tps', interpolation: profileTps ? 'stepAfter' : 'linear' } as ScenarioModelSeries] : []),
     ],
   }
 }

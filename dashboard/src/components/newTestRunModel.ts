@@ -1,8 +1,9 @@
-import { GeneratorAssignmentSettings, RuntimeSettingsOverride, StoredScenario, SystemInventoryGenerator } from '../types'
+import { GeneratorAssignmentSettings, RuntimeSettingsOverride, StoredScenario, SystemInventoryGenerator, TrafficProfile } from '../types'
 import { parseDurationToSeconds } from '../utils/timeUtils'
 import { normalizeRequiredLabels } from './assignmentLabels'
 import { canonicalThinkTimeType } from './thinkTimeConfig'
 import { formatMillisecondsAsSecondsValue, formatPacingTiming } from './runtimeTiming'
+import { trafficProfileMappingForGroup, trafficProfileTargetAt, trafficProfileTimelineSeconds } from './trafficProfilePreviewModel'
 
 export type RunDefaultKey =
   | 'duration'
@@ -97,6 +98,9 @@ export type RunLoadProfilePreview = {
   preBaselineSeconds: number
   postBaselineSeconds: number
   peakVUsers: number
+  peakTps?: number
+  runtimeTarget?: 'tps' | 'vusers'
+  tpsGroupIndexes?: number[]
 }
 
 const RESOURCE_BASELINE_SECONDS = 5 * 60
@@ -737,7 +741,7 @@ export function buildRuntimeSettingsForRun(scenario: StoredScenario, overrides: 
   return payload
 }
 
-export function buildRunLoadProfilePreview(groups: ScenarioScriptGroup[], duration: string, startDelay: string | undefined, resourceBaseline: boolean): RunLoadProfilePreview {
+export function buildRunLoadProfilePreview(groups: ScenarioScriptGroup[], duration: string, startDelay: string | undefined, resourceBaseline: boolean, trafficProfile?: TrafficProfile): RunLoadProfilePreview {
   if (!groups.length) {
     return {
       points: [],
@@ -753,8 +757,11 @@ export function buildRunLoadProfilePreview(groups: ScenarioScriptGroup[], durati
   const startDelaySeconds = parseDurationToSeconds(startDelay)
   const preBaselineSeconds = startDelaySeconds + (resourceBaseline ? RESOURCE_BASELINE_SECONDS : 0)
   const postBaselineSeconds = resourceBaseline ? RESOURCE_BASELINE_SECONDS : 0
+  const profileMappings = groups.map(group => trafficProfileMappingForGroup(trafficProfile, group.name || group.script_name))
+  const profileVUsers = trafficProfile?.runtime_target === 'vusers'
+  const profileTps = trafficProfile?.runtime_target === 'tps'
   const maxRampDown = groups.reduce(
-    (max, group) => group.stages?.length ? max : Math.max(max, parseDurationToSeconds(group.ramp_down)),
+    (max, group, index) => (profileMappings[index] || group.stages?.length) ? max : Math.max(max, parseDurationToSeconds(group.ramp_down)),
     0,
   )
   const totalSeconds = preBaselineSeconds + steadySeconds + maxRampDown + postBaselineSeconds
@@ -765,7 +772,8 @@ export function buildRunLoadProfilePreview(groups: ScenarioScriptGroup[], durati
   const step = Math.max(1, Math.floor(totalSeconds / 30))
   const timeline = new Set<number>([0, totalSeconds, preBaselineSeconds, preBaselineSeconds + steadySeconds])
   for (let second = step; second < totalSeconds; second += step) timeline.add(second)
-  groups.forEach(group => {
+  groups.forEach((group, index) => {
+    if (profileMappings[index]) return
     if (group.stages?.length) {
       let cursor = preBaselineSeconds
       group.stages.forEach(stage => {
@@ -777,17 +785,23 @@ export function buildRunLoadProfilePreview(groups: ScenarioScriptGroup[], durati
     timeline.add(preBaselineSeconds + Math.min(steadySeconds, parseDurationToSeconds(group.ramp_up)))
     timeline.add(preBaselineSeconds + steadySeconds + parseDurationToSeconds(group.ramp_down))
   })
+  trafficProfileTimelineSeconds(trafficProfile).forEach(second => timeline.add(preBaselineSeconds + Math.min(steadySeconds, second)))
+  const tpsGroupIndexes = groups.flatMap((_, index) => profileTps && profileMappings[index] ? [index] : [])
   const points: Array<Record<string, number>> = []
   let peakVUsers = 0
+  let peakTps = 0
 
   for (const second of Array.from(timeline).filter(value => value >= 0 && value <= totalSeconds).sort((left, right) => left - right)) {
     const point: Record<string, number> = { second, total: 0 }
     groups.forEach((group, index) => {
       const loadSecond = Math.max(0, second - preBaselineSeconds)
+      const profileMapping = profileMappings[index]
       let value = 0
 
       if (second < preBaselineSeconds) {
         value = 0
+      } else if (profileVUsers && profileMapping) {
+        value = loadSecond < steadySeconds ? trafficProfileTargetAt(profileMapping, loadSecond) : 0
       } else if (group.stages?.length) {
         value = loadSecond < steadySeconds ? stagedRunGroupValue(group, loadSecond) : 0
       } else {
@@ -805,8 +819,15 @@ export function buildRunLoadProfilePreview(groups: ScenarioScriptGroup[], durati
       const roundedValue = Math.round(Math.max(0, value))
       point[`group${index}`] = roundedValue
       point.total += roundedValue
+
+      if (profileTps && profileMapping) {
+        const tps = second >= preBaselineSeconds && loadSecond < steadySeconds ? trafficProfileTargetAt(profileMapping, loadSecond) : 0
+        point[`group${index}Tps`] = tps
+        point.totalTps = (point.totalTps || 0) + tps
+      }
     })
     peakVUsers = Math.max(peakVUsers, point.total)
+    peakTps = Math.max(peakTps, point.totalTps || 0)
     points.push(point)
   }
 
@@ -815,7 +836,9 @@ export function buildRunLoadProfilePreview(groups: ScenarioScriptGroup[], durati
     const finalPoint: Record<string, number> = { second: totalSeconds, total: 0 }
     groups.forEach((_, index) => {
       finalPoint[`group${index}`] = 0
+      if (tpsGroupIndexes.includes(index)) finalPoint[`group${index}Tps`] = 0
     })
+    if (profileTps) finalPoint.totalTps = 0
     points.push(finalPoint)
   }
 
@@ -826,6 +849,7 @@ export function buildRunLoadProfilePreview(groups: ScenarioScriptGroup[], durati
     preBaselineSeconds,
     postBaselineSeconds,
     peakVUsers,
+    ...(profileTps ? { peakTps, runtimeTarget: 'tps' as const, tpsGroupIndexes } : profileVUsers ? { runtimeTarget: 'vusers' as const } : {}),
   }
 }
 

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { adaptScenarioShapeDefaults, buildScenarioModelPreview, buildScenarioShapeCatalog, buildShapeStages, getScenarioShapePreset, parseDurationSeconds, SCENARIO_SHAPE_PRESETS, ShapeStageStrategy, steppedStepPlan, validateStageTimeline } from './scenarioWizardUtils'
-import { LoadModelSupportEntry, LoadModelTemplate } from '../types'
+import { LoadModelSupportEntry, LoadModelTemplate, TrafficProfile } from '../types'
 
 const stageSeconds = (stages: { duration: string }[]) => stages.reduce((sum, stage) => sum + parseDurationSeconds(stage.duration), 0)
 const stagePeak = (stages: { target_vusers?: number }[]) => Math.max(...stages.map(stage => Number(stage.target_vusers) || 0))
@@ -89,6 +89,53 @@ describe('scenarioWizardUtils', () => {
     expect(end?.totalVusers).toBe(0)
     expect(preview.peakTps).toBe(25)
     expect(preview.series.some(series => series.kind === 'tps')).toBe(true)
+  })
+
+  it('plots a production TPS profile instead of flattening it to configured VUsers', () => {
+    const trafficProfile: TrafficProfile = {
+      version: 1,
+      source: { kind: 'file', file: { filename: 'traffic.csv', timestamp_column: 'time', value_columns: ['transactions'] } },
+      value_semantics: 'tps', runtime_target: 'tps', interpolation: 'step', source_duration: '3m', target_duration: '3m', refreshed_at: '2026-08-31T00:00:00Z',
+      mappings: [{ series_key: 'requests', series_name: 'Requests', group_name: 'Checkout', peak_target: 10, points: [{ offset_ms: 0, target: 2 }, { offset_ms: 60_000, target: 10 }, { offset_ms: 120_000, target: 4 }] }],
+    }
+
+    const preview = buildScenarioModelPreview({ duration: '3m', groups: [{ name: 'Checkout', vusers: 9 }], goalTargetTps: 99, trafficProfile })
+
+    expect(preview.points.find(point => point.elapsedSeconds === 0)).toMatchObject({ totalVusers: 9, totalTps: 2 })
+    expect(preview.points.find(point => point.elapsedSeconds === 60)?.totalTps).toBe(10)
+    expect(preview.points.find(point => point.elapsedSeconds === 120)?.totalTps).toBe(4)
+    expect(preview.peakTps).toBe(10)
+    expect(preview.series.find(series => series.key === 'totalTps')).toMatchObject({ label: 'Production target TPS', interpolation: 'stepAfter' })
+
+    const multiGroupProfile: TrafficProfile = {
+      ...trafficProfile,
+      mappings: [
+        ...trafficProfile.mappings,
+        { series_key: 'search', series_name: 'Search', group_name: 'Search', peak_target: 5, points: [{ offset_ms: 0, target: 1 }, { offset_ms: 60_000, target: 5 }, { offset_ms: 120_000, target: 2 }] },
+      ],
+    }
+    const multiGroupPreview = buildScenarioModelPreview({
+      duration: '3m',
+      groups: [{ name: 'Checkout', vusers: 9 }, { name: 'Search', vusers: 4 }],
+      trafficProfile: multiGroupProfile,
+    })
+    expect(multiGroupPreview.points.find(point => point.elapsedSeconds === 60)).toMatchObject({ group_0_tps: 10, group_1_tps: 5, totalTps: 15 })
+    expect(multiGroupPreview.series.filter(series => series.kind === 'tps').map(series => series.key)).toEqual(['group_0_tps', 'group_1_tps', 'totalTps'])
+  })
+
+  it('uses production VUser targets for profile-managed groups', () => {
+    const trafficProfile: TrafficProfile = {
+      version: 1,
+      source: { kind: 'file', file: { filename: 'vusers.csv', timestamp_column: 'time', value_columns: ['vusers'] } },
+      value_semantics: 'vusers', runtime_target: 'vusers', interpolation: 'step', source_duration: '2m', target_duration: '2m', refreshed_at: '2026-08-31T00:00:00Z',
+      mappings: [{ series_key: 'users', series_name: 'Users', group_name: 'Checkout', peak_target: 24, points: [{ offset_ms: 0, target: 4 }, { offset_ms: 60_000, target: 24 }] }],
+    }
+
+    const preview = buildScenarioModelPreview({ duration: '2m', groups: [{ name: 'Checkout', vusers: 24 }], trafficProfile })
+
+    expect(preview.points.find(point => point.elapsedSeconds === 0)?.totalVusers).toBe(4)
+    expect(preview.points.find(point => point.elapsedSeconds === 60)?.totalVusers).toBe(24)
+    expect(preview.series.find(series => series.key === 'group_0_vusers')?.interpolation).toBe('stepAfter')
   })
 
   it('validates stage timelines against scenario duration', () => {
