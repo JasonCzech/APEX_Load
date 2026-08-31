@@ -482,7 +482,7 @@ function generatorImpactVerdictCopy(verdict: GeneratorImpactVerdict) {
 }
 
 export default function TestExecutionCharts({
-  filteredData,
+  filteredData: sourceFilteredData,
   expandedChart,
   onExpandedChartChange,
   onChartMouseDown,
@@ -523,6 +523,14 @@ export default function TestExecutionCharts({
   externalControlsTarget = null,
   terminalStatus,
 }: Props) {
+  // Some callers provide already-built archive or scoped histories instead of
+  // going through buildExecutionChartData. Normalize at the rendering boundary
+  // as well so zero/NaN response-time sentinels cannot leak into any timeline,
+  // percentile, group, transaction, or Under Load graph.
+  const filteredData = useMemo(
+    () => carryForwardPositiveResponseTimes(sourceFilteredData),
+    [sourceFilteredData],
+  )
   const densityFallback = defaultDensity ?? (surface === 'command-center' ? 'command_center' : 'standard')
   const storageKeyFor = (name: string) => `${storageScope}.${name}`
   const chartOrderStorageKey = storageKeyFor('chartOrder')

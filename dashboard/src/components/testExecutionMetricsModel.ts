@@ -500,12 +500,6 @@ function responseTimeMetricSuffix(key: string) {
   ))
 }
 
-function responseTimeActivityKey(key: string, metric: typeof RESPONSE_TIME_METRICS[number]) {
-  if (key === metric) return 'tps'
-  if (key.startsWith('transaction:')) return `${key.slice(0, -(metric.length))}tps`
-  return `${key.slice(0, -(metric.length))}tps`
-}
-
 // Empty engine intervals carry 0 ms (and resource-only archive rows carry NaN)
 // because no response-time samples were observed. Those are absence sentinels,
 // not measured zero-duration responses. Keep each response-time line at its last
@@ -530,10 +524,6 @@ export function carryForwardPositiveResponseTimes(points: MetricsHistoryPoint[])
       }
       const metric = responseTimeMetricSuffix(key)
       if (!metric) return
-      const activity = point[responseTimeActivityKey(key, metric)]
-      // A finite zero with positive throughput is a measured sub-millisecond
-      // value after display rounding, not an empty-interval sentinel.
-      if (value === 0 && typeof activity === 'number' && Number.isFinite(activity) && activity > 0) return
       const previous = previousPositive.get(key)
       if (previous === undefined) return
       if (next === point) {

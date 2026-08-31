@@ -525,7 +525,7 @@ describe('TestExecutionCharts context menu', () => {
     expect(window.localStorage.getItem('apexload.execution.chartMetricFilters')).toContain('"tps":["tps","Search_tps"]')
   })
 
-  it('renders every live transaction, marks singletons, and gates sole-group duplicates', async () => {
+  it('renders every live transaction and gates sole-group duplicates after response carry-forward', async () => {
     const transactionValues = (loginTps: number, searchTps?: number) => ({
       [transactionChartSeriesKey('Login', 'tps')]: loginTps,
       [transactionChartSeriesKey('Login', 'avgMs')]: 90,
@@ -572,7 +572,7 @@ describe('TestExecutionCharts context menu', () => {
       expect(loginLine?.getAttribute('data-connect-nulls')).toBe('true')
       expect(searchLine?.getAttribute('data-connect-nulls')).toBe('true')
       expect(loginLine?.getAttribute('data-dot-radius')).toBe('')
-      expect(searchLine?.getAttribute('data-dot-radius')).toBe('3')
+      expect(searchLine?.getAttribute('data-dot-radius')).toBe(metric === 'avgMs' ? '' : '3')
       expect(chart?.querySelector(`path[data-testid="mock-line"][data-key="Only_${metric}"]`)).toBeNull()
       expect(chart?.textContent).toContain('Transaction · Login')
       expect(chart?.textContent).toContain('Transaction · Search')
@@ -1036,7 +1036,7 @@ describe('TestExecutionCharts context menu', () => {
           filteredData={[]}
           loadImpactData={[
             { time: '10:00:00', vusers: 5, tps: 1, avgMs: 100, errorPct: 0, p50: 90, p90: 120, p95: 140, p99: 160 },
-            { time: '10:00:01', vusers: 5, tps: 0, avgMs: 0, errorPct: 0, p50: 0, p90: 0, p95: 0, p99: 0 },
+            { time: '10:00:01', vusers: 5, tps: 1, avgMs: 0, errorPct: 0, p50: 0, p90: 0, p95: 0, p99: 0 },
           ]}
           expandedChart={null}
           onExpandedChartChange={vi.fn()}
@@ -1062,6 +1062,40 @@ describe('TestExecutionCharts context menu', () => {
     const averageRow = Array.from(artUnderLoad?.querySelectorAll('tbody tr') ?? [])
       .find(row => row.querySelector('th')?.textContent === 'Average')
     expect(averageRow?.textContent).toContain('100ms100ms100ms100ms')
+  })
+
+  it('normalizes zero response-time sentinels at the chart boundary', async () => {
+    await act(async () => {
+      root.render(
+        <TestExecutionCharts
+          filteredData={[
+            { time: '10:00:00', timestampMs: 0, vusers: 5, tps: 2, avgMs: 100, errorPct: 0, p50: 90, p90: 120, p95: 140, p99: 160 },
+            { time: '10:00:01', timestampMs: 1_000, vusers: 5, tps: 2, avgMs: 0, errorPct: 0, p50: 0, p90: 0, p95: 0, p99: 0 },
+          ]}
+          expandedChart={null}
+          onExpandedChartChange={vi.fn()}
+          onChartMouseDown={vi.fn()}
+          onChartMouseMove={vi.fn()}
+          onZoom={vi.fn()}
+          onResetZoom={vi.fn()}
+          showRefArea={false}
+          refAreaLeft=""
+          refAreaEnd=""
+          timeRange="all"
+          onTimeRangeChange={vi.fn()}
+          isMultiGroup={false}
+          groupNames={[]}
+          groupColors={['#00a3ff']}
+          showLoadImpact={false}
+        />,
+      )
+    })
+
+    const responseTimeChart = Array.from(container.querySelectorAll('.chart-card'))
+      .find(chart => chart.textContent?.includes('Response Time (ms)'))
+    const totalRow = Array.from(responseTimeChart?.querySelectorAll('tbody tr') ?? [])
+      .find(row => row.querySelector('th')?.textContent === 'Total')
+    expect(totalRow?.textContent).toContain('100ms100ms100ms100ms')
   })
 
   it('scopes the Configure Graphs card list to the graph page in view', async () => {

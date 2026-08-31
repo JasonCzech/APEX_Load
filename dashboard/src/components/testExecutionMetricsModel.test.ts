@@ -50,7 +50,7 @@ describe('testExecutionMetricsModel', () => {
     expect(filled[1]).toBe(points[1])
   })
 
-  it('preserves a measured zero response time when the interval has throughput', () => {
+  it('forward-fills zero response-time sentinels even when throughput remains positive', () => {
     const points = [
       { time: '1', vusers: 1, tps: 1, avgMs: 120, errorPct: 0, p50: 100, p90: 140, p99: 180 },
       { time: '2', vusers: 1, tps: 1, avgMs: 0, errorPct: 0, p50: 0, p90: 0, p99: 0 },
@@ -58,8 +58,8 @@ describe('testExecutionMetricsModel', () => {
 
     const filled = carryForwardPositiveResponseTimes(points)
 
-    expect(filled[1]).toBe(points[1])
-    expect(filled[1]).toMatchObject({ avgMs: 0, p50: 0, p90: 0, p99: 0 })
+    expect(filled[1]).not.toBe(points[1])
+    expect(filled[1]).toMatchObject({ avgMs: 120, p50: 100, p90: 140, p99: 180 })
   })
 
   it('forward-fills empty response-time intervals in final chart data', () => {
@@ -67,7 +67,7 @@ describe('testExecutionMetricsModel', () => {
       time: String(timestampMs),
       timestampMs,
       vusers: 2,
-      tps: avgMs > 0 ? 1 : 0,
+      tps: 1,
       avgMs,
       errorPct: 0,
       p50: avgMs,
@@ -81,8 +81,9 @@ describe('testExecutionMetricsModel', () => {
     })
 
     expect(chartData.map(sample => sample.avgMs)).toEqual([100, 100, 100, 130])
-    // Throughput zero remains meaningful and is not forward-filled with latency.
-    expect(chartData.map(sample => sample.tps)).toEqual([1, 0, 0, 1])
+    // Throughput remains untouched; it is not evidence that a zero latency
+    // sentinel represents a measured zero-duration response.
+    expect(chartData.map(sample => sample.tps)).toEqual([1, 1, 1, 1])
   })
 
   it('maps backend execution history into chart points with group and latency metrics', () => {
