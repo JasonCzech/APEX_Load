@@ -266,22 +266,26 @@ type ResourceSample struct {
 }
 
 type IntervalSummaryRecord struct {
-	Timestamp              time.Time `json:"timestamp"`
-	TestID                 string    `json:"test_id"`
-	TestName               string    `json:"test_name"`
-	ActiveVUsers           int64     `json:"active_vusers"`
-	TPS                    float64   `json:"tps"`
-	TargetTPS              float64   `json:"target_tps,omitempty"`
-	ThroughputGapPct       float64   `json:"throughput_gap_pct,omitempty"`
-	ThroughputTargetMissed bool      `json:"throughput_target_missed,omitempty"`
-	AvgResponseMs          float64   `json:"avg_response_ms"`
-	ErrorPct               float64   `json:"error_pct"`
-	TotalTx                int64     `json:"total_transactions"`
-	TotalErrors            int64     `json:"total_errors"`
-	P50Ms                  float64   `json:"p50_ms"`
-	P90Ms                  float64   `json:"p90_ms"`
-	P95Ms                  float64   `json:"p95_ms"`
-	P99Ms                  float64   `json:"p99_ms"`
+	Timestamp                time.Time                          `json:"timestamp"`
+	TestID                   string                             `json:"test_id"`
+	TestName                 string                             `json:"test_name"`
+	ActiveVUsers             int64                              `json:"active_vusers"`
+	TPS                      float64                            `json:"tps"`
+	TargetTPS                float64                            `json:"target_tps,omitempty"`
+	ThroughputGapPct         float64                            `json:"throughput_gap_pct,omitempty"`
+	ThroughputTargetMissed   bool                               `json:"throughput_target_missed,omitempty"`
+	AvgResponseMs            float64                            `json:"avg_response_ms"`
+	ErrorPct                 float64                            `json:"error_pct"`
+	TotalTx                  int64                              `json:"total_transactions"`
+	TotalErrors              int64                              `json:"total_errors"`
+	P50Ms                    float64                            `json:"p50_ms"`
+	P90Ms                    float64                            `json:"p90_ms"`
+	P95Ms                    float64                            `json:"p95_ms"`
+	P99Ms                    float64                            `json:"p99_ms"`
+	LoadLevels               []ActiveLoadLevel                  `json:"load_levels,omitempty"`
+	ActiveRuntimeSeconds     *float64                           `json:"active_runtime_seconds,omitempty"`
+	SampleWindowSeconds      float64                            `json:"sample_window_seconds,omitempty"`
+	LoadLevelDurationDigests map[string]*engine.TDigestSnapshot `json:"load_level_duration_digests,omitempty"`
 	// DurationDigest is an optional generator-archive staging field. Distributed
 	// finalization consumes it into fleet scalar percentiles; controller archives
 	// keep the existing scalar reporting contract.
@@ -363,6 +367,7 @@ type RunArchiveReport struct {
 	EvidenceTiers       []RunArchiveEvidenceTier               `json:"evidence_tiers,omitempty"`
 	ErrorPatterns       []RunArchiveErrorPattern               `json:"error_patterns,omitempty"`
 	SummaryTimeline     []RunArchiveSummaryPoint               `json:"summary_timeline,omitempty"`
+	LoadLevelSummaries  []RunArchiveLoadLevelSummary           `json:"load_level_summaries,omitempty"`
 	ByAction            map[string]RunArchiveActionStats       `json:"by_action"`
 	ByGroup             map[string]RunArchiveActionStats       `json:"by_group,omitempty"`
 	BySOAPOperation     map[string]RunArchiveActionStats       `json:"by_soap_operation,omitempty"`
@@ -390,6 +395,27 @@ type RunArchiveReport struct {
 	// storage-aware handler layer (attachDashboardPanels) from the run's frozen
 	// snapshot, so buildRunArchiveReport stays a pure function of one archive record.
 	DashboardPanels *RunArchiveDashboardPanels `json:"dashboard_panels,omitempty"`
+}
+
+// RunArchiveLoadLevelSummary preserves the evidence collected while one
+// stepped-ramp level was active. Partial is true when an early stop or another
+// lifecycle transition ended the observed interval before its configured hold.
+type RunArchiveLoadLevelSummary struct {
+	Group                   string  `json:"group"`
+	StageIndex              int     `json:"stage_index"`
+	Name                    string  `json:"name"`
+	TargetVUsers            int     `json:"target_vusers"`
+	ConfiguredDuration      string  `json:"configured_duration"`
+	ObservedDurationSeconds float64 `json:"observed_duration_seconds"`
+	Requests                int64   `json:"requests"`
+	Errors                  int64   `json:"errors"`
+	ErrorRatePct            float64 `json:"error_rate_pct"`
+	Throughput              float64 `json:"throughput"`
+	P50Ms                   float64 `json:"p50_ms"`
+	P90Ms                   float64 `json:"p90_ms"`
+	P95Ms                   float64 `json:"p95_ms"`
+	P99Ms                   float64 `json:"p99_ms"`
+	Partial                 bool    `json:"partial,omitempty"`
 }
 
 // RunArchiveDashboardPanels is a report-friendly digest of a run's imported dashboard

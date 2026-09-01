@@ -4178,6 +4178,52 @@ paths:
                           type: string
                           format: date-time
                       nullable: true
+                    load_level_summaries:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          configured_duration:
+                            type: string
+                          error_rate_pct:
+                            type: number
+                            format: double
+                          errors:
+                            type: integer
+                            format: int64
+                          group:
+                            type: string
+                          name:
+                            type: string
+                          observed_duration_seconds:
+                            type: number
+                            format: double
+                          p50_ms:
+                            type: number
+                            format: double
+                          p90_ms:
+                            type: number
+                            format: double
+                          p95_ms:
+                            type: number
+                            format: double
+                          p99_ms:
+                            type: number
+                            format: double
+                          partial:
+                            type: boolean
+                          requests:
+                            type: integer
+                            format: int64
+                          stage_index:
+                            type: integer
+                            format: int64
+                          target_vusers:
+                            type: integer
+                            format: int64
+                          throughput:
+                            type: number
+                            format: double
                     manifest:
                       type: object
                       properties:
@@ -5848,6 +5894,17 @@ paths:
                     goal_config:
                       type: object
                       properties:
+                        early_stop:
+                          type: object
+                          properties:
+                            breach_window:
+                              type: string
+                            enabled:
+                              type: boolean
+                            error_rate_pct:
+                              type: number
+                              format: double
+                          nullable: true
                         max_avg_server_processing_ms:
                           type: number
                           format: double
@@ -5934,6 +5991,14 @@ paths:
                                 format: double
                               transaction:
                                 type: string
+                        workload_shape_config:
+                          type: object
+                          properties:
+                            stepped_ramp:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
+                          nullable: true
                       nullable: true
                     groups:
                       type: array
@@ -44011,6 +44076,17 @@ paths:
                 goal_config:
                   type: object
                   properties:
+                    early_stop:
+                      type: object
+                      properties:
+                        breach_window:
+                          type: string
+                        enabled:
+                          type: boolean
+                        error_rate_pct:
+                          type: number
+                          format: double
+                      nullable: true
                     max_avg_server_processing_ms:
                       type: number
                       format: double
@@ -44097,6 +44173,14 @@ paths:
                             format: double
                           transaction:
                             type: string
+                    workload_shape_config:
+                      type: object
+                      properties:
+                        stepped_ramp:
+                          type: object
+                          additionalProperties: true
+                          nullable: true
+                      nullable: true
                   nullable: true
                 groups:
                   type: array
@@ -44731,6 +44815,17 @@ paths:
                     goal_config:
                       type: object
                       properties:
+                        early_stop:
+                          type: object
+                          properties:
+                            breach_window:
+                              type: string
+                            enabled:
+                              type: boolean
+                            error_rate_pct:
+                              type: number
+                              format: double
+                          nullable: true
                         max_avg_server_processing_ms:
                           type: number
                           format: double
@@ -44817,6 +44912,14 @@ paths:
                                 format: double
                               transaction:
                                 type: string
+                        workload_shape_config:
+                          type: object
+                          properties:
+                            stepped_ramp:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
+                          nullable: true
                       nullable: true
                     groups:
                       type: array
@@ -46390,6 +46493,21 @@ paths:
                       goal_config:
                         type: object
                         properties:
+                          early_stop:
+                            type: object
+                            properties:
+                              breach_window:
+                                type: string
+                              enabled:
+                                type: boolean
+                              error_rate_pct:
+                                type: number
+                                format: double
+                            required:
+                              - breach_window
+                              - enabled
+                              - error_rate_pct
+                            nullable: true
                           max_avg_server_processing_ms:
                             type: number
                             format: double
@@ -46481,6 +46599,14 @@ paths:
                                 - metric
                                 - threshold
                                 - transaction
+                          workload_shape_config:
+                            type: object
+                            properties:
+                              stepped_ramp:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                            nullable: true
                         nullable: true
                       goal_targets:
                         type: object
@@ -46503,6 +46629,31 @@ paths:
                         items:
                           type: object
                           properties:
+                            active_stage:
+                              type: object
+                              properties:
+                                duration:
+                                  type: string
+                                group:
+                                  type: string
+                                name:
+                                  type: string
+                                stage_index:
+                                  type: integer
+                                  format: int64
+                                started_at:
+                                  type: string
+                                  format: date-time
+                                target_vusers:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - duration
+                                - group
+                                - stage_index
+                                - started_at
+                                - target_vusers
+                              nullable: true
                             assignment:
                               type: object
                               properties:
@@ -46944,6 +47095,11 @@ paths:
                               required:
                                 - targets
                               nullable: true
+                            load_levels:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
                             network_profiles:
                               type: object
                               additionalProperties:
@@ -47820,6 +47976,32 @@ paths:
                             required:
                               - targets
                             nullable: true
+                          load_levels:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                duration:
+                                  type: string
+                                group:
+                                  type: string
+                                name:
+                                  type: string
+                                stage_index:
+                                  type: integer
+                                  format: int64
+                                started_at:
+                                  type: string
+                                  format: date-time
+                                target_vusers:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - duration
+                                - group
+                                - stage_index
+                                - started_at
+                                - target_vusers
                           network_profiles:
                             type: object
                             additionalProperties:
@@ -49991,6 +50173,21 @@ paths:
                       goal_config:
                         type: object
                         properties:
+                          early_stop:
+                            type: object
+                            properties:
+                              breach_window:
+                                type: string
+                              enabled:
+                                type: boolean
+                              error_rate_pct:
+                                type: number
+                                format: double
+                            required:
+                              - breach_window
+                              - enabled
+                              - error_rate_pct
+                            nullable: true
                           max_avg_server_processing_ms:
                             type: number
                             format: double
@@ -50082,6 +50279,14 @@ paths:
                                 - metric
                                 - threshold
                                 - transaction
+                          workload_shape_config:
+                            type: object
+                            properties:
+                              stepped_ramp:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                            nullable: true
                         nullable: true
                       goal_targets:
                         type: object
@@ -50104,6 +50309,31 @@ paths:
                         items:
                           type: object
                           properties:
+                            active_stage:
+                              type: object
+                              properties:
+                                duration:
+                                  type: string
+                                group:
+                                  type: string
+                                name:
+                                  type: string
+                                stage_index:
+                                  type: integer
+                                  format: int64
+                                started_at:
+                                  type: string
+                                  format: date-time
+                                target_vusers:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - duration
+                                - group
+                                - stage_index
+                                - started_at
+                                - target_vusers
+                              nullable: true
                             assignment:
                               type: object
                               properties:
@@ -50545,6 +50775,11 @@ paths:
                               required:
                                 - targets
                               nullable: true
+                            load_levels:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
                             network_profiles:
                               type: object
                               additionalProperties:
@@ -51421,6 +51656,32 @@ paths:
                             required:
                               - targets
                             nullable: true
+                          load_levels:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                duration:
+                                  type: string
+                                group:
+                                  type: string
+                                name:
+                                  type: string
+                                stage_index:
+                                  type: integer
+                                  format: int64
+                                started_at:
+                                  type: string
+                                  format: date-time
+                                target_vusers:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - duration
+                                - group
+                                - stage_index
+                                - started_at
+                                - target_vusers
                           network_profiles:
                             type: object
                             additionalProperties:
@@ -53589,6 +53850,21 @@ paths:
                       goal_config:
                         type: object
                         properties:
+                          early_stop:
+                            type: object
+                            properties:
+                              breach_window:
+                                type: string
+                              enabled:
+                                type: boolean
+                              error_rate_pct:
+                                type: number
+                                format: double
+                            required:
+                              - breach_window
+                              - enabled
+                              - error_rate_pct
+                            nullable: true
                           max_avg_server_processing_ms:
                             type: number
                             format: double
@@ -53680,6 +53956,14 @@ paths:
                                 - metric
                                 - threshold
                                 - transaction
+                          workload_shape_config:
+                            type: object
+                            properties:
+                              stepped_ramp:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                            nullable: true
                         nullable: true
                       goal_targets:
                         type: object
@@ -53702,6 +53986,31 @@ paths:
                         items:
                           type: object
                           properties:
+                            active_stage:
+                              type: object
+                              properties:
+                                duration:
+                                  type: string
+                                group:
+                                  type: string
+                                name:
+                                  type: string
+                                stage_index:
+                                  type: integer
+                                  format: int64
+                                started_at:
+                                  type: string
+                                  format: date-time
+                                target_vusers:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - duration
+                                - group
+                                - stage_index
+                                - started_at
+                                - target_vusers
+                              nullable: true
                             assignment:
                               type: object
                               properties:
@@ -54143,6 +54452,11 @@ paths:
                               required:
                                 - targets
                               nullable: true
+                            load_levels:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
                             network_profiles:
                               type: object
                               additionalProperties:
@@ -55019,6 +55333,32 @@ paths:
                             required:
                               - targets
                             nullable: true
+                          load_levels:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                duration:
+                                  type: string
+                                group:
+                                  type: string
+                                name:
+                                  type: string
+                                stage_index:
+                                  type: integer
+                                  format: int64
+                                started_at:
+                                  type: string
+                                  format: date-time
+                                target_vusers:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - duration
+                                - group
+                                - stage_index
+                                - started_at
+                                - target_vusers
                           network_profiles:
                             type: object
                             additionalProperties:
@@ -57199,6 +57539,21 @@ paths:
                       goal_config:
                         type: object
                         properties:
+                          early_stop:
+                            type: object
+                            properties:
+                              breach_window:
+                                type: string
+                              enabled:
+                                type: boolean
+                              error_rate_pct:
+                                type: number
+                                format: double
+                            required:
+                              - breach_window
+                              - enabled
+                              - error_rate_pct
+                            nullable: true
                           max_avg_server_processing_ms:
                             type: number
                             format: double
@@ -57290,6 +57645,14 @@ paths:
                                 - metric
                                 - threshold
                                 - transaction
+                          workload_shape_config:
+                            type: object
+                            properties:
+                              stepped_ramp:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                            nullable: true
                         nullable: true
                       goal_targets:
                         type: object
@@ -57312,6 +57675,31 @@ paths:
                         items:
                           type: object
                           properties:
+                            active_stage:
+                              type: object
+                              properties:
+                                duration:
+                                  type: string
+                                group:
+                                  type: string
+                                name:
+                                  type: string
+                                stage_index:
+                                  type: integer
+                                  format: int64
+                                started_at:
+                                  type: string
+                                  format: date-time
+                                target_vusers:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - duration
+                                - group
+                                - stage_index
+                                - started_at
+                                - target_vusers
+                              nullable: true
                             assignment:
                               type: object
                               properties:
@@ -57753,6 +58141,11 @@ paths:
                               required:
                                 - targets
                               nullable: true
+                            load_levels:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
                             network_profiles:
                               type: object
                               additionalProperties:
@@ -58629,6 +59022,32 @@ paths:
                             required:
                               - targets
                             nullable: true
+                          load_levels:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                duration:
+                                  type: string
+                                group:
+                                  type: string
+                                name:
+                                  type: string
+                                stage_index:
+                                  type: integer
+                                  format: int64
+                                started_at:
+                                  type: string
+                                  format: date-time
+                                target_vusers:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - duration
+                                - group
+                                - stage_index
+                                - started_at
+                                - target_vusers
                           network_profiles:
                             type: object
                             additionalProperties:
@@ -60809,6 +61228,21 @@ paths:
                       goal_config:
                         type: object
                         properties:
+                          early_stop:
+                            type: object
+                            properties:
+                              breach_window:
+                                type: string
+                              enabled:
+                                type: boolean
+                              error_rate_pct:
+                                type: number
+                                format: double
+                            required:
+                              - breach_window
+                              - enabled
+                              - error_rate_pct
+                            nullable: true
                           max_avg_server_processing_ms:
                             type: number
                             format: double
@@ -60900,6 +61334,14 @@ paths:
                                 - metric
                                 - threshold
                                 - transaction
+                          workload_shape_config:
+                            type: object
+                            properties:
+                              stepped_ramp:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                            nullable: true
                         nullable: true
                       goal_targets:
                         type: object
@@ -60922,6 +61364,31 @@ paths:
                         items:
                           type: object
                           properties:
+                            active_stage:
+                              type: object
+                              properties:
+                                duration:
+                                  type: string
+                                group:
+                                  type: string
+                                name:
+                                  type: string
+                                stage_index:
+                                  type: integer
+                                  format: int64
+                                started_at:
+                                  type: string
+                                  format: date-time
+                                target_vusers:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - duration
+                                - group
+                                - stage_index
+                                - started_at
+                                - target_vusers
+                              nullable: true
                             assignment:
                               type: object
                               properties:
@@ -61363,6 +61830,11 @@ paths:
                               required:
                                 - targets
                               nullable: true
+                            load_levels:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
                             network_profiles:
                               type: object
                               additionalProperties:
@@ -62239,6 +62711,32 @@ paths:
                             required:
                               - targets
                             nullable: true
+                          load_levels:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                duration:
+                                  type: string
+                                group:
+                                  type: string
+                                name:
+                                  type: string
+                                stage_index:
+                                  type: integer
+                                  format: int64
+                                started_at:
+                                  type: string
+                                  format: date-time
+                                target_vusers:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - duration
+                                - group
+                                - stage_index
+                                - started_at
+                                - target_vusers
                           network_profiles:
                             type: object
                             additionalProperties:
@@ -64419,6 +64917,21 @@ paths:
                       goal_config:
                         type: object
                         properties:
+                          early_stop:
+                            type: object
+                            properties:
+                              breach_window:
+                                type: string
+                              enabled:
+                                type: boolean
+                              error_rate_pct:
+                                type: number
+                                format: double
+                            required:
+                              - breach_window
+                              - enabled
+                              - error_rate_pct
+                            nullable: true
                           max_avg_server_processing_ms:
                             type: number
                             format: double
@@ -64510,6 +65023,14 @@ paths:
                                 - metric
                                 - threshold
                                 - transaction
+                          workload_shape_config:
+                            type: object
+                            properties:
+                              stepped_ramp:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                            nullable: true
                         nullable: true
                       goal_targets:
                         type: object
@@ -64532,6 +65053,31 @@ paths:
                         items:
                           type: object
                           properties:
+                            active_stage:
+                              type: object
+                              properties:
+                                duration:
+                                  type: string
+                                group:
+                                  type: string
+                                name:
+                                  type: string
+                                stage_index:
+                                  type: integer
+                                  format: int64
+                                started_at:
+                                  type: string
+                                  format: date-time
+                                target_vusers:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - duration
+                                - group
+                                - stage_index
+                                - started_at
+                                - target_vusers
+                              nullable: true
                             assignment:
                               type: object
                               properties:
@@ -64973,6 +65519,11 @@ paths:
                               required:
                                 - targets
                               nullable: true
+                            load_levels:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
                             network_profiles:
                               type: object
                               additionalProperties:
@@ -65849,6 +66400,32 @@ paths:
                             required:
                               - targets
                             nullable: true
+                          load_levels:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                duration:
+                                  type: string
+                                group:
+                                  type: string
+                                name:
+                                  type: string
+                                stage_index:
+                                  type: integer
+                                  format: int64
+                                started_at:
+                                  type: string
+                                  format: date-time
+                                target_vusers:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - duration
+                                - group
+                                - stage_index
+                                - started_at
+                                - target_vusers
                           network_profiles:
                             type: object
                             additionalProperties:
@@ -68029,6 +68606,21 @@ paths:
                       goal_config:
                         type: object
                         properties:
+                          early_stop:
+                            type: object
+                            properties:
+                              breach_window:
+                                type: string
+                              enabled:
+                                type: boolean
+                              error_rate_pct:
+                                type: number
+                                format: double
+                            required:
+                              - breach_window
+                              - enabled
+                              - error_rate_pct
+                            nullable: true
                           max_avg_server_processing_ms:
                             type: number
                             format: double
@@ -68120,6 +68712,14 @@ paths:
                                 - metric
                                 - threshold
                                 - transaction
+                          workload_shape_config:
+                            type: object
+                            properties:
+                              stepped_ramp:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                            nullable: true
                         nullable: true
                       goal_targets:
                         type: object
@@ -68142,6 +68742,31 @@ paths:
                         items:
                           type: object
                           properties:
+                            active_stage:
+                              type: object
+                              properties:
+                                duration:
+                                  type: string
+                                group:
+                                  type: string
+                                name:
+                                  type: string
+                                stage_index:
+                                  type: integer
+                                  format: int64
+                                started_at:
+                                  type: string
+                                  format: date-time
+                                target_vusers:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - duration
+                                - group
+                                - stage_index
+                                - started_at
+                                - target_vusers
+                              nullable: true
                             assignment:
                               type: object
                               properties:
@@ -68583,6 +69208,11 @@ paths:
                               required:
                                 - targets
                               nullable: true
+                            load_levels:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
                             network_profiles:
                               type: object
                               additionalProperties:
@@ -69459,6 +70089,32 @@ paths:
                             required:
                               - targets
                             nullable: true
+                          load_levels:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                duration:
+                                  type: string
+                                group:
+                                  type: string
+                                name:
+                                  type: string
+                                stage_index:
+                                  type: integer
+                                  format: int64
+                                started_at:
+                                  type: string
+                                  format: date-time
+                                target_vusers:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - duration
+                                - group
+                                - stage_index
+                                - started_at
+                                - target_vusers
                           network_profiles:
                             type: object
                             additionalProperties:
@@ -79295,6 +79951,17 @@ paths:
                 goal_config:
                   type: object
                   properties:
+                    early_stop:
+                      type: object
+                      properties:
+                        breach_window:
+                          type: string
+                        enabled:
+                          type: boolean
+                        error_rate_pct:
+                          type: number
+                          format: double
+                      nullable: true
                     max_avg_server_processing_ms:
                       type: number
                       format: double
@@ -79381,6 +80048,26 @@ paths:
                             format: double
                           transaction:
                             type: string
+                    workload_shape_config:
+                      type: object
+                      properties:
+                        stepped_ramp:
+                          type: object
+                          properties:
+                            groups:
+                              type: object
+                              additionalProperties:
+                                type: object
+                                description: 'Go type: SteppedRampDefinition'
+                                additionalProperties: true
+                            scenario:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
+                            scope:
+                              type: string
+                          nullable: true
+                      nullable: true
                   nullable: true
                 groups:
                   type: array
@@ -80746,6 +81433,21 @@ paths:
                   goal_config:
                     type: object
                     properties:
+                      early_stop:
+                        type: object
+                        properties:
+                          breach_window:
+                            type: string
+                          enabled:
+                            type: boolean
+                          error_rate_pct:
+                            type: number
+                            format: double
+                        required:
+                          - breach_window
+                          - enabled
+                          - error_rate_pct
+                        nullable: true
                       max_avg_server_processing_ms:
                         type: number
                         format: double
@@ -80837,6 +81539,28 @@ paths:
                             - metric
                             - threshold
                             - transaction
+                      workload_shape_config:
+                        type: object
+                        properties:
+                          stepped_ramp:
+                            type: object
+                            properties:
+                              groups:
+                                type: object
+                                additionalProperties:
+                                  type: object
+                                  description: 'Go type: SteppedRampDefinition'
+                                  additionalProperties: true
+                              scenario:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              scope:
+                                type: string
+                            required:
+                              - scope
+                            nullable: true
+                        nullable: true
                     nullable: true
                   id:
                     type: string
@@ -82627,6 +83351,21 @@ paths:
                   goal_config:
                     type: object
                     properties:
+                      early_stop:
+                        type: object
+                        properties:
+                          breach_window:
+                            type: string
+                          enabled:
+                            type: boolean
+                          error_rate_pct:
+                            type: number
+                            format: double
+                        required:
+                          - breach_window
+                          - enabled
+                          - error_rate_pct
+                        nullable: true
                       max_avg_server_processing_ms:
                         type: number
                         format: double
@@ -82718,6 +83457,28 @@ paths:
                             - metric
                             - threshold
                             - transaction
+                      workload_shape_config:
+                        type: object
+                        properties:
+                          stepped_ramp:
+                            type: object
+                            properties:
+                              groups:
+                                type: object
+                                additionalProperties:
+                                  type: object
+                                  description: 'Go type: SteppedRampDefinition'
+                                  additionalProperties: true
+                              scenario:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              scope:
+                                type: string
+                            required:
+                              - scope
+                            nullable: true
+                        nullable: true
                     nullable: true
                   id:
                     type: string
@@ -84427,6 +85188,17 @@ paths:
                 goal_config:
                   type: object
                   properties:
+                    early_stop:
+                      type: object
+                      properties:
+                        breach_window:
+                          type: string
+                        enabled:
+                          type: boolean
+                        error_rate_pct:
+                          type: number
+                          format: double
+                      nullable: true
                     max_avg_server_processing_ms:
                       type: number
                       format: double
@@ -84513,6 +85285,26 @@ paths:
                             format: double
                           transaction:
                             type: string
+                    workload_shape_config:
+                      type: object
+                      properties:
+                        stepped_ramp:
+                          type: object
+                          properties:
+                            groups:
+                              type: object
+                              additionalProperties:
+                                type: object
+                                description: 'Go type: SteppedRampDefinition'
+                                additionalProperties: true
+                            scenario:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
+                            scope:
+                              type: string
+                          nullable: true
+                      nullable: true
                   nullable: true
                 groups:
                   type: array
@@ -85878,6 +86670,21 @@ paths:
                   goal_config:
                     type: object
                     properties:
+                      early_stop:
+                        type: object
+                        properties:
+                          breach_window:
+                            type: string
+                          enabled:
+                            type: boolean
+                          error_rate_pct:
+                            type: number
+                            format: double
+                        required:
+                          - breach_window
+                          - enabled
+                          - error_rate_pct
+                        nullable: true
                       max_avg_server_processing_ms:
                         type: number
                         format: double
@@ -85969,6 +86776,28 @@ paths:
                             - metric
                             - threshold
                             - transaction
+                      workload_shape_config:
+                        type: object
+                        properties:
+                          stepped_ramp:
+                            type: object
+                            properties:
+                              groups:
+                                type: object
+                                additionalProperties:
+                                  type: object
+                                  description: 'Go type: SteppedRampDefinition'
+                                  additionalProperties: true
+                              scenario:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              scope:
+                                type: string
+                            required:
+                              - scope
+                            nullable: true
+                        nullable: true
                     nullable: true
                   id:
                     type: string
@@ -88026,6 +88855,21 @@ paths:
                       goal_config:
                         type: object
                         properties:
+                          early_stop:
+                            type: object
+                            properties:
+                              breach_window:
+                                type: string
+                              enabled:
+                                type: boolean
+                              error_rate_pct:
+                                type: number
+                                format: double
+                            required:
+                              - breach_window
+                              - enabled
+                              - error_rate_pct
+                            nullable: true
                           max_avg_server_processing_ms:
                             type: number
                             format: double
@@ -88117,6 +88961,14 @@ paths:
                                 - metric
                                 - threshold
                                 - transaction
+                          workload_shape_config:
+                            type: object
+                            properties:
+                              stepped_ramp:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                            nullable: true
                         nullable: true
                       id:
                         type: string
@@ -91192,6 +92044,21 @@ paths:
                       goal_config:
                         type: object
                         properties:
+                          early_stop:
+                            type: object
+                            properties:
+                              breach_window:
+                                type: string
+                              enabled:
+                                type: boolean
+                              error_rate_pct:
+                                type: number
+                                format: double
+                            required:
+                              - breach_window
+                              - enabled
+                              - error_rate_pct
+                            nullable: true
                           max_avg_server_processing_ms:
                             type: number
                             format: double
@@ -91283,6 +92150,14 @@ paths:
                                 - metric
                                 - threshold
                                 - transaction
+                          workload_shape_config:
+                            type: object
+                            properties:
+                              stepped_ramp:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                            nullable: true
                         nullable: true
                       groups:
                         type: array
@@ -92596,6 +93471,17 @@ paths:
                     goal_config:
                       type: object
                       properties:
+                        early_stop:
+                          type: object
+                          properties:
+                            breach_window:
+                              type: string
+                            enabled:
+                              type: boolean
+                            error_rate_pct:
+                              type: number
+                              format: double
+                          nullable: true
                         max_avg_server_processing_ms:
                           type: number
                           format: double
@@ -92682,6 +93568,14 @@ paths:
                                 format: double
                               transaction:
                                 type: string
+                        workload_shape_config:
+                          type: object
+                          properties:
+                            stepped_ramp:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
+                          nullable: true
                       nullable: true
                     groups:
                       type: array
@@ -94156,6 +95050,21 @@ paths:
                       goal_config:
                         type: object
                         properties:
+                          early_stop:
+                            type: object
+                            properties:
+                              breach_window:
+                                type: string
+                              enabled:
+                                type: boolean
+                              error_rate_pct:
+                                type: number
+                                format: double
+                            required:
+                              - breach_window
+                              - enabled
+                              - error_rate_pct
+                            nullable: true
                           max_avg_server_processing_ms:
                             type: number
                             format: double
@@ -94247,6 +95156,14 @@ paths:
                                 - metric
                                 - threshold
                                 - transaction
+                          workload_shape_config:
+                            type: object
+                            properties:
+                              stepped_ramp:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                            nullable: true
                         nullable: true
                       groups:
                         type: array
@@ -95457,6 +96374,17 @@ paths:
                 goal_config:
                   type: object
                   properties:
+                    early_stop:
+                      type: object
+                      properties:
+                        breach_window:
+                          type: string
+                        enabled:
+                          type: boolean
+                        error_rate_pct:
+                          type: number
+                          format: double
+                      nullable: true
                     max_avg_server_processing_ms:
                       type: number
                       format: double
@@ -95543,6 +96471,26 @@ paths:
                             format: double
                           transaction:
                             type: string
+                    workload_shape_config:
+                      type: object
+                      properties:
+                        stepped_ramp:
+                          type: object
+                          properties:
+                            groups:
+                              type: object
+                              additionalProperties:
+                                type: object
+                                description: 'Go type: SteppedRampDefinition'
+                                additionalProperties: true
+                            scenario:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
+                            scope:
+                              type: string
+                          nullable: true
+                      nullable: true
                   nullable: true
                 groups:
                   type: array
@@ -186859,6 +187807,17 @@ paths:
                 goal_config:
                   type: object
                   properties:
+                    early_stop:
+                      type: object
+                      properties:
+                        breach_window:
+                          type: string
+                        enabled:
+                          type: boolean
+                        error_rate_pct:
+                          type: number
+                          format: double
+                      nullable: true
                     max_avg_server_processing_ms:
                       type: number
                       format: double
@@ -186945,6 +187904,26 @@ paths:
                             format: double
                           transaction:
                             type: string
+                    workload_shape_config:
+                      type: object
+                      properties:
+                        stepped_ramp:
+                          type: object
+                          properties:
+                            groups:
+                              type: object
+                              additionalProperties:
+                                type: object
+                                description: 'Go type: SteppedRampDefinition'
+                                additionalProperties: true
+                            scenario:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
+                            scope:
+                              type: string
+                          nullable: true
+                      nullable: true
                   nullable: true
                 groups:
                   type: array
@@ -189100,6 +190079,21 @@ paths:
                   goal_config:
                     type: object
                     properties:
+                      early_stop:
+                        type: object
+                        properties:
+                          breach_window:
+                            type: string
+                          enabled:
+                            type: boolean
+                          error_rate_pct:
+                            type: number
+                            format: double
+                        required:
+                          - breach_window
+                          - enabled
+                          - error_rate_pct
+                        nullable: true
                       max_avg_server_processing_ms:
                         type: number
                         format: double
@@ -189191,6 +190185,28 @@ paths:
                             - metric
                             - threshold
                             - transaction
+                      workload_shape_config:
+                        type: object
+                        properties:
+                          stepped_ramp:
+                            type: object
+                            properties:
+                              groups:
+                                type: object
+                                additionalProperties:
+                                  type: object
+                                  description: 'Go type: SteppedRampDefinition'
+                                  additionalProperties: true
+                              scenario:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              scope:
+                                type: string
+                            required:
+                              - scope
+                            nullable: true
+                        nullable: true
                     nullable: true
                   goal_targets:
                     type: object
@@ -189213,6 +190229,31 @@ paths:
                     items:
                       type: object
                       properties:
+                        active_stage:
+                          type: object
+                          properties:
+                            duration:
+                              type: string
+                            group:
+                              type: string
+                            name:
+                              type: string
+                            stage_index:
+                              type: integer
+                              format: int64
+                            started_at:
+                              type: string
+                              format: date-time
+                            target_vusers:
+                              type: integer
+                              format: int64
+                          required:
+                            - duration
+                            - group
+                            - stage_index
+                            - started_at
+                            - target_vusers
+                          nullable: true
                         assignment:
                           type: object
                           properties:
@@ -190306,6 +191347,32 @@ paths:
                           required:
                             - targets
                           nullable: true
+                        load_levels:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              duration:
+                                type: string
+                              group:
+                                type: string
+                              name:
+                                type: string
+                              stage_index:
+                                type: integer
+                                format: int64
+                              started_at:
+                                type: string
+                                format: date-time
+                              target_vusers:
+                                type: integer
+                                format: int64
+                            required:
+                              - duration
+                              - group
+                              - stage_index
+                              - started_at
+                              - target_vusers
                         network_profiles:
                           type: object
                           additionalProperties:
@@ -191925,6 +192992,32 @@ paths:
                         required:
                           - targets
                         nullable: true
+                      load_levels:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            duration:
+                              type: string
+                            group:
+                              type: string
+                            name:
+                              type: string
+                            stage_index:
+                              type: integer
+                              format: int64
+                            started_at:
+                              type: string
+                              format: date-time
+                            target_vusers:
+                              type: integer
+                              format: int64
+                          required:
+                            - duration
+                            - group
+                            - stage_index
+                            - started_at
+                            - target_vusers
                       network_profiles:
                         type: object
                         additionalProperties:
@@ -194958,6 +196051,21 @@ paths:
                   goal_config:
                     type: object
                     properties:
+                      early_stop:
+                        type: object
+                        properties:
+                          breach_window:
+                            type: string
+                          enabled:
+                            type: boolean
+                          error_rate_pct:
+                            type: number
+                            format: double
+                        required:
+                          - breach_window
+                          - enabled
+                          - error_rate_pct
+                        nullable: true
                       max_avg_server_processing_ms:
                         type: number
                         format: double
@@ -195049,6 +196157,28 @@ paths:
                             - metric
                             - threshold
                             - transaction
+                      workload_shape_config:
+                        type: object
+                        properties:
+                          stepped_ramp:
+                            type: object
+                            properties:
+                              groups:
+                                type: object
+                                additionalProperties:
+                                  type: object
+                                  description: 'Go type: SteppedRampDefinition'
+                                  additionalProperties: true
+                              scenario:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              scope:
+                                type: string
+                            required:
+                              - scope
+                            nullable: true
+                        nullable: true
                     nullable: true
                   goal_targets:
                     type: object
@@ -195071,6 +196201,31 @@ paths:
                     items:
                       type: object
                       properties:
+                        active_stage:
+                          type: object
+                          properties:
+                            duration:
+                              type: string
+                            group:
+                              type: string
+                            name:
+                              type: string
+                            stage_index:
+                              type: integer
+                              format: int64
+                            started_at:
+                              type: string
+                              format: date-time
+                            target_vusers:
+                              type: integer
+                              format: int64
+                          required:
+                            - duration
+                            - group
+                            - stage_index
+                            - started_at
+                            - target_vusers
+                          nullable: true
                         assignment:
                           type: object
                           properties:
@@ -196164,6 +197319,32 @@ paths:
                           required:
                             - targets
                           nullable: true
+                        load_levels:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              duration:
+                                type: string
+                              group:
+                                type: string
+                              name:
+                                type: string
+                              stage_index:
+                                type: integer
+                                format: int64
+                              started_at:
+                                type: string
+                                format: date-time
+                              target_vusers:
+                                type: integer
+                                format: int64
+                            required:
+                              - duration
+                              - group
+                              - stage_index
+                              - started_at
+                              - target_vusers
                         network_profiles:
                           type: object
                           additionalProperties:
@@ -197783,6 +198964,32 @@ paths:
                         required:
                           - targets
                         nullable: true
+                      load_levels:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            duration:
+                              type: string
+                            group:
+                              type: string
+                            name:
+                              type: string
+                            stage_index:
+                              type: integer
+                              format: int64
+                            started_at:
+                              type: string
+                              format: date-time
+                            target_vusers:
+                              type: integer
+                              format: int64
+                          required:
+                            - duration
+                            - group
+                            - stage_index
+                            - started_at
+                            - target_vusers
                       network_profiles:
                         type: object
                         additionalProperties:
@@ -201179,6 +202386,21 @@ paths:
                       goal_config:
                         type: object
                         properties:
+                          early_stop:
+                            type: object
+                            properties:
+                              breach_window:
+                                type: string
+                              enabled:
+                                type: boolean
+                              error_rate_pct:
+                                type: number
+                                format: double
+                            required:
+                              - breach_window
+                              - enabled
+                              - error_rate_pct
+                            nullable: true
                           max_avg_server_processing_ms:
                             type: number
                             format: double
@@ -201270,6 +202492,14 @@ paths:
                                 - metric
                                 - threshold
                                 - transaction
+                          workload_shape_config:
+                            type: object
+                            properties:
+                              stepped_ramp:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                            nullable: true
                         nullable: true
                       governance:
                         type: object
@@ -201363,6 +202593,31 @@ paths:
                         items:
                           type: object
                           properties:
+                            active_stage:
+                              type: object
+                              properties:
+                                duration:
+                                  type: string
+                                group:
+                                  type: string
+                                name:
+                                  type: string
+                                stage_index:
+                                  type: integer
+                                  format: int64
+                                started_at:
+                                  type: string
+                                  format: date-time
+                                target_vusers:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - duration
+                                - group
+                                - stage_index
+                                - started_at
+                                - target_vusers
+                              nullable: true
                             assignment:
                               type: object
                               properties:
@@ -202682,6 +203937,21 @@ paths:
                       goal_config:
                         type: object
                         properties:
+                          early_stop:
+                            type: object
+                            properties:
+                              breach_window:
+                                type: string
+                              enabled:
+                                type: boolean
+                              error_rate_pct:
+                                type: number
+                                format: double
+                            required:
+                              - breach_window
+                              - enabled
+                              - error_rate_pct
+                            nullable: true
                           max_avg_server_processing_ms:
                             type: number
                             format: double
@@ -202773,6 +204043,14 @@ paths:
                                 - metric
                                 - threshold
                                 - transaction
+                          workload_shape_config:
+                            type: object
+                            properties:
+                              stepped_ramp:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                            nullable: true
                         nullable: true
                       governance:
                         type: object
@@ -202866,6 +204144,31 @@ paths:
                         items:
                           type: object
                           properties:
+                            active_stage:
+                              type: object
+                              properties:
+                                duration:
+                                  type: string
+                                group:
+                                  type: string
+                                name:
+                                  type: string
+                                stage_index:
+                                  type: integer
+                                  format: int64
+                                started_at:
+                                  type: string
+                                  format: date-time
+                                target_vusers:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - duration
+                                - group
+                                - stage_index
+                                - started_at
+                                - target_vusers
+                              nullable: true
                             assignment:
                               type: object
                               properties:
@@ -204556,6 +205859,67 @@ paths:
                       - verified
                       - verified_at
                     nullable: true
+                  load_level_summaries:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        configured_duration:
+                          type: string
+                        error_rate_pct:
+                          type: number
+                          format: double
+                        errors:
+                          type: integer
+                          format: int64
+                        group:
+                          type: string
+                        name:
+                          type: string
+                        observed_duration_seconds:
+                          type: number
+                          format: double
+                        p50_ms:
+                          type: number
+                          format: double
+                        p90_ms:
+                          type: number
+                          format: double
+                        p95_ms:
+                          type: number
+                          format: double
+                        p99_ms:
+                          type: number
+                          format: double
+                        partial:
+                          type: boolean
+                        requests:
+                          type: integer
+                          format: int64
+                        stage_index:
+                          type: integer
+                          format: int64
+                        target_vusers:
+                          type: integer
+                          format: int64
+                        throughput:
+                          type: number
+                          format: double
+                      required:
+                        - configured_duration
+                        - error_rate_pct
+                        - errors
+                        - group
+                        - name
+                        - observed_duration_seconds
+                        - p50_ms
+                        - p90_ms
+                        - p95_ms
+                        - p99_ms
+                        - requests
+                        - stage_index
+                        - target_vusers
+                        - throughput
                   manifest:
                     type: object
                     properties:
@@ -204903,6 +206267,10 @@ paths:
                           goal_config:
                             type: object
                             properties:
+                              early_stop:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               max_avg_server_processing_ms:
                                 type: number
                                 format: double
@@ -204979,6 +206347,10 @@ paths:
                                   type: object
                                   description: 'Go type: TransactionSLARule'
                                   additionalProperties: true
+                              workload_shape_config:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                             nullable: true
                           governance:
                             type: object
@@ -205005,6 +206377,11 @@ paths:
                             items:
                               type: object
                               properties:
+                                active_stage:
+                                  type: object
+                                  description: 'Go type: ActiveLoadLevel'
+                                  additionalProperties: true
+                                  nullable: true
                                 assignment:
                                   type: object
                                   description: 'Go type: GeneratorAssignmentSettings'
@@ -205613,6 +206990,10 @@ paths:
                           goal_config:
                             type: object
                             properties:
+                              early_stop:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               max_avg_server_processing_ms:
                                 type: number
                                 format: double
@@ -205689,6 +207070,10 @@ paths:
                                   type: object
                                   description: 'Go type: TransactionSLARule'
                                   additionalProperties: true
+                              workload_shape_config:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                             nullable: true
                           governance:
                             type: object
@@ -205715,6 +207100,11 @@ paths:
                             items:
                               type: object
                               properties:
+                                active_stage:
+                                  type: object
+                                  description: 'Go type: ActiveLoadLevel'
+                                  additionalProperties: true
+                                  nullable: true
                                 assignment:
                                   type: object
                                   description: 'Go type: GeneratorAssignmentSettings'
@@ -208552,6 +209942,21 @@ paths:
                   goal_config:
                     type: object
                     properties:
+                      early_stop:
+                        type: object
+                        properties:
+                          breach_window:
+                            type: string
+                          enabled:
+                            type: boolean
+                          error_rate_pct:
+                            type: number
+                            format: double
+                        required:
+                          - breach_window
+                          - enabled
+                          - error_rate_pct
+                        nullable: true
                       max_avg_server_processing_ms:
                         type: number
                         format: double
@@ -208643,6 +210048,28 @@ paths:
                             - metric
                             - threshold
                             - transaction
+                      workload_shape_config:
+                        type: object
+                        properties:
+                          stepped_ramp:
+                            type: object
+                            properties:
+                              groups:
+                                type: object
+                                additionalProperties:
+                                  type: object
+                                  description: 'Go type: SteppedRampDefinition'
+                                  additionalProperties: true
+                              scenario:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              scope:
+                                type: string
+                            required:
+                              - scope
+                            nullable: true
+                        nullable: true
                     nullable: true
                   goal_targets:
                     type: object
@@ -208665,6 +210092,31 @@ paths:
                     items:
                       type: object
                       properties:
+                        active_stage:
+                          type: object
+                          properties:
+                            duration:
+                              type: string
+                            group:
+                              type: string
+                            name:
+                              type: string
+                            stage_index:
+                              type: integer
+                              format: int64
+                            started_at:
+                              type: string
+                              format: date-time
+                            target_vusers:
+                              type: integer
+                              format: int64
+                          required:
+                            - duration
+                            - group
+                            - stage_index
+                            - started_at
+                            - target_vusers
+                          nullable: true
                         assignment:
                           type: object
                           properties:
@@ -209758,6 +211210,32 @@ paths:
                           required:
                             - targets
                           nullable: true
+                        load_levels:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              duration:
+                                type: string
+                              group:
+                                type: string
+                              name:
+                                type: string
+                              stage_index:
+                                type: integer
+                                format: int64
+                              started_at:
+                                type: string
+                                format: date-time
+                              target_vusers:
+                                type: integer
+                                format: int64
+                            required:
+                              - duration
+                              - group
+                              - stage_index
+                              - started_at
+                              - target_vusers
                         network_profiles:
                           type: object
                           additionalProperties:
@@ -211377,6 +212855,32 @@ paths:
                         required:
                           - targets
                         nullable: true
+                      load_levels:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            duration:
+                              type: string
+                            group:
+                              type: string
+                            name:
+                              type: string
+                            stage_index:
+                              type: integer
+                              format: int64
+                            started_at:
+                              type: string
+                              format: date-time
+                            target_vusers:
+                              type: integer
+                              format: int64
+                          required:
+                            - duration
+                            - group
+                            - stage_index
+                            - started_at
+                            - target_vusers
                       network_profiles:
                         type: object
                         additionalProperties:
@@ -214354,6 +215858,21 @@ paths:
                   goal_config:
                     type: object
                     properties:
+                      early_stop:
+                        type: object
+                        properties:
+                          breach_window:
+                            type: string
+                          enabled:
+                            type: boolean
+                          error_rate_pct:
+                            type: number
+                            format: double
+                        required:
+                          - breach_window
+                          - enabled
+                          - error_rate_pct
+                        nullable: true
                       max_avg_server_processing_ms:
                         type: number
                         format: double
@@ -214445,6 +215964,28 @@ paths:
                             - metric
                             - threshold
                             - transaction
+                      workload_shape_config:
+                        type: object
+                        properties:
+                          stepped_ramp:
+                            type: object
+                            properties:
+                              groups:
+                                type: object
+                                additionalProperties:
+                                  type: object
+                                  description: 'Go type: SteppedRampDefinition'
+                                  additionalProperties: true
+                              scenario:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              scope:
+                                type: string
+                            required:
+                              - scope
+                            nullable: true
+                        nullable: true
                     nullable: true
                   goal_targets:
                     type: object
@@ -214467,6 +216008,31 @@ paths:
                     items:
                       type: object
                       properties:
+                        active_stage:
+                          type: object
+                          properties:
+                            duration:
+                              type: string
+                            group:
+                              type: string
+                            name:
+                              type: string
+                            stage_index:
+                              type: integer
+                              format: int64
+                            started_at:
+                              type: string
+                              format: date-time
+                            target_vusers:
+                              type: integer
+                              format: int64
+                          required:
+                            - duration
+                            - group
+                            - stage_index
+                            - started_at
+                            - target_vusers
+                          nullable: true
                         assignment:
                           type: object
                           properties:
@@ -215560,6 +217126,32 @@ paths:
                           required:
                             - targets
                           nullable: true
+                        load_levels:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              duration:
+                                type: string
+                              group:
+                                type: string
+                              name:
+                                type: string
+                              stage_index:
+                                type: integer
+                                format: int64
+                              started_at:
+                                type: string
+                                format: date-time
+                              target_vusers:
+                                type: integer
+                                format: int64
+                            required:
+                              - duration
+                              - group
+                              - stage_index
+                              - started_at
+                              - target_vusers
                         network_profiles:
                           type: object
                           additionalProperties:
@@ -217179,6 +218771,32 @@ paths:
                         required:
                           - targets
                         nullable: true
+                      load_levels:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            duration:
+                              type: string
+                            group:
+                              type: string
+                            name:
+                              type: string
+                            stage_index:
+                              type: integer
+                              format: int64
+                            started_at:
+                              type: string
+                              format: date-time
+                            target_vusers:
+                              type: integer
+                              format: int64
+                          required:
+                            - duration
+                            - group
+                            - stage_index
+                            - started_at
+                            - target_vusers
                       network_profiles:
                         type: object
                         additionalProperties:
@@ -223675,6 +225293,21 @@ paths:
                       goal_config:
                         type: object
                         properties:
+                          early_stop:
+                            type: object
+                            properties:
+                              breach_window:
+                                type: string
+                              enabled:
+                                type: boolean
+                              error_rate_pct:
+                                type: number
+                                format: double
+                            required:
+                              - breach_window
+                              - enabled
+                              - error_rate_pct
+                            nullable: true
                           max_avg_server_processing_ms:
                             type: number
                             format: double
@@ -223766,12 +225399,45 @@ paths:
                                 - metric
                                 - threshold
                                 - transaction
+                          workload_shape_config:
+                            type: object
+                            properties:
+                              stepped_ramp:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                            nullable: true
                         nullable: true
                       groups:
                         type: array
                         items:
                           type: object
                           properties:
+                            active_stage:
+                              type: object
+                              properties:
+                                duration:
+                                  type: string
+                                group:
+                                  type: string
+                                name:
+                                  type: string
+                                stage_index:
+                                  type: integer
+                                  format: int64
+                                started_at:
+                                  type: string
+                                  format: date-time
+                                target_vusers:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - duration
+                                - group
+                                - stage_index
+                                - started_at
+                                - target_vusers
+                              nullable: true
                             assignment:
                               type: object
                               properties:
@@ -224775,6 +226441,21 @@ paths:
                       goal_config:
                         type: object
                         properties:
+                          early_stop:
+                            type: object
+                            properties:
+                              breach_window:
+                                type: string
+                              enabled:
+                                type: boolean
+                              error_rate_pct:
+                                type: number
+                                format: double
+                            required:
+                              - breach_window
+                              - enabled
+                              - error_rate_pct
+                            nullable: true
                           max_avg_server_processing_ms:
                             type: number
                             format: double
@@ -224866,12 +226547,45 @@ paths:
                                 - metric
                                 - threshold
                                 - transaction
+                          workload_shape_config:
+                            type: object
+                            properties:
+                              stepped_ramp:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                            nullable: true
                         nullable: true
                       groups:
                         type: array
                         items:
                           type: object
                           properties:
+                            active_stage:
+                              type: object
+                              properties:
+                                duration:
+                                  type: string
+                                group:
+                                  type: string
+                                name:
+                                  type: string
+                                stage_index:
+                                  type: integer
+                                  format: int64
+                                started_at:
+                                  type: string
+                                  format: date-time
+                                target_vusers:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - duration
+                                - group
+                                - stage_index
+                                - started_at
+                                - target_vusers
+                              nullable: true
                             assignment:
                               type: object
                               properties:
@@ -228738,6 +230452,17 @@ paths:
                 goal_config:
                   type: object
                   properties:
+                    early_stop:
+                      type: object
+                      properties:
+                        breach_window:
+                          type: string
+                        enabled:
+                          type: boolean
+                        error_rate_pct:
+                          type: number
+                          format: double
+                      nullable: true
                     max_avg_server_processing_ms:
                       type: number
                       format: double
@@ -228824,6 +230549,26 @@ paths:
                             format: double
                           transaction:
                             type: string
+                    workload_shape_config:
+                      type: object
+                      properties:
+                        stepped_ramp:
+                          type: object
+                          properties:
+                            groups:
+                              type: object
+                              additionalProperties:
+                                type: object
+                                description: 'Go type: SteppedRampDefinition'
+                                additionalProperties: true
+                            scenario:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
+                            scope:
+                              type: string
+                          nullable: true
+                      nullable: true
                   nullable: true
                 groups:
                   type: array
@@ -230418,6 +232163,31 @@ paths:
                     items:
                       type: object
                       properties:
+                        active_stage:
+                          type: object
+                          properties:
+                            duration:
+                              type: string
+                            group:
+                              type: string
+                            name:
+                              type: string
+                            stage_index:
+                              type: integer
+                              format: int64
+                            started_at:
+                              type: string
+                              format: date-time
+                            target_vusers:
+                              type: integer
+                              format: int64
+                          required:
+                            - duration
+                            - group
+                            - stage_index
+                            - started_at
+                            - target_vusers
+                          nullable: true
                         assignment:
                           type: object
                           properties:
@@ -231160,6 +232930,17 @@ paths:
                 goal_config:
                   type: object
                   properties:
+                    early_stop:
+                      type: object
+                      properties:
+                        breach_window:
+                          type: string
+                        enabled:
+                          type: boolean
+                        error_rate_pct:
+                          type: number
+                          format: double
+                      nullable: true
                     max_avg_server_processing_ms:
                       type: number
                       format: double
@@ -231246,6 +233027,14 @@ paths:
                             format: double
                           transaction:
                             type: string
+                    workload_shape_config:
+                      type: object
+                      properties:
+                        stepped_ramp:
+                          type: object
+                          additionalProperties: true
+                          nullable: true
+                      nullable: true
                   nullable: true
                 groups:
                   type: array

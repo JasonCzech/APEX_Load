@@ -457,36 +457,66 @@ func (w *runArchiveWriter) RecordIntervalSummary(live *LiveMetrics) error {
 	if w.flushErr != nil {
 		return w.flushErr
 	}
+	activeRuntimeSeconds := live.ActiveRuntimeSeconds
 	record := IntervalSummaryRecord{
-		Timestamp:              live.Timestamp,
-		TestID:                 w.manifest.TestID,
-		TestName:               w.manifest.TestName,
-		ActiveVUsers:           live.ActiveVUsers,
-		TPS:                    live.TPS,
-		TargetTPS:              live.TargetTPS,
-		ThroughputGapPct:       live.ThroughputGapPct,
-		ThroughputTargetMissed: live.ThroughputTargetMissed,
-		AvgResponseMs:          live.AvgResponseMs,
-		ErrorPct:               live.ErrorPct,
-		TotalTx:                live.TotalTx,
-		TotalErrors:            live.TotalErrors,
-		P50Ms:                  live.P50Ms,
-		P90Ms:                  live.P90Ms,
-		P95Ms:                  live.P95Ms,
-		P99Ms:                  live.P99Ms,
-		Groups:                 cloneGroupLiveMetricsMap(live.GroupMetrics),
-		Transactions:           intervalTransactionsFromLive(live.Transactions),
-		ByRegion:               intervalTransactionsFromLive(live.ByRegion),
-		Browser:                cloneBrowserLiveMetrics(live.Browser),
-		BrowserByDevice:        cloneBrowserByDeviceMetrics(live.BrowserByDevice),
-		Telemetry:              cloneTelemetryHealth(live.Telemetry),
-		TelemetryStatus:        cloneTelemetryRunHealth(live.TelemetryStatus),
+		Timestamp:                live.Timestamp,
+		TestID:                   w.manifest.TestID,
+		TestName:                 w.manifest.TestName,
+		ActiveVUsers:             live.ActiveVUsers,
+		TPS:                      live.TPS,
+		TargetTPS:                live.TargetTPS,
+		ThroughputGapPct:         live.ThroughputGapPct,
+		ThroughputTargetMissed:   live.ThroughputTargetMissed,
+		AvgResponseMs:            live.AvgResponseMs,
+		ErrorPct:                 live.ErrorPct,
+		TotalTx:                  live.TotalTx,
+		TotalErrors:              live.TotalErrors,
+		P50Ms:                    live.P50Ms,
+		P90Ms:                    live.P90Ms,
+		P95Ms:                    live.P95Ms,
+		P99Ms:                    live.P99Ms,
+		LoadLevels:               append([]ActiveLoadLevel(nil), live.LoadLevels...),
+		ActiveRuntimeSeconds:     &activeRuntimeSeconds,
+		SampleWindowSeconds:      live.SampleWindowSeconds,
+		LoadLevelDurationDigests: loadLevelDurationDigests(live.GroupMetrics),
+		Groups:                   cloneGroupLiveMetricsMap(live.GroupMetrics),
+		Transactions:             intervalTransactionsFromLive(live.Transactions),
+		ByRegion:                 intervalTransactionsFromLive(live.ByRegion),
+		Browser:                  cloneBrowserLiveMetrics(live.Browser),
+		BrowserByDevice:          cloneBrowserByDeviceMetrics(live.BrowserByDevice),
+		Telemetry:                cloneTelemetryHealth(live.Telemetry),
+		TelemetryStatus:          cloneTelemetryRunHealth(live.TelemetryStatus),
 	}
 	if err := w.summaryEncoder.Encode(record); err != nil {
 		return err
 	}
 	w.manifest.IntervalSummaryCount++
 	return nil
+}
+
+func loadLevelDurationDigests(groups map[string]*GroupLiveMetrics) map[string]*engine.TDigestSnapshot {
+	if len(groups) == 0 {
+		return nil
+	}
+	result := make(map[string]*engine.TDigestSnapshot, len(groups)+1)
+	total := engine.NewTDigest(200)
+	for name, metrics := range groups {
+		if metrics == nil || metrics.DurationDigest == nil || metrics.DurationDigest.Count <= 0 {
+			continue
+		}
+		copy := *metrics.DurationDigest
+		copy.Centroids = append([]engine.TDigestCentroidSnapshot(nil), metrics.DurationDigest.Centroids...)
+		result[name] = &copy
+		total.Merge(engine.NewTDigestFromSnapshot(copy))
+	}
+	if total.Count() > 0 {
+		snapshot := total.Snapshot()
+		result["__total__"] = &snapshot
+	}
+	if len(result) == 0 {
+		return nil
+	}
+	return result
 }
 
 func (w *runArchiveWriter) Finalize(status string, completedAt time.Time, errStr string, slaEvaluated bool, slaBreached bool, slaDetails []string) (*storage.RunArchiveRecord, error) {

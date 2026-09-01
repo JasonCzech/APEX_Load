@@ -1,39 +1,58 @@
-# Command Center v2 Design QA
+# Stepped Ramp Guided Worksheet — Design QA
 
-## Result
+- Source visual truth: `/Users/jasonczech/.codex/generated_images/01a05eb5-16da-7340-990d-d53e9fa49ed7/exec-0517e758-2b13-41ff-895b-3bcf0a8af76d.png`
+- Implementation: `http://127.0.0.1:4000/#/tests?view=builder`
+- Implementation screenshot evidence: `/Users/jasonczech/.codex/generated_images/01a05eb5-16da-7340-990d-d53e9fa49ed7/exec-1ecf81a0-e211-4aec-849e-6b9f0e491950.png` (comparison board containing the browser-rendered implementation capture)
+- Responsive before/after evidence: `/Users/jasonczech/.codex/generated_images/01a05eb5-16da-7340-990d-d53e9fa49ed7/exec-dd7c795d-69c9-48da-a1e1-b5cd7af5a573.png`
+- Source pixels: 1488 × 1056.
+- Browser capture pixels: 1778 × 1250; browser CSS viewport reported 844 × 1000 because the in-app browser letterboxed its fixed content viewport. The comparison board normalized visible worksheet heights and cropped to the Scenario Builder content region. No density-based finding was filed.
+- State: Stepped Ramp selected; 60-minute duration; 0–60 VUsers; six equal steps; scenario scope; early stop enabled at retained 5% / 1m values; model preview and six-row level table visible.
 
-Passed for the desktop Command Center prototype. No open P0, P1, or P2 visual or interaction defects were found in the verified state.
+## Findings
 
-## Evidence
+No actionable P0, P1, or P2 differences remain.
 
-- Reference: `/Users/jasonczech/.codex/generated_images/01a01bec-8852-7510-8ac5-830ca8c8b7ce/exec-85ce4bbb-850e-45f8-ae67-857cc61f226d.png`
-- Final implementation capture: `/Users/jasonczech/.codex/visualizations/2026/08/19/01a01bec-8852-7510-8ac5-830ca8c8b7ce/command-center-v2-final-verified.png`
-- Side-by-side comparison: `/Users/jasonczech/.codex/visualizations/2026/08/19/01a01bec-8852-7510-8ac5-830ca8c8b7ce/command-center-v2-final-comparison.png`
-- Verified route: `http://127.0.0.1:4000/#/command-center/cb8b7bf2-612c-4b57-bf88-0320a4ab047f?projectId=unassigned&applicationId=legacy&releaseId=38a5f2e8-ea3c-4aea-8886-d99eda6299ae`
-- Browser state: light theme, queued active run, Command Center v2, Ops View, Gradual transition selected.
+- The implementation intentionally retains the existing APEX Load shell, six-step scenario wizard, theme tokens, typography, and shared form components. These differ from the standalone three-step mockup but preserve its worksheet hierarchy and are product constraints rather than design drift.
+- P3: the calculation is presented as one compact result line instead of the mockup's two icon-led rows. It still exposes range, step count, VUsers per step, and equal interval duration without adding visual weight.
+- P3: the archive/live evidence note replaces the mockup's total summary footer. The stage table still exposes all six targets and durations, while the chart's existing legend provides group and aggregate series.
 
-## Verified Behavior
+## Required Fidelity Surfaces
 
-- Original and Command Center v2 remain independently accessible from the Command Center header.
-- Ops View and Graph Wall switch in both directions.
-- Abort remains visible in the persistent run control shelf.
-- Group targets are adjusted inline; the redundant sidebar group editor is absent.
-- Immediate and Gradual transition modes remain available, and Gradual enables Ramp Duration.
-- The v2 duration action is state-aware and routes to the existing runtime adjustment dialog when a run is in flight.
-- The actual VUser chart uses metrics history only through elapsed progress; future actual values are not fabricated.
+- Fonts and typography: Existing APEX Load font family and optical weights are retained. Heading, section title, field label, result, and helper-text hierarchy remain clear with no truncation in the verified states.
+- Spacing and layout rhythm: The worksheet preserves the numbered three-section progression, compact field groups, two-option controls, action placement, and a sticky preview. Desktop uses a two-column form/preview composition; the corrected narrow layout stacks the preview and expands the form to the available width.
+- Colors and visual tokens: Existing APEX Load light/dark tokens and purple accent are used consistently. Selected, focused, disabled, warning, and validation states remain distinguishable.
+- Image quality and asset fidelity: The target contains no product imagery requiring replacement. The implementation reuses the existing Recharts preview and existing APEX brand assets; no placeholder, CSS-art, emoji, or custom inline-SVG substitute was introduced.
+- Copy and content: Worksheet copy explains the performance-at-each-level purpose, equal intervals, partial final steps, scenario/group scope, early-stop semantics, and retained evidence. Goal Oriented is absent from this flow.
 
-## Iteration History
+## Full-view Comparison Evidence
 
-- P1: The first version placed the version/view controls on an extra row and a subsequent positioning attempt clipped them. Fixed by rendering the selector into the existing Command Center top bar.
-- P1: The first chart approximation projected an actual line across future time. Fixed by using real metrics history and null future samples.
-- P1: The first duration panel staged a local-only value. Fixed by invoking the existing server-backed runtime adjustment flow.
+The combined source/implementation board shows the same dominant structure: guided worksheet on the left, live staircase preview on the right, three numbered sections, range inputs, increment-mode choice, scenario/group scope, error protection, and a six-row level table. The implementation is denser because it lives inside the existing Scenario Builder shell; this is intentional and remains readable.
 
-## Residual Test Gap
+## Focused Region Comparison Evidence
 
-- The local runs available during browser QA were queued, so the enabled in-flight duration button was not clicked in the browser to avoid starting or mutating a load test. The runtime adjustment path remains covered by the focused component suite.
-- Browser viewport emulation did not reliably reproduce the requested 1600x900 CSS viewport in this session. Desktop layout was visually inspected at the available viewport, and the existing responsive breakpoints remain in place.
+Focused checks covered the calculation/result block, early-stop controls, and load-level table. The implementation reports `0 → 60 VUsers`, `6 steps`, `+10 VUsers per step`, and `10m each`; the preview table reports 10–60 VUsers in six 10-minute intervals. A partial final-step state at 55 VUsers was also captured and verified.
 
-## Automated Checks
+## Interaction and Accessibility Evidence
 
-- `npm run typecheck`: passed.
-- `npm test -- --run src/components/CommandCenterPrototype.test.tsx`: 56 tests passed.
+- Keyboard activation switched both increment modes.
+- Invalid seven-step duration displayed nearby valid duration suggestions and disabled Apply.
+- Changing the ending load to 55 immediately updated the preview and exposed the partial-step warning.
+- Enabling early stop enabled the threshold and sustained-window controls.
+- Scenario and group-scope controls use radio semantics; early stop uses a labeled checkbox.
+- Browser console check returned no warnings or errors.
+
+## Comparison History
+
+1. P2 responsive finding: the higher-specificity desktop grid selector kept 520px and 380px tracks at the narrow breakpoint, squeezing the preview beside the form.
+   - Fix: added an equal-specificity narrow override in `dashboard/src/components/TestHub.css`, stacked the preview, removed sticky/max-height behavior, and collapsed stepped-ramp field/protection grids to one column.
+   - Post-fix evidence: the same browser state reported a single 526.9px workspace track; main and preview widths both measured 526.9px, with the preview positioned statically below the worksheet. The before/after artifact is linked above.
+
+## Implementation Checklist
+
+- [x] Desktop worksheet and sticky preview match Option 3's hierarchy.
+- [x] Narrow layout stacks cleanly without a squeezed second track.
+- [x] Default, partial-step, invalid-duration, and early-stop states are functional.
+- [x] Keyboard and semantic-control behavior verified.
+- [x] Browser console is clean.
+
+final result: passed

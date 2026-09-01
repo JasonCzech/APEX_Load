@@ -2127,6 +2127,9 @@ func validateScenarioRequest(req CreateTestRequest) (string, error) {
 		if err := ValidateTransactionSLARules(req.GoalConfig.TransactionRules); err != nil {
 			return "", fmt.Errorf("invalid goal_config: %w", err)
 		}
+		if err := validateEarlyStopConfig(req.GoalConfig.EarlyStop); err != nil {
+			return "", err
+		}
 	}
 	if strings.TrimSpace(req.Duration) != "" {
 		duration, err := time.ParseDuration(req.Duration)
@@ -2233,6 +2236,23 @@ func validateScenarioRequest(req CreateTestRequest) (string, error) {
 		return "", fmt.Errorf("goal-oriented scenarios require max_error_count when stop_on_max_errors is enabled")
 	}
 	return scenarioMode, nil
+}
+
+func validateEarlyStopConfig(config *EarlyStopConfig) error {
+	if config == nil {
+		return nil
+	}
+	if !finiteFloat(config.ErrorRatePct) || config.ErrorRatePct < 0 || config.ErrorRatePct > 100 {
+		return fmt.Errorf("early_stop.error_rate_pct must be between 0 and 100")
+	}
+	window, err := time.ParseDuration(strings.TrimSpace(config.BreachWindow))
+	if err != nil {
+		return fmt.Errorf("invalid early_stop.breach_window: %w", err)
+	}
+	if window <= 0 {
+		return fmt.Errorf("early_stop.breach_window must be greater than zero")
+	}
+	return nil
 }
 
 func finiteFloat(value float64) bool {

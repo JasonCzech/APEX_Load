@@ -564,6 +564,9 @@ func (a *runArtifacts) finalize(test *ManagedTest, finalStatus string, endTime t
 	var goalStatus *GoalStatus
 	if test != nil && a.runner != nil {
 		a.runner.mu.RLock()
+		if strings.TrimSpace(finalError) == "" && strings.HasPrefix(test.Error, "early stop:") {
+			finalError = test.Error
+		}
 		if a.runner.tests[test.ID] == test && test.LiveMetrics != nil {
 			goalStatus = cloneGoalStatus(test.LiveMetrics.GoalStatus)
 			slaEvaluated = slaEvaluated || test.ciSLAEvaluated || ciSLAEvidenceComplete(test.GoalConfig, test.LiveMetrics)

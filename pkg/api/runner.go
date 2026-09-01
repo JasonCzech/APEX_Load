@@ -614,6 +614,7 @@ type ManagedTest struct {
 	// p99BreachConsecutive counts consecutive metrics evaluations with P99
 	// above thresholds.max_p99_latency_ms for the opt-in sustained auto-stop.
 	p99BreachConsecutive       int
+	earlyStopBreachStartedAt   *time.Time
 	errorPatterns              map[string]*LiveErrorPattern
 	liveErrorEvidence          map[string][]LiveErrorEvidence
 	vuserScaleRamps            map[string]*vuserScaleRamp
@@ -676,6 +677,7 @@ type TestGroup struct {
 	RampUp         string              `json:"ramp_up,omitempty"`
 	RampDown       string              `json:"ramp_down,omitempty"`
 	Stages         []storage.LoadStage `json:"stages,omitempty"`
+	ActiveStage    *ActiveLoadLevel    `json:"active_stage,omitempty"`
 	// Iterations is the effective root+group value retained for API compatibility.
 	Iterations *int `json:"iterations,omitempty"`
 	// IterationOverride records group-owned intent supplied through the compact
@@ -780,6 +782,9 @@ type LiveMetrics struct {
 	Resources              *engine.SystemResources               `json:"resources,omitempty"`
 	GeneratorResources     map[string]*GeneratorResourceSnapshot `json:"generator_resources,omitempty"`
 	Latency                *NetworkLatency                       `json:"latency,omitempty"`
+	LoadLevels             []ActiveLoadLevel                     `json:"load_levels,omitempty"`
+	ActiveRuntimeSeconds   float64                               `json:"-"`
+	SampleWindowSeconds    float64                               `json:"-"`
 	ErrorEvidence          []LiveErrorEvidence                   `json:"-"`
 	// slaTelemetryPeaks retains, per SLA metric evaluated against
 	// per-transaction server telemetry, the worst transaction's summary. It is
@@ -1762,9 +1767,49 @@ type GoalConfig struct {
 	StopOnSLABreach bool   `json:"stop_on_sla_breach,omitempty"`
 	StopOnMaxErrors bool   `json:"stop_on_max_errors,omitempty"`
 	SLABreachWindow string `json:"sla_breach_window,omitempty"`
+	// EarlyStop is a scenario-specific, VUser-mode-compatible error-rate stop.
+	// It deliberately lives beside the existing guardrails so legacy durable
+	// goal_config_json columns can round-trip it without a database migration.
+	EarlyStop *EarlyStopConfig `json:"early_stop,omitempty"`
+	// WorkloadShapeConfig retains authoring intent that cannot be reconstructed
+	// losslessly from derived stage rows (for example an uneven final step).
+	WorkloadShapeConfig *WorkloadShapeConfig `json:"workload_shape_config,omitempty"`
 	// TransactionRules are terminal-only SLA rules evaluated from the complete
 	// archive. They do not participate in live stop-on-breach decisions.
 	TransactionRules []TransactionSLARule `json:"transaction_rules,omitempty"`
+}
+
+type EarlyStopConfig struct {
+	Enabled      bool    `json:"enabled"`
+	ErrorRatePct float64 `json:"error_rate_pct"`
+	BreachWindow string  `json:"breach_window"`
+}
+
+type SteppedRampDefinition struct {
+	StartVUsers   int    `json:"start_vusers"`
+	EndVUsers     int    `json:"end_vusers"`
+	IncrementBy   string `json:"increment_by"`
+	StepCount     int    `json:"step_count,omitempty"`
+	VUsersPerStep int    `json:"vusers_per_step,omitempty"`
+}
+
+type SteppedRampConfig struct {
+	Scope    string                           `json:"scope"`
+	Scenario *SteppedRampDefinition           `json:"scenario,omitempty"`
+	Groups   map[string]SteppedRampDefinition `json:"groups,omitempty"`
+}
+
+type WorkloadShapeConfig struct {
+	SteppedRamp *SteppedRampConfig `json:"stepped_ramp,omitempty"`
+}
+
+type ActiveLoadLevel struct {
+	Group        string    `json:"group"`
+	StageIndex   int       `json:"stage_index"`
+	Name         string    `json:"name,omitempty"`
+	TargetVUsers int       `json:"target_vusers"`
+	Duration     string    `json:"duration"`
+	StartedAt    time.Time `json:"started_at"`
 }
 
 type TransactionSLARule struct {

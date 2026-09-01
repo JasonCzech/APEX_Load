@@ -1509,6 +1509,23 @@ export interface operations {
               "verified"?: boolean;
               "verified_at"?: string;
             }) | null;
+            "load_level_summaries"?: Array<{
+              "configured_duration"?: string;
+              "error_rate_pct"?: number;
+              "errors"?: number;
+              "group"?: string;
+              "name"?: string;
+              "observed_duration_seconds"?: number;
+              "p50_ms"?: number;
+              "p90_ms"?: number;
+              "p95_ms"?: number;
+              "p99_ms"?: number;
+              "partial"?: boolean;
+              "requests"?: number;
+              "stage_index"?: number;
+              "target_vusers"?: number;
+              "throughput"?: number;
+            }>;
             "manifest"?: ({
               "artifacts"?: Array<{
                 "count"?: number;
@@ -2140,6 +2157,11 @@ export interface operations {
             }>;
             "duration"?: string;
             "goal_config"?: ({
+              "early_stop"?: ({
+                "breach_window"?: string;
+                "enabled"?: boolean;
+                "error_rate_pct"?: number;
+              }) | null;
               "max_avg_server_processing_ms"?: (number) | null;
               "max_avg_transfer_ms"?: (number) | null;
               "max_cls"?: (number) | null;
@@ -2166,6 +2188,9 @@ export interface operations {
                 "threshold"?: number;
                 "transaction"?: string;
               }>;
+              "workload_shape_config"?: ({
+                "stepped_ramp"?: (Record<string, unknown>) | null;
+              }) | null;
             }) | null;
             "groups"?: Array<{
               "assignment"?: ({
@@ -7144,6 +7169,11 @@ export interface operations {
               }>;
               "duration": string;
               "goal_config"?: ({
+                "early_stop"?: ({
+                  "breach_window": string;
+                  "enabled": boolean;
+                  "error_rate_pct": number;
+                }) | null;
                 "max_avg_server_processing_ms"?: (number) | null;
                 "max_avg_transfer_ms"?: (number) | null;
                 "max_cls"?: (number) | null;
@@ -7170,6 +7200,9 @@ export interface operations {
                   "threshold": number;
                   "transaction": string;
                 }>;
+                "workload_shape_config"?: ({
+                  "stepped_ramp"?: (Record<string, unknown>) | null;
+                }) | null;
               }) | null;
               "id": string;
               "last_run_at"?: (string) | null;
@@ -15883,6 +15916,11 @@ export interface operations {
           "duration"?: string;
           "folder_id"?: (string) | null;
           "goal_config"?: ({
+            "early_stop"?: ({
+              "breach_window"?: string;
+              "enabled"?: boolean;
+              "error_rate_pct"?: number;
+            }) | null;
             "max_avg_server_processing_ms"?: (number) | null;
             "max_avg_transfer_ms"?: (number) | null;
             "max_cls"?: (number) | null;
@@ -15909,6 +15947,9 @@ export interface operations {
               "threshold"?: number;
               "transaction"?: string;
             }>;
+            "workload_shape_config"?: ({
+              "stepped_ramp"?: (Record<string, unknown>) | null;
+            }) | null;
           }) | null;
           "groups"?: Array<{
             "assignment"?: ({
@@ -16143,6 +16184,11 @@ export interface operations {
             "duration"?: string;
             "folder_id"?: (string) | null;
             "goal_config"?: ({
+              "early_stop"?: ({
+                "breach_window"?: string;
+                "enabled"?: boolean;
+                "error_rate_pct"?: number;
+              }) | null;
               "max_avg_server_processing_ms"?: (number) | null;
               "max_avg_transfer_ms"?: (number) | null;
               "max_cls"?: (number) | null;
@@ -16169,6 +16215,9 @@ export interface operations {
                 "threshold"?: number;
                 "transaction"?: string;
               }>;
+              "workload_shape_config"?: ({
+                "stepped_ramp"?: (Record<string, unknown>) | null;
+              }) | null;
             }) | null;
             "groups"?: Array<{
               "assignment"?: ({
@@ -16728,6 +16777,11 @@ export interface operations {
                 "vusers": number;
               }>;
               "goal_config"?: ({
+                "early_stop"?: ({
+                  "breach_window": string;
+                  "enabled": boolean;
+                  "error_rate_pct": number;
+                }) | null;
                 "max_avg_server_processing_ms"?: (number) | null;
                 "max_avg_transfer_ms"?: (number) | null;
                 "max_cls"?: (number) | null;
@@ -16754,6 +16808,9 @@ export interface operations {
                   "threshold": number;
                   "transaction": string;
                 }>;
+                "workload_shape_config"?: ({
+                  "stepped_ramp"?: (Record<string, unknown>) | null;
+                }) | null;
               }) | null;
               "goal_targets"?: Record<string, {
                 "group": string;
@@ -16761,6 +16818,14 @@ export interface operations {
                 "updated_at"?: string;
               }>;
               "groups": Array<{
+                "active_stage"?: ({
+                  "duration": string;
+                  "group": string;
+                  "name"?: string;
+                  "stage_index": number;
+                  "started_at": string;
+                  "target_vusers": number;
+                }) | null;
                 "assignment"?: ({
                   "load_zone_weights"?: Record<string, number>;
                   "mode"?: string;
@@ -16896,6 +16961,7 @@ export interface operations {
                 "latency"?: ({
                   "targets": Array<Record<string, unknown>>;
                 }) | null;
+                "load_levels"?: Array<Record<string, unknown>>;
                 "network_profiles"?: Record<string, (Record<string, unknown>) | null>;
                 "p50_ms": number;
                 "p90_ms": number;
@@ -17168,6 +17234,14 @@ export interface operations {
                 "latency"?: ({
                   "targets": Array<Record<string, unknown>>;
                 }) | null;
+                "load_levels"?: Array<{
+                  "duration": string;
+                  "group": string;
+                  "name"?: string;
+                  "stage_index": number;
+                  "started_at": string;
+                  "target_vusers": number;
+                }>;
                 "network_profiles"?: Record<string, ({
                   "avg_connect_ms"?: number;
                   "avg_dns_ms"?: number;
@@ -18091,6 +18165,11 @@ export interface operations {
           }>;
           "duration": string;
           "goal_config"?: ({
+            "early_stop"?: ({
+              "breach_window"?: string;
+              "enabled"?: boolean;
+              "error_rate_pct"?: number;
+            }) | null;
             "max_avg_server_processing_ms"?: (number) | null;
             "max_avg_transfer_ms"?: (number) | null;
             "max_cls"?: (number) | null;
@@ -18117,6 +18196,13 @@ export interface operations {
               "threshold"?: number;
               "transaction"?: string;
             }>;
+            "workload_shape_config"?: ({
+              "stepped_ramp"?: ({
+                "groups"?: Record<string, Record<string, unknown>>;
+                "scenario"?: (Record<string, unknown>) | null;
+                "scope"?: string;
+              }) | null;
+            }) | null;
           }) | null;
           "groups": Array<{
             "assignment"?: ({
@@ -18650,6 +18736,11 @@ export interface operations {
             }>;
             "duration": string;
             "goal_config"?: ({
+              "early_stop"?: ({
+                "breach_window": string;
+                "enabled": boolean;
+                "error_rate_pct": number;
+              }) | null;
               "max_avg_server_processing_ms"?: (number) | null;
               "max_avg_transfer_ms"?: (number) | null;
               "max_cls"?: (number) | null;
@@ -18676,6 +18767,13 @@ export interface operations {
                 "threshold": number;
                 "transaction": string;
               }>;
+              "workload_shape_config"?: ({
+                "stepped_ramp"?: ({
+                  "groups"?: Record<string, Record<string, unknown>>;
+                  "scenario"?: (Record<string, unknown>) | null;
+                  "scope": string;
+                }) | null;
+              }) | null;
             }) | null;
             "id": string;
             "last_run_at"?: (string) | null;
@@ -21013,6 +21111,11 @@ export interface operations {
           "duration"?: string;
           "folder_id"?: (string) | null;
           "goal_config"?: ({
+            "early_stop"?: ({
+              "breach_window"?: string;
+              "enabled"?: boolean;
+              "error_rate_pct"?: number;
+            }) | null;
             "max_avg_server_processing_ms"?: (number) | null;
             "max_avg_transfer_ms"?: (number) | null;
             "max_cls"?: (number) | null;
@@ -21039,6 +21142,13 @@ export interface operations {
               "threshold"?: number;
               "transaction"?: string;
             }>;
+            "workload_shape_config"?: ({
+              "stepped_ramp"?: ({
+                "groups"?: Record<string, Record<string, unknown>>;
+                "scenario"?: (Record<string, unknown>) | null;
+                "scope"?: string;
+              }) | null;
+            }) | null;
           }) | null;
           "groups"?: Array<{
             "assignment"?: ({
@@ -21831,6 +21941,11 @@ export interface operations {
               "vusers": number;
             }>;
             "goal_config"?: ({
+              "early_stop"?: ({
+                "breach_window": string;
+                "enabled": boolean;
+                "error_rate_pct": number;
+              }) | null;
               "max_avg_server_processing_ms"?: (number) | null;
               "max_avg_transfer_ms"?: (number) | null;
               "max_cls"?: (number) | null;
@@ -21857,6 +21972,13 @@ export interface operations {
                 "threshold": number;
                 "transaction": string;
               }>;
+              "workload_shape_config"?: ({
+                "stepped_ramp"?: ({
+                  "groups"?: Record<string, Record<string, unknown>>;
+                  "scenario"?: (Record<string, unknown>) | null;
+                  "scope": string;
+                }) | null;
+              }) | null;
             }) | null;
             "goal_targets"?: Record<string, {
               "group": string;
@@ -21864,6 +21986,14 @@ export interface operations {
               "updated_at"?: string;
             }>;
             "groups": Array<{
+              "active_stage"?: ({
+                "duration": string;
+                "group": string;
+                "name"?: string;
+                "stage_index": number;
+                "started_at": string;
+                "target_vusers": number;
+              }) | null;
               "assignment"?: ({
                 "load_zone_weights"?: Record<string, number>;
                 "mode"?: string;
@@ -22228,6 +22358,14 @@ export interface operations {
               "latency"?: ({
                 "targets": Array<Record<string, unknown>>;
               }) | null;
+              "load_levels"?: Array<{
+                "duration": string;
+                "group": string;
+                "name"?: string;
+                "stage_index": number;
+                "started_at": string;
+                "target_vusers": number;
+              }>;
               "network_profiles"?: Record<string, ({
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
@@ -22743,6 +22881,14 @@ export interface operations {
                   "ttfb_ms"?: number;
                 }>;
               }) | null;
+              "load_levels"?: Array<{
+                "duration": string;
+                "group": string;
+                "name"?: string;
+                "stage_index": number;
+                "started_at": string;
+                "target_vusers": number;
+              }>;
               "network_profiles"?: Record<string, ({
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
@@ -25313,6 +25459,11 @@ export interface operations {
             }>;
             "duration"?: string;
             "goal_config"?: ({
+              "early_stop"?: ({
+                "breach_window"?: string;
+                "enabled"?: boolean;
+                "error_rate_pct"?: number;
+              }) | null;
               "max_avg_server_processing_ms"?: (number) | null;
               "max_avg_transfer_ms"?: (number) | null;
               "max_cls"?: (number) | null;
@@ -25339,6 +25490,9 @@ export interface operations {
                 "threshold"?: number;
                 "transaction"?: string;
               }>;
+              "workload_shape_config"?: ({
+                "stepped_ramp"?: (Record<string, unknown>) | null;
+              }) | null;
             }) | null;
             "groups"?: Array<{
               "assignment"?: ({
@@ -25878,6 +26032,11 @@ export interface operations {
               }>;
               "duration": string;
               "goal_config"?: ({
+                "early_stop"?: ({
+                  "breach_window": string;
+                  "enabled": boolean;
+                  "error_rate_pct": number;
+                }) | null;
                 "max_avg_server_processing_ms"?: (number) | null;
                 "max_avg_transfer_ms"?: (number) | null;
                 "max_cls"?: (number) | null;
@@ -25904,6 +26063,9 @@ export interface operations {
                   "threshold": number;
                   "transaction": string;
                 }>;
+                "workload_shape_config"?: ({
+                  "stepped_ramp"?: (Record<string, unknown>) | null;
+                }) | null;
               }) | null;
               "groups": Array<{
                 "assignment"?: ({
@@ -27412,6 +27574,11 @@ export interface operations {
           "duration"?: string;
           "folder_id"?: (string) | null;
           "goal_config"?: ({
+            "early_stop"?: ({
+              "breach_window"?: string;
+              "enabled"?: boolean;
+              "error_rate_pct"?: number;
+            }) | null;
             "max_avg_server_processing_ms"?: (number) | null;
             "max_avg_transfer_ms"?: (number) | null;
             "max_cls"?: (number) | null;
@@ -27438,6 +27605,13 @@ export interface operations {
               "threshold"?: number;
               "transaction"?: string;
             }>;
+            "workload_shape_config"?: ({
+              "stepped_ramp"?: ({
+                "groups"?: Record<string, Record<string, unknown>>;
+                "scenario"?: (Record<string, unknown>) | null;
+                "scope"?: string;
+              }) | null;
+            }) | null;
           }) | null;
           "groups"?: Array<{
             "assignment"?: ({
@@ -28045,6 +28219,14 @@ export interface operations {
               "total_vusers": number;
             }) | null;
             "groups": Array<{
+              "active_stage"?: ({
+                "duration": string;
+                "group": string;
+                "name"?: string;
+                "stage_index": number;
+                "started_at": string;
+                "target_vusers": number;
+              }) | null;
               "assignment"?: ({
                 "load_zone_weights"?: Record<string, number>;
                 "mode"?: string;
@@ -33953,6 +34135,11 @@ export interface operations {
                 "vusers": number;
               }>;
               "goal_config"?: ({
+                "early_stop"?: ({
+                  "breach_window": string;
+                  "enabled": boolean;
+                  "error_rate_pct": number;
+                }) | null;
                 "max_avg_server_processing_ms"?: (number) | null;
                 "max_avg_transfer_ms"?: (number) | null;
                 "max_cls"?: (number) | null;
@@ -33979,6 +34166,9 @@ export interface operations {
                   "threshold": number;
                   "transaction": string;
                 }>;
+                "workload_shape_config"?: ({
+                  "stepped_ramp"?: (Record<string, unknown>) | null;
+                }) | null;
               }) | null;
               "goal_targets"?: Record<string, {
                 "group": string;
@@ -33986,6 +34176,14 @@ export interface operations {
                 "updated_at"?: string;
               }>;
               "groups": Array<{
+                "active_stage"?: ({
+                  "duration": string;
+                  "group": string;
+                  "name"?: string;
+                  "stage_index": number;
+                  "started_at": string;
+                  "target_vusers": number;
+                }) | null;
                 "assignment"?: ({
                   "load_zone_weights"?: Record<string, number>;
                   "mode"?: string;
@@ -34121,6 +34319,7 @@ export interface operations {
                 "latency"?: ({
                   "targets": Array<Record<string, unknown>>;
                 }) | null;
+                "load_levels"?: Array<Record<string, unknown>>;
                 "network_profiles"?: Record<string, (Record<string, unknown>) | null>;
                 "p50_ms": number;
                 "p90_ms": number;
@@ -34393,6 +34592,14 @@ export interface operations {
                 "latency"?: ({
                   "targets": Array<Record<string, unknown>>;
                 }) | null;
+                "load_levels"?: Array<{
+                  "duration": string;
+                  "group": string;
+                  "name"?: string;
+                  "stage_index": number;
+                  "started_at": string;
+                  "target_vusers": number;
+                }>;
                 "network_profiles"?: Record<string, ({
                   "avg_connect_ms"?: number;
                   "avg_dns_ms"?: number;
@@ -35352,6 +35559,11 @@ export interface operations {
                 "vusers": number;
               }>;
               "goal_config"?: ({
+                "early_stop"?: ({
+                  "breach_window": string;
+                  "enabled": boolean;
+                  "error_rate_pct": number;
+                }) | null;
                 "max_avg_server_processing_ms"?: (number) | null;
                 "max_avg_transfer_ms"?: (number) | null;
                 "max_cls"?: (number) | null;
@@ -35378,6 +35590,9 @@ export interface operations {
                   "threshold": number;
                   "transaction": string;
                 }>;
+                "workload_shape_config"?: ({
+                  "stepped_ramp"?: (Record<string, unknown>) | null;
+                }) | null;
               }) | null;
               "governance"?: ({
                 "capacity_reservation_id"?: string;
@@ -35412,6 +35627,14 @@ export interface operations {
                 }) | null;
               }) | null;
               "groups"?: Array<{
+                "active_stage"?: ({
+                  "duration": string;
+                  "group": string;
+                  "name"?: string;
+                  "stage_index": number;
+                  "started_at": string;
+                  "target_vusers": number;
+                }) | null;
                 "assignment"?: ({
                   "load_zone_weights"?: Record<string, number>;
                   "mode"?: string;
@@ -35858,6 +36081,11 @@ export interface operations {
                 "vusers": number;
               }>;
               "goal_config"?: ({
+                "early_stop"?: ({
+                  "breach_window": string;
+                  "enabled": boolean;
+                  "error_rate_pct": number;
+                }) | null;
                 "max_avg_server_processing_ms"?: (number) | null;
                 "max_avg_transfer_ms"?: (number) | null;
                 "max_cls"?: (number) | null;
@@ -35884,6 +36112,9 @@ export interface operations {
                   "threshold": number;
                   "transaction": string;
                 }>;
+                "workload_shape_config"?: ({
+                  "stepped_ramp"?: (Record<string, unknown>) | null;
+                }) | null;
               }) | null;
               "governance"?: ({
                 "capacity_reservation_id"?: string;
@@ -35918,6 +36149,14 @@ export interface operations {
                 }) | null;
               }) | null;
               "groups"?: Array<{
+                "active_stage"?: ({
+                  "duration": string;
+                  "group": string;
+                  "name"?: string;
+                  "stage_index": number;
+                  "started_at": string;
+                  "target_vusers": number;
+                }) | null;
                 "assignment"?: ({
                   "load_zone_weights"?: Record<string, number>;
                   "mode"?: string;
@@ -36516,6 +36755,23 @@ export interface operations {
               "verified": boolean;
               "verified_at": string;
             }) | null;
+            "load_level_summaries"?: Array<{
+              "configured_duration": string;
+              "error_rate_pct": number;
+              "errors": number;
+              "group": string;
+              "name": string;
+              "observed_duration_seconds": number;
+              "p50_ms": number;
+              "p90_ms": number;
+              "p95_ms": number;
+              "p99_ms": number;
+              "partial"?: boolean;
+              "requests": number;
+              "stage_index": number;
+              "target_vusers": number;
+              "throughput": number;
+            }>;
             "manifest": ({
               "artifacts"?: Array<{
                 "count"?: number;
@@ -36628,6 +36884,7 @@ export interface operations {
                   "vusers": number;
                 }>;
                 "goal_config"?: ({
+                  "early_stop"?: (Record<string, unknown>) | null;
                   "max_avg_server_processing_ms"?: (number) | null;
                   "max_avg_transfer_ms"?: (number) | null;
                   "max_cls"?: (number) | null;
@@ -36648,6 +36905,7 @@ export interface operations {
                   "stop_on_sla_breach"?: boolean;
                   "target_average_tps"?: (number) | null;
                   "transaction_rules"?: Array<Record<string, unknown>>;
+                  "workload_shape_config"?: (Record<string, unknown>) | null;
                 }) | null;
                 "governance"?: ({
                   "capacity_reservation_id"?: string;
@@ -36657,6 +36915,7 @@ export interface operations {
                   "runtime_settings_review"?: (Record<string, unknown>) | null;
                 }) | null;
                 "groups"?: Array<{
+                  "active_stage"?: (Record<string, unknown>) | null;
                   "assignment"?: (Record<string, unknown>) | null;
                   "continue_on_error"?: (Record<string, unknown>) | null;
                   "effective_end_at"?: (string) | null;
@@ -36847,6 +37106,7 @@ export interface operations {
                   "vusers": number;
                 }>;
                 "goal_config"?: ({
+                  "early_stop"?: (Record<string, unknown>) | null;
                   "max_avg_server_processing_ms"?: (number) | null;
                   "max_avg_transfer_ms"?: (number) | null;
                   "max_cls"?: (number) | null;
@@ -36867,6 +37127,7 @@ export interface operations {
                   "stop_on_sla_breach"?: boolean;
                   "target_average_tps"?: (number) | null;
                   "transaction_rules"?: Array<Record<string, unknown>>;
+                  "workload_shape_config"?: (Record<string, unknown>) | null;
                 }) | null;
                 "governance"?: ({
                   "capacity_reservation_id"?: string;
@@ -36876,6 +37137,7 @@ export interface operations {
                   "runtime_settings_review"?: (Record<string, unknown>) | null;
                 }) | null;
                 "groups"?: Array<{
+                  "active_stage"?: (Record<string, unknown>) | null;
                   "assignment"?: (Record<string, unknown>) | null;
                   "continue_on_error"?: (Record<string, unknown>) | null;
                   "effective_end_at"?: (string) | null;
@@ -37729,6 +37991,11 @@ export interface operations {
             }>;
             "duration": string;
             "goal_config"?: ({
+              "early_stop"?: ({
+                "breach_window": string;
+                "enabled": boolean;
+                "error_rate_pct": number;
+              }) | null;
               "max_avg_server_processing_ms"?: (number) | null;
               "max_avg_transfer_ms"?: (number) | null;
               "max_cls"?: (number) | null;
@@ -37755,6 +38022,13 @@ export interface operations {
                 "threshold": number;
                 "transaction": string;
               }>;
+              "workload_shape_config"?: ({
+                "stepped_ramp"?: ({
+                  "groups"?: Record<string, Record<string, unknown>>;
+                  "scenario"?: (Record<string, unknown>) | null;
+                  "scope": string;
+                }) | null;
+              }) | null;
             }) | null;
             "id": string;
             "last_run_at"?: (string) | null;
@@ -40561,6 +40835,11 @@ export interface operations {
               "vusers": number;
             }>;
             "goal_config"?: ({
+              "early_stop"?: ({
+                "breach_window": string;
+                "enabled": boolean;
+                "error_rate_pct": number;
+              }) | null;
               "max_avg_server_processing_ms"?: (number) | null;
               "max_avg_transfer_ms"?: (number) | null;
               "max_cls"?: (number) | null;
@@ -40587,6 +40866,13 @@ export interface operations {
                 "threshold": number;
                 "transaction": string;
               }>;
+              "workload_shape_config"?: ({
+                "stepped_ramp"?: ({
+                  "groups"?: Record<string, Record<string, unknown>>;
+                  "scenario"?: (Record<string, unknown>) | null;
+                  "scope": string;
+                }) | null;
+              }) | null;
             }) | null;
             "goal_targets"?: Record<string, {
               "group": string;
@@ -40594,6 +40880,14 @@ export interface operations {
               "updated_at"?: string;
             }>;
             "groups": Array<{
+              "active_stage"?: ({
+                "duration": string;
+                "group": string;
+                "name"?: string;
+                "stage_index": number;
+                "started_at": string;
+                "target_vusers": number;
+              }) | null;
               "assignment"?: ({
                 "load_zone_weights"?: Record<string, number>;
                 "mode"?: string;
@@ -40958,6 +41252,14 @@ export interface operations {
               "latency"?: ({
                 "targets": Array<Record<string, unknown>>;
               }) | null;
+              "load_levels"?: Array<{
+                "duration": string;
+                "group": string;
+                "name"?: string;
+                "stage_index": number;
+                "started_at": string;
+                "target_vusers": number;
+              }>;
               "network_profiles"?: Record<string, ({
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
@@ -41473,6 +41775,14 @@ export interface operations {
                   "ttfb_ms"?: number;
                 }>;
               }) | null;
+              "load_levels"?: Array<{
+                "duration": string;
+                "group": string;
+                "name"?: string;
+                "stage_index": number;
+                "started_at": string;
+                "target_vusers": number;
+              }>;
               "network_profiles"?: Record<string, ({
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
@@ -43349,6 +43659,11 @@ export interface operations {
                 "vusers": number;
               }>;
               "goal_config"?: ({
+                "early_stop"?: ({
+                  "breach_window": string;
+                  "enabled": boolean;
+                  "error_rate_pct": number;
+                }) | null;
                 "max_avg_server_processing_ms"?: (number) | null;
                 "max_avg_transfer_ms"?: (number) | null;
                 "max_cls"?: (number) | null;
@@ -43375,8 +43690,19 @@ export interface operations {
                   "threshold": number;
                   "transaction": string;
                 }>;
+                "workload_shape_config"?: ({
+                  "stepped_ramp"?: (Record<string, unknown>) | null;
+                }) | null;
               }) | null;
               "groups"?: Array<{
+                "active_stage"?: ({
+                  "duration": string;
+                  "group": string;
+                  "name"?: string;
+                  "stage_index": number;
+                  "started_at": string;
+                  "target_vusers": number;
+                }) | null;
                 "assignment"?: ({
                   "load_zone_weights"?: Record<string, number>;
                   "mode"?: string;
@@ -43729,6 +44055,11 @@ export interface operations {
                 "vusers": number;
               }>;
               "goal_config"?: ({
+                "early_stop"?: ({
+                  "breach_window": string;
+                  "enabled": boolean;
+                  "error_rate_pct": number;
+                }) | null;
                 "max_avg_server_processing_ms"?: (number) | null;
                 "max_avg_transfer_ms"?: (number) | null;
                 "max_cls"?: (number) | null;
@@ -43755,8 +44086,19 @@ export interface operations {
                   "threshold": number;
                   "transaction": string;
                 }>;
+                "workload_shape_config"?: ({
+                  "stepped_ramp"?: (Record<string, unknown>) | null;
+                }) | null;
               }) | null;
               "groups"?: Array<{
+                "active_stage"?: ({
+                  "duration": string;
+                  "group": string;
+                  "name"?: string;
+                  "stage_index": number;
+                  "started_at": string;
+                  "target_vusers": number;
+                }) | null;
                 "assignment"?: ({
                   "load_zone_weights"?: Record<string, number>;
                   "mode"?: string;
@@ -52797,6 +53139,11 @@ export interface operations {
               "vusers": number;
             }>;
             "goal_config"?: ({
+              "early_stop"?: ({
+                "breach_window": string;
+                "enabled": boolean;
+                "error_rate_pct": number;
+              }) | null;
               "max_avg_server_processing_ms"?: (number) | null;
               "max_avg_transfer_ms"?: (number) | null;
               "max_cls"?: (number) | null;
@@ -52823,6 +53170,13 @@ export interface operations {
                 "threshold": number;
                 "transaction": string;
               }>;
+              "workload_shape_config"?: ({
+                "stepped_ramp"?: ({
+                  "groups"?: Record<string, Record<string, unknown>>;
+                  "scenario"?: (Record<string, unknown>) | null;
+                  "scope": string;
+                }) | null;
+              }) | null;
             }) | null;
             "goal_targets"?: Record<string, {
               "group": string;
@@ -52830,6 +53184,14 @@ export interface operations {
               "updated_at"?: string;
             }>;
             "groups": Array<{
+              "active_stage"?: ({
+                "duration": string;
+                "group": string;
+                "name"?: string;
+                "stage_index": number;
+                "started_at": string;
+                "target_vusers": number;
+              }) | null;
               "assignment"?: ({
                 "load_zone_weights"?: Record<string, number>;
                 "mode"?: string;
@@ -53194,6 +53556,14 @@ export interface operations {
               "latency"?: ({
                 "targets": Array<Record<string, unknown>>;
               }) | null;
+              "load_levels"?: Array<{
+                "duration": string;
+                "group": string;
+                "name"?: string;
+                "stage_index": number;
+                "started_at": string;
+                "target_vusers": number;
+              }>;
               "network_profiles"?: Record<string, ({
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
@@ -53709,6 +54079,14 @@ export interface operations {
                   "ttfb_ms"?: number;
                 }>;
               }) | null;
+              "load_levels"?: Array<{
+                "duration": string;
+                "group": string;
+                "name"?: string;
+                "stage_index": number;
+                "started_at": string;
+                "target_vusers": number;
+              }>;
               "network_profiles"?: Record<string, ({
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
@@ -54580,6 +54958,11 @@ export interface operations {
           "duration"?: string;
           "folder_id"?: (string) | null;
           "goal_config"?: ({
+            "early_stop"?: ({
+              "breach_window"?: string;
+              "enabled"?: boolean;
+              "error_rate_pct"?: number;
+            }) | null;
             "max_avg_server_processing_ms"?: (number) | null;
             "max_avg_transfer_ms"?: (number) | null;
             "max_cls"?: (number) | null;
@@ -54606,6 +54989,9 @@ export interface operations {
               "threshold"?: number;
               "transaction"?: string;
             }>;
+            "workload_shape_config"?: ({
+              "stepped_ramp"?: (Record<string, unknown>) | null;
+            }) | null;
           }) | null;
           "groups"?: Array<{
             "assignment"?: ({
@@ -59785,6 +60171,11 @@ export interface operations {
                 "vusers": number;
               }>;
               "goal_config"?: ({
+                "early_stop"?: ({
+                  "breach_window": string;
+                  "enabled": boolean;
+                  "error_rate_pct": number;
+                }) | null;
                 "max_avg_server_processing_ms"?: (number) | null;
                 "max_avg_transfer_ms"?: (number) | null;
                 "max_cls"?: (number) | null;
@@ -59811,6 +60202,9 @@ export interface operations {
                   "threshold": number;
                   "transaction": string;
                 }>;
+                "workload_shape_config"?: ({
+                  "stepped_ramp"?: (Record<string, unknown>) | null;
+                }) | null;
               }) | null;
               "goal_targets"?: Record<string, {
                 "group": string;
@@ -59818,6 +60212,14 @@ export interface operations {
                 "updated_at"?: string;
               }>;
               "groups": Array<{
+                "active_stage"?: ({
+                  "duration": string;
+                  "group": string;
+                  "name"?: string;
+                  "stage_index": number;
+                  "started_at": string;
+                  "target_vusers": number;
+                }) | null;
                 "assignment"?: ({
                   "load_zone_weights"?: Record<string, number>;
                   "mode"?: string;
@@ -59953,6 +60355,7 @@ export interface operations {
                 "latency"?: ({
                   "targets": Array<Record<string, unknown>>;
                 }) | null;
+                "load_levels"?: Array<Record<string, unknown>>;
                 "network_profiles"?: Record<string, (Record<string, unknown>) | null>;
                 "p50_ms": number;
                 "p90_ms": number;
@@ -60225,6 +60628,14 @@ export interface operations {
                 "latency"?: ({
                   "targets": Array<Record<string, unknown>>;
                 }) | null;
+                "load_levels"?: Array<{
+                  "duration": string;
+                  "group": string;
+                  "name"?: string;
+                  "stage_index": number;
+                  "started_at": string;
+                  "target_vusers": number;
+                }>;
                 "network_profiles"?: Record<string, ({
                   "avg_connect_ms"?: number;
                   "avg_dns_ms"?: number;
@@ -60985,6 +61396,11 @@ export interface operations {
                 "vusers": number;
               }>;
               "goal_config"?: ({
+                "early_stop"?: ({
+                  "breach_window": string;
+                  "enabled": boolean;
+                  "error_rate_pct": number;
+                }) | null;
                 "max_avg_server_processing_ms"?: (number) | null;
                 "max_avg_transfer_ms"?: (number) | null;
                 "max_cls"?: (number) | null;
@@ -61011,6 +61427,9 @@ export interface operations {
                   "threshold": number;
                   "transaction": string;
                 }>;
+                "workload_shape_config"?: ({
+                  "stepped_ramp"?: (Record<string, unknown>) | null;
+                }) | null;
               }) | null;
               "goal_targets"?: Record<string, {
                 "group": string;
@@ -61018,6 +61437,14 @@ export interface operations {
                 "updated_at"?: string;
               }>;
               "groups": Array<{
+                "active_stage"?: ({
+                  "duration": string;
+                  "group": string;
+                  "name"?: string;
+                  "stage_index": number;
+                  "started_at": string;
+                  "target_vusers": number;
+                }) | null;
                 "assignment"?: ({
                   "load_zone_weights"?: Record<string, number>;
                   "mode"?: string;
@@ -61153,6 +61580,7 @@ export interface operations {
                 "latency"?: ({
                   "targets": Array<Record<string, unknown>>;
                 }) | null;
+                "load_levels"?: Array<Record<string, unknown>>;
                 "network_profiles"?: Record<string, (Record<string, unknown>) | null>;
                 "p50_ms": number;
                 "p90_ms": number;
@@ -61425,6 +61853,14 @@ export interface operations {
                 "latency"?: ({
                   "targets": Array<Record<string, unknown>>;
                 }) | null;
+                "load_levels"?: Array<{
+                  "duration": string;
+                  "group": string;
+                  "name"?: string;
+                  "stage_index": number;
+                  "started_at": string;
+                  "target_vusers": number;
+                }>;
                 "network_profiles"?: Record<string, ({
                   "avg_connect_ms"?: number;
                   "avg_dns_ms"?: number;
@@ -62185,6 +62621,11 @@ export interface operations {
                 "vusers": number;
               }>;
               "goal_config"?: ({
+                "early_stop"?: ({
+                  "breach_window": string;
+                  "enabled": boolean;
+                  "error_rate_pct": number;
+                }) | null;
                 "max_avg_server_processing_ms"?: (number) | null;
                 "max_avg_transfer_ms"?: (number) | null;
                 "max_cls"?: (number) | null;
@@ -62211,6 +62652,9 @@ export interface operations {
                   "threshold": number;
                   "transaction": string;
                 }>;
+                "workload_shape_config"?: ({
+                  "stepped_ramp"?: (Record<string, unknown>) | null;
+                }) | null;
               }) | null;
               "goal_targets"?: Record<string, {
                 "group": string;
@@ -62218,6 +62662,14 @@ export interface operations {
                 "updated_at"?: string;
               }>;
               "groups": Array<{
+                "active_stage"?: ({
+                  "duration": string;
+                  "group": string;
+                  "name"?: string;
+                  "stage_index": number;
+                  "started_at": string;
+                  "target_vusers": number;
+                }) | null;
                 "assignment"?: ({
                   "load_zone_weights"?: Record<string, number>;
                   "mode"?: string;
@@ -62353,6 +62805,7 @@ export interface operations {
                 "latency"?: ({
                   "targets": Array<Record<string, unknown>>;
                 }) | null;
+                "load_levels"?: Array<Record<string, unknown>>;
                 "network_profiles"?: Record<string, (Record<string, unknown>) | null>;
                 "p50_ms": number;
                 "p90_ms": number;
@@ -62625,6 +63078,14 @@ export interface operations {
                 "latency"?: ({
                   "targets": Array<Record<string, unknown>>;
                 }) | null;
+                "load_levels"?: Array<{
+                  "duration": string;
+                  "group": string;
+                  "name"?: string;
+                  "stage_index": number;
+                  "started_at": string;
+                  "target_vusers": number;
+                }>;
                 "network_profiles"?: Record<string, ({
                   "avg_connect_ms"?: number;
                   "avg_dns_ms"?: number;
@@ -63385,6 +63846,11 @@ export interface operations {
                 "vusers": number;
               }>;
               "goal_config"?: ({
+                "early_stop"?: ({
+                  "breach_window": string;
+                  "enabled": boolean;
+                  "error_rate_pct": number;
+                }) | null;
                 "max_avg_server_processing_ms"?: (number) | null;
                 "max_avg_transfer_ms"?: (number) | null;
                 "max_cls"?: (number) | null;
@@ -63411,6 +63877,9 @@ export interface operations {
                   "threshold": number;
                   "transaction": string;
                 }>;
+                "workload_shape_config"?: ({
+                  "stepped_ramp"?: (Record<string, unknown>) | null;
+                }) | null;
               }) | null;
               "goal_targets"?: Record<string, {
                 "group": string;
@@ -63418,6 +63887,14 @@ export interface operations {
                 "updated_at"?: string;
               }>;
               "groups": Array<{
+                "active_stage"?: ({
+                  "duration": string;
+                  "group": string;
+                  "name"?: string;
+                  "stage_index": number;
+                  "started_at": string;
+                  "target_vusers": number;
+                }) | null;
                 "assignment"?: ({
                   "load_zone_weights"?: Record<string, number>;
                   "mode"?: string;
@@ -63553,6 +64030,7 @@ export interface operations {
                 "latency"?: ({
                   "targets": Array<Record<string, unknown>>;
                 }) | null;
+                "load_levels"?: Array<Record<string, unknown>>;
                 "network_profiles"?: Record<string, (Record<string, unknown>) | null>;
                 "p50_ms": number;
                 "p90_ms": number;
@@ -63825,6 +64303,14 @@ export interface operations {
                 "latency"?: ({
                   "targets": Array<Record<string, unknown>>;
                 }) | null;
+                "load_levels"?: Array<{
+                  "duration": string;
+                  "group": string;
+                  "name"?: string;
+                  "stage_index": number;
+                  "started_at": string;
+                  "target_vusers": number;
+                }>;
                 "network_profiles"?: Record<string, ({
                   "avg_connect_ms"?: number;
                   "avg_dns_ms"?: number;
@@ -64585,6 +65071,11 @@ export interface operations {
                 "vusers": number;
               }>;
               "goal_config"?: ({
+                "early_stop"?: ({
+                  "breach_window": string;
+                  "enabled": boolean;
+                  "error_rate_pct": number;
+                }) | null;
                 "max_avg_server_processing_ms"?: (number) | null;
                 "max_avg_transfer_ms"?: (number) | null;
                 "max_cls"?: (number) | null;
@@ -64611,6 +65102,9 @@ export interface operations {
                   "threshold": number;
                   "transaction": string;
                 }>;
+                "workload_shape_config"?: ({
+                  "stepped_ramp"?: (Record<string, unknown>) | null;
+                }) | null;
               }) | null;
               "goal_targets"?: Record<string, {
                 "group": string;
@@ -64618,6 +65112,14 @@ export interface operations {
                 "updated_at"?: string;
               }>;
               "groups": Array<{
+                "active_stage"?: ({
+                  "duration": string;
+                  "group": string;
+                  "name"?: string;
+                  "stage_index": number;
+                  "started_at": string;
+                  "target_vusers": number;
+                }) | null;
                 "assignment"?: ({
                   "load_zone_weights"?: Record<string, number>;
                   "mode"?: string;
@@ -64753,6 +65255,7 @@ export interface operations {
                 "latency"?: ({
                   "targets": Array<Record<string, unknown>>;
                 }) | null;
+                "load_levels"?: Array<Record<string, unknown>>;
                 "network_profiles"?: Record<string, (Record<string, unknown>) | null>;
                 "p50_ms": number;
                 "p90_ms": number;
@@ -65025,6 +65528,14 @@ export interface operations {
                 "latency"?: ({
                   "targets": Array<Record<string, unknown>>;
                 }) | null;
+                "load_levels"?: Array<{
+                  "duration": string;
+                  "group": string;
+                  "name"?: string;
+                  "stage_index": number;
+                  "started_at": string;
+                  "target_vusers": number;
+                }>;
                 "network_profiles"?: Record<string, ({
                   "avg_connect_ms"?: number;
                   "avg_dns_ms"?: number;
@@ -71803,6 +72314,11 @@ export interface operations {
               }>;
               "duration": string;
               "goal_config"?: ({
+                "early_stop"?: ({
+                  "breach_window": string;
+                  "enabled": boolean;
+                  "error_rate_pct": number;
+                }) | null;
                 "max_avg_server_processing_ms"?: (number) | null;
                 "max_avg_transfer_ms"?: (number) | null;
                 "max_cls"?: (number) | null;
@@ -71829,6 +72345,9 @@ export interface operations {
                   "threshold": number;
                   "transaction": string;
                 }>;
+                "workload_shape_config"?: ({
+                  "stepped_ramp"?: (Record<string, unknown>) | null;
+                }) | null;
               }) | null;
               "groups": Array<{
                 "assignment"?: ({
@@ -81483,6 +82002,11 @@ export interface operations {
               "vusers": number;
             }>;
             "goal_config"?: ({
+              "early_stop"?: ({
+                "breach_window": string;
+                "enabled": boolean;
+                "error_rate_pct": number;
+              }) | null;
               "max_avg_server_processing_ms"?: (number) | null;
               "max_avg_transfer_ms"?: (number) | null;
               "max_cls"?: (number) | null;
@@ -81509,6 +82033,13 @@ export interface operations {
                 "threshold": number;
                 "transaction": string;
               }>;
+              "workload_shape_config"?: ({
+                "stepped_ramp"?: ({
+                  "groups"?: Record<string, Record<string, unknown>>;
+                  "scenario"?: (Record<string, unknown>) | null;
+                  "scope": string;
+                }) | null;
+              }) | null;
             }) | null;
             "goal_targets"?: Record<string, {
               "group": string;
@@ -81516,6 +82047,14 @@ export interface operations {
               "updated_at"?: string;
             }>;
             "groups": Array<{
+              "active_stage"?: ({
+                "duration": string;
+                "group": string;
+                "name"?: string;
+                "stage_index": number;
+                "started_at": string;
+                "target_vusers": number;
+              }) | null;
               "assignment"?: ({
                 "load_zone_weights"?: Record<string, number>;
                 "mode"?: string;
@@ -81880,6 +82419,14 @@ export interface operations {
               "latency"?: ({
                 "targets": Array<Record<string, unknown>>;
               }) | null;
+              "load_levels"?: Array<{
+                "duration": string;
+                "group": string;
+                "name"?: string;
+                "stage_index": number;
+                "started_at": string;
+                "target_vusers": number;
+              }>;
               "network_profiles"?: Record<string, ({
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
@@ -82395,6 +82942,14 @@ export interface operations {
                   "ttfb_ms"?: number;
                 }>;
               }) | null;
+              "load_levels"?: Array<{
+                "duration": string;
+                "group": string;
+                "name"?: string;
+                "stage_index": number;
+                "started_at": string;
+                "target_vusers": number;
+              }>;
               "network_profiles"?: Record<string, ({
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
@@ -86730,6 +87285,11 @@ export interface operations {
           }>;
           "duration": string;
           "goal_config"?: ({
+            "early_stop"?: ({
+              "breach_window"?: string;
+              "enabled"?: boolean;
+              "error_rate_pct"?: number;
+            }) | null;
             "max_avg_server_processing_ms"?: (number) | null;
             "max_avg_transfer_ms"?: (number) | null;
             "max_cls"?: (number) | null;
@@ -86756,6 +87316,13 @@ export interface operations {
               "threshold"?: number;
               "transaction"?: string;
             }>;
+            "workload_shape_config"?: ({
+              "stepped_ramp"?: ({
+                "groups"?: Record<string, Record<string, unknown>>;
+                "scenario"?: (Record<string, unknown>) | null;
+                "scope"?: string;
+              }) | null;
+            }) | null;
           }) | null;
           "groups": Array<{
             "assignment"?: ({
@@ -87289,6 +87856,11 @@ export interface operations {
             }>;
             "duration": string;
             "goal_config"?: ({
+              "early_stop"?: ({
+                "breach_window": string;
+                "enabled": boolean;
+                "error_rate_pct": number;
+              }) | null;
               "max_avg_server_processing_ms"?: (number) | null;
               "max_avg_transfer_ms"?: (number) | null;
               "max_cls"?: (number) | null;
@@ -87315,6 +87887,13 @@ export interface operations {
                 "threshold": number;
                 "transaction": string;
               }>;
+              "workload_shape_config"?: ({
+                "stepped_ramp"?: ({
+                  "groups"?: Record<string, Record<string, unknown>>;
+                  "scenario"?: (Record<string, unknown>) | null;
+                  "scope": string;
+                }) | null;
+              }) | null;
             }) | null;
             "id": string;
             "last_run_at"?: (string) | null;
@@ -93585,6 +94164,11 @@ export interface operations {
           }>;
           "duration"?: string;
           "goal_config"?: ({
+            "early_stop"?: ({
+              "breach_window"?: string;
+              "enabled"?: boolean;
+              "error_rate_pct"?: number;
+            }) | null;
             "max_avg_server_processing_ms"?: (number) | null;
             "max_avg_transfer_ms"?: (number) | null;
             "max_cls"?: (number) | null;
@@ -93611,6 +94195,13 @@ export interface operations {
               "threshold"?: number;
               "transaction"?: string;
             }>;
+            "workload_shape_config"?: ({
+              "stepped_ramp"?: ({
+                "groups"?: Record<string, Record<string, unknown>>;
+                "scenario"?: (Record<string, unknown>) | null;
+                "scope"?: string;
+              }) | null;
+            }) | null;
           }) | null;
           "groups"?: Array<{
             "assignment"?: ({

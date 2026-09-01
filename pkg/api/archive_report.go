@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/engine"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
@@ -46,6 +47,7 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 		BrowserByEngine:     make(map[string]*BrowserEngineLiveMetrics),
 		BrowserByPlatform:   make(map[string]*BrowserPlatformLiveMetrics),
 		BrowserByDevice:     make(map[string]*BrowserDeviceLiveMetrics),
+		LoadLevelSummaries:  buildRunArchiveLoadLevelSummaries(summaries),
 	}
 	faultTimelineBuckets := make(map[time.Time]*RunArchiveSOAPFaultTimelineBucket)
 	payloadTimelineBuckets := make(map[time.Time]*RunArchiveSOAPPayloadTimelineBucket)
@@ -470,6 +472,142 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 	report.ArtifactInventory = buildRunArchiveArtifactInventory(record, manifest)
 
 	return report, nil
+}
+
+type archiveLoadLevelAccumulator struct {
+	level       ActiveLoadLevel
+	duration    float64
+	requests    int64
+	errors      int64
+	tps         float64
+	digest      *engine.TDigest
+	digestValid bool
+	sampleCount int
+}
+
+func buildRunArchiveLoadLevelSummaries(summaries []IntervalSummaryRecord) []RunArchiveLoadLevelSummary {
+	accumulators := make(map[string]*archiveLoadLevelAccumulator)
+	for index, summary := range summaries {
+		seconds := archiveSummaryIntervalSeconds(summaries, index)
+		for _, level := range summary.LoadLevels {
+			key := fmt.Sprintf("%s\x00%d\x00%d", level.Group, level.StageIndex, level.TargetVUsers)
+			accumulator := accumulators[key]
+			if accumulator == nil {
+				accumulator = &archiveLoadLevelAccumulator{level: level, digestValid: true}
+				accumulators[key] = accumulator
+			}
+			var requests, errors int64
+			var throughput float64
+			if level.Group == "__total__" {
+				requests, errors = summary.TotalTx, summary.TotalErrors
+				throughput = summary.TPS
+			} else if metrics := summary.Groups[level.Group]; metrics != nil {
+				requests, errors = metrics.Transactions, metrics.Errors
+				throughput = metrics.TPS
+			} else {
+				continue
+			}
+			attempts := requests + errors
+			if attempts > 0 {
+				snapshot := summary.LoadLevelDurationDigests[level.Group]
+				if snapshot == nil || snapshot.Count != attempts {
+					accumulator.digestValid = false
+				} else {
+					if accumulator.digest == nil {
+						accumulator.digest = engine.NewTDigest(snapshot.Compression)
+					}
+					accumulator.digest.Merge(engine.NewTDigestFromSnapshot(*snapshot))
+				}
+			}
+			accumulator.duration += seconds
+			accumulator.requests += requests
+			accumulator.errors += errors
+			if seconds > 0 {
+				accumulator.tps += throughput * seconds
+			}
+			accumulator.sampleCount++
+		}
+	}
+	result := make([]RunArchiveLoadLevelSummary, 0, len(accumulators))
+	for _, accumulator := range accumulators {
+		weight := accumulator.duration
+		if weight <= 0 {
+			weight = float64(accumulator.sampleCount)
+		}
+		errorPct := 0.0
+		attempts := accumulator.requests + accumulator.errors
+		if attempts > 0 {
+			errorPct = float64(accumulator.errors) * 100 / float64(attempts)
+		}
+		configured, _ := time.ParseDuration(accumulator.level.Duration)
+		observedDuration := accumulator.duration
+		if configured > 0 && observedDuration > configured.Seconds() {
+			observedDuration = configured.Seconds()
+		}
+		var p50, p90, p95, p99 float64
+		if accumulator.digestValid && accumulator.digest != nil && accumulator.digest.Count() == attempts {
+			p50 = accumulator.digest.Quantile(0.50) / float64(time.Millisecond)
+			p90 = accumulator.digest.Quantile(0.90) / float64(time.Millisecond)
+			p95 = accumulator.digest.Quantile(0.95) / float64(time.Millisecond)
+			p99 = accumulator.digest.Quantile(0.99) / float64(time.Millisecond)
+		}
+		result = append(result, RunArchiveLoadLevelSummary{
+			Group: accumulator.level.Group, StageIndex: accumulator.level.StageIndex, Name: accumulator.level.Name,
+			TargetVUsers: accumulator.level.TargetVUsers, ConfiguredDuration: accumulator.level.Duration,
+			ObservedDurationSeconds: observedDuration, Requests: accumulator.requests, Errors: accumulator.errors,
+			ErrorRatePct: errorPct, Throughput: accumulator.tps / weight, P50Ms: p50,
+			P90Ms: p90, P95Ms: p95, P99Ms: p99,
+			Partial: configured > 0 && observedDuration+0.001 < configured.Seconds(),
+		})
+	}
+	sort.SliceStable(result, func(i, j int) bool {
+		if result[i].Group != result[j].Group {
+			return result[i].Group < result[j].Group
+		}
+		return result[i].StageIndex < result[j].StageIndex
+	})
+	return result
+}
+
+func archiveSummaryIntervalSeconds(summaries []IntervalSummaryRecord, index int) float64 {
+	if index >= 0 && index < len(summaries) && summaries[index].SampleWindowSeconds > 0 {
+		window := summaries[index].SampleWindowSeconds
+		current := summaries[index].ActiveRuntimeSeconds
+		if current == nil {
+			return window
+		}
+		advance := *current
+		if index > 0 && summaries[index-1].ActiveRuntimeSeconds != nil {
+			advance = *current - *summaries[index-1].ActiveRuntimeSeconds
+		}
+		if advance <= 0 {
+			return 0
+		}
+		if advance < window {
+			return advance
+		}
+		return window
+	}
+	if len(summaries) < 2 {
+		return 0
+	}
+	if index+1 < len(summaries) {
+		if current, next := summaries[index].ActiveRuntimeSeconds, summaries[index+1].ActiveRuntimeSeconds; current != nil && next != nil && *next >= *current {
+			return *next - *current
+		}
+		if seconds := summaries[index+1].Timestamp.Sub(summaries[index].Timestamp).Seconds(); seconds > 0 {
+			return seconds
+		}
+	}
+	if index > 0 {
+		if previous, current := summaries[index-1].ActiveRuntimeSeconds, summaries[index].ActiveRuntimeSeconds; previous != nil && current != nil && *current >= *previous {
+			return *current - *previous
+		}
+		if seconds := summaries[index].Timestamp.Sub(summaries[index-1].Timestamp).Seconds(); seconds > 0 {
+			return seconds
+		}
+	}
+	return 0
 }
 
 func buildRunArchiveWeb2MigrationEvidence(transactions []TransactionEvent) *RunArchiveWeb2MigrationEvidence {

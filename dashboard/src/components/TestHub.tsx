@@ -17,7 +17,8 @@ import { readImportedJavaVMParameters } from './scriptEditorImportModel'
 import GroupPlacementEditor from './GroupPlacementEditor'
 import { overrideFromRuntimeDraft } from './runtimeSettingsModel'
 import { applyEffectiveRuntimeSettingsToGroups } from './runtimeSettingsApply'
-import { adaptScenarioShapeDefaults, buildScenarioModelPreview, buildScenarioShapeCatalog, buildShapeStages, formatModelTimeLabel, getScenarioShapePreset, ScenarioModelPreview, ScenarioSeed, ScenarioShapePreset, ScenarioSourceMode, ScenarioWizardStep, shapeStageStrategyFor, validateStageTimeline } from './scenarioWizardUtils'
+import { adaptScenarioShapeDefaults, buildScenarioModelPreview, buildScenarioShapeCatalog, buildShapeStages, buildSteppedRampPlan, formatModelTimeLabel, getScenarioShapePreset, MAX_STEPPED_RAMP_STEPS, ScenarioModelPreview, ScenarioSeed, ScenarioShapePreset, ScenarioSourceMode, ScenarioWizardStep, shapeStageStrategyFor, validateStageTimeline } from './scenarioWizardUtils'
+import type { SteppedRampConfig, SteppedRampDefinition } from '../types/goals'
 import { BaselineGroupOption, baselineGroupOptions, formatGoalSizingSummary, goalSizedGoalFields, goalSizedGroups, littlesLawVUsers } from './goalSizingUtils'
 import DurationField from './DurationField'
 import CreateTestGoalSettings from './CreateTestGoalSettings'
@@ -229,6 +230,26 @@ function mergeCloneWithScriptSelections(current: ScenarioFormState, cloned: Scen
 }
 
 type LoadStageType = 'ramp_up' | 'hold' | 'ramp_down'
+
+const DEFAULT_STEPPED_RAMP_DEFINITION: SteppedRampDefinition = {
+  start_vusers: 0,
+  end_vusers: 60,
+  increment_by: 'step_count',
+  step_count: 6,
+  vusers_per_step: 10,
+}
+
+function cloneSteppedRampDefinition(value?: SteppedRampDefinition): SteppedRampDefinition {
+  return { ...DEFAULT_STEPPED_RAMP_DEFINITION, ...(value || {}) }
+}
+
+function steppedRampGroupKey(_group: ScenarioFormGroup, index: number) {
+  return `group_${index}`
+}
+
+function steppedRampDefinitionForGroup(config: SteppedRampConfig | undefined, group: ScenarioFormGroup, index: number) {
+  return config?.groups?.[steppedRampGroupKey(group, index)] || config?.groups?.[group.name.trim()]
+}
 
 function goalConfigFromForm(form: ScenarioFormState): GoalConfig {
   const goal: GoalConfig = { ...(form.goal_config || {}) }
@@ -1153,6 +1174,46 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
   const addScenarioGroupBlockedReason = scenarioGroupNameError || 'Add a script to every existing group before adding another group.'
   const activeGroupIndex = Math.min(stageGroupIndex, formGroups.length - 1)
   const activeStageGroup = formGroups[activeGroupIndex] || formGroups[0]
+	const isSteppedRamp = selectedShapeId === 'stepped-ramp'
+	const steppedRampConfig: SteppedRampConfig = useMemo(
+		() => form.goal_config?.workload_shape_config?.stepped_ramp || {
+			scope: 'scenario',
+			scenario: cloneSteppedRampDefinition(),
+		},
+		[form.goal_config?.workload_shape_config?.stepped_ramp],
+	)
+	const activeSteppedRampDefinition = steppedRampConfig.scope === 'group'
+		? cloneSteppedRampDefinition(steppedRampDefinitionForGroup(steppedRampConfig, activeStageGroup, activeGroupIndex))
+		: cloneSteppedRampDefinition(steppedRampConfig.scenario)
+	const activeSteppedRampPlan = buildSteppedRampPlan({
+		durationSeconds: parseDurationToSeconds(form.duration),
+		startVusers: activeSteppedRampDefinition.start_vusers,
+		endVusers: activeSteppedRampDefinition.end_vusers,
+		incrementBy: activeSteppedRampDefinition.increment_by,
+		stepCount: activeSteppedRampDefinition.step_count,
+		vusersPerStep: activeSteppedRampDefinition.vusers_per_step,
+	})
+	const steppedRampBlockingMessage = useMemo(() => {
+		if (!isSteppedRamp) return ''
+		const definitions = steppedRampConfig.scope === 'group'
+			? formGroups.map((group, index) => ({
+				label: group.name.trim() || `Group ${index + 1}`,
+				definition: cloneSteppedRampDefinition(steppedRampDefinitionForGroup(steppedRampConfig, group, index)),
+			}))
+			: [{ label: 'Scenario', definition: cloneSteppedRampDefinition(steppedRampConfig.scenario) }]
+		for (const { label, definition } of definitions) {
+			const plan = buildSteppedRampPlan({
+				durationSeconds: parseDurationToSeconds(form.duration),
+				startVusers: definition.start_vusers,
+				endVusers: definition.end_vusers,
+				incrementBy: definition.increment_by,
+				stepCount: definition.step_count,
+				vusersPerStep: definition.vusers_per_step,
+			})
+			if (plan.error) return `${label}: ${plan.error}`
+		}
+		return ''
+	}, [form.duration, formGroups, isSteppedRamp, steppedRampConfig])
   const activeProfileMapping = form.traffic_profile?.mappings.find(mapping => mapping.group_name === (activeStageGroup?.name || `Group ${activeGroupIndex + 1}`))
   const activeStageTimeline = useMemo(
     () => validateStageTimeline(form.duration, activeStageGroup?.stages || []),
@@ -1851,6 +1912,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
         goalTps: form.goal_target_average_tps,
       })
       seedFormFromScenario(seed)
+			if (shapeId === 'stepped-ramp') updateSteppedRamp(undefined, 'scenario')
     }
     setStageGroupIndex(0)
     setRunSettingsTab(preset?.recommendedRunTab ?? 'scenario')
@@ -1878,6 +1940,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
       goalTps: form.goal_target_average_tps,
     })
     seedFormFromScenario(seed)
+		if (template.shape_id === 'stepped-ramp') updateSteppedRamp(undefined, 'scenario')
   }
 
   const openGoalSizing = async () => {
@@ -2094,6 +2157,65 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
     setLoadModelValidation(null)
   }
 
+	const updateSteppedRamp = (definitionPatch?: Partial<SteppedRampDefinition>, scope?: 'scenario' | 'group', durationOverride?: string) => {
+		setForm(previous => {
+			const currentConfig = previous.goal_config?.workload_shape_config?.stepped_ramp
+			const nextScope = scope || currentConfig?.scope || 'scenario'
+			const scenarioDefinition = cloneSteppedRampDefinition(currentConfig?.scenario)
+			const groupDefinitions: Record<string, SteppedRampDefinition> = {}
+			previous.groups.forEach((group, index) => {
+				const key = steppedRampGroupKey(group, index)
+				groupDefinitions[key] = cloneSteppedRampDefinition(steppedRampDefinitionForGroup(currentConfig, group, index) || scenarioDefinition)
+			})
+			if (definitionPatch) {
+				if (nextScope === 'scenario') Object.assign(scenarioDefinition, definitionPatch)
+				else Object.assign(groupDefinitions[steppedRampGroupKey(previous.groups[activeGroupIndex], activeGroupIndex)], definitionPatch)
+			}
+			const nextConfig: SteppedRampConfig = {
+				scope: nextScope,
+				scenario: scenarioDefinition,
+				...(nextScope === 'group' ? { groups: groupDefinitions } : {}),
+			}
+			const nextDuration = durationOverride ?? previous.duration
+			const durationSeconds = parseDurationToSeconds(nextDuration)
+			const nextGroups = previous.groups.map((group, index) => {
+				const definition = nextScope === 'group'
+					? groupDefinitions[steppedRampGroupKey(group, index)]
+					: scenarioDefinition
+				const plan = buildSteppedRampPlan({
+					durationSeconds,
+					startVusers: definition.start_vusers,
+					endVusers: definition.end_vusers,
+					incrementBy: definition.increment_by,
+					stepCount: definition.step_count,
+					vusersPerStep: definition.vusers_per_step,
+				})
+				if (plan.error) return group
+				return { ...group, stages: plan.stages, vusers: definition.end_vusers, ramp_up: '', ramp_down: '' }
+			})
+			const goalConfig: GoalConfig = {
+				...(previous.goal_config || {}),
+				early_stop: previous.goal_config?.early_stop || { enabled: false, error_rate_pct: 5, breach_window: '1m' },
+				workload_shape_config: { ...(previous.goal_config?.workload_shape_config || {}), stepped_ramp: nextConfig },
+			}
+			return { ...previous, duration: nextDuration, scenario_mode: 'vuser_driven', groups: nextGroups, goal_config: goalConfig }
+		})
+		setLoadModelValidation(null)
+		setLoadModelValidationError('')
+	}
+
+	const updateSteppedRampEarlyStop = (patch: Partial<NonNullable<GoalConfig['early_stop']>>) => {
+		setForm(previous => ({
+			...previous,
+			goal_config: {
+				...(previous.goal_config || {}),
+				early_stop: { enabled: false, error_rate_pct: 5, breach_window: '1m', ...(previous.goal_config?.early_stop || {}), ...patch },
+				workload_shape_config: previous.goal_config?.workload_shape_config,
+			},
+		}))
+		setLoadModelValidation(null)
+	}
+
   const updateGroupRuntime = (index: number, next: ScenarioRuntimeSettingsDraft | undefined) => {
     setForm(prev => ({
       ...prev,
@@ -2154,6 +2276,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
       const nextGroups = [...prev.groups, emptyScenarioGroup('', prev.groups.length)]
       return { ...prev, groups: nextGroups }
     })
+		if (isSteppedRamp) updateSteppedRamp()
     setStageGroupIndex(form.groups.length)
     setLoadModelValidation(null)
   }
@@ -2178,6 +2301,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
       ]
       return { ...prev, groups: ensureScenarioGroups(nextGroups) }
     })
+		if (isSteppedRamp) updateSteppedRamp()
     setStageGroupIndex(form.groups.length)
     setLoadModelValidation(null)
   }
@@ -2227,7 +2351,28 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
             ? { ...group, name: `Group ${nextIndex + 1}` }
             : group
         })
-      return { ...prev, groups: ensureScenarioGroups(nextGroups) }
+			const ensuredGroups = ensureScenarioGroups(nextGroups)
+			const stepped = prev.goal_config?.workload_shape_config?.stepped_ramp
+			if (stepped?.scope !== 'group') return { ...prev, groups: ensuredGroups }
+			const definitions: Record<string, SteppedRampDefinition> = {}
+			ensuredGroups.forEach((group, nextIndex) => {
+				const previousIndex = nextIndex >= index ? nextIndex + 1 : nextIndex
+				const previousGroup = prev.groups[previousIndex]
+				definitions[steppedRampGroupKey(group, nextIndex)] = cloneSteppedRampDefinition(
+					previousGroup ? steppedRampDefinitionForGroup(stepped, previousGroup, previousIndex) : stepped.scenario,
+				)
+			})
+			return {
+				...prev,
+				groups: ensuredGroups,
+				goal_config: {
+					...(prev.goal_config || {}),
+					workload_shape_config: {
+						...(prev.goal_config?.workload_shape_config || {}),
+						stepped_ramp: { ...stepped, groups: definitions },
+					},
+				},
+			}
     })
     setScriptSelectionTargetIndex(current => {
       if (current === null) return null
@@ -2345,6 +2490,11 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
       setLoadModelValidationError(blockingStageTimelineMessage)
       return
     }
+		if (steppedRampBlockingMessage) {
+			setLoadModelValidationError(steppedRampBlockingMessage)
+			setWizardStep('run')
+			return
+		}
     if (observerEnvelopeError) {
       setLoadModelValidationError(observerEnvelopeError)
       return
@@ -2398,6 +2548,11 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
       setError(blockingStageTimelineMessage)
       return null
     }
+		if (steppedRampBlockingMessage) {
+			setError(steppedRampBlockingMessage)
+			setWizardStep('run')
+			return null
+		}
     if (observerEnvelopeError) {
       setError(observerEnvelopeError)
       return null
@@ -2638,7 +2793,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
     start: Boolean(scenarioStartChoice),
     source: sourceStepComplete,
     scripts: Boolean(form.name.trim() && formGroups.length > 0 && formGroups.every(group => group.script_id) && !scenarioGroupNameError),
-    run: Boolean(isValidDurationInput(form.duration) && !blockingStageTimelineMessage),
+    run: Boolean(isValidDurationInput(form.duration) && !blockingStageTimelineMessage && !steppedRampBlockingMessage),
     data: true,
     review: Boolean(requiredDraftReady && !blockingStageTimelineMessage),
   }
@@ -3409,7 +3564,75 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
             aria-labelledby={`scenario-run-settings-${runSettingsTab}-tab`}
           >
             {runSettingsTab === 'scenario' && (
-              <>
+				isSteppedRamp ? (
+					<div className="stepped-ramp-worksheet">
+						<div className="stepped-ramp-heading">
+							<span>Guided worksheet</span>
+							<h3>Stepped Ramp Setup</h3>
+							<p>Define equal-duration load levels to compare throughput, latency, and errors as demand increases.</p>
+						</div>
+						<section className="stepped-ramp-section" aria-labelledby="stepped-range-title">
+							<div className="stepped-ramp-number">1</div>
+							<div className="stepped-ramp-section-body">
+								<h4 id="stepped-range-title">Range &amp; duration</h4>
+								<p>Set the total test duration and the initial and final load levels.</p>
+								<div className="stepped-ramp-fields three">
+									<DurationField
+										className="scenario-field"
+										label="Duration"
+										value={form.duration}
+										required
+										showPresets
+										onChange={value => updateSteppedRamp(undefined, undefined, value)}
+									/>
+									<label className="scenario-field"><span>Starting load level</span><div className="stepped-ramp-unit-input"><input className="settings-input" type="number" min={0} value={activeSteppedRampDefinition.start_vusers} onChange={event => updateSteppedRamp({ start_vusers: Math.max(0, Number(event.target.value) || 0) })} /><span>VUsers</span></div></label>
+									<label className="scenario-field"><span>Ending load level</span><div className="stepped-ramp-unit-input"><input className="settings-input" type="number" min={1} value={activeSteppedRampDefinition.end_vusers} onChange={event => updateSteppedRamp({ end_vusers: Math.max(0, Number(event.target.value) || 0) })} /><span>VUsers</span></div></label>
+								</div>
+							</div>
+						</section>
+						<section className="stepped-ramp-section" aria-labelledby="stepped-increments-title">
+							<div className="stepped-ramp-number">2</div>
+							<div className="stepped-ramp-section-body">
+								<h4 id="stepped-increments-title">Create equal steps</h4>
+								<p>Choose how to define the load increase. The final increment may be smaller when the range is uneven.</p>
+								<div className="stepped-ramp-choice" role="radiogroup" aria-label="Define ramp increments by">
+									<button type="button" role="radio" aria-checked={activeSteppedRampDefinition.increment_by === 'step_count'} className={activeSteppedRampDefinition.increment_by === 'step_count' ? 'active' : ''} onClick={() => updateSteppedRamp({ increment_by: 'step_count' })}>Choose number of steps</button>
+									<button type="button" role="radio" aria-checked={activeSteppedRampDefinition.increment_by === 'vusers_per_step'} className={activeSteppedRampDefinition.increment_by === 'vusers_per_step' ? 'active' : ''} onClick={() => updateSteppedRamp({ increment_by: 'vusers_per_step' })}>Choose VUsers per step</button>
+								</div>
+								<label className="scenario-field stepped-ramp-primary-input">
+									<span>{activeSteppedRampDefinition.increment_by === 'step_count' ? 'Number of steps' : 'VUsers per step'}</span>
+									<input className="settings-input" type="number" min={1} max={activeSteppedRampDefinition.increment_by === 'step_count' ? Math.min(MAX_STEPPED_RAMP_STEPS, Math.max(1, activeSteppedRampDefinition.end_vusers - activeSteppedRampDefinition.start_vusers)) : undefined} value={activeSteppedRampDefinition.increment_by === 'step_count' ? activeSteppedRampDefinition.step_count || 1 : activeSteppedRampDefinition.vusers_per_step || 1} onChange={event => updateSteppedRamp(activeSteppedRampDefinition.increment_by === 'step_count' ? { step_count: Math.max(1, Number(event.target.value) || 1) } : { vusers_per_step: Math.max(1, Number(event.target.value) || 1) })} />
+								</label>
+								{activeSteppedRampPlan.error ? <div className="settings-error-inline">{activeSteppedRampPlan.error}</div> : (
+									<div className="stepped-ramp-equation" aria-live="polite">
+										<strong>{activeSteppedRampDefinition.start_vusers} → {activeSteppedRampDefinition.end_vusers} VUsers</strong>
+										<span>{activeSteppedRampPlan.stages.length} steps · +{activeSteppedRampPlan.increment} VUsers per step · {formatTimeCompact(activeSteppedRampPlan.intervalSeconds)} each</span>
+										{activeSteppedRampPlan.partialFinalStep && <em>Final step uses a smaller increment to land exactly on {activeSteppedRampDefinition.end_vusers} VUsers.</em>}
+									</div>
+								)}
+							</div>
+						</section>
+						<section className="stepped-ramp-section" aria-labelledby="stepped-protect-title">
+							<div className="stepped-ramp-number">3</div>
+							<div className="stepped-ramp-section-body">
+								<h4 id="stepped-protect-title">Apply &amp; protect</h4>
+								<p>Choose where this model applies and whether excessive errors should stop the run.</p>
+								<div className="stepped-ramp-scope" role="radiogroup" aria-label="Apply stepped ramp to">
+									<button type="button" role="radio" aria-checked={steppedRampConfig.scope === 'scenario'} className={steppedRampConfig.scope === 'scenario' ? 'active' : ''} onClick={() => updateSteppedRamp(undefined, 'scenario')}><strong>Entire scenario</strong><span>Apply the same ramp to every group</span></button>
+									<button type="button" role="radio" aria-checked={steppedRampConfig.scope === 'group'} className={steppedRampConfig.scope === 'group' ? 'active' : ''} onClick={() => updateSteppedRamp(undefined, 'group')}><strong>Configure each group</strong><span>Set a different ramp for each group</span></button>
+								</div>
+								{steppedRampConfig.scope === 'group' && formGroups.length > 1 && <div className="scenario-group-tabs" role="tablist" aria-label="Stepped ramp groups">{formGroups.map((group, index) => <button key={`${group.script_id}-${index}-ramp`} type="button" className={`scenario-group-tab ${activeGroupIndex === index ? 'active' : ''}`} role="tab" aria-selected={activeGroupIndex === index} onClick={() => setStageGroupIndex(index)}><strong>{group.name.trim() || `Group ${index + 1}`}</strong><span>{group.vusers} peak VUsers</span></button>)}</div>}
+								<div className="stepped-ramp-protection">
+									<label className="stepped-ramp-toggle"><input type="checkbox" checked={Boolean(form.goal_config?.early_stop?.enabled)} onChange={event => updateSteppedRampEarlyStop({ enabled: event.target.checked })} /><span><strong>Stop early on excessive errors</strong><small>Stop when the error rate remains at or above the threshold.</small></span></label>
+									<label className="scenario-field"><span>Error rate threshold</span><div className="stepped-ramp-unit-input"><input className="settings-input" type="number" min={0} max={100} step="0.1" disabled={!form.goal_config?.early_stop?.enabled} value={form.goal_config?.early_stop?.error_rate_pct ?? 5} onChange={event => updateSteppedRampEarlyStop({ error_rate_pct: Number(event.target.value) })} /><span>%</span></div></label>
+									<DurationField className="scenario-field" label="Sustained for" compact disabled={!form.goal_config?.early_stop?.enabled} value={form.goal_config?.early_stop?.breach_window || '1m'} onChange={value => updateSteppedRampEarlyStop({ breach_window: value })} />
+								</div>
+								<p className="scenario-assignment-copy secondary">If the test stops, the active load level and partial interval evidence are retained in results.</p>
+							</div>
+						</section>
+						<button type="button" className="btn btn-primary stepped-ramp-apply" disabled={Boolean(steppedRampBlockingMessage)} onClick={() => setWizardStep('data')}>Apply stepped ramp</button>
+					</div>
+				) : <>
           <div className="settings-grid scenario-core-grid">
             <DurationField
               className="scenario-field"
@@ -3654,7 +3877,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
             )}
             </div>
           </div>
-              </>
+				</>
             )}
             {runSettingsTab === 'runtime' && (
               <>
@@ -3964,7 +4187,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
             })}
           </div>
 
-          <div className={`scenario-builder-workspace ${showModelPreview ? 'with-preview' : ''}`}>
+          <div className={`scenario-builder-workspace ${showModelPreview ? 'with-preview' : ''} ${isSteppedRamp ? 'stepped-ramp-layout' : ''}`}>
             <div className="scenario-builder-main">
               {renderWizardStep()}
             </div>
@@ -3977,6 +4200,20 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
                   dataPoolLabel={dataPoolLabel}
                   validationStatus={validationLabel}
                 />
+				{isSteppedRamp && !activeSteppedRampPlan.error && (
+					<div className="stepped-ramp-stage-preview">
+						<div className="stepped-ramp-stage-preview-header"><strong>Load levels</strong><span>Live preview</span></div>
+						<table>
+							<thead><tr><th>Step</th><th>Time range</th><th>VUsers</th><th>Duration</th></tr></thead>
+							<tbody>{activeSteppedRampPlan.stages.map((stage, index) => {
+								const start = index * activeSteppedRampPlan.intervalSeconds
+								const end = start + activeSteppedRampPlan.intervalSeconds
+								return <tr key={`${stage.name}-${index}`}><td>{index + 1}</td><td>{formatModelTimeLabel(start)}–{formatModelTimeLabel(end)}</td><td>{stage.target_vusers}</td><td>{formatModelTimeLabel(activeSteppedRampPlan.intervalSeconds)}</td></tr>
+							})}</tbody>
+						</table>
+						<p>Metrics are tagged with each active load level for live and archived comparison.</p>
+					</div>
+				)}
               </aside>
             )}
           </div>
@@ -3984,6 +4221,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
           {renderSourceScenarioRunsPanel()}
 
           {blockingStageTimelineMessage && <div className="settings-error-inline">{blockingStageTimelineMessage}</div>}
+					{steppedRampBlockingMessage && <div className="settings-error-inline">{steppedRampBlockingMessage}</div>}
           {observerEnvelopeError && <div className="settings-error-inline">{observerEnvelopeError}</div>}
           {aggregateEnvelopeError && <div className="settings-error-inline">{aggregateEnvelopeError}</div>}
           {assignmentValidationError && <div className="settings-error-inline">{assignmentValidationError}</div>}
@@ -4024,9 +4262,9 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
               Next
             </button>
             {wizardStep === 'review' && onCreateTestFromScenario && (
-              <button className="btn btn-secondary" onClick={saveScenarioAndCreateTest} disabled={Boolean(blockingStageTimelineMessage || observerEnvelopeError || aggregateEnvelopeError || assignmentValidationError || scenarioGroupNameError)}>Save &amp; Create Test Run</button>
+              <button className="btn btn-secondary" onClick={saveScenarioAndCreateTest} disabled={Boolean(blockingStageTimelineMessage || steppedRampBlockingMessage || observerEnvelopeError || aggregateEnvelopeError || assignmentValidationError || scenarioGroupNameError)}>Save &amp; Create Test Run</button>
             )}
-            <button className="btn btn-primary" onClick={saveScenario} disabled={Boolean(blockingStageTimelineMessage || observerEnvelopeError || aggregateEnvelopeError || assignmentValidationError || scenarioGroupNameError)}>Save Scenario</button>
+            <button className="btn btn-primary" onClick={saveScenario} disabled={Boolean(blockingStageTimelineMessage || steppedRampBlockingMessage || observerEnvelopeError || aggregateEnvelopeError || assignmentValidationError || scenarioGroupNameError)}>Save Scenario</button>
           </div>
 
         </div>

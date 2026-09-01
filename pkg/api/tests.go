@@ -1092,6 +1092,7 @@ func cloneLiveMetrics(metrics *LiveMetrics) *LiveMetrics {
 	cloned.Resources = cloneSystemResources(metrics.Resources)
 	cloned.GeneratorResources = cloneGeneratorResourceSnapshots(metrics.GeneratorResources)
 	cloned.Latency = cloneNetworkLatency(metrics.Latency)
+	cloned.LoadLevels = append([]ActiveLoadLevel(nil), metrics.LoadLevels...)
 	cloned.ErrorEvidence = cloneLiveErrorEvidence(metrics.ErrorEvidence)
 	cloned.slaTelemetryPeaks = cloneSLATelemetryPeaks(metrics.slaTelemetryPeaks)
 	return &cloned

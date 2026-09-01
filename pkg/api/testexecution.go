@@ -3549,6 +3549,7 @@ func (tr *TestRunner) runStageSchedule(ctx context.Context, testID string, group
 			}
 		}
 	}
+	defer tr.clearActiveLoadStage(testID, groupName)
 	for index, stage := range stages {
 		if !tr.runtimeGroupAcceptsStages(testID, groupName) {
 			return
@@ -3569,6 +3570,7 @@ func (tr *TestRunner) runStageSchedule(ctx context.Context, testID string, group
 				slog.Warn("stage schedule scale failed", "test_id", testID, "group", groupName, "stage", index, "target_vusers", stage.TargetVUsers, "error", err)
 				return
 			}
+			tr.setActiveLoadStage(testID, groupName, index, stage)
 			if ramp == nil {
 				if !tr.waitTestActiveDuration(ctx, testID, duration) {
 					return
@@ -3601,11 +3603,50 @@ func (tr *TestRunner) runStageSchedule(ctx context.Context, testID string, group
 				slog.Warn("stage schedule hold scale failed", "test_id", testID, "group", groupName, "stage", index, "target_vusers", stage.TargetVUsers, "error", err)
 				return
 			}
+			tr.setActiveLoadStage(testID, groupName, index, stage)
 		default:
 			slog.Warn("stage schedule stopped on invalid stage type", "test_id", testID, "group", groupName, "stage", index, "type", stage.Type)
 			return
 		}
 		if !tr.waitTestActiveDuration(ctx, testID, duration) {
+			return
+		}
+	}
+}
+
+func (tr *TestRunner) setActiveLoadStage(testID, groupName string, index int, stage storage.LoadStage) {
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+	test := tr.tests[testID]
+	if test == nil {
+		return
+	}
+	for groupIndex := range test.Groups {
+		if test.Groups[groupIndex].Name != groupName {
+			continue
+		}
+		test.Groups[groupIndex].ActiveStage = &ActiveLoadLevel{
+			Group:        groupName,
+			StageIndex:   index,
+			Name:         stage.Name,
+			TargetVUsers: stage.TargetVUsers,
+			Duration:     stage.Duration,
+			StartedAt:    time.Now().UTC(),
+		}
+		return
+	}
+}
+
+func (tr *TestRunner) clearActiveLoadStage(testID, groupName string) {
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+	test := tr.tests[testID]
+	if test == nil {
+		return
+	}
+	for groupIndex := range test.Groups {
+		if test.Groups[groupIndex].Name == groupName {
+			test.Groups[groupIndex].ActiveStage = nil
 			return
 		}
 	}
@@ -4516,11 +4557,14 @@ func (tr *TestRunner) PauseTest(id string) error {
 		return fmt.Errorf("test changed from RUNNING to %s while pause was being applied", currentStatus)
 	}
 	pausedAt := time.Now().UTC()
+	previousEarlyStopBreachStartedAt := cloneTimePtr(test.earlyStopBreachStartedAt)
 	test.Status = "PAUSED"
 	test.PausedAt = &pausedAt
+	test.earlyStopBreachStartedAt = nil
 	if err := tr.saveManagedTestRecord(test); err != nil {
 		test.Status = "RUNNING"
 		test.PausedAt = nil
+		test.earlyStopBreachStartedAt = previousEarlyStopBreachStartedAt
 		tr.mu.Unlock()
 		if rollbackErr := tr.applyResume(test, multiEngine, backend); rollbackErr != nil {
 			controlErr := errors.Join(fmt.Errorf("persist paused test state: %w", err), fmt.Errorf("resume backend after persistence failure: %w", rollbackErr))
@@ -5302,6 +5346,26 @@ func (tr *TestRunner) requestStopIfRunning(test *ManagedTest, warningMessage str
 		return
 	}
 	if err := tr.StopTest(test.ID); err != nil {
+		slog.Warn(warningMessage, "test_id", test.ID, "error", err)
+	}
+}
+
+func (tr *TestRunner) requestStopIfRunningWithReason(test *ManagedTest, reason, warningMessage string) {
+	tr.mu.Lock()
+	if test.Status != "RUNNING" {
+		tr.mu.Unlock()
+		return
+	}
+	previousError := test.Error
+	test.Error = strings.TrimSpace(reason)
+	installedReason := test.Error
+	tr.mu.Unlock()
+	if err := tr.StopTest(test.ID); err != nil {
+		tr.mu.Lock()
+		if test.Status == "RUNNING" && test.Error == installedReason {
+			test.Error = previousError
+		}
+		tr.mu.Unlock()
 		slog.Warn(warningMessage, "test_id", test.ID, "error", err)
 	}
 }

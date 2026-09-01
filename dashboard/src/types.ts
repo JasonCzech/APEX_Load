@@ -14,7 +14,7 @@ import type {
   BrowserReplaySnapshot,
   ProtocolEvidence,
 } from './types/replay'
-import type { ClientMetrics } from './types/metrics'
+import type { ActiveLoadLevel, ClientMetrics } from './types/metrics'
 import type { ScenarioDataPoolBinding } from './types/dataPools'
 import type {
   RedactionRule,
@@ -279,7 +279,7 @@ export type {
   CorrelationRulesetApplyResponse,
   CorrelationRulesetListResponse,
 } from './types/correlationRulesets'
-export type { ClientMetrics } from './types/metrics'
+export type { ActiveLoadLevel, ClientMetrics } from './types/metrics'
 export type {
   ScenarioDataPoolBinding,
   SharedDataPool,
@@ -1223,6 +1223,7 @@ export interface IntervalSummaryRecord {
   browser?: BrowserLiveMetrics
   browser_by_device?: Record<string, BrowserDeviceLiveMetrics>
   latency?: NetworkLatency
+	load_levels?: ActiveLoadLevel[]
 }
 
 export interface IntervalTransactionMetrics {
@@ -1540,6 +1541,7 @@ export interface RunArchiveReport {
   evidence_tiers?: RunArchiveEvidenceTier[]
   error_patterns?: RunArchiveErrorPattern[]
   summary_timeline?: RunArchiveSummaryPoint[]
+	load_level_summaries?: RunArchiveLoadLevelSummary[]
   by_action: Record<string, RunArchiveActionStats>
   by_group?: Record<string, RunArchiveActionStats>
   by_soap_operation?: Record<string, RunArchiveActionStats>
@@ -1555,6 +1557,24 @@ export interface RunArchiveReport {
   browser_resources?: BrowserResourceTiming[]
   resource_peaks: RunArchiveResourcePeaks
   release_trend?: RunArchiveReleaseTrendSummary
+}
+
+export interface RunArchiveLoadLevelSummary {
+	group: string
+	stage_index: number
+	name: string
+	target_vusers: number
+	configured_duration: string
+	observed_duration_seconds: number
+	requests: number
+	errors: number
+	error_rate_pct: number
+	throughput: number
+	p50_ms: number
+	p90_ms: number
+	p95_ms: number
+	p99_ms: number
+	partial?: boolean
 }
 
 export interface RunArchiveNetworkPhaseSummary {
@@ -1917,6 +1937,7 @@ export interface LiveMetrics {
   resources?: SystemResources
   generator_resources?: Record<string, GeneratorResourceSnapshot>
   latency?: NetworkLatency
+	load_levels?: ActiveLoadLevel[]
 }
 
 export interface GeneratorResourceSnapshot {

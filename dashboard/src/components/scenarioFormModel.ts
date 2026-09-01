@@ -334,6 +334,10 @@ export function scenarioFormStateFromStoredScenario(
     goal_config: scenario.goal_config ? {
       ...scenario.goal_config,
       transaction_rules: scenario.goal_config.transaction_rules?.map(rule => ({ ...rule })),
+		early_stop: scenario.goal_config.early_stop ? { ...scenario.goal_config.early_stop } : undefined,
+		workload_shape_config: scenario.goal_config.workload_shape_config
+			? structuredClone(scenario.goal_config.workload_shape_config)
+			: undefined,
     } : undefined,
     traffic_profile: scenario.traffic_profile ? structuredClone(scenario.traffic_profile) : undefined,
     continue_on_error: runtimeSettings?.error_handling?.continue_on_error,

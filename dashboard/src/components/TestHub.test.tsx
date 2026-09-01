@@ -1282,16 +1282,16 @@ describe('TestHub', () => {
     await selectManualShapeByName('Stepped Ramp')
     await clickWizardStep('Run Settings')
 
-    const stageRows = container.querySelectorAll('.scenario-stage-row')
-    expect(stageRows.length).toBe(38)
-    const firstStageName = stageRows[0].querySelector('input') as HTMLInputElement
-    expect(firstStageName?.value).toBe('Step 1')
-    expect(container.textContent).toContain('Peak staged VUsers: 75')
-    // Stages active → the "Use Simple Ramp" escape hatch is offered.
-    expect(Array.from(container.querySelectorAll('button')).some(button => button.textContent?.includes('Use Simple Ramp'))).toBe(true)
+    const stageRows = container.querySelectorAll('.stepped-ramp-stage-preview tbody tr')
+    expect(stageRows.length).toBe(6)
+    expect(stageRows[0].textContent).toContain('10')
+    expect(stageRows[5].textContent).toContain('60')
+    expect(container.textContent).toContain('6 steps · +10 VUsers per step · 10m each')
+    expect(findControlByLabel<HTMLSelectElement>(container, 'Scenario Mode', 'select')).toBeUndefined()
+    expect(container.textContent).not.toContain('Goal oriented')
   })
 
-  it('regenerates stepped-ramp stages explicitly from current peak and duration without ordinary edit clobbering', async () => {
+  it('updates the guided stepped-ramp stages immediately and saves authoring intent', async () => {
     await act(async () => {
       root.render(<TestHub initialView="builder" testStatuses={{}} onSelectTest={vi.fn()} />)
     })
@@ -1310,32 +1310,27 @@ describe('TestHub', () => {
     await chooseLibraryScriptForGroup()
     await clickWizardStep('Run Settings')
 
-    const groupCard = container.querySelector('.scenario-script-group-card')
-    const vusersInput = groupCard ? Array.from(groupCard.querySelectorAll('input')).find(input => input.type === 'number') : undefined
+    const endingLoadInput = findControlByLabel<HTMLInputElement>(container, 'Ending load level', 'input')
     const durationField = getDurationFieldByLabel(container, 'Duration')
-    expect(vusersInput).toBeDefined()
+    expect(endingLoadInput).toBeDefined()
     expect(durationField).not.toBeNull()
-    if (!vusersInput || !durationField) return
+    if (!endingLoadInput || !durationField) return
 
     await act(async () => {
-      setInputValue(vusersInput, '20')
-      setInputValue(durationField.input, '1')
-      setSelectValue(durationField.select, 'h')
+      setInputValue(endingLoadInput, '30')
     })
 
-    await clickButton('Regenerate for Stepped Ramp')
-
-    let stageRows = container.querySelectorAll('.scenario-stage-row')
-    expect(stageRows.length).toBe(40)
-    expect(container.textContent).toContain('Peak staged VUsers: 20')
-    expect(container.textContent).toContain('current peak and scenario duration')
+    let stageRows = container.querySelectorAll('.stepped-ramp-stage-preview tbody tr')
+    expect(stageRows.length).toBe(6)
+    expect(stageRows[5].textContent).toContain('30')
 
     await act(async () => {
       setInputValue(durationField.input, '2')
       setSelectValue(durationField.select, 'h')
     })
-    stageRows = container.querySelectorAll('.scenario-stage-row')
-    expect(stageRows.length).toBe(40)
+    stageRows = container.querySelectorAll('.stepped-ramp-stage-preview tbody tr')
+    expect(stageRows.length).toBe(6)
+    expect(container.textContent).toContain('20m each')
 
     await clickButton('Save Scenario')
     await flushPromises()
@@ -1347,10 +1342,44 @@ describe('TestHub', () => {
       scenario_mode: 'vuser_driven',
       groups: [expect.objectContaining({
         script_id: 'script-1',
-        vusers: 20,
+        vusers: 30,
       })],
+		goal_config: expect.objectContaining({
+			early_stop: { enabled: false, error_rate_pct: 5, breach_window: '1m' },
+			workload_shape_config: { stepped_ramp: expect.objectContaining({ scope: 'scenario', scenario: expect.objectContaining({ start_vusers: 0, end_vusers: 30, step_count: 6 }) }) },
+		}),
     })
-    expect(payload.groups[0].stages).toHaveLength(40)
+    expect(payload.groups[0].stages).toHaveLength(6)
+    expect(payload.groups[0].stages.every((stage: { type: string; duration: string }) => stage.type === 'hold' && stage.duration === '20m')).toBe(true)
+  })
+
+  it('retains a group-level stepped-ramp definition when the group is renamed', async () => {
+    await act(async () => {
+      root.render(<TestHub initialView="builder" testStatuses={{}} onSelectTest={vi.fn()} />)
+    })
+    await flushPromises()
+
+    await clickButton('Build from Workload Shape')
+    await selectManualShapeByName('Stepped Ramp')
+    await clickWizardStep('Scripts')
+    await chooseLibraryScriptForGroup()
+    await clickWizardStep('Run Settings')
+    await clickButton('Configure each group')
+
+    const endingLoadInput = findControlByLabel<HTMLInputElement>(container, 'Ending load level', 'input')
+    expect(endingLoadInput).toBeDefined()
+    if (!endingLoadInput) return
+    await act(async () => setInputValue(endingLoadInput, '42'))
+
+    await clickWizardStep('Scripts')
+    const groupNameInput = findControlByLabel<HTMLInputElement>(container, 'Group Name', 'input')
+    expect(groupNameInput).toBeDefined()
+    if (!groupNameInput) return
+    await act(async () => setInputValue(groupNameInput, 'Renamed Checkout'))
+
+    await clickWizardStep('Run Settings')
+    expect(findControlByLabel<HTMLInputElement>(container, 'Ending load level', 'input')?.value).toBe('42')
+    expect(container.textContent).toContain('0 → 42 VUsers')
   })
 
   it('re-seeds the form from a new shape while preserving the chosen script', async () => {
@@ -1372,9 +1401,11 @@ describe('TestHub', () => {
     const groupCard = container.querySelector('.scenario-script-group-list-spacious .scenario-script-group-card')
     expect(groupCard?.textContent).toContain('Checkout Flow')
 
-    // Load model now reflects the stepped-ramp preset (12m duration).
+    // Load model now reflects the stepped-ramp 60-minute default.
     await clickWizardStep('Run Settings')
-    expect(getDurationFieldByLabel(container, 'Duration')?.input.value).toBe('12')
+		const duration = getDurationFieldByLabel(container, 'Duration')
+    expect(duration?.input.value).toBe('1')
+		expect(duration?.select.value).toBe('h')
   })
 
   it('groups Scenario Builder run settings into focused tabs', async () => {

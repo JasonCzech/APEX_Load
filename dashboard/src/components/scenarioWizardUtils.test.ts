@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { adaptScenarioShapeDefaults, buildScenarioModelPreview, buildScenarioShapeCatalog, buildShapeStages, getScenarioShapePreset, parseDurationSeconds, SCENARIO_SHAPE_PRESETS, ShapeStageStrategy, steppedStepPlan, validateStageTimeline } from './scenarioWizardUtils'
+import { adaptScenarioShapeDefaults, buildScenarioModelPreview, buildScenarioShapeCatalog, buildShapeStages, buildSteppedRampPlan, getScenarioShapePreset, MAX_STEPPED_RAMP_STEPS, parseDurationSeconds, SCENARIO_SHAPE_PRESETS, ShapeStageStrategy, steppedStepPlan, validateStageTimeline } from './scenarioWizardUtils'
 import { LoadModelSupportEntry, LoadModelTemplate, TrafficProfile } from '../types'
 
 const stageSeconds = (stages: { duration: string }[]) => stages.reduce((sum, stage) => sum + parseDurationSeconds(stage.duration), 0)
@@ -91,6 +91,41 @@ describe('scenarioWizardUtils', () => {
     expect(preview.series.some(series => series.kind === 'tps')).toBe(true)
   })
 
+  it('models hold stages as instantaneous stair-step transitions at runtime boundaries', () => {
+    const preview = buildScenarioModelPreview({
+      duration: '30m',
+      groups: [{
+        name: 'API',
+        vusers: 30,
+        stages: [
+          { type: 'hold', duration: '10m', target_vusers: 10 },
+          { type: 'hold', duration: '10m', target_vusers: 20 },
+          { type: 'hold', duration: '10m', target_vusers: 30 },
+        ],
+      }],
+    })
+
+    expect(preview.points.find(point => point.elapsedSeconds === 0)?.totalVusers).toBe(10)
+    expect(preview.points.find(point => point.elapsedSeconds === 600)?.totalVusers).toBe(20)
+    expect(preview.points.find(point => point.elapsedSeconds === 1200)?.totalVusers).toBe(30)
+    expect(preview.series.find(series => series.key === 'group_0_vusers')?.interpolation).toBe('stepAfter')
+    expect(preview.series.find(series => series.key === 'totalVusers')?.interpolation).toBe('stepAfter')
+  })
+
+  it('keeps true ramp stages linearly interpolated in the preview', () => {
+    const preview = buildScenarioModelPreview({
+      duration: '10m',
+      groups: [{
+        name: 'API',
+        vusers: 30,
+        stages: [{ type: 'ramp_up', duration: '10m', target_vusers: 30 }],
+      }],
+    })
+
+    expect(preview.series.find(series => series.key === 'group_0_vusers')?.interpolation).toBe('linear')
+    expect(preview.series.find(series => series.key === 'totalVusers')?.interpolation).toBe('linear')
+  })
+
   it('plots a production TPS profile instead of flattening it to configured VUsers', () => {
     const trafficProfile: TrafficProfile = {
       version: 1,
@@ -177,6 +212,61 @@ describe('scenarioWizardUtils', () => {
 })
 
 describe('shape-adaptive stage generators', () => {
+	it.each([
+		{
+			name: 'defaults',
+			input: { durationSeconds: 3600, startVusers: 0, endVusers: 60, incrementBy: 'step_count' as const, stepCount: 6 },
+			targets: [10, 20, 30, 40, 50, 60],
+			duration: '10m',
+			partial: false,
+		},
+		{
+			name: 'non-zero start',
+			input: { durationSeconds: 600, startVusers: 20, endVusers: 60, incrementBy: 'step_count' as const, stepCount: 4 },
+			targets: [30, 40, 50, 60],
+			duration: '2m30s',
+			partial: false,
+		},
+		{
+			name: 'VUsers per step with partial final increment',
+			input: { durationSeconds: 600, startVusers: 0, endVusers: 55, incrementBy: 'vusers_per_step' as const, vusersPerStep: 10 },
+			targets: [10, 20, 30, 40, 50, 55],
+			duration: '1m40s',
+			partial: true,
+		},
+	])('builds equal measurement intervals for $name', ({ input, targets, duration, partial }) => {
+		const plan = buildSteppedRampPlan(input)
+		expect(plan.error).toBeUndefined()
+		expect(plan.stages.map(stage => stage.target_vusers)).toEqual(targets)
+		expect(plan.stages.every(stage => stage.type === 'hold' && stage.duration === duration)).toBe(true)
+		expect(plan.partialFinalStep).toBe(partial)
+	})
+
+	it('blocks a duration that cannot divide evenly and suggests nearby valid values', () => {
+		const plan = buildSteppedRampPlan({ durationSeconds: 601, startVusers: 0, endVusers: 60, incrementBy: 'step_count', stepCount: 6 })
+		expect(plan.stages).toEqual([])
+		expect(plan.error).toContain('Try 10m or 10m6s')
+	})
+
+	it('rejects an ending load at or below the starting point', () => {
+		expect(buildSteppedRampPlan({ durationSeconds: 60, startVusers: 10, endVusers: 10, incrementBy: 'step_count', stepCount: 2 }).error)
+			.toContain('greater than starting')
+	})
+
+	it('rejects duplicate-producing and excessive interval counts', () => {
+		expect(buildSteppedRampPlan({ durationSeconds: 360, startVusers: 0, endVusers: 2, incrementBy: 'step_count', stepCount: 6 }).error)
+			.toContain('cannot exceed')
+		expect(buildSteppedRampPlan({ durationSeconds: 10_000, startVusers: 0, endVusers: 1_000, incrementBy: 'step_count', stepCount: MAX_STEPPED_RAMP_STEPS + 1 }).error)
+			.toContain(`at most ${MAX_STEPPED_RAMP_STEPS}`)
+	})
+
+	it('rejects non-finite duration and load inputs', () => {
+		expect(buildSteppedRampPlan({ durationSeconds: Number.NaN, startVusers: 0, endVusers: 60, incrementBy: 'step_count', stepCount: 6 }).error)
+			.toContain('finite')
+		expect(buildSteppedRampPlan({ durationSeconds: 3600, startVusers: Number.POSITIVE_INFINITY, endVusers: 60, incrementBy: 'step_count', stepCount: 6 }).error)
+			.toContain('finite')
+	})
+
   it('plans small stepped ramps as one VUser per step', () => {
     expect(steppedStepPlan(20)).toEqual({ inc: 1, steps: 20 })
   })

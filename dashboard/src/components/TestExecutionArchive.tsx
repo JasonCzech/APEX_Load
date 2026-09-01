@@ -28,6 +28,7 @@ import {
 } from '../utils/snapshotFormatUtils'
 import { copyTextToClipboard } from '../utils/clipboardUtils'
 import { formatBrowserRuntimeSummary } from './browserRuntimeSummary'
+import { formatTimeCompact } from '../utils/timeUtils'
 import {
   ARCHIVE_PAGE_SIZE_OPTIONS,
   DEFAULT_ARCHIVE_TRANSACTION_FILTERS,
@@ -1025,7 +1026,8 @@ export default function TestExecutionArchive({
           {(showReportOverviewView || showReportCompletenessView || showReportMetadataView) && (
             <>
               {showReportOverviewView && (
-                <div className="archive-overview-grid">
+				<>
+				<div className="archive-overview-grid">
                   <div className="scenario-script-detail-card">
                     <span className="scenario-script-detail-label">Peak TPS</span>
                     <span className="scenario-script-detail-value">{archiveReport.overview.peak_tps.toFixed(1)}</span>
@@ -1080,7 +1082,18 @@ export default function TestExecutionArchive({
                     <span className="scenario-script-detail-label">Network Peak</span>
                     <span className="scenario-script-detail-value">{archiveReport.resource_peaks.net_sent_kbps.toFixed(1)} / {archiveReport.resource_peaks.net_recv_kbps.toFixed(1)} KB/s</span>
                   </div>
-                </div>
+				</div>
+				{archiveReport.load_level_summaries && archiveReport.load_level_summaries.length > 0 && (
+					<div className="tx-section archive-summary-section">
+						<div className="archive-section-header archive-section-header-stack">
+							<div><h3 className="chart-title">Performance by Load Level</h3><p className="archive-section-copy">Retained interval evidence for each stepped-ramp group and aggregate load level.</p></div>
+						</div>
+						<div className="scenario-table-scroll"><table className="tx-table"><thead><tr><th>Group</th><th>Level</th><th>VUsers</th><th>Observed</th><th>Requests</th><th>Errors</th><th>Error Rate</th><th>TPS</th><th>P50</th><th>P90</th><th>P95</th><th>P99</th></tr></thead><tbody>
+							{archiveReport.load_level_summaries.map(level => <tr key={`${level.group}-${level.stage_index}-${level.target_vusers}`}><td>{level.group === '__total__' ? 'Total' : level.group}</td><td>{level.name}{level.partial ? ' (partial)' : ''}</td><td>{level.target_vusers}</td><td>{formatTimeCompact(level.observed_duration_seconds)}</td><td>{level.requests.toLocaleString()}</td><td>{level.errors.toLocaleString()}</td><td>{level.error_rate_pct.toFixed(2)}%</td><td>{level.throughput.toFixed(1)}</td><td>{level.p50_ms.toFixed(1)}</td><td>{level.p90_ms.toFixed(1)}</td><td>{level.p95_ms.toFixed(1)}</td><td>{level.p99_ms.toFixed(1)}</td></tr>)}
+						</tbody></table></div>
+					</div>
+				)}
+				</>
               )}
 
               {showReportCompletenessView && (

@@ -61,7 +61,7 @@ const EXECUTION_WORKSPACE_DEFAULT_PROFILE: DashboardWorkspaceProfile = {
   name: 'Default Execution Layout',
   activeTabId: 'overview',
   tabs: [
-    { id: 'overview', label: 'Overview', cardIds: ['scenario-overview', 'hero-metrics', 'test-manifest'] },
+    { id: 'overview', label: 'Overview', cardIds: ['scenario-overview', 'hero-metrics', 'active-load-levels', 'test-manifest'] },
     { id: 'control', label: 'Control', cardIds: ['scenario-preview'] },
     { id: 'graphs', label: 'Graphs', cardIds: ['runtime-graphs'] },
     { id: 'diagnostics', label: 'Diagnostics', cardIds: ['status-panels', 'live-summary'] },
@@ -781,6 +781,27 @@ export default function TestExecution({
         />
       ),
     },
+	{
+		id: 'active-load-levels',
+		title: 'Active Load Levels',
+		category: 'Run Overview',
+		description: 'Current stepped-ramp measurement intervals and load-level metrics.',
+		defaultWidth: 'half',
+		render: () => {
+			const levels = statusMetrics?.load_levels || []
+			return levels.length > 0 ? (
+				<div className="execution-load-levels" aria-live="polite">
+					<table>
+						<thead><tr><th>Group</th><th>Level</th><th>VUsers</th><th>TPS</th><th>Error</th><th>P95</th></tr></thead>
+						<tbody>{levels.map(level => {
+							const group = level.group === '__total__' ? undefined : statusMetrics?.groups?.[level.group]
+							return <tr key={`${level.group}-${level.stage_index}-${level.target_vusers}`}><td>{level.group === '__total__' ? 'Total' : level.group}</td><td>{level.name}</td><td>{level.target_vusers}</td><td>{(group?.tps ?? statusMetrics?.tps ?? 0).toFixed(1)}</td><td>{group ? (group.transactions > 0 ? `${((group.errors / group.transactions) * 100).toFixed(1)}%` : '0.0%') : `${(statusMetrics?.error_pct ?? 0).toFixed(1)}%`}</td><td>{(group?.p95_ms ?? statusMetrics?.p95_ms ?? 0).toFixed(1)} ms</td></tr>
+						})}</tbody>
+					</table>
+				</div>
+			) : <div className="empty-card"><p>No stepped-ramp interval is active.</p><p className="empty-hint">The current group and aggregate load levels appear here as each hold begins.</p></div>
+		},
+	},
     {
       id: 'test-manifest',
       title: 'Test Manifest',

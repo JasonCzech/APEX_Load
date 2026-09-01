@@ -45,6 +45,28 @@ func cloneGoalConfig(config *GoalConfig) *GoalConfig {
 	}
 	clone := *config
 	clone.TransactionRules = append([]TransactionSLARule(nil), config.TransactionRules...)
+	if config.EarlyStop != nil {
+		value := *config.EarlyStop
+		clone.EarlyStop = &value
+	}
+	if config.WorkloadShapeConfig != nil {
+		shape := *config.WorkloadShapeConfig
+		clone.WorkloadShapeConfig = &shape
+		if config.WorkloadShapeConfig.SteppedRamp != nil {
+			stepped := *config.WorkloadShapeConfig.SteppedRamp
+			shape.SteppedRamp = &stepped
+			if stepped.Scenario != nil {
+				definition := *stepped.Scenario
+				stepped.Scenario = &definition
+			}
+			if stepped.Groups != nil {
+				stepped.Groups = make(map[string]SteppedRampDefinition, len(stepped.Groups))
+				for name, definition := range config.WorkloadShapeConfig.SteppedRamp.Groups {
+					stepped.Groups[name] = definition
+				}
+			}
+		}
+	}
 	if config.TargetAverageTPS != nil {
 		value := *config.TargetAverageTPS
 		clone.TargetAverageTPS = &value

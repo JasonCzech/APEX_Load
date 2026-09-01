@@ -27,3 +27,12 @@ export interface ClientMetrics {
   task_duration_ms?: number
   long_task_count?: number
 }
+
+export interface ActiveLoadLevel {
+  group: string
+  stage_index: number
+  name: string
+  target_vusers: number
+  duration: string
+  started_at: string
+}

@@ -4149,3 +4149,32 @@
   from { opacity: 0; }
   to { opacity: 1; }
 }
+.execution-load-levels {
+  overflow-x: auto;
+}
+
+.execution-load-levels table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.execution-load-levels th,
+.execution-load-levels td {
+  padding: 9px 10px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.execution-load-levels th {
+  color: var(--text-muted);
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.execution-load-levels td:nth-child(3) {
+  color: var(--accent);
+  font-weight: 800;
+}

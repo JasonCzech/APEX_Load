@@ -8,6 +8,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"sort"
 	"strings"
@@ -67,6 +68,7 @@ func buildLiveMetricsFromSnapshot(snap engine.MetricsSnapshot, groupVUsers map[s
 		NetworkProfiles:        make(map[string]*TxMetrics),
 		ByRegion:               make(map[string]*TxMetrics),
 		Resources:              snap.Resources,
+		SampleWindowSeconds:    snap.Window.Seconds(),
 	}
 	if snap.Browser != nil {
 		live.Browser = &BrowserLiveMetrics{
@@ -471,6 +473,8 @@ func (tr *TestRunner) publishLiveMetrics(test *ManagedTest, live *LiveMetrics, a
 			return false
 		}
 	}
+	live.ActiveRuntimeSeconds = activeRuntimeSecondsLocked(test, now)
+	live.LoadLevels = activeLoadLevelsLocked(test)
 	tests := make([]*ManagedTest, 0, len(tr.tests))
 	for _, candidate := range tr.tests {
 		tests = append(tests, candidate)
@@ -1041,23 +1045,36 @@ func (tr *TestRunner) evaluateThresholdAlertsAndStops(test *ManagedTest, live *L
 	}
 	settings := tr.GetSystemSettings()
 	projectID := normalizeProjectID(test.ProjectID)
-	alerts := buildThresholdAlerts(test, live, settings.Thresholds)
+	effectiveThresholds := settings.Thresholds
+	earlyStop := tr.scenarioEarlyStop(test)
+	if earlyStop != nil && earlyStop.Enabled {
+		threshold := earlyStop.ErrorRatePct
+		effectiveThresholds.MaxErrorRatePct = &threshold
+	}
+	alerts := buildThresholdAlerts(test, live, effectiveThresholds, earlyStop != nil && earlyStop.Enabled)
 
 	// Decide stops before emitting so every alert's "action" reflects what this
 	// evaluation actually does: no stop can be requested when allowStops is
 	// false (final drain, terminal distributed batches), and the sustained-P99
 	// stop must stamp the p99 alert that triggered it.
-	stopForError := allowStops && tr.testIsRunning(test) && shouldStopForErrorThreshold(live, settings.Thresholds)
+	stopForError := allowStops && tr.shouldStopForEffectiveErrorThreshold(test, live, settings.Thresholds)
 	stopForP99 := allowStops && tr.shouldStopForSustainedP99(test, live, settings.Thresholds)
 	applyThresholdAlertStopActions(alerts, stopForError, stopForP99)
 	for _, alert := range alerts {
 		alert["project_id"] = projectID
+		if len(live.LoadLevels) > 0 {
+			alert["load_levels"] = live.LoadLevels
+		}
 		tr.hub.BroadcastScopedJSON(test.ID, projectID, alert)
 	}
 	tr.routeThresholdAlertNotifications(test, alerts, time.Now())
 
 	if stopForError {
-		tr.requestStopIfRunning(test, "threshold stop failed")
+		if earlyStop != nil && earlyStop.Enabled {
+			tr.requestStopIfRunningWithReason(test, earlyStopReason(live, *earlyStop), "threshold stop failed")
+		} else {
+			tr.requestStopIfRunning(test, "threshold stop failed")
+		}
 	}
 	if stopForP99 {
 		tr.requestStopIfRunning(test, "p99 threshold stop failed")
@@ -1065,6 +1082,113 @@ func (tr *TestRunner) evaluateThresholdAlertsAndStops(test *ManagedTest, live *L
 	if allowStops && shouldStopForGoalStatus(live) {
 		tr.requestStopIfRunning(test, "goal-oriented stop failed")
 	}
+}
+
+func earlyStopReason(live *LiveMetrics, config EarlyStopConfig) string {
+	levels := make([]string, 0, len(live.LoadLevels))
+	for _, level := range live.LoadLevels {
+		if level.Group == "__total__" {
+			continue
+		}
+		name := strings.TrimSpace(level.Name)
+		if name == "" {
+			name = fmt.Sprintf("stage %d", level.StageIndex+1)
+		}
+		levels = append(levels, fmt.Sprintf("%s %s (%d VUsers)", level.Group, name, level.TargetVUsers))
+	}
+	context := ""
+	if len(levels) > 0 {
+		context = " at " + strings.Join(levels, ", ")
+	}
+	return fmt.Sprintf("early stop: error rate %.2f%% remained at or above %.2f%% for %s%s", live.ErrorPct, config.ErrorRatePct, config.BreachWindow, context)
+}
+
+func (tr *TestRunner) scenarioEarlyStop(test *ManagedTest) *EarlyStopConfig {
+	if tr == nil || test == nil {
+		return nil
+	}
+	tr.mu.RLock()
+	defer tr.mu.RUnlock()
+	if test.GoalConfig == nil || test.GoalConfig.EarlyStop == nil {
+		return nil
+	}
+	copy := *test.GoalConfig.EarlyStop
+	return &copy
+}
+
+func (tr *TestRunner) shouldStopForEffectiveErrorThreshold(test *ManagedTest, live *LiveMetrics, system ThresholdSettings) bool {
+	if tr == nil || test == nil || live == nil {
+		return false
+	}
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+	if test.GoalConfig == nil || test.GoalConfig.EarlyStop == nil || !test.GoalConfig.EarlyStop.Enabled {
+		test.earlyStopBreachStartedAt = nil
+		return test.Status == "RUNNING" && shouldStopForErrorThreshold(live, system)
+	}
+	config := test.GoalConfig.EarlyStop
+	if !tr.testLoadReadyLocked(test, live.Timestamp) {
+		test.earlyStopBreachStartedAt = nil
+		return false
+	}
+	window, err := time.ParseDuration(config.BreachWindow)
+	if err != nil || window <= 0 {
+		test.earlyStopBreachStartedAt = nil
+		return false
+	}
+	now := live.Timestamp
+	if now.IsZero() {
+		now = time.Now()
+	}
+	if live.ErrorPct < config.ErrorRatePct {
+		test.earlyStopBreachStartedAt = nil
+		return false
+	}
+	if test.earlyStopBreachStartedAt == nil {
+		started := now
+		test.earlyStopBreachStartedAt = &started
+		return false
+	}
+	return now.Sub(*test.earlyStopBreachStartedAt) >= window
+}
+
+func activeLoadLevelsLocked(test *ManagedTest) []ActiveLoadLevel {
+	if test == nil {
+		return nil
+	}
+	levels := make([]ActiveLoadLevel, 0, len(test.Groups))
+	for _, group := range test.Groups {
+		if group.ActiveStage == nil {
+			continue
+		}
+		level := *group.ActiveStage
+		levels = append(levels, level)
+	}
+	if len(levels) > 1 {
+		total := 0
+		for _, level := range levels {
+			total += level.TargetVUsers
+		}
+		levels = append(levels, ActiveLoadLevel{Group: "__total__", StageIndex: -1, Name: "Aggregate load", TargetVUsers: total, StartedAt: time.Now().UTC()})
+	}
+	return levels
+}
+
+func activeRuntimeSecondsLocked(test *ManagedTest, now time.Time) float64 {
+	if test == nil || test.StartedAt == nil || test.StartedAt.IsZero() {
+		return 0
+	}
+	if now.IsZero() {
+		now = time.Now().UTC()
+	}
+	active := now.Sub(test.StartedAt.UTC()) - test.CumulativePause
+	if test.PausedAt != nil && !test.PausedAt.IsZero() && now.After(test.PausedAt.UTC()) {
+		active -= now.Sub(test.PausedAt.UTC())
+	}
+	if active < 0 {
+		return 0
+	}
+	return active.Seconds()
 }
 
 func (tr *TestRunner) broadcastEvent(eventType string, test *ManagedTest) {

@@ -1,5 +1,6 @@
 import type { LoadStageDraft } from './loadModels'
 import type { RuntimeSettingsOverride } from './runtimeSettings'
+import type { ActiveLoadLevel } from './metrics'
 
 /** Shared load-group and generator-assignment contracts. */
 export interface TestGroup {
@@ -26,6 +27,7 @@ export interface TestGroup {
   /** How the scenario's enabled-by-default continue-on-error policy resolved
    *  for this group, and which layer supplied the winning value. */
   continue_on_error?: ContinueOnErrorResolution
+	active_stage?: ActiveLoadLevel
 }
 
 /** ContinueOnErrorResolution explains how the scenario's enabled-by-default

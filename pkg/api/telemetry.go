@@ -607,7 +607,7 @@ func cloneTelemetryHealth(in *TelemetryHealth) *TelemetryHealth {
 	return &out
 }
 
-func buildThresholdAlerts(test *ManagedTest, live *LiveMetrics, thresholds ThresholdSettings) []map[string]any {
+func buildThresholdAlerts(test *ManagedTest, live *LiveMetrics, thresholds ThresholdSettings, inclusiveErrorThreshold ...bool) []map[string]any {
 	alerts := make([]map[string]any, 0, 5)
 	if thresholds.MaxP99LatencyMs != nil && live.P99Ms > *thresholds.MaxP99LatencyMs {
 		alerts = append(alerts, map[string]any{
@@ -620,7 +620,8 @@ func buildThresholdAlerts(test *ManagedTest, live *LiveMetrics, thresholds Thres
 			"threshold": *thresholds.MaxP99LatencyMs,
 		})
 	}
-	if thresholds.MaxErrorRatePct != nil && live.ErrorPct > *thresholds.MaxErrorRatePct {
+	inclusiveError := len(inclusiveErrorThreshold) > 0 && inclusiveErrorThreshold[0]
+	if thresholds.MaxErrorRatePct != nil && (live.ErrorPct > *thresholds.MaxErrorRatePct || (inclusiveError && live.ErrorPct >= *thresholds.MaxErrorRatePct)) {
 		alerts = append(alerts, map[string]any{
 			"type":      "threshold_alert",
 			"test_id":   test.ID,

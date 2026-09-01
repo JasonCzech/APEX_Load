@@ -256,7 +256,12 @@ function normalizeSelectedTargets(targets?: string[]) {
 export function buildGoalConfigPayload(scenarioMode: ScenarioMode, goalConfig: GoalConfig = {}): GoalConfig | undefined {
 	const transactionRules = goalConfig.transaction_rules?.map(rule => ({ ...rule }))
 	if (scenarioMode !== 'goal_oriented') {
-		return transactionRules?.length ? { transaction_rules: transactionRules } : undefined
+		const payload: GoalConfig = {
+			...(transactionRules?.length ? { transaction_rules: transactionRules } : {}),
+			...(goalConfig.early_stop ? { early_stop: structuredClone(goalConfig.early_stop) } : {}),
+			...(goalConfig.workload_shape_config ? { workload_shape_config: structuredClone(goalConfig.workload_shape_config) } : {}),
+		}
+		return Object.keys(payload).length ? payload : undefined
 	}
 
   const hasValue = (value: number | undefined) => value !== undefined && value !== null
@@ -278,6 +283,8 @@ export function buildGoalConfigPayload(scenarioMode: ScenarioMode, goalConfig: G
     ...(hasValue(goalConfig.max_redelivery_rate_pct) ? { max_redelivery_rate_pct: goalConfig.max_redelivery_rate_pct } : {}),
     ...(hasValue(goalConfig.max_dead_letter_rate_pct) ? { max_dead_letter_rate_pct: goalConfig.max_dead_letter_rate_pct } : {}),
 		...(transactionRules?.length ? { transaction_rules: transactionRules } : {}),
+		...(goalConfig.early_stop ? { early_stop: structuredClone(goalConfig.early_stop) } : {}),
+		...(goalConfig.workload_shape_config ? { workload_shape_config: structuredClone(goalConfig.workload_shape_config) } : {}),
     ...(goalConfig.stop_on_sla_breach ? { stop_on_sla_breach: true } : {}),
     ...(goalConfig.stop_on_max_errors ? { stop_on_max_errors: true } : {}),
     ...(goalConfig.sla_breach_window ? { sla_breach_window: goalConfig.sla_breach_window } : {}),

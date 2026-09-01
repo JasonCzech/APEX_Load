@@ -6,6 +6,27 @@ import { buildCreateTestPayload, buildGoalConfigPayload, buildScenarioGroupPaylo
 import { buildInitialScenarioDraft, buildScenarioDraftFromTest, scenarioDraftReducer } from './scenarioDraftUtils'
 
 describe('scenarioPayloadUtils', () => {
+	it('retains stepped-ramp authoring intent and early-stop settings in VUser-driven payloads', () => {
+		const goalConfig = buildGoalConfigPayload('vuser_driven', {
+			early_stop: { enabled: true, error_rate_pct: 4.5, breach_window: '45s' },
+			workload_shape_config: {
+				stepped_ramp: {
+					scope: 'scenario',
+					scenario: { start_vusers: 0, end_vusers: 60, increment_by: 'step_count', step_count: 6, vusers_per_step: 10 },
+				},
+			},
+		})
+		expect(goalConfig).toEqual({
+			early_stop: { enabled: true, error_rate_pct: 4.5, breach_window: '45s' },
+			workload_shape_config: {
+				stepped_ramp: {
+					scope: 'scenario',
+					scenario: { start_vusers: 0, end_vusers: 60, increment_by: 'step_count', step_count: 6, vusers_per_step: 10 },
+				},
+			},
+		})
+	})
+
   it('round-trips a full-resolution traffic profile without converting it to stages', () => {
     const trafficProfile = {
       version: 1,

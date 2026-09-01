@@ -140,6 +140,73 @@ export interface ShapeStageBuildOptions {
   turbulenceTps?: number
 }
 
+export interface SteppedRampPlanInput {
+  durationSeconds: number
+  startVusers: number
+  endVusers: number
+  incrementBy: 'step_count' | 'vusers_per_step'
+  stepCount?: number
+  vusersPerStep?: number
+}
+
+export interface SteppedRampPlan {
+  stages: LoadStageDraft[]
+  increment: number
+  intervalSeconds: number
+  partialFinalStep: boolean
+  error?: string
+}
+
+export const MAX_STEPPED_RAMP_STEPS = 100
+
+export function buildSteppedRampPlan(input: SteppedRampPlanInput): SteppedRampPlan {
+  const durationSeconds = Math.max(0, Math.round(input.durationSeconds))
+  const start = Math.max(0, Math.round(input.startVusers))
+  const end = Math.max(0, Math.round(input.endVusers))
+  if (![durationSeconds, start, end].every(Number.isFinite)) {
+    return { stages: [], increment: 0, intervalSeconds: 0, partialFinalStep: false, error: 'Duration and load levels must be finite numbers.' }
+  }
+  if (end <= start) return { stages: [], increment: 0, intervalSeconds: 0, partialFinalStep: false, error: 'Ending load level must be greater than starting load level.' }
+  const range = end - start
+  const requested = input.incrementBy === 'step_count'
+    ? Math.max(1, Math.round(input.stepCount || 0))
+    : Math.max(1, Math.round(input.vusersPerStep || 0))
+  const intervalCount = input.incrementBy === 'step_count' ? requested : Math.ceil(range / requested)
+  const increment = input.incrementBy === 'step_count' ? Math.ceil(range / intervalCount) : requested
+  if (!Number.isFinite(requested) || !Number.isFinite(intervalCount)) {
+    return { stages: [], increment: 0, intervalSeconds: 0, partialFinalStep: false, error: 'Step values must be finite numbers.' }
+  }
+  if (input.incrementBy === 'step_count' && intervalCount > range) {
+    return { stages: [], increment, intervalSeconds: 0, partialFinalStep: false, error: `Number of steps cannot exceed the ${range}-VUser load range.` }
+  }
+  if (intervalCount > MAX_STEPPED_RAMP_STEPS) {
+    return { stages: [], increment, intervalSeconds: 0, partialFinalStep: false, error: `Stepped Ramp supports at most ${MAX_STEPPED_RAMP_STEPS} measurement intervals.` }
+  }
+  if (durationSeconds <= 0 || durationSeconds % intervalCount !== 0) {
+    const lower = Math.max(intervalCount, Math.floor(durationSeconds / intervalCount) * intervalCount)
+    const upper = Math.max(intervalCount, Math.ceil(durationSeconds / intervalCount) * intervalCount)
+    return {
+      stages: [], increment, intervalSeconds: 0, partialFinalStep: false,
+      error: `Duration must divide evenly across ${intervalCount} steps. Try ${formatTimeCompact(lower)} or ${formatTimeCompact(upper)}.`,
+    }
+  }
+  const intervalSeconds = durationSeconds / intervalCount
+  const targets = Array.from({ length: intervalCount }, (_, index) => Math.min(end, start + increment * (index + 1)))
+  const finalIncrement = targets[targets.length - 1] - (targets[targets.length - 2] ?? start)
+  const partialFinalStep = finalIncrement !== increment
+  return {
+    stages: targets.map((target, index) => ({
+      name: `Level ${index + 1}${partialFinalStep && index === targets.length - 1 ? ' (partial)' : ''}`,
+      type: 'hold',
+      duration: formatTimeCompact(intervalSeconds),
+      target_vusers: target,
+    })),
+    increment,
+    intervalSeconds,
+    partialFinalStep,
+  }
+}
+
 /**
  * A ScenarioShapePreset is the deterministic starting point applied when the operator
  * selects a workload shape via "Use Manual Shape". It seeds the scenario form so the
@@ -488,14 +555,14 @@ export const SCENARIO_SHAPE_PRESETS: Record<string, ScenarioShapePreset> = {
     recommendedRunTab: 'scenario',
   },
   'stepped-ramp': {
-    duration: '12m',
+		duration: '60m',
     scenarioMode: 'vuser_driven',
     groups: [{
-      vusers: 75,
-      ramp_up: '12m',
-      stages: buildShapeStages('stepped', { peakVusers: 75, durationSeconds: 12 * 60 }),
+			vusers: 60,
+			ramp_up: '',
+			stages: buildSteppedRampPlan({ durationSeconds: 60 * 60, startVusers: 0, endVusers: 60, incrementBy: 'step_count', stepCount: 6 }).stages,
     }],
-    guidance: 'Each step holds a VUser target before the next increase. Edit the steps in the Advanced Stair-Step Ramp panel on Run Settings.',
+		guidance: 'Measure performance at equal-duration load levels. Configure the range, increment, scope, and protection settings on Run Settings.',
   },
   'spike-rendezvous': {
     duration: '8m',
@@ -688,7 +755,9 @@ function stagedValue(stages: LoadStageDraft[], elapsedSeconds: number, valueKey:
     const rawTarget = stage[valueKey]
     const target = rawTarget === undefined ? previousValue : Math.max(0, Number(rawTarget) || 0)
     const stageEnd = cursor + stageDuration
-    if (elapsedSeconds <= stageEnd) {
+    // A stage owns [start, end). At the exact boundary the runtime has already
+    // applied the next stage target, so the preview must advance as well.
+    if (elapsedSeconds < stageEnd) {
       if (stage.type === 'ramp_up' || stage.type === 'ramp_down') {
         const progress = stageDuration > 0 ? (elapsedSeconds - cursor) / stageDuration : 1
         return previousValue + ((target - previousValue) * Math.max(0, Math.min(1, progress)))
@@ -747,6 +816,12 @@ export function buildScenarioModelPreview(params: {
   const profileMappings = groups.map(group => trafficProfileMappingForGroup(params.trafficProfile, group.name))
   const profileVUsers = params.trafficProfile?.runtime_target === 'vusers'
   const profileTps = params.trafficProfile?.runtime_target === 'tps'
+  const groupUsesSteppedStages = (group: ScenarioModelGroupInput) => (
+    Boolean(group.stages?.length) && group.stages!.every(stage => stage.type === 'hold')
+  )
+  const allVuserSeriesAreStepped = groups.every((group, index) => (
+    Boolean(profileVUsers && profileMappings[index]) || groupUsesSteppedStages(group)
+  ))
   const maxRampDownSeconds = groups.reduce(
     (max, group, index) => (profileMappings[index] || group.stages?.length) ? max : Math.max(max, parseDurationSeconds(group.ramp_down, 0)),
     0,
@@ -758,7 +833,7 @@ export function buildScenarioModelPreview(params: {
     label: group.name || `Group ${index + 1}`,
     color: GROUP_COLORS[index % GROUP_COLORS.length],
     kind: 'group',
-    interpolation: profileVUsers && profileMappings[index] ? 'stepAfter' : 'linear',
+    interpolation: (profileVUsers && profileMappings[index]) || groupUsesSteppedStages(group) ? 'stepAfter' : 'linear',
   }))
   const tpsGroupIndexes = groups.flatMap((group, index) => (
     (profileTps && profileMappings[index]) || group.stages?.some(stage => Number(stage.target_tps) > 0) ? [index] : []
@@ -827,15 +902,15 @@ export function buildScenarioModelPreview(params: {
     durationSeconds,
     series: [
       ...groupSeries,
-      { key: 'totalVusers', label: 'Total VUsers', color: 'var(--text-primary)', kind: 'total', interpolation: profileVUsers ? 'stepAfter' : 'linear' },
+      { key: 'totalVusers', label: 'Total VUsers', color: 'var(--text-primary)', kind: 'total', interpolation: allVuserSeriesAreStepped ? 'stepAfter' : 'linear' },
       ...(tpsGroupIndexes.length > 1 ? tpsGroupIndexes.map(index => ({
         key: tpsSeriesKey(index),
         label: `${groups[index].name || `Group ${index + 1}`} TPS`,
         color: GROUP_COLORS[index % GROUP_COLORS.length],
         kind: 'tps' as const,
-        interpolation: profileTps && profileMappings[index] ? 'stepAfter' as const : 'linear' as const,
+        interpolation: (profileTps && profileMappings[index]) || groupUsesSteppedStages(groups[index]) ? 'stepAfter' as const : 'linear' as const,
       })) : []),
-      ...(includeTps ? [{ key: 'totalTps', label: profileTps ? 'Production target TPS' : 'Target TPS', color: 'var(--warning)', kind: 'tps', interpolation: profileTps ? 'stepAfter' : 'linear' } as ScenarioModelSeries] : []),
+      ...(includeTps ? [{ key: 'totalTps', label: profileTps ? 'Production target TPS' : 'Target TPS', color: 'var(--warning)', kind: 'tps', interpolation: profileTps || tpsGroupIndexes.every(index => groupUsesSteppedStages(groups[index])) ? 'stepAfter' : 'linear' } as ScenarioModelSeries] : []),
     ],
   }
 }

@@ -38,6 +38,30 @@ export interface GoalConfig {
   stop_on_max_errors?: boolean
   sla_breach_window?: string
   transaction_rules?: TransactionSLARule[]
+  early_stop?: {
+    enabled: boolean
+    error_rate_pct: number
+    breach_window: string
+  }
+  workload_shape_config?: {
+    stepped_ramp?: SteppedRampConfig
+  }
+}
+
+export type SteppedRampIncrementMode = 'step_count' | 'vusers_per_step'
+
+export interface SteppedRampDefinition {
+  start_vusers: number
+  end_vusers: number
+  increment_by: SteppedRampIncrementMode
+  step_count?: number
+  vusers_per_step?: number
+}
+
+export interface SteppedRampConfig {
+  scope: 'scenario' | 'group'
+  scenario?: SteppedRampDefinition
+  groups?: Record<string, SteppedRampDefinition>
 }
 
 export interface GoalStatus {
