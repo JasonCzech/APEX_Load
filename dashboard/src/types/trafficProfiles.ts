@@ -57,7 +57,7 @@ export interface TrafficProfile {
   source_duration: string
   target_duration: string
   gap_policy?: TrafficProfileGapPolicy
-  window?: { mode?: 'full' | 'explicit' | 'peak'; start?: string; end?: string; start_offset?: string; end_offset?: string; duration?: string }
+  window?: { mode?: 'full' | 'explicit' | 'peak'; peak_scope?: 'per_group' | 'overall'; start?: string; end?: string; start_offset?: string; end_offset?: string; duration?: string }
   amplitude?: { mode?: 'factor' | 'peak'; value?: number }
   mappings: TrafficProfileMapping[]
   sizing?: {
@@ -94,7 +94,7 @@ export interface TrafficProfileDeriveRequest {
   mappings: Array<{ series_key: string; group_name: string; source?: TrafficProfileSourceEntry; art?: { basis: 'source_series' | 'operator_peak'; series_key?: string; value?: number; unit?: 'milliseconds' | 'seconds' } }>
   value_semantics: TrafficProfileValueSemantics
   gap_policy: TrafficProfileGapPolicy
-  window: { mode: 'full' | 'explicit' | 'peak'; start?: string; end?: string; start_offset?: string; end_offset?: string; duration?: string }
+  window: { mode: 'full' | 'explicit' | 'peak'; peak_scope?: 'per_group' | 'overall'; start?: string; end?: string; start_offset?: string; end_offset?: string; duration?: string }
   target_duration?: string
   amplitude: { mode: 'factor' | 'peak'; value: number }
   scenario_draft: ScenarioUpsertPayload

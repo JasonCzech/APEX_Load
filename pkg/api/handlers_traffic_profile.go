@@ -447,6 +447,10 @@ func (s *Server) handleDeriveTrafficProfile(w http.ResponseWriter, r *http.Reque
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	request.Window.Mode = window.Mode
+	if window.Mode == "peak" {
+		request.Window.PeakScope = trafficProfilePeakScope(request.Window)
+	}
 	var targetDuration time.Duration
 	if strings.TrimSpace(request.TargetDuration) != "" {
 		targetDuration, err = time.ParseDuration(request.TargetDuration)
@@ -470,8 +474,6 @@ func (s *Server) handleDeriveTrafficProfile(w http.ResponseWriter, r *http.Reque
 		art        *TrafficProfileART
 	}
 	candidates := make([]normalizationCandidate, 0, len(request.Mappings))
-	resolvedTargetDuration := targetDuration
-	maximumSourceDuration := time.Duration(0)
 	for _, mapping := range request.Mappings {
 		series, ok := seriesByKey[mapping.SeriesKey]
 		if !ok {
@@ -491,26 +493,13 @@ func (s *Server) handleDeriveTrafficProfile(w http.ResponseWriter, r *http.Reque
 			return
 		}
 		var sourceEnd time.Time
-		if request.Window.Mode == "" || request.Window.Mode == "full" {
-			kind := strings.ToLower(strings.TrimSpace(mappingSource.Kind))
-			if kind == "prometheus" || kind == "opensearch" {
-				_, sourceEnd, err = resolveTrafficProfileRange(mappingSource)
-				if err != nil {
-					writeError(w, http.StatusBadRequest, err.Error())
-					return
-				}
+		kind := strings.ToLower(strings.TrimSpace(mappingSource.Kind))
+		if kind == "prometheus" || kind == "opensearch" {
+			_, sourceEnd, err = resolveTrafficProfileRange(mappingSource)
+			if err != nil {
+				writeError(w, http.StatusBadRequest, err.Error())
+				return
 			}
-		}
-		normalized, normalizeErr := trafficprofile.Normalize(series, trafficprofile.NormalizeOptions{Semantics: request.ValueSemantics, GapPolicy: request.GapPolicy, Window: window, SourceEnd: sourceEnd, TargetDuration: targetDuration, AmplitudeMode: request.Amplitude.Mode, Amplitude: request.Amplitude.Value})
-		if normalizeErr != nil {
-			writeError(w, http.StatusUnprocessableEntity, normalizeErr.Error())
-			return
-		}
-		if normalized.SourceDuration > maximumSourceDuration {
-			maximumSourceDuration = normalized.SourceDuration
-		}
-		if targetDuration == 0 && normalized.TargetDuration > resolvedTargetDuration {
-			resolvedTargetDuration = normalized.TargetDuration
 		}
 		var artSeries *trafficprofile.Series
 		if mapping.ART != nil {
@@ -532,14 +521,50 @@ func (s *Server) handleDeriveTrafficProfile(w http.ResponseWriter, r *http.Reque
 				return
 			}
 		}
-		candidates = append(candidates, normalizationCandidate{mapping: mapping, series: series, source: mappingSource, sourceEnd: sourceEnd, normalized: normalized, artRequest: mapping.ART, artSeries: artSeries})
+		candidates = append(candidates, normalizationCandidate{mapping: mapping, series: series, source: mappingSource, sourceEnd: sourceEnd, artRequest: mapping.ART, artSeries: artSeries})
+	}
+	warnings := make([]string, 0)
+	normalizationWindow := window
+	if strings.EqualFold(strings.TrimSpace(request.Window.Mode), "peak") && trafficProfilePeakScope(request.Window) == "overall" {
+		fullSeries := make([]trafficprofile.NormalizedSeries, 0, len(candidates))
+		for _, candidate := range candidates {
+			normalized, normalizeErr := trafficprofile.NormalizeForPeakSelection(candidate.series, trafficprofile.NormalizeOptions{Semantics: request.ValueSemantics, GapPolicy: request.GapPolicy, SourceEnd: candidate.sourceEnd})
+			if normalizeErr != nil {
+				writeError(w, http.StatusUnprocessableEntity, normalizeErr.Error())
+				return
+			}
+			fullSeries = append(fullSeries, normalized)
+		}
+		offset, peakErr := trafficprofile.SelectOverallPeakWindow(fullSeries, window.Duration)
+		if peakErr != nil {
+			writeError(w, http.StatusUnprocessableEntity, peakErr.Error())
+			return
+		}
+		normalizationWindow = trafficprofile.WindowSpec{Mode: "explicit", RelativeOffsets: true, StartOffset: offset, EndOffset: offset + window.Duration}
+		warnings = append(warnings, fmt.Sprintf("selected one overall peak window at %s-%s across %d mapped groups", offset, offset+window.Duration, len(candidates)))
+	}
+	resolvedTargetDuration := targetDuration
+	maximumSourceDuration := time.Duration(0)
+	for index := range candidates {
+		candidate := &candidates[index]
+		normalized, normalizeErr := trafficprofile.Normalize(candidate.series, trafficprofile.NormalizeOptions{Semantics: request.ValueSemantics, GapPolicy: request.GapPolicy, Window: normalizationWindow, SourceEnd: candidate.sourceEnd, TargetDuration: targetDuration, AmplitudeMode: request.Amplitude.Mode, Amplitude: request.Amplitude.Value})
+		if normalizeErr != nil {
+			writeError(w, http.StatusUnprocessableEntity, normalizeErr.Error())
+			return
+		}
+		candidate.normalized = normalized
+		if normalized.SourceDuration > maximumSourceDuration {
+			maximumSourceDuration = normalized.SourceDuration
+		}
+		if targetDuration == 0 && normalized.TargetDuration > resolvedTargetDuration {
+			resolvedTargetDuration = normalized.TargetDuration
+		}
 	}
 	profile := &TrafficProfile{Version: trafficProfileVersion, Source: request.Source, ValueSemantics: string(request.ValueSemantics), Interpolation: "step", GapPolicy: string(request.GapPolicy), Window: request.Window, Amplitude: request.Amplitude, SourceDuration: maximumSourceDuration.String(), TargetDuration: resolvedTargetDuration.String(), RefreshedAt: time.Now().UTC()}
-	warnings := make([]string, 0)
 	for index := range candidates {
 		candidate := &candidates[index]
 		if candidate.normalized.TargetDuration != resolvedTargetDuration {
-			normalized, normalizeErr := trafficprofile.Normalize(candidate.series, trafficprofile.NormalizeOptions{Semantics: request.ValueSemantics, GapPolicy: request.GapPolicy, Window: window, SourceEnd: candidate.sourceEnd, TargetDuration: resolvedTargetDuration, AmplitudeMode: request.Amplitude.Mode, Amplitude: request.Amplitude.Value})
+			normalized, normalizeErr := trafficprofile.Normalize(candidate.series, trafficprofile.NormalizeOptions{Semantics: request.ValueSemantics, GapPolicy: request.GapPolicy, Window: normalizationWindow, SourceEnd: candidate.sourceEnd, TargetDuration: resolvedTargetDuration, AmplitudeMode: request.Amplitude.Mode, Amplitude: request.Amplitude.Value})
 			if normalizeErr != nil {
 				writeError(w, http.StatusUnprocessableEntity, normalizeErr.Error())
 				return
@@ -774,7 +799,15 @@ func resolveTrafficProfileRange(source TrafficProfileSource) (time.Time, time.Ti
 }
 
 func trafficProfileWindowSpec(window TrafficProfileWindow) (trafficprofile.WindowSpec, error) {
-	result := trafficprofile.WindowSpec{Mode: window.Mode, Start: window.Start, End: window.End}
+	mode := strings.ToLower(strings.TrimSpace(window.Mode))
+	peakScope := strings.ToLower(strings.TrimSpace(window.PeakScope))
+	if peakScope != "" && mode != "peak" {
+		return trafficprofile.WindowSpec{}, errors.New("window.peak_scope requires mode peak")
+	}
+	if mode == "peak" && peakScope != "" && peakScope != "per_group" && peakScope != "overall" {
+		return trafficprofile.WindowSpec{}, errors.New("window.peak_scope must be per_group or overall")
+	}
+	result := trafficprofile.WindowSpec{Mode: mode, Start: window.Start, End: window.End}
 	startOffset := strings.TrimSpace(window.StartOffset)
 	endOffset := strings.TrimSpace(window.EndOffset)
 	if startOffset != "" || endOffset != "" {
@@ -806,6 +839,14 @@ func trafficProfileWindowSpec(window TrafficProfileWindow) (trafficprofile.Windo
 		result.Duration = duration
 	}
 	return result, nil
+}
+
+func trafficProfilePeakScope(window TrafficProfileWindow) string {
+	scope := strings.ToLower(strings.TrimSpace(window.PeakScope))
+	if scope == "" {
+		return "per_group"
+	}
+	return scope
 }
 
 func dedupeTrafficProfileWarnings(values []string) []string {

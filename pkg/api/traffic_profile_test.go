@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -394,6 +395,91 @@ func TestDeriveTrafficProfileAlignsPerGroupFileSpans(t *testing.T) {
 	}
 	if response.TrafficProfile.Mappings[0].SourceDuration != "20s" || response.TrafficProfile.Mappings[0].SourceStart != start.Format(time.RFC3339Nano) || response.TrafficProfile.Mappings[0].SourceEnd != start.Add(20*time.Second).Format(time.RFC3339Nano) || response.TrafficProfile.Mappings[0].Points[1].OffsetMS != 20_000 || response.TrafficProfile.Mappings[1].Source == nil {
 		t.Fatalf("aligned mappings = %#v", response.TrafficProfile.Mappings)
+	}
+}
+
+func TestDeriveTrafficProfileCanSelectOneOverallPeakWindow(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	start := time.Date(2026, 8, 27, 0, 0, 0, 0, time.UTC)
+	request := trafficProfileDeriveRequest{
+		Source: TrafficProfileSource{Kind: "file", File: &TrafficProfileFileSource{Filename: "traffic.csv", TimestampColumn: "timestamp", ValueColumns: []string{"checkout", "search"}}},
+		Series: []trafficprofile.Series{
+			{Key: "checkout", Name: "Checkout", Points: []trafficprofile.Point{{Timestamp: start, Value: 0}, {Timestamp: start.Add(time.Second), Value: 100}, {Timestamp: start.Add(2 * time.Second), Value: 100}, {Timestamp: start.Add(3 * time.Second), Value: 0}, {Timestamp: start.Add(4 * time.Second), Value: 0}}},
+			{Key: "search", Name: "Search", Points: []trafficprofile.Point{{Timestamp: start, Value: 0}, {Timestamp: start.Add(time.Second), Value: 0}, {Timestamp: start.Add(2 * time.Second), Value: 90}, {Timestamp: start.Add(3 * time.Second), Value: 90}, {Timestamp: start.Add(4 * time.Second), Value: 0}}},
+		},
+		Mappings: []trafficProfileSeriesMappingRequest{
+			{SeriesKey: "checkout", GroupName: "checkout"},
+			{SeriesKey: "search", GroupName: "search"},
+		},
+		ValueSemantics: trafficprofile.SemanticsTPS,
+		GapPolicy:      trafficprofile.GapHold,
+		Window:         TrafficProfileWindow{Mode: "peak", PeakScope: "overall", Duration: "2s"},
+		TargetDuration: "10s",
+		Amplitude:      TrafficProfileAmplitude{Mode: "factor", Value: 1},
+		ScenarioDraft: CreateScenarioRequest{
+			Name: "Overall peak replay", Duration: "10s", ScenarioMode: "goal_oriented",
+			Groups: []CreateGroupEntry{{Name: "checkout", VUsers: 5}, {Name: "search", VUsers: 5}},
+		},
+	}
+	body, err := json.Marshal(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	recorder := httptest.NewRecorder()
+	server.handleDeriveTrafficProfile(recorder, httptest.NewRequest(http.MethodPost, "/api/v1/scenarios/traffic-profile/derive", bytes.NewReader(body)))
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("derive = %d %s", recorder.Code, recorder.Body.String())
+	}
+	var response trafficProfileDeriveResponse
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	wantStart := start.Add(time.Second).Format(time.RFC3339Nano)
+	if response.TrafficProfile.Window.PeakScope != "overall" || len(response.TrafficProfile.Mappings) != 2 {
+		t.Fatalf("profile = %#v", response.TrafficProfile)
+	}
+	for _, mapping := range response.TrafficProfile.Mappings {
+		if mapping.SourceStart != wantStart || mapping.SourceDuration != "2s" || len(mapping.Points) != 2 || mapping.Points[1].OffsetMS != 5_000 {
+			t.Fatalf("mapping %s resolved window = %s / %s", mapping.GroupName, mapping.SourceStart, mapping.SourceDuration)
+		}
+	}
+	if !slices.ContainsFunc(response.Warnings, func(value string) bool { return strings.Contains(value, "overall peak window") }) {
+		t.Fatalf("warnings = %#v", response.Warnings)
+	}
+
+	request.Window.PeakScope = ""
+	body, err = json.Marshal(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	recorder = httptest.NewRecorder()
+	server.handleDeriveTrafficProfile(recorder, httptest.NewRequest(http.MethodPost, "/api/v1/scenarios/traffic-profile/derive", bytes.NewReader(body)))
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("legacy per-group derive = %d %s", recorder.Code, recorder.Body.String())
+	}
+	response = trafficProfileDeriveResponse{}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	starts := map[string]string{}
+	for _, mapping := range response.TrafficProfile.Mappings {
+		starts[mapping.GroupName] = mapping.SourceStart
+	}
+	if starts["checkout"] != wantStart || starts["search"] != start.Add(2*time.Second).Format(time.RFC3339Nano) {
+		t.Fatalf("legacy per-group starts = %#v", starts)
+	}
+}
+
+func TestTrafficProfilePeakScopeValidationAndBackwardCompatibleDefault(t *testing.T) {
+	window, err := trafficProfileWindowSpec(TrafficProfileWindow{Mode: "peak", Duration: "1h"})
+	if err != nil || window.Duration != time.Hour || trafficProfilePeakScope(TrafficProfileWindow{Mode: "peak"}) != "per_group" {
+		t.Fatalf("legacy peak window = %#v, scope=%q, err=%v", window, trafficProfilePeakScope(TrafficProfileWindow{Mode: "peak"}), err)
+	}
+	if _, err := trafficProfileWindowSpec(TrafficProfileWindow{Mode: "peak", PeakScope: "invalid", Duration: "1h"}); err == nil {
+		t.Fatal("expected invalid peak scope to fail")
+	}
+	if _, err := trafficProfileWindowSpec(TrafficProfileWindow{Mode: "full", PeakScope: "overall"}); err == nil {
+		t.Fatal("expected peak scope on a full window to fail")
 	}
 }
 

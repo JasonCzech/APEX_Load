@@ -157,6 +157,7 @@ export default function TrafficProfileSourcePanel({ projectId, groupNames, scena
   const [semantics, setSemantics] = useState<TrafficProfileValueSemantics>(existingProfile?.value_semantics || 'transactions_per_bucket')
   const [gapPolicy, setGapPolicy] = useState<TrafficProfileGapPolicy>(existingProfile?.gap_policy || 'hold')
   const [windowMode, setWindowMode] = useState<'full' | 'explicit' | 'peak'>(existingProfile?.window?.mode || 'full')
+  const [peakScope, setPeakScope] = useState<'per_group' | 'overall'>(() => existingProfile ? existingProfile.window?.peak_scope || 'per_group' : 'overall')
   const [peakDuration, setPeakDuration] = useState(existingProfile?.window?.duration || '1h')
   const [windowStart, setWindowStart] = useState(localDateTimeValue(existingProfile?.window?.start))
   const [windowEnd, setWindowEnd] = useState(localDateTimeValue(existingProfile?.window?.end))
@@ -323,7 +324,7 @@ export default function TrafficProfileSourcePanel({ projectId, groupNames, scena
         value_semantics: semantics,
         gap_policy: gapPolicy,
         window: windowMode === 'peak'
-          ? { mode: 'peak', duration: peakDuration }
+          ? { mode: 'peak', peak_scope: peakScope, duration: peakDuration }
           : windowMode === 'explicit'
             ? usesRelativeWindow
               ? { mode: 'explicit', start_offset: windowStartOffset, end_offset: windowEndOffset }
@@ -563,7 +564,7 @@ export default function TrafficProfileSourcePanel({ projectId, groupNames, scena
           <label><span>Values represent</span><select value={semantics} onChange={event => setSemantics(event.target.value as TrafficProfileValueSemantics)}><option value="transactions_per_bucket">Transactions per bucket</option><option value="cumulative_counter">Cumulative counter</option><option value="tps">TPS</option><option value="vusers">VUsers</option></select></label>
           <label><span>Gap policy</span><select value={gapPolicy} onChange={event => setGapPolicy(event.target.value as TrafficProfileGapPolicy)}><option value="hold">Hold previous</option><option value="zero">Insert zero</option><option value="drop">Drop missing</option></select></label>
           <label><span>Window</span><select value={windowMode} onChange={event => setWindowMode(event.target.value as typeof windowMode)}><option value="full">Full range</option><option value="explicit">Explicit range</option><option value="peak">Peak window</option></select></label>
-          {windowMode === 'peak' && <label><span>Peak window duration</span><input value={peakDuration} onChange={event => setPeakDuration(event.target.value)} /></label>}
+          {windowMode === 'peak' && <><label><span>Peak selection</span><select aria-label="Peak selection" value={peakScope} onChange={event => setPeakScope(event.target.value as typeof peakScope)}><option value="overall">Overall across all groups</option><option value="per_group">Each group separately</option></select></label><label><span>Peak window duration</span><input value={peakDuration} onChange={event => setPeakDuration(event.target.value)} /></label></>}
           {windowMode === 'explicit' && (usesRelativeWindow
             ? <><label><span>Window start offset</span><input aria-label="Window start offset" value={windowStartOffset} onChange={event => setWindowStartOffset(event.target.value)} placeholder="0s" /></label><label><span>Window end offset</span><input aria-label="Window end offset" value={windowEndOffset} onChange={event => setWindowEndOffset(event.target.value)} placeholder="1h" /></label></>
             : <><label><span>Window start</span><input type="datetime-local" value={windowStart} onChange={event => setWindowStart(event.target.value)} /></label><label><span>Window end</span><input type="datetime-local" value={windowEnd} onChange={event => setWindowEnd(event.target.value)} /></label></>)}

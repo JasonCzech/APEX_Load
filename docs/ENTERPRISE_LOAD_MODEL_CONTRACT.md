@@ -67,6 +67,13 @@ window policy, time/amplitude transforms, warnings, and series-to-group
 mappings. Profile-managed groups cannot also carry manual stages or a nonzero
 start offset. Unmapped groups keep their static/manual workload.
 
+Peak-window selection can resolve the highest-area interval independently for
+each mapped group (`peak_scope: per_group`) or select one shared relative
+interval from the aggregate of all mapped groups (`peak_scope: overall`). The
+shared option keeps the groups aligned even when their source files use
+different calendar dates. Profiles saved before peak scope was introduced
+retain the original per-group behavior.
+
 For scenarios with multiple groups, the builder supports either one analyzed
 series fanned out to every group or a separate CSV/XLSX upload per group. A
 per-group profile stores a composite, non-secret source descriptor plus the

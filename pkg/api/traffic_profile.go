@@ -90,6 +90,7 @@ type TrafficProfileOpenSearchSource struct {
 
 type TrafficProfileWindow struct {
 	Mode        string    `json:"mode,omitempty"`
+	PeakScope   string    `json:"peak_scope,omitempty"`
 	Start       time.Time `json:"start,omitempty"`
 	End         time.Time `json:"end,omitempty"`
 	StartOffset string    `json:"start_offset,omitempty"`

@@ -2408,6 +2408,7 @@ export interface operations {
                 "end"?: string;
                 "end_offset"?: string;
                 "mode"?: string;
+                "peak_scope"?: string;
                 "start"?: string;
                 "start_offset"?: string;
               };
@@ -7472,6 +7473,7 @@ export interface operations {
                   "end"?: string;
                   "end_offset"?: string;
                   "mode"?: string;
+                  "peak_scope"?: string;
                   "start"?: string;
                   "start_offset"?: string;
                 };
@@ -16418,6 +16420,7 @@ export interface operations {
                 "end"?: string;
                 "end_offset"?: string;
                 "mode"?: string;
+                "peak_scope"?: string;
                 "start"?: string;
                 "start_offset"?: string;
               };
@@ -16473,6 +16476,7 @@ export interface operations {
               "end"?: string;
               "end_offset"?: string;
               "mode"?: string;
+              "peak_scope"?: string;
               "start"?: string;
               "start_offset"?: string;
             };
@@ -17614,6 +17618,7 @@ export interface operations {
                   "end"?: string;
                   "end_offset"?: string;
                   "mode"?: string;
+                  "peak_scope"?: string;
                   "start"?: string;
                   "start_offset"?: string;
                 };
@@ -18603,6 +18608,7 @@ export interface operations {
               "end"?: string;
               "end_offset"?: string;
               "mode"?: string;
+              "peak_scope"?: string;
               "start"?: string;
               "start_offset"?: string;
             };
@@ -19252,6 +19258,7 @@ export interface operations {
                 "end"?: string;
                 "end_offset"?: string;
                 "mode"?: string;
+                "peak_scope"?: string;
                 "start"?: string;
                 "start_offset"?: string;
               };
@@ -21532,6 +21539,7 @@ export interface operations {
               "end"?: string;
               "end_offset"?: string;
               "mode"?: string;
+              "peak_scope"?: string;
               "start"?: string;
               "start_offset"?: string;
             };
@@ -23436,6 +23444,7 @@ export interface operations {
                 "end"?: string;
                 "end_offset"?: string;
                 "mode"?: string;
+                "peak_scope"?: string;
                 "start"?: string;
                 "start_offset"?: string;
               };
@@ -25572,6 +25581,7 @@ export interface operations {
                 "end"?: string;
                 "end_offset"?: string;
                 "mode"?: string;
+                "peak_scope"?: string;
                 "start"?: string;
                 "start_offset"?: string;
               };
@@ -25656,6 +25666,7 @@ export interface operations {
             "end"?: string;
             "end_offset"?: string;
             "mode"?: string;
+            "peak_scope"?: string;
             "start"?: string;
             "start_offset"?: string;
           };
@@ -26135,6 +26146,7 @@ export interface operations {
                   "end"?: string;
                   "end_offset"?: string;
                   "mode"?: string;
+                  "peak_scope"?: string;
                   "start"?: string;
                   "start_offset"?: string;
                 };
@@ -26234,6 +26246,7 @@ export interface operations {
                 "end"?: string;
                 "end_offset"?: string;
                 "mode"?: string;
+                "peak_scope"?: string;
                 "start"?: string;
                 "start_offset"?: string;
               };
@@ -27925,6 +27938,7 @@ export interface operations {
               "end"?: string;
               "end_offset"?: string;
               "mode"?: string;
+              "peak_scope"?: string;
               "start"?: string;
               "start_offset"?: string;
             };
@@ -34829,6 +34843,7 @@ export interface operations {
                   "end"?: string;
                   "end_offset"?: string;
                   "mode"?: string;
+                  "peak_scope"?: string;
                   "start"?: string;
                   "start_offset"?: string;
                 };
@@ -35699,6 +35714,7 @@ export interface operations {
                   "end"?: string;
                   "end_offset"?: string;
                   "mode"?: string;
+                  "peak_scope"?: string;
                   "start"?: string;
                   "start_offset"?: string;
                 };
@@ -36204,6 +36220,7 @@ export interface operations {
                   "end"?: string;
                   "end_offset"?: string;
                   "mode"?: string;
+                  "peak_scope"?: string;
                   "start"?: string;
                   "start_offset"?: string;
                 };
@@ -38320,6 +38337,7 @@ export interface operations {
                 "end"?: string;
                 "end_offset"?: string;
                 "mode"?: string;
+                "peak_scope"?: string;
                 "start"?: string;
                 "start_offset"?: string;
               };
@@ -42156,6 +42174,7 @@ export interface operations {
                 "end"?: string;
                 "end_offset"?: string;
                 "mode"?: string;
+                "peak_scope"?: string;
                 "start"?: string;
                 "start_offset"?: string;
               };
@@ -43652,6 +43671,7 @@ export interface operations {
                   "end"?: string;
                   "end_offset"?: string;
                   "mode"?: string;
+                  "peak_scope"?: string;
                   "start"?: string;
                   "start_offset"?: string;
                 };
@@ -44031,6 +44051,7 @@ export interface operations {
                   "end"?: string;
                   "end_offset"?: string;
                   "mode"?: string;
+                  "peak_scope"?: string;
                   "start"?: string;
                   "start_offset"?: string;
                 };
@@ -54389,6 +54410,7 @@ export interface operations {
                 "end"?: string;
                 "end_offset"?: string;
                 "mode"?: string;
+                "peak_scope"?: string;
                 "start"?: string;
                 "start_offset"?: string;
               };
@@ -54836,6 +54858,7 @@ export interface operations {
               "end"?: string;
               "end_offset"?: string;
               "mode"?: string;
+              "peak_scope"?: string;
               "start"?: string;
               "start_offset"?: string;
             };
@@ -60652,6 +60675,7 @@ export interface operations {
                   "end"?: string;
                   "end_offset"?: string;
                   "mode"?: string;
+                  "peak_scope"?: string;
                   "start"?: string;
                   "start_offset"?: string;
                 };
@@ -61851,6 +61875,7 @@ export interface operations {
                   "end"?: string;
                   "end_offset"?: string;
                   "mode"?: string;
+                  "peak_scope"?: string;
                   "start"?: string;
                   "start_offset"?: string;
                 };
@@ -63050,6 +63075,7 @@ export interface operations {
                   "end"?: string;
                   "end_offset"?: string;
                   "mode"?: string;
+                  "peak_scope"?: string;
                   "start"?: string;
                   "start_offset"?: string;
                 };
@@ -64249,6 +64275,7 @@ export interface operations {
                   "end"?: string;
                   "end_offset"?: string;
                   "mode"?: string;
+                  "peak_scope"?: string;
                   "start"?: string;
                   "start_offset"?: string;
                 };
@@ -65448,6 +65475,7 @@ export interface operations {
                   "end"?: string;
                   "end_offset"?: string;
                   "mode"?: string;
+                  "peak_scope"?: string;
                   "start"?: string;
                   "start_offset"?: string;
                 };
@@ -72043,6 +72071,7 @@ export interface operations {
                   "end"?: string;
                   "end_offset"?: string;
                   "mode"?: string;
+                  "peak_scope"?: string;
                   "start"?: string;
                   "start_offset"?: string;
                 };
@@ -83067,6 +83096,7 @@ export interface operations {
                 "end"?: string;
                 "end_offset"?: string;
                 "mode"?: string;
+                "peak_scope"?: string;
                 "start"?: string;
                 "start_offset"?: string;
               };
@@ -87217,6 +87247,7 @@ export interface operations {
               "end"?: string;
               "end_offset"?: string;
               "mode"?: string;
+              "peak_scope"?: string;
               "start"?: string;
               "start_offset"?: string;
             };
@@ -87866,6 +87897,7 @@ export interface operations {
                 "end"?: string;
                 "end_offset"?: string;
                 "mode"?: string;
+                "peak_scope"?: string;
                 "start"?: string;
                 "start_offset"?: string;
               };
@@ -94070,6 +94102,7 @@ export interface operations {
               "end"?: string;
               "end_offset"?: string;
               "mode"?: string;
+              "peak_scope"?: string;
               "start"?: string;
               "start_offset"?: string;
             };

@@ -35,6 +35,22 @@ func SeriesStats(series Series) (Stats, error) {
 }
 
 func Normalize(series Series, opts NormalizeOptions) (NormalizedSeries, error) {
+	return normalizeSeries(series, opts, false)
+}
+
+// NormalizeForPeakSelection converts source values to their runtime target
+// semantics without enforcing executable bucket cadence. It is intended only
+// for choosing a source-time window; the selected result must still pass
+// Normalize with its final target duration before it can be stored or run.
+func NormalizeForPeakSelection(series Series, opts NormalizeOptions) (NormalizedSeries, error) {
+	opts.Window = WindowSpec{Mode: "full"}
+	opts.TargetDuration = 0
+	opts.AmplitudeMode = ""
+	opts.Amplitude = 1
+	return normalizeSeries(series, opts, true)
+}
+
+func normalizeSeries(series Series, opts NormalizeOptions, skipRuntimeCadenceValidation bool) (NormalizedSeries, error) {
 	points, err := validateAndSort(series.Points)
 	if err != nil {
 		return NormalizedSeries{}, err
@@ -133,7 +149,7 @@ func Normalize(series Series, opts NormalizeOptions) (NormalizedSeries, error) {
 	runtimePoints := make([]RuntimePoint, len(series.Points))
 	for index, point := range series.Points {
 		offset := time.Duration(float64(point.Timestamp.Sub(stats.Start)) * scale)
-		if index > 0 && offset-time.Duration(runtimePoints[index-1].OffsetMS)*time.Millisecond < minimum {
+		if !skipRuntimeCadenceValidation && index > 0 && offset-time.Duration(runtimePoints[index-1].OffsetMS)*time.Millisecond < minimum {
 			return NormalizedSeries{}, fmt.Errorf("compressed interval before point %d is below the %s minimum for %s profiles", index+1, minimum, runtimeTarget)
 		}
 		target := values[index] * amplitude
@@ -143,7 +159,7 @@ func Normalize(series Series, opts NormalizeOptions) (NormalizedSeries, error) {
 		runtimePoints[index] = RuntimePoint{OffsetMS: offset.Milliseconds(), Target: target}
 	}
 	lastBucket := targetDuration - time.Duration(runtimePoints[len(runtimePoints)-1].OffsetMS)*time.Millisecond
-	if lastBucket < minimum {
+	if !skipRuntimeCadenceValidation && lastBucket < minimum {
 		return NormalizedSeries{}, fmt.Errorf("compressed final bucket is below the %s minimum for %s profiles", minimum, runtimeTarget)
 	}
 	if runtimeTarget == "tps" {

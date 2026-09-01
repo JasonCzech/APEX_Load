@@ -6600,6 +6600,8 @@ paths:
                               type: string
                             mode:
                               type: string
+                            peak_scope:
+                              type: string
                             start:
                               type: string
                               format: date-time
@@ -45502,6 +45504,8 @@ paths:
                               type: string
                             mode:
                               type: string
+                            peak_scope:
+                              type: string
                             start:
                               type: string
                               format: date-time
@@ -45644,6 +45648,8 @@ paths:
                         end_offset:
                           type: string
                         mode:
+                          type: string
+                        peak_scope:
                           type: string
                         start:
                           type: string
@@ -49136,6 +49142,8 @@ paths:
                               end_offset:
                                 type: string
                               mode:
+                                type: string
+                              peak_scope:
                                 type: string
                               start:
                                 type: string
@@ -52736,6 +52744,8 @@ paths:
                                 type: string
                               mode:
                                 type: string
+                              peak_scope:
+                                type: string
                               start:
                                 type: string
                                 format: date-time
@@ -56331,6 +56341,8 @@ paths:
                               end_offset:
                                 type: string
                               mode:
+                                type: string
+                              peak_scope:
                                 type: string
                               start:
                                 type: string
@@ -59940,6 +59952,8 @@ paths:
                                 type: string
                               mode:
                                 type: string
+                              peak_scope:
+                                type: string
                               start:
                                 type: string
                                 format: date-time
@@ -63547,6 +63561,8 @@ paths:
                               end_offset:
                                 type: string
                               mode:
+                                type: string
+                              peak_scope:
                                 type: string
                               start:
                                 type: string
@@ -67156,6 +67172,8 @@ paths:
                                 type: string
                               mode:
                                 type: string
+                              peak_scope:
+                                type: string
                               start:
                                 type: string
                                 format: date-time
@@ -70763,6 +70781,8 @@ paths:
                               end_offset:
                                 type: string
                               mode:
+                                type: string
+                              peak_scope:
                                 type: string
                               start:
                                 type: string
@@ -80619,6 +80639,8 @@ paths:
                           type: string
                         mode:
                           type: string
+                        peak_scope:
+                          type: string
                         start:
                           type: string
                           format: date-time
@@ -82390,6 +82412,8 @@ paths:
                           end_offset:
                             type: string
                           mode:
+                            type: string
+                          peak_scope:
                             type: string
                           start:
                             type: string
@@ -84270,6 +84294,8 @@ paths:
                             type: string
                           mode:
                             type: string
+                          peak_scope:
+                            type: string
                           start:
                             type: string
                             format: date-time
@@ -85744,6 +85770,8 @@ paths:
                         end_offset:
                           type: string
                         mode:
+                          type: string
+                        peak_scope:
                           type: string
                         start:
                           type: string
@@ -87517,6 +87545,8 @@ paths:
                             type: string
                           mode:
                             type: string
+                          peak_scope:
+                            type: string
                           start:
                             type: string
                             format: date-time
@@ -88957,6 +88987,8 @@ paths:
                               end_offset:
                                 type: string
                               mode:
+                                type: string
+                              peak_scope:
                                 type: string
                               start:
                                 type: string
@@ -91943,6 +91975,8 @@ paths:
                                 type: string
                               mode:
                                 type: string
+                              peak_scope:
+                                type: string
                               start:
                                 type: string
                                 format: date-time
@@ -93314,6 +93348,8 @@ paths:
                               type: string
                             mode:
                               type: string
+                            peak_scope:
+                              type: string
                             start:
                               type: string
                               format: date-time
@@ -93504,6 +93540,8 @@ paths:
                     end_offset:
                       type: string
                     mode:
+                      type: string
+                    peak_scope:
                       type: string
                     start:
                       type: string
@@ -94901,6 +94939,8 @@ paths:
                                 type: string
                               mode:
                                 type: string
+                              peak_scope:
+                                type: string
                               start:
                                 type: string
                                 format: date-time
@@ -95199,6 +95239,8 @@ paths:
                           end_offset:
                             type: string
                           mode:
+                            type: string
+                          peak_scope:
                             type: string
                           start:
                             type: string
@@ -96758,6 +96800,8 @@ paths:
                         end_offset:
                           type: string
                         mode:
+                          type: string
+                        peak_scope:
                           type: string
                         start:
                           type: string
@@ -188180,6 +188224,8 @@ paths:
                           type: string
                         mode:
                           type: string
+                        peak_scope:
+                          type: string
                         start:
                           type: string
                           format: date-time
@@ -193894,6 +193940,8 @@ paths:
                           end_offset:
                             type: string
                           mode:
+                            type: string
+                          peak_scope:
                             type: string
                           start:
                             type: string
@@ -199751,6 +199799,8 @@ paths:
                             type: string
                           mode:
                             type: string
+                          peak_scope:
+                            type: string
                           start:
                             type: string
                             format: date-time
@@ -202167,6 +202217,8 @@ paths:
                                 type: string
                               mode:
                                 type: string
+                              peak_scope:
+                                type: string
                               start:
                                 type: string
                                 format: date-time
@@ -203667,6 +203719,8 @@ paths:
                               end_offset:
                                 type: string
                               mode:
+                                type: string
+                              peak_scope:
                                 type: string
                               start:
                                 type: string
@@ -213339,6 +213393,8 @@ paths:
                             type: string
                           mode:
                             type: string
+                          peak_scope:
+                            type: string
                           start:
                             type: string
                             format: date-time
@@ -219139,6 +219195,8 @@ paths:
                             type: string
                           mode:
                             type: string
+                          peak_scope:
+                            type: string
                           start:
                             type: string
                             format: date-time
@@ -224549,6 +224607,8 @@ paths:
                                 type: string
                               mode:
                                 type: string
+                              peak_scope:
+                                type: string
                               start:
                                 type: string
                                 format: date-time
@@ -225646,6 +225706,8 @@ paths:
                               end_offset:
                                 type: string
                               mode:
+                                type: string
+                              peak_scope:
                                 type: string
                               start:
                                 type: string
@@ -230041,6 +230103,8 @@ paths:
                           type: string
                         mode:
                           type: string
+                        peak_scope:
+                          type: string
                         start:
                           type: string
                           format: date-time
@@ -231870,6 +231934,8 @@ paths:
                         end_offset:
                           type: string
                         mode:
+                          type: string
+                        peak_scope:
                           type: string
                         start:
                           type: string

@@ -342,3 +342,56 @@ func TestPeakWindowProratesPartialTransactionBucketsAndKeepsExactDuration(t *tes
 		t.Fatalf("points = %#v", got.Points)
 	}
 }
+
+func TestSelectOverallPeakWindowUsesOneAggregateRelativeWindow(t *testing.T) {
+	first := NormalizedSeries{TargetDuration: 80 * time.Second, Points: []RuntimePoint{
+		{OffsetMS: 0, Target: 0},
+		{OffsetMS: 20_000, Target: 100},
+		{OffsetMS: 40_000, Target: 0},
+		{OffsetMS: 60_000, Target: 0},
+	}}
+	second := NormalizedSeries{TargetDuration: 80 * time.Second, Points: []RuntimePoint{
+		{OffsetMS: 0, Target: 0},
+		{OffsetMS: 20_000, Target: 0},
+		{OffsetMS: 40_000, Target: 90},
+		{OffsetMS: 60_000, Target: 0},
+	}}
+
+	got, err := SelectOverallPeakWindow([]NormalizedSeries{first, second}, 20*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != 20*time.Second {
+		t.Fatalf("overall peak offset = %s, want 20s", got)
+	}
+}
+
+func TestSelectOverallPeakWindowRejectsWindowBeyondShortestSeries(t *testing.T) {
+	points := []RuntimePoint{{OffsetMS: 0, Target: 1}, {OffsetMS: 5_000, Target: 2}}
+	_, err := SelectOverallPeakWindow([]NormalizedSeries{
+		{TargetDuration: 10 * time.Second, Points: points},
+		{TargetDuration: 20 * time.Second, Points: points},
+	}, 15*time.Second)
+	if err == nil || !strings.Contains(err.Error(), "shortest mapped source span") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestNormalizeForPeakSelectionDefersRuntimeCadenceValidation(t *testing.T) {
+	start := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	series := Series{Points: []Point{
+		{Timestamp: start, Value: 10},
+		{Timestamp: start.Add(time.Second), Value: 20},
+		{Timestamp: start.Add(2 * time.Second), Value: 30},
+	}}
+	if _, err := Normalize(series, NormalizeOptions{Semantics: SemanticsTPS}); err == nil || !strings.Contains(err.Error(), "5s minimum") {
+		t.Fatalf("runtime normalization error = %v", err)
+	}
+	got, err := NormalizeForPeakSelection(series, NormalizeOptions{Semantics: SemanticsTPS})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.SourceDuration != 3*time.Second || len(got.Points) != 3 || got.Points[1].OffsetMS != 1_000 {
+		t.Fatalf("peak-selection normalization = %#v", got)
+	}
+}

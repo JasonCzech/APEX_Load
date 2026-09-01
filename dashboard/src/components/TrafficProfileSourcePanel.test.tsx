@@ -225,6 +225,9 @@ describe('TrafficProfileSourcePanel', () => {
       windowSelect.value = 'peak'
       windowSelect.dispatchEvent(new Event('change', { bubbles: true }))
     })
+    const peakSelection = container.querySelector('[aria-label="Peak selection"]') as HTMLSelectElement
+    expect(peakSelection.value).toBe('overall')
+    expect(Array.from(peakSelection.options).map(option => option.value)).toEqual(['overall', 'per_group'])
     const peakDurationInput = Array.from(container.querySelectorAll('input')).find(input => input.parentElement?.querySelector('span')?.textContent === 'Peak window duration') as HTMLInputElement
     await act(async () => {
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(peakDurationInput, '30m')
@@ -232,6 +235,8 @@ describe('TrafficProfileSourcePanel', () => {
     })
     const preview = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Build profile preview')
     await act(async () => { preview?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+
+    expect(apiMock.deriveTrafficProfile).toHaveBeenCalledWith(expect.objectContaining({ window: { mode: 'peak', peak_scope: 'overall', duration: '30m' } }))
 
     expect(container.textContent).toContain('complete analyzed source range')
     const selection = container.querySelector('[data-testid="profile-preview-selection"]')
