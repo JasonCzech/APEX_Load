@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -283,6 +284,13 @@ func TestValidateTrafficProfileRelativeFileSource(t *testing.T) {
 			}
 		})
 	}
+	overlap := valid
+	overlapFile := *valid.File
+	overlap.File = &overlapFile
+	overlap.File.ARTColumns = []string{"orders"}
+	if err := validateTrafficProfileSource(overlap); err == nil || !strings.Contains(err.Error(), "both a workload value and ART") {
+		t.Fatalf("overlapping workload/ART columns error = %v", err)
+	}
 }
 
 func TestTrafficProfileWindowSpecRelativeOffsets(t *testing.T) {
@@ -384,8 +392,144 @@ func TestDeriveTrafficProfileAlignsPerGroupFileSpans(t *testing.T) {
 	if response.TrafficProfile.TargetDuration != "40s" || response.TrafficProfile.SourceDuration != "40s" || len(response.TrafficProfile.Mappings) != 2 {
 		t.Fatalf("profile = %#v", response.TrafficProfile)
 	}
-	if response.TrafficProfile.Mappings[0].SourceDuration != "20s" || response.TrafficProfile.Mappings[0].Points[1].OffsetMS != 20_000 || response.TrafficProfile.Mappings[1].Source == nil {
+	if response.TrafficProfile.Mappings[0].SourceDuration != "20s" || response.TrafficProfile.Mappings[0].SourceStart != start.Format(time.RFC3339Nano) || response.TrafficProfile.Mappings[0].SourceEnd != start.Add(20*time.Second).Format(time.RFC3339Nano) || response.TrafficProfile.Mappings[0].Points[1].OffsetMS != 20_000 || response.TrafficProfile.Mappings[1].Source == nil {
 		t.Fatalf("aligned mappings = %#v", response.TrafficProfile.Mappings)
+	}
+}
+
+func TestDeriveTrafficProfileARTSizesSimultaneousPeakAndReplacesGuardrails(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	start := time.Date(2026, 8, 27, 0, 0, 0, 0, time.UTC)
+	existingMin, existingMax := 9, 10
+	request := trafficProfileDeriveRequest{
+		Source: TrafficProfileSource{Kind: "file", File: &TrafficProfileFileSource{Filename: "traffic.csv", TimestampColumn: "timestamp", ValueColumns: []string{"checkout", "search"}}},
+		Series: []trafficprofile.Series{
+			{Key: "checkout", Name: "Checkout", Points: []trafficprofile.Point{{Timestamp: start, Value: 100}, {Timestamp: start.Add(10 * time.Second), Value: 10}}},
+			{Key: "search", Name: "Search", Points: []trafficprofile.Point{{Timestamp: start, Value: 10}, {Timestamp: start.Add(10 * time.Second), Value: 100}}},
+		},
+		Mappings: []trafficProfileSeriesMappingRequest{
+			{SeriesKey: "checkout", GroupName: "checkout", ART: &trafficProfileARTRequest{Basis: "operator_peak", Value: 1, Unit: "seconds"}},
+			{SeriesKey: "search", GroupName: "search", ART: &trafficProfileARTRequest{Basis: "operator_peak", Value: 1000, Unit: "milliseconds"}},
+		},
+		ValueSemantics: trafficprofile.SemanticsTPS,
+		GapPolicy:      trafficprofile.GapHold,
+		Window:         TrafficProfileWindow{Mode: "full"},
+		Amplitude:      TrafficProfileAmplitude{Mode: "factor", Value: 1},
+		ScenarioDraft: CreateScenarioRequest{
+			Name: "ART replay", Duration: "20s", ScenarioMode: "goal_oriented",
+			GoalConfig: &GoalConfig{MinVUsers: &existingMin, MaxVUsers: &existingMax},
+			Groups:     []CreateGroupEntry{{Name: "checkout", VUsers: 5}, {Name: "search", VUsers: 5}, {Name: "static", VUsers: 5}},
+		},
+	}
+	body, err := json.Marshal(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	recorder := httptest.NewRecorder()
+	server.handleDeriveTrafficProfile(recorder, httptest.NewRequest(http.MethodPost, "/api/v1/scenarios/traffic-profile/derive", bytes.NewReader(body)))
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("derive = %d %s", recorder.Code, recorder.Body.String())
+	}
+	var response trafficProfileDeriveResponse
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	sizing := response.TrafficProfile.Sizing
+	if sizing == nil || !sizing.Complete || sizing.ProfilePeakVUsers != 110 || sizing.StaticPeakVUsers != 5 || sizing.EstimatedPeakVUsers != 115 || sizing.SuggestedMinVUsers != 1 || sizing.SuggestedMaxVUsers != 225 {
+		t.Fatalf("sizing = %#v", sizing)
+	}
+	if response.ScenarioDraft.GoalConfig == nil || *response.ScenarioDraft.GoalConfig.MinVUsers != 1 || *response.ScenarioDraft.GoalConfig.MaxVUsers != 225 {
+		t.Fatalf("guardrails = %#v", response.ScenarioDraft.GoalConfig)
+	}
+	for _, mapping := range response.TrafficProfile.Mappings {
+		if mapping.ART == nil || mapping.ART.MinARTMS != 1000 || mapping.ART.AverageARTMS != 1000 || mapping.ART.PeakARTMS != 1000 || mapping.ART.EstimatedPeakVUsers != 100 {
+			t.Fatalf("ART mapping = %#v", mapping)
+		}
+	}
+
+	request.Mappings[1].ART = nil
+	body, err = json.Marshal(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	recorder = httptest.NewRecorder()
+	server.handleDeriveTrafficProfile(recorder, httptest.NewRequest(http.MethodPost, "/api/v1/scenarios/traffic-profile/derive", bytes.NewReader(body)))
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("incomplete ART derive = %d %s", recorder.Code, recorder.Body.String())
+	}
+	response = trafficProfileDeriveResponse{}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.TrafficProfile.Sizing != nil || response.ScenarioDraft.GoalConfig == nil || *response.ScenarioDraft.GoalConfig.MinVUsers != existingMin || *response.ScenarioDraft.GoalConfig.MaxVUsers != existingMax {
+		t.Fatalf("incomplete ART should preserve guardrails: profile=%#v guardrails=%#v", response.TrafficProfile.Sizing, response.ScenarioDraft.GoalConfig)
+	}
+}
+
+func TestTrafficProfileARTSizingSaturatesEstimateAndClampsGuardrail(t *testing.T) {
+	profile := testTrafficProfile("tps")
+	profile.Mappings[0].Points[1].Target = 1e12
+	profile.Mappings[0].ART = &TrafficProfileART{Basis: "operator_peak", Points: []trafficprofile.ARTPoint{{OffsetMS: 0, ARTMS: 1e9}}, PeakARTMS: 1e9}
+	minimum, maximum := 1, maxManagedTestVUsers
+	if err := validateTrafficProfile(profile, []CreateGroupEntry{{Name: "checkout"}}, "10s", "goal_oriented", &GoalConfig{MinVUsers: &minimum, MaxVUsers: &maximum}); err != nil {
+		t.Fatal(err)
+	}
+	if profile.Mappings[0].ART.EstimatedPeakVUsers != maxCapacityUnit || profile.Sizing == nil || profile.Sizing.SuggestedMaxVUsers != maxManagedTestVUsers {
+		t.Fatalf("saturated sizing = mapping %#v sizing %#v", profile.Mappings[0].ART, profile.Sizing)
+	}
+}
+
+func TestTrafficProfileRejectsFileARTEvidenceForQuerySource(t *testing.T) {
+	profile := testTrafficProfile("tps")
+	profile.Source = TrafficProfileSource{Kind: "prometheus", Prometheus: &TrafficProfilePrometheusSource{Query: "sum(rate(requests_total[1m]))", Range: TrafficProfileQueryRange{Mode: "relative", Lookback: "1h", StepSeconds: 5}}}
+	profile.Mappings[0].ART = &TrafficProfileART{Basis: "source_series", SeriesKey: "art", Points: []trafficprofile.ARTPoint{{OffsetMS: 0, ARTMS: 100}}, PeakARTMS: 100}
+	minimum, maximum := 1, 10
+	err := validateTrafficProfile(profile, []CreateGroupEntry{{Name: "checkout"}}, "10s", "goal_oriented", &GoalConfig{MinVUsers: &minimum, MaxVUsers: &maximum})
+	if err == nil || !strings.Contains(err.Error(), "file-backed ART requires a file source") {
+		t.Fatalf("query source ART error = %v", err)
+	}
+}
+
+func TestAnalyzeTrafficProfileSeparatesWorkloadAndARTColumns(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	for name, value := range map[string]string{
+		"timestamp_column": "timestamp",
+		"value_column":     "checkout_tps",
+		"art_column":       "checkout_art_seconds",
+		"timezone":         "UTC",
+	} {
+		if err := writer.WriteField(name, value); err != nil {
+			t.Fatal(err)
+		}
+	}
+	part, err := writer.CreateFormFile("file", "traffic.csv")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := part.Write([]byte("timestamp,checkout_tps,checkout_art_seconds\n2026-01-01T00:00:00Z,10,0.2\n2026-01-01T00:00:15Z,20,\n")); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/scenarios/traffic-profile/analyze", &body)
+	request.Header.Set("Content-Type", writer.FormDataContentType())
+	server.handleAnalyzeTrafficProfile(recorder, request)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("analyze = %d %s", recorder.Code, recorder.Body.String())
+	}
+	var response trafficProfileAnalyzeResponse
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if len(response.Series) != 1 || response.Series[0].Series.Name != "checkout_tps" || len(response.ARTSeries) != 1 || response.ARTSeries[0].Series.Name != "checkout_art_seconds" || response.ARTSeries[0].Stats.Count != 1 || response.ARTSeries[0].Stats.Max != 0.2 {
+		t.Fatalf("analysis = %#v", response)
+	}
+	if response.Source.File == nil || len(response.Source.File.ARTColumns) != 1 || response.Source.File.ARTColumns[0] != "checkout_art_seconds" {
+		t.Fatalf("source = %#v", response.Source)
 	}
 }
 

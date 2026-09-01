@@ -318,7 +318,8 @@ describe('caller-supplied transport options', () => {
     const blob = await api.tests.downloadTestReportFormat('t-1', 'exec', 'csv', {
       signal: controller.signal,
     })
-    expect(blob).toBeInstanceOf(Blob)
+    expect(blob).toMatchObject({ size: 6, type: 'text/plain;charset=utf-8' })
+    await expect(blob.text()).resolves.toBe('id,ms\n')
     const [url, init] = lastCall()
     expect(url).toBe(`${BASE}/tests/t-1/archive/report?format=csv&profile=exec`)
     expect(init.signal).toBe(controller.signal)
@@ -327,7 +328,8 @@ describe('caller-supplied transport options', () => {
   it('downloads DOCX from the profile-shaped archive report endpoint', async () => {
     fetchMock.mockResolvedValueOnce(new Response('PK', { status: 200 }))
     const blob = await api.tests.downloadTestReportFormat('t-1', 'audit', 'docx')
-    expect(blob).toBeInstanceOf(Blob)
+    expect(blob).toMatchObject({ size: 2, type: 'text/plain;charset=utf-8' })
+    await expect(blob.text()).resolves.toBe('PK')
     const [url] = lastCall()
     expect(url).toBe(`${BASE}/tests/t-1/archive/report?format=docx&profile=audit`)
   })

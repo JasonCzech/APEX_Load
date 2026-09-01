@@ -3199,7 +3199,7 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
             <div className="new-test-profile-header">
               <div>
                 <h3>Modeled Load Profile</h3>
-                <p>{runLoadProfilePreview.runtimeTarget === 'tps' ? `${scenario?.traffic_profile?.runtime_target === 'tps' ? 'Production-derived adaptive' : 'Configured adaptive'} TPS targets. VUser demand is determined by the goal controller at runtime.` : runLoadProfilePreview.showVUsers ? 'Planned VUsers for this run.' : 'VUser demand is determined by the goal controller at runtime.'}</p>
+                <p>{runLoadProfilePreview.runtimeTarget === 'tps' ? `${scenario?.traffic_profile?.runtime_target === 'tps' ? 'Production-derived adaptive' : 'Configured adaptive'} TPS targets. VUser demand is controlled at runtime${runLoadProfilePreview.estimatedPeakVUsers !== undefined ? '; the ART-backed VUser figure is a Little’s Law planning estimate' : ''}.` : runLoadProfilePreview.showVUsers ? 'Planned VUsers for this run.' : 'VUser demand is determined by the goal controller at runtime.'}</p>
               </div>
               {runLoadProfilePreview.showVUsers && runLoadProfilePreview.peakTps === undefined && <div className="new-test-profile-stat">
                 <strong>{runLoadProfilePreview.peakVUsers}</strong>
@@ -3210,6 +3210,8 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
               <div className="new-test-profile-stat"><strong>{formatProfileTps(runLoadProfilePreview.minTps)}</strong><span>minimum TPS</span></div>
               <div className="new-test-profile-stat"><strong>{formatProfileTps(runLoadProfilePreview.averageTps)}</strong><span>average TPS</span></div>
               <div className="new-test-profile-stat"><strong>{formatProfileTps(runLoadProfilePreview.peakTps)}</strong><span>peak TPS</span></div>
+              {runLoadProfilePreview.estimatedPeakVUsers !== undefined && <div className="new-test-profile-stat"><strong>{runLoadProfilePreview.estimatedPeakVUsers.toLocaleString()}</strong><span>estimated peak VUsers</span></div>}
+              {runLoadProfilePreview.recommendedGenerators !== undefined && runLoadProfilePreview.recommendedGenerators > 0 && <div className="new-test-profile-stat"><strong>{runLoadProfilePreview.recommendedGenerators}</strong><span>recommended generators</span></div>}
             </div>}
             {runLoadProfilePreview.points.length > 0 && (runLoadProfilePreview.showVUsers || runLoadProfilePreview.peakTps !== undefined) ? (
               <>

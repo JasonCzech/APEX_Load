@@ -52,6 +52,21 @@ type RuntimePoint struct {
 	Target   float64 `json:"target"`
 }
 
+// ARTPoint is planning evidence aligned to the transformed workload clock.
+// It never drives the runtime scheduler; callers use it with Little's Law to
+// estimate the VUsers that an adaptive TPS target may require.
+type ARTPoint struct {
+	OffsetMS int64   `json:"offset_ms"`
+	ARTMS    float64 `json:"art_ms"`
+}
+
+type NormalizedART struct {
+	Points         []ARTPoint `json:"points"`
+	PeakARTMS      float64    `json:"peak_art_ms"`
+	FallbackToPeak bool       `json:"fallback_to_peak,omitempty"`
+	Warnings       []string   `json:"warnings,omitempty"`
+}
+
 type WindowSpec struct {
 	Mode            string        `json:"mode,omitempty"`
 	Start           time.Time     `json:"start,omitempty"`
@@ -75,6 +90,8 @@ type NormalizeOptions struct {
 type NormalizedSeries struct {
 	Source         Series         `json:"source"`
 	Points         []RuntimePoint `json:"points"`
+	SourceStart    time.Time      `json:"source_start"`
+	SourceEnd      time.Time      `json:"source_end"`
 	SourceDuration time.Duration  `json:"source_duration"`
 	TargetDuration time.Duration  `json:"target_duration"`
 	DetectedBucket time.Duration  `json:"detected_bucket"`

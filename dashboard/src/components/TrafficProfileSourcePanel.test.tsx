@@ -35,7 +35,9 @@ vi.mock('recharts', () => {
   const Wrapper = ({ children }: { children?: ReactNode }) => <div>{children}</div>
   const Chart = ({ children, data }: { children?: ReactNode; data?: unknown[] }) => <div data-testid="profile-preview-chart" data-chart={JSON.stringify(data || [])}>{children}</div>
   const MockLine = ({ dataKey, name }: { dataKey?: string; name?: string }) => <span data-testid="profile-preview-line" data-key={dataKey} data-name={name} />
-  return { CartesianGrid: Wrapper, ComposedChart: Chart, Legend: Wrapper, Line: MockLine, ResponsiveContainer: Wrapper, Tooltip: Wrapper, XAxis: Wrapper, YAxis: Wrapper }
+  const MockReferenceArea = ({ x1, x2, label }: { x1?: number; x2?: number; label?: { value?: string } }) => <span data-testid="profile-preview-selection" data-x1={x1} data-x2={x2} data-name={label?.value} />
+  const MockXAxis = ({ domain }: { domain?: [number, number] }) => <span data-testid="profile-preview-x-axis" data-domain={JSON.stringify(domain || [])} />
+  return { CartesianGrid: Wrapper, ComposedChart: Chart, Legend: Wrapper, Line: MockLine, ReferenceArea: MockReferenceArea, ResponsiveContainer: Wrapper, Tooltip: Wrapper, XAxis: MockXAxis, YAxis: Wrapper }
 })
 
 describe('TrafficProfileSourcePanel', () => {
@@ -89,6 +91,160 @@ describe('TrafficProfileSourcePanel', () => {
     const applied = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Production profile applied')
     expect(applied?.disabled).toBe(true)
     expect(container.textContent).toContain('Applied: this candidate is the current scenario profile.')
+
+    await act(async () => root.unmount())
+    container.remove()
+  })
+
+  it('adds per-group estimated ART, displays sizing, and confirms guardrail replacement', async () => {
+    const mapping: TrafficProfile['mappings'][number] = {
+      series_key: 'requests', series_name: 'requests', group_name: 'Checkout', peak_target: 30,
+      points: [{ offset_ms: 0, target: 15 }, { offset_ms: 15_000, target: 30 }],
+      art: { basis: 'operator_peak', source_unit: 'seconds', points: [{ offset_ms: 0, art_ms: 1000 }], peak_art_ms: 1000, estimated_peak_vusers: 30 },
+    }
+    const response: TrafficProfileDeriveResponse = {
+      traffic_profile: {
+        version: 1, source: defaultAnalysis.source, value_semantics: 'tps', runtime_target: 'tps', interpolation: 'step', source_duration: '30s', target_duration: '30s', gap_policy: 'hold', mappings: [mapping],
+        sizing: { complete: true, profile_peak_vusers: 30, static_peak_vusers: 0, estimated_peak_vusers: 30, suggested_min_vusers: 1, suggested_max_vusers: 60, recommended_generators: 2 }, refreshed_at: '2026-08-27T00:00:00Z',
+      },
+      preview: [mapping],
+      scenario_draft: { name: 'Replay', duration: '30s', scenario_mode: 'goal_oriented', goal_config: { min_vusers: 1, max_vusers: 60 }, script_shakeout: false, resource_baseline: false, groups: [{ name: 'Checkout', script_id: 'script-1', vusers: 10, initialization: 'at_runtime' }] },
+      load_model_validation: { capacity_advisory: { warnings: ['Only one generator is currently available.'] } } as TrafficProfileDeriveResponse['load_model_validation'],
+    }
+    apiMock.deriveTrafficProfile.mockResolvedValue(response)
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValueOnce(true)
+    const onApply = vi.fn()
+    const existingProfile: TrafficProfile = {
+      ...response.traffic_profile,
+      refreshed_at: '2026-08-26T00:00:00Z',
+      mappings: [{
+        ...mapping,
+        art: { basis: 'operator_peak', source_unit: 'milliseconds', points: [{ offset_ms: 0, art_ms: 500 }], peak_art_ms: 500, estimated_peak_vusers: 15 },
+      }],
+      sizing: { complete: true, profile_peak_vusers: 15, static_peak_vusers: 0, estimated_peak_vusers: 15, suggested_min_vusers: 1, suggested_max_vusers: 30, recommended_generators: 1 },
+    }
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    const draft = { name: 'Replay', duration: '30s', scenario_mode: 'goal_oriented', goal_config: { min_vusers: 5, max_vusers: 10 }, script_shakeout: false, resource_baseline: false, groups: [{ name: 'Checkout', script_id: 'script-1', vusers: 10 }] } as ScenarioUpsertPayload
+    await act(async () => { root.render(<TrafficProfileSourcePanel groupNames={['Checkout']} scenarioDraft={draft} existingProfile={existingProfile} onApply={onApply} />) })
+    const prometheus = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Prometheus')
+    await act(async () => { prometheus?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+    const analyze = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Analyze source')
+    await act(async () => { analyze?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+    const basis = container.querySelector('[aria-label="ART basis for Checkout"]') as HTMLSelectElement
+    await act(async () => { basis.value = 'operator_peak'; basis.dispatchEvent(new Event('change', { bubbles: true })) })
+    const art = container.querySelector('[aria-label="Estimated peak ART for Checkout"]') as HTMLInputElement
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(art, '1')
+      art.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    const unit = container.querySelector('[aria-label="ART unit for Checkout"]') as HTMLSelectElement
+    await act(async () => { unit.value = 'seconds'; unit.dispatchEvent(new Event('change', { bubbles: true })) })
+    const preview = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Build profile preview')
+    await act(async () => { preview?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+    expect(apiMock.deriveTrafficProfile).toHaveBeenCalledWith(expect.objectContaining({ mappings: [{ series_key: 'requests', group_name: 'Checkout', art: { basis: 'operator_peak', value: 1, unit: 'seconds' } }] }))
+    expect(container.textContent).toContain('Estimated peak VUsers: 30')
+    expect(container.textContent).toContain('Current guardrails: 5-10 VUsers · Suggested: 1-60 VUsers')
+    expect(container.textContent).toContain('2 generator(s) recommended')
+    expect(container.textContent).toContain('Capacity: Only one generator is currently available.')
+    expect(container.textContent).toContain('Operator estimate · 500 ms · 15 VUsers')
+    expect(container.textContent).toContain('estimated peak 15 VUsers, suggested bounds 1-30, 1 generator recommendation')
+    const apply = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Apply profile and ART guardrails')
+    await act(async () => { apply?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+    expect(onApply).not.toHaveBeenCalled()
+    await act(async () => { apply?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+    expect(confirm).toHaveBeenCalledWith(expect.stringContaining('5-10'))
+    expect(onApply).toHaveBeenCalledWith(response)
+    confirm.mockRestore()
+    await act(async () => root.unmount())
+    container.remove()
+  })
+
+  it('defaults manual ART and units from the saved group evidence', async () => {
+    const existingProfile: TrafficProfile = {
+      version: 1,
+      source: defaultAnalysis.source,
+      value_semantics: 'tps', runtime_target: 'tps', interpolation: 'step', source_duration: '30s', target_duration: '30s', gap_policy: 'hold', refreshed_at: '2026-08-27T00:00:00Z',
+      mappings: [{
+        series_key: 'requests', series_name: 'requests', group_name: 'Checkout', peak_target: 30,
+        points: [{ offset_ms: 0, target: 15 }, { offset_ms: 15_000, target: 30 }],
+        art: { basis: 'operator_peak', source_unit: 'seconds', points: [{ offset_ms: 0, art_ms: 1000 }], peak_art_ms: 1000, estimated_peak_vusers: 30 },
+      }],
+    }
+    const draft = { name: 'Replay', duration: '30s', scenario_mode: 'goal_oriented', goal_config: { min_vusers: 1, max_vusers: 60 }, script_shakeout: false, resource_baseline: false, groups: [{ name: 'Checkout', script_id: 'script-1', vusers: 10, initialization: 'at_runtime' }] } as ScenarioUpsertPayload
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    await act(async () => { root.render(<TrafficProfileSourcePanel groupNames={['Checkout']} scenarioDraft={draft} existingProfile={existingProfile} onApply={vi.fn()} />) })
+    const analyze = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Analyze source')
+    await act(async () => { analyze?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+    expect((container.querySelector('[aria-label="ART basis for Checkout"]') as HTMLSelectElement).value).toBe('operator_peak')
+    expect((container.querySelector('[aria-label="Estimated peak ART for Checkout"]') as HTMLInputElement).value).toBe('1')
+    expect((container.querySelector('[aria-label="ART unit for Checkout"]') as HTMLSelectElement).value).toBe('seconds')
+    await act(async () => root.unmount())
+    container.remove()
+  })
+
+  it('keeps the full source range visible and highlights the resolved peak window', async () => {
+    const sourceStart = Date.parse('2026-08-26T00:00:00Z')
+    const sourcePoints = [0, 15, 30, 45, 60].map((minutes, index) => ({
+      timestamp: new Date(sourceStart + minutes * 60_000).toISOString(),
+      value: [2, 20, 40, 15, 3][index],
+    }))
+    apiMock.analyzeTrafficProfile.mockResolvedValue({
+      ...defaultAnalysis,
+      series: [{
+        series: { key: 'requests', name: 'requests', points: sourcePoints },
+        stats: { count: sourcePoints.length, start: sourcePoints[0].timestamp, end: sourcePoints[sourcePoints.length - 1].timestamp, min: 2, max: 40, mean: 16, detected_bucket: 900_000_000_000, gaps: 0 },
+      }],
+    })
+    const mapping: TrafficProfile['mappings'][number] = {
+      series_key: 'requests', series_name: 'requests', group_name: 'Checkout', source_start: '2026-08-26T00:15:00Z', source_end: '2026-08-26T00:45:00Z', source_duration: '30m', peak_target: 40,
+      points: [{ offset_ms: 0, target: 20 }, { offset_ms: 300_000, target: 40 }],
+    }
+    apiMock.deriveTrafficProfile.mockResolvedValue({
+      traffic_profile: {
+        version: 1, source: defaultAnalysis.source, value_semantics: 'tps', runtime_target: 'tps', interpolation: 'step', source_duration: '30m', target_duration: '10m', gap_policy: 'hold', window: { mode: 'peak', duration: '30m' }, mappings: [mapping], refreshed_at: '2026-08-27T00:00:00Z',
+      },
+      preview: [mapping],
+      scenario_draft: { name: 'Replay', duration: '10m', scenario_mode: 'goal_oriented', script_shakeout: false, resource_baseline: false, groups: [] },
+    } satisfies TrafficProfileDeriveResponse)
+    const draft = { name: 'Replay', duration: '1h', scenario_mode: 'vuser_driven', script_shakeout: false, resource_baseline: false, groups: [{ name: 'Checkout', script_id: 'script-1', vusers: 10 }] } as ScenarioUpsertPayload
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    await act(async () => { root.render(<TrafficProfileSourcePanel groupNames={['Checkout']} scenarioDraft={draft} onApply={vi.fn()} />) })
+
+    const prometheus = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Prometheus')
+    await act(async () => { prometheus?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+    const analyze = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Analyze source')
+    await act(async () => { analyze?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+    const windowSelect = Array.from(container.querySelectorAll('select')).find(select => select.parentElement?.querySelector('span')?.textContent === 'Window') as HTMLSelectElement
+    await act(async () => {
+      windowSelect.value = 'peak'
+      windowSelect.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    const peakDurationInput = Array.from(container.querySelectorAll('input')).find(input => input.parentElement?.querySelector('span')?.textContent === 'Peak window duration') as HTMLInputElement
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(peakDurationInput, '30m')
+      peakDurationInput.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    const preview = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Build profile preview')
+    await act(async () => { preview?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+
+    expect(container.textContent).toContain('complete analyzed source range')
+    const selection = container.querySelector('[data-testid="profile-preview-selection"]')
+    expect(selection?.getAttribute('data-x1')).toBe('900000')
+    expect(selection?.getAttribute('data-x2')).toBe('2700000')
+    expect(selection?.getAttribute('data-name')).toBe('Checkout selected window')
+    expect(container.querySelector('[data-testid="profile-preview-x-axis"]')?.getAttribute('data-domain')).toBe('[0,3600000]')
+    const chartRows = JSON.parse(container.querySelector('[data-testid="profile-preview-chart"]')?.getAttribute('data-chart') || '[]') as Array<Record<string, number>>
+    expect(chartRows.find(row => row.elapsed === 0)?.source_0).toBe(2)
+    expect(chartRows.find(row => row.elapsed === 3_600_000)?.source_0).toBe(3)
+    expect(chartRows.find(row => row.elapsed === 900_000)?.candidate_0).toBe(20)
+    expect(chartRows.find(row => row.elapsed === 1_800_000)?.candidate_0).toBe(40)
+    expect(chartRows.find(row => row.elapsed === 2_700_000)?.candidate_0).toBe(0)
 
     await act(async () => root.unmount())
     container.remove()
@@ -328,8 +484,8 @@ describe('TrafficProfileSourcePanel', () => {
       }
     })
     const compositeMappings: TrafficProfile['mappings'] = [
-      { series_key: 'group-1:checkout-requests', series_name: 'checkout requests', group_name: 'Checkout', peak_target: 30, points: [{ offset_ms: 0, target: 10 }, { offset_ms: 15_000, target: 30 }] },
-      { series_key: 'group-2:search-requests', series_name: 'search requests', group_name: 'Search', peak_target: 20, points: [{ offset_ms: 0, target: 5 }, { offset_ms: 15_000, target: 20 }] },
+      { series_key: 'group-1:checkout-requests', series_name: 'checkout requests', group_name: 'Checkout', source_start: '2026-08-26T00:00:00Z', source_end: '2026-08-26T00:00:30Z', source_duration: '30s', peak_target: 30, points: [{ offset_ms: 0, target: 10 }, { offset_ms: 15_000, target: 30 }] },
+      { series_key: 'group-2:search-requests', series_name: 'search requests', group_name: 'Search', source_start: '2026-08-26T00:00:00Z', source_end: '2026-08-26T00:00:30Z', source_duration: '30s', peak_target: 20, points: [{ offset_ms: 0, target: 5 }, { offset_ms: 15_000, target: 20 }] },
     ]
     apiMock.deriveTrafficProfile.mockResolvedValue({
       traffic_profile: { version: 1, source: { kind: 'multiple', sources: [] }, value_semantics: 'tps', runtime_target: 'tps', interpolation: 'step', source_duration: '30s', target_duration: '30s', mappings: compositeMappings, refreshed_at: '2026-08-27T00:00:00Z' },

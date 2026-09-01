@@ -802,6 +802,19 @@ describe('Sidebar', () => {
     expect(menuRule).not.toContain('transparent')
   })
 
+  it('keeps the macOS traffic lights clear of expanded and compact branding at every dashboard zoom', async () => {
+    // @ts-expect-error node:fs is available in the Vitest runtime.
+    const { readFileSync } = await import('node:fs')
+    const css = readFileSync('src/components/Sidebar.css', 'utf8') as string
+    const expandedRule = css.match(/body\.is-desktop\.is-mac \.sidebar:not\(\.collapsed\) \.sidebar-brand \{([\s\S]*?)\n\}/)?.[1] || ''
+    const collapsedRule = css.match(/body\.is-desktop\.is-mac \.sidebar\.collapsed \.sidebar-brand \{([\s\S]*?)\n\}/)?.[1] || ''
+    const compactRule = css.match(/body\.is-desktop\.is-mac \.sidebar:not\(\.collapsed\) \.sidebar-brand,\n {2}body\.is-desktop\.is-mac \.sidebar\.collapsed \.sidebar-brand \{([\s\S]*?)\n {2}\}/)?.[1] || ''
+
+    expect(expandedRule).toContain('padding-left: calc(80px / var(--dashboard-zoom, 1));')
+    expect(collapsedRule).toContain('padding: calc(44px / var(--dashboard-zoom, 1)) 0 16px;')
+    expect(compactRule).toContain('padding: calc(44px / var(--dashboard-zoom, 1)) 0 16px;')
+  })
+
   it('renders Release as a separate dropdown directly below Application', async () => {
     const onReleaseChange = vi.fn()
     await act(async () => {

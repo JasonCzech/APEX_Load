@@ -407,6 +407,8 @@ func TestCloseBeforeWindowRestorePreservesPriorSessionState(t *testing.T) {
 
 type fakeDesktopServer struct {
 	mu             sync.Mutex
+	schedulerErr   error
+	started        []string
 	ready          bool
 	origin         string
 	startErr       error
@@ -419,11 +421,65 @@ type fakeDesktopServer struct {
 	browserProject string
 }
 
+func (s *fakeDesktopServer) StartScheduler(context.Context) error {
+	s.mu.Lock()
+	s.started = append(s.started, "scheduler")
+	err := s.schedulerErr
+	s.mu.Unlock()
+	return err
+}
+
 func (s *fakeDesktopServer) Start() error {
+	s.mu.Lock()
+	s.started = append(s.started, "server")
+	s.mu.Unlock()
 	if s.startBlock != nil {
 		<-s.startBlock
 	}
 	return s.startErr
+}
+
+func TestStartDesktopServicesStartsSchedulerBeforeServer(t *testing.T) {
+	app := NewApp()
+	server := &fakeDesktopServer{startBlock: make(chan struct{})}
+	if !app.startDesktopServices(context.Background(), server) {
+		t.Fatal("startDesktopServices unexpectedly failed")
+	}
+	deadline := time.Now().Add(time.Second)
+	for {
+		server.mu.Lock()
+		started := append([]string(nil), server.started...)
+		server.mu.Unlock()
+		if len(started) == 2 {
+			if want := []string{"scheduler", "server"}; !reflect.DeepEqual(started, want) {
+				t.Fatalf("service startup order = %#v, want %#v", started, want)
+			}
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("service startup did not complete: %#v", started)
+		}
+		time.Sleep(time.Millisecond)
+	}
+	app.shutdownWait = time.Second
+	app.shutdown(context.Background())
+}
+
+func TestStartDesktopServicesRejectsSchedulerFailure(t *testing.T) {
+	app := NewApp()
+	server := &fakeDesktopServer{schedulerErr: errors.New("scheduler unavailable")}
+	if app.startDesktopServices(context.Background(), server) {
+		t.Fatal("startDesktopServices accepted a scheduler startup failure")
+	}
+	server.mu.Lock()
+	started := append([]string(nil), server.started...)
+	server.mu.Unlock()
+	if want := []string{"scheduler"}; !reflect.DeepEqual(started, want) {
+		t.Fatalf("services started after scheduler failure = %#v, want %#v", started, want)
+	}
+	if got := app.GetStartupError(); !strings.Contains(got, "scheduler unavailable") {
+		t.Fatalf("startup error = %q, want scheduler failure", got)
+	}
 }
 
 func (s *fakeDesktopServer) Shutdown(context.Context) error {

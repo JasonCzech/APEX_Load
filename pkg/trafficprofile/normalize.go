@@ -193,7 +193,7 @@ func Normalize(series Series, opts NormalizeOptions) (NormalizedSeries, error) {
 			warnings = append(warnings, fmt.Sprintf("%d adjacent TPS target changes exceed 2x or fall below 0.5x; achieved TPS may lag the requested steps", largeChanges))
 		}
 	}
-	return NormalizedSeries{Source: series, Points: runtimePoints, SourceDuration: sourceDuration, TargetDuration: targetDuration, DetectedBucket: stats.DetectedBucket, RuntimeTarget: runtimeTarget, Warnings: dedupeStrings(warnings)}, nil
+	return NormalizedSeries{Source: series, Points: runtimePoints, SourceStart: stats.Start, SourceEnd: sourceEnd, SourceDuration: sourceDuration, TargetDuration: targetDuration, DetectedBucket: stats.DetectedBucket, RuntimeTarget: runtimeTarget, Warnings: dedupeStrings(warnings)}, nil
 }
 
 func applyGapPolicy(points []Point, cadence time.Duration, policy GapPolicy, semantics ValueSemantics) ([]Point, []string, error) {

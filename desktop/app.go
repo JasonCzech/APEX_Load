@@ -34,6 +34,7 @@ const (
 // failure paths testable without a live Wails runtime.
 type desktopAPIServer interface {
 	Start() error
+	StartScheduler(context.Context) error
 	Shutdown(context.Context) error
 	BoundAddrReady() bool
 	BoundAddr() string
@@ -372,7 +373,7 @@ func (a *App) startup(ctx context.Context) {
 		// can generate/retain W3C IDs but never exports local operator activity.
 		TracingStatus: telemetry.Status{CorrelationOnly: true},
 	})
-	if !a.startAPIServer(server) {
+	if !a.startDesktopServices(ctx, server) {
 		a.lifecycleMu.Lock()
 		if a.store == store {
 			a.store = nil
@@ -389,6 +390,32 @@ func (a *App) startup(ctx context.Context) {
 	// resolved (the menu built in main.go was created before recents loaded).
 	// Linux keeps its initial Wails menu static; recents remain in the dashboard.
 	a.rebuildMenu()
+}
+
+// startDesktopServices keeps the embedded controller's background services in
+// parity with cmd/controller. In particular, schedules created from the native
+// app must be driven by the same persisted scheduler as schedules created from
+// the hosted dashboard. Start the scheduler before publishing the HTTP server
+// so the renderer can never observe a partially initialized controller.
+func (a *App) startDesktopServices(ctx context.Context, server desktopAPIServer) bool {
+	if err := server.StartScheduler(ctx); err != nil {
+		a.failStartup("failed to start scenario scheduler", err)
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), defaultShutdownTimeout)
+		defer cancel()
+		if shutdownErr := server.Shutdown(shutdownCtx); shutdownErr != nil {
+			slog.Warn("failed to clean up embedded controller after scheduler startup failure", "err", shutdownErr)
+		}
+		return false
+	}
+	if a.startAPIServer(server) {
+		return true
+	}
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), defaultShutdownTimeout)
+	defer cancel()
+	if err := server.Shutdown(shutdownCtx); err != nil {
+		slog.Warn("failed to clean up unpublished embedded controller", "err", err)
+	}
+	return false
 }
 
 // beginStartup/finishStartup delimit the complete Wails OnStartup callback.

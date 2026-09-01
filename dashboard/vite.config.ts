@@ -10,6 +10,7 @@ const dashboardPackage = require('./package.json') as { version?: string }
 const vitePackage = require('vite/package.json') as { version?: string }
 const dashboardRoot = fileURLToPath(new URL('.', import.meta.url))
 const docsRoot = fileURLToPath(new URL('../docs', import.meta.url))
+const mcpRoot = fileURLToPath(new URL('../mcp', import.meta.url))
 const apiProxyTarget = process.env.APEXLOAD_API_PROXY || 'http://localhost:8080'
 const apiProxyOrigin = new URL(apiProxyTarget).origin
 
@@ -68,8 +69,8 @@ export default defineConfig({
     strictPort: true,
     fs: {
       // The dashboard intentionally embeds reviewed repository documentation.
-      // Keep Vite's file-serving boundary to the package and that directory.
-      allow: [dashboardRoot, docsRoot],
+      // Keep Vite's file-serving boundary to the package and the reviewed guide directories.
+      allow: [dashboardRoot, docsRoot, mcpRoot],
     },
     proxy: {
       '/api': {

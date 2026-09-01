@@ -30,6 +30,56 @@ func TestParseCSVAndNormalizeCounts(t *testing.T) {
 	}
 }
 
+func TestNormalizeARTConvertsUnitsAndUsesPeakForSparseEvidence(t *testing.T) {
+	start := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	workload, err := Normalize(Series{Name: "orders", Points: []Point{
+		{Timestamp: start, Value: 10},
+		{Timestamp: start.Add(15 * time.Second), Value: 20},
+		{Timestamp: start.Add(30 * time.Second), Value: 30},
+	}}, NormalizeOptions{Semantics: SemanticsTPS, SourceEnd: start.Add(45 * time.Second), TargetDuration: 15 * time.Second})
+	if err != nil {
+		t.Fatal(err)
+	}
+	complete, err := NormalizeART(Series{Name: "art", Points: []Point{
+		{Timestamp: start, Value: 0.1},
+		{Timestamp: start.Add(15 * time.Second), Value: 0.2},
+		{Timestamp: start.Add(30 * time.Second), Value: 0.4},
+	}}, workload, "seconds")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if complete.FallbackToPeak || complete.PeakARTMS != 400 || len(complete.Points) != 3 || complete.Points[1].ARTMS != 200 || complete.Points[1].OffsetMS != 5000 {
+		t.Fatalf("complete ART = %#v", complete)
+	}
+
+	sparse, err := NormalizeART(Series{Name: "art", Points: []Point{
+		{Timestamp: start, Value: 100},
+		{Timestamp: start.Add(30 * time.Second), Value: 400},
+	}}, workload, "milliseconds")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !sparse.FallbackToPeak || len(sparse.Points) != 1 || sparse.Points[0].ARTMS != 400 || len(sparse.Warnings) != 1 {
+		t.Fatalf("sparse ART = %#v", sparse)
+	}
+	for _, test := range []struct {
+		name   string
+		series Series
+		unit   string
+	}{
+		{name: "zero", series: Series{Points: []Point{{Timestamp: start, Value: 0}}}, unit: "milliseconds"},
+		{name: "negative", series: Series{Points: []Point{{Timestamp: start, Value: -1}}}, unit: "milliseconds"},
+		{name: "unknown unit", series: Series{Points: []Point{{Timestamp: start, Value: 1}}}, unit: "minutes"},
+		{name: "outside window", series: Series{Points: []Point{{Timestamp: start.Add(-time.Second), Value: 1}}}, unit: "milliseconds"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if _, err := NormalizeART(test.series, workload, test.unit); err == nil {
+				t.Fatal("expected ART validation error")
+			}
+		})
+	}
+}
+
 func TestParseXLSXAndNaiveTimestampTimezone(t *testing.T) {
 	book := excelize.NewFile()
 	defer book.Close()
@@ -39,6 +89,9 @@ func TestParseXLSXAndNaiveTimestampTimezone(t *testing.T) {
 	book.SetCellValue("Sheet1", "B2", 15)
 	book.SetCellValue("Sheet1", "A3", time.Date(2026, 1, 1, 8, 0, 15, 0, time.UTC))
 	book.SetCellValue("Sheet1", "B3", 30)
+	book.SetCellValue("Sheet1", "C1", "art_seconds")
+	book.SetCellValue("Sheet1", "C2", 0.2)
+	book.SetCellValue("Sheet1", "C3", 0.4)
 	format := "yyyy-mm-dd hh:mm:ss"
 	style, err := book.NewStyle(&excelize.Style{CustomNumFmt: &format})
 	if err != nil {
@@ -65,6 +118,10 @@ func TestParseXLSXAndNaiveTimestampTimezone(t *testing.T) {
 	}
 	if got := series[0].Points[0].Timestamp.Format(time.RFC3339); got != "2026-01-01T13:00:00Z" {
 		t.Fatalf("UTC timestamp = %s", got)
+	}
+	artSeries, err := SeriesFromSheet(&sheets[0], TableOptions{TimestampColumn: "when", ValueColumns: []string{"art_seconds"}, Timezone: location})
+	if err != nil || len(artSeries) != 1 || artSeries[0].Points[1].Value != 0.4 {
+		t.Fatalf("XLSX ART series = %#v, %v", artSeries, err)
 	}
 }
 
@@ -274,6 +331,9 @@ func TestPeakWindowProratesPartialTransactionBucketsAndKeepsExactDuration(t *tes
 	got, err := Normalize(series, NormalizeOptions{Semantics: SemanticsTransactionsPerBucket, Window: WindowSpec{Mode: "peak", Duration: 15 * time.Second}})
 	if err != nil {
 		t.Fatal(err)
+	}
+	if !got.SourceStart.Equal(start) || !got.SourceEnd.Equal(start.Add(15*time.Second)) {
+		t.Fatalf("resolved source window = %s-%s", got.SourceStart, got.SourceEnd)
 	}
 	if got.SourceDuration != 15*time.Second || got.TargetDuration != 15*time.Second {
 		t.Fatalf("durations = %s / %s", got.SourceDuration, got.TargetDuration)

@@ -59,23 +59,33 @@ type trafficProfileAnalyzedSeries struct {
 }
 
 type trafficProfileAnalyzeResponse struct {
-	Source   TrafficProfileSource           `json:"source"`
-	Sheets   []trafficprofile.Sheet         `json:"sheets,omitempty"`
-	Series   []trafficProfileAnalyzedSeries `json:"series,omitempty"`
-	Warnings []string                       `json:"warnings,omitempty"`
-	Limits   trafficProfileLimits           `json:"limits"`
+	Source    TrafficProfileSource           `json:"source"`
+	Sheets    []trafficprofile.Sheet         `json:"sheets,omitempty"`
+	Series    []trafficProfileAnalyzedSeries `json:"series,omitempty"`
+	ARTSeries []trafficProfileAnalyzedSeries `json:"art_series,omitempty"`
+	Warnings  []string                       `json:"warnings,omitempty"`
+	Limits    trafficProfileLimits           `json:"limits"`
 }
 
 type trafficProfileSeriesMappingRequest struct {
 	SeriesKey string                     `json:"series_key"`
 	GroupName string                     `json:"group_name"`
 	Source    *TrafficProfileSourceEntry `json:"source,omitempty"`
+	ART       *trafficProfileARTRequest  `json:"art,omitempty"`
+}
+
+type trafficProfileARTRequest struct {
+	Basis     string  `json:"basis"`
+	SeriesKey string  `json:"series_key,omitempty"`
+	Value     float64 `json:"value,omitempty"`
+	Unit      string  `json:"unit,omitempty"`
 }
 
 type trafficProfileDeriveRequest struct {
 	ProjectID      string                               `json:"project_id,omitempty"`
 	Source         TrafficProfileSource                 `json:"source"`
 	Series         []trafficprofile.Series              `json:"series"`
+	ARTSeries      []trafficprofile.Series              `json:"art_series,omitempty"`
 	Mappings       []trafficProfileSeriesMappingRequest `json:"mappings"`
 	ValueSemantics trafficprofile.ValueSemantics        `json:"value_semantics"`
 	GapPolicy      trafficprofile.GapPolicy             `json:"gap_policy"`
@@ -170,7 +180,7 @@ func (s *Server) handleAnalyzeTrafficProfile(w http.ResponseWriter, r *http.Requ
 		writeError(w, http.StatusBadRequest, "source.kind must be prometheus or opensearch for JSON analysis")
 		return
 	}
-	s.writeTrafficProfileAnalysis(w, request.Source, nil, series)
+	s.writeTrafficProfileAnalysis(w, request.Source, nil, series, nil)
 }
 
 func (s *Server) handleAnalyzeTrafficProfileFile(w http.ResponseWriter, r *http.Request) {
@@ -226,6 +236,25 @@ func (s *Server) handleAnalyzeTrafficProfileFile(w http.ResponseWriter, r *http.
 		}
 	}
 	source.File.ValueColumns = valueColumns
+	artColumns := append([]string(nil), r.MultipartForm.Value["art_column"]...)
+	if len(artColumns) == 0 {
+		for _, value := range strings.Split(r.FormValue("art_columns"), ",") {
+			if value = strings.TrimSpace(value); value != "" {
+				artColumns = append(artColumns, value)
+			}
+		}
+	}
+	source.File.ARTColumns = artColumns
+	workloadColumns := make(map[string]struct{}, len(valueColumns))
+	for _, column := range valueColumns {
+		workloadColumns[strings.ToLower(strings.TrimSpace(column))] = struct{}{}
+	}
+	for _, column := range artColumns {
+		if _, exists := workloadColumns[strings.ToLower(strings.TrimSpace(column))]; exists {
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("column %q cannot be both a workload value and ART", column))
+			return
+		}
+	}
 	if source.File.TimestampColumn == "" || len(valueColumns) == 0 || selected == "" {
 		writeJSON(w, http.StatusOK, trafficProfileAnalyzeResponse{Source: source, Sheets: sheets, Limits: currentTrafficProfileLimits()})
 		return
@@ -269,10 +298,18 @@ func (s *Server) handleAnalyzeTrafficProfileFile(w http.ResponseWriter, r *http.
 		writeError(w, http.StatusUnprocessableEntity, err.Error())
 		return
 	}
-	s.writeTrafficProfileAnalysis(w, source, sheets, series)
+	var artSeries []trafficprofile.Series
+	if len(artColumns) > 0 {
+		artSeries, err = trafficprofile.SeriesFromSheet(sheet, trafficprofile.TableOptions{TimestampColumn: source.File.TimestampColumn, TimestampMode: timestampMode, RelativeStart: relativeStart, ValueColumns: artColumns, SeriesColumn: source.File.SeriesColumn, Timezone: location})
+		if err != nil {
+			writeError(w, http.StatusUnprocessableEntity, "ART columns: "+err.Error())
+			return
+		}
+	}
+	s.writeTrafficProfileAnalysis(w, source, sheets, series, artSeries)
 }
 
-func (s *Server) writeTrafficProfileAnalysis(w http.ResponseWriter, source TrafficProfileSource, sheets []trafficprofile.Sheet, series []trafficprofile.Series) {
+func (s *Server) writeTrafficProfileAnalysis(w http.ResponseWriter, source TrafficProfileSource, sheets []trafficprofile.Sheet, series, artSeries []trafficprofile.Series) {
 	if len(series) == 0 {
 		writeError(w, http.StatusUnprocessableEntity, "analysis did not discover any series with at least two points")
 		return
@@ -296,7 +333,38 @@ func (s *Server) writeTrafficProfileAnalysis(w http.ResponseWriter, source Traff
 		}
 		response.Series = append(response.Series, trafficProfileAnalyzedSeries{Series: item, Stats: stats})
 	}
+	artTotal := 0
+	for _, item := range artSeries {
+		artTotal += len(item.Points)
+		if len(item.Points) > trafficprofile.MaxPointsPerSeries || artTotal > trafficprofile.MaxPointsPerProfile {
+			writeError(w, http.StatusUnprocessableEntity, "ART evidence exceeds point limits")
+			return
+		}
+		stats, err := trafficProfileARTSeriesStats(item)
+		if err != nil {
+			writeError(w, http.StatusUnprocessableEntity, "ART series: "+err.Error())
+			return
+		}
+		response.ARTSeries = append(response.ARTSeries, trafficProfileAnalyzedSeries{Series: item, Stats: stats})
+	}
 	writeJSON(w, http.StatusOK, response)
+}
+
+// File-backed ART may contain only one valid observation. It is still useful
+// as a conservative constant estimate even though workload series require at
+// least two points to define an executable time range.
+func trafficProfileARTSeriesStats(series trafficprofile.Series) (trafficprofile.Stats, error) {
+	if len(series.Points) != 1 {
+		return trafficprofile.SeriesStats(series)
+	}
+	point := series.Points[0]
+	if point.Timestamp.IsZero() {
+		return trafficprofile.Stats{}, errors.New("point timestamp is required")
+	}
+	if point.Value < 0 || math.IsNaN(point.Value) || math.IsInf(point.Value, 0) {
+		return trafficprofile.Stats{}, errors.New("point value must be finite and zero or greater")
+	}
+	return trafficprofile.Stats{Count: 1, Start: point.Timestamp, End: point.Timestamp, Min: point.Value, Max: point.Value, Mean: point.Value}, nil
 }
 
 func (s *Server) handleDeriveTrafficProfile(w http.ResponseWriter, r *http.Request) {
@@ -347,6 +415,33 @@ func (s *Server) handleDeriveTrafficProfile(w http.ResponseWriter, r *http.Reque
 		writeError(w, http.StatusRequestEntityTooLarge, "traffic profile exceeds total point limit")
 		return
 	}
+	if len(request.ARTSeries) > trafficProfileMaxSeries {
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("art_series must contain at most %d entries", trafficProfileMaxSeries))
+		return
+	}
+	artSeriesByKey := make(map[string]trafficprofile.Series, len(request.ARTSeries))
+	artTotal := 0
+	for _, series := range request.ARTSeries {
+		series.Key = strings.TrimSpace(series.Key)
+		if series.Key == "" {
+			writeError(w, http.StatusBadRequest, "every ART series requires a non-empty key")
+			return
+		}
+		if _, exists := artSeriesByKey[series.Key]; exists {
+			writeError(w, http.StatusBadRequest, "ART series keys must be unique")
+			return
+		}
+		if len(series.Points) > trafficprofile.MaxPointsPerSeries {
+			writeError(w, http.StatusRequestEntityTooLarge, "ART series exceeds the per-series point limit")
+			return
+		}
+		artTotal += len(series.Points)
+		artSeriesByKey[series.Key] = series
+	}
+	if artTotal > trafficprofile.MaxPointsPerProfile {
+		writeError(w, http.StatusRequestEntityTooLarge, "ART evidence exceeds total point limit")
+		return
+	}
 	window, err := trafficProfileWindowSpec(request.Window)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -370,6 +465,9 @@ func (s *Server) handleDeriveTrafficProfile(w http.ResponseWriter, r *http.Reque
 		source     TrafficProfileSource
 		sourceEnd  time.Time
 		normalized trafficprofile.NormalizedSeries
+		artRequest *trafficProfileARTRequest
+		artSeries  *trafficprofile.Series
+		art        *TrafficProfileART
 	}
 	candidates := make([]normalizationCandidate, 0, len(request.Mappings))
 	resolvedTargetDuration := targetDuration
@@ -414,7 +512,27 @@ func (s *Server) handleDeriveTrafficProfile(w http.ResponseWriter, r *http.Reque
 		if targetDuration == 0 && normalized.TargetDuration > resolvedTargetDuration {
 			resolvedTargetDuration = normalized.TargetDuration
 		}
-		candidates = append(candidates, normalizationCandidate{mapping: mapping, series: series, source: mappingSource, sourceEnd: sourceEnd, normalized: normalized})
+		var artSeries *trafficprofile.Series
+		if mapping.ART != nil {
+			switch mapping.ART.Basis {
+			case "source_series":
+				item, exists := artSeriesByKey[strings.TrimSpace(mapping.ART.SeriesKey)]
+				if !exists {
+					writeError(w, http.StatusBadRequest, "mapped ART series "+mapping.ART.SeriesKey+" was not analyzed")
+					return
+				}
+				artSeries = &item
+			case "operator_peak":
+				if _, peakErr := trafficprofile.NormalizeARTPeak(mapping.ART.Value, mapping.ART.Unit); peakErr != nil {
+					writeError(w, http.StatusUnprocessableEntity, peakErr.Error())
+					return
+				}
+			default:
+				writeError(w, http.StatusBadRequest, "ART basis must be source_series or operator_peak")
+				return
+			}
+		}
+		candidates = append(candidates, normalizationCandidate{mapping: mapping, series: series, source: mappingSource, sourceEnd: sourceEnd, normalized: normalized, artRequest: mapping.ART, artSeries: artSeries})
 	}
 	profile := &TrafficProfile{Version: trafficProfileVersion, Source: request.Source, ValueSemantics: string(request.ValueSemantics), Interpolation: "step", GapPolicy: string(request.GapPolicy), Window: request.Window, Amplitude: request.Amplitude, SourceDuration: maximumSourceDuration.String(), TargetDuration: resolvedTargetDuration.String(), RefreshedAt: time.Now().UTC()}
 	warnings := make([]string, 0)
@@ -430,6 +548,31 @@ func (s *Server) handleDeriveTrafficProfile(w http.ResponseWriter, r *http.Reque
 			warnings = append(warnings, fmt.Sprintf("%s was proportionally aligned from %s to the shared test duration %s", candidate.series.Name, normalized.SourceDuration, resolvedTargetDuration))
 		}
 		normalized := candidate.normalized
+		if candidate.artRequest != nil {
+			art := &TrafficProfileART{Basis: candidate.artRequest.Basis, SourceUnit: normalizedARTUnit(candidate.artRequest.Unit)}
+			if candidate.artRequest.Basis == "source_series" {
+				normalizedART, artErr := trafficprofile.NormalizeART(*candidate.artSeries, normalized, candidate.artRequest.Unit)
+				if artErr != nil {
+					writeError(w, http.StatusUnprocessableEntity, fmt.Sprintf("%s ART: %v", candidate.series.Name, artErr))
+					return
+				}
+				art.SeriesKey = candidate.artSeries.Key
+				art.SeriesName = candidate.artSeries.Name
+				art.Points = normalizedART.Points
+				art.PeakARTMS = normalizedART.PeakARTMS
+				art.FallbackToPeak = normalizedART.FallbackToPeak
+				warnings = append(warnings, normalizedART.Warnings...)
+			} else {
+				peakARTMS, peakErr := trafficprofile.NormalizeARTPeak(candidate.artRequest.Value, candidate.artRequest.Unit)
+				if peakErr != nil {
+					writeError(w, http.StatusUnprocessableEntity, peakErr.Error())
+					return
+				}
+				art.Points = []trafficprofile.ARTPoint{{OffsetMS: 0, ARTMS: peakARTMS}}
+				art.PeakARTMS = peakARTMS
+			}
+			candidate.art = art
+		}
 		if profile.RuntimeTarget == "" {
 			profile.RuntimeTarget = normalized.RuntimeTarget
 		}
@@ -437,7 +580,11 @@ func (s *Server) handleDeriveTrafficProfile(w http.ResponseWriter, r *http.Reque
 		for _, point := range normalized.Points {
 			peak = math.Max(peak, point.Target)
 		}
-		resultMapping := TrafficProfileMapping{SeriesKey: candidate.series.Key, SeriesName: candidate.series.Name, GroupName: candidate.mapping.GroupName, SourceDuration: normalized.SourceDuration.String(), Points: normalized.Points, PeakTarget: peak}
+		resultMapping := TrafficProfileMapping{SeriesKey: candidate.series.Key, SeriesName: candidate.series.Name, GroupName: candidate.mapping.GroupName, SourceStart: normalized.SourceStart.Format(time.RFC3339Nano), SourceEnd: normalized.SourceEnd.Format(time.RFC3339Nano), SourceDuration: normalized.SourceDuration.String(), Points: normalized.Points, PeakTarget: peak, ART: candidate.art}
+		if resultMapping.ART != nil {
+			resultMapping.ART.MinARTMS, resultMapping.ART.AverageARTMS = trafficProfileARTStatistics(resultMapping.ART, normalized.TargetDuration)
+			resultMapping.ART.EstimatedPeakVUsers = trafficProfileMappingEstimatedPeak(resultMapping)
+		}
 		if strings.EqualFold(strings.TrimSpace(request.Source.Kind), "multiple") {
 			source := trafficProfileSourceEntry(candidate.source)
 			resultMapping.Source = &source
@@ -454,11 +601,35 @@ func (s *Server) handleDeriveTrafficProfile(w http.ResponseWriter, r *http.Reque
 		draft.ScenarioMode = "vuser_driven"
 	} else {
 		draft.ScenarioMode = "goal_oriented"
-		// A profile supplies the changing TPS objective, but the adaptive
-		// controller still needs an initial safety envelope. Preserve an
-		// operator-provided envelope; otherwise seed conservative editable
-		// bounds from the draft's current VUser allocation.
-		if draft.GoalConfig == nil || draft.GoalConfig.MinVUsers == nil || draft.GoalConfig.MaxVUsers == nil {
+		completeART := len(profile.Mappings) > 0
+		for _, mapping := range profile.Mappings {
+			if mapping.ART == nil {
+				completeART = false
+				break
+			}
+		}
+		if completeART {
+			profilePeak := trafficProfileEstimatedAggregatePeak(profile.Mappings)
+			staticPeak := trafficProfileDraftStaticPeak(draft.Groups, profile.Mappings)
+			totalPeak := saturatingAddNonNegative(staticPeak, profilePeak)
+			suggestedMaximum := staticPeak
+			if profilePeak > (maxManagedTestVUsers-staticPeak)/2 {
+				suggestedMaximum = maxManagedTestVUsers
+			} else {
+				suggestedMaximum += 2 * profilePeak
+			}
+			suggestedMaximum = min(maxManagedTestVUsers, max(1, suggestedMaximum))
+			suggestedMinimum := 1
+			profile.Sizing = &TrafficProfileSizing{Complete: true, ProfilePeakVUsers: profilePeak, StaticPeakVUsers: staticPeak, EstimatedPeakVUsers: totalPeak, SuggestedMinVUsers: suggestedMinimum, SuggestedMaxVUsers: suggestedMaximum}
+			if draft.GoalConfig == nil {
+				draft.GoalConfig = &GoalConfig{}
+			}
+			draft.GoalConfig.MinVUsers = &suggestedMinimum
+			draft.GoalConfig.MaxVUsers = &suggestedMaximum
+			warnings = append(warnings, fmt.Sprintf("ART sizing estimates a simultaneous peak of %d VUsers; suggested adaptive guardrails are %d-%d VUsers", totalPeak, suggestedMinimum, suggestedMaximum))
+		} else if draft.GoalConfig == nil || draft.GoalConfig.MinVUsers == nil || draft.GoalConfig.MaxVUsers == nil {
+			// Without complete ART evidence, retain the legacy editable envelope
+			// derived from the draft's current VUser allocation.
 			maximum := 0
 			for _, group := range draft.Groups {
 				vusers := max(0, group.VUsers)
@@ -479,7 +650,7 @@ func (s *Server) handleDeriveTrafficProfile(w http.ResponseWriter, r *http.Reque
 			if draft.GoalConfig.MaxVUsers == nil {
 				draft.GoalConfig.MaxVUsers = &maximum
 			}
-			warnings = append(warnings, "Adaptive TPS guardrails were initialized from the scenario VUser allocation; review min/max VUsers or use baseline sizing before launch.")
+			warnings = append(warnings, "ART sizing is incomplete; adaptive TPS guardrails were initialized from the scenario VUser allocation. Add file-backed or estimated peak ART for every mapped group to derive sizing.")
 		}
 	}
 	for index := range draft.Groups {
@@ -515,10 +686,20 @@ func (s *Server) handleDeriveTrafficProfile(w http.ResponseWriter, r *http.Reque
 			writeError(w, http.StatusUnprocessableEntity, err.Error())
 			return
 		}
+		if profile.Sizing != nil && validation.CapacityAdvisory != nil {
+			profile.Sizing.RecommendedGenerators = validation.CapacityAdvisory.RecommendedGenerators
+		}
 	} else {
 		profile.Warnings = dedupeTrafficProfileWarnings(append(profile.Warnings, "Select a script for every group to generate the load-model validation report."))
 	}
 	writeJSON(w, http.StatusOK, trafficProfileDeriveResponse{TrafficProfile: profile, Preview: profile.Mappings, Warnings: profile.Warnings, ScenarioDraft: draft, LoadModelValidation: validation})
+}
+
+func normalizedARTUnit(unit string) string {
+	if strings.EqualFold(strings.TrimSpace(unit), "s") || strings.HasPrefix(strings.ToLower(strings.TrimSpace(unit)), "second") {
+		return "seconds"
+	}
+	return "milliseconds"
 }
 
 // trafficProfileAuthorizedProjectID reports the project this request was

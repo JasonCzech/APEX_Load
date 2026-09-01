@@ -906,11 +906,27 @@
   font-size: 12px;
 }
 
-.api-guide-mcp-card a {
+.api-guide-mcp-guide-link {
+  align-self: flex-start;
+  appearance: none;
+  background: none;
+  border: 0;
+  cursor: pointer;
+  padding: 0;
   color: var(--accent);
   font-size: 13px;
   font-weight: 700;
   text-decoration: none;
+}
+
+.api-guide-mcp-guide-link:hover {
+  text-decoration: underline;
+}
+
+.api-guide-mcp-setup-guide {
+  display: grid;
+  gap: 14px;
+  scroll-margin-top: 24px;
 }
 
 .api-guide-mcp-card ul {

@@ -28,6 +28,7 @@ type TrafficProfile struct {
 	Window         TrafficProfileWindow    `json:"window,omitempty"`
 	Amplitude      TrafficProfileAmplitude `json:"amplitude,omitempty"`
 	Mappings       []TrafficProfileMapping `json:"mappings"`
+	Sizing         *TrafficProfileSizing   `json:"sizing,omitempty"`
 	Warnings       []string                `json:"warnings,omitempty"`
 	RefreshedAt    time.Time               `json:"refreshed_at"`
 }
@@ -58,6 +59,7 @@ type TrafficProfileFileSource struct {
 	TimestampMode     string   `json:"timestamp_mode,omitempty"`
 	RelativeStartTime string   `json:"relative_start_time,omitempty"`
 	ValueColumns      []string `json:"value_columns"`
+	ARTColumns        []string `json:"art_columns,omitempty"`
 	SeriesColumn      string   `json:"series_column,omitempty"`
 	Timezone          string   `json:"timezone,omitempty"`
 }
@@ -105,9 +107,35 @@ type TrafficProfileMapping struct {
 	SeriesName     string                        `json:"series_name"`
 	GroupName      string                        `json:"group_name"`
 	Source         *TrafficProfileSourceEntry    `json:"source,omitempty"`
+	SourceStart    string                        `json:"source_start,omitempty"`
+	SourceEnd      string                        `json:"source_end,omitempty"`
 	SourceDuration string                        `json:"source_duration,omitempty"`
 	Points         []trafficprofile.RuntimePoint `json:"points"`
 	PeakTarget     float64                       `json:"peak_target"`
+	ART            *TrafficProfileART            `json:"art,omitempty"`
+}
+
+type TrafficProfileART struct {
+	Basis               string                    `json:"basis"`
+	SeriesKey           string                    `json:"series_key,omitempty"`
+	SeriesName          string                    `json:"series_name,omitempty"`
+	SourceUnit          string                    `json:"source_unit,omitempty"`
+	Points              []trafficprofile.ARTPoint `json:"points,omitempty"`
+	MinARTMS            float64                   `json:"min_art_ms"`
+	AverageARTMS        float64                   `json:"average_art_ms"`
+	PeakARTMS           float64                   `json:"peak_art_ms"`
+	EstimatedPeakVUsers int                       `json:"estimated_peak_vusers"`
+	FallbackToPeak      bool                      `json:"fallback_to_peak,omitempty"`
+}
+
+type TrafficProfileSizing struct {
+	Complete              bool `json:"complete"`
+	ProfilePeakVUsers     int  `json:"profile_peak_vusers"`
+	StaticPeakVUsers      int  `json:"static_peak_vusers"`
+	EstimatedPeakVUsers   int  `json:"estimated_peak_vusers"`
+	SuggestedMinVUsers    int  `json:"suggested_min_vusers"`
+	SuggestedMaxVUsers    int  `json:"suggested_max_vusers"`
+	RecommendedGenerators int  `json:"recommended_generators,omitempty"`
 }
 
 func cloneTrafficProfile(profile *TrafficProfile) *TrafficProfile {
@@ -238,7 +266,7 @@ func validateTrafficProfile(profile *TrafficProfile, groups []CreateGroupEntry, 
 	if len(profile.Mappings) == 0 {
 		return errors.New("traffic_profile requires at least one series mapping")
 	}
-	seenGroups, totalPoints := map[string]struct{}{}, 0
+	seenGroups, totalPoints, totalARTPoints := map[string]struct{}{}, 0, 0
 	compositeSource := strings.EqualFold(strings.TrimSpace(profile.Source.Kind), "multiple")
 	allowedSources := map[string]struct{}{}
 	if compositeSource {
@@ -327,11 +355,108 @@ func validateTrafficProfile(profile *TrafficProfile, groups []CreateGroupEntry, 
 		if expectedTarget == "vusers" && group.VUsers != int(mapping.PeakTarget) {
 			return fmt.Errorf("traffic_profile group %q vusers must equal its peak target %d", mapping.GroupName, int(mapping.PeakTarget))
 		}
+		if mapping.ART != nil {
+			if expectedTarget != "tps" {
+				return fmt.Errorf("traffic_profile mapping %q ART evidence requires a TPS runtime target", mapping.SeriesName)
+			}
+			if err := validateTrafficProfileART(mapping.ART, profileDuration); err != nil {
+				return fmt.Errorf("traffic_profile mapping %q ART: %w", mapping.SeriesName, err)
+			}
+			artSource := profile.Source
+			if mapping.Source != nil {
+				artSource = mapping.Source.asSource()
+			}
+			if mapping.ART.Basis == "source_series" && !strings.EqualFold(strings.TrimSpace(artSource.Kind), "file") {
+				return fmt.Errorf("traffic_profile mapping %q file-backed ART requires a file source", mapping.SeriesName)
+			}
+			mapping.ART.MinARTMS, mapping.ART.AverageARTMS = trafficProfileARTStatistics(mapping.ART, profileDuration)
+			mapping.ART.EstimatedPeakVUsers = trafficProfileMappingEstimatedPeak(*mapping)
+			totalARTPoints += len(mapping.ART.Points)
+		}
 		totalPoints += len(mapping.Points)
 		seenGroups[groupKey] = struct{}{}
 	}
 	if totalPoints > trafficprofile.MaxPointsPerProfile {
 		return fmt.Errorf("traffic_profile contains %d points; limit is %d", totalPoints, trafficprofile.MaxPointsPerProfile)
+	}
+	if totalARTPoints > trafficprofile.MaxPointsPerProfile {
+		return fmt.Errorf("traffic_profile contains %d ART points; limit is %d", totalARTPoints, trafficprofile.MaxPointsPerProfile)
+	}
+	completeART := expectedTarget == "tps" && len(profile.Mappings) > 0
+	for index := range profile.Mappings {
+		if profile.Mappings[index].ART == nil {
+			completeART = false
+			break
+		}
+	}
+	if completeART {
+		profilePeak := trafficProfileEstimatedAggregatePeak(profile.Mappings)
+		staticPeak := trafficProfileDraftStaticPeak(groups, profile.Mappings)
+		totalPeak := saturatingAddNonNegative(staticPeak, profilePeak)
+		suggestedMaximum := staticPeak
+		if staticPeak >= maxManagedTestVUsers || profilePeak > (maxManagedTestVUsers-staticPeak)/2 {
+			suggestedMaximum = maxManagedTestVUsers
+		} else {
+			suggestedMaximum += 2 * profilePeak
+		}
+		suggestedMaximum = min(maxManagedTestVUsers, max(1, suggestedMaximum))
+		previousSizing := TrafficProfileSizing{}
+		if profile.Sizing == nil {
+			profile.Sizing = &TrafficProfileSizing{}
+		} else {
+			previousSizing = *profile.Sizing
+		}
+		profile.Sizing.Complete = true
+		profile.Sizing.ProfilePeakVUsers = profilePeak
+		profile.Sizing.StaticPeakVUsers = staticPeak
+		profile.Sizing.EstimatedPeakVUsers = totalPeak
+		profile.Sizing.SuggestedMinVUsers = 1
+		profile.Sizing.SuggestedMaxVUsers = suggestedMaximum
+		if !previousSizing.Complete || previousSizing.ProfilePeakVUsers != profilePeak || previousSizing.StaticPeakVUsers != staticPeak || previousSizing.EstimatedPeakVUsers != totalPeak || previousSizing.SuggestedMinVUsers != 1 || previousSizing.SuggestedMaxVUsers != suggestedMaximum {
+			profile.Sizing.RecommendedGenerators = 0
+		}
+	} else {
+		profile.Sizing = nil
+	}
+	return nil
+}
+
+func validateTrafficProfileART(art *TrafficProfileART, duration time.Duration) error {
+	if art == nil {
+		return nil
+	}
+	if art.Basis != "source_series" && art.Basis != "operator_peak" {
+		return errors.New("basis must be source_series or operator_peak")
+	}
+	if art.PeakARTMS <= 0 || math.IsNaN(art.PeakARTMS) || math.IsInf(art.PeakARTMS, 0) {
+		return errors.New("peak_art_ms must be finite and greater than zero")
+	}
+	if art.Basis == "source_series" && (strings.TrimSpace(art.SeriesKey) == "" || len(art.Points) == 0) {
+		return errors.New("source_series basis requires series_key and points")
+	}
+	if art.Basis == "operator_peak" && len(art.Points) != 1 {
+		return errors.New("operator_peak basis requires one constant ART point")
+	}
+	if len(art.Points) > trafficprofile.MaxPointsPerSeries {
+		return fmt.Errorf("contains more than %d points", trafficprofile.MaxPointsPerSeries)
+	}
+	previous := int64(-1)
+	peak := 0.0
+	for index, point := range art.Points {
+		if index == 0 && point.OffsetMS != 0 {
+			return errors.New("points must begin at offset_ms 0")
+		}
+		if point.OffsetMS < 0 || point.OffsetMS <= previous || point.OffsetMS >= duration.Milliseconds() {
+			return fmt.Errorf("point %d offset_ms must increase within the target duration", index)
+		}
+		if point.ARTMS <= 0 || math.IsNaN(point.ARTMS) || math.IsInf(point.ARTMS, 0) {
+			return fmt.Errorf("point %d art_ms must be finite and greater than zero", index)
+		}
+		peak = math.Max(peak, point.ARTMS)
+		previous = point.OffsetMS
+	}
+	if math.Abs(peak-art.PeakARTMS) > 1e-6 {
+		return errors.New("peak_art_ms must equal the maximum ART point")
 	}
 	return nil
 }
@@ -390,6 +515,20 @@ func validateTrafficProfileSource(source TrafficProfileSource) error {
 				return errors.New("traffic_profile file value_columns must be unique")
 			}
 			seenColumns[key] = struct{}{}
+		}
+		seenARTColumns := make(map[string]struct{}, len(source.File.ARTColumns))
+		for _, column := range source.File.ARTColumns {
+			key := strings.ToLower(strings.TrimSpace(column))
+			if key == "" {
+				return errors.New("traffic_profile file art_columns cannot contain an empty name")
+			}
+			if _, exists := seenARTColumns[key]; exists {
+				return errors.New("traffic_profile file art_columns must be unique")
+			}
+			if _, exists := seenColumns[key]; exists {
+				return fmt.Errorf("traffic_profile file column %q cannot be both a workload value and ART", column)
+			}
+			seenARTColumns[key] = struct{}{}
 		}
 	case "prometheus":
 		if source.Prometheus == nil || source.File != nil || source.OpenSearch != nil || len(source.Sources) > 0 {
@@ -539,6 +678,129 @@ func trafficProfileCapacityVUsers(profile *TrafficProfile, groups []TestGroup, d
 		}
 	}
 	return saturatingAddNonNegative(profilePeak, managedGroupPeakVUsers(staticGroups, duration))
+}
+
+func trafficProfileARTAt(art *TrafficProfileART, offsetMS int64) float64 {
+	if art == nil || len(art.Points) == 0 || offsetMS < art.Points[0].OffsetMS {
+		return 0
+	}
+	low, high := 0, len(art.Points)-1
+	for low < high {
+		middle := (low + high + 1) / 2
+		if art.Points[middle].OffsetMS <= offsetMS {
+			low = middle
+		} else {
+			high = middle - 1
+		}
+	}
+	return art.Points[low].ARTMS
+}
+
+func trafficProfileTargetAt(mapping TrafficProfileMapping, offsetMS int64) float64 {
+	if len(mapping.Points) == 0 || offsetMS < mapping.Points[0].OffsetMS {
+		return 0
+	}
+	low, high := 0, len(mapping.Points)-1
+	for low < high {
+		middle := (low + high + 1) / 2
+		if mapping.Points[middle].OffsetMS <= offsetMS {
+			low = middle
+		} else {
+			high = middle - 1
+		}
+	}
+	return mapping.Points[low].Target
+}
+
+func trafficProfileEstimatedVUsersAt(mapping TrafficProfileMapping, offsetMS int64) int {
+	target, artMS := trafficProfileTargetAt(mapping, offsetMS), trafficProfileARTAt(mapping.ART, offsetMS)
+	if target <= 0 || artMS <= 0 {
+		return 0
+	}
+	raw := target * (artMS / 1000)
+	if math.IsNaN(raw) || math.IsInf(raw, 0) || raw >= float64(maxCapacityUnit) {
+		return maxCapacityUnit
+	}
+	return littlesLawVUsers(target, artMS)
+}
+
+func trafficProfileARTStatistics(art *TrafficProfileART, duration time.Duration) (minimum, average float64) {
+	if art == nil || len(art.Points) == 0 || duration <= 0 {
+		return 0, 0
+	}
+	minimum = art.Points[0].ARTMS
+	area := 0.0
+	durationMS := duration.Milliseconds()
+	for index, point := range art.Points {
+		minimum = math.Min(minimum, point.ARTMS)
+		end := durationMS
+		if index+1 < len(art.Points) {
+			end = art.Points[index+1].OffsetMS
+		}
+		area += point.ARTMS * float64(max(int64(0), end-point.OffsetMS))
+	}
+	return minimum, area / float64(durationMS)
+}
+
+func trafficProfileDraftStaticPeak(groups []CreateGroupEntry, mappings []TrafficProfileMapping) int {
+	managed := make(map[string]struct{}, len(mappings))
+	for _, mapping := range mappings {
+		managed[normalizeEffectiveGroupName(mapping.GroupName)] = struct{}{}
+	}
+	total := 0
+	for _, group := range groups {
+		if _, exists := managed[normalizeEffectiveGroupName(group.Name)]; exists {
+			continue
+		}
+		peak := max(0, group.VUsers)
+		for _, stage := range group.Stages {
+			peak = max(peak, stage.TargetVUsers)
+		}
+		total = saturatingAddNonNegative(total, peak)
+	}
+	return total
+}
+
+func trafficProfileMappingEstimatedPeak(mapping TrafficProfileMapping) int {
+	if mapping.ART == nil {
+		return 0
+	}
+	offsets := make(map[int64]struct{}, len(mapping.Points)+len(mapping.ART.Points))
+	for _, point := range mapping.Points {
+		offsets[point.OffsetMS] = struct{}{}
+	}
+	for _, point := range mapping.ART.Points {
+		offsets[point.OffsetMS] = struct{}{}
+	}
+	peak := 0
+	for offset := range offsets {
+		peak = max(peak, trafficProfileEstimatedVUsersAt(mapping, offset))
+	}
+	return peak
+}
+
+func trafficProfileEstimatedAggregatePeak(mappings []TrafficProfileMapping) int {
+	offsets := make(map[int64]struct{})
+	for _, mapping := range mappings {
+		if mapping.ART == nil {
+			return 0
+		}
+		for _, point := range mapping.Points {
+			offsets[point.OffsetMS] = struct{}{}
+		}
+		for _, point := range mapping.ART.Points {
+			offsets[point.OffsetMS] = struct{}{}
+		}
+	}
+	peak := 0
+	for offset := range offsets {
+		total := 0
+		for _, mapping := range mappings {
+			total = saturatingAddNonNegative(total, trafficProfileEstimatedVUsersAt(mapping, offset))
+		}
+		peak = max(peak, total)
+	}
+	return peak
 }
 
 func trafficProfilePeakAggregateTarget(profile *TrafficProfile) float64 {

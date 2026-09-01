@@ -2368,6 +2368,7 @@ export interface operations {
               "gap_policy"?: string;
               "interpolation"?: string;
               "mappings"?: Array<{
+                "art"?: (Record<string, unknown>) | null;
                 "group_name"?: string;
                 "peak_target"?: number;
                 "points"?: Array<Record<string, unknown>>;
@@ -2375,9 +2376,20 @@ export interface operations {
                 "series_name"?: string;
                 "source"?: (Record<string, unknown>) | null;
                 "source_duration"?: string;
+                "source_end"?: string;
+                "source_start"?: string;
               }>;
               "refreshed_at"?: string;
               "runtime_target"?: string;
+              "sizing"?: ({
+                "complete"?: boolean;
+                "estimated_peak_vusers"?: number;
+                "profile_peak_vusers"?: number;
+                "recommended_generators"?: number;
+                "static_peak_vusers"?: number;
+                "suggested_max_vusers"?: number;
+                "suggested_min_vusers"?: number;
+              }) | null;
               "source"?: {
                 "file"?: (Record<string, unknown>) | null;
                 "kind"?: string;
@@ -4902,6 +4914,7 @@ export interface operations {
     requestBody: {
       content: {
         "multipart/form-data": {
+          "art_columns"?: string;
           "file"?: string;
           "relative_start_time"?: string;
           "series_column"?: string;
@@ -4918,6 +4931,10 @@ export interface operations {
       "200": {
         content: {
           "application/json": {
+            "art_series"?: Array<{
+              "series": Record<string, unknown>;
+              "stats": Record<string, unknown>;
+            }>;
             "limits": {
               "derive_bytes": number;
               "points_per_profile": number;
@@ -4932,6 +4949,7 @@ export interface operations {
             "sheets"?: Array<Record<string, unknown>>;
             "source": {
               "file"?: ({
+                "art_columns"?: Array<string>;
                 "filename": string;
                 "relative_start_time"?: string;
                 "series_column"?: string;
@@ -4971,6 +4989,7 @@ export interface operations {
               }) | null;
               "sources"?: Array<{
                 "file"?: ({
+                  "art_columns"?: Array<string>;
                   "filename": string;
                   "relative_start_time"?: string;
                   "series_column"?: string;
@@ -7413,6 +7432,7 @@ export interface operations {
                 "gap_policy"?: string;
                 "interpolation": string;
                 "mappings": Array<{
+                  "art"?: (Record<string, unknown>) | null;
                   "group_name": string;
                   "peak_target": number;
                   "points": Array<Record<string, unknown>>;
@@ -7420,9 +7440,20 @@ export interface operations {
                   "series_name": string;
                   "source"?: (Record<string, unknown>) | null;
                   "source_duration"?: string;
+                  "source_end"?: string;
+                  "source_start"?: string;
                 }>;
                 "refreshed_at": string;
                 "runtime_target": string;
+                "sizing"?: ({
+                  "complete": boolean;
+                  "estimated_peak_vusers": number;
+                  "profile_peak_vusers": number;
+                  "recommended_generators"?: number;
+                  "static_peak_vusers": number;
+                  "suggested_max_vusers": number;
+                  "suggested_min_vusers": number;
+                }) | null;
                 "source": {
                   "file"?: (Record<string, unknown>) | null;
                   "kind": string;
@@ -16347,6 +16378,7 @@ export interface operations {
               "gap_policy"?: string;
               "interpolation"?: string;
               "mappings"?: Array<{
+                "art"?: (Record<string, unknown>) | null;
                 "group_name"?: string;
                 "peak_target"?: number;
                 "points"?: Array<Record<string, unknown>>;
@@ -16354,9 +16386,20 @@ export interface operations {
                 "series_name"?: string;
                 "source"?: (Record<string, unknown>) | null;
                 "source_duration"?: string;
+                "source_end"?: string;
+                "source_start"?: string;
               }>;
               "refreshed_at"?: string;
               "runtime_target"?: string;
+              "sizing"?: ({
+                "complete"?: boolean;
+                "estimated_peak_vusers"?: number;
+                "profile_peak_vusers"?: number;
+                "recommended_generators"?: number;
+                "static_peak_vusers"?: number;
+                "suggested_max_vusers"?: number;
+                "suggested_min_vusers"?: number;
+              }) | null;
               "source"?: {
                 "file"?: (Record<string, unknown>) | null;
                 "kind"?: string;
@@ -16390,6 +16433,7 @@ export interface operations {
             "gap_policy"?: string;
             "interpolation"?: string;
             "mappings"?: Array<{
+              "art"?: (Record<string, unknown>) | null;
               "group_name"?: string;
               "peak_target"?: number;
               "points"?: Array<Record<string, unknown>>;
@@ -16397,9 +16441,20 @@ export interface operations {
               "series_name"?: string;
               "source"?: (Record<string, unknown>) | null;
               "source_duration"?: string;
+              "source_end"?: string;
+              "source_start"?: string;
             }>;
             "refreshed_at"?: string;
             "runtime_target"?: string;
+            "sizing"?: ({
+              "complete"?: boolean;
+              "estimated_peak_vusers"?: number;
+              "profile_peak_vusers"?: number;
+              "recommended_generators"?: number;
+              "static_peak_vusers"?: number;
+              "suggested_max_vusers"?: number;
+              "suggested_min_vusers"?: number;
+            }) | null;
             "source"?: {
               "file"?: (Record<string, unknown>) | null;
               "kind"?: string;
@@ -17519,6 +17574,7 @@ export interface operations {
                 "gap_policy"?: string;
                 "interpolation": string;
                 "mappings": Array<{
+                  "art"?: (Record<string, unknown>) | null;
                   "group_name": string;
                   "peak_target": number;
                   "points": Array<Record<string, unknown>>;
@@ -17526,9 +17582,20 @@ export interface operations {
                   "series_name": string;
                   "source"?: (Record<string, unknown>) | null;
                   "source_duration"?: string;
+                  "source_end"?: string;
+                  "source_start"?: string;
                 }>;
                 "refreshed_at": string;
                 "runtime_target": string;
+                "sizing"?: ({
+                  "complete": boolean;
+                  "estimated_peak_vusers": number;
+                  "profile_peak_vusers": number;
+                  "recommended_generators"?: number;
+                  "static_peak_vusers": number;
+                  "suggested_max_vusers": number;
+                  "suggested_min_vusers": number;
+                }) | null;
                 "source": {
                   "file"?: (Record<string, unknown>) | null;
                   "kind": string;
@@ -18451,6 +18518,18 @@ export interface operations {
             "gap_policy"?: string;
             "interpolation"?: string;
             "mappings"?: Array<{
+              "art"?: ({
+                "average_art_ms"?: number;
+                "basis"?: string;
+                "estimated_peak_vusers"?: number;
+                "fallback_to_peak"?: boolean;
+                "min_art_ms"?: number;
+                "peak_art_ms"?: number;
+                "points"?: Array<Record<string, unknown>>;
+                "series_key"?: string;
+                "series_name"?: string;
+                "source_unit"?: string;
+              }) | null;
               "group_name"?: string;
               "peak_target"?: number;
               "points"?: Array<Record<string, unknown>>;
@@ -18464,11 +18543,23 @@ export interface operations {
                 "prometheus"?: (Record<string, unknown>) | null;
               }) | null;
               "source_duration"?: string;
+              "source_end"?: string;
+              "source_start"?: string;
             }>;
             "refreshed_at"?: string;
             "runtime_target"?: string;
+            "sizing"?: ({
+              "complete"?: boolean;
+              "estimated_peak_vusers"?: number;
+              "profile_peak_vusers"?: number;
+              "recommended_generators"?: number;
+              "static_peak_vusers"?: number;
+              "suggested_max_vusers"?: number;
+              "suggested_min_vusers"?: number;
+            }) | null;
             "source"?: {
               "file"?: ({
+                "art_columns"?: Array<string>;
                 "filename"?: string;
                 "relative_start_time"?: string;
                 "series_column"?: string;
@@ -19076,6 +19167,18 @@ export interface operations {
               "gap_policy"?: string;
               "interpolation": string;
               "mappings": Array<{
+                "art"?: ({
+                  "average_art_ms": number;
+                  "basis": string;
+                  "estimated_peak_vusers": number;
+                  "fallback_to_peak"?: boolean;
+                  "min_art_ms": number;
+                  "peak_art_ms": number;
+                  "points"?: Array<Record<string, unknown>>;
+                  "series_key"?: string;
+                  "series_name"?: string;
+                  "source_unit"?: string;
+                }) | null;
                 "group_name": string;
                 "peak_target": number;
                 "points": Array<Record<string, unknown>>;
@@ -19089,11 +19192,23 @@ export interface operations {
                   "prometheus"?: (Record<string, unknown>) | null;
                 }) | null;
                 "source_duration"?: string;
+                "source_end"?: string;
+                "source_start"?: string;
               }>;
               "refreshed_at": string;
               "runtime_target": string;
+              "sizing"?: ({
+                "complete": boolean;
+                "estimated_peak_vusers": number;
+                "profile_peak_vusers": number;
+                "recommended_generators"?: number;
+                "static_peak_vusers": number;
+                "suggested_max_vusers": number;
+                "suggested_min_vusers": number;
+              }) | null;
               "source": {
                 "file"?: ({
+                  "art_columns"?: Array<string>;
                   "filename": string;
                   "relative_start_time"?: string;
                   "series_column"?: string;
@@ -21332,6 +21447,18 @@ export interface operations {
             "gap_policy"?: string;
             "interpolation"?: string;
             "mappings"?: Array<{
+              "art"?: ({
+                "average_art_ms"?: number;
+                "basis"?: string;
+                "estimated_peak_vusers"?: number;
+                "fallback_to_peak"?: boolean;
+                "min_art_ms"?: number;
+                "peak_art_ms"?: number;
+                "points"?: Array<Record<string, unknown>>;
+                "series_key"?: string;
+                "series_name"?: string;
+                "source_unit"?: string;
+              }) | null;
               "group_name"?: string;
               "peak_target"?: number;
               "points"?: Array<Record<string, unknown>>;
@@ -21345,11 +21472,23 @@ export interface operations {
                 "prometheus"?: (Record<string, unknown>) | null;
               }) | null;
               "source_duration"?: string;
+              "source_end"?: string;
+              "source_start"?: string;
             }>;
             "refreshed_at"?: string;
             "runtime_target"?: string;
+            "sizing"?: ({
+              "complete"?: boolean;
+              "estimated_peak_vusers"?: number;
+              "profile_peak_vusers"?: number;
+              "recommended_generators"?: number;
+              "static_peak_vusers"?: number;
+              "suggested_max_vusers"?: number;
+              "suggested_min_vusers"?: number;
+            }) | null;
             "source"?: {
               "file"?: ({
+                "art_columns"?: Array<string>;
                 "filename"?: string;
                 "relative_start_time"?: string;
                 "series_column"?: string;
@@ -23212,6 +23351,18 @@ export interface operations {
               "gap_policy"?: string;
               "interpolation": string;
               "mappings": Array<{
+                "art"?: ({
+                  "average_art_ms": number;
+                  "basis": string;
+                  "estimated_peak_vusers": number;
+                  "fallback_to_peak"?: boolean;
+                  "min_art_ms": number;
+                  "peak_art_ms": number;
+                  "points"?: Array<Record<string, unknown>>;
+                  "series_key"?: string;
+                  "series_name"?: string;
+                  "source_unit"?: string;
+                }) | null;
                 "group_name": string;
                 "peak_target": number;
                 "points": Array<Record<string, unknown>>;
@@ -23225,11 +23376,23 @@ export interface operations {
                   "prometheus"?: (Record<string, unknown>) | null;
                 }) | null;
                 "source_duration"?: string;
+                "source_end"?: string;
+                "source_start"?: string;
               }>;
               "refreshed_at": string;
               "runtime_target": string;
+              "sizing"?: ({
+                "complete": boolean;
+                "estimated_peak_vusers": number;
+                "profile_peak_vusers": number;
+                "recommended_generators"?: number;
+                "static_peak_vusers": number;
+                "suggested_max_vusers": number;
+                "suggested_min_vusers": number;
+              }) | null;
               "source": {
                 "file"?: ({
+                  "art_columns"?: Array<string>;
                   "filename": string;
                   "relative_start_time"?: string;
                   "series_column"?: string;
@@ -25075,12 +25238,20 @@ export interface operations {
             "mode"?: string;
             "value"?: number;
           };
+          "art_series"?: Array<Record<string, unknown>>;
           "gap_policy"?: Record<string, unknown>;
           "mappings"?: Array<{
+            "art"?: ({
+              "basis"?: string;
+              "series_key"?: string;
+              "unit"?: string;
+              "value"?: number;
+            }) | null;
             "group_name"?: string;
             "series_key"?: string;
             "source"?: ({
               "file"?: ({
+                "art_columns"?: Array<string>;
                 "filename"?: string;
                 "relative_start_time"?: string;
                 "series_column"?: string;
@@ -25361,6 +25532,7 @@ export interface operations {
               "gap_policy"?: string;
               "interpolation"?: string;
               "mappings"?: Array<{
+                "art"?: (Record<string, unknown>) | null;
                 "group_name"?: string;
                 "peak_target"?: number;
                 "points"?: Array<Record<string, unknown>>;
@@ -25368,9 +25540,20 @@ export interface operations {
                 "series_name"?: string;
                 "source"?: (Record<string, unknown>) | null;
                 "source_duration"?: string;
+                "source_end"?: string;
+                "source_start"?: string;
               }>;
               "refreshed_at"?: string;
               "runtime_target"?: string;
+              "sizing"?: ({
+                "complete"?: boolean;
+                "estimated_peak_vusers"?: number;
+                "profile_peak_vusers"?: number;
+                "recommended_generators"?: number;
+                "static_peak_vusers"?: number;
+                "suggested_max_vusers"?: number;
+                "suggested_min_vusers"?: number;
+              }) | null;
               "source"?: {
                 "file"?: (Record<string, unknown>) | null;
                 "kind"?: string;
@@ -25398,6 +25581,7 @@ export interface operations {
           "series"?: Array<Record<string, unknown>>;
           "source"?: {
             "file"?: ({
+              "art_columns"?: Array<string>;
               "filename"?: string;
               "relative_start_time"?: string;
               "series_column"?: string;
@@ -25437,6 +25621,7 @@ export interface operations {
             }) | null;
             "sources"?: Array<{
               "file"?: ({
+                "art_columns"?: Array<string>;
                 "filename"?: string;
                 "relative_start_time"?: string;
                 "series_column"?: string;
@@ -25608,6 +25793,18 @@ export interface operations {
               "total_vusers": number;
             }) | null;
             "preview": Array<{
+              "art"?: ({
+                "average_art_ms": number;
+                "basis": string;
+                "estimated_peak_vusers": number;
+                "fallback_to_peak"?: boolean;
+                "min_art_ms": number;
+                "peak_art_ms": number;
+                "points"?: Array<Record<string, unknown>>;
+                "series_key"?: string;
+                "series_name"?: string;
+                "source_unit"?: string;
+              }) | null;
               "group_name": string;
               "peak_target": number;
               "points": Array<Record<string, unknown>>;
@@ -25615,6 +25812,7 @@ export interface operations {
               "series_name": string;
               "source"?: ({
                 "file"?: ({
+                  "art_columns"?: Array<string>;
                   "filename": string;
                   "relative_start_time"?: string;
                   "series_column"?: string;
@@ -25642,6 +25840,8 @@ export interface operations {
                 }) | null;
               }) | null;
               "source_duration"?: string;
+              "source_end"?: string;
+              "source_start"?: string;
             }>;
             "scenario_draft": {
               "assignment"?: ({
@@ -25895,6 +26095,7 @@ export interface operations {
                 "gap_policy"?: string;
                 "interpolation": string;
                 "mappings": Array<{
+                  "art"?: (Record<string, unknown>) | null;
                   "group_name": string;
                   "peak_target": number;
                   "points": Array<Record<string, unknown>>;
@@ -25902,9 +26103,20 @@ export interface operations {
                   "series_name": string;
                   "source"?: (Record<string, unknown>) | null;
                   "source_duration"?: string;
+                  "source_end"?: string;
+                  "source_start"?: string;
                 }>;
                 "refreshed_at": string;
                 "runtime_target": string;
+                "sizing"?: ({
+                  "complete": boolean;
+                  "estimated_peak_vusers": number;
+                  "profile_peak_vusers": number;
+                  "recommended_generators"?: number;
+                  "static_peak_vusers": number;
+                  "suggested_max_vusers": number;
+                  "suggested_min_vusers": number;
+                }) | null;
                 "source": {
                   "file"?: (Record<string, unknown>) | null;
                   "kind": string;
@@ -25937,6 +26149,18 @@ export interface operations {
               "gap_policy"?: string;
               "interpolation": string;
               "mappings": Array<{
+                "art"?: ({
+                  "average_art_ms": number;
+                  "basis": string;
+                  "estimated_peak_vusers": number;
+                  "fallback_to_peak"?: boolean;
+                  "min_art_ms": number;
+                  "peak_art_ms": number;
+                  "points"?: Array<Record<string, unknown>>;
+                  "series_key"?: string;
+                  "series_name"?: string;
+                  "source_unit"?: string;
+                }) | null;
                 "group_name": string;
                 "peak_target": number;
                 "points": Array<Record<string, unknown>>;
@@ -25950,11 +26174,23 @@ export interface operations {
                   "prometheus"?: (Record<string, unknown>) | null;
                 }) | null;
                 "source_duration"?: string;
+                "source_end"?: string;
+                "source_start"?: string;
               }>;
               "refreshed_at": string;
               "runtime_target": string;
+              "sizing"?: ({
+                "complete": boolean;
+                "estimated_peak_vusers": number;
+                "profile_peak_vusers": number;
+                "recommended_generators"?: number;
+                "static_peak_vusers": number;
+                "suggested_max_vusers": number;
+                "suggested_min_vusers": number;
+              }) | null;
               "source": {
                 "file"?: ({
+                  "art_columns"?: Array<string>;
                   "filename": string;
                   "relative_start_time"?: string;
                   "series_column"?: string;
@@ -27604,6 +27840,18 @@ export interface operations {
             "gap_policy"?: string;
             "interpolation"?: string;
             "mappings"?: Array<{
+              "art"?: ({
+                "average_art_ms"?: number;
+                "basis"?: string;
+                "estimated_peak_vusers"?: number;
+                "fallback_to_peak"?: boolean;
+                "min_art_ms"?: number;
+                "peak_art_ms"?: number;
+                "points"?: Array<Record<string, unknown>>;
+                "series_key"?: string;
+                "series_name"?: string;
+                "source_unit"?: string;
+              }) | null;
               "group_name"?: string;
               "peak_target"?: number;
               "points"?: Array<Record<string, unknown>>;
@@ -27617,11 +27865,23 @@ export interface operations {
                 "prometheus"?: (Record<string, unknown>) | null;
               }) | null;
               "source_duration"?: string;
+              "source_end"?: string;
+              "source_start"?: string;
             }>;
             "refreshed_at"?: string;
             "runtime_target"?: string;
+            "sizing"?: ({
+              "complete"?: boolean;
+              "estimated_peak_vusers"?: number;
+              "profile_peak_vusers"?: number;
+              "recommended_generators"?: number;
+              "static_peak_vusers"?: number;
+              "suggested_max_vusers"?: number;
+              "suggested_min_vusers"?: number;
+            }) | null;
             "source"?: {
               "file"?: ({
+                "art_columns"?: Array<string>;
                 "filename"?: string;
                 "relative_start_time"?: string;
                 "series_column"?: string;
@@ -34529,6 +34789,7 @@ export interface operations {
                 "gap_policy"?: string;
                 "interpolation": string;
                 "mappings": Array<{
+                  "art"?: (Record<string, unknown>) | null;
                   "group_name": string;
                   "peak_target": number;
                   "points": Array<Record<string, unknown>>;
@@ -34536,9 +34797,20 @@ export interface operations {
                   "series_name": string;
                   "source"?: (Record<string, unknown>) | null;
                   "source_duration"?: string;
+                  "source_end"?: string;
+                  "source_start"?: string;
                 }>;
                 "refreshed_at": string;
                 "runtime_target": string;
+                "sizing"?: ({
+                  "complete": boolean;
+                  "estimated_peak_vusers": number;
+                  "profile_peak_vusers": number;
+                  "recommended_generators"?: number;
+                  "static_peak_vusers": number;
+                  "suggested_max_vusers": number;
+                  "suggested_min_vusers": number;
+                }) | null;
                 "source": {
                   "file"?: (Record<string, unknown>) | null;
                   "kind": string;
@@ -35387,6 +35659,7 @@ export interface operations {
                 "gap_policy"?: string;
                 "interpolation": string;
                 "mappings": Array<{
+                  "art"?: (Record<string, unknown>) | null;
                   "group_name": string;
                   "peak_target": number;
                   "points": Array<Record<string, unknown>>;
@@ -35394,9 +35667,20 @@ export interface operations {
                   "series_name": string;
                   "source"?: (Record<string, unknown>) | null;
                   "source_duration"?: string;
+                  "source_end"?: string;
+                  "source_start"?: string;
                 }>;
                 "refreshed_at": string;
                 "runtime_target": string;
+                "sizing"?: ({
+                  "complete": boolean;
+                  "estimated_peak_vusers": number;
+                  "profile_peak_vusers": number;
+                  "recommended_generators"?: number;
+                  "static_peak_vusers": number;
+                  "suggested_max_vusers": number;
+                  "suggested_min_vusers": number;
+                }) | null;
                 "source": {
                   "file"?: (Record<string, unknown>) | null;
                   "kind": string;
@@ -35880,6 +36164,7 @@ export interface operations {
                 "gap_policy"?: string;
                 "interpolation": string;
                 "mappings": Array<{
+                  "art"?: (Record<string, unknown>) | null;
                   "group_name": string;
                   "peak_target": number;
                   "points": Array<Record<string, unknown>>;
@@ -35887,9 +36172,20 @@ export interface operations {
                   "series_name": string;
                   "source"?: (Record<string, unknown>) | null;
                   "source_duration"?: string;
+                  "source_end"?: string;
+                  "source_start"?: string;
                 }>;
                 "refreshed_at": string;
                 "runtime_target": string;
+                "sizing"?: ({
+                  "complete": boolean;
+                  "estimated_peak_vusers": number;
+                  "profile_peak_vusers": number;
+                  "recommended_generators"?: number;
+                  "static_peak_vusers": number;
+                  "suggested_max_vusers": number;
+                  "suggested_min_vusers": number;
+                }) | null;
                 "source": {
                   "file"?: (Record<string, unknown>) | null;
                   "kind": string;
@@ -36416,6 +36712,7 @@ export interface operations {
                   "mappings": Array<Record<string, unknown>>;
                   "refreshed_at": string;
                   "runtime_target": string;
+                  "sizing"?: (Record<string, unknown>) | null;
                   "source": Record<string, unknown>;
                   "source_duration": string;
                   "target_duration": string;
@@ -36634,6 +36931,7 @@ export interface operations {
                   "mappings": Array<Record<string, unknown>>;
                   "refreshed_at": string;
                   "runtime_target": string;
+                  "sizing"?: (Record<string, unknown>) | null;
                   "source": Record<string, unknown>;
                   "source_duration": string;
                   "target_duration": string;
@@ -37937,6 +38235,18 @@ export interface operations {
               "gap_policy"?: string;
               "interpolation": string;
               "mappings": Array<{
+                "art"?: ({
+                  "average_art_ms": number;
+                  "basis": string;
+                  "estimated_peak_vusers": number;
+                  "fallback_to_peak"?: boolean;
+                  "min_art_ms": number;
+                  "peak_art_ms": number;
+                  "points"?: Array<Record<string, unknown>>;
+                  "series_key"?: string;
+                  "series_name"?: string;
+                  "source_unit"?: string;
+                }) | null;
                 "group_name": string;
                 "peak_target": number;
                 "points": Array<Record<string, unknown>>;
@@ -37950,11 +38260,23 @@ export interface operations {
                   "prometheus"?: (Record<string, unknown>) | null;
                 }) | null;
                 "source_duration"?: string;
+                "source_end"?: string;
+                "source_start"?: string;
               }>;
               "refreshed_at": string;
               "runtime_target": string;
+              "sizing"?: ({
+                "complete": boolean;
+                "estimated_peak_vusers": number;
+                "profile_peak_vusers": number;
+                "recommended_generators"?: number;
+                "static_peak_vusers": number;
+                "suggested_max_vusers": number;
+                "suggested_min_vusers": number;
+              }) | null;
               "source": {
                 "file"?: ({
+                  "art_columns"?: Array<string>;
                   "filename": string;
                   "relative_start_time"?: string;
                   "series_column"?: string;
@@ -41749,6 +42071,18 @@ export interface operations {
               "gap_policy"?: string;
               "interpolation": string;
               "mappings": Array<{
+                "art"?: ({
+                  "average_art_ms": number;
+                  "basis": string;
+                  "estimated_peak_vusers": number;
+                  "fallback_to_peak"?: boolean;
+                  "min_art_ms": number;
+                  "peak_art_ms": number;
+                  "points"?: Array<Record<string, unknown>>;
+                  "series_key"?: string;
+                  "series_name"?: string;
+                  "source_unit"?: string;
+                }) | null;
                 "group_name": string;
                 "peak_target": number;
                 "points": Array<Record<string, unknown>>;
@@ -41762,11 +42096,23 @@ export interface operations {
                   "prometheus"?: (Record<string, unknown>) | null;
                 }) | null;
                 "source_duration"?: string;
+                "source_end"?: string;
+                "source_start"?: string;
               }>;
               "refreshed_at": string;
               "runtime_target": string;
+              "sizing"?: ({
+                "complete": boolean;
+                "estimated_peak_vusers": number;
+                "profile_peak_vusers": number;
+                "recommended_generators"?: number;
+                "static_peak_vusers": number;
+                "suggested_max_vusers": number;
+                "suggested_min_vusers": number;
+              }) | null;
               "source": {
                 "file"?: ({
+                  "art_columns"?: Array<string>;
                   "filename": string;
                   "relative_start_time"?: string;
                   "series_column"?: string;
@@ -43266,6 +43612,7 @@ export interface operations {
                 "gap_policy"?: string;
                 "interpolation": string;
                 "mappings": Array<{
+                  "art"?: (Record<string, unknown>) | null;
                   "group_name": string;
                   "peak_target": number;
                   "points": Array<Record<string, unknown>>;
@@ -43273,9 +43620,20 @@ export interface operations {
                   "series_name": string;
                   "source"?: (Record<string, unknown>) | null;
                   "source_duration"?: string;
+                  "source_end"?: string;
+                  "source_start"?: string;
                 }>;
                 "refreshed_at": string;
                 "runtime_target": string;
+                "sizing"?: ({
+                  "complete": boolean;
+                  "estimated_peak_vusers": number;
+                  "profile_peak_vusers": number;
+                  "recommended_generators"?: number;
+                  "static_peak_vusers": number;
+                  "suggested_max_vusers": number;
+                  "suggested_min_vusers": number;
+                }) | null;
                 "source": {
                   "file"?: (Record<string, unknown>) | null;
                   "kind": string;
@@ -43633,6 +43991,7 @@ export interface operations {
                 "gap_policy"?: string;
                 "interpolation": string;
                 "mappings": Array<{
+                  "art"?: (Record<string, unknown>) | null;
                   "group_name": string;
                   "peak_target": number;
                   "points": Array<Record<string, unknown>>;
@@ -43640,9 +43999,20 @@ export interface operations {
                   "series_name": string;
                   "source"?: (Record<string, unknown>) | null;
                   "source_duration"?: string;
+                  "source_end"?: string;
+                  "source_start"?: string;
                 }>;
                 "refreshed_at": string;
                 "runtime_target": string;
+                "sizing"?: ({
+                  "complete": boolean;
+                  "estimated_peak_vusers": number;
+                  "profile_peak_vusers": number;
+                  "recommended_generators"?: number;
+                  "static_peak_vusers": number;
+                  "suggested_max_vusers": number;
+                  "suggested_min_vusers": number;
+                }) | null;
                 "source": {
                   "file"?: (Record<string, unknown>) | null;
                   "kind": string;
@@ -53934,6 +54304,18 @@ export interface operations {
               "gap_policy"?: string;
               "interpolation": string;
               "mappings": Array<{
+                "art"?: ({
+                  "average_art_ms": number;
+                  "basis": string;
+                  "estimated_peak_vusers": number;
+                  "fallback_to_peak"?: boolean;
+                  "min_art_ms": number;
+                  "peak_art_ms": number;
+                  "points"?: Array<Record<string, unknown>>;
+                  "series_key"?: string;
+                  "series_name"?: string;
+                  "source_unit"?: string;
+                }) | null;
                 "group_name": string;
                 "peak_target": number;
                 "points": Array<Record<string, unknown>>;
@@ -53947,11 +54329,23 @@ export interface operations {
                   "prometheus"?: (Record<string, unknown>) | null;
                 }) | null;
                 "source_duration"?: string;
+                "source_end"?: string;
+                "source_start"?: string;
               }>;
               "refreshed_at": string;
               "runtime_target": string;
+              "sizing"?: ({
+                "complete": boolean;
+                "estimated_peak_vusers": number;
+                "profile_peak_vusers": number;
+                "recommended_generators"?: number;
+                "static_peak_vusers": number;
+                "suggested_max_vusers": number;
+                "suggested_min_vusers": number;
+              }) | null;
               "source": {
                 "file"?: ({
+                  "art_columns"?: Array<string>;
                   "filename": string;
                   "relative_start_time"?: string;
                   "series_column"?: string;
@@ -54402,6 +54796,7 @@ export interface operations {
             "gap_policy"?: string;
             "interpolation"?: string;
             "mappings"?: Array<{
+              "art"?: (Record<string, unknown>) | null;
               "group_name"?: string;
               "peak_target"?: number;
               "points"?: Array<Record<string, unknown>>;
@@ -54409,9 +54804,20 @@ export interface operations {
               "series_name"?: string;
               "source"?: (Record<string, unknown>) | null;
               "source_duration"?: string;
+              "source_end"?: string;
+              "source_start"?: string;
             }>;
             "refreshed_at"?: string;
             "runtime_target"?: string;
+            "sizing"?: ({
+              "complete"?: boolean;
+              "estimated_peak_vusers"?: number;
+              "profile_peak_vusers"?: number;
+              "recommended_generators"?: number;
+              "static_peak_vusers"?: number;
+              "suggested_max_vusers"?: number;
+              "suggested_min_vusers"?: number;
+            }) | null;
             "source"?: {
               "file"?: (Record<string, unknown>) | null;
               "kind"?: string;
@@ -60206,6 +60612,7 @@ export interface operations {
                 "gap_policy"?: string;
                 "interpolation": string;
                 "mappings": Array<{
+                  "art"?: (Record<string, unknown>) | null;
                   "group_name": string;
                   "peak_target": number;
                   "points": Array<Record<string, unknown>>;
@@ -60213,9 +60620,20 @@ export interface operations {
                   "series_name": string;
                   "source"?: (Record<string, unknown>) | null;
                   "source_duration"?: string;
+                  "source_end"?: string;
+                  "source_start"?: string;
                 }>;
                 "refreshed_at": string;
                 "runtime_target": string;
+                "sizing"?: ({
+                  "complete": boolean;
+                  "estimated_peak_vusers": number;
+                  "profile_peak_vusers": number;
+                  "recommended_generators"?: number;
+                  "static_peak_vusers": number;
+                  "suggested_max_vusers": number;
+                  "suggested_min_vusers": number;
+                }) | null;
                 "source": {
                   "file"?: (Record<string, unknown>) | null;
                   "kind": string;
@@ -61393,6 +61811,7 @@ export interface operations {
                 "gap_policy"?: string;
                 "interpolation": string;
                 "mappings": Array<{
+                  "art"?: (Record<string, unknown>) | null;
                   "group_name": string;
                   "peak_target": number;
                   "points": Array<Record<string, unknown>>;
@@ -61400,9 +61819,20 @@ export interface operations {
                   "series_name": string;
                   "source"?: (Record<string, unknown>) | null;
                   "source_duration"?: string;
+                  "source_end"?: string;
+                  "source_start"?: string;
                 }>;
                 "refreshed_at": string;
                 "runtime_target": string;
+                "sizing"?: ({
+                  "complete": boolean;
+                  "estimated_peak_vusers": number;
+                  "profile_peak_vusers": number;
+                  "recommended_generators"?: number;
+                  "static_peak_vusers": number;
+                  "suggested_max_vusers": number;
+                  "suggested_min_vusers": number;
+                }) | null;
                 "source": {
                   "file"?: (Record<string, unknown>) | null;
                   "kind": string;
@@ -62580,6 +63010,7 @@ export interface operations {
                 "gap_policy"?: string;
                 "interpolation": string;
                 "mappings": Array<{
+                  "art"?: (Record<string, unknown>) | null;
                   "group_name": string;
                   "peak_target": number;
                   "points": Array<Record<string, unknown>>;
@@ -62587,9 +63018,20 @@ export interface operations {
                   "series_name": string;
                   "source"?: (Record<string, unknown>) | null;
                   "source_duration"?: string;
+                  "source_end"?: string;
+                  "source_start"?: string;
                 }>;
                 "refreshed_at": string;
                 "runtime_target": string;
+                "sizing"?: ({
+                  "complete": boolean;
+                  "estimated_peak_vusers": number;
+                  "profile_peak_vusers": number;
+                  "recommended_generators"?: number;
+                  "static_peak_vusers": number;
+                  "suggested_max_vusers": number;
+                  "suggested_min_vusers": number;
+                }) | null;
                 "source": {
                   "file"?: (Record<string, unknown>) | null;
                   "kind": string;
@@ -63767,6 +64209,7 @@ export interface operations {
                 "gap_policy"?: string;
                 "interpolation": string;
                 "mappings": Array<{
+                  "art"?: (Record<string, unknown>) | null;
                   "group_name": string;
                   "peak_target": number;
                   "points": Array<Record<string, unknown>>;
@@ -63774,9 +64217,20 @@ export interface operations {
                   "series_name": string;
                   "source"?: (Record<string, unknown>) | null;
                   "source_duration"?: string;
+                  "source_end"?: string;
+                  "source_start"?: string;
                 }>;
                 "refreshed_at": string;
                 "runtime_target": string;
+                "sizing"?: ({
+                  "complete": boolean;
+                  "estimated_peak_vusers": number;
+                  "profile_peak_vusers": number;
+                  "recommended_generators"?: number;
+                  "static_peak_vusers": number;
+                  "suggested_max_vusers": number;
+                  "suggested_min_vusers": number;
+                }) | null;
                 "source": {
                   "file"?: (Record<string, unknown>) | null;
                   "kind": string;
@@ -64954,6 +65408,7 @@ export interface operations {
                 "gap_policy"?: string;
                 "interpolation": string;
                 "mappings": Array<{
+                  "art"?: (Record<string, unknown>) | null;
                   "group_name": string;
                   "peak_target": number;
                   "points": Array<Record<string, unknown>>;
@@ -64961,9 +65416,20 @@ export interface operations {
                   "series_name": string;
                   "source"?: (Record<string, unknown>) | null;
                   "source_duration"?: string;
+                  "source_end"?: string;
+                  "source_start"?: string;
                 }>;
                 "refreshed_at": string;
                 "runtime_target": string;
+                "sizing"?: ({
+                  "complete": boolean;
+                  "estimated_peak_vusers": number;
+                  "profile_peak_vusers": number;
+                  "recommended_generators"?: number;
+                  "static_peak_vusers": number;
+                  "suggested_max_vusers": number;
+                  "suggested_min_vusers": number;
+                }) | null;
                 "source": {
                   "file"?: (Record<string, unknown>) | null;
                   "kind": string;
@@ -71537,6 +72003,7 @@ export interface operations {
                 "gap_policy"?: string;
                 "interpolation": string;
                 "mappings": Array<{
+                  "art"?: (Record<string, unknown>) | null;
                   "group_name": string;
                   "peak_target": number;
                   "points": Array<Record<string, unknown>>;
@@ -71544,9 +72011,20 @@ export interface operations {
                   "series_name": string;
                   "source"?: (Record<string, unknown>) | null;
                   "source_duration"?: string;
+                  "source_end"?: string;
+                  "source_start"?: string;
                 }>;
                 "refreshed_at": string;
                 "runtime_target": string;
+                "sizing"?: ({
+                  "complete": boolean;
+                  "estimated_peak_vusers": number;
+                  "profile_peak_vusers": number;
+                  "recommended_generators"?: number;
+                  "static_peak_vusers": number;
+                  "suggested_max_vusers": number;
+                  "suggested_min_vusers": number;
+                }) | null;
                 "source": {
                   "file"?: (Record<string, unknown>) | null;
                   "kind": string;
@@ -82504,6 +82982,18 @@ export interface operations {
               "gap_policy"?: string;
               "interpolation": string;
               "mappings": Array<{
+                "art"?: ({
+                  "average_art_ms": number;
+                  "basis": string;
+                  "estimated_peak_vusers": number;
+                  "fallback_to_peak"?: boolean;
+                  "min_art_ms": number;
+                  "peak_art_ms": number;
+                  "points"?: Array<Record<string, unknown>>;
+                  "series_key"?: string;
+                  "series_name"?: string;
+                  "source_unit"?: string;
+                }) | null;
                 "group_name": string;
                 "peak_target": number;
                 "points": Array<Record<string, unknown>>;
@@ -82517,11 +83007,23 @@ export interface operations {
                   "prometheus"?: (Record<string, unknown>) | null;
                 }) | null;
                 "source_duration"?: string;
+                "source_end"?: string;
+                "source_start"?: string;
               }>;
               "refreshed_at": string;
               "runtime_target": string;
+              "sizing"?: ({
+                "complete": boolean;
+                "estimated_peak_vusers": number;
+                "profile_peak_vusers": number;
+                "recommended_generators"?: number;
+                "static_peak_vusers": number;
+                "suggested_max_vusers": number;
+                "suggested_min_vusers": number;
+              }) | null;
               "source": {
                 "file"?: ({
+                  "art_columns"?: Array<string>;
                   "filename": string;
                   "relative_start_time"?: string;
                   "series_column"?: string;
@@ -86630,6 +87132,18 @@ export interface operations {
             "gap_policy"?: string;
             "interpolation"?: string;
             "mappings"?: Array<{
+              "art"?: ({
+                "average_art_ms"?: number;
+                "basis"?: string;
+                "estimated_peak_vusers"?: number;
+                "fallback_to_peak"?: boolean;
+                "min_art_ms"?: number;
+                "peak_art_ms"?: number;
+                "points"?: Array<Record<string, unknown>>;
+                "series_key"?: string;
+                "series_name"?: string;
+                "source_unit"?: string;
+              }) | null;
               "group_name"?: string;
               "peak_target"?: number;
               "points"?: Array<Record<string, unknown>>;
@@ -86643,11 +87157,23 @@ export interface operations {
                 "prometheus"?: (Record<string, unknown>) | null;
               }) | null;
               "source_duration"?: string;
+              "source_end"?: string;
+              "source_start"?: string;
             }>;
             "refreshed_at"?: string;
             "runtime_target"?: string;
+            "sizing"?: ({
+              "complete"?: boolean;
+              "estimated_peak_vusers"?: number;
+              "profile_peak_vusers"?: number;
+              "recommended_generators"?: number;
+              "static_peak_vusers"?: number;
+              "suggested_max_vusers"?: number;
+              "suggested_min_vusers"?: number;
+            }) | null;
             "source"?: {
               "file"?: ({
+                "art_columns"?: Array<string>;
                 "filename"?: string;
                 "relative_start_time"?: string;
                 "series_column"?: string;
@@ -87255,6 +87781,18 @@ export interface operations {
               "gap_policy"?: string;
               "interpolation": string;
               "mappings": Array<{
+                "art"?: ({
+                  "average_art_ms": number;
+                  "basis": string;
+                  "estimated_peak_vusers": number;
+                  "fallback_to_peak"?: boolean;
+                  "min_art_ms": number;
+                  "peak_art_ms": number;
+                  "points"?: Array<Record<string, unknown>>;
+                  "series_key"?: string;
+                  "series_name"?: string;
+                  "source_unit"?: string;
+                }) | null;
                 "group_name": string;
                 "peak_target": number;
                 "points": Array<Record<string, unknown>>;
@@ -87268,11 +87806,23 @@ export interface operations {
                   "prometheus"?: (Record<string, unknown>) | null;
                 }) | null;
                 "source_duration"?: string;
+                "source_end"?: string;
+                "source_start"?: string;
               }>;
               "refreshed_at": string;
               "runtime_target": string;
+              "sizing"?: ({
+                "complete": boolean;
+                "estimated_peak_vusers": number;
+                "profile_peak_vusers": number;
+                "recommended_generators"?: number;
+                "static_peak_vusers": number;
+                "suggested_max_vusers": number;
+                "suggested_min_vusers": number;
+              }) | null;
               "source": {
                 "file"?: ({
+                  "art_columns"?: Array<string>;
                   "filename": string;
                   "relative_start_time"?: string;
                   "series_column"?: string;
@@ -93435,6 +93985,18 @@ export interface operations {
             "gap_policy"?: string;
             "interpolation"?: string;
             "mappings"?: Array<{
+              "art"?: ({
+                "average_art_ms"?: number;
+                "basis"?: string;
+                "estimated_peak_vusers"?: number;
+                "fallback_to_peak"?: boolean;
+                "min_art_ms"?: number;
+                "peak_art_ms"?: number;
+                "points"?: Array<Record<string, unknown>>;
+                "series_key"?: string;
+                "series_name"?: string;
+                "source_unit"?: string;
+              }) | null;
               "group_name"?: string;
               "peak_target"?: number;
               "points"?: Array<Record<string, unknown>>;
@@ -93448,11 +94010,23 @@ export interface operations {
                 "prometheus"?: (Record<string, unknown>) | null;
               }) | null;
               "source_duration"?: string;
+              "source_end"?: string;
+              "source_start"?: string;
             }>;
             "refreshed_at"?: string;
             "runtime_target"?: string;
+            "sizing"?: ({
+              "complete"?: boolean;
+              "estimated_peak_vusers"?: number;
+              "profile_peak_vusers"?: number;
+              "recommended_generators"?: number;
+              "static_peak_vusers"?: number;
+              "suggested_max_vusers"?: number;
+              "suggested_min_vusers"?: number;
+            }) | null;
             "source"?: {
               "file"?: ({
+                "art_columns"?: Array<string>;
                 "filename"?: string;
                 "relative_start_time"?: string;
                 "series_column"?: string;

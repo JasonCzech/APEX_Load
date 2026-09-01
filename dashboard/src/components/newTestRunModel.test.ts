@@ -814,6 +814,7 @@ describe('newTestRunModel', () => {
       source: { kind: 'file', file: { filename: 'traffic.csv', timestamp_column: 'time', value_columns: ['transactions'] } },
       value_semantics: 'transactions_per_bucket', runtime_target: 'tps', interpolation: 'step', source_duration: '3m', target_duration: '3m', refreshed_at: '2026-08-31T00:00:00Z',
       mappings: [{ series_key: 'requests', series_name: 'Requests', group_name: 'Browse', peak_target: 12, points: [{ offset_ms: 0, target: 3 }, { offset_ms: 60_000, target: 12 }, { offset_ms: 120_000, target: 5 }] }],
+      sizing: { complete: true, profile_peak_vusers: 18, static_peak_vusers: 0, estimated_peak_vusers: 18, suggested_min_vusers: 1, suggested_max_vusers: 36, recommended_generators: 2 },
     }
 
     const preview = buildRunLoadProfilePreview([group], '3m', undefined, false, trafficProfile, 'goal_oriented')
@@ -826,6 +827,8 @@ describe('newTestRunModel', () => {
     expect(preview.minTps).toBe(3)
     expect(preview.averageTps).toBeCloseTo(20 / 3)
     expect(preview.showVUsers).toBe(false)
+    expect(preview.estimatedPeakVUsers).toBe(18)
+    expect(preview.recommendedGenerators).toBe(2)
     expect(preview.tpsGroupIndexes).toEqual([0])
 
     const delayedPreview = buildRunLoadProfilePreview([group], '3m', '30s', true, trafficProfile)

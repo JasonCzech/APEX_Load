@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import userGuideMarkdown from '../../../docs/APPLICATION_USER_GUIDE.md?raw'
 import adminGuideMarkdown from '../../../docs/ADMIN_USER_GUIDE.md?raw'
+import mcpGuideMarkdown from '../../../mcp/README.md?raw'
 import { loadApiEndpointCatalog } from '../apiDocsClient'
 import { buildEndpointCatalogMap, endpointCatalogKey, type ApiEndpointCatalog, type ApiEndpointCatalogRoute } from '../apiEndpointCatalog'
 import { API_GUIDE_DEFAULT_PAGE, type ApiGuideContentPageID } from '../apiGuideNavigation'
@@ -204,7 +205,13 @@ export default function ApiGuidePage({
             <article className="api-guide-mcp-card">
               <h4>Start The Server</h4>
               <pre><code>{'APEXLOAD_URL=http://localhost:8080/api/v1 \\\nAPEXLOAD_API_KEY=srk_... \\\npython3 mcp/server.py'}</code></pre>
-              <a href="https://github.com/jasonczech/apexload/blob/main/mcp/README.md" target="_blank" rel="noreferrer">MCP setup guide</a>
+              <button
+                type="button"
+                className="api-guide-mcp-guide-link"
+                onClick={() => document.getElementById('mcp-setup-guide')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+              >
+                View MCP setup guide
+              </button>
             </article>
             <article className="api-guide-mcp-card">
               <h4>Tool Coverage</h4>
@@ -223,6 +230,13 @@ export default function ApiGuidePage({
                 ))}
               </ul>
             </article>
+          </div>
+          <div id="mcp-setup-guide" className="api-guide-mcp-setup-guide">
+            <div className="api-guide-section-header">
+              <h3>MCP Setup Guide</h3>
+              <p>Install, configure, and connect the bundled APEX Load MCP server without leaving the application.</p>
+            </div>
+            <GuideMarkdownArticle source={mcpGuideMarkdown} />
           </div>
         </section>
       )}

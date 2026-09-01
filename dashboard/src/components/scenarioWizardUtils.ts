@@ -54,6 +54,8 @@ export interface ScenarioModelPreview {
   peakTps?: number
   minTps?: number
   averageTps?: number
+  estimatedPeakVusers?: number
+  recommendedGenerators?: number
   durationSeconds: number
 }
 
@@ -820,6 +822,8 @@ export function buildScenarioModelPreview(params: {
     peakTps: profileTpsStatistics?.maximum ?? (includeTps ? peakTps : undefined),
     minTps: profileTpsStatistics?.minimum,
     averageTps: profileTpsStatistics?.average,
+    estimatedPeakVusers: profileTps && params.trafficProfile?.sizing?.complete ? params.trafficProfile.sizing.estimated_peak_vusers : undefined,
+    recommendedGenerators: profileTps && params.trafficProfile?.sizing?.complete ? params.trafficProfile.sizing.recommended_generators : undefined,
     durationSeconds,
     series: [
       ...groupSeries,

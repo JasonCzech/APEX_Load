@@ -42,6 +42,23 @@
   padding: 20px 0;
 }
 
+/*
+ * macOS full-size-content windows place the native traffic lights inside the
+ * webview. Keep the active sidebar brand clear of that fixed native hit area.
+ * The dashboard itself is scaled for app zoom, while the window controls are
+ * not, so divide by the zoom factor to preserve an 80px physical inset.
+ */
+body.is-desktop.is-mac .sidebar:not(.collapsed) .sidebar-brand {
+  padding-left: calc(80px / var(--dashboard-zoom, 1));
+}
+
+/* A 64px collapsed rail cannot fit beside the traffic lights; place its brand
+ * below them instead, again compensating for dashboard zoom. */
+body.is-desktop.is-mac .sidebar.collapsed .sidebar-brand {
+  min-height: calc(44px / var(--dashboard-zoom, 1) + 44px);
+  padding: calc(44px / var(--dashboard-zoom, 1)) 0 16px;
+}
+
 .brand-icon {
   flex-shrink: 0;
 }
@@ -571,6 +588,11 @@
   .sidebar .sidebar-brand {
     justify-content: center;
     padding: 20px 0;
+  }
+  body.is-desktop.is-mac .sidebar:not(.collapsed) .sidebar-brand,
+  body.is-desktop.is-mac .sidebar.collapsed .sidebar-brand {
+    min-height: calc(44px / var(--dashboard-zoom, 1) + 44px);
+    padding: calc(44px / var(--dashboard-zoom, 1)) 0 16px;
   }
   .sidebar .nav-item {
     justify-content: center;

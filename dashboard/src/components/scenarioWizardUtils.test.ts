@@ -97,6 +97,7 @@ describe('scenarioWizardUtils', () => {
       source: { kind: 'file', file: { filename: 'traffic.csv', timestamp_column: 'time', value_columns: ['transactions'] } },
       value_semantics: 'tps', runtime_target: 'tps', interpolation: 'step', source_duration: '3m', target_duration: '3m', refreshed_at: '2026-08-31T00:00:00Z',
       mappings: [{ series_key: 'requests', series_name: 'Requests', group_name: 'Checkout', peak_target: 10, points: [{ offset_ms: 0, target: 2 }, { offset_ms: 60_000, target: 10 }, { offset_ms: 120_000, target: 4 }] }],
+      sizing: { complete: true, profile_peak_vusers: 12, static_peak_vusers: 0, estimated_peak_vusers: 12, suggested_min_vusers: 1, suggested_max_vusers: 24, recommended_generators: 2 },
     }
 
     const preview = buildScenarioModelPreview({ duration: '3m', scenarioMode: 'goal_oriented', groups: [{ name: 'Checkout', vusers: 9 }], goalTargetTps: 99, trafficProfile })
@@ -108,6 +109,8 @@ describe('scenarioWizardUtils', () => {
     expect(preview.minTps).toBe(2)
     expect(preview.averageTps).toBeCloseTo(16 / 3)
     expect(preview.showVUsers).toBe(false)
+    expect(preview.estimatedPeakVusers).toBe(12)
+    expect(preview.recommendedGenerators).toBe(2)
     expect(preview.series.find(series => series.key === 'totalTps')).toMatchObject({ label: 'Production target TPS', interpolation: 'stepAfter' })
 
     const multiGroupProfile: TrafficProfile = {

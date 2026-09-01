@@ -94,6 +94,28 @@ target suspends the mapped group at zero VUsers; a later positive target seeds
 one VUser before closed-loop scaling resumes. Open-arrival scripts cannot be
 mapped to adaptive TPS profiles.
 
+TPS mappings may also carry optional average-response-time (ART) sizing
+evidence. File sources can map a timestamped ART column in milliseconds or
+seconds; query sources currently use an operator-entered peak ART. ART is
+normalized to milliseconds and transformed onto the same selected window and
+runtime clock as its workload, while TPS amplitude transforms do not affect
+ART. If a file-backed ART series does not cover every workload bucket, the
+profile records a conservative constant-peak fallback and a warning.
+
+When every profile-managed TPS group has ART evidence, the platform evaluates
+Little's Law (`ceil(TPS × ART_ms / 1000)`) at the union of all TPS and ART
+boundaries. It records per-group estimates, the actual simultaneous managed
+peak, static-group demand, and the total estimated scenario peak. The suggested
+global guardrails are a minimum of 1 and a maximum of static demand plus twice
+the simultaneous managed estimate, clamped to platform limits. Applying those
+guardrails requires explicit dashboard confirmation; incomplete ART evidence
+leaves existing guardrails unchanged. Capacity advice uses the suggested
+maximum because the adaptive controller may scale to that bound.
+
+Estimated VUsers are planning evidence only. Goal-oriented load charts remain
+TPS-only because runtime VUser demand cannot be known in advance; live scaling
+continues to be controlled by the adaptive TPS controller.
+
 Adaptive TPS replay is a convergent closed-loop approximation, not an exact
 arrival schedule. The goal controller evaluates on a five-second cadence and
 uses bounded scale steps. TPS buckets below five seconds are rejected; buckets

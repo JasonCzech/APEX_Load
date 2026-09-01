@@ -867,13 +867,15 @@ function ScenarioModelPreviewPanel({
       <div className="scenario-model-preview-header">
         <div>
           <h4>Model Preview</h4>
-          <p>{includesTps ? (model.showVUsers ? 'Planned TPS targets and VUsers over time, calculated from the current wizard draft.' : 'Planned adaptive TPS targets. VUser demand is determined by the goal controller at runtime.') : (model.showVUsers ? 'Planned VUsers over time by script group, calculated from the current wizard draft.' : 'VUser demand is determined by the goal controller at runtime and cannot be modeled ahead of the run.')}</p>
+          <p>{includesTps ? (model.showVUsers ? 'Planned TPS targets and VUsers over time, calculated from the current wizard draft.' : model.estimatedPeakVusers !== undefined ? 'Planned adaptive TPS targets. VUser demand is controlled at runtime; the ART-backed VUser figure is a Little’s Law planning estimate.' : 'Planned adaptive TPS targets. VUser demand is determined by the goal controller at runtime.') : (model.showVUsers ? 'Planned VUsers over time by script group, calculated from the current wizard draft.' : 'VUser demand is determined by the goal controller at runtime and cannot be modeled ahead of the run.')}</p>
         </div>
         <div className="scenario-model-summary">
           {model.showVUsers && <span><strong>{model.peakVusers}</strong> peak VUsers</span>}
           {model.peakTps !== undefined && <span><strong>{formatTps(model.peakTps)}</strong> peak TPS</span>}
           {model.minTps !== undefined && <span><strong>{formatTps(model.minTps)}</strong> minimum TPS</span>}
           {model.averageTps !== undefined && <span><strong>{formatTps(model.averageTps)}</strong> average TPS</span>}
+          {model.estimatedPeakVusers !== undefined && <span><strong>{model.estimatedPeakVusers.toLocaleString()}</strong> estimated peak VUsers</span>}
+          {model.recommendedGenerators !== undefined && model.recommendedGenerators > 0 && <span><strong>{model.recommendedGenerators}</strong> recommended generators</span>}
           <span><strong>{formatModelTimeLabel(model.durationSeconds)}</strong> duration</span>
           <span><strong>{groupSeries.length}</strong> groups</span>
           <span>{shapeLabel}</span>

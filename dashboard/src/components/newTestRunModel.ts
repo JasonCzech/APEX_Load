@@ -102,6 +102,8 @@ export type RunLoadProfilePreview = {
   peakTps?: number
   minTps?: number
   averageTps?: number
+  estimatedPeakVUsers?: number
+  recommendedGenerators?: number
   runtimeTarget?: 'tps' | 'vusers'
   tpsGroupIndexes?: number[]
 }
@@ -869,6 +871,8 @@ export function buildRunLoadProfilePreview(groups: ScenarioScriptGroup[], durati
       peakTps: profileTpsStatistics?.maximum ?? configuredGoalTps ?? peakTps,
       minTps: profileTpsStatistics?.minimum ?? configuredGoalTps ?? 0,
       averageTps: profileTpsStatistics?.average ?? configuredGoalTps ?? 0,
+      estimatedPeakVUsers: profileTps && trafficProfile?.sizing?.complete ? trafficProfile.sizing.estimated_peak_vusers : undefined,
+      recommendedGenerators: profileTps && trafficProfile?.sizing?.complete ? trafficProfile.sizing.recommended_generators : undefined,
       runtimeTarget: 'tps' as const,
       tpsGroupIndexes,
     } : profileVUsers ? { runtimeTarget: 'vusers' as const } : {}),

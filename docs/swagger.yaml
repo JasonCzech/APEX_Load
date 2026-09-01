@@ -6490,6 +6490,11 @@ paths:
                           items:
                             type: object
                             properties:
+                              art:
+                                type: object
+                                description: 'Go type: TrafficProfileART'
+                                additionalProperties: true
+                                nullable: true
                               group_name:
                                 type: string
                               peak_target:
@@ -6512,11 +6517,39 @@ paths:
                                 nullable: true
                               source_duration:
                                 type: string
+                              source_end:
+                                type: string
+                              source_start:
+                                type: string
                         refreshed_at:
                           type: string
                           format: date-time
                         runtime_target:
                           type: string
+                        sizing:
+                          type: object
+                          properties:
+                            complete:
+                              type: boolean
+                            estimated_peak_vusers:
+                              type: integer
+                              format: int64
+                            profile_peak_vusers:
+                              type: integer
+                              format: int64
+                            recommended_generators:
+                              type: integer
+                              format: int64
+                            static_peak_vusers:
+                              type: integer
+                              format: int64
+                            suggested_max_vusers:
+                              type: integer
+                              format: int64
+                            suggested_min_vusers:
+                              type: integer
+                              format: int64
+                          nullable: true
                         source:
                           type: object
                           properties:
@@ -45359,6 +45392,11 @@ paths:
                           items:
                             type: object
                             properties:
+                              art:
+                                type: object
+                                description: 'Go type: TrafficProfileART'
+                                additionalProperties: true
+                                nullable: true
                               group_name:
                                 type: string
                               peak_target:
@@ -45381,11 +45419,39 @@ paths:
                                 nullable: true
                               source_duration:
                                 type: string
+                              source_end:
+                                type: string
+                              source_start:
+                                type: string
                         refreshed_at:
                           type: string
                           format: date-time
                         runtime_target:
                           type: string
+                        sizing:
+                          type: object
+                          properties:
+                            complete:
+                              type: boolean
+                            estimated_peak_vusers:
+                              type: integer
+                              format: int64
+                            profile_peak_vusers:
+                              type: integer
+                              format: int64
+                            recommended_generators:
+                              type: integer
+                              format: int64
+                            static_peak_vusers:
+                              type: integer
+                              format: int64
+                            suggested_max_vusers:
+                              type: integer
+                              format: int64
+                            suggested_min_vusers:
+                              type: integer
+                              format: int64
+                          nullable: true
                         source:
                           type: object
                           properties:
@@ -45469,6 +45535,11 @@ paths:
                       items:
                         type: object
                         properties:
+                          art:
+                            type: object
+                            description: 'Go type: TrafficProfileART'
+                            additionalProperties: true
+                            nullable: true
                           group_name:
                             type: string
                           peak_target:
@@ -45491,11 +45562,39 @@ paths:
                             nullable: true
                           source_duration:
                             type: string
+                          source_end:
+                            type: string
+                          source_start:
+                            type: string
                     refreshed_at:
                       type: string
                       format: date-time
                     runtime_target:
                       type: string
+                    sizing:
+                      type: object
+                      properties:
+                        complete:
+                          type: boolean
+                        estimated_peak_vusers:
+                          type: integer
+                          format: int64
+                        profile_peak_vusers:
+                          type: integer
+                          format: int64
+                        recommended_generators:
+                          type: integer
+                          format: int64
+                        static_peak_vusers:
+                          type: integer
+                          format: int64
+                        suggested_max_vusers:
+                          type: integer
+                          format: int64
+                        suggested_min_vusers:
+                          type: integer
+                          format: int64
+                      nullable: true
                     source:
                       type: object
                       properties:
@@ -48913,6 +49012,11 @@ paths:
                             items:
                               type: object
                               properties:
+                                art:
+                                  type: object
+                                  description: 'Go type: TrafficProfileART'
+                                  additionalProperties: true
+                                  nullable: true
                                 group_name:
                                   type: string
                                 peak_target:
@@ -48935,6 +49039,10 @@ paths:
                                   nullable: true
                                 source_duration:
                                   type: string
+                                source_end:
+                                  type: string
+                                source_start:
+                                  type: string
                               required:
                                 - group_name
                                 - peak_target
@@ -48946,6 +49054,37 @@ paths:
                             format: date-time
                           runtime_target:
                             type: string
+                          sizing:
+                            type: object
+                            properties:
+                              complete:
+                                type: boolean
+                              estimated_peak_vusers:
+                                type: integer
+                                format: int64
+                              profile_peak_vusers:
+                                type: integer
+                                format: int64
+                              recommended_generators:
+                                type: integer
+                                format: int64
+                              static_peak_vusers:
+                                type: integer
+                                format: int64
+                              suggested_max_vusers:
+                                type: integer
+                                format: int64
+                              suggested_min_vusers:
+                                type: integer
+                                format: int64
+                            required:
+                              - complete
+                              - estimated_peak_vusers
+                              - profile_peak_vusers
+                              - static_peak_vusers
+                              - suggested_max_vusers
+                              - suggested_min_vusers
+                            nullable: true
                           source:
                             type: object
                             properties:
@@ -52472,6 +52611,11 @@ paths:
                             items:
                               type: object
                               properties:
+                                art:
+                                  type: object
+                                  description: 'Go type: TrafficProfileART'
+                                  additionalProperties: true
+                                  nullable: true
                                 group_name:
                                   type: string
                                 peak_target:
@@ -52494,6 +52638,10 @@ paths:
                                   nullable: true
                                 source_duration:
                                   type: string
+                                source_end:
+                                  type: string
+                                source_start:
+                                  type: string
                               required:
                                 - group_name
                                 - peak_target
@@ -52505,6 +52653,37 @@ paths:
                             format: date-time
                           runtime_target:
                             type: string
+                          sizing:
+                            type: object
+                            properties:
+                              complete:
+                                type: boolean
+                              estimated_peak_vusers:
+                                type: integer
+                                format: int64
+                              profile_peak_vusers:
+                                type: integer
+                                format: int64
+                              recommended_generators:
+                                type: integer
+                                format: int64
+                              static_peak_vusers:
+                                type: integer
+                                format: int64
+                              suggested_max_vusers:
+                                type: integer
+                                format: int64
+                              suggested_min_vusers:
+                                type: integer
+                                format: int64
+                            required:
+                              - complete
+                              - estimated_peak_vusers
+                              - profile_peak_vusers
+                              - static_peak_vusers
+                              - suggested_max_vusers
+                              - suggested_min_vusers
+                            nullable: true
                           source:
                             type: object
                             properties:
@@ -56028,6 +56207,11 @@ paths:
                             items:
                               type: object
                               properties:
+                                art:
+                                  type: object
+                                  description: 'Go type: TrafficProfileART'
+                                  additionalProperties: true
+                                  nullable: true
                                 group_name:
                                   type: string
                                 peak_target:
@@ -56050,6 +56234,10 @@ paths:
                                   nullable: true
                                 source_duration:
                                   type: string
+                                source_end:
+                                  type: string
+                                source_start:
+                                  type: string
                               required:
                                 - group_name
                                 - peak_target
@@ -56061,6 +56249,37 @@ paths:
                             format: date-time
                           runtime_target:
                             type: string
+                          sizing:
+                            type: object
+                            properties:
+                              complete:
+                                type: boolean
+                              estimated_peak_vusers:
+                                type: integer
+                                format: int64
+                              profile_peak_vusers:
+                                type: integer
+                                format: int64
+                              recommended_generators:
+                                type: integer
+                                format: int64
+                              static_peak_vusers:
+                                type: integer
+                                format: int64
+                              suggested_max_vusers:
+                                type: integer
+                                format: int64
+                              suggested_min_vusers:
+                                type: integer
+                                format: int64
+                            required:
+                              - complete
+                              - estimated_peak_vusers
+                              - profile_peak_vusers
+                              - static_peak_vusers
+                              - suggested_max_vusers
+                              - suggested_min_vusers
+                            nullable: true
                           source:
                             type: object
                             properties:
@@ -59596,6 +59815,11 @@ paths:
                             items:
                               type: object
                               properties:
+                                art:
+                                  type: object
+                                  description: 'Go type: TrafficProfileART'
+                                  additionalProperties: true
+                                  nullable: true
                                 group_name:
                                   type: string
                                 peak_target:
@@ -59618,6 +59842,10 @@ paths:
                                   nullable: true
                                 source_duration:
                                   type: string
+                                source_end:
+                                  type: string
+                                source_start:
+                                  type: string
                               required:
                                 - group_name
                                 - peak_target
@@ -59629,6 +59857,37 @@ paths:
                             format: date-time
                           runtime_target:
                             type: string
+                          sizing:
+                            type: object
+                            properties:
+                              complete:
+                                type: boolean
+                              estimated_peak_vusers:
+                                type: integer
+                                format: int64
+                              profile_peak_vusers:
+                                type: integer
+                                format: int64
+                              recommended_generators:
+                                type: integer
+                                format: int64
+                              static_peak_vusers:
+                                type: integer
+                                format: int64
+                              suggested_max_vusers:
+                                type: integer
+                                format: int64
+                              suggested_min_vusers:
+                                type: integer
+                                format: int64
+                            required:
+                              - complete
+                              - estimated_peak_vusers
+                              - profile_peak_vusers
+                              - static_peak_vusers
+                              - suggested_max_vusers
+                              - suggested_min_vusers
+                            nullable: true
                           source:
                             type: object
                             properties:
@@ -63164,6 +63423,11 @@ paths:
                             items:
                               type: object
                               properties:
+                                art:
+                                  type: object
+                                  description: 'Go type: TrafficProfileART'
+                                  additionalProperties: true
+                                  nullable: true
                                 group_name:
                                   type: string
                                 peak_target:
@@ -63186,6 +63450,10 @@ paths:
                                   nullable: true
                                 source_duration:
                                   type: string
+                                source_end:
+                                  type: string
+                                source_start:
+                                  type: string
                               required:
                                 - group_name
                                 - peak_target
@@ -63197,6 +63465,37 @@ paths:
                             format: date-time
                           runtime_target:
                             type: string
+                          sizing:
+                            type: object
+                            properties:
+                              complete:
+                                type: boolean
+                              estimated_peak_vusers:
+                                type: integer
+                                format: int64
+                              profile_peak_vusers:
+                                type: integer
+                                format: int64
+                              recommended_generators:
+                                type: integer
+                                format: int64
+                              static_peak_vusers:
+                                type: integer
+                                format: int64
+                              suggested_max_vusers:
+                                type: integer
+                                format: int64
+                              suggested_min_vusers:
+                                type: integer
+                                format: int64
+                            required:
+                              - complete
+                              - estimated_peak_vusers
+                              - profile_peak_vusers
+                              - static_peak_vusers
+                              - suggested_max_vusers
+                              - suggested_min_vusers
+                            nullable: true
                           source:
                             type: object
                             properties:
@@ -66732,6 +67031,11 @@ paths:
                             items:
                               type: object
                               properties:
+                                art:
+                                  type: object
+                                  description: 'Go type: TrafficProfileART'
+                                  additionalProperties: true
+                                  nullable: true
                                 group_name:
                                   type: string
                                 peak_target:
@@ -66754,6 +67058,10 @@ paths:
                                   nullable: true
                                 source_duration:
                                   type: string
+                                source_end:
+                                  type: string
+                                source_start:
+                                  type: string
                               required:
                                 - group_name
                                 - peak_target
@@ -66765,6 +67073,37 @@ paths:
                             format: date-time
                           runtime_target:
                             type: string
+                          sizing:
+                            type: object
+                            properties:
+                              complete:
+                                type: boolean
+                              estimated_peak_vusers:
+                                type: integer
+                                format: int64
+                              profile_peak_vusers:
+                                type: integer
+                                format: int64
+                              recommended_generators:
+                                type: integer
+                                format: int64
+                              static_peak_vusers:
+                                type: integer
+                                format: int64
+                              suggested_max_vusers:
+                                type: integer
+                                format: int64
+                              suggested_min_vusers:
+                                type: integer
+                                format: int64
+                            required:
+                              - complete
+                              - estimated_peak_vusers
+                              - profile_peak_vusers
+                              - static_peak_vusers
+                              - suggested_max_vusers
+                              - suggested_min_vusers
+                            nullable: true
                           source:
                             type: object
                             properties:
@@ -70300,6 +70639,11 @@ paths:
                             items:
                               type: object
                               properties:
+                                art:
+                                  type: object
+                                  description: 'Go type: TrafficProfileART'
+                                  additionalProperties: true
+                                  nullable: true
                                 group_name:
                                   type: string
                                 peak_target:
@@ -70322,6 +70666,10 @@ paths:
                                   nullable: true
                                 source_duration:
                                   type: string
+                                source_end:
+                                  type: string
+                                source_start:
+                                  type: string
                               required:
                                 - group_name
                                 - peak_target
@@ -70333,6 +70681,37 @@ paths:
                             format: date-time
                           runtime_target:
                             type: string
+                          sizing:
+                            type: object
+                            properties:
+                              complete:
+                                type: boolean
+                              estimated_peak_vusers:
+                                type: integer
+                                format: int64
+                              profile_peak_vusers:
+                                type: integer
+                                format: int64
+                              recommended_generators:
+                                type: integer
+                                format: int64
+                              static_peak_vusers:
+                                type: integer
+                                format: int64
+                              suggested_max_vusers:
+                                type: integer
+                                format: int64
+                              suggested_min_vusers:
+                                type: integer
+                                format: int64
+                            required:
+                              - complete
+                              - estimated_peak_vusers
+                              - profile_peak_vusers
+                              - static_peak_vusers
+                              - suggested_max_vusers
+                              - suggested_min_vusers
+                            nullable: true
                           source:
                             type: object
                             properties:
@@ -80022,6 +80401,38 @@ paths:
                       items:
                         type: object
                         properties:
+                          art:
+                            type: object
+                            properties:
+                              average_art_ms:
+                                type: number
+                                format: double
+                              basis:
+                                type: string
+                              estimated_peak_vusers:
+                                type: integer
+                                format: int64
+                              fallback_to_peak:
+                                type: boolean
+                              min_art_ms:
+                                type: number
+                                format: double
+                              peak_art_ms:
+                                type: number
+                                format: double
+                              points:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: trafficprofile.ARTPoint'
+                                  additionalProperties: true
+                              series_key:
+                                type: string
+                              series_name:
+                                type: string
+                              source_unit:
+                                type: string
+                            nullable: true
                           group_name:
                             type: string
                           peak_target:
@@ -80062,17 +80473,49 @@ paths:
                             nullable: true
                           source_duration:
                             type: string
+                          source_end:
+                            type: string
+                          source_start:
+                            type: string
                     refreshed_at:
                       type: string
                       format: date-time
                     runtime_target:
                       type: string
+                    sizing:
+                      type: object
+                      properties:
+                        complete:
+                          type: boolean
+                        estimated_peak_vusers:
+                          type: integer
+                          format: int64
+                        profile_peak_vusers:
+                          type: integer
+                          format: int64
+                        recommended_generators:
+                          type: integer
+                          format: int64
+                        static_peak_vusers:
+                          type: integer
+                          format: int64
+                        suggested_max_vusers:
+                          type: integer
+                          format: int64
+                        suggested_min_vusers:
+                          type: integer
+                          format: int64
+                      nullable: true
                     source:
                       type: object
                       properties:
                         file:
                           type: object
                           properties:
+                            art_columns:
+                              type: array
+                              items:
+                                type: string
                             filename:
                               type: string
                             relative_start_time:
@@ -81692,6 +82135,44 @@ paths:
                         items:
                           type: object
                           properties:
+                            art:
+                              type: object
+                              properties:
+                                average_art_ms:
+                                  type: number
+                                  format: double
+                                basis:
+                                  type: string
+                                estimated_peak_vusers:
+                                  type: integer
+                                  format: int64
+                                fallback_to_peak:
+                                  type: boolean
+                                min_art_ms:
+                                  type: number
+                                  format: double
+                                peak_art_ms:
+                                  type: number
+                                  format: double
+                                points:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: trafficprofile.ARTPoint'
+                                    additionalProperties: true
+                                series_key:
+                                  type: string
+                                series_name:
+                                  type: string
+                                source_unit:
+                                  type: string
+                              required:
+                                - average_art_ms
+                                - basis
+                                - estimated_peak_vusers
+                                - min_art_ms
+                                - peak_art_ms
+                              nullable: true
                             group_name:
                               type: string
                             peak_target:
@@ -81734,6 +82215,10 @@ paths:
                               nullable: true
                             source_duration:
                               type: string
+                            source_end:
+                              type: string
+                            source_start:
+                              type: string
                           required:
                             - group_name
                             - peak_target
@@ -81745,12 +82230,47 @@ paths:
                         format: date-time
                       runtime_target:
                         type: string
+                      sizing:
+                        type: object
+                        properties:
+                          complete:
+                            type: boolean
+                          estimated_peak_vusers:
+                            type: integer
+                            format: int64
+                          profile_peak_vusers:
+                            type: integer
+                            format: int64
+                          recommended_generators:
+                            type: integer
+                            format: int64
+                          static_peak_vusers:
+                            type: integer
+                            format: int64
+                          suggested_max_vusers:
+                            type: integer
+                            format: int64
+                          suggested_min_vusers:
+                            type: integer
+                            format: int64
+                        required:
+                          - complete
+                          - estimated_peak_vusers
+                          - profile_peak_vusers
+                          - static_peak_vusers
+                          - suggested_max_vusers
+                          - suggested_min_vusers
+                        nullable: true
                       source:
                         type: object
                         properties:
                           file:
                             type: object
                             properties:
+                              art_columns:
+                                type: array
+                                items:
+                                  type: string
                               filename:
                                 type: string
                               relative_start_time:
@@ -83494,6 +84014,44 @@ paths:
                         items:
                           type: object
                           properties:
+                            art:
+                              type: object
+                              properties:
+                                average_art_ms:
+                                  type: number
+                                  format: double
+                                basis:
+                                  type: string
+                                estimated_peak_vusers:
+                                  type: integer
+                                  format: int64
+                                fallback_to_peak:
+                                  type: boolean
+                                min_art_ms:
+                                  type: number
+                                  format: double
+                                peak_art_ms:
+                                  type: number
+                                  format: double
+                                points:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: trafficprofile.ARTPoint'
+                                    additionalProperties: true
+                                series_key:
+                                  type: string
+                                series_name:
+                                  type: string
+                                source_unit:
+                                  type: string
+                              required:
+                                - average_art_ms
+                                - basis
+                                - estimated_peak_vusers
+                                - min_art_ms
+                                - peak_art_ms
+                              nullable: true
                             group_name:
                               type: string
                             peak_target:
@@ -83536,6 +84094,10 @@ paths:
                               nullable: true
                             source_duration:
                               type: string
+                            source_end:
+                              type: string
+                            source_start:
+                              type: string
                           required:
                             - group_name
                             - peak_target
@@ -83547,12 +84109,47 @@ paths:
                         format: date-time
                       runtime_target:
                         type: string
+                      sizing:
+                        type: object
+                        properties:
+                          complete:
+                            type: boolean
+                          estimated_peak_vusers:
+                            type: integer
+                            format: int64
+                          profile_peak_vusers:
+                            type: integer
+                            format: int64
+                          recommended_generators:
+                            type: integer
+                            format: int64
+                          static_peak_vusers:
+                            type: integer
+                            format: int64
+                          suggested_max_vusers:
+                            type: integer
+                            format: int64
+                          suggested_min_vusers:
+                            type: integer
+                            format: int64
+                        required:
+                          - complete
+                          - estimated_peak_vusers
+                          - profile_peak_vusers
+                          - static_peak_vusers
+                          - suggested_max_vusers
+                          - suggested_min_vusers
+                        nullable: true
                       source:
                         type: object
                         properties:
                           file:
                             type: object
                             properties:
+                              art_columns:
+                                type: array
+                                items:
+                                  type: string
                               filename:
                                 type: string
                               relative_start_time:
@@ -84930,6 +85527,38 @@ paths:
                       items:
                         type: object
                         properties:
+                          art:
+                            type: object
+                            properties:
+                              average_art_ms:
+                                type: number
+                                format: double
+                              basis:
+                                type: string
+                              estimated_peak_vusers:
+                                type: integer
+                                format: int64
+                              fallback_to_peak:
+                                type: boolean
+                              min_art_ms:
+                                type: number
+                                format: double
+                              peak_art_ms:
+                                type: number
+                                format: double
+                              points:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: trafficprofile.ARTPoint'
+                                  additionalProperties: true
+                              series_key:
+                                type: string
+                              series_name:
+                                type: string
+                              source_unit:
+                                type: string
+                            nullable: true
                           group_name:
                             type: string
                           peak_target:
@@ -84970,17 +85599,49 @@ paths:
                             nullable: true
                           source_duration:
                             type: string
+                          source_end:
+                            type: string
+                          source_start:
+                            type: string
                     refreshed_at:
                       type: string
                       format: date-time
                     runtime_target:
                       type: string
+                    sizing:
+                      type: object
+                      properties:
+                        complete:
+                          type: boolean
+                        estimated_peak_vusers:
+                          type: integer
+                          format: int64
+                        profile_peak_vusers:
+                          type: integer
+                          format: int64
+                        recommended_generators:
+                          type: integer
+                          format: int64
+                        static_peak_vusers:
+                          type: integer
+                          format: int64
+                        suggested_max_vusers:
+                          type: integer
+                          format: int64
+                        suggested_min_vusers:
+                          type: integer
+                          format: int64
+                      nullable: true
                     source:
                       type: object
                       properties:
                         file:
                           type: object
                           properties:
+                            art_columns:
+                              type: array
+                              items:
+                                type: string
                             filename:
                               type: string
                             relative_start_time:
@@ -86600,6 +87261,44 @@ paths:
                         items:
                           type: object
                           properties:
+                            art:
+                              type: object
+                              properties:
+                                average_art_ms:
+                                  type: number
+                                  format: double
+                                basis:
+                                  type: string
+                                estimated_peak_vusers:
+                                  type: integer
+                                  format: int64
+                                fallback_to_peak:
+                                  type: boolean
+                                min_art_ms:
+                                  type: number
+                                  format: double
+                                peak_art_ms:
+                                  type: number
+                                  format: double
+                                points:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: trafficprofile.ARTPoint'
+                                    additionalProperties: true
+                                series_key:
+                                  type: string
+                                series_name:
+                                  type: string
+                                source_unit:
+                                  type: string
+                              required:
+                                - average_art_ms
+                                - basis
+                                - estimated_peak_vusers
+                                - min_art_ms
+                                - peak_art_ms
+                              nullable: true
                             group_name:
                               type: string
                             peak_target:
@@ -86642,6 +87341,10 @@ paths:
                               nullable: true
                             source_duration:
                               type: string
+                            source_end:
+                              type: string
+                            source_start:
+                              type: string
                           required:
                             - group_name
                             - peak_target
@@ -86653,12 +87356,47 @@ paths:
                         format: date-time
                       runtime_target:
                         type: string
+                      sizing:
+                        type: object
+                        properties:
+                          complete:
+                            type: boolean
+                          estimated_peak_vusers:
+                            type: integer
+                            format: int64
+                          profile_peak_vusers:
+                            type: integer
+                            format: int64
+                          recommended_generators:
+                            type: integer
+                            format: int64
+                          static_peak_vusers:
+                            type: integer
+                            format: int64
+                          suggested_max_vusers:
+                            type: integer
+                            format: int64
+                          suggested_min_vusers:
+                            type: integer
+                            format: int64
+                        required:
+                          - complete
+                          - estimated_peak_vusers
+                          - profile_peak_vusers
+                          - static_peak_vusers
+                          - suggested_max_vusers
+                          - suggested_min_vusers
+                        nullable: true
                       source:
                         type: object
                         properties:
                           file:
                             type: object
                             properties:
+                              art_columns:
+                                type: array
+                                items:
+                                  type: string
                               filename:
                                 type: string
                               relative_start_time:
@@ -88095,6 +88833,11 @@ paths:
                             items:
                               type: object
                               properties:
+                                art:
+                                  type: object
+                                  description: 'Go type: TrafficProfileART'
+                                  additionalProperties: true
+                                  nullable: true
                                 group_name:
                                   type: string
                                 peak_target:
@@ -88117,6 +88860,10 @@ paths:
                                   nullable: true
                                 source_duration:
                                   type: string
+                                source_end:
+                                  type: string
+                                source_start:
+                                  type: string
                               required:
                                 - group_name
                                 - peak_target
@@ -88128,6 +88875,37 @@ paths:
                             format: date-time
                           runtime_target:
                             type: string
+                          sizing:
+                            type: object
+                            properties:
+                              complete:
+                                type: boolean
+                              estimated_peak_vusers:
+                                type: integer
+                                format: int64
+                              profile_peak_vusers:
+                                type: integer
+                                format: int64
+                              recommended_generators:
+                                type: integer
+                                format: int64
+                              static_peak_vusers:
+                                type: integer
+                                format: int64
+                              suggested_max_vusers:
+                                type: integer
+                                format: int64
+                              suggested_min_vusers:
+                                type: integer
+                                format: int64
+                            required:
+                              - complete
+                              - estimated_peak_vusers
+                              - profile_peak_vusers
+                              - static_peak_vusers
+                              - suggested_max_vusers
+                              - suggested_min_vusers
+                            nullable: true
                           source:
                             type: object
                             properties:
@@ -91040,6 +91818,11 @@ paths:
                             items:
                               type: object
                               properties:
+                                art:
+                                  type: object
+                                  description: 'Go type: TrafficProfileART'
+                                  additionalProperties: true
+                                  nullable: true
                                 group_name:
                                   type: string
                                 peak_target:
@@ -91062,6 +91845,10 @@ paths:
                                   nullable: true
                                 source_duration:
                                   type: string
+                                source_end:
+                                  type: string
+                                source_start:
+                                  type: string
                               required:
                                 - group_name
                                 - peak_target
@@ -91073,6 +91860,37 @@ paths:
                             format: date-time
                           runtime_target:
                             type: string
+                          sizing:
+                            type: object
+                            properties:
+                              complete:
+                                type: boolean
+                              estimated_peak_vusers:
+                                type: integer
+                                format: int64
+                              profile_peak_vusers:
+                                type: integer
+                                format: int64
+                              recommended_generators:
+                                type: integer
+                                format: int64
+                              static_peak_vusers:
+                                type: integer
+                                format: int64
+                              suggested_max_vusers:
+                                type: integer
+                                format: int64
+                              suggested_min_vusers:
+                                type: integer
+                                format: int64
+                            required:
+                              - complete
+                              - estimated_peak_vusers
+                              - profile_peak_vusers
+                              - static_peak_vusers
+                              - suggested_max_vusers
+                              - suggested_min_vusers
+                            nullable: true
                           source:
                             type: object
                             properties:
@@ -91215,6 +92033,8 @@ paths:
             schema:
               type: object
               properties:
+                art_columns:
+                  type: string
                 file:
                   type: string
                   format: binary
@@ -91241,6 +92061,22 @@ paths:
               schema:
                 type: object
                 properties:
+                  art_series:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        series:
+                          type: object
+                          description: 'Go type: trafficprofile.Series'
+                          additionalProperties: true
+                        stats:
+                          type: object
+                          description: 'Go type: trafficprofile.Stats'
+                          additionalProperties: true
+                      required:
+                        - series
+                        - stats
                   limits:
                     type: object
                     properties:
@@ -91293,6 +92129,10 @@ paths:
                       file:
                         type: object
                         properties:
+                          art_columns:
+                            type: array
+                            items:
+                              type: string
                           filename:
                             type: string
                           relative_start_time:
@@ -91400,6 +92240,10 @@ paths:
                             file:
                               type: object
                               properties:
+                                art_columns:
+                                  type: array
+                                  items:
+                                    type: string
                                 filename:
                                   type: string
                                 relative_start_time:
@@ -91554,6 +92398,12 @@ paths:
                     value:
                       type: number
                       format: double
+                art_series:
+                  type: array
+                  items:
+                    type: object
+                    description: 'Go type: trafficprofile.Series'
+                    additionalProperties: true
                 gap_policy:
                   type: object
                   description: 'Go type: trafficprofile.GapPolicy'
@@ -91563,6 +92413,19 @@ paths:
                   items:
                     type: object
                     properties:
+                      art:
+                        type: object
+                        properties:
+                          basis:
+                            type: string
+                          series_key:
+                            type: string
+                          unit:
+                            type: string
+                          value:
+                            type: number
+                            format: double
+                        nullable: true
                       group_name:
                         type: string
                       series_key:
@@ -91573,6 +92436,10 @@ paths:
                           file:
                             type: object
                             properties:
+                              art_columns:
+                                type: array
+                                items:
+                                  type: string
                               filename:
                                 type: string
                               relative_start_time:
@@ -92337,6 +93204,11 @@ paths:
                           items:
                             type: object
                             properties:
+                              art:
+                                type: object
+                                description: 'Go type: TrafficProfileART'
+                                additionalProperties: true
+                                nullable: true
                               group_name:
                                 type: string
                               peak_target:
@@ -92359,11 +93231,39 @@ paths:
                                 nullable: true
                               source_duration:
                                 type: string
+                              source_end:
+                                type: string
+                              source_start:
+                                type: string
                         refreshed_at:
                           type: string
                           format: date-time
                         runtime_target:
                           type: string
+                        sizing:
+                          type: object
+                          properties:
+                            complete:
+                              type: boolean
+                            estimated_peak_vusers:
+                              type: integer
+                              format: int64
+                            profile_peak_vusers:
+                              type: integer
+                              format: int64
+                            recommended_generators:
+                              type: integer
+                              format: int64
+                            static_peak_vusers:
+                              type: integer
+                              format: int64
+                            suggested_max_vusers:
+                              type: integer
+                              format: int64
+                            suggested_min_vusers:
+                              type: integer
+                              format: int64
+                          nullable: true
                         source:
                           type: object
                           properties:
@@ -92435,6 +93335,10 @@ paths:
                     file:
                       type: object
                       properties:
+                        art_columns:
+                          type: array
+                          items:
+                            type: string
                         filename:
                           type: string
                         relative_start_time:
@@ -92523,6 +93427,10 @@ paths:
                           file:
                             type: object
                             properties:
+                              art_columns:
+                                type: array
+                                items:
+                                  type: string
                               filename:
                                 type: string
                               relative_start_time:
@@ -92994,6 +93902,44 @@ paths:
                     items:
                       type: object
                       properties:
+                        art:
+                          type: object
+                          properties:
+                            average_art_ms:
+                              type: number
+                              format: double
+                            basis:
+                              type: string
+                            estimated_peak_vusers:
+                              type: integer
+                              format: int64
+                            fallback_to_peak:
+                              type: boolean
+                            min_art_ms:
+                              type: number
+                              format: double
+                            peak_art_ms:
+                              type: number
+                              format: double
+                            points:
+                              type: array
+                              items:
+                                type: object
+                                description: 'Go type: trafficprofile.ARTPoint'
+                                additionalProperties: true
+                            series_key:
+                              type: string
+                            series_name:
+                              type: string
+                            source_unit:
+                              type: string
+                          required:
+                            - average_art_ms
+                            - basis
+                            - estimated_peak_vusers
+                            - min_art_ms
+                            - peak_art_ms
+                          nullable: true
                         group_name:
                           type: string
                         peak_target:
@@ -93015,6 +93961,10 @@ paths:
                             file:
                               type: object
                               properties:
+                                art_columns:
+                                  type: array
+                                  items:
+                                    type: string
                                 filename:
                                   type: string
                                 relative_start_time:
@@ -93088,6 +94038,10 @@ paths:
                             - kind
                           nullable: true
                         source_duration:
+                          type: string
+                        source_end:
+                          type: string
+                        source_start:
                           type: string
                       required:
                         - group_name
@@ -93822,6 +94776,11 @@ paths:
                             items:
                               type: object
                               properties:
+                                art:
+                                  type: object
+                                  description: 'Go type: TrafficProfileART'
+                                  additionalProperties: true
+                                  nullable: true
                                 group_name:
                                   type: string
                                 peak_target:
@@ -93844,6 +94803,10 @@ paths:
                                   nullable: true
                                 source_duration:
                                   type: string
+                                source_end:
+                                  type: string
+                                source_start:
+                                  type: string
                               required:
                                 - group_name
                                 - peak_target
@@ -93855,6 +94818,37 @@ paths:
                             format: date-time
                           runtime_target:
                             type: string
+                          sizing:
+                            type: object
+                            properties:
+                              complete:
+                                type: boolean
+                              estimated_peak_vusers:
+                                type: integer
+                                format: int64
+                              profile_peak_vusers:
+                                type: integer
+                                format: int64
+                              recommended_generators:
+                                type: integer
+                                format: int64
+                              static_peak_vusers:
+                                type: integer
+                                format: int64
+                              suggested_max_vusers:
+                                type: integer
+                                format: int64
+                              suggested_min_vusers:
+                                type: integer
+                                format: int64
+                            required:
+                              - complete
+                              - estimated_peak_vusers
+                              - profile_peak_vusers
+                              - static_peak_vusers
+                              - suggested_max_vusers
+                              - suggested_min_vusers
+                            nullable: true
                           source:
                             type: object
                             properties:
@@ -93950,6 +94944,44 @@ paths:
                         items:
                           type: object
                           properties:
+                            art:
+                              type: object
+                              properties:
+                                average_art_ms:
+                                  type: number
+                                  format: double
+                                basis:
+                                  type: string
+                                estimated_peak_vusers:
+                                  type: integer
+                                  format: int64
+                                fallback_to_peak:
+                                  type: boolean
+                                min_art_ms:
+                                  type: number
+                                  format: double
+                                peak_art_ms:
+                                  type: number
+                                  format: double
+                                points:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: trafficprofile.ARTPoint'
+                                    additionalProperties: true
+                                series_key:
+                                  type: string
+                                series_name:
+                                  type: string
+                                source_unit:
+                                  type: string
+                              required:
+                                - average_art_ms
+                                - basis
+                                - estimated_peak_vusers
+                                - min_art_ms
+                                - peak_art_ms
+                              nullable: true
                             group_name:
                               type: string
                             peak_target:
@@ -93992,6 +95024,10 @@ paths:
                               nullable: true
                             source_duration:
                               type: string
+                            source_end:
+                              type: string
+                            source_start:
+                              type: string
                           required:
                             - group_name
                             - peak_target
@@ -94003,12 +95039,47 @@ paths:
                         format: date-time
                       runtime_target:
                         type: string
+                      sizing:
+                        type: object
+                        properties:
+                          complete:
+                            type: boolean
+                          estimated_peak_vusers:
+                            type: integer
+                            format: int64
+                          profile_peak_vusers:
+                            type: integer
+                            format: int64
+                          recommended_generators:
+                            type: integer
+                            format: int64
+                          static_peak_vusers:
+                            type: integer
+                            format: int64
+                          suggested_max_vusers:
+                            type: integer
+                            format: int64
+                          suggested_min_vusers:
+                            type: integer
+                            format: int64
+                        required:
+                          - complete
+                          - estimated_peak_vusers
+                          - profile_peak_vusers
+                          - static_peak_vusers
+                          - suggested_max_vusers
+                          - suggested_min_vusers
+                        nullable: true
                       source:
                         type: object
                         properties:
                           file:
                             type: object
                             properties:
+                              art_columns:
+                                type: array
+                                items:
+                                  type: string
                               filename:
                                 type: string
                               relative_start_time:
@@ -95470,6 +96541,38 @@ paths:
                       items:
                         type: object
                         properties:
+                          art:
+                            type: object
+                            properties:
+                              average_art_ms:
+                                type: number
+                                format: double
+                              basis:
+                                type: string
+                              estimated_peak_vusers:
+                                type: integer
+                                format: int64
+                              fallback_to_peak:
+                                type: boolean
+                              min_art_ms:
+                                type: number
+                                format: double
+                              peak_art_ms:
+                                type: number
+                                format: double
+                              points:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: trafficprofile.ARTPoint'
+                                  additionalProperties: true
+                              series_key:
+                                type: string
+                              series_name:
+                                type: string
+                              source_unit:
+                                type: string
+                            nullable: true
                           group_name:
                             type: string
                           peak_target:
@@ -95510,17 +96613,49 @@ paths:
                             nullable: true
                           source_duration:
                             type: string
+                          source_end:
+                            type: string
+                          source_start:
+                            type: string
                     refreshed_at:
                       type: string
                       format: date-time
                     runtime_target:
                       type: string
+                    sizing:
+                      type: object
+                      properties:
+                        complete:
+                          type: boolean
+                        estimated_peak_vusers:
+                          type: integer
+                          format: int64
+                        profile_peak_vusers:
+                          type: integer
+                          format: int64
+                        recommended_generators:
+                          type: integer
+                          format: int64
+                        static_peak_vusers:
+                          type: integer
+                          format: int64
+                        suggested_max_vusers:
+                          type: integer
+                          format: int64
+                        suggested_min_vusers:
+                          type: integer
+                          format: int64
+                      nullable: true
                     source:
                       type: object
                       properties:
                         file:
                           type: object
                           properties:
+                            art_columns:
+                              type: array
+                              items:
+                                type: string
                             filename:
                               type: string
                             relative_start_time:
@@ -186827,6 +187962,38 @@ paths:
                       items:
                         type: object
                         properties:
+                          art:
+                            type: object
+                            properties:
+                              average_art_ms:
+                                type: number
+                                format: double
+                              basis:
+                                type: string
+                              estimated_peak_vusers:
+                                type: integer
+                                format: int64
+                              fallback_to_peak:
+                                type: boolean
+                              min_art_ms:
+                                type: number
+                                format: double
+                              peak_art_ms:
+                                type: number
+                                format: double
+                              points:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: trafficprofile.ARTPoint'
+                                  additionalProperties: true
+                              series_key:
+                                type: string
+                              series_name:
+                                type: string
+                              source_unit:
+                                type: string
+                            nullable: true
                           group_name:
                             type: string
                           peak_target:
@@ -186867,17 +188034,49 @@ paths:
                             nullable: true
                           source_duration:
                             type: string
+                          source_end:
+                            type: string
+                          source_start:
+                            type: string
                     refreshed_at:
                       type: string
                       format: date-time
                     runtime_target:
                       type: string
+                    sizing:
+                      type: object
+                      properties:
+                        complete:
+                          type: boolean
+                        estimated_peak_vusers:
+                          type: integer
+                          format: int64
+                        profile_peak_vusers:
+                          type: integer
+                          format: int64
+                        recommended_generators:
+                          type: integer
+                          format: int64
+                        static_peak_vusers:
+                          type: integer
+                          format: int64
+                        suggested_max_vusers:
+                          type: integer
+                          format: int64
+                        suggested_min_vusers:
+                          type: integer
+                          format: int64
+                      nullable: true
                     source:
                       type: object
                       properties:
                         file:
                           type: object
                           properties:
+                            art_columns:
+                              type: array
+                              items:
+                                type: string
                             filename:
                               type: string
                             relative_start_time:
@@ -192440,6 +193639,44 @@ paths:
                         items:
                           type: object
                           properties:
+                            art:
+                              type: object
+                              properties:
+                                average_art_ms:
+                                  type: number
+                                  format: double
+                                basis:
+                                  type: string
+                                estimated_peak_vusers:
+                                  type: integer
+                                  format: int64
+                                fallback_to_peak:
+                                  type: boolean
+                                min_art_ms:
+                                  type: number
+                                  format: double
+                                peak_art_ms:
+                                  type: number
+                                  format: double
+                                points:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: trafficprofile.ARTPoint'
+                                    additionalProperties: true
+                                series_key:
+                                  type: string
+                                series_name:
+                                  type: string
+                                source_unit:
+                                  type: string
+                              required:
+                                - average_art_ms
+                                - basis
+                                - estimated_peak_vusers
+                                - min_art_ms
+                                - peak_art_ms
+                              nullable: true
                             group_name:
                               type: string
                             peak_target:
@@ -192482,6 +193719,10 @@ paths:
                               nullable: true
                             source_duration:
                               type: string
+                            source_end:
+                              type: string
+                            source_start:
+                              type: string
                           required:
                             - group_name
                             - peak_target
@@ -192493,12 +193734,47 @@ paths:
                         format: date-time
                       runtime_target:
                         type: string
+                      sizing:
+                        type: object
+                        properties:
+                          complete:
+                            type: boolean
+                          estimated_peak_vusers:
+                            type: integer
+                            format: int64
+                          profile_peak_vusers:
+                            type: integer
+                            format: int64
+                          recommended_generators:
+                            type: integer
+                            format: int64
+                          static_peak_vusers:
+                            type: integer
+                            format: int64
+                          suggested_max_vusers:
+                            type: integer
+                            format: int64
+                          suggested_min_vusers:
+                            type: integer
+                            format: int64
+                        required:
+                          - complete
+                          - estimated_peak_vusers
+                          - profile_peak_vusers
+                          - static_peak_vusers
+                          - suggested_max_vusers
+                          - suggested_min_vusers
+                        nullable: true
                       source:
                         type: object
                         properties:
                           file:
                             type: object
                             properties:
+                              art_columns:
+                                type: array
+                                items:
+                                  type: string
                               filename:
                                 type: string
                               relative_start_time:
@@ -198219,6 +199495,44 @@ paths:
                         items:
                           type: object
                           properties:
+                            art:
+                              type: object
+                              properties:
+                                average_art_ms:
+                                  type: number
+                                  format: double
+                                basis:
+                                  type: string
+                                estimated_peak_vusers:
+                                  type: integer
+                                  format: int64
+                                fallback_to_peak:
+                                  type: boolean
+                                min_art_ms:
+                                  type: number
+                                  format: double
+                                peak_art_ms:
+                                  type: number
+                                  format: double
+                                points:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: trafficprofile.ARTPoint'
+                                    additionalProperties: true
+                                series_key:
+                                  type: string
+                                series_name:
+                                  type: string
+                                source_unit:
+                                  type: string
+                              required:
+                                - average_art_ms
+                                - basis
+                                - estimated_peak_vusers
+                                - min_art_ms
+                                - peak_art_ms
+                              nullable: true
                             group_name:
                               type: string
                             peak_target:
@@ -198261,6 +199575,10 @@ paths:
                               nullable: true
                             source_duration:
                               type: string
+                            source_end:
+                              type: string
+                            source_start:
+                              type: string
                           required:
                             - group_name
                             - peak_target
@@ -198272,12 +199590,47 @@ paths:
                         format: date-time
                       runtime_target:
                         type: string
+                      sizing:
+                        type: object
+                        properties:
+                          complete:
+                            type: boolean
+                          estimated_peak_vusers:
+                            type: integer
+                            format: int64
+                          profile_peak_vusers:
+                            type: integer
+                            format: int64
+                          recommended_generators:
+                            type: integer
+                            format: int64
+                          static_peak_vusers:
+                            type: integer
+                            format: int64
+                          suggested_max_vusers:
+                            type: integer
+                            format: int64
+                          suggested_min_vusers:
+                            type: integer
+                            format: int64
+                        required:
+                          - complete
+                          - estimated_peak_vusers
+                          - profile_peak_vusers
+                          - static_peak_vusers
+                          - suggested_max_vusers
+                          - suggested_min_vusers
+                        nullable: true
                       source:
                         type: object
                         properties:
                           file:
                             type: object
                             properties:
+                              art_columns:
+                                type: array
+                                items:
+                                  type: string
                               filename:
                                 type: string
                               relative_start_time:
@@ -200689,6 +202042,11 @@ paths:
                             items:
                               type: object
                               properties:
+                                art:
+                                  type: object
+                                  description: 'Go type: TrafficProfileART'
+                                  additionalProperties: true
+                                  nullable: true
                                 group_name:
                                   type: string
                                 peak_target:
@@ -200711,6 +202069,10 @@ paths:
                                   nullable: true
                                 source_duration:
                                   type: string
+                                source_end:
+                                  type: string
+                                source_start:
+                                  type: string
                               required:
                                 - group_name
                                 - peak_target
@@ -200722,6 +202084,37 @@ paths:
                             format: date-time
                           runtime_target:
                             type: string
+                          sizing:
+                            type: object
+                            properties:
+                              complete:
+                                type: boolean
+                              estimated_peak_vusers:
+                                type: integer
+                                format: int64
+                              profile_peak_vusers:
+                                type: integer
+                                format: int64
+                              recommended_generators:
+                                type: integer
+                                format: int64
+                              static_peak_vusers:
+                                type: integer
+                                format: int64
+                              suggested_max_vusers:
+                                type: integer
+                                format: int64
+                              suggested_min_vusers:
+                                type: integer
+                                format: int64
+                            required:
+                              - complete
+                              - estimated_peak_vusers
+                              - profile_peak_vusers
+                              - static_peak_vusers
+                              - suggested_max_vusers
+                              - suggested_min_vusers
+                            nullable: true
                           source:
                             type: object
                             properties:
@@ -202150,6 +203543,11 @@ paths:
                             items:
                               type: object
                               properties:
+                                art:
+                                  type: object
+                                  description: 'Go type: TrafficProfileART'
+                                  additionalProperties: true
+                                  nullable: true
                                 group_name:
                                   type: string
                                 peak_target:
@@ -202172,6 +203570,10 @@ paths:
                                   nullable: true
                                 source_duration:
                                   type: string
+                                source_end:
+                                  type: string
+                                source_start:
+                                  type: string
                               required:
                                 - group_name
                                 - peak_target
@@ -202183,6 +203585,37 @@ paths:
                             format: date-time
                           runtime_target:
                             type: string
+                          sizing:
+                            type: object
+                            properties:
+                              complete:
+                                type: boolean
+                              estimated_peak_vusers:
+                                type: integer
+                                format: int64
+                              profile_peak_vusers:
+                                type: integer
+                                format: int64
+                              recommended_generators:
+                                type: integer
+                                format: int64
+                              static_peak_vusers:
+                                type: integer
+                                format: int64
+                              suggested_max_vusers:
+                                type: integer
+                                format: int64
+                              suggested_min_vusers:
+                                type: integer
+                                format: int64
+                            required:
+                              - complete
+                              - estimated_peak_vusers
+                              - profile_peak_vusers
+                              - static_peak_vusers
+                              - suggested_max_vusers
+                              - suggested_min_vusers
+                            nullable: true
                           source:
                             type: object
                             properties:
@@ -203747,6 +205180,10 @@ paths:
                                 format: date-time
                               runtime_target:
                                 type: string
+                              sizing:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               source:
                                 type: object
                                 additionalProperties: true
@@ -204453,6 +205890,10 @@ paths:
                                 format: date-time
                               runtime_target:
                                 type: string
+                              sizing:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               source:
                                 type: object
                                 additionalProperties: true
@@ -211642,6 +213083,44 @@ paths:
                         items:
                           type: object
                           properties:
+                            art:
+                              type: object
+                              properties:
+                                average_art_ms:
+                                  type: number
+                                  format: double
+                                basis:
+                                  type: string
+                                estimated_peak_vusers:
+                                  type: integer
+                                  format: int64
+                                fallback_to_peak:
+                                  type: boolean
+                                min_art_ms:
+                                  type: number
+                                  format: double
+                                peak_art_ms:
+                                  type: number
+                                  format: double
+                                points:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: trafficprofile.ARTPoint'
+                                    additionalProperties: true
+                                series_key:
+                                  type: string
+                                series_name:
+                                  type: string
+                                source_unit:
+                                  type: string
+                              required:
+                                - average_art_ms
+                                - basis
+                                - estimated_peak_vusers
+                                - min_art_ms
+                                - peak_art_ms
+                              nullable: true
                             group_name:
                               type: string
                             peak_target:
@@ -211684,6 +213163,10 @@ paths:
                               nullable: true
                             source_duration:
                               type: string
+                            source_end:
+                              type: string
+                            source_start:
+                              type: string
                           required:
                             - group_name
                             - peak_target
@@ -211695,12 +213178,47 @@ paths:
                         format: date-time
                       runtime_target:
                         type: string
+                      sizing:
+                        type: object
+                        properties:
+                          complete:
+                            type: boolean
+                          estimated_peak_vusers:
+                            type: integer
+                            format: int64
+                          profile_peak_vusers:
+                            type: integer
+                            format: int64
+                          recommended_generators:
+                            type: integer
+                            format: int64
+                          static_peak_vusers:
+                            type: integer
+                            format: int64
+                          suggested_max_vusers:
+                            type: integer
+                            format: int64
+                          suggested_min_vusers:
+                            type: integer
+                            format: int64
+                        required:
+                          - complete
+                          - estimated_peak_vusers
+                          - profile_peak_vusers
+                          - static_peak_vusers
+                          - suggested_max_vusers
+                          - suggested_min_vusers
+                        nullable: true
                       source:
                         type: object
                         properties:
                           file:
                             type: object
                             properties:
+                              art_columns:
+                                type: array
+                                items:
+                                  type: string
                               filename:
                                 type: string
                               relative_start_time:
@@ -217365,6 +218883,44 @@ paths:
                         items:
                           type: object
                           properties:
+                            art:
+                              type: object
+                              properties:
+                                average_art_ms:
+                                  type: number
+                                  format: double
+                                basis:
+                                  type: string
+                                estimated_peak_vusers:
+                                  type: integer
+                                  format: int64
+                                fallback_to_peak:
+                                  type: boolean
+                                min_art_ms:
+                                  type: number
+                                  format: double
+                                peak_art_ms:
+                                  type: number
+                                  format: double
+                                points:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: trafficprofile.ARTPoint'
+                                    additionalProperties: true
+                                series_key:
+                                  type: string
+                                series_name:
+                                  type: string
+                                source_unit:
+                                  type: string
+                              required:
+                                - average_art_ms
+                                - basis
+                                - estimated_peak_vusers
+                                - min_art_ms
+                                - peak_art_ms
+                              nullable: true
                             group_name:
                               type: string
                             peak_target:
@@ -217407,6 +218963,10 @@ paths:
                               nullable: true
                             source_duration:
                               type: string
+                            source_end:
+                              type: string
+                            source_start:
+                              type: string
                           required:
                             - group_name
                             - peak_target
@@ -217418,12 +218978,47 @@ paths:
                         format: date-time
                       runtime_target:
                         type: string
+                      sizing:
+                        type: object
+                        properties:
+                          complete:
+                            type: boolean
+                          estimated_peak_vusers:
+                            type: integer
+                            format: int64
+                          profile_peak_vusers:
+                            type: integer
+                            format: int64
+                          recommended_generators:
+                            type: integer
+                            format: int64
+                          static_peak_vusers:
+                            type: integer
+                            format: int64
+                          suggested_max_vusers:
+                            type: integer
+                            format: int64
+                          suggested_min_vusers:
+                            type: integer
+                            format: int64
+                        required:
+                          - complete
+                          - estimated_peak_vusers
+                          - profile_peak_vusers
+                          - static_peak_vusers
+                          - suggested_max_vusers
+                          - suggested_min_vusers
+                        nullable: true
                       source:
                         type: object
                         properties:
                           file:
                             type: object
                             properties:
+                              art_columns:
+                                type: array
+                                items:
+                                  type: string
                               filename:
                                 type: string
                               relative_start_time:
@@ -222829,6 +224424,11 @@ paths:
                             items:
                               type: object
                               properties:
+                                art:
+                                  type: object
+                                  description: 'Go type: TrafficProfileART'
+                                  additionalProperties: true
+                                  nullable: true
                                 group_name:
                                   type: string
                                 peak_target:
@@ -222851,6 +224451,10 @@ paths:
                                   nullable: true
                                 source_duration:
                                   type: string
+                                source_end:
+                                  type: string
+                                source_start:
+                                  type: string
                               required:
                                 - group_name
                                 - peak_target
@@ -222862,6 +224466,37 @@ paths:
                             format: date-time
                           runtime_target:
                             type: string
+                          sizing:
+                            type: object
+                            properties:
+                              complete:
+                                type: boolean
+                              estimated_peak_vusers:
+                                type: integer
+                                format: int64
+                              profile_peak_vusers:
+                                type: integer
+                                format: int64
+                              recommended_generators:
+                                type: integer
+                                format: int64
+                              static_peak_vusers:
+                                type: integer
+                                format: int64
+                              suggested_max_vusers:
+                                type: integer
+                                format: int64
+                              suggested_min_vusers:
+                                type: integer
+                                format: int64
+                            required:
+                              - complete
+                              - estimated_peak_vusers
+                              - profile_peak_vusers
+                              - static_peak_vusers
+                              - suggested_max_vusers
+                              - suggested_min_vusers
+                            nullable: true
                           source:
                             type: object
                             properties:
@@ -223887,6 +225522,11 @@ paths:
                             items:
                               type: object
                               properties:
+                                art:
+                                  type: object
+                                  description: 'Go type: TrafficProfileART'
+                                  additionalProperties: true
+                                  nullable: true
                                 group_name:
                                   type: string
                                 peak_target:
@@ -223909,6 +225549,10 @@ paths:
                                   nullable: true
                                 source_duration:
                                   type: string
+                                source_end:
+                                  type: string
+                                source_start:
+                                  type: string
                               required:
                                 - group_name
                                 - peak_target
@@ -223920,6 +225564,37 @@ paths:
                             format: date-time
                           runtime_target:
                             type: string
+                          sizing:
+                            type: object
+                            properties:
+                              complete:
+                                type: boolean
+                              estimated_peak_vusers:
+                                type: integer
+                                format: int64
+                              profile_peak_vusers:
+                                type: integer
+                                format: int64
+                              recommended_generators:
+                                type: integer
+                                format: int64
+                              static_peak_vusers:
+                                type: integer
+                                format: int64
+                              suggested_max_vusers:
+                                type: integer
+                                format: int64
+                              suggested_min_vusers:
+                                type: integer
+                                format: int64
+                            required:
+                              - complete
+                              - estimated_peak_vusers
+                              - profile_peak_vusers
+                              - static_peak_vusers
+                              - suggested_max_vusers
+                              - suggested_min_vusers
+                            nullable: true
                           source:
                             type: object
                             properties:
@@ -228148,6 +229823,38 @@ paths:
                       items:
                         type: object
                         properties:
+                          art:
+                            type: object
+                            properties:
+                              average_art_ms:
+                                type: number
+                                format: double
+                              basis:
+                                type: string
+                              estimated_peak_vusers:
+                                type: integer
+                                format: int64
+                              fallback_to_peak:
+                                type: boolean
+                              min_art_ms:
+                                type: number
+                                format: double
+                              peak_art_ms:
+                                type: number
+                                format: double
+                              points:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: trafficprofile.ARTPoint'
+                                  additionalProperties: true
+                              series_key:
+                                type: string
+                              series_name:
+                                type: string
+                              source_unit:
+                                type: string
+                            nullable: true
                           group_name:
                             type: string
                           peak_target:
@@ -228188,17 +229895,49 @@ paths:
                             nullable: true
                           source_duration:
                             type: string
+                          source_end:
+                            type: string
+                          source_start:
+                            type: string
                     refreshed_at:
                       type: string
                       format: date-time
                     runtime_target:
                       type: string
+                    sizing:
+                      type: object
+                      properties:
+                        complete:
+                          type: boolean
+                        estimated_peak_vusers:
+                          type: integer
+                          format: int64
+                        profile_peak_vusers:
+                          type: integer
+                          format: int64
+                        recommended_generators:
+                          type: integer
+                          format: int64
+                        static_peak_vusers:
+                          type: integer
+                          format: int64
+                        suggested_max_vusers:
+                          type: integer
+                          format: int64
+                        suggested_min_vusers:
+                          type: integer
+                          format: int64
+                      nullable: true
                     source:
                       type: object
                       properties:
                         file:
                           type: object
                           properties:
+                            art_columns:
+                              type: array
+                              items:
+                                type: string
                             filename:
                               type: string
                             relative_start_time:
@@ -230022,6 +231761,11 @@ paths:
                       items:
                         type: object
                         properties:
+                          art:
+                            type: object
+                            description: 'Go type: TrafficProfileART'
+                            additionalProperties: true
+                            nullable: true
                           group_name:
                             type: string
                           peak_target:
@@ -230044,11 +231788,39 @@ paths:
                             nullable: true
                           source_duration:
                             type: string
+                          source_end:
+                            type: string
+                          source_start:
+                            type: string
                     refreshed_at:
                       type: string
                       format: date-time
                     runtime_target:
                       type: string
+                    sizing:
+                      type: object
+                      properties:
+                        complete:
+                          type: boolean
+                        estimated_peak_vusers:
+                          type: integer
+                          format: int64
+                        profile_peak_vusers:
+                          type: integer
+                          format: int64
+                        recommended_generators:
+                          type: integer
+                          format: int64
+                        static_peak_vusers:
+                          type: integer
+                          format: int64
+                        suggested_max_vusers:
+                          type: integer
+                          format: int64
+                        suggested_min_vusers:
+                          type: integer
+                          format: int64
+                      nullable: true
                     source:
                       type: object
                       properties:
