@@ -779,6 +779,7 @@ describe('newTestRunModel', () => {
     expect(preview.postBaselineSeconds).toBe(300)
     expect(preview.totalSeconds).toBe(1260)
     expect(preview.peakVUsers).toBe(15)
+    expect(preview.showVUsers).toBe(true)
     expect(preview.points[0]).toMatchObject({ second: 0, total: 0 })
     expect(preview.points[preview.points.length - 1]).toMatchObject({ second: 1260, total: 0 })
   })
@@ -815,13 +816,16 @@ describe('newTestRunModel', () => {
       mappings: [{ series_key: 'requests', series_name: 'Requests', group_name: 'Browse', peak_target: 12, points: [{ offset_ms: 0, target: 3 }, { offset_ms: 60_000, target: 12 }, { offset_ms: 120_000, target: 5 }] }],
     }
 
-    const preview = buildRunLoadProfilePreview([group], '3m', undefined, false, trafficProfile)
+    const preview = buildRunLoadProfilePreview([group], '3m', undefined, false, trafficProfile, 'goal_oriented')
 
     expect(preview.points.find(point => point.second === 0)).toMatchObject({ total: 9, totalTps: 3 })
     expect(preview.points.find(point => point.second === 60)?.totalTps).toBe(12)
     expect(preview.points.find(point => point.second === 120)?.totalTps).toBe(5)
     expect(preview.points.find(point => point.second === 180)?.totalTps).toBe(0)
     expect(preview.peakTps).toBe(12)
+    expect(preview.minTps).toBe(3)
+    expect(preview.averageTps).toBeCloseTo(20 / 3)
+    expect(preview.showVUsers).toBe(false)
     expect(preview.tpsGroupIndexes).toEqual([0])
 
     const delayedPreview = buildRunLoadProfilePreview([group], '3m', '30s', true, trafficProfile)
@@ -840,7 +844,23 @@ describe('newTestRunModel', () => {
     }
     const multiGroupPreview = buildRunLoadProfilePreview([group, { ...group, name: 'Search', vusers: 4 }], '3m', undefined, false, multiGroupProfile)
     expect(multiGroupPreview.points.find(point => point.second === 60)).toMatchObject({ group0Tps: 12, group1Tps: 7, totalTps: 19 })
+    expect(multiGroupPreview.minTps).toBe(5)
+    expect(multiGroupPreview.averageTps).toBeCloseTo(11)
     expect(multiGroupPreview.tpsGroupIndexes).toEqual([0, 1])
+  })
+
+  it('renders the configured TPS target for an ordinary goal-oriented scenario', () => {
+    const group = { ...scenarioFixture().scripts[0], vusers: 9, ramp_up: '', ramp_down: '' }
+    const preview = buildRunLoadProfilePreview([group], '3m', undefined, false, undefined, 'goal_oriented', 75)
+
+    expect(preview.showVUsers).toBe(false)
+    expect(preview.runtimeTarget).toBe('tps')
+    expect(preview.peakTps).toBe(75)
+    expect(preview.minTps).toBe(75)
+    expect(preview.averageTps).toBe(75)
+    expect(preview.points.find(point => point.second === 0)?.totalTps).toBe(75)
+    expect(preview.points.find(point => point.second === 180)?.totalTps).toBe(0)
+    expect(preview.tpsGroupIndexes).toEqual([])
   })
 
   it('formats placement summaries and generator eligibility', () => {

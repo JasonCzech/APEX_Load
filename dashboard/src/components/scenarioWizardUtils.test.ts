@@ -99,12 +99,15 @@ describe('scenarioWizardUtils', () => {
       mappings: [{ series_key: 'requests', series_name: 'Requests', group_name: 'Checkout', peak_target: 10, points: [{ offset_ms: 0, target: 2 }, { offset_ms: 60_000, target: 10 }, { offset_ms: 120_000, target: 4 }] }],
     }
 
-    const preview = buildScenarioModelPreview({ duration: '3m', groups: [{ name: 'Checkout', vusers: 9 }], goalTargetTps: 99, trafficProfile })
+    const preview = buildScenarioModelPreview({ duration: '3m', scenarioMode: 'goal_oriented', groups: [{ name: 'Checkout', vusers: 9 }], goalTargetTps: 99, trafficProfile })
 
     expect(preview.points.find(point => point.elapsedSeconds === 0)).toMatchObject({ totalVusers: 9, totalTps: 2 })
     expect(preview.points.find(point => point.elapsedSeconds === 60)?.totalTps).toBe(10)
     expect(preview.points.find(point => point.elapsedSeconds === 120)?.totalTps).toBe(4)
     expect(preview.peakTps).toBe(10)
+    expect(preview.minTps).toBe(2)
+    expect(preview.averageTps).toBeCloseTo(16 / 3)
+    expect(preview.showVUsers).toBe(false)
     expect(preview.series.find(series => series.key === 'totalTps')).toMatchObject({ label: 'Production target TPS', interpolation: 'stepAfter' })
 
     const multiGroupProfile: TrafficProfile = {
@@ -120,6 +123,8 @@ describe('scenarioWizardUtils', () => {
       trafficProfile: multiGroupProfile,
     })
     expect(multiGroupPreview.points.find(point => point.elapsedSeconds === 60)).toMatchObject({ group_0_tps: 10, group_1_tps: 5, totalTps: 15 })
+    expect(multiGroupPreview.minTps).toBe(3)
+    expect(multiGroupPreview.averageTps).toBeCloseTo(8)
     expect(multiGroupPreview.series.filter(series => series.kind === 'tps').map(series => series.key)).toEqual(['group_0_tps', 'group_1_tps', 'totalTps'])
   })
 

@@ -8,6 +8,7 @@ import { isEffectiveOperationAllowed } from '../utils/authAccessUtils'
 import { getErrorMessage } from '../utils/errorUtils'
 import { formatTimeCompact, isValidDurationInput, isValidNonNegativeDurationInput, parseDurationToSeconds } from '../utils/timeUtils'
 import { chartTooltipContentStyle, chartTooltipLabelStyle, preserveChartItemOrder } from './chartTooltipTheme'
+import { formatTrafficProfileAxisTime } from './trafficProfilePreviewModel'
 import { listAllCapacityTimeslots } from './schedulingCatalogModel'
 import { SortIndicator } from './SortIndicator'
 import {
@@ -219,6 +220,7 @@ type GroupEditChanges = {
 }
 
 const LOAD_PROFILE_COLORS = ['#2563eb', '#16a34a', '#f59e0b', '#dc2626', '#7c3aed', '#0891b2']
+const formatProfileTps = (value: number | undefined) => (value ?? 0).toLocaleString(undefined, { maximumFractionDigits: 2 })
 
 function formatDate(value?: string) {
   return value ? new Date(value).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : 'Never'
@@ -956,8 +958,8 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
   const effectiveResourceBaseline = useMemo(() => getEffectiveResourceBaseline(scenario, runDefaultOverrides), [scenario, runDefaultOverrides])
   const effectiveScenarioGroups = useMemo(() => buildEffectiveScenarioGroups(scenario, groupRunOverrides), [groupRunOverrides, scenario])
   const runLoadProfilePreview = useMemo(
-    () => buildRunLoadProfilePreview(effectiveScenarioGroups, effectiveRunDuration, scenario?.start_delay, effectiveResourceBaseline, scenario?.traffic_profile),
-    [effectiveResourceBaseline, effectiveRunDuration, effectiveScenarioGroups, scenario?.start_delay, scenario?.traffic_profile],
+    () => buildRunLoadProfilePreview(effectiveScenarioGroups, effectiveRunDuration, scenario?.start_delay, effectiveResourceBaseline, scenario?.traffic_profile, scenario?.scenario_mode, scenario?.goal_config?.target_average_tps),
+    [effectiveResourceBaseline, effectiveRunDuration, effectiveScenarioGroups, scenario?.goal_config?.target_average_tps, scenario?.scenario_mode, scenario?.start_delay, scenario?.traffic_profile],
   )
   const runDefaultCards = useMemo(() => buildRunDefaultCards(scenario, runDefaultOverrides), [scenario, runDefaultOverrides])
   const globalRunDefaultCards = useMemo(
@@ -3197,14 +3199,19 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
             <div className="new-test-profile-header">
               <div>
                 <h3>Modeled Load Profile</h3>
-                <p>{runLoadProfilePreview.runtimeTarget === 'tps' ? 'Production-derived adaptive TPS targets and configured VUsers for this run.' : 'Planned VUsers for this run.'}</p>
+                <p>{runLoadProfilePreview.runtimeTarget === 'tps' ? `${scenario?.traffic_profile?.runtime_target === 'tps' ? 'Production-derived adaptive' : 'Configured adaptive'} TPS targets. VUser demand is determined by the goal controller at runtime.` : runLoadProfilePreview.showVUsers ? 'Planned VUsers for this run.' : 'VUser demand is determined by the goal controller at runtime.'}</p>
               </div>
-              <div className="new-test-profile-stat">
-                <strong>{runLoadProfilePreview.peakTps !== undefined ? runLoadProfilePreview.peakTps.toLocaleString() : runLoadProfilePreview.peakVUsers}</strong>
-                <span>{runLoadProfilePreview.peakTps !== undefined ? 'peak TPS' : 'peak VUsers'}</span>
-              </div>
+              {runLoadProfilePreview.showVUsers && runLoadProfilePreview.peakTps === undefined && <div className="new-test-profile-stat">
+                <strong>{runLoadProfilePreview.peakVUsers}</strong>
+                <span>peak VUsers</span>
+              </div>}
             </div>
-            {runLoadProfilePreview.points.length > 0 ? (
+            {runLoadProfilePreview.peakTps !== undefined && <div className="new-test-profile-stats" aria-label="TPS profile statistics">
+              <div className="new-test-profile-stat"><strong>{formatProfileTps(runLoadProfilePreview.minTps)}</strong><span>minimum TPS</span></div>
+              <div className="new-test-profile-stat"><strong>{formatProfileTps(runLoadProfilePreview.averageTps)}</strong><span>average TPS</span></div>
+              <div className="new-test-profile-stat"><strong>{formatProfileTps(runLoadProfilePreview.peakTps)}</strong><span>peak TPS</span></div>
+            </div>}
+            {runLoadProfilePreview.points.length > 0 && (runLoadProfilePreview.showVUsers || runLoadProfilePreview.peakTps !== undefined) ? (
               <>
                 <div className="new-test-profile-chart">
                   <ResponsiveContainer width="100%" height={210}>
@@ -3214,14 +3221,14 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
                         dataKey="second"
                         type="number"
                         domain={[0, 'dataMax']}
-                        tickFormatter={(value) => formatTimeCompact(Number(value))}
+                        tickFormatter={(value) => formatTrafficProfileAxisTime(Number(value))}
                         stroke="var(--text-muted)"
                         fontSize={10}
                         height={38}
                         tickLine={false}
                         label={{ value: 'Elapsed time', position: 'insideBottom', offset: -4, fill: 'var(--text-muted)', fontSize: 10 }}
                       />
-                      <YAxis
+                      {runLoadProfilePreview.showVUsers && <YAxis
                         yAxisId="vusers"
                         stroke="var(--text-muted)"
                         fontSize={10}
@@ -3229,16 +3236,16 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
                         tickLine={false}
                         allowDecimals={false}
                         label={{ value: 'VUsers', angle: -90, position: 'left', fill: 'var(--text-muted)', fontSize: 10 }}
-                      />
+                      />}
                       {runLoadProfilePreview.peakTps !== undefined && (
                         <YAxis
                           yAxisId="tps"
-                          orientation="right"
+                          orientation={runLoadProfilePreview.showVUsers ? 'right' : 'left'}
                           stroke="var(--warning)"
                           fontSize={10}
                           width={66}
                           tickLine={false}
-                          label={{ value: 'TPS', angle: 90, position: 'right', fill: 'var(--warning)', fontSize: 10 }}
+                          label={{ value: 'TPS', angle: runLoadProfilePreview.showVUsers ? 90 : -90, position: runLoadProfilePreview.showVUsers ? 'right' : 'left', fill: 'var(--warning)', fontSize: 10 }}
                         />
                       )}
                       <Tooltip
@@ -3248,7 +3255,7 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
                         labelStyle={chartTooltipLabelStyle}
                         formatter={(value, name) => [value ?? 0, name === 'total' ? 'Total VUsers' : name ?? '']}
                       />
-                      {effectiveScenarioGroups.map((group, index) => (
+                      {runLoadProfilePreview.showVUsers && effectiveScenarioGroups.map((group, index) => (
                         <Area
                           key={`${group.order}-${group.script_id}`}
                           yAxisId="vusers"
@@ -3262,7 +3269,7 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
                           isAnimationActive={false}
                         />
                       ))}
-                      <Line
+                      {runLoadProfilePreview.showVUsers && <Line
                         yAxisId="vusers"
                         type="monotone"
                         dataKey="total"
@@ -3271,7 +3278,7 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
                         strokeWidth={2}
                         dot={false}
                         isAnimationActive={false}
-                      />
+                      />}
                       {(runLoadProfilePreview.tpsGroupIndexes || []).length > 1 && (runLoadProfilePreview.tpsGroupIndexes || []).map(index => (
                         <Line
                           key={`group-${index}-tps`}
@@ -3290,7 +3297,7 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
                           yAxisId="tps"
                           type="stepAfter"
                           dataKey="totalTps"
-                          name="Production target TPS"
+                          name={scenario?.traffic_profile?.runtime_target === 'tps' ? 'Production target TPS' : 'Target TPS'}
                           stroke="var(--warning)"
                           strokeWidth={2.5}
                           strokeDasharray="6 5"
@@ -3299,7 +3306,7 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
                         />
                       )}
                       <ReferenceArea
-                        yAxisId="vusers"
+                        yAxisId={runLoadProfilePreview.showVUsers ? 'vusers' : 'tps'}
                         x1={runLoadProfilePreview.preBaselineSeconds}
                         x2={runLoadProfilePreview.preBaselineSeconds + runLoadProfilePreview.steadySeconds}
                         fill="var(--accent)"
@@ -3308,7 +3315,7 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
                       />
                       {runLoadProfilePreview.preBaselineSeconds > 0 && (
                         <ReferenceArea
-                          yAxisId="vusers"
+                          yAxisId={runLoadProfilePreview.showVUsers ? 'vusers' : 'tps'}
                           x1={0}
                           x2={runLoadProfilePreview.preBaselineSeconds}
                           fill="var(--warning)"
@@ -3318,7 +3325,7 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
                       )}
                       {runLoadProfilePreview.postBaselineSeconds > 0 && (
                         <ReferenceArea
-                          yAxisId="vusers"
+                          yAxisId={runLoadProfilePreview.showVUsers ? 'vusers' : 'tps'}
                           x1={runLoadProfilePreview.totalSeconds - runLoadProfilePreview.postBaselineSeconds}
                           x2={runLoadProfilePreview.totalSeconds}
                           fill="var(--warning)"
@@ -3330,13 +3337,13 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
                   </ResponsiveContainer>
                 </div>
                 <div className="new-test-profile-legend">
-                  {effectiveScenarioGroups.map((group, index) => (
+                  {runLoadProfilePreview.showVUsers && effectiveScenarioGroups.map((group, index) => (
                     <span key={`${group.order}-${group.script_id}`}>
                       <i style={{ background: LOAD_PROFILE_COLORS[index % LOAD_PROFILE_COLORS.length] }} />
                       {group.name || group.script_name || `Group ${index + 1}`}
                     </span>
                   ))}
-                  {runLoadProfilePreview.peakTps !== undefined && <span><i style={{ background: 'var(--warning)' }} />Production target TPS</span>}
+                  {runLoadProfilePreview.peakTps !== undefined && <span><i style={{ background: 'var(--warning)' }} />{scenario?.traffic_profile?.runtime_target === 'tps' ? 'Production target TPS' : 'Target TPS'}</span>}
                 </div>
                 <div className="new-test-profile-meta">
                   <span>{formatTimeCompact(runLoadProfilePreview.totalSeconds)} total</span>
@@ -3344,7 +3351,7 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
                 </div>
               </>
             ) : (
-              <div className="new-test-empty compact">Select a runnable scenario to preview the load profile.</div>
+              <div className="new-test-empty compact">{scenario?.scenario_mode === 'goal_oriented' ? 'No deterministic VUser curve is available. The goal controller will determine demand during execution.' : 'Select a runnable scenario to preview the load profile.'}</div>
             )}
           </section>
 

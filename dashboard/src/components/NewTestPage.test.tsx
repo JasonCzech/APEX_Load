@@ -1377,9 +1377,45 @@ describe('NewTestPage', () => {
 
     const profileCard = container.querySelector('.new-test-profile-card')
     expect(profileCard?.textContent).toContain('Production-derived adaptive TPS targets')
+    expect(profileCard?.textContent).toContain('3minimum TPS')
+    expect(profileCard?.textContent).toContain('6.67average TPS')
     expect(profileCard?.textContent).toContain('12peak TPS')
     expect(profileCard?.querySelector('[data-key="totalTps"]')?.getAttribute('data-name')).toBe('Production target TPS')
-    expect(Array.from(profileCard?.querySelectorAll('[data-testid="mock-y-axis"]') || []).map(axis => axis.getAttribute('data-label'))).toEqual(['VUsers', 'TPS'])
+    expect(Array.from(profileCard?.querySelectorAll('[data-testid="mock-y-axis"]') || []).map(axis => axis.getAttribute('data-label'))).toEqual(['TPS'])
+    expect(profileCard?.querySelector('[data-testid="mock-y-axis"]')?.getAttribute('data-orientation')).toBe('left')
+    expect(profileCard?.textContent).not.toContain('peak VUsers')
+  })
+
+  it('renders the configured TPS target for a goal-oriented scenario without a traffic profile', async () => {
+    apiMock.listScenarios.mockResolvedValue({
+      scenarios: [{
+        id: 'scenario-goal', name: 'Adaptive Goal', duration: '3m', scenario_mode: 'goal_oriented', script_shakeout: false, resource_baseline: false,
+        goal_config: { target_average_tps: 75, min_vusers: 1, max_vusers: 100 },
+        scripts: [{ order: 1, name: 'Checkout', script_id: 'script-1', script_name: 'Checkout Script', protocol: 'http', vusers: 9 }],
+        script_count: 1, created_at: '2026-08-31T00:00:00Z', updated_at: '2026-08-31T00:00:00Z', associated_releases: [],
+      }],
+    })
+
+    await act(async () => {
+      root.render(
+        <NewTestPage
+          activeApplication={{ id: 'app-1', name: 'ACC', created_at: '', updated_at: '' }}
+          activeRelease={{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }}
+          releases={[{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }]}
+          onSelectTest={vi.fn()}
+          onCreateRelease={vi.fn().mockResolvedValue(null)}
+        />,
+      )
+    })
+    await flushPromises()
+
+    const profileCard = container.querySelector('.new-test-profile-card')
+    expect(profileCard?.textContent).toContain('75minimum TPS')
+    expect(profileCard?.textContent).toContain('75average TPS')
+    expect(profileCard?.textContent).toContain('75peak TPS')
+    expect(profileCard?.querySelector('[data-key="totalTps"]')?.getAttribute('data-name')).toBe('Target TPS')
+    expect(Array.from(profileCard?.querySelectorAll('[data-testid="mock-y-axis"]') || []).map(axis => axis.getAttribute('data-label'))).toEqual(['TPS'])
+    expect(profileCard?.textContent).not.toContain('peak VUsers')
   })
 
   it('saves per-script runtime settings as run-only group overrides', async () => {

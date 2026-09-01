@@ -10,7 +10,7 @@ import {
 } from '../types'
 import { type PacingConfig, type ThinkTimeConfig } from '../types/scripts'
 import { formatTimeCompact, parseDurationToNanoseconds, parseDurationToSeconds } from '../utils/timeUtils'
-import { trafficProfileMappingForGroup, trafficProfileTargetAt, trafficProfileTimelineSeconds } from './trafficProfilePreviewModel'
+import { trafficProfileMappingForGroup, trafficProfileTargetAt, trafficProfileTimelineSeconds, trafficProfileTpsStatistics } from './trafficProfilePreviewModel'
 
 export type ScenarioWizardStep = 'start' | 'source' | 'scripts' | 'run' | 'data' | 'review'
 
@@ -49,8 +49,11 @@ export interface ScenarioModelSeries {
 export interface ScenarioModelPreview {
   points: ScenarioModelPoint[]
   series: ScenarioModelSeries[]
+  showVUsers: boolean
   peakVusers: number
   peakTps?: number
+  minTps?: number
+  averageTps?: number
   durationSeconds: number
 }
 
@@ -732,10 +735,12 @@ function collectTimeline(steadySeconds: number, totalSeconds: number, groups: Sc
 export function buildScenarioModelPreview(params: {
   duration: string
   groups: ScenarioModelGroupInput[]
+  scenarioMode?: ScenarioMode
   goalTargetTps?: number
   trafficProfile?: TrafficProfile
 }): ScenarioModelPreview {
   const steadySeconds = parseDurationSeconds(params.duration, 60)
+  const showVUsers = params.scenarioMode !== 'goal_oriented'
   const groups = params.groups.length > 0 ? params.groups : [{ vusers: 0 }]
   const profileMappings = groups.map(group => trafficProfileMappingForGroup(params.trafficProfile, group.name))
   const profileVUsers = params.trafficProfile?.runtime_target === 'vusers'
@@ -759,6 +764,9 @@ export function buildScenarioModelPreview(params: {
   const hasGroupTps = tpsGroupIndexes.length > 0
   const hasGoalTps = !profileTps && Number(params.goalTargetTps) > 0
   const includeTps = hasGroupTps || hasGoalTps
+  const profileTpsStatistics = profileTps
+    ? trafficProfileTpsStatistics(profileMappings, steadySeconds)
+    : undefined
 
   let peakVusers = 0
   let peakTps = 0
@@ -807,8 +815,11 @@ export function buildScenarioModelPreview(params: {
 
   return {
     points,
+    showVUsers,
     peakVusers,
-    peakTps: includeTps ? peakTps : undefined,
+    peakTps: profileTpsStatistics?.maximum ?? (includeTps ? peakTps : undefined),
+    minTps: profileTpsStatistics?.minimum,
+    averageTps: profileTpsStatistics?.average,
     durationSeconds,
     series: [
       ...groupSeries,

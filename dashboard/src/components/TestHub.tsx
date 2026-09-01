@@ -56,6 +56,7 @@ import { duplicateScenarioGroupNameIndexes, scenarioGroupNameAfterScriptSelectio
 import { boundedAllSettled } from '../utils/boundedAllSettled'
 import { ScenarioCompositionTimeline } from './ScenarioCompositionTimeline'
 import TrafficProfileSourcePanel from './TrafficProfileSourcePanel'
+import { formatTrafficProfileAxisTime } from './trafficProfilePreviewModel'
 
 interface Props {
   applicationRepository?: ApplicationRepository | null
@@ -858,17 +859,21 @@ function ScenarioModelPreviewPanel({
   const totalSeries = model.series.find(series => series.kind === 'total')
   const tpsSeries = model.series.filter(series => series.kind === 'tps')
   const includesTps = tpsSeries.length > 0
+  const visibleSeries = model.series.filter(series => model.showVUsers || series.kind === 'tps')
+  const formatTps = (value: number) => value.toLocaleString(undefined, { maximumFractionDigits: 2 })
 
   return (
     <section className="scenario-model-preview-panel">
       <div className="scenario-model-preview-header">
         <div>
           <h4>Model Preview</h4>
-          <p>{includesTps ? 'Planned adaptive TPS targets and configured VUsers over time, calculated from the current wizard draft.' : 'Planned VUsers over time by script group, calculated from the current wizard draft.'}</p>
+          <p>{includesTps ? (model.showVUsers ? 'Planned TPS targets and VUsers over time, calculated from the current wizard draft.' : 'Planned adaptive TPS targets. VUser demand is determined by the goal controller at runtime.') : (model.showVUsers ? 'Planned VUsers over time by script group, calculated from the current wizard draft.' : 'VUser demand is determined by the goal controller at runtime and cannot be modeled ahead of the run.')}</p>
         </div>
         <div className="scenario-model-summary">
-          <span><strong>{model.peakVusers}</strong> peak VUsers</span>
-          {model.peakTps !== undefined && <span><strong>{model.peakTps}</strong> peak TPS</span>}
+          {model.showVUsers && <span><strong>{model.peakVusers}</strong> peak VUsers</span>}
+          {model.peakTps !== undefined && <span><strong>{formatTps(model.peakTps)}</strong> peak TPS</span>}
+          {model.minTps !== undefined && <span><strong>{formatTps(model.minTps)}</strong> minimum TPS</span>}
+          {model.averageTps !== undefined && <span><strong>{formatTps(model.averageTps)}</strong> average TPS</span>}
           <span><strong>{formatModelTimeLabel(model.durationSeconds)}</strong> duration</span>
           <span><strong>{groupSeries.length}</strong> groups</span>
           <span>{shapeLabel}</span>
@@ -876,13 +881,13 @@ function ScenarioModelPreviewPanel({
           <span>{validationStatus}</span>
         </div>
       </div>
-      <div className="scenario-model-chart">
+      {(model.showVUsers || includesTps) ? <div className="scenario-model-chart">
         <ResponsiveContainer width="100%" height={340}>
-          <ComposedChart data={model.points} margin={{ top: 16, right: includesTps ? 92 : 24, bottom: 18, left: 24 }}>
+          <ComposedChart data={model.points} margin={{ top: 16, right: includesTps && model.showVUsers ? 92 : 24, bottom: 18, left: 24 }}>
             <CartesianGrid stroke="var(--border-subtle, var(--border))" strokeDasharray="3 3" vertical={false} />
             <XAxis
               dataKey="elapsedSeconds"
-              tickFormatter={(value) => formatModelTimeLabel(Number(value))}
+              tickFormatter={(value) => formatTrafficProfileAxisTime(Number(value))}
               stroke="var(--text-muted)"
               fontSize={11}
               height={42}
@@ -890,7 +895,7 @@ function ScenarioModelPreviewPanel({
               axisLine={false}
               label={{ value: 'Elapsed time', position: 'insideBottom', offset: -4, fill: 'var(--text-muted)', fontSize: 11 }}
             />
-            <YAxis
+            {model.showVUsers && <YAxis
               yAxisId="vusers"
               stroke="var(--text-muted)"
               fontSize={11}
@@ -898,21 +903,21 @@ function ScenarioModelPreviewPanel({
               tickLine={false}
               axisLine={false}
               label={{ value: 'VUsers', angle: -90, position: 'left', fill: 'var(--text-muted)', fontSize: 11 }}
-            />
+            />}
             {includesTps && (
               <YAxis
                 yAxisId="tps"
-                orientation="right"
+                orientation={model.showVUsers ? 'right' : 'left'}
                 stroke="var(--warning)"
                 fontSize={11}
                 width={68}
                 tickLine={false}
                 axisLine={false}
-                label={{ value: 'TPS', angle: 90, position: 'right', fill: 'var(--warning)', fontSize: 11 }}
+                label={{ value: 'TPS', angle: model.showVUsers ? 90 : -90, position: model.showVUsers ? 'right' : 'left', fill: 'var(--warning)', fontSize: 11 }}
               />
             )}
             <Tooltip content={<ScenarioModelTooltip />} />
-            {groupSeries.map(series => (
+            {model.showVUsers && groupSeries.map(series => (
               <Area
                 key={series.key}
                 yAxisId="vusers"
@@ -928,7 +933,7 @@ function ScenarioModelPreviewPanel({
                 isAnimationActive={false}
               />
             ))}
-            {totalSeries && (
+            {model.showVUsers && totalSeries && (
               <Line
                 yAxisId="vusers"
                 type={totalSeries.interpolation || 'linear'}
@@ -956,9 +961,9 @@ function ScenarioModelPreviewPanel({
             ))}
           </ComposedChart>
         </ResponsiveContainer>
-      </div>
+      </div> : <div className="scenario-model-chart"><p className="scenario-shape-guidance">No deterministic load curve is available. The goal controller will determine VUser demand during execution.</p></div>}
       <div className="scenario-model-legend">
-        {model.series.map(series => (
+        {visibleSeries.map(series => (
           <span key={series.key}>
             <i style={{ background: series.color }} />
             {series.label}
@@ -1214,6 +1219,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
   const scenarioModel = useMemo(
     () => buildScenarioModelPreview({
       duration: form.duration,
+      scenarioMode: form.scenario_mode,
       groups: formGroups.map(group => ({
         name: group.name || findScriptById(scripts, group.script_id)?.name || undefined,
         vusers: Number(group.vusers) || 0,
@@ -1224,7 +1230,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
       goalTargetTps: form.goal_target_average_tps,
       trafficProfile: form.traffic_profile,
     }),
-    [form.duration, form.goal_target_average_tps, form.traffic_profile, formGroups, scripts],
+    [form.duration, form.goal_target_average_tps, form.scenario_mode, form.traffic_profile, formGroups, scripts],
   )
   const filteredCloneScenarios = useMemo(() => {
     const query = scenarioCloneQuery.trim().toLowerCase()

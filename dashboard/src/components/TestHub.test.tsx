@@ -2828,6 +2828,12 @@ describe('TestHub', () => {
     const productionProfileVisual = container.querySelector('[aria-label="Production Traffic Profile workload shape"]')
     expect(productionProfileVisual?.querySelector('.scenario-shape-line')?.getAttribute('d'))
       .toBe('M12 50C22 49 29 45 36 38C44 29 51 20 62 17C74 14 84 20 91 29C99 38 103 45 108 49')
+
+    await clickButton('Open API Arrival Rate')
+    expect(Array.from(container.querySelectorAll('[data-testid="scenario-model-y-axis"]')).map(axis => axis.getAttribute('data-label'))).toEqual(['TPS'])
+    expect(container.querySelector('[data-testid="scenario-model-y-axis"]')?.getAttribute('data-orientation')).toBe('left')
+    expect(container.textContent).not.toContain('peak VUsers')
+    expect(container.textContent).toContain('VUser demand is determined by the goal controller at runtime')
   })
 
   it('converts a newly disabled selected shape to Custom Workload', async () => {

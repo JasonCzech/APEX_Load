@@ -33,7 +33,9 @@ const apiMock = {
 vi.mock('../hooks/useApi', () => ({ useApi: () => apiMock }))
 vi.mock('recharts', () => {
   const Wrapper = ({ children }: { children?: ReactNode }) => <div>{children}</div>
-  return { CartesianGrid: Wrapper, ComposedChart: Wrapper, Line: () => null, ResponsiveContainer: Wrapper, Tooltip: Wrapper, XAxis: Wrapper, YAxis: Wrapper }
+  const Chart = ({ children, data }: { children?: ReactNode; data?: unknown[] }) => <div data-testid="profile-preview-chart" data-chart={JSON.stringify(data || [])}>{children}</div>
+  const MockLine = ({ dataKey, name }: { dataKey?: string; name?: string }) => <span data-testid="profile-preview-line" data-key={dataKey} data-name={name} />
+  return { CartesianGrid: Wrapper, ComposedChart: Chart, Legend: Wrapper, Line: MockLine, ResponsiveContainer: Wrapper, Tooltip: Wrapper, XAxis: Wrapper, YAxis: Wrapper }
 })
 
 describe('TrafficProfileSourcePanel', () => {
@@ -47,12 +49,12 @@ describe('TrafficProfileSourcePanel', () => {
       traffic_profile: {
         version: 1,
         source: { kind: 'prometheus', prometheus: { query: 'sum(rate(requests_total[1m]))', range: { mode: 'relative', lookback: '24h', step_seconds: 15 } } },
-        value_semantics: 'tps', runtime_target: 'tps', interpolation: 'step', source_duration: '15s', target_duration: '15s', gap_policy: 'hold',
+        value_semantics: 'tps', runtime_target: 'tps', interpolation: 'step', source_duration: '15s', target_duration: '30s', gap_policy: 'hold',
         mappings: [{ series_key: 'requests', series_name: 'requests', group_name: 'Checkout', peak_target: 30, points: [{ offset_ms: 0, target: 15 }, { offset_ms: 15_000, target: 30 }] }],
         refreshed_at: '2026-08-27T00:00:00Z',
       },
       preview: [{ series_key: 'requests', series_name: 'requests', group_name: 'Checkout', peak_target: 30, points: [{ offset_ms: 0, target: 15 }, { offset_ms: 15_000, target: 30 }] }],
-      scenario_draft: { name: 'Replay', duration: '15s', scenario_mode: 'goal_oriented', script_shakeout: false, resource_baseline: false, groups: [{ name: 'Checkout', script_id: 'script-1', vusers: 10, stages: [], initialization: 'at_runtime' }] },
+      scenario_draft: { name: 'Replay', duration: '30s', scenario_mode: 'goal_oriented', script_shakeout: false, resource_baseline: false, groups: [{ name: 'Checkout', script_id: 'script-1', vusers: 10, stages: [], initialization: 'at_runtime' }] },
     }
     apiMock.deriveTrafficProfile.mockResolvedValue(profile)
     const onApply = vi.fn()
@@ -75,6 +77,9 @@ describe('TrafficProfileSourcePanel', () => {
     const preview = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Build profile preview')
     await act(async () => { preview?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
     expect(apiMock.deriveTrafficProfile).toHaveBeenCalledWith(expect.objectContaining({ mappings: [{ series_key: 'requests', group_name: 'Checkout' }] }))
+    expect(container.textContent).toContain('minimum 15 TPS')
+    expect(container.textContent).toContain('average 22.5 TPS')
+    expect(container.textContent).toContain('peak 30 TPS')
     const apply = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Apply production profile')
     await act(async () => { apply?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
     expect(onApply).toHaveBeenCalledWith(profile)
@@ -84,6 +89,67 @@ describe('TrafficProfileSourcePanel', () => {
     const applied = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Production profile applied')
     expect(applied?.disabled).toBe(true)
     expect(container.textContent).toContain('Applied: this candidate is the current scenario profile.')
+
+    await act(async () => root.unmount())
+    container.remove()
+  })
+
+  it('omits unmapped analyzed series from the profile graph', async () => {
+    apiMock.analyzeTrafficProfile.mockResolvedValue({
+      ...defaultAnalysis,
+      series: [
+        defaultAnalysis.series[0],
+        {
+          series: { key: 'ignored', name: 'ignored', points: analyzedSeries.points },
+          stats: { ...defaultAnalysis.series[0].stats },
+        },
+      ],
+    })
+    const draft = { name: 'Replay', duration: '1h', scenario_mode: 'vuser_driven', script_shakeout: false, resource_baseline: false, groups: [{ name: 'Checkout', script_id: 'script-1', vusers: 10 }] } as ScenarioUpsertPayload
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    await act(async () => { root.render(<TrafficProfileSourcePanel groupNames={['Checkout']} scenarioDraft={draft} onApply={vi.fn()} />) })
+
+    const prometheus = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Prometheus')
+    await act(async () => { prometheus?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+    const analyze = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Analyze source')
+    await act(async () => { analyze?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+
+    expect(Array.from(container.querySelectorAll('[data-testid="profile-preview-line"]')).map(line => line.getAttribute('data-name'))).toEqual([
+      'Checkout production source',
+    ])
+
+    await act(async () => root.unmount())
+    container.remove()
+  })
+
+  it('preserves an isolated production peak while downsampling the graph', async () => {
+    const points = Array.from({ length: 1001 }, (_, index) => ({
+      timestamp: new Date(Date.parse('2026-08-26T00:00:00Z') + index * 15_000).toISOString(),
+      value: index === 501 ? 999 : 1,
+    }))
+    apiMock.analyzeTrafficProfile.mockResolvedValue({
+      ...defaultAnalysis,
+      series: [{
+        series: { key: 'requests', name: 'requests', points },
+        stats: { count: points.length, start: points[0].timestamp, end: points[points.length - 1].timestamp, min: 1, max: 999, mean: 2, detected_bucket: 15_000_000_000, gaps: 0 },
+      }],
+    })
+    const draft = { name: 'Replay', duration: '1h', scenario_mode: 'vuser_driven', script_shakeout: false, resource_baseline: false, groups: [{ name: 'Checkout', script_id: 'script-1', vusers: 10 }] } as ScenarioUpsertPayload
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    await act(async () => { root.render(<TrafficProfileSourcePanel groupNames={['Checkout']} scenarioDraft={draft} onApply={vi.fn()} />) })
+
+    const prometheus = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Prometheus')
+    await act(async () => { prometheus?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+    const analyze = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Analyze source')
+    await act(async () => { analyze?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+
+    const chartRows = JSON.parse(container.querySelector('[data-testid="profile-preview-chart"]')?.getAttribute('data-chart') || '[]') as Array<Record<string, number>>
+    expect(chartRows.some(row => row.source_0 === 999)).toBe(true)
+    expect(chartRows.length).toBeLessThanOrEqual(1000)
 
     await act(async () => root.unmount())
     container.remove()
@@ -261,9 +327,13 @@ describe('TrafficProfileSourcePanel', () => {
         series: [{ series: { ...analyzedSeries, key: `${group}-requests`, name: `${group} requests` }, stats: { count: 2, start: point.timestamp, end: '2026-08-26T00:00:15Z', min: 15, max: 30, mean: 22.5, detected_bucket: 15_000_000_000, gaps: 0 } }],
       }
     })
+    const compositeMappings: TrafficProfile['mappings'] = [
+      { series_key: 'group-1:checkout-requests', series_name: 'checkout requests', group_name: 'Checkout', peak_target: 30, points: [{ offset_ms: 0, target: 10 }, { offset_ms: 15_000, target: 30 }] },
+      { series_key: 'group-2:search-requests', series_name: 'search requests', group_name: 'Search', peak_target: 20, points: [{ offset_ms: 0, target: 5 }, { offset_ms: 15_000, target: 20 }] },
+    ]
     apiMock.deriveTrafficProfile.mockResolvedValue({
-      traffic_profile: { version: 1, source: { kind: 'multiple', sources: [] }, value_semantics: 'tps', runtime_target: 'tps', interpolation: 'step', source_duration: '30s', target_duration: '30s', mappings: [], refreshed_at: '2026-08-27T00:00:00Z' },
-      preview: [], scenario_draft: { name: 'Replay', duration: '30s', scenario_mode: 'goal_oriented', script_shakeout: false, resource_baseline: false, groups: [] },
+      traffic_profile: { version: 1, source: { kind: 'multiple', sources: [] }, value_semantics: 'tps', runtime_target: 'tps', interpolation: 'step', source_duration: '30s', target_duration: '30s', mappings: compositeMappings, refreshed_at: '2026-08-27T00:00:00Z' },
+      preview: compositeMappings, scenario_draft: { name: 'Replay', duration: '30s', scenario_mode: 'goal_oriented', script_shakeout: false, resource_baseline: false, groups: [] },
     } satisfies TrafficProfileDeriveResponse)
     const draft = { name: 'Replay', duration: '1h', scenario_mode: 'vuser_driven', script_shakeout: false, resource_baseline: false, groups: [{ name: 'Checkout', script_id: 'checkout', vusers: 10 }, { name: 'Search', script_id: 'search', vusers: 10 }] } as ScenarioUpsertPayload
     const container = document.createElement('div')
@@ -329,6 +399,16 @@ describe('TrafficProfileSourcePanel', () => {
     expect(request.source.sources?.map(source => source.file?.filename)).toEqual(['checkout.csv', 'search.xlsx'])
     expect(new Set(request.series.map(series => series.key)).size).toBe(2)
     expect(request.mappings.map(mapping => [mapping.group_name, mapping.source?.file?.filename])).toEqual([['Checkout', 'checkout.csv'], ['Search', 'search.xlsx']])
+    expect(Array.from(container.querySelectorAll('[data-testid="profile-preview-line"]')).map(line => line.getAttribute('data-name'))).toEqual([
+      'Checkout production source',
+      'Search production source',
+      'Checkout candidate',
+      'Search candidate',
+      'Total candidate',
+    ])
+    const chartRows = JSON.parse(container.querySelector('[data-testid="profile-preview-chart"]')?.getAttribute('data-chart') || '[]') as Array<Record<string, number>>
+    expect(chartRows.find(row => row.elapsed === 0)).toMatchObject({ candidate_0: 10, candidate_1: 5, candidate_total: 15 })
+    expect(chartRows.find(row => row.elapsed === 15_000)).toMatchObject({ candidate_0: 30, candidate_1: 20, candidate_total: 50 })
 
     await act(async () => root.unmount())
     container.remove()

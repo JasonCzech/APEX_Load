@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { CartesianGrid, ComposedChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
+import { CartesianGrid, ComposedChart, Legend, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 
 import type {
   TrafficProfileAnalyzeResponse,
@@ -17,6 +17,7 @@ import { useApi } from '../hooks/useApi'
 import { getErrorMessage } from '../utils/errorUtils'
 import ImportDropzone from './ImportDropzone'
 import type { ScenarioUpsertPayload } from './scenarioPayloadUtils'
+import { formatTrafficProfileAxisTime, trafficProfileTargetAt, trafficProfileTpsStatistics } from './trafficProfilePreviewModel'
 
 interface Props {
   projectId?: string
@@ -28,6 +29,7 @@ interface Props {
 
 const previewLimit = 1000
 const allGroupsMapping = '__all_groups__'
+const profileLineColors = ['#2563eb', '#16a34a', '#f59e0b', '#dc2626', '#7c3aed', '#0891b2', '#db2777', '#65a30d']
 const fallbackTimezones = ['UTC', 'America/New_York', 'America/Chicago', 'America/Denver', 'America/Los_Angeles', 'Europe/London', 'Europe/Paris', 'Asia/Tokyo', 'Asia/Kolkata', 'Australia/Sydney']
 
 const browserTimezones = (() => {
@@ -52,10 +54,32 @@ interface GroupUploadSelection {
   seriesKey: string
 }
 
-function sample<T>(values: T[], limit = previewLimit): T[] {
+function samplePreservingExtrema<T>(values: T[], limit = previewLimit, valueOf: (value: T) => number): T[] {
   if (values.length <= limit) return values
-  const stride = Math.ceil(values.length / limit)
-  return values.filter((_, index) => index % stride === 0 || index === values.length - 1)
+  if (limit <= 1) return values.slice(0, 1)
+  if (limit === 2) return [values[0], values[values.length - 1]]
+
+  const interior = values.slice(1, -1)
+  const bucketCount = Math.max(1, Math.floor((limit - 2) / 2))
+  const sampled: Array<{ index: number; value: T }> = [
+    { index: 0, value: values[0] },
+  ]
+  for (let bucket = 0; bucket < bucketCount; bucket += 1) {
+    const start = Math.floor((bucket * interior.length) / bucketCount)
+    const end = Math.floor(((bucket + 1) * interior.length) / bucketCount)
+    if (start >= end) continue
+    let minimumIndex = start
+    let maximumIndex = start
+    for (let index = start + 1; index < end; index += 1) {
+      if (valueOf(interior[index]) < valueOf(interior[minimumIndex])) minimumIndex = index
+      if (valueOf(interior[index]) > valueOf(interior[maximumIndex])) maximumIndex = index
+    }
+    Array.from(new Set([minimumIndex, maximumIndex])).sort((left, right) => left - right).forEach(index => {
+      sampled.push({ index: index + 1, value: interior[index] })
+    })
+  }
+  sampled.push({ index: values.length - 1, value: values[values.length - 1] })
+  return sampled.sort((left, right) => left.index - right.index).slice(0, limit).map(item => item.value)
 }
 
 function localDateTimeValue(value?: string): string {
@@ -281,21 +305,103 @@ export default function TrafficProfileSourcePanel({ projectId, groupNames, scena
     } catch (cause) { setError(getErrorMessage(cause, 'Traffic-profile derivation failed.')) } finally { setBusy(false) }
   }
 
-  const chartData = useMemo(() => {
-    const firstGroupUpload = groupNames.map(name => groupUploads[name]).find(Boolean)
-    const selectedGroupSeries = firstGroupUpload?.analysis.series?.find(item => item.series.key === firstGroupUpload.seriesKey)?.series
-    const raw = (assignmentMode === 'per_group' ? selectedGroupSeries : analysis?.series?.[0]?.series)?.points || []
-    const points = derived?.preview?.[0]?.points || []
-    const oldPoints = existingProfile?.mappings?.[0]?.points || []
-    if (!raw.length && !points.length && !oldPoints.length) return []
-    const rawStart = raw.length ? Date.parse(raw[0].timestamp) : 0
-    const rawSpan = raw.length > 1 ? Math.max(1, Date.parse(raw[raw.length - 1].timestamp) - rawStart) : 1
-    const targetSpan = derived?.traffic_profile ? Math.max(1, durationMilliseconds(derived.traffic_profile.target_duration), points[points.length - 1]?.offset_ms || rawSpan) : rawSpan
-    const rows: Array<{ elapsed: number; raw?: number; target?: number; oldTarget?: number }> = sample(raw).map(point => ({ elapsed: ((Date.parse(point.timestamp) - rawStart) / rawSpan) * targetSpan, raw: point.value }))
-    sample(points).forEach(point => rows.push({ elapsed: point.offset_ms, target: point.target }))
-    sample(oldPoints).forEach(point => rows.push({ elapsed: point.offset_ms, oldTarget: point.target }))
-    return rows.sort((left, right) => left.elapsed - right.elapsed)
-  }, [analysis, assignmentMode, derived, existingProfile, groupNames, groupUploads])
+  const chartModel = useMemo(() => {
+    type ChartRow = { elapsed: number } & Record<string, number>
+    type ChartLine = { key: string; name: string; color: string; kind: 'source' | 'candidate' | 'saved' | 'total' }
+    const candidateMappings = derived?.preview?.length ? derived.preview : derived?.traffic_profile.mappings || []
+    const savedMappings = existingProfile?.mappings || []
+    const rawSeries = assignmentMode === 'per_group'
+      ? groupNames.flatMap(groupName => {
+        const upload = groupUploads[groupName]
+        const series = upload?.analysis.series?.find(item => item.series.key === upload.seriesKey)?.series
+        return series ? [{ groupName, series }] : []
+      })
+      : (analysis?.series || []).flatMap(item => {
+        const candidateGroups = candidateMappings
+          .filter(mapping => mapping.series_key === item.series.key)
+          .map(mapping => mapping.group_name)
+        const configuredTarget = mappings[item.series.key]
+        const groupName = candidateGroups.length > 1
+          ? 'All groups'
+          : candidateGroups[0] || (configuredTarget === allGroupsMapping ? 'All groups' : configuredTarget)
+        return groupName ? [{ groupName, series: item.series }] : []
+      })
+
+    if (!rawSeries.length && !candidateMappings.length && !savedMappings.length) return { data: [] as ChartRow[], lines: [] as ChartLine[] }
+
+    const candidateDuration = durationMilliseconds(derived?.traffic_profile.target_duration)
+    const savedDuration = durationMilliseconds(existingProfile?.target_duration)
+    const rawDuration = rawSeries.reduce((maximum, item) => {
+      const start = Date.parse(item.series.points[0]?.timestamp || '')
+      const end = Date.parse(item.series.points[item.series.points.length - 1]?.timestamp || '')
+      return Math.max(maximum, Number.isFinite(start) && Number.isFinite(end) ? Math.max(0, end - start) : 0)
+    }, 0)
+    const targetSpan = Math.max(1, candidateDuration || savedDuration || rawDuration)
+    const lineCount = rawSeries.length + candidateMappings.length + savedMappings.length + (candidateMappings.length > 1 ? 1 : 0) + (savedMappings.length > 1 ? 1 : 0)
+    const pointsPerLine = Math.max(25, Math.floor(previewLimit / Math.max(1, lineCount)))
+    const rows = new Map<number, ChartRow>()
+    const lines: ChartLine[] = []
+    const mergeValue = (elapsed: number, key: string, value: number) => {
+      const normalizedElapsed = Math.round(elapsed)
+      rows.set(normalizedElapsed, { ...rows.get(normalizedElapsed), elapsed: normalizedElapsed, [key]: value })
+    }
+    const groupColor = (groupName: string, fallbackIndex: number) => {
+      const groupIndex = groupNames.findIndex(name => name.trim().toLowerCase() === groupName.trim().toLowerCase())
+      return profileLineColors[(groupIndex >= 0 ? groupIndex : fallbackIndex) % profileLineColors.length]
+    }
+
+    rawSeries.forEach((item, index) => {
+      const key = `source_${index}`
+      const start = Date.parse(item.series.points[0]?.timestamp || '')
+      const end = Date.parse(item.series.points[item.series.points.length - 1]?.timestamp || '')
+      const span = Number.isFinite(start) && Number.isFinite(end) ? Math.max(1, end - start) : 1
+      samplePreservingExtrema(item.series.points, pointsPerLine, point => point.value).forEach(point => {
+        const timestamp = Date.parse(point.timestamp)
+        if (Number.isFinite(timestamp)) mergeValue(((timestamp - start) / span) * targetSpan, key, point.value)
+      })
+      lines.push({ key, name: `${item.groupName} production source`, color: groupColor(item.groupName, index), kind: 'source' })
+    })
+
+    candidateMappings.forEach((mapping, index) => {
+      const key = `candidate_${index}`
+      samplePreservingExtrema(mapping.points, pointsPerLine, point => point.target).forEach(point => mergeValue(point.offset_ms, key, point.target))
+      lines.push({ key, name: `${mapping.group_name} candidate`, color: groupColor(mapping.group_name, index), kind: 'candidate' })
+    })
+    if (candidateMappings.length > 1) {
+      const key = 'candidate_total'
+      const offsets = Array.from(new Set(candidateMappings.flatMap(mapping => mapping.points.map(point => point.offset_ms)))).sort((left, right) => left - right)
+      samplePreservingExtrema(offsets, pointsPerLine, offset => candidateMappings.reduce((total, mapping) => total + trafficProfileTargetAt(mapping, offset / 1000), 0)).forEach(offset => mergeValue(offset, key, candidateMappings.reduce((total, mapping) => total + trafficProfileTargetAt(mapping, offset / 1000), 0)))
+      lines.push({ key, name: 'Total candidate', color: 'var(--text-primary)', kind: 'total' })
+    }
+
+    savedMappings.forEach((mapping, index) => {
+      const key = `saved_${index}`
+      samplePreservingExtrema(mapping.points, pointsPerLine, point => point.target).forEach(point => mergeValue(point.offset_ms, key, point.target))
+      lines.push({ key, name: `${mapping.group_name} saved profile`, color: groupColor(mapping.group_name, index), kind: 'saved' })
+    })
+    if (savedMappings.length > 1) {
+      const key = 'saved_total'
+      const offsets = Array.from(new Set(savedMappings.flatMap(mapping => mapping.points.map(point => point.offset_ms)))).sort((left, right) => left - right)
+      samplePreservingExtrema(offsets, pointsPerLine, offset => savedMappings.reduce((total, mapping) => total + trafficProfileTargetAt(mapping, offset / 1000), 0)).forEach(offset => mergeValue(offset, key, savedMappings.reduce((total, mapping) => total + trafficProfileTargetAt(mapping, offset / 1000), 0)))
+      lines.push({ key, name: 'Total saved profile', color: 'var(--warning)', kind: 'saved' })
+    }
+
+    return { data: Array.from(rows.values()).sort((left, right) => left.elapsed - right.elapsed), lines }
+  }, [analysis, assignmentMode, derived, existingProfile, groupNames, groupUploads, mappings])
+  const derivedTpsStatistics = useMemo(() => {
+    if (derived?.traffic_profile.runtime_target !== 'tps') return undefined
+    return trafficProfileTpsStatistics(
+      derived.traffic_profile.mappings,
+      durationMilliseconds(derived.traffic_profile.target_duration) / 1000,
+    )
+  }, [derived])
+  const sourceUsesOwnAxis = chartModel.lines.some(line => line.kind === 'source')
+    && chartModel.lines.some(line => line.kind !== 'source')
+    && (semantics === 'transactions_per_bucket' || semantics === 'cumulative_counter')
+  const primaryAxisLabel = chartModel.lines.some(line => line.kind !== 'source')
+    ? (derived?.traffic_profile.runtime_target || existingProfile?.runtime_target) === 'vusers' ? 'VUsers' : 'TPS'
+    : semantics === 'cumulative_counter' ? 'Source counter' : semantics === 'transactions_per_bucket' ? 'Transactions / bucket' : semantics === 'vusers' ? 'VUsers' : 'TPS'
+  const formatTps = (value: number) => value.toLocaleString(undefined, { maximumFractionDigits: 2 })
 
   const perGroupReady = groupNames.length > 1 && groupNames.every(name => {
     const upload = groupUploads[name]
@@ -386,8 +492,8 @@ export default function TrafficProfileSourcePanel({ projectId, groupNames, scena
         <button type="button" className="btn btn-primary" disabled={busy} onClick={() => void derive()}>Build profile preview</button>
       </> : null}
 
-      {chartData.length ? <div style={{ height: 280 }}><ResponsiveContainer width="100%" height="100%"><ComposedChart data={chartData}><CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="elapsed" tickFormatter={value => `${Math.round(Number(value) / 1000)}s`} /><YAxis /><Tooltip /><Line type="linear" dataKey="raw" name="Production source" stroke="var(--text-muted)" dot={false} connectNulls isAnimationActive={false} />{existingProfile && <Line type="stepAfter" dataKey="oldTarget" name="Current saved profile" stroke="var(--warning)" dot={false} connectNulls isAnimationActive={false} />}<Line type="stepAfter" dataKey="target" name="Candidate runtime target" stroke="var(--accent)" dot={false} connectNulls isAnimationActive={false} /></ComposedChart></ResponsiveContainer></div> : null}
-      {derived && <div className="scenario-shape-guidance" role="status"><strong>{derived.traffic_profile.mappings.reduce((sum, mapping) => sum + mapping.points.length, 0).toLocaleString()} full-resolution points</strong><p>{derived.traffic_profile.runtime_target.toUpperCase()} profile · {derived.traffic_profile.target_duration} · peak {Math.max(...derived.traffic_profile.mappings.map(mapping => mapping.peak_target))}</p>{existingProfile && <p className="secondary">{candidateMatchesExisting ? 'Applied: this candidate is the current scenario profile.' : `Current: ${existingProfile.mappings.reduce((sum, mapping) => sum + mapping.points.length, 0).toLocaleString()} points, ${existingProfile.target_duration}, peak ${Math.max(...existingProfile.mappings.map(mapping => mapping.peak_target))}. Candidate remains unapplied until you confirm below.`}</p>}{derived.warnings?.map(warning => <p key={warning} className="secondary">{warning}</p>)}<button type="button" className="btn btn-primary" disabled={candidateMatchesExisting} onClick={() => onApply(derived)}>{candidateMatchesExisting ? 'Production profile applied' : 'Apply production profile'}</button></div>}
+      {chartModel.data.length ? <div style={{ height: 280 }}><ResponsiveContainer width="100%" height="100%"><ComposedChart data={chartModel.data} margin={{ top: 8, right: sourceUsesOwnAxis ? 24 : 12, bottom: 4, left: 24 }}><CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="elapsed" tickFormatter={value => formatTrafficProfileAxisTime(Number(value) / 1000)} /><YAxis yAxisId="target" label={{ value: primaryAxisLabel, angle: -90, position: 'left' }} />{sourceUsesOwnAxis && <YAxis yAxisId="source" orientation="right" label={{ value: semantics === 'cumulative_counter' ? 'Source counter' : 'Transactions / bucket', angle: 90, position: 'right' }} />}<Tooltip /><Legend />{chartModel.lines.map(line => <Line key={line.key} yAxisId={line.kind === 'source' && sourceUsesOwnAxis ? 'source' : 'target'} type={line.kind === 'source' ? 'linear' : 'stepAfter'} dataKey={line.key} name={line.name} stroke={line.color} strokeWidth={line.kind === 'total' ? 3 : line.kind === 'candidate' ? 2 : 1.5} strokeDasharray={line.kind === 'source' ? '2 4' : line.kind === 'saved' ? '8 4' : undefined} strokeOpacity={line.kind === 'source' ? 0.65 : 1} dot={false} connectNulls isAnimationActive={false} />)}</ComposedChart></ResponsiveContainer></div> : null}
+      {derived && <div className="scenario-shape-guidance" role="status"><strong>{derived.traffic_profile.mappings.reduce((sum, mapping) => sum + mapping.points.length, 0).toLocaleString()} full-resolution points</strong><p>{derived.traffic_profile.runtime_target.toUpperCase()} profile · {derived.traffic_profile.target_duration}{derivedTpsStatistics ? ` · minimum ${formatTps(derivedTpsStatistics.minimum)} TPS · average ${formatTps(derivedTpsStatistics.average)} TPS · peak ${formatTps(derivedTpsStatistics.maximum)} TPS` : ` · peak ${Math.max(...derived.traffic_profile.mappings.map(mapping => mapping.peak_target))}`}</p>{existingProfile && <p className="secondary">{candidateMatchesExisting ? 'Applied: this candidate is the current scenario profile.' : `Current: ${existingProfile.mappings.reduce((sum, mapping) => sum + mapping.points.length, 0).toLocaleString()} points, ${existingProfile.target_duration}, peak ${Math.max(...existingProfile.mappings.map(mapping => mapping.peak_target))}. Candidate remains unapplied until you confirm below.`}</p>}{derived.warnings?.map(warning => <p key={warning} className="secondary">{warning}</p>)}<button type="button" className="btn btn-primary" disabled={candidateMatchesExisting} onClick={() => onApply(derived)}>{candidateMatchesExisting ? 'Production profile applied' : 'Apply production profile'}</button></div>}
       {error && <div className="form-error" role="alert">{error}</div>}
     </div>
   )

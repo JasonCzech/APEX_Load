@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import type { TrafficProfile } from '../types'
-import { trafficProfileMappingForGroup, trafficProfileTargetAt, trafficProfileTimelineSeconds } from './trafficProfilePreviewModel'
+import { formatTrafficProfileAxisTime, trafficProfileMappingForGroup, trafficProfileTargetAt, trafficProfileTimelineSeconds, trafficProfileTpsStatistics } from './trafficProfilePreviewModel'
 
 function profile(pointCount = 4): TrafficProfile {
   return {
@@ -58,5 +58,26 @@ describe('trafficProfilePreviewModel', () => {
     expect(timeline.length).toBeLessThanOrEqual(8)
     expect(timeline[0]).toBe(0)
     expect(timeline[timeline.length - 1]).toBe(240)
+  })
+
+  it('calculates exact time-weighted aggregate TPS statistics', () => {
+    const first = profile().mappings[0]
+    first.points = [{ offset_ms: 0, target: 2 }, { offset_ms: 60_000, target: 10 }, { offset_ms: 180_000, target: 4 }]
+    const second = {
+      ...first,
+      series_key: 'search',
+      group_name: 'Search',
+      points: [{ offset_ms: 0, target: 1 }, { offset_ms: 120_000, target: 5 }],
+    }
+
+    expect(trafficProfileTpsStatistics([first, second], 240)).toEqual({ minimum: 3, maximum: 15, average: 9.5 })
+    expect(trafficProfileTpsStatistics([], 240)).toEqual({ minimum: 0, maximum: 0, average: 0 })
+  })
+
+  it('formats profile axes in minutes and hours', () => {
+    expect(formatTrafficProfileAxisTime(0)).toBe('0m')
+    expect(formatTrafficProfileAxisTime(30)).toBe('0.5m')
+    expect(formatTrafficProfileAxisTime(900)).toBe('15m')
+    expect(formatTrafficProfileAxisTime(5400)).toBe('1h 30m')
   })
 })

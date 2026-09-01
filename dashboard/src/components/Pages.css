@@ -6944,6 +6944,18 @@
   text-align: center;
 }
 
+.new-test-profile-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.new-test-profile-stats .new-test-profile-stat {
+  min-width: 0;
+  padding-inline: 6px;
+}
+
 .new-test-profile-stat strong {
   display: block;
   color: var(--text-primary);
