@@ -50,11 +50,6 @@ function setInputValue(input: HTMLInputElement, value: string) {
   input.dispatchEvent(new Event('input', { bubbles: true }))
 }
 
-function goalBaselineRunNames(root: HTMLElement): string[] {
-  return Array.from(root.querySelectorAll('.goal-baseline-table tbody tr.clickable-row .cell-name > div:first-child'))
-    .map(node => node.textContent || '')
-}
-
 function deferred<T>() {
   let resolve!: (value: T) => void
   let reject!: (reason?: unknown) => void
@@ -146,100 +141,41 @@ describe('TestHub build-from-goal', () => {
     await act(async () => { await Promise.resolve() })
   }
 
-  it('sizes VUsers from a baseline run and applies the draft to the form', async () => {
+  it('opens Build from Goal in the guided worksheet and imports matching baseline ART', async () => {
     await act(async () => {
       root.render(<TestHub testStatuses={{}} onSelectTest={vi.fn()} />)
     })
     await flush()
 
-    // Open the scenario builder, then the Build-from-goal panel.
     await act(async () => { findButton(container, 'Scenario Builder')?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
     await act(async () => { findButton(container, 'Build from Goal')?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
     await flush()
 
     expect(apiMock.listTests).toHaveBeenCalled()
-    const panel = container.querySelector('[data-testid="goal-sizing-panel"]') as HTMLElement | null
-    expect(panel).toBeTruthy()
-    const modelingOptions = container.querySelector('[data-testid="goal-sizing-modeling-options"]') as HTMLElement | null
-    const baselinePicker = container.querySelector('.goal-baseline-picker') as HTMLElement | null
-    expect(modelingOptions).toBeTruthy()
-    expect(baselinePicker).toBeTruthy()
-    if (!modelingOptions || !baselinePicker) throw new Error('Goal sizing panel did not render the modeling options and baseline table')
-    expect(modelingOptions.compareDocumentPosition(baselinePicker) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    expect(modelingOptions.textContent).toContain('Modeling Options')
-    expect(modelingOptions.textContent).toContain('Select a completed run from the table below')
-
-    expect(container.querySelector('select[aria-label="Baseline run"]')).toBeNull()
-    expect(container.textContent).toContain('Search Baseline')
-    expect(container.textContent).toContain('Baseline Run')
-    expect(goalBaselineRunNames(container)).toEqual(['Search Baseline', 'Baseline Run'])
-
-    const runSortHeader = Array.from(container.querySelectorAll('.goal-baseline-table th'))
-      .find(header => header.querySelector('button')?.textContent?.startsWith('Run')) as HTMLTableCellElement | undefined
-    expect(runSortHeader).toBeTruthy()
-    expect(runSortHeader?.getAttribute('aria-sort')).toBe('none')
-    const runSortButton = runSortHeader?.querySelector('button') as HTMLButtonElement | null
-    expect(runSortButton).toBeTruthy()
-    await act(async () => { runSortButton?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
-    expect(runSortHeader?.getAttribute('aria-sort')).toBe('ascending')
-    expect(goalBaselineRunNames(container)).toEqual(['Baseline Run', 'Search Baseline'])
-
-    // Filter the completed-run table, then expand the run to inspect script metrics.
-    const runFilter = container.querySelector('.goal-baseline-search input') as HTMLInputElement
-    expect(runFilter).toBeTruthy()
-    await act(async () => { setInputValue(runFilter, 'Baseline Run') })
-    expect(container.textContent).toContain('Baseline Run')
-    expect(container.textContent).not.toContain('Search Baseline')
-
-    const expandButton = container.querySelector('button[aria-label="Expand Baseline Run scripts"]') as HTMLButtonElement
-    expect(expandButton).toBeTruthy()
-    await act(async () => { expandButton.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+    expect(container.textContent).toContain('Goal-Driven Scenario Setup')
+    expect(container.textContent).toContain('Throughput goal')
+    expect(container.textContent).toContain('Estimate adaptive demand')
+    expect(container.textContent).not.toContain('Scenario Mode')
+    const picker = container.querySelector('select[aria-label="Completed baseline run"]') as HTMLSelectElement
+    expect(Array.from(picker.options).map(option => option.textContent)).toEqual(expect.arrayContaining([
+      expect.stringContaining('Baseline Run'),
+      expect.stringContaining('Search Baseline'),
+    ]))
+    await act(async () => {
+      picker.value = 'run-1'
+      picker.dispatchEvent(new Event('change', { bubbles: true }))
+    })
     await flush()
     expect(apiMock.getTestArchiveReport).toHaveBeenCalledWith('run-1')
-    expect(container.textContent).toContain('Scripts in Baseline Run')
-    expect(container.textContent).toContain('Checkout')
-    expect(container.textContent).toContain('42.4')
-    expect(container.textContent).toContain('3,000 ms')
-
-    // Select the completed baseline run from the table.
-    const selectButton = container.querySelector('button[aria-label="Select Baseline Run as goal baseline"]') as HTMLButtonElement
-    expect(selectButton).toBeTruthy()
-    await act(async () => { selectButton.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
-    await flush()
-
-    // Enter the target TPS for the Checkout group; the instant estimate should appear.
-    const tpsInput = container.querySelector('input[aria-label="Target TPS for Checkout"]') as HTMLInputElement
+	await act(async () => { findButton(container, 'Enter ART manually')?.click() })
+	const artInput = container.querySelector('input[aria-label="Average response time for Group 1"]') as HTMLInputElement
+	await act(async () => { setInputValue(artInput, '3000') })
+    const tpsInput = container.querySelector('input[aria-label="Target TPS for Group 1"]') as HTMLInputElement
     expect(tpsInput).toBeTruthy()
-    expect(modelingOptions?.contains(tpsInput)).toBe(true)
     await act(async () => { setInputValue(tpsInput, '100') })
     await flush()
-    expect(container.textContent).toContain('Estimated total: 300 VUsers')
-
-    // Size the scenario against the backend.
-    await act(async () => { findButton(container, 'Size scenario')?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
-    await flush()
-    expect(apiMock.sizeScenarioFromGoal).toHaveBeenCalledWith({
-      baseline_test_id: 'run-1',
-      groups: [{ script_id: 'script-a', group: 'Checkout', target_tps: 100 }],
-    })
-    const result = container.querySelector('[data-testid="goal-sizing-result"]') as HTMLElement
-    expect(result.textContent).toContain('300 VUsers')
-    expect(result.querySelector('.goal-sizing-result-summary')?.textContent).toContain('Total VUsers')
-    expect(result.querySelector('.goal-sizing-result-summary')?.textContent).toContain('Target TPS')
-    const resultTable = result.querySelector('.goal-sizing-result-table') as HTMLTableElement | null
-    expect(resultTable).toBeTruthy()
-    expect(resultTable?.textContent).toContain('Computed VUsers')
-    expect(resultTable?.textContent).toContain('Group metrics')
-    expect(resultTable?.textContent).toContain('script-a')
-
-    // Apply the draft to the scenario form.
-    await act(async () => { findButton(container, 'Apply to scenario')?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
-    await flush()
-
-    expect(container.querySelector('[data-testid="goal-sizing-panel"]')).toBeNull()
-    expect(container.querySelector('.scenario-wizard-step.active')?.textContent).toContain('Scripts')
-    expect(container.textContent).toContain('Scripts And Groups')
-    expect(container.textContent).toContain('Checkout')
+    expect(container.textContent).toContain('300 seed VUsers')
+	expect(container.textContent).toContain('300–600 VUsers')
   })
 
   it('drains bounded test pages so older completed baselines remain selectable', async () => {
@@ -317,14 +253,12 @@ describe('TestHub build-from-goal', () => {
     await act(async () => { findButton(container, 'Build from Goal')?.click() })
     await flush()
 
-    const selectBaseline = container.querySelector('button[aria-label="Select Baseline Run as goal baseline"]') as HTMLButtonElement
-    const selectSearch = container.querySelector('button[aria-label="Select Search Baseline as goal baseline"]') as HTMLButtonElement
-    await act(async () => { selectBaseline.click() })
-    await act(async () => { selectSearch.click() })
+    const picker = container.querySelector('select[aria-label="Completed baseline run"]') as HTMLSelectElement
+    await act(async () => { picker.value = 'run-1'; picker.dispatchEvent(new Event('change', { bubbles: true })) })
+    await act(async () => { picker.value = 'run-2'; picker.dispatchEvent(new Event('change', { bubbles: true })) })
     await flush()
 
-    expect(container.querySelector('input[aria-label="Target TPS for Search"]')).toBeTruthy()
-    expect(container.querySelector('input[aria-label="Target TPS for Checkout"]')).toBeNull()
+    expect(picker.value).toBe('run-2')
 
     await act(async () => {
       firstReport.resolve({
@@ -337,7 +271,6 @@ describe('TestHub build-from-goal', () => {
       await firstReport.promise
     })
 
-    expect(container.querySelector('input[aria-label="Target TPS for Search"]')).toBeTruthy()
-    expect(container.querySelector('input[aria-label="Target TPS for Checkout"]')).toBeNull()
+    expect(picker.value).toBe('run-2')
   })
 })

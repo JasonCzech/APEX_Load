@@ -2628,10 +2628,12 @@ export interface GoalSizingGroupTarget {
   group?: string
   name?: string
   target_tps: number
+  art_basis?: 'manual' | 'baseline'
+  art_ms?: number
 }
 
 export interface GoalSizingRequest {
-  baseline_test_id: string
+  baseline_test_id?: string
   name?: string
   duration?: string
   start_delay?: string
@@ -2646,7 +2648,7 @@ export interface GoalSizingGroupResult {
   baseline_art_ms: number
   target_tps: number
   computed_vusers: number
-  basis: 'group' | 'overview' | string
+  basis: 'manual' | 'baseline' | string
 }
 
 export interface GoalSizingScenarioDraftGroup {

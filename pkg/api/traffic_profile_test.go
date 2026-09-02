@@ -619,6 +619,235 @@ func TestAnalyzeTrafficProfileSeparatesWorkloadAndARTColumns(t *testing.T) {
 	}
 }
 
+func TestAnalyzeCSVDrivenRejectsNonCSVFiles(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	part, err := writer.CreateFormFile("file", "schedule.xlsx")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := part.Write([]byte("not-an-xlsx")); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/scenarios/csv-driven/analyze", &body)
+	request.Header.Set("Content-Type", writer.FormDataContentType())
+	server.handleAnalyzeCSVDriven(recorder, request)
+	if recorder.Code != http.StatusUnsupportedMediaType || !strings.Contains(recorder.Body.String(), ".csv") {
+		t.Fatalf("CSV Driven XLSX analysis = %d %s", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestValidateCSVDrivenDeriveRequest(t *testing.T) {
+	start := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	minimum, maximum := 2, 20
+	base := trafficProfileDeriveRequest{
+		Source: TrafficProfileSource{Kind: "file", File: &TrafficProfileFileSource{Filename: "schedule.csv"}},
+		Series: []trafficprofile.Series{{Key: "checkout", Name: "Checkout", Points: []trafficprofile.Point{
+			{Timestamp: start, Value: 2}, {Timestamp: start.Add(5 * time.Second), Value: 8},
+		}}},
+		Mappings:       []trafficProfileSeriesMappingRequest{{SeriesKey: "checkout", GroupName: "Checkout"}},
+		ValueSemantics: trafficprofile.SemanticsVUsers,
+		GapPolicy:      trafficprofile.GapDrop,
+		Window:         TrafficProfileWindow{Mode: "full"},
+		ScenarioDraft: CreateScenarioRequest{
+			ScenarioMode: "vuser_driven",
+			Groups:       []CreateGroupEntry{{Name: "Checkout", VUsers: 1}},
+		},
+	}
+	if err := validateCSVDrivenDeriveRequest(base); err != nil {
+		t.Fatalf("valid VUser request: %v", err)
+	}
+
+	tests := []struct {
+		name   string
+		mutate func(*trafficProfileDeriveRequest)
+		want   string
+	}{
+		{name: "query source", mutate: func(request *trafficProfileDeriveRequest) { request.Source = TrafficProfileSource{Kind: "prometheus"} }, want: "source.kind file"},
+		{name: "non csv source", mutate: func(request *trafficProfileDeriveRequest) { request.Source.File.Filename = "schedule.xlsx" }, want: ".csv source"},
+		{name: "target duration", mutate: func(request *trafficProfileDeriveRequest) { request.TargetDuration = "1m" }, want: "derive duration"},
+		{name: "amplitude", mutate: func(request *trafficProfileDeriveRequest) {
+			request.Amplitude = TrafficProfileAmplitude{Mode: "factor", Value: 2}
+		}, want: "amplitude"},
+		{name: "fractional vusers", mutate: func(request *trafficProfileDeriveRequest) { request.Series[0].Points[1].Value = 8.5 }, want: "whole number"},
+		{name: "mismatched bounds", mutate: func(request *trafficProfileDeriveRequest) {
+			request.Series = append(request.Series, trafficprofile.Series{Key: "search", Name: "Search", Points: []trafficprofile.Point{{Timestamp: start, Value: 1}, {Timestamp: start.Add(10 * time.Second), Value: 2}}})
+			request.Mappings = append(request.Mappings, trafficProfileSeriesMappingRequest{SeriesKey: "search", GroupName: "Search"})
+			request.ScenarioDraft.Groups = append(request.ScenarioDraft.Groups, CreateGroupEntry{Name: "Search", VUsers: 1})
+		}, want: "same start, end"},
+		{name: "unmatched group", mutate: func(request *trafficProfileDeriveRequest) {
+			request.Mappings[0].GroupName = "Missing"
+		}, want: "was not found"},
+		{name: "duplicate series mapping", mutate: func(request *trafficProfileDeriveRequest) {
+			request.Mappings = append(request.Mappings, trafficProfileSeriesMappingRequest{SeriesKey: "checkout", GroupName: "Search"})
+			request.ScenarioDraft.Groups = append(request.ScenarioDraft.Groups, CreateGroupEntry{Name: "Search", VUsers: 1})
+		}, want: "mapped more than once"},
+		{name: "TPS without ART", mutate: func(request *trafficProfileDeriveRequest) {
+			request.ValueSemantics = trafficprofile.SemanticsTPS
+			request.ScenarioDraft.ScenarioMode = "goal_oriented"
+			request.ScenarioDraft.GoalConfig = &GoalConfig{MinVUsers: &minimum, MaxVUsers: &maximum}
+		}, want: "requires ART"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			request := base
+			request.Source.File = &TrafficProfileFileSource{Filename: base.Source.File.Filename}
+			request.Series = append([]trafficprofile.Series(nil), base.Series...)
+			request.Series[0].Points = append([]trafficprofile.Point(nil), base.Series[0].Points...)
+			request.Mappings = append([]trafficProfileSeriesMappingRequest(nil), base.Mappings...)
+			request.ScenarioDraft.Groups = append([]CreateGroupEntry(nil), base.ScenarioDraft.Groups...)
+			test.mutate(&request)
+			if err := validateCSVDrivenDeriveRequest(request); err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("error = %v, want %q", err, test.want)
+			}
+		})
+	}
+}
+
+func TestCSVDrivenDerivePreservesExactPointsAndInfersFinalBucket(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	start := time.Date(2026, 9, 2, 12, 0, 0, 0, time.UTC)
+	request := trafficProfileDeriveRequest{
+		Source: TrafficProfileSource{Kind: "file", File: &TrafficProfileFileSource{Filename: "schedule.csv", TimestampColumn: "elapsed", TimestampMode: "relative", RelativeStartTime: "00:00", ValueColumns: []string{"checkout"}, Timezone: "UTC"}},
+		Series: []trafficprofile.Series{{Key: "checkout", Name: "checkout", Points: []trafficprofile.Point{
+			{Timestamp: start, Value: 10},
+			{Timestamp: start.Add(5 * time.Second), Value: 20},
+			{Timestamp: start.Add(10 * time.Second), Value: 7},
+		}}},
+		Mappings:       []trafficProfileSeriesMappingRequest{{SeriesKey: "checkout", GroupName: "Checkout"}},
+		ValueSemantics: trafficprofile.SemanticsVUsers,
+		GapPolicy:      trafficprofile.GapDrop,
+		Window:         TrafficProfileWindow{Mode: "full"},
+		ScenarioDraft: CreateScenarioRequest{
+			Name: "Exact CSV", Duration: "1m", ScenarioMode: "vuser_driven",
+			Groups: []CreateGroupEntry{{Name: "Checkout", VUsers: 1}},
+		},
+	}
+	body, err := json.Marshal(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	recorder := httptest.NewRecorder()
+	server.handleDeriveCSVDriven(recorder, httptest.NewRequest(http.MethodPost, "/api/v1/scenarios/csv-driven/derive", bytes.NewReader(body)))
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("derive = %d %s", recorder.Code, recorder.Body.String())
+	}
+	var response trafficProfileDeriveResponse
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.TrafficProfile.TargetDuration != "15s" || response.TrafficProfile.SourceDuration != "15s" {
+		t.Fatalf("inferred duration = %s / %s", response.TrafficProfile.TargetDuration, response.TrafficProfile.SourceDuration)
+	}
+	if response.ScenarioDraft.WorkloadShapeID == nil || *response.ScenarioDraft.WorkloadShapeID != csvDrivenShapeID || response.ScenarioDraft.ScenarioMode != "vuser_driven" {
+		t.Fatalf("scenario draft = %#v", response.ScenarioDraft)
+	}
+	points := response.TrafficProfile.Mappings[0].Points
+	if len(points) != 3 || points[0].Target != 10 || points[1].Target != 20 || points[2].Target != 7 || points[1].OffsetMS != 5_000 || points[2].OffsetMS != 10_000 {
+		t.Fatalf("exact points = %#v", points)
+	}
+}
+
+func TestValidateCSVDrivenSheetRowsRejectsMissingAuthoredValues(t *testing.T) {
+	sheet, err := trafficprofile.ParseCSV([]byte("elapsed,group,target\n0,checkout,10\n5,checkout,\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = validateCSVDrivenSheetRows(sheet, "elapsed", "group", []string{"target"}, nil)
+	if err == nil || !strings.Contains(err.Error(), "row 3 column \"target\"") {
+		t.Fatalf("missing value error = %v", err)
+	}
+}
+
+func TestValidateCSVDrivenSheetRowsRejectsAmbiguousColumnRoles(t *testing.T) {
+	sheet, err := trafficprofile.ParseCSV([]byte("elapsed,group,target\n0,checkout,10\n5,checkout,20\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range []struct {
+		name         string
+		seriesColumn string
+		values       []string
+		art          []string
+	}{
+		{name: "time as target", values: []string{"elapsed"}},
+		{name: "series as target", seriesColumn: "group", values: []string{"group"}},
+		{name: "target as ART", values: []string{"target"}, art: []string{"target"}},
+		{name: "duplicate target", values: []string{"target", "target"}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			err := validateCSVDrivenSheetRows(sheet, "elapsed", test.seriesColumn, test.values, test.art)
+			if err == nil || !strings.Contains(err.Error(), "cannot be used as both") {
+				t.Fatalf("ambiguous role error = %v", err)
+			}
+		})
+	}
+}
+
+func TestValidateCSVDrivenPersistedProfileContract(t *testing.T) {
+	profile := testTrafficProfile("vusers")
+	profile.GapPolicy = string(trafficprofile.GapDrop)
+	profile.Mappings[0].SourceStart = "2026-09-02T12:00:00Z"
+	profile.Mappings[0].SourceEnd = "2026-09-02T12:00:10Z"
+	profile.Mappings[0].SourceDuration = "10s"
+	groups := []CreateGroupEntry{{Name: "checkout", VUsers: 5}}
+	if err := validateTrafficProfileForWorkloadShape(csvDrivenShapeID, profile, groups); err != nil {
+		t.Fatalf("valid persisted CSV profile: %v", err)
+	}
+
+	tests := []struct {
+		name   string
+		mutate func(*TrafficProfile)
+		want   string
+	}{
+		{name: "xlsx source", mutate: func(profile *TrafficProfile) { profile.Source.File.Filename = "traffic.xlsx" }, want: "CSV file"},
+		{name: "stretched duration", mutate: func(profile *TrafficProfile) { profile.TargetDuration = "20s" }, want: "must equal"},
+		{name: "window transform", mutate: func(profile *TrafficProfile) { profile.Window = TrafficProfileWindow{Mode: "peak", Duration: "5s"} }, want: "window selection"},
+		{name: "amplitude transform", mutate: func(profile *TrafficProfile) { profile.Amplitude = TrafficProfileAmplitude{Mode: "factor", Value: 2} }, want: "amplitude"},
+		{name: "fractional VUsers", mutate: func(profile *TrafficProfile) { profile.Mappings[0].Points[1].Target = 4.5 }, want: "whole number"},
+		{name: "duplicate series", mutate: func(profile *TrafficProfile) {
+			profile.Mappings = append(profile.Mappings, profile.Mappings[0])
+			profile.Mappings[1].GroupName = "search"
+		}, want: "mapped more than once"},
+		{name: "ART in VUser mode", mutate: func(profile *TrafficProfile) {
+			profile.Mappings[0].ART = &TrafficProfileART{Basis: "operator_peak", PeakARTMS: 100}
+		}, want: "cannot contain ART"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			candidate := cloneTrafficProfile(profile)
+			test.mutate(candidate)
+			candidateGroups := groups
+			if test.name == "duplicate series" {
+				candidateGroups = append(candidateGroups, CreateGroupEntry{Name: "search", VUsers: 5})
+			}
+			if err := validateTrafficProfileForWorkloadShape(csvDrivenShapeID, candidate, candidateGroups); err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("persisted profile error = %v, want %q", err, test.want)
+			}
+		})
+	}
+}
+
+func TestStoreScenarioEnforcesCSVDrivenPersistedProfileContract(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	script := server.runner.StoreScript(&dsl.Script{ID: "csv-contract-script", Name: "CSV Contract", Version: "1.0.0", Protocol: "http", Actions: []dsl.Action{{Name: "Open", Type: "request", Method: "GET", Target: "/"}}})
+	profile := testTrafficProfile("vusers")
+	profile.Source.File.Filename = "traffic.xlsx"
+	shape := csvDrivenShapeID
+	_, err := server.runner.StoreScenario(CreateScenarioRequest{
+		Name: "Invalid CSV shape", WorkloadShapeID: &shape, Duration: "10s", ScenarioMode: "vuser_driven", TrafficProfile: profile,
+		Groups: []CreateGroupEntry{{Name: "checkout", ScriptID: script.ID, VUsers: 5}},
+	})
+	if err == nil || !strings.Contains(err.Error(), "CSV file") {
+		t.Fatalf("store scenario error = %v", err)
+	}
+}
+
 // Derivation authorizes on the declared project_id but compiles a
 // caller-supplied draft, so the draft must be pinned to that project or the
 // endpoint becomes a cross-project read of another tenant's scripts.

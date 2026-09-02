@@ -1813,9 +1813,26 @@ type ClosedVUserConfig struct {
 	Groups   map[string]ClosedVUserDefinition `json:"groups,omitempty"`
 }
 
+type GoalDrivenARTConfig struct {
+	Basis          string  `json:"basis"`
+	ARTMs          float64 `json:"art_ms"`
+	BaselineTestID string  `json:"baseline_test_id,omitempty"`
+	BaselineGroup  string  `json:"baseline_group,omitempty"`
+}
+
+type GoalDrivenGroupDefinition struct {
+	TargetTPS float64              `json:"target_tps"`
+	ART       *GoalDrivenARTConfig `json:"art,omitempty"`
+}
+
+type GoalDrivenConfig struct {
+	Groups map[string]GoalDrivenGroupDefinition `json:"groups"`
+}
+
 type WorkloadShapeConfig struct {
 	SteppedRamp *SteppedRampConfig `json:"stepped_ramp,omitempty"`
 	ClosedVUser *ClosedVUserConfig `json:"closed_vuser,omitempty"`
+	GoalDriven  *GoalDrivenConfig  `json:"goal_driven,omitempty"`
 }
 
 type ActiveLoadLevel struct {

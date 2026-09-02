@@ -4,13 +4,43 @@ import DurationField from './DurationField'
 interface Props {
   goalConfig: GoalConfig
   onGoalConfigChange: <K extends keyof GoalConfig>(field: K, value: GoalConfig[K]) => void
+  advancedOnly?: boolean
 }
 
 function optionalNumber(value: string): number | undefined {
   return value === '' ? undefined : Number(value)
 }
 
-export default function CreateTestGoalSettings({ goalConfig, onGoalConfigChange }: Props) {
+export default function CreateTestGoalSettings({ goalConfig, onGoalConfigChange, advancedOnly = false }: Props) {
+  if (advancedOnly) {
+    const fields: Array<{ field: keyof GoalConfig, label: string, max?: number, step?: string }> = [
+      { field: 'max_avg_server_processing_ms', label: 'Avg Server Processing Ceiling (ms)', step: 'any' },
+      { field: 'max_avg_transfer_ms', label: 'Avg Transfer Ceiling (ms)', step: 'any' },
+      { field: 'max_error_count', label: 'Max Error Count', step: '1' },
+      { field: 'max_lcp_ms', label: 'Max LCP (ms)', step: 'any' },
+      { field: 'max_inp_ms', label: 'Max INP (ms)', step: 'any' },
+      { field: 'max_cls', label: 'Max CLS', step: 'any' },
+      { field: 'max_throttled_requests', label: 'Max Throttled Requests', step: '1' },
+      { field: 'max_end_to_end_latency_ms', label: 'Max End-to-End Latency (ms)', step: 'any' },
+      { field: 'max_partition_skew_pct', label: 'Max Partition Skew %', max: 100, step: 'any' },
+      { field: 'max_redelivery_rate_pct', label: 'Max Redelivery Rate %', max: 100, step: 'any' },
+      { field: 'max_dead_letter_rate_pct', label: 'Max Dead-Letter Rate %', max: 100, step: 'any' },
+    ]
+    return (
+      <div className="goal-settings-grid">
+        {fields.map(({ field, label, max, step }) => (
+          <label key={field}>
+            <span>{label}</span>
+            <input type="number" min={0} max={max} step={step} value={(goalConfig[field] as number | undefined) ?? ''} onChange={event => onGoalConfigChange(field, optionalNumber(event.target.value) as never)} />
+          </label>
+        ))}
+        <label className="checkbox-label goal-checkbox-label">
+          <input type="checkbox" checked={goalConfig.stop_on_max_errors ?? false} onChange={event => onGoalConfigChange('stop_on_max_errors', event.target.checked)} />
+          <span>Stop when total errors exceed max error count</span>
+        </label>
+      </div>
+    )
+  }
   return (
     <div className="goal-settings">
       <div className="goal-settings-header">

@@ -186,29 +186,33 @@ func (s *Server) handleSizeScenarioFromGoal(w http.ResponseWriter, r *http.Reque
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
-	if strings.TrimSpace(req.BaselineTestID) == "" {
-		writeError(w, http.StatusBadRequest, "baseline_test_id is required")
+	var report *RunArchiveReport
+	baselineID := strings.TrimSpace(req.BaselineTestID)
+	if baselineID == "" && goalSizingNeedsBaseline(req) {
+		writeError(w, http.StatusBadRequest, "baseline_test_id is required unless every group supplies manual ART")
 		return
 	}
-	if _, ok := s.runner.GetTest(req.BaselineTestID); !ok {
-		writeError(w, http.StatusNotFound, "baseline test not found")
-		return
-	}
-	record, ok := s.runner.GetRunArchiveContext(r.Context(), req.BaselineTestID)
-	if !ok {
-		writeError(w, http.StatusNotFound, "baseline run archive not found")
-		return
-	}
-	lease, err := acquireArchiveMaterialized(r.Context(), record)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to materialize baseline archive: "+err.Error())
-		return
-	}
-	defer lease.Release()
-	report, err := cachedRunArchiveReport(record)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to build baseline report: "+err.Error())
-		return
+	if baselineID != "" {
+		if _, ok := s.runner.GetTest(baselineID); !ok {
+			writeError(w, http.StatusNotFound, "baseline test not found")
+			return
+		}
+		record, ok := s.runner.GetRunArchiveContext(r.Context(), baselineID)
+		if !ok {
+			writeError(w, http.StatusNotFound, "baseline run archive not found")
+			return
+		}
+		lease, err := acquireArchiveMaterialized(r.Context(), record)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to materialize baseline archive: "+err.Error())
+			return
+		}
+		defer lease.Release()
+		report, err = cachedRunArchiveReport(record)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to build baseline report: "+err.Error())
+			return
+		}
 	}
 	sizing, err := buildGoalSizingReport(report, req)
 	if err != nil {
@@ -221,6 +225,16 @@ func (s *Server) handleSizeScenarioFromGoal(w http.ResponseWriter, r *http.Reque
 		sizing.LoadModelValidation = validation
 	}
 	writeJSON(w, http.StatusOK, sizing)
+}
+
+func goalSizingNeedsBaseline(req GoalSizingRequest) bool {
+	for _, group := range req.Groups {
+		basis := strings.ToLower(strings.TrimSpace(group.ARTBasis))
+		if basis != "manual" && !(basis == "" && group.ARTMs != nil) {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Server) handleDeleteScenario(w http.ResponseWriter, r *http.Request) {

@@ -1030,6 +1030,8 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.mux.Handle("GET /api/v1/scenarios/traffic-profile/sources", cors(log(auth(http.HandlerFunc(s.handleTrafficProfileSources)))))
 	s.mux.Handle("POST /api/v1/scenarios/traffic-profile/analyze", cors(log(auth(http.HandlerFunc(s.handleAnalyzeTrafficProfile)))))
 	s.mux.Handle("POST /api/v1/scenarios/traffic-profile/derive", cors(log(auth(http.HandlerFunc(s.handleDeriveTrafficProfile)))))
+	s.mux.Handle("POST /api/v1/scenarios/csv-driven/analyze", cors(log(auth(http.HandlerFunc(s.handleAnalyzeCSVDriven)))))
+	s.mux.Handle("POST /api/v1/scenarios/csv-driven/derive", cors(log(auth(http.HandlerFunc(s.handleDeriveCSVDriven)))))
 	s.mux.Handle("GET /api/v1/scenarios/{id}", cors(log(auth(http.HandlerFunc(s.handleGetScenario)))))
 	s.mux.Handle("PUT /api/v1/scenarios/{id}", cors(log(auth(http.HandlerFunc(s.handleUpdateScenario)))))
 	s.mux.Handle("DELETE /api/v1/scenarios/{id}", cors(log(auth(http.HandlerFunc(s.handleDeleteScenario)))))

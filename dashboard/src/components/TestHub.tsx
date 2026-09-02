@@ -17,8 +17,8 @@ import { readImportedJavaVMParameters } from './scriptEditorImportModel'
 import GroupPlacementEditor from './GroupPlacementEditor'
 import { overrideFromRuntimeDraft } from './runtimeSettingsModel'
 import { applyEffectiveRuntimeSettingsToGroups } from './runtimeSettingsApply'
-import { adaptScenarioShapeDefaults, buildClosedVUserPlan, buildScenarioModelPreview, buildScenarioShapeCatalog, buildShapeStages, buildSteppedRampPlan, formatModelTimeLabel, getScenarioShapePreset, isGuidedClosedVUserOwned, MAX_STEPPED_RAMP_STEPS, remapClosedRampDownHistory, ScenarioModelPreview, ScenarioSeed, ScenarioShapePreset, ScenarioSourceMode, ScenarioWizardStep, shapeStageStrategyFor, validateStageTimeline } from './scenarioWizardUtils'
-import type { ClosedVUserConfig, ClosedVUserDefinition, SteppedRampConfig, SteppedRampDefinition } from '../types/goals'
+import { adaptScenarioShapeDefaults, buildClosedVUserPlan, buildScenarioModelPreview, buildScenarioShapeCatalog, buildShapeStages, buildSteppedRampPlan, formatModelTimeLabel, getScenarioShapePreset, isGuidedClosedVUserOwned, MAX_STEPPED_RAMP_STEPS, remapClosedRampDownHistory, remapGoalDrivenIndexedState, ScenarioModelPreview, ScenarioSeed, ScenarioShapePreset, ScenarioSourceMode, ScenarioWizardStep, shapeStageStrategyFor, validateStageTimeline } from './scenarioWizardUtils'
+import type { ClosedVUserConfig, ClosedVUserDefinition, GoalDrivenARTConfig, GoalDrivenConfig, GoalDrivenGroupDefinition, SteppedRampConfig, SteppedRampDefinition } from '../types/goals'
 import { BaselineGroupOption, baselineGroupOptions, formatGoalSizingSummary, goalSizedGoalFields, goalSizedGroups, littlesLawVUsers } from './goalSizingUtils'
 import DurationField from './DurationField'
 import CreateTestGoalSettings from './CreateTestGoalSettings'
@@ -57,6 +57,7 @@ import { duplicateScenarioGroupNameIndexes, scenarioGroupNameAfterScriptSelectio
 import { boundedAllSettled } from '../utils/boundedAllSettled'
 import { ScenarioCompositionTimeline } from './ScenarioCompositionTimeline'
 import TrafficProfileSourcePanel from './TrafficProfileSourcePanel'
+import CSVDrivenSourcePanel from './CSVDrivenSourcePanel'
 import { formatTrafficProfileAxisTime } from './trafficProfilePreviewModel'
 
 interface Props {
@@ -149,6 +150,7 @@ export type ScenarioStartChoice = ScenarioSourceMode | 'goal' | ''
 // Workload shape backing the production traffic-profile workflow. Its domain
 // feature gates the workflow's entry points and its analyze/derive endpoints.
 const PRODUCTION_REPLAY_SHAPE_ID = 'production-replay'
+const CSV_DRIVEN_SHAPE_ID = 'csv-driven'
 type RunSettingsTab = 'scenario' | 'runtime' | 'infrastructure'
 
 const scenarioWizardSteps: Array<{ id: ScenarioWizardStep, label: string }> = [
@@ -293,8 +295,26 @@ function closedVUserDefinitionForGroup(config: ClosedVUserConfig | undefined, gr
     || closedVUserDefinitionFromGroup(group, scenarioDuration)
 }
 
+function goalDrivenGroupKey(index: number) {
+  return `group_${index}`
+}
+
+function reconstructedGoalTarget(groups: ScenarioFormGroup[], index: number, totalTarget = 25) {
+  const totalSeed = groups.reduce((sum, group) => sum + Math.max(0, Number(group.vusers) || 0), 0)
+  if (totalSeed <= 0) return totalTarget / Math.max(1, groups.length)
+  return totalTarget * Math.max(0, Number(groups[index]?.vusers) || 0) / totalSeed
+}
+
 function goalConfigFromForm(form: ScenarioFormState): GoalConfig {
-  const goal: GoalConfig = { ...(form.goal_config || {}) }
+  const goal: GoalConfig = {
+    ...(form.goal_config || {}),
+    early_stop: {
+      enabled: false,
+      error_rate_pct: 5,
+      breach_window: '1m',
+      ...(form.goal_config?.early_stop || {}),
+    },
+  }
   const setNumber = (field: keyof GoalConfig, value: number | undefined) => {
     if (value === undefined || value === null) {
       delete goal[field]
@@ -1110,6 +1130,8 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
   const [goalSizingResult, setGoalSizingResult] = useState<GoalSizingReport | null>(null)
   const [goalSizingLoading, setGoalSizingLoading] = useState(false)
   const [goalSizingError, setGoalSizingError] = useState('')
+  const [goalArtModes, setGoalArtModes] = useState<Record<string, 'manual' | 'baseline'>>({})
+  const [goalArtUnits, setGoalArtUnits] = useState<Record<string, 'ms' | 's'>>({})
   const [effectiveAuthAccessResources, setEffectiveAuthAccessResources] = useState<DashboardAuthEffectiveAccessResource[]>([])
   const [effectiveAccessLoaded, setEffectiveAccessLoaded] = useState(false)
   const [stageGroupIndex, setStageGroupIndex] = useState(0)
@@ -1124,6 +1146,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
   const deleteScenarioInitialFocusRef = useRef<HTMLButtonElement | null>(null)
   const editingBaselineFormRef = useRef('')
   const closedRampDownEnabledOnceRef = useRef<Set<string>>(new Set())
+  const goalGuardrailsEditedRef = useRef(false)
   const persistScenarioRef = useRef<() => Promise<StoredScenario | null>>(async () => null)
   const resetScenarioBuilderRef = useRef<() => void>(() => undefined)
   const refreshRef = useRef<() => Promise<void>>(async () => undefined)
@@ -1219,6 +1242,39 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
   const activeStageGroup = formGroups[activeGroupIndex] || formGroups[0]
 	const isSteppedRamp = selectedShapeId === 'stepped-ramp'
 	const isClosedVUser = selectedShapeId === 'closed-vuser'
+	const isGoalDriven = selectedShapeId === 'open-arrival-rate' || selectedShapeId === 'goal-based'
+	const goalDrivenStoredConfig = form.goal_config?.workload_shape_config?.goal_driven
+	const goalDrivenConfig: GoalDrivenConfig = useMemo(() => {
+		if (goalDrivenStoredConfig) return goalDrivenStoredConfig
+		return {
+			groups: Object.fromEntries(formGroups.map((_, index) => [goalDrivenGroupKey(index), {
+				target_tps: reconstructedGoalTarget(formGroups, index, form.goal_target_average_tps || 25),
+			}]))
+		}
+	}, [form.goal_target_average_tps, formGroups, goalDrivenStoredConfig])
+	const activeGoalDrivenDefinition: GoalDrivenGroupDefinition = goalDrivenConfig.groups[goalDrivenGroupKey(activeGroupIndex)] || {
+		target_tps: reconstructedGoalTarget(formGroups, activeGroupIndex, form.goal_target_average_tps || 25),
+	}
+	const goalDrivenEstimatedVUsers = formGroups.map((group, index) => {
+		const definition = goalDrivenConfig.groups[goalDrivenGroupKey(index)]
+		const artMs = Number(definition?.art?.art_ms)
+		return artMs > 0
+			? littlesLawVUsers(definition.target_tps, artMs)
+			: Math.max(1, Number(group.vusers) || 1)
+	})
+	const totalGoalDrivenEstimatedVUsers = goalDrivenEstimatedVUsers.reduce((sum, value) => sum + value, 0)
+	const goalDrivenBlockingMessage = useMemo(() => {
+		if (!isGoalDriven) return ''
+		for (let index = 0; index < formGroups.length; index += 1) {
+			const definition = goalDrivenConfig.groups[goalDrivenGroupKey(index)]
+			const label = formGroups[index].name.trim() || `Group ${index + 1}`
+			if (!definition || !Number.isFinite(definition.target_tps) || definition.target_tps <= 0) return `${label}: Target TPS must be greater than zero.`
+			if (definition.art && (!Number.isFinite(definition.art.art_ms) || definition.art.art_ms <= 0)) return `${label}: ART must be greater than zero.`
+		}
+		if (form.goal_min_vusers !== undefined && form.goal_min_vusers < 1) return 'Minimum VUsers must be at least 1.'
+		if (form.goal_max_vusers !== undefined && form.goal_max_vusers < (form.goal_min_vusers || 1)) return 'Maximum VUsers must be at least the minimum.'
+		return ''
+	}, [form.goal_max_vusers, form.goal_min_vusers, formGroups, goalDrivenConfig.groups, isGoalDriven])
 	const closedVUserStoredConfig = form.goal_config?.workload_shape_config?.closed_vuser
 	const isGuidedClosedVUser = isClosedVUser && isGuidedClosedVUserOwned(Boolean(closedVUserStoredConfig), formGroups)
 	const steppedRampConfig: SteppedRampConfig = useMemo(
@@ -1366,18 +1422,19 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
     () => buildScenarioModelPreview({
       duration: form.duration,
       scenarioMode: form.scenario_mode,
-      groups: formGroups.map(group => ({
+      groups: formGroups.map((group, index) => ({
         name: group.name || findScriptById(scripts, group.script_id)?.name || undefined,
         vusers: Number(group.vusers) || 0,
         ramp_up: group.ramp_up,
         ramp_down: group.ramp_down,
         stages: group.stages,
 				stop_after_stages: isGuidedClosedVUser,
+				target_tps: isGoalDriven ? goalDrivenConfig.groups[goalDrivenGroupKey(index)]?.target_tps : undefined,
       })),
       goalTargetTps: form.goal_target_average_tps,
       trafficProfile: form.traffic_profile,
     }),
-    [form.duration, form.goal_target_average_tps, form.scenario_mode, form.traffic_profile, formGroups, isGuidedClosedVUser, scripts],
+	[form.duration, form.goal_target_average_tps, form.scenario_mode, form.traffic_profile, formGroups, goalDrivenConfig.groups, isGoalDriven, isGuidedClosedVUser, scripts],
   )
   const filteredCloneScenarios = useMemo(() => {
     const query = scenarioCloneQuery.trim().toLowerCase()
@@ -1504,6 +1561,10 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
     () => loadModelSupportMatrix.length === 0 || loadModelSupportMatrix.some(shape => shape.id === PRODUCTION_REPLAY_SHAPE_ID),
     [loadModelSupportMatrix],
   )
+  const csvDrivenShapeEnabled = useMemo(
+    () => loadModelSupportMatrix.length === 0 || loadModelSupportMatrix.some(shape => shape.id === CSV_DRIVEN_SHAPE_ID),
+    [loadModelSupportMatrix],
+  )
 
   useEffect(() => {
     // A scenario saved before the shape was disabled keeps its profile and stays
@@ -1512,6 +1573,11 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
     setScenarioSourceMode(current => (current === 'traffic_profile' ? 'shape' : current))
     setScenarioStartChoice(current => (current === 'traffic_profile' ? 'shape' : current))
   }, [form.traffic_profile, trafficProfileShapeEnabled])
+  useEffect(() => {
+    if (csvDrivenShapeEnabled || selectedShapeId === CSV_DRIVEN_SHAPE_ID) return
+    setScenarioSourceMode(current => (current === 'csv_driven' ? 'shape' : current))
+    setScenarioStartChoice(current => (current === 'csv_driven' ? 'shape' : current))
+  }, [csvDrivenShapeEnabled, selectedShapeId])
   // Engine config defaults are static app-wide; fetch once so the runtime editor can
   // show the actual inherited value (never a blank placeholder) for unset fields.
   useEffect(() => {
@@ -1757,6 +1823,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
   // Reset every builder field to a pristine "new scenario" state. Does not touch
   // showForm/view or the persisted draft — callers decide those.
   const resetBuilderToBlank = useCallback(() => {
+    goalGuardrailsEditedRef.current = false
     setEditingId(null)
     editingBaselineFormRef.current = ''
     setForm(emptyScenarioForm())
@@ -1766,6 +1833,9 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
     setScenarioSourceMode('shape')
     setScenarioStartChoice('')
     setGoalSizingResult(null)
+    setGoalArtModes({})
+    setGoalArtUnits({})
+    setGoalBaselineId('')
     setWizardStep('start')
     setMaxVisitedWizardIndex(0)
     setStageGroupIndex(0)
@@ -1863,6 +1933,14 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
     const fallbackScriptId = scripts[0]?.id || ''
     const nextForm = scenarioFormStateFromStoredScenario(scenario, fallbackScriptId)
     const storedClosed = nextForm.goal_config?.workload_shape_config?.closed_vuser
+    const storedGoalDriven = nextForm.goal_config?.workload_shape_config?.goal_driven
+    goalGuardrailsEditedRef.current = nextForm.scenario_mode === 'goal_oriented'
+      && (nextForm.goal_min_vusers !== undefined || nextForm.goal_max_vusers !== undefined)
+    setGoalArtModes(Object.fromEntries(Object.entries(storedGoalDriven?.groups || {}).map(([key, definition]) => [key, definition.art?.basis || 'manual'])))
+    setGoalArtUnits({})
+    const storedBaselineId = Object.values(storedGoalDriven?.groups || {}).find(definition => definition.art?.basis === 'baseline')?.art?.baseline_test_id || ''
+    setGoalBaselineId(storedBaselineId)
+    if (storedBaselineId) void loadCompletedGoalBaselines()
     closedRampDownEnabledOnceRef.current = new Set(storedClosed
       ? storedClosed.scope === 'group' ? Object.keys(storedClosed.groups || {}) : ['scenario']
       : [])
@@ -1873,8 +1951,9 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
     setSelectedLoadModelTemplateId('')
     setSelectedShapeId(scenario.workload_shape_id || '')
     setSelectedCloneScenarioId(scenario.id)
-    setScenarioSourceMode(scenario.traffic_profile ? 'traffic_profile' : 'existing')
-    setScenarioStartChoice(scenario.traffic_profile ? 'traffic_profile' : 'existing')
+    const storedSourceMode: ScenarioSourceMode = scenario.workload_shape_id === CSV_DRIVEN_SHAPE_ID ? 'csv_driven' : scenario.traffic_profile ? 'traffic_profile' : 'existing'
+    setScenarioSourceMode(storedSourceMode)
+    setScenarioStartChoice(storedSourceMode)
     setScenarioCloneQuery('')
     setScriptSelectionTargetIndex(null)
     setRunSettingsTab('scenario')
@@ -1917,6 +1996,14 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
     const fallbackScriptId = scripts[0]?.id || ''
     const clonedForm = scenarioFormStateFromStoredScenario(scenario, fallbackScriptId, true)
     const storedClosed = clonedForm.goal_config?.workload_shape_config?.closed_vuser
+    const storedGoalDriven = clonedForm.goal_config?.workload_shape_config?.goal_driven
+    goalGuardrailsEditedRef.current = clonedForm.scenario_mode === 'goal_oriented'
+      && (clonedForm.goal_min_vusers !== undefined || clonedForm.goal_max_vusers !== undefined)
+    setGoalArtModes(Object.fromEntries(Object.entries(storedGoalDriven?.groups || {}).map(([key, definition]) => [key, definition.art?.basis || 'manual'])))
+    setGoalArtUnits({})
+    const storedBaselineId = Object.values(storedGoalDriven?.groups || {}).find(definition => definition.art?.basis === 'baseline')?.art?.baseline_test_id || ''
+    setGoalBaselineId(storedBaselineId)
+    if (storedBaselineId) void loadCompletedGoalBaselines()
     closedRampDownEnabledOnceRef.current = new Set(storedClosed
       ? storedClosed.scope === 'group' ? Object.keys(storedClosed.groups || {}) : ['scenario']
       : [])
@@ -1927,8 +2014,9 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
     setSelectedLoadModelTemplateId('')
     setSelectedShapeId(scenario.workload_shape_id || '')
     setSelectedCloneScenarioId(scenario.id)
-    setScenarioSourceMode(scenario.traffic_profile ? 'traffic_profile' : 'existing')
-    setScenarioStartChoice(scenario.traffic_profile ? 'traffic_profile' : 'existing')
+    const clonedSourceMode: ScenarioSourceMode = scenario.workload_shape_id === CSV_DRIVEN_SHAPE_ID ? 'csv_driven' : scenario.traffic_profile ? 'traffic_profile' : 'existing'
+    setScenarioSourceMode(clonedSourceMode)
+    setScenarioStartChoice(clonedSourceMode)
     setScriptSelectionTargetIndex(null)
     setRunSettingsTab('scenario')
     setLoadModelValidation(null)
@@ -2000,6 +2088,19 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
       setWizardStep('source')
       return
     }
+    if (shapeId === CSV_DRIVEN_SHAPE_ID) {
+      setSelectedShapeId('')
+      setSelectedCloneScenarioId('')
+      setSelectedLoadModelTemplateId('')
+      setLoadModelValidation(null)
+      setLoadModelValidationError('')
+      setScenarioSourceMode('csv_driven')
+      setScenarioStartChoice('csv_driven')
+      setScriptSelectionTargetIndex(null)
+      markWizardStepVisited('source')
+      setWizardStep('source')
+      return
+    }
     const preset = getScenarioShapePreset(shapeId)
     const shapeChanged = shapeId !== selectedShapeId
     setSelectedShapeId(shapeId)
@@ -2017,9 +2118,11 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
         goalTps: form.goal_target_average_tps,
       })
       if (shapeId === 'closed-vuser') closedRampDownEnabledOnceRef.current.clear()
+	  if (shapeId === 'open-arrival-rate' || shapeId === 'goal-based') goalGuardrailsEditedRef.current = false
       seedFormFromScenario(seed)
 			if (shapeId === 'stepped-ramp') updateSteppedRamp(undefined, 'scenario')
 			if (shapeId === 'closed-vuser') updateClosedVUser(undefined, 'scenario')
+			if (shapeId === 'open-arrival-rate' || shapeId === 'goal-based') updateGoalDriven()
     }
     setStageGroupIndex(0)
     setRunSettingsTab(preset?.recommendedRunTab ?? 'scenario')
@@ -2047,9 +2150,25 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
       goalTps: form.goal_target_average_tps,
     })
     if (template.shape_id === 'closed-vuser') closedRampDownEnabledOnceRef.current.clear()
+	if (template.shape_id === 'open-arrival-rate' || template.shape_id === 'goal-based') goalGuardrailsEditedRef.current = false
     seedFormFromScenario(seed)
 		if (template.shape_id === 'stepped-ramp') updateSteppedRamp(undefined, 'scenario')
 		if (template.shape_id === 'closed-vuser') updateClosedVUser(undefined, 'scenario')
+		if (template.shape_id === 'open-arrival-rate' || template.shape_id === 'goal-based') updateGoalDriven()
+  }
+
+  async function loadCompletedGoalBaselines() {
+	const projectId = activeProjectId
+	const scopeGeneration = goalSizingScopeGenerationRef.current
+	const requestGeneration = ++goalBaselineSelectionGenerationRef.current
+	try {
+	  const response = await loadAllTestSummaries(api.listTests, { project_id: projectId, summary: true })
+	  if (currentProjectIdRef.current !== projectId || goalSizingScopeGenerationRef.current !== scopeGeneration || goalBaselineSelectionGenerationRef.current !== requestGeneration) return
+	  setGoalBaselineTests((response.tests || []).filter(test => test.status === 'COMPLETE'))
+	} catch (err: unknown) {
+	  if (currentProjectIdRef.current !== projectId || goalSizingScopeGenerationRef.current !== scopeGeneration || goalBaselineSelectionGenerationRef.current !== requestGeneration) return
+	  setGoalSizingError(getErrorMessage(err, 'Unable to load completed runs'))
+	}
   }
 
   const openGoalSizing = async () => {
@@ -2057,7 +2176,9 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
       setError('Current session can view scenarios but cannot create or edit them.')
       return
     }
-    setGoalSizingOpen(true)
+	selectShapeOption('open-arrival-rate')
+	setGoalSizingOpen(false)
+	setGoalArtModes({ group_0: 'baseline' })
     setScenarioStartChoice('goal')
     setGoalBaselineId('')
     setGoalBaselineQuery('')
@@ -2069,29 +2190,11 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
     setGoalTargetTps({})
     setGoalSizingResult(null)
     setGoalSizingError('')
-    setWizardStep('start')
+	setWizardStep('run')
     setShowForm(true)
     setEditingId(null)
     editingBaselineFormRef.current = ''
-    const projectId = activeProjectId
-    const scopeGeneration = goalSizingScopeGenerationRef.current
-    const requestGeneration = ++goalBaselineSelectionGenerationRef.current
-    try {
-      const response = await loadAllTestSummaries(api.listTests, { project_id: projectId, summary: true })
-      if (
-        currentProjectIdRef.current !== projectId
-        || goalSizingScopeGenerationRef.current !== scopeGeneration
-        || goalBaselineSelectionGenerationRef.current !== requestGeneration
-      ) return
-      setGoalBaselineTests((response.tests || []).filter(test => test.status === 'COMPLETE'))
-    } catch (err: unknown) {
-      if (
-        currentProjectIdRef.current !== projectId
-        || goalSizingScopeGenerationRef.current !== scopeGeneration
-        || goalBaselineSelectionGenerationRef.current !== requestGeneration
-      ) return
-      setGoalSizingError(getErrorMessage(err, 'Unable to load completed runs'))
-    }
+	await loadCompletedGoalBaselines()
   }
 
   const loadGoalBaselineReport = async (testId: string): Promise<RunArchiveReport> => {
@@ -2153,6 +2256,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
       }
       setGoalBaselineGroups(options)
       setGoalTargetTps(Object.fromEntries(options.map(option => [option.group, ''])))
+	  applyGoalBaselineOptions(testId, options)
     } catch (err: unknown) {
       if (!isCurrentSelection()) return
       setGoalSizingError(getErrorMessage(err, 'Unable to load the baseline run report'))
@@ -2409,6 +2513,100 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
 		setLoadModelValidation(null)
 	}
 
+	function updateGoalDriven(definitionPatch?: Partial<GoalDrivenGroupDefinition>, groupIndex = activeGroupIndex) {
+		setForm(previous => {
+			const current = previous.goal_config?.workload_shape_config?.goal_driven
+			const definitions: Record<string, GoalDrivenGroupDefinition> = {}
+			previous.groups.forEach((group, index) => {
+				const existing = current?.groups?.[goalDrivenGroupKey(index)]
+				definitions[goalDrivenGroupKey(index)] = existing
+					? { ...existing, art: existing.art ? { ...existing.art } : undefined }
+					: { target_tps: reconstructedGoalTarget(previous.groups, index, previous.goal_target_average_tps || 25) }
+			})
+			if (definitionPatch && definitions[goalDrivenGroupKey(groupIndex)]) {
+				const hasARTPatch = Object.prototype.hasOwnProperty.call(definitionPatch, 'art')
+				definitions[goalDrivenGroupKey(groupIndex)] = {
+					...definitions[goalDrivenGroupKey(groupIndex)],
+					...definitionPatch,
+					art: hasARTPatch ? definitionPatch.art : definitions[goalDrivenGroupKey(groupIndex)].art,
+				}
+			}
+			const totalTarget = Object.values(definitions).reduce((sum, definition) => sum + (Number(definition.target_tps) || 0), 0)
+			const groups = previous.groups.map((group, index) => {
+				const definition = definitions[goalDrivenGroupKey(index)]
+				const artMs = Number(definition.art?.art_ms)
+				const vusers = artMs > 0
+					? littlesLawVUsers(definition.target_tps, artMs)
+					: group.vusers
+				return { ...group, vusers, stages: [] }
+			})
+			const totalEstimate = groups.reduce((sum, group) => sum + Math.max(1, Number(group.vusers) || 1), 0)
+			const otherShapeConfig = { ...(previous.goal_config?.workload_shape_config || {}) }
+			delete otherShapeConfig.stepped_ramp
+			delete otherShapeConfig.closed_vuser
+			const goalConfig: GoalConfig = {
+				...(previous.goal_config || {}),
+				target_average_tps: totalTarget,
+				min_vusers: goalGuardrailsEditedRef.current ? previous.goal_min_vusers : totalEstimate,
+				max_vusers: goalGuardrailsEditedRef.current ? previous.goal_max_vusers : Math.max(2, totalEstimate * 2),
+				workload_shape_config: { ...otherShapeConfig, goal_driven: { groups: definitions } },
+			}
+			return {
+				...previous,
+				duration: previous.duration || '60m',
+				scenario_mode: 'goal_oriented',
+				groups,
+				goal_target_average_tps: totalTarget,
+				goal_min_vusers: goalConfig.min_vusers,
+				goal_max_vusers: goalConfig.max_vusers,
+				goal_config: goalConfig,
+			}
+		})
+		setLoadModelValidation(null)
+		setLoadModelValidationError('')
+	}
+
+	function updateGoalDrivenGuardrail<K extends keyof GoalConfig>(field: K, value: GoalConfig[K]) {
+		if (field === 'min_vusers' || field === 'max_vusers') goalGuardrailsEditedRef.current = true
+		setForm(previous => scenarioFormWithGoalField(previous, field, value))
+	}
+
+	function applyGoalBaselineOptions(testId: string, options: BaselineGroupOption[]) {
+		const normalizeName = (value: string) => value.trim().toLowerCase().replace(/[^a-z0-9]+/g, ' ')
+		const modes = Object.fromEntries(form.groups.map((group, index) => {
+			const matched = options.some(option => (option.script_id && option.script_id === group.script_id) || normalizeName(option.group) === normalizeName(group.name))
+			return [goalDrivenGroupKey(index), matched ? 'baseline' : 'manual']
+		})) as Record<string, 'manual' | 'baseline'>
+		setGoalArtModes(modes)
+		setForm(previous => {
+			const current = previous.goal_config?.workload_shape_config?.goal_driven
+			const definitions: Record<string, GoalDrivenGroupDefinition> = {}
+			const groups = previous.groups.map((group, index) => {
+				const key = goalDrivenGroupKey(index)
+				const existing = current?.groups?.[key] || { target_tps: reconstructedGoalTarget(previous.groups, index, previous.goal_target_average_tps || 25) }
+				const match = options.find(option => option.script_id && option.script_id === group.script_id)
+					|| options.find(option => normalizeName(option.group) === normalizeName(group.name))
+				if (!match) {
+					definitions[key] = { ...existing, art: existing.art ? { ...existing.art } : undefined }
+					return group
+				}
+				const art: GoalDrivenARTConfig = { basis: 'baseline', art_ms: match.baseline_art_ms, baseline_test_id: testId, baseline_group: match.group }
+				definitions[key] = { ...existing, art }
+				return { ...group, vusers: littlesLawVUsers(existing.target_tps, art.art_ms), stages: [] }
+			})
+			const totalTarget = Object.values(definitions).reduce((sum, definition) => sum + definition.target_tps, 0)
+			const totalEstimate = groups.reduce((sum, group) => sum + Math.max(1, group.vusers), 0)
+			const goalConfig: GoalConfig = {
+				...(previous.goal_config || {}),
+				target_average_tps: totalTarget,
+				min_vusers: goalGuardrailsEditedRef.current ? previous.goal_min_vusers : totalEstimate,
+				max_vusers: goalGuardrailsEditedRef.current ? previous.goal_max_vusers : Math.max(2, totalEstimate * 2),
+				workload_shape_config: { ...(previous.goal_config?.workload_shape_config || {}), goal_driven: { groups: definitions } },
+			}
+			return { ...previous, groups, scenario_mode: 'goal_oriented', goal_target_average_tps: totalTarget, goal_min_vusers: goalConfig.min_vusers, goal_max_vusers: goalConfig.max_vusers, goal_config: goalConfig }
+		})
+	}
+
   const updateGroupRuntime = (index: number, next: ScenarioRuntimeSettingsDraft | undefined) => {
     setForm(prev => ({
       ...prev,
@@ -2471,6 +2669,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
     })
 		if (isSteppedRamp) updateSteppedRamp()
 		if (isGuidedClosedVUser) updateClosedVUser()
+		if (isGoalDriven) updateGoalDriven(undefined, form.groups.length)
     setStageGroupIndex(form.groups.length)
     setLoadModelValidation(null)
   }
@@ -2497,6 +2696,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
     })
 		if (isSteppedRamp) updateSteppedRamp()
 		if (isGuidedClosedVUser) updateClosedVUser()
+		if (isGoalDriven) updateGoalDriven(undefined, form.groups.length)
     setStageGroupIndex(form.groups.length)
     setLoadModelValidation(null)
   }
@@ -2537,7 +2737,9 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
   }
 
   const removeScenarioGroup = (index: number) => {
-	closedRampDownEnabledOnceRef.current = remapClosedRampDownHistory(closedRampDownEnabledOnceRef.current, index)
+		closedRampDownEnabledOnceRef.current = remapClosedRampDownHistory(closedRampDownEnabledOnceRef.current, index)
+    setGoalArtModes(previous => remapGoalDrivenIndexedState(previous, index))
+    setGoalArtUnits(previous => remapGoalDrivenIndexedState(previous, index))
     setForm(prev => {
       const nextGroups = prev.groups
         .filter((_, groupIndex) => groupIndex !== index)
@@ -2550,6 +2752,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
 			const ensuredGroups = ensureScenarioGroups(nextGroups)
 			const stepped = prev.goal_config?.workload_shape_config?.stepped_ramp
 			const closed = prev.goal_config?.workload_shape_config?.closed_vuser
+			const goalDriven = prev.goal_config?.workload_shape_config?.goal_driven
 			let steppedRamp = stepped
 			let closedVUser = closed
 			if (stepped?.scope === 'group') {
@@ -2586,7 +2789,17 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
 					return plan.error ? max : Math.max(max, plan.totalSeconds)
 				}, 0)
 				: 0
-			if (steppedRamp === stepped && closedVUser === closed) return { ...prev, groups: ensuredGroups }
+			let nextGoalDriven = goalDriven
+			if (goalDriven) {
+				const definitions: Record<string, GoalDrivenGroupDefinition> = {}
+				ensuredGroups.forEach((_, nextIndex) => {
+					const previousIndex = nextIndex >= index ? nextIndex + 1 : nextIndex
+					const existing = goalDriven.groups[goalDrivenGroupKey(previousIndex)]
+					if (existing) definitions[goalDrivenGroupKey(nextIndex)] = { ...existing, art: existing.art ? { ...existing.art } : undefined }
+				})
+				nextGoalDriven = { groups: definitions }
+			}
+			if (steppedRamp === stepped && closedVUser === closed && nextGoalDriven === goalDriven) return { ...prev, groups: ensuredGroups }
 			return {
 				...prev,
 				duration: closedDuration > 0 ? formatTimeCompact(closedDuration) : prev.duration,
@@ -2597,10 +2810,12 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
 						...(prev.goal_config?.workload_shape_config || {}),
 						stepped_ramp: steppedRamp,
 						closed_vuser: closedVUser,
+						goal_driven: nextGoalDriven,
 					},
 				},
 			}
     })
+	if (isGoalDriven) updateGoalDriven(undefined, Math.max(0, index - 1))
     setScriptSelectionTargetIndex(current => {
       if (current === null) return null
       if (current === index) return null
@@ -2727,6 +2942,10 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
 			setWizardStep('run')
 			return
 		}
+		if (goalDrivenBlockingMessage) {
+			setLoadModelValidationError(goalDrivenBlockingMessage)
+			return
+		}
     if (observerEnvelopeError) {
       setLoadModelValidationError(observerEnvelopeError)
       return
@@ -2790,6 +3009,10 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
 			setWizardStep('run')
 			return null
 		}
+		if (goalDrivenBlockingMessage) {
+			setError(goalDrivenBlockingMessage)
+			return null
+		}
     if (observerEnvelopeError) {
       setError(observerEnvelopeError)
       return null
@@ -2826,12 +3049,16 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
 
   const resetScenarioBuilder = () => {
     clearScenarioBuilderDraft()
+    goalGuardrailsEditedRef.current = false
     setEditingId(null)
     editingBaselineFormRef.current = ''
     setForm(emptyScenarioForm())
     setStageGroupIndex(0)
     setSelectedLoadModelTemplateId('')
     setSelectedShapeId('')
+    setGoalArtModes({})
+    setGoalArtUnits({})
+    setGoalBaselineId('')
     setScenarioSourceMode('shape')
     setScenarioStartChoice('')
     setScenarioCloneQuery('')
@@ -3018,11 +3245,11 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
   const dataPoolLabel = form.data_pool_id
     ? dataPools.find(pool => pool.id === form.data_pool_id)?.name || 'Data pool configured'
     : 'No data pool'
-  const shapeLabel = selectedTemplate?.name || selectedShape?.support.name || (scenarioSourceMode === 'existing' ? 'Modeled from scenario' : 'Manual shape')
+  const shapeLabel = selectedTemplate?.name || selectedShape?.support.name || (scenarioSourceMode === 'existing' ? 'Modeled from scenario' : scenarioSourceMode === 'csv_driven' ? 'CSV Driven' : 'Manual shape')
   const validationLabel = loadModelValidation ? formatLoadModelDimension(loadModelValidation.status) : 'Not validated'
   const requiredDraftReady = Boolean(form.name.trim() && isValidDurationInput(form.duration) && formGroups.every(group => group.script_id) && !scenarioGroupNameError)
   const sourceStepComplete = scenarioStartChoice === 'goal'
-    ? Boolean(goalSizingResult)
+    ? isGoalDriven
     : scenarioSourceMode === 'existing'
       ? Boolean(selectedCloneScenarioId || editingId)
       : Boolean(selectedShapeId || selectedLoadModelTemplateId)
@@ -3030,7 +3257,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
     start: Boolean(scenarioStartChoice),
     source: sourceStepComplete,
     scripts: Boolean(form.name.trim() && formGroups.length > 0 && formGroups.every(group => group.script_id) && !scenarioGroupNameError),
-    run: Boolean(isValidDurationInput(form.duration) && !blockingStageTimelineMessage && !steppedRampBlockingMessage && !closedVUserBlockingMessage),
+    run: Boolean(isValidDurationInput(form.duration) && !blockingStageTimelineMessage && !steppedRampBlockingMessage && !closedVUserBlockingMessage && !goalDrivenBlockingMessage),
     data: true,
     review: Boolean(requiredDraftReady && !blockingStageTimelineMessage),
   }
@@ -3433,7 +3660,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
   }
 
   const renderPreRunAssurance = () => (
-    <div className="scenario-subpanel">
+    <div className="scenario-subpanel" data-testid="pre-run-assurance">
       <div className="scenario-assignment-header">
         <div>
           <h4>Pre-Run Assurance</h4>
@@ -3457,6 +3684,22 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
           <input type="checkbox" checked={form.snapshot_on_error ?? false} onChange={event => setForm({ ...form, snapshot_on_error: event.target.checked })} />
           <div><strong>Snapshot on error</strong><span>Preserve request/response context for failed actions.</span></div>
         </label>
+      </div>
+    </div>
+  )
+
+  const renderProtectRun = () => (
+    <div className="scenario-subpanel" data-testid="protect-the-run">
+      <div className="scenario-assignment-header">
+        <div>
+          <h4>Protect the Run</h4>
+          <p>Optionally stop when the error rate remains at or above a threshold for a sustained active-runtime window.</p>
+        </div>
+      </div>
+      <div className="stepped-ramp-protection">
+        <label className="stepped-ramp-toggle"><input type="checkbox" checked={Boolean(form.goal_config?.early_stop?.enabled)} onChange={event => updateGuidedEarlyStop({ enabled: event.target.checked })} /><span><strong>Stop early on excessive errors</strong><small>The active load level and partial interval evidence are retained in alerts and results.</small></span></label>
+        <label className="scenario-field"><span>Error rate threshold</span><div className="stepped-ramp-unit-input"><input aria-label="Protect the Run error rate threshold" className="settings-input" type="number" min={0} max={100} step="0.1" disabled={!form.goal_config?.early_stop?.enabled} value={form.goal_config?.early_stop?.error_rate_pct ?? 5} onChange={event => updateGuidedEarlyStop({ error_rate_pct: Number(event.target.value) })} /><span>%</span></div></label>
+        <DurationField className="scenario-field" label="Protect the Run sustained for" compact disabled={!form.goal_config?.early_stop?.enabled} value={form.goal_config?.early_stop?.breach_window || '1m'} onChange={value => updateGuidedEarlyStop({ breach_window: value })} />
       </div>
     </div>
   )
@@ -3488,6 +3731,11 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
               <strong>CSV, XLSX, Prometheus, OpenSearch</strong>
               <small>Preserve the production series at full resolution and replay it as adaptive TPS or direct VUser targets.</small>
             </button>}
+            {csvDrivenShapeEnabled && <button type="button" className={`scenario-source-card ${scenarioSourceMode === 'csv_driven' ? 'selected' : ''}`} onClick={() => selectScenarioSourceMode('csv_driven')}>
+              <span>CSV Driven</span>
+              <strong>Exact VUser or TPS Schedule</strong>
+              <small>Upload a wide or long CSV and replay each authored row as a precise target boundary.</small>
+            </button>}
             <button type="button" className="scenario-source-card" onClick={() => void openGoalSizing()}>
               <span>Build from Goal</span>
               <strong>Little&apos;s Law Sizing</strong>
@@ -3503,16 +3751,47 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
         <section className="scenario-wizard-panel">
           <div className="scenario-wizard-panel-header">
             <div>
-              <h4>{scenarioSourceMode === 'existing' ? 'Choose Scenario To Model' : scenarioSourceMode === 'traffic_profile' ? 'Build From Production Traffic' : 'Choose Workload Shape'}</h4>
-              <p>{scenarioSourceMode === 'existing' ? 'The selected scenario becomes an editable copy; the original remains unchanged.' : scenarioSourceMode === 'traffic_profile' ? 'Analyze a file or production query, map series to groups, and preview the exact runtime targets before applying.' : 'Supported workload models and starter templates are combined into one actionable catalog.'}</p>
+              <h4>{scenarioSourceMode === 'existing' ? 'Choose Scenario To Model' : scenarioSourceMode === 'traffic_profile' ? 'Build From Production Traffic' : scenarioSourceMode === 'csv_driven' ? 'Build From An Authored CSV' : 'Choose Workload Shape'}</h4>
+              <p>{scenarioSourceMode === 'existing' ? 'The selected scenario becomes an editable copy; the original remains unchanged.' : scenarioSourceMode === 'traffic_profile' ? 'Analyze a file or production query, map series to groups, and preview the exact runtime targets before applying.' : scenarioSourceMode === 'csv_driven' ? 'Map an exact VUser or TPS schedule from a CSV without production-source transformations.' : 'Supported workload models and starter templates are combined into one actionable catalog.'}</p>
             </div>
             <div className="scenario-source-toggle">
               <button type="button" className={`mode-chip ${scenarioSourceMode === 'shape' ? 'active' : ''}`} onClick={() => selectScenarioSourceMode('shape')}>Shapes</button>
               <button type="button" className={`mode-chip ${scenarioSourceMode === 'existing' ? 'active' : ''}`} onClick={() => selectScenarioSourceMode('existing')}>Existing</button>
               {trafficProfileShapeEnabled && <button type="button" className={`mode-chip ${scenarioSourceMode === 'traffic_profile' ? 'active' : ''}`} onClick={() => selectScenarioSourceMode('traffic_profile')}>Production profile</button>}
+              {csvDrivenShapeEnabled && <button type="button" className={`mode-chip ${scenarioSourceMode === 'csv_driven' ? 'active' : ''}`} onClick={() => selectScenarioSourceMode('csv_driven')}>CSV Driven</button>}
             </div>
           </div>
-          {scenarioSourceMode === 'traffic_profile' ? (
+          {scenarioSourceMode === 'csv_driven' ? (
+            <CSVDrivenSourcePanel
+              projectId={activeProjectId}
+              groupNames={form.groups.map((group, index) => group.name.trim() || findScriptById(scripts, group.script_id)?.name || `Group ${index + 1}`)}
+              scenarioDraft={buildScenarioDraftPayload()}
+              existingProfile={selectedShapeId === CSV_DRIVEN_SHAPE_ID ? form.traffic_profile : undefined}
+              onApply={(result: TrafficProfileDeriveResponse) => {
+                const managed = new Map(result.traffic_profile.mappings.map(mapping => [mapping.group_name, mapping]))
+                const goal = result.scenario_draft.goal_config
+                setForm(previous => ({
+                  ...previous,
+                  duration: result.traffic_profile.target_duration,
+                  scenario_mode: result.traffic_profile.runtime_target === 'vusers' ? 'vuser_driven' : 'goal_oriented',
+                  traffic_profile: result.traffic_profile,
+                  goal_config: goal ? structuredClone(goal) : undefined,
+                  goal_target_average_tps: goal?.target_average_tps,
+                  goal_min_vusers: goal?.min_vusers,
+                  goal_max_vusers: goal?.max_vusers,
+                  goal_p95_latency_ms: goal?.p95_latency_ms,
+                  goal_max_error_pct: goal?.max_error_pct,
+                  groups: previous.groups.map((group, index) => {
+                    const name = group.name.trim() || findScriptById(scripts, group.script_id)?.name || `Group ${index + 1}`
+                    const mapping = managed.get(name)
+                    return mapping ? { ...group, name, stages: [], ramp_up: '', ramp_down: '', start_offset: '', vusers: result.traffic_profile.runtime_target === 'vusers' ? mapping.peak_target : group.vusers } : group
+                  }),
+                }))
+                setSelectedShapeId(CSV_DRIVEN_SHAPE_ID)
+                setLoadModelValidation(result.load_model_validation || null)
+              }}
+            />
+          ) : scenarioSourceMode === 'traffic_profile' ? (
             <TrafficProfileSourcePanel
               projectId={activeProjectId}
               groupNames={form.groups.map((group, index) => group.name.trim() || findScriptById(scripts, group.script_id)?.name || `Group ${index + 1}`)}
@@ -3595,8 +3874,8 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
                                   <>
                                     <span className="scenario-table-assignment-badge manual">{assignment.badge}</span>
                                     <span className="scenario-table-assignment-detail">{assignment.detail}</span>
-                                  </>
-                                )}
+							</>
+							)}
                               </div>
                             )}
                             {browserRuntimeSummary && (
@@ -3832,8 +4111,69 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
             role="tabpanel"
             aria-labelledby={`scenario-run-settings-${runSettingsTab}-tab`}
           >
-            {runSettingsTab === 'scenario' && (
-				isGuidedClosedVUser ? (
+            {runSettingsTab === 'scenario' && (<>
+					{isGoalDriven ? (
+					<>
+						<div className="stepped-ramp-worksheet goal-driven-worksheet">
+							<div className="stepped-ramp-heading">
+								<span>Guided worksheet</span>
+								<h3>Goal-Driven Scenario Setup</h3>
+								<p>Define requested throughput, estimate the adaptive seed from response time, and set safe operating guardrails.</p>
+							</div>
+							<section className="stepped-ramp-section" aria-labelledby="goal-throughput-title">
+								<div className="stepped-ramp-number">1</div>
+								<div className="stepped-ramp-section-body">
+									<h4 id="goal-throughput-title">Throughput goal</h4>
+									<p>Set the requested transaction rate for each load group. The scenario target is their sum.</p>
+									<div className="settings-grid scenario-core-grid">
+										<DurationField className="scenario-field" label="Duration" value={form.duration} required showPresets onChange={value => setForm(previous => ({ ...previous, duration: value, scenario_mode: 'goal_oriented' }))} />
+										<label className="scenario-field"><span>Target TPS for {activeGroupLabel}</span><div className="stepped-ramp-unit-input"><input aria-label={`Target TPS for ${activeGroupLabel}`} className="settings-input" type="number" min={0.01} step="any" value={activeGoalDrivenDefinition.target_tps} onChange={event => updateGoalDriven({ target_tps: Number(event.target.value) })} /><span>TPS</span></div></label>
+									</div>
+									{formGroups.length > 1 && <div className="scenario-group-tabs" role="tablist" aria-label="Goal-driven groups">{formGroups.map((group, index) => <button key={`goal-group-${index}`} type="button" className={`scenario-group-tab ${activeGroupIndex === index ? 'active' : ''}`} role="tab" aria-selected={activeGroupIndex === index} onClick={() => setStageGroupIndex(index)}><strong>{group.name.trim() || `Group ${index + 1}`}</strong><span>{goalDrivenConfig.groups[goalDrivenGroupKey(index)]?.target_tps || 0} TPS</span></button>)}</div>}
+									<div className="stepped-ramp-equation" aria-live="polite"><strong>{form.goal_target_average_tps || 0} aggregate TPS</strong><span>Constant requested throughput for {formatModelTimeLabel(parseDurationToSeconds(form.duration))}</span></div>
+								</div>
+							</section>
+							<section className="stepped-ramp-section" aria-labelledby="goal-demand-title">
+								<div className="stepped-ramp-number">2</div>
+								<div className="stepped-ramp-section-body">
+									<h4 id="goal-demand-title">Estimate adaptive demand</h4>
+									<p>Use expected average response time (ART) to calculate a planning seed. Runtime VUsers still adapt within guardrails.</p>
+									<div className="stepped-ramp-choice" role="radiogroup" aria-label={`ART source for ${activeGroupLabel}`}>
+										<button type="button" role="radio" aria-checked={(goalArtModes[goalDrivenGroupKey(activeGroupIndex)] || activeGoalDrivenDefinition.art?.basis || 'manual') === 'manual'} className={(goalArtModes[goalDrivenGroupKey(activeGroupIndex)] || activeGoalDrivenDefinition.art?.basis || 'manual') === 'manual' ? 'active' : ''} onClick={() => { const key = goalDrivenGroupKey(activeGroupIndex); setGoalArtModes(previous => ({ ...previous, [key]: 'manual' })); updateGoalDriven({ art: { basis: 'manual', art_ms: activeGoalDrivenDefinition.art?.art_ms || 400 } }) }}>Enter ART manually</button>
+										<button type="button" role="radio" aria-checked={(goalArtModes[goalDrivenGroupKey(activeGroupIndex)] || activeGoalDrivenDefinition.art?.basis) === 'baseline'} className={(goalArtModes[goalDrivenGroupKey(activeGroupIndex)] || activeGoalDrivenDefinition.art?.basis) === 'baseline' ? 'active' : ''} onClick={() => { setGoalArtModes(previous => ({ ...previous, [goalDrivenGroupKey(activeGroupIndex)]: 'baseline' })); if (activeGoalDrivenDefinition.art?.basis !== 'baseline') updateGoalDriven({ art: undefined }); if (goalBaselineTests.length === 0) void loadCompletedGoalBaselines() }}>Import completed baseline</button>
+									</div>
+									{(goalArtModes[goalDrivenGroupKey(activeGroupIndex)] || activeGoalDrivenDefinition.art?.basis || 'manual') === 'manual' ? (
+										<label className="scenario-field stepped-ramp-primary-input"><span>Average response time</span><div className="stepped-ramp-unit-input"><input aria-label={`Average response time for ${activeGroupLabel}`} className="settings-input" type="number" min={0.001} step="any" value={activeGoalDrivenDefinition.art ? ((goalArtUnits[goalDrivenGroupKey(activeGroupIndex)] || 'ms') === 's' ? activeGoalDrivenDefinition.art.art_ms / 1000 : activeGoalDrivenDefinition.art.art_ms) : ''} onChange={event => { const raw = Number(event.target.value); const artMs = (goalArtUnits[goalDrivenGroupKey(activeGroupIndex)] || 'ms') === 's' ? raw * 1000 : raw; updateGoalDriven({ art: { basis: 'manual', art_ms: artMs } }) }} /><select aria-label="ART unit" value={goalArtUnits[goalDrivenGroupKey(activeGroupIndex)] || 'ms'} onChange={event => setGoalArtUnits(previous => ({ ...previous, [goalDrivenGroupKey(activeGroupIndex)]: event.target.value as 'ms' | 's' }))}><option value="ms">ms</option><option value="s">seconds</option></select></div></label>
+									) : (
+										<div className="goal-driven-baseline-picker">
+											<label className="scenario-field"><span>Completed baseline run</span><select aria-label="Completed baseline run" className="settings-input" value={goalBaselineId} onChange={event => void selectGoalBaseline(event.target.value)}><option value="">Choose a completed run</option>{goalBaselineTests.map(test => <option key={test.id} value={test.id}>{test.name} · {test.id}</option>)}</select><small>{goalBaselineTests.length} completed run{goalBaselineTests.length === 1 ? '' : 's'} available</small></label>
+											{goalBaselineLoadingId && <small>Loading baseline response times…</small>}
+											{goalBaselineId && activeGoalDrivenDefinition.art?.basis !== 'baseline' && <div className="settings-error-inline">No baseline group matched this script ID or normalized group name. Enter ART manually for {activeGroupLabel}.</div>}
+										</div>
+									)}
+									<div className="stepped-ramp-equation" aria-live="polite"><strong>{activeGoalDrivenDefinition.art ? `${activeGoalDrivenDefinition.target_tps} TPS × ${(activeGoalDrivenDefinition.art.art_ms / 1000).toLocaleString()}s = ${goalDrivenEstimatedVUsers[activeGroupIndex]} seed VUsers` : `${goalDrivenEstimatedVUsers[activeGroupIndex]} current seed estimate`}</strong><span>{totalGoalDrivenEstimatedVUsers} total estimated seed VUsers · planning metadata, not a promised runtime curve</span></div>
+								</div>
+							</section>
+							<section className="stepped-ramp-section" aria-labelledby="goal-guardrails-title">
+								<div className="stepped-ramp-number">3</div>
+								<div className="stepped-ramp-section-body">
+									<h4 id="goal-guardrails-title">Guardrails &amp; protection</h4>
+									<p>Bound adaptive demand and optionally stop after a sustained SLA breach.</p>
+									<div className="settings-grid scenario-core-grid">
+										<label className="scenario-field"><span>Min VUsers</span><input className="settings-input" type="number" min={1} value={form.goal_min_vusers ?? totalGoalDrivenEstimatedVUsers} onChange={event => updateGoalDrivenGuardrail('min_vusers', Number(event.target.value))} /></label>
+										<label className="scenario-field"><span>Max VUsers</span><input className="settings-input" type="number" min={1} value={form.goal_max_vusers ?? Math.max(2, totalGoalDrivenEstimatedVUsers * 2)} onChange={event => updateGoalDrivenGuardrail('max_vusers', Number(event.target.value))} /></label>
+										<label className="scenario-field"><span>P95 latency ceiling</span><div className="stepped-ramp-unit-input"><input className="settings-input" type="number" min={0} step="any" value={form.goal_p95_latency_ms ?? ''} onChange={event => updateGoalDrivenGuardrail('p95_latency_ms', event.target.value === '' ? undefined : Number(event.target.value))} /><span>ms</span></div></label>
+										<label className="scenario-field"><span>Max error rate</span><div className="stepped-ramp-unit-input"><input className="settings-input" type="number" min={0} max={100} step="any" value={form.goal_max_error_pct ?? ''} onChange={event => updateGoalDrivenGuardrail('max_error_pct', event.target.value === '' ? undefined : Number(event.target.value))} /><span>%</span></div></label>
+										<DurationField className="scenario-field" label="Breach window" value={form.goal_config?.sla_breach_window || '1m'} compact onChange={value => updateGoalDrivenGuardrail('sla_breach_window', value)} />
+									</div>
+									<label className="stepped-ramp-toggle"><input type="checkbox" checked={Boolean(form.goal_config?.stop_on_sla_breach)} onChange={event => updateGoalDrivenGuardrail('stop_on_sla_breach', event.target.checked)} /><span><strong>Stop on sustained guardrail breach</strong><small>Stop only after the configured breach window.</small></span></label>
+									<details className="goal-driven-advanced"><summary>Advanced Guardrails</summary><CreateTestGoalSettings advancedOnly goalConfig={goalConfigFromForm(form)} onGoalConfigChange={updateGoalDrivenGuardrail} /></details>
+								</div>
+							</section>
+							<button type="button" className="btn btn-primary stepped-ramp-apply" disabled={Boolean(goalDrivenBlockingMessage)} onClick={() => setWizardStep('data')}>Apply goal-driven scenario</button>
+						</div>
+						</>
+				) : isGuidedClosedVUser ? (
 					<>
 						<div className="stepped-ramp-worksheet closed-vuser-worksheet">
 							<div className="stepped-ramp-heading">
@@ -3871,21 +4211,8 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
 									{activeClosedVUserPlan.error ? <div className="settings-error-inline">{activeClosedVUserPlan.error}</div> : <div className="stepped-ramp-equation" aria-live="polite"><strong>{activeClosedVUserDefinition.peak_vusers} peak VUsers · {formatModelTimeLabel(activeClosedVUserPlan.totalSeconds)} total</strong><span>{formatModelTimeLabel(activeClosedVUserPlan.rampUpSeconds)} ramp-up · {formatModelTimeLabel(activeClosedVUserPlan.sustainSeconds)} sustained{activeClosedVUserPlan.rampDownSeconds > 0 ? ` · ${formatModelTimeLabel(activeClosedVUserPlan.rampDownSeconds)} ramp-down` : ' · immediate stop'}</span></div>}
 								</div>
 							</section>
-							<section className="stepped-ramp-section" aria-labelledby="closed-protect-title">
-								<div className="stepped-ramp-number">3</div>
-								<div className="stepped-ramp-section-body">
-									<h4 id="closed-protect-title">Protect the run</h4>
-									<p>Optionally stop when the error rate remains excessive for a sustained window.</p>
-									<div className="stepped-ramp-protection">
-										<label className="stepped-ramp-toggle"><input type="checkbox" checked={Boolean(form.goal_config?.early_stop?.enabled)} onChange={event => updateGuidedEarlyStop({ enabled: event.target.checked })} /><span><strong>Stop early on excessive errors</strong><small>The active group load is included in alerts and results.</small></span></label>
-										<label className="scenario-field"><span>Error rate threshold</span><div className="stepped-ramp-unit-input"><input className="settings-input" type="number" min={0} max={100} step="0.1" disabled={!form.goal_config?.early_stop?.enabled} value={form.goal_config?.early_stop?.error_rate_pct ?? 5} onChange={event => updateGuidedEarlyStop({ error_rate_pct: Number(event.target.value) })} /><span>%</span></div></label>
-										<DurationField className="scenario-field" label="Sustained for" compact disabled={!form.goal_config?.early_stop?.enabled} value={form.goal_config?.early_stop?.breach_window || '1m'} onChange={value => updateGuidedEarlyStop({ breach_window: value })} />
-									</div>
-								</div>
-							</section>
 							<button type="button" className="btn btn-primary stepped-ramp-apply" disabled={Boolean(closedVUserBlockingMessage)} onClick={() => setWizardStep('data')}>Apply Closed VUser profile</button>
 						</div>
-						{renderPreRunAssurance()}
 					</>
 				) : isSteppedRamp ? (
 					<div className="stepped-ramp-worksheet">
@@ -3938,19 +4265,13 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
 						<section className="stepped-ramp-section" aria-labelledby="stepped-protect-title">
 							<div className="stepped-ramp-number">3</div>
 							<div className="stepped-ramp-section-body">
-								<h4 id="stepped-protect-title">Apply &amp; protect</h4>
-								<p>Choose where this model applies and whether excessive errors should stop the run.</p>
+								<h4 id="stepped-protect-title">Apply the model</h4>
+								<p>Choose whether the same step model applies to every group or each group is configured independently.</p>
 								<div className="stepped-ramp-scope" role="radiogroup" aria-label="Apply stepped ramp to">
 									<button type="button" role="radio" aria-checked={steppedRampConfig.scope === 'scenario'} className={steppedRampConfig.scope === 'scenario' ? 'active' : ''} onClick={() => updateSteppedRamp(undefined, 'scenario')}><strong>Entire scenario</strong><span>Apply the same ramp to every group</span></button>
 									<button type="button" role="radio" aria-checked={steppedRampConfig.scope === 'group'} className={steppedRampConfig.scope === 'group' ? 'active' : ''} onClick={() => updateSteppedRamp(undefined, 'group')}><strong>Configure each group</strong><span>Set a different ramp for each group</span></button>
 								</div>
 								{steppedRampConfig.scope === 'group' && formGroups.length > 1 && <div className="scenario-group-tabs" role="tablist" aria-label="Stepped ramp groups">{formGroups.map((group, index) => <button key={`${group.script_id}-${index}-ramp`} type="button" className={`scenario-group-tab ${activeGroupIndex === index ? 'active' : ''}`} role="tab" aria-selected={activeGroupIndex === index} onClick={() => setStageGroupIndex(index)}><strong>{group.name.trim() || `Group ${index + 1}`}</strong><span>{group.vusers} peak VUsers</span></button>)}</div>}
-								<div className="stepped-ramp-protection">
-					<label className="stepped-ramp-toggle"><input type="checkbox" checked={Boolean(form.goal_config?.early_stop?.enabled)} onChange={event => updateGuidedEarlyStop({ enabled: event.target.checked })} /><span><strong>Stop early on excessive errors</strong><small>Stop when the error rate remains at or above the threshold.</small></span></label>
-					<label className="scenario-field"><span>Error rate threshold</span><div className="stepped-ramp-unit-input"><input className="settings-input" type="number" min={0} max={100} step="0.1" disabled={!form.goal_config?.early_stop?.enabled} value={form.goal_config?.early_stop?.error_rate_pct ?? 5} onChange={event => updateGuidedEarlyStop({ error_rate_pct: Number(event.target.value) })} /><span>%</span></div></label>
-					<DurationField className="scenario-field" label="Sustained for" compact disabled={!form.goal_config?.early_stop?.enabled} value={form.goal_config?.early_stop?.breach_window || '1m'} onChange={value => updateGuidedEarlyStop({ breach_window: value })} />
-								</div>
-								<p className="scenario-assignment-copy secondary">If the test stops, the active load level and partial interval evidence are retained in results.</p>
 							</div>
 						</section>
 						<button type="button" className="btn btn-primary stepped-ramp-apply" disabled={Boolean(steppedRampBlockingMessage)} onClick={() => setWizardStep('data')}>Apply stepped ramp</button>
@@ -4009,7 +4330,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
             <div className="scenario-assignment-header">
               <div>
                 <h4>Load Per Group</h4>
-                <p>Set the VUser count and simple ramp for each script group participating in this scenario.</p>
+                <p>{form.scenario_mode === 'goal_oriented' ? 'Review the current runtime seed estimate. Goal-oriented demand is controlled by throughput and guardrails.' : 'Set the VUser count and simple ramp for each script group participating in this scenario.'}</p>
               </div>
             </div>
             <div
@@ -4024,7 +4345,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
                     <span className="scenario-assignment-copy secondary">{activeGroupScript?.name || 'Unassigned script'}</span>
                   </div>
                   <div className="settings-grid scenario-group-grid">
-                    <label className="scenario-field">
+                    {form.scenario_mode === 'goal_oriented' ? <div className="scenario-field"><span>Current seed estimate</span><strong>{activeStageGroup.vusers} VUsers</strong><small>Read-only compatibility seed; adaptive runtime demand is governed by the goal controller.</small></div> : <label className="scenario-field">
                       <span>VUsers</span>
                       <div className="scenario-vuser-field">
                         <input
@@ -4050,7 +4371,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
                           })}
                         />
                       </div>
-                    </label>
+					</label>}
 					<DurationField
 						className="scenario-field"
 						label="Start Offset"
@@ -4079,7 +4400,6 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
                 </div>
             </div>
           </div>
-          {renderPreRunAssurance()}
           {form.scenario_mode === 'goal_oriented' && (
             <div className="scenario-subpanel">
               <div className="scenario-assignment-header">
@@ -4097,7 +4417,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
           <div className="scenario-subpanel">
             {activeProfileMapping && (
               <div className="scenario-shape-guidance">
-                <strong>Managed by production traffic profile</strong>
+                <strong>{selectedShapeId === CSV_DRIVEN_SHAPE_ID ? 'Managed by CSV schedule' : 'Managed by production traffic profile'}</strong>
                 <p>{activeProfileMapping.points.length.toLocaleString()} {form.traffic_profile?.runtime_target.toUpperCase()} target changes · peak {activeProfileMapping.peak_target}</p>
                 <button type="button" className="btn btn-secondary" onClick={() => { setForm(previous => ({ ...previous, traffic_profile: undefined })); setSelectedShapeId('') }}>Remove profile</button>
               </div>
@@ -4175,8 +4495,10 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
             )}
             </div>
           </div>
-				</>
-            )}
+						</>}
+            {renderProtectRun()}
+            {renderPreRunAssurance()}
+            </>)}
             {runSettingsTab === 'runtime' && (
               <>
               <RuntimeSettingsGroupEditor
@@ -4343,7 +4665,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
             <h4>Review And Validate</h4>
             <p>Validate modeled demand, capacity, data fit, and generator placement before saving.</p>
           </div>
-          <button type="button" className="btn btn-secondary" onClick={validateLoadModel} disabled={loadModelValidationLoading || Boolean(blockingStageTimelineMessage || observerEnvelopeError || aggregateEnvelopeError || assignmentValidationError)}>
+          <button type="button" className="btn btn-secondary" onClick={validateLoadModel} disabled={loadModelValidationLoading || Boolean(blockingStageTimelineMessage || goalDrivenBlockingMessage || observerEnvelopeError || aggregateEnvelopeError || assignmentValidationError)}>
             {loadModelValidationLoading ? 'Validating...' : 'Validate Load Model'}
           </button>
         </div>
@@ -4485,7 +4807,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
             })}
           </div>
 
-          <div className={`scenario-builder-workspace ${showModelPreview ? 'with-preview' : ''} ${isSteppedRamp || isGuidedClosedVUser ? 'stepped-ramp-layout' : ''}`}>
+		  <div className={`scenario-builder-workspace ${showModelPreview ? 'with-preview' : ''} ${isSteppedRamp || isGuidedClosedVUser || isGoalDriven ? 'stepped-ramp-layout' : ''}`}>
             <div className="scenario-builder-main">
               {renderWizardStep()}
             </div>
@@ -4526,6 +4848,13 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
 						<p>{activeClosedVUserDefinition.ramp_down_enabled ? 'The group returns continuously to zero before the run ends.' : 'The group stops immediately after the sustained-load phase.'}</p>
 					</div>
 				)}
+				{isGoalDriven && (
+					<div className="stepped-ramp-stage-preview goal-driven-preview-details">
+						<div className="stepped-ramp-stage-preview-header"><strong>Adaptive demand plan</strong><span>Live preview</span></div>
+						<table><thead><tr><th>Group</th><th>Target TPS</th><th>ART</th><th>Seed estimate</th></tr></thead><tbody>{formGroups.map((group, index) => { const definition = goalDrivenConfig.groups[goalDrivenGroupKey(index)]; return <tr key={`goal-preview-${index}`}><td>{group.name.trim() || `Group ${index + 1}`}</td><td>{definition?.target_tps || 0}</td><td>{definition?.art ? `${definition.art.art_ms.toLocaleString()} ms` : 'Not set'}</td><td>{goalDrivenEstimatedVUsers[index]} VUsers</td></tr> })}</tbody></table>
+						<p>Guardrail range {form.goal_min_vusers ?? totalGoalDrivenEstimatedVUsers}–{form.goal_max_vusers ?? Math.max(2, totalGoalDrivenEstimatedVUsers * 2)} VUsers. Actual demand adapts; the chart represents requested TPS.</p>
+					</div>
+				)}
               </aside>
             )}
           </div>
@@ -4535,6 +4864,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
           {blockingStageTimelineMessage && <div className="settings-error-inline">{blockingStageTimelineMessage}</div>}
 					{steppedRampBlockingMessage && <div className="settings-error-inline">{steppedRampBlockingMessage}</div>}
 					{closedVUserBlockingMessage && <div className="settings-error-inline">{closedVUserBlockingMessage}</div>}
+					{goalDrivenBlockingMessage && <div className="settings-error-inline">{goalDrivenBlockingMessage}</div>}
           {observerEnvelopeError && <div className="settings-error-inline">{observerEnvelopeError}</div>}
           {aggregateEnvelopeError && <div className="settings-error-inline">{aggregateEnvelopeError}</div>}
           {assignmentValidationError && <div className="settings-error-inline">{assignmentValidationError}</div>}
@@ -4575,9 +4905,9 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
               Next
             </button>
             {wizardStep === 'review' && onCreateTestFromScenario && (
-              <button className="btn btn-secondary" onClick={saveScenarioAndCreateTest} disabled={Boolean(blockingStageTimelineMessage || steppedRampBlockingMessage || closedVUserBlockingMessage || observerEnvelopeError || aggregateEnvelopeError || assignmentValidationError || scenarioGroupNameError)}>Save &amp; Create Test Run</button>
+              <button className="btn btn-secondary" onClick={saveScenarioAndCreateTest} disabled={Boolean(blockingStageTimelineMessage || steppedRampBlockingMessage || closedVUserBlockingMessage || goalDrivenBlockingMessage || observerEnvelopeError || aggregateEnvelopeError || assignmentValidationError || scenarioGroupNameError)}>Save &amp; Create Test Run</button>
             )}
-            <button className="btn btn-primary" onClick={saveScenario} disabled={Boolean(blockingStageTimelineMessage || steppedRampBlockingMessage || closedVUserBlockingMessage || observerEnvelopeError || aggregateEnvelopeError || assignmentValidationError || scenarioGroupNameError)}>Save Scenario</button>
+            <button className="btn btn-primary" onClick={saveScenario} disabled={Boolean(blockingStageTimelineMessage || steppedRampBlockingMessage || closedVUserBlockingMessage || goalDrivenBlockingMessage || observerEnvelopeError || aggregateEnvelopeError || assignmentValidationError || scenarioGroupNameError)}>Save Scenario</button>
           </div>
 
         </div>

@@ -46,7 +46,24 @@ export interface GoalConfig {
   workload_shape_config?: {
     stepped_ramp?: SteppedRampConfig
     closed_vuser?: ClosedVUserConfig
+    goal_driven?: GoalDrivenConfig
   }
+}
+
+export interface GoalDrivenARTConfig {
+  basis: 'manual' | 'baseline'
+  art_ms: number
+  baseline_test_id?: string
+  baseline_group?: string
+}
+
+export interface GoalDrivenGroupDefinition {
+  target_tps: number
+  art?: GoalDrivenARTConfig
+}
+
+export interface GoalDrivenConfig {
+  groups: Record<string, GoalDrivenGroupDefinition>
 }
 
 export type SteppedRampIncrementMode = 'step_count' | 'vusers_per_step'

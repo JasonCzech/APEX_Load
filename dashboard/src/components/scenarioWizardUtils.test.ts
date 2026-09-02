@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { adaptScenarioShapeDefaults, buildClosedVUserPlan, buildScenarioModelPreview, buildScenarioShapeCatalog, buildShapeStages, buildSteppedRampPlan, getScenarioShapePreset, isGuidedClosedVUserOwned, MAX_STEPPED_RAMP_STEPS, parseDurationSeconds, remapClosedRampDownHistory, SCENARIO_SHAPE_PRESETS, ShapeStageStrategy, steppedStepPlan, validateStageTimeline } from './scenarioWizardUtils'
+import { adaptScenarioShapeDefaults, buildClosedVUserPlan, buildScenarioModelPreview, buildScenarioShapeCatalog, buildShapeStages, buildSteppedRampPlan, getScenarioShapePreset, isGuidedClosedVUserOwned, MAX_STEPPED_RAMP_STEPS, parseDurationSeconds, remapClosedRampDownHistory, remapGoalDrivenIndexedState, SCENARIO_SHAPE_PRESETS, ShapeStageStrategy, steppedStepPlan, validateStageTimeline } from './scenarioWizardUtils'
 import { LoadModelSupportEntry, LoadModelTemplate, TrafficProfile } from '../types'
 
 const stageSeconds = (stages: { duration: string }[]) => stages.reduce((sum, stage) => sum + parseDurationSeconds(stage.duration), 0)
@@ -22,6 +22,13 @@ describe('scenarioWizardUtils', () => {
 		])
 	})
 
+  it('reindexes Goal-Driven ART UI state when a group is removed', () => {
+    expect(remapGoalDrivenIndexedState({ group_0: 'manual', group_1: 'baseline', group_2: 'manual' }, 0)).toEqual({
+      group_0: 'baseline',
+      group_1: 'manual',
+    })
+  })
+
   it('merges supported workload shapes with matching templates', () => {
     const support: LoadModelSupportEntry[] = [
       { id: 'closed-vuser', name: 'Closed VUser', category: 'vuser', status: 'executed', apexload_shape: 'Closed model', fields: ['groups[].vusers'], notes: 'Ready' },
@@ -36,6 +43,14 @@ describe('scenarioWizardUtils', () => {
     expect(catalog).toHaveLength(2)
     expect(catalog[0].templates.map(template => template.id)).toEqual(['closed-smoke'])
     expect(catalog[1].templates).toEqual([])
+  })
+
+  it('hides the goal-based compatibility card when the canonical goal-driven shape is available', () => {
+    const support: LoadModelSupportEntry[] = [
+      { id: 'open-arrival-rate', name: 'Goal-Driven Scenario', category: 'throughput', status: 'executed', apexload_shape: 'Adaptive', fields: [], notes: 'Canonical' },
+      { id: 'goal-based', name: 'Goal-Driven Scenario (legacy alias)', category: 'adaptive', status: 'executed', apexload_shape: 'Legacy', fields: [], notes: 'Alias' },
+    ]
+    expect(buildScenarioShapeCatalog(support, []).map(option => option.id)).toEqual(['open-arrival-rate'])
   })
 
   it('parses source-style duration strings into seconds', () => {
@@ -200,6 +215,22 @@ describe('scenarioWizardUtils', () => {
     expect(multiGroupPreview.minTps).toBe(3)
     expect(multiGroupPreview.averageTps).toBeCloseTo(8)
     expect(multiGroupPreview.series.filter(series => series.kind === 'tps').map(series => series.key)).toEqual(['group_0_tps', 'group_1_tps', 'totalTps'])
+  })
+
+  it('holds a Goal-Driven TPS target through the full duration before stopping', () => {
+    const preview = buildScenarioModelPreview({
+      duration: '60m',
+      scenarioMode: 'goal_oriented',
+      goalTargetTps: 30,
+      groups: [
+        { name: 'Checkout', vusers: 10, target_tps: 20 },
+        { name: 'Search', vusers: 5, target_tps: 10 },
+      ],
+    })
+
+    expect(preview.points[preview.points.length - 2]?.totalTps).toBe(30)
+    expect(preview.points[preview.points.length - 1]).toMatchObject({ elapsedSeconds: 3600, group_0_tps: 0, group_1_tps: 0, totalTps: 30 })
+    expect(preview.series.filter(series => series.kind === 'tps').every(series => series.interpolation === 'stepAfter')).toBe(true)
   })
 
   it('uses production VUser targets for profile-managed groups', () => {

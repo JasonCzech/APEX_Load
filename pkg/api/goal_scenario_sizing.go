@@ -11,17 +11,19 @@ import (
 // baseline Group name. Name optionally renames the group in the produced
 // scenario draft.
 type GoalSizingGroupTarget struct {
-	ScriptID  string  `json:"script_id,omitempty"`
-	Group     string  `json:"group,omitempty"`
-	Name      string  `json:"name,omitempty"`
-	TargetTPS float64 `json:"target_tps"`
+	ScriptID  string   `json:"script_id,omitempty"`
+	Group     string   `json:"group,omitempty"`
+	Name      string   `json:"name,omitempty"`
+	TargetTPS float64  `json:"target_tps"`
+	ARTBasis  string   `json:"art_basis,omitempty"`
+	ARTMs     *float64 `json:"art_ms,omitempty"`
 }
 
 // GoalSizingRequest asks the platform to size a goal-oriented scenario from a
 // completed baseline run by applying Little's Law (VUsers = TPS * ART_seconds)
 // to each requested group.
 type GoalSizingRequest struct {
-	BaselineTestID string                  `json:"baseline_test_id"`
+	BaselineTestID string                  `json:"baseline_test_id,omitempty"`
 	Name           string                  `json:"name,omitempty"`
 	Duration       string                  `json:"duration,omitempty"`
 	StartDelay     string                  `json:"start_delay,omitempty"`
@@ -52,39 +54,37 @@ type GoalSizingReport struct {
 	LoadModelValidation *LoadModelValidationReport `json:"load_model_validation,omitempty"`
 }
 
-const defaultGoalScenarioDuration = "10m"
+const defaultGoalScenarioDuration = "60m"
 
 // buildGoalSizingReport applies Little's Law to a baseline run report. It is a
 // pure function (no store or network access) so the sizing math is unit
 // testable in isolation. The caller resolves the archive report and, after
 // sizing, attaches load-model validation.
 func buildGoalSizingReport(report *RunArchiveReport, req GoalSizingRequest) (*GoalSizingReport, error) {
-	if report == nil {
-		return nil, fmt.Errorf("baseline run report is unavailable")
-	}
 	if len(req.Groups) == 0 {
 		return nil, fmt.Errorf("at least one group target is required")
 	}
 
 	var baselineGroups []TestGroup
-	if report.Manifest != nil {
+	if report != nil && report.Manifest != nil {
 		baselineGroups = report.Manifest.Provenance.Groups
 	}
-	singleGroupBaseline := len(report.ByGroup) <= 1 && len(baselineGroups) <= 1
+	singleGroupBaseline := report != nil && len(report.ByGroup) <= 1 && len(baselineGroups) <= 1
 
 	result := &GoalSizingReport{
 		BaselineTestID: strings.TrimSpace(req.BaselineTestID),
 		Groups:         make([]GoalSizingGroupResult, 0, len(req.Groups)),
 	}
 	draftGroups := make([]CreateGroupEntry, 0, len(req.Groups))
+	authoringGroups := make(map[string]GoalDrivenGroupDefinition, len(req.Groups))
 
 	for index, target := range req.Groups {
-		if target.TargetTPS <= 0 {
+		if math.IsNaN(target.TargetTPS) || math.IsInf(target.TargetTPS, 0) || target.TargetTPS <= 0 {
 			return nil, fmt.Errorf("group %d: target_tps must be greater than 0", index+1)
 		}
 
 		groupName, scriptID := resolveBaselineGroup(baselineGroups, target)
-		artMs, basis, err := baselineGroupART(report, groupName, singleGroupBaseline)
+		artMs, basis, err := resolveGoalSizingART(report, target, groupName, singleGroupBaseline)
 		if err != nil {
 			label := firstNonBlank(groupName, scriptID, target.Group, target.ScriptID)
 			if label == "" {
@@ -113,6 +113,25 @@ func buildGoalSizingReport(report *RunArchiveReport, req GoalSizingRequest) (*Go
 			VUsers:   vusers,
 			RampUp:   suggestedRampUp(vusers),
 		})
+		authoringGroups[fmt.Sprintf("group_%d", index)] = GoalDrivenGroupDefinition{
+			TargetTPS: target.TargetTPS,
+			ART: &GoalDrivenARTConfig{
+				Basis: basis,
+				ARTMs: artMs,
+				BaselineTestID: func() string {
+					if basis == "baseline" {
+						return strings.TrimSpace(req.BaselineTestID)
+					}
+					return ""
+				}(),
+				BaselineGroup: func() string {
+					if basis == "baseline" {
+						return groupName
+					}
+					return ""
+				}(),
+			},
+		}
 
 		result.TotalTargetTPS += target.TargetTPS
 		result.TotalVUsers += vusers
@@ -139,10 +158,34 @@ func buildGoalSizingReport(report *RunArchiveReport, req GoalSizingRequest) (*Go
 			TargetAverageTPS: &totalTPS,
 			MinVUsers:        &minV,
 			MaxVUsers:        &maxV,
+			WorkloadShapeConfig: &WorkloadShapeConfig{
+				GoalDriven: &GoalDrivenConfig{Groups: authoringGroups},
+			},
 		},
 		Groups: draftGroups,
 	}
 	return result, nil
+}
+
+func resolveGoalSizingART(report *RunArchiveReport, target GoalSizingGroupTarget, groupName string, singleGroupBaseline bool) (float64, string, error) {
+	basis := strings.ToLower(strings.TrimSpace(target.ARTBasis))
+	if basis == "" && target.ARTMs != nil {
+		basis = "manual"
+	}
+	if basis == "manual" {
+		if target.ARTMs == nil || math.IsNaN(*target.ARTMs) || math.IsInf(*target.ARTMs, 0) || *target.ARTMs <= 0 {
+			return 0, "", fmt.Errorf("manual art_ms must be a positive finite value")
+		}
+		return *target.ARTMs, "manual", nil
+	}
+	if basis != "" && basis != "baseline" {
+		return 0, "", fmt.Errorf("art_basis must be manual or baseline")
+	}
+	if report == nil {
+		return 0, "", fmt.Errorf("baseline run report is unavailable; provide manual ART")
+	}
+	artMs, _, err := baselineGroupART(report, groupName, singleGroupBaseline)
+	return artMs, "baseline", err
 }
 
 // resolveBaselineGroup maps a sizing target onto a baseline group, returning
@@ -208,7 +251,7 @@ func littlesLawVUsers(targetTPS, artMs float64) int {
 // so the runtime goal controller has room to converge (response time rises
 // under load, so it usually scales up). Explicit overrides win when valid.
 func goalVUserBounds(totalVUsers int, minOverride, maxOverride *int) (minV, maxV int) {
-	minV = int(math.Round(0.5 * float64(totalVUsers)))
+	minV = totalVUsers
 	if minV < 1 {
 		minV = 1
 	}

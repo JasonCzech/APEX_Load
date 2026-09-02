@@ -416,6 +416,16 @@ export function useTestApi() {
     [],
   )
 
+  const analyzeCSVDriven = useCallback(
+    (data: FormData, options?: ApiCallOptions) => request<TrafficProfileAnalyzeResponse>('/scenarios/csv-driven/analyze', withCallOptions({ method: 'POST', body: data }, options)),
+    [],
+  )
+
+  const deriveCSVDriven = useCallback(
+    (data: TrafficProfileDeriveRequest, options?: ApiCallOptions) => request<TrafficProfileDeriveResponse>('/scenarios/csv-driven/derive', withCallOptions({ method: 'POST', body: JSON.stringify(data) }, options)),
+    [],
+  )
+
   const startTest = useCallback(
     (id: string, options?: StartTestOptions, callOptions?: ApiCallOptions) =>
       request<TestActionResponse>(`/tests/${id}/start`, withCallOptions({
@@ -830,6 +840,8 @@ export function useTestApi() {
       getTrafficProfileSources,
       analyzeTrafficProfile,
       deriveTrafficProfile,
+      analyzeCSVDriven,
+      deriveCSVDriven,
       startTest,
       pinComparisonBaseline,
       unpinComparisonBaseline,
@@ -904,6 +916,8 @@ export function useTestApi() {
       getTrafficProfileSources,
       analyzeTrafficProfile,
       deriveTrafficProfile,
+      analyzeCSVDriven,
+      deriveCSVDriven,
       startTest,
       pinComparisonBaseline,
       unpinComparisonBaseline,

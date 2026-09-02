@@ -52,6 +52,7 @@ type LoadModelTemplateGroup struct {
 // contract. Its catalog feature gates the analyze/derive endpoints as well as
 // scenario persistence, so the whole workflow is governed, not just the save.
 const productionReplayShapeID = "production-replay"
+const csvDrivenShapeID = "csv-driven"
 
 func workloadShapeFeatureID(shapeID string) string {
 	return "workload_shape." + strings.TrimSpace(shapeID)
@@ -167,12 +168,12 @@ func loadModelSupportMatrix() []LoadModelSupportEntry {
 		},
 		{
 			ID:            "open-arrival-rate",
-			Name:          "Open Arrival Rate",
+			Name:          "Goal-Driven Scenario",
 			Category:      "throughput",
 			Status:        "executed",
-			APEXLoadShape: "Open workload runtime using target throughput controls.",
-			Fields:        []string{"config.run_logic.workload_model=open", "config.pacing.tps", "goal_config.target_average_tps"},
-			Notes:         "Runtime emits target TPS, throughput gap, and miss flags for observability.",
+			APEXLoadShape: "Adaptive goal-oriented workload sized from per-group throughput and response-time inputs.",
+			Fields:        []string{"scenario_mode=goal_oriented", "goal_config.workload_shape_config.goal_driven", "goal_config.target_average_tps", "goal_config.min_vusers", "goal_config.max_vusers"},
+			Notes:         "Target TPS is configured per group; VUsers are derived planning seeds and runtime demand adapts within guardrails.",
 		},
 		{
 			ID:            "stepped-ramp",
@@ -191,6 +192,15 @@ func loadModelSupportMatrix() []LoadModelSupportEntry {
 			APEXLoadShape: "Full-resolution step profiles derived from CSV, XLSX, Prometheus, or OpenSearch time series.",
 			Fields:        []string{"traffic_profile", "traffic_profile.mappings[].points", "scenario_mode", "goal_config.min_vusers", "goal_config.max_vusers"},
 			Notes:         "VUser targets are applied directly; TPS targets use closed-loop adaptive control and may lag short or abrupt production changes.",
+		},
+		{
+			ID:            csvDrivenShapeID,
+			Name:          "CSV Driven",
+			Category:      "traffic-profile",
+			Status:        "executed",
+			APEXLoadShape: "Exact step-after VUser or TPS targets authored in a CSV file.",
+			Fields:        []string{"traffic_profile", "traffic_profile.mappings[].points", "scenario_mode", "goal_config.min_vusers", "goal_config.max_vusers"},
+			Notes:         "Accepts wide or long CSV layouts. VUser targets are applied directly; TPS targets use adaptive control and ART-backed capacity guardrails.",
 		},
 		{
 			ID:            "spike-rendezvous",
@@ -221,7 +231,7 @@ func loadModelSupportMatrix() []LoadModelSupportEntry {
 		},
 		{
 			ID:            "goal-based",
-			Name:          "Goal-Based",
+			Name:          "Goal-Driven Scenario (legacy alias)",
 			Category:      "adaptive",
 			Status:        "executed",
 			APEXLoadShape: "Goal controller adjusts VUsers within configured guardrails.",
@@ -251,8 +261,8 @@ func loadModelSupportMatrix() []LoadModelSupportEntry {
 
 func loadModelTemplates() []LoadModelTemplate {
 	targetTPS := 25.0
-	minVUsers := 5
-	maxVUsers := 50
+	minVUsers := 10
+	maxVUsers := 20
 	p95 := 800.0
 	maxErrorPct := 1.0
 	chaosTargetTPS := 15.0
@@ -286,16 +296,19 @@ func loadModelTemplates() []LoadModelTemplate {
 		},
 		{
 			ID:          "open-api-arrival-rate",
-			Name:        "Open API Arrival Rate",
+			Name:        "Goal-Driven API",
 			ShapeID:     "open-arrival-rate",
-			Description: "Throughput-oriented API load shape for queueing-sensitive services.",
+			Description: "Adaptive API load sized from a throughput goal and expected response time.",
 			Scenario: LoadModelScenarioDraft{
 				ScenarioMode: "goal_oriented",
-				Duration:     "10m",
-				GoalConfig:   &GoalConfig{TargetAverageTPS: &targetTPS, MinVUsers: &minVUsers, MaxVUsers: &maxVUsers, P95LatencyMs: &p95, MaxErrorPct: &maxErrorPct},
-				Groups:       []LoadModelTemplateGroup{{Name: "arrival-rate", VUsers: 10, RampUp: "2m"}},
+				Duration:     "60m",
+				GoalConfig: &GoalConfig{TargetAverageTPS: &targetTPS, MinVUsers: &minVUsers, MaxVUsers: &maxVUsers, P95LatencyMs: &p95, MaxErrorPct: &maxErrorPct,
+					WorkloadShapeConfig: &WorkloadShapeConfig{GoalDriven: &GoalDrivenConfig{Groups: map[string]GoalDrivenGroupDefinition{
+						"group_0": {TargetTPS: targetTPS, ART: &GoalDrivenARTConfig{Basis: "manual", ARTMs: 400}},
+					}}}},
+				Groups: []LoadModelTemplateGroup{{Name: "arrival-rate", VUsers: 10, RampUp: "2m"}},
 			},
-			Notes: []string{"Pair with script config.run_logic.workload_model=open or pacing TPS settings."},
+			Notes: []string{"The saved 10-VUser seed is ceil(25 TPS × 0.4 seconds ART); runtime demand remains adaptive."},
 		},
 		{
 			ID:          "rendezvous-spike",

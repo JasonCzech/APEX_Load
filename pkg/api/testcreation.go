@@ -2130,7 +2130,7 @@ func validateScenarioRequest(req CreateTestRequest) (string, error) {
 		if err := validateEarlyStopConfig(req.GoalConfig.EarlyStop); err != nil {
 			return "", err
 		}
-		if err := validateWorkloadShapeConfig(req.GoalConfig.WorkloadShapeConfig, scenarioMode, req.Groups); err != nil {
+		if err := validateWorkloadShapeConfig(req.GoalConfig.WorkloadShapeConfig, scenarioMode, req.Groups, req.GoalConfig.TargetAverageTPS); err != nil {
 			return "", err
 		}
 	}
@@ -2258,8 +2258,63 @@ func validateEarlyStopConfig(config *EarlyStopConfig) error {
 	return nil
 }
 
-func validateWorkloadShapeConfig(config *WorkloadShapeConfig, scenarioMode string, groups []CreateGroupEntry) error {
-	if config == nil || config.ClosedVUser == nil {
+func validateWorkloadShapeConfig(config *WorkloadShapeConfig, scenarioMode string, groups []CreateGroupEntry, targetAverageTPS *float64) error {
+	if config == nil {
+		return nil
+	}
+	configuredShapes := 0
+	if config.SteppedRamp != nil {
+		configuredShapes++
+	}
+	if config.ClosedVUser != nil {
+		configuredShapes++
+	}
+	if config.GoalDriven != nil {
+		configuredShapes++
+	}
+	if configuredShapes > 1 {
+		return fmt.Errorf("workload_shape_config cannot contain multiple guided workload shapes")
+	}
+	if config.GoalDriven != nil {
+		if normalizeScenarioMode(scenarioMode) != "goal_oriented" {
+			return fmt.Errorf("workload_shape_config.goal_driven requires scenario_mode goal_oriented")
+		}
+		groupCount := len(groups)
+		if groupCount == 0 {
+			groupCount = 1
+		}
+		if len(config.GoalDriven.Groups) != groupCount {
+			return fmt.Errorf("workload_shape_config.goal_driven.groups must contain exactly one definition for each of %d groups", groupCount)
+		}
+		totalTPS := 0.0
+		for index := 0; index < groupCount; index++ {
+			key := fmt.Sprintf("group_%d", index)
+			definition, ok := config.GoalDriven.Groups[key]
+			if !ok {
+				return fmt.Errorf("workload_shape_config.goal_driven.groups.%s is required", key)
+			}
+			if !finiteFloat(definition.TargetTPS) || definition.TargetTPS <= 0 {
+				return fmt.Errorf("workload_shape_config.goal_driven.groups.%s.target_tps must be greater than zero", key)
+			}
+			totalTPS += definition.TargetTPS
+			if definition.ART != nil {
+				if definition.ART.Basis != "manual" && definition.ART.Basis != "baseline" {
+					return fmt.Errorf("workload_shape_config.goal_driven.groups.%s.art.basis must be manual or baseline", key)
+				}
+				if !finiteFloat(definition.ART.ARTMs) || definition.ART.ARTMs <= 0 {
+					return fmt.Errorf("workload_shape_config.goal_driven.groups.%s.art.art_ms must be greater than zero", key)
+				}
+				if definition.ART.Basis == "baseline" && strings.TrimSpace(definition.ART.BaselineTestID) == "" {
+					return fmt.Errorf("workload_shape_config.goal_driven.groups.%s.art.baseline_test_id is required for baseline ART", key)
+				}
+			}
+		}
+		if targetAverageTPS == nil || !finiteFloat(*targetAverageTPS) || math.Abs(*targetAverageTPS-totalTPS) > 1e-6 {
+			return fmt.Errorf("goal_config.target_average_tps must equal the sum of goal-driven group targets")
+		}
+		return nil
+	}
+	if config.ClosedVUser == nil {
 		return nil
 	}
 	if config.SteppedRamp != nil {

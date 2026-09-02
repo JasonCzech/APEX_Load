@@ -14,7 +14,7 @@ import { trafficProfileMappingForGroup, trafficProfileTargetAt, trafficProfileTi
 
 export type ScenarioWizardStep = 'start' | 'source' | 'scripts' | 'run' | 'data' | 'review'
 
-export type ScenarioSourceMode = 'shape' | 'existing' | 'traffic_profile'
+export type ScenarioSourceMode = 'shape' | 'existing' | 'traffic_profile' | 'csv_driven'
 
 export interface ScenarioShapeCatalogOption {
   id: string
@@ -25,6 +25,7 @@ export interface ScenarioShapeCatalogOption {
 export interface ScenarioModelGroupInput {
   name?: string
   vusers: number
+  target_tps?: number
   ramp_up?: string
   ramp_down?: string
   stages?: LoadStageDraft[]
@@ -66,7 +67,8 @@ export function buildScenarioShapeCatalog(
   supportMatrix: LoadModelSupportEntry[],
   templates: LoadModelTemplate[],
 ): ScenarioShapeCatalogOption[] {
-  return supportMatrix.map((support) => ({
+  const hasGoalDriven = supportMatrix.some(support => support.id === 'open-arrival-rate')
+  return supportMatrix.filter(support => !(hasGoalDriven && support.id === 'goal-based')).map((support) => ({
     id: support.id,
     support,
     templates: templates.filter(template => template.shape_id === support.id),
@@ -197,6 +199,18 @@ export function remapClosedRampDownHistory(keys: Iterable<string>, removedIndex:
     if (index > removedIndex) remapped.add(`group_${index - 1}`)
   }
   return remapped
+}
+
+export function remapGoalDrivenIndexedState<T>(state: Record<string, T>, removedIndex: number): Record<string, T> {
+  const next: Record<string, T> = {}
+  Object.entries(state).forEach(([key, value]) => {
+    const match = /^group_(\d+)$/.exec(key)
+    if (!match) return
+    const index = Number(match[1])
+    if (index === removedIndex) return
+    next[`group_${index > removedIndex ? index - 1 : index}`] = value
+  })
+  return next
 }
 
 export function buildClosedVUserPlan(input: ClosedVUserPlanInput): ClosedVUserPlan {
@@ -485,14 +499,6 @@ function targetTpsFor(seed: ScenarioSeed, ctx?: ScenarioShapeAdaptContext, fallb
   return Number(ctx?.goalTps || seed.goal?.target_average_tps || seed.pacing?.tps || fallback)
 }
 
-function vuserGuardrails(peak: number, multiplier: number) {
-  const p = normalizePeak(peak)
-  return {
-    min_vusers: Math.max(1, Math.floor(p / 2)),
-    max_vusers: Math.max(p, Math.round(p * multiplier)),
-  }
-}
-
 export function adaptScenarioShapeDefaults(shapeId: string, seed: ScenarioSeed, ctx?: ScenarioShapeAdaptContext): ScenarioSeed {
   const strategy = shapeStageStrategyFor(shapeId)
   const durationSeconds = scenarioDurationSeconds(seed, ctx)
@@ -534,10 +540,10 @@ export function adaptScenarioShapeDefaults(shapeId: string, seed: ScenarioSeed, 
   }
 
   if (shapeId === 'open-arrival-rate' || shapeId === 'goal-based') {
-    const defaultTps = shapeId === 'goal-based' ? 30 : 25
+	const defaultTps = 25
     const targetTps = targetTpsFor(seed, ctx, defaultTps)
     const peak = normalizePeak(next.groups?.[0]?.vusers || 10)
-    const guardrails = vuserGuardrails(peak, shapeId === 'goal-based' ? 10 : 5)
+	const guardrails = { min_vusers: peak, max_vusers: Math.max(2, peak * 2) }
     next.scenario_mode = 'goal_oriented'
     next.goal = {
       ...(next.goal || {}),
@@ -637,12 +643,12 @@ export const SCENARIO_SHAPE_PRESETS: Record<string, ScenarioShapePreset> = {
     guidance: 'Ramp continuously to a fixed VUser load, measure steady-state performance, and optionally ramp down before the run ends.',
   },
   'open-arrival-rate': {
-    duration: '10m',
+	duration: '60m',
     scenarioMode: 'goal_oriented',
     groups: [{ vusers: 10, ramp_up: '2m' }],
     goal: { target_average_tps: 25, min_vusers: 5, max_vusers: 50, p95_latency_ms: 800, max_error_pct: 1 },
     pacing: { type: 'tps', tps: 25 },
-    guidance: 'Throughput-driven: the goal controller holds a target TPS while pacing keeps arrival rate steady. Tune Target TPS and the goal envelope on Run Settings.',
+	guidance: 'Set a throughput goal, estimate adaptive VUser demand from ART, and protect the run with explicit guardrails.',
     recommendedRunTab: 'scenario',
   },
   'stepped-ramp': {
@@ -690,11 +696,11 @@ export const SCENARIO_SHAPE_PRESETS: Record<string, ScenarioShapePreset> = {
     guidance: 'Escalating load to find the breaking point. Staged groups push VUsers higher while the goal guardrails (max VUsers, SLA) and capacity advisory keep the run bounded.',
   },
   'goal-based': {
-    duration: '10m',
+	duration: '60m',
     scenarioMode: 'goal_oriented',
     groups: [{ vusers: 10, ramp_up: '2m' }],
-    goal: { target_average_tps: 30, min_vusers: 5, max_vusers: 100, p95_latency_ms: 800, max_error_pct: 1 },
-    guidance: 'The goal controller scales VUsers within the min/max guardrails to hold the target TPS and SLA. Set the goal envelope on Run Settings.',
+	goal: { target_average_tps: 25, min_vusers: 10, max_vusers: 20, p95_latency_ms: 800, max_error_pct: 1 },
+	guidance: 'Legacy Goal-Based scenarios use the Goal-Driven worksheet while retaining their stored compatibility ID.',
   },
   'chaos-resilience': {
     duration: '18m',
@@ -927,7 +933,7 @@ export function buildScenarioModelPreview(params: {
     interpolation: (profileVUsers && profileMappings[index]) || groupUsesSteppedStages(group) ? 'stepAfter' : 'linear',
   }))
   const tpsGroupIndexes = groups.flatMap((group, index) => (
-    (profileTps && profileMappings[index]) || group.stages?.some(stage => Number(stage.target_tps) > 0) ? [index] : []
+	(profileTps && profileMappings[index]) || Number(group.target_tps) > 0 || group.stages?.some(stage => Number(stage.target_tps) > 0) ? [index] : []
   ))
   const hasGroupTps = tpsGroupIndexes.length > 0
   const hasGoalTps = !profileTps && Number(params.goalTargetTps) > 0
@@ -959,11 +965,13 @@ export function buildScenarioModelPreview(params: {
       point[groupKey] = Math.round(value * 100) / 100
       point.totalVusers += value
 
-      if ((profileTps && profileMapping) || group.stages?.some(stage => Number(stage.target_tps) > 0)) {
-        const tps = elapsedSeconds < steadySeconds
-          ? profileTps && profileMapping
-            ? trafficProfileTargetAt(profileMapping, elapsedSeconds)
-            : stagedValue(group.stages || [], elapsedSeconds, 'target_tps')
+	if ((profileTps && profileMapping) || Number(group.target_tps) > 0 || group.stages?.some(stage => Number(stage.target_tps) > 0)) {
+		const tps = elapsedSeconds < steadySeconds
+		  ? profileTps && profileMapping
+			? trafficProfileTargetAt(profileMapping, elapsedSeconds)
+			: Number(group.target_tps) > 0
+			  ? Number(group.target_tps)
+			  : stagedValue(group.stages || [], elapsedSeconds, 'target_tps')
           : 0
         point[tpsKey] = Math.round(tps * 100) / 100
         point.totalTps = (point.totalTps || 0) + tps
@@ -1001,9 +1009,9 @@ export function buildScenarioModelPreview(params: {
         label: `${groups[index].name || `Group ${index + 1}`} TPS`,
         color: GROUP_COLORS[index % GROUP_COLORS.length],
         kind: 'tps' as const,
-        interpolation: (profileTps && profileMappings[index]) || groupUsesSteppedStages(groups[index]) ? 'stepAfter' as const : 'linear' as const,
+		interpolation: (profileTps && profileMappings[index]) || Number(groups[index].target_tps) > 0 || groupUsesSteppedStages(groups[index]) ? 'stepAfter' as const : 'linear' as const,
       })) : []),
-      ...(includeTps ? [{ key: 'totalTps', label: profileTps ? 'Production target TPS' : 'Target TPS', color: 'var(--warning)', kind: 'tps', interpolation: profileTps || tpsGroupIndexes.every(index => groupUsesSteppedStages(groups[index])) ? 'stepAfter' : 'linear' } as ScenarioModelSeries] : []),
+	  ...(includeTps ? [{ key: 'totalTps', label: profileTps ? 'Production target TPS' : 'Target TPS', color: 'var(--warning)', kind: 'tps', interpolation: profileTps || tpsGroupIndexes.every(index => Number(groups[index].target_tps) > 0 || groupUsesSteppedStages(groups[index])) ? 'stepAfter' : 'linear' } as ScenarioModelSeries] : []),
     ],
   }
 }

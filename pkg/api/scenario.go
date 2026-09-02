@@ -310,6 +310,15 @@ func (tr *TestRunner) storeScenarioLockedWithWriter(id string, req CreateScenari
 	if err := validateTrafficProfile(req.TrafficProfile, groups, req.Duration, req.ScenarioMode, req.GoalConfig); err != nil {
 		return nil, err
 	}
+	effectiveShapeID := ""
+	if req.WorkloadShapeID != nil {
+		effectiveShapeID = strings.TrimSpace(*req.WorkloadShapeID)
+	} else if existing != nil {
+		effectiveShapeID = existing.WorkloadShapeID
+	}
+	if err := validateTrafficProfileForWorkloadShape(effectiveShapeID, req.TrafficProfile, groups); err != nil {
+		return nil, err
+	}
 	for index := range groups {
 		groups[index].runtimeSecretScope = id
 	}

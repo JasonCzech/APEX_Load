@@ -103,6 +103,116 @@ type trafficProfileDeriveResponse struct {
 	LoadModelValidation *LoadModelValidationReport `json:"load_model_validation,omitempty"`
 }
 
+func validateCSVDrivenDeriveRequest(request trafficProfileDeriveRequest) error {
+	if !strings.EqualFold(strings.TrimSpace(request.Source.Kind), "file") || request.Source.File == nil {
+		return errors.New("CSV Driven scenarios require source.kind file")
+	}
+	if strings.ToLower(filepath.Ext(strings.TrimSpace(request.Source.File.Filename))) != ".csv" {
+		return errors.New("CSV Driven scenarios require a .csv source")
+	}
+	windowMode := strings.ToLower(strings.TrimSpace(request.Window.Mode))
+	if windowMode != "" && windowMode != "full" {
+		return errors.New("CSV Driven scenarios replay the full CSV and do not support window selection")
+	}
+	if !request.Window.Start.IsZero() || !request.Window.End.IsZero() || strings.TrimSpace(request.Window.StartOffset) != "" || strings.TrimSpace(request.Window.EndOffset) != "" || strings.TrimSpace(request.Window.Duration) != "" || strings.TrimSpace(request.Window.PeakScope) != "" {
+		return errors.New("CSV Driven scenarios do not support window transformations")
+	}
+	if strings.TrimSpace(request.TargetDuration) != "" {
+		return errors.New("CSV Driven scenarios derive duration from the CSV")
+	}
+	if strings.TrimSpace(request.Amplitude.Mode) != "" || (request.Amplitude.Value != 0 && request.Amplitude.Value != 1) {
+		return errors.New("CSV Driven scenarios do not support amplitude transformations")
+	}
+	if request.ValueSemantics != trafficprofile.SemanticsVUsers && request.ValueSemantics != trafficprofile.SemanticsTPS {
+		return errors.New("CSV Driven values must represent vusers or tps")
+	}
+	if request.GapPolicy != trafficprofile.GapDrop {
+		return errors.New("CSV Driven scenarios require gap_policy drop so authored boundaries remain unchanged")
+	}
+	if len(request.ScenarioDraft.Groups) == 0 || len(request.Mappings) != len(request.ScenarioDraft.Groups) {
+		return errors.New("CSV Driven scenarios require exactly one series mapping for every scenario group")
+	}
+	availableGroups := make(map[string]struct{}, len(request.ScenarioDraft.Groups))
+	for _, group := range request.ScenarioDraft.Groups {
+		key := normalizeEffectiveGroupName(group.Name)
+		if key == "" {
+			return errors.New("CSV Driven scenario groups require non-empty names")
+		}
+		if _, exists := availableGroups[key]; exists {
+			return fmt.Errorf("CSV Driven scenario group %q is duplicated", group.Name)
+		}
+		availableGroups[key] = struct{}{}
+	}
+	mappedGroups := make(map[string]struct{}, len(request.Mappings))
+	mappedSeries := make(map[string]struct{}, len(request.Mappings))
+	for _, mapping := range request.Mappings {
+		seriesKey := strings.TrimSpace(mapping.SeriesKey)
+		if seriesKey == "" {
+			return errors.New("CSV Driven mappings require non-empty series_key values")
+		}
+		if _, exists := mappedSeries[seriesKey]; exists {
+			return fmt.Errorf("CSV Driven series %q is mapped more than once", mapping.SeriesKey)
+		}
+		mappedSeries[seriesKey] = struct{}{}
+		groupKey := normalizeEffectiveGroupName(mapping.GroupName)
+		if _, exists := availableGroups[groupKey]; !exists {
+			return fmt.Errorf("CSV Driven mapping group %q was not found in the scenario", mapping.GroupName)
+		}
+		if _, exists := mappedGroups[groupKey]; exists {
+			return fmt.Errorf("CSV Driven scenario group %q is mapped more than once", mapping.GroupName)
+		}
+		mappedGroups[groupKey] = struct{}{}
+	}
+	wantMode := "vuser_driven"
+	if request.ValueSemantics == trafficprofile.SemanticsTPS {
+		wantMode = "goal_oriented"
+		if request.ScenarioDraft.GoalConfig == nil || request.ScenarioDraft.GoalConfig.MinVUsers == nil || request.ScenarioDraft.GoalConfig.MaxVUsers == nil {
+			return errors.New("CSV Driven TPS schedules require minimum and maximum VUser guardrails")
+		}
+		if *request.ScenarioDraft.GoalConfig.MinVUsers < 1 || *request.ScenarioDraft.GoalConfig.MaxVUsers < *request.ScenarioDraft.GoalConfig.MinVUsers {
+			return errors.New("CSV Driven TPS guardrails require max_vusers to be at least min_vusers")
+		}
+		for _, mapping := range request.Mappings {
+			if mapping.ART == nil {
+				return fmt.Errorf("CSV Driven TPS mapping %q requires ART sizing", mapping.GroupName)
+			}
+		}
+	}
+	if mode := strings.TrimSpace(request.ScenarioDraft.ScenarioMode); mode != "" && mode != wantMode {
+		return fmt.Errorf("CSV Driven %s values require scenario_mode %s", request.ValueSemantics, wantMode)
+	}
+
+	var reference *trafficprofile.Stats
+	for _, series := range request.Series {
+		if _, ok := mappedSeries[strings.TrimSpace(series.Key)]; !ok {
+			continue
+		}
+		stats, err := trafficprofile.SeriesStats(series)
+		if err != nil {
+			return fmt.Errorf("series %q: %w", series.Name, err)
+		}
+		if request.ValueSemantics == trafficprofile.SemanticsVUsers {
+			for pointIndex, point := range series.Points {
+				if point.Value != math.Trunc(point.Value) {
+					return fmt.Errorf("series %q point %d VUser target must be a whole number", series.Name, pointIndex+1)
+				}
+			}
+		}
+		if reference == nil {
+			copy := stats
+			reference = &copy
+			continue
+		}
+		if !stats.Start.Equal(reference.Start) || !stats.End.Equal(reference.End) || stats.DetectedBucket != reference.DetectedBucket {
+			return errors.New("all mapped CSV series must share the same start, end, and inferred final interval")
+		}
+	}
+	if reference == nil {
+		return errors.New("mapped CSV series were not found in analyzed series")
+	}
+	return nil
+}
+
 func (s *Server) handleTrafficProfileSources(w http.ResponseWriter, r *http.Request) {
 	settings := s.runner.GetSystemSettings()
 	prom := newPromGraphDataSource(normalizePrometheusSettings(settings.Prometheus))
@@ -122,7 +232,7 @@ func (s *Server) handleTrafficProfileSources(w http.ResponseWriter, r *http.Requ
 func (s *Server) handleAnalyzeTrafficProfile(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, trafficProfileUploadMaxBytes)
 	if strings.HasPrefix(strings.ToLower(r.Header.Get("Content-Type")), "multipart/") {
-		s.handleAnalyzeTrafficProfileFile(w, r)
+		s.handleAnalyzeTrafficProfileFile(w, r, false)
 		return
 	}
 	var request trafficProfileAnalyzeRequest
@@ -183,7 +293,15 @@ func (s *Server) handleAnalyzeTrafficProfile(w http.ResponseWriter, r *http.Requ
 	s.writeTrafficProfileAnalysis(w, request.Source, nil, series, nil)
 }
 
-func (s *Server) handleAnalyzeTrafficProfileFile(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleAnalyzeCSVDriven(w http.ResponseWriter, r *http.Request) {
+	if !strings.HasPrefix(strings.ToLower(r.Header.Get("Content-Type")), "multipart/") {
+		writeError(w, http.StatusUnsupportedMediaType, "CSV Driven analysis requires a multipart CSV upload")
+		return
+	}
+	s.handleAnalyzeTrafficProfileFile(w, r, true)
+}
+
+func (s *Server) handleAnalyzeTrafficProfileFile(w http.ResponseWriter, r *http.Request, csvOnly bool) {
 	r.Body = http.MaxBytesReader(w, r.Body, trafficProfileUploadMaxBytes)
 	if err := r.ParseMultipartForm(trafficProfileUploadMaxBytes); err != nil {
 		writeError(w, http.StatusRequestEntityTooLarge, "invalid or oversized traffic-profile upload")
@@ -202,7 +320,10 @@ func (s *Server) handleAnalyzeTrafficProfileFile(w http.ResponseWriter, r *http.
 	}
 	extension := strings.ToLower(filepath.Ext(header.Filename))
 	var sheets []trafficprofile.Sheet
-	if extension == ".xlsx" {
+	if csvOnly && extension != ".csv" {
+		writeError(w, http.StatusUnsupportedMediaType, "CSV Driven scenarios require a .csv file")
+		return
+	} else if extension == ".xlsx" {
 		sheets, err = trafficprofile.ParseXLSX(data)
 	} else if extension == ".csv" || extension == ".txt" || extension == ".tsv" {
 		var sheet *trafficprofile.Sheet
@@ -270,6 +391,12 @@ func (s *Server) handleAnalyzeTrafficProfileFile(w http.ResponseWriter, r *http.
 		writeError(w, http.StatusBadRequest, "selected worksheet was not found")
 		return
 	}
+	if csvOnly {
+		if err := validateCSVDrivenSheetRows(sheet, source.File.TimestampColumn, source.File.SeriesColumn, valueColumns, artColumns); err != nil {
+			writeError(w, http.StatusUnprocessableEntity, err.Error())
+			return
+		}
+	}
 	var location *time.Location
 	if source.File.Timezone != "" {
 		location, err = time.LoadLocation(source.File.Timezone)
@@ -307,6 +434,53 @@ func (s *Server) handleAnalyzeTrafficProfileFile(w http.ResponseWriter, r *http.
 		}
 	}
 	s.writeTrafficProfileAnalysis(w, source, sheets, series, artSeries)
+}
+
+func validateCSVDrivenSheetRows(sheet *trafficprofile.Sheet, timestampColumn, seriesColumn string, valueColumns, artColumns []string) error {
+	columnIndexes := make(map[string]int, len(sheet.Columns))
+	for index, column := range sheet.Columns {
+		columnIndexes[strings.ToLower(strings.TrimSpace(column))] = index
+	}
+	required := []string{timestampColumn}
+	roles := map[string]string{strings.ToLower(strings.TrimSpace(timestampColumn)): "time"}
+	addRole := func(column, role string) error {
+		key := strings.ToLower(strings.TrimSpace(column))
+		if previous, exists := roles[key]; exists {
+			return fmt.Errorf("column %q cannot be used as both %s and %s", column, previous, role)
+		}
+		roles[key] = role
+		required = append(required, column)
+		return nil
+	}
+	if strings.TrimSpace(seriesColumn) != "" {
+		if err := addRole(seriesColumn, "group / series"); err != nil {
+			return err
+		}
+	}
+	for _, column := range valueColumns {
+		if err := addRole(column, "target"); err != nil {
+			return err
+		}
+	}
+	for _, column := range artColumns {
+		if err := addRole(column, "ART"); err != nil {
+			return err
+		}
+	}
+	for _, column := range required {
+		if _, exists := columnIndexes[strings.ToLower(strings.TrimSpace(column))]; !exists {
+			return fmt.Errorf("column %q was not found", column)
+		}
+	}
+	for rowIndex, row := range sheet.Rows {
+		for _, column := range required {
+			index := columnIndexes[strings.ToLower(strings.TrimSpace(column))]
+			if index >= len(row) || strings.TrimSpace(row[index]) == "" {
+				return fmt.Errorf("row %d column %q is required for an exact CSV schedule", rowIndex+2, column)
+			}
+		}
+	}
+	return nil
 }
 
 func (s *Server) writeTrafficProfileAnalysis(w http.ResponseWriter, source TrafficProfileSource, sheets []trafficprofile.Sheet, series, artSeries []trafficprofile.Series) {
@@ -368,10 +542,24 @@ func trafficProfileARTSeriesStats(series trafficprofile.Series) (trafficprofile.
 }
 
 func (s *Server) handleDeriveTrafficProfile(w http.ResponseWriter, r *http.Request) {
+	s.handleDeriveTrafficProfileForShape(w, r, productionReplayShapeID, false)
+}
+
+func (s *Server) handleDeriveCSVDriven(w http.ResponseWriter, r *http.Request) {
+	s.handleDeriveTrafficProfileForShape(w, r, csvDrivenShapeID, true)
+}
+
+func (s *Server) handleDeriveTrafficProfileForShape(w http.ResponseWriter, r *http.Request, shapeID string, exactCSV bool) {
 	r.Body = http.MaxBytesReader(w, r.Body, trafficProfileDeriveMaxBytes)
 	var request trafficProfileDeriveRequest
 	if !decodeJSONBody(w, r, &request) {
 		return
+	}
+	if exactCSV {
+		if err := validateCSVDrivenDeriveRequest(request); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
 	}
 	// The route authorizes against the declared project_id, but the draft it
 	// compiles carries caller-supplied script IDs. Pin the draft to the
@@ -620,7 +808,7 @@ func (s *Server) handleDeriveTrafficProfile(w http.ResponseWriter, r *http.Reque
 	draft := request.ScenarioDraft
 	draft.TrafficProfile = profile
 	draft.Duration = profile.TargetDuration
-	shape := "production-replay"
+	shape := shapeID
 	draft.WorkloadShapeID = &shape
 	if profile.RuntimeTarget == "vusers" {
 		draft.ScenarioMode = "vuser_driven"
@@ -649,8 +837,10 @@ func (s *Server) handleDeriveTrafficProfile(w http.ResponseWriter, r *http.Reque
 			if draft.GoalConfig == nil {
 				draft.GoalConfig = &GoalConfig{}
 			}
-			draft.GoalConfig.MinVUsers = &suggestedMinimum
-			draft.GoalConfig.MaxVUsers = &suggestedMaximum
+			if !exactCSV || draft.GoalConfig.MinVUsers == nil || draft.GoalConfig.MaxVUsers == nil {
+				draft.GoalConfig.MinVUsers = &suggestedMinimum
+				draft.GoalConfig.MaxVUsers = &suggestedMaximum
+			}
 			warnings = append(warnings, fmt.Sprintf("ART sizing estimates a simultaneous peak of %d VUsers; suggested adaptive guardrails are %d-%d VUsers", totalPeak, suggestedMinimum, suggestedMaximum))
 		} else if draft.GoalConfig == nil || draft.GoalConfig.MinVUsers == nil || draft.GoalConfig.MaxVUsers == nil {
 			// Without complete ART evidence, retain the legacy editable envelope

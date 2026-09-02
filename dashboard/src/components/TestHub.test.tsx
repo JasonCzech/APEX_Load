@@ -36,6 +36,8 @@ const apiMock = {
   getSystemInventory: vi.fn(),
   getConfigDefaults: vi.fn().mockResolvedValue({ config: {} }),
   getTrafficProfileSources: vi.fn(),
+  analyzeCSVDriven: vi.fn(),
+  deriveCSVDriven: vi.fn(),
 }
 
 const libraryApiMock = {
@@ -77,7 +79,9 @@ vi.mock('recharts', () => {
     Area: ({ dataKey, name }: { dataKey?: string; name?: string }) => <path data-testid="scenario-model-area" data-key={dataKey} data-name={name} />,
     CartesianGrid: Mock,
     ComposedChart: MockChart,
+    Legend: Mock,
     Line: ({ dataKey, name }: { dataKey?: string; name?: string }) => <path data-testid="scenario-model-line" data-key={dataKey} data-name={name} />,
+    LineChart: MockChart,
     ResponsiveContainer: ({ children }: { children?: ReactNode }) => <div data-testid="scenario-model-responsive">{children}</div>,
     Tooltip: MockTooltip,
     XAxis: ({ label }: { label?: string | { value?: string } }) => <g data-testid="scenario-model-x-axis" data-label={labelText(label)} />,
@@ -696,12 +700,12 @@ describe('TestHub', () => {
     apiMock.listLoadModelTemplates.mockResolvedValue({
       templates: [{
         id: 'open-api-arrival-rate',
-        name: 'Open API Arrival Rate',
+		name: 'Goal-Driven API',
         shape_id: 'open-arrival-rate',
         description: 'Throughput-oriented API load shape for queueing-sensitive services.',
         scenario: {
           scenario_mode: 'goal_oriented',
-          duration: '10m',
+		  duration: '60m',
           goal_config: {
             target_average_tps: 25,
             min_vusers: 5,
@@ -765,7 +769,7 @@ describe('TestHub', () => {
         },
         {
           id: 'open-arrival-rate',
-          name: 'Open Arrival Rate',
+		  name: 'Goal-Driven Scenario',
           category: 'throughput',
           status: 'executed',
           apexload_shape: 'Open workload runtime using target throughput controls.',
@@ -791,6 +795,15 @@ describe('TestHub', () => {
           notes: 'Preserves the gradual daily traffic curve.',
         },
         {
+          id: 'csv-driven',
+          name: 'CSV Driven',
+          category: 'profile',
+          status: 'executed',
+          apexload_shape: 'Exact authored CSV target replay.',
+          fields: ['traffic_profile.mappings[].points', 'scenario_mode'],
+          notes: 'Supports direct VUser or goal-driven TPS schedules.',
+        },
+        {
           id: 'chaos-resilience',
           name: 'Chaos Resilience',
           category: 'resilience',
@@ -800,7 +813,7 @@ describe('TestHub', () => {
           notes: 'Preserves shakeout evidence before full load.',
         },
       ],
-      status_counts: { executed: 5 },
+      status_counts: { executed: 6 },
       notes: [],
     })
     apiMock.validateScenarioLoadModel.mockResolvedValue({
@@ -933,6 +946,9 @@ describe('TestHub', () => {
       scenario_mode: 'vuser_driven',
       script_shakeout: false,
       resource_baseline: false,
+      goal_config: {
+        early_stop: { enabled: false, error_rate_pct: 5, breach_window: '1m' },
+      },
       workload_shape_id: '',
       assignment: { mode: 'auto' },
       groups: [
@@ -1219,21 +1235,21 @@ describe('TestHub', () => {
     await flushPromises()
 
     await clickButton('Build from Workload Shape')
-    await selectManualShapeByName('Open Arrival Rate')
+    await selectManualShapeByName('Goal-Driven Scenario')
 
     // Guidance banner reflects the chosen shape on the Scripts step.
     const guidance = container.querySelector('.scenario-shape-guidance')
     expect(guidance).toBeTruthy()
-    expect(guidance?.textContent).toContain('Open Arrival Rate')
+    expect(guidance?.textContent).toContain('Goal-Driven Scenario')
     expect(guidance?.textContent).toContain('throughput')
 
     await clickWizardStep('Run Settings')
     const durationField = getDurationFieldByLabel(container, 'Duration')
-    expect(durationField?.input.value).toBe('10')
-    expect(durationField?.select.value).toBe('m')
-    const modeSelect = Array.from(container.querySelectorAll('select')).find(select => select.value === 'goal_oriented')
-    expect(modeSelect?.value).toBe('goal_oriented')
-    expect(container.textContent).toContain('Goal Controller')
+	expect(durationField?.input.value).toBe('1')
+	expect(durationField?.select.value).toBe('h')
+		expect(container.textContent).not.toContain('Scenario Mode')
+		expect(container.textContent).toContain('Goal-Driven Scenario Setup')
+		expect((container.querySelector('input[aria-label="Average response time for Group 1"]') as HTMLInputElement | null)?.value).toBe('')
     for (const label of [
       'Max Error Count',
       'Max LCP (ms)',
@@ -1244,12 +1260,57 @@ describe('TestHub', () => {
       'Max Partition Skew %',
       'Max Redelivery Rate %',
       'Max Dead-Letter Rate %',
-      'SLA Breach Window',
-      'Stop on sustained SLA breach',
+	  'Breach window',
+	  'Stop on sustained guardrail breach',
       'Stop when total errors exceed max error count',
     ]) {
       expect(container.textContent).toContain(label)
     }
+  })
+
+  it('preserves persisted Goal-Driven VUser guardrails when throughput changes', async () => {
+    apiMock.listScenarios.mockResolvedValue({
+      scenarios: [{
+        id: 'goal-driven-edit',
+        name: 'Authored Goal Guardrails',
+        workload_shape_id: 'open-arrival-rate',
+        duration: '60m',
+        scenario_mode: 'goal_oriented',
+        goal_config: {
+          target_average_tps: 25,
+          min_vusers: 3,
+          max_vusers: 99,
+          workload_shape_config: {
+            goal_driven: {
+              groups: { group_0: { target_tps: 25, art: { basis: 'manual', art_ms: 400 } } },
+            },
+          },
+        },
+        scripts: [{ order: 0, script_id: 'script-1', script_name: 'Checkout Flow', name: 'Checkout', vusers: 10 }],
+        data_pools: [],
+        associated_releases: [],
+        result_count: 0,
+        created_at: '2026-05-12T00:00:00Z',
+        updated_at: '2026-05-12T00:00:00Z',
+        script_count: 1,
+      }],
+      count: 1,
+    })
+
+    await act(async () => {
+      root.render(<TestHub testStatuses={{}} onSelectTest={vi.fn()} />)
+    })
+    await flushPromises()
+    await clickButton('Edit')
+    await clickWizardStep('Run Settings')
+
+    const target = container.querySelector('input[aria-label="Target TPS for Checkout"]') as HTMLInputElement | null
+    expect(target).not.toBeNull()
+    if (!target) return
+    await act(async () => setInputValue(target, '50'))
+
+    expect(findControlByLabel<HTMLInputElement>(container, 'Min VUsers', 'input')?.value).toBe('3')
+    expect(findControlByLabel<HTMLInputElement>(container, 'Max VUsers', 'input')?.value).toBe('99')
   })
 
   it('rejects a persistent goal-oriented scenario without a goal or guardrail', async () => {
@@ -1459,7 +1520,7 @@ describe('TestHub', () => {
     await flushPromises()
 
     await clickButton('Build from Workload Shape')
-    await selectManualShapeByName('Open Arrival Rate')
+	await selectManualShapeByName('Goal-Driven Scenario')
     await chooseLibraryScriptForGroup()
 
     // Switch to a different shape from the catalog.
@@ -1517,6 +1578,51 @@ describe('TestHub', () => {
     expect(container.textContent).toContain('Auto-transactions')
     expect(container.textContent).toContain('Think Time')
     expect(container.textContent).not.toContain('Automatic placement')
+  })
+
+  it.each([
+    ['custom', null],
+    ['closed VUser', 'Closed VUser'],
+    ['goal driven', 'Goal-Driven Scenario'],
+    ['stepped', 'Stepped Ramp'],
+    ['production profile', 'Production Traffic Profile'],
+    ['CSV driven', 'CSV Driven'],
+  ])('renders shared safety settings exactly once and retains them for %s scenarios', async (_label, shapeName) => {
+    await act(async () => {
+      root.render(<TestHub initialView="builder" testStatuses={{}} onSelectTest={vi.fn()} />)
+    })
+    await flushPromises()
+
+    if (shapeName) await selectManualShapeByName(shapeName)
+    await clickWizardStep('Run Settings')
+
+    expect(container.querySelectorAll('[data-testid="protect-the-run"]')).toHaveLength(1)
+    expect(container.querySelectorAll('[data-testid="pre-run-assurance"]')).toHaveLength(1)
+
+    const protectToggle = Array.from(container.querySelectorAll('label')).find(label => label.textContent?.includes('Stop early on excessive errors'))?.querySelector('input')
+    const shakeoutToggle = Array.from(container.querySelectorAll('label')).find(label => label.textContent?.includes('Script shakeout gate'))?.querySelector('input')
+    expect(protectToggle).toBeDefined()
+    expect(shakeoutToggle).toBeDefined()
+    if (!protectToggle || !shakeoutToggle) return
+
+    await act(async () => {
+      protectToggle.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      shakeoutToggle.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    const threshold = container.querySelector<HTMLInputElement>('[aria-label="Protect the Run error rate threshold"]')
+    expect(threshold?.disabled).toBe(false)
+    if (!threshold) return
+    await act(async () => setInputValue(threshold, '7.5'))
+
+    await clickRunSettingsTab('Browser/Script Runtime')
+    expect(container.querySelectorAll('[data-testid="protect-the-run"]')).toHaveLength(0)
+    expect(container.querySelectorAll('[data-testid="pre-run-assurance"]')).toHaveLength(0)
+    await clickRunSettingsTab('Scenario Settings')
+
+    expect(container.querySelectorAll('[data-testid="protect-the-run"]')).toHaveLength(1)
+    expect(container.querySelectorAll('[data-testid="pre-run-assurance"]')).toHaveLength(1)
+    expect(container.querySelector<HTMLInputElement>('[aria-label="Protect the Run error rate threshold"]')?.value).toBe('7.5')
+    expect(Array.from(container.querySelectorAll('label')).find(label => label.textContent?.includes('Script shakeout gate'))?.querySelector('input')?.checked).toBe(true)
   })
 
   it('shows multi-group Scenario tab load settings in horizontal group tabs', async () => {
@@ -2779,7 +2885,7 @@ describe('TestHub', () => {
     await clickWizardStep('Shape / Source')
 
     expect(container.textContent).toContain('Choose Workload Shape')
-    const templateButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Open API Arrival Rate'))
+	const templateButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Goal-Driven API'))
     expect(templateButton).toBeDefined()
     if (!templateButton) return
 
@@ -2789,18 +2895,12 @@ describe('TestHub', () => {
 
     await chooseLibraryScriptForGroup()
     await clickWizardStep('Run Settings')
-    const rampUpField = getDurationFieldByLabel(container, 'Ramp Up')
+	const durationField = getDurationFieldByLabel(container, 'Duration')
 
-    expect(rampUpField?.input.value).toBe('2')
-    expect(rampUpField?.select.value).toBe('m')
-
-    const durationField = getDurationFieldByLabel(container, 'Duration')
-    const modeSelect = Array.from(container.querySelectorAll('select')).find(select => select.value === 'goal_oriented') as HTMLSelectElement | undefined
-
-    expect(durationField?.input.value).toBe('10')
-    expect(durationField?.select.value).toBe('m')
-    expect(modeSelect?.value).toBe('goal_oriented')
-    expect(container.textContent).toContain('Goal Controller')
+	expect(durationField?.input.value).toBe('1')
+	expect(durationField?.select.value).toBe('h')
+	expect(container.textContent).not.toContain('Scenario Mode')
+	expect(container.textContent).toContain('Goal-Driven Scenario Setup')
 
     const runSettingsValidateButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Validate Load Model'))
     expect(runSettingsValidateButton).toBeUndefined()
@@ -2818,12 +2918,12 @@ describe('TestHub', () => {
     await flushPromises()
 
     expect(apiMock.validateScenarioLoadModel).toHaveBeenCalledWith(expect.objectContaining({
-      duration: '10m',
+	  duration: '60m',
       scenario_mode: 'goal_oriented',
       goal_config: expect.objectContaining({
         target_average_tps: 25,
-        min_vusers: 5,
-        max_vusers: 50,
+		min_vusers: 10,
+		max_vusers: 20,
         max_dead_letter_rate_pct: 0.5,
         stop_on_sla_breach: true,
         sla_breach_window: '15s',
@@ -2924,13 +3024,13 @@ describe('TestHub', () => {
     expect(container.textContent).toContain('groups[].stages[].target_vusers')
     expect(container.textContent).toContain('Chaos Resilience')
     expect(container.textContent).toContain('script_shakeout')
-    expect(container.querySelectorAll('.scenario-shape-visual')).toHaveLength(5)
+    expect(container.querySelectorAll('.scenario-shape-visual')).toHaveLength(6)
     expect(container.querySelector('[aria-label="Closed VUser workload shape"]')).toBeTruthy()
     const productionProfileVisual = container.querySelector('[aria-label="Production Traffic Profile workload shape"]')
     expect(productionProfileVisual?.querySelector('.scenario-shape-line')?.getAttribute('d'))
       .toBe('M12 50C22 49 29 45 36 38C44 29 51 20 62 17C74 14 84 20 91 29C99 38 103 45 108 49')
 
-    await clickButton('Open API Arrival Rate')
+	await clickButton('Goal-Driven API')
     expect(Array.from(container.querySelectorAll('[data-testid="scenario-model-y-axis"]')).map(axis => axis.getAttribute('data-label'))).toEqual(['TPS'])
     expect(container.querySelector('[data-testid="scenario-model-y-axis"]')?.getAttribute('data-orientation')).toBe('left')
     expect(container.textContent).not.toContain('peak VUsers')
@@ -2959,7 +3059,7 @@ describe('TestHub', () => {
     })
     await flushPromises()
     await clickWizardStep('Shape / Source')
-    await clickButton('Open API Arrival Rate')
+	await clickButton('Goal-Driven API')
 
     apiMock.getLoadModelSupportMatrix.mockResolvedValueOnce({
       support_matrix: [{

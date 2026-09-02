@@ -80,6 +80,21 @@ func cloneGoalConfig(config *GoalConfig) *GoalConfig {
 				}
 			}
 		}
+		if config.WorkloadShapeConfig.GoalDriven != nil {
+			goalDriven := *config.WorkloadShapeConfig.GoalDriven
+			shape.GoalDriven = &goalDriven
+			if goalDriven.Groups != nil {
+				goalDriven.Groups = make(map[string]GoalDrivenGroupDefinition, len(goalDriven.Groups))
+				for name, definition := range config.WorkloadShapeConfig.GoalDriven.Groups {
+					copyDefinition := definition
+					if definition.ART != nil {
+						art := *definition.ART
+						copyDefinition.ART = &art
+					}
+					goalDriven.Groups[name] = copyDefinition
+				}
+			}
+		}
 	}
 	if config.TargetAverageTPS != nil {
 		value := *config.TargetAverageTPS
@@ -425,6 +440,18 @@ func defaultGoalTargetsByGroup(test *ManagedTest) map[string]float64 {
 	if test == nil || len(test.Groups) == 0 || test.GoalConfig == nil || test.GoalConfig.TargetAverageTPS == nil || *test.GoalConfig.TargetAverageTPS <= 0 {
 		return nil
 	}
+	if shape := test.GoalConfig.WorkloadShapeConfig; shape != nil && shape.GoalDriven != nil && len(shape.GoalDriven.Groups) > 0 {
+		targets := make(map[string]float64, len(test.Groups))
+		for index, group := range test.Groups {
+			definition, ok := shape.GoalDriven.Groups[fmt.Sprintf("group_%d", index)]
+			if !ok || definition.TargetTPS <= 0 || math.IsNaN(definition.TargetTPS) || math.IsInf(definition.TargetTPS, 0) {
+				return nil
+			}
+			targets[group.Name] = definition.TargetTPS
+		}
+		return targets
+	}
+
 	aggregate := *test.GoalConfig.TargetAverageTPS
 	targets := make(map[string]float64, len(test.Groups))
 

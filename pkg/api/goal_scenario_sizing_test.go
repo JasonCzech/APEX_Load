@@ -3,10 +3,12 @@ package api
 import (
 	"bytes"
 	"encoding/json"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -109,8 +111,8 @@ func TestBuildGoalSizingReportLittlesLaw(t *testing.T) {
 	if g.ComputedVUsers != 300 {
 		t.Fatalf("computed vusers = %d, want 300", g.ComputedVUsers)
 	}
-	if g.Basis != "group" {
-		t.Fatalf("basis = %q, want group", g.Basis)
+	if g.Basis != "baseline" {
+		t.Fatalf("basis = %q, want baseline", g.Basis)
 	}
 	if sizing.TotalVUsers != 300 || sizing.TotalTargetTPS != 100 {
 		t.Fatalf("totals = %d vusers / %.1f tps, want 300 / 100", sizing.TotalVUsers, sizing.TotalTargetTPS)
@@ -122,8 +124,15 @@ func TestBuildGoalSizingReportLittlesLaw(t *testing.T) {
 	if gc == nil || gc.TargetAverageTPS == nil || *gc.TargetAverageTPS != 100 {
 		t.Fatalf("goal config target tps not set correctly: %#v", gc)
 	}
-	if gc.MinVUsers == nil || gc.MaxVUsers == nil || *gc.MinVUsers != 150 || *gc.MaxVUsers != 600 {
-		t.Fatalf("bounds = %v/%v, want 150/600", gc.MinVUsers, gc.MaxVUsers)
+	if gc.MinVUsers == nil || gc.MaxVUsers == nil || *gc.MinVUsers != 300 || *gc.MaxVUsers != 600 {
+		t.Fatalf("bounds = %v/%v, want 300/600", gc.MinVUsers, gc.MaxVUsers)
+	}
+	if sizing.ScenarioDraft.Duration != "60m" {
+		t.Fatalf("duration = %q, want 60m", sizing.ScenarioDraft.Duration)
+	}
+	intent := gc.WorkloadShapeConfig.GoalDriven.Groups["group_0"]
+	if intent.TargetTPS != 100 || intent.ART == nil || intent.ART.Basis != "baseline" || intent.ART.ARTMs != 3000 {
+		t.Fatalf("goal-driven intent = %#v, want baseline 3000ms at 100 TPS", intent)
 	}
 	if len(sizing.ScenarioDraft.Groups) != 1 || sizing.ScenarioDraft.Groups[0].VUsers != 300 {
 		t.Fatalf("draft group vusers wrong: %#v", sizing.ScenarioDraft.Groups)
@@ -184,14 +193,43 @@ func TestBuildGoalSizingReportSingleGroupFallsBackToOverview(t *testing.T) {
 		t.Fatalf("buildGoalSizingReport: %v", err)
 	}
 	g := sizing.Groups[0]
-	if g.Basis != "overview" {
-		t.Fatalf("basis = %q, want overview", g.Basis)
+	if g.Basis != "baseline" {
+		t.Fatalf("basis = %q, want baseline", g.Basis)
 	}
 	if g.BaselineARTMs != 2000 { // (1000+3000)/2
 		t.Fatalf("art = %.1f, want 2000", g.BaselineARTMs)
 	}
 	if g.ComputedVUsers != 20 { // 10 * 2.0s
 		t.Fatalf("vusers = %d, want 20", g.ComputedVUsers)
+	}
+}
+
+func TestBuildGoalSizingReportManualARTWithoutBaseline(t *testing.T) {
+	artMs := 1250.0
+	sizing, err := buildGoalSizingReport(nil, GoalSizingRequest{
+		Groups: []GoalSizingGroupTarget{{Name: "Checkout", ScriptID: "script-a", TargetTPS: 12.5, ARTBasis: "manual", ARTMs: &artMs}},
+	})
+	if err != nil {
+		t.Fatalf("buildGoalSizingReport: %v", err)
+	}
+	if sizing.TotalVUsers != 16 {
+		t.Fatalf("total vusers = %d, want 16", sizing.TotalVUsers)
+	}
+	group := sizing.Groups[0]
+	if group.Basis != "manual" || group.BaselineARTMs != artMs {
+		t.Fatalf("manual evidence = %#v", group)
+	}
+	intent := sizing.ScenarioDraft.GoalConfig.WorkloadShapeConfig.GoalDriven.Groups["group_0"]
+	if intent.ART == nil || intent.ART.Basis != "manual" || intent.ART.BaselineTestID != "" {
+		t.Fatalf("manual intent = %#v", intent)
+	}
+}
+
+func TestBuildGoalSizingReportRejectsInvalidManualART(t *testing.T) {
+	zero := 0.0
+	_, err := buildGoalSizingReport(nil, GoalSizingRequest{Groups: []GoalSizingGroupTarget{{TargetTPS: 10, ARTBasis: "manual", ARTMs: &zero}}})
+	if err == nil || !strings.Contains(err.Error(), "positive finite") {
+		t.Fatalf("error = %v, want positive finite ART error", err)
 	}
 }
 
@@ -246,6 +284,11 @@ func TestBuildGoalSizingReportErrors(t *testing.T) {
 			name:   "non-positive target tps",
 			report: single,
 			req:    GoalSizingRequest{BaselineTestID: "baseline-1", Groups: []GoalSizingGroupTarget{{ScriptID: "script-a", TargetTPS: 0}}},
+		},
+		{
+			name:   "non-finite target tps",
+			report: single,
+			req:    GoalSizingRequest{Groups: []GoalSizingGroupTarget{{ARTBasis: "manual", ARTMs: func() *float64 { value := 100.0; return &value }(), TargetTPS: math.NaN()}}},
 		},
 		{
 			name:   "unknown group in multi-group baseline",
@@ -329,12 +372,14 @@ func TestHandleSizeScenarioFromGoalRouteWiring(t *testing.T) {
 	defer store.Close()
 	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 2, Addr: ":8080"})
 
+	manualART := 250.0
 	cases := []struct {
 		name string
 		body GoalSizingRequest
 		want int
 	}{
 		{name: "missing baseline id", body: GoalSizingRequest{Groups: []GoalSizingGroupTarget{{ScriptID: "x", TargetTPS: 10}}}, want: http.StatusBadRequest},
+		{name: "manual ART needs no baseline", body: GoalSizingRequest{Groups: []GoalSizingGroupTarget{{Name: "Manual", ScriptID: "x", TargetTPS: 10, ARTBasis: "manual", ARTMs: &manualART}}}, want: http.StatusOK},
 		{name: "unknown baseline", body: GoalSizingRequest{BaselineTestID: "nope", Groups: []GoalSizingGroupTarget{{ScriptID: "x", TargetTPS: 10}}}, want: http.StatusNotFound},
 	}
 	for _, tc := range cases {

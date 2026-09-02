@@ -3166,6 +3166,26 @@
       "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin"
     },
     {
+      "method": "POST",
+      "path": "/api/v1/scenarios/csv-driven/analyze",
+      "operationId": "handleAnalyzeCSVDriven",
+      "summary": "Analyze CSV Driven",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: tests:run"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/scenarios/csv-driven/derive",
+      "operationId": "handleDeriveCSVDriven",
+      "summary": "Derive CSV Driven",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: tests:run"
+    },
+    {
       "method": "GET",
       "path": "/api/v1/scenarios/load-models/support-matrix",
       "operationId": "handleLoadModelSupportMatrix",

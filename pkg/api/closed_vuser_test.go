@@ -21,7 +21,7 @@ func TestValidateClosedVUserWorkloadShapeConfig(t *testing.T) {
 		{name: "scenario", scenarioMode: "vuser_driven", config: &WorkloadShapeConfig{ClosedVUser: &ClosedVUserConfig{Scope: "scenario", Scenario: &valid}}},
 		{name: "group", scenarioMode: "vuser_driven", groups: []CreateGroupEntry{{}, {}}, config: &WorkloadShapeConfig{ClosedVUser: &ClosedVUserConfig{Scope: "group", Groups: map[string]ClosedVUserDefinition{"group_0": valid, "group_1": valid}}}},
 		{name: "goal mode", scenarioMode: "goal_oriented", config: &WorkloadShapeConfig{ClosedVUser: &ClosedVUserConfig{Scope: "scenario", Scenario: &valid}}, wantErr: "requires scenario_mode vuser_driven"},
-		{name: "conflicting shapes", scenarioMode: "vuser_driven", config: &WorkloadShapeConfig{ClosedVUser: &ClosedVUserConfig{Scope: "scenario", Scenario: &valid}, SteppedRamp: &SteppedRampConfig{Scope: "scenario"}}, wantErr: "cannot contain both"},
+		{name: "conflicting shapes", scenarioMode: "vuser_driven", config: &WorkloadShapeConfig{ClosedVUser: &ClosedVUserConfig{Scope: "scenario", Scenario: &valid}, SteppedRamp: &SteppedRampConfig{Scope: "scenario"}}, wantErr: "cannot contain multiple"},
 		{name: "missing group definition", scenarioMode: "vuser_driven", groups: []CreateGroupEntry{{}, {}}, config: &WorkloadShapeConfig{ClosedVUser: &ClosedVUserConfig{Scope: "group", Groups: map[string]ClosedVUserDefinition{"group_0": valid}}}, wantErr: "exactly one definition"},
 		{name: "wrong group key", scenarioMode: "vuser_driven", groups: []CreateGroupEntry{{}}, config: &WorkloadShapeConfig{ClosedVUser: &ClosedVUserConfig{Scope: "group", Groups: map[string]ClosedVUserDefinition{"checkout": valid}}}, wantErr: "groups.group_0 is required"},
 		{name: "missing scenario definition", config: &WorkloadShapeConfig{ClosedVUser: &ClosedVUserConfig{Scope: "scenario"}}, wantErr: "scenario is required"},
@@ -37,7 +37,7 @@ func TestValidateClosedVUserWorkloadShapeConfig(t *testing.T) {
 			if mode == "" {
 				mode = "vuser_driven"
 			}
-			err := validateWorkloadShapeConfig(tt.config, mode, tt.groups)
+			err := validateWorkloadShapeConfig(tt.config, mode, tt.groups, nil)
 			if tt.wantErr == "" {
 				if err != nil {
 					t.Fatalf("validateWorkloadShapeConfig() error = %v", err)

@@ -12,7 +12,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
-const domainFeatureCatalogVersion = "2026-08-27.1"
+const domainFeatureCatalogVersion = "2026-09-02.1"
 
 type domainFeatureDefinition struct {
 	ID          string `json:"id"`
@@ -89,13 +89,14 @@ var domainFeatureCatalog = []domainFeatureDefinition{
 	{ID: "script_import.oracle_ebusiness_review", Name: "Oracle E-Business / Siebel Review", Category: "script_import", ParentID: "script_builder.imports"},
 
 	{ID: "workload_shape.closed-vuser", Name: "Closed VUser", Category: "workload_shape"},
-	{ID: "workload_shape.open-arrival-rate", Name: "Open Arrival Rate", Category: "workload_shape"},
+	{ID: "workload_shape.open-arrival-rate", Name: "Goal-Driven Scenario", Category: "workload_shape"},
 	{ID: "workload_shape.stepped-ramp", Name: "Stepped Ramp", Category: "workload_shape"},
 	{ID: "workload_shape.production-replay", Name: "Production Traffic Profile", Category: "workload_shape"},
+	{ID: "workload_shape.csv-driven", Name: "CSV Driven", Category: "workload_shape"},
 	{ID: "workload_shape.spike-rendezvous", Name: "Rendezvous Spike", Category: "workload_shape"},
 	{ID: "workload_shape.soak", Name: "Soak", Category: "workload_shape"},
 	{ID: "workload_shape.stress", Name: "Stress", Category: "workload_shape"},
-	{ID: "workload_shape.goal-based", Name: "Goal-Based", Category: "workload_shape"},
+	{ID: "workload_shape.goal-based", Name: "Goal-Driven Scenario (legacy alias)", Category: "workload_shape"},
 	{ID: "workload_shape.chaos-resilience", Name: "Chaos Resilience", Category: "workload_shape"},
 	{ID: "workload_shape.mixed-protocol", Name: "Mixed Protocol", Category: "workload_shape"},
 }

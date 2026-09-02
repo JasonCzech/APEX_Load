@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -418,6 +419,79 @@ func validateTrafficProfile(profile *TrafficProfile, groups []CreateGroupEntry, 
 		}
 	} else {
 		profile.Sizing = nil
+	}
+	return nil
+}
+
+func validateTrafficProfileForWorkloadShape(shapeID string, profile *TrafficProfile, groups []CreateGroupEntry) error {
+	if strings.TrimSpace(shapeID) != csvDrivenShapeID {
+		return nil
+	}
+	if profile == nil {
+		return errors.New("csv-driven scenarios require traffic_profile")
+	}
+	if !strings.EqualFold(strings.TrimSpace(profile.Source.Kind), "file") || profile.Source.File == nil || strings.ToLower(filepath.Ext(strings.TrimSpace(profile.Source.File.Filename))) != ".csv" {
+		return errors.New("csv-driven scenarios require a CSV file traffic_profile source")
+	}
+	if len(profile.Source.File.ARTColumns) > 0 && profile.RuntimeTarget == "vusers" {
+		return errors.New("csv-driven VUser schedules cannot retain ART columns")
+	}
+	windowMode := strings.ToLower(strings.TrimSpace(profile.Window.Mode))
+	if windowMode != "" && windowMode != "full" {
+		return errors.New("csv-driven scenarios do not support traffic profile window selection")
+	}
+	if !profile.Window.Start.IsZero() || !profile.Window.End.IsZero() || strings.TrimSpace(profile.Window.StartOffset) != "" || strings.TrimSpace(profile.Window.EndOffset) != "" || strings.TrimSpace(profile.Window.Duration) != "" || strings.TrimSpace(profile.Window.PeakScope) != "" {
+		return errors.New("csv-driven scenarios do not support traffic profile window transformations")
+	}
+	if strings.TrimSpace(profile.Amplitude.Mode) != "" || (profile.Amplitude.Value != 0 && profile.Amplitude.Value != 1) {
+		return errors.New("csv-driven scenarios do not support amplitude transformations")
+	}
+	if profile.GapPolicy != string(trafficprofile.GapDrop) {
+		return errors.New("csv-driven scenarios require gap_policy drop")
+	}
+	if profile.ValueSemantics != string(trafficprofile.SemanticsVUsers) && profile.ValueSemantics != string(trafficprofile.SemanticsTPS) {
+		return errors.New("csv-driven traffic_profile values must represent vusers or tps")
+	}
+	sourceDuration, sourceErr := time.ParseDuration(profile.SourceDuration)
+	targetDuration, targetErr := time.ParseDuration(profile.TargetDuration)
+	if sourceErr != nil || targetErr != nil || sourceDuration != targetDuration {
+		return errors.New("csv-driven target duration must equal the inferred CSV source duration")
+	}
+	if len(profile.Mappings) != len(groups) {
+		return errors.New("csv-driven scenarios require exactly one traffic profile mapping for every scenario group")
+	}
+	var sourceStart, sourceEnd, mappingDuration string
+	seenSeries := make(map[string]struct{}, len(profile.Mappings))
+	for index, mapping := range profile.Mappings {
+		seriesKey := strings.TrimSpace(mapping.SeriesKey)
+		if _, exists := seenSeries[seriesKey]; exists {
+			return fmt.Errorf("csv-driven series %q is mapped more than once", mapping.SeriesKey)
+		}
+		seenSeries[seriesKey] = struct{}{}
+		if index == 0 {
+			sourceStart, sourceEnd, mappingDuration = mapping.SourceStart, mapping.SourceEnd, mapping.SourceDuration
+			if sourceStart == "" || sourceEnd == "" || mappingDuration == "" {
+				return errors.New("csv-driven mappings require shared source bounds and duration metadata")
+			}
+		} else if mapping.SourceStart != sourceStart || mapping.SourceEnd != sourceEnd || mapping.SourceDuration != mappingDuration {
+			return errors.New("csv-driven mappings must share identical source bounds and inferred duration")
+		}
+		if mapping.SourceDuration != profile.SourceDuration {
+			return errors.New("csv-driven mapping duration must equal the inferred CSV source duration")
+		}
+		if profile.RuntimeTarget == "tps" && mapping.ART == nil {
+			return fmt.Errorf("csv-driven TPS mapping %q requires ART sizing", mapping.GroupName)
+		}
+		if profile.RuntimeTarget == "vusers" {
+			if mapping.ART != nil {
+				return fmt.Errorf("csv-driven VUser mapping %q cannot contain ART sizing", mapping.GroupName)
+			}
+			for pointIndex, point := range mapping.Points {
+				if point.Target != math.Trunc(point.Target) {
+					return fmt.Errorf("csv-driven mapping %q point %d VUser target must be a whole number", mapping.GroupName, pointIndex+1)
+				}
+			}
+		}
 	}
 	return nil
 }

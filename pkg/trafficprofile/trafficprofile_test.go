@@ -147,6 +147,24 @@ func TestSeriesFromSheetRelativeTimestamps(t *testing.T) {
 	}
 }
 
+func TestSeriesFromSheetLongFormGroups(t *testing.T) {
+	sheet, err := ParseCSV([]byte("elapsed,group,target\n0s,checkout,10\n0s,search,4\n5s,checkout,20\n5s,search,8\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	start := time.Date(2000, time.January, 1, 0, 0, 0, 0, time.UTC)
+	series, err := SeriesFromSheet(sheet, TableOptions{TimestampColumn: "elapsed", TimestampMode: "relative", RelativeStart: start, SeriesColumn: "group", ValueColumns: []string{"target"}, Timezone: time.UTC})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(series) != 2 || series[0].Key != "checkout" || series[1].Key != "search" {
+		t.Fatalf("long-form series = %#v", series)
+	}
+	if len(series[0].Points) != 2 || series[0].Points[1].Value != 20 || series[0].Points[1].Timestamp.Sub(series[0].Points[0].Timestamp) != 5*time.Second {
+		t.Fatalf("checkout series = %#v", series[0])
+	}
+}
+
 func TestParseRelativeTimestamp(t *testing.T) {
 	for _, test := range []struct {
 		value string

@@ -96,7 +96,7 @@ export interface TrafficProfileDeriveRequest {
   gap_policy: TrafficProfileGapPolicy
   window: { mode: 'full' | 'explicit' | 'peak'; peak_scope?: 'per_group' | 'overall'; start?: string; end?: string; start_offset?: string; end_offset?: string; duration?: string }
   target_duration?: string
-  amplitude: { mode: 'factor' | 'peak'; value: number }
+  amplitude?: { mode: 'factor' | 'peak'; value: number }
   scenario_draft: ScenarioUpsertPayload
 }
 

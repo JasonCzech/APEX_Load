@@ -61,6 +61,8 @@ var legacyRouteCatalogAuthRules = []apiRouteAuthRule{
 	routeAuth(http.MethodGet, "/api/v1/scenarios/traffic-profile/sources", viewerGlobalAccess()),
 	routeAuth(http.MethodPost, "/api/v1/scenarios/traffic-profile/analyze", withDomainFeature(editorImportAccess(resolveImportProjectIDFromJSONOrForm, trafficProfileUploadMaxBytes), workloadShapeFeatureID(productionReplayShapeID))),
 	routeAuth(http.MethodPost, "/api/v1/scenarios/traffic-profile/derive", withDomainFeature(editorProjectAccessWithBodyLimit(resolveImportProjectIDFromJSONOrForm, trafficProfileDeriveMaxBytes), workloadShapeFeatureID(productionReplayShapeID))),
+	routeAuth(http.MethodPost, "/api/v1/scenarios/csv-driven/analyze", withDomainFeature(editorImportAccess(resolveImportProjectIDFromJSONOrForm, trafficProfileUploadMaxBytes), workloadShapeFeatureID(csvDrivenShapeID))),
+	routeAuth(http.MethodPost, "/api/v1/scenarios/csv-driven/derive", withDomainFeature(editorProjectAccessWithBodyLimit(resolveImportProjectIDFromJSONOrForm, trafficProfileDeriveMaxBytes), workloadShapeFeatureID(csvDrivenShapeID))),
 	routeAuth(http.MethodGet, "/api/v1/scenarios/load-models/support-matrix", viewerGlobalAccess()),
 	routeAuth(http.MethodGet, "/api/v1/scenarios/load-models/templates", viewerGlobalAccess()),
 	routeAuth(http.MethodGet, "/api/v1/tests/{id}/report/annotations", accessRequirement{GlobalRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}, ProjectRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin}, ProjectLookup: resolveTestProjectID}),
