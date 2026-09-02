@@ -1987,6 +1987,19 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
   }
 
   const selectShapeOption = (shapeId: string) => {
+    if (shapeId === PRODUCTION_REPLAY_SHAPE_ID) {
+      setSelectedShapeId('')
+      setSelectedCloneScenarioId('')
+      setSelectedLoadModelTemplateId('')
+      setLoadModelValidation(null)
+      setLoadModelValidationError('')
+      setScenarioSourceMode('traffic_profile')
+      setScenarioStartChoice('traffic_profile')
+      setScriptSelectionTargetIndex(null)
+      markWizardStepVisited('source')
+      setWizardStep('source')
+      return
+    }
     const preset = getScenarioShapePreset(shapeId)
     const shapeChanged = shapeId !== selectedShapeId
     setSelectedShapeId(shapeId)

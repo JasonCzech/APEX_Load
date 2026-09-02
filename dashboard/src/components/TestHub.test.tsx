@@ -35,6 +35,7 @@ const apiMock = {
   getAuthEffectiveAccess: vi.fn(),
   getSystemInventory: vi.fn(),
   getConfigDefaults: vi.fn().mockResolvedValue({ config: {} }),
+  getTrafficProfileSources: vi.fn(),
 }
 
 const libraryApiMock = {
@@ -684,6 +685,14 @@ describe('TestHub', () => {
       count: 1,
     })
     apiMock.listDataPools.mockResolvedValue({ data_pools: [], count: 0 })
+    apiMock.getTrafficProfileSources.mockResolvedValue({
+      sources: [
+        { kind: 'file', enabled: true, configured: true, formats: ['csv', 'xlsx'] },
+        { kind: 'prometheus', enabled: true, configured: true },
+        { kind: 'opensearch', enabled: false, configured: false },
+      ],
+      limits: { upload_bytes: 25, derive_bytes: 8, upstream_bytes: 16, points_per_series: 10_000, points_per_profile: 50_000 },
+    })
     apiMock.listLoadModelTemplates.mockResolvedValue({
       templates: [{
         id: 'open-api-arrival-rate',
@@ -2926,6 +2935,20 @@ describe('TestHub', () => {
     expect(container.querySelector('[data-testid="scenario-model-y-axis"]')?.getAttribute('data-orientation')).toBe('left')
     expect(container.textContent).not.toContain('peak VUsers')
     expect(container.textContent).toContain('VUser demand is determined by the goal controller at runtime')
+  })
+
+  it('opens the production traffic workflow from the workload shape catalog', async () => {
+    await act(async () => {
+      root.render(<TestHub testStatuses={{}} onSelectTest={vi.fn()} />)
+    })
+    await flushPromises()
+
+    await selectManualShapeByName('Production Traffic Profile')
+    await flushPromises()
+
+    expect(container.textContent).toContain('Build From Production Traffic')
+    expect(container.querySelector('.traffic-profile-panel')).toBeTruthy()
+    expect(container.textContent).toContain('CSV / XLSX')
   })
 
   it('converts a newly disabled selected shape to Custom Workload', async () => {
