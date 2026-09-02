@@ -666,6 +666,20 @@
   line-height: 1.35;
 }
 
+.closed-vuser-ramp-toggle {
+  margin-top: 14px;
+  max-width: 420px;
+}
+
+.closed-vuser-worksheet + .scenario-subpanel {
+  margin-top: 18px;
+}
+
+.closed-vuser-phase-preview td:first-child {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
 .stepped-ramp-apply {
   align-self: flex-end;
 }

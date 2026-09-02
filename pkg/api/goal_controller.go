@@ -66,6 +66,20 @@ func cloneGoalConfig(config *GoalConfig) *GoalConfig {
 				}
 			}
 		}
+		if config.WorkloadShapeConfig.ClosedVUser != nil {
+			closed := *config.WorkloadShapeConfig.ClosedVUser
+			shape.ClosedVUser = &closed
+			if closed.Scenario != nil {
+				definition := *closed.Scenario
+				closed.Scenario = &definition
+			}
+			if closed.Groups != nil {
+				closed.Groups = make(map[string]ClosedVUserDefinition, len(closed.Groups))
+				for name, definition := range config.WorkloadShapeConfig.ClosedVUser.Groups {
+					closed.Groups[name] = definition
+				}
+			}
+		}
 	}
 	if config.TargetAverageTPS != nil {
 		value := *config.TargetAverageTPS

@@ -5994,6 +5994,10 @@ paths:
                         workload_shape_config:
                           type: object
                           properties:
+                            closed_vuser:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                             stepped_ramp:
                               type: object
                               additionalProperties: true
@@ -44176,6 +44180,10 @@ paths:
                     workload_shape_config:
                       type: object
                       properties:
+                        closed_vuser:
+                          type: object
+                          additionalProperties: true
+                          nullable: true
                         stepped_ramp:
                           type: object
                           additionalProperties: true
@@ -44915,6 +44923,10 @@ paths:
                         workload_shape_config:
                           type: object
                           properties:
+                            closed_vuser:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                             stepped_ramp:
                               type: object
                               additionalProperties: true
@@ -46602,6 +46614,10 @@ paths:
                           workload_shape_config:
                             type: object
                             properties:
+                              closed_vuser:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               stepped_ramp:
                                 type: object
                                 additionalProperties: true
@@ -50282,6 +50298,10 @@ paths:
                           workload_shape_config:
                             type: object
                             properties:
+                              closed_vuser:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               stepped_ramp:
                                 type: object
                                 additionalProperties: true
@@ -53959,6 +53979,10 @@ paths:
                           workload_shape_config:
                             type: object
                             properties:
+                              closed_vuser:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               stepped_ramp:
                                 type: object
                                 additionalProperties: true
@@ -57648,6 +57672,10 @@ paths:
                           workload_shape_config:
                             type: object
                             properties:
+                              closed_vuser:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               stepped_ramp:
                                 type: object
                                 additionalProperties: true
@@ -61337,6 +61365,10 @@ paths:
                           workload_shape_config:
                             type: object
                             properties:
+                              closed_vuser:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               stepped_ramp:
                                 type: object
                                 additionalProperties: true
@@ -65026,6 +65058,10 @@ paths:
                           workload_shape_config:
                             type: object
                             properties:
+                              closed_vuser:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               stepped_ramp:
                                 type: object
                                 additionalProperties: true
@@ -68715,6 +68751,10 @@ paths:
                           workload_shape_config:
                             type: object
                             properties:
+                              closed_vuser:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               stepped_ramp:
                                 type: object
                                 additionalProperties: true
@@ -80051,6 +80091,22 @@ paths:
                     workload_shape_config:
                       type: object
                       properties:
+                        closed_vuser:
+                          type: object
+                          properties:
+                            groups:
+                              type: object
+                              additionalProperties:
+                                type: object
+                                description: 'Go type: ClosedVUserDefinition'
+                                additionalProperties: true
+                            scenario:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
+                            scope:
+                              type: string
+                          nullable: true
                         stepped_ramp:
                           type: object
                           properties:
@@ -81542,6 +81598,24 @@ paths:
                       workload_shape_config:
                         type: object
                         properties:
+                          closed_vuser:
+                            type: object
+                            properties:
+                              groups:
+                                type: object
+                                additionalProperties:
+                                  type: object
+                                  description: 'Go type: ClosedVUserDefinition'
+                                  additionalProperties: true
+                              scenario:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              scope:
+                                type: string
+                            required:
+                              - scope
+                            nullable: true
                           stepped_ramp:
                             type: object
                             properties:
@@ -83460,6 +83534,24 @@ paths:
                       workload_shape_config:
                         type: object
                         properties:
+                          closed_vuser:
+                            type: object
+                            properties:
+                              groups:
+                                type: object
+                                additionalProperties:
+                                  type: object
+                                  description: 'Go type: ClosedVUserDefinition'
+                                  additionalProperties: true
+                              scenario:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              scope:
+                                type: string
+                            required:
+                              - scope
+                            nullable: true
                           stepped_ramp:
                             type: object
                             properties:
@@ -85288,6 +85380,22 @@ paths:
                     workload_shape_config:
                       type: object
                       properties:
+                        closed_vuser:
+                          type: object
+                          properties:
+                            groups:
+                              type: object
+                              additionalProperties:
+                                type: object
+                                description: 'Go type: ClosedVUserDefinition'
+                                additionalProperties: true
+                            scenario:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
+                            scope:
+                              type: string
+                          nullable: true
                         stepped_ramp:
                           type: object
                           properties:
@@ -86779,6 +86887,24 @@ paths:
                       workload_shape_config:
                         type: object
                         properties:
+                          closed_vuser:
+                            type: object
+                            properties:
+                              groups:
+                                type: object
+                                additionalProperties:
+                                  type: object
+                                  description: 'Go type: ClosedVUserDefinition'
+                                  additionalProperties: true
+                              scenario:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              scope:
+                                type: string
+                            required:
+                              - scope
+                            nullable: true
                           stepped_ramp:
                             type: object
                             properties:
@@ -88964,6 +89090,10 @@ paths:
                           workload_shape_config:
                             type: object
                             properties:
+                              closed_vuser:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               stepped_ramp:
                                 type: object
                                 additionalProperties: true
@@ -92153,6 +92283,10 @@ paths:
                           workload_shape_config:
                             type: object
                             properties:
+                              closed_vuser:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               stepped_ramp:
                                 type: object
                                 additionalProperties: true
@@ -93571,6 +93705,10 @@ paths:
                         workload_shape_config:
                           type: object
                           properties:
+                            closed_vuser:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                             stepped_ramp:
                               type: object
                               additionalProperties: true
@@ -95159,6 +95297,10 @@ paths:
                           workload_shape_config:
                             type: object
                             properties:
+                              closed_vuser:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               stepped_ramp:
                                 type: object
                                 additionalProperties: true
@@ -96474,6 +96616,22 @@ paths:
                     workload_shape_config:
                       type: object
                       properties:
+                        closed_vuser:
+                          type: object
+                          properties:
+                            groups:
+                              type: object
+                              additionalProperties:
+                                type: object
+                                description: 'Go type: ClosedVUserDefinition'
+                                additionalProperties: true
+                            scenario:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
+                            scope:
+                              type: string
+                          nullable: true
                         stepped_ramp:
                           type: object
                           properties:
@@ -187907,6 +188065,22 @@ paths:
                     workload_shape_config:
                       type: object
                       properties:
+                        closed_vuser:
+                          type: object
+                          properties:
+                            groups:
+                              type: object
+                              additionalProperties:
+                                type: object
+                                description: 'Go type: ClosedVUserDefinition'
+                                additionalProperties: true
+                            scenario:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
+                            scope:
+                              type: string
+                          nullable: true
                         stepped_ramp:
                           type: object
                           properties:
@@ -190188,6 +190362,24 @@ paths:
                       workload_shape_config:
                         type: object
                         properties:
+                          closed_vuser:
+                            type: object
+                            properties:
+                              groups:
+                                type: object
+                                additionalProperties:
+                                  type: object
+                                  description: 'Go type: ClosedVUserDefinition'
+                                  additionalProperties: true
+                              scenario:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              scope:
+                                type: string
+                            required:
+                              - scope
+                            nullable: true
                           stepped_ramp:
                             type: object
                             properties:
@@ -196160,6 +196352,24 @@ paths:
                       workload_shape_config:
                         type: object
                         properties:
+                          closed_vuser:
+                            type: object
+                            properties:
+                              groups:
+                                type: object
+                                additionalProperties:
+                                  type: object
+                                  description: 'Go type: ClosedVUserDefinition'
+                                  additionalProperties: true
+                              scenario:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              scope:
+                                type: string
+                            required:
+                              - scope
+                            nullable: true
                           stepped_ramp:
                             type: object
                             properties:
@@ -202495,6 +202705,10 @@ paths:
                           workload_shape_config:
                             type: object
                             properties:
+                              closed_vuser:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               stepped_ramp:
                                 type: object
                                 additionalProperties: true
@@ -204046,6 +204260,10 @@ paths:
                           workload_shape_config:
                             type: object
                             properties:
+                              closed_vuser:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               stepped_ramp:
                                 type: object
                                 additionalProperties: true
@@ -210051,6 +210269,24 @@ paths:
                       workload_shape_config:
                         type: object
                         properties:
+                          closed_vuser:
+                            type: object
+                            properties:
+                              groups:
+                                type: object
+                                additionalProperties:
+                                  type: object
+                                  description: 'Go type: ClosedVUserDefinition'
+                                  additionalProperties: true
+                              scenario:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              scope:
+                                type: string
+                            required:
+                              - scope
+                            nullable: true
                           stepped_ramp:
                             type: object
                             properties:
@@ -215967,6 +216203,24 @@ paths:
                       workload_shape_config:
                         type: object
                         properties:
+                          closed_vuser:
+                            type: object
+                            properties:
+                              groups:
+                                type: object
+                                additionalProperties:
+                                  type: object
+                                  description: 'Go type: ClosedVUserDefinition'
+                                  additionalProperties: true
+                              scenario:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              scope:
+                                type: string
+                            required:
+                              - scope
+                            nullable: true
                           stepped_ramp:
                             type: object
                             properties:
@@ -225402,6 +225656,10 @@ paths:
                           workload_shape_config:
                             type: object
                             properties:
+                              closed_vuser:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               stepped_ramp:
                                 type: object
                                 additionalProperties: true
@@ -226550,6 +226808,10 @@ paths:
                           workload_shape_config:
                             type: object
                             properties:
+                              closed_vuser:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               stepped_ramp:
                                 type: object
                                 additionalProperties: true
@@ -230552,6 +230814,22 @@ paths:
                     workload_shape_config:
                       type: object
                       properties:
+                        closed_vuser:
+                          type: object
+                          properties:
+                            groups:
+                              type: object
+                              additionalProperties:
+                                type: object
+                                description: 'Go type: ClosedVUserDefinition'
+                                additionalProperties: true
+                            scenario:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
+                            scope:
+                              type: string
+                          nullable: true
                         stepped_ramp:
                           type: object
                           properties:
@@ -233030,6 +233308,10 @@ paths:
                     workload_shape_config:
                       type: object
                       properties:
+                        closed_vuser:
+                          type: object
+                          additionalProperties: true
+                          nullable: true
                         stepped_ramp:
                           type: object
                           additionalProperties: true

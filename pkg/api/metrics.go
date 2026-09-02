@@ -1096,6 +1096,19 @@ func earlyStopReason(live *LiveMetrics, config EarlyStopConfig) string {
 		}
 		levels = append(levels, fmt.Sprintf("%s %s (%d VUsers)", level.Group, name, level.TargetVUsers))
 	}
+	if len(levels) == 0 && len(live.GroupMetrics) > 0 {
+		groupNames := make([]string, 0, len(live.GroupMetrics))
+		for name := range live.GroupMetrics {
+			groupNames = append(groupNames, name)
+		}
+		sort.Strings(groupNames)
+		for _, name := range groupNames {
+			metrics := live.GroupMetrics[name]
+			if metrics != nil {
+				levels = append(levels, fmt.Sprintf("%s (%d VUsers)", name, metrics.VUsers))
+			}
+		}
+	}
 	context := ""
 	if len(levels) > 0 {
 		context = " at " + strings.Join(levels, ", ")

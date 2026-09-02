@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   clampVUsersForRole,
   LOAD_GROUP_MAX_VUSERS,
+  maxSharedVUsersForRoles,
   maxVUsersForRole,
   OBSERVER_MAX_VUSERS,
   validateAggregateVUserDemand,
@@ -10,6 +11,11 @@ import {
 } from './observerGroupModel'
 
 describe('observerGroupModel', () => {
+  it('caps a shared profile at the most restrictive group role', () => {
+    expect(maxSharedVUsersForRoles(['load', 'observer'])).toBe(OBSERVER_MAX_VUSERS)
+    expect(maxSharedVUsersForRoles(['load', 'load'])).toBe(LOAD_GROUP_MAX_VUSERS)
+  })
+
   it('matches backend observer and load-group limits', () => {
     expect(maxVUsersForRole('observer')).toBe(10)
     expect(maxVUsersForRole('load')).toBe(1_000_000)

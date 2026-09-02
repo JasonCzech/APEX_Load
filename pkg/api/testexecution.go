@@ -3612,6 +3612,40 @@ func (tr *TestRunner) runStageSchedule(ctx context.Context, testID string, group
 			return
 		}
 	}
+	if tr.closedVUserStopsAfterStageSchedule(testID, groupName) {
+		if !tr.waitTestRunning(ctx, testID) {
+			return
+		}
+		if err := tr.scaleVUsersNow(testID, groupName, 0, false); err != nil && ctx.Err() == nil {
+			slog.Warn("closed VUser group stop failed", "test_id", testID, "group", groupName, "error", err)
+		}
+	}
+}
+
+func (tr *TestRunner) closedVUserStopsAfterStageSchedule(testID, groupName string) bool {
+	tr.mu.RLock()
+	defer tr.mu.RUnlock()
+	test := tr.tests[testID]
+	if test == nil || test.GoalConfig == nil || test.GoalConfig.WorkloadShapeConfig == nil || test.GoalConfig.WorkloadShapeConfig.ClosedVUser == nil {
+		return false
+	}
+	config := test.GoalConfig.WorkloadShapeConfig.ClosedVUser
+	if config.Scope == "scenario" {
+		return config.Scenario != nil && !config.Scenario.RampDownEnabled
+	}
+	for index := range test.Groups {
+		if test.Groups[index].Name != groupName {
+			continue
+		}
+		if definition, ok := config.Groups[fmt.Sprintf("group_%d", index)]; ok {
+			return !definition.RampDownEnabled
+		}
+		if definition, ok := config.Groups[groupName]; ok {
+			return !definition.RampDownEnabled
+		}
+		return false
+	}
+	return false
 }
 
 func (tr *TestRunner) setActiveLoadStage(testID, groupName string, index int, stage storage.LoadStage) {
@@ -3619,6 +3653,9 @@ func (tr *TestRunner) setActiveLoadStage(testID, groupName string, index int, st
 	defer tr.mu.Unlock()
 	test := tr.tests[testID]
 	if test == nil {
+		return
+	}
+	if test.GoalConfig != nil && test.GoalConfig.WorkloadShapeConfig != nil && test.GoalConfig.WorkloadShapeConfig.ClosedVUser != nil && test.GoalConfig.WorkloadShapeConfig.SteppedRamp == nil {
 		return
 	}
 	for groupIndex := range test.Groups {

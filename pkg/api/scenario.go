@@ -299,6 +299,7 @@ func (tr *TestRunner) storeScenarioLockedWithWriter(id string, req CreateScenari
 		StartDelay:   req.StartDelay,
 		Assignment:   req.Assignment,
 		GoalConfig:   req.GoalConfig,
+		Groups:       req.Groups,
 	}); err != nil {
 		return nil, err
 	}

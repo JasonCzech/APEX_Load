@@ -2189,6 +2189,7 @@ export interface operations {
                 "transaction"?: string;
               }>;
               "workload_shape_config"?: ({
+                "closed_vuser"?: (Record<string, unknown>) | null;
                 "stepped_ramp"?: (Record<string, unknown>) | null;
               }) | null;
             }) | null;
@@ -7201,6 +7202,7 @@ export interface operations {
                   "transaction": string;
                 }>;
                 "workload_shape_config"?: ({
+                  "closed_vuser"?: (Record<string, unknown>) | null;
                   "stepped_ramp"?: (Record<string, unknown>) | null;
                 }) | null;
               }) | null;
@@ -15948,6 +15950,7 @@ export interface operations {
               "transaction"?: string;
             }>;
             "workload_shape_config"?: ({
+              "closed_vuser"?: (Record<string, unknown>) | null;
               "stepped_ramp"?: (Record<string, unknown>) | null;
             }) | null;
           }) | null;
@@ -16216,6 +16219,7 @@ export interface operations {
                 "transaction"?: string;
               }>;
               "workload_shape_config"?: ({
+                "closed_vuser"?: (Record<string, unknown>) | null;
                 "stepped_ramp"?: (Record<string, unknown>) | null;
               }) | null;
             }) | null;
@@ -16809,6 +16813,7 @@ export interface operations {
                   "transaction": string;
                 }>;
                 "workload_shape_config"?: ({
+                  "closed_vuser"?: (Record<string, unknown>) | null;
                   "stepped_ramp"?: (Record<string, unknown>) | null;
                 }) | null;
               }) | null;
@@ -18197,6 +18202,11 @@ export interface operations {
               "transaction"?: string;
             }>;
             "workload_shape_config"?: ({
+              "closed_vuser"?: ({
+                "groups"?: Record<string, Record<string, unknown>>;
+                "scenario"?: (Record<string, unknown>) | null;
+                "scope"?: string;
+              }) | null;
               "stepped_ramp"?: ({
                 "groups"?: Record<string, Record<string, unknown>>;
                 "scenario"?: (Record<string, unknown>) | null;
@@ -18768,6 +18778,11 @@ export interface operations {
                 "transaction": string;
               }>;
               "workload_shape_config"?: ({
+                "closed_vuser"?: ({
+                  "groups"?: Record<string, Record<string, unknown>>;
+                  "scenario"?: (Record<string, unknown>) | null;
+                  "scope": string;
+                }) | null;
                 "stepped_ramp"?: ({
                   "groups"?: Record<string, Record<string, unknown>>;
                   "scenario"?: (Record<string, unknown>) | null;
@@ -21143,6 +21158,11 @@ export interface operations {
               "transaction"?: string;
             }>;
             "workload_shape_config"?: ({
+              "closed_vuser"?: ({
+                "groups"?: Record<string, Record<string, unknown>>;
+                "scenario"?: (Record<string, unknown>) | null;
+                "scope"?: string;
+              }) | null;
               "stepped_ramp"?: ({
                 "groups"?: Record<string, Record<string, unknown>>;
                 "scenario"?: (Record<string, unknown>) | null;
@@ -21973,6 +21993,11 @@ export interface operations {
                 "transaction": string;
               }>;
               "workload_shape_config"?: ({
+                "closed_vuser"?: ({
+                  "groups"?: Record<string, Record<string, unknown>>;
+                  "scenario"?: (Record<string, unknown>) | null;
+                  "scope": string;
+                }) | null;
                 "stepped_ramp"?: ({
                   "groups"?: Record<string, Record<string, unknown>>;
                   "scenario"?: (Record<string, unknown>) | null;
@@ -25491,6 +25516,7 @@ export interface operations {
                 "transaction"?: string;
               }>;
               "workload_shape_config"?: ({
+                "closed_vuser"?: (Record<string, unknown>) | null;
                 "stepped_ramp"?: (Record<string, unknown>) | null;
               }) | null;
             }) | null;
@@ -26064,6 +26090,7 @@ export interface operations {
                   "transaction": string;
                 }>;
                 "workload_shape_config"?: ({
+                  "closed_vuser"?: (Record<string, unknown>) | null;
                   "stepped_ramp"?: (Record<string, unknown>) | null;
                 }) | null;
               }) | null;
@@ -27606,6 +27633,11 @@ export interface operations {
               "transaction"?: string;
             }>;
             "workload_shape_config"?: ({
+              "closed_vuser"?: ({
+                "groups"?: Record<string, Record<string, unknown>>;
+                "scenario"?: (Record<string, unknown>) | null;
+                "scope"?: string;
+              }) | null;
               "stepped_ramp"?: ({
                 "groups"?: Record<string, Record<string, unknown>>;
                 "scenario"?: (Record<string, unknown>) | null;
@@ -34167,6 +34199,7 @@ export interface operations {
                   "transaction": string;
                 }>;
                 "workload_shape_config"?: ({
+                  "closed_vuser"?: (Record<string, unknown>) | null;
                   "stepped_ramp"?: (Record<string, unknown>) | null;
                 }) | null;
               }) | null;
@@ -35591,6 +35624,7 @@ export interface operations {
                   "transaction": string;
                 }>;
                 "workload_shape_config"?: ({
+                  "closed_vuser"?: (Record<string, unknown>) | null;
                   "stepped_ramp"?: (Record<string, unknown>) | null;
                 }) | null;
               }) | null;
@@ -36113,6 +36147,7 @@ export interface operations {
                   "transaction": string;
                 }>;
                 "workload_shape_config"?: ({
+                  "closed_vuser"?: (Record<string, unknown>) | null;
                   "stepped_ramp"?: (Record<string, unknown>) | null;
                 }) | null;
               }) | null;
@@ -38023,6 +38058,11 @@ export interface operations {
                 "transaction": string;
               }>;
               "workload_shape_config"?: ({
+                "closed_vuser"?: ({
+                  "groups"?: Record<string, Record<string, unknown>>;
+                  "scenario"?: (Record<string, unknown>) | null;
+                  "scope": string;
+                }) | null;
                 "stepped_ramp"?: ({
                   "groups"?: Record<string, Record<string, unknown>>;
                   "scenario"?: (Record<string, unknown>) | null;
@@ -40867,6 +40907,11 @@ export interface operations {
                 "transaction": string;
               }>;
               "workload_shape_config"?: ({
+                "closed_vuser"?: ({
+                  "groups"?: Record<string, Record<string, unknown>>;
+                  "scenario"?: (Record<string, unknown>) | null;
+                  "scope": string;
+                }) | null;
                 "stepped_ramp"?: ({
                   "groups"?: Record<string, Record<string, unknown>>;
                   "scenario"?: (Record<string, unknown>) | null;
@@ -43691,6 +43736,7 @@ export interface operations {
                   "transaction": string;
                 }>;
                 "workload_shape_config"?: ({
+                  "closed_vuser"?: (Record<string, unknown>) | null;
                   "stepped_ramp"?: (Record<string, unknown>) | null;
                 }) | null;
               }) | null;
@@ -44087,6 +44133,7 @@ export interface operations {
                   "transaction": string;
                 }>;
                 "workload_shape_config"?: ({
+                  "closed_vuser"?: (Record<string, unknown>) | null;
                   "stepped_ramp"?: (Record<string, unknown>) | null;
                 }) | null;
               }) | null;
@@ -53171,6 +53218,11 @@ export interface operations {
                 "transaction": string;
               }>;
               "workload_shape_config"?: ({
+                "closed_vuser"?: ({
+                  "groups"?: Record<string, Record<string, unknown>>;
+                  "scenario"?: (Record<string, unknown>) | null;
+                  "scope": string;
+                }) | null;
                 "stepped_ramp"?: ({
                   "groups"?: Record<string, Record<string, unknown>>;
                   "scenario"?: (Record<string, unknown>) | null;
@@ -54990,6 +55042,7 @@ export interface operations {
               "transaction"?: string;
             }>;
             "workload_shape_config"?: ({
+              "closed_vuser"?: (Record<string, unknown>) | null;
               "stepped_ramp"?: (Record<string, unknown>) | null;
             }) | null;
           }) | null;
@@ -60203,6 +60256,7 @@ export interface operations {
                   "transaction": string;
                 }>;
                 "workload_shape_config"?: ({
+                  "closed_vuser"?: (Record<string, unknown>) | null;
                   "stepped_ramp"?: (Record<string, unknown>) | null;
                 }) | null;
               }) | null;
@@ -61428,6 +61482,7 @@ export interface operations {
                   "transaction": string;
                 }>;
                 "workload_shape_config"?: ({
+                  "closed_vuser"?: (Record<string, unknown>) | null;
                   "stepped_ramp"?: (Record<string, unknown>) | null;
                 }) | null;
               }) | null;
@@ -62653,6 +62708,7 @@ export interface operations {
                   "transaction": string;
                 }>;
                 "workload_shape_config"?: ({
+                  "closed_vuser"?: (Record<string, unknown>) | null;
                   "stepped_ramp"?: (Record<string, unknown>) | null;
                 }) | null;
               }) | null;
@@ -63878,6 +63934,7 @@ export interface operations {
                   "transaction": string;
                 }>;
                 "workload_shape_config"?: ({
+                  "closed_vuser"?: (Record<string, unknown>) | null;
                   "stepped_ramp"?: (Record<string, unknown>) | null;
                 }) | null;
               }) | null;
@@ -65103,6 +65160,7 @@ export interface operations {
                   "transaction": string;
                 }>;
                 "workload_shape_config"?: ({
+                  "closed_vuser"?: (Record<string, unknown>) | null;
                   "stepped_ramp"?: (Record<string, unknown>) | null;
                 }) | null;
               }) | null;
@@ -72346,6 +72404,7 @@ export interface operations {
                   "transaction": string;
                 }>;
                 "workload_shape_config"?: ({
+                  "closed_vuser"?: (Record<string, unknown>) | null;
                   "stepped_ramp"?: (Record<string, unknown>) | null;
                 }) | null;
               }) | null;
@@ -82034,6 +82093,11 @@ export interface operations {
                 "transaction": string;
               }>;
               "workload_shape_config"?: ({
+                "closed_vuser"?: ({
+                  "groups"?: Record<string, Record<string, unknown>>;
+                  "scenario"?: (Record<string, unknown>) | null;
+                  "scope": string;
+                }) | null;
                 "stepped_ramp"?: ({
                   "groups"?: Record<string, Record<string, unknown>>;
                   "scenario"?: (Record<string, unknown>) | null;
@@ -87317,6 +87381,11 @@ export interface operations {
               "transaction"?: string;
             }>;
             "workload_shape_config"?: ({
+              "closed_vuser"?: ({
+                "groups"?: Record<string, Record<string, unknown>>;
+                "scenario"?: (Record<string, unknown>) | null;
+                "scope"?: string;
+              }) | null;
               "stepped_ramp"?: ({
                 "groups"?: Record<string, Record<string, unknown>>;
                 "scenario"?: (Record<string, unknown>) | null;
@@ -87888,6 +87957,11 @@ export interface operations {
                 "transaction": string;
               }>;
               "workload_shape_config"?: ({
+                "closed_vuser"?: ({
+                  "groups"?: Record<string, Record<string, unknown>>;
+                  "scenario"?: (Record<string, unknown>) | null;
+                  "scope": string;
+                }) | null;
                 "stepped_ramp"?: ({
                   "groups"?: Record<string, Record<string, unknown>>;
                   "scenario"?: (Record<string, unknown>) | null;
@@ -94196,6 +94270,11 @@ export interface operations {
               "transaction"?: string;
             }>;
             "workload_shape_config"?: ({
+              "closed_vuser"?: ({
+                "groups"?: Record<string, Record<string, unknown>>;
+                "scenario"?: (Record<string, unknown>) | null;
+                "scope"?: string;
+              }) | null;
               "stepped_ramp"?: ({
                 "groups"?: Record<string, Record<string, unknown>>;
                 "scenario"?: (Record<string, unknown>) | null;

@@ -17,8 +17,8 @@ import { readImportedJavaVMParameters } from './scriptEditorImportModel'
 import GroupPlacementEditor from './GroupPlacementEditor'
 import { overrideFromRuntimeDraft } from './runtimeSettingsModel'
 import { applyEffectiveRuntimeSettingsToGroups } from './runtimeSettingsApply'
-import { adaptScenarioShapeDefaults, buildScenarioModelPreview, buildScenarioShapeCatalog, buildShapeStages, buildSteppedRampPlan, formatModelTimeLabel, getScenarioShapePreset, MAX_STEPPED_RAMP_STEPS, ScenarioModelPreview, ScenarioSeed, ScenarioShapePreset, ScenarioSourceMode, ScenarioWizardStep, shapeStageStrategyFor, validateStageTimeline } from './scenarioWizardUtils'
-import type { SteppedRampConfig, SteppedRampDefinition } from '../types/goals'
+import { adaptScenarioShapeDefaults, buildClosedVUserPlan, buildScenarioModelPreview, buildScenarioShapeCatalog, buildShapeStages, buildSteppedRampPlan, formatModelTimeLabel, getScenarioShapePreset, isGuidedClosedVUserOwned, MAX_STEPPED_RAMP_STEPS, remapClosedRampDownHistory, ScenarioModelPreview, ScenarioSeed, ScenarioShapePreset, ScenarioSourceMode, ScenarioWizardStep, shapeStageStrategyFor, validateStageTimeline } from './scenarioWizardUtils'
+import type { ClosedVUserConfig, ClosedVUserDefinition, SteppedRampConfig, SteppedRampDefinition } from '../types/goals'
 import { BaselineGroupOption, baselineGroupOptions, formatGoalSizingSummary, goalSizedGoalFields, goalSizedGroups, littlesLawVUsers } from './goalSizingUtils'
 import DurationField from './DurationField'
 import CreateTestGoalSettings from './CreateTestGoalSettings'
@@ -36,7 +36,7 @@ import { clearScenarioBuilderDraft, hasScenarioBuilderProgress } from './scenari
 import { useNavigationGuard, useNavigationGuardRunner, type NavigationGuard } from '../hooks/NavigationGuardProvider'
 import { useModalDialog } from '../hooks/useModalDialog'
 import { dialogBackdropProps } from './dialogBackdropProps'
-import { clampVUsersForRole, maxVUsersForRole, OBSERVER_MAX_VUSERS, validateAggregateVUserDemand, validateGroupExecutionEnvelope } from './observerGroupModel'
+import { clampVUsersForRole, maxSharedVUsersForRoles, maxVUsersForRole, OBSERVER_MAX_VUSERS, validateAggregateVUserDemand, validateGroupExecutionEnvelope } from './observerGroupModel'
 import { validateGeneratorAssignment } from './generatorAssignmentValidation'
 import {
   assignmentFromForm,
@@ -239,6 +239,14 @@ const DEFAULT_STEPPED_RAMP_DEFINITION: SteppedRampDefinition = {
   vusers_per_step: 10,
 }
 
+const DEFAULT_CLOSED_VUSER_DEFINITION: ClosedVUserDefinition = {
+  peak_vusers: 5,
+  ramp_up: '2m',
+  sustain: '65m',
+  ramp_down_enabled: false,
+  ramp_down: '2m',
+}
+
 function cloneSteppedRampDefinition(value?: SteppedRampDefinition): SteppedRampDefinition {
   return { ...DEFAULT_STEPPED_RAMP_DEFINITION, ...(value || {}) }
 }
@@ -249,6 +257,40 @@ function steppedRampGroupKey(_group: ScenarioFormGroup, index: number) {
 
 function steppedRampDefinitionForGroup(config: SteppedRampConfig | undefined, group: ScenarioFormGroup, index: number) {
   return config?.groups?.[steppedRampGroupKey(group, index)] || config?.groups?.[group.name.trim()]
+}
+
+function closedVUserGroupKey(_group: ScenarioFormGroup, index: number) {
+  return `group_${index}`
+}
+
+function closedVUserDefinitionFromGroup(group: ScenarioFormGroup, scenarioDuration: string): ClosedVUserDefinition {
+  const rampStage = group.stages.find(stage => stage.type === 'ramp_up')
+  const holdStage = group.stages.find(stage => stage.type === 'hold')
+  const downStage = group.stages.find(stage => stage.type === 'ramp_down')
+  const rampUp = rampStage?.duration || group.ramp_up || DEFAULT_CLOSED_VUSER_DEFINITION.ramp_up
+  const rampDownEnabled = Boolean(downStage || group.ramp_down)
+  const rampDown = downStage?.duration || group.ramp_down || rampUp
+  const inferredSustainSeconds = Math.max(
+    1,
+    parseDurationToSeconds(scenarioDuration) - parseDurationToSeconds(rampUp) - (rampDownEnabled ? parseDurationToSeconds(rampDown) : 0),
+  )
+  return {
+    peak_vusers: Math.max(1, Number(group.vusers) || DEFAULT_CLOSED_VUSER_DEFINITION.peak_vusers),
+    ramp_up: rampUp,
+    sustain: holdStage?.duration || formatTimeCompact(inferredSustainSeconds),
+    ramp_down_enabled: rampDownEnabled,
+    ramp_down: rampDown,
+  }
+}
+
+function cloneClosedVUserDefinition(value?: ClosedVUserDefinition, fallback?: ClosedVUserDefinition): ClosedVUserDefinition {
+  return { ...DEFAULT_CLOSED_VUSER_DEFINITION, ...(fallback || {}), ...(value || {}) }
+}
+
+function closedVUserDefinitionForGroup(config: ClosedVUserConfig | undefined, group: ScenarioFormGroup, index: number, scenarioDuration: string) {
+  return config?.groups?.[closedVUserGroupKey(group, index)]
+    || config?.groups?.[group.name.trim()]
+    || closedVUserDefinitionFromGroup(group, scenarioDuration)
 }
 
 function goalConfigFromForm(form: ScenarioFormState): GoalConfig {
@@ -1081,6 +1123,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
   const deleteScenarioDialogRef = useRef<HTMLDivElement | null>(null)
   const deleteScenarioInitialFocusRef = useRef<HTMLButtonElement | null>(null)
   const editingBaselineFormRef = useRef('')
+  const closedRampDownEnabledOnceRef = useRef<Set<string>>(new Set())
   const persistScenarioRef = useRef<() => Promise<StoredScenario | null>>(async () => null)
   const resetScenarioBuilderRef = useRef<() => void>(() => undefined)
   const refreshRef = useRef<() => Promise<void>>(async () => undefined)
@@ -1175,6 +1218,9 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
   const activeGroupIndex = Math.min(stageGroupIndex, formGroups.length - 1)
   const activeStageGroup = formGroups[activeGroupIndex] || formGroups[0]
 	const isSteppedRamp = selectedShapeId === 'stepped-ramp'
+	const isClosedVUser = selectedShapeId === 'closed-vuser'
+	const closedVUserStoredConfig = form.goal_config?.workload_shape_config?.closed_vuser
+	const isGuidedClosedVUser = isClosedVUser && isGuidedClosedVUserOwned(Boolean(closedVUserStoredConfig), formGroups)
 	const steppedRampConfig: SteppedRampConfig = useMemo(
 		() => form.goal_config?.workload_shape_config?.stepped_ramp || {
 			scope: 'scenario',
@@ -1214,6 +1260,43 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
 		}
 		return ''
 	}, [form.duration, formGroups, isSteppedRamp, steppedRampConfig])
+	const closedVUserConfig: ClosedVUserConfig = useMemo(
+		() => closedVUserStoredConfig || {
+			scope: 'scenario',
+			scenario: cloneClosedVUserDefinition(undefined, closedVUserDefinitionFromGroup(formGroups[0], form.duration)),
+		},
+		[closedVUserStoredConfig, form.duration, formGroups],
+	)
+	const activeClosedVUserDefinition = closedVUserConfig.scope === 'group'
+		? cloneClosedVUserDefinition(closedVUserDefinitionForGroup(closedVUserConfig, activeStageGroup, activeGroupIndex, form.duration))
+		: cloneClosedVUserDefinition(closedVUserConfig.scenario, closedVUserDefinitionFromGroup(activeStageGroup, form.duration))
+	const activeClosedVUserPlan = buildClosedVUserPlan({
+		peakVusers: activeClosedVUserDefinition.peak_vusers,
+		rampUp: activeClosedVUserDefinition.ramp_up,
+		sustain: activeClosedVUserDefinition.sustain,
+		rampDownEnabled: activeClosedVUserDefinition.ramp_down_enabled,
+		rampDown: activeClosedVUserDefinition.ramp_down,
+	})
+	const closedVUserBlockingMessage = useMemo(() => {
+		if (!isGuidedClosedVUser) return ''
+		const definitions = closedVUserConfig.scope === 'group'
+			? formGroups.map((group, index) => ({
+				label: group.name.trim() || `Group ${index + 1}`,
+				definition: cloneClosedVUserDefinition(closedVUserDefinitionForGroup(closedVUserConfig, group, index, form.duration)),
+			}))
+			: [{ label: 'Scenario', definition: cloneClosedVUserDefinition(closedVUserConfig.scenario) }]
+		for (const { label, definition } of definitions) {
+			const plan = buildClosedVUserPlan({
+				peakVusers: definition.peak_vusers,
+				rampUp: definition.ramp_up,
+				sustain: definition.sustain,
+				rampDownEnabled: definition.ramp_down_enabled,
+				rampDown: definition.ramp_down,
+			})
+			if (plan.error) return `${label}: ${plan.error}`
+		}
+		return ''
+	}, [closedVUserConfig, form.duration, formGroups, isGuidedClosedVUser])
   const activeProfileMapping = form.traffic_profile?.mappings.find(mapping => mapping.group_name === (activeStageGroup?.name || `Group ${activeGroupIndex + 1}`))
   const activeStageTimeline = useMemo(
     () => validateStageTimeline(form.duration, activeStageGroup?.stages || []),
@@ -1289,11 +1372,12 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
         ramp_up: group.ramp_up,
         ramp_down: group.ramp_down,
         stages: group.stages,
+				stop_after_stages: isGuidedClosedVUser,
       })),
       goalTargetTps: form.goal_target_average_tps,
       trafficProfile: form.traffic_profile,
     }),
-    [form.duration, form.goal_target_average_tps, form.scenario_mode, form.traffic_profile, formGroups, scripts],
+    [form.duration, form.goal_target_average_tps, form.scenario_mode, form.traffic_profile, formGroups, isGuidedClosedVUser, scripts],
   )
   const filteredCloneScenarios = useMemo(() => {
     const query = scenarioCloneQuery.trim().toLowerCase()
@@ -1778,6 +1862,10 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
     }
     const fallbackScriptId = scripts[0]?.id || ''
     const nextForm = scenarioFormStateFromStoredScenario(scenario, fallbackScriptId)
+    const storedClosed = nextForm.goal_config?.workload_shape_config?.closed_vuser
+    closedRampDownEnabledOnceRef.current = new Set(storedClosed
+      ? storedClosed.scope === 'group' ? Object.keys(storedClosed.groups || {}) : ['scenario']
+      : [])
     setEditingId(scenario.id)
     editingBaselineFormRef.current = JSON.stringify(nextForm)
     setForm(nextForm)
@@ -1828,6 +1916,10 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
   const cloneScenarioDraft = (scenario: StoredScenario) => {
     const fallbackScriptId = scripts[0]?.id || ''
     const clonedForm = scenarioFormStateFromStoredScenario(scenario, fallbackScriptId, true)
+    const storedClosed = clonedForm.goal_config?.workload_shape_config?.closed_vuser
+    closedRampDownEnabledOnceRef.current = new Set(storedClosed
+      ? storedClosed.scope === 'group' ? Object.keys(storedClosed.groups || {}) : ['scenario']
+      : [])
     setEditingId(null)
     editingBaselineFormRef.current = ''
     setForm(current => mergeCloneWithScriptSelections(current, clonedForm))
@@ -1911,8 +2003,10 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
         groups: form.groups,
         goalTps: form.goal_target_average_tps,
       })
+      if (shapeId === 'closed-vuser') closedRampDownEnabledOnceRef.current.clear()
       seedFormFromScenario(seed)
 			if (shapeId === 'stepped-ramp') updateSteppedRamp(undefined, 'scenario')
+			if (shapeId === 'closed-vuser') updateClosedVUser(undefined, 'scenario')
     }
     setStageGroupIndex(0)
     setRunSettingsTab(preset?.recommendedRunTab ?? 'scenario')
@@ -1939,8 +2033,10 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
       groups: form.groups,
       goalTps: form.goal_target_average_tps,
     })
+    if (template.shape_id === 'closed-vuser') closedRampDownEnabledOnceRef.current.clear()
     seedFormFromScenario(seed)
 		if (template.shape_id === 'stepped-ramp') updateSteppedRamp(undefined, 'scenario')
+		if (template.shape_id === 'closed-vuser') updateClosedVUser(undefined, 'scenario')
   }
 
   const openGoalSizing = async () => {
@@ -2159,6 +2255,8 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
 
 	const updateSteppedRamp = (definitionPatch?: Partial<SteppedRampDefinition>, scope?: 'scenario' | 'group', durationOverride?: string) => {
 		setForm(previous => {
+			const otherShapeConfig = { ...(previous.goal_config?.workload_shape_config || {}) }
+			delete otherShapeConfig.closed_vuser
 			const currentConfig = previous.goal_config?.workload_shape_config?.stepped_ramp
 			const nextScope = scope || currentConfig?.scope || 'scenario'
 			const scenarioDefinition = cloneSteppedRampDefinition(currentConfig?.scenario)
@@ -2196,7 +2294,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
 			const goalConfig: GoalConfig = {
 				...(previous.goal_config || {}),
 				early_stop: previous.goal_config?.early_stop || { enabled: false, error_rate_pct: 5, breach_window: '1m' },
-				workload_shape_config: { ...(previous.goal_config?.workload_shape_config || {}), stepped_ramp: nextConfig },
+				workload_shape_config: { ...otherShapeConfig, stepped_ramp: nextConfig },
 			}
 			return { ...previous, duration: nextDuration, scenario_mode: 'vuser_driven', groups: nextGroups, goal_config: goalConfig }
 		})
@@ -2204,7 +2302,89 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
 		setLoadModelValidationError('')
 	}
 
-	const updateSteppedRampEarlyStop = (patch: Partial<NonNullable<GoalConfig['early_stop']>>) => {
+	const updateClosedVUser = (definitionPatch?: Partial<ClosedVUserDefinition>, scope?: 'scenario' | 'group') => {
+		setForm(previous => {
+			const otherShapeConfig = { ...(previous.goal_config?.workload_shape_config || {}) }
+			delete otherShapeConfig.stepped_ramp
+			const currentConfig = previous.goal_config?.workload_shape_config?.closed_vuser
+			const nextScope = scope || currentConfig?.scope || 'scenario'
+			const scenarioFallback = closedVUserDefinitionFromGroup(previous.groups[0], previous.duration)
+			const scenarioDefinition = cloneClosedVUserDefinition(currentConfig?.scenario, scenarioFallback)
+			const groupDefinitions: Record<string, ClosedVUserDefinition> = {}
+			previous.groups.forEach((group, index) => {
+				groupDefinitions[closedVUserGroupKey(group, index)] = cloneClosedVUserDefinition(
+					closedVUserDefinitionForGroup(currentConfig, group, index, previous.duration),
+					scenarioDefinition,
+				)
+			})
+			if (definitionPatch) {
+				if (nextScope === 'scenario') Object.assign(scenarioDefinition, definitionPatch)
+				else Object.assign(groupDefinitions[closedVUserGroupKey(previous.groups[activeGroupIndex], activeGroupIndex)], definitionPatch)
+			}
+			const nextConfig: ClosedVUserConfig = {
+				scope: nextScope,
+				scenario: scenarioDefinition,
+				...(nextScope === 'group' ? { groups: groupDefinitions } : {}),
+			}
+			const nextGroups = previous.groups.map((group, index) => {
+				const definition = nextScope === 'group'
+					? groupDefinitions[closedVUserGroupKey(group, index)]
+					: scenarioDefinition
+				const plan = buildClosedVUserPlan({
+					peakVusers: definition.peak_vusers,
+					rampUp: definition.ramp_up,
+					sustain: definition.sustain,
+					rampDownEnabled: definition.ramp_down_enabled,
+					rampDown: definition.ramp_down,
+				})
+				if (plan.error) return group
+				return {
+					...group,
+					vusers: definition.peak_vusers,
+					ramp_up: definition.ramp_up,
+					ramp_down: definition.ramp_down_enabled ? definition.ramp_down : '',
+					stages: plan.stages,
+				}
+			})
+			const plans = (nextScope === 'group' ? Object.values(groupDefinitions) : [scenarioDefinition])
+				.map(definition => buildClosedVUserPlan({
+					peakVusers: definition.peak_vusers,
+					rampUp: definition.ramp_up,
+					sustain: definition.sustain,
+					rampDownEnabled: definition.ramp_down_enabled,
+					rampDown: definition.ramp_down,
+				}))
+			const longestDuration = plans.reduce((max, plan) => plan.error ? max : Math.max(max, plan.totalSeconds), 0)
+			const goalConfig: GoalConfig = {
+				...(previous.goal_config || {}),
+				early_stop: previous.goal_config?.early_stop || { enabled: false, error_rate_pct: 5, breach_window: '1m' },
+				workload_shape_config: { ...otherShapeConfig, closed_vuser: nextConfig },
+			}
+			return {
+				...previous,
+				duration: longestDuration > 0 ? formatTimeCompact(longestDuration) : previous.duration,
+				scenario_mode: 'vuser_driven',
+				groups: nextGroups,
+				goal_config: goalConfig,
+			}
+		})
+		setLoadModelValidation(null)
+		setLoadModelValidationError('')
+	}
+
+	const toggleClosedVUserRampDown = (enabled: boolean) => {
+		const key = closedVUserConfig.scope === 'group'
+			? closedVUserGroupKey(activeStageGroup, activeGroupIndex)
+			: 'scenario'
+		const firstEnable = enabled && !closedRampDownEnabledOnceRef.current.has(key)
+		if (enabled) closedRampDownEnabledOnceRef.current.add(key)
+		updateClosedVUser({
+			ramp_down_enabled: enabled,
+			...(firstEnable ? { ramp_down: activeClosedVUserDefinition.ramp_up } : {}),
+		})
+	}
+
+	const updateGuidedEarlyStop = (patch: Partial<NonNullable<GoalConfig['early_stop']>>) => {
 		setForm(previous => ({
 			...previous,
 			goal_config: {
@@ -2277,6 +2457,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
       return { ...prev, groups: nextGroups }
     })
 		if (isSteppedRamp) updateSteppedRamp()
+		if (isGuidedClosedVUser) updateClosedVUser()
     setStageGroupIndex(form.groups.length)
     setLoadModelValidation(null)
   }
@@ -2302,6 +2483,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
       return { ...prev, groups: ensureScenarioGroups(nextGroups) }
     })
 		if (isSteppedRamp) updateSteppedRamp()
+		if (isGuidedClosedVUser) updateClosedVUser()
     setStageGroupIndex(form.groups.length)
     setLoadModelValidation(null)
   }
@@ -2342,6 +2524,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
   }
 
   const removeScenarioGroup = (index: number) => {
+	closedRampDownEnabledOnceRef.current = remapClosedRampDownHistory(closedRampDownEnabledOnceRef.current, index)
     setForm(prev => {
       const nextGroups = prev.groups
         .filter((_, groupIndex) => groupIndex !== index)
@@ -2353,23 +2536,54 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
         })
 			const ensuredGroups = ensureScenarioGroups(nextGroups)
 			const stepped = prev.goal_config?.workload_shape_config?.stepped_ramp
-			if (stepped?.scope !== 'group') return { ...prev, groups: ensuredGroups }
-			const definitions: Record<string, SteppedRampDefinition> = {}
-			ensuredGroups.forEach((group, nextIndex) => {
-				const previousIndex = nextIndex >= index ? nextIndex + 1 : nextIndex
-				const previousGroup = prev.groups[previousIndex]
-				definitions[steppedRampGroupKey(group, nextIndex)] = cloneSteppedRampDefinition(
-					previousGroup ? steppedRampDefinitionForGroup(stepped, previousGroup, previousIndex) : stepped.scenario,
-				)
-			})
+			const closed = prev.goal_config?.workload_shape_config?.closed_vuser
+			let steppedRamp = stepped
+			let closedVUser = closed
+			if (stepped?.scope === 'group') {
+				const definitions: Record<string, SteppedRampDefinition> = {}
+				ensuredGroups.forEach((group, nextIndex) => {
+					const previousIndex = nextIndex >= index ? nextIndex + 1 : nextIndex
+					const previousGroup = prev.groups[previousIndex]
+					definitions[steppedRampGroupKey(group, nextIndex)] = cloneSteppedRampDefinition(
+						previousGroup ? steppedRampDefinitionForGroup(stepped, previousGroup, previousIndex) : stepped.scenario,
+					)
+				})
+				steppedRamp = { ...stepped, groups: definitions }
+			}
+			if (closed?.scope === 'group') {
+				const definitions: Record<string, ClosedVUserDefinition> = {}
+				ensuredGroups.forEach((group, nextIndex) => {
+					const previousIndex = nextIndex >= index ? nextIndex + 1 : nextIndex
+					const previousGroup = prev.groups[previousIndex]
+					definitions[closedVUserGroupKey(group, nextIndex)] = cloneClosedVUserDefinition(
+						previousGroup ? closedVUserDefinitionForGroup(closed, previousGroup, previousIndex, prev.duration) : closed.scenario,
+					)
+				})
+				closedVUser = { ...closed, groups: definitions }
+			}
+			const closedDuration = closedVUser?.scope === 'group'
+				? Object.values(closedVUser.groups || {}).reduce((max, definition) => {
+					const plan = buildClosedVUserPlan({
+						peakVusers: definition.peak_vusers,
+						rampUp: definition.ramp_up,
+						sustain: definition.sustain,
+						rampDownEnabled: definition.ramp_down_enabled,
+						rampDown: definition.ramp_down,
+					})
+					return plan.error ? max : Math.max(max, plan.totalSeconds)
+				}, 0)
+				: 0
+			if (steppedRamp === stepped && closedVUser === closed) return { ...prev, groups: ensuredGroups }
 			return {
 				...prev,
+				duration: closedDuration > 0 ? formatTimeCompact(closedDuration) : prev.duration,
 				groups: ensuredGroups,
 				goal_config: {
 					...(prev.goal_config || {}),
 					workload_shape_config: {
 						...(prev.goal_config?.workload_shape_config || {}),
-						stepped_ramp: { ...stepped, groups: definitions },
+						stepped_ramp: steppedRamp,
+						closed_vuser: closedVUser,
 					},
 				},
 			}
@@ -2495,6 +2709,11 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
 			setWizardStep('run')
 			return
 		}
+		if (closedVUserBlockingMessage) {
+			setLoadModelValidationError(closedVUserBlockingMessage)
+			setWizardStep('run')
+			return
+		}
     if (observerEnvelopeError) {
       setLoadModelValidationError(observerEnvelopeError)
       return
@@ -2550,6 +2769,11 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
     }
 		if (steppedRampBlockingMessage) {
 			setError(steppedRampBlockingMessage)
+			setWizardStep('run')
+			return null
+		}
+		if (closedVUserBlockingMessage) {
+			setError(closedVUserBlockingMessage)
 			setWizardStep('run')
 			return null
 		}
@@ -2793,7 +3017,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
     start: Boolean(scenarioStartChoice),
     source: sourceStepComplete,
     scripts: Boolean(form.name.trim() && formGroups.length > 0 && formGroups.every(group => group.script_id) && !scenarioGroupNameError),
-    run: Boolean(isValidDurationInput(form.duration) && !blockingStageTimelineMessage && !steppedRampBlockingMessage),
+    run: Boolean(isValidDurationInput(form.duration) && !blockingStageTimelineMessage && !steppedRampBlockingMessage && !closedVUserBlockingMessage),
     data: true,
     review: Boolean(requiredDraftReady && !blockingStageTimelineMessage),
   }
@@ -3195,6 +3419,35 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
     )
   }
 
+  const renderPreRunAssurance = () => (
+    <div className="scenario-subpanel">
+      <div className="scenario-assignment-header">
+        <div>
+          <h4>Pre-Run Assurance</h4>
+          <p>Run a one-pass canary/shakeout immediately before full load. Passing starts the run automatically; failures pause with evidence for continue/cancel.</p>
+        </div>
+      </div>
+      <div className="scenario-option-grid">
+        <label className={`scenario-option-card ${form.script_shakeout ? 'selected' : ''}`}>
+          <input type="checkbox" checked={form.script_shakeout} onChange={event => setForm({ ...form, script_shakeout: event.target.checked })} />
+          <div><strong>Script shakeout gate</strong><span>Execute init/actions once for each script group before full load.</span></div>
+        </label>
+        <label className={`scenario-option-card ${form.resource_baseline ? 'selected' : ''}`}>
+          <input type="checkbox" checked={form.resource_baseline} onChange={event => setForm({ ...form, resource_baseline: event.target.checked })} />
+          <div><strong>Resource baseline windows</strong><span>Capture 5m pre/post resource evidence around the run.</span></div>
+        </label>
+        <label className={`scenario-option-card ${form.continue_on_error ? 'selected' : ''}`}>
+          <input type="checkbox" checked={form.continue_on_error ?? false} onChange={event => setForm({ ...form, continue_on_error: event.target.checked })} />
+          <div><strong>Continue on action errors</strong><span>Keep collecting resilience evidence after request-level failures.</span></div>
+        </label>
+        <label className={`scenario-option-card ${form.snapshot_on_error ? 'selected' : ''}`}>
+          <input type="checkbox" checked={form.snapshot_on_error ?? false} onChange={event => setForm({ ...form, snapshot_on_error: event.target.checked })} />
+          <div><strong>Snapshot on error</strong><span>Preserve request/response context for failed actions.</span></div>
+        </label>
+      </div>
+    </div>
+  )
+
   const renderWizardStep = () => {
     if (goalSizingOpen) {
       return renderGoalSizingPanel()
@@ -3529,10 +3782,13 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
       )
     }
 
-    if (wizardStep === 'run') {
-      const activeGroupScript = findScriptById(scripts, activeStageGroup.script_id)
-      const activeGroupVUserMax = maxVUsersForRole(activeStageGroup.role)
-      const activeGroupLabel = activeStageGroup.name || `Group ${activeGroupIndex + 1}`
+	    if (wizardStep === 'run') {
+	      const activeGroupScript = findScriptById(scripts, activeStageGroup.script_id)
+	      const activeGroupVUserMax = maxVUsersForRole(activeStageGroup.role)
+	      const closedVUserPeakMax = closedVUserConfig.scope === 'scenario'
+	        ? maxSharedVUsersForRoles(formGroups.map(group => group.role))
+	        : activeGroupVUserMax
+	      const activeGroupLabel = activeStageGroup.name || `Group ${activeGroupIndex + 1}`
 
       return (
         <section className="scenario-wizard-panel">
@@ -3564,7 +3820,61 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
             aria-labelledby={`scenario-run-settings-${runSettingsTab}-tab`}
           >
             {runSettingsTab === 'scenario' && (
-				isSteppedRamp ? (
+				isGuidedClosedVUser ? (
+					<>
+						<div className="stepped-ramp-worksheet closed-vuser-worksheet">
+							<div className="stepped-ramp-heading">
+								<span>Guided worksheet</span>
+								<h3>Closed VUser Setup</h3>
+								<p>Ramp continuously to a fixed load, measure steady-state performance, and optionally ramp down before the run ends.</p>
+							</div>
+							<section className="stepped-ramp-section" aria-labelledby="closed-target-title">
+								<div className="stepped-ramp-number">1</div>
+								<div className="stepped-ramp-section-body">
+									<h4 id="closed-target-title">Target load</h4>
+									<p>Choose the peak load and whether the same profile applies to every group.</p>
+									<label className="scenario-field stepped-ramp-primary-input">
+										<span>Peak VUsers</span>
+											<div className="stepped-ramp-unit-input"><input className="settings-input" type="number" min={1} max={closedVUserPeakMax} value={activeClosedVUserDefinition.peak_vusers} onChange={event => updateClosedVUser({ peak_vusers: Math.min(closedVUserPeakMax, clampVUsersForRole(Number(event.target.value), activeStageGroup.role, 1)) })} /><span>VUsers</span></div>
+									</label>
+									<div className="stepped-ramp-scope" role="radiogroup" aria-label="Apply Closed VUser profile to">
+										<button type="button" role="radio" aria-checked={closedVUserConfig.scope === 'scenario'} className={closedVUserConfig.scope === 'scenario' ? 'active' : ''} onClick={() => updateClosedVUser(undefined, 'scenario')}><strong>Entire scenario</strong><span>Repeat this profile for every group</span></button>
+										<button type="button" role="radio" aria-checked={closedVUserConfig.scope === 'group'} className={closedVUserConfig.scope === 'group' ? 'active' : ''} onClick={() => updateClosedVUser(undefined, 'group')}><strong>Configure each group</strong><span>Set independent peaks and phase lengths</span></button>
+									</div>
+									{closedVUserConfig.scope === 'group' && formGroups.length > 1 && <div className="scenario-group-tabs" role="tablist" aria-label="Closed VUser groups">{formGroups.map((group, index) => <button key={`${group.script_id}-${index}-closed`} type="button" className={`scenario-group-tab ${activeGroupIndex === index ? 'active' : ''}`} role="tab" aria-selected={activeGroupIndex === index} onClick={() => setStageGroupIndex(index)}><strong>{group.name.trim() || `Group ${index + 1}`}</strong><span>{group.vusers} peak VUsers</span></button>)}</div>}
+								</div>
+							</section>
+							<section className="stepped-ramp-section" aria-labelledby="closed-phases-title">
+								<div className="stepped-ramp-number">2</div>
+								<div className="stepped-ramp-section-body">
+									<h4 id="closed-phases-title">Run phases</h4>
+									<p>Ramp-up is continuous. Sustained time begins after the peak is reached.</p>
+									<div className="stepped-ramp-fields three">
+										<DurationField className="scenario-field" label="Ramp-up" value={activeClosedVUserDefinition.ramp_up} compact onChange={value => updateClosedVUser({ ramp_up: value })} />
+										<DurationField className="scenario-field" label="Sustained load" value={activeClosedVUserDefinition.sustain} compact onChange={value => updateClosedVUser({ sustain: value })} />
+										<DurationField className="scenario-field" label="Ramp-down" value={activeClosedVUserDefinition.ramp_down} compact disabled={!activeClosedVUserDefinition.ramp_down_enabled} onChange={value => updateClosedVUser({ ramp_down: value })} />
+									</div>
+									<label className="stepped-ramp-toggle closed-vuser-ramp-toggle"><input type="checkbox" checked={activeClosedVUserDefinition.ramp_down_enabled} onChange={event => toggleClosedVUserRampDown(event.target.checked)} /><span><strong>Ramp down before stopping</strong><small>Continuously return this group to zero VUsers.</small></span></label>
+									{activeClosedVUserPlan.error ? <div className="settings-error-inline">{activeClosedVUserPlan.error}</div> : <div className="stepped-ramp-equation" aria-live="polite"><strong>{activeClosedVUserDefinition.peak_vusers} peak VUsers · {formatModelTimeLabel(activeClosedVUserPlan.totalSeconds)} total</strong><span>{formatModelTimeLabel(activeClosedVUserPlan.rampUpSeconds)} ramp-up · {formatModelTimeLabel(activeClosedVUserPlan.sustainSeconds)} sustained{activeClosedVUserPlan.rampDownSeconds > 0 ? ` · ${formatModelTimeLabel(activeClosedVUserPlan.rampDownSeconds)} ramp-down` : ' · immediate stop'}</span></div>}
+								</div>
+							</section>
+							<section className="stepped-ramp-section" aria-labelledby="closed-protect-title">
+								<div className="stepped-ramp-number">3</div>
+								<div className="stepped-ramp-section-body">
+									<h4 id="closed-protect-title">Protect the run</h4>
+									<p>Optionally stop when the error rate remains excessive for a sustained window.</p>
+									<div className="stepped-ramp-protection">
+										<label className="stepped-ramp-toggle"><input type="checkbox" checked={Boolean(form.goal_config?.early_stop?.enabled)} onChange={event => updateGuidedEarlyStop({ enabled: event.target.checked })} /><span><strong>Stop early on excessive errors</strong><small>The active group load is included in alerts and results.</small></span></label>
+										<label className="scenario-field"><span>Error rate threshold</span><div className="stepped-ramp-unit-input"><input className="settings-input" type="number" min={0} max={100} step="0.1" disabled={!form.goal_config?.early_stop?.enabled} value={form.goal_config?.early_stop?.error_rate_pct ?? 5} onChange={event => updateGuidedEarlyStop({ error_rate_pct: Number(event.target.value) })} /><span>%</span></div></label>
+										<DurationField className="scenario-field" label="Sustained for" compact disabled={!form.goal_config?.early_stop?.enabled} value={form.goal_config?.early_stop?.breach_window || '1m'} onChange={value => updateGuidedEarlyStop({ breach_window: value })} />
+									</div>
+								</div>
+							</section>
+							<button type="button" className="btn btn-primary stepped-ramp-apply" disabled={Boolean(closedVUserBlockingMessage)} onClick={() => setWizardStep('data')}>Apply Closed VUser profile</button>
+						</div>
+						{renderPreRunAssurance()}
+					</>
+				) : isSteppedRamp ? (
 					<div className="stepped-ramp-worksheet">
 						<div className="stepped-ramp-heading">
 							<span>Guided worksheet</span>
@@ -3623,9 +3933,9 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
 								</div>
 								{steppedRampConfig.scope === 'group' && formGroups.length > 1 && <div className="scenario-group-tabs" role="tablist" aria-label="Stepped ramp groups">{formGroups.map((group, index) => <button key={`${group.script_id}-${index}-ramp`} type="button" className={`scenario-group-tab ${activeGroupIndex === index ? 'active' : ''}`} role="tab" aria-selected={activeGroupIndex === index} onClick={() => setStageGroupIndex(index)}><strong>{group.name.trim() || `Group ${index + 1}`}</strong><span>{group.vusers} peak VUsers</span></button>)}</div>}
 								<div className="stepped-ramp-protection">
-									<label className="stepped-ramp-toggle"><input type="checkbox" checked={Boolean(form.goal_config?.early_stop?.enabled)} onChange={event => updateSteppedRampEarlyStop({ enabled: event.target.checked })} /><span><strong>Stop early on excessive errors</strong><small>Stop when the error rate remains at or above the threshold.</small></span></label>
-									<label className="scenario-field"><span>Error rate threshold</span><div className="stepped-ramp-unit-input"><input className="settings-input" type="number" min={0} max={100} step="0.1" disabled={!form.goal_config?.early_stop?.enabled} value={form.goal_config?.early_stop?.error_rate_pct ?? 5} onChange={event => updateSteppedRampEarlyStop({ error_rate_pct: Number(event.target.value) })} /><span>%</span></div></label>
-									<DurationField className="scenario-field" label="Sustained for" compact disabled={!form.goal_config?.early_stop?.enabled} value={form.goal_config?.early_stop?.breach_window || '1m'} onChange={value => updateSteppedRampEarlyStop({ breach_window: value })} />
+					<label className="stepped-ramp-toggle"><input type="checkbox" checked={Boolean(form.goal_config?.early_stop?.enabled)} onChange={event => updateGuidedEarlyStop({ enabled: event.target.checked })} /><span><strong>Stop early on excessive errors</strong><small>Stop when the error rate remains at or above the threshold.</small></span></label>
+					<label className="scenario-field"><span>Error rate threshold</span><div className="stepped-ramp-unit-input"><input className="settings-input" type="number" min={0} max={100} step="0.1" disabled={!form.goal_config?.early_stop?.enabled} value={form.goal_config?.early_stop?.error_rate_pct ?? 5} onChange={event => updateGuidedEarlyStop({ error_rate_pct: Number(event.target.value) })} /><span>%</span></div></label>
+					<DurationField className="scenario-field" label="Sustained for" compact disabled={!form.goal_config?.early_stop?.enabled} value={form.goal_config?.early_stop?.breach_window || '1m'} onChange={value => updateGuidedEarlyStop({ breach_window: value })} />
 								</div>
 								<p className="scenario-assignment-copy secondary">If the test stops, the active load level and partial interval evidence are retained in results.</p>
 							</div>
@@ -3756,32 +4066,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
                 </div>
             </div>
           </div>
-          <div className="scenario-subpanel">
-            <div className="scenario-assignment-header">
-              <div>
-                <h4>Pre-Run Assurance</h4>
-                <p>Run a one-pass canary/shakeout immediately before full load. Passing starts the run automatically; failures pause with evidence for continue/cancel.</p>
-              </div>
-            </div>
-            <div className="scenario-option-grid">
-              <label className={`scenario-option-card ${form.script_shakeout ? 'selected' : ''}`}>
-                <input type="checkbox" checked={form.script_shakeout} onChange={event => setForm({ ...form, script_shakeout: event.target.checked })} />
-                <div><strong>Script shakeout gate</strong><span>Execute init/actions once for each script group before full load.</span></div>
-              </label>
-              <label className={`scenario-option-card ${form.resource_baseline ? 'selected' : ''}`}>
-                <input type="checkbox" checked={form.resource_baseline} onChange={event => setForm({ ...form, resource_baseline: event.target.checked })} />
-                <div><strong>Resource baseline windows</strong><span>Capture 5m pre/post resource evidence around the run.</span></div>
-              </label>
-              <label className={`scenario-option-card ${form.continue_on_error ? 'selected' : ''}`}>
-                <input type="checkbox" checked={form.continue_on_error ?? false} onChange={event => setForm({ ...form, continue_on_error: event.target.checked })} />
-                <div><strong>Continue on action errors</strong><span>Keep collecting resilience evidence after request-level failures.</span></div>
-              </label>
-              <label className={`scenario-option-card ${form.snapshot_on_error ? 'selected' : ''}`}>
-                <input type="checkbox" checked={form.snapshot_on_error ?? false} onChange={event => setForm({ ...form, snapshot_on_error: event.target.checked })} />
-                <div><strong>Snapshot on error</strong><span>Preserve request/response context for failed actions.</span></div>
-              </label>
-            </div>
-          </div>
+          {renderPreRunAssurance()}
           {form.scenario_mode === 'goal_oriented' && (
             <div className="scenario-subpanel">
               <div className="scenario-assignment-header">
@@ -4187,7 +4472,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
             })}
           </div>
 
-          <div className={`scenario-builder-workspace ${showModelPreview ? 'with-preview' : ''} ${isSteppedRamp ? 'stepped-ramp-layout' : ''}`}>
+          <div className={`scenario-builder-workspace ${showModelPreview ? 'with-preview' : ''} ${isSteppedRamp || isGuidedClosedVUser ? 'stepped-ramp-layout' : ''}`}>
             <div className="scenario-builder-main">
               {renderWizardStep()}
             </div>
@@ -4214,6 +4499,20 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
 						<p>Metrics are tagged with each active load level for live and archived comparison.</p>
 					</div>
 				)}
+				{isGuidedClosedVUser && !activeClosedVUserPlan.error && (
+					<div className="stepped-ramp-stage-preview closed-vuser-phase-preview">
+						<div className="stepped-ramp-stage-preview-header"><strong>Run phases</strong><span>Live preview</span></div>
+						<table>
+							<thead><tr><th>Phase</th><th>Time range</th><th>Target</th><th>Duration</th></tr></thead>
+							<tbody>{activeClosedVUserPlan.stages.map((stage, index) => {
+								const start = activeClosedVUserPlan.stages.slice(0, index).reduce((sum, item) => sum + parseDurationToSeconds(item.duration), 0)
+								const duration = parseDurationToSeconds(stage.duration)
+								return <tr key={`${stage.name}-${index}`}><td>{stage.name}</td><td>{formatModelTimeLabel(start)}–{formatModelTimeLabel(start + duration)}</td><td>{stage.target_vusers} VUsers</td><td>{formatModelTimeLabel(duration)}</td></tr>
+							})}</tbody>
+						</table>
+						<p>{activeClosedVUserDefinition.ramp_down_enabled ? 'The group returns continuously to zero before the run ends.' : 'The group stops immediately after the sustained-load phase.'}</p>
+					</div>
+				)}
               </aside>
             )}
           </div>
@@ -4222,6 +4521,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
 
           {blockingStageTimelineMessage && <div className="settings-error-inline">{blockingStageTimelineMessage}</div>}
 					{steppedRampBlockingMessage && <div className="settings-error-inline">{steppedRampBlockingMessage}</div>}
+					{closedVUserBlockingMessage && <div className="settings-error-inline">{closedVUserBlockingMessage}</div>}
           {observerEnvelopeError && <div className="settings-error-inline">{observerEnvelopeError}</div>}
           {aggregateEnvelopeError && <div className="settings-error-inline">{aggregateEnvelopeError}</div>}
           {assignmentValidationError && <div className="settings-error-inline">{assignmentValidationError}</div>}
@@ -4262,9 +4562,9 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
               Next
             </button>
             {wizardStep === 'review' && onCreateTestFromScenario && (
-              <button className="btn btn-secondary" onClick={saveScenarioAndCreateTest} disabled={Boolean(blockingStageTimelineMessage || steppedRampBlockingMessage || observerEnvelopeError || aggregateEnvelopeError || assignmentValidationError || scenarioGroupNameError)}>Save &amp; Create Test Run</button>
+              <button className="btn btn-secondary" onClick={saveScenarioAndCreateTest} disabled={Boolean(blockingStageTimelineMessage || steppedRampBlockingMessage || closedVUserBlockingMessage || observerEnvelopeError || aggregateEnvelopeError || assignmentValidationError || scenarioGroupNameError)}>Save &amp; Create Test Run</button>
             )}
-            <button className="btn btn-primary" onClick={saveScenario} disabled={Boolean(blockingStageTimelineMessage || steppedRampBlockingMessage || observerEnvelopeError || aggregateEnvelopeError || assignmentValidationError || scenarioGroupNameError)}>Save Scenario</button>
+            <button className="btn btn-primary" onClick={saveScenario} disabled={Boolean(blockingStageTimelineMessage || steppedRampBlockingMessage || closedVUserBlockingMessage || observerEnvelopeError || aggregateEnvelopeError || assignmentValidationError || scenarioGroupNameError)}>Save Scenario</button>
           </div>
 
         </div>

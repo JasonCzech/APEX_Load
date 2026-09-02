@@ -1799,8 +1799,23 @@ type SteppedRampConfig struct {
 	Groups   map[string]SteppedRampDefinition `json:"groups,omitempty"`
 }
 
+type ClosedVUserDefinition struct {
+	PeakVUsers      int    `json:"peak_vusers"`
+	RampUp          string `json:"ramp_up"`
+	Sustain         string `json:"sustain"`
+	RampDownEnabled bool   `json:"ramp_down_enabled"`
+	RampDown        string `json:"ramp_down"`
+}
+
+type ClosedVUserConfig struct {
+	Scope    string                           `json:"scope"`
+	Scenario *ClosedVUserDefinition           `json:"scenario,omitempty"`
+	Groups   map[string]ClosedVUserDefinition `json:"groups,omitempty"`
+}
+
 type WorkloadShapeConfig struct {
 	SteppedRamp *SteppedRampConfig `json:"stepped_ramp,omitempty"`
+	ClosedVUser *ClosedVUserConfig `json:"closed_vuser,omitempty"`
 }
 
 type ActiveLoadLevel struct {

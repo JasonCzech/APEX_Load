@@ -2130,6 +2130,9 @@ func validateScenarioRequest(req CreateTestRequest) (string, error) {
 		if err := validateEarlyStopConfig(req.GoalConfig.EarlyStop); err != nil {
 			return "", err
 		}
+		if err := validateWorkloadShapeConfig(req.GoalConfig.WorkloadShapeConfig, scenarioMode, req.Groups); err != nil {
+			return "", err
+		}
 	}
 	if strings.TrimSpace(req.Duration) != "" {
 		duration, err := time.ParseDuration(req.Duration)
@@ -2251,6 +2254,66 @@ func validateEarlyStopConfig(config *EarlyStopConfig) error {
 	}
 	if window <= 0 {
 		return fmt.Errorf("early_stop.breach_window must be greater than zero")
+	}
+	return nil
+}
+
+func validateWorkloadShapeConfig(config *WorkloadShapeConfig, scenarioMode string, groups []CreateGroupEntry) error {
+	if config == nil || config.ClosedVUser == nil {
+		return nil
+	}
+	if config.SteppedRamp != nil {
+		return fmt.Errorf("workload_shape_config cannot contain both closed_vuser and stepped_ramp")
+	}
+	if normalizeScenarioMode(scenarioMode) != "vuser_driven" {
+		return fmt.Errorf("workload_shape_config.closed_vuser requires scenario_mode vuser_driven")
+	}
+	closed := config.ClosedVUser
+	if closed.Scope != "scenario" && closed.Scope != "group" {
+		return fmt.Errorf("workload_shape_config.closed_vuser.scope must be scenario or group")
+	}
+	definitions := make(map[string]ClosedVUserDefinition)
+	if closed.Scope == "scenario" {
+		if closed.Scenario == nil {
+			return fmt.Errorf("workload_shape_config.closed_vuser.scenario is required at scenario scope")
+		}
+		definitions["scenario"] = *closed.Scenario
+	} else {
+		if len(closed.Groups) == 0 {
+			return fmt.Errorf("workload_shape_config.closed_vuser.groups is required at group scope")
+		}
+		groupCount := len(groups)
+		if groupCount == 0 {
+			groupCount = 1
+		}
+		if len(closed.Groups) != groupCount {
+			return fmt.Errorf("workload_shape_config.closed_vuser.groups must contain exactly one definition for each of %d groups", groupCount)
+		}
+		for index := 0; index < groupCount; index++ {
+			key := fmt.Sprintf("group_%d", index)
+			if _, ok := closed.Groups[key]; !ok {
+				return fmt.Errorf("workload_shape_config.closed_vuser.groups.%s is required", key)
+			}
+		}
+		for name, definition := range closed.Groups {
+			definitions[name] = definition
+		}
+	}
+	for name, definition := range definitions {
+		if definition.PeakVUsers < 1 || definition.PeakVUsers > maxManagedTestVUsers {
+			return fmt.Errorf("workload_shape_config.closed_vuser.%s.peak_vusers must be between 1 and %d", name, maxManagedTestVUsers)
+		}
+		if duration, err := time.ParseDuration(strings.TrimSpace(definition.RampUp)); err != nil || duration <= 0 {
+			return fmt.Errorf("workload_shape_config.closed_vuser.%s.ramp_up must be a positive duration", name)
+		}
+		if duration, err := time.ParseDuration(strings.TrimSpace(definition.Sustain)); err != nil || duration <= 0 {
+			return fmt.Errorf("workload_shape_config.closed_vuser.%s.sustain must be a positive duration", name)
+		}
+		if definition.RampDownEnabled {
+			if duration, err := time.ParseDuration(strings.TrimSpace(definition.RampDown)); err != nil || duration <= 0 {
+				return fmt.Errorf("workload_shape_config.closed_vuser.%s.ramp_down must be a positive duration when enabled", name)
+			}
+		}
 	}
 	return nil
 }

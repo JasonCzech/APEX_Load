@@ -45,6 +45,7 @@ export interface GoalConfig {
   }
   workload_shape_config?: {
     stepped_ramp?: SteppedRampConfig
+    closed_vuser?: ClosedVUserConfig
   }
 }
 
@@ -62,6 +63,20 @@ export interface SteppedRampConfig {
   scope: 'scenario' | 'group'
   scenario?: SteppedRampDefinition
   groups?: Record<string, SteppedRampDefinition>
+}
+
+export interface ClosedVUserDefinition {
+  peak_vusers: number
+  ramp_up: string
+  sustain: string
+  ramp_down_enabled: boolean
+  ramp_down: string
+}
+
+export interface ClosedVUserConfig {
+  scope: 'scenario' | 'group'
+  scenario?: ClosedVUserDefinition
+  groups?: Record<string, ClosedVUserDefinition>
 }
 
 export interface GoalStatus {

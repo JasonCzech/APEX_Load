@@ -161,9 +161,9 @@ func loadModelSupportMatrix() []LoadModelSupportEntry {
 			Name:          "Closed VUser",
 			Category:      "vuser",
 			Status:        "executed",
-			APEXLoadShape: "Scenario groups with fixed VUsers and duration.",
-			Fields:        []string{"groups[].vusers", "duration", "groups[].ramp_up", "groups[].ramp_down"},
-			Notes:         "Primary execution model; each VUser loops until duration or iteration limits stop the group.",
+			APEXLoadShape: "Continuous ramp-up to a sustained closed-model load with an optional continuous ramp-down.",
+			Fields:        []string{"groups[].vusers", "groups[].stages", "duration", "goal_config.workload_shape_config.closed_vuser"},
+			Notes:         "Each VUser loops during its configured timeline; scenario scope repeats the profile independently for every group.",
 		},
 		{
 			ID:            "open-arrival-rate",
@@ -267,8 +267,21 @@ func loadModelTemplates() []LoadModelTemplate {
 			ShapeID:     "closed-vuser",
 			Description: "Small closed-model smoke run suitable for pull-request or release-candidate gates.",
 			Scenario: LoadModelScenarioDraft{
-				Duration: "3m",
-				Groups:   []LoadModelTemplateGroup{{Name: "smoke", VUsers: 5, RampUp: "30s", Iterations: 1}},
+				ScenarioMode: "vuser_driven",
+				Duration:     "67m",
+				GoalConfig: &GoalConfig{WorkloadShapeConfig: &WorkloadShapeConfig{ClosedVUser: &ClosedVUserConfig{
+					Scope: "scenario",
+					Scenario: &ClosedVUserDefinition{
+						PeakVUsers: 5, RampUp: "2m", Sustain: "65m", RampDownEnabled: false, RampDown: "2m",
+					},
+				}}},
+				Groups: []LoadModelTemplateGroup{{
+					Name: "smoke", VUsers: 5, RampUp: "2m",
+					Stages: []storage.LoadStage{
+						{Type: "ramp_up", Duration: "2m", TargetVUsers: 5, Name: "Ramp up"},
+						{Type: "hold", Duration: "1h5m", TargetVUsers: 5, Name: "Sustained load"},
+					},
+				}},
 			},
 		},
 		{

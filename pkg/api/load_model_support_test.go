@@ -33,3 +33,19 @@ func TestLoadModelSupportMatrixReconciledToExecutedShapes(t *testing.T) {
 		}
 	}
 }
+
+func TestClosedVUserTemplateDoesNotCapSustainedIterations(t *testing.T) {
+	for _, template := range loadModelTemplates() {
+		if template.ShapeID != "closed-vuser" {
+			continue
+		}
+		if len(template.Scenario.Groups) != 1 {
+			t.Fatalf("Closed VUser template groups = %d, want 1", len(template.Scenario.Groups))
+		}
+		if template.Scenario.Groups[0].Iterations != 0 {
+			t.Fatalf("Closed VUser template iterations = %d, want no iteration cap", template.Scenario.Groups[0].Iterations)
+		}
+		return
+	}
+	t.Fatal("Closed VUser template not found")
+}

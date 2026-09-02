@@ -1,12 +1,27 @@
 import { describe, expect, it } from 'vitest'
 
-import { adaptScenarioShapeDefaults, buildScenarioModelPreview, buildScenarioShapeCatalog, buildShapeStages, buildSteppedRampPlan, getScenarioShapePreset, MAX_STEPPED_RAMP_STEPS, parseDurationSeconds, SCENARIO_SHAPE_PRESETS, ShapeStageStrategy, steppedStepPlan, validateStageTimeline } from './scenarioWizardUtils'
+import { adaptScenarioShapeDefaults, buildClosedVUserPlan, buildScenarioModelPreview, buildScenarioShapeCatalog, buildShapeStages, buildSteppedRampPlan, getScenarioShapePreset, isGuidedClosedVUserOwned, MAX_STEPPED_RAMP_STEPS, parseDurationSeconds, remapClosedRampDownHistory, SCENARIO_SHAPE_PRESETS, ShapeStageStrategy, steppedStepPlan, validateStageTimeline } from './scenarioWizardUtils'
 import { LoadModelSupportEntry, LoadModelTemplate, TrafficProfile } from '../types'
 
 const stageSeconds = (stages: { duration: string }[]) => stages.reduce((sum, stage) => sum + parseDurationSeconds(stage.duration), 0)
 const stagePeak = (stages: { target_vusers?: number }[]) => Math.max(...stages.map(stage => Number(stage.target_vusers) || 0))
 
 describe('scenarioWizardUtils', () => {
+	it('only gives the Closed VUser worksheet ownership of configured or unstaged scenarios', () => {
+		expect(isGuidedClosedVUserOwned(false, [{ stages: [] }])).toBe(true)
+		expect(isGuidedClosedVUserOwned(true, [{ stages: [{ type: 'ramp_up', duration: '2m', target_vusers: 5 }] }])).toBe(true)
+		expect(isGuidedClosedVUserOwned(false, [{ stages: [
+			{ type: 'ramp_up', duration: '2m', target_vusers: 5 },
+			{ type: 'hold', duration: '5m', target_vusers: 5 },
+		] }])).toBe(false)
+	})
+
+	it('reindexes ramp-down history when a Closed VUser group is removed', () => {
+		expect([...remapClosedRampDownHistory(new Set(['scenario', 'group_0', 'group_1', 'group_3']), 1)].sort()).toEqual([
+			'group_0', 'group_2', 'scenario',
+		])
+	})
+
   it('merges supported workload shapes with matching templates', () => {
     const support: LoadModelSupportEntry[] = [
       { id: 'closed-vuser', name: 'Closed VUser', category: 'vuser', status: 'executed', apexload_shape: 'Closed model', fields: ['groups[].vusers'], notes: 'Ready' },
@@ -126,6 +141,27 @@ describe('scenarioWizardUtils', () => {
     expect(preview.series.find(series => series.key === 'totalVusers')?.interpolation).toBe('linear')
   })
 
+  it('stops a shorter Closed VUser group after its authored phases', () => {
+    const preview = buildScenarioModelPreview({
+      duration: '10m',
+      groups: [
+        { name: 'Short', vusers: 10, stop_after_stages: true, stages: [
+          { type: 'ramp_up', duration: '1m', target_vusers: 10 },
+          { type: 'hold', duration: '4m', target_vusers: 10 },
+        ] },
+        { name: 'Long', vusers: 20, stop_after_stages: true, stages: [
+          { type: 'ramp_up', duration: '2m', target_vusers: 20 },
+          { type: 'hold', duration: '8m', target_vusers: 20 },
+        ] },
+      ],
+    })
+
+    const atFiveMinutes = preview.points.find(point => point.elapsedSeconds === 300)
+    expect(atFiveMinutes?.group_0_vusers).toBe(0)
+    expect(atFiveMinutes?.group_1_vusers).toBe(20)
+    expect(preview.series.find(series => series.key === 'group_0_vusers')?.interpolation).toBe('linear')
+  })
+
   it('plots a production TPS profile instead of flattening it to configured VUsers', () => {
     const trafficProfile: TrafficProfile = {
       version: 1,
@@ -212,6 +248,24 @@ describe('scenarioWizardUtils', () => {
 })
 
 describe('shape-adaptive stage generators', () => {
+	it('builds the default Closed VUser phases with an immediate stop', () => {
+		const plan = buildClosedVUserPlan({ peakVusers: 5, rampUp: '2m', sustain: '65m', rampDownEnabled: false, rampDown: '2m' })
+		expect(plan.error).toBeUndefined()
+		expect(plan.totalSeconds).toBe(67 * 60)
+		expect(plan.stages).toEqual([
+			{ name: 'Ramp-up', type: 'ramp_up', duration: '2m', target_vusers: 5 },
+			{ name: 'Sustained load', type: 'hold', duration: '1h5m', target_vusers: 5 },
+		])
+	})
+
+	it('adds a continuous Closed VUser ramp-down and validates phase durations', () => {
+		const plan = buildClosedVUserPlan({ peakVusers: 20, rampUp: '1m', sustain: '5m', rampDownEnabled: true, rampDown: '1m' })
+		expect(plan.totalSeconds).toBe(7 * 60)
+		expect(plan.stages[plan.stages.length - 1]).toEqual({ name: 'Ramp-down', type: 'ramp_down', duration: '1m', target_vusers: 0 })
+		expect(buildClosedVUserPlan({ peakVusers: 20, rampUp: '0s', sustain: '5m', rampDownEnabled: false, rampDown: '1m' }).error).toContain('Ramp-up')
+		expect(buildClosedVUserPlan({ peakVusers: 20, rampUp: '1m', sustain: '', rampDownEnabled: false, rampDown: '1m' }).error).toContain('Sustained')
+		expect(buildClosedVUserPlan({ peakVusers: 20, rampUp: '1m', sustain: '5m', rampDownEnabled: true, rampDown: '' }).error).toContain('Ramp-down')
+	})
 	it.each([
 		{
 			name: 'defaults',
@@ -345,13 +399,14 @@ describe('adaptScenarioShapeDefaults', () => {
     expect(seed.groups?.[0].stages).toEqual([])
   })
 
-  it('caps closed and mixed-protocol non-stage defaults', () => {
+  it('builds closed phases and caps mixed-protocol non-stage defaults', () => {
     const closed = adaptScenarioShapeDefaults('closed-vuser', {
       duration: '10m',
       groups: [{ vusers: 10, ramp_up: '5m' }],
     })
-    expect(parseDurationSeconds(closed.groups?.[0].ramp_up)).toBeLessThanOrEqual(120)
-    expect(closed.groups?.[0].stages).toEqual([])
+    expect(closed.groups?.[0].ramp_up).toBe('5m')
+    expect(closed.groups?.[0].stages?.map(stage => stage.type)).toEqual(['ramp_up', 'hold'])
+    expect(stageSeconds(closed.groups?.[0].stages || [])).toBe(600)
 
     const mixed = adaptScenarioShapeDefaults('mixed-protocol', {
       duration: '15m',
@@ -427,10 +482,12 @@ describe('SCENARIO_SHAPE_PRESETS', () => {
     })
   })
 
-  it('keeps closed-vuser a single group with no stages (protects the manual-shape smoke flow)', () => {
+  it('seeds the default Closed VUser phase profile', () => {
     const preset = getScenarioShapePreset('closed-vuser')!
     expect(preset.groups).toHaveLength(1)
-    expect(preset.groups[0].stages ?? []).toHaveLength(0)
+    expect(preset.duration).toBe('67m')
+    expect(preset.groups[0]).toMatchObject({ vusers: 5, ramp_up: '2m' })
+    expect(preset.groups[0].stages?.map(stage => stage.type)).toEqual(['ramp_up', 'hold'])
     expect(preset.scenarioMode).toBe('vuser_driven')
   })
 

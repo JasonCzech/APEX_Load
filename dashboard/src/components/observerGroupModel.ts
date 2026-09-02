@@ -8,6 +8,10 @@ export function maxVUsersForRole(role: GroupRole): number {
   return role === 'observer' ? OBSERVER_MAX_VUSERS : LOAD_GROUP_MAX_VUSERS
 }
 
+export function maxSharedVUsersForRoles(roles: GroupRole[]): number {
+  return roles.reduce((limit, role) => Math.min(limit, maxVUsersForRole(role)), LOAD_GROUP_MAX_VUSERS)
+}
+
 export function clampVUsersForRole(value: number, role: GroupRole, minimum = 0): number {
   const finiteValue = Number.isFinite(value) ? Math.trunc(value) : minimum
   return Math.min(maxVUsersForRole(role), Math.max(minimum, finiteValue))

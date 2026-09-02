@@ -27,6 +27,38 @@ describe('scenarioPayloadUtils', () => {
 		})
 	})
 
+	it('retains Closed VUser authoring intent and derived continuous stages', () => {
+		const goalConfig = buildGoalConfigPayload('vuser_driven', {
+			early_stop: { enabled: false, error_rate_pct: 5, breach_window: '1m' },
+			workload_shape_config: {
+				closed_vuser: {
+					scope: 'scenario',
+					scenario: { peak_vusers: 5, ramp_up: '2m', sustain: '65m', ramp_down_enabled: false, ramp_down: '2m' },
+				},
+			},
+		})
+		expect(goalConfig).toEqual({
+			early_stop: { enabled: false, error_rate_pct: 5, breach_window: '1m' },
+			workload_shape_config: {
+				closed_vuser: {
+					scope: 'scenario',
+					scenario: { peak_vusers: 5, ramp_up: '2m', sustain: '65m', ramp_down_enabled: false, ramp_down: '2m' },
+				},
+			},
+		})
+
+		const groups = buildScenarioGroupPayloads([{
+			name: 'checkout', scriptId: 'script-1', vusers: 5, rampUp: '2m', rampDown: '', initialization: 'at_runtime',
+			stages: [
+				{ type: 'ramp_up', duration: '2m', target_vusers: 5, name: 'Ramp up' },
+				{ type: 'hold', duration: '1h5m', target_vusers: 5, name: 'Sustained load' },
+			],
+		}])
+		expect(groups[0].stages).toHaveLength(2)
+		expect(groups[0].ramp_up).toBe('2m')
+		expect(groups[0].ramp_down).toBeUndefined()
+	})
+
   it('round-trips a full-resolution traffic profile without converting it to stages', () => {
     const trafficProfile = {
       version: 1,

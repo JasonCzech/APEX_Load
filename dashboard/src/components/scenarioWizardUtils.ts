@@ -28,6 +28,7 @@ export interface ScenarioModelGroupInput {
   ramp_up?: string
   ramp_down?: string
   stages?: LoadStageDraft[]
+  stop_after_stages?: boolean
 }
 
 export interface ScenarioModelPoint {
@@ -157,7 +158,80 @@ export interface SteppedRampPlan {
   error?: string
 }
 
+export interface ClosedVUserPlanInput {
+  peakVusers: number
+  rampUp: string
+  sustain: string
+  rampDownEnabled: boolean
+  rampDown: string
+}
+
+export interface ClosedVUserPlan {
+  stages: LoadStageDraft[]
+  rampUpSeconds: number
+  sustainSeconds: number
+  rampDownSeconds: number
+  totalSeconds: number
+  error?: string
+}
+
 export const MAX_STEPPED_RAMP_STEPS = 100
+
+export function isGuidedClosedVUserOwned(
+  hasAuthoringConfig: boolean,
+  groups: Array<{ stages?: LoadStageDraft[] }>,
+) {
+  return hasAuthoringConfig || groups.every(group => (group.stages || []).length === 0)
+}
+
+export function remapClosedRampDownHistory(keys: Iterable<string>, removedIndex: number) {
+  const remapped = new Set<string>()
+  for (const key of keys) {
+    const match = /^group_(\d+)$/.exec(key)
+    if (!match) {
+      remapped.add(key)
+      continue
+    }
+    const index = Number(match[1])
+    if (index < removedIndex) remapped.add(key)
+    if (index > removedIndex) remapped.add(`group_${index - 1}`)
+  }
+  return remapped
+}
+
+export function buildClosedVUserPlan(input: ClosedVUserPlanInput): ClosedVUserPlan {
+  const empty = { stages: [], rampUpSeconds: 0, sustainSeconds: 0, rampDownSeconds: 0, totalSeconds: 0 }
+  const peakVusers = Math.round(input.peakVusers)
+  if (!Number.isFinite(peakVusers) || peakVusers < 1) {
+    return { ...empty, error: 'Peak load must be at least 1 VUser.' }
+  }
+  const rampUpSeconds = parseDurationToSeconds(input.rampUp)
+  if (rampUpSeconds <= 0) {
+    return { ...empty, error: 'Ramp-up duration must be greater than zero.' }
+  }
+  const sustainSeconds = parseDurationToSeconds(input.sustain)
+  if (sustainSeconds <= 0) {
+    return { ...empty, rampUpSeconds, error: 'Sustained-load duration must be greater than zero.' }
+  }
+  const rampDownSeconds = input.rampDownEnabled ? parseDurationToSeconds(input.rampDown) : 0
+  if (input.rampDownEnabled && rampDownSeconds <= 0) {
+    return { ...empty, rampUpSeconds, sustainSeconds, error: 'Ramp-down duration must be greater than zero when ramp-down is enabled.' }
+  }
+  const stages: LoadStageDraft[] = [
+    { name: 'Ramp-up', type: 'ramp_up', duration: formatTimeCompact(rampUpSeconds), target_vusers: peakVusers },
+    { name: 'Sustained load', type: 'hold', duration: formatTimeCompact(sustainSeconds), target_vusers: peakVusers },
+  ]
+  if (input.rampDownEnabled) {
+    stages.push({ name: 'Ramp-down', type: 'ramp_down', duration: formatTimeCompact(rampDownSeconds), target_vusers: 0 })
+  }
+  return {
+    stages,
+    rampUpSeconds,
+    sustainSeconds,
+    rampDownSeconds,
+    totalSeconds: rampUpSeconds + sustainSeconds + rampDownSeconds,
+  }
+}
 
 export function buildSteppedRampPlan(input: SteppedRampPlanInput): SteppedRampPlan {
   const durationSeconds = Math.max(0, Math.round(input.durationSeconds))
@@ -215,7 +289,7 @@ export function buildSteppedRampPlan(input: SteppedRampPlanInput): SteppedRampPl
  * Numbers mirror pkg/api/load_model_support.go so the manual-shape path and the matching
  * starter-template button produce the same draft. Invariants (enforced in tests):
  *   - staged groups: Σ(stage durations) <= scenario `duration`, and group.vusers == staged peak.
- *   - closed-vuser keeps exactly one group with no stages.
+ *   - closed-vuser keeps exactly one group with canonical ramp/hold stages.
  */
 export interface ScenarioShapePreset {
   duration: string
@@ -436,13 +510,26 @@ export function adaptScenarioShapeDefaults(shapeId: string, seed: ScenarioSeed, 
 
   if (shapeId === 'closed-vuser') {
     next.scenario_mode = 'vuser_driven'
-    next.groups = next.groups?.slice(0, 1).map(group => ({
-      ...group,
-      vusers: normalizePeak(group.vusers || 5),
-      ramp_up: simpleRampForDuration(durationSeconds, 0.2, parseDurationToSeconds(group.ramp_up) || 30),
-      ramp_down: group.ramp_down || '',
-      stages: [],
-    }))
+    next.groups = next.groups?.slice(0, 1).map(group => {
+      const rampUp = group.ramp_up || '2m'
+      const rampUpSeconds = parseDurationToSeconds(rampUp)
+      const rampDown = group.ramp_down || ''
+      const rampDownSeconds = parseDurationToSeconds(rampDown)
+      const sustain = formatTimeCompact(Math.max(1, durationSeconds - rampUpSeconds - rampDownSeconds))
+      return {
+        ...group,
+        vusers: normalizePeak(group.vusers || 5),
+        ramp_up: rampUp,
+        ramp_down: rampDown,
+        stages: buildClosedVUserPlan({
+          peakVusers: normalizePeak(group.vusers || 5),
+          rampUp,
+          sustain,
+          rampDownEnabled: Boolean(rampDown),
+          rampDown: rampDown || rampUp,
+        }).stages,
+      }
+    })
     return next
   }
 
@@ -540,10 +627,14 @@ export function adaptScenarioShapeDefaults(shapeId: string, seed: ScenarioSeed, 
 
 export const SCENARIO_SHAPE_PRESETS: Record<string, ScenarioShapePreset> = {
   'closed-vuser': {
-    duration: '3m',
+    duration: '67m',
     scenarioMode: 'vuser_driven',
-    groups: [{ vusers: 5, ramp_up: '30s' }],
-    guidance: 'Fixed VUsers loop for the full duration. Set per-group VUsers and ramp on the Run Settings step.',
+    groups: [{
+      vusers: 5,
+      ramp_up: '2m',
+      stages: buildClosedVUserPlan({ peakVusers: 5, rampUp: '2m', sustain: '65m', rampDownEnabled: false, rampDown: '2m' }).stages,
+    }],
+    guidance: 'Ramp continuously to a fixed VUser load, measure steady-state performance, and optionally ramp down before the run ends.',
   },
   'open-arrival-rate': {
     duration: '10m',
@@ -861,7 +952,9 @@ export function buildScenarioModelPreview(params: {
       const value = profileVUsers && profileMapping
         ? (elapsedSeconds < steadySeconds ? trafficProfileTargetAt(profileMapping, elapsedSeconds) : 0)
         : group.stages?.length
-          ? (elapsedSeconds < steadySeconds ? stagedValue(group.stages, elapsedSeconds, 'target_vusers') : 0)
+          ? (elapsedSeconds < steadySeconds && (!group.stop_after_stages || elapsedSeconds < group.stages.reduce((sum, stage) => sum + parseDurationSeconds(stage.duration, 60), 0))
+            ? stagedValue(group.stages, elapsedSeconds, 'target_vusers')
+            : 0)
           : simpleGroupValue(group, elapsedSeconds, steadySeconds)
       point[groupKey] = Math.round(value * 100) / 100
       point.totalVusers += value

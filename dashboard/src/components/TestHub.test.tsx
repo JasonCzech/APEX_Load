@@ -1291,6 +1291,71 @@ describe('TestHub', () => {
     expect(container.textContent).not.toContain('Goal oriented')
   })
 
+  it('guides Closed VUser phases, retains assurance controls, and saves authoring intent', async () => {
+    await act(async () => {
+      root.render(<TestHub initialView="builder" testStatuses={{}} onSelectTest={vi.fn()} />)
+    })
+    await flushPromises()
+
+    await clickButton('Build from Workload Shape')
+    await selectManualShapeByName('Closed VUser')
+    await clickWizardStep('Scripts')
+    const nameInput = container.querySelector<HTMLInputElement>('input[placeholder="Scenario name"]')
+    expect(nameInput).not.toBeNull()
+    if (!nameInput) return
+    await act(async () => setInputValue(nameInput, 'Closed Profile Scenario'))
+    await chooseLibraryScriptForGroup()
+    await clickWizardStep('Run Settings')
+
+    expect(container.textContent).toContain('Closed VUser Setup')
+    expect(container.textContent).toContain('1h7m total')
+    expect(findControlByLabel<HTMLInputElement>(container, 'Peak VUsers', 'input')?.value).toBe('5')
+    expect(getDurationFieldByLabel(container, 'Ramp-up')?.input.value).toBe('2')
+    expect(getDurationFieldByLabel(container, 'Sustained load')?.input.value).toBe('65')
+    expect(container.querySelectorAll('.closed-vuser-phase-preview tbody tr')).toHaveLength(2)
+    expect(findControlByLabel<HTMLSelectElement>(container, 'Scenario Mode', 'select')).toBeUndefined()
+    for (const assurance of ['Script shakeout gate', 'Resource baseline windows', 'Continue on action errors', 'Snapshot on error']) {
+      expect(container.textContent).toContain(assurance)
+    }
+
+    const rampDownToggle = container.querySelector<HTMLInputElement>('.closed-vuser-ramp-toggle input[type="checkbox"]') ?? undefined
+    expect(rampDownToggle).toBeDefined()
+    if (!rampDownToggle) return
+    const rampUpField = getDurationFieldByLabel(container, 'Ramp-up')
+    expect(rampUpField).not.toBeNull()
+    if (!rampUpField) return
+    await act(async () => setInputValue(rampUpField.input, '3'))
+    await act(async () => rampDownToggle.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    expect(getDurationFieldByLabel(container, 'Ramp-down')?.input.value).toBe('3')
+    expect(container.querySelectorAll('.closed-vuser-phase-preview tbody tr')).toHaveLength(3)
+    expect(container.textContent).toContain('1h11m total')
+
+    await act(async () => rampDownToggle.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    await act(async () => setInputValue(rampUpField.input, '4'))
+    await act(async () => rampDownToggle.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    expect(getDurationFieldByLabel(container, 'Ramp-down')?.input.value).toBe('3')
+    expect(container.textContent).toContain('1h12m total')
+
+    await clickButton('Save Scenario')
+    await flushPromises()
+    const payload = apiMock.createScenario.mock.calls[apiMock.createScenario.mock.calls.length - 1]?.[0]
+    expect(payload).toMatchObject({
+      duration: '1h12m',
+      scenario_mode: 'vuser_driven',
+      goal_config: expect.objectContaining({
+        early_stop: { enabled: false, error_rate_pct: 5, breach_window: '1m' },
+        workload_shape_config: {
+          closed_vuser: expect.objectContaining({
+            scope: 'scenario',
+            scenario: { peak_vusers: 5, ramp_up: '4m', sustain: '1h5m', ramp_down_enabled: true, ramp_down: '3m' },
+          }),
+        },
+      }),
+    })
+    expect(payload.groups[0]).toMatchObject({ vusers: 5, ramp_up: '4m', ramp_down: '3m' })
+    expect(payload.groups[0].stages.map((stage: { type: string }) => stage.type)).toEqual(['ramp_up', 'hold', 'ramp_down'])
+  })
+
   it('updates the guided stepped-ramp stages immediately and saves authoring intent', async () => {
     await act(async () => {
       root.render(<TestHub initialView="builder" testStatuses={{}} onSelectTest={vi.fn()} />)
@@ -1336,19 +1401,15 @@ describe('TestHub', () => {
     await flushPromises()
 
     const payload = apiMock.createScenario.mock.calls[apiMock.createScenario.mock.calls.length - 1]?.[0]
-    expect(payload).toMatchObject({
-      name: 'Adaptive Stepped Scenario',
-      duration: '2h',
-      scenario_mode: 'vuser_driven',
-      groups: [expect.objectContaining({
-        script_id: 'script-1',
-        vusers: 30,
-      })],
-		goal_config: expect.objectContaining({
-			early_stop: { enabled: false, error_rate_pct: 5, breach_window: '1m' },
-			workload_shape_config: { stepped_ramp: expect.objectContaining({ scope: 'scenario', scenario: expect.objectContaining({ start_vusers: 0, end_vusers: 30, step_count: 6 }) }) },
-		}),
+    expect(payload.name).toBe('Adaptive Stepped Scenario')
+    expect(payload.duration).toBe('2h')
+    expect(payload.scenario_mode).toBe('vuser_driven')
+    expect(payload.goal_config.early_stop).toEqual({ enabled: false, error_rate_pct: 5, breach_window: '1m' })
+    expect(payload.goal_config.workload_shape_config.stepped_ramp).toMatchObject({
+      scope: 'scenario',
+      scenario: { start_vusers: 0, end_vusers: 30, step_count: 6 },
     })
+    expect(payload.groups[0]).toMatchObject({ script_id: 'script-1', vusers: 30 })
     expect(payload.groups[0].stages).toHaveLength(6)
     expect(payload.groups[0].stages.every((stage: { type: string; duration: string }) => stage.type === 'hold' && stage.duration === '20m')).toBe(true)
   })
