@@ -936,7 +936,7 @@ func buildRunArchiveChangeAttribution(manifest *RunArchiveManifest) RunArchiveCh
 	return RunArchiveChangeAttribution{
 		ScriptRevisions:       scriptRevisions,
 		ScenarioRevision:      strings.TrimSpace(provenance.ScenarioID),
-		Environment:           archiveFirstNonEmpty(provenance.ControllerEnv["APEXLOAD_ENVIRONMENT"], provenance.ControllerEnv["APEXLOAD_ENV"], provenance.ProjectID),
+		Environment:           archiveFirstNonEmpty(provenance.ControllerEnv["APEXLOAD_ENVIRONMENT"], provenance.ControllerEnv["APEXLOAD_ENV"]),
 		GeneratorVersions:     generatorVersions,
 		DataRevision:          dataRevisionFromGroups(provenance.Groups),
 		RuntimeOverrides:      provenance.RuntimeSettings != nil,

@@ -300,7 +300,7 @@ func defaultReportAnnotations(report *RunArchiveReport, testID, profile string) 
 		label = p.Label
 	}
 
-	testName := testID
+	testName := reportRunName(report)
 	if report != nil && report.Manifest != nil {
 		if strings.TrimSpace(report.Manifest.TestName) != "" {
 			testName = report.Manifest.TestName

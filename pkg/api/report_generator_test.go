@@ -143,7 +143,8 @@ func TestRenderRunArchiveHTMLReportIncludesBrowserAndSOAPSections(t *testing.T) 
 	body := string(html)
 	checks := []string{
 		"Checkout Flow",
-		"Detailed Technical profile",
+		"Detailed Technical Report",
+		"Performance results for <strong>Checkout Flow</strong>",
 		"@media print",
 		"@page",
 		"break-inside: avoid",
@@ -410,5 +411,46 @@ func TestRenderRunArchiveHTMLReportHonorsVerdictAndFindingsOverrides(t *testing.
 	}
 	if !strings.Contains(body, "Curated finding") {
 		t.Fatal("expected analyst-curated finding to render")
+	}
+}
+
+func TestReportReaderContextUsesNamesWithoutInventingEnvironment(t *testing.T) {
+	for _, tc := range []struct{ name, environment, expected string }{
+		{"missing environment", "", "Not recorded"},
+		{"configured environment", "Performance lab", "Performance lab"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			report := &RunArchiveReport{Manifest: &RunArchiveManifest{TestID: "internal-run-uuid", TestName: "Storefront usability verification", Provenance: RunArchiveProvenance{ProjectID: "internal-project-uuid", ScenarioID: "internal-scenario-uuid", ControllerEnv: map[string]string{"APEXLOAD_ENVIRONMENT": tc.environment}}}}
+			report.ChangeAttribution = buildRunArchiveChangeAttribution(report.Manifest)
+			html, err := renderRunArchiveHTMLReportWithProfile(report, "executive")
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, value := range []string{"Performance results for <strong>Storefront usability verification</strong>", tc.expected} {
+				if !strings.Contains(string(html), value) {
+					t.Fatalf("missing %q", value)
+				}
+			}
+			for _, value := range []string{"internal-run-uuid", "internal-project-uuid", "internal-scenario-uuid", "profile generated from the archived run bundle"} {
+				if strings.Contains(string(html), value) {
+					t.Fatalf("internal metadata in executive report: %q", value)
+				}
+			}
+			profile, _ := lookupRunArchiveReportProfile("executive")
+			lines := strings.Join(buildRunArchiveReportPDFLines(report, profile, nil, nil), "\n")
+			if !strings.Contains(lines, "Run: Storefront usability verification") || !strings.Contains(lines, "Environment: "+tc.expected) {
+				t.Fatal(lines)
+			}
+			if strings.Contains(lines, "internal-run-uuid") || strings.Contains(lines, "internal-project-uuid") {
+				t.Fatal("internal identifiers leaked into PDF reader context")
+			}
+			if report.Manifest.TestID != "internal-run-uuid" || report.Manifest.Provenance.ProjectID != "internal-project-uuid" {
+				t.Fatal("raw provenance changed")
+			}
+		})
+	}
+	report := &RunArchiveReport{Manifest: &RunArchiveManifest{TestID: "internal-run-uuid"}}
+	if reportRunName(report) != "Unnamed test" {
+		t.Fatal("missing name must not become an ID")
 	}
 }

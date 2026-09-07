@@ -486,8 +486,7 @@ func buildReportSectionRegistry() map[string]reportSectionRenderer {
 			*lines = append(*lines,
 				fmt.Sprintf("Data completeness: %.0f%% (%s)", d.Report.Completeness.ScorePct, d.Report.Completeness.Status),
 			)
-			appendPDFValueLine(lines, "Environment", d.Report.ChangeAttribution.Environment)
-			appendPDFValueLine(lines, "Scenario revision", d.Report.ChangeAttribution.ScenarioRevision)
+			appendPDFValueLine(lines, "Environment", reportEnvironment(d.Report))
 			if d.Report.ChangeAttribution.RuntimeOverrides {
 				appendPDFValueLine(lines, "Runtime overrides", strings.Join(d.Report.ChangeAttribution.RuntimeOverrideFields, ", "))
 			} else {
@@ -539,7 +538,7 @@ func buildReportSectionRegistry() map[string]reportSectionRenderer {
 			pdfHeading(lines, "Change Attribution")
 			attribution := d.Report.ChangeAttribution
 			appendPDFValueLine(lines, "Scenario revision", attribution.ScenarioRevision)
-			appendPDFValueLine(lines, "Environment", attribution.Environment)
+			appendPDFValueLine(lines, "Environment", reportEnvironment(d.Report))
 			appendPDFValueLine(lines, "Data revision", attribution.DataRevision)
 			appendPDFValueLine(lines, "Script revisions", strings.Join(attribution.ScriptRevisions, ", "))
 			appendPDFValueLine(lines, "Generator versions", strings.Join(attribution.GeneratorVersions, ", "))
@@ -895,7 +894,7 @@ func buildReportSectionRegistry() map[string]reportSectionRenderer {
 		PDF: func(d *runArchiveHTMLReportData, lines *[]string) {
 			pdfHeading(lines, "Test Setup")
 			attribution := d.Report.ChangeAttribution
-			appendPDFValueLine(lines, "Environment", attribution.Environment)
+			appendPDFValueLine(lines, "Environment", reportEnvironment(d.Report))
 			appendPDFValueLine(lines, "Scenario revision", attribution.ScenarioRevision)
 			appendPDFValueLine(lines, "Scripts", strings.Join(attribution.ScriptRevisions, ", "))
 			appendPDFValueLine(lines, "Generators", strings.Join(attribution.GeneratorVersions, ", "))

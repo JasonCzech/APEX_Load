@@ -152,7 +152,7 @@ var runArchiveReportShellTemplate = template.Must(template.New("run-archive-repo
     </div>
   </div>
   <div class="doc-badge">
-    Test <span class="mono">{{.Data.Report.Manifest.TestID}}</span><br>
+    Run <span>{{reportRunName .Data.Report}}</span><br>
     Execution <span class="mono">{{executionLabel .Data.Report.Manifest.TerminationReason}}</span><br>
     Generated <span class="mono">{{formatTime .Data.GeneratedAt}}</span>
   </div>
@@ -163,11 +163,10 @@ var runArchiveReportShellTemplate = template.Must(template.New("run-archive-repo
 
 <div class="eyebrow">{{.Data.Profile.Label}} Report</div>
 <h1>{{if .Data.Annotations.Title}}{{.Data.Annotations.Title}}{{else}}{{.Data.Report.Manifest.TestName}}{{end}}</h1>
-<p class="subtitle">{{.Data.Profile.Label}} profile generated from the archived run bundle for test
-<span class="mono">{{.Data.Report.Manifest.TestID}}</span>.{{if .Data.Annotations.PreparedBy}} Prepared by {{.Data.Annotations.PreparedBy}}.{{end}} {{.Data.Profile.Description}}</p>
+<p class="subtitle">Performance results for <strong>{{reportRunName .Data.Report}}</strong>.{{if .Data.Annotations.PreparedBy}} Prepared by {{.Data.Annotations.PreparedBy}}.{{end}}</p>
 
 <div class="meta-strip">
-  <div class="meta-cell"><b>Environment</b><span>{{if .Data.Report.ChangeAttribution.Environment}}{{.Data.Report.ChangeAttribution.Environment}}{{else}}—{{end}}</span></div>
+  <div class="meta-cell"><b>Environment</b><span>{{reportEnvironment .Data.Report}}</span></div>
   <div class="meta-cell"><b>Ended</b><span>{{formatTime .Data.Report.Manifest.CompletedAt}}</span></div>
   <div class="meta-cell"><b>Peak load</b><span>{{.Data.Report.Overview.PeakActiveVUsers}} VUsers · {{formatFloat .Data.Report.Overview.PeakTPS}} TPS</span></div>
   <div class="meta-cell"><b>Profile</b><span>{{.Data.Profile.Label}}</span></div>
@@ -400,8 +399,7 @@ var reportSectionTemplates = template.Must(template.New("run-archive-report-sect
 <h2>Run Context &amp; Confidence</h2>
 <div class="kpis">
   <div class="kpi"><b>Data completeness</b><div class="v">{{f0 .Report.Completeness.ScorePct}}%</div></div>
-  <div class="kpi"><b>Environment</b><div class="v">{{if .Report.ChangeAttribution.Environment}}{{.Report.ChangeAttribution.Environment}}{{else}}—{{end}}</div></div>
-  <div class="kpi"><b>Scenario revision</b><div class="v">{{if .Report.ChangeAttribution.ScenarioRevision}}{{.Report.ChangeAttribution.ScenarioRevision}}{{else}}—{{end}}</div></div>
+  <div class="kpi"><b>Environment</b><div class="v">{{reportEnvironment .Report}}</div></div>
   <div class="kpi"><b>Runtime overrides</b><div class="v">{{if .Report.ChangeAttribution.RuntimeOverrides}}Yes{{else}}No{{end}}</div></div>
 </div>
 {{end}}
@@ -426,7 +424,7 @@ var reportSectionTemplates = template.Must(template.New("run-archive-report-sect
 <div class="overview">
   <div class="metric"><span class="metric-label">Scripts</span><span class="metric-value">{{if .Report.ChangeAttribution.ScriptRevisions}}{{join .Report.ChangeAttribution.ScriptRevisions}}{{else}}n/a{{end}}</span></div>
   <div class="metric"><span class="metric-label">Scenario</span><span class="metric-value">{{if .Report.ChangeAttribution.ScenarioRevision}}{{.Report.ChangeAttribution.ScenarioRevision}}{{else}}n/a{{end}}</span></div>
-  <div class="metric"><span class="metric-label">Environment</span><span class="metric-value">{{if .Report.ChangeAttribution.Environment}}{{.Report.ChangeAttribution.Environment}}{{else}}n/a{{end}}</span></div>
+  <div class="metric"><span class="metric-label">Environment</span><span class="metric-value">{{reportEnvironment .Report}}</span></div>
   <div class="metric"><span class="metric-label">Generators</span><span class="metric-value">{{if .Report.ChangeAttribution.GeneratorVersions}}{{join .Report.ChangeAttribution.GeneratorVersions}}{{else}}n/a{{end}}</span></div>
 </div>
 <p class="section-copy">Runtime overrides {{if .Report.ChangeAttribution.RuntimeOverrides}}were applied{{if .Report.ChangeAttribution.RuntimeOverrideFields}} to: {{join .Report.ChangeAttribution.RuntimeOverrideFields}}{{end}}{{else}}were not applied{{end}}.</p>
@@ -622,7 +620,7 @@ var reportSectionTemplates = template.Must(template.New("run-archive-report-sect
 <table>
 <thead><tr><th>Component</th><th>Detail</th></tr></thead>
 <tbody>
-<tr><td>Environment</td><td>{{if .Report.ChangeAttribution.Environment}}{{.Report.ChangeAttribution.Environment}}{{else}}n/a{{end}}</td></tr>
+<tr><td>Environment</td><td>{{reportEnvironment .Report}}</td></tr>
 <tr><td>Scenario revision</td><td>{{if .Report.ChangeAttribution.ScenarioRevision}}{{.Report.ChangeAttribution.ScenarioRevision}}{{else}}n/a{{end}}</td></tr>
 <tr><td>Load generation</td><td>APEX Load{{if gt .GeneratorCount 0}} · {{.GeneratorCount}} generator(s){{end}}{{if .Report.ChangeAttribution.GeneratorVersions}} · {{join .Report.ChangeAttribution.GeneratorVersions}}{{end}}</td></tr>
 <tr><td>Scripts</td><td>{{if .Report.ChangeAttribution.ScriptRevisions}}{{join .Report.ChangeAttribution.ScriptRevisions}}{{else}}n/a{{end}}</td></tr>

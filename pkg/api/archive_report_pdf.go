@@ -73,8 +73,7 @@ func buildRunArchiveReportPDFLines(report *RunArchiveReport, profile RunArchiveR
 
 	if report.Manifest != nil {
 		lines = append(lines,
-			"Run: "+firstNonEmptyPDFValue(report.Manifest.TestName, report.Manifest.TestID),
-			"Test ID: "+report.Manifest.TestID,
+			"Run: "+reportRunName(report),
 			"Completed: "+formatPDFTime(report.Manifest.CompletedAt),
 			"",
 		)

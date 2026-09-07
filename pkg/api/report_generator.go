@@ -70,9 +70,11 @@ type runArchiveHTMLReportData struct {
 }
 
 var profileHTMLFuncMap = template.FuncMap{
-	"populationRate":  reportPopulationRate,
-	"executionLabel":  reportExecutionLabel,
-	"elapsedDuration": reportElapsedDuration,
+	"reportRunName":     reportRunName,
+	"reportEnvironment": reportEnvironment,
+	"populationRate":    reportPopulationRate,
+	"executionLabel":    reportExecutionLabel,
+	"elapsedDuration":   reportElapsedDuration,
 	"formatTime": func(value any) string {
 		var t time.Time
 		switch typed := value.(type) {
@@ -442,4 +444,18 @@ func joinCountRows(rows []runArchiveHTMLCountRow) string {
 		parts = append(parts, fmt.Sprintf("%s (%d)", row.Name, row.Count))
 	}
 	return strings.Join(parts, ", ")
+}
+
+// Reader-facing context never substitutes internal identifiers for missing names.
+func reportRunName(report *RunArchiveReport) string {
+	if report != nil && report.Manifest != nil && strings.TrimSpace(report.Manifest.TestName) != "" {
+		return strings.TrimSpace(report.Manifest.TestName)
+	}
+	return "Unnamed test"
+}
+func reportEnvironment(report *RunArchiveReport) string {
+	if report != nil && strings.TrimSpace(report.ChangeAttribution.Environment) != "" {
+		return strings.TrimSpace(report.ChangeAttribution.Environment)
+	}
+	return "Not recorded"
 }
