@@ -1412,9 +1412,35 @@ export interface operations {
               "peak_tps"?: number;
               "transactions"?: number;
             }>;
+            "by_request"?: Record<string, {
+              "avg_response_ms"?: number;
+              "error_pct"?: number;
+              "errors"?: number;
+              "max_response_ms"?: number;
+              "min_response_ms"?: number;
+              "p50_ms"?: number;
+              "p90_ms"?: number;
+              "p95_ms"?: number;
+              "p99_ms"?: number;
+              "peak_tps"?: number;
+              "transactions"?: number;
+            }>;
             "by_soap_fault_category"?: Record<string, number>;
             "by_soap_fault_code"?: Record<string, number>;
             "by_soap_operation"?: Record<string, {
+              "avg_response_ms"?: number;
+              "error_pct"?: number;
+              "errors"?: number;
+              "max_response_ms"?: number;
+              "min_response_ms"?: number;
+              "p50_ms"?: number;
+              "p90_ms"?: number;
+              "p95_ms"?: number;
+              "p99_ms"?: number;
+              "peak_tps"?: number;
+              "transactions"?: number;
+            }>;
+            "by_transaction"?: Record<string, {
               "avg_response_ms"?: number;
               "error_pct"?: number;
               "errors"?: number;
@@ -1624,6 +1650,7 @@ export interface operations {
               "sla_details"?: Array<string>;
               "sla_evaluated"?: boolean;
               "status"?: string;
+              "termination_reason"?: string;
               "test_id"?: string;
               "test_manifest_file"?: string;
               "test_name"?: string;
@@ -1639,6 +1666,20 @@ export interface operations {
               "transactions_file"?: string;
               "transactions_parquet_file"?: string;
             }) | null;
+            "metric_populations"?: Record<string, {
+              "average_rate_per_second"?: number;
+              "avg_response_ms"?: number;
+              "error_pct"?: number;
+              "errors"?: number;
+              "max_response_ms"?: number;
+              "min_response_ms"?: number;
+              "p50_ms"?: number;
+              "p90_ms"?: number;
+              "p95_ms"?: number;
+              "p99_ms"?: number;
+              "peak_tps"?: number;
+              "transactions"?: number;
+            }>;
             "network_phases"?: {
               "by_action"?: Record<string, {
                 "avg_connect_ms"?: number;
@@ -1771,6 +1812,7 @@ export interface operations {
                 "completeness_pct"?: number;
                 "deltas"?: (Record<string, unknown>) | null;
                 "error_pct"?: number;
+                "metric_population"?: string;
                 "peak_active_vusers"?: number;
                 "peak_tps"?: number;
                 "regressions"?: Array<string>;
@@ -1787,6 +1829,7 @@ export interface operations {
                 "completeness_pct"?: number;
                 "deltas"?: (Record<string, unknown>) | null;
                 "error_pct"?: number;
+                "metric_population"?: string;
                 "peak_active_vusers"?: number;
                 "peak_tps"?: number;
                 "regressions"?: Array<string>;
@@ -1809,6 +1852,7 @@ export interface operations {
               "regressed"?: boolean;
               "regressions"?: Array<string>;
               "release_id"?: string;
+              "release_name"?: string;
               "run_count"?: number;
               "trajectory"?: {
                 "avg_response_trend_pct"?: number;
@@ -32551,6 +32595,7 @@ export interface operations {
                 }>;
                 "request_count"?: number;
                 "request_index"?: (number) | null;
+                "response_body_state"?: string;
                 "screenshot_base64"?: string;
                 "selector"?: string;
                 "snapshot"?: (Record<string, unknown>) | null;
@@ -32609,6 +32654,7 @@ export interface operations {
                 "repair_suggestions"?: Array<Record<string, unknown>>;
                 "request_count"?: number;
                 "request_index"?: (number) | null;
+                "response_body_state"?: string;
                 "screenshot_base64"?: string;
                 "selector"?: string;
                 "snapshot"?: (Record<string, unknown>) | null;
@@ -32709,6 +32755,7 @@ export interface operations {
                   "repair_suggestions"?: Array<Record<string, unknown>>;
                   "request_count"?: number;
                   "request_index"?: (number) | null;
+                  "response_body_state"?: string;
                   "screenshot_base64"?: string;
                   "selector"?: string;
                   "snapshot"?: (Record<string, unknown>) | null;
@@ -35082,6 +35129,7 @@ export interface operations {
                 "peak_tps_delta": number;
               }) | null;
               "error_pct": number;
+              "metric_population"?: string;
               "peak_active_vusers": number;
               "peak_tps": number;
               "regressions"?: Array<string>;
@@ -37752,6 +37800,7 @@ export interface operations {
             "sla_details"?: Array<string>;
             "sla_evaluated"?: boolean;
             "status"?: string;
+            "termination_reason"?: string;
             "test_id": string;
             "test_manifest_file"?: string;
             "test_name": string;
@@ -37937,9 +37986,35 @@ export interface operations {
               "peak_tps"?: number;
               "transactions": number;
             }>;
+            "by_request"?: Record<string, {
+              "avg_response_ms": number;
+              "error_pct": number;
+              "errors": number;
+              "max_response_ms": number;
+              "min_response_ms": number;
+              "p50_ms"?: number;
+              "p90_ms"?: number;
+              "p95_ms"?: number;
+              "p99_ms"?: number;
+              "peak_tps"?: number;
+              "transactions": number;
+            }>;
             "by_soap_fault_category"?: Record<string, number>;
             "by_soap_fault_code"?: Record<string, number>;
             "by_soap_operation"?: Record<string, {
+              "avg_response_ms": number;
+              "error_pct": number;
+              "errors": number;
+              "max_response_ms": number;
+              "min_response_ms": number;
+              "p50_ms"?: number;
+              "p90_ms"?: number;
+              "p95_ms"?: number;
+              "p99_ms"?: number;
+              "peak_tps"?: number;
+              "transactions": number;
+            }>;
+            "by_transaction"?: Record<string, {
               "avg_response_ms": number;
               "error_pct": number;
               "errors": number;
@@ -38507,6 +38582,7 @@ export interface operations {
               "sla_details"?: Array<string>;
               "sla_evaluated"?: boolean;
               "status"?: string;
+              "termination_reason"?: string;
               "test_id": string;
               "test_manifest_file"?: string;
               "test_name": string;
@@ -38528,6 +38604,20 @@ export interface operations {
               "transactions_file": string;
               "transactions_parquet_file"?: string;
             }) | null;
+            "metric_populations"?: Record<string, {
+              "average_rate_per_second": number;
+              "avg_response_ms": number;
+              "error_pct": number;
+              "errors": number;
+              "max_response_ms": number;
+              "min_response_ms": number;
+              "p50_ms"?: number;
+              "p90_ms"?: number;
+              "p95_ms"?: number;
+              "p99_ms"?: number;
+              "peak_tps"?: number;
+              "transactions": number;
+            }>;
             "network_phases"?: {
               "by_action"?: Record<string, {
                 "avg_connect_ms"?: number;
@@ -38666,6 +38756,7 @@ export interface operations {
                   "peak_tps_delta": number;
                 }) | null;
                 "error_pct": number;
+                "metric_population"?: string;
                 "peak_active_vusers": number;
                 "peak_tps": number;
                 "regressions"?: Array<string>;
@@ -38688,6 +38779,7 @@ export interface operations {
                   "peak_tps_delta": number;
                 }) | null;
                 "error_pct": number;
+                "metric_population"?: string;
                 "peak_active_vusers": number;
                 "peak_tps": number;
                 "regressions"?: Array<string>;
@@ -38710,6 +38802,7 @@ export interface operations {
               "regressed": boolean;
               "regressions"?: Array<string>;
               "release_id": string;
+              "release_name"?: string;
               "run_count": number;
               "trajectory": {
                 "avg_response_trend_pct": number;
@@ -40745,6 +40838,7 @@ export interface operations {
                 }>;
                 "request_count"?: number;
                 "request_index"?: (number) | null;
+                "response_body_state"?: string;
                 "screenshot_base64"?: string;
                 "selector"?: string;
                 "snapshot"?: (Record<string, unknown>) | null;
@@ -40803,6 +40897,7 @@ export interface operations {
                 "repair_suggestions"?: Array<Record<string, unknown>>;
                 "request_count"?: number;
                 "request_index"?: (number) | null;
+                "response_body_state"?: string;
                 "screenshot_base64"?: string;
                 "selector"?: string;
                 "snapshot"?: (Record<string, unknown>) | null;
@@ -40916,6 +41011,7 @@ export interface operations {
                   "repair_suggestions"?: Array<Record<string, unknown>>;
                   "request_count"?: number;
                   "request_index"?: (number) | null;
+                  "response_body_state"?: string;
                   "screenshot_base64"?: string;
                   "selector"?: string;
                   "snapshot"?: (Record<string, unknown>) | null;
@@ -41097,6 +41193,7 @@ export interface operations {
                 }>;
                 "request_count"?: number;
                 "request_index"?: (number) | null;
+                "response_body_state"?: string;
                 "screenshot_base64"?: string;
                 "selector"?: string;
                 "snapshot"?: (Record<string, unknown>) | null;
@@ -41155,6 +41252,7 @@ export interface operations {
                 "repair_suggestions"?: Array<Record<string, unknown>>;
                 "request_count"?: number;
                 "request_index"?: (number) | null;
+                "response_body_state"?: string;
                 "screenshot_base64"?: string;
                 "selector"?: string;
                 "snapshot"?: (Record<string, unknown>) | null;
@@ -41268,6 +41366,7 @@ export interface operations {
                   "repair_suggestions"?: Array<Record<string, unknown>>;
                   "request_count"?: number;
                   "request_index"?: (number) | null;
+                  "response_body_state"?: string;
                   "screenshot_base64"?: string;
                   "selector"?: string;
                   "snapshot"?: (Record<string, unknown>) | null;
@@ -53055,6 +53154,7 @@ export interface operations {
                 }>;
                 "request_count"?: number;
                 "request_index"?: (number) | null;
+                "response_body_state"?: string;
                 "screenshot_base64"?: string;
                 "selector"?: string;
                 "snapshot"?: (Record<string, unknown>) | null;
@@ -53113,6 +53213,7 @@ export interface operations {
                 "repair_suggestions"?: Array<Record<string, unknown>>;
                 "request_count"?: number;
                 "request_index"?: (number) | null;
+                "response_body_state"?: string;
                 "screenshot_base64"?: string;
                 "selector"?: string;
                 "snapshot"?: (Record<string, unknown>) | null;
@@ -53213,6 +53314,7 @@ export interface operations {
                   "repair_suggestions"?: Array<Record<string, unknown>>;
                   "request_count"?: number;
                   "request_index"?: (number) | null;
+                  "response_body_state"?: string;
                   "screenshot_base64"?: string;
                   "selector"?: string;
                   "snapshot"?: (Record<string, unknown>) | null;
@@ -53495,6 +53597,7 @@ export interface operations {
                 }>;
                 "request_count"?: number;
                 "request_index"?: (number) | null;
+                "response_body_state"?: string;
                 "screenshot_base64"?: string;
                 "selector"?: string;
                 "snapshot"?: (Record<string, unknown>) | null;
@@ -53553,6 +53656,7 @@ export interface operations {
                 "repair_suggestions"?: Array<Record<string, unknown>>;
                 "request_count"?: number;
                 "request_index"?: (number) | null;
+                "response_body_state"?: string;
                 "screenshot_base64"?: string;
                 "selector"?: string;
                 "snapshot"?: (Record<string, unknown>) | null;
@@ -53666,6 +53770,7 @@ export interface operations {
                   "repair_suggestions"?: Array<Record<string, unknown>>;
                   "request_count"?: number;
                   "request_index"?: (number) | null;
+                  "response_body_state"?: string;
                   "screenshot_base64"?: string;
                   "selector"?: string;
                   "snapshot"?: (Record<string, unknown>) | null;
@@ -53852,6 +53957,7 @@ export interface operations {
                 }>;
                 "request_count"?: number;
                 "request_index"?: (number) | null;
+                "response_body_state"?: string;
                 "screenshot_base64"?: string;
                 "selector"?: string;
                 "snapshot"?: (Record<string, unknown>) | null;
@@ -53910,6 +54016,7 @@ export interface operations {
                 "repair_suggestions"?: Array<Record<string, unknown>>;
                 "request_count"?: number;
                 "request_index"?: (number) | null;
+                "response_body_state"?: string;
                 "screenshot_base64"?: string;
                 "selector"?: string;
                 "snapshot"?: (Record<string, unknown>) | null;
@@ -54023,6 +54130,7 @@ export interface operations {
                   "repair_suggestions"?: Array<Record<string, unknown>>;
                   "request_count"?: number;
                   "request_index"?: (number) | null;
+                  "response_body_state"?: string;
                   "screenshot_base64"?: string;
                   "selector"?: string;
                   "snapshot"?: (Record<string, unknown>) | null;
@@ -68991,6 +69099,7 @@ export interface operations {
                 }>;
                 "request_count"?: number;
                 "request_index"?: (number) | null;
+                "response_body_state"?: string;
                 "screenshot_base64"?: string;
                 "selector"?: string;
                 "snapshot"?: (Record<string, unknown>) | null;
@@ -69049,6 +69158,7 @@ export interface operations {
                 "repair_suggestions"?: Array<Record<string, unknown>>;
                 "request_count"?: number;
                 "request_index"?: (number) | null;
+                "response_body_state"?: string;
                 "screenshot_base64"?: string;
                 "selector"?: string;
                 "snapshot"?: (Record<string, unknown>) | null;
@@ -69149,6 +69259,7 @@ export interface operations {
                   "repair_suggestions"?: Array<Record<string, unknown>>;
                   "request_count"?: number;
                   "request_index"?: (number) | null;
+                  "response_body_state"?: string;
                   "screenshot_base64"?: string;
                   "selector"?: string;
                   "snapshot"?: (Record<string, unknown>) | null;
@@ -69431,6 +69542,7 @@ export interface operations {
                 }>;
                 "request_count"?: number;
                 "request_index"?: (number) | null;
+                "response_body_state"?: string;
                 "screenshot_base64"?: string;
                 "selector"?: string;
                 "snapshot"?: (Record<string, unknown>) | null;
@@ -69489,6 +69601,7 @@ export interface operations {
                 "repair_suggestions"?: Array<Record<string, unknown>>;
                 "request_count"?: number;
                 "request_index"?: (number) | null;
+                "response_body_state"?: string;
                 "screenshot_base64"?: string;
                 "selector"?: string;
                 "snapshot"?: (Record<string, unknown>) | null;
@@ -69602,6 +69715,7 @@ export interface operations {
                   "repair_suggestions"?: Array<Record<string, unknown>>;
                   "request_count"?: number;
                   "request_index"?: (number) | null;
+                  "response_body_state"?: string;
                   "screenshot_base64"?: string;
                   "selector"?: string;
                   "snapshot"?: (Record<string, unknown>) | null;
@@ -69788,6 +69902,7 @@ export interface operations {
                 }>;
                 "request_count"?: number;
                 "request_index"?: (number) | null;
+                "response_body_state"?: string;
                 "screenshot_base64"?: string;
                 "selector"?: string;
                 "snapshot"?: (Record<string, unknown>) | null;
@@ -69846,6 +69961,7 @@ export interface operations {
                 "repair_suggestions"?: Array<Record<string, unknown>>;
                 "request_count"?: number;
                 "request_index"?: (number) | null;
+                "response_body_state"?: string;
                 "screenshot_base64"?: string;
                 "selector"?: string;
                 "snapshot"?: (Record<string, unknown>) | null;
@@ -69959,6 +70075,7 @@ export interface operations {
                   "repair_suggestions"?: Array<Record<string, unknown>>;
                   "request_count"?: number;
                   "request_index"?: (number) | null;
+                  "response_body_state"?: string;
                   "screenshot_base64"?: string;
                   "selector"?: string;
                   "snapshot"?: (Record<string, unknown>) | null;
@@ -74841,6 +74958,7 @@ export interface operations {
                 }>;
                 "request_count"?: number;
                 "request_index"?: (number) | null;
+                "response_body_state"?: string;
                 "screenshot_base64"?: string;
                 "selector"?: string;
                 "snapshot"?: (Record<string, unknown>) | null;
@@ -74899,6 +75017,7 @@ export interface operations {
                 "repair_suggestions"?: Array<Record<string, unknown>>;
                 "request_count"?: number;
                 "request_index"?: (number) | null;
+                "response_body_state"?: string;
                 "screenshot_base64"?: string;
                 "selector"?: string;
                 "snapshot"?: (Record<string, unknown>) | null;
@@ -74999,6 +75118,7 @@ export interface operations {
                   "repair_suggestions"?: Array<Record<string, unknown>>;
                   "request_count"?: number;
                   "request_index"?: (number) | null;
+                  "response_body_state"?: string;
                   "screenshot_base64"?: string;
                   "selector"?: string;
                   "snapshot"?: (Record<string, unknown>) | null;
@@ -75870,6 +75990,7 @@ export interface operations {
                 }>;
                 "request_count"?: number;
                 "request_index"?: (number) | null;
+                "response_body_state"?: string;
                 "screenshot_base64"?: string;
                 "selector"?: string;
                 "snapshot"?: (Record<string, unknown>) | null;
@@ -75928,6 +76049,7 @@ export interface operations {
                 "repair_suggestions"?: Array<Record<string, unknown>>;
                 "request_count"?: number;
                 "request_index"?: (number) | null;
+                "response_body_state"?: string;
                 "screenshot_base64"?: string;
                 "selector"?: string;
                 "snapshot"?: (Record<string, unknown>) | null;
@@ -76028,6 +76150,7 @@ export interface operations {
                   "repair_suggestions"?: Array<Record<string, unknown>>;
                   "request_count"?: number;
                   "request_index"?: (number) | null;
+                  "response_body_state"?: string;
                   "screenshot_base64"?: string;
                   "selector"?: string;
                   "snapshot"?: (Record<string, unknown>) | null;
@@ -77007,6 +77130,7 @@ export interface operations {
                 }>;
                 "request_count"?: number;
                 "request_index"?: (number) | null;
+                "response_body_state"?: string;
                 "screenshot_base64"?: string;
                 "selector"?: string;
                 "snapshot"?: (Record<string, unknown>) | null;
@@ -77065,6 +77189,7 @@ export interface operations {
                 "repair_suggestions"?: Array<Record<string, unknown>>;
                 "request_count"?: number;
                 "request_index"?: (number) | null;
+                "response_body_state"?: string;
                 "screenshot_base64"?: string;
                 "selector"?: string;
                 "snapshot"?: (Record<string, unknown>) | null;
@@ -77178,6 +77303,7 @@ export interface operations {
                   "repair_suggestions"?: Array<Record<string, unknown>>;
                   "request_count"?: number;
                   "request_index"?: (number) | null;
+                  "response_body_state"?: string;
                   "screenshot_base64"?: string;
                   "selector"?: string;
                   "snapshot"?: (Record<string, unknown>) | null;
@@ -78104,6 +78230,7 @@ export interface operations {
                 }>;
                 "request_count"?: number;
                 "request_index"?: (number) | null;
+                "response_body_state"?: string;
                 "screenshot_base64"?: string;
                 "selector"?: string;
                 "snapshot"?: (Record<string, unknown>) | null;
@@ -78162,6 +78289,7 @@ export interface operations {
                 "repair_suggestions"?: Array<Record<string, unknown>>;
                 "request_count"?: number;
                 "request_index"?: (number) | null;
+                "response_body_state"?: string;
                 "screenshot_base64"?: string;
                 "selector"?: string;
                 "snapshot"?: (Record<string, unknown>) | null;
@@ -78275,6 +78403,7 @@ export interface operations {
                   "repair_suggestions"?: Array<Record<string, unknown>>;
                   "request_count"?: number;
                   "request_index"?: (number) | null;
+                  "response_body_state"?: string;
                   "screenshot_base64"?: string;
                   "selector"?: string;
                   "snapshot"?: (Record<string, unknown>) | null;
@@ -79202,6 +79331,7 @@ export interface operations {
                 }>;
                 "request_count"?: number;
                 "request_index"?: (number) | null;
+                "response_body_state"?: string;
                 "screenshot_base64"?: string;
                 "selector"?: string;
                 "snapshot"?: (Record<string, unknown>) | null;
@@ -79260,6 +79390,7 @@ export interface operations {
                 "repair_suggestions"?: Array<Record<string, unknown>>;
                 "request_count"?: number;
                 "request_index"?: (number) | null;
+                "response_body_state"?: string;
                 "screenshot_base64"?: string;
                 "selector"?: string;
                 "snapshot"?: (Record<string, unknown>) | null;
@@ -79373,6 +79504,7 @@ export interface operations {
                   "repair_suggestions"?: Array<Record<string, unknown>>;
                   "request_count"?: number;
                   "request_index"?: (number) | null;
+                  "response_body_state"?: string;
                   "screenshot_base64"?: string;
                   "selector"?: string;
                   "snapshot"?: (Record<string, unknown>) | null;
@@ -80299,6 +80431,7 @@ export interface operations {
                 }>;
                 "request_count"?: number;
                 "request_index"?: (number) | null;
+                "response_body_state"?: string;
                 "screenshot_base64"?: string;
                 "selector"?: string;
                 "snapshot"?: (Record<string, unknown>) | null;
@@ -80357,6 +80490,7 @@ export interface operations {
                 "repair_suggestions"?: Array<Record<string, unknown>>;
                 "request_count"?: number;
                 "request_index"?: (number) | null;
+                "response_body_state"?: string;
                 "screenshot_base64"?: string;
                 "selector"?: string;
                 "snapshot"?: (Record<string, unknown>) | null;
@@ -80470,6 +80604,7 @@ export interface operations {
                   "repair_suggestions"?: Array<Record<string, unknown>>;
                   "request_count"?: number;
                   "request_index"?: (number) | null;
+                  "response_body_state"?: string;
                   "screenshot_base64"?: string;
                   "selector"?: string;
                   "snapshot"?: (Record<string, unknown>) | null;
@@ -80779,6 +80914,7 @@ export interface operations {
                 }>;
                 "request_count"?: number;
                 "request_index"?: (number) | null;
+                "response_body_state"?: string;
                 "screenshot_base64"?: string;
                 "selector"?: string;
                 "snapshot"?: (Record<string, unknown>) | null;
@@ -80837,6 +80973,7 @@ export interface operations {
                 "repair_suggestions"?: Array<Record<string, unknown>>;
                 "request_count"?: number;
                 "request_index"?: (number) | null;
+                "response_body_state"?: string;
                 "screenshot_base64"?: string;
                 "selector"?: string;
                 "snapshot"?: (Record<string, unknown>) | null;
@@ -80950,6 +81087,7 @@ export interface operations {
                   "repair_suggestions"?: Array<Record<string, unknown>>;
                   "request_count"?: number;
                   "request_index"?: (number) | null;
+                  "response_body_state"?: string;
                   "screenshot_base64"?: string;
                   "selector"?: string;
                   "snapshot"?: (Record<string, unknown>) | null;
@@ -81145,6 +81283,7 @@ export interface operations {
                 }>;
                 "request_count"?: number;
                 "request_index"?: (number) | null;
+                "response_body_state"?: string;
                 "screenshot_base64"?: string;
                 "selector"?: string;
                 "snapshot"?: (Record<string, unknown>) | null;
@@ -81203,6 +81342,7 @@ export interface operations {
                 "repair_suggestions"?: Array<Record<string, unknown>>;
                 "request_count"?: number;
                 "request_index"?: (number) | null;
+                "response_body_state"?: string;
                 "screenshot_base64"?: string;
                 "selector"?: string;
                 "snapshot"?: (Record<string, unknown>) | null;
@@ -81316,6 +81456,7 @@ export interface operations {
                   "repair_suggestions"?: Array<Record<string, unknown>>;
                   "request_count"?: number;
                   "request_index"?: (number) | null;
+                  "response_body_state"?: string;
                   "screenshot_base64"?: string;
                   "selector"?: string;
                   "snapshot"?: (Record<string, unknown>) | null;
@@ -81506,6 +81647,7 @@ export interface operations {
                 }>;
                 "request_count"?: number;
                 "request_index"?: (number) | null;
+                "response_body_state"?: string;
                 "screenshot_base64"?: string;
                 "selector"?: string;
                 "snapshot"?: (Record<string, unknown>) | null;
@@ -81564,6 +81706,7 @@ export interface operations {
                 "repair_suggestions"?: Array<Record<string, unknown>>;
                 "request_count"?: number;
                 "request_index"?: (number) | null;
+                "response_body_state"?: string;
                 "screenshot_base64"?: string;
                 "selector"?: string;
                 "snapshot"?: (Record<string, unknown>) | null;
@@ -81664,6 +81807,7 @@ export interface operations {
                   "repair_suggestions"?: Array<Record<string, unknown>>;
                   "request_count"?: number;
                   "request_index"?: (number) | null;
+                  "response_body_state"?: string;
                   "screenshot_base64"?: string;
                   "selector"?: string;
                   "snapshot"?: (Record<string, unknown>) | null;
@@ -81941,6 +82085,7 @@ export interface operations {
                 }>;
                 "request_count"?: number;
                 "request_index"?: (number) | null;
+                "response_body_state"?: string;
                 "screenshot_base64"?: string;
                 "selector"?: string;
                 "snapshot"?: (Record<string, unknown>) | null;
@@ -81999,6 +82144,7 @@ export interface operations {
                 "repair_suggestions"?: Array<Record<string, unknown>>;
                 "request_count"?: number;
                 "request_index"?: (number) | null;
+                "response_body_state"?: string;
                 "screenshot_base64"?: string;
                 "selector"?: string;
                 "snapshot"?: (Record<string, unknown>) | null;
@@ -82112,6 +82258,7 @@ export interface operations {
                   "repair_suggestions"?: Array<Record<string, unknown>>;
                   "request_count"?: number;
                   "request_index"?: (number) | null;
+                  "response_body_state"?: string;
                   "screenshot_base64"?: string;
                   "selector"?: string;
                   "snapshot"?: (Record<string, unknown>) | null;
@@ -82293,6 +82440,7 @@ export interface operations {
                 }>;
                 "request_count"?: number;
                 "request_index"?: (number) | null;
+                "response_body_state"?: string;
                 "screenshot_base64"?: string;
                 "selector"?: string;
                 "snapshot"?: (Record<string, unknown>) | null;
@@ -82351,6 +82499,7 @@ export interface operations {
                 "repair_suggestions"?: Array<Record<string, unknown>>;
                 "request_count"?: number;
                 "request_index"?: (number) | null;
+                "response_body_state"?: string;
                 "screenshot_base64"?: string;
                 "selector"?: string;
                 "snapshot"?: (Record<string, unknown>) | null;
@@ -82464,6 +82613,7 @@ export interface operations {
                   "repair_suggestions"?: Array<Record<string, unknown>>;
                   "request_count"?: number;
                   "request_index"?: (number) | null;
+                  "response_body_state"?: string;
                   "screenshot_base64"?: string;
                   "selector"?: string;
                   "snapshot"?: (Record<string, unknown>) | null;
@@ -91663,6 +91813,7 @@ export interface operations {
                 }>;
                 "request_count"?: number;
                 "request_index"?: (number) | null;
+                "response_body_state"?: string;
                 "screenshot_base64"?: string;
                 "selector"?: string;
                 "snapshot"?: (Record<string, unknown>) | null;
@@ -91721,6 +91872,7 @@ export interface operations {
                 "repair_suggestions"?: Array<Record<string, unknown>>;
                 "request_count"?: number;
                 "request_index"?: (number) | null;
+                "response_body_state"?: string;
                 "screenshot_base64"?: string;
                 "selector"?: string;
                 "snapshot"?: (Record<string, unknown>) | null;
@@ -91834,6 +91986,7 @@ export interface operations {
                   "repair_suggestions"?: Array<Record<string, unknown>>;
                   "request_count"?: number;
                   "request_index"?: (number) | null;
+                  "response_body_state"?: string;
                   "screenshot_base64"?: string;
                   "selector"?: string;
                   "snapshot"?: (Record<string, unknown>) | null;
@@ -92029,6 +92182,7 @@ export interface operations {
                 }>;
                 "request_count"?: number;
                 "request_index"?: (number) | null;
+                "response_body_state"?: string;
                 "screenshot_base64"?: string;
                 "selector"?: string;
                 "snapshot"?: (Record<string, unknown>) | null;
@@ -92087,6 +92241,7 @@ export interface operations {
                 "repair_suggestions"?: Array<Record<string, unknown>>;
                 "request_count"?: number;
                 "request_index"?: (number) | null;
+                "response_body_state"?: string;
                 "screenshot_base64"?: string;
                 "selector"?: string;
                 "snapshot"?: (Record<string, unknown>) | null;
@@ -92200,6 +92355,7 @@ export interface operations {
                   "repair_suggestions"?: Array<Record<string, unknown>>;
                   "request_count"?: number;
                   "request_index"?: (number) | null;
+                  "response_body_state"?: string;
                   "screenshot_base64"?: string;
                   "selector"?: string;
                   "snapshot"?: (Record<string, unknown>) | null;
@@ -92395,6 +92551,7 @@ export interface operations {
                 }>;
                 "request_count"?: number;
                 "request_index"?: (number) | null;
+                "response_body_state"?: string;
                 "screenshot_base64"?: string;
                 "selector"?: string;
                 "snapshot"?: (Record<string, unknown>) | null;
@@ -92453,6 +92610,7 @@ export interface operations {
                 "repair_suggestions"?: Array<Record<string, unknown>>;
                 "request_count"?: number;
                 "request_index"?: (number) | null;
+                "response_body_state"?: string;
                 "screenshot_base64"?: string;
                 "selector"?: string;
                 "snapshot"?: (Record<string, unknown>) | null;
@@ -92566,6 +92724,7 @@ export interface operations {
                   "repair_suggestions"?: Array<Record<string, unknown>>;
                   "request_count"?: number;
                   "request_index"?: (number) | null;
+                  "response_body_state"?: string;
                   "screenshot_base64"?: string;
                   "selector"?: string;
                   "snapshot"?: (Record<string, unknown>) | null;
@@ -92761,6 +92920,7 @@ export interface operations {
                 }>;
                 "request_count"?: number;
                 "request_index"?: (number) | null;
+                "response_body_state"?: string;
                 "screenshot_base64"?: string;
                 "selector"?: string;
                 "snapshot"?: (Record<string, unknown>) | null;
@@ -92819,6 +92979,7 @@ export interface operations {
                 "repair_suggestions"?: Array<Record<string, unknown>>;
                 "request_count"?: number;
                 "request_index"?: (number) | null;
+                "response_body_state"?: string;
                 "screenshot_base64"?: string;
                 "selector"?: string;
                 "snapshot"?: (Record<string, unknown>) | null;
@@ -92932,6 +93093,7 @@ export interface operations {
                   "repair_suggestions"?: Array<Record<string, unknown>>;
                   "request_count"?: number;
                   "request_index"?: (number) | null;
+                  "response_body_state"?: string;
                   "screenshot_base64"?: string;
                   "selector"?: string;
                   "snapshot"?: (Record<string, unknown>) | null;
@@ -96377,6 +96539,7 @@ export interface operations {
                 }>;
                 "request_count"?: number;
                 "request_index"?: (number) | null;
+                "response_body_state"?: string;
                 "screenshot_base64"?: string;
                 "selector"?: string;
                 "snapshot"?: (Record<string, unknown>) | null;
@@ -96435,6 +96598,7 @@ export interface operations {
                 "repair_suggestions"?: Array<Record<string, unknown>>;
                 "request_count"?: number;
                 "request_index"?: (number) | null;
+                "response_body_state"?: string;
                 "screenshot_base64"?: string;
                 "selector"?: string;
                 "snapshot"?: (Record<string, unknown>) | null;
@@ -96535,6 +96699,7 @@ export interface operations {
                   "repair_suggestions"?: Array<Record<string, unknown>>;
                   "request_count"?: number;
                   "request_index"?: (number) | null;
+                  "response_body_state"?: string;
                   "screenshot_base64"?: string;
                   "selector"?: string;
                   "snapshot"?: (Record<string, unknown>) | null;

@@ -183,8 +183,9 @@ export function ReleaseTrendPanel({
     const names = new Set<string>()
     points.forEach(point => {
       const report = reportsById[point.run_id]
-      if (!report?.by_action) return
-      Object.keys(report.by_action).forEach(name => names.add(name))
+      const stats = report?.metric_populations ? report.by_transaction : report?.by_action
+      if (!stats) return
+      Object.keys(stats).forEach(name => names.add(name))
     })
     return Array.from(names).sort((left, right) => left.localeCompare(right))
   }, [points, reportsById])
@@ -211,7 +212,8 @@ export function ReleaseTrendPanel({
 
       let transaction: RunArchiveActionStats | undefined
       if (transactionFilter !== ALL) {
-        transaction = reportsById[point.run_id]?.by_action?.[transactionFilter]
+        const report = reportsById[point.run_id]
+        transaction = (report?.metric_populations ? report.by_transaction : report?.by_action)?.[transactionFilter]
         // A run that never executed the selected transaction has nothing to plot.
         if (!transaction) return
       }
@@ -231,7 +233,7 @@ export function ReleaseTrendPanel({
     return filtered.map((row, index) => {
       if (!row.transaction || index === 0) return row
       const previous = filtered[index - 1].transaction
-      if (!previous) return row
+      if (!previous || row.point.metric_population !== filtered[index - 1].point.metric_population) return row
       return { ...row, transactionDeltaMs: row.transaction.avg_response_ms - previous.avg_response_ms }
     })
   }, [points, reportsById, scenarioFilter, scenarioIdForRun, scenarioNames, transactionFilter])
@@ -330,6 +332,7 @@ export function ReleaseTrendPanel({
       <div className="release-trend-header">
         <div>
           <h4 className="release-trend-title">Release Trend Analysis</h4>
+          <p>Metric population: {points.every(point => point.metric_population === 'transaction') ? 'named transaction attempts' : 'Unknown for legacy records; comparisons require matching populations'}.</p>
           <p className="release-trend-subtitle">
             {trend.run_count} run{trend.run_count === 1 ? '' : 's'} · avg response {formatSignedPct(trend.summary.avg_response_trend_pct)} · error rate {formatSignedPct(trend.summary.error_pct_trend)} across the series.
             {rows.length !== points.length && ` Showing ${rows.length} of ${points.length} runs.`}
@@ -445,7 +448,7 @@ function ReleaseTrendRunDetail({
   onOpenRunArchive,
 }: ReleaseTrendRunDetailProps) {
   const transactionRows = useMemo(() => {
-    const byAction = report?.by_action
+    const byAction = report?.metric_populations ? report.by_transaction : report?.by_action
     if (!byAction) return []
     const entries = Object.entries(byAction)
     const scoped = transactionFilter

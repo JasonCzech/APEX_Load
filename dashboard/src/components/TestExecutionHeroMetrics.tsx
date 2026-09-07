@@ -27,6 +27,11 @@ export default function TestExecutionHeroMetrics({ archiveReport, summary, metri
     if (points.length === 0) return undefined
     return points.reduce((total, point) => total + point.tps, 0) / points.length
   })()
+  const named = archiveReport?.metric_populations?.transaction
+  const archived = Boolean(archiveReport)
+  const latency = archived ? named?.avg_response_ms : summary?.avgLatency ?? metrics?.avg_response_ms
+  const errorPct = archived ? named?.error_pct : summary?.avgError ?? metrics?.error_pct
+  const count = archived ? named?.transactions : metrics?.total_transactions
   return (
     <div className="hero-metrics">
       <div className="hero-card">
@@ -35,22 +40,23 @@ export default function TestExecutionHeroMetrics({ archiveReport, summary, metri
       </div>
       <div className="hero-card">
         <span className="hero-value">{(summary?.avgTps ?? archivedAverageTps ?? metrics?.tps ?? 0).toFixed(1)}</span>
-        <span className="hero-label">Avg TPS</span>
+        <span className="hero-label">Successful transaction TPS</span>
       </div>
       <div className="hero-card">
-        <span className="hero-value">{(archiveReport?.overview.avg_response_ms ?? summary?.avgLatency ?? metrics?.avg_response_ms ?? 0).toFixed(0)}</span>
-        <span className="hero-label">Avg Latency (ms)</span>
+        <span className="hero-value">{latency === undefined ? 'Unknown' : latency.toFixed(0)}</span>
+        <span className="hero-label">Named transaction latency (ms)</span>
       </div>
       <div className="hero-card">
         <span className="hero-value error-value">
-          {(archiveReport?.overview.error_pct ?? summary?.avgError ?? metrics?.error_pct ?? 0).toFixed(2)}%
+          {errorPct === undefined ? 'Unknown' : `${errorPct.toFixed(2)}%`}
         </span>
-        <span className="hero-label">Avg Error Rate</span>
+        <span className="hero-label">Named transaction error rate</span>
       </div>
       <div className="hero-card">
-        <span className="hero-value">{archiveReport?.overview.transactions ?? metrics?.total_transactions ?? 0}</span>
-        <span className="hero-label">Total Tx</span>
+        <span className="hero-value">{count ?? 'Unknown'}</span>
+        <span className="hero-label">Named transactions</span>
       </div>
+      {archiveReport?.metric_populations?.action && <div className="hero-card"><span className="hero-value">{archiveReport.metric_populations.action.average_rate_per_second.toFixed(1)}</span><span className="hero-label">Requests / actions per second</span></div>}
     </div>
   )
 }

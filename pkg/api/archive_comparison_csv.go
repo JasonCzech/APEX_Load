@@ -62,6 +62,7 @@ func writeArchiveComparisonCSV(writer io.Writer, breakdown string, action string
 		"throughput_missed_intervals",
 		"throughput_target_missed",
 		"peak_active_vusers",
+		"metric_population",
 	)
 	if err := csvWriter.Write(headers); err != nil {
 		return err
@@ -150,6 +151,7 @@ func archiveComparisonActionCSVRow(run archiveComparisonRun, action string) []st
 		"",
 		"",
 		"",
+		"action",
 	}
 }
 
@@ -166,6 +168,14 @@ func archiveComparisonCSVRow(run archiveComparisonRun, breakdown string, segment
 		cls = formatCSVFloat(browser.AvgCLSScore)
 		inp = formatCSVFloat(browser.AvgINPMs)
 	}
+	population := "unknown_archive_records"
+	count, errorPct, peak := run.Report.Overview.Transactions, run.Report.Overview.ErrorPct, run.Report.Overview.PeakTPS
+	if named, ok := run.Report.MetricPopulations["transaction"]; ok {
+		population = "transaction"
+		count = named.Transactions
+		errorPct = named.ErrorPct
+		peak = named.PeakTPS
+	}
 	return []string{
 		run.ID,
 		run.Name,
@@ -179,14 +189,15 @@ func archiveComparisonCSVRow(run archiveComparisonRun, breakdown string, segment
 		lcp,
 		cls,
 		inp,
-		formatCSVInt(run.Report.Overview.Transactions),
-		formatCSVFloat(run.Report.Overview.ErrorPct),
-		formatCSVFloat(run.Report.Overview.PeakTPS),
+		formatCSVInt(count),
+		formatCSVFloat(errorPct),
+		formatCSVFloat(peak),
 		formatCSVFloat(run.Report.Overview.PeakTargetTPS),
 		formatCSVFloat(run.Report.Overview.MaxThroughputGapPct),
 		formatCSVInt(run.Report.Overview.ThroughputMissedIntervals),
 		fmt.Sprintf("%t", run.Report.Overview.ThroughputMissedIntervals > 0),
 		formatCSVInt(run.Report.Overview.PeakActiveVUsers),
+		population,
 	}
 }
 

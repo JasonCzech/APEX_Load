@@ -87,7 +87,7 @@ export default function ProjectModal({ title = 'New Project', initialName = '', 
       <form ref={dialogRef} className="project-modal" role="dialog" aria-modal="true" aria-label={title} onSubmit={submit}>
         <div className="project-modal-header">
           <h3>{title}</h3>
-          <button type="button" className="project-modal-close" onClick={requestClose} disabled={dismissLocked}>×</button>
+          <button type="button" className="project-modal-close" aria-label={`Close ${title}`} onClick={requestClose} disabled={dismissLocked}>×</button>
         </div>
         <label className="project-modal-field">
           <span>Name</span>

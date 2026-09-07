@@ -7816,3 +7816,28 @@ button.debugger-problem-row:hover {
   color: var(--text-muted);
 }
 .java-env-classpath-asset-chip .chip-entry { color: var(--text-muted); overflow-wrap: anywhere; }
+
+/* Keep user-resized debugger columns inside the available application width. */
+@media (min-width: 961px) and (max-width: 1600px) {
+  .debugger-shell {
+    grid-template-columns: minmax(180px, min(var(--rail-w, 260px), 24%)) minmax(0, 1fr) minmax(240px, min(var(--vars-w, 400px), 34%));
+  }
+  .debugger-shell.debugger-detail-collapsed,
+  .debugger-shell.debugger-variables-collapsed,
+  .debugger-shell.debugger-detail-collapsed.debugger-variables-collapsed {
+    grid-template-columns: minmax(180px, min(var(--rail-w, 260px), 28%)) minmax(0, 1fr);
+  }
+}
+@media (max-width: 960px) {
+  .debugger-shell.debugger-detail-collapsed,
+  .debugger-shell.debugger-variables-collapsed,
+  .debugger-shell.debugger-detail-collapsed.debugger-variables-collapsed {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* Failure evidence must not squeeze the request inspector to a single line. */
+.debugger-body { overflow-y: auto; }
+.debugger-shell { min-height: calc(360px + var(--bottom-h, 220px)); flex-shrink: 0; }
+
+.debugger-center .replay-diagnosis-panel { grid-template-columns: minmax(0, 1fr); }

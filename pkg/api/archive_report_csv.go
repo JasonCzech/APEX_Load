@@ -141,6 +141,8 @@ func writeReleaseTrendSummaryCSVRows(write reportCSVWriteFunc, trend *RunArchive
 		value  string
 	}{
 		{"release_id", trend.ReleaseID},
+		{"release_name", trend.ReleaseName},
+		{"metric_population", trend.Current.MetricPopulation},
 		{"run_count", formatCSVInt(int64(trend.RunCount))},
 		{"has_baseline", strconv.FormatBool(trend.HasBaseline)},
 		{"regressed", strconv.FormatBool(trend.Regressed)},

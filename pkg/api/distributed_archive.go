@@ -529,6 +529,31 @@ func mergeRemoteArchiveManifest(tr *TestRunner, test *ManagedTest, bundles []rem
 		IntervalSummariesFile:        "interval_summaries.jsonl",
 		IntervalSummariesParquetFile: "interval_summaries.parquet",
 	}
+	manifest.TerminationReason = "unknown"
+	switch finalStatus {
+	case "ABORTED":
+		manifest.TerminationReason = "aborted"
+	case "FAILED":
+		manifest.TerminationReason = "failed"
+	case "COMPLETE":
+		if manifest.Provenance.StoppedBySubject != "" {
+			manifest.TerminationReason = "operator_stopped"
+		} else if finalError != "" {
+			manifest.TerminationReason = "stopped_early"
+		} else {
+			if tr != nil {
+				tr.mu.RLock()
+			}
+			completed := test != nil && test.remoteWorkloadCompleted
+			if tr != nil {
+				tr.mu.RUnlock()
+			}
+			if completed {
+				manifest.TerminationReason = "workload_completed"
+			}
+
+		}
+	}
 	manifest.SLAEvaluated, manifest.SLABreached, manifest.SLADetails = distributedArchiveSLA(tr, test)
 	for index, bundle := range bundles {
 		if index == 0 || bundle.manifest.CreatedAt.Before(manifest.CreatedAt) {

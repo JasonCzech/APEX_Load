@@ -37,6 +37,9 @@ import { boundedAllSettled } from '../utils/boundedAllSettled'
 const GitHubSyncModal = lazy(() => import('./GitHubSyncModal'))
 
 interface Props {
+  onScriptSaved?: (script: StoredScript) => void
+  initialCreateWorkflow?: 'start-new' | 'source'
+
   applicationRepository?: ApplicationRepository | null
   initialMode?: ScriptsAuthoringSubView
   initialEditId?: string
@@ -142,7 +145,7 @@ function scriptSearchText(script: StoredScript) {
   ].filter(Boolean).join(' ').toLowerCase()
 }
 
-export default function ScriptsPage({ applicationRepository, initialMode = 'list', initialEditId, nativeImportRequest, onNativeImportRequestHandled, onSelectScenario, onNavigate, onAuthoringStateChange, featurePolicySignal = 0 }: Props) {
+export default function ScriptsPage({ onScriptSaved, initialCreateWorkflow, applicationRepository, initialMode = 'list', initialEditId, nativeImportRequest, onNativeImportRequestHandled, onSelectScenario, onNavigate, onAuthoringStateChange, featurePolicySignal = 0 }: Props) {
   const api = useApi()
   const { activeProject } = useProject()
   const activeProjectId = activeProject?.id
@@ -423,7 +426,7 @@ export default function ScriptsPage({ applicationRepository, initialMode = 'list
     openCreateOptions,
     openCreateOptionsWithNotice,
     handleEdit,
-    handleSavedScript,
+    handleSavedScript: acceptSavedScript,
     handleDraftEdit,
     returnToDraftSource,
     createOptionActions,
@@ -432,6 +435,11 @@ export default function ScriptsPage({ applicationRepository, initialMode = 'list
     initialMode,
     initialEditId,
   })
+  const handleSavedScript = useCallback((...args: Parameters<typeof acceptSavedScript>) => {
+    acceptSavedScript(...args)
+    onScriptSaved?.(args[0])
+  }, [acceptSavedScript, onScriptSaved])
+
 
   useEffect(() => {
     const projectId = activeProjectId
@@ -1026,6 +1034,7 @@ export default function ScriptsPage({ applicationRepository, initialMode = 'list
         </p>
       )}
       <ScriptsAuthoringShell
+        initialCreateWorkflow={initialCreateWorkflow}
         authoringState={authoringState}
         projectId={activeProject?.id}
         policyRefreshSignal={featurePolicySignal}
@@ -1123,13 +1132,13 @@ export default function ScriptsPage({ applicationRepository, initialMode = 'list
                   </select>
                 </label>
                 <label className="project-redaction-rule-field">
-                  <span>Search Release</span>
+                  <span>Search scripts</span>
                   <input
                     className="settings-input"
                     type="search"
                     value={libraryQuery}
                     onChange={(event) => setLibraryQuery(event.target.value)}
-                    placeholder="Find releases or scripts..."
+                    placeholder="Find scripts by name, protocol, or release..."
                   />
                 </label>
               </>
@@ -1206,12 +1215,12 @@ export default function ScriptsPage({ applicationRepository, initialMode = 'list
             onValidateScriptDetails={api.validateScript}
           />
         </div>
-        <div className="page-section">
+        <details className="page-section"><summary>Advanced: object repositories</summary>
           <ObjectRepositoryPanel projectId={activeProject?.id} canManage={canManageScripts} />
-        </div>
-        <div className="page-section">
+        </details>
+        <details className="page-section"><summary>Advanced: correlation rulesets</summary>
           <CorrelationRulesetPanel projectId={activeProject?.id} canManage={canManageScripts} />
-        </div>
+        </details>
       </div>
       {githubPushScript && githubConfig && (
         <Suspense fallback={null}>

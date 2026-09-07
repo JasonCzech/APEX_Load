@@ -1,3 +1,4 @@
+import WorkspaceSetupGuide from './WorkspaceSetupGuide'
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type Dispatch, type ReactNode, type SetStateAction } from 'react'
 import { type DashboardThemePreference } from '../hooks/useDashboardTheme'
 import { useApplicationApi } from '../hooks/api/useApplicationApi'
@@ -355,6 +356,7 @@ export default function SettingsPage({
     refreshApplications,
     refreshReleases,
     createAndSelectApplication,
+    createAndSelectRelease,
   } = useApplication()
   const {
     projects: scopedProjects,
@@ -3119,6 +3121,20 @@ export default function SettingsPage({
 
   return (
     <div className="page settings-page">
+      <WorkspaceSetupGuide storageKey="apexload.workspaceSetup.step" steps={[
+        {label: 'Domain', description: 'A domain groups teams and their projects.', choices: domains, selectedId: activeDomain?.id, canCreate: canManageDomains,
+          select: id => { const domain = domains.find(item => item.id === id); if (domain) onDomainChange?.(domain) },
+          create: async name => { const result = await repositoryApi.createDomain({name}); onDomainChange?.(result.domain); void onDomainsRefresh?.(result.domain.id, {preserveDomain:result.domain}).catch(() => undefined); return result.domain }},
+        {label: 'Project', description: 'A project owns scripts, scenarios, test data, and permissions.', choices: scopedProjects, selectedId: activeProject?.id, canCreate: canManageProjects,
+          select: id => {const project = scopedProjects.find(item => item.id === id); if (project) setActiveProject(project)},
+          create: name => createAndSelectProject({name, domain_id: activeDomain?.id})},
+        {label: 'Application', description: 'Choose the application whose performance you are evaluating.', choices: applications, selectedId: activeApplication?.id, canCreate: canManageProjects && !!activeProject,
+          select: id => {const application = applications.find(item => item.id === id); if(application) setActiveApplication(application)},
+          create: name => createAndSelectApplication(name, activeProject?.id)},
+        {label: 'Release', description: 'A release groups runs for comparison and acceptance review.', choices: releases, selectedId: activeRelease?.id, canCreate: canManageProjects && !!activeApplication,
+          select: id => {const release = releases.find(item => item.id === id); if(release) setActiveRelease(release)},
+          create: async name => {const release = await createAndSelectRelease(name); if (!release) throw new Error('Choose an application before creating a release.'); return release}},
+      ]} />
       <div className="page-header">
         <div>
           <h2>Settings</h2>
@@ -3237,6 +3253,7 @@ export default function SettingsPage({
                 type="number"
                 min={1}
                 step={1}
+                aria-label="Max Concurrent Tests"
                 value={settings.general.max_concurrent_tests}
                 onChange={(e) => updateGeneral('max_concurrent_tests', e.target.value)}
               />
@@ -3251,6 +3268,7 @@ export default function SettingsPage({
                 type="number"
                 min={1}
                 step={1}
+                aria-label="Metrics Interval (seconds)"
                 value={settings.general.metrics_interval_seconds}
                 onChange={(e) => updateGeneral('metrics_interval_seconds', e.target.value)}
               />
@@ -3265,6 +3283,7 @@ export default function SettingsPage({
                 type="number"
                 min={0}
                 step={60}
+                aria-label="Usage Snapshot Cadence (seconds)"
                 value={settings.general.usage_snapshot_interval_seconds || 0}
                 onChange={(e) => updateGeneral('usage_snapshot_interval_seconds', e.target.value)}
               />
@@ -3276,6 +3295,7 @@ export default function SettingsPage({
               </div>
               <select
                 className="settings-input"
+                aria-label="Dashboard Theme"
                 value={theme}
                 onChange={(e) => onThemeChange(e.target.value as DashboardThemePreference)}
               >
@@ -5913,7 +5933,7 @@ export default function SettingsPage({
                   ))}
                 </div>
               ) : (
-                <p className="new-test-inline-note">No data pools have been created yet.</p>
+                <p className="new-test-inline-note">No data pools have been created yet. Use the creation form above to name a pool, then add or import its rows.</p>
               )}
             </div>
 

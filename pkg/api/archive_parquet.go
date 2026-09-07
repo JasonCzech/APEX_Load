@@ -26,6 +26,7 @@ type parquetTransactionEvent struct {
 	Phase               string  `parquet:"name=phase, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
 	HasDetail           bool    `parquet:"name=has_detail, type=BOOLEAN"`
 	ActionName          string  `parquet:"name=action_name, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
+	Population          string  `parquet:"name=population, type=BYTE_ARRAY, convertedtype=UTF8"`
 	BusinessTransaction bool    `parquet:"name=business_transaction, type=BOOLEAN"`
 	CorrelationID       string  `parquet:"name=correlation_id, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
 	TraceID             string  `parquet:"name=trace_id, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
@@ -237,6 +238,7 @@ func toParquetTransactions(items []TransactionEvent) []parquetTransactionEvent {
 			HasDetail:           item.HasDetail,
 			ActionName:          item.ActionName,
 			BusinessTransaction: item.BusinessTransaction,
+			Population:          item.Population,
 			CorrelationID:       item.CorrelationID,
 			TraceID:             item.TraceID,
 			SpanID:              item.SpanID,

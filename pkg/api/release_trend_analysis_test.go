@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
@@ -126,5 +127,20 @@ func TestReleaseTrendEndpointReturnsJSON(t *testing.T) {
 	}
 	if trend.Points[0].RunID != "run-early" || trend.Points[1].RunID != "run-late" {
 		t.Fatalf("runs not in completion order: %#v", trend.Points)
+	}
+}
+
+func TestReleaseTrendSeparatesMetricPopulations(t *testing.T) {
+	early := trendRunFixture("legacy", time.Now(), 0, 50, 100, false)
+	late := trendRunFixture("typed", time.Now().Add(time.Minute), 0, 50, 100, false)
+	late.Report.MetricPopulations = map[string]ArchiveMetricPopulation{"transaction": {RunArchiveActionStats: RunArchiveActionStats{Transactions: 7, Errors: 1, ErrorPct: 14.28, AvgResponseMs: 120, PeakTPS: 3}}}
+	trend := buildReleaseTrend("release", []releaseTrendRun{early, late})
+	point := trend.Points[1]
+	if point.Transactions != 7 || point.AvgResponseMs != 120 || point.MetricPopulation != "transaction" || point.Deltas != nil {
+		t.Fatalf("mixed population comparison: %+v", point)
+	}
+	summary := buildRunArchiveReleaseTrendSummary(trend, "typed")
+	if summary.HasBaseline || !strings.Contains(summary.Note, "population") {
+		t.Fatalf("summary: %+v", summary)
 	}
 }

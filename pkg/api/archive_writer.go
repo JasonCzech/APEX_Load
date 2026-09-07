@@ -142,6 +142,13 @@ func (w *runArchiveWriter) flushBuffersLocked() error {
 	return errors.Join(failures...)
 }
 
+// SetTerminationReason records the execution driver's explicit completion signal.
+func (w *runArchiveWriter) SetTerminationReason(reason string) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.manifest.TerminationReason = reason
+}
+
 func (w *runArchiveWriter) RefreshProvenance(provenance RunArchiveProvenance) {
 	if w == nil {
 		return
@@ -208,7 +215,12 @@ func (w *runArchiveWriter) RecordResult(result *protocol.Result) error {
 	if w.flushErr != nil {
 		return w.flushErr
 	}
+	population := "action"
+	if result.BusinessTransaction {
+		population = "transaction"
+	}
 	event := TransactionEvent{
+		Population:            population,
 		Timestamp:             result.StartTime,
 		TestID:                w.manifest.TestID,
 		TestName:              w.manifest.TestName,
@@ -525,6 +537,21 @@ func (w *runArchiveWriter) Finalize(status string, completedAt time.Time, errStr
 	defer w.mu.Unlock()
 	if w.flushErr != nil {
 		return nil, errors.Join(w.flushErr, w.syncAndCloseDataFilesLocked())
+	}
+	if w.manifest.TerminationReason == "" {
+		w.manifest.TerminationReason = "unknown"
+	}
+	switch status {
+	case "COMPLETE":
+		if w.manifest.Provenance.StoppedBySubject != "" {
+			w.manifest.TerminationReason = "operator_stopped"
+		} else if errStr != "" {
+			w.manifest.TerminationReason = "stopped_early"
+		}
+	case "ABORTED":
+		w.manifest.TerminationReason = "aborted"
+	case "FAILED":
+		w.manifest.TerminationReason = "failed"
 	}
 	w.manifest.Status = status
 	w.manifest.CompletedAt = completedAt

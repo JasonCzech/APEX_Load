@@ -63,6 +63,7 @@ func (s *Server) handleImportSalesforce(w http.ResponseWriter, r *http.Request) 
 		Warnings:              result.Warnings,
 		Stats:                 result.Stats,
 		Correlations:          salesforceAugmentation.Correlations,
+		Diagnostics:           result.Unsupported,
 		UnsupportedElements:   result.Unsupported.Strings(),
 		ReviewSections:        augmented.Sections,
 		SourceReview:          result.SourceReview,

@@ -637,7 +637,7 @@ describe('CorrelationDiagnosePanel', () => {
       )
     })
     expect(container.textContent).toContain('Could not check whether this script has a stored baseline')
-    expect(container.textContent).not.toContain('No stored baseline')
+    expect(container.textContent).not.toContain('No recorded baseline')
     const retryButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Retry')!
     await act(async () => { retryButton.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
     expect(retry).toHaveBeenCalledTimes(1)
@@ -888,7 +888,7 @@ describe('CorrelationDiagnosePanel', () => {
       )
     })
     expect(container.textContent).toContain('Diagnose from recording (HAR)')
-    expect(container.textContent).toContain('No stored baseline')
+    expect(container.textContent).toContain('No recorded baseline')
 	const input = container.querySelector<HTMLInputElement>('input[type="file"]')!
 	const uploadButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Diagnose from recording'))!
 	expect(uploadButton.tagName).toBe('BUTTON')

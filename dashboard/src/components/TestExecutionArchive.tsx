@@ -291,7 +291,7 @@ function formatArchiveBucketTimestamp(value?: string): string {
     month: '2-digit',
     day: '2-digit',
     hour: '2-digit',
-    minute: '2-digit',
+    minute: '2-digit', second: '2-digit',
   })
 }
 
@@ -881,7 +881,7 @@ export default function TestExecutionArchive({
     () => archiveReport ? buildArchiveCompactPanels(archiveReport, test, runtimeBrowserSummary) : [],
     [archiveReport, runtimeBrowserSummary, test],
   )
-  const selectedActionStats = archiveReport?.by_action?.[selectedArchiveAction]
+  const selectedActionStats = (archiveReport?.metric_populations ? archiveReport.by_request : archiveReport?.by_action)?.[selectedArchiveAction]
   const { archiveAnalysisNodes, archiveAnalysisEdges, archiveAnalysisNodeByID } = useMemo(() => ({
     archiveAnalysisNodes: sortArchiveAnalysisNodes(archiveAnalysis?.graph.nodes || [], test.id),
     archiveAnalysisEdges: sortArchiveAnalysisEdges(archiveAnalysis?.graph.edges || [], test.id),
@@ -965,7 +965,7 @@ export default function TestExecutionArchive({
             </p>
           </div>
           <div className="archive-report-badges">
-            <span className="archive-chip">{test.archive?.transaction_count || 0} transactions</span>
+            <span className="archive-chip">{test.archive?.transaction_count || 0} archive records</span>
             <span className="archive-chip">{test.archive?.resource_sample_count || 0} resource samples</span>
             <span className="archive-chip">{test.archive?.interval_summary_count || 0} summaries</span>
           </div>
@@ -979,7 +979,7 @@ export default function TestExecutionArchive({
         <>
           {showReportProfilesView && (
             archiveReport.report_profiles?.length ? (
-              <div className="archive-profile-grid">
+              <details><summary>Export report — audience and format</summary><div className="archive-profile-grid">
                 {archiveReport.report_profiles.map(profile => (
                   <div key={profile.id} className="archive-profile-card">
                     <div className="archive-profile-heading">
@@ -1017,7 +1017,7 @@ export default function TestExecutionArchive({
                     </div>
                   </div>
                 ))}
-              </div>
+              </div></details>
             ) : showStandaloneReportSection ? (
               <p className="scenario-script-status">No report profiles are configured for this archive.</p>
             ) : null
@@ -1029,7 +1029,7 @@ export default function TestExecutionArchive({
 				<>
 				<div className="archive-overview-grid">
                   <div className="scenario-script-detail-card">
-                    <span className="scenario-script-detail-label">Peak TPS</span>
+                    <span className="scenario-script-detail-label">Peak successful transaction TPS</span>
                     <span className="scenario-script-detail-value">{archiveReport.overview.peak_tps.toFixed(1)}</span>
                     {archiveReport.overview.peak_target_tps ? (
                       <span className="capacity-advisory-detail">Target {archiveReport.overview.peak_target_tps.toFixed(1)} TPS</span>
@@ -1044,8 +1044,8 @@ export default function TestExecutionArchive({
                   )}
                   {archiveReport.overview.goal_completion && (
                     <div className="scenario-script-detail-card">
-                      <span className="scenario-script-detail-label">Goal Completion</span>
-                      <span className="scenario-script-detail-value">{archiveReport.overview.goal_completion.transaction_completion_pct !== undefined ? `${archiveReport.overview.goal_completion.transaction_completion_pct.toFixed(1)}%` : archiveReport.overview.goal_completion.achieved_transactions.toLocaleString()}</span>
+                      <span className="scenario-script-detail-label">Named transaction volume</span>
+                      <span className="scenario-script-detail-value">{archiveReport.overview.goal_completion.transaction_completion_pct !== undefined ? `${archiveReport.overview.goal_completion.transaction_completion_pct.toFixed(1)}%` : archiveReport.metric_populations?.transaction?.transactions.toLocaleString() ?? 'Unknown'}</span>
                       <span className="capacity-advisory-detail">
                         {archiveReport.overview.goal_completion.configured_max_transactions
                           ? `${archiveReport.overview.goal_completion.achieved_transactions.toLocaleString()} / ${archiveReport.overview.goal_completion.configured_max_transactions.toLocaleString()} transactions`

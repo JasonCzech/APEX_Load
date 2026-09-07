@@ -9,7 +9,7 @@ test('[U22] creation capability failure has an actionable retry that recovers', 
   await expect(page.getByRole('alert')).toContainText('Workflow capabilities temporarily unavailable')
   await page.unroute(pattern)
   await page.getByRole('button', { name: 'Retry', exact: true }).click()
-  await expect(page.getByRole('button', { name: /Import From Source/ })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Import', exact: true })).toBeVisible()
   await expect(page.getByText('Workflow capabilities temporarily unavailable')).toBeHidden()
 })
 
@@ -60,7 +60,7 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 932, height: 1096
 test('[U24] recorder startup failure preserves the target and exposes recovery', async ({ page, request }) => {
   const workspace = await createWorkspace(request)
   await page.goto(`/#/scripts?mode=create&${scopeQuery(workspace)}`)
-  await page.getByRole('button', { name: /Record Browser/ }).click()
+  await page.getByRole('button', { name: 'Record', exact: true }).click()
   const input = page.getByRole('textbox', { name: 'Start URL address' })
   await input.fill('127.0.0.1:1')
   await page.route('**/api/v1/**', async route => {

@@ -77,13 +77,14 @@ func buildRunArchiveDashboardPanels(resp *ImportedDashboardGraphsResponse, captu
 
 func summarizeDashboardPanel(panel DashboardPanel) RunArchiveDashboardPanel {
 	summary := RunArchiveDashboardPanel{
-		Title:              strings.TrimSpace(panel.Title),
-		Kind:               panel.Kind,
-		Unit:               strings.TrimSpace(panel.Unit),
-		Error:              strings.TrimSpace(panel.Error),
-		ThresholdEvaluated: panel.ThresholdEvaluated,
-		ThresholdBreached:  panel.ThresholdBreached,
-		ThresholdDetail:    strings.TrimSpace(panel.ThresholdDetail),
+		Title:               strings.TrimSpace(panel.Title),
+		Kind:                panel.Kind,
+		Unit:                strings.TrimSpace(panel.Unit),
+		Error:               strings.TrimSpace(panel.Error),
+		ThresholdConfigured: len(panel.Thresholds) > 0,
+		ThresholdEvaluated:  panel.ThresholdEvaluated,
+		ThresholdBreached:   panel.ThresholdBreached,
+		ThresholdDetail:     strings.TrimSpace(panel.ThresholdDetail),
 	}
 	if panel.Value != nil {
 		v := *panel.Value

@@ -331,8 +331,8 @@ export default function CorrelationRulesetPanel({ projectId, canManage = false }
 
       {canManage && projectId && (
         <div className="pp-field-row">
-          <input className="pp-field" placeholder="Discover from script id…" value={discoverForm.scriptId} onChange={e => setDiscoverForm(f => ({ ...f, scriptId: e.target.value }))} />
-          <input className="pp-field" placeholder="Ruleset name (optional)" value={discoverForm.name} onChange={e => setDiscoverForm(f => ({ ...f, name: e.target.value }))} />
+          <input className="pp-field" aria-label="Discover from script id…" placeholder="Discover from script id…" value={discoverForm.scriptId} onChange={e => setDiscoverForm(f => ({ ...f, scriptId: e.target.value }))} />
+          <input className="pp-field" aria-label="Ruleset name (optional)" placeholder="Ruleset name (optional)" value={discoverForm.name} onChange={e => setDiscoverForm(f => ({ ...f, name: e.target.value }))} />
           <button type="button" className="btn btn-primary btn-sm" onClick={() => { void handleDiscover() }} disabled={busy || !discoverForm.scriptId.trim()}>Discover from script</button>
         </div>
       )}
@@ -370,7 +370,7 @@ export default function CorrelationRulesetPanel({ projectId, canManage = false }
                   )}
                   {canManage && (
                     <div className="pp-field-row">
-                      <input className="pp-field" placeholder="Apply to script id…" value={applyForm.rulesetId === ruleset.id ? applyForm.scriptId : ''} onFocus={() => openApply(ruleset.id)} onChange={e => updateApplyScriptID(ruleset.id, e.target.value)} />
+                      <input className="pp-field" aria-label="Apply to script id…" placeholder="Apply to script id…" value={applyForm.rulesetId === ruleset.id ? applyForm.scriptId : ''} onFocus={() => openApply(ruleset.id)} onChange={e => updateApplyScriptID(ruleset.id, e.target.value)} />
                       <button type="button" className="btn btn-secondary btn-sm" disabled={busy || applyForm.rulesetId !== ruleset.id || !applyForm.scriptId.trim()} onClick={() => handleApply(ruleset.id, false)}>Preview</button>
                       <button type="button" className="btn btn-primary btn-sm" disabled={busy || applyForm.rulesetId !== ruleset.id || !applyForm.scriptId.trim() || !applyResult?.preview_token || applyResult.matched_rules === 0 || applyResult.ruleset_id !== ruleset.id || applyResult.script_id !== applyForm.scriptId.trim()} onClick={() => handleApply(ruleset.id, true)}>Apply</button>
                     </div>

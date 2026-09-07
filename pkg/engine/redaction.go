@@ -840,7 +840,11 @@ func scrubSensitiveResultWithOptions(result *protocol.Result, config *RedactionC
 	result.Snapshot.RequestHeaders = scrubSensitiveHeaders(result.Snapshot.RequestHeaders, config)
 	result.Snapshot.RequestBody = scrubSensitiveTextWithConfig(result.Snapshot.RequestBody, config)
 	result.Snapshot.ResponseHeaders = scrubSensitiveHeaders(result.Snapshot.ResponseHeaders, config)
+	previousResponseBody := result.Snapshot.ResponseBody
 	result.Snapshot.ResponseBody = scrubSensitiveTextWithConfig(result.Snapshot.ResponseBody, config)
+	if previousResponseBody != result.Snapshot.ResponseBody {
+		result.Snapshot.ResponseBodyState = "redacted"
+	}
 	result.Snapshot.PageURL = scrubSensitiveTextWithConfig(result.Snapshot.PageURL, config)
 	result.Snapshot.PageTitle = scrubSensitiveTextWithConfig(result.Snapshot.PageTitle, config)
 	result.Snapshot.HTML = scrubSensitiveTextWithConfig(result.Snapshot.HTML, config)

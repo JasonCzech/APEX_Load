@@ -419,7 +419,7 @@ export default function ScriptCreateOptions({
   const [existingScriptProtocol, setExistingScriptProtocol] = useState('all')
   const [existingScriptHealth, setExistingScriptHealth] = useState('all')
   const [existingScriptSort, setExistingScriptSort] = useState<{ key: ExistingScriptSortKey; direction: ExistingScriptSortDirection }>({ key: 'name', direction: 'asc' })
-  const [startNewCategory, setStartNewCategory] = useState<StartNewCategory>('templates')
+  const [startNewCategory, setStartNewCategory] = useState<StartNewCategory>('editors')
   const [sourceSecretMigrationAllowed, setSourceSecretMigrationAllowed] = useState(false)
   const [migrateExistingSecrets, setMigrateExistingSecrets] = useState(false)
   const activeWorkflow = workflow ?? internalWorkflow
@@ -722,24 +722,20 @@ export default function ScriptCreateOptions({
       )}
 
       <div className="script-workflow-picker" aria-label="Script creation workflows">
-        {featureEnabled('script_builder.existing_scripts') && <button type="button" className={`script-workflow-card ${activeWorkflow === 'existing' ? 'active' : ''}`} onClick={() => setActiveWorkflow('existing')}>
-          <span>1</span>
-          <strong>Model Existing</strong>
+        {featureEnabled('script_builder.existing_scripts') && <button type="button" className={`script-workflow-card ${activeWorkflow === 'existing' ? 'active' : ''}`} aria-label="Use existing" onClick={() => setActiveWorkflow('existing')}>
+          <strong>Use existing</strong>
           <small>Clone a saved script into a new editable draft.</small>
         </button>}
-        {startNewCategoryTabs.length > 0 && <button type="button" className={`script-workflow-card ${activeWorkflow === 'start-new' ? 'active' : ''}`} onClick={() => setActiveWorkflow('start-new')}>
-          <span>2</span>
-          <strong>Start New Script</strong>
+        {startNewCategoryTabs.length > 0 && <button type="button" className={`script-workflow-card ${activeWorkflow === 'start-new' ? 'active' : ''}`} aria-label="Create" onClick={() => setActiveWorkflow('start-new')}>
+          <strong>Create</strong>
           <small>Use templates, reusable blocks, or blank protocol editors.</small>
         </button>}
-        {featureEnabled('script_builder.browser_recording') && <button type="button" className="script-workflow-card" onClick={onOpenRecorder}>
-          <span>3</span>
-          <strong>Record Browser</strong>
+        {featureEnabled('script_builder.browser_recording') && <button type="button" className="script-workflow-card" aria-label="Record" onClick={onOpenRecorder}>
+          <strong>Record</strong>
           <small>Capture a user journey and review it before save.</small>
         </button>}
-        {featureEnabled('script_builder.imports') && <button type="button" className={`script-workflow-card ${activeWorkflow === 'source' ? 'active' : ''}`} onClick={() => setActiveWorkflow('source')}>
-          <span>4</span>
-          <strong>Import From Source</strong>
+        {featureEnabled('script_builder.imports') && <button type="button" className={`script-workflow-card ${activeWorkflow === 'source' ? 'active' : ''}`} aria-label="Import" onClick={() => setActiveWorkflow('source')}>
+          <strong>Import</strong>
           <small>Generate or migrate scripts from contracts, collections, traffic captures, source archives, and legacy tool exports.</small>
         </button>}
       </div>

@@ -299,16 +299,16 @@ export default function ObjectRepositoryPanel({ projectId, canManage = false }: 
 
       {canManage && projectId && showCreate && (
         <div className="pp-field-row">
-          <input className="pp-field" placeholder="Repository name" value={createForm.name} onChange={e => setCreateForm(f => ({ ...f, name: e.target.value }))} />
-          <input className="pp-field" placeholder="Description (optional)" value={createForm.description} onChange={e => setCreateForm(f => ({ ...f, description: e.target.value }))} />
+          <input className="pp-field" aria-label="Repository name" placeholder="Repository name" value={createForm.name} onChange={e => setCreateForm(f => ({ ...f, name: e.target.value }))} />
+          <input className="pp-field" aria-label="Description (optional)" placeholder="Description (optional)" value={createForm.description} onChange={e => setCreateForm(f => ({ ...f, description: e.target.value }))} />
           <button type="button" className="btn btn-primary btn-sm" onClick={() => { void handleCreate() }} disabled={busy || !createForm.name.trim()}>Create</button>
         </div>
       )}
 
       {canManage && projectId && (
         <div className="pp-field-row">
-          <input className="pp-field" placeholder="Seed from script id…" value={importForm.scriptId} onChange={e => setImportForm(f => ({ ...f, scriptId: e.target.value }))} />
-          <input className="pp-field" placeholder="Repository name (optional)" value={importForm.name} onChange={e => setImportForm(f => ({ ...f, name: e.target.value }))} />
+          <input className="pp-field" aria-label="Seed from script id…" placeholder="Seed from script id…" value={importForm.scriptId} onChange={e => setImportForm(f => ({ ...f, scriptId: e.target.value }))} />
+          <input className="pp-field" aria-label="Repository name (optional)" placeholder="Repository name (optional)" value={importForm.name} onChange={e => setImportForm(f => ({ ...f, name: e.target.value }))} />
           <label className="pp-check" title="Rewrite the script's actions to reference the new repository by object_ref (keeps inline selectors as fallback).">
             <input type="checkbox" checked={importForm.bindScript} onChange={e => setImportForm(f => ({ ...f, bindScript: e.target.checked }))} />
             Bind script

@@ -2318,10 +2318,11 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
             title={reviewMode === 'validation' ? 'Validation Review' : 'Review Generated Script'}
             reviewGeneration={reviewScope}
             subtitle={`${actionCount} action(s) generated from ${generatedFromLabel(kind)}.${reviewMode === 'validation' ? ' This preview came from a dry-run validation; nothing has been saved. You can still save the reviewed script if the output looks correct.' : ''}`}
-            saveLabel={asyncAPISelectedSaveLabel || cloudTestSaveLabel || ((kind === 'postman' && postmanSaveMode === 'replace') || (kind === 'openapi' && openAPISaveMode === 'replace') ? 'Replace Script' : reviewMode === 'validation' ? 'Save Reviewed Script' : 'Save To Script Library')}
+            saveLabel={asyncAPISelectedSaveLabel || cloudTestSaveLabel || ((kind === 'postman' && postmanSaveMode === 'replace') || (kind === 'openapi' && openAPISaveMode === 'replace') ? 'Replace Script' : reviewMode === 'validation' ? 'Save script and open editor' : 'Save To Script Library')}
             script={reviewedScript}
             warnings={result.warnings}
             unsupportedElements={result.unsupported_elements}
+            diagnostics={result.diagnostics}
             reviewSections={result.review_sections}
             parameterization={asyncAPISelectedScriptSaved ? undefined : result.parameterization}
             onParameterizationApplied={handleParameterizationApplied}

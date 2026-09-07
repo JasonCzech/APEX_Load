@@ -180,6 +180,15 @@ func (localExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 	// forever and deadlock the backstop behind it.
 	unlockArchiveCommit := tr.lockArchiveCommitFence(test.ID)
 	defer unlockArchiveCommit()
+	if recorder, ok := artifacts.recorder.(interface{ SetTerminationReason(string) }); ok {
+		reason := "unknown"
+		if finalStatus == "COMPLETE" && gracefulStopCompleted {
+			reason = "operator_stopped"
+		} else if finalStatus == "COMPLETE" && err == nil {
+			reason = "workload_completed"
+		}
+		recorder.SetTerminationReason(reason)
+	}
 	archiveRecord, finalStatus, finalError := artifacts.finalize(test, finalStatus, endTime, finalError)
 	if err := tr.completeTestRunUnderArchiveFence(test, finalStatus, endTime, finalError, archiveRecord); err != nil {
 		slog.Error("local terminal transition remains retryable after bounded persistence retries", "test_id", test.ID, "status", finalStatus, "error", err)

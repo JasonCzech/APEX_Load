@@ -43,3 +43,13 @@ describe('TestExecutionHeroMetrics', () => {
     expect(cards[1]?.textContent).not.toContain('100.0')
   })
 })
+
+it('uses the named population rather than combined archive totals', () => {
+ const host=document.createElement('div'); const root=createRoot(host)
+ const report={overview:{transactions:506,avg_response_ms:5,error_pct:20},metric_populations:{transaction:{transactions:253,avg_response_ms:80,error_pct:0},action:{average_rate_per_second:10}},summary_timeline:[]} as unknown as RunArchiveReport
+ act(()=>root.render(<TestExecutionHeroMetrics archiveReport={report} summary={null} />))
+ expect(host.textContent).toContain('253Named transactions')
+ expect(host.textContent).not.toContain('506')
+ expect(host.textContent).toContain('80Named transaction latency')
+ act(()=>root.unmount())
+})

@@ -89,6 +89,7 @@ func (b *distributedExecutionBackend) prepareDistributedTestRunWithLifecycle(tr 
 	test.remoteLifecycleCtx = lifecycleCtx
 	test.remoteLifecycleCancel = lifecycleCancel
 	test.remoteStopFinalizerRunning = false
+	test.remoteWorkloadCompleted = false
 	test.remoteMetricsLastPublishedAt = time.Time{}
 	test.remoteMetricsFlushScheduled = false
 	test.remoteMetricsAcceptedRevision = 0
@@ -146,6 +147,7 @@ func (b *distributedExecutionBackend) prepareDistributedTestRunWithLifecycle(tr 
 		test.remoteLifecycleCtx = previousLifecycleCtx
 		test.remoteLifecycleCancel = previousLifecycleCancel
 		test.remoteStopFinalizerRunning = false
+		test.remoteWorkloadCompleted = false
 		test.remoteMetricsLastPublishedAt = time.Time{}
 		test.remoteMetricsFlushScheduled = false
 		test.remoteMetricsAcceptedRevision = 0
@@ -454,6 +456,7 @@ func (b *distributedExecutionBackend) closeRemoteResources(tr *TestRunner, test 
 	test.remoteRunSupervisionFencedTargets = nil
 	clear(test.remoteRunSupervisionToken[:])
 	test.remoteStopFinalizerRunning = false
+	test.remoteWorkloadCompleted = false
 	test.remoteActivated = false
 	test.remoteActivationPending = false
 	clearDistributedRunSecretSnapshotsLocked(test)
@@ -1498,6 +1501,7 @@ func (b *distributedExecutionBackend) applyRemoteMetricsBatchWithFreshness(tr *T
 					finalStatus = "ABORTED"
 				} else {
 					finalStatus = "COMPLETE"
+					test.remoteWorkloadCompleted = true
 				}
 				test.remoteFinalizing = true
 			}

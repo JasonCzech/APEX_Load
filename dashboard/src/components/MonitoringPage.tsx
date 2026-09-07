@@ -175,7 +175,7 @@ function infrastructureReadinessStatusLabel(state: InfrastructureReadinessState)
     case 'ready': return 'Ready'
     case 'degraded': return 'Degraded'
     case 'not_ready': return 'Not Ready'
-    case 'not_configured': return 'Not Configured'
+    case 'not_configured': return 'Not applicable'
     case 'not_reported': return 'Not Reported'
     case 'checking': return 'Checking'
     default: return 'Unknown'
@@ -212,7 +212,7 @@ function infrastructureReadinessSummary(
     case 'not_reported':
       return 'Not reported by this controller.'
     case 'not_configured':
-      return 'Not configured for this runtime.'
+      return 'This runtime does not use this optional integration.'
     default:
       return check?.message || infrastructureReadinessStatusLabel(state)
   }

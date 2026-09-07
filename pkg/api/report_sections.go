@@ -301,11 +301,23 @@ func buildReportSectionRegistry() map[string]reportSectionRenderer {
 		return func(d *runArchiveHTMLReportData, lines *[]string) {
 			report := d.Report
 			pdfHeading(lines, heading)
+			if report.Manifest != nil {
+				reason := report.Manifest.TerminationReason
+				if reason == "" {
+					reason = "Unknown"
+				}
+				*lines = append(*lines, "Execution: "+reportExecutionLabel(reason), "Planned duration: "+report.Manifest.Provenance.Duration, "Elapsed: "+reportElapsedDuration(report.Manifest), "Evidence coverage applies to the captured period; workload completion is assessed separately.")
+			}
+			for _, key := range []string{"action", "transaction", "unknown"} {
+				if population, ok := report.MetricPopulations[key]; ok && population.Transactions > 0 {
+					*lines = append(*lines, fmt.Sprintf("%s: %d records, %d errors, p95 %.1f ms, average %.2f/s", reportPopulationLabel(key), population.Transactions, population.Errors, population.P95Ms, population.AverageRate))
+				}
+			}
 			*lines = append(*lines,
-				fmt.Sprintf("Transactions: %s", formatPDFInt(report.Overview.Transactions)),
-				fmt.Sprintf("Errors: %s (%.2f%%)", formatPDFInt(report.Overview.Errors), report.Overview.ErrorPct),
-				fmt.Sprintf("Average response: %.1f ms (min %.1f ms / max %.1f ms)", report.Overview.AvgResponseMs, report.Overview.MinResponseMs, report.Overview.MaxResponseMs),
-				fmt.Sprintf("Peak TPS: %.1f", report.Overview.PeakTPS),
+				fmt.Sprintf("Archive records: %s", formatPDFInt(report.Overview.Transactions)),
+				fmt.Sprintf("Archive record errors: %s (%.2f%%)", formatPDFInt(report.Overview.Errors), report.Overview.ErrorPct),
+				fmt.Sprintf("Archive record average: %.1f ms (min %.1f ms / max %.1f ms)", report.Overview.AvgResponseMs, report.Overview.MinResponseMs, report.Overview.MaxResponseMs),
+				fmt.Sprintf("Peak successful transaction TPS: %.1f", report.Overview.PeakTPS),
 				fmt.Sprintf("Peak active VUsers: %s", formatPDFInt(report.Overview.PeakActiveVUsers)),
 			)
 			if report.Overview.PeakTargetTPS > 0 {
@@ -320,7 +332,17 @@ func buildReportSectionRegistry() map[string]reportSectionRenderer {
 			if err := write(section, "", "schema_version", report.SchemaVersion); err != nil {
 				return err
 			}
+			for _, key := range []string{"action", "transaction", "unknown"} {
+				if population, ok := report.MetricPopulations[key]; ok {
+					for _, item := range [][2]string{{"count", formatCSVInt(population.Transactions)}, {"errors", formatCSVInt(population.Errors)}, {"error_pct", formatCSVFloat(population.ErrorPct)}, {"p95_ms", formatCSVFloat(population.P95Ms)}, {"average_rate_per_second", formatCSVFloat(population.AverageRate)}} {
+						if err := write("metric_populations", key, item[0], item[1]); err != nil {
+							return err
+						}
+					}
+				}
+			}
 			rows := [][2]string{
+				{"population", "archive_records"},
 				{"transactions", formatCSVInt(report.Overview.Transactions)},
 				{"errors", formatCSVInt(report.Overview.Errors)},
 				{"error_pct", formatCSVFloat(report.Overview.ErrorPct)},
@@ -427,7 +449,7 @@ func buildReportSectionRegistry() map[string]reportSectionRenderer {
 	add(reportSectionRenderer{ID: "signoff", Label: "Recommendation & Sign-Off",
 		PDF: func(d *runArchiveHTMLReportData, lines *[]string) {
 			pdfHeading(lines, "Sign-Off")
-			*lines = append(*lines, "Prepared by: ____________________", "Approver: ____________________", "Decision date: ____________________", "")
+			*lines = append(*lines, "Prepared by: "+reportProvidedValue(d.Annotations.PreparedBy), "Analyst assessment: "+reportProvidedValue(d.Annotations.VerdictOverride), "Rationale: "+reportProvidedValue(d.Annotations.VerdictExplanation), "Assessment author: "+reportProvidedValue(d.Annotations.UpdatedBy), "")
 		},
 		CSV: func(d *runArchiveHTMLReportData, write reportCSVWriteFunc) error {
 			prepared := strings.TrimSpace(d.Annotations.PreparedBy)
@@ -908,7 +930,7 @@ func buildReportSectionRegistry() map[string]reportSectionRenderer {
 		PDF: func(d *runArchiveHTMLReportData, lines *[]string) {
 			pdfHeading(lines, "Data Sources & Raw Exports")
 			*lines = append(*lines,
-				fmt.Sprintf("Transactions captured: %s", formatPDFInt(d.Report.Overview.Transactions)),
+				fmt.Sprintf("Archive records captured: %s", formatPDFInt(d.Report.Overview.Transactions)),
 				fmt.Sprintf("Interval summaries: %d", d.Report.Overview.IntervalSummaries),
 				fmt.Sprintf("Resource samples: %d", d.Report.Overview.ResourceSamples),
 				"Report schema: "+d.Report.SchemaVersion,
@@ -1223,4 +1245,22 @@ func buildReportSectionRegistry() map[string]reportSectionRenderer {
 		}})
 
 	return reg
+}
+
+func reportProvidedValue(value string) string {
+	if strings.TrimSpace(value) == "" {
+		return "Not provided"
+	}
+	return value
+}
+
+func reportPopulationLabel(key string) string {
+	switch key {
+	case "action":
+		return "Requests / actions"
+	case "transaction":
+		return "Named transactions"
+	default:
+		return "Unclassified legacy records"
+	}
 }

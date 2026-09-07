@@ -9,6 +9,7 @@ import LazyLoadBoundary from './LazyLoadBoundary'
 const ScriptsAuthoringSurface = lazy(() => import('./ScriptsAuthoringSurface'))
 
 interface Props {
+  initialCreateWorkflow?: CreateWorkflow
   authoringState: AuthoringState
   projectId?: string
   policyRefreshSignal?: number
@@ -29,6 +30,7 @@ interface Props {
 }
 
 export default function ScriptsAuthoringShell({
+  initialCreateWorkflow,
   authoringState,
   projectId,
   policyRefreshSignal,
@@ -47,14 +49,14 @@ export default function ScriptsAuthoringShell({
   canMigrateSecrets = false,
   children,
 }: Props) {
-  const [createOptionsWorkflow, setCreateOptionsWorkflow] = useState<CreateWorkflow>('existing')
+  const [createOptionsWorkflow, setCreateOptionsWorkflow] = useState<CreateWorkflow>(initialCreateWorkflow || 'existing')
   const workflowChosenByUserRef = useRef(false)
 
   useEffect(() => {
     if (authoringState.subView === 'create-options' && !workflowChosenByUserRef.current) {
-      setCreateOptionsWorkflow(scripts.length === 0 ? 'start-new' : 'existing')
+      setCreateOptionsWorkflow(initialCreateWorkflow || (scripts.length === 0 ? 'start-new' : 'existing'))
     }
-  }, [authoringState.subView, scripts.length])
+  }, [authoringState.subView, scripts.length, initialCreateWorkflow])
 
   const changeCreateOptionsWorkflow = (workflow: CreateWorkflow) => {
     workflowChosenByUserRef.current = true

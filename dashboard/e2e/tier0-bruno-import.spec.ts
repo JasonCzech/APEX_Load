@@ -98,7 +98,7 @@ http:
   ])
 
   await page.goto(`/#/scripts?mode=create&${scopeQuery(workspace)}`)
-  await page.getByRole('button', { name: /Import From Source/ }).click()
+  await page.getByRole('button', { name: 'Import', exact: true }).click()
   await page.getByRole('button', { name: /Bruno Collection/ }).click()
   const controls = page.getByRole('group', { name: 'Script import controls' })
   await controls.locator('input[type="file"]').first().setInputFiles({

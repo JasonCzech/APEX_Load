@@ -242,7 +242,7 @@ const GRPC_ACTION_TYPES = ['grpc_unary', 'grpc_server_stream', 'grpc_client_stre
 const DATABASE_ACTION_TYPES = ['db_health', 'db_begin', 'db_query', 'db_exec', 'db_procedure', 'db_commit', 'db_rollback', ...CONTROL_ACTION_TYPES]
 const NETWORK_ACTION_TYPES = ['network_health', 'dns_query', 'tcp_request', 'udp_request', 'ftp_command', 'smtp_send', 'pop3_command', 'imap_command', 'ldap_bind', 'ldap_search', ...CONTROL_ACTION_TYPES]
 const HTTP_ACTION_TYPES = [
-  'GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS',
+  'request', 'GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS',
   'http_oauth2_token', 'cookie_clear', 'cache_clear', 'http_connections_close',
   ...CONTROL_ACTION_TYPES,
 ]
@@ -768,7 +768,7 @@ function ActionCoreFields({ action, index, protocol, isBrowserScript, isJmsScrip
             : isNetworkScript
               ? NETWORK_ACTION_TYPES
               : HTTP_ACTION_TYPES
-  const actionTypeLabel = isBrowserScript || isJmsScript || isWebSocketScript || isGrpcScript || isDatabaseScript || isNetworkScript ? 'Action Type' : 'Method'
+  const actionTypeLabel = 'Action Type'
   const selectableActionTypes = actionTypes.includes(action.type) ? actionTypes : [action.type, ...actionTypes]
 
   // http_oauth2_token is an engine action driven by params (no target/headers/body),
@@ -798,6 +798,11 @@ function ActionCoreFields({ action, index, protocol, isBrowserScript, isJmsScrip
           {selectableActionTypes.map(type => <option key={type}>{type}</option>)}
         </select>
       </label>
+      {actionTypes === HTTP_ACTION_TYPES && (action.type === 'request' || ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'].includes(action.type)) && <label><span>HTTP method</span>
+        <select aria-label="HTTP method" value={action.method || (action.type === 'request' ? 'GET' : action.type)} onChange={e => onUpdate(index, 'method', e.target.value)}>
+          {['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'].map(method => <option key={method}>{method}</option>)}
+        </select>
+      </label>}
       <label><span>Transaction</span>
         <input
           value={actionTransactionName(action)}

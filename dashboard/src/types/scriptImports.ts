@@ -259,6 +259,7 @@ export interface ScriptImportResult<
   scenario_drafts?: TScenarioDraft[]
   warnings: string[]
   unsupported_elements: string[]
+  diagnostics?: { element: string; detail: string; severity: 'blocker' | 'warning' | 'info'; location?: string }[]
   assumptions: string[]
   review_sections: ImportReviewSection[]
   repair_suggestions: ImportRepairSuggestion[]

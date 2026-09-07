@@ -508,9 +508,9 @@ func TestArchiveQueryEndpoints(t *testing.T) {
 		if payload.BySOAPOperation["CreateOrder"].Transactions == 0 {
 			t.Fatalf("expected SOAP operation breakdown, got %#v", payload.BySOAPOperation)
 		}
-		slaRow, ok := payload.SLARows["step-1"]
+		slaRow, ok := payload.SLARows["Archive API Script"]
 		if !ok {
-			t.Fatalf("expected SLA row for step-1, got %#v", payload.SLARows)
+			t.Fatalf("expected SLA row for enclosing transaction Archive API Script, got %#v", payload.SLARows)
 		}
 		if !slaRow.HasSLA || slaRow.ResultKind != "pass" {
 			t.Fatalf("expected passing evaluated SLA row, got %#v", slaRow)

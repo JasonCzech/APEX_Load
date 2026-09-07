@@ -492,7 +492,7 @@ describe('TestExecutionArchive', () => {
     expect(container.textContent).toContain('Reason: Request validation failed')
     expect(container.textContent).toContain('Summary Timeline')
     expect(container.textContent).toContain(new Date('2026-05-14T20:00:00Z').toLocaleString(undefined, {
-      year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit',
+      year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit',
     }))
     expect(container.textContent).not.toContain('2026-05-14 20:00Z')
     expect(container.textContent).toContain('120.0 ms')
@@ -515,7 +515,7 @@ describe('TestExecutionArchive', () => {
     expect(container.textContent).toContain('Target 2.0 TPS')
     expect(container.textContent).toContain('Throughput Gap')
     expect(container.textContent).toContain('3 missed target intervals')
-    expect(container.textContent).toContain('Goal Completion')
+    expect(container.textContent).toContain('Named transaction volume')
     expect(container.textContent).toContain('1 / 10 transactions')
     expect(container.textContent).toContain('Staged Load')
     expect(container.textContent).toContain('1 group · 1 once-only')
@@ -1506,10 +1506,10 @@ describe('TestExecutionArchive', () => {
     expect(container.textContent).toContain('client')
     expect(container.textContent).toContain('server')
     expect(container.textContent).toContain(new Date('2026-05-14T20:00:00Z').toLocaleString(undefined, {
-      year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit',
+      year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit',
     }))
     expect(container.textContent).toContain(new Date('2026-05-14T20:01:00Z').toLocaleString(undefined, {
-      year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit',
+      year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit',
     }))
     expect(container.textContent).toContain('env:Sender (2)')
     expect(container.textContent).toContain('env:Receiver (1)')
@@ -1524,15 +1524,15 @@ describe('TestExecutionArchive', () => {
   it('renders archive report sections as standalone views', async () => {
     await renderArchiveView('report-overview')
 
-    expect(container.textContent).toContain('Peak TPS')
-    expect(container.textContent).toContain('Goal Completion')
+    expect(container.textContent).toContain('Peak successful transaction TPS')
+    expect(container.textContent).toContain('Named transaction volume')
     expect(container.textContent).not.toContain('Error Patterns')
 
     await renderArchiveView('report-error-patterns')
 
     expect(container.textContent).toContain('Error Patterns')
     expect(container.textContent).toContain('soap fault: Request validation failed for order 1001')
-    expect(container.textContent).not.toContain('Peak TPS')
+    expect(container.textContent).not.toContain('Peak successful transaction TPS')
 
     await renderArchiveView('report-assets')
 

@@ -10,7 +10,7 @@ function sourceDescription(kind: LibraryKind) {
 }
 
 function remoteStatusLabel(status?: string) {
-  return status || 'No Remote Workspace'
+  return status || 'Not connected'
 }
 
 function credentialsLabel(ready: boolean) {
@@ -45,7 +45,7 @@ export default function LibraryFederationControls({ kind, federation, projectNam
     actionBlockedReason,
     refreshCatalogs,
   } = federation
-  const generalBlockedReason = selectedRemoteId ? actionBlockedReason : ''
+  const generalBlockedReason = sourceFilter === 'host' && selectedRemoteId ? actionBlockedReason : ''
 
   return (
     <div className="library-source-controls">
@@ -54,7 +54,7 @@ export default function LibraryFederationControls({ kind, federation, projectNam
           <h3 className="section-title">Library Sources</h3>
           <p className="library-toolbar-subtitle">{summaryText || sourceDescription(kind)}</p>
         </div>
-        <div className="library-source-summary">
+        {sourceFilter === 'host' && selectedRemoteId && <div className="library-source-summary">
           {onConfigureRemotes ? (
             <button
               type="button"
@@ -75,12 +75,13 @@ export default function LibraryFederationControls({ kind, federation, projectNam
           ) : (
             <span className={`script-health-token ${credentialsReady ? 'healthy' : 'danger'}`}>{credentialsLabel(credentialsReady)}</span>
           )}
-        </div>
+        </div>}
       </div>
 
       <div className="library-source-toolbar">
         {filterControls}
-        <label className="project-redaction-rule-field">
+        {sourceFilter === 'host' && !selectedRemoteId && <div><span>Not connected</span>{onConfigureRemotes && <button className="btn btn-secondary" type="button" onClick={onConfigureRemotes}>Connect remote workspace</button>}</div>}
+        {sourceFilter === 'host' && <label className="project-redaction-rule-field">
           <span>Remote</span>
           <select className="settings-input library-source-select" value={selectedRemoteId} onChange={event => setSelectedRemoteId(event.target.value)}>
             {remotes.length === 0 && <option value="">No remote configured</option>}
@@ -88,14 +89,14 @@ export default function LibraryFederationControls({ kind, federation, projectNam
               <option key={remote.id} value={remote.id}>{remote.name}</option>
             ))}
           </select>
-        </label>
+        </label>}
         <label className="project-redaction-rule-field">
           <span>Source</span>
           <select className="settings-input library-source-select" value={sourceFilter} onChange={event => setSourceFilter(event.target.value as LibrarySourceFilter)}>
             {LIBRARY_SOURCE_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
           </select>
         </label>
-        <label className="project-redaction-rule-field">
+        {sourceFilter === 'host' && <label className="project-redaction-rule-field">
           <span>Project Mapping</span>
           <input
             className="settings-input"
@@ -104,8 +105,8 @@ export default function LibraryFederationControls({ kind, federation, projectNam
             title={projectMapping ? `Project ID: ${projectMapping}` : undefined}
             placeholder="No project selected"
           />
-        </label>
-        {kind === 'scenario' && (
+        </label>}
+        {sourceFilter === 'host' && kind === 'scenario' && (
           <label className="library-federation-checkbox">
             <input type="checkbox" checked={includeDependencies} onChange={event => setIncludeDependencies(event.target.checked)} />
             <span>Include referenced scripts</span>

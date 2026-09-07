@@ -295,7 +295,7 @@ export function buildRepositoryCatalogRows(input: RepositoryCatalogBuildInput): 
       const releaseNames = releaseNamesFromRefs(scenarioReleaseRefs)
       const releaseIds = releaseIdsFromRefs(scenarioReleaseRefs)
       const protocols = protocolListFromScenario(scenario)
-      const status = scenarioModeLabel(scenario.scenario_mode)
+      const status = 'Ready'
       rows.push({
         id: scenario.id,
         kind: 'scenario',
@@ -310,7 +310,7 @@ export function buildRepositoryCatalogRows(input: RepositoryCatalogBuildInput): 
         releaseNames,
         protocol: protocols,
         status,
-        summary: `${scenario.duration || 'No duration'} · ${plural(scenario.script_count || scenario.scripts.length, 'script')} · ${plural(scenario.result_count || 0, 'run')}`,
+        summary: `${scenarioModeLabel(scenario.scenario_mode)} · ${scenario.duration || 'No duration'} · ${plural(scenario.script_count || scenario.scripts.length, 'script')} · ${plural(scenario.result_count || 0, 'run')}`,
         detail: scenario.data_pools?.length ? plural(scenario.data_pools.length, 'data pool') : 'No data pool',
         createdAt: scenario.created_at,
         updatedAt: scenario.updated_at,

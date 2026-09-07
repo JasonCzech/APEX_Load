@@ -13,6 +13,7 @@ import (
 
 	"github.com/jasonczech/apexload/pkg/convert/convertresult"
 	"github.com/jasonczech/apexload/pkg/convert/credentialpolicy"
+	"github.com/jasonczech/apexload/pkg/convert/diag"
 	"github.com/jasonczech/apexload/pkg/convert/enterprisearchive"
 	"github.com/jasonczech/apexload/pkg/convert/jmeter"
 	"github.com/jasonczech/apexload/pkg/convert/paramize"
@@ -34,6 +35,7 @@ type scriptImportResponseOptions struct {
 	Correlations        any
 	Assumptions         []string
 	UnsupportedElements []string
+	Diagnostics         diag.Diagnostics
 	ReviewSections      []scriptImportReviewSection
 	RepairSuggestions   []scriptImportRepairSuggestion
 	ScenarioDraft       *jmeter.ScenarioDraft
@@ -248,6 +250,7 @@ func newScriptImportResponse(opts scriptImportResponseOptions) map[string]any {
 		"stats":                       sanitizeImportEmbeddedReviewEvidence(stats),
 		"correlations":                sanitizeImportEmbeddedReviewEvidence(sanitizeImportCorrelationCollection(correlations)),
 		"assumptions":                 sanitizeImportReviewEvidence(assumptions),
+		"diagnostics":                 sanitizeImportReviewEvidence(opts.Diagnostics),
 		"unsupported_elements":        sanitizeImportReviewEvidence(unsupported),
 		"review_sections":             sanitizeImportReviewEvidence(reviewSections),
 		"repair_suggestions":          sanitizeImportReviewEvidence(repairSuggestions),

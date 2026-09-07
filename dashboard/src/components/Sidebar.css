@@ -222,11 +222,11 @@ body.is-desktop.is-mac .sidebar.collapsed .sidebar-brand {
 
 .nav-item.active {
   background: var(--accent-soft);
-  color: var(--accent);
+  color: var(--accent-hover);
 }
 
 .nav-item.active .nav-icon {
-  color: var(--accent);
+  color: var(--accent-hover);
 }
 
 .nav-icon {
@@ -502,6 +502,7 @@ body.is-desktop.is-mac .sidebar.collapsed .sidebar-brand {
 }
 
 .status-text {
+  color: var(--text-primary);
   white-space: nowrap;
 }
 

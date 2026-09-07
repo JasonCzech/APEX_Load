@@ -99,6 +99,7 @@ export interface ReplayDiagnosisSummary {
 }
 
 export interface BrowserReplaySnapshot {
+  response_body_state?: 'captured' | 'empty' | 'redacted' | 'not_captured' | 'expired'
   request_method?: string
   request_url?: string
   request_headers?: Record<string, string>
@@ -150,6 +151,7 @@ export interface BrowserReplayEvent {
   network_entries?: BrowserReplayNetworkEntry[]
   dom_summary?: BrowserReplayDomSummary
   client_metrics?: ClientMetrics
+  response_body_state?: string
   snapshot?: BrowserReplaySnapshot
   protocol_evidence?: ProtocolEvidence
   diagnosis?: ReplayDiagnosis

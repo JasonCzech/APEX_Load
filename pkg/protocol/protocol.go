@@ -738,20 +738,21 @@ func UnavailableCorrelationEvidence(reason string) *CorrelationEvidence {
 
 // ErrorSnapshot captures full request/response data for post-test debugging.
 type ErrorSnapshot struct {
-	RequestMethod    string            `json:"request_method"`
-	RequestURL       string            `json:"request_url"`
-	RequestHeaders   map[string]string `json:"request_headers,omitempty"`
-	RequestBody      string            `json:"request_body,omitempty"`
-	ResponseStatus   int               `json:"response_status"`
-	ResponseHeaders  map[string]string `json:"response_headers,omitempty"`
-	ResponseBody     string            `json:"response_body,omitempty"`
-	PageURL          string            `json:"page_url,omitempty"`
-	PageTitle        string            `json:"page_title,omitempty"`
-	HTML             string            `json:"html,omitempty"`
-	ScreenshotBase64 string            `json:"screenshot_base64,omitempty"`
-	ConsoleEntries   []ConsoleEntry    `json:"console_entries,omitempty"`
-	NetworkEntries   []NetworkEntry    `json:"network_entries,omitempty"`
-	DOMSummary       *DOMSummary       `json:"dom_summary,omitempty"`
+	ResponseBodyState string            `json:"response_body_state,omitempty"`
+	RequestMethod     string            `json:"request_method"`
+	RequestURL        string            `json:"request_url"`
+	RequestHeaders    map[string]string `json:"request_headers,omitempty"`
+	RequestBody       string            `json:"request_body,omitempty"`
+	ResponseStatus    int               `json:"response_status"`
+	ResponseHeaders   map[string]string `json:"response_headers,omitempty"`
+	ResponseBody      string            `json:"response_body,omitempty"`
+	PageURL           string            `json:"page_url,omitempty"`
+	PageTitle         string            `json:"page_title,omitempty"`
+	HTML              string            `json:"html,omitempty"`
+	ScreenshotBase64  string            `json:"screenshot_base64,omitempty"`
+	ConsoleEntries    []ConsoleEntry    `json:"console_entries,omitempty"`
+	NetworkEntries    []NetworkEntry    `json:"network_entries,omitempty"`
+	DOMSummary        *DOMSummary       `json:"dom_summary,omitempty"`
 }
 
 func ClassifyPayloadSize(value int64) string {

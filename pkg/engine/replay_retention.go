@@ -205,6 +205,9 @@ func stripReplayEventRichEvidence(event *ReplayActionEvent) {
 	event.Network = nil
 	event.DOMSummary = nil
 	event.ProtocolEvidence = nil
+	if event.Snapshot != nil {
+		event.ResponseBodyState = "not_retained"
+	}
 	event.Snapshot = nil
 	event.RepairSuggestions = nil
 	if event.Diagnosis != nil {

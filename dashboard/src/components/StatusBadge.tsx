@@ -18,13 +18,14 @@ const STATUS_STYLES: Record<string, string> = {
 
 interface Props {
   status: string
+  stoppedByOperator?: boolean
 }
 
-export default function StatusBadge({ status }: Props) {
+export default function StatusBadge({ status, stoppedByOperator }: Props) {
   const normalizedStatus = normalizeTestStatus(status)
   return (
     <span className={`status-badge ${STATUS_STYLES[normalizedStatus] || ''}`}>
-      {normalizedStatus || 'UNKNOWN'}
+      {normalizedStatus === 'COMPLETE' && stoppedByOperator ? 'Stopped by operator' : normalizedStatus || 'UNKNOWN'}
     </span>
   )
 }

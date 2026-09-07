@@ -714,7 +714,7 @@ describe('ScriptsPage', () => {
     expect(container.textContent).toContain('Create Script')
     expect(container.textContent).toContain('Model From Existing Script')
 
-    await clickButton('Start New Script')
+    await clickButton('Create')
     await clickButton('Blank & Assisted Editors')
 
     const sampleButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Build From Sample'))
@@ -780,7 +780,7 @@ describe('ScriptsPage', () => {
     expect(container.textContent).not.toContain('Model From Existing Script')
     expect(container.textContent).toContain('Library Sources')
     expect(container.textContent).toContain('Associated Release')
-    expect(container.textContent).toContain('Search Release')
+    expect(container.textContent).toContain('Search scripts')
     expect(container.textContent).not.toContain('Asset Type')
     expect(container.textContent).not.toContain('Select a Remote Workspace first.')
 
@@ -852,14 +852,14 @@ describe('ScriptsPage', () => {
 
     const workflowCards = Array.from(container.querySelectorAll('.script-workflow-card')).map(button => button.textContent || '')
     expect(workflowCards).toHaveLength(4)
-    expect(workflowCards.some(label => label.includes('Start New Script'))).toBe(true)
+    expect(workflowCards.some(label => label.includes('Create'))).toBe(true)
     expect(workflowCards.some(label => label.includes('Use Template'))).toBe(false)
     expect(workflowCards.some(label => label.includes('Build Manually'))).toBe(false)
-    expect(workflowCards.some(label => label.includes('Import From Source'))).toBe(true)
+    expect(workflowCards.some(label => label.includes('Import'))).toBe(true)
     expect(workflowCards.some(label => label.includes('Start From Source'))).toBe(false)
     expect(workflowCards.some(label => label.includes('Import Existing'))).toBe(false)
 
-    await clickButton('Import From Source')
+    await clickButton('Import')
     await flushPromises()
 
     expect(container.textContent).toContain('Contracts & Collections')
@@ -909,7 +909,7 @@ describe('ScriptsPage', () => {
     })
 
     await flushPromises()
-    await clickButton('Import From Source')
+    await clickButton('Import')
     await flushPromises()
 
     expect(container.textContent).toContain('Contracts & Collections')
@@ -928,10 +928,10 @@ describe('ScriptsPage', () => {
 
     await flushPromises()
 
-    expect(container.textContent).toContain('Record Browser')
+    expect(container.textContent).toContain('Record')
     expect(container.textContent).not.toContain('Browser Recorder')
 
-    await clickButton('Record Browser')
+    await clickButton('Record')
     await act(async () => {
       await vi.dynamicImportSettled()
     })
@@ -948,7 +948,7 @@ describe('ScriptsPage', () => {
 
     await flushPromises()
 
-    await clickButton('Start New Script')
+    await clickButton('Create')
 
     const lanes = Array.from(container.querySelectorAll('.script-create-lane.full'))
     expect(lanes).toHaveLength(1)
@@ -1519,7 +1519,7 @@ describe('ScriptsPage', () => {
     expect(firstScriptRow?.textContent).toContain('Checkout Script')
   })
 
-  it('routes script library source pills to integrations settings', async () => {
+  it('does not warn about optional remotes in a local script library', async () => {
     const onNavigate = vi.fn()
 
     await act(async () => {
@@ -1530,24 +1530,9 @@ describe('ScriptsPage', () => {
 
     const noRemoteButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('No Remote Workspace'))
     const credentialsButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Credentials Missing'))
-    expect(noRemoteButton).toBeDefined()
-    expect(credentialsButton).toBeDefined()
-    if (!noRemoteButton || !credentialsButton) return
-
-    await act(async () => {
-      noRemoteButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
-
-    expect(onNavigate).toHaveBeenCalledWith('settings')
-    expect(window.localStorage.getItem('apexload.settings.focusSection')).toBe('integrations')
-
-    window.localStorage.removeItem('apexload.settings.focusSection')
-    await act(async () => {
-      credentialsButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
-
-    expect(onNavigate).toHaveBeenCalledWith('settings')
-    expect(window.localStorage.getItem('apexload.settings.focusSection')).toBe('integrations')
+    expect(noRemoteButton).toBeUndefined()
+    expect(credentialsButton).toBeUndefined()
+    expect(onNavigate).not.toHaveBeenCalled()
   })
 
   it('notifies the parent topbar when a library script opens in edit mode', async () => {
@@ -1645,7 +1630,7 @@ describe('ScriptsPage', () => {
 
     await flushPromises()
 
-    await clickButton('Import From Source')
+    await clickButton('Import')
     await clickButton('OpenAPI / Swagger')
 
     expect(container.querySelector('[data-testid="protocol-import-openapi"]')).not.toBeNull()
@@ -1663,7 +1648,7 @@ describe('ScriptsPage', () => {
 
     await flushPromises()
 
-    await clickButton('Import From Source')
+    await clickButton('Import')
 
     const jmeterButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Import JMeter'))
     expect(jmeterButton).toBeDefined()
@@ -1698,7 +1683,7 @@ describe('ScriptsPage', () => {
 
     await flushPromises()
 
-    await clickButton('Import From Source')
+    await clickButton('Import')
 
     const jmeterButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Import JMeter'))
     expect(jmeterButton).toBeDefined()
@@ -1736,7 +1721,7 @@ describe('ScriptsPage', () => {
 
     await flushPromises()
 
-    await clickButton('Import From Source')
+    await clickButton('Import')
 
     const enterpriseArchiveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Import Loadrunner Script Archive'))
     expect(enterpriseArchiveButton).toBeDefined()
@@ -1773,7 +1758,7 @@ describe('ScriptsPage', () => {
       root.render(<ScriptsPage initialMode="create-options" />)
     })
     await flushPromises()
-    await clickButton('Import From Source')
+    await clickButton('Import')
     await flushPromises()
 
     apiMock.listAuthoringCapabilities.mockRejectedValue(new Error('policy unavailable'))
@@ -1802,7 +1787,7 @@ describe('ScriptsPage', () => {
     })
     await flushPromises()
 
-    await clickButton('Import From Source')
+    await clickButton('Import')
     await clickButton('Import Loadrunner Script Archive')
     const preservedInput = container.querySelector<HTMLInputElement>('input[aria-label="mock-enterprise-archive-state"]')!
     preservedInput.value = 'pending-lane-still-mounted'
@@ -1823,10 +1808,10 @@ describe('ScriptsPage', () => {
     })
     await flushPromises()
 
-    await clickButton('Import From Source')
+    await clickButton('Import')
     await clickButton('Import Loadrunner Script Archive')
     await clickButton('mock-enterprise-archive-close')
-    await clickButton('Import From Source')
+    await clickButton('Import')
     await clickButton('Import JMeter')
     expect(container.querySelector('[data-testid="jmeter-import"]')).not.toBeNull()
 
@@ -1848,7 +1833,7 @@ describe('ScriptsPage', () => {
 
     await flushPromises()
 
-    await clickButton('Import From Source')
+    await clickButton('Import')
 
     const enterpriseArchiveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Import Loadrunner Script Archive'))
     expect(enterpriseArchiveButton).toBeDefined()
@@ -1875,7 +1860,7 @@ describe('ScriptsPage', () => {
 
     expect(container.querySelector('[data-testid="enterprise-archive-import"]')).toBeNull()
     expect(container.textContent).toContain('Create Script')
-    await clickButton('Import From Source')
+    await clickButton('Import')
     expect(container.textContent).toContain('Import JMeter')
   })
 
@@ -1886,7 +1871,7 @@ describe('ScriptsPage', () => {
 
     await flushPromises()
 
-    await clickButton('Import From Source')
+    await clickButton('Import')
 
     const enterpriseArchiveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Import Loadrunner Script Archive'))
     expect(enterpriseArchiveButton).toBeDefined()
@@ -1928,7 +1913,7 @@ describe('ScriptsPage', () => {
 
     await flushPromises()
 
-    await clickButton('Import From Source')
+    await clickButton('Import')
 
     const jmeterButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Import JMeter'))
     expect(jmeterButton).toBeDefined()
@@ -1967,7 +1952,7 @@ describe('ScriptsPage', () => {
 
     await flushPromises()
 
-    await clickButton('Start New Script')
+    await clickButton('Create')
     await clickButton('Blank & Assisted Editors')
 
     expect(container.textContent).toContain('Blank & Assisted Editors')
@@ -2008,7 +1993,7 @@ describe('ScriptsPage', () => {
       createButtonAgain.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
-    await clickButton('Start New Script')
+    await clickButton('Create')
     await clickButton('Blank & Assisted Editors')
 
     const javaButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Java over HTTP'))
@@ -2065,12 +2050,13 @@ describe('ScriptsPage', () => {
     await flushPromises()
 
     await flushPromises()
-    await clickButton('Start New Script')
+    await clickButton('Create')
 
     expect(apiMock.listAuthoringTemplates).toHaveBeenCalledTimes(1)
     expect(apiMock.listAuthoringComponents).toHaveBeenCalledTimes(1)
     expect(container.textContent).toContain('Starter Templates')
     expect(container.textContent).toContain('Reusable Blocks')
+    await clickButton('Starter Templates')
     expect(container.textContent).toContain('Browser Checkout Canary')
 
     await clickButton('Reusable Blocks')
@@ -2114,7 +2100,7 @@ describe('ScriptsPage', () => {
 
     await flushPromises()
     await flushPromises()
-    await clickButton('Start New Script')
+    await clickButton('Create')
     await clickButton('Reusable Blocks')
 
     expect(container.textContent).toContain('Reusable Blocks')
@@ -2467,7 +2453,7 @@ describe('ScriptsPage', () => {
 
     await flushPromises()
 
-    await clickButton('Import From Source')
+    await clickButton('Import')
     await flushPromises()
 
     const sampleImportButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Request / Response Sample'))
@@ -2612,7 +2598,7 @@ function setSelectValue(select: HTMLSelectElement, value: string) {
 }
 
 async function clickButton(label: string) {
-  const button = Array.from(document.querySelectorAll('button')).find(element => element.textContent?.includes(label))
+  const button = Array.from(document.querySelectorAll('button')).find(element => (['Create','Import','Record','Use existing'].includes(label) ? element.querySelector('strong')?.textContent === label : element.textContent?.includes(label)))
   expect(button).toBeDefined()
   if (!button) {
     return

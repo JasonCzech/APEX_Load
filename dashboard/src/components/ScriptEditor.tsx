@@ -4748,7 +4748,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
     },
     {
       key: 'save',
-      label: 'Approve / Save',
+      label: 'Approval readiness',
       status: approvalReady ? 'ready' : 'needs evidence',
       action: handleSave,
       disabled: saveScriptDisabled || !approvalReady,
@@ -4801,8 +4801,8 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
     secondaryActions: [
       {
         id: 'run-debug',
-        label: replaying ? 'Running...' : replayReport ? 'Restart' : 'Run',
-        compactLabel: 'Run',
+        label: replaying ? 'Running...' : replayReport ? 'Debug again' : 'Debug one iteration',
+        compactLabel: 'Debug',
         icon: <DebugTopbarIcon kind="run" />,
         className: 'topbar-debug-action topbar-debug-action-run',
         title: replayRunButtonTitle,
@@ -5386,6 +5386,12 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
 
   return (
     <div className="script-editor">
+      <div className="script-evidence-states" aria-label="Script evidence states">
+        <span>Saved: {scriptEditorDirty ? 'unsaved changes' : 'up to date'}</span>
+        <span>Validated: {validationEvidenceMatchesCurrentDraft && validationPassed ? 'passed' : validationEvidence ? 'stale or needs changes' : 'not yet'}</span>
+        <span>Debugged: {debugEvidenceStatus}</span>
+        <span>Approval readiness: {approvalReady ? 'ready for review' : 'needs evidence'}</span>
+      </div>
       <datalist id="object-ref-suggestions">
         {objectRefSuggestions.map(name => <option key={name} value={name} aria-label={name} />)}
       </datalist>
@@ -5578,7 +5584,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
             <div className="script-ide-quick-actions" role="group" aria-label="Quick actions">
               <button type="button" className="debugger-icon-btn" title={replayRunButtonTitle} onClick={() => void handleReplay()} disabled={replaying || saving || replayBlockedByMissingSecrets || !currentDraftScript.name || (currentDraftScript.actions || []).length === 0}>
                 <span className="debugger-icon" aria-hidden="true">&#9654;</span>
-                <span>{replaying ? 'Running...' : replayReport ? 'Restart' : 'Run'}</span>
+                <span>{replaying ? 'Running...' : replayReport ? 'Debug again' : 'Debug one iteration'}</span>
               </button>
               {workspaceTab === 'debug' && (
                 <>
@@ -5969,6 +5975,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
                     <input value={script.name} onChange={e => updateField('name', e.target.value)} placeholder="My_Test_Script" />
                   </label>
                 </div>
+                <details className="advanced-action-tools"><summary>Advanced action tools</summary>
                 <section className="outline-section">
                   <div className="actions-sidebar-header outline-section-header">
                     <button
@@ -6323,6 +6330,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
                     )
                   )}
                 </section>
+                </details>
                 <ScriptJsonParameterOutline
                   collapsed={outlineParameterListCollapsed}
                   deepScanning={deepScanning}

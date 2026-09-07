@@ -388,6 +388,7 @@ interface Props {
   previewData?: unknown
   warnings?: string[]
   warningsTitle?: string
+  diagnostics?: {element: string; detail: string; severity: 'blocker' | 'warning' | 'info'; location?: string}[]
   unsupportedElements?: string[]
   reviewSections?: ImportReviewSection[]
   // Collection-wide values, applied across every script of the import at once.
@@ -450,6 +451,7 @@ export default function ScriptImportReview({
   warnings = [],
   warningsTitle = 'Warnings',
   unsupportedElements = [],
+  diagnostics,
   reviewSections = [],
   sharedValues,
   sharedValueScripts,
@@ -485,6 +487,11 @@ export default function ScriptImportReview({
   onEdit,
   children,
 }: Props) {
+  const reviewSummaryRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    reviewSummaryRef.current?.focus()
+    reviewSummaryRef.current?.scrollIntoView?.({ block: 'start', behavior: 'smooth' })
+  }, [reviewGeneration])
   const hasUnresolvedSecretBindings = secretBindingRequirements.length > 0
   const allRemainingRequirementsPreserveValues = requirementsPreserveDestinationValues(secretBindingRequirements)
   const internalBindingReviewRef = useRef<SecretBindingReviewHandle | null>(null)
@@ -708,7 +715,7 @@ export default function ScriptImportReview({
     [previewData, script, showPreview],
   )
   const previewPane = preview ? (
-    <details className="script-import-review-preview" open>
+    <details className="script-import-review-preview">
       <summary>
         <h4>{previewTitle}</h4>
       </summary>
@@ -786,20 +793,26 @@ export default function ScriptImportReview({
           description: redactPreviewText(section.summary),
           source: 'Import review',
         }])
-  const unsupportedDetails: IssueDetail[] = unsupportedElements.map((item, index) => ({
+  const diagnosticStrings = diagnostics?.length ? diagnostics.map(item => `${item.element}${item.location ? ` at ${item.location}` : ''} [${item.severity}]: ${item.detail}`) : unsupportedElements
+  const conversionNotes: IssueDetail[] = diagnosticStrings.filter(item => /\[info\]/i.test(item)).map((item, index) => ({ id: `conversion-note-${index}`, severity: 'info', title: 'Conversion note', description: redactPreviewText(item), source: 'Import conversion' }))
+  const unsupportedDetails: IssueDetail[] = diagnosticStrings.filter(item => !/\[(info|blocker)\]/i.test(item)).map((item, index) => ({
     id: `unsupported-${index}`,
     severity: 'warning' as const,
     title: 'Unsupported element',
     description: redactPreviewText(item),
     source: 'Import conversion',
   }))
+  for (const [index, item] of diagnosticStrings.filter(item => /\[blocker\]/i.test(item)).entries()) {
+    if (!blockerDetails.some(existing => existing.description === redactPreviewText(item))) blockerDetails.push({id: `conversion-blocker-${index}`, severity: 'blocker', title: 'Blocking conversion failure', description: redactPreviewText(item), source: 'Import conversion'})
+  }
   const protectedSessionLabel = protectedImportExpiryLabel(protectedImportSessionExpiresAt)
   const importDraftExpiry = importDraftExpiryStatus(importDraftExpiresAt)
   const importDraftExpired = importDraftExpiry?.expired === true
 
   return (
     <div className="script-import-review">
-      <div className="script-import-review-header">
+      <div className="script-import-review-header" tabIndex={-1} ref={reviewSummaryRef}>
+        <p role="status">Import review ready. {script.actions?.length || 0} actions. Review blockers and warnings before saving.</p>
         <div>
           <h3>{title}</h3>
           {subtitle && <p>{subtitle}</p>}
@@ -887,6 +900,7 @@ export default function ScriptImportReview({
 
       {children}
 
+      {conversionNotes.length > 0 && <button type="button" className="script-health-token issue-pill-button" onClick={() => setIssueDialog({ title: 'Conversion notes', issues: conversionNotes })}>{conversionNotes.length} conversion note{conversionNotes.length === 1 ? '' : 's'}</button>}
       {(blockerDetails.length > 0 || warningDetails.length > 0 || infoDetails.length > 0 || unsupportedDetails.length > 0) && (
         <div className="script-import-review-issue-summary" aria-label="Import issue summary">
           {blockerDetails.length > 0 && (

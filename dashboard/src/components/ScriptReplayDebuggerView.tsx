@@ -925,7 +925,7 @@ export function ScriptReplayDebuggerView({
                       </div>
                     ) : (<>
                     {!isBrowserScript && debuggerTab !== 'browser' && replayReport && (
-                      <CorrelationDiagnosePanel
+                      <details><summary>Compare with a recording (optional)</summary><CorrelationDiagnosePanel
                         scriptId={scriptId ?? null}
                         replaySessionId={replayReport.replay_session_id || activeReplaySessionId || undefined}
                         replayTerminal={replayTerminal}
@@ -941,7 +941,7 @@ export function ScriptReplayDebuggerView({
                         diagnoseWithBaseline={(id, replay, replaySessionId) => api.diagnoseScriptReplay(id, replay, replaySessionId)}
                         diagnoseWithUpload={(recorded, replay) => api.diagnoseCorrelations(recorded, replay)}
                         onAddExtractor={addExtractorDefinition}
-                      />
+                      /></details>
                     )}
                     {debuggerTab === 'browser' && isBrowserScript ? (
                       <BrowserReplayDebugger
@@ -1004,6 +1004,12 @@ export function ScriptReplayDebuggerView({
                                     </div>
                                   )}
                                 </div>
+                                      {!isBrowserScript && <section aria-label="Response evidence">
+                                  <strong>Actual response: {event.status_code || 'No protocol status'}</strong>
+                                  <p>Response body: {(event.snapshot?.response_body_state || event.response_body_state)?.replace(/_/g, ' ') || 'Unknown capture state'}</p>
+                                  {event.error_message && <p role="alert">{event.error_message}</p>}
+                                  {event.snapshot?.response_body ? <SnapshotBodyPreview body={event.snapshot.response_body} headers={event.snapshot.response_headers} /> : <p>{(event.snapshot?.response_body_state || event.response_body_state) === 'empty' ? 'The target returned an empty response body.' : (event.snapshot?.response_body_state || event.response_body_state) === 'redacted' ? 'Response body removed by the credential-redaction policy.' : (event.snapshot?.response_body_state || event.response_body_state) === 'expired' ? 'Response body expired under the retention policy.' : (event.snapshot?.response_body_state || event.response_body_state) === 'not_captured' ? 'Response body was not captured.' : event.response_body_state === 'not_retained' ? 'Response body was removed by the evidence-retention limit.' : 'Response body unavailable; the capture state is unknown. This does not establish that the response was empty.'}</p>}
+                                </section>}
                                 {event.diagnosis && (
                                   <div className="replay-diagnosis-panel">
                                     <div>
@@ -1011,7 +1017,8 @@ export function ScriptReplayDebuggerView({
                                       <strong>{formatReplayDiagnosisCategory(event.diagnosis.category)}</strong>
                                       <p>{event.diagnosis.cause}</p>
                                       {event.diagnosis.evidence && <small>{event.diagnosis.evidence}</small>}
-                                      {event.diagnosis.action && <small>{event.diagnosis.action}</small>}
+
+                                {event.diagnosis.action && <small>{event.diagnosis.action}</small>}
                                     </div>
                                     {(event.repair_suggestions || []).length > 0 && (
                                       <RepairSuggestionList
@@ -1159,6 +1166,7 @@ export function ScriptReplayDebuggerView({
                                     )}
                                   </div>
                                 )}
+
                                 <div className="replay-code-block">
                                   <span className="replay-detail-label">Resolved Headers</span>
                                   <SnapshotTextPreview text={formatReplayHeaders(event.headers)} />

@@ -464,7 +464,7 @@ export function CorrelationDiagnosePanel({
               />
 			</>
           )}
-          {recordingStatusState === 'ready' && !recordingStatus?.exists && <span className="extractor-tester-note">No stored baseline for this script — upload the recording it came from.</span>}
+          {recordingStatusState === 'ready' && !recordingStatus?.exists && <span className="extractor-tester-note">No recorded baseline is available. If this script originated from a recording, you can attach it for comparison. Contract-authored scripts do not require one.</span>}
           {recordingStatusState === 'ready' && !!recordingStatus?.exists && recordingStatus.correlation_usable === false && (
             <span className="extractor-tester-note">{baselineUnavailableMessage(recordingStatus.correlation_unavailable_reason)}</span>
           )}

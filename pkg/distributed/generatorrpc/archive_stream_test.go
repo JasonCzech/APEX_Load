@@ -63,8 +63,8 @@ func TestStreamJSONLToParquetRejectsOversizedRecord(t *testing.T) {
 }
 
 func TestToParquetTransactionsCarriesBusinessTransactionProvenance(t *testing.T) {
-	rows := toParquetTransactions([]archiveTransactionEvent{{BusinessTransaction: true}})
-	if len(rows) != 1 || !rows[0].BusinessTransaction {
+	rows := toParquetTransactions([]archiveTransactionEvent{{BusinessTransaction: true, Population: "transaction"}})
+	if len(rows) != 1 || !rows[0].BusinessTransaction || rows[0].Population != "transaction" {
 		t.Fatalf("parquet transaction provenance = %#v", rows)
 	}
 }
@@ -86,7 +86,7 @@ func TestArchiveRecorderCarriesBusinessTransactionProvenance(t *testing.T) {
 	if err := json.Unmarshal(output.Bytes(), &event); err != nil {
 		t.Fatalf("decode transaction: %v", err)
 	}
-	if !event.BusinessTransaction || event.ActionName != "Checkout" {
+	if !event.BusinessTransaction || event.ActionName != "Checkout" || event.Population != "transaction" {
 		t.Fatalf("archived transaction provenance = %#v", event)
 	}
 }

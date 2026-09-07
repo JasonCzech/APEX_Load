@@ -70,6 +70,8 @@ type runArchiveHTMLReportData struct {
 }
 
 var profileHTMLFuncMap = template.FuncMap{
+	"executionLabel":  reportExecutionLabel,
+	"elapsedDuration": reportElapsedDuration,
 	"formatTime": func(value any) string {
 		var t time.Time
 		switch typed := value.(type) {
@@ -199,8 +201,12 @@ func buildRunArchiveReportRenderData(report *RunArchiveReport, profile RunArchiv
 		annotations = defaultReportAnnotations(report, testID, profile.ID)
 	}
 
-	actionRows := make([]runArchiveHTMLActionRow, 0, len(report.ByAction))
-	for name, stats := range report.ByAction {
+	actionStats := report.ByAction
+	if report.MetricPopulations != nil {
+		actionStats = report.ByRequest
+	}
+	actionRows := make([]runArchiveHTMLActionRow, 0, len(actionStats))
+	for name, stats := range actionStats {
 		actionRows = append(actionRows, runArchiveHTMLActionRow{Name: name, Stats: stats})
 	}
 	sort.Slice(actionRows, func(i, j int) bool {
@@ -222,9 +228,6 @@ func buildRunArchiveReportRenderData(report *RunArchiveReport, profile RunArchiv
 	})
 
 	verdict := deriveReportVerdict(report)
-	if strings.TrimSpace(annotations.VerdictOverride) != "" {
-		verdict = applyVerdictOverride(annotations.VerdictOverride, annotations.VerdictExplanation, verdict)
-	}
 	findings := annotations.Findings
 	if len(findings) == 0 {
 		findings = deriveReportFindings(report)

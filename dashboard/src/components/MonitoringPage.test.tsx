@@ -1428,7 +1428,7 @@ describe('MonitoringPage', () => {
     })
 
     const readiness = container.querySelector('[aria-label="Infrastructure readiness"]')
-    expect(readiness!.textContent).toContain('Kubernetes APINot configured for this runtime.Not Configured')
+    expect(readiness!.textContent).toContain('Kubernetes APIThis runtime does not use this optional integration.Not applicable')
   })
 
   it('honors an explicit not-configured status from a newer controller', async () => {
@@ -1452,8 +1452,8 @@ describe('MonitoringPage', () => {
     })
 
     const kubernetesRow = infrastructureReadinessRow('Kubernetes API')
-    expect(kubernetesRow!.textContent).toContain('Not configured for this runtime.')
-    expect(kubernetesRow!.textContent).toContain('Not Configured')
+    expect(kubernetesRow!.textContent).toContain('This runtime does not use this optional integration.')
+    expect(kubernetesRow!.textContent).toContain('Not applicable')
     expect(kubernetesRow!.querySelector('.monitor-infrastructure-status-not-configured')).not.toBeNull()
     expect(kubernetesRow!.querySelector('.monitor-infrastructure-status-unknown')).toBeNull()
     expect(container.textContent).not.toContain('Kubernetes API: Kubernetes integration is disabled')

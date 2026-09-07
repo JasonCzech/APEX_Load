@@ -76,11 +76,34 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 		return quantiles, nil
 	}
 
+	namedTransactions := make(map[string]*archivePopulationAccumulator)
+	requests := make(map[string]*archivePopulationAccumulator)
+	populations := map[string]*archivePopulationAccumulator{"action": {}, "transaction": {}, "unknown": {}}
 	var totalDuration float64
 	transactionIndex := 0
 	err = forEachArchiveTransaction(record, func(txPtr *TransactionEvent) error {
 		tx := *txPtr
 		normalizeArchiveTransactionSnapshot(&tx)
+		population := archiveEventPopulation(tx)
+		populations[population].add(tx)
+		if population == "action" {
+			if requests[tx.ActionName] == nil {
+				if len(requests) >= maxArchiveAnalysisDimensions {
+					return fmt.Errorf("archive exceeds request dimension limit")
+				}
+				requests[tx.ActionName] = &archivePopulationAccumulator{}
+			}
+			requests[tx.ActionName].add(tx)
+		}
+		if population == "transaction" {
+			if namedTransactions[tx.ActionName] == nil {
+				if len(namedTransactions) >= maxArchiveAnalysisDimensions {
+					return fmt.Errorf("archive exceeds named transaction dimension limit")
+				}
+				namedTransactions[tx.ActionName] = &archivePopulationAccumulator{}
+			}
+			namedTransactions[tx.ActionName].add(tx)
+		}
 		report.Overview.Transactions++
 		totalDuration += tx.DurationMs
 		overallQuantiles.Add(tx.DurationMs)
@@ -108,16 +131,18 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 		if len(summaries) > 0 {
 			index := archiveSummaryBucketIndex(summaries, tx.Timestamp)
 			if index >= 0 {
-				buckets := actionSummaryBuckets[tx.ActionName]
-				if len(buckets) == 0 {
-					if len(summaries) > maxArchiveReportAggregateCells-actionSummaryCells {
-						return fmt.Errorf("archive report exceeds %d action summary buckets", maxArchiveReportAggregateCells)
+				for _, key := range []string{tx.ActionName, population + "\x00" + tx.ActionName, population + "\x00"} {
+					buckets := actionSummaryBuckets[key]
+					if len(buckets) == 0 {
+						if len(summaries) > maxArchiveReportAggregateCells-actionSummaryCells {
+							return fmt.Errorf("archive report exceeds %d action summary buckets", maxArchiveReportAggregateCells)
+						}
+						buckets = make([]archiveActionSummaryBucket, len(summaries))
+						actionSummaryCells += len(summaries)
 					}
-					buckets = make([]archiveActionSummaryBucket, len(summaries))
-					actionSummaryCells += len(summaries)
+					buckets[index].transactions++
+					actionSummaryBuckets[key] = buckets
 				}
-				buckets[index].transactions++
-				actionSummaryBuckets[tx.ActionName] = buckets
 			}
 		}
 		if tx.Group != "" {
@@ -462,7 +487,7 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 	if telemetrySummary.Samples > 0 {
 		report.Overview.Telemetry = finalizeRunArchiveTelemetrySummary(telemetrySummary)
 	}
-	report.Overview.LoadModelGoals, report.Overview.GoalCompletion = buildRunArchiveGoalCompletion(manifest.Provenance, report.Overview)
+
 	report.EvidenceTiers = buildRunArchiveEvidenceTiersFromCounts(manifest, report, browserArtifactCount, countExternalMetricSamples(resources), countOracleDBMetricSamples(resources))
 	report.Compatibility = buildRunArchiveReportCompatibility(record, manifest)
 	report.Completeness = buildRunArchiveCompletenessScoreFromCounts(manifest, report, report.Overview.Transactions, int64(len(resources)), int64(len(summaries)))
@@ -471,6 +496,27 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 	report.NetworkPhases = networkPhases.finalize()
 	report.ArtifactInventory = buildRunArchiveArtifactInventory(record, manifest)
 
+	report.ByRequest = make(map[string]RunArchiveActionStats)
+	for name, acc := range requests {
+		stats := acc.finish().RunArchiveActionStats
+		stats.PeakTPS = archiveActionPeakTPSFromBuckets(summaries, actionSummaryBuckets["action\x00"+name])
+		report.ByRequest[name] = stats
+	}
+	report.ByTransaction = make(map[string]RunArchiveActionStats)
+	for name, acc := range namedTransactions {
+		stats := acc.finish().RunArchiveActionStats
+		stats.PeakTPS = archiveActionPeakTPSFromBuckets(summaries, actionSummaryBuckets["transaction\x00"+name])
+		report.ByTransaction[name] = stats
+	}
+	report.MetricPopulations = make(map[string]ArchiveMetricPopulation)
+	for name, acc := range populations {
+		metrics := acc.finish()
+		metrics.PeakTPS = archiveActionPeakTPSFromBuckets(summaries, actionSummaryBuckets[name+"\x00"])
+		report.MetricPopulations[name] = metrics
+	}
+	goalOverview := report.Overview
+	goalOverview.Transactions = report.MetricPopulations["transaction"].Transactions
+	report.Overview.LoadModelGoals, report.Overview.GoalCompletion = buildRunArchiveGoalCompletion(manifest.Provenance, goalOverview)
 	return report, nil
 }
 

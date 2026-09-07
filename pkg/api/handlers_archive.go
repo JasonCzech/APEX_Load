@@ -952,7 +952,11 @@ func applyArchiveComparisonActionScope(record *storage.RunArchiveRecord, run *ar
 	if action == "" {
 		return nil
 	}
-	stats, ok := run.Report.ByAction[action]
+	populationStats := run.Report.ByAction
+	if run.Report.MetricPopulations != nil {
+		populationStats = run.Report.ByRequest
+	}
+	stats, ok := populationStats[action]
 	if !ok {
 		return archiveComparisonActionNotFoundError{runID: run.ID, action: action}
 	}

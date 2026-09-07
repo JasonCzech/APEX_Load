@@ -225,7 +225,7 @@ export function useExecutionArchiveModel(test: TestSummary | null): ExecutionArc
       try {
         const report = await api.getTestArchiveReport(testID)
         if (cancelled) return
-        const actionNames = Object.keys(report.by_action || {})
+        const actionNames = Object.keys((report.metric_populations ? report.by_request : report.by_action) || {})
         const operationNames = Object.keys(report.by_soap_operation || {})
         setArchiveReport(report)
         setSelectedArchiveAction((current) => (current && actionNames.includes(current) ? current : actionNames[0] || ''))
@@ -339,7 +339,7 @@ export function useExecutionArchiveModel(test: TestSummary | null): ExecutionArc
 
   const archiveActionEntries = useMemo(() => {
     if (!archiveReport) return []
-    return Object.entries(archiveReport.by_action || {}).sort((a, b) => b[1].transactions - a[1].transactions)
+    return Object.entries((archiveReport.metric_populations ? archiveReport.by_request : archiveReport.by_action) || {}).sort((a, b) => b[1].transactions - a[1].transactions)
   }, [archiveReport])
 
   const archiveSOAPOperationEntries = useMemo(() => {

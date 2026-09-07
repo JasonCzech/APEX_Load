@@ -345,6 +345,17 @@ describe('AccessPage', () => {
     vi.clearAllMocks()
   })
 
+  it('explains genuinely empty user scope without suggesting nonexistent filters', async () => {
+    apiMock.listAuthUsers.mockResolvedValue({users:[],count:0,total:0})
+    await act(async () => {
+      root.render(<AccessPage projects={projects} domains={domains} canManageUserLifecycle canManageUserBindings canViewUserActivity canManageServiceAccounts={false} />)
+    })
+    await flushPromises()
+    expect(container.textContent).toContain('No users in this scope')
+    expect(container.textContent).toContain('Open Onboard Users to create the first account.')
+    expect(container.textContent).not.toContain('Adjust search or filters')
+  })
+
   it('creates a service-account key from the Generate Key subtab', async () => {
     await act(async () => {
       root.render(<AccessPage projects={projects} domains={domains} activeDomain={domains[0]} activeProject={projects[0]} canManageUserLifecycle={false} canManageUserBindings={false} canViewUserActivity={false} canManageServiceAccounts />)

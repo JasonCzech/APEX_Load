@@ -272,6 +272,7 @@ export default function DashboardWorkspace({
   const [cardLibraryCollapsed, setCardLibraryCollapsed] = useState(() => readStoredJSON<boolean>(cardLibraryStorageKey, false))
   const [activeTabOverride, setActiveTabOverride] = useState<string | null>(() => initialActiveTabId || null)
   const [collapsedLibraryCategories, setCollapsedLibraryCategories] = useState<Record<string, boolean>>({})
+  const [customizing, setCustomizing] = useState(false)
   const [newTabName, setNewTabName] = useState('')
 	const [projectSaveState, setProjectSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
 	const [selectedProjectProfileId, setSelectedProjectProfileId] = useState('')
@@ -644,7 +645,8 @@ export default function DashboardWorkspace({
   }
 
   return (
-    <section className="dashboard-workspace" aria-label={ariaLabel}>
+    <section className={`dashboard-workspace ${customizing ? 'is-customizing' : 'is-reading'}`} aria-label={ariaLabel}>
+      <button type="button" className="btn btn-secondary btn-sm" aria-pressed={customizing} onClick={() => setCustomizing(value => !value)}>{customizing ? 'Done customizing' : 'Customize view'}</button>
       <div className="dashboard-workspace-toolbar">
         <label>
           <span>Layout</span>

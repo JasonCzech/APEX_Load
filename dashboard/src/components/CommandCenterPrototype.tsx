@@ -3482,6 +3482,7 @@ function LoadModelPanel({
         <div>
           <h3>Load Model</h3>
           <p>{phase} / {formatRemaining(remainingSeconds)} remaining</p>
+          {runStatus === 'PAUSED' && <p>Allocated users are retained while active load pauses. Rolling throughput decays as its averaging window clears.</p>}
         </div>
         <span className="command-load-model-badge">{formatNumber(progressPct, 0)}% elapsed</span>
       </div>
@@ -3508,7 +3509,9 @@ function LoadModelPanel({
             <YAxis
               stroke="var(--text-muted)"
               tick={{ fill: 'var(--text-muted)', fontSize: 10 }}
-              tickFormatter={(value) => formatNumber(Number(value) / 1000, 1)}
+              allowDecimals={false}
+              domain={[0, dataMax => Math.max(1, Number(dataMax), totalCurrent)]}
+              tickFormatter={(value) => `${formatNumber(Number(value))} VU`}
             />
             <Tooltip
               contentStyle={chartTooltipContentStyle}

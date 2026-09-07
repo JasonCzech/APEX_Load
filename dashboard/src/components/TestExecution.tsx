@@ -1,3 +1,4 @@
+import RunOutcomeSummary from './RunOutcomeSummary'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import {
@@ -449,7 +450,7 @@ export default function TestExecution({
     priority: 90,
     title: 'Test Run',
     meta: [
-      { id: 'status', label: topbarRunStatusLabel(test.status), tone: executionStatusTone },
+      { id: 'status', label: test.status === 'COMPLETE' && test.stopped_by_subject ? 'Stopped by operator' : topbarRunStatusLabel(test.status), tone: executionStatusTone },
       { id: 'name', label: test.name || 'Untitled test', tone: 'accent' },
       { id: 'planned-vusers', label: `Load ${test.total_vusers} VUsers`, tone: 'accent' },
       { id: 'duration', label: test.duration || 'No duration', tone: 'default' },
@@ -502,7 +503,7 @@ export default function TestExecution({
       },
       {
         id: 'generate-report',
-        label: 'Generate Report',
+        label: 'Export report',
         compactLabel: 'Report',
         shortcut: 'r',
         shortcutGroup: 'Test Run',
@@ -1144,6 +1145,7 @@ export default function TestExecution({
         </section>
       )}
 
+      {archiveReport && <RunOutcomeSummary report={archiveReport} />}
       <DashboardWorkspace
         key={testId}
         ariaLabel="Test execution workspace"

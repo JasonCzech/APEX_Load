@@ -240,7 +240,7 @@ describe('ScriptsAuthoringShell', () => {
 
     expect(container.textContent).toContain('New draft authoring')
     expect(container.textContent).not.toContain('Model From Existing Script')
-    expect(Array.from(container.querySelectorAll('.script-workflow-card')).find(button => button.textContent?.includes('Start New Script'))?.classList.contains('active')).toBe(true)
+    expect(Array.from(container.querySelectorAll('.script-workflow-card')).find(button => button.textContent?.includes('Create'))?.classList.contains('active')).toBe(true)
   })
 
   it('renders create options and delegates launcher actions', async () => {
@@ -269,23 +269,23 @@ describe('ScriptsAuthoringShell', () => {
     expect(container.textContent).toContain('Create Script')
     expect(container.textContent).toContain('Model From Existing Script')
     expect(container.textContent).toContain('Checkout Model')
-    expect(container.textContent).toContain('Start New Script')
+    expect(container.textContent).toContain('Create')
     expect(container.textContent).not.toContain('Use Template')
     expect(container.textContent).not.toContain('Build Manually')
-    expect(container.textContent).toContain('Import From Source')
+    expect(container.textContent).toContain('Import')
     expect(container.textContent).not.toContain('Start From Source')
     expect(container.textContent).not.toContain('Import Existing')
-    expect(container.textContent).toContain('Record Browser')
+    expect(container.textContent).toContain('Record')
     expect(container.textContent).not.toContain('Browser Recorder')
 
     await clickButton('Checkout Model')
     expect(onStartExistingScript).toHaveBeenCalledWith(expect.objectContaining({ id: 'script-1' }))
 
-    await clickButton('Record Browser')
+    await clickButton('Record')
     expect(actions.openRecorder).toHaveBeenCalled()
     expect(container.textContent).not.toContain('Browser Recorder')
 
-    await clickButton('Import From Source')
+    await clickButton('Import')
     await flushPromises()
     expect(container.textContent).toContain('Contracts & Collections')
     expect(container.textContent).toContain('Traffic & Samples')
@@ -464,7 +464,7 @@ describe('ScriptsAuthoringShell', () => {
     })
     await flushPromises()
 
-    await clickButton('Import From Source')
+    await clickButton('Import')
     expect(container.textContent).toContain('Contracts & Collections')
     expect(container.textContent).not.toContain('Model From Existing Script')
 
@@ -545,7 +545,7 @@ describe('ScriptsAuthoringShell', () => {
     })
 
     await flushPromises()
-    await clickButton('Start New Script')
+    await clickButton('Create')
 
     expect(apiMock.listAuthoringTemplates).toHaveBeenCalledTimes(1)
     expect(apiMock.listAuthoringComponents).toHaveBeenCalledTimes(1)
@@ -555,6 +555,7 @@ describe('ScriptsAuthoringShell', () => {
     expect(container.querySelectorAll('.script-create-category-tabs [role="tab"]')).toHaveLength(3)
     expect(container.querySelectorAll('.script-create-table-list')).toHaveLength(1)
     expect(container.querySelector('.script-create-choice-groups .script-create-option')).toBeNull()
+    await clickButton('Starter Templates')
     expect(container.textContent).toContain('HTTP Smoke')
     expect(container.textContent).toMatch(/ci smoke\s*api\s*ci\s*smoke/i)
     expect(container.textContent).toMatch(/3 VUsers\s*\/\s*2m/i)
@@ -673,7 +674,7 @@ describe('ScriptsAuthoringShell', () => {
   }
 
   async function clickButton(label: string) {
-    const button = Array.from(container.querySelectorAll('button')).find(element => element.textContent?.includes(label))
+    const button = Array.from(container.querySelectorAll('button')).find(element => (['Create','Import','Record','Use existing'].includes(label) ? element.querySelector('strong')?.textContent === label : element.textContent?.includes(label)))
     expect(button).toBeDefined()
     if (!button) {
       return

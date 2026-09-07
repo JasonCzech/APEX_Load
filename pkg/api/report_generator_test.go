@@ -402,8 +402,8 @@ func TestRenderRunArchiveHTMLReportHonorsVerdictAndFindingsOverrides(t *testing.
 		t.Fatalf("render with overrides returned error: %v", err)
 	}
 	body := string(html)
-	if !strings.Contains(body, "Conditional Pass") {
-		t.Fatal("expected analyst verdict override to win over auto-derived Fail")
+	if !strings.Contains(body, "Conditional Pass") || !strings.Contains(body, "SLA breached: latency") {
+		t.Fatal("expected analyst assessment to be shown separately from computed Fail")
 	}
 	if !strings.Contains(body, "Transient breach recovered") {
 		t.Fatal("expected analyst verdict explanation")

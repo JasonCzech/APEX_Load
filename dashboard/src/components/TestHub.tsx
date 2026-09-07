@@ -1,3 +1,4 @@
+import ScriptsPage from './ScriptsPage'
 import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
 import { Area, CartesianGrid, ComposedChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
@@ -1087,6 +1088,11 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
   const [scenarioCloneQuery, setScenarioCloneQuery] = useState('')
   const [selectedCloneScenarioId, setSelectedCloneScenarioId] = useState('')
   const [selectedShapeId, setSelectedShapeId] = useState('')
+  const [prerequisiteScript, setPrerequisiteScript] = useState<'start-new' | 'source' | null>(null)
+  const [newPoolRow, setNewPoolRow] = useState('{}')
+  const [createdPoolId, setCreatedPoolId] = useState<string | null>(null)
+  const [newPoolName, setNewPoolName] = useState('')
+  const [poolCreating, setPoolCreating] = useState(false)
   const [form, setForm] = useState<ScenarioFormState>(() => emptyScenarioForm())
   const markWizardStepVisited = useCallback((stepId: ScenarioWizardStep) => {
     const stepIndex = scenarioWizardSteps.findIndex(step => step.id === stepId)
@@ -1160,6 +1166,10 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
   const effectiveAccessScopeKeyRef = useRef(effectiveAccessScopeKey)
   effectiveAccessScopeKeyRef.current = effectiveAccessScopeKey
   if (currentProjectIdRef.current !== activeProjectId) {
+    setPrerequisiteScript(null)
+    setCreatedPoolId(null)
+    setNewPoolName('')
+    setNewPoolRow('{}')
     currentProjectIdRef.current = activeProjectId
     refreshGenerationRef.current += 1
     goalSizingScopeGenerationRef.current += 1
@@ -1404,6 +1414,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
     () => isEffectiveOperationAllowed(effectiveAuthAccessResources, 'manage_tests'),
     [effectiveAuthAccessResources],
   )
+  const canManageScripts = isEffectiveOperationAllowed(effectiveAuthAccessResources, 'manage_scripts')
   const canManageProjects = useMemo(
     () => isEffectiveOperationAllowed(effectiveAuthAccessResources, 'manage_projects'),
     [effectiveAuthAccessResources],
@@ -3213,7 +3224,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
       resetScenarioBuilderRef.current()
     },
   }), [])
-  useNavigationGuard(showForm ? scenarioBuilderGuard : null, scenarioBuilderDirty)
+  useNavigationGuard(showForm && !prerequisiteScript ? scenarioBuilderGuard : null, scenarioBuilderDirty && !prerequisiteScript)
 
   useEffect(() => {
     if (currentWizardIndex >= 0) {
@@ -3261,7 +3272,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
     scripts: Boolean(form.name.trim() && formGroups.length > 0 && formGroups.every(group => group.script_id) && !scenarioGroupNameError),
     run: Boolean(isValidDurationInput(form.duration) && !blockingStageTimelineMessage && !steppedRampBlockingMessage && !closedVUserBlockingMessage && !goalDrivenBlockingMessage),
     data: true,
-    review: Boolean(requiredDraftReady && !blockingStageTimelineMessage),
+    review: Boolean(requiredDraftReady && loadModelValidation && !blockingStageTimelineMessage),
   }
   // Only offer "Start Over" for a new build (not an edit) once there's progress to discard.
   const builderHasProgress = !editingId && hasScenarioBuilderProgress({ form, scenarioStartChoice, maxVisitedWizardIndex })
@@ -3269,7 +3280,8 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
   const renderScenarioRunsContent = (scenario: StoredScenario) => {
     const runs = scenarioRuns[scenario.id] || []
     const loading = loadingRunsFor === scenario.id
-    return (
+
+  return (
       <div className="scenario-linked-runs-content">
         <div className="scenario-linked-runs-header">
           <div>
@@ -3933,16 +3945,16 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
                 <div key={option.id} className={`scenario-shape-catalog-card ${selectedShapeId === option.id ? 'selected' : ''}`}>
                   <div className="scenario-support-card-header">
                     <div>
-                      <strong>{option.support.name}</strong>
+                      <strong>{option.support.name}</strong>{option.support.name === 'Closed VUser' && <small>Recommended for a first fixed-user test</small>}
                       <span>{option.support.category}</span>
                     </div>
                     <span className={`scenario-load-status ${getLoadModelStatusClass(option.support.status)}`}>{formatLoadModelDimension(option.support.status)}</span>
                   </div>
                   <p>{option.support.apexload_shape}</p>
-                  <div className="scenario-support-fields">
+                  <details><summary>Technical fields</summary><div className="scenario-support-fields">
                     {option.support.fields.slice(0, 3).map(field => <code key={field}>{field}</code>)}
                     {option.support.fields.length > 3 && <code>+{option.support.fields.length - 3} fields</code>}
-                  </div>
+                  </div></details>
                   <WorkloadShapeVisual entry={option.support} />
                   <div className="scenario-shape-actions">
                     <button type="button" className="btn btn-sm btn-secondary" onClick={() => selectShapeOption(option.id)}>Use Manual Shape</button>
@@ -4364,6 +4376,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
                         />
                         <input
                           className="settings-input"
+                          aria-label={`${activeGroupLabel} VUsers`}
                           type="number"
                           min={1}
                           max={activeGroupVUserMax}
@@ -4498,8 +4511,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
             </div>
           </div>
 						</>}
-            {renderProtectRun()}
-            {renderPreRunAssurance()}
+            <details><summary>Advanced run protection and assurance</summary>{renderProtectRun()}{renderPreRunAssurance()}</details>
             </>)}
             {runSettingsTab === 'runtime' && (
               <>
@@ -4628,6 +4640,31 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
             <h4>Data Pools</h4>
             <p>Attach one data pool for scripts that need coordinated parameter data.</p>
           </div>
+          <details><summary>Create a data pool without leaving this draft</summary>
+            {!canManageScripts && <p>Data pool creation requires editor permission. Ask a project administrator to create it in Settings → Data Pools.</p>}
+            <p>Requires permission to manage data pools. Start with one JSON data row; additional rows can be managed in Settings → Data Pools.</p>
+            <label>New data pool name<input value={newPoolName} disabled={!!createdPoolId} onChange={event => setNewPoolName(event.target.value)} /></label>
+            <label>First data row (JSON object)<textarea value={newPoolRow} onChange={event => setNewPoolRow(event.target.value)} /></label>
+            <button className="btn btn-secondary" disabled={!canManageScripts || poolCreating || !newPoolName.trim()} onClick={async () => {
+              const project = activeProjectId
+              if (!project) return
+              setPoolCreating(true)
+              try {
+                const data: unknown = JSON.parse(newPoolRow)
+                if (!data || typeof data !== 'object' || Array.isArray(data) || Object.values(data).some(value => typeof value !== 'string')) throw new Error('Enter a JSON object with string values for the first row.')
+                const pool = createdPoolId ? dataPools.find(item => item.id === createdPoolId) : await api.createDataPool({ name: newPoolName.trim(), project_id: project })
+                if (!pool || currentProjectIdRef.current !== project) return
+                setCreatedPoolId(pool.id)
+                setDataPools(previous => [...previous.filter(item => item.id !== pool.id), pool])
+                await api.createDataPoolRow(pool.id, { data: data as Record<string, string> })
+                if (currentProjectIdRef.current !== project) return
+                setForm(previous => ({...previous, data_pool_id: pool.id, data_pool_alias: pool.name.toLowerCase().replace(/\W+/g, '_')}))
+                setCreatedPoolId(null); setNewPoolName(''); setNewPoolRow('{}'); setError('')
+              } catch (error) { setError(getErrorMessage(error, 'Unable to create data pool. Your scenario draft is retained.')) }
+              finally { setPoolCreating(false) }
+            }}>{poolCreating ? 'Creating…' : createdPoolId ? 'Retry adding first row' : 'Create and attach data pool'}</button>
+          </details>
+
           <div className="settings-grid scenario-core-grid">
             <label className="scenario-field">
               <span>Data Pool</span>
@@ -4743,6 +4780,16 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
       </section>
     )
   }
+
+  if (prerequisiteScript) return <section aria-label="Create prerequisite script">
+    <button className="btn btn-secondary" onClick={() => void runGuarded(() => setPrerequisiteScript(null))}>Back to scenario draft</button>
+    <p>Your scenario draft is retained. Saving a script returns it to the selected group.</p>
+    <ScriptsPage applicationRepository={applicationRepository} initialMode="create-options" initialCreateWorkflow={prerequisiteScript} onScriptSaved={script => {
+      setScripts(previous => [...previous.filter(item => item.id !== script.id), script])
+      selectScriptFromLibrary(script)
+      setPrerequisiteScript(null)
+    }} />
+  </section>
 
   return (
     <div className="page">
@@ -4897,19 +4944,19 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
               </button>
             )}
             <button
-              className="btn btn-secondary"
+              className="btn btn-primary"
               onClick={() => {
                 const nextIndex = Math.min(scenarioWizardSteps.length - 1, currentWizardIndex + 1)
                 setWizardStep(scenarioWizardSteps[nextIndex].id)
               }}
-              disabled={currentWizardIndex === scenarioWizardSteps.length - 1 || (wizardStep === 'scripts' && Boolean(scenarioGroupNameError))}
+              disabled={currentWizardIndex === scenarioWizardSteps.length - 1 || (wizardStep === 'scripts' && !wizardStepCompletion.scripts)}
             >
               Next
             </button>
             {wizardStep === 'review' && onCreateTestFromScenario && (
-              <button className="btn btn-secondary" onClick={saveScenarioAndCreateTest} disabled={Boolean(blockingStageTimelineMessage || steppedRampBlockingMessage || closedVUserBlockingMessage || goalDrivenBlockingMessage || observerEnvelopeError || aggregateEnvelopeError || assignmentValidationError || scenarioGroupNameError)}>Save &amp; Create Test Run</button>
+              <button className="btn btn-primary" onClick={saveScenarioAndCreateTest} disabled={Boolean(blockingStageTimelineMessage || steppedRampBlockingMessage || closedVUserBlockingMessage || goalDrivenBlockingMessage || observerEnvelopeError || aggregateEnvelopeError || assignmentValidationError || scenarioGroupNameError)}>Save &amp; Create Test Run</button>
             )}
-            <button className="btn btn-primary" onClick={saveScenario} disabled={Boolean(blockingStageTimelineMessage || steppedRampBlockingMessage || closedVUserBlockingMessage || goalDrivenBlockingMessage || observerEnvelopeError || aggregateEnvelopeError || assignmentValidationError || scenarioGroupNameError)}>Save Scenario</button>
+            <button className="btn btn-secondary" onClick={saveScenario} disabled={Boolean(blockingStageTimelineMessage || steppedRampBlockingMessage || closedVUserBlockingMessage || goalDrivenBlockingMessage || observerEnvelopeError || aggregateEnvelopeError || assignmentValidationError || scenarioGroupNameError)}>Save Scenario</button>
           </div>
 
         </div>
@@ -4920,6 +4967,9 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
           <div className="library-toolbar">
             <div>
               <h3 className="section-title">Existing Scripts Library ({scripts.length})</h3>
+              {!canManageScripts && <p>Script creation requires script-management permission. Ask a project administrator to add a script to this library.</p>}
+              <button className="btn btn-secondary" disabled={!canManageScripts} title={!canManageScripts ? 'Ask a script author or administrator to create a script in this project.' : undefined} onClick={() => { setScriptSelectionTargetIndex(scriptSelectionTargetIndex ?? Math.max(0, formGroups.findIndex(group => !group.script_id))); setPrerequisiteScript('start-new') }}>Create script</button>
+              <button className="btn btn-secondary" disabled={!canManageScripts} title={!canManageScripts ? 'Ask a script author or administrator to create a script in this project.' : undefined} onClick={() => { setScriptSelectionTargetIndex(scriptSelectionTargetIndex ?? Math.max(0, formGroups.findIndex(group => !group.script_id))); setPrerequisiteScript('source') }}>Import script</button>
               <p className="library-toolbar-subtitle">
                 {scriptLibraryQuery.trim() ? `${visibleScriptLibrary.length} matching script${visibleScriptLibrary.length === 1 ? '' : 's'}` : 'Pick from existing scripts while assembling scenario groups.'}
               </p>
@@ -5036,7 +5086,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
                 </select>
               </label>
               <label className="project-redaction-rule-field">
-                <span>Search Release</span>
+                <span>Search scenarios</span>
                 <input
                   className="settings-input"
                   type="search"

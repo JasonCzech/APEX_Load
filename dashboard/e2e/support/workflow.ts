@@ -155,10 +155,10 @@ export async function login(page: Page, username = 'admin') {
   await page.getByRole('button', { name: 'Sign in', exact: true }).click()
   await expect(page.getByRole('heading', { level: 1, name: 'Dashboard' })).toBeVisible()
 }
-export async function seedScript(request: APIRequestContext, workspace: Workspace, name = 'Workflow_HTTP', baseURL = 'http://127.0.0.1:1') {
+export async function seedScript(request: APIRequestContext, workspace: Workspace, name = 'Workflow_HTTP', baseURL = 'http://127.0.0.1:1', path = '/orders') {
   return idOf(await json(await request.post('/api/v1/scripts', { data: {
     project_id: workspace.projectId,
-    script: { name, version: '1.0.0', protocol: 'http', config: { base_url: baseURL, pacing: { type: 'fixed_interval', interval_ms: 500 } }, actions: [{ name: 'orders', type: 'request', method: 'GET', target: '/orders' }] },
+    script: { name, version: '1.0.0', protocol: 'http', config: { base_url: baseURL, pacing: { type: 'fixed_interval', interval_ms: 500 } }, actions: [{ name: 'orders', type: 'request', method: 'GET', target: path }] },
   } })))
 }
 export async function seedScenario(request: APIRequestContext, workspace: Workspace, scriptId: string, name = 'Workflow scenario') {
@@ -170,7 +170,7 @@ export async function importOpenAPI(page: Page, name: string, target: string) {
   await page.getByRole('button', { name: 'Scripts', exact: true }).click()
   // Navigate through the actual creation entry rather than seeding the script.
   await page.getByRole('button', { name: 'Script Builder', exact: true }).first().click()
-  await page.getByRole('button', { name: /Import From Source/ }).click()
+  await page.getByRole('button', { name: 'Import', exact: true }).click()
   await page.getByRole('button', { name: /OpenAPI \/ Swagger/ }).click()
   const controls = page.getByRole('group', { name: 'Script import controls' })
   const spec = { openapi: '3.0.3', info: { title: name, version: '1.0' }, servers: [{ url: target }], paths: { '/orders': { get: { operationId: 'listOrders', responses: { '200': { description: 'Orders' } } } } } }
@@ -220,7 +220,7 @@ export const test = base.extend<WorkflowFixtures>({
   // eslint-disable-next-line no-empty-pattern
   target: async ({}, provide) => {
     let count = 0
-    const server = createServer((_req, res) => { count++; res.setHeader('Content-Type', 'application/json'); res.end('{"orders":[{"id":1}]}') })
+    const server = createServer((req, res) => { count++; res.setHeader('Content-Type', 'application/json'); res.statusCode = req.url === '/unavailable' ? 503 : 200; res.end(res.statusCode === 503 ? '{"message":"Service unavailable"}' : '{"orders":[{"id":1}]}') })
     await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
     await provide({ url: `http://127.0.0.1:${(server.address() as AddressInfo).port}`, count: () => count })
     server.closeAllConnections()

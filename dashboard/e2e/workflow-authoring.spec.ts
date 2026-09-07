@@ -93,7 +93,7 @@ test('[U04] project scope and browser history never substitute a similarly named
 test('[U06] malformed OpenAPI can be replaced and validated without creating a library entry', async ({ page, request }) => {
   const workspace = await createWorkspace(request)
   await page.goto(`/#/scripts?mode=create&${scopeQuery(workspace)}`)
-  await page.getByRole('button', { name: /Import From Source/ }).click()
+  await page.getByRole('button', { name: 'Import', exact: true }).click()
   await page.getByRole('button', { name: /OpenAPI \/ Swagger/ }).click()
   const controls = page.getByRole('group', { name: 'Script import controls' })
   const file = controls.locator('input[type=file]')

@@ -104,7 +104,12 @@ func appendReleaseTrendPDFLines(lines *[]string, trend *RunArchiveReleaseTrendSu
 		return
 	}
 	*lines = append(*lines, "Release Trend")
-	*lines = append(*lines, fmt.Sprintf("Release: %s (%d archived run(s))", firstNonEmptyPDFValue(trend.ReleaseID), trend.RunCount))
+	label := "Unknown (legacy archive records)"
+	if trend.Current.MetricPopulation == "transaction" {
+		label = "Named transaction attempts"
+	}
+	*lines = append(*lines, "Metric population: "+label)
+	*lines = append(*lines, fmt.Sprintf("Release: %s (%d archived run(s))", firstNonEmptyPDFValue(firstNonEmptyReportText(trend.ReleaseName, trend.ReleaseID)), trend.RunCount))
 	if trend.HasBaseline && trend.Baseline != nil && trend.Deltas != nil {
 		baseline := trend.Baseline
 		*lines = append(*lines,

@@ -125,7 +125,7 @@ test('[U21] the imported script editor preserves tab state and saved changes acr
 
   await page.getByRole('button', { name: 'Close script editor' }).click()
   await expect(page.getByRole('heading', { level: 1, name: 'Script Library' })).toBeVisible({ timeout: 15_000 })
-  await page.getByPlaceholder('Find releases or scripts...').fill('Tier_0_Orders_API')
+  await page.getByRole('searchbox', {name:'Search scripts',exact:true}).fill('Tier_0_Orders_API')
   const scriptRow = page.getByRole('row').filter({ hasText: 'Tier_0_Orders_API' })
   await scriptRow.getByRole('button', { name: 'Edit', exact: true }).click()
 
@@ -155,6 +155,7 @@ test('[U21] a large script renders a usable virtualized action list within a bou
   })
 
   await openEditor(page, workspace, scriptId)
+  await page.getByText('Advanced action tools',{exact:true}).click()
   await expect(
     page.getByRole('button', { name: `Action List ${actionCount} executables` }),
     'the large editor must become usable rather than hanging during full-list rendering',

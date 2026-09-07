@@ -1189,14 +1189,14 @@ describe('ScriptEditor', () => {
     const debugActionLabels = () => Array.from(topbar?.querySelectorAll<HTMLButtonElement>('.topbar-debug-action') || []).map(button => button.textContent?.trim())
     const topbarWorkspaceButton = (label: string) => Array.from(topbar?.querySelectorAll<HTMLButtonElement>('.mode-chip') || [])
       .find(button => button.textContent?.trim() === label)
-    expect(debugActionLabels()).toEqual(['Run'])
+    expect(debugActionLabels()).toEqual(['Debug one iteration'])
     expect(Array.from(topbar?.querySelectorAll<HTMLButtonElement>('.topbar-debug-action') || []).every(button => button.querySelector('.topbar-action-icon svg'))).toBe(true)
     await act(async () => {
       topbarWorkspaceButton('Debug')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
       await Promise.resolve()
     })
     expect(debugActionLabels()).toEqual([
-      'Run',
+      'Debug one iteration',
       'Pause',
       'Step',
       'Step Over',
@@ -1208,7 +1208,7 @@ describe('ScriptEditor', () => {
       topbarWorkspaceButton('Author')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
       await Promise.resolve()
     })
-    expect(debugActionLabels()).toEqual(['Run'])
+    expect(debugActionLabels()).toEqual(['Debug one iteration'])
     const metaLabels = Array.from(topbar?.querySelectorAll('.topbar-meta-chip') || []).map(chip => chip.textContent?.trim())
     expect(metaLabels).not.toContain('Create Script')
     expect(metaLabels).not.toContain('Edit Script')
@@ -6275,7 +6275,7 @@ describe('ScriptEditor', () => {
     expect(container.querySelector('.editor-feedback-strip')?.textContent || '').not.toContain('Authoring Health')
   })
 
-  it('does not mark Approve / Save ready when the completed replay failed', async () => {
+  it('does not mark Approval readiness ready when the completed replay failed', async () => {
     const browserScript: ScriptDefinition = {
       ...initialScript,
       protocol: 'browser',
@@ -6336,14 +6336,14 @@ describe('ScriptEditor', () => {
     })
 
     const approvalItem = Array.from(container.querySelectorAll<HTMLElement>('.utility-checklist-item'))
-      .find(item => item.textContent?.includes('Approve / Save'))
+      .find(item => item.textContent?.includes('Approval readiness'))
     expect(approvalItem?.textContent).toContain('needs evidence')
     expect(approvalItem?.textContent).not.toContain('ready')
     expect(approvalItem?.querySelector('button')?.disabled).toBe(true)
 
   })
 
-  it('does not mark Approve / Save ready when backend validation failed', async () => {
+  it('does not mark Approval readiness ready when backend validation failed', async () => {
     apiMock.validateDraftScript.mockResolvedValueOnce({
       script_id: '',
       valid: false,
@@ -6373,7 +6373,7 @@ describe('ScriptEditor', () => {
     })
 
     const approvalItem = Array.from(container.querySelectorAll<HTMLElement>('.utility-checklist-item'))
-      .find(item => item.textContent?.includes('Approve / Save'))
+      .find(item => item.textContent?.includes('Approval readiness'))
     expect(approvalItem?.textContent).toContain('needs evidence')
     expect(approvalItem?.textContent).not.toContain('ready')
 
@@ -6406,7 +6406,7 @@ describe('ScriptEditor', () => {
       findCenterTab(container, 'Runtime Settings')?.click()
     })
     const approvalItem = Array.from(container.querySelectorAll<HTMLElement>('.utility-checklist-item'))
-      .find(item => item.textContent?.includes('Approve / Save'))
+      .find(item => item.textContent?.includes('Approval readiness'))
     expect(approvalItem?.textContent).toContain('needs evidence')
     expect(approvalItem?.textContent).not.toContain('ready')
     const debugEvidenceItem = Array.from(container.querySelectorAll<HTMLElement>('.utility-checklist-item'))
@@ -6438,7 +6438,7 @@ describe('ScriptEditor', () => {
       findCenterTab(container, 'Runtime Settings')?.click()
     })
     const readyApprovalItem = Array.from(container.querySelectorAll<HTMLElement>('.utility-checklist-item'))
-      .find(item => item.textContent?.includes('Approve / Save'))
+      .find(item => item.textContent?.includes('Approval readiness'))
     expect(readyApprovalItem?.textContent).toContain('ready')
     expect(readyApprovalItem?.querySelector('button')?.disabled).toBe(false)
     await act(async () => {
@@ -6462,7 +6462,7 @@ describe('ScriptEditor', () => {
     })
 
     const approvalItem = Array.from(container.querySelectorAll<HTMLElement>('.utility-checklist-item'))
-      .find(item => item.textContent?.includes('Approve / Save'))
+      .find(item => item.textContent?.includes('Approval readiness'))
     expect(approvalItem?.textContent).toContain('needs evidence')
     expect(approvalItem?.textContent).not.toContain('ready')
     expect(approvalItem?.querySelector('button')?.disabled).toBe(true)
@@ -6492,7 +6492,7 @@ describe('ScriptEditor', () => {
       findCenterTab(container, 'Runtime Settings')?.click()
     })
     const validationStaleApprovalItem = Array.from(container.querySelectorAll<HTMLElement>('.utility-checklist-item'))
-      .find(item => item.textContent?.includes('Approve / Save'))
+      .find(item => item.textContent?.includes('Approval readiness'))
     expect(validationStaleApprovalItem?.textContent).toContain('needs evidence')
     expect(validationStaleApprovalItem?.textContent).not.toContain('ready')
     expect(validationStaleApprovalItem?.querySelector('button')?.disabled).toBe(true)

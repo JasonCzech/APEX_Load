@@ -1194,7 +1194,7 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
       { label: 'Capacity', value: capacityValue, tone: capacityAdvisory?.requires_override ? 'warning' : 'normal' },
       { label: 'Bottleneck', value: bottleneckValue, tone: capacityAdvisory?.requires_override ? 'warning' : 'normal' },
       { label: 'Reservation Decision', value: formatLaunchDecision(immediatePreflight, immediatePreflightLoading), tone: launchBlocked ? 'warning' : 'normal' },
-      { label: 'Reserved Window', value: formatReservationWindow(immediatePreflight) },
+      { label: `Reserved Window (${Intl.DateTimeFormat().resolvedOptions().timeZone})`, value: formatReservationWindow(immediatePreflight) },
       { label: 'Conflicts', value: launchConflict ? launchConflict.message : 'None', tone: launchConflict ? 'warning' : 'normal' },
       { label: 'Next Blocking Event', value: formatNextBlockingEvent(immediatePreflight), tone: launchBlocked ? 'warning' : 'normal' },
     ]
@@ -2552,7 +2552,7 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
                 </div>
                 <div className="setting-row">
                   <div className="setting-info">
-                    <span className="setting-label">Cron Expression</span>
+                    <span className="setting-label">Frequency and time</span>
                     <span className="setting-desc">Build a schedule below, or type a five-field cron (supports `MON-FRI`, `@daily`, `L`, `15W`, `5#3`).</span>
                     {scheduleDraft.cron_expr.trim() && describeCron(scheduleDraft.cron_expr) && (
                       <span className="setting-desc cron-preview">{describeCron(scheduleDraft.cron_expr)}{scheduleDraft.timezone ? ` (${scheduleDraft.timezone})` : ''}</span>
@@ -2560,7 +2560,7 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
                   </div>
                   <div className="cron-field-stack">
                     <CronBuilder value={scheduleDraft.cron_expr} disabled={!canManageTests} onChange={(expr) => setScheduleDraft(prev => ({ ...prev, cron_expr: expr }))} />
-                    <input className="settings-input cron-raw-input" value={scheduleDraft.cron_expr} disabled={!canManageTests} onChange={(event) => setScheduleDraft(prev => ({ ...prev, cron_expr: event.target.value }))} placeholder="0 9 * * 1-5" aria-label="Raw cron expression" />
+<details><summary>Advanced cron expression</summary>                    <input className="settings-input cron-raw-input" value={scheduleDraft.cron_expr} disabled={!canManageTests} onChange={(event) => setScheduleDraft(prev => ({ ...prev, cron_expr: event.target.value }))} placeholder="0 9 * * 1-5" aria-label="Raw cron expression" /></details>
                     {schedulePreview && (
                       schedulePreview.error ? (
                         <span className="setting-desc cron-preview-error" role="alert">{schedulePreview.error}</span>
@@ -2621,6 +2621,7 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
                   </div>
                   <input className="settings-input" aria-labelledby="schedule-run-name-label" value={scheduleDraft.run_name_template} onChange={(event) => setScheduleDraft(prev => ({ ...prev, run_name_template: event.target.value }))} placeholder={scenario?.name || 'Scheduled run'} />
                 </div>
+                <details className="schedule-policy-details"><summary>Optional schedule windows and pauses</summary>
                 <ScheduleWindowListEditor
                   title="Blackout windows"
                   description="Runs never fire during these windows. Leave days unselected to apply every day."
@@ -2669,6 +2670,7 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
                     />
                   </div>
                 </div>
+                </details>
                 <label className="setting-row" style={{ alignItems: 'center', gap: 12 }}>
                   <input type="checkbox" checked={scheduleDraft.enabled} onChange={(event) => setScheduleDraft(prev => ({ ...prev, enabled: event.target.checked }))} />
                   <div className="setting-info">
@@ -3395,7 +3397,7 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
               )}
               <div className="new-test-schedule-launch">
                 <label>
-                  <span>Scheduled Start</span>
+                  <span>Scheduled Start ({Intl.DateTimeFormat().resolvedOptions().timeZone})</span>
                   <input
                     className="settings-input"
                     type="datetime-local"

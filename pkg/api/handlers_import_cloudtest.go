@@ -99,6 +99,7 @@ func (s *Server) handleImportCloudTest(w http.ResponseWriter, r *http.Request) {
 		Script:              result.Script,
 		Warnings:            result.Warnings,
 		Stats:               result.Stats,
+		Diagnostics:         result.Unsupported,
 		UnsupportedElements: result.Unsupported.Strings(),
 		ReviewSections:      augmented.Sections,
 		Summary: map[string]any{

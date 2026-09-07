@@ -117,6 +117,9 @@ func classifyReplayFailure(event ReplayActionEvent) ReplayDiagnosis {
 	}
 
 	switch {
+	case event.StatusCode >= 500 && event.StatusCode <= 599:
+		category = "service_unavailable"
+		addSignal(statusText)
 	case isBrowserAction && containsAny(lower, "selector", "locator", "strict mode", "no element", "not found", "not visible", "not enabled", "detached", "element"):
 		category = "selector"
 		addSignal("browser_selector")
@@ -299,8 +302,10 @@ func replayDiagnosisAction(category string) string {
 		return "Review selector evidence, prefer stable role/text/test-id locators, and add an explicit wait if the element is rendered late."
 	case "wait_timing":
 		return "Add or tune a wait around the page state that proves the next action is safe."
+	case "service_unavailable":
+		return "Investigate target availability and the response evidence. Preserve the expected contract; a server error is not a reason to weaken an assertion."
 	case "assertion":
-		return "Compare expected and actual values, then draft a narrower assertion or update the expected value."
+		return "Compare expected and actual values against the intended contract. Investigate the target behavior before explicitly editing an assertion."
 	case "correlation":
 		return "Add or repair an extractor before the first unresolved use of the value."
 	case "data":
@@ -383,7 +388,7 @@ func replayRepairSuggestionsForDiagnosis(event ReplayActionEvent, diagnosis Repl
 		return []ReplayRepairSuggestion{{
 			ID:             baseID + ":adjust-assertion",
 			Title:          "Review assertion",
-			Description:    "Draft a focused assertion update using actual replay response evidence.",
+			Description:    "Review the intended contract and actual response. Change the assertion only if the contract requires it.",
 			DraftPatchType: "adjust_assertion",
 			Action:         event.ActionName,
 			Confidence:     0.62,

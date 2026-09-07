@@ -560,6 +560,7 @@ type ManagedTest struct {
 	remoteMetricsBatchesByTarget map[string]generatorrpc.MetricsBatch
 	remoteTargetStates           map[string]string
 	remoteFinalizing             bool
+	remoteWorkloadCompleted      bool
 	remoteLifecycleCtx           context.Context
 	remoteLifecycleCancel        context.CancelFunc
 	remoteStopFinalizerRunning   bool

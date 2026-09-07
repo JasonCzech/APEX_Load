@@ -24,7 +24,7 @@ test('[U05] OpenAPI validation stays dry-run until the reviewed script is commit
   const workspace = await createWorkspace(request)
 
   await page.goto(`/#/scripts?mode=create&${scopeQuery(workspace)}`)
-  await page.getByRole('button', { name: /Import From Source/ }).click()
+  await page.getByRole('button', { name: 'Import', exact: true }).click()
   await page.getByRole('button', { name: /OpenAPI \/ Swagger/ }).click()
 
   const importControls = page.getByRole('group', { name: 'Script import controls' })
@@ -90,6 +90,6 @@ test('[U05] OpenAPI validation stays dry-run until the reviewed script is commit
   await page.getByRole('button', { name: 'Dashboard', exact: true }).click()
   await page.getByRole('button', { name: 'Scripts', exact: true }).click()
   await expect(page.getByRole('heading', { level: 1, name: 'Script Library' })).toBeVisible({ timeout: 15_000 })
-  await page.getByPlaceholder('Find releases or scripts...').fill('Tier_0_Orders_API')
+  await page.getByRole('searchbox', {name:'Search scripts',exact:true}).fill('Tier_0_Orders_API')
   await expect(page.getByRole('button', { name: 'Tier_0_Orders_API', exact: true })).toBeVisible()
 })

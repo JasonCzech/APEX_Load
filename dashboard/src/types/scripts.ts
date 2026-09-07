@@ -883,6 +883,7 @@ export interface ScriptReplayDOMSummary {
 }
 
 export interface ScriptReplaySnapshot {
+  response_body_state?: 'captured' | 'empty' | 'redacted' | 'not_captured' | 'expired'
   request_method?: string
   request_url?: string
   request_headers?: Record<string, string>
@@ -914,6 +915,7 @@ export interface ScriptProtocolEvidence {
 }
 
 export interface ScriptReplayActionEvent {
+  response_body_state?: string
   event_id?: string
   action_index?: number
   event_index?: number

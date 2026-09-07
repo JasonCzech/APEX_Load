@@ -26,6 +26,7 @@ type ReleaseTrendDeltas struct {
 // ReleaseTrendPoint is one run in the series, with deltas and regression flags
 // relative to the previous run.
 type ReleaseTrendPoint struct {
+	MetricPopulation string              `json:"metric_population,omitempty"`
 	RunID            string              `json:"run_id"`
 	RunName          string              `json:"run_name"`
 	Status           string              `json:"status"`
@@ -78,8 +79,10 @@ func buildReleaseTrend(releaseID string, runs []releaseTrendRun) ReleaseTrend {
 		point := trendPointFromRun(run)
 		if i > 0 {
 			prev := points[i-1]
-			point.Deltas = computeTrendDeltas(prev, point)
-			point.Regressions = detectTrendRegressions(prev, point)
+			if prev.MetricPopulation == point.MetricPopulation {
+				point.Deltas = computeTrendDeltas(prev, point)
+				point.Regressions = detectTrendRegressions(prev, point)
+			}
 		}
 		points = append(points, point)
 	}
@@ -94,7 +97,7 @@ func buildReleaseTrend(releaseID string, runs []releaseTrendRun) ReleaseTrend {
 		trend.Summary.LatestRegressed = len(latest.Regressions) > 0
 		trend.Summary.LatestRegressions = latest.Regressions
 	}
-	if len(points) >= 2 {
+	if len(points) >= 2 && points[0].MetricPopulation == points[len(points)-1].MetricPopulation {
 		first := points[0]
 		last := points[len(points)-1]
 		if first.AvgResponseMs > 0 {
@@ -114,6 +117,7 @@ func trendPointFromRun(run releaseTrendRun) ReleaseTrendPoint {
 	}
 	report := run.Report
 	point := ReleaseTrendPoint{
+		MetricPopulation: "unknown_archive_records",
 		RunID:            run.Test.ID,
 		RunName:          run.Test.Name,
 		Status:           run.Test.Status,
@@ -124,6 +128,10 @@ func trendPointFromRun(run releaseTrendRun) ReleaseTrendPoint {
 		PeakTPS:          report.Overview.PeakTPS,
 		PeakActiveVUsers: report.Overview.PeakActiveVUsers,
 		CompletenessPct:  report.Completeness.ScorePct,
+	}
+	if named, ok := report.MetricPopulations["transaction"]; ok {
+		point.MetricPopulation = "transaction"
+		point.Transactions, point.ErrorPct, point.AvgResponseMs, point.PeakTPS = named.Transactions, named.ErrorPct, named.AvgResponseMs, named.PeakTPS
 	}
 	if report.Manifest != nil {
 		point.SLABreached = report.Manifest.SLABreached
@@ -175,6 +183,7 @@ func detectTrendRegressions(prev, cur ReleaseTrendPoint) []string {
 // trajectory. It is attached at the storage-aware handler layer (which can read the
 // sibling archives); buildRunArchiveReport stays a pure function of one record.
 type RunArchiveReleaseTrendSummary struct {
+	ReleaseName string              `json:"release_name,omitempty"`
 	ReleaseID   string              `json:"release_id"`
 	RunCount    int                 `json:"run_count"`
 	HasBaseline bool                `json:"has_baseline"`
@@ -230,14 +239,18 @@ func buildRunArchiveReleaseTrendSummary(trend ReleaseTrend, runID string) *RunAr
 		Deltas:      deltas,
 		Trajectory:  trend.Summary,
 	}
-	if index > 0 {
+	if index > 0 && trend.Points[index-1].MetricPopulation == current.MetricPopulation {
 		baseline := trend.Points[index-1]
 		baseline.Deltas = nil
 		baseline.Regressions = nil
 		summary.HasBaseline = true
 		summary.Baseline = &baseline
 	} else {
-		summary.Note = "First archived run for this release; no prior run to compare against."
+		if index > 0 {
+			summary.Note = "Prior run uses a different or unknown metric population; a comparison is unavailable."
+		} else {
+			summary.Note = "First archived run for this release; no prior run to compare against."
+		}
 	}
 	return summary
 }

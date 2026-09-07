@@ -12,7 +12,7 @@ function federation(projectMapping = 'dbcecb40-d493-49a1-b3af-78e547009786') {
     remotes: [],
     selectedRemoteId: '',
     setSelectedRemoteId: () => undefined,
-    sourceFilter: 'all',
+    sourceFilter: 'host',
     setSourceFilter: () => undefined,
     projectMapping,
     setProjectMapping: () => undefined,

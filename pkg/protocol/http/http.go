@@ -1270,14 +1270,21 @@ func buildHTTPSnapshot(method string, targetURL string, requestHeaders http.Head
 	if len(redactedBody) > 0 {
 		body = string(redactedBody)
 	}
+	responseBodyState := "captured"
+	if responseStatus == 0 {
+		responseBodyState = "not_captured"
+	} else if len(responseBody) == 0 {
+		responseBodyState = "empty"
+	}
 	return &protocol.ErrorSnapshot{
-		RequestMethod:   method,
-		RequestURL:      requestURL,
-		RequestHeaders:  headers,
-		RequestBody:     body,
-		ResponseStatus:  responseStatus,
-		ResponseHeaders: redactSnapshotCredentialHeaders(responseHeaders),
-		ResponseBody:    string(responseBody),
+		ResponseBodyState: responseBodyState,
+		RequestMethod:     method,
+		RequestURL:        requestURL,
+		RequestHeaders:    headers,
+		RequestBody:       body,
+		ResponseStatus:    responseStatus,
+		ResponseHeaders:   redactSnapshotCredentialHeaders(responseHeaders),
+		ResponseBody:      string(responseBody),
 	}
 }
 

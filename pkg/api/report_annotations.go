@@ -302,13 +302,11 @@ func defaultReportAnnotations(report *RunArchiveReport, testID, profile string) 
 
 	testName := testID
 	slaBreached := false
-	var slaDetails []string
 	if report != nil && report.Manifest != nil {
 		if strings.TrimSpace(report.Manifest.TestName) != "" {
 			testName = report.Manifest.TestName
 		}
 		slaBreached = report.Manifest.SLABreached
-		slaDetails = report.Manifest.SLADetails
 	}
 
 	ann := &ReportAnnotations{
@@ -327,7 +325,14 @@ func defaultReportAnnotations(report *RunArchiveReport, testID, profile string) 
 	}
 
 	ov := report.Overview
-	verdict := "met its SLA targets"
+	verdict := "has not been assessed against acceptance criteria"
+	assessment := deriveReportVerdict(report)
+	if assessment.Status == reportVerdictPass {
+		verdict = "met its evaluated acceptance criteria"
+	}
+	if assessment.Status == reportVerdictConditional {
+		verdict = "requires further evidence before acceptance"
+	}
 	if slaBreached {
 		verdict = "breached one or more SLA targets"
 	}
@@ -337,21 +342,21 @@ func defaultReportAnnotations(report *RunArchiveReport, testID, profile string) 
 			"This run reached %s active VUsers, peaked at %.1f TPS, recorded %.2f%% errors, and %s.",
 			formatPDFInt(ov.PeakActiveVUsers), ov.PeakTPS, ov.ErrorPct, verdict,
 		)
-		ann.SectionComments["decision"] = "State the recommended release decision and the confidence level behind it."
+		ann.SectionComments["decision"] = "Not provided"
 		ann.SectionComments["business_impact"] = fmt.Sprintf("Customer-facing risk is driven by %.2f%% errors and %.1f ms average response time.", ov.ErrorPct, ov.AvgResponseMs)
-		ann.SectionComments["sla"] = defaultSLAComment(slaBreached, slaDetails)
+		ann.SectionComments["sla"] = deriveReportVerdict(report).Explanation
 		ann.SectionComments["risks"] = defaultRiskComment(report)
-		ann.SectionComments["recommendations"] = "Document sign-off recommendation, owner, and any accepted risk."
+		ann.SectionComments["recommendations"] = "Not provided"
 	case "audit":
 		ann.ExecutiveNarrative = fmt.Sprintf(
 			"Audit package for %s. The run archived %s transaction(s), %s resource sample(s), and %s interval summary record(s); evidence completeness is %.0f%% (%s).",
 			testName, formatPDFInt(ov.Transactions), formatPDFInt(ov.ResourceSamples), formatPDFInt(ov.IntervalSummaries), report.Completeness.ScorePct, report.Completeness.Status,
 		)
-		ann.SectionComments["audit_scope"] = "Confirm the audited scenario, release gate, environment, and evidence review scope."
-		ann.SectionComments["exceptions"] = "Record approved exceptions, waivers, or deviations from the planned test procedure."
-		ann.SectionComments["evidence_notes"] = defaultSLAComment(slaBreached, slaDetails)
+		ann.SectionComments["audit_scope"] = "Not provided"
+		ann.SectionComments["exceptions"] = "Not provided"
+		ann.SectionComments["evidence_notes"] = deriveReportVerdict(report).Explanation
 		ann.SectionComments["integrity_notes"] = fmt.Sprintf("Evidence completeness scored %.0f%% with %d completeness finding(s).", report.Completeness.ScorePct, len(report.Completeness.Findings))
-		ann.SectionComments["approvals"] = "Record approval references, approvers, and final disposition."
+		ann.SectionComments["approvals"] = "Not provided"
 	default:
 		ann.ExecutiveNarrative = fmt.Sprintf(
 			"This run executed %s transaction(s) at a peak of %.1f TPS with %.2f%% errors and a %.1f ms average response time, reaching %s active VUsers. The test %s.",
@@ -359,10 +364,10 @@ func defaultReportAnnotations(report *RunArchiveReport, testID, profile string) 
 		)
 		ann.SectionComments["overview"] = fmt.Sprintf("%s transaction(s) were recorded with a %.2f%% error rate across the run.", formatPDFInt(ov.Transactions), ov.ErrorPct)
 		ann.SectionComments["performance"] = fmt.Sprintf("Throughput peaked at %.1f TPS and response time ranged from %.1f ms to %.1f ms (avg %.1f ms).", ov.PeakTPS, ov.MinResponseMs, ov.MaxResponseMs, ov.AvgResponseMs)
-		ann.SectionComments["sla"] = defaultSLAComment(slaBreached, slaDetails)
-		ann.SectionComments["bottlenecks"] = "Summarize the likely bottleneck, supporting signal, and owner for follow-up."
+		ann.SectionComments["sla"] = deriveReportVerdict(report).Explanation
+		ann.SectionComments["bottlenecks"] = "Not provided"
 		ann.SectionComments["errors"] = defaultRiskComment(report)
-		ann.SectionComments["recommendations"] = "Document engineering follow-up actions, retest scope, and owners."
+		ann.SectionComments["recommendations"] = "Not provided"
 	}
 
 	return ann

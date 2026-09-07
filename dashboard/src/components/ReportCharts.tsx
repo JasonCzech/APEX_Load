@@ -67,7 +67,7 @@ function ActionBarShape({ payload, x, y, width, height }: BarShapeProps) {
 // the run-wide average response time so the chart can single out the offenders.
 function buildActionBars(report: RunArchiveReport): ActionBar[] {
   const runAverage = report.overview?.avg_response_ms ?? 0
-  const entries = Object.entries(report.by_action || {})
+  const entries = Object.entries((report.metric_populations ? report.by_request : report.by_action) || {})
   entries.sort((a, b) => b[1].transactions - a[1].transactions)
   return entries
     .slice(0, 8)

@@ -828,7 +828,7 @@ describe('EnterpriseArchiveImport', () => {
     const reviewChildren = Array.from(review?.children || [])
     const preview = reviewChildren.find(element => element.classList.contains('script-import-review-preview')) as HTMLDetailsElement | undefined
     expect(preview?.tagName).toBe('DETAILS')
-    expect(preview?.open).toBe(true)
+    expect(preview?.open).toBe(false)
     expect(preview?.querySelector('summary h4')?.textContent).toBe('DSL Preview')
     expect(review?.querySelector('.script-import-review-preview-aside')).toBeNull()
     expect(review?.querySelector('.script-import-review-preview-row')).toBeNull()

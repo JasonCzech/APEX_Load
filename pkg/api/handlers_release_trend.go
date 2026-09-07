@@ -66,7 +66,7 @@ func (s *Server) collectReleaseTrendRunsForFamily(family resolvedReleaseFamily, 
 		var cachedPoint *ReleaseTrendPoint
 		if strings.TrimSpace(record.TrendPointJSON) != "" {
 			var point ReleaseTrendPoint
-			if err := json.Unmarshal([]byte(record.TrendPointJSON), &point); err == nil && point.RunID == test.ID {
+			if err := json.Unmarshal([]byte(record.TrendPointJSON), &point); err == nil && point.RunID == test.ID && point.MetricPopulation != "" {
 				cachedPoint = &point
 				if !requireReport {
 					runs = append(runs, releaseTrendRun{Test: test, Point: cachedPoint})
@@ -127,6 +127,9 @@ func (s *Server) attachReleaseTrend(report *RunArchiveReport) {
 		return
 	}
 	report.ReleaseTrend = buildRunArchiveReleaseTrendSummary(buildReleaseTrend(family.CanonicalID, runs), report.Manifest.TestID)
+	if report.ReleaseTrend != nil {
+		report.ReleaseTrend.ReleaseName = family.Name
+	}
 }
 
 // attachReleaseTrendForProfile attaches the release-trend summary only when the

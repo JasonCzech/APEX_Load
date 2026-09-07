@@ -8,85 +8,43 @@ import (
 )
 
 func TestDeriveReportVerdict(t *testing.T) {
-	tests := []struct {
-		name        string
-		report      *RunArchiveReport
-		wantStatus  string
-		wantFailed  bool
-		wantCondtnl bool
+	for _, tc := range []struct {
+		name                                               string
+		configured, evaluated, breach, completed, evidence bool
+		want                                               string
 	}{
-		{
-			name: "clean run passes",
-			report: &RunArchiveReport{
-				Manifest:     &RunArchiveManifest{},
-				Completeness: RunArchiveCompletenessScore{ScorePct: 100, Status: "complete"},
-			},
-			wantStatus: reportVerdictPass,
-		},
-		{
-			name: "sla breach fails",
-			report: &RunArchiveReport{
-				Manifest:     &RunArchiveManifest{SLABreached: true, SLADetails: []string{"Latency breached"}},
-				Completeness: RunArchiveCompletenessScore{ScorePct: 100, Status: "complete"},
-			},
-			wantStatus: reportVerdictFail,
-			wantFailed: true,
-		},
-		{
-			name: "degraded telemetry is conditional",
-			report: &RunArchiveReport{
-				Manifest: &RunArchiveManifest{},
-				Overview: RunArchiveOverview{
-					Telemetry: &RunArchiveTelemetrySummary{Status: "degraded", DegradedIntervals: 2},
-				},
-				Completeness: RunArchiveCompletenessScore{ScorePct: 100, Status: "complete"},
-			},
-			wantStatus:  reportVerdictConditional,
-			wantCondtnl: true,
-		},
-		{
-			name: "throughput miss is conditional",
-			report: &RunArchiveReport{
-				Manifest:     &RunArchiveManifest{},
-				Overview:     RunArchiveOverview{ThroughputMissedIntervals: 3, PeakTargetTPS: 85},
-				Completeness: RunArchiveCompletenessScore{ScorePct: 100, Status: "complete"},
-			},
-			wantStatus:  reportVerdictConditional,
-			wantCondtnl: true,
-		},
-		{
-			name: "incomplete data is conditional",
-			report: &RunArchiveReport{
-				Manifest:     &RunArchiveManifest{},
-				Completeness: RunArchiveCompletenessScore{ScorePct: 82, Status: "needs_review"},
-			},
-			wantStatus:  reportVerdictConditional,
-			wantCondtnl: true,
-		},
-		{
-			name:        "nil report is conditional",
-			report:      nil,
-			wantStatus:  reportVerdictConditional,
-			wantCondtnl: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := deriveReportVerdict(tt.report)
-			if got.Status != tt.wantStatus {
-				t.Fatalf("status = %q, want %q", got.Status, tt.wantStatus)
+		{name: "no criteria", completed: true, evidence: true, want: reportVerdictNotAssessed},
+		{name: "criteria without samples", configured: true, completed: true, evidence: true, want: reportVerdictConditional},
+		{name: "passing complete workload", configured: true, evaluated: true, completed: true, evidence: true, want: reportVerdictPass},
+		{name: "early stop", configured: true, evaluated: true, evidence: true, want: reportVerdictConditional},
+		{name: "missing evidence", configured: true, evaluated: true, completed: true, want: reportVerdictConditional},
+		{name: "breach takes priority", breach: true, want: reportVerdictFail},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := &RunArchiveReport{Manifest: &RunArchiveManifest{SLABreached: tc.breach}}
+			if tc.configured {
+				r.Manifest.Provenance.GoalConfig = &GoalConfig{P95LatencyMs: ptr(100.0)}
 			}
-			if got.Failed != tt.wantFailed {
-				t.Fatalf("failed = %v, want %v", got.Failed, tt.wantFailed)
+			if tc.evaluated {
+				r.ByAction = map[string]RunArchiveActionStats{"Checkout": {Transactions: 2, P95Ms: 50}}
 			}
-			if got.Conditional != tt.wantCondtnl {
-				t.Fatalf("conditional = %v, want %v", got.Conditional, tt.wantCondtnl)
+			if tc.completed {
+				r.Manifest.TerminationReason = "workload_completed"
 			}
-			if strings.TrimSpace(got.Explanation) == "" {
-				t.Fatal("explanation must not be empty")
+			if tc.evidence {
+				r.Completeness = RunArchiveCompletenessScore{ScorePct: 100, Status: "complete"}
+			}
+			got := deriveReportVerdict(r)
+			if got.Status != tc.want {
+				t.Fatalf("got %#v, want %s", got, tc.want)
+			}
+			if tc.want != reportVerdictPass && strings.Contains(got.Explanation, "targets were met") {
+				t.Fatal(got.Explanation)
 			}
 		})
+	}
+	if got := deriveReportVerdict(nil); got.Status != reportVerdictConditional {
+		t.Fatal(got)
 	}
 }
 
@@ -292,5 +250,42 @@ func TestCanonicalReportFindingSeverity(t *testing.T) {
 		if got := canonicalReportFindingSeverity(in); got != want {
 			t.Errorf("canonicalReportFindingSeverity(%q) = %q, want %q", in, got, want)
 		}
+	}
+}
+
+func TestReportAcceptanceRequiresEveryConfiguredCriterion(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		configure func(*RunArchiveReport)
+		want      string
+	}{
+		{"load controls alone", func(r *RunArchiveReport) {
+			r.Manifest.Provenance.GoalConfig = &GoalConfig{MinVUsers: ptr(1), StopOnSLABreach: true}
+			r.Manifest.SLAEvaluated = true
+		}, reportVerdictNotAssessed},
+		{"unevaluated imported threshold", func(r *RunArchiveReport) {
+			r.DashboardPanels = &RunArchiveDashboardPanels{Dashboards: []RunArchiveDashboard{{Panels: []RunArchiveDashboardPanel{{ThresholdConfigured: true}}}}}
+		}, reportVerdictConditional},
+		{"passing imported threshold", func(r *RunArchiveReport) {
+			r.DashboardPanels = &RunArchiveDashboardPanels{Dashboards: []RunArchiveDashboard{{Panels: []RunArchiveDashboardPanel{{ThresholdConfigured: true, ThresholdEvaluated: true}}}}}
+		}, reportVerdictPass},
+		{"partial criterion coverage", func(r *RunArchiveReport) {
+			r.Manifest.Provenance.GoalConfig = &GoalConfig{P95LatencyMs: ptr(100.0), MaxLCPMs: ptr(2500.0)}
+			r.ByAction = map[string]RunArchiveActionStats{"checkout": {Transactions: 1, P95Ms: 50}}
+		}, reportVerdictConditional},
+		{"unachieved load", func(r *RunArchiveReport) {
+			r.Manifest.Provenance.GoalConfig = &GoalConfig{P95LatencyMs: ptr(100.0)}
+			r.ByAction = map[string]RunArchiveActionStats{"checkout": {Transactions: 1, P95Ms: 50}}
+			r.Manifest.Provenance.TotalVUsers = 10
+			r.Overview.PeakActiveVUsers = 1
+		}, reportVerdictConditional},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := &RunArchiveReport{Manifest: &RunArchiveManifest{TerminationReason: "workload_completed"}, Completeness: RunArchiveCompletenessScore{Status: "complete", ScorePct: 100}}
+			tc.configure(r)
+			if got := deriveReportVerdict(r); got.Status != tc.want {
+				t.Fatalf("got %+v, want %s", got, tc.want)
+			}
+		})
 	}
 }

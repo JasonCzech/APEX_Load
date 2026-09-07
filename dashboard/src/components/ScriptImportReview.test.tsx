@@ -59,6 +59,19 @@ describe('ScriptImportReview', () => {
     container.remove()
   })
 
+  it('keeps conversion notes informational and blockers distinct from unsupported features', () => {
+    act(() => root.render(<ScriptImportReview title="Review" script={script} diagnostics={[
+      {element:'headers',detail:'source_order_unavailable',severity:'info'},
+      {element:'unsupported adapter',detail:'No execution adapter',severity:'warning'},
+      {element:'invalid source',detail:'Cannot convert',severity:'blocker'},
+    ]} />))
+    expect(container.textContent).toContain('1 conversion note')
+    expect(container.textContent).toContain('1 unsupported')
+    expect(container.textContent).toContain('1 blocker')
+    expect(container.querySelector('[aria-label="View 2 unsupported import elements"]')).toBeNull()
+    expect(document.activeElement).toBe(container.querySelector('.script-import-review-header'))
+  })
+
   it('does not serialize preview data until the preview is visible and memoizes the result', () => {
     const toJSON = vi.fn(() => ({ generated: true }))
     const previewData = { toJSON }
@@ -458,7 +471,7 @@ describe('ScriptImportReview', () => {
     const preview = children.find(element => element.classList.contains('script-import-review-preview')) as HTMLDetailsElement | undefined
     const comparison = children.find(element => element.classList.contains('script-import-review-preview-aside'))
     expect(preview?.tagName).toBe('DETAILS')
-    expect(preview?.open).toBe(true)
+    expect(preview?.open).toBe(false)
     expect(preview?.querySelector('summary h4')?.textContent).toBe('Generated Script Preview')
     expect(comparison?.textContent).toContain('Source Comparison')
     expect(preview && comparison ? children.indexOf(preview) < children.indexOf(comparison) : false).toBe(true)

@@ -142,6 +142,7 @@ func (s *Server) buildRecorderImportResponse(r *http.Request, result *recorderjs
 		Script:              result.Script,
 		Warnings:            result.Warnings,
 		Stats:               result.Stats,
+		Diagnostics:         result.Unsupported,
 		UnsupportedElements: result.Unsupported.Strings(),
 		ReviewSections:      augmented.Sections,
 		Parameterization:    buildImportParameterization(result.Script, nil),

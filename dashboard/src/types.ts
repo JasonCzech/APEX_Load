@@ -527,6 +527,7 @@ export interface ReleaseTrendDeltas {
 }
 
 export interface ReleaseTrendPoint {
+ metric_population?: string
   run_id: string
   run_name: string
   status: string
@@ -561,6 +562,7 @@ export interface ReleaseTrend {
 // release trend attached to an archive report's executive view: this run vs the
 // immediately prior run in the same release, plus the release-wide trajectory.
 export interface RunArchiveReleaseTrendSummary {
+ release_name?: string
   release_id: string
   run_count: number
   has_baseline: boolean
@@ -741,6 +743,8 @@ export interface TestSummary {
   created_by_display_name?: string
   started_by_subject?: string
   started_by_display_name?: string
+  stopped_by_subject?: string
+  stopped_by_display_name?: string
   generator_shards?: GeneratorShardSummary[]
   vuser_ramps?: Record<string, VUserRampStatus>
   goal_targets?: Record<string, GoalTargetStatus>
@@ -876,6 +880,8 @@ export interface TestNote {
 }
 
 export interface RunArchiveManifest {
+  termination_reason?: string
+
   schema_version: string
   test_id: string
   test_name: string
@@ -1525,6 +1531,10 @@ export interface RunArchiveSLARollup {
 }
 
 export interface RunArchiveReport {
+  by_request?: Record<string, RunArchiveActionStats>
+  by_transaction?: Record<string, RunArchiveActionStats>
+  metric_populations?: Record<string, RunArchiveActionStats & { average_rate_per_second: number }>
+
   schema_version?: string
   compatibility?: RunArchiveReportCompatibility
   completeness?: RunArchiveCompletenessScore

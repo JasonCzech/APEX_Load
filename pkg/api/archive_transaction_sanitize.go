@@ -283,7 +283,11 @@ func sanitizeArchivedSnapshot(snapshot *protocol.ErrorSnapshot, policy scrub.Pol
 	out.RequestHeaders = sanitizeArchivedHeaders(out.RequestHeaders, policy)
 	out.RequestBody = scrub.ValueLabel(out.RequestBody, policy)
 	out.ResponseHeaders = sanitizeArchivedHeaders(out.ResponseHeaders, policy)
+	previousResponseBody := out.ResponseBody
 	out.ResponseBody = scrub.ValueLabel(out.ResponseBody, policy)
+	if previousResponseBody != out.ResponseBody {
+		out.ResponseBodyState = "redacted"
+	}
 	out.PageURL = scrub.ValueURL(out.PageURL, policy)
 	out.PageTitle = scrub.ValueLabel(out.PageTitle, policy)
 	out.HTML = scrub.ValueLabel(out.HTML, policy)

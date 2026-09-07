@@ -164,6 +164,7 @@ type ReplayReport struct {
 }
 
 type ReplayActionEvent struct {
+	ResponseBodyState string                   `json:"response_body_state,omitempty"`
 	EventID           string                   `json:"event_id,omitempty"`
 	ActionIndex       int                      `json:"action_index"`
 	EventIndex        int                      `json:"event_index"`
@@ -1387,6 +1388,11 @@ func runReplayAction(
 			// ReplayReport.Snapshots do not retain two copies of the same evidence.
 			event.Snapshot = retained[len(retained)-1]
 		}
+	}
+	if event.Snapshot != nil {
+		event.ResponseBodyState = event.Snapshot.ResponseBodyState
+	} else {
+		event.ResponseBodyState = "not_captured"
 	}
 	deduplicateReplayBrowserSnapshot(&event)
 	if result.Duration > 0 {

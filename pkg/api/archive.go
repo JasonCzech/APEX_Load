@@ -36,14 +36,15 @@ const (
 )
 
 type RunArchiveManifest struct {
-	SchemaVersion string               `json:"schema_version"`
-	TestID        string               `json:"test_id"`
-	TestName      string               `json:"test_name"`
-	CreatedAt     time.Time            `json:"created_at"`
-	CompletedAt   time.Time            `json:"completed_at,omitempty"`
-	Status        string               `json:"status,omitempty"`
-	Error         string               `json:"error,omitempty"`
-	Provenance    RunArchiveProvenance `json:"provenance,omitempty"`
+	TerminationReason string               `json:"termination_reason,omitempty"`
+	SchemaVersion     string               `json:"schema_version"`
+	TestID            string               `json:"test_id"`
+	TestName          string               `json:"test_name"`
+	CreatedAt         time.Time            `json:"created_at"`
+	CompletedAt       time.Time            `json:"completed_at,omitempty"`
+	Status            string               `json:"status,omitempty"`
+	Error             string               `json:"error,omitempty"`
+	Provenance        RunArchiveProvenance `json:"provenance,omitempty"`
 	// InitialProvenance is captured once when archive recording begins and is
 	// never refreshed by runtime controls. Provenance remains the final enriched
 	// execution snapshot for generator inventory, actors, and governance.
@@ -168,6 +169,7 @@ type RunArchiveExecutionPlanApprovalSnapshot struct {
 }
 
 type TransactionEvent struct {
+	Population            string                    `json:"population,omitempty"`
 	EventID               string                    `json:"event_id"`
 	Timestamp             time.Time                 `json:"timestamp"`
 	TestID                string                    `json:"test_id"`
@@ -351,6 +353,9 @@ type transactionEventFilter struct {
 }
 
 type RunArchiveReport struct {
+	ByTransaction       map[string]RunArchiveActionStats       `json:"by_transaction,omitempty"`
+	ByRequest           map[string]RunArchiveActionStats       `json:"by_request,omitempty"`
+	MetricPopulations   map[string]ArchiveMetricPopulation     `json:"metric_populations,omitempty"`
 	SchemaVersion       string                                 `json:"schema_version"`
 	Compatibility       RunArchiveReportCompatibility          `json:"compatibility"`
 	Completeness        RunArchiveCompletenessScore            `json:"completeness"`
@@ -431,19 +436,20 @@ type RunArchiveDashboard struct {
 }
 
 type RunArchiveDashboardPanel struct {
-	Title              string   `json:"title"`
-	Kind               string   `json:"kind"`
-	Unit               string   `json:"unit,omitempty"`
-	SeriesCount        int      `json:"series_count,omitempty"`
-	Min                *float64 `json:"min,omitempty"`
-	Avg                *float64 `json:"avg,omitempty"`
-	Max                *float64 `json:"max,omitempty"`
-	Last               *float64 `json:"last,omitempty"`
-	Value              *float64 `json:"value,omitempty"`
-	Error              string   `json:"error,omitempty"`
-	ThresholdEvaluated bool     `json:"threshold_evaluated,omitempty"`
-	ThresholdBreached  bool     `json:"threshold_breached,omitempty"`
-	ThresholdDetail    string   `json:"threshold_detail,omitempty"`
+	Title               string   `json:"title"`
+	Kind                string   `json:"kind"`
+	Unit                string   `json:"unit,omitempty"`
+	SeriesCount         int      `json:"series_count,omitempty"`
+	Min                 *float64 `json:"min,omitempty"`
+	Avg                 *float64 `json:"avg,omitempty"`
+	Max                 *float64 `json:"max,omitempty"`
+	Last                *float64 `json:"last,omitempty"`
+	Value               *float64 `json:"value,omitempty"`
+	Error               string   `json:"error,omitempty"`
+	ThresholdConfigured bool     `json:"threshold_configured,omitempty"`
+	ThresholdEvaluated  bool     `json:"threshold_evaluated,omitempty"`
+	ThresholdBreached   bool     `json:"threshold_breached,omitempty"`
+	ThresholdDetail     string   `json:"threshold_detail,omitempty"`
 }
 
 type RunArchiveReportProfile struct {

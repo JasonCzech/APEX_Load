@@ -366,9 +366,6 @@ function comparisonFilenameToken(value: string) {
   return value.trim().replace(/[^A-Za-z0-9_-]+/g, '_').replace(/^_+|_+$/g, '') || 'transaction'
 }
 
-function peakComparisonTPS(summaries: IntervalSummaryRecord[]) {
-  return summaries.reduce((peak, summary) => Math.max(peak, summary.tps || 0), 0)
-}
 
 function peakComparisonSummaryMetric(summaries: IntervalSummaryRecord[], metric: ComparisonChartMetric) {
   const values = summaries
@@ -1039,7 +1036,7 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onOpenTe
 
   const comparisonActionOptions = useMemo(() => {
     if (comparisonCards.length < 2 || !comparisonCards.every(item => item.report)) return []
-    const actionSets = comparisonCards.map(({ report }) => new Set(Object.keys(report?.by_action || {}).filter(Boolean)))
+    const actionSets = comparisonCards.map(({ report }) => new Set(Object.keys((report?.metric_populations ? report.by_request : report?.by_action) || {}).filter(Boolean)))
     if (actionSets.some(set => set.size === 0)) return []
     const [first, ...rest] = actionSets
     return Array.from(first)
@@ -1091,13 +1088,13 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onOpenTe
   const comparisonActionRows = useMemo(() => {
     if (comparisonCards.length < 2 || !comparisonCards.every(item => item.report)) return []
     const [baseline] = comparisonCards
-    const baselineActions = baseline.report?.by_action || {}
+    const baselineActions = (baseline.report?.metric_populations ? baseline.report.by_request : baseline.report?.by_action) || {}
     const actionNames = new Set<string>()
     if (comparisonActionFiltered) {
       actionNames.add(comparisonActionFilter)
     } else {
       comparisonCards.forEach(({ report }) => {
-        Object.keys(report?.by_action || {}).forEach(name => actionNames.add(name))
+        Object.keys((report?.metric_populations ? report.by_request : report?.by_action) || {}).forEach(name => actionNames.add(name))
       })
     }
     return Array.from(actionNames)
@@ -1109,7 +1106,7 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onOpenTe
           comparisonActionFiltered,
         )
         const runs = comparisonCards.map((card, index) => {
-          const stats = card.report?.by_action?.[name] as RunArchiveActionStats | undefined
+          const stats = (card.report?.metric_populations ? card.report.by_request : card.report?.by_action)?.[name] as RunArchiveActionStats | undefined
           const metricValue = comparisonTableMetricValue(
             stats,
             comparisonSummaries[card.test.id] || [],
@@ -1409,7 +1406,7 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onOpenTe
         </td>
         <td>
           {test ? (
-            <StatusBadge status={row.status} />
+            <StatusBadge status={row.status} stoppedByOperator={Boolean(test.stopped_by_subject)} />
           ) : (
             <span className={`script-health-token ${resultSourceStatusTone(row.status)}`}>{row.status}</span>
           )}
@@ -1420,7 +1417,7 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onOpenTe
         <td className="cell-muted">{row.duration || '-'}</td>
         <td className="cell-muted">
           {test
-            ? (test.archive ? `${test.archive.transaction_count} tx` : 'Pending')
+            ? (test.archive ? `${test.archive.transaction_count} archive records` : 'Pending')
             : (externalImport && row.archiveCount !== undefined ? `${row.archiveCount} tx` : (row.hasArchive ? 'Ready' : '-'))}
           {test?.baseline_pinned && (
             <>
@@ -1614,12 +1611,12 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onOpenTe
                         const platformEntries = getBrowserPlatformEntries(report)
                         const engineEntries = getBrowserEngineEntries(report)
                         const browserRuntimeSummary = formatBrowserRuntimeSummary(report?.manifest.provenance?.runtime_settings?.browser)
-                        const actionStats = comparisonActionFiltered ? report?.by_action?.[comparisonActionFilter] : undefined
-                        const runSummaries = comparisonSummaries[test.id] || []
-                        const cardTransactions = comparisonActionFiltered ? actionStats?.transactions ?? 0 : report!.overview.transactions
-                        const cardAvgResponseMs = comparisonActionFiltered ? actionStats?.avg_response_ms ?? 0 : report!.overview.avg_response_ms
-                        const cardErrorPct = comparisonActionFiltered ? actionStats?.error_pct ?? 0 : report!.overview.error_pct
-                        const cardPeakTPS = comparisonActionFiltered ? peakComparisonTPS(runSummaries) : report!.overview.peak_tps
+                        const actionStats = comparisonActionFiltered ? (report?.metric_populations ? report.by_request : report?.by_action)?.[comparisonActionFilter] : undefined
+                        const namedPopulation = report?.metric_populations?.transaction
+                        const cardTransactions = comparisonActionFiltered ? actionStats?.transactions ?? 0 : namedPopulation?.transactions
+                        const cardAvgResponseMs = comparisonActionFiltered ? actionStats?.avg_response_ms ?? 0 : namedPopulation?.avg_response_ms
+                        const cardErrorPct = comparisonActionFiltered ? actionStats?.error_pct ?? 0 : namedPopulation?.error_pct
+                        const cardPeakTPS = comparisonActionFiltered ? actionStats?.peak_tps : namedPopulation?.peak_tps
 
                         return (
                           <>
@@ -1639,25 +1636,25 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onOpenTe
                               </div>
                               <div className="results-compare-panel-badges">
                                 {index === 0 && <span className="results-compare-baseline-chip">Reference</span>}
-                                <StatusBadge status={resolveStatus(test, testStatuses)} />
+                                <StatusBadge status={resolveStatus(test, testStatuses)} stoppedByOperator={Boolean(test.stopped_by_subject)} />
                               </div>
                             </div>
                             <div className="results-compare-metrics">
                               <div className="results-compare-metric">
-                                <span className="results-compare-label">Transactions</span>
-                                <span className="results-compare-value">{cardTransactions}</span>
+                                <span className="results-compare-label">{comparisonActionFiltered ? 'Requests / actions' : 'Named transactions'}</span>
+                                <span className="results-compare-value">{cardTransactions ?? 'Unknown'}</span>
                               </div>
                               <div className="results-compare-metric">
                                 <span className="results-compare-label">Avg Latency</span>
-                                <span className="results-compare-value">{cardAvgResponseMs.toFixed(1)} ms</span>
+                                <span className="results-compare-value">{cardAvgResponseMs === undefined ? 'Unknown' : `${cardAvgResponseMs.toFixed(1)} ms`}</span>
                               </div>
                               <div className="results-compare-metric">
                                 <span className="results-compare-label">Error Rate</span>
-                                <span className="results-compare-value">{cardErrorPct.toFixed(2)}%</span>
+                                <span className="results-compare-value">{cardErrorPct === undefined ? 'Unknown' : `${cardErrorPct.toFixed(2)}%`}</span>
                               </div>
                               <div className="results-compare-metric">
-                                <span className="results-compare-label">Peak TPS</span>
-                                <span className="results-compare-value">{cardPeakTPS.toFixed(1)}</span>
+                                <span className="results-compare-label">Peak {comparisonActionFiltered ? 'request' : 'transaction'} attempts/s</span>
+                                <span className="results-compare-value">{cardPeakTPS?.toFixed(1) ?? 'Unknown'}</span>
                               </div>
                               {!comparisonActionFiltered && (
                                 <>
@@ -1900,7 +1897,7 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onOpenTe
                   </select>
                 </label>
                 <label className="project-redaction-rule-field">
-                  <span>Search Release</span>
+                  <span>Search results</span>
                   <input
                     className="settings-input"
                     type="search"

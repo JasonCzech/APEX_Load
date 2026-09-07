@@ -73,6 +73,7 @@ type archiveTransactionEvent struct {
 	HasDetail             bool                      `json:"has_detail"`
 	MessageDetailPriority int                       `json:"message_detail_priority,omitempty"`
 	ActionName            string                    `json:"action_name,omitempty"`
+	Population            string                    `json:"population,omitempty"`
 	BusinessTransaction   bool                      `json:"business_transaction,omitempty"`
 	DurationMs            float64                   `json:"duration_ms"`
 	DNSMs                 float64                   `json:"dns_ms,omitempty"`
@@ -564,6 +565,7 @@ type parquetTransactionEvent struct {
 	Phase                string  `parquet:"name=phase, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
 	HasDetail            bool    `parquet:"name=has_detail, type=BOOLEAN"`
 	ActionName           string  `parquet:"name=action_name, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
+	Population           string  `parquet:"name=population, type=BYTE_ARRAY, convertedtype=UTF8"`
 	BusinessTransaction  bool    `parquet:"name=business_transaction, type=BOOLEAN"`
 	DurationMs           float64 `parquet:"name=duration_ms, type=DOUBLE"`
 	DNSMs                float64 `parquet:"name=dns_ms, type=DOUBLE"`
@@ -956,6 +958,7 @@ func (w *archiveRecorder) RecordResult(result *protocol.Result) error {
 		MessageDetailPriority: result.MessageDetailPriority,
 		ActionName:            truncateSnapshotField(result.ActionName, 512),
 		BusinessTransaction:   result.BusinessTransaction,
+		Population:            archiveResultPopulation(result.BusinessTransaction),
 		DurationMs:            durationMillis(result.Duration),
 		DNSMs:                 durationMillis(result.DNSTime),
 		ConnectMs:             durationMillis(result.ConnectTime),
@@ -1573,6 +1576,7 @@ func toParquetTransactions(items []archiveTransactionEvent) []parquetTransaction
 			HasDetail:            item.HasDetail,
 			ActionName:           item.ActionName,
 			BusinessTransaction:  item.BusinessTransaction,
+			Population:           item.Population,
 			DurationMs:           item.DurationMs,
 			DNSMs:                item.DNSMs,
 			ConnectMs:            item.ConnectMs,
@@ -1686,4 +1690,11 @@ func mustJSON(value any) string {
 		return ""
 	}
 	return string(data)
+}
+
+func archiveResultPopulation(businessTransaction bool) string {
+	if businessTransaction {
+		return "transaction"
+	}
+	return "action"
 }

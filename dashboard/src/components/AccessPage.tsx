@@ -2250,8 +2250,8 @@ export default function AccessPage({
                   </table>
                   {filteredUsers.length === 0 && (
                     <div className="access-empty-state">
-                      <strong>No users found</strong>
-                      <span>Adjust search or filters.</span>
+                      <strong>{Object.values(userFilters).some(Boolean) ? 'No users match these filters' : 'No users in this scope'}</strong>
+                      <span>{Object.values(userFilters).some(Boolean) ? 'Clear search or filters to see other users.' : canManageUserLifecycle ? 'Open Onboard Users to create the first account.' : 'Only users in your permitted scope are shown. Ask an identity administrator to create an account.'}</span>
                     </div>
                   )}
                 </div>
@@ -2278,7 +2278,8 @@ export default function AccessPage({
                 <div className="access-form-grid">
                   <label>
                     <span>Subject</span>
-                    <input value={userForm.subject} onChange={event => setUserForm(prev => ({ ...prev, subject: event.target.value }))} placeholder="oidc-subject-or-upstream-user" />
+                    <input value={userForm.subject} onChange={event => setUserForm(prev => ({ ...prev, subject: event.target.value }))} placeholder="oidc-subject-or-upstream-user" aria-describedby="identity-subject-help" />
+                    <small id="identity-subject-help">The stable user identifier supplied by your identity provider, not the display name. Ask your identity administrator for this value.</small>
                   </label>
                   <label>
                     <span>Email</span>
@@ -2291,7 +2292,7 @@ export default function AccessPage({
                   </label>
                 </div>
                 <div className="access-control-section">
-                  <h4>Initial Permissions</h4>
+                  <h4>Initial Permissions</h4><p>Viewer can inspect results. Editor can author and run tests. Project Admin additionally manages project access and settings.</p>
                   <p>Assign the user's starting global, domain, and project roles before the account is created.</p>
                   {renderUserBindingDraftEditor(onboardBindingDrafts, setOnboardBindingDrafts)}
                 </div>

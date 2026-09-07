@@ -9,7 +9,8 @@ import (
 // Report verdict labels rendered in the report's headline verdict bar.
 const (
 	reportVerdictPass        = "Pass"
-	reportVerdictConditional = "Conditional Pass"
+	reportVerdictConditional = "Inconclusive"
+	reportVerdictNotAssessed = "Not assessed"
 	reportVerdictFail        = "Fail"
 )
 
@@ -42,26 +43,28 @@ type ReportVerdict struct {
 	Explanation string `json:"explanation"`
 }
 
-// deriveReportVerdict computes the headline verdict from the archived run
-// signals. A confirmed SLA breach is a Fail. Absent a breach, soft concerns
-// (degraded telemetry, incomplete data, throughput misses) yield a Conditional
-// Pass; an otherwise clean run is a Pass. Analysts can override the result for
-// nuance (e.g. a transient, self-recovered breach) via report annotations.
+// deriveReportVerdict separates acceptance from execution and evidence coverage.
+// Analyst sign-off is retained separately and never changes the computed result.
 func deriveReportVerdict(report *RunArchiveReport) ReportVerdict {
 	if report == nil {
 		return ReportVerdict{Status: reportVerdictConditional, Conditional: true,
 			Explanation: "No archived run evidence was available to evaluate this test."}
 	}
 
-	slaBreached := false
+	rollup := buildSLARollup(buildSLAComplianceRowMap(report))
+	slaBreached := rollup.Failed > 0
 	var slaDetails []string
+	var panelConfigured, panelEvaluated, panelUnevaluated bool
 	if report.Manifest != nil {
-		slaBreached = report.Manifest.SLABreached
+		slaBreached = slaBreached || report.Manifest.SLABreached
 		slaDetails = report.Manifest.SLADetails
 	}
 	if report.DashboardPanels != nil {
 		for _, dashboard := range report.DashboardPanels.Dashboards {
 			for _, panel := range dashboard.Panels {
+				panelConfigured = panelConfigured || panel.ThresholdConfigured || panel.ThresholdEvaluated
+				panelEvaluated = panelEvaluated || panel.ThresholdEvaluated
+				panelUnevaluated = panelUnevaluated || (panel.ThresholdConfigured && !panel.ThresholdEvaluated)
 				if !panel.ThresholdBreached {
 					continue
 				}
@@ -86,12 +89,58 @@ func deriveReportVerdict(report *RunArchiveReport) ReportVerdict {
 		return ReportVerdict{Status: reportVerdictFail, Failed: true, Explanation: explanation}
 	}
 
+	_, latencyConfigured, _, errorConfigured := reportGoalThresholds(report)
+	configured := latencyConfigured || errorConfigured || panelConfigured
+	evaluated := rollup.Evaluated > 0 || panelEvaluated
+	if report.Manifest != nil {
+		configured = configured || hasReportAcceptanceCriteria(report.Manifest.Provenance.GoalConfig) || len(report.Manifest.TransactionRuleResults) > 0 || (report.Manifest.Provenance.GoalConfig == nil && report.Manifest.SLAEvaluated)
+		evaluated = evaluated || report.Manifest.SLAEvaluated
+	}
+	if !configured {
+		return ReportVerdict{Status: reportVerdictNotAssessed, Conditional: true, Explanation: "No acceptance criteria were configured. Performance acceptance has not been assessed."}
+	}
+	if !evaluated {
+		return ReportVerdict{Status: reportVerdictConditional, Conditional: true, Explanation: "Acceptance criteria were configured but not evaluated."}
+	}
 	concerns := reportConditionalConcerns(report)
+	if panelUnevaluated {
+		concerns = append(concerns, "a configured dashboard threshold was not evaluated")
+	}
+	if (latencyConfigured || errorConfigured) && rollup.NA > 0 {
+		concerns = append(concerns, "a configured transaction criterion has no samples")
+	}
+	if report.Manifest != nil {
+		if goals := report.Manifest.Provenance.GoalConfig; goals != nil {
+			if len(goals.TransactionRules) > len(report.Manifest.TransactionRuleResults) {
+				concerns = append(concerns, "configured transaction rules have missing evaluations")
+			}
+			remaining := *goals
+			remaining.P95LatencyMs, remaining.MaxErrorPct, remaining.TransactionRules = nil, nil, nil
+			if hasReportAcceptanceCriteria(&remaining) && !report.Manifest.SLAEvaluated {
+				concerns = append(concerns, "additional configured acceptance criteria were not evaluated")
+			}
+		}
+		for _, rule := range report.Manifest.TransactionRuleResults {
+			if rule.Status == "not_evaluated" {
+				concerns = append(concerns, "a configured transaction criterion was not evaluated")
+				break
+			}
+		}
+	}
+	if report.Manifest == nil || report.Manifest.TerminationReason != "workload_completed" {
+		concerns = append(concerns, "intended workload completion is not confirmed")
+	}
+	if report.Manifest != nil && report.Manifest.Provenance.TotalVUsers > 0 && report.Overview.PeakActiveVUsers < int64(report.Manifest.Provenance.TotalVUsers) {
+		concerns = append(concerns, "the intended VUser load was not observed")
+	}
+	if report.Completeness.Status == "" {
+		concerns = append(concerns, "evidence coverage is unknown")
+	}
 	if len(concerns) > 0 {
 		return ReportVerdict{
 			Status:      reportVerdictConditional,
 			Conditional: true,
-			Explanation: "All configured SLA targets were met, but the run warrants review: " + strings.Join(concerns, "; ") + ".",
+			Explanation: "Acceptance requires review: " + strings.Join(concerns, "; ") + ".",
 		}
 	}
 
@@ -101,8 +150,19 @@ func deriveReportVerdict(report *RunArchiveReport) ReportVerdict {
 	}
 }
 
+// Load bounds and stop switches control execution; they are not acceptance targets.
+func hasReportAcceptanceCriteria(config *GoalConfig) bool {
+	if config == nil {
+		return false
+	}
+	goals := *config
+	goals.MinVUsers, goals.MaxVUsers = nil, nil
+	goals.StopOnSLABreach, goals.StopOnMaxErrors = false, false
+	return hasGoalConfig(&goals)
+}
+
 // reportConditionalConcerns lists the soft signals that downgrade an
-// otherwise-passing run to a Conditional Pass.
+// otherwise-passing run to Inconclusive.
 func reportConditionalConcerns(report *RunArchiveReport) []string {
 	concerns := make([]string, 0, 3)
 	if t := report.Overview.Telemetry; t != nil && (t.DegradedIntervals > 0 || t.BreachedIntervals > 0) {
@@ -265,8 +325,12 @@ func buildSLAComplianceRows(report *RunArchiveReport) []SLAComplianceRow {
 	}
 	slaMs, hasSLA, maxErrPct, hasErrLimit := reportGoalThresholds(report)
 
-	rows := make([]SLAComplianceRow, 0, len(report.ByAction))
-	for name, stats := range report.ByAction {
+	statsByName := report.ByAction
+	if report.MetricPopulations != nil {
+		statsByName = report.ByTransaction
+	}
+	rows := make([]SLAComplianceRow, 0, len(statsByName))
+	for name, stats := range statsByName {
 		row := SLAComplianceRow{
 			Name:     name,
 			Volume:   stats.Transactions,
@@ -372,6 +436,9 @@ func reportGoalThresholds(report *RunArchiveReport) (slaMs float64, hasSLA bool,
 // within 10% of the SLA p95 is flagged as a warning; otherwise it passes. With
 // no latency SLA configured the result is "—" unless the error limit is broken.
 func evaluateSLARow(stats RunArchiveActionStats, hasSLA bool, slaMs float64, hasErrLimit bool, maxErrPct float64) (string, string) {
+	if stats.Transactions == 0 {
+		return "Not evaluated", "na"
+	}
 	errorFail := hasErrLimit && stats.ErrorPct > maxErrPct
 	if !hasSLA {
 		if errorFail {
@@ -390,4 +457,31 @@ func evaluateSLARow(stats RunArchiveActionStats, hasSLA bool, slaMs float64, has
 		return fmt.Sprintf("Pass — %.0f%% of SLA", pct), "warn"
 	}
 	return "Pass", "pass"
+}
+
+func reportExecutionLabel(reason string) string {
+	switch reason {
+	case "workload_completed":
+		return "Finished"
+	case "operator_stopped":
+		return "Stopped by operator"
+	case "stopped_early":
+		return "Stopped early"
+	case "aborted":
+		return "Aborted"
+	case "failed":
+		return "Failed"
+	default:
+		return "Unknown termination reason"
+	}
+}
+func reportElapsedDuration(manifest *RunArchiveManifest) string {
+	if manifest == nil || manifest.Provenance.StartedAt == nil || manifest.CompletedAt.IsZero() {
+		return "Unknown"
+	}
+	elapsed := manifest.CompletedAt.Sub(*manifest.Provenance.StartedAt)
+	if elapsed < 0 {
+		return "Unknown"
+	}
+	return fmt.Sprintf("%.0f seconds", elapsed.Seconds())
 }

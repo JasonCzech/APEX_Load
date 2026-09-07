@@ -58,13 +58,13 @@ func TestDefaultReportAnnotationsPassingSLA(t *testing.T) {
 	report.ErrorPatterns = nil
 
 	ann := defaultReportAnnotations(report, "t1", "engineer")
-	if got := ann.SectionComments["sla"]; got != "All configured SLA targets were met." {
+	if got := ann.SectionComments["sla"]; !strings.Contains(got, "No acceptance criteria") {
 		t.Fatalf("sla comment = %q, want passing message", got)
 	}
 	if !strings.Contains(ann.SectionComments["errors"], "No significant error patterns") {
 		t.Fatalf("errors comment = %q, want no-errors message", ann.SectionComments["errors"])
 	}
-	if !strings.Contains(ann.ExecutiveNarrative, "met its SLA targets") {
+	if !strings.Contains(ann.ExecutiveNarrative, "has not been assessed") {
 		t.Fatalf("narrative = %q, want passing verdict", ann.ExecutiveNarrative)
 	}
 }

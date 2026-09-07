@@ -233,6 +233,7 @@ func (s *Server) handleImportSample(w http.ResponseWriter, r *http.Request) {
 		Warnings:              result.Warnings,
 		Stats:                 result.Stats,
 		Correlations:          result.Correlations,
+		Diagnostics:           result.Unsupported,
 		UnsupportedElements:   result.Unsupported.Strings(),
 		ReviewSections:        augmented.Sections,
 		SourceReview:          result.SourceReview,

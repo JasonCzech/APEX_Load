@@ -1846,7 +1846,7 @@ describe('TestHub', () => {
     expect(container.textContent).not.toContain('Scenario Library (')
     expect(container.textContent).toContain('Library Sources')
     expect(container.textContent).toContain('Associated Release')
-    expect(container.textContent).toContain('Search Release')
+    expect(container.textContent).toContain('Search scenarios')
     expect(container.textContent).not.toContain('Asset Type')
     const libraryHeaders = Array.from(container.querySelectorAll('th')).map(th => th.textContent || '')
     expect(libraryHeaders.some(header => header.includes('Scenario'))).toBe(true)
@@ -2157,7 +2157,7 @@ describe('TestHub', () => {
     expect(container.textContent).toContain('No scenarios match these filters.')
   })
 
-  it('routes scenario library source pills to integrations settings', async () => {
+  it('does not warn about optional remotes in a local scenario library', async () => {
     const onSelectTest = vi.fn()
     const onNavigate = vi.fn()
 
@@ -2169,24 +2169,9 @@ describe('TestHub', () => {
 
     const noRemoteButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('No Remote Workspace'))
     const credentialsButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Credentials Missing'))
-    expect(noRemoteButton).toBeDefined()
-    expect(credentialsButton).toBeDefined()
-    if (!noRemoteButton || !credentialsButton) return
-
-    await act(async () => {
-      noRemoteButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
-
-    expect(onNavigate).toHaveBeenCalledWith('settings')
-    expect(window.localStorage.getItem('apexload.settings.focusSection')).toBe('integrations')
-
-    window.localStorage.removeItem('apexload.settings.focusSection')
-    await act(async () => {
-      credentialsButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
-
-    expect(onNavigate).toHaveBeenCalledWith('settings')
-    expect(window.localStorage.getItem('apexload.settings.focusSection')).toBe('integrations')
+    expect(noRemoteButton).toBeUndefined()
+    expect(credentialsButton).toBeUndefined()
+    expect(onNavigate).not.toHaveBeenCalled()
   })
 
   it('clones an existing scenario draft with data pool bindings from the wizard source step', async () => {
