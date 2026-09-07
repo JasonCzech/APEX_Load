@@ -41,25 +41,28 @@ const (
 var portableTemplatePattern = regexp.MustCompile(`\{\{[^{}\r\n]{1,256}\}\}`)
 
 type projectionContext struct {
-	key            string
-	opaque         bool
-	headers        bool
-	headerList     bool
-	secretBindings bool
-	parameter      bool
-	dataSource     bool
-	metadata       bool
-	javaVMArgument bool
-	untypedMap     bool
-	schemaScalar   bool
-	action         bool
-	actionList     bool
-	sequenceParams bool
-	scriptMetadata bool
-	importMetadata bool
-	scriptName     bool
-	extractor      bool
-	extractorList  bool
+	transactionParams   bool
+	transactionFunction string
+	label               bool
+	key                 string
+	opaque              bool
+	headers             bool
+	headerList          bool
+	secretBindings      bool
+	parameter           bool
+	dataSource          bool
+	metadata            bool
+	javaVMArgument      bool
+	untypedMap          bool
+	schemaScalar        bool
+	action              bool
+	actionList          bool
+	sequenceParams      bool
+	scriptMetadata      bool
+	importMetadata      bool
+	scriptName          bool
+	extractor           bool
+	extractorList       bool
 }
 
 type projector struct {
@@ -226,16 +229,18 @@ func (p *projector) project(value any, ctx projectionContext, depth int) (any, e
 			}
 
 			childContext := projectionContext{
-				key:            key,
-				opaque:         ctx.opaque || isOpaqueMap(key),
-				headers:        isHeaderMap(key),
-				headerList:     isHeaderList(key),
-				secretBindings: isSecretBindingsMap(key),
-				parameter:      normalizeName(key) == "parameters",
-				dataSource:     normalizeName(key) == "datasources",
-				metadata:       ctx.metadata || normalized == "metadata",
-				javaVMArgument: normalized == "additionalvmparameters",
-				untypedMap:     ctx.untypedMap || isUntypedDisclosureMapKey(key),
+				transactionParams: key == "params" && typed["type"] == "source_transaction",
+				label:             ctx.label && (key == "value" || key == "raw"),
+				key:               key,
+				opaque:            ctx.opaque || isOpaqueMap(key),
+				headers:           isHeaderMap(key),
+				headerList:        isHeaderList(key),
+				secretBindings:    isSecretBindingsMap(key),
+				parameter:         normalizeName(key) == "parameters",
+				dataSource:        normalizeName(key) == "datasources",
+				metadata:          ctx.metadata || normalized == "metadata",
+				javaVMArgument:    normalized == "additionalvmparameters",
+				untypedMap:        ctx.untypedMap || isUntypedDisclosureMapKey(key),
 				schemaScalar: !ctx.metadata &&
 					!ctx.untypedMap &&
 					isDisclosureSchemaDiscriminator(key),
@@ -244,6 +249,9 @@ func (p *projector) project(value any, ctx projectionContext, depth int) (any, e
 					normalized == "params",
 				extractorList: ctx.action && normalized == "extractors",
 				scriptName:    depth == 0 && normalized == "name",
+			}
+			if ctx.transactionParams && (key == "args" || key == "call_args") {
+				childContext.transactionFunction, _ = typed["function"].(string)
 			}
 			if depth == 0 && normalized == "metadata" {
 				childContext.untypedMap = false
@@ -276,6 +284,7 @@ func (p *projector) project(value any, ctx projectionContext, depth int) (any, e
 		out := make([]any, len(typed))
 		for index, child := range typed {
 			childContext := ctx
+			childContext.label = credential.TransactionLabelArgument(ctx.transactionFunction, index)
 			if ctx.actionList {
 				childContext = projectionContext{action: true}
 			}
@@ -429,6 +438,9 @@ func (p *projector) projectString(value string, ctx projectionContext) string {
 	}
 	if isURLKey(ctx.key) {
 		return p.replaceKnown(projectURL(value))
+	}
+	if ctx.label || credential.LabelField(ctx.key) {
+		return p.replaceKnown(scrub.ValueLabel(value, scrub.Policy{}))
 	}
 	if ctx.opaque || isFreeTextKey(ctx.key) {
 		return p.replaceKnown(scrubText(value))

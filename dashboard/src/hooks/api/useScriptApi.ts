@@ -668,6 +668,8 @@ export function useScriptApi() {
   const importEnterpriseArchive = useCallback(
     async (file: File, options?: EnterpriseArchiveImportOptions): Promise<EnterpriseArchiveImportResult> => {
       const formData = new FormData()
+      // The server authorizes scope before accepting archive bytes.
+      if (options?.project_id) formData.append('project_id', options.project_id)
       formData.append('file', file)
       if (options?.har_file) formData.append('har_file', options.har_file)
       if (options?.supplemental_files?.length) {
@@ -676,7 +678,6 @@ export function useScriptApi() {
         })
       }
       if (options?.name) formData.append('name', options.name)
-      if (options?.project_id) formData.append('project_id', options.project_id)
       if (options?.base_url) formData.append('base_url', options.base_url)
       if (options?.include_assertions) formData.append('include_assertions', 'true')
       if (options?.preserve_transactions !== undefined) formData.append('preserve_transactions', String(options.preserve_transactions))
@@ -698,6 +699,8 @@ export function useScriptApi() {
   const validateEnterpriseArchiveImport = useCallback(
     async (file: File, options?: EnterpriseArchiveImportOptions): Promise<EnterpriseArchiveImportResult> => {
       const formData = new FormData()
+      // The server authorizes scope before accepting archive bytes.
+      if (options?.project_id) formData.append('project_id', options.project_id)
       formData.append('file', file)
       if (options?.har_file) formData.append('har_file', options.har_file)
       if (options?.supplemental_files?.length) {
@@ -706,7 +709,6 @@ export function useScriptApi() {
         })
       }
       if (options?.name) formData.append('name', options.name)
-      if (options?.project_id) formData.append('project_id', options.project_id)
       if (options?.base_url) formData.append('base_url', options.base_url)
       if (options?.include_assertions) formData.append('include_assertions', 'true')
       if (options?.preserve_transactions !== undefined) formData.append('preserve_transactions', String(options.preserve_transactions))

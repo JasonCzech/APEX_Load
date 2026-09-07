@@ -43,6 +43,20 @@ describe('useScriptApi import wrappers', () => {
     vi.clearAllMocks()
   })
 
+  it.each(['importEnterpriseArchive', 'validateEnterpriseArchiveImport'] as const)(
+    '%s sends project scope before archive and supporting files', async method => {
+      const archive = new File(['fixture'], 'script.zip')
+      const har = new File(['{}'], 'recording.har')
+      const supplemental = new File(['data'], 'accounts.dat')
+      await api[method](archive, { project_id: 'project-1', har_file: har, supplemental_files: [supplemental] })
+      const [, options] = (apiFetch as Mock).mock.calls[0]
+      const body = options.body as FormData
+      expect(Array.from(body.keys())).toEqual(['project_id', 'file', 'har_file', 'supplemental_file'])
+      expect(body.get('project_id')).toBe('project-1')
+      expect(body.get('file')).toBe(archive)
+    },
+  )
+
   it('sends OpenAPI project scope before file bytes for streaming authorization', async () => {
     const file = new File(['openapi: 3.0.3'], 'api.yaml', { type: 'text/yaml' })
     await api.importOpenAPI(file, { project_id: 'project-1', name: 'Orders', agentforce_transform: true })

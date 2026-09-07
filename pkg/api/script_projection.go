@@ -20,6 +20,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jasonczech/apexload/pkg/convert/credentialpolicy"
+	"github.com/jasonczech/apexload/pkg/credential"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/dslwalk"
 	"github.com/jasonczech/apexload/pkg/engine"
@@ -1032,12 +1033,15 @@ func projectAuthoringReviewState(state map[string]any) map[string]any {
 }
 
 type scriptProjectionContext struct {
-	key            string
-	opaqueMap      bool
-	headers        bool
-	headerList     bool
-	secretBindings bool
-	metadata       bool
+	transactionParams   bool
+	transactionFunction string
+	label               bool
+	key                 string
+	opaqueMap           bool
+	headers             bool
+	headerList          bool
+	secretBindings      bool
+	metadata            bool
 }
 
 func projectScriptNode(value any, ctx scriptProjectionContext) any {
@@ -1173,12 +1177,17 @@ func projectScriptNode(value any, ctx scriptProjectionContext) any {
 				continue
 			}
 			childCtx := scriptProjectionContext{
-				key:            key,
-				opaqueMap:      ctx.opaqueMap || isOpaqueScriptMap(key),
-				headers:        isScriptHeaderMap(key),
-				headerList:     isScriptHeaderList(key),
-				secretBindings: isScriptSecretBindingsMap(key),
-				metadata:       ctx.metadata || normalizeScriptFieldName(key) == "metadata",
+				transactionParams: key == "params" && typed["type"] == "source_transaction",
+				label:             ctx.label && (key == "value" || key == "raw"),
+				key:               key,
+				opaqueMap:         ctx.opaqueMap || isOpaqueScriptMap(key),
+				headers:           isScriptHeaderMap(key),
+				headerList:        isScriptHeaderList(key),
+				secretBindings:    isScriptSecretBindingsMap(key),
+				metadata:          ctx.metadata || normalizeScriptFieldName(key) == "metadata",
+			}
+			if ctx.transactionParams && (key == "args" || key == "call_args") {
+				childCtx.transactionFunction, _ = typed["function"].(string)
 			}
 			if ctx.headers {
 				out[key] = projectHeaderValue(key, child)
@@ -1190,7 +1199,9 @@ func projectScriptNode(value any, ctx scriptProjectionContext) any {
 	case []any:
 		out := make([]any, len(typed))
 		for i, child := range typed {
-			out[i] = projectScriptNode(child, ctx)
+			childCtx := ctx
+			childCtx.label = credential.TransactionLabelArgument(ctx.transactionFunction, i)
+			out[i] = projectScriptNode(child, childCtx)
 		}
 		return out
 	case string:
@@ -1445,6 +1456,9 @@ func projectScriptString(value string, ctx scriptProjectionContext) string {
 	}
 	if isScriptURLKey(ctx.key) {
 		return maskScriptURL(value)
+	}
+	if ctx.label || credential.LabelField(ctx.key) {
+		return scrub.ValueLabel(value, scrub.Policy{})
 	}
 	if ctx.opaqueMap || isScriptFreeTextKey(ctx.key) {
 		return scrubScriptText(value, false)
