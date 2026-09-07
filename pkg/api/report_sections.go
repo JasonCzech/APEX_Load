@@ -306,11 +306,11 @@ func buildReportSectionRegistry() map[string]reportSectionRenderer {
 				if reason == "" {
 					reason = "Unknown"
 				}
-				*lines = append(*lines, "Execution: "+reportExecutionLabel(reason), "Planned duration: "+report.Manifest.Provenance.Duration, "Elapsed: "+reportElapsedDuration(report.Manifest), "Evidence coverage applies to the captured period; workload completion is assessed separately.")
+				*lines = append(*lines, "Execution: "+reportExecutionLabel(reason), "Planned duration: "+report.Manifest.Provenance.Duration, "Elapsed: "+reportElapsedDuration(report.Manifest), "Evidence coverage applies to the captured period; workload completion is assessed separately. Population average rates use elapsed execution time, including pauses and idle time.")
 			}
 			for _, key := range []string{"action", "transaction", "unknown"} {
 				if population, ok := report.MetricPopulations[key]; ok && population.Transactions > 0 {
-					*lines = append(*lines, fmt.Sprintf("%s: %d records, %d errors, p95 %.1f ms, average %.2f/s", reportPopulationLabel(key), population.Transactions, population.Errors, population.P95Ms, population.AverageRate))
+					*lines = append(*lines, fmt.Sprintf("%s: %d records, %d errors, p95 %.1f ms, average %s/s", reportPopulationLabel(key), population.Transactions, population.Errors, population.P95Ms, reportPopulationRate(population.AverageRate)))
 				}
 			}
 			*lines = append(*lines,
@@ -334,7 +334,7 @@ func buildReportSectionRegistry() map[string]reportSectionRenderer {
 			}
 			for _, key := range []string{"action", "transaction", "unknown"} {
 				if population, ok := report.MetricPopulations[key]; ok {
-					for _, item := range [][2]string{{"count", formatCSVInt(population.Transactions)}, {"errors", formatCSVInt(population.Errors)}, {"error_pct", formatCSVFloat(population.ErrorPct)}, {"p95_ms", formatCSVFloat(population.P95Ms)}, {"average_rate_per_second", formatCSVFloat(population.AverageRate)}} {
+					for _, item := range [][2]string{{"count", formatCSVInt(population.Transactions)}, {"errors", formatCSVInt(population.Errors)}, {"error_pct", formatCSVFloat(population.ErrorPct)}, {"p95_ms", formatCSVFloat(population.P95Ms)}, {"average_rate_per_second", reportPopulationRate(population.AverageRate)}} {
 						if err := write("metric_populations", key, item[0], item[1]); err != nil {
 							return err
 						}

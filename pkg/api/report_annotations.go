@@ -301,12 +301,10 @@ func defaultReportAnnotations(report *RunArchiveReport, testID, profile string) 
 	}
 
 	testName := testID
-	slaBreached := false
 	if report != nil && report.Manifest != nil {
 		if strings.TrimSpace(report.Manifest.TestName) != "" {
 			testName = report.Manifest.TestName
 		}
-		slaBreached = report.Manifest.SLABreached
 	}
 
 	ann := &ReportAnnotations{
@@ -333,7 +331,7 @@ func defaultReportAnnotations(report *RunArchiveReport, testID, profile string) 
 	if assessment.Status == reportVerdictConditional {
 		verdict = "requires further evidence before acceptance"
 	}
-	if slaBreached {
+	if assessment.Status == reportVerdictFail {
 		verdict = "breached one or more SLA targets"
 	}
 	switch profileID {

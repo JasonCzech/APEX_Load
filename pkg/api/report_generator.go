@@ -70,6 +70,7 @@ type runArchiveHTMLReportData struct {
 }
 
 var profileHTMLFuncMap = template.FuncMap{
+	"populationRate":  reportPopulationRate,
 	"executionLabel":  reportExecutionLabel,
 	"elapsedDuration": reportElapsedDuration,
 	"formatTime": func(value any) string {

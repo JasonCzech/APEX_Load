@@ -16,7 +16,7 @@ export default function RunOutcomeSummary({ report }: { report: RunArchiveReport
     <dl aria-label="Metric populations">
       {(['action', 'transaction', 'unknown'] as const).map(key => {
         const metrics = report.metric_populations?.[key]
-        return <div key={key}><dt>{key === 'action' ? 'Requests / actions' : key === 'transaction' ? 'Named transactions' : 'Unclassified legacy records'}</dt><dd>{metrics?.transactions === 0 ? '0 records · no samples to evaluate' : metrics ? `${metrics.transactions} · ${metrics.errors} errors · p95 ${metrics.p95_ms?.toFixed(1) ?? 'Unknown'} ms · ${metrics.average_rate_per_second?.toFixed(1) ?? 'Unknown'}/s average` : 'Unknown'}</dd></div>
+        return <div key={key}><dt>{key === 'action' ? 'Requests / actions' : key === 'transaction' ? 'Named transactions' : 'Unclassified legacy records'}</dt><dd>{metrics?.transactions === 0 ? '0 records · no samples to evaluate' : metrics ? `${metrics.transactions} · ${metrics.errors} errors · p95 ${metrics.p95_ms?.toFixed(1) ?? 'Unknown'} ms · ${metrics.average_rate_per_second?.toFixed(3) ?? 'Unknown'}/s elapsed-run average` : 'Unknown'}</dd></div>
       })}
       <div><dt>Archive records</dt><dd>{report.overview.transactions}</dd></div>
     </dl>

@@ -157,3 +157,26 @@ func TestResolveReportAnnotationsUsesDefaultsWhenUnsaved(t *testing.T) {
 		t.Fatalf("expected default annotations when nothing saved, got %#v", resolved)
 	}
 }
+
+func TestDefaultNarrativeUsesComputedFailures(t *testing.T) {
+	for _, source := range []string{"transaction", "dashboard"} {
+		t.Run(source, func(t *testing.T) {
+			report := &RunArchiveReport{Manifest: &RunArchiveManifest{}, MetricPopulations: map[string]ArchiveMetricPopulation{}}
+			if source == "transaction" {
+				report.Manifest.Provenance.GoalConfig = &GoalConfig{MaxErrorPct: ptr(0.0)}
+				report.ByTransaction = map[string]RunArchiveActionStats{"checkout": {Transactions: 1, Errors: 1, ErrorPct: 100}}
+			} else {
+				report.DashboardPanels = &RunArchiveDashboardPanels{Dashboards: []RunArchiveDashboard{{Panels: []RunArchiveDashboardPanel{{ThresholdConfigured: true, ThresholdEvaluated: true, ThresholdBreached: true}}}}}
+			}
+			if got := deriveReportVerdict(report); got.Status != reportVerdictFail {
+				t.Fatal(got)
+			}
+			for _, profile := range []string{"executive", "engineer"} {
+				ann := defaultReportAnnotations(report, "review", profile)
+				if !strings.Contains(ann.ExecutiveNarrative, "breached one or more SLA targets") || strings.Contains(ann.ExecutiveNarrative, "not been assessed") {
+					t.Fatalf("%s: %s", profile, ann.ExecutiveNarrative)
+				}
+			}
+		})
+	}
+}

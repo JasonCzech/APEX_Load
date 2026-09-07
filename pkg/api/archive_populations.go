@@ -1,19 +1,21 @@
 package api
 
-import "time"
+import (
+	"fmt"
+	"time"
+)
 
 // ArchiveMetricPopulation keeps protocol actions separate from enclosing
 // business transactions. Archive records remain available as raw evidence.
 type ArchiveMetricPopulation struct {
 	RunArchiveActionStats
-	AverageRate float64 `json:"average_rate_per_second"`
+	AverageRate *float64 `json:"average_rate_per_second,omitempty"`
 }
 
 type archivePopulationAccumulator struct {
-	stats       RunArchiveActionStats
-	digest      archiveQuantileAccumulator
-	total       float64
-	first, last time.Time
+	stats  RunArchiveActionStats
+	digest archiveQuantileAccumulator
+	total  float64
 }
 
 func archiveEventPopulation(tx TransactionEvent) string {
@@ -44,17 +46,15 @@ func (a *archivePopulationAccumulator) add(tx TransactionEvent) {
 	if tx.DurationMs > a.stats.MaxResponseMs {
 		a.stats.MaxResponseMs = tx.DurationMs
 	}
-	if a.first.IsZero() || tx.Timestamp.Before(a.first) {
-		a.first = tx.Timestamp
-	}
-	end := tx.Timestamp.Add(time.Duration(tx.DurationMs * float64(time.Millisecond)))
-	if end.After(a.last) {
-		a.last = end
-	}
+
 }
 
-func (a *archivePopulationAccumulator) finish() ArchiveMetricPopulation {
+func (a *archivePopulationAccumulator) finish(window time.Duration) ArchiveMetricPopulation {
 	result := ArchiveMetricPopulation{RunArchiveActionStats: a.stats}
+	if window > 0 {
+		rate := float64(a.stats.Transactions) / window.Seconds()
+		result.AverageRate = &rate
+	}
 	if a.stats.Transactions == 0 {
 		return result
 	}
@@ -62,8 +62,23 @@ func (a *archivePopulationAccumulator) finish() ArchiveMetricPopulation {
 	result.ErrorPct = 100 * float64(a.stats.Errors) / float64(a.stats.Transactions)
 	result.P50Ms, result.P90Ms = a.digest.Quantile(.5), a.digest.Quantile(.9)
 	result.P95Ms, result.P99Ms = a.digest.Quantile(.95), a.digest.Quantile(.99)
-	if seconds := a.last.Sub(a.first).Seconds(); seconds > 0 {
-		result.AverageRate = float64(a.stats.Transactions) / seconds
-	}
 	return result
+}
+
+// Use elapsed execution time, including pauses and idle/pacing time, for every
+// population. Missing or invalid legacy timestamps cannot establish a rate.
+func archivePopulationWindow(manifest *RunArchiveManifest) time.Duration {
+	if manifest == nil || manifest.Provenance.StartedAt == nil || manifest.Provenance.StartedAt.IsZero() || manifest.CompletedAt.IsZero() {
+		return 0
+	}
+	if elapsed := manifest.CompletedAt.Sub(*manifest.Provenance.StartedAt); elapsed > 0 {
+		return elapsed
+	}
+	return 0
+}
+func reportPopulationRate(rate *float64) string {
+	if rate == nil {
+		return "Unknown"
+	}
+	return fmt.Sprintf("%.3f", *rate)
 }

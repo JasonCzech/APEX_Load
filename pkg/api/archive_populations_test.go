@@ -18,14 +18,14 @@ func TestArchiveMetricPopulationsDoNotDoubleCount(t *testing.T) {
 	} {
 		groups[archiveEventPopulation(event)].add(event)
 	}
-	actions, transactions, unknown := groups["action"].finish(), groups["transaction"].finish(), groups["unknown"].finish()
+	actions, transactions, unknown := groups["action"].finish(time.Second), groups["transaction"].finish(time.Second), groups["unknown"].finish(time.Second)
 	if actions.Transactions != 2 || actions.Errors != 1 || actions.ErrorPct != 50 || actions.AvgResponseMs != 20 {
 		t.Fatal(actions)
 	}
 	if transactions.Transactions != 1 || transactions.AvgResponseMs != 40 || unknown.Transactions != 1 {
 		t.Fatal(transactions, unknown)
 	}
-	if actions.AverageRate <= 0 || actions.P95Ms <= actions.P50Ms {
+	if actions.AverageRate == nil || *actions.AverageRate <= 0 || actions.P95Ms <= actions.P50Ms {
 		t.Fatal(actions)
 	}
 }
@@ -101,6 +101,12 @@ func TestArchivePopulationReconciliationSurvivesReportRendering(t *testing.T) {
 	if report.Overview.Transactions != 3 || report.ByRequest["same name"].Transactions != 2 || report.ByTransaction["same name"].Transactions != 1 {
 		t.Fatalf("populations: %+v / %+v", report.ByRequest, report.ByTransaction)
 	}
+	for population, want := range map[string]float64{"action": 1, "transaction": 0.5, "unknown": 0} {
+		rate := report.MetricPopulations[population].AverageRate
+		if rate == nil || *rate != want {
+			t.Fatalf("%s rate=%v, want %v over the shared two-second run", population, rate, want)
+		}
+	}
 	report.ReleaseTrend = &RunArchiveReleaseTrendSummary{ReleaseID: "release-id", ReleaseName: "Checkout release", RunCount: 1}
 	html, err := renderRunArchiveHTMLReportWithProfile(report, "executive")
 	if err != nil {
@@ -113,5 +119,43 @@ func TestArchivePopulationReconciliationSurvivesReportRendering(t *testing.T) {
 	}
 	if strings.Contains(string(html), "met its SLA targets") || strings.Contains(string(html), "Release Manager · Date") || strings.Contains(string(html), "Performance Engineer</") {
 		t.Fatal("invented acceptance")
+	}
+}
+
+func TestArchivePopulationRatesUseSharedElapsedWindow(t *testing.T) {
+	start := time.Now()
+	for _, tc := range []struct {
+		name  string
+		begin *time.Time
+		end   time.Time
+		valid bool
+	}{
+		{"paced run", &start, start.Add(30 * time.Second), true},
+		{"missing start", nil, start.Add(30 * time.Second), false},
+		{"missing end", &start, time.Time{}, false},
+		{"zero window", &start, start, false},
+		{"reversed window", &start, start.Add(-time.Second), false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			window := archivePopulationWindow(&RunArchiveManifest{Provenance: RunArchiveProvenance{StartedAt: tc.begin}, CompletedAt: tc.end})
+			for _, offset := range []time.Duration{0, 10 * time.Second, 29 * time.Second} {
+				acc := archivePopulationAccumulator{}
+				acc.add(TransactionEvent{Timestamp: start.Add(offset), DurationMs: 80, Success: true})
+				got := acc.finish(window)
+				if !tc.valid {
+					if got.AverageRate != nil {
+						t.Fatalf("invented legacy rate: %v", *got.AverageRate)
+					}
+					continue
+				}
+				if got.AverageRate == nil || *got.AverageRate != 1.0/30 {
+					t.Fatalf("rate=%v", got.AverageRate)
+				}
+			}
+			empty := (&archivePopulationAccumulator{}).finish(window)
+			if tc.valid && (empty.AverageRate == nil || *empty.AverageRate != 0) {
+				t.Fatal("valid empty population must have zero rate")
+			}
+		})
 	}
 }

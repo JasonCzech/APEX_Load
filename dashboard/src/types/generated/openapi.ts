@@ -1667,7 +1667,7 @@ export interface operations {
               "transactions_parquet_file"?: string;
             }) | null;
             "metric_populations"?: Record<string, {
-              "average_rate_per_second"?: number;
+              "average_rate_per_second"?: (number) | null;
               "avg_response_ms"?: number;
               "error_pct"?: number;
               "errors"?: number;
@@ -38605,7 +38605,7 @@ export interface operations {
               "transactions_parquet_file"?: string;
             }) | null;
             "metric_populations"?: Record<string, {
-              "average_rate_per_second": number;
+              "average_rate_per_second"?: (number) | null;
               "avg_response_ms": number;
               "error_pct": number;
               "errors": number;

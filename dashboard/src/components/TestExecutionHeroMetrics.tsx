@@ -56,7 +56,7 @@ export default function TestExecutionHeroMetrics({ archiveReport, summary, metri
         <span className="hero-value">{count ?? 'Unknown'}</span>
         <span className="hero-label">Named transactions</span>
       </div>
-      {archiveReport?.metric_populations?.action && <div className="hero-card"><span className="hero-value">{archiveReport.metric_populations.action.average_rate_per_second.toFixed(1)}</span><span className="hero-label">Requests / actions per second</span></div>}
+      {archiveReport?.metric_populations?.action && <div className="hero-card"><span className="hero-value">{archiveReport.metric_populations.action.average_rate_per_second?.toFixed(3) ?? 'Unknown'}</span><span className="hero-label">Requests / actions per second</span></div>}
     </div>
   )
 }

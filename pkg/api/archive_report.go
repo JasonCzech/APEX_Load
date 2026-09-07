@@ -496,21 +496,22 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 	report.NetworkPhases = networkPhases.finalize()
 	report.ArtifactInventory = buildRunArchiveArtifactInventory(record, manifest)
 
+	window := archivePopulationWindow(manifest)
 	report.ByRequest = make(map[string]RunArchiveActionStats)
 	for name, acc := range requests {
-		stats := acc.finish().RunArchiveActionStats
+		stats := acc.finish(window).RunArchiveActionStats
 		stats.PeakTPS = archiveActionPeakTPSFromBuckets(summaries, actionSummaryBuckets["action\x00"+name])
 		report.ByRequest[name] = stats
 	}
 	report.ByTransaction = make(map[string]RunArchiveActionStats)
 	for name, acc := range namedTransactions {
-		stats := acc.finish().RunArchiveActionStats
+		stats := acc.finish(window).RunArchiveActionStats
 		stats.PeakTPS = archiveActionPeakTPSFromBuckets(summaries, actionSummaryBuckets["transaction\x00"+name])
 		report.ByTransaction[name] = stats
 	}
 	report.MetricPopulations = make(map[string]ArchiveMetricPopulation)
 	for name, acc := range populations {
-		metrics := acc.finish()
+		metrics := acc.finish(window)
 		metrics.PeakTPS = archiveActionPeakTPSFromBuckets(summaries, actionSummaryBuckets[name+"\x00"])
 		report.MetricPopulations[name] = metrics
 	}

@@ -4627,6 +4627,7 @@ paths:
                           average_rate_per_second:
                             type: number
                             format: double
+                            nullable: true
                           avg_response_ms:
                             type: number
                             format: double
@@ -211523,6 +211524,7 @@ paths:
                         average_rate_per_second:
                           type: number
                           format: double
+                          nullable: true
                         avg_response_ms:
                           type: number
                           format: double
@@ -211557,7 +211559,6 @@ paths:
                           type: integer
                           format: int64
                       required:
-                        - average_rate_per_second
                         - avg_response_ms
                         - error_pct
                         - errors

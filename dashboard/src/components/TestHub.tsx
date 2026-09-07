@@ -35,7 +35,7 @@ import ReferenceKeyBadge from './ReferenceKeyBadge'
 import SelectAllCheckbox from './SelectAllCheckbox'
 import { useHasTopbarContributionProvider, useTopbarContribution } from '../hooks/TopbarContributionProvider'
 import { clearScenarioBuilderDraft, hasScenarioBuilderProgress } from './scenarioBuilderDraft'
-import { useNavigationGuard, useNavigationGuardRunner, type NavigationGuard } from '../hooks/NavigationGuardProvider'
+import { NavigationGuardRunnerContext, useNavigationGuard, useNavigationGuardRunner, type NavigationGuard } from '../hooks/NavigationGuardProvider'
 import { useModalDialog } from '../hooks/useModalDialog'
 import { dialogBackdropProps } from './dialogBackdropProps'
 import { clampVUsersForRole, maxSharedVUsersForRoles, maxVUsersForRole, OBSERVER_MAX_VUSERS, validateAggregateVUserDemand, validateGroupExecutionEnvelope } from './observerGroupModel'
@@ -1082,7 +1082,8 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
   const [wizardStep, setWizardStep] = useState<ScenarioWizardStep>('start')
   const [maxVisitedWizardIndex, setMaxVisitedWizardIndex] = useState(0)
   const hasTopbarContributionProvider = useHasTopbarContributionProvider()
-  const { runGuarded } = useNavigationGuardRunner()
+  const navigationRunner = useNavigationGuardRunner()
+  const { runGuarded } = navigationRunner
   const [scenarioSourceMode, setScenarioSourceMode] = useState<ScenarioSourceMode>('shape')
   const [scenarioStartChoice, setScenarioStartChoice] = useState<ScenarioStartChoice>('')
   const [scenarioCloneQuery, setScenarioCloneQuery] = useState('')
@@ -3224,7 +3225,15 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
       resetScenarioBuilderRef.current()
     },
   }), [])
-  useNavigationGuard(showForm && !prerequisiteScript ? scenarioBuilderGuard : null, scenarioBuilderDirty && !prerequisiteScript)
+  useNavigationGuard(showForm ? scenarioBuilderGuard : null, scenarioBuilderDirty)
+  // Script-local navigation retains the scenario mounted underneath it. Global
+  // navigation outside this provider must still resolve both dirty editors.
+  const prerequisiteNavigationRunner = useMemo(() => ({
+    ...navigationRunner,
+    runGuarded: (proceed: () => void, retainedGuardIds: readonly string[] = []) =>
+      runGuarded(proceed, [...retainedGuardIds, scenarioBuilderGuard.id]),
+  }), [navigationRunner, runGuarded, scenarioBuilderGuard.id])
+
 
   useEffect(() => {
     if (currentWizardIndex >= 0) {
@@ -4782,13 +4791,13 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
   }
 
   if (prerequisiteScript) return <section aria-label="Create prerequisite script">
-    <button className="btn btn-secondary" onClick={() => void runGuarded(() => setPrerequisiteScript(null))}>Back to scenario draft</button>
+    <button className="btn btn-secondary" onClick={() => void runGuarded(() => setPrerequisiteScript(null), [scenarioBuilderGuard.id])}>Back to scenario draft</button>
     <p>Your scenario draft is retained. Saving a script returns it to the selected group.</p>
-    <ScriptsPage applicationRepository={applicationRepository} initialMode="create-options" initialCreateWorkflow={prerequisiteScript} onScriptSaved={script => {
+    <NavigationGuardRunnerContext.Provider value={prerequisiteNavigationRunner}><ScriptsPage applicationRepository={applicationRepository} initialMode="create-options" initialCreateWorkflow={prerequisiteScript} onScriptSaved={script => {
       setScripts(previous => [...previous.filter(item => item.id !== script.id), script])
       selectScriptFromLibrary(script)
       setPrerequisiteScript(null)
-    }} />
+    }} /></NavigationGuardRunnerContext.Provider>
   </section>
 
   return (

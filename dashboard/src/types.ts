@@ -1533,7 +1533,7 @@ export interface RunArchiveSLARollup {
 export interface RunArchiveReport {
   by_request?: Record<string, RunArchiveActionStats>
   by_transaction?: Record<string, RunArchiveActionStats>
-  metric_populations?: Record<string, RunArchiveActionStats & { average_rate_per_second: number }>
+  metric_populations?: Record<string, RunArchiveActionStats & { average_rate_per_second?: number }>
 
   schema_version?: string
   compatibility?: RunArchiveReportCompatibility

@@ -31,6 +31,31 @@ describe('NavigationGuardProvider', () => {
     vi.clearAllMocks()
   })
 
+  it('retains the parent guard across an internal return, including child resolution', async () => {
+    const returned = vi.fn()
+    const departed = vi.fn()
+    const parentDiscard = vi.fn()
+    await act(async () => root.render(<NavigationGuardProvider>
+      <Runner proceed={returned} retainedGuardIds={['parent']} />
+      <Publisher guard={makeGuard({id:'parent', label:'Scenario', dirty:true, discard:parentDiscard})} dirty />
+      <Publisher guard={makeGuard({id:'child', label:'Script', dirty:true})} dirty />
+    </NavigationGuardProvider>))
+    await click('Navigate')
+    expect(container.textContent).toContain('Script has unsaved changes')
+    await click('Discard changes')
+    expect(returned).toHaveBeenCalledOnce()
+    expect(parentDiscard).not.toHaveBeenCalled()
+    await act(async () => root.render(<NavigationGuardProvider>
+      <Runner proceed={departed} />
+      <Publisher guard={makeGuard({id:'parent', label:'Scenario', dirty:true, discard:parentDiscard})} dirty />
+    </NavigationGuardProvider>))
+    await click('Navigate')
+    expect(container.textContent).toContain('Scenario has unsaved changes')
+    expect(departed).not.toHaveBeenCalled()
+    await click('Keep editing')
+    expect(parentDiscard).not.toHaveBeenCalled()
+  })
+
   it('proceeds immediately when no registered guard is dirty', async () => {
     const proceed = vi.fn()
 
@@ -261,10 +286,10 @@ function Publisher({ guard, dirty }: { guard: NavigationGuard; dirty: boolean })
   return null
 }
 
-function Runner({ proceed }: { proceed: () => void }) {
+function Runner({ proceed, retainedGuardIds }: { proceed: () => void; retainedGuardIds?: readonly string[] }) {
   const { runGuarded } = useNavigationGuardRunner()
   return (
-    <button type="button" onClick={() => runGuarded(proceed)}>
+    <button type="button" onClick={() => runGuarded(proceed, retainedGuardIds)}>
       Navigate
     </button>
   )

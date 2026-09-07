@@ -32,12 +32,12 @@ export function NavigationGuardProvider({ children }: { children: ReactNode }) {
     }
   }), [bumpVersion])
   const hasDirtyGuard = useCallback(() => Boolean(firstDirtyGuard(guardsRef.current)), [])
-  const runGuarded = useCallback((proceed: () => void) => {
+  const runGuarded = useCallback((proceed: () => void, retainedGuardIds: readonly string[] = []) => {
     if (pendingRef.current) return
-    const guard = firstDirtyGuard(guardsRef.current)
+    const guard = firstDirtyGuard(guardsRef.current, retainedGuardIds)
     if (!guard) { proceed(); return }
     setError(null)
-    const next = { guard, proceed }
+    const next = { guard, proceed, retainedGuardIds }
     pendingRef.current = next
     setPending(next)
   }, [])
@@ -65,9 +65,9 @@ export function NavigationGuardProvider({ children }: { children: ReactNode }) {
     // on the next render, and leaving the stale registration in the map would
     // either prompt twice or let another dirty editor be skipped.
     guardsRef.current.delete(resolved.guard.id)
-    const nextGuard = firstDirtyGuard(guardsRef.current)
+    const nextGuard = firstDirtyGuard(guardsRef.current, resolved.retainedGuardIds)
     if (nextGuard) {
-      const next = { guard: nextGuard, proceed: resolved.proceed }
+      const next = { guard: nextGuard, proceed: resolved.proceed, retainedGuardIds: resolved.retainedGuardIds }
       pendingRef.current = next
       setPending(next)
       setError(null)

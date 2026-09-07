@@ -17,10 +17,11 @@ export type NavigationGuardRegistrar = (guard: NavigationGuard, dirty: boolean) 
 
 export interface NavigationGuardRunner {
   hasDirtyGuard: () => boolean
-  runGuarded: (proceed: () => void) => void
+  runGuarded: (proceed: () => void, retainedGuardIds?: readonly string[]) => void
 }
 
 export interface PendingNavigation {
+  retainedGuardIds?: readonly string[]
   guard: RegisteredNavigationGuard
   proceed: () => void
 }
@@ -31,9 +32,9 @@ export const NavigationGuardRunnerContext = createContext<NavigationGuardRunner>
   runGuarded: (proceed) => proceed(),
 })
 
-export function firstDirtyGuard(guards: Map<string, RegisteredNavigationGuard>): RegisteredNavigationGuard | null {
+export function firstDirtyGuard(guards: Map<string, RegisteredNavigationGuard>, retainedGuardIds: readonly string[] = []): RegisteredNavigationGuard | null {
   return [...guards.values()]
-    .filter(guard => guard.dirty || guard.isDirty())
+    .filter(guard => !retainedGuardIds.includes(guard.id) && (guard.dirty || guard.isDirty()))
     .sort((left, right) => right.sequence - left.sequence)[0] || null
 }
 
