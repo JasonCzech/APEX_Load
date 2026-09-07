@@ -1779,7 +1779,7 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
         <>
           {outputMode === 'native_requests' ? (
             <>
-              <nav className="bruno-tabs" role="tablist" aria-label="Bruno native inspection panels">
+              <div className="bruno-tabs" role="tablist" aria-label="Bruno native inspection panels">
                 {BRUNO_INSPECTION_TABS.map((tab, index) => (
                   <button
                     key={tab.id}
@@ -1818,7 +1818,7 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
                     {tab.label}
                   </button>
                 ))}
-              </nav>
+              </div>
 
               <section
                   className="bruno-tab-panel"

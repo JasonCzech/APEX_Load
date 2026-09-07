@@ -154,6 +154,7 @@ requirement — not optional. When adding or modifying code:
 - Cover both the happy path and meaningful edge cases (empty inputs, error conditions, boundary values).
 - Run `go test ./...` before considering any Go change complete.
 - If a change touches the dashboard, verify UI behavior in a browser (type checking alone is insufficient).
+- After frontend or user-workflow code changes, run `cd dashboard && npm run test:cycle`. This includes unit checks, a fresh embedded build, and both dev-admin and local-auth Playwright workflow profiles. CI runs the same browser profiles on code changes; do not replace them with route-only smoke checks.
 - Test files live next to the code they test (e.g. `pkg/engine/metrics_test.go` tests `metrics.go`).
 - Use table-driven tests where multiple input/output combinations exist.
 - Do not mock internal packages unless required for isolation; prefer testing against real implementations.

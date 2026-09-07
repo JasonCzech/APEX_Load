@@ -41,7 +41,7 @@ function isScriptUpdate(response: Response, scriptId: string): boolean {
 // Tier-0 journey step S4 (docs/qa/TIER0_JOURNEY.md): an imported script opens
 // action-list-first, keeps unsaved edits across workbench tabs, persists them,
 // and can be reopened from the Script Library without losing its actions.
-test('the imported script editor preserves tab state and saved changes across reopen', async ({ page, request }) => {
+test('[U21] the imported script editor preserves tab state and saved changes across reopen', async ({ page, request }) => {
   test.setTimeout(120_000)
   const workspace = await createWorkspace(request)
   const scriptId = await createScript(request, workspace, {
@@ -137,7 +137,7 @@ test('the imported script editor preserves tab state and saved changes across re
   await expect(reopenedWorkbench.getByRole('textbox', { name: 'Base URL' })).toHaveValue(editedBaseURL)
 })
 
-test('a large script renders a usable virtualized action list within a bounded interval', async ({ page, request }) => {
+test('[U21] a large script renders a usable virtualized action list within a bounded interval', async ({ page, request }) => {
   test.setTimeout(30_000)
   const workspace = await createWorkspace(request)
   const actionCount = 400

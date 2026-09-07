@@ -30,7 +30,7 @@ async function transactionCount(request: APIRequestContext, testId: string): Pro
   return typeof total === 'number' ? total : -1
 }
 
-test('live metrics advance while a run is executing', async ({ request, seedLiveRun }) => {
+test('[U12] live metrics advance while a run is executing', async ({ request, seedLiveRun }) => {
   test.setTimeout(TEST_TIMEOUT_MS)
 
   const run = await seedLiveRun({ label: 'tier0-live-metrics', readyTimeoutMs: READY_TIMEOUT_MS })
@@ -54,7 +54,7 @@ test('live metrics advance while a run is executing', async ({ request, seedLive
   ).toBeGreaterThan(first)
 })
 
-test('the run view renders live metrics for an executing run', async ({ page, seedLiveRun }) => {
+test('[U12] the run view renders live metrics for an executing run', async ({ page, seedLiveRun }) => {
   test.setTimeout(TEST_TIMEOUT_MS)
 
   const run = await seedLiveRun({ label: 'tier0-live-view', readyTimeoutMs: READY_TIMEOUT_MS })

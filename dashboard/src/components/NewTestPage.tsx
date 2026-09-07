@@ -1,5 +1,5 @@
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { createPortal } from 'react-dom'
+import { createPortal, flushSync } from 'react-dom'
 import { Area, AreaChart, CartesianGrid, Line, ReferenceArea, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { Application, ApplicationRepository, CapacityTimeslot, DashboardAuthEffectiveAccessResource, DashboardScheduleDefaultsSettings, DraftCapacityEstimate, GeneratorAssignmentSettings, LaunchPreflightResponse, Release, RuntimeSettingsOverride, ScenarioSchedule, ScenarioScheduleOccurrence, ScenarioScheduleWindow, StoredScenario, SystemInventoryGenerator, TestSummary } from '../types'
 import { useApi } from '../hooks/useApi'
@@ -584,6 +584,7 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
   const [scenarioSortDirection, setScenarioSortDirection] = useState<SortDirection>('asc')
   const [expandedScenarioId, setExpandedScenarioId] = useState('')
   const [creating, setCreating] = useState(false)
+  const creatingRef = useRef(false)
   const [error, setError] = useState('')
   const [confirmDeleteScheduleId, setConfirmDeleteScheduleId] = useState<string | null>(null)
   const [showAllRuntimeDefaults, setShowAllRuntimeDefaults] = useState(false)
@@ -600,6 +601,7 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
   const [estimateLoading, setEstimateLoading] = useState(false)
   const [immediatePreflight, setImmediatePreflight] = useState<LaunchPreflightResponse | null>(null)
   const [immediatePreflightLoading, setImmediatePreflightLoading] = useState(false)
+  const [immediatePreflightError, setImmediatePreflightError] = useState('')
   const [scheduledPreflight, setScheduledPreflight] = useState<LaunchPreflightResponse | null>(null)
   const [scheduledPreflightLoading, setScheduledPreflightLoading] = useState(false)
   const [scheduledStartLocal, setScheduledStartLocal] = useState(initialPrefillStartLocal || '')
@@ -1283,18 +1285,24 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
 
   useEffect(() => {
     if (!runCreatePayload) {
+      setImmediatePreflightError('')
       setImmediatePreflight(null)
       setImmediatePreflightLoading(false)
       return
     }
     let cancelled = false
+    setImmediatePreflight(null)
+    setImmediatePreflightError('')
     setImmediatePreflightLoading(true)
     const timer = window.setTimeout(async () => {
       try {
         const preflight = await api.preflightTest({ ...runCreatePayload, intent: 'immediate' })
         if (!cancelled) setImmediatePreflight(preflight)
-      } catch {
-        if (!cancelled) setImmediatePreflight(null)
+      } catch (cause: unknown) {
+        if (!cancelled) {
+          setImmediatePreflight(null)
+          setImmediatePreflightError(getErrorMessage(cause, 'Unable to check launch readiness. Retry after recovery.'))
+        }
       } finally {
         if (!cancelled) setImmediatePreflightLoading(false)
       }
@@ -1361,6 +1369,7 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
   )
 
   const createRun = async (intent: 'start' | 'reserve' | 'queue' | 'schedule', options: { navigate?: boolean } = {}): Promise<boolean> => {
+    if (creatingRef.current) return false
     const navigate = options.navigate ?? true
     const currentRunDefaults = runDefaultOverridesRef.current
     const currentGroupOverrides = groupRunOverridesRef.current
@@ -1383,6 +1392,7 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
       setError('Choose a scheduled start time before scheduling a run.')
       return false
     }
+    creatingRef.current = true
     setCreating(true)
     setError('')
     try {
@@ -1478,6 +1488,11 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
         test = await api.createTest(createPayload)
       }
       if (!test) throw new Error('Unable to recover the created queued run')
+      const openCreatedRun = (id: string, commandCenter = true) => {
+        // The submitted form is durable; clear its guard before navigating.
+        flushSync(resetRunSetup)
+        ;(commandCenter ? (onOpenCommandCenter || onSelectTest) : onSelectTest)(id)
+      }
       const finishTimeslotBinding = () => {
         if (!selectedTimeslotId) return
         setSelectedTimeslotId('')
@@ -1497,7 +1512,7 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
         }
         if (!queuedRunStillNeedsStart(test)) {
           resolveQueueAttempt()
-          if (navigate) (onOpenCommandCenter || onSelectTest)(test.id)
+          if (navigate) openCreatedRun(test.id)
           return true
         }
         try {
@@ -1512,7 +1527,7 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
           }
           if (recoveredAfterStart && !queuedRunStillNeedsStart(recoveredAfterStart)) {
             resolveQueueAttempt()
-            if (navigate) (onOpenCommandCenter || onSelectTest)(recoveredAfterStart.id)
+            if (navigate) openCreatedRun(recoveredAfterStart.id)
             return true
           }
           // Creation is already durable. Hand the known run to the execution
@@ -1520,28 +1535,29 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
           // lost; retrying Queue Now must never create a second run.
           setQueueRecovery({ attempt: resolvedQueueAttempt, status: 'ready', test: recoveredAfterStart || test })
           setError(`${getErrorMessage(startError, 'Unable to start the created run')} The queued run was preserved for recovery.`)
-          if (navigate) (onOpenCommandCenter || onSelectTest)(test.id)
+          if (navigate) openCreatedRun(test.id)
           return true
         }
         resolveQueueAttempt()
-        if (navigate) (onOpenCommandCenter || onSelectTest)(test.id)
+        if (navigate) openCreatedRun(test.id)
         return true
       }
       if (intent === 'start') {
         await api.startTest(test.id)
-        if (navigate) (onOpenCommandCenter || onSelectTest)(test.id)
+        if (navigate) openCreatedRun(test.id)
         return true
       }
       if (navigate && intent === 'reserve') {
-        ;(onOpenCommandCenter || onSelectTest)(test.id)
+        ;openCreatedRun(test.id)
         return true
       }
-      if (navigate) onSelectTest(test.id)
+      if (navigate) openCreatedRun(test.id, false)
       return true
     } catch (err: unknown) {
       setError(getErrorMessage(err, 'Unable to create test'))
       return false
     } finally {
+      creatingRef.current = false
       setCreating(false)
     }
   }
@@ -2397,7 +2413,7 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
   saveScheduleRef.current = submitSchedule
 
   const showStartNow = true
-  const startNowAllowed = immediatePreflight ? immediatePreflight.start_now_allowed : true
+  const startNowAllowed = Boolean(immediatePreflight?.start_now_allowed)
   const showQueueRun = Boolean(immediatePreflight?.queue_allowed)
   const immediateLaunchBlocked = Boolean(immediatePreflight && !startNowAllowed && !showQueueRun)
   const scheduleAllowed = Boolean(scheduledStartISO && scheduledPreflight?.schedule_allowed)
@@ -3358,6 +3374,7 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
           </section>
 
           <section className="new-test-launch-card" aria-label="Hold for Manual Start or Schedule Run">
+            {immediatePreflightError && <div className="new-test-launch-feedback warning" role="alert">{immediatePreflightError}</div>}
             <h3>Hold for Manual Start / Schedule Run</h3>
               <div className="new-test-launch-actions">
                 {runSetupValidationError && <div className="new-test-launch-feedback warning" role="alert">{runSetupValidationError}</div>}

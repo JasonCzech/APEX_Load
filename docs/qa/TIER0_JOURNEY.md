@@ -10,9 +10,12 @@ break: if this journey is green, the product is usable; if any step is red, it i
 of what unit coverage says. Generated inventories track changing route and spec breadth separately.
 
 **Status:** [TIER0_ASSERTION_MATRIX.md](TIER0_ASSERTION_MATRIX.md) is the completion inventory.
-Today S1–S12 are `GREEN`; the full arc remains `MISSING`.
-The breadth guard still covers all 16 top-level views. Run implemented specs with
-`scripts/run-e2e.sh`. A step is not green merely because one of its API assertions exists.
+S1–S12 retain their independent step coverage. `workflow-local-auth.spec.ts` now
+adds U01, a continuous real-login → UI workspace → import/edit → scenario → run →
+stop → Results/report → download journey, without API-seeded business objects
+between stages. Lifecycle variations and report lenses remain separate tests.
+The breadth guard covers all 16 top-level views. Run the normal change cycle with
+`cd dashboard && npm run test:cycle`; see [workflow coverage](WORKFLOW_REGRESSION_SUITE.md). A step is not green merely because one of its API assertions exists.
 
 **Observed behaviour worth recording**, since this document told the implementer to treat surprises
 as findings rather than adjusting assertions to match:

@@ -1,4 +1,5 @@
 import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { flushSync } from 'react-dom'
 import { Area, CartesianGrid, ComposedChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { ApplicationRepository, DashboardAuthEffectiveAccessResource, DraftCapacityEstimate, GeneratorAssignmentSettings, GoalConfig, GoalSizingReport, LoadModelSupportEntry, LoadModelTemplate, LoadModelValidationReport, LoadStageDraft, RunArchiveActionStats, RunArchiveReport, RuntimeSettingsOverride, ScenarioDataPoolBinding, ScenarioMode, ScenarioRuntimeSettingsDraft, SharedDataPool, StoredScenario, StoredScript, SystemInventoryGenerator, TestSummary, TrafficProfile, TrafficProfileDeriveResponse } from '../types'
 import { type ScriptConfig } from '../types/scripts'
@@ -3084,7 +3085,8 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
       setError('Scenario was saved, but the response did not include a scenario id.')
       return
     }
-    resetScenarioBuilder()
+    // Publish the saved state before the parent evaluates navigation guards.
+    flushSync(resetScenarioBuilder)
     onCreateTestFromScenario?.(saved.id)
     void refresh()
   }

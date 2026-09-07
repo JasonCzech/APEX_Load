@@ -3415,6 +3415,30 @@ describe('NewTestPage', () => {
     expect(apiMock.approveScenarioScheduleApproval).toHaveBeenCalledWith('scenario-1', 'schedule-1', 'approval-1', 'Approved from schedule dashboard.')
   })
 
+  it('blocks launch and explains a failed preflight instead of failing open', async () => {
+    apiMock.preflightTest.mockRejectedValue(new Error('Capacity service unavailable'))
+    await act(async () => {
+      root.render(
+        <NewTestPage
+          activeApplication={{ id: 'app-1', name: 'ACC', created_at: '', updated_at: '' }}
+          activeRelease={{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }}
+          releases={[{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }]}
+          onSelectTest={vi.fn()}
+          onOpenCommandCenter={vi.fn()}
+          onCreateRelease={vi.fn().mockResolvedValue(null)}
+        />,
+      )
+    })
+
+    await flushPromises()
+    await flushDebouncedPreflight()
+
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain('Capacity service unavailable')
+    const start = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Start Now')
+    expect(start?.disabled).toBe(true)
+    expect(apiMock.createTest).not.toHaveBeenCalled()
+  })
+
   it('shows a disabled start action and queued-run action when immediate preflight returns queue', async () => {
     const selectTest = vi.fn()
     const openCommandCenter = vi.fn()
@@ -3607,6 +3631,7 @@ describe('NewTestPage', () => {
     if (remountedRunName) {
       await act(async () => setInputValue(remountedRunName, 'Different replacement draft'))
     }
+    await flushDebouncedPreflight()
     const remountedQueuedButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Create Queued Run') as HTMLButtonElement | undefined
     expect(remountedQueuedButton?.disabled).toBe(true)
     const resumeButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Resume queued run')
@@ -3730,6 +3755,7 @@ describe('NewTestPage', () => {
       slotSelect!.value = 'slot-1'
       slotSelect!.dispatchEvent(new Event('change', { bubbles: true }))
     })
+    await flushDebouncedPreflight()
 
     const queuedButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Create Queued Run')
     await act(async () => {

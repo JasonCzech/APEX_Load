@@ -60,7 +60,7 @@ async function waitForReport(request: APIRequestContext, testId: string): Promis
   throw new Error(`report never became available; last status ${lastStatus}`)
 }
 
-test('a finished run produces a report and stays findable in results', async ({ request, page, seedLiveRun }) => {
+test('[U16] a finished run produces a report and stays findable in results', async ({ request, page, seedLiveRun }) => {
   test.setTimeout(TEST_TIMEOUT_MS)
   await enableRunReport(page)
 
@@ -98,7 +98,7 @@ test('a finished run produces a report and stays findable in results', async ({ 
   await expect(page.getByText(runName, { exact: false }).first()).toBeVisible({ timeout: 30_000 })
 })
 
-test('every report lens renders the same run', async ({ request, page, seedLiveRun }) => {
+test('[U16] every report lens renders the same run', async ({ request, page, seedLiveRun }) => {
   test.setTimeout(TEST_TIMEOUT_MS)
   await enableRunReport(page)
 

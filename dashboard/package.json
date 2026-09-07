@@ -21,7 +21,9 @@
     "test": "vitest run",
     "test:bundle-budget": "node --test ./scripts/check-bundle-budget.node-test.mjs",
     "test:node-version": "node --test ./scripts/check-node-version.node-test.mjs",
-    "preinstall": "npm run check:node"
+    "preinstall": "npm run check:node",
+    "test:workflows": "../scripts/run-dashboard-workflows.sh",
+    "test:cycle": "npm run typecheck && npm run lint && npm test && npm run build && npm run test:workflows"
   },
   "dependencies": {
     "@codemirror/autocomplete": "^6.20.3",

@@ -58,7 +58,7 @@ async function waitForStatus(
 // seeded run executing against the controller the next spec asserts on. The
 // repository verified this directly: a body `finally` after a timeout reached
 // the server zero times.
-test('a run dismisses confirmation, pauses, resumes, scales, extends, stops, and downloads evidence', async ({ request, page, seedLiveRun }) => {
+test('[U13 U14] a run dismisses confirmation, pauses, resumes, scales, extends, stops, and downloads evidence', async ({ request, page, seedLiveRun }) => {
   test.setTimeout(240_000)
 
   {
@@ -153,7 +153,7 @@ test('a run dismisses confirmation, pauses, resumes, scales, extends, stops, and
   }
 })
 
-test('abort force-cancels a live run with exact terminal semantics', async ({ request, page, seedLiveRun }) => {
+test('[U13 U14] abort force-cancels a live run with exact terminal semantics', async ({ request, page, seedLiveRun }) => {
   test.setTimeout(180_000)
 
   const run = await seedLiveRun({ label: 'tier0-abort' })

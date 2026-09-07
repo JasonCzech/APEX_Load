@@ -1132,9 +1132,10 @@ export function useScriptApi() {
   const importOpenAPI = useCallback(
     async (file: File, options?: { name?: string; base_url?: string; project_id?: string; agentforce_transform?: boolean }): Promise<OpenAPIImportResult> => {
       const formData = new FormData()
+      // Authorize the project before the server consumes uploaded bytes.
+      if (options?.project_id) formData.append('project_id', options.project_id)
       formData.append('file', file)
       if (options?.name) formData.append('script_name', options.name)
-      if (options?.project_id) formData.append('project_id', options.project_id)
       if (options?.base_url) formData.append('base_url', options.base_url)
 
       const res = await apiFetch(`/scripts/import/openapi${options?.agentforce_transform ? '?agentforce_transform=true' : ''}`, { method: 'POST', body: formData })

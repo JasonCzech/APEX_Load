@@ -64,7 +64,7 @@ function isImportResponse(response: Response, endpoint: string): boolean {
   return response.request().method() === 'POST' && url.pathname === endpoint
 }
 
-test('Bruno native collection inspection, acknowledgements, and atomic save work on the host platform', async ({ page, request }) => {
+test('[U23] Bruno native collection inspection, acknowledgements, and atomic save work on the host platform', async ({ page, request }) => {
   test.setTimeout(120_000)
   const workspace = await createWorkspace(request)
   const archive = storedZip([
@@ -118,6 +118,7 @@ http:
   expect(inspection.ok(), await inspection.text()).toBeTruthy()
   await expect(controls.getByText(/2 API requests found.*2 native scripts/).first()).toBeVisible()
 
+  await controls.getByRole('tab', { name: 'Import APIs', exact: true }).click()
   const acknowledgements = controls.getByRole('checkbox', { name: /^Acknowledge / })
   await expect(acknowledgements).toHaveCount(2)
   for (let index = 0; index < 2; index += 1) await acknowledgements.nth(index).check()

@@ -1,0 +1,76 @@
+import { readFile, stat } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
+import { test, expect, login, createWorkspaceUI, importOpenAPI, buildScenarioUI, mutation, json, idOf, runStatus } from './support/workflow'
+
+test.beforeEach(() => { test.skip(process.env.APEXLOAD_E2E_PROFILE !== 'local-auth', 'local-auth profile') })
+
+test('[U01] sign in, build workspace, import, edit, launch, stop and retrieve the same run', async ({ page, target, trackRun }) => {
+  test.setTimeout(240_000)
+  await page.addInitScript(() => localStorage.setItem('apexload.featureFlags.runReport', 'true'))
+  await login(page)
+  const request = page.context().request
+  const label = `arc-${Date.now()}`
+  const workspace = await createWorkspaceUI(page, request, label)
+  const scriptName = `Orders_${Date.now()}`
+  const scriptId = await importOpenAPI(page, scriptName, target.url)
+  const workbench = page.getByRole('region', { name: 'Author center workbench' })
+  await expect(workbench.getByRole('tab', { name: 'Action List' })).toHaveAttribute('aria-selected', 'true')
+  await workbench.getByRole('tab', { name: 'Runtime Settings' }).click()
+  await workbench.getByRole('textbox', { name: 'Base URL' }).fill(target.url + '/')
+  const updated = mutation(page, 'PUT', `/api/v1/scripts/${scriptId}`)
+  await page.getByRole('button', { name: 'Save script', exact: true }).click()
+  await json(await updated)
+  await page.getByRole('button', { name: 'Close script editor' }).click()
+  const scenarioId = await buildScenarioUI(page, scriptName, `${label} scenario`)
+  await expect(page).toHaveURL(new RegExp(`scenarioId=${scenarioId}`))
+  const runName = `${label} run`
+  await page.getByLabel('Run Name', { exact: true }).fill(runName)
+  await expect(page.getByRole('button', { name: 'Start Now' })).toBeEnabled({ timeout: 30_000 })
+  const created = mutation(page, 'POST', '/api/v1/tests')
+  await page.getByRole('button', { name: 'Start Now' }).click()
+  const run = await json(await created)
+  const id = idOf(run); trackRun(id)
+  expect(run.project_id).toBe(workspace.projectId)
+  await expect(page).toHaveURL(new RegExp(`(?:test|command-center)/${id}`))
+  await expect.poll(() => target.count(), { timeout: 60_000 }).toBeGreaterThan(0)
+  const first = target.count()
+  await expect.poll(() => target.count()).toBeGreaterThan(first)
+  await expect.poll(() => runStatus(request, id)).toBe('RUNNING')
+  await page.getByRole('button', { name: 'Stop', exact: true }).click()
+  await page.getByRole('dialog', { name: 'Stop this test run?' }).getByRole('button', { name: 'Stop Test' }).click()
+  await expect.poll(() => runStatus(request, id), { timeout: 90_000 }).toBe('COMPLETE')
+  await expect.poll(async () => (await request.get(`/api/v1/tests/${id}/archive/manifest`)).ok(), { timeout: 60_000 }).toBe(true)
+  await page.getByRole('button', { name: 'Results', exact: true }).first().click()
+  await page.getByPlaceholder('Find releases or results...').fill(runName)
+  const row = page.locator('tbody tr').filter({ hasText: runName })
+  await expect(row).toBeVisible()
+  await row.getByRole('button', { name: 'Open Report' }).click()
+  await expect(page).toHaveURL(new RegExp(`#/report/${id}`))
+  await expect(page.getByText(runName, { exact: false }).first()).toBeVisible()
+  // Follow the report's evidence link, preserving the same run identity.
+  await page.getByRole('button', { name: 'Legacy archive' }).first().click()
+  const download = page.waitForEvent('download')
+  await page.getByRole('button', { name: 'Download Transactions JSONL' }).first().click()
+  const downloaded = await download
+  const path = await downloaded.path(); expect(path).not.toBeNull()
+  expect((await stat(path!)).size).toBeGreaterThan(0)
+  const manifest = await json(await request.get(`/api/v1/tests/${id}/archive/manifest`))
+  const serverFile = await request.get(`/api/v1/tests/${id}/archive/files/${String(manifest.transactions_file).split('/').pop()}`)
+  expect(serverFile.ok()).toBeTruthy()
+  expect(createHash('sha256').update(await readFile(path!)).digest('hex')).toBe(createHash('sha256').update(await serverFile.body()).digest('hex'))
+})
+
+test('[U02] viewer cannot launch and sign-out does not reopen a protected workspace', async ({ page }) => {
+  await login(page, 'user')
+  const auth = await json(await page.context().request.get('/api/v1/auth/me'))
+  expect((auth.user as { subject: string }).subject).toBe('local:user')
+  await page.goto('/#/new-test')
+  await expect(page.getByRole('button', { name: 'Start Now' })).toBeDisabled()
+  const denied = await page.context().request.post('/api/v1/tests', { data: { name: 'viewer must not create', duration: '1m', groups: [] } })
+  expect(denied.status()).toBe(403)
+  await page.getByRole('button', { name: 'Sign out' }).click()
+  await expect(page.getByRole('heading', { name: 'Choose a test persona' })).toBeVisible()
+  await page.goBack()
+  await expect(page.getByRole('heading', { name: 'Choose a test persona' })).toBeVisible()
+  await expect(page.locator('nav.sidebar-nav')).toBeHidden()
+})

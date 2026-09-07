@@ -1970,7 +1970,6 @@ function OpsCockpitV2View({
   onTableTabChange,
   evidenceLoading,
   evidenceError,
-  runStatus,
   totalDurationSeconds,
   remainingSeconds,
   readOnly = false,

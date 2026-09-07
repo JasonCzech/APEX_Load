@@ -41,7 +41,7 @@ function isScenarioCreate(response: Response): boolean {
 // Tier-0 journey step S5 (docs/qa/TIER0_JOURNEY.md): traverse all six
 // Scenario Builder steps, prove state survives backward/forward navigation,
 // and require the Review step and stored API resource to agree with the draft.
-test('the six-step scenario builder preserves the draft and reviews the saved values', async ({ page, request }) => {
+test('[U09] the six-step scenario builder preserves the draft and reviews the saved values', async ({ page, request }) => {
   test.setTimeout(120_000)
   const workspace = await createWorkspace(request)
   const scriptId = await createScript(request, workspace)
@@ -52,8 +52,6 @@ test('the six-step scenario builder preserves the draft and reviews the saved va
   await expect(page.getByRole('heading', { level: 4, name: 'Start With A Model' })).toBeVisible({ timeout: 15_000 })
 
   await page.getByRole('button', { name: 'Build from Workload Shape' }).click()
-  await expect(page.getByRole('heading', { level: 4, name: 'Choose Workload Shape' })).toBeVisible()
-  await page.getByRole('button', { name: 'Use Manual Shape' }).first().click()
 
   await expect(page.getByRole('heading', { level: 4, name: 'Scripts And Groups' })).toBeVisible()
   await page.getByPlaceholder('Scenario name').fill(scenarioName)
@@ -61,6 +59,8 @@ test('the six-step scenario builder preserves the draft and reviews the saved va
   const scriptRow = page.getByRole('row').filter({ hasText: 'Tier_0_Checkout_Script' })
   await scriptRow.getByRole('button', { name: 'Use for Group 1' }).click()
 
+  await steps.getByRole('button', { name: /^Shape/ }).click()
+  await page.getByRole('button', { name: 'Next', exact: true }).click()
   await steps.getByRole('button', { name: /^Run Settings/ }).click()
   await expect(page.getByRole('heading', { level: 4, name: 'Run Settings' })).toBeVisible()
   await page.getByLabel('Duration', { exact: true }).fill('3')
@@ -79,12 +79,14 @@ test('the six-step scenario builder preserves the draft and reviews the saved va
   await expect(page.getByLabel('Duration Unit')).toHaveValue('m')
   await expect(vusers).toHaveValue('17')
   await page.getByRole('button', { name: 'Back', exact: true }).click()
+  await page.getByRole('button', { name: 'Back', exact: true }).click()
   await expect(page.getByPlaceholder('Scenario name')).toHaveValue(scenarioName)
-  await expect(page.getByRole('button', { name: 'Choose script for Group 1' })).toContainText('Tier_0_Checkout_Script')
+  await expect(page.getByRole('button', { name: 'Choose script for Tier_0_Checkout_Script' })).toContainText('Tier_0_Checkout_Script')
   await page.getByRole('button', { name: 'Next', exact: true }).click()
   await page.getByRole('button', { name: 'Next', exact: true }).click()
   await page.getByRole('button', { name: 'Next', exact: true }).click()
 
+  await page.getByRole('button', { name: 'Next', exact: true }).click()
   await expect(page.getByRole('heading', { level: 4, name: 'Review And Validate' })).toBeVisible()
   const review = page.locator('.scenario-review-grid')
   await expect(review).toContainText(scenarioName)
@@ -116,7 +118,7 @@ test('the six-step scenario builder preserves the draft and reviews the saved va
   ]))
 })
 
-test('canceling unsaved navigation keeps the scenario draft in the builder', async ({ page, request }) => {
+test('[U09] canceling unsaved navigation keeps the scenario draft in the builder', async ({ page, request }) => {
   const workspace = await createWorkspace(request)
   const draftName = 'Do Not Lose This Draft'
 

@@ -33,7 +33,7 @@ const legacyA11yWarningRules = Object.fromEntries(
 legacyA11yWarningRules['jsx-a11y/label-has-associated-control'] = ['warn', {
   labelComponents: [],
   labelAttributes: [],
-  controlComponents: ['SecondsFromMillisecondsInput', 'ActionBodyTextarea'],
+  controlComponents: ['SecondsFromMillisecondsInput', 'ActionBodyTextarea', 'TimezoneSelect'],
   assert: 'either',
   depth: 25,
 }]
@@ -86,6 +86,11 @@ export default tseslint.config(
         // Pure model helpers are intentionally colocated with the prototype
         // until that screen is decomposed; they do not hold React state.
         allowExportNames: [
+          'buildProjectDashboardWorkspace',
+          'stabilizeErrorRowOrder',
+          'chartTimeAxisPresentation',
+          'formatChartTimeMetricValue',
+          'formatMetricTableValue',
           'historicalGroupSummaryQuery',
           'selectedGroupHistoryHasFields',
           'selectedGroupLoadImpactData',

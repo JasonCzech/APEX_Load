@@ -44,7 +44,7 @@ async function seedRunnableScenario(request: APIRequestContext, workspace: Works
   return idFrom(scenario, 'create launch scenario')
 }
 
-test('preflight and estimate lead to an immediate launch that reaches RUNNING', async ({ page, request, baseURL }) => {
+test('[U10] preflight and estimate lead to an immediate launch that reaches RUNNING', async ({ page, request, baseURL }) => {
   test.setTimeout(150_000)
   if (!baseURL) throw new Error('Tier-0 launch needs Playwright baseURL')
 

@@ -1,19 +1,8 @@
 import { expect, test } from '@playwright/test'
 import { createWorkspace, scopeQuery } from './support/workspace'
 
-// Breadth guard for the Tier-0 journey: every top-level view a user can reach
-// must render under a real workspace scope without throwing.
-//
-// The dashboard lazy-loads each page behind a Suspense boundary, so a module
-// that throws on load degrades to a blank region rather than a hard failure —
-// which is exactly the kind of break that reaches a user without any test
-// noticing. Asserting "the app shell is still mounted AND nothing threw" is
-// what distinguishes a rendered page from an empty one.
-//
-// This deliberately does not assert page-specific content. Per-view assertions
-// belong in the per-step specs; this one exists so that a view which crashes
-// outright can never pass unnoticed while those are still being written.
-
+// A visible body cannot prove a lazy page loaded. Require rendered page content
+// and a settled loading boundary, with page-specific cases covering interactions.
 const ROUTES: Array<{ hash: string; name: string }> = [
   { hash: '#/dashboard', name: 'Dashboard' },
   { hash: '#/repository', name: 'Repository' },
@@ -33,7 +22,7 @@ const ROUTES: Array<{ hash: string; name: string }> = [
   { hash: '#/repository-guide', name: 'Repository guide' },
 ]
 
-test('every top-level view renders under a real workspace scope', async ({ page, request }) => {
+test('[U22] every top-level view renders under a real workspace scope', async ({ page, request }) => {
   test.setTimeout(120_000)
   const workspace = await createWorkspace(request)
   const scope = scopeQuery(workspace)
@@ -49,13 +38,11 @@ test('every top-level view renders under a real workspace scope', async ({ page,
     await page.goto(`/${route.hash}${separator}${scope}`)
 
     try {
-      // The shell must still be mounted. A page module that throws inside its
-      // Suspense boundary leaves the shell up but the region empty, which the
-      // pageerror check below is what actually catches.
-      await expect(page.locator('body')).toBeVisible({ timeout: 15_000 })
-      // Give the lazy chunk a moment to evaluate; a throw during module
-      // evaluation surfaces as a pageerror rather than a failed assertion.
-      await page.waitForTimeout(400)
+      await expect(page.getByRole('heading', { level: 1 })).toBeVisible()
+      await expect(page.getByText('Loading page...', { exact: true })).toBeHidden()
+      await expect(page.locator('main').locator('.page, .command-center-page, .dashboard-workspace').first()).toBeVisible()
+      await expect(page.locator('main').getByText('This dashboard page could not be loaded.', { exact: true })).toBeHidden()
+      await expect.poll(() => page.locator('main').locator('table, section, [role="tabpanel"], .page > :not(.page-header)').count()).toBeGreaterThan(0)
       if (pageErrors.length > 0) {
         failures.push(`${route.name} (${route.hash}): ${pageErrors.map(e => e.message).join('; ')}`)
       }

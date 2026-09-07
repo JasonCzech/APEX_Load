@@ -43,6 +43,17 @@ describe('useScriptApi import wrappers', () => {
     vi.clearAllMocks()
   })
 
+  it('sends OpenAPI project scope before file bytes for streaming authorization', async () => {
+    const file = new File(['openapi: 3.0.3'], 'api.yaml', { type: 'text/yaml' })
+    await api.importOpenAPI(file, { project_id: 'project-1', name: 'Orders', agentforce_transform: true })
+    const [url, options] = (apiFetch as Mock).mock.calls[0]
+    expect(url).toBe('/scripts/import/openapi?agentforce_transform=true')
+    const body = options.body as FormData
+    expect(Array.from(body.keys())).toEqual(['project_id', 'file', 'script_name'])
+    expect(body.get('project_id')).toBe('project-1')
+    expect(body.get('file')).toBe(file)
+  })
+
   it('posts k6 imports as multipart with script_name/base_url/project_id', async () => {
     const file = new File(['import http from "k6/http";'], 'script.js', { type: 'application/javascript' })
     await api.importK6(file, { project_id: 'p1', base_url: 'https://api.example.test', name: 'My k6' })
