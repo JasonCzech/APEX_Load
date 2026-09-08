@@ -7744,3 +7744,71 @@ button.debugger-problem-row:hover {
   .browser-assertion-evidence { grid-template-columns: minmax(0, 1fr); gap: 4px; }
   .browser-assertion-evidence dd { margin-bottom: 8px; }
 }
+
+/* Task-focused authoring and evidence. Breakpoints use the workspace width,
+   since a desktop window can contain a much narrower editor panel. */
+.script-editor { container-type: inline-size; }
+.script-evidence-states { align-items: center; flex-wrap: wrap; }
+.actions-content-grid { --author-rail-width: 220px; --author-center-width: minmax(0, 1fr); --author-utility-width: minmax(280px, 36%); }
+.actions-content-grid.author-right-sidebar-wide { --author-center-width: minmax(0, 1fr); --author-utility-width: minmax(320px, 44%); }
+.actions-content-grid.author-outline-collapsed,
+.actions-content-grid.author-right-sidebar-collapsed,
+.actions-content-grid.author-outline-collapsed.author-right-sidebar-collapsed { --author-center-width: minmax(0, 1fr); }
+.actions-content-grid > *, .editor-utility-sidebar.wide { min-width: 0; max-width: 100%; }
+.editor-utility-sidebar { container-type: inline-size; }
+.action-editor-panel { min-width: 0; overflow-wrap: anywhere; }
+.action-editor-panel .form-grid, .action-editor-panel .browser-action-grid { grid-template-columns: minmax(0, 1fr); }
+.action-editor-panel input, .action-editor-panel select, .action-editor-panel textarea { min-width: 0; max-width: 100%; }
+.action-editor-panel .assertion-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.action-editor-panel .assertion-row > input, .action-editor-panel .assertion-row > select { flex: 1 1 180px; }
+.action-editor-panel summary, .action-library summary, .author-data-tools summary { cursor: pointer; padding: 12px; font-weight: 600; }
+.action-library { border-bottom: 1px solid var(--border); }
+.action-library-body { padding: 12px; max-height: 340px; overflow: auto; }
+.author-data-tools { border-bottom: 1px solid var(--border); }
+.center-tab-strip { flex-wrap: wrap; }
+.script-browser-evidence { padding: 16px; min-width: 0; height: 100%; overflow: auto; }
+.selected-evidence-header { display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
+.selected-evidence-header > div { min-width: 0; flex: 1 1 220px; }
+.selected-evidence-header h3, .selected-evidence-header p { overflow-wrap: anywhere; margin: 6px 0; }
+.selected-evidence-header small { color: var(--text-muted); }
+.selected-evidence-failure { padding: 12px; margin: 12px 0; border: 1px solid var(--border); border-left: 3px solid var(--danger, #e55768); border-radius: 6px; overflow-wrap: anywhere; }
+.script-browser-evidence .browser-assertion-result { display: block; }
+.script-browser-evidence .browser-assertion-result dd { margin: 4px 0 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.selected-evidence-tabs { display: flex; flex-wrap: wrap; gap: 4px; padding: 12px 0; border-bottom: 1px solid var(--border); }
+.selected-evidence-tabs button { min-height: 34px; padding: 6px 10px; border: 1px solid var(--border); background: var(--bg-secondary); color: var(--text-primary); border-radius: 5px; cursor: pointer; }
+.selected-evidence-tabs button.active { border-color: var(--accent); background: var(--bg-hover); }
+.selected-evidence-body { padding-top: 12px; min-width: 0; }
+.selected-evidence-screenshot { display: block; width: 100%; height: auto; max-height: 520px; object-fit: contain; object-position: top left; margin-top: 12px; }
+.debugger-shell.browser-evidence-workspace { grid-template-columns: minmax(180px, min(var(--rail-w, 260px), 28%)) minmax(0, 1fr); grid-template-areas: 'rail code' 'bottom bottom'; }
+.debugger-shell.debug-dock-collapsed { grid-template-rows: minmax(0, 1fr) 42px; min-height: 440px; }
+.debug-dock-collapsed .debugger-bottom > :not(.debugger-bottom-tabs) { display: none; }
+.debugger-bottom-tabs { flex-wrap: wrap; }
+@container (max-width: 1100px) {
+  .actions-content-grid, .actions-content-grid.author-right-sidebar-wide { grid-template-columns: minmax(0, 1fr) minmax(300px, 48%); grid-template-areas: 'author-rail author-rail' 'author-code author-utility'; grid-template-rows: auto minmax(0, 1fr); }
+  .actions-sidebar { max-height: 170px; min-width: 0; }
+  .actions-sidebar.collapsed { max-height: 42px; }
+  .author-rail-resize { display: none; }
+  .actions-content-grid.author-right-sidebar-collapsed { grid-template-columns: minmax(0, 1fr) 48px; }
+}
+@container (max-width: 700px) {
+  .actions-content-grid, .actions-content-grid.author-right-sidebar-wide, .actions-content-grid.author-outline-collapsed, .actions-content-grid.author-right-sidebar-collapsed { display: flex; flex-direction: column; overflow-y: auto; }
+  .actions-sidebar, .author-code-center, .editor-utility-sidebar { flex: 0 0 auto; width: 100%; min-height: 0; }
+  .author-code-center { max-height: 320px; }
+  .editor-body.workspace-author .editor-utility-sidebar { overflow: visible; max-height: none; }
+  .debugger-shell.browser-evidence-workspace { grid-template-columns: minmax(0, 1fr); grid-template-rows: 180px minmax(360px, 1fr) 180px; grid-template-areas: 'rail' 'code' 'bottom'; overflow-y: auto; }
+  .debugger-shell.browser-evidence-workspace.debug-dock-collapsed { grid-template-rows: 180px minmax(360px, 1fr) 70px; }
+  .debugger-shell.browser-evidence-workspace .debugger-resizer-col { display: none; }
+}
+/* HTTP evidence occupies the document pane; Source can still be compared with
+   the optional inspector. The action list is never duplicated in Debug. */
+.debugger-code-center .center-tab-panel > .debugger-center { height: 100%; min-height: 0; border: 0; }
+.debugger-code-center .debugger-center > .debugger-resizer-vars,
+.debugger-code-center .debugger-center .debugger-pane-close { display: none; }
+.utility-optional > summary { padding: 12px; cursor: pointer; font-weight: 600; }
+.action-list-center-name { white-space: normal; overflow-wrap: anywhere; }
+
+.debugger-bottom-tab-list { display: flex; flex-wrap: wrap; }
+
+.selected-evidence-repairs { margin: 12px 0; padding: 12px; border: 1px solid var(--border); border-radius: 6px; }
+.selected-evidence-repair-description { display: block; margin: 6px 0; }
+.debugger-action-row-main strong { white-space: normal; overflow-wrap: anywhere; }

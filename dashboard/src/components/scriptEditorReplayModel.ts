@@ -196,7 +196,7 @@ export function debugLogLevelWeight(level: ScriptDebugLogLevel | 'all'): number 
 }
 
 export function formatDebugLogEntry(entry: ScriptDebugLogEntry): string {
-  const location = entry.phase ? ` ${entry.phase}[${entry.action_index ?? '-'}]` : ''
+  const location = entry.phase ? ` ${entry.phase} ${(entry.action_index ?? 0) + 1}` : ''
   const raw = entry.raw ? `\n${entry.raw}` : ''
   return `[${formatReplayTime(entry.timestamp)}] ${entry.level.toUpperCase()} ${entry.category}${location} ${entry.message}${raw}`
 }

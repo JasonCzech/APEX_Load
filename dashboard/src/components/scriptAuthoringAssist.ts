@@ -931,9 +931,9 @@ export function buildScriptRepairSuggestions(script: ScriptDefinition, issues: A
   if (hasUnstableBrowserSelectors) {
     suggestions.push({
       key: 'stabilize_browser_selectors',
-      title: 'Stabilize Selectors',
-      description: 'Replace brittle generated selectors with data-testid placeholders while preserving the original selector in metadata.',
-      applyLabel: 'Stabilize Selectors',
+      title: 'Review Selectors',
+      description: 'Review brittle selectors against captured DOM or the application. Replacement selectors must exist in the target page.',
+      applyLabel: 'Review Selectors',
     })
   }
 
@@ -1115,30 +1115,9 @@ function stabilizeBrowserWaits(script: ScriptDefinition): ScriptRepairResult {
 }
 
 function stabilizeBrowserSelectors(script: ScriptDefinition): ScriptRepairResult {
-  const nextScript = cloneScript(script)
-  let updatedCount = 0
-  nextScript.actions = nextScript.actions.map((action, index) => {
-    const selector = action.selector || action.target
-    if (!action.type.startsWith('browser_') || !isUnstableSelector(selector)) return action
-    const stableSelector = `[data-testid="${sanitizeRepairName(action.name || `action_${index + 1}`, `action_${index + 1}`)}"]`
-    updatedCount += 1
-    return {
-      ...action,
-      selector: stableSelector,
-      target: action.selector ? action.target : stableSelector,
-      metadata: {
-        ...(action.metadata || {}),
-        original_selector: selector,
-        selector_repair: 'replace_with_data_testid_placeholder',
-      },
-    }
-  })
-  return {
-    script: nextScript,
-    summary: updatedCount > 0
-      ? `Stabilized ${updatedCount} browser selector${updatedCount === 1 ? '' : 's'} with data-testid placeholders.`
-      : 'No unstable browser selectors needed repair.',
-  }
+  // A generated attribute name is not evidence that an element exists.
+  // Retain this key for callers with saved suggestions, but never mutate selectors.
+  return { script, summary: 'Review selectors against the captured DOM. No selectors changed; choose a verified element before editing.' }
 }
 
 export function normalizeImportedActionNames(script: ScriptDefinition): MigrationAssistantResult {

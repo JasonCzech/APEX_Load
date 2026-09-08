@@ -71,8 +71,7 @@ export function ActionEditor({ action, index, parameters, onUpdate, onAddExtract
             isJmsScript={isJmsScript}
             onUpdate={onUpdate}
           />
-		  <div className="sub-section">
-			<div className="sub-header"><h4>Analytics attribution</h4></div>
+		  <details className="sub-section"><summary>Advanced: analytics attribution</summary>
 			<div className="form-grid">
 			  <label>
 				<span>Hierarchy path</span>
@@ -83,7 +82,7 @@ export function ActionEditor({ action, index, parameters, onUpdate, onAddExtract
 				<input value={action.attribution?.page_name || ''} placeholder="Checkout" onChange={event => onUpdate(index, 'attribution', { ...(action.attribution || {}), page_name: event.target.value })} />
 			  </label>
 			</div>
-		  </div>
+		  </details>
 
           {isHTTPRuntimeControl ? (
             <div className="sub-section http-runtime-action-card" role="note">
@@ -850,7 +849,7 @@ function ActionCoreFields({ action, index, protocol, isBrowserScript, isJmsScrip
         <label className="full-width"><span>{targetLabel}</span><input value={action.target} onChange={e => onUpdate(index, 'target', e.target.value)} placeholder={targetPlaceholder} /></label>
       )}
       {showSelector && (
-        <label className="full-width"><span>Selector Override</span><input value={action.selector || ''} onChange={e => onUpdate(index, 'selector', e.target.value)} placeholder="#submit, input[name=email], [data-testid=save]" /></label>
+        <label className="full-width"><span>Selector Override</span><small>Overrides Target Selector for element lookup. An Object Repository Ref takes precedence when it resolves.</small><input value={action.selector || ''} onChange={e => onUpdate(index, 'selector', e.target.value)} placeholder="#submit, input[name=email], [data-testid=save]" /></label>
       )}
       {showSelector && (
         <label className="full-width">

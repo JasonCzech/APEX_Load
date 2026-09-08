@@ -349,7 +349,15 @@ export function useScriptReplayDebuggerController({
     window.addEventListener('blur', onUp)
   }, [debuggerBottomHeight, debuggerRailWidth, debuggerVarsWidth])
 
+  const resetLayout = useCallback(() => {
+    setDebuggerRailWidth(DEBUGGER_LAYOUT_DEFAULTS.rail)
+    setDebuggerVarsWidth(DEBUGGER_LAYOUT_DEFAULTS.vars)
+    setDebuggerBottomHeight(DEBUGGER_LAYOUT_DEFAULTS.bottom)
+    setDebugDetailCollapsed(false)
+  }, [])
+
   return {
+    resetLayout,
     activeDebuggerResize,
     currentDebugAction,
     currentDebugAncestorKeys: currentDebugAncestorKeySet,

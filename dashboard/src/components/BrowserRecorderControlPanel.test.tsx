@@ -2042,6 +2042,8 @@ describe('BrowserRecorderControlPanel', () => {
     const badge = container.querySelector('.brp-quality-badge')
     expect(badge?.textContent).toBe('Selector: high (90/100)')
     expect(badge?.className).toContain('brp-quality-high')
+    expect(container.textContent).toContain('not a measured replay success rate')
+    expect(badge?.getAttribute('title')).toContain('not a replay success probability')
   })
 
   it('shows and accepts transaction suggestions', async () => {

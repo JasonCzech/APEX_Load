@@ -4,12 +4,14 @@ import { replayPreflightStatusLabel } from './replayPreflightUtils'
 
 export default function ReplayPreflightCard({
   preflight,
+  compact = false,
   onConfigureSecrets,
   secretStatusState,
   onRetrySecretStatus,
   configureSecretsLabel = 'Configure secrets',
 }: {
   preflight: ReplayPreflight
+  compact?: boolean
   onConfigureSecrets?: () => void
   secretStatusState?: 'checking' | 'unavailable'
   onRetrySecretStatus?: () => void
@@ -39,14 +41,16 @@ export default function ReplayPreflightCard({
         </div>
       </div>
       <div className="replay-preflight-checks">
-        {(preflight.checks || []).map(check => (
+        {(preflight.checks || []).filter(check => !compact || check.status !== 'pass').sort((a, b) => ((a.status === 'fail' ? 0 : a.status === 'warn' ? 1 : 2) - (b.status === 'fail' ? 0 : b.status === 'warn' ? 1 : 2))).map(check => (
           <div key={check.id} className={`replay-preflight-check ${check.status}`}>
-            <span>{check.label}</span>
-            <strong>{check.id === 'runtime' && check.status === 'warn' ? 'Not verified' : check.status === 'pass' ? 'Passed' : check.status === 'warn' ? 'Note' : 'Needs work'}</strong>
+            <span>{check.label}</span><strong>{check.id === 'runtime' && check.status === 'warn' ? 'Not verified' : check.status === 'pass' ? 'Passed' : check.status === 'warn' ? 'Note' : 'Needs work'}</strong>
             {check.detail && <small>{check.detail}</small>}
           </div>
         ))}
       </div>
+      {compact && (preflight.checks || []).some(check => check.status === 'pass') && <details><summary>Passed static checks ({(preflight.checks || []).filter(check => check.status === 'pass').length})</summary>
+        <div className="replay-preflight-checks">{(preflight.checks || []).filter(check => check.status === 'pass').map(check => <div key={check.id} className="replay-preflight-check pass"><span>{check.label}</span><strong>Passed</strong><small>{check.detail}</small></div>)}</div>
+      </details>}
       {secretStatusState && (
         <div className="replay-preflight-alerts" role="status">
           <span>

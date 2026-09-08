@@ -1,6 +1,7 @@
 import type * as React from 'react'
-import { memo, useMemo } from 'react'
+import { memo, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import { useVirtualizer, type VirtualItem } from '@tanstack/react-virtual'
 import CodeMirror from '@uiw/react-codemirror'
 import { json } from '@codemirror/lang-json'
@@ -70,7 +71,7 @@ const DEBUG_LOG_LEVELS: ScriptDebugLogLevel[] = ['error', 'warn', 'info', 'debug
 const DEBUG_LOG_VIRTUALIZE_THRESHOLD = 100
 
 const DebugConsoleLogEntry = memo(function DebugConsoleLogEntry({ entry }: { entry: ScriptDebugLogEntry }) {
-  const location = entry.phase ? `${entry.phase}[${entry.action_index ?? '-'}]` : null
+  const location = entry.phase ? `${entry.phase} ${(entry.action_index ?? 0) + 1}` : null
   const highlightedRaw = useMemo(() => highlightDebugLogRaw(entry.raw || ''), [entry.raw])
   return (
     <>
@@ -123,6 +124,7 @@ export interface ScriptReplayDebuggerViewProps {
   copiedReplaySnapshotSection: string | null
   debugActionRows: ScriptPhaseActionRow[]
   debugBreakpointKeys: Set<string>
+  debugDetailHost?: HTMLDivElement | null
   debuggerWorkbench: ReactNode
   error: string
   expandedReplayBrowserArtifacts: Record<string, boolean>
@@ -132,9 +134,9 @@ export interface ScriptReplayDebuggerViewProps {
   handleValidateScript: () => Promise<void>
   isBrowserScript: boolean
   jsonParseMessage: string
+  onEditReplayAction: (event: BrowserReplayEvent) => void
   onActivateDebug: () => void
   onSelectProblemAction: (row: ScriptPhaseActionRow) => void
-  onUpdateScriptName: (value: string) => void
   parameterReferenceCounts: Map<string, number>
   problemCount: number
   projectId?: string
@@ -185,7 +187,6 @@ export function ScriptReplayDebuggerView({
   activeReplaySessionId,
   addExtractorDefinition,
   api,
-  applyReplaySuggestedLocator,
   breakpointSummary,
   browserReplaySession,
   clearDebugBreakpoints,
@@ -193,18 +194,18 @@ export function ScriptReplayDebuggerView({
   copiedReplaySnapshotSection,
   debugActionRows,
   debugBreakpointKeys,
+  debugDetailHost,
   debuggerWorkbench,
   error,
   expandedReplayBrowserArtifacts,
-  expandedReplayEvent,
   exportGeneratedTextFile,
   handleCopyReplaySnapshotSection,
   handleValidateScript,
   isBrowserScript,
   jsonParseMessage,
+  onEditReplayAction,
   onActivateDebug,
   onSelectProblemAction,
-  onUpdateScriptName,
   parameterReferenceCounts,
   problemCount,
   projectId,
@@ -330,6 +331,8 @@ export function ScriptReplayDebuggerView({
     replayEditableActionsKey,
   }), [scriptId, replayReport, activeReplaySessionId, replayEditableActionsKey])
 
+  const [dockCollapsed, setDockCollapsed] = useState(true)
+  const [previousEvidenceOpen, setPreviousEvidenceOpen] = useState(false)
   return (
           <div
             className={`config-panel replay-panel script-ide-debugger debugger-dialog open ${replayReport ? 'has-report' : ''}`}
@@ -408,8 +411,8 @@ export function ScriptReplayDebuggerView({
             )}
 
             <div className="debugger-body">
-              {isBrowserScript && <p className="debugger-evidence-hint">Recording verification checks a conversion draft. Debugging here checks the current saved or edited script; changes require a new debug run.</p>}
-              {previousReplayReport && <details className="debugger-previous-evidence"><summary>Previous replay evidence · {previousReplayReport.stopped ? 'Stopped' : previousReplayReport.success ? 'Passed' : 'Failed'}</summary><p>{previousReplayReport.completed_at} · {previousReplayReport.error}</p><BrowserReplayDebugger report={previousReplayReport} running={false} /></details>}
+              {isBrowserScript && <details className="debugger-evidence-hint"><summary>About debug evidence</summary><p>Recording verification checks a conversion draft. Debugging here checks the current saved or edited script; changes require a new debug run.</p></details>}
+              {previousReplayReport && <details className="debugger-previous-evidence" onToggle={event => setPreviousEvidenceOpen(event.currentTarget.open)}><summary>Previous replay evidence · {previousReplayReport.stopped ? 'Stopped' : previousReplayReport.success ? 'Passed' : 'Failed'}</summary><p>{previousReplayReport.completed_at} · {previousReplayReport.error}</p>{previousEvidenceOpen && <BrowserReplayDebugger report={previousReplayReport} running={false} />}</details>}
               {(replaying || replayReport) && (
                 <div className={`debugger-live-strip ${debuggerStatusState}`}>
                   <span className="replay-live-badge">{replaying ? (isReplayPaused ? 'Paused' : 'Streaming live') : replayReport?.stopped ? 'Stopped' : replayReport?.success ? 'Finished' : 'Failed'}</span>
@@ -417,6 +420,7 @@ export function ScriptReplayDebuggerView({
                     <strong>{replayLatestActivity?.title || 'Debugger status available'}</strong>
                     {replayLatestActivity?.detail && !isBrowserScript && !replayReport?.stopped && <span>{replayLatestActivity.detail}</span>}
                   </div>
+                  <small>{replayReport?.events.length || 0} recorded executions · {replayReport?.events.filter(event => !event.success).length || 0} failures</small>
                   <span className="debugger-live-strip-time">{formatReplayTime(replayLatestActivity?.timestamp || replayReport?.completed_at || replayReport?.started_at)}</span>
                 </div>
               )}
@@ -450,7 +454,7 @@ export function ScriptReplayDebuggerView({
               )}
 
               <div
-                className={`debugger-shell ${debugDetailCollapsed ? 'debugger-detail-collapsed' : ''} ${activeDebuggerResize ? `resizing resizing-${activeDebuggerResize}` : ''}`}
+                className={`debugger-shell ${debugDetailCollapsed || isBrowserScript || debugDetailHost ? 'debugger-detail-collapsed' : ''} ${isBrowserScript ? 'browser-evidence-workspace' : ''} ${dockCollapsed ? 'debug-dock-collapsed' : ''} ${activeDebuggerResize ? `resizing resizing-${activeDebuggerResize}` : ''}`}
                 style={{
                   '--rail-w': `${debuggerRailWidth}px`,
                   '--vars-w': `${debuggerVarsWidth}px`,
@@ -458,12 +462,6 @@ export function ScriptReplayDebuggerView({
                 } as React.CSSProperties}
               >
                 <aside className="debugger-rail" aria-label="Actions">
-                  <div className="script-name-panel side-panel-script-name" aria-label="Script identity">
-                    <label className="script-name-field">
-                      <span>Script Name</span>
-                      <input value={script.name} onChange={e => onUpdateScriptName(e.target.value)} placeholder="My_Test_Script" />
-                    </label>
-                  </div>
                   <section className="debugger-rail-section">
                     <div className="debugger-rail-header">
                       <div className="debugger-rail-header-top">
@@ -860,7 +858,7 @@ export function ScriptReplayDebuggerView({
 
                 {debuggerWorkbench}
 
-                {!debugDetailCollapsed && (
+                {(!debugDetailCollapsed || debugDetailHost) && !isBrowserScript && (<EvidenceDestination host={debugDetailHost}>
                 <section className="debugger-center" aria-label="Debug detail">
                   <div
                     className={`debugger-resizer debugger-resizer-col debugger-resizer-vars ${activeDebuggerResize === 'vars' ? 'active' : ''}`}
@@ -947,17 +945,7 @@ export function ScriptReplayDebuggerView({
                         onAddExtractor={addExtractorDefinition}
                       /></details>
                     )}
-                    {debuggerTab === 'browser' && isBrowserScript ? (
-                      <BrowserReplayDebugger
-                        sessionId={activeReplaySessionId}
-                        session={browserReplaySession}
-                        report={replayReport}
-                        running={replaying}
-                        selectedEventIndex={expandedReplayEvent}
-                        onSelectEvent={setExpandedReplayEvent}
-                        onApplySuggestedLocator={applyReplaySuggestedLocator}
-                      />
-                    ) : !replayReport ? (
+                    {!replayReport ? (
                       <div className="debugger-empty">No debugger session yet. Place optional breakpoints in the gutter, adjust settings, then press Run.</div>
                     ) : selectedReplayEvent && selectedReplayEventIndex != null ? (
                       (() => {
@@ -979,6 +967,7 @@ export function ScriptReplayDebuggerView({
                         return (
                           <div className="debugger-detail">
                             <div className="debugger-detail-head">
+                              {!replaying && replayMatchesCurrentScript && <button type="button" className="btn btn-sm btn-secondary" onClick={() => onEditReplayAction(event)}>Edit this action</button>}
                               <span className="replay-event-phase">{event.phase}</span>
                               <strong>{event.action_name || 'Unnamed action'}</strong>
                               <span className="replay-event-target">{event.method || event.action_type} {event.target}</span>
@@ -1310,7 +1299,7 @@ export function ScriptReplayDebuggerView({
                     </>)}
                   </div>
                 </section>
-                )}
+                </EvidenceDestination>)}
 
                 <section className="debugger-bottom" aria-label="Debug dock">
                   <div
@@ -1326,11 +1315,14 @@ export function ScriptReplayDebuggerView({
                     aria-valuemin={DEBUGGER_LAYOUT_LIMITS.bottom.min}
                     aria-valuenow={debuggerBottomHeight}
                   />
-                  <div className="debugger-bottom-tabs" role="tablist">
-                    <button type="button" role="tab" aria-selected={debuggerBottomTab === 'console'} className={debuggerBottomTab === 'console' ? 'active' : ''} onClick={() => setDebuggerBottomTab('console')} title="Wire log — raw protocol request/response and engine output">Console</button>
-                    <button type="button" role="tab" aria-selected={debuggerBottomTab === 'timeline'} className={debuggerBottomTab === 'timeline' ? 'active' : ''} onClick={() => setDebuggerBottomTab('timeline')} title="Flow log — actions, transactions, and variable changes in order">Timeline</button>
-                    <button type="button" role="tab" aria-selected={debuggerBottomTab === 'problems'} className={debuggerBottomTab === 'problems' ? 'active' : ''} onClick={() => setDebuggerBottomTab('problems')}>Problems{problemCount > 0 ? ` ${problemCount}` : ''}</button>
-                    <button type="button" role="tab" aria-selected={debuggerBottomTab === 'output'} className={debuggerBottomTab === 'output' ? 'active' : ''} onClick={() => setDebuggerBottomTab('output')}>Output</button>
+                  <div className="debugger-bottom-tabs">
+                    <button type="button" aria-label={dockCollapsed ? "Expand logs and problems" : "Collapse logs and problems"} onClick={() => setDockCollapsed(value => !value)}>{dockCollapsed ? "Expand" : "Collapse"}</button>
+                    <div role="tablist" aria-label="Debug logs and problems" className="debugger-bottom-tab-list">
+                    <button type="button" role="tab" aria-selected={debuggerBottomTab === 'console'} className={debuggerBottomTab === 'console' ? 'active' : ''} onClick={() => { setDockCollapsed(false); setDebuggerBottomTab('console') }} title="Wire log — raw protocol request/response and engine output">Engine logs</button>
+                    <button type="button" role="tab" aria-selected={debuggerBottomTab === 'timeline'} className={debuggerBottomTab === 'timeline' ? 'active' : ''} onClick={() => { setDockCollapsed(false); setDebuggerBottomTab('timeline') }} title="Flow log — actions, transactions, and variable changes in order">Timeline</button>
+                    <button type="button" role="tab" aria-selected={debuggerBottomTab === 'problems'} className={debuggerBottomTab === 'problems' ? 'active' : ''} onClick={() => { setDockCollapsed(false); setDebuggerBottomTab('problems') }}>Problems{problemCount > 0 ? ` ${problemCount}` : ''}</button>
+                    <button type="button" role="tab" aria-selected={debuggerBottomTab === 'output'} className={debuggerBottomTab === 'output' ? 'active' : ''} onClick={() => { setDockCollapsed(false); setDebuggerBottomTab('output') }}>Output</button>
+                    </div>
                   </div>
                   {debuggerBottomTab === 'console' ? (
                     <div className="debug-raw-panel debugger-console">
@@ -1496,3 +1488,5 @@ export function ScriptReplayDebuggerView({
           </div>
   )
 }
+
+function EvidenceDestination({ host, children }: { host?: HTMLElement | null; children: ReactNode }) { return host ? createPortal(children, host) : children }

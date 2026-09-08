@@ -30,7 +30,7 @@ async function createScript(
 
 async function openEditor(page: Page, workspace: Workspace, scriptId: string): Promise<void> {
   await page.goto(`/#/scripts?mode=edit&scriptId=${scriptId}&${scopeQuery(workspace)}`)
-  await expect(page.getByRole('heading', { level: 1, name: 'Edit Script' })).toBeVisible({ timeout: 15_000 })
+  await expect(page.getByRole('group', { name: 'Script workspace' })).toBeVisible({ timeout: 15_000 })
 }
 
 function isScriptUpdate(response: Response, scriptId: string): boolean {
@@ -129,7 +129,7 @@ test('[U21] the imported script editor preserves tab state and saved changes acr
   const scriptRow = page.getByRole('row').filter({ hasText: 'Tier_0_Orders_API' })
   await scriptRow.getByRole('button', { name: 'Edit', exact: true }).click()
 
-  await expect(page.getByRole('heading', { level: 1, name: 'Edit Script' })).toBeVisible({ timeout: 15_000 })
+  await expect(page.getByRole('group', { name: 'Script workspace' })).toBeVisible({ timeout: 15_000 })
   const reopenedWorkbench = page.getByRole('region', { name: 'Author center workbench' })
   await expect(reopenedWorkbench.getByRole('tab', { name: 'Action List' })).toHaveAttribute('aria-selected', 'true')
   await expect(reopenedWorkbench.getByRole('button', { name: 'listOrders' })).toBeVisible()

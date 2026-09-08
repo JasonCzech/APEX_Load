@@ -633,12 +633,12 @@ export function adaptScenarioShapeDefaults(shapeId: string, seed: ScenarioSeed, 
 
 export const SCENARIO_SHAPE_PRESETS: Record<string, ScenarioShapePreset> = {
   'closed-vuser': {
-    duration: '67m',
+    duration: '5m',
     scenarioMode: 'vuser_driven',
     groups: [{
       vusers: 5,
       ramp_up: '2m',
-      stages: buildClosedVUserPlan({ peakVusers: 5, rampUp: '2m', sustain: '65m', rampDownEnabled: false, rampDown: '2m' }).stages,
+      stages: buildClosedVUserPlan({ peakVusers: 5, rampUp: '2m', sustain: '3m', rampDownEnabled: false, rampDown: '2m' }).stages,
     }],
     guidance: 'Ramp continuously to a fixed VUser load, measure steady-state performance, and optionally ramp down before the run ends.',
   },

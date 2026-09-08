@@ -85,6 +85,8 @@ export function defaultExtractorForProtocol(protocol: string) {
 
 export function defaultAssertionForProtocol(protocol: string) {
   switch (protocol) {
+    case 'browser':
+      return { type: 'element_text_contains', value: '', expected: '' }
     case 'database':
       return { type: 'row_count', expected: 1 }
     case 'network':

@@ -1197,11 +1197,7 @@ describe('ScriptEditor', () => {
     })
     expect(debugActionLabels()).toEqual([
       'Debug one iteration',
-      'Pause',
       'Step',
-      'Step Over',
-      'Finish Loop',
-      'Stop',
       'Break on failure',
     ])
     await act(async () => {
@@ -2164,10 +2160,8 @@ describe('ScriptEditor', () => {
     const debugNamePanel = debugRail?.querySelector('.side-panel-script-name')
     const debugActionHeader = Array.from(debugRail?.querySelectorAll('.debugger-rail-header') || [])
       .find(header => header.textContent?.includes('Action List'))
-    expect(debugNamePanel?.textContent).toContain('Script Name')
-    expect(debugNamePanel?.querySelector<HTMLInputElement>('input[placeholder="My_Test_Script"]')?.value).toBe('Checkout Flow')
+    expect(debugNamePanel).toBeNull() // Rename remains in Author; Debug keeps the action rail focused.
     expect(debugActionHeader).toBeTruthy()
-    expect(Boolean(debugNamePanel!.compareDocumentPosition(debugActionHeader!) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true)
     expect(debugRail?.querySelector('.debugger-rail-list')?.textContent).toContain('Login')
     expect(debugRail?.querySelector('.debugger-parameter-list')?.textContent).toContain('session_id')
 
@@ -2339,7 +2333,7 @@ describe('ScriptEditor', () => {
 
     const debugCenter = container.querySelector('.debugger-code-center')
     expect(debugCenter).not.toBeNull()
-    expect(findCenterTab(container, 'Action List')?.getAttribute('aria-selected')).toBe('true')
+    expect(findCenterTab(container, 'Action evidence')?.getAttribute('aria-selected')).toBe('true')
     expect(findCenterTab(debugCenter || container, 'Source Mapping')).toBeUndefined()
     expect(findCenterTab(debugCenter || container, 'Metadata JSON')).toBeUndefined()
     expect(findCenterTab(debugCenter || container, 'Conversion Mapping')).toBeUndefined()
@@ -2403,9 +2397,9 @@ describe('ScriptEditor', () => {
     })
 
     expect(findCenterTab(container, 'Browser Replay')?.getAttribute('aria-selected')).toBe('true')
-    expect(container.querySelector('.browser-debugger-main')).not.toBeNull()
-    expect(container.textContent).toContain('Browser Replay Cockpit')
-    expect(container.textContent).toContain('No screenshot yet')
+    expect(container.querySelector('.script-browser-evidence')).not.toBeNull()
+    expect(container.textContent).toContain('Browser evidence')
+    expect(container.textContent).toContain('Debug one iteration to capture')
   })
 
   it('renders a dedicated http_oauth2_token param editor', async () => {
@@ -2692,6 +2686,8 @@ describe('ScriptEditor', () => {
       await Promise.resolve()
     })
 
+    await act(async () => { findCenterTab(container, 'Source')?.click() })
+
     // The merged detail panel (request/response + variables) is open by default.
     expect(container.querySelector('.debugger-center')).not.toBeNull()
     expect(container.querySelector('.debugger-shell')?.classList.contains('debugger-detail-collapsed')).toBe(false)
@@ -2703,7 +2699,7 @@ describe('ScriptEditor', () => {
     })
     expect(container.querySelector('.debugger-center')).toBeNull()
     expect(container.querySelector('.debugger-shell')?.classList.contains('debugger-detail-collapsed')).toBe(true)
-    expect(container.querySelector('[aria-label="Action List"]')).not.toBeNull()
+    expect(findCenterTab(container, 'Source')?.getAttribute('aria-selected')).toBe('true')
 
     const showDetails = findButtonByTitle(container, 'Show detail panel (request/response + variables)')
     expect(showDetails).toBeDefined()
@@ -2744,6 +2740,8 @@ describe('ScriptEditor', () => {
       debugTab?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
       await Promise.resolve()
     })
+
+    await act(async () => { findCenterTab(container, 'Source')?.click() })
 
     // Debug detail panel (request/response + variables tabs) is open by default.
     expect(container.querySelector('.debugger-center')).not.toBeNull()
@@ -5373,7 +5371,7 @@ describe('ScriptEditor', () => {
     expect(lines).toHaveLength(2)
     expect(lines[0].querySelector('.debug-log-level.level-info')?.textContent).toBe('INFO')
     expect(lines[0].querySelector('.debug-log-category')?.textContent).toBe('request')
-    expect(lines[0].querySelector('.debug-log-location')?.textContent).toBe('action[0]')
+    expect(lines[0].querySelector('.debug-log-location')?.textContent).toBe('action 1')
     expect(lines[0].querySelector('.token-method')?.textContent).toBe('GET')
     expect(lines[0].querySelector('.token-target')?.textContent).toBe('/api/orders')
     expect(lines[0].querySelector('.token-header')?.textContent).toBe('Content-Type')
@@ -6744,9 +6742,10 @@ describe('ScriptEditor', () => {
     })
     await flushReact()
 
-    expect(container.querySelector<HTMLInputElement>('.side-panel-script-name input')?.value).toBe('Project Two Replay')
     expect(container.textContent).not.toContain('Old project replay')
     expect(container.textContent).not.toContain('Debugger completed successfully')
+    await act(async () => { findWorkspaceTab(container, 'Author')?.click() })
+    expect(container.querySelector<HTMLInputElement>('.side-panel-script-name input')?.value).toBe('Project Two Replay')
   })
 
   it('passes the stored script response through the save callback', async () => {
@@ -7393,10 +7392,10 @@ describe('ScriptEditor', () => {
       }),
     }))
     expect(findCenterTab(container, 'Browser Replay')?.getAttribute('aria-selected')).toBe('true')
-    expect(container.querySelector('.browser-debugger-main')).not.toBeNull()
-    expect(container.querySelector('.browser-address')?.textContent).toContain('Search Results')
+    expect(container.querySelector('.script-browser-evidence')).not.toBeNull()
+    expect(container.querySelector('.selected-evidence-header')?.textContent).toContain('Search Results')
 
-    const firstTimelineRow = Array.from(container.querySelectorAll('.browser-debugger-timeline-row'))
+    const firstTimelineRow = Array.from(container.querySelectorAll('.debugger-action-row-main'))
       .find(row => row.textContent?.includes('Open Home')) as HTMLButtonElement | undefined
     expect(firstTimelineRow).toBeDefined()
     if (!firstTimelineRow) {
@@ -7408,8 +7407,8 @@ describe('ScriptEditor', () => {
       await Promise.resolve()
     })
 
-    expect(container.querySelector('.browser-debugger-timeline-row.active')?.textContent).toContain('Open Home')
-    expect(container.querySelector('.browser-address')?.textContent).toContain('Home')
+    expect(container.querySelector('.debugger-action-row.selected')?.textContent).toContain('Open Home')
+    expect(container.querySelector('.selected-evidence-header')?.textContent).toContain('Home')
   })
 
   it('applies suggested browser selectors through editor history', async () => {
@@ -7573,6 +7572,7 @@ describe('ScriptEditor', () => {
       await Promise.resolve()
     })
 
+    await act(async () => { findCenterTab(container, 'Source')?.click() })
     const restoredScript = parseActiveEditorScript()
     expect(restoredScript.actions[1].selector).toBe('#old-submit')
   })
@@ -9974,7 +9974,7 @@ describe('ScriptEditor', () => {
     expect(container.querySelector('.actions-sidebar .editor-outline-nav')).not.toBeNull()
     expect(container.textContent).toContain('Parameter File Mappings')
     expect(container.textContent).toContain('Open Mapping List')
-    expect(container.textContent).not.toContain('Starter Blocks')
+    expect(container.querySelector('.actions-sidebar')?.textContent).not.toContain('Starter Blocks')
     const openMappingsButton = findButtonByText(container, 'Open Mapping List')
     expect(openMappingsButton).toBeDefined()
     await act(async () => {

@@ -18,6 +18,7 @@ export type ScriptEditorStateSetter<T> = (update: ScriptEditorStateUpdate<T>) =>
 export interface ActionEditorParameterDraft {
   source: 'action' | 'json'
   phase?: ScriptActionPhase
+  stepPath?: string[]
   actionIndex: number
   start: number
   end: number

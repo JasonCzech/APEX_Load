@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useId, useState } from 'react'
 
 import { type RuntimeSettingsOverride, type ScenarioRuntimeSettingsDraft } from '../types'
 import { type ScriptActionDefinition, type ScriptConfig } from '../types/scripts'
@@ -74,6 +74,8 @@ export interface RuntimeSettingsGroupEditorProps {
   description?: string
   /** Hides the Apply-to-groups panel — for mounts that edit one settings object. */
   hideApplyPanel?: boolean
+  hideGroupSelector?: boolean
+  overrideLabel?: string
   /** Section applicability protocols. A scenario- or test-wide mount passes every
    *  member protocol so a section applicable to at least one group stays editable;
    *  unset falls back to the focus group's own protocol. */
@@ -160,8 +162,11 @@ export default function RuntimeSettingsGroupEditor({
   title,
   description,
   hideApplyPanel,
+  hideGroupSelector,
+  overrideLabel,
   applicableProtocols,
 }: RuntimeSettingsGroupEditorProps) {
+  const tabPrefix = useId()
   const [applyOpen, setApplyOpen] = useState(false)
   const [applyTargets, setApplyTargets] = useState<number[]>([])
   const [rawActiveTab, setRawActiveTab] = useState<RuntimeTabId>('summary')
@@ -671,7 +676,7 @@ export default function RuntimeSettingsGroupEditor({
         </div>
       </div>
 
-      {groups.length > 1 && (
+      {!hideGroupSelector && groups.length > 1 && (
         <div className="scenario-browser-grid">
           <label>
             <span>Focus group</span>
@@ -692,15 +697,15 @@ export default function RuntimeSettingsGroupEditor({
         </div>
       )}
 
-      <div className="scenario-run-settings-tabs runtime-override-tabs" role="tablist" aria-label="Per-group runtime sections">
+      <div className="scenario-run-settings-tabs runtime-override-tabs" role="tablist" aria-label={`${title || "Group runtime"} sections`}>
         {visibleTabs.map(tab => (
           <button
             key={tab.id}
             type="button"
             role="tab"
-            id={`runtime-tab-${tab.id}`}
+            id={`${tabPrefix}-runtime-tab-${tab.id}`}
             aria-selected={activeTab === tab.id}
-            aria-controls={`runtime-tab-panel-${tab.id}`}
+            aria-controls={`${tabPrefix}-runtime-tab-panel-${tab.id}`}
             className={`scenario-run-settings-tab ${activeTab === tab.id ? 'active' : ''}`}
             onClick={() => setRawActiveTab(tab.id)}
           >
@@ -712,11 +717,11 @@ export default function RuntimeSettingsGroupEditor({
       <div
         className="scenario-run-settings-tab-panel runtime-override-tab-panel"
         role="tabpanel"
-        id={`runtime-tab-panel-${activeTab}`}
-        aria-labelledby={`runtime-tab-${activeTab}`}
+        id={`${tabPrefix}-runtime-tab-panel-${activeTab}`}
+        aria-labelledby={`${tabPrefix}-runtime-tab-${activeTab}`}
       >
         {activeTab === 'summary' && (
-          <table className="runtime-override-summary">
+          <table className="runtime-override-summary" data-table-pagination="off">
             <thead>
               <tr>
                 <th>Setting</th>
@@ -726,7 +731,7 @@ export default function RuntimeSettingsGroupEditor({
               </tr>
             </thead>
             <tbody>
-              {SUMMARY_FIELDS.map(field => {
+              {SUMMARY_FIELDS.filter(field => fieldApplicable(field)).map(field => {
                 const applicable = fieldApplicable(field)
                 if (!applicable) {
                   return (
@@ -741,7 +746,7 @@ export default function RuntimeSettingsGroupEditor({
                   <tr key={field} className="runtime-override-row">
                     <td>{FIELD_LABELS[field]}</td>
                     <td>{effective.value}</td>
-                    <td><span className={`runtime-source-badge source-${effective.source}`}>{RUNTIME_FIELD_SOURCE_LABEL[effective.source]}</span></td>
+                    <td><span className={`runtime-source-badge source-${effective.source}`}>{effective.source === 'group' && overrideLabel ? overrideLabel : RUNTIME_FIELD_SOURCE_LABEL[effective.source]}</span></td>
                     <td>
                       {fieldHasOverride(field) && (
                         <button type="button" className="link-button" onClick={() => clearField(field)} aria-label={`Clear ${FIELD_LABELS[field]} override`}>

@@ -1785,6 +1785,7 @@ export default function BrowserRecorderControlPanel({
               <span className="rec-feed-count">{session.step_count}</span>
             </span>
           </div>
+          {steps.some(step => step.candidates?.length) && <p className="brp-hint">Selector quality is a heuristic ranking of captured locators, not a measured replay success rate. Open Step details for the locator and its capture reason; verify the generated script to test it.</p>}
           {steps.length > 10 && (
             <div className="brp-step-search">
               <input
@@ -1814,7 +1815,7 @@ export default function BrowserRecorderControlPanel({
                   {step.mark_secret && <span className="brp-masked" title="Marked as a runtime secret">secret</span>}
                   {step.mark_param && <span className="brp-masked" title="Marked as a data parameter">param</span>}
                   {quality && (
-                    <span className={`brp-quality-badge brp-quality-${quality.tone}`} title={`Selector confidence ${quality.score}/100 (${step.candidates?.[0]?.kind})`}>
+                    <span className={`brp-quality-badge brp-quality-${quality.tone}`} title={`Heuristic selector quality ${quality.score}/100 (${step.candidates?.[0]?.kind}); not a replay success probability`}>
                       Selector: {quality.tone} ({quality.score}/100)
                     </span>
                   )}

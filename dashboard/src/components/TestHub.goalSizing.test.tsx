@@ -241,6 +241,28 @@ describe('TestHub build-from-goal', () => {
     expect(container.textContent).not.toContain('Project A Baseline')
   })
 
+  it('ignores a baseline response from a discarded draft in the same project', async () => {
+    const report = deferred<Awaited<ReturnType<typeof apiMock.getTestArchiveReport>>>()
+    apiMock.getTestArchiveReport.mockReturnValueOnce(report.promise)
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    await act(async () => root.render(<TestHub testStatuses={{}} onSelectTest={vi.fn()} initialView="builder" />))
+    await flush()
+    await act(async () => findButton(container, 'Build from Goal')?.click())
+    await flush()
+    const picker = container.querySelector<HTMLSelectElement>('[aria-label="Completed baseline run"]')!
+    await act(async () => { picker.value = 'run-1'; picker.dispatchEvent(new Event('change', { bubbles: true })) })
+    await act(async () => findButton(container, 'Start Over')?.click())
+    await act(async () => report.resolve({
+      manifest: { provenance: { groups: [{ name: 'Checkout', script_id: 'script-a', script_name: 'Checkout', protocol: 'http', vusers: 1 }] } },
+      by_group: { Checkout: { transactions: 10, avg_response_ms: 3000 } },
+      overview: { transactions: 10, avg_response_ms: 3000 },
+    }))
+    await act(async () => findButton(container, 'Run Settings')?.click())
+    const mode = Array.from(container.querySelectorAll('label')).find(label => label.textContent?.includes('Scenario Mode'))?.querySelector('select')
+    expect(mode?.value).toBe('vuser_driven')
+    confirm.mockRestore()
+  })
+
   it('keeps the latest baseline selection when an older report resolves later', async () => {
     const firstReport = deferred<Awaited<ReturnType<typeof apiMock.getTestArchiveReport>>>()
     apiMock.getTestArchiveReport.mockImplementationOnce(() => firstReport.promise)

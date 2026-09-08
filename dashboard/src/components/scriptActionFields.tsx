@@ -160,7 +160,7 @@ export function BrowserActionFields({ action, index, onUpdate }: BrowserActionFi
         </div>
       )}
 
-      <div className="sub-section browser-action-section">
+      <details className="browser-action-section"><summary>Advanced: synchronization and capture</summary><div className="sub-section browser-action-section">
         <div className="sub-header"><h4>Post-Action Sync</h4></div>
         <div className="browser-action-grid">
           <label>
@@ -234,6 +234,7 @@ export function BrowserActionFields({ action, index, onUpdate }: BrowserActionFi
           </label>
         </div>
       </div>
+    </details>
     </>
   )
 }
@@ -881,11 +882,11 @@ export function HttpActionFields({
         />
       )}
 
-      {!isBrowserScript && (
+      {(
         <ProtocolAssertionsSection
           action={action}
           index={index}
-          protocol={isSoapScript ? 'soap' : 'http'}
+          protocol={isBrowserScript ? 'browser' : isSoapScript ? 'soap' : 'http'}
           onAddAssertion={onAddAssertion}
           onRemoveAssertion={onRemoveAssertion}
           onUpdateAssertion={onUpdateAssertion}
@@ -1106,6 +1107,8 @@ export interface ProtocolAssertionsSectionProps {
 
 function assertionOptions(protocol: string): Array<[string, string]> {
   switch (protocol) {
+    case 'browser':
+      return [['element_text_contains', 'Element text contains'], ['element_text_equals', 'Element text equals'], ['element_visible', 'Element visible'], ['page_title', 'Page title'], ['url_contains', 'URL contains'], ['body_contains', 'Page HTML contains'], ['body_not_contains', 'Page HTML excludes'], ['response_time_ms', 'Response time (ms)']]
     case 'jms-solace':
     case 'jms-servicebus':
     case 'jms-ibmmq':
@@ -1128,14 +1131,15 @@ function assertionUsesNumericExpected(type: string) {
 }
 
 function assertionUsesTextValue(type: string) {
-  return ['body_contains', 'body_not_contains', 'metadata_contains', 'correlation_match'].includes(type)
+  return ['body_contains', 'body_not_contains', 'metadata_contains', 'correlation_match', 'element_visible', 'url_contains'].includes(type)
 }
 
 function assertionUsesNamedExpected(type: string) {
-  return ['property_equals', 'header_equals', 'scalar_equals', 'header_contains', 'body_regex_capture_equals'].includes(type)
+  return ['property_equals', 'header_equals', 'scalar_equals', 'header_contains', 'body_regex_capture_equals', 'element_text_contains', 'element_text_equals'].includes(type)
 }
 
 function assertionValuePlaceholder(type: string) {
+  if (type.startsWith('element_text_')) return 'Element selector'
   if (type === 'header_contains') return 'Header name'
   if (type === 'body_regex_capture_equals') return 'RE2 pattern'
   return 'Name'
@@ -1144,19 +1148,21 @@ function assertionValuePlaceholder(type: string) {
 export function ProtocolAssertionsSection({ action, index, protocol, onAddAssertion, onRemoveAssertion, onUpdateAssertion }: ProtocolAssertionsSectionProps) {
   const options = assertionOptions(protocol)
   return (
-    <div className="sub-section">
+    <div className="sub-section" data-action-section="assertions">
       <div className="sub-header"><h4>Assertions</h4><button className="btn btn-sm btn-ghost" onClick={() => onAddAssertion(index)}>+ Add</button></div>
       {(action.assertions || []).map((assertion, assertionIndex) => (
         <div key={assertionIndex} className="assertion-row">
-          <select value={assertion.type} onChange={e => onUpdateAssertion(index, assertionIndex, 'type', e.target.value)}>
+          <select aria-label={`Assertion ${assertionIndex + 1} type`} value={assertion.type} onChange={e => onUpdateAssertion(index, assertionIndex, 'type', e.target.value)}>
+            {!options.some(([value]) => value === assertion.type) && <option value={assertion.type}>{assertion.type} (preserved)</option>}
             {options.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
           </select>
-          {assertionUsesNumericExpected(assertion.type) && <input type="number" value={typeof assertion.expected === 'number' ? assertion.expected : 0} onChange={e => onUpdateAssertion(index, assertionIndex, 'expected', Number(e.target.value))} />}
-          {assertion.type === 'response_time_ms' && <input type="number" value={assertion.max ?? 5000} onChange={e => onUpdateAssertion(index, assertionIndex, 'max', Number(e.target.value))} placeholder="Max ms" />}
-          {assertionUsesTextValue(assertion.type) && <input value={assertion.value ?? ''} onChange={e => onUpdateAssertion(index, assertionIndex, 'value', e.target.value)} placeholder="Expected text" />}
-          {assertionUsesNamedExpected(assertion.type) && assertion.type !== 'scalar_equals' && <input value={assertion.value ?? ''} onChange={e => onUpdateAssertion(index, assertionIndex, 'value', e.target.value)} placeholder={assertionValuePlaceholder(assertion.type)} />}
-          {assertionUsesNamedExpected(assertion.type) && <input value={typeof assertion.expected === 'string' || typeof assertion.expected === 'number' ? String(assertion.expected) : ''} onChange={e => onUpdateAssertion(index, assertionIndex, 'expected', e.target.value)} placeholder="Expected value" />}
-          <button className="btn-icon danger" onClick={() => onRemoveAssertion(index, assertionIndex)}>✕</button>
+          {assertion.type === 'page_title' && <input aria-label={`Assertion ${assertionIndex + 1} expected title`} value={typeof assertion.value === 'string' ? assertion.value : String(assertion.expected ?? '')} onChange={e => onUpdateAssertion(index, assertionIndex, typeof assertion.value === 'string' ? 'value' : 'expected', e.target.value)} placeholder="Expected title" />}
+          {assertionUsesNumericExpected(assertion.type) && <input aria-label={`Assertion ${assertionIndex + 1} expected number`} type="number" value={typeof assertion.expected === 'number' ? assertion.expected : 0} onChange={e => onUpdateAssertion(index, assertionIndex, 'expected', Number(e.target.value))} />}
+          {assertion.type === 'response_time_ms' && <input aria-label={`Assertion ${assertionIndex + 1} maximum milliseconds`} type="number" min="1" value={assertion.max ?? 5000} onChange={e => onUpdateAssertion(index, assertionIndex, 'max', Number(e.target.value))} placeholder="Max ms" />}
+          {assertionUsesTextValue(assertion.type) && <input aria-label={`Assertion ${assertionIndex + 1} ${assertion.type.startsWith('element_') ? 'selector' : 'value'}`} value={assertion.value ?? ''} onChange={e => onUpdateAssertion(index, assertionIndex, 'value', e.target.value)} placeholder={assertion.type === 'element_visible' ? 'Element selector' : 'Expected text'} />}
+          {assertionUsesNamedExpected(assertion.type) && assertion.type !== 'scalar_equals' && <input aria-label={`Assertion ${assertionIndex + 1} ${assertion.type.startsWith('element_') ? 'selector' : 'value'}`} value={assertion.value ?? ''} onChange={e => onUpdateAssertion(index, assertionIndex, 'value', e.target.value)} placeholder={assertionValuePlaceholder(assertion.type)} />}
+          {assertionUsesNamedExpected(assertion.type) && <input aria-label={`Assertion ${assertionIndex + 1} expected value`} value={typeof assertion.expected === 'string' || typeof assertion.expected === 'number' ? String(assertion.expected) : ''} onChange={e => onUpdateAssertion(index, assertionIndex, 'expected', e.target.value)} placeholder="Expected value" />}
+          <button aria-label={`Remove assertion ${assertionIndex + 1}`} className="btn-icon danger" onClick={() => onRemoveAssertion(index, assertionIndex)}>✕</button>
         </div>
       ))}
     </div>

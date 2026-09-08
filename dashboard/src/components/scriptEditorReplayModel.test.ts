@@ -163,7 +163,7 @@ describe('script editor replay model', () => {
     }
     expect(debugLogLevelWeight('error')).toBeLessThan(debugLogLevelWeight('debug'))
     expect(debugLogLevelWeight('all')).toBe(5)
-    expect(formatDebugLogEntry(entry)).toContain('INFO request action[2] sent\nGET /orders')
+    expect(formatDebugLogEntry(entry)).toContain('INFO request action 3 sent\nGET /orders')
     expect(formatReplayDiagnosisCategory('selector_not_found')).toBe('Selector Not Found')
     expect(formatReplayDiagnosisCategory()).toBe('Diagnosis')
   })

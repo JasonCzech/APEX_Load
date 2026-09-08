@@ -34,7 +34,7 @@ import {
   type ScriptValidationResponse,
   type ReplayPreflight,
 } from '../types/scripts'
-import BrowserReplayDebugger from './BrowserReplayDebugger'
+import ScriptBrowserEvidence from './ScriptBrowserEvidence'
 import IssueDetailsDialog, { type IssueDetail } from './IssueDetailsDialog'
 import {
   addCorrelationExtractorIfMissing,
@@ -162,6 +162,7 @@ import {
   parseScriptJsonDraft,
   phaseActionsForScript,
   resolveAuthorJsonScopeByKey,
+  updateNestedAction,
   SCRIPT_JSON_DEFAULT_COMPANION_TAB,
   type AuthorJsonScope,
 } from './scriptEditorJsonModel'
@@ -1187,10 +1188,9 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
     })
   }, [importMetadata, sourceReview])
   useEffect(() => {
-    if (workspaceTab === 'debug' && isBrowserScript) {
-      openCenterTab(BROWSER_REPLAY_TAB_ID)
-    }
-  }, [isBrowserScript, openCenterTab, workspaceTab])
+    if (workspaceTab === 'debug' && isBrowserScript && (centerTabsState.activeTabId === ACTION_LIST_TAB_ID || DEBUG_HIDDEN_CENTER_TABS.has(centerTabsState.activeTabId))) openCenterTab(BROWSER_REPLAY_TAB_ID)
+    if (workspaceTab === 'author' && centerTabsState.activeTabId === BROWSER_REPLAY_TAB_ID) openCenterTab(ACTION_LIST_TAB_ID)
+  }, [centerTabsState.activeTabId, isBrowserScript, openCenterTab, workspaceTab])
   useEffect(() => {
     if (centerTabsHydratedKey !== centerTabsStorageKey) return
     try {
@@ -1435,40 +1435,27 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
   const applyReplaySuggestedLocator = useCallback((event: ReplayActionEvent, locator: string) => {
     const nextLocator = locator.trim()
     if (!nextLocator) return
-    const phase = normalizeDebugPhase(event.phase || 'action')
-    if (phase !== 'action') {
-      setError('Suggested selectors can only be applied to script action steps.')
-      setSuccess('')
-      return
-    }
-    const actionIndex = typeof event.action_index === 'number'
-      ? event.action_index
-      : (() => {
-        const eventTarget = (event.selector || event.target || '').trim()
-        const matches = script.actions
-          .map((action, index) => ({ action, index }))
-          .filter(({ action }) => {
-            const actionTarget = (action.selector || action.target || '').trim()
-            return Boolean(event.action_name && action.name === event.action_name)
-              || Boolean(eventTarget && actionTarget === eventTarget)
-          })
-        return matches.length === 1 ? matches[0].index : -1
-      })()
-    if (actionIndex < 0 || actionIndex >= script.actions.length) {
+    const normalizedPhase = normalizeDebugPhase(event.phase || 'action')
+    if (!['init', 'action', 'teardown'].includes(normalizedPhase)) return
+    const phase = normalizedPhase as ScriptActionPhase
+    const phaseActions = phaseActionsForScript(script, phase)
+    // The API omits a zero action index when serializing replay events.
+    const actionIndex = event.action_index ?? 0
+    if (actionIndex < 0 || actionIndex >= phaseActions.length) {
       setError('Suggested selector could not be mapped to a script action.')
       setSuccess('')
       return
     }
-    const currentAction = script.actions[actionIndex]
-    const nextScript: ScriptData = {
-      ...script,
-      actions: script.actions.map((action, index) => (
-        index === actionIndex ? { ...action, selector: nextLocator } : action
-      )),
-    }
+    const stepPath = event.step_path?.length ? event.step_path : event.request_index != null ? [`requests[${event.request_index}]`] : undefined
+    const key = `${phase}:${actionIndex}${stepPath?.length ? `#${stepPath.join('/')}` : ''}`
+    const scope = resolveAuthorJsonScopeByKey(script, key)
+    if (!scope) { setError('Suggested selector could not be mapped to a script action.'); return }
+    const currentAction = scope.action
+    const collection = phase === 'action' ? 'actions' : phase
+    const nextScript: ScriptData = { ...script, [collection]: phaseActions.map((action, index) => index === actionIndex ? updateNestedAction(action, stepPath, leaf => ({ ...leaf, selector: nextLocator })) : action) }
     replaceScriptWithHistory(nextScript)
-    setActiveAction(actionIndex)
-    setAuthorCodeFocus({ phase: 'action', actionIndex })
+    setActiveAction(phase === 'action' && !stepPath?.length ? actionIndex : null)
+    setAuthorCodeFocus({ phase, actionIndex, stepPath, key })
     setScriptJsonSidebarTab('details')
     setAuthorRightSidebarCollapsed(false)
     openCenterTab(SCRIPT_JSON_TAB_ID)
@@ -2367,7 +2354,8 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
   const updatePhaseActionObject = (phase: ScriptActionPhase, idx: number, updater: (action: Action) => Action) => {
     updatePhaseActionList(phase, actions => {
       if (idx < 0 || idx >= actions.length) return actions
-      actions[idx] = updater(actions[idx])
+      const path = authorCodeFocus?.phase === phase && authorCodeFocus.actionIndex === idx ? authorCodeFocus.stepPath : undefined
+      actions[idx] = updateNestedAction(actions[idx], path, updater)
       return actions
     })
   }
@@ -2770,15 +2758,19 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
     }
   }
 
+  const workspaceDocuments = useRef<Partial<Record<WorkbenchMode, CenterWorkbenchTabId>>>({})
+  useEffect(() => { workspaceDocuments.current = {} }, [scriptId, projectId, folderId])
   const activateWorkspaceTab = useCallback((nextTab: WorkbenchMode) => {
+    if (nextTab === workspaceTab) return
+    workspaceDocuments.current[workspaceTab] = centerTabsState.activeTabId
+    const nextDocument = workspaceDocuments.current[nextTab]
+      || (nextTab === 'debug' && isBrowserScript ? BROWSER_REPLAY_TAB_ID : ACTION_LIST_TAB_ID)
     setWorkspaceTab(nextTab)
+    openCenterTab(nextDocument === BROWSER_REPLAY_TAB_ID && nextTab === 'author' ? ACTION_LIST_TAB_ID : nextDocument)
     if (nextTab === 'debug') {
       setDebuggerTab('request')
-      if (isBrowserScript) {
-        openCenterTab(BROWSER_REPLAY_TAB_ID)
-      }
     }
-  }, [isBrowserScript, openCenterTab, setDebuggerTab])
+  }, [centerTabsState.activeTabId, isBrowserScript, openCenterTab, setDebuggerTab, workspaceTab])
 
   const openReplayDebugger = useCallback((openSettings = false) => {
     activateWorkspaceTab('debug')
@@ -3389,7 +3381,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
   const stepReplayDisabled = replaying
     ? (!activeReplaySessionId || !isReplayPaused)
     : (saving || replayBlockedByMissingSecrets || !script.name || debugActionRows.length === 0)
-  const breakpointSummary = `${debugBreakpoints.length} selected across ${debugActionRows.length} executable action${debugActionRows.length === 1 ? '' : 's'}`
+  const breakpointSummary = `${debugBreakpoints.length} breakpoints across ${debugActionRows.length} executable action${debugActionRows.length === 1 ? '' : 's'}`
   useEffect(() => {
     if (hasReplayVariableInspectorData) {
       setDebugDetailCollapsed(false)
@@ -3483,7 +3475,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
           return
         }
         if (workspaceTab === 'debug') {
-          setWorkspaceTab('author')
+          activateWorkspaceTab('author')
         }
       },
     },
@@ -3565,6 +3557,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
       },
     },
   ], [
+    activateWorkspaceTab,
     activeAction,
     debugActionRows,
     debuggerSettingsOpen,
@@ -3930,12 +3923,16 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
       typeConfig: draft.typeConfig,
       reuseExisting: draft.reuseExisting,
     })
-    const action = phaseActionsForScript(script, phase)[draft.actionIndex]
+    const key = `${phase}:${draft.actionIndex}${draft.stepPath?.length ? `#${draft.stepPath.join('/')}` : ''}`
+    const action = resolveAuthorJsonScopeByKey(script, key)?.action
     if (action) {
       const body = action.body || ''
       const replacement = `{{param.${name}}}`
       const nextBody = `${body.slice(0, draft.start)}${replacement}${body.slice(draft.end)}`
-      updatePhaseAction(phase, draft.actionIndex, 'body', nextBody)
+      updatePhaseActionList(phase, actions => {
+        actions[draft.actionIndex] = updateNestedAction(actions[draft.actionIndex], draft.stepPath, leaf => ({ ...leaf, body: nextBody }))
+        return actions
+      })
     }
     setPendingParameterDraft(null)
   }
@@ -4512,6 +4509,13 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
   }
 
   const applyRepairSuggestion = (suggestion: ScriptRepairSuggestion) => {
+    if (suggestion.key === 'stabilize_browser_selectors') {
+      openCenterTab(ACTION_LIST_TAB_ID)
+      const index = script.actions.findIndex(action => action.type.startsWith('browser_') && /nth-child|>/.test(action.selector || action.target || ''))
+      if (index >= 0) selectAuthorAction(index)
+      setSuccess('Review the effective selector against the captured DOM. No selectors changed.')
+      return
+    }
     const result = applyScriptRepairSuggestion(script, suggestion.key)
     replaceScriptWithHistory(result.script)
     recordAssistantChange(suggestion.title, result.summary)
@@ -4640,14 +4644,10 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
   }
 
   const activeInspectorScope = useMemo(() => {
-    const focus = authorCodeFocus && !authorCodeFocus.stepPath?.length
-      ? authorCodeFocus
-      : activeAction !== null
-        ? { phase: 'action' as const, actionIndex: activeAction }
-        : null
+    const focus = authorCodeFocus || (activeAction !== null ? { phase: 'action' as const, actionIndex: activeAction } : null)
     if (!focus) return null
-    const action = phaseActionsForScript(script, focus.phase)[focus.actionIndex] || null
-    return action ? { phase: focus.phase, actionIndex: focus.actionIndex, action } : null
+    const key = `${focus.phase}:${focus.actionIndex}${focus.stepPath?.length ? `#${focus.stepPath.join('/')}` : ''}`
+    return resolveAuthorJsonScopeByKey(script, key)
   }, [activeAction, authorCodeFocus, script])
   const selectedJsonUnavailable = Boolean(jsonDirty || jsonParseMessage)
   const showSelectedActionJson = Boolean(
@@ -4780,6 +4780,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
     handleReplay,
     handleStepReplay,
     handleStopReplay,
+    handleSave,
     setBreakOnFailure,
   })
   topbarActionHandlersRef.current = {
@@ -4788,12 +4789,13 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
     handleReplay,
     handleStepReplay,
     handleStopReplay,
+    handleSave,
     setBreakOnFailure,
   }
   const scriptTopbarContribution = useMemo<TopbarContribution>(() => ({
     id: 'script-editor',
     priority: 80,
-    title: scriptId ? 'Edit Script' : 'Create Script',
+    title: currentDraftScript.name || (scriptId ? 'Edit Script' : 'Create Script'),
     meta: [
       {
         id: 'problems',
@@ -4819,6 +4821,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
       />
     ),
     secondaryActions: [
+      { id: 'save-script', label: saving ? 'Saving...' : 'Save', title: saveScriptTitle, ariaLabel: 'Save script', disabled: saveScriptDisabled, tone: 'primary', onClick: () => { void topbarActionHandlersRef.current.handleSave() } },
       {
         id: 'run-debug',
         label: replaying ? 'Running...' : replayReport ? 'Debug again' : 'Debug one iteration',
@@ -4836,7 +4839,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
         compactLabel: isReplayPaused ? 'Go' : 'Pause',
         icon: <DebugTopbarIcon kind="pause" />,
         className: 'topbar-debug-action topbar-debug-action-pause',
-        hidden: workspaceTab !== 'debug',
+        hidden: workspaceTab !== 'debug' || !replaying,
         title: isReplayPaused ? 'Continue debugger' : 'Pause debugger',
         tone: 'secondary',
         disabled: !activeReplaySessionId || !replaying || !browserReplaySession || browserReplaySession.status === 'completed' || browserReplaySession.status === 'failed' || browserReplaySession.status === 'stopped',
@@ -4860,7 +4863,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
         compactLabel: replayReport?.completed_at ? 'Restart over' : 'Over',
         icon: <DebugTopbarIcon kind="stepOver" />,
         className: 'topbar-debug-action topbar-debug-action-step-over',
-        hidden: workspaceTab !== 'debug',
+        hidden: workspaceTab !== 'debug' || !isReplayPaused,
         title: 'Step over the current block (run the rest of it, pause after)',
         tone: 'secondary',
         disabled: stepReplayDisabled,
@@ -4872,7 +4875,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
         compactLabel: 'Loop',
         icon: <DebugTopbarIcon kind="loop" />,
         className: 'topbar-debug-action topbar-debug-action-loop',
-        hidden: workspaceTab !== 'debug',
+        hidden: workspaceTab !== 'debug' || !isReplayPaused || !(browserReplaySession?.current_action?.iteration_path?.length || browserReplaySession?.current_action?.iteration != null),
         title: 'Run to the end of the enclosing loop',
         tone: 'secondary',
         disabled: stepReplayDisabled,
@@ -4884,7 +4887,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
         compactLabel: 'Stop',
         icon: <DebugTopbarIcon kind="stop" />,
         className: 'topbar-debug-action topbar-debug-action-stop',
-        hidden: workspaceTab !== 'debug',
+        hidden: workspaceTab !== 'debug' || !replaying,
         title: 'Stop debugger',
         tone: 'danger',
         disabled: !activeReplaySessionId || !replaying,
@@ -4905,7 +4908,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
         onClick: () => { void topbarActionHandlersRef.current.setBreakOnFailure(!replayOptions.breakOnFailure) },
       },
     ],
-  }), [activeReplaySessionId, browserReplaySession, currentDraftScript.actions, currentDraftScript.name, debugWorkspaceStatusLabel, isReplayPaused, problemCount, replayBlockedByMissingSecrets, replayOptions.breakOnFailure, replayReport, replayRunButtonTitle, replaying, saving, scriptId, stepReplayDisabled, validationEvidence, workspaceTab])
+  }), [activeReplaySessionId, browserReplaySession, currentDraftScript.actions, currentDraftScript.name, debugWorkspaceStatusLabel, isReplayPaused, problemCount, replayBlockedByMissingSecrets, replayOptions.breakOnFailure, replayReport, replayRunButtonTitle, replaying, saving, saveScriptDisabled, saveScriptTitle, scriptId, stepReplayDisabled, validationEvidence, workspaceTab])
   useTopbarContribution(scriptTopbarContribution)
 
   const renderBlockedCenterDocument = (title: string) => (
@@ -4948,7 +4951,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
           onAddMetadata={(idx) => addPhaseMetadata(activeInspectorScope.phase, idx)}
           onUpdateMetadata={(actionIdx, oldKey, newKey, value) => updatePhaseMetadata(activeInspectorScope.phase, actionIdx, oldKey, newKey, value)}
           onRemoveMetadata={(actionIdx, key) => removePhaseMetadata(activeInspectorScope.phase, actionIdx, key)}
-          onBeginParameterEdit={(draft) => openParameterizeChoice({ ...draft, phase: activeInspectorScope.phase })}
+          onBeginParameterEdit={(draft) => openParameterizeChoice({ ...draft, phase: activeInspectorScope.phase, stepPath: authorCodeFocus?.stepPath })}
           methodColor={methodColor}
           protocol={script.protocol}
           isBrowserScript={isBrowserScript}
@@ -4959,6 +4962,98 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
       </>
     ) : null
   )
+  const renderActionLibrary = () => <details className="action-library"><summary>Add action from a block</summary><div className="action-library-body">
+                  <div className="starter-blocks-panel">
+                    <div className="starter-blocks-header">
+                      <strong>Starter Blocks</strong>
+                      <span>{starterTemplates.length}</span>
+                    </div>
+                    <div className="starter-blocks-list">
+                      {starterTemplates.map((template) => (
+                        <button key={template.key} type="button" className="starter-block-card" onClick={() => addActionTemplate(template.key)}>
+                          <strong>{template.label}</strong>
+                          <span>{template.description}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                {authoringComponents.length > 0 && (
+                  <section className="outline-section reusable-blocks-section">
+                    <div className="actions-sidebar-header outline-section-header">
+                      <button
+                        type="button"
+                        className="outline-section-toggle"
+                        aria-expanded={!reusableBlocksCollapsed}
+                        onClick={() => setReusableBlocksCollapsed(collapsed => !collapsed)}
+                      >
+                        <span aria-hidden="true" className="outline-section-chevron">{reusableBlocksCollapsed ? '▸' : '▾'}</span>
+                        <span>
+                          <strong>Reusable Blocks</strong>
+                          <small>
+                            {authoringComponents.length} block{authoringComponents.length === 1 ? '' : 's'}
+                            {isEditingExisting ? ' · inserts after selected action' : ''}
+                          </small>
+                        </span>
+                      </button>
+                    </div>
+                    {!reusableBlocksCollapsed && (
+                      <div className="starter-blocks-panel reusable-blocks-panel">
+                        <div className="starter-blocks-list">
+                          {AUTHORING_COMPONENT_GROUPS.map(group => {
+                            const groupComponents = authoringComponents.filter(component => !isUserBlock(component) && component.kind === group.kind)
+                            if (groupComponents.length === 0) return null
+                            return (
+                              <div key={group.kind} className="reusable-blocks-group">
+                                <span className="reusable-blocks-group-label">{group.label}</span>
+                                {groupComponents.map(component => (
+                                  <button
+                                    key={component.id}
+                                    type="button"
+                                    className="starter-block-card"
+                                    onClick={() => insertAuthoringComponent(component)}
+                                    title={component.usage_notes?.[0] || component.summary}
+                                  >
+                                    <strong>{component.name}</strong>
+                                    <span>{component.summary}</span>
+                                  </button>
+                                ))}
+                              </div>
+                            )
+                          })}
+                          {authoringComponents.some(isUserBlock) && (
+                            <div className="reusable-blocks-group">
+                              <span className="reusable-blocks-group-label">Your Blocks</span>
+                              {authoringComponents.filter(isUserBlock).map(component => (
+                                <div key={component.id} className="starter-block-card user-block-card">
+                                  <button
+                                    type="button"
+                                    className="user-block-insert"
+                                    onClick={() => insertAuthoringComponent(component)}
+                                    title={component.usage_notes?.[0] || component.summary}
+                                  >
+                                    <strong>{component.name}</strong>
+                                    <span>{component.summary}</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="btn-icon danger user-block-delete"
+                                    aria-label={`Delete reusable block ${component.name}`}
+                                    title="Delete this block"
+                                    disabled={savingBlock}
+                                    onClick={() => deleteUserBlock(component)}
+                                  >
+                                    ✕
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </section>
+                )}
+  </div></details>
   const renderActionListCenterDocument = () => renderStructuredCenterDocument('Action List', (
     <section className="center-document action-list-center-document" aria-label="Action List">
       <div className="center-document-header">
@@ -4970,6 +5065,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
           + Add Action
         </button>
       </div>
+      {renderActionLibrary()}
       <div className="action-list-center-summary" aria-label="Lifecycle action counts">
         <span><strong>{script.init?.length || 0}</strong> init</span>
         <span><strong>{script.actions?.length || 0}</strong> actions</span>
@@ -5038,22 +5134,43 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
       )}
     </section>
   ))
+  const editReplayAction = (event: BrowserReplayEvent) => {
+    if (!['init', 'action', 'teardown'].includes(event.phase)) return
+    const actionIndex = event.action_index ?? 0
+    const phase = event.phase as ScriptActionPhase
+    const path = event.step_path?.length ? event.step_path : event.request_index != null ? [`requests[${event.request_index}]`] : []
+    const key = `${phase}:${actionIndex}${path.length ? `#${path.join('/')}` : ''}`
+    const scope = resolveAuthorJsonScopeByKey(script, key)
+    if (!scope) return
+    activateWorkspaceTab('author')
+    openCenterTab(ACTION_LIST_TAB_ID)
+    setActiveAction(phase === 'action' && path.length === 0 ? actionIndex : null)
+    setAuthorCodeFocus({ phase, actionIndex, stepPath: path, key, label: event.action_name })
+    setAuthorRightSidebarCollapsed(false)
+    setShowFullScriptJson(false)
+    requestAnimationFrame(() => {
+      const assertions = document.querySelector('[data-action-section="assertions"]')
+      const field = assertions?.querySelector<HTMLElement>('input[aria-label*="expected"]')
+        || assertions?.querySelector<HTMLElement>('input')
+        || document.querySelector<HTMLElement>('.action-editor-panel input')
+      field?.focus()
+      field?.scrollIntoView({ block: 'nearest' })
+    })
+  }
   const renderCenterTabPanel = (tabId: CenterWorkbenchTabId) => {
     if (tabId === BROWSER_REPLAY_TAB_ID && isBrowserScript) {
       return (
-        <BrowserReplayDebugger
-          sessionId={activeReplaySessionId}
-          session={browserReplaySession}
-          report={replayReport}
+        <ScriptBrowserEvidence
+          key={activeReplaySessionId || 'idle'}
+          event={selectedReplayEvent}
+          variables={mergeReplayVariables(replaySeedVariables, replayDebuggerController.debugEvents.slice(0, (replayDebuggerController.selectedReplayEventIndex ?? -1) + 1))}
           running={replaying}
-          variant="main"
-          selectedEventIndex={expandedReplayEvent}
-          onSelectEvent={setExpandedReplayEvent}
-          onApplySuggestedLocator={applyReplaySuggestedLocator}
+          onEdit={!replaying && !jsonParseMessage && selectedReplayEvent && replayEditableActionsKey === currentEditableActionsKey ? () => editReplayAction(selectedReplayEvent) : undefined}
+          onApplyLocator={!replaying && !jsonParseMessage && replayEditableActionsKey === currentEditableActionsKey ? applyReplaySuggestedLocator : undefined}
         />
       )
     }
-    if (tabId === ACTION_LIST_TAB_ID) return renderActionListCenterDocument()
+    if (tabId === ACTION_LIST_TAB_ID) return workspaceTab === 'debug' ? null : renderActionListCenterDocument()
     if (tabId !== SCRIPT_JSON_TAB_ID) return null
     return (
       <ScriptJsonDocument
@@ -5102,8 +5219,8 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
   }
   const renderCenterWorkbench = (className: string, ariaLabel: string, mode: WorkbenchMode) => {
     const workbenchTabs = mode === 'debug'
-      ? visibleCenterTabs.filter(tab => !DEBUG_HIDDEN_CENTER_TABS.has(tab.id))
-      : visibleCenterTabs
+      ? visibleCenterTabs.filter(tab => !DEBUG_HIDDEN_CENTER_TABS.has(tab.id) && (!isBrowserScript || tab.id !== ACTION_LIST_TAB_ID)).map(tab => tab.id === ACTION_LIST_TAB_ID ? { ...tab, label: 'Action evidence', title: 'Action evidence' } : tab)
+      : visibleCenterTabs.filter(tab => tab.id !== BROWSER_REPLAY_TAB_ID)
     const fallbackTabs = centerTabDescriptors.filter(tab => mode !== 'debug' || !DEBUG_HIDDEN_CENTER_TABS.has(tab.id))
     return (
       <CenterTabbedPane
@@ -5198,6 +5315,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
       </div>
       <ReplayPreflightCard
         preflight={replayPreflight}
+        compact
         onConfigureSecrets={projectId ? openProjectSecrets : undefined}
         configureSecretsLabel={scriptId ? 'Configure secrets' : 'Save & configure secrets'}
         secretStatusState={replaySecretStatusState}
@@ -5207,7 +5325,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
       />
       {renderReadinessValidationResult()}
       {showChecklist && (
-        <div className="utility-checklist">
+        <details><summary>Evidence required for approval</summary><div className="utility-checklist">
           {convergenceItems.map(item => (
             <div key={item.key} className="utility-checklist-item">
               <div>
@@ -5221,7 +5339,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
               )}
             </div>
           ))}
-        </div>
+        </div></details>
       )}
     </div>
   )
@@ -5407,8 +5525,10 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
   return (
     <div className="script-editor">
       <div className="script-evidence-states" aria-label="Script evidence states">
+        {workspaceTab === 'author' && <button type="button" className="btn btn-sm btn-ghost" aria-pressed={!authorOutlineCollapsed} onClick={() => setAuthorOutlineCollapsed(value => !value)}>Toggle tools</button>}
+        <button type="button" className="btn btn-sm btn-ghost" onClick={() => { setAuthorRailWidth(220); setAuthorOutlineCollapsed(false); setAuthorRightSidebarCollapsed(false); replayDebuggerController.resetLayout() }}>Reset layout</button>
         <span>Saved: {scriptEditorDirty ? 'unsaved changes' : 'up to date'}</span>
-        <span>Script checks: {validationEvidenceMatchesCurrentDraft && validationPassed ? 'passed' : validationEvidence ? 'stale or needs changes' : 'not yet'}</span>
+        <span>Validation evidence: {validationEvidenceMatchesCurrentDraft && validationPassed ? 'passed' : validationEvidence ? 'stale or needs changes' : 'not yet'}</span>
         <span>Debugged: {debugEvidenceStatus}</span>
         <span>Approval readiness: {approvalReady ? 'ready for review' : 'needs evidence'}</span>
       </div>
@@ -5699,6 +5819,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
             copiedReplaySnapshotSection={copiedReplaySnapshotSection}
             debugActionRows={debugActionRows}
             debugBreakpointKeys={debugBreakpointKeys}
+            debugDetailHost={!isBrowserScript && centerTabsState.activeTabId === ACTION_LIST_TAB_ID ? centerTabPanelElements[ACTION_LIST_TAB_ID] : null}
             debuggerWorkbench={renderCenterWorkbench('debugger-code-center', 'Debugger center workbench', 'debug')}
             error={error}
             expandedReplayBrowserArtifacts={expandedReplayBrowserArtifacts}
@@ -5708,12 +5829,13 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
             handleValidateScript={handleValidateScript}
             isBrowserScript={isBrowserScript}
             jsonParseMessage={jsonParseMessage}
+            onEditReplayAction={editReplayAction}
             onActivateDebug={() => activateWorkspaceTab('debug')}
             onSelectProblemAction={row => {
-              selectAuthorPhaseAction(row)
               activateWorkspaceTab('author')
+              openCenterTab(ACTION_LIST_TAB_ID)
+              selectAuthorPhaseAction(row)
             }}
-            onUpdateScriptName={value => updateField('name', value)}
             parameterReferenceCounts={parameterReferenceCounts}
             problemCount={problemCount}
             projectId={projectId}
@@ -5970,9 +6092,9 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
                       <button type="button" className="btn-icon editor-outline-action-button" onClick={redoEditorChange} disabled={editorHistory.future.length === 0} title="Redo guided change" aria-label="Redo guided change">
                         <EditorRailActionIcon kind="redo" />
                       </button>
-                      <button type="button" className="btn-icon editor-outline-action-button primary" onClick={() => { void handleSave() }} disabled={saveScriptDisabled} title={saveScriptTitle} aria-label="Save script">
+                      {!hasTopbarContributionProvider && <button type="button" className="btn-icon editor-outline-action-button primary" onClick={() => { void handleSave() }} disabled={saveScriptDisabled} title={saveScriptTitle} aria-label="Save script">
                         <EditorRailActionIcon kind="save" />
-                      </button>
+                      </button>}
                       {onClose && (
                         <button type="button" className="btn-icon editor-outline-action-button" onClick={handleCloseEditor} title="Close script editor" aria-label="Close script editor">
                           <EditorRailActionIcon kind="close" />
@@ -6352,6 +6474,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
                   )}
                 </section>
                 </details>
+                <details className="author-data-tools"><summary>Data &amp; variables ({script.parameters?.length || 0})</summary>
                 <ScriptJsonParameterOutline
                   collapsed={outlineParameterListCollapsed}
                   deepScanning={deepScanning}
@@ -6364,100 +6487,9 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
                   onSelectParameter={selectOutlineParameter}
                   onToggle={() => setOutlineParameterListCollapsed(collapsed => !collapsed)}
                 />
-                {importedParameterFileMappings.length > 0 ? (
-                  <ImportReviewOutlineSection controller={importReviewController} />
-                ) : (
-                  <div className="starter-blocks-panel">
-                    <div className="starter-blocks-header">
-                      <strong>Starter Blocks</strong>
-                      <span>{starterTemplates.length}</span>
-                    </div>
-                    <div className="starter-blocks-list">
-                      {starterTemplates.map((template) => (
-                        <button key={template.key} type="button" className="starter-block-card" onClick={() => addActionTemplate(template.key)}>
-                          <strong>{template.label}</strong>
-                          <span>{template.description}</span>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-                {authoringComponents.length > 0 && (
-                  <section className="outline-section reusable-blocks-section">
-                    <div className="actions-sidebar-header outline-section-header">
-                      <button
-                        type="button"
-                        className="outline-section-toggle"
-                        aria-expanded={!reusableBlocksCollapsed}
-                        onClick={() => setReusableBlocksCollapsed(collapsed => !collapsed)}
-                      >
-                        <span aria-hidden="true" className="outline-section-chevron">{reusableBlocksCollapsed ? '▸' : '▾'}</span>
-                        <span>
-                          <strong>Reusable Blocks</strong>
-                          <small>
-                            {authoringComponents.length} block{authoringComponents.length === 1 ? '' : 's'}
-                            {isEditingExisting ? ' · inserts after selected action' : ''}
-                          </small>
-                        </span>
-                      </button>
-                    </div>
-                    {!reusableBlocksCollapsed && (
-                      <div className="starter-blocks-panel reusable-blocks-panel">
-                        <div className="starter-blocks-list">
-                          {AUTHORING_COMPONENT_GROUPS.map(group => {
-                            const groupComponents = authoringComponents.filter(component => !isUserBlock(component) && component.kind === group.kind)
-                            if (groupComponents.length === 0) return null
-                            return (
-                              <div key={group.kind} className="reusable-blocks-group">
-                                <span className="reusable-blocks-group-label">{group.label}</span>
-                                {groupComponents.map(component => (
-                                  <button
-                                    key={component.id}
-                                    type="button"
-                                    className="starter-block-card"
-                                    onClick={() => insertAuthoringComponent(component)}
-                                    title={component.usage_notes?.[0] || component.summary}
-                                  >
-                                    <strong>{component.name}</strong>
-                                    <span>{component.summary}</span>
-                                  </button>
-                                ))}
-                              </div>
-                            )
-                          })}
-                          {authoringComponents.some(isUserBlock) && (
-                            <div className="reusable-blocks-group">
-                              <span className="reusable-blocks-group-label">Your Blocks</span>
-                              {authoringComponents.filter(isUserBlock).map(component => (
-                                <div key={component.id} className="starter-block-card user-block-card">
-                                  <button
-                                    type="button"
-                                    className="user-block-insert"
-                                    onClick={() => insertAuthoringComponent(component)}
-                                    title={component.usage_notes?.[0] || component.summary}
-                                  >
-                                    <strong>{component.name}</strong>
-                                    <span>{component.summary}</span>
-                                  </button>
-                                  <button
-                                    type="button"
-                                    className="btn-icon danger user-block-delete"
-                                    aria-label={`Delete reusable block ${component.name}`}
-                                    title="Delete this block"
-                                    disabled={savingBlock}
-                                    onClick={() => deleteUserBlock(component)}
-                                  >
-                                    ✕
-                                  </button>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    )}
-                  </section>
-                )}
+                <button type="button" className="btn btn-sm btn-secondary" onClick={() => openEditorSection('parameter-data')}>Open parameter data</button>
+                </details>
+                {importedParameterFileMappings.length > 0 && <ImportReviewOutlineSection controller={importReviewController} />}
                 <div className="editor-outline-nav editor-outline-nav-bottom">
                   <div className="editor-outline-list">
                     <button className="editor-outline-link" type="button" onClick={() => openEditorSection('config')}>Script Configuration</button>
@@ -6526,7 +6558,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
                   dataSourceInspectorItems={dataSourceInspectorItems}
                   errorCount={errorCount}
                   extractorInspectorItems={extractorInspectorItems}
-                  importReview={(
+                  importReview={importMetadata ? (
                     <ImportReviewCommitPanel
                       assistantChangeLog={assistantChangeLog}
                       controller={importReviewController}
@@ -6537,7 +6569,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
                       onSelectAction={selectAuthorAction}
                       script={script}
                     />
-                  )}
+                  ) : null}
                   importedParameterFileMappings={importedParameterFileMappings}
                   onApplyRepairSuggestion={applyRepairSuggestion}
                   onOpenParameterData={() => openCenterTab('parameter-data')}

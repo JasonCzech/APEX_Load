@@ -516,7 +516,7 @@ describe('SCENARIO_SHAPE_PRESETS', () => {
   it('seeds the default Closed VUser phase profile', () => {
     const preset = getScenarioShapePreset('closed-vuser')!
     expect(preset.groups).toHaveLength(1)
-    expect(preset.duration).toBe('67m')
+    expect(preset.duration).toBe('5m')
     expect(preset.groups[0]).toMatchObject({ vusers: 5, ramp_up: '2m' })
     expect(preset.groups[0].stages?.map(stage => stage.type)).toEqual(['ramp_up', 'hold'])
     expect(preset.scenarioMode).toBe('vuser_driven')

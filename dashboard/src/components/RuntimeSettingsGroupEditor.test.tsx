@@ -107,7 +107,7 @@ describe('RuntimeSettingsGroupEditor', () => {
     const badges = Array.from(container.querySelectorAll('.runtime-source-badge')).map(b => (b.textContent || '').trim())
     // pacing + log_level are overridden on group 0; browser is not applicable for http.
     expect(badges.filter(b => b === 'Group override').length).toBe(2)
-    expect(text).toContain('Not applicable for http protocol')
+    expect(text).not.toContain('Not applicable for http protocol')
     // The overridden values are surfaced.
     expect(text).toContain('Fixed delay · 0.25 seconds')
     expect(text).toContain('extended')
@@ -281,7 +281,7 @@ describe('RuntimeSettingsGroupEditor', () => {
     expect(text).toContain('HTTP transport')
     expect(text).toContain('HTTP/2 required (no fallback)')
     expect(text).toContain('Logging')
-    expect(text).toContain('Not applicable for http protocol') // Browser config row
+    expect(text).not.toContain('Not applicable for http protocol') // Browser config row
   })
 
   it('clears a group override field via the Clear control', () => {

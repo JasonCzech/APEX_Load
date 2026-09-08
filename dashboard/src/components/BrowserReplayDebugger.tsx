@@ -643,7 +643,7 @@ export default function BrowserReplayDebugger({
   )
 }
 
-function BrowserReplayScreenshotDialog({ onClose, src }: BrowserReplayScreenshotDialogProps) {
+export function BrowserReplayScreenshotDialog({ onClose, src }: BrowserReplayScreenshotDialogProps) {
   const dialogRef = useRef<HTMLDivElement | null>(null)
   const closeButtonRef = useRef<HTMLButtonElement | null>(null)
   useModalDialog({ dialogRef, initialFocusRef: closeButtonRef, onClose })

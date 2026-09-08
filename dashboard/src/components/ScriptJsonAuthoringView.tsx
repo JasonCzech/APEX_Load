@@ -639,6 +639,7 @@ export function ScriptJsonInsightsView({
 
       {readiness}
 
+      <details className="utility-optional"><summary>Repair and import review</summary>
       <div className="utility-card">
         <div className="utility-card-header">
           <strong>Repair Actions</strong>
@@ -658,6 +659,8 @@ export function ScriptJsonInsightsView({
       </div>
 
       {importReview}
+      </details>
+      <details className="utility-optional"><summary>Data &amp; variable details</summary>
 
       <div className="utility-card">
         <div className="utility-card-header">
@@ -700,6 +703,7 @@ export function ScriptJsonInsightsView({
           </div>
         )}
       </div>
+      </details>
     </>
   )
 }

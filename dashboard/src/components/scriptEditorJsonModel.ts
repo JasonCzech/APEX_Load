@@ -316,6 +316,7 @@ export function phaseActionsForScript(
 type ParsedActionStepSegment =
 	| { name: 'requests' | 'then' | 'else' | 'loop' | 'default'; index: number }
 	| { name: 'case'; caseIndex: number; index: number }
+  | { name: 'parallel'; branchIndex: number; index: number }
 
 function parseActionStepSegment(segment: string): ParsedActionStepSegment | null {
 	const branch = segment.match(/^(requests|then|else|loop|default)\[(\d+)\]$/)
@@ -325,6 +326,8 @@ function parseActionStepSegment(segment: string): ParsedActionStepSegment | null
 			index: Number.parseInt(branch[2], 10),
 		}
 	}
+  const parallel = segment.match(/^branches\[(\d+)\]\.steps\[(\d+)\]$/)
+  if (parallel) return { name: 'parallel', branchIndex: Number(parallel[1]), index: Number(parallel[2]) }
 	const switchCase = segment.match(/^case\[(\d+)\]\[(\d+)\]$/)
 	if (!switchCase) return null
 	return { name: 'case', caseIndex: Number.parseInt(switchCase[1], 10), index: Number.parseInt(switchCase[2], 10) }
@@ -335,7 +338,9 @@ function resolveNestedAction(root: ScriptActionDefinition | undefined, stepPath?
   for (const segment of stepPath || []) {
     const parsed = parseActionStepSegment(segment)
     if (!parsed || !current) return null
-    if (parsed.name === 'requests') {
+    if (parsed.name === 'parallel') {
+      current = current.control?.branches?.[parsed.branchIndex]?.steps?.[parsed.index]
+    } else if (parsed.name === 'requests') {
       current = rawHttpSequenceRequest(current, parsed.index) ?? undefined
     } else if (parsed.name === 'else') {
       current = current.control?.else?.[parsed.index]
@@ -350,10 +355,25 @@ function resolveNestedAction(root: ScriptActionDefinition | undefined, stepPath?
   return current || null
 }
 
+/** Update a selected leaf without changing siblings or the container's fields. */
+export function updateNestedAction(root: ScriptActionDefinition, stepPath: string[] | undefined, update: (action: ScriptActionDefinition) => ScriptActionDefinition): ScriptActionDefinition {
+  if (!stepPath?.length) return update(root)
+  if (!resolveNestedAction(root, stepPath)) return root
+  const clone = structuredClone(root)
+  const target = resolveNestedAction(clone, stepPath)!
+  const next = update(target)
+  if (next !== target) {
+    for (const key of Object.keys(target)) delete (target as unknown as Record<string, unknown>)[key]
+    Object.assign(target, next)
+  }
+  return clone
+}
+
 export function jsonPathForActionStepPath(stepPath?: string[]): string {
   return (stepPath || []).map(segment => {
     const parsed = parseActionStepSegment(segment)
     if (!parsed) return ''
+    if (parsed.name === 'parallel') return `.control.branches[${parsed.branchIndex}].steps[${parsed.index}]`
     if (parsed.name === 'requests') return `.params.requests[${parsed.index}]`
     if (parsed.name === 'else') return `.control.else[${parsed.index}]`
 	if (parsed.name === 'default') return `.control.default[${parsed.index}]`

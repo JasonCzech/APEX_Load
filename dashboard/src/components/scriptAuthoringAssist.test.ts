@@ -517,8 +517,9 @@ describe('scriptAuthoringAssist', () => {
       'stabilize_browser_selectors',
     ).script
     expect(withBrowserRepairs.actions[1].wait_for?.timeout_ms).toBe(10000)
-    expect(withBrowserRepairs.actions[1].selector).toBe('[data-testid="click_submit"]')
-    expect(withBrowserRepairs.actions[1].metadata?.original_selector).toContain('nth-child')
+    expect(withBrowserRepairs.actions[1].selector).toBe(repairDraft.actions[1].selector)
+    expect(withBrowserRepairs.actions[1].target).toBe(repairDraft.actions[1].target)
+    expect(withBrowserRepairs.actions[1].metadata).toEqual(repairDraft.actions[1].metadata)
   })
 
   it('externalizes every ordered credential header without collapsing duplicates or retaining literals', () => {

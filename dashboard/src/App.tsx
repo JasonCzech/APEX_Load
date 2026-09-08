@@ -2988,9 +2988,11 @@ function AppShell({
   const showTopbarRunChips =
     visibleTopbarRuns.length > 0 && !hasContextualTopbarActions;
   // The route is the authoritative page identity. A lazily suspended previous
-  // page can keep its topbar contribution mounted briefly, so using a
-  // contribution title here would announce the old page after navigation.
-  const effectiveTopbarTitle = topbarPageTitle;
+  // page can keep its contribution mounted briefly. Only an active script
+  // editor may refine the script route title with the document name.
+  const effectiveTopbarTitle = view.page === "scripts" && scriptsTopbarState?.editingId && activeTopbarContribution?.id === "script-editor"
+    ? activeTopbarContribution?.title || topbarPageTitle
+    : topbarPageTitle;
   const showTopbarClientDownloads = shouldShowTopbarClientDownloads(view);
   const mainContentClassName = `main-content topbar-title-mode page-${view.page}`;
   // Application/release ids are appended to the route by canonicalization
@@ -3001,6 +3003,9 @@ function AppShell({
   // remount; child-scope appends do not.
   const routeBoundaryKey = viewToLocationHash({
     ...view,
+    // Scenario subviews share one editor instance. Re-keying on its own view
+    // toggle loses the selected saved scenario and the save confirmation.
+    ...(view.page === "tests" ? { scenarioView: undefined } : {}),
     applicationId: undefined,
     releaseId: undefined,
   });
@@ -3239,7 +3244,7 @@ function AppShell({
               )}
               {showTopbarClientDownloads && <ClientDownloadsMenu />}
               <DeploymentBanner />
-              <ThemeToggle theme={theme} onThemeChange={setTheme} />
+              {activeTopbarContribution?.id !== "script-editor" && <ThemeToggle theme={theme} onThemeChange={setTheme} />}
             </div>
           </div>
           {activeTopbarContribution?.feedback && (

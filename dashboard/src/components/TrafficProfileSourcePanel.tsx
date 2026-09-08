@@ -520,10 +520,11 @@ export default function TrafficProfileSourcePanel({ projectId, groupNames, scena
       ) : <>
         <div className="scenario-source-toggle" aria-label="Traffic profile source">
           {(['file', 'prometheus', 'opensearch'] as const).map(kind => (
-            <button key={kind} type="button" className={`mode-chip ${sourceKind === kind ? 'active' : ''}`} disabled={!sourceAvailable(kind)} onClick={() => { fileConfigRevisionRef.current += 1; setSourceKind(kind); setAnalysis(null); setFileAnalysisDirty(false); setDerived(null) }}>{kind === 'file' ? 'CSV / XLSX' : kind === 'prometheus' ? 'Prometheus' : 'OpenSearch'}</button>
+            <button key={kind} type="button" className={`mode-chip ${sourceKind === kind ? 'active' : ''}`} aria-pressed={sourceKind === kind} title={!sourceAvailable(kind) ? `${kind === 'prometheus' ? 'Prometheus' : 'OpenSearch'} must be enabled and configured on the controller by an administrator. Use CSV / XLSX meanwhile.` : undefined} disabled={!sourceAvailable(kind)} onClick={() => { fileConfigRevisionRef.current += 1; setSourceKind(kind); setAnalysis(null); setFileAnalysisDirty(false); setDerived(null) }}>{kind === 'file' ? 'CSV / XLSX' : kind === 'prometheus' ? 'Prometheus' : 'OpenSearch'}</button>
           ))}
         </div>
 
+        {(['prometheus', 'opensearch'] as const).filter(kind => !sourceAvailable(kind)).map(kind => <p key={kind} className="scenario-assignment-copy secondary">{kind === 'prometheus' ? 'Prometheus' : 'OpenSearch'} is unavailable. Ask an administrator to enable and configure this source on the controller, or upload CSV / XLSX.</p>)}
         {sourceKind === 'file' ? (
           <>
             <ImportDropzone accept=".csv,.tsv,.txt,.xlsx" file={file} onFile={next => {

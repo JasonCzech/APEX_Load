@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import type { ScriptDefinition } from '../types/scripts'
+import type { ScriptDefinition, ScriptActionDefinition } from '../types/scripts'
 import type { ParameterCandidate } from './scriptEditorState'
 import {
   SCRIPT_CODE_LINE_WRAP_MAX_CHARS,
@@ -248,5 +248,20 @@ describe('large Script JSON documents', () => {
     const summary = buildScriptOutlineSummary(script({ actions }))
     expect(summary.actionCount).toBe(1_000)
     expect(summary.parameterRefCount).toBe(1_000)
+  })
+})
+
+describe('guided nested action updates', () => {
+  it.each(['loop[0]', 'then[0]', 'else[0]', 'default[0]', 'case[0][0]', 'branches[0].steps[0]', 'requests[0]'])('preserves siblings and vendor fields when editing %s', async path => {
+    const { updateNestedAction } = await import('./scriptEditorJsonModel')
+    const leaf = { name: 'Check', type: 'browser_wait', target: '#result', metadata: { vendor: 'preserved' }, assertions: [{ type: 'element_text_contains', value: '#result', expected: 'Before' }] }
+    const independentLeaf = () => structuredClone(leaf)
+    const root: ScriptActionDefinition = { name: 'Container', type: 'control_loop', target: '', control: { steps: [independentLeaf()], else: [independentLeaf()], default: [independentLeaf()], cases: [{ condition: { left: 'x', op: 'eq', right: 'x' }, steps: [independentLeaf()] }], branches: [{ name: 'one', steps: [independentLeaf()] }] }, params: { requests: [independentLeaf()] } }
+    const updated = updateNestedAction(root, [path], action => ({ ...action, assertions: [{ ...action.assertions![0], expected: 'After' }] }))
+    const scope = resolveAuthorJsonScope(script({ init: [updated] }), { phase: 'init', actionIndex: 0, stepPath: [path] })
+    expect(scope?.action.assertions?.[0].expected).toBe('After')
+    expect(scope?.action.metadata).toEqual({ vendor: 'preserved' })
+    expect(leaf.assertions[0].expected).toBe('Before')
+    expect(updateNestedAction(root, ['bad[0]'], () => leaf)).toBe(root)
   })
 })
