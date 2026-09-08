@@ -113,7 +113,7 @@ func buildReplayPreflight(script *dsl.Script, variables map[string]string, issue
 		{
 			ID:     "runtime",
 			Label:  "Runtime prerequisites",
-			Status: replayCheckStatus(true, preflight.BrowserRequired),
+			Status: "warn",
 			Detail: strings.Join(preflight.RuntimePrerequisites, "; "),
 		},
 	}
@@ -229,13 +229,20 @@ func replayRuntimePrerequisites(script *dsl.Script) []string {
 		return nil
 	}
 	if !strings.EqualFold(strings.TrimSpace(script.Protocol), "browser") {
-		return []string{"Protocol adapter: " + strings.TrimSpace(script.Protocol)}
+		switch strings.TrimSpace(script.Protocol) {
+		case "sap_gui":
+			return []string{"SAP GUI execution is unavailable: no bundled runtime adapter. Save a reference artifact for review."}
+		case "java_vuser":
+			return []string{"Java runner availability and authoring approval are not verified by static checks. Execution requires an approved draft and a compatible governed JVM runner."}
+		default:
+			return []string{"Required protocol: " + strings.TrimSpace(script.Protocol), "Runner availability and target connectivity are checked when debugging starts."}
+		}
 	}
 	engine := strings.TrimSpace(script.Config.Browser.Engine)
 	if engine == "" {
 		engine = "chromium"
 	}
-	prereqs := []string{"Browser engine: " + engine}
+	prereqs := []string{"Browser engine: " + engine, "Browser runtime availability is checked when debugging starts."}
 	if profile := strings.TrimSpace(script.Config.Browser.DeviceProfile); profile != "" {
 		prereqs = append(prereqs, "Device profile: "+profile)
 	}

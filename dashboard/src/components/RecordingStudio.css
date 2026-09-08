@@ -1664,3 +1664,14 @@
 .rec-install-status strong {
   color: var(--text-primary);
 }
+
+/* Keep the active journey ahead of launch setup; native hidden must win over card display rules. */
+.recording-studio [hidden] { display: none !important; }
+.rec-mode-picker { display: flex; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
+.rec-browser-launcher { display: flex; flex-direction: column; }
+.rec-browser-launcher > .rec-option-heading { order: -2; }
+.rec-browser-launcher > .brp-panel { order: -1; }
+.brp-output-review { border: 1px solid var(--border); border-radius: 8px; padding: 12px; margin: 12px 0; }
+.brp-step-action { min-width: 32px; min-height: 32px; }
+.brp-step details { max-width: 35%; overflow-wrap: anywhere; }
+.brp-quality-badge { white-space: normal; }

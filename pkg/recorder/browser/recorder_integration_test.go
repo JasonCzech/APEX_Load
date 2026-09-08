@@ -393,6 +393,12 @@ func TestRecorderCapturesDebouncedHover(t *testing.T) {
 		t.Fatalf("hover save: %v", err)
 	}
 	waitForSteps(t, recorder, 1, 10*time.Second)
+	// Moving over empty page space must not capture a whole-page HTML hover.
+	if err := page.Mouse().Move(900, 650); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(650 * time.Millisecond)
+
 	session, err := recorder.Stop()
 	if err != nil {
 		t.Fatalf("stop: %v", err)

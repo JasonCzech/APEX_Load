@@ -54,3 +54,16 @@ func TestEvaluateBrowserAssertionsWithoutPageRuntime(t *testing.T) {
 		t.Fatal("evaluateBrowserAssertions missing page_title value returned nil error")
 	}
 }
+
+func TestPageTitleMismatchIncludesExpectedAndActualEvidence(t *testing.T) {
+	b := &Browser{}
+	result := &protocol.Result{PageTitle: "Hello"}
+	err := b.evaluateBrowserAssertions(nil, []protocol.Assertion{{Type: "page_title", Value: "Welcome"}}, result)
+	if err == nil {
+		t.Fatal("expected mismatch")
+	}
+	evidence, ok := result.ProtocolEvidence["assertion_failure"].(map[string]any)
+	if !ok || evidence["actual"] != "Hello" || evidence["expected"] != "Welcome" {
+		t.Fatalf("evidence = %#v", result.ProtocolEvidence)
+	}
+}

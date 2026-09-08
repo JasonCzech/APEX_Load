@@ -1,3 +1,4 @@
+import './ReplayPreflightCard.css'
 import type { ReplayPreflight } from '../types/scripts'
 import { replayPreflightStatusLabel } from './replayPreflightUtils'
 
@@ -19,7 +20,7 @@ export default function ReplayPreflightCard({
     <div className={`replay-preflight-card ${preflight.valid && !secretStatusState ? 'ready' : 'attention'}`}>
       <div className="replay-preflight-header">
         <div>
-          <span className="replay-detail-label">Preflight</span>
+          <span className="replay-detail-label">Preflight (static checks)</span>
           <strong>
             {secretStatusState === 'checking'
               ? 'Checking credentials'
@@ -41,7 +42,7 @@ export default function ReplayPreflightCard({
         {(preflight.checks || []).map(check => (
           <div key={check.id} className={`replay-preflight-check ${check.status}`}>
             <span>{check.label}</span>
-            <strong>{check.status === 'pass' ? 'Ready' : check.status === 'warn' ? 'Note' : 'Needs work'}</strong>
+            <strong>{check.id === 'runtime' && check.status === 'warn' ? 'Not verified' : check.status === 'pass' ? 'Passed' : check.status === 'warn' ? 'Note' : 'Needs work'}</strong>
             {check.detail && <small>{check.detail}</small>}
           </div>
         ))}

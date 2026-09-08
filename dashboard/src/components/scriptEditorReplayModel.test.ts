@@ -1,3 +1,4 @@
+import { replayEvidenceIndex } from './scriptEditorReplayModel'
 import { describe, expect, it } from 'vitest'
 import type {
   BrowserReplayEvent,
@@ -206,5 +207,12 @@ describe('script editor replay model', () => {
     expect(appended).toEqual([first, second])
     expect(replaced.map(item => item.id)).toEqual(['one', 'two'])
     expect(replaced[0].title).toBe('Restarted')
+  })
+})
+
+describe('replayEvidenceIndex', () => {
+  it('keeps a failed action selected after successful teardown', () => {
+    expect(replayEvidenceIndex({ events: [{ success: true }, { success: false }, { success: true }] } as BrowserReplayReport)).toBe(1)
+    expect(replayEvidenceIndex({ events: [] } as unknown as BrowserReplayReport)).toBeNull()
   })
 })

@@ -135,6 +135,7 @@ const (
 )
 
 type ReplayReport struct {
+	Stopped                     bool                      `json:"stopped,omitempty"`
 	ReplaySessionID             string                    `json:"replay_session_id,omitempty"`
 	ScriptHash                  string                    `json:"script_hash,omitempty"`
 	ScriptRevision              string                    `json:"script_revision,omitempty"`

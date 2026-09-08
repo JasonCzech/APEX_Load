@@ -18442,8 +18442,61 @@ paths:
             schema:
               type: object
               properties:
+                conversion:
+                  type: object
+                  properties:
+                    also_create_http_script:
+                      type: boolean
+                    end_seq:
+                      type: integer
+                      format: int64
+                    expected_script_count:
+                      type: integer
+                      format: int64
+                    folder_id:
+                      type: string
+                      nullable: true
+                    max_think_time_ms:
+                      type: integer
+                      format: int64
+                    name:
+                      type: string
+                    parameterization_selections:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          script_index:
+                            type: integer
+                            format: int64
+                          selected_ids:
+                            type: array
+                            items:
+                              type: string
+                    parameterize:
+                      type: boolean
+                    secret_bindings:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          requirement_id:
+                            type: string
+                          script_index:
+                            type: integer
+                            format: int64
+                          secret_name:
+                            type: string
+                    split_at_transactions:
+                      type: boolean
+                    start_seq:
+                      type: integer
+                      format: int64
                 replay_session_id:
                   type: string
+                script_index:
+                  type: integer
+                  format: int64
       responses:
         "201":
           description: Created
@@ -19229,6 +19282,8 @@ paths:
                           started_at:
                             type: string
                             format: date-time
+                          stopped:
+                            type: boolean
                           success:
                             type: boolean
                           truncated_event_evidence_count:
@@ -20146,6 +20201,8 @@ paths:
                           started_at:
                             type: string
                             format: date-time
+                          stopped:
+                            type: boolean
                           success:
                             type: boolean
                           truncated_event_evidence_count:
@@ -21020,6 +21077,8 @@ paths:
                           started_at:
                             type: string
                             format: date-time
+                          stopped:
+                            type: boolean
                           success:
                             type: boolean
                           truncated_event_evidence_count:
@@ -21900,6 +21959,8 @@ paths:
                           started_at:
                             type: string
                             format: date-time
+                          stopped:
+                            type: boolean
                           success:
                             type: boolean
                           truncated_event_evidence_count:
@@ -22780,6 +22841,8 @@ paths:
                           started_at:
                             type: string
                             format: date-time
+                          stopped:
+                            type: boolean
                           success:
                             type: boolean
                           truncated_event_evidence_count:
@@ -72714,6 +72777,8 @@ paths:
                           started_at:
                             type: string
                             format: date-time
+                          stopped:
+                            type: boolean
                           success:
                             type: boolean
                           truncated_event_evidence_count:
@@ -73732,6 +73797,8 @@ paths:
                           started_at:
                             type: string
                             format: date-time
+                          stopped:
+                            type: boolean
                           success:
                             type: boolean
                           truncated_event_evidence_count:
@@ -74810,6 +74877,8 @@ paths:
                           started_at:
                             type: string
                             format: date-time
+                          stopped:
+                            type: boolean
                           success:
                             type: boolean
                           truncated_event_evidence_count:
@@ -75834,6 +75903,8 @@ paths:
                           started_at:
                             type: string
                             format: date-time
+                          stopped:
+                            type: boolean
                           success:
                             type: boolean
                           truncated_event_evidence_count:
@@ -76852,6 +76923,8 @@ paths:
                           started_at:
                             type: string
                             format: date-time
+                          stopped:
+                            type: boolean
                           success:
                             type: boolean
                           truncated_event_evidence_count:
@@ -77875,6 +77948,8 @@ paths:
                           started_at:
                             type: string
                             format: date-time
+                          stopped:
+                            type: boolean
                           success:
                             type: boolean
                           truncated_event_evidence_count:
@@ -78899,6 +78974,8 @@ paths:
                           started_at:
                             type: string
                             format: date-time
+                          stopped:
+                            type: boolean
                           success:
                             type: boolean
                           truncated_event_evidence_count:
@@ -103014,6 +103091,8 @@ paths:
                           started_at:
                             type: string
                             format: date-time
+                          stopped:
+                            type: boolean
                           success:
                             type: boolean
                           truncated_event_evidence_count:
@@ -104033,6 +104112,8 @@ paths:
                           started_at:
                             type: string
                             format: date-time
+                          stopped:
+                            type: boolean
                           success:
                             type: boolean
                           truncated_event_evidence_count:
@@ -105113,6 +105194,8 @@ paths:
                           started_at:
                             type: string
                             format: date-time
+                          stopped:
+                            type: boolean
                           success:
                             type: boolean
                           truncated_event_evidence_count:
@@ -106138,6 +106221,8 @@ paths:
                           started_at:
                             type: string
                             format: date-time
+                          stopped:
+                            type: boolean
                           success:
                             type: boolean
                           truncated_event_evidence_count:
@@ -107157,6 +107242,8 @@ paths:
                           started_at:
                             type: string
                             format: date-time
+                          stopped:
+                            type: boolean
                           success:
                             type: boolean
                           truncated_event_evidence_count:
@@ -108181,6 +108268,8 @@ paths:
                           started_at:
                             type: string
                             format: date-time
+                          stopped:
+                            type: boolean
                           success:
                             type: boolean
                           truncated_event_evidence_count:
@@ -109206,6 +109295,8 @@ paths:
                           started_at:
                             type: string
                             format: date-time
+                          stopped:
+                            type: boolean
                           success:
                             type: boolean
                           truncated_event_evidence_count:
@@ -120919,6 +121010,8 @@ paths:
                           started_at:
                             type: string
                             format: date-time
+                          stopped:
+                            type: boolean
                           success:
                             type: boolean
                           truncated_event_evidence_count:
@@ -124169,6 +124262,8 @@ paths:
                           started_at:
                             type: string
                             format: date-time
+                          stopped:
+                            type: boolean
                           success:
                             type: boolean
                           truncated_event_evidence_count:
@@ -129528,6 +129623,8 @@ paths:
                           started_at:
                             type: string
                             format: date-time
+                          stopped:
+                            type: boolean
                           success:
                             type: boolean
                           truncated_event_evidence_count:
@@ -145540,6 +145637,8 @@ paths:
                           started_at:
                             type: string
                             format: date-time
+                          stopped:
+                            type: boolean
                           success:
                             type: boolean
                           truncated_event_evidence_count:
@@ -153567,6 +153666,8 @@ paths:
                           started_at:
                             type: string
                             format: date-time
+                          stopped:
+                            type: boolean
                           success:
                             type: boolean
                           truncated_event_evidence_count:
@@ -178284,6 +178385,8 @@ paths:
                           started_at:
                             type: string
                             format: date-time
+                          stopped:
+                            type: boolean
                           success:
                             type: boolean
                           truncated_event_evidence_count:

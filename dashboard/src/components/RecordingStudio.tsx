@@ -5,6 +5,7 @@ import {
   useLayoutEffect,
   useRef,
   type MouseEvent,
+  type ReactNode,
 } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import {
@@ -564,6 +565,7 @@ interface RecordingStudioProps {
   // Destination folder for saved recordings, matching the import surfaces. A
   // recording started while a folder is open belongs in that folder.
   folderId?: string | null;
+  destinationControl?: ReactNode;
   onImported?: (result: ImportedSaveResult) => void;
   onEdit?: (script: ScriptDefinition) => void;
   onClose?: () => void;
@@ -573,11 +575,15 @@ interface RecordingStudioProps {
 export default function RecordingStudio({
   activeProject,
   folderId,
+  destinationControl,
   onImported,
   onEdit,
   onClose,
   onOperationBusyChange,
 }: RecordingStudioProps) {
+  const [recordingMode, setRecordingMode] = useState<'browser' | 'proxy'>('browser');
+  const [browserURLError, setBrowserURLError] = useState('');
+  const browserURLRef = useRef<HTMLInputElement>(null);
   const api = useApi();
   const studioActiveRef = useRef(true);
   useEffect(() => {
@@ -1452,9 +1458,11 @@ export default function RecordingStudio({
     if (browserStartScopeRef.current === sourceRecorderScope) return;
     const startURL = composeHttpURL(browserStartScheme, browserStartAddress);
     if (!startURL) {
-      showFeedback("Enter an http(s) URL to record", "error");
+      setBrowserURLError("Enter an http(s) URL to record");
+      browserURLRef.current?.focus();
       return;
     }
+    setBrowserURLError('');
     browserStartScopeRef.current = sourceRecorderScope;
     setBrowserStartInProgress(true);
     try {
@@ -2448,8 +2456,12 @@ export default function RecordingStudio({
         <div className={`rec-feedback ${feedbackType}`}>{feedback}</div>
       )}
 
-      <div className="rec-recorder-options-grid">
-        <div className="rec-controls-card rec-browser-launcher">
+      <div className="rec-mode-picker" role="group" aria-label="Recording method">
+        <button className="btn btn-secondary" aria-pressed={recordingMode === 'browser'} onClick={() => setRecordingMode('browser')}>Browser actions</button>
+        <button className="btn btn-secondary" aria-pressed={recordingMode === 'proxy'} onClick={() => setRecordingMode('proxy')}>HTTP proxy (advanced)</button>
+      </div>
+      <div className="rec-recorder-options-grid" style={{ gridTemplateColumns: 'minmax(0, 1fr)' }}>
+        <div className="rec-controls-card rec-browser-launcher" hidden={recordingMode !== 'browser'}>
           <div className="rec-option-heading">
             <h3 className="rec-section-title">Record Browser Session</h3>
             <p>
@@ -2735,9 +2747,13 @@ export default function RecordingStudio({
                     }
                     placeholder="app.example.com/login"
                     aria-label="Start URL address"
+                    ref={browserURLRef}
+                    aria-invalid={!!browserURLError}
+                    aria-describedby={browserURLError ? 'browser-url-error' : undefined}
                   />
                 </div>
               </div>
+              {browserURLError && <p id="browser-url-error" role="alert">{browserURLError}</p>}
               <div className="rec-form-row">
                 <div className="rec-label">Session Name</div>
                 <input
@@ -2865,7 +2881,7 @@ export default function RecordingStudio({
                 >
                   <circle cx="12" cy="12" r="10" />
                 </svg>
-                {browserStartInProgress ? "Starting Browser…" : "Record Browser"}
+                {browserStartInProgress ? "Starting Browser…" : "Start browser recording"}
               </button>
               <div className="rec-browser-unavailable">
                 A Chromium window opens on this machine with an in-page
@@ -2879,6 +2895,7 @@ export default function RecordingStudio({
 
           {browserPanelSessionId && (
             <BrowserRecorderControlPanel
+              destinationControl={recordingMode === 'browser' ? destinationControl : undefined}
               sessionId={browserPanelSessionId}
               folderId={folderId}
               onImported={onImported}
@@ -2956,6 +2973,7 @@ export default function RecordingStudio({
         <div
           className="rec-controls-card rec-proxy-recorder-option"
           data-testid="rec-proxy-recorder-option"
+          hidden={recordingMode !== 'proxy'}
         >
           <div className="rec-option-heading">
             <h3 className="rec-section-title">Advanced Proxy Recorder</h3>
@@ -3498,6 +3516,7 @@ export default function RecordingStudio({
         </div>
       </div>
 
+      <div hidden={recordingMode !== 'proxy'}>
       {/* Previous Sessions */}
       {stoppedSessions.length > 0 && (
         <div className="rec-sessions-section">
@@ -3826,6 +3845,7 @@ export default function RecordingStudio({
       {convertResult && convertedScript && (
         <div className="rec-convert-result">
           <h3 className="rec-section-title">Conversion Result</h3>
+          {recordingMode === 'proxy' && destinationControl}
           {convertedSecretRequirements.length > 0 && (
             <SecretBindingReview
               ref={convertedCredentialReviewRef}
@@ -4120,6 +4140,7 @@ export default function RecordingStudio({
           )}
         </div>
       )}
+      </div>
     </div>
   );
 }

@@ -52,6 +52,11 @@ func (c *secretCollector) collect(value any, ctx projectionContext, depth int) {
 		}
 		credentialValue := mapHasCredentialValue(typed, c.credentialParameterNames)
 		for key, child := range typed {
+			if ctx.key == "sapgui" && !ctx.metadata && !ctx.untypedMap && key == "session_behavior" {
+				if text, ok := child.(string); ok && dsl.IsSAPGUISessionBehavior(text) {
+					continue
+				}
+			}
 			normalized := normalizeName(key)
 			switch {
 			case ctx.metadata &&
@@ -80,8 +85,9 @@ func (c *secretCollector) collect(value any, ctx projectionContext, depth int) {
 					// merely because the parent is credential-shaped. Recurse
 					// so only password/token/etc. leaves are collected.
 					c.collect(child, projectionContext{
-						key:      key,
-						metadata: ctx.metadata,
+						key:        key,
+						metadata:   ctx.metadata,
+						untypedMap: ctx.untypedMap || isUntypedDisclosureMapKey(key),
 					}, depth+1)
 				default:
 					c.addNode(child)
@@ -100,6 +106,7 @@ func (c *secretCollector) collect(value any, ctx projectionContext, depth int) {
 					parameter:      normalizeName(key) == "parameters",
 					dataSource:     normalizeName(key) == "datasources",
 					metadata:       ctx.metadata || normalized == "metadata",
+					untypedMap:     ctx.untypedMap || isUntypedDisclosureMapKey(key),
 					javaVMArgument: normalized == "additionalvmparameters",
 				}, depth+1)
 			}

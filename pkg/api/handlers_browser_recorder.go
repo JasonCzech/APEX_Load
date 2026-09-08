@@ -3006,7 +3006,9 @@ func (s *Server) handleExportBrowserRecordingStorageState(w http.ResponseWriter,
 }
 
 type browserRecordingVerifyRequest struct {
-	ReplaySessionID string `json:"replay_session_id,omitempty"`
+	Conversion      browserRecordingConvertRequest `json:"conversion,omitempty"`
+	ScriptIndex     int                            `json:"script_index,omitempty"`
+	ReplaySessionID string                         `json:"replay_session_id,omitempty"`
 }
 
 type browserRecordingVerifyResponse struct {
@@ -3045,8 +3047,42 @@ func (s *Server) handleVerifyBrowserRecording(w http.ResponseWriter, r *http.Req
 		writeError(w, http.StatusConflict, "stop the recording before verifying it")
 		return
 	}
-	result := s.convertBrowserRecording(artifact, info, browserRecordingConvertRequest{})
-	script := result.Script
+	result := s.convertBrowserRecording(artifact, info, req.Conversion)
+	scripts := append([]*dsl.Script(nil), result.Scripts...)
+	if req.Conversion.AlsoCreateHTTPScript {
+		httpScript, warnings, _, err := s.createHTTPScriptFromHAR(artifact, info, req.Conversion.Name)
+		if err != nil {
+			writeError(w, http.StatusUnprocessableEntity, "HTTP conversion failed: "+err.Error())
+			return
+		}
+		result.Warnings = append(result.Warnings, warnings...)
+		if httpScript != nil {
+			scripts = append(scripts, httpScript)
+		}
+	}
+	if req.Conversion.ExpectedScriptCount < 0 || req.ScriptIndex < 0 || req.ScriptIndex >= len(scripts) ||
+		(req.Conversion.ExpectedScriptCount > 0 && req.Conversion.ExpectedScriptCount != len(scripts)) {
+		writeError(w, http.StatusConflict, "conversion outputs changed; refresh the preview before verifying")
+		return
+	}
+	if err := validateBrowserRecordingParameterizationSelections(req.Conversion.ParameterizationSelections, len(scripts)); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := validateBrowserRecordingSecretBindings(req.Conversion.SecretBindings, len(scripts)); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	script, err := applyBrowserRecordingParameterizationSelections(scripts[req.ScriptIndex], req.ScriptIndex, req.Conversion.ParameterizationSelections)
+	if err != nil {
+		writeError(w, http.StatusConflict, err.Error())
+		return
+	}
+	script, err = applyBrowserRecordingSecretBindings(script, req.ScriptIndex, req.Conversion.SecretBindings)
+	if err != nil {
+		writeError(w, http.StatusConflict, err.Error())
+		return
+	}
 	if script == nil || len(script.Actions)+len(script.Init)+len(script.Teardown) == 0 {
 		writeError(w, http.StatusUnprocessableEntity, "the recording produced no replayable actions")
 		return

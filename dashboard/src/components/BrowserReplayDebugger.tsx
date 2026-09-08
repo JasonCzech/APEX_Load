@@ -195,7 +195,7 @@ export default function BrowserReplayDebugger({
   const screenshot = viewportEvent?.screenshot_base64 || viewportEvent?.snapshot?.screenshot_base64
   const pageURL = viewportEvent?.page_url || viewportEvent?.snapshot?.page_url
   const pageTitle = viewportEvent?.page_title || viewportEvent?.snapshot?.page_title || viewportEvent?.dom_summary?.title
-  const status = session?.status || (running ? 'running' : report?.success ? 'completed' : report ? 'failed' : 'idle')
+  const status = session?.status || (running ? 'running' : report?.stopped ? 'stopped' : report?.success ? 'completed' : report ? 'failed' : 'idle')
   const selectedPageURL = selectedEvent?.page_url || selectedEvent?.snapshot?.page_url
   const selectedPageTitle = selectedEvent?.page_title || selectedEvent?.snapshot?.page_title || selectedEvent?.dom_summary?.title
   const selectedDOMSummary = selectedEvent?.dom_summary || selectedEvent?.snapshot?.dom_summary
@@ -210,6 +210,7 @@ export default function BrowserReplayDebugger({
   const selectedHTML = selectedEvent?.html || selectedEvent?.snapshot?.html
   const selectedClientMetrics = eventClientMetrics(selectedEvent)
   const suggestedLocator = suggestedLocatorForEvent(selectedEvent)
+  const assertionFailure = selectedEvent?.protocol_evidence?.assertion_failure as { expected?: unknown; actual?: unknown; type?: unknown } | undefined
   const failingEvent = events.find(event => !event.success) || null
   const runtimeProfile = session?.runtime_profile || report?.runtime_profile || report?.artifact_manifest?.runtime_profile
   const runtimeChips = runtimeProfileChips(runtimeProfile, session?.log_level)
@@ -286,9 +287,9 @@ export default function BrowserReplayDebugger({
           <h4>{mainVariant ? 'Browser Replay Cockpit' : 'Browser Debugger'}</h4>
           <p>{pageURL || sessionId || 'Waiting for the first browser event'}</p>
           {mainVariant && runtimeChips.length > 0 && (
-            <div className="browser-debugger-runtime-chips" aria-label="Replay Runtime">
+            <details><summary>Replay runtime</summary><div className="browser-debugger-runtime-chips" aria-label="Replay Runtime">
               {runtimeChips.map(chip => <span key={chip}>{chip}</span>)}
-            </div>
+            </div></details>
           )}
         </div>
         <span className={`browser-debugger-status ${status}`}>{status}</span>
@@ -313,6 +314,7 @@ export default function BrowserReplayDebugger({
         </div>
       )}
 
+      {assertionFailure && <dl className="browser-assertion-evidence" aria-label="Assertion result"><dt>Expected ({String(assertionFailure.type || 'assertion')})</dt><dd>{String(assertionFailure.expected ?? '')}</dd><dt>Actual</dt><dd>{String(assertionFailure.actual ?? '')}</dd></dl>}
       <div className="browser-debugger-layout">
         <div className="browser-viewport">
           <div className="browser-viewport-bar">

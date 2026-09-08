@@ -29,6 +29,9 @@ func attachSelfHealSuggestion(event *ReplayActionEvent) {
 		return
 	}
 	previous := selfHealEvidenceString(evidence, "primary_selector")
+	if healed == previous || healed == event.Selector {
+		return
+	}
 	recorderSeq := selfHealEvidenceString(evidence, "recorder_step_seq")
 	if recorderSeq == "" && event.SourceStepIndex > 0 {
 		recorderSeq = fmt.Sprint(event.SourceStepIndex)
@@ -108,6 +111,9 @@ func classifyReplayFailure(event ReplayActionEvent) ReplayDiagnosis {
 	}, " "))
 	isBrowserAction := strings.HasPrefix(strings.ToLower(event.ActionType), "browser_") || event.Selector != "" || event.PageURL != "" || event.HTML != ""
 
+	if isBrowserAction {
+		lower = strings.ToLower(errorText)
+	}
 	category := "runtime_environment"
 	signals := make([]string, 0, 3)
 	addSignal := func(signal string) {
@@ -120,10 +126,13 @@ func classifyReplayFailure(event ReplayActionEvent) ReplayDiagnosis {
 	case event.StatusCode >= 500 && event.StatusCode <= 599:
 		category = "service_unavailable"
 		addSignal(statusText)
-	case isBrowserAction && containsAny(lower, "selector", "locator", "strict mode", "no element", "not found", "not visible", "not enabled", "detached", "element"):
+	case isBrowserAction && (event.ProtocolEvidence["assertion_failure"] != nil || containsAny(strings.ToLower(errorText), "assertion failed", "assertion requires", "(unexpected)", "does not contain", "text =", "page title =", "exceeded max")):
+		category = "assertion"
+		addSignal("browser_assertion")
+	case isBrowserAction && containsAny(strings.ToLower(errorText), "selector", "locator", "strict mode", "no element", "not found", "not visible", "not enabled", "detached"):
 		category = "selector"
 		addSignal("browser_selector")
-	case isBrowserAction && containsAny(lower, "timeout", "timed out", "wait", "navigation"):
+	case isBrowserAction && containsAny(strings.ToLower(errorText), "timeout", "timed out", "wait", "navigation"):
 		category = "wait_timing"
 		addSignal("browser_wait")
 	case strings.HasPrefix(strings.ToLower(event.ActionType), "ws_") && containsAny(lower, "handshake", "bad status", "upgrade"):
@@ -354,26 +363,9 @@ func replayRepairSuggestionsForDiagnosis(event ReplayActionEvent, diagnosis Repl
 	}
 	switch diagnosis.Category {
 	case "selector":
-		return []ReplayRepairSuggestion{
-			{
-				ID:             baseID + ":update-selector",
-				Title:          "Draft stronger selector",
-				Description:    "Create a draft edit that replaces the brittle selector with a stable locator from DOM evidence.",
-				DraftPatchType: "update_selector",
-				Action:         event.ActionName,
-				Confidence:     0.72,
-				Fields:         map[string]string{"selector": event.Selector, "target": event.Target},
-			},
-			{
-				ID:             baseID + ":add-wait",
-				Title:          "Add readiness wait",
-				Description:    "Insert an explicit wait before this browser action so replay waits for the required element state.",
-				DraftPatchType: "add_wait",
-				Action:         event.ActionName,
-				Confidence:     0.64,
-				Fields:         map[string]string{"selector": event.Selector},
-			},
-		}
+		// A replacement is actionable only when replay demonstrated a different
+		// locator. Successful self-heal evidence is handled separately above.
+		return nil
 	case "wait_timing":
 		return []ReplayRepairSuggestion{{
 			ID:             baseID + ":tune-wait",
@@ -381,7 +373,6 @@ func replayRepairSuggestionsForDiagnosis(event ReplayActionEvent, diagnosis Repl
 			Description:    "Draft a wait condition that anchors on the page or element state seen immediately before the failure.",
 			DraftPatchType: "add_wait",
 			Action:         event.ActionName,
-			Confidence:     0.68,
 			Fields:         map[string]string{"selector": event.Selector, "target": event.Target},
 		}}
 	case "assertion":
@@ -391,7 +382,6 @@ func replayRepairSuggestionsForDiagnosis(event ReplayActionEvent, diagnosis Repl
 			Description:    "Review the intended contract and actual response. Change the assertion only if the contract requires it.",
 			DraftPatchType: "adjust_assertion",
 			Action:         event.ActionName,
-			Confidence:     0.62,
 		}}
 	case "correlation":
 		return []ReplayRepairSuggestion{{
@@ -400,7 +390,6 @@ func replayRepairSuggestionsForDiagnosis(event ReplayActionEvent, diagnosis Repl
 			Description:    "Draft an extractor before the failed action so dynamic values are captured instead of hard-coded.",
 			DraftPatchType: "add_extractor",
 			Action:         event.ActionName,
-			Confidence:     0.70,
 			Fields:         map[string]string{"target": event.Target},
 		}}
 	case "data":
@@ -410,7 +399,6 @@ func replayRepairSuggestionsForDiagnosis(event ReplayActionEvent, diagnosis Repl
 			Description:    "Draft a data binding requirement for values this replay could not seed.",
 			DraftPatchType: "mark_data_requirement",
 			Action:         event.ActionName,
-			Confidence:     0.66,
 		}}
 	case "auth_session":
 		return []ReplayRepairSuggestion{{
@@ -419,7 +407,6 @@ func replayRepairSuggestionsForDiagnosis(event ReplayActionEvent, diagnosis Repl
 			Description:    "Draft a setup change for login, cookies, CSRF extraction, or required auth secrets.",
 			DraftPatchType: "repair_auth_session",
 			Action:         event.ActionName,
-			Confidence:     0.58,
 		}}
 	case "websocket_handshake", "websocket_receive_timeout":
 		return []ReplayRepairSuggestion{{
@@ -428,7 +415,6 @@ func replayRepairSuggestionsForDiagnosis(event ReplayActionEvent, diagnosis Repl
 			Description:    "Draft a WebSocket repair for URL, headers, subprotocol, receive timeout, or message match criteria.",
 			DraftPatchType: "repair_websocket",
 			Action:         event.ActionName,
-			Confidence:     0.61,
 			Fields:         map[string]string{"target": event.Target},
 		}}
 	case "grpc_contract", "grpc_status":
@@ -438,7 +424,6 @@ func replayRepairSuggestionsForDiagnosis(event ReplayActionEvent, diagnosis Repl
 			Description:    "Draft a gRPC edit for proto/reflection, method target, metadata, TLS/plaintext mode, or deadline settings.",
 			DraftPatchType: "repair_grpc",
 			Action:         event.ActionName,
-			Confidence:     0.60,
 			Fields:         map[string]string{"target": event.Target},
 		}}
 	case "database_connection", "database_sql", "database_guard", "database_runtime":
@@ -448,7 +433,6 @@ func replayRepairSuggestionsForDiagnosis(event ReplayActionEvent, diagnosis Repl
 			Description:    "Draft a database edit for DSN readiness, bind values, SQL text, read-only policy, or row assertions.",
 			DraftPatchType: "repair_database",
 			Action:         event.ActionName,
-			Confidence:     0.63,
 			Fields:         map[string]string{"target": event.Target},
 		}}
 	case "network_dns_resolution", "network_connection", "network_auth_tls", "network_protocol":
@@ -458,7 +442,6 @@ func replayRepairSuggestionsForDiagnosis(event ReplayActionEvent, diagnosis Repl
 			Description:    "Draft a network edit for endpoint, port, TLS/auth, protocol command, timeout, or response assertion.",
 			DraftPatchType: "repair_network",
 			Action:         event.ActionName,
-			Confidence:     0.59,
 			Fields:         map[string]string{"target": event.Target},
 		}}
 	case "jms_broker_message":
@@ -468,7 +451,6 @@ func replayRepairSuggestionsForDiagnosis(event ReplayActionEvent, diagnosis Repl
 			Description:    "Draft a JMS edit for broker settings, destination, reply-to, correlation ID, timeout, acknowledgement, or dead-letter routing.",
 			DraftPatchType: "repair_jms",
 			Action:         event.ActionName,
-			Confidence:     0.60,
 			Fields:         map[string]string{"target": event.Target},
 		}}
 	default:
@@ -478,7 +460,6 @@ func replayRepairSuggestionsForDiagnosis(event ReplayActionEvent, diagnosis Repl
 			Description:    "Attach this failure evidence to a draft repair note for analyst review.",
 			DraftPatchType: "diagnostic_note",
 			Action:         event.ActionName,
-			Confidence:     0.50,
 		}}
 	}
 }

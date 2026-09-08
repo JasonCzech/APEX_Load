@@ -434,6 +434,15 @@ func (m *BrowserReplayManager) Start(scriptID string, script *dsl.Script, req Br
 				}
 				messageType = "browser_replay_failed"
 			} else if session.Status == BrowserReplayStopped {
+				if report != nil {
+					report.Stopped = true
+					report.Success = false
+					// A deliberate stop is not an execution error. Keep action
+					// failures in Events for inspection.
+					report.Error = ""
+				}
+				session.Error = ""
+
 				messageType = "browser_replay_stopped"
 			} else if err != nil {
 				session.Status = BrowserReplayFailed

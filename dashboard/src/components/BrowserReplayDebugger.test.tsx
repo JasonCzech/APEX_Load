@@ -68,6 +68,17 @@ describe('BrowserReplayDebugger', () => {
     ],
   }
 
+  it('renders stopped replay neutrally and exposes assertion expected and actual values', async () => {
+    const stopped = { ...report, stopped: true, events: [] }
+    await act(async () => root.render(<BrowserReplayDebugger report={stopped} running={false} />))
+    expect(container.querySelector('.browser-debugger-status')?.textContent).toBe('stopped')
+    const failure = { ...report, events: [{ ...report.events[1], protocol_evidence: { assertion_failure: { type: 'element_text_contains', expected: 'Welcome operator', actual: 'Hello operator' } } }] }
+    await act(async () => root.render(<BrowserReplayDebugger report={failure} running={false} />))
+    const evidence = container.querySelector('[aria-label="Assertion result"]')
+    expect(evidence?.textContent).toContain('Welcome operator')
+    expect(evidence?.textContent).toContain('Hello operator')
+  })
+
   beforeEach(() => {
     container = document.createElement('div')
     document.body.appendChild(container)

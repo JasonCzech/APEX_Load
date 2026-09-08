@@ -203,6 +203,12 @@ func (p *projector) project(value any, ctx projectionContext, depth int) (any, e
 				out[key] = projected
 				continue
 			}
+			if ctx.key == "sapgui" && !ctx.metadata && !ctx.untypedMap && key == "session_behavior" {
+				if text, ok := child.(string); ok && dsl.IsSAPGUISessionBehavior(text) {
+					out[key] = text
+					continue
+				}
+			}
 			if ctx.secretBindings {
 				out[key] = projectSecretBinding(child)
 				continue

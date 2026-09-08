@@ -1176,6 +1176,12 @@ func projectScriptNode(value any, ctx scriptProjectionContext) any {
 				out[key] = projected
 				continue
 			}
+			if ctx.key == "sapgui" && !ctx.metadata && !ctx.opaqueMap && key == "session_behavior" {
+				if text, ok := child.(string); ok && dsl.IsSAPGUISessionBehavior(text) {
+					out[key] = text
+					continue
+				}
+			}
 			childCtx := scriptProjectionContext{
 				transactionParams: key == "params" && typed["type"] == "source_transaction",
 				label:             ctx.label && (key == "value" || key == "raw"),

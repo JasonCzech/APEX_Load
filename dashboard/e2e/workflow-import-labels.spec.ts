@@ -24,7 +24,7 @@ test('transaction names survive archive import without requiring secret bindings
   await page.getByRole('tab', { name: 'DSL Preview', exact: true }).click()
   await expect(page.getByRole('tabpanel', { name: 'DSL Preview' })).toContainText(label)
   const saved = mutation(page, 'POST', '/api/v1/scripts/import/enterprise-script-archive/save')
-  await page.getByRole('button', { name: 'Convert Loadrunner Script Archive', exact: true }).first().click()
+  await page.getByRole('button', { name: 'Continue reviewed import', exact: true }).first().click()
   const savedResult = await json(await saved)
   const scriptId = (savedResult.scripts as { id: string }[])[0].id
   await expect(page.getByRole('region', { name: 'Author center workbench' })).toContainText(label)

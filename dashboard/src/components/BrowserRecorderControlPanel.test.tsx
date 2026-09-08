@@ -182,6 +182,7 @@ describe('BrowserRecorderControlPanel', () => {
   let root: Root
 
   beforeEach(() => {
+    sessionStorage.clear()
     container = document.createElement('div')
     document.body.appendChild(container)
     root = createRoot(container)
@@ -341,7 +342,7 @@ describe('BrowserRecorderControlPanel', () => {
     expect(container.textContent).toContain('masked')
     expect(container.textContent).not.toContain('hunter2')
     // No conversion controls while recording.
-    expect(container.textContent).not.toContain('Save to Script Library')
+    expect(container.textContent).not.toContain('Save unverified draft')
     expect(apiMock.getRawBrowserRecording).not.toHaveBeenCalled()
     expect(apiMock.getBrowserRecording).toHaveBeenCalledWith('brec-1')
   })
@@ -538,8 +539,8 @@ describe('BrowserRecorderControlPanel', () => {
     await renderPanel()
 
     const visibleStepNumbers = () => Array.from(container.querySelectorAll('.brp-step-seq')).map(node => node.textContent)
-    expect(visibleStepNumbers()).not.toContain('#1')
-    expect(visibleStepNumbers()).toContain('#30')
+    expect(visibleStepNumbers()).toContain('#1')
+    expect(visibleStepNumbers()).not.toContain('#30')
     expect(container.querySelectorAll('.rec-feed-item')).toHaveLength(25)
     await act(async () => {
       Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Show all 30 steps')?.click()
@@ -589,7 +590,7 @@ describe('BrowserRecorderControlPanel', () => {
     expect(apiMock.stopBrowserRecording).toHaveBeenCalledWith('brec-1')
     expect(container.textContent).toContain('Stopped')
     expect(container.textContent).toContain('Save as Script')
-    expect(container.textContent).toContain('Save to Script Library')
+    expect(container.textContent).toContain('Save unverified draft')
     // The capture-time masking warning surfaces to the user.
     expect(container.textContent).toContain('{{env.PASSWORD}}')
   })
@@ -617,7 +618,7 @@ describe('BrowserRecorderControlPanel', () => {
     expect(container.textContent).toContain('Force finished')
     expect(container.textContent).toContain('captured steps preserved')
     expect(container.textContent).toContain('graceful stop did not finish')
-    expect(container.textContent).toContain('Save to Script Library')
+    expect(container.textContent).toContain('Save unverified draft')
   })
 
   it('previews the conversion with parameterization summary', async () => {
@@ -627,7 +628,7 @@ describe('BrowserRecorderControlPanel', () => {
     await flushPromises()
 
     expect(apiMock.previewBrowserRecordingConversion).toHaveBeenCalledWith('brec-1', expect.objectContaining({ name: 'Checkout Flow' }))
-    expect(container.textContent).toContain('Preview: 2 actions')
+    expect(container.textContent).toContain('0 init · 2 main · 0 teardown actions')
     expect(container.textContent).toContain('3 parameterization suggestions')
   })
 
@@ -720,7 +721,7 @@ describe('BrowserRecorderControlPanel', () => {
       await Promise.resolve()
     })
     await vi.waitFor(() => expect(apiMock.applyImportParameterization).toHaveBeenCalledTimes(1))
-    await clickButton('Save to Script Library')
+    await clickButton('Save unverified draft')
     await flushPromises()
     await vi.waitFor(() => expect(apiMock.convertBrowserRecording).toHaveBeenCalledTimes(1))
 
@@ -754,7 +755,7 @@ describe('BrowserRecorderControlPanel', () => {
 
     act(() => {
       const save = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-        .find(button => button.textContent?.includes('Save to Script Library'))!
+        .find(button => button.textContent?.includes('Save unverified draft'))!
       save.click()
     })
     await vi.waitFor(() => expect(busyChanges).toHaveBeenCalledWith(true))
@@ -867,7 +868,7 @@ describe('BrowserRecorderControlPanel', () => {
       await Promise.resolve()
     })
     await vi.waitFor(() => expect(apiMock.applyImportParameterization).toHaveBeenCalledTimes(1))
-    await clickButton('Save to Script Library')
+    await clickButton('Save unverified draft')
     await flushPromises()
     await vi.waitFor(() => expect(apiMock.convertBrowserRecording).toHaveBeenCalledTimes(1))
 
@@ -901,7 +902,7 @@ describe('BrowserRecorderControlPanel', () => {
     })
 
     await renderPanel({ onImported })
-    await clickButton('Save to Script Library')
+    await clickButton('Save unverified draft')
     await flushPromises()
 
     expect(container.textContent).toContain('Credentials (1)')
@@ -952,7 +953,7 @@ describe('BrowserRecorderControlPanel', () => {
     })
 
     await renderPanel({ onImported, onEdit })
-    await clickButton('Save to Script Library')
+    await clickButton('Save unverified draft')
     await flushPromises()
 
     expect(container.textContent).toContain('Preserved in script')
@@ -1015,7 +1016,7 @@ describe('BrowserRecorderControlPanel', () => {
       await flushPromises()
 
       const save = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-        .find(button => button.textContent?.includes('Save to Script Library'))!
+        .find(button => button.textContent?.includes('Save unverified draft'))!
       const edit = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
         .find(button => button.textContent?.includes('Save And Open In Visual Editor'))!
       const applyParameterization = container.querySelector<HTMLButtonElement>('.paramize-review button.btn-primary')!
@@ -1089,7 +1090,7 @@ describe('BrowserRecorderControlPanel', () => {
     })
 
     await renderPanel({ onImported })
-    await clickButton('Save to Script Library')
+    await clickButton('Save unverified draft')
     await flushPromises()
     expect(container.textContent).toContain('Preserved in script')
 
@@ -1137,7 +1138,7 @@ describe('BrowserRecorderControlPanel', () => {
     await setInputValue(value!, 'entered-at-conversion')
     expect(container.textContent).toContain('Will be created')
 
-    await clickButton('Save to Script Library')
+    await clickButton('Save unverified draft')
     await flushPromises()
 
     expect(apiMock.createProjectSecrets).toHaveBeenCalledWith('project-1', [{
@@ -1183,7 +1184,7 @@ describe('BrowserRecorderControlPanel', () => {
       'input[aria-label="Secret value for LOGIN_PASSWORD"]',
     )!
     await setInputValue(valueInput, 'write-only-browser-value')
-    await clickButton('Save to Script Library')
+    await clickButton('Save unverified draft')
     await flushPromises()
 
     expect(apiMock.createProjectSecrets).toHaveBeenCalledWith('project-1', [{
@@ -1197,7 +1198,7 @@ describe('BrowserRecorderControlPanel', () => {
     expect(container.textContent).toContain('applies to scripts, not external secret-store writes')
     expect(container.textContent).toContain('temporary headed script-store failure')
 
-    await clickButton('Save to Script Library')
+    await clickButton('Save unverified draft')
     await flushPromises()
 
     expect(apiMock.createProjectSecrets).toHaveBeenCalledTimes(1)
@@ -1267,7 +1268,7 @@ describe('BrowserRecorderControlPanel', () => {
     apiMock.commitGenericImportBatch.mockRejectedValueOnce(new Error('atomic batch rejected'))
 
     await renderPanel({ onImported })
-    await clickButton('Save to Script Library')
+    await clickButton('Save unverified draft')
     await flushPromises()
 
     expect(apiMock.commitGenericImportBatch).toHaveBeenCalledWith(expect.objectContaining({
@@ -1304,10 +1305,10 @@ describe('BrowserRecorderControlPanel', () => {
       })
 
     await renderPanel()
-    await clickButton('Save to Script Library')
+    await clickButton('Save unverified draft')
     await flushPromises()
     const firstOperationID = apiMock.commitGenericImportBatch.mock.calls[0][0].operation_id
-    await clickButton('Save to Script Library')
+    await clickButton('Save unverified draft')
     await flushPromises()
 
     expect(apiMock.commitGenericImportBatch).toHaveBeenCalledTimes(2)
@@ -1384,7 +1385,7 @@ describe('BrowserRecorderControlPanel', () => {
     const onImported = vi.fn()
     apiMock.getBrowserRecording.mockResolvedValue({ session: stoppedSession })
     await renderPanel({ onImported })
-    await clickButton('Save to Script Library')
+    await clickButton('Save unverified draft')
     await flushPromises()
 
     expect(apiMock.previewBrowserRecordingConversion).toHaveBeenCalledWith('brec-1', expect.objectContaining({ name: 'Checkout Flow' }))
@@ -1409,7 +1410,7 @@ describe('BrowserRecorderControlPanel', () => {
     await renderPanel({ onDismiss, onImported })
     await clickButton('Preview Conversion')
     await flushPromises()
-    await clickButton('Save to Script Library')
+    await clickButton('Save unverified draft')
     await flushPromises()
 
     const dismiss = Array.from(container.querySelectorAll('button'))
@@ -1461,7 +1462,7 @@ describe('BrowserRecorderControlPanel', () => {
     await renderPanel({ onImported })
     await clickButton('Preview Conversion')
     await flushPromises()
-    await clickButton('Save to Script Library')
+    await clickButton('Save unverified draft')
     await flushPromises()
 
     await act(async () => {
@@ -1542,7 +1543,7 @@ describe('BrowserRecorderControlPanel', () => {
       await Promise.resolve()
     })
     await vi.waitFor(() => expect(apiMock.applyImportParameterization).toHaveBeenCalledTimes(1))
-    await clickButton('Save to Script Library')
+    await clickButton('Save unverified draft')
     await flushPromises()
 
     expect(apiMock.convertBrowserRecording).toHaveBeenCalledTimes(1)
@@ -2039,7 +2040,7 @@ describe('BrowserRecorderControlPanel', () => {
     })
     await renderPanel()
     const badge = container.querySelector('.brp-quality-badge')
-    expect(badge?.textContent).toBe('90')
+    expect(badge?.textContent).toBe('Selector: high (90/100)')
     expect(badge?.className).toContain('brp-quality-high')
   })
 
@@ -2076,8 +2077,55 @@ describe('BrowserRecorderControlPanel', () => {
     expect(verify).not.toBeNull()
     await act(async () => { verify.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
     await flushPromises()
-    expect(apiMock.verifyBrowserRecording).toHaveBeenCalledWith('brec-1', expect.stringMatching(/^[0-9a-f-]{36}$/))
+    expect(apiMock.verifyBrowserRecording).toHaveBeenCalledWith('brec-1', expect.stringMatching(/^[0-9a-f-]{36}$/), expect.objectContaining({ parameterize: false, split_at_transactions: false }), 0)
     expect(container.querySelector('[data-testid="replay-progress"]')).not.toBeNull()
+  })
+
+  it('scopes verification to each output and invalidates it when conversion settings change', async () => {
+    apiMock.getBrowserRecording.mockResolvedValue({ session: stoppedSession })
+    apiMock.previewBrowserRecordingConversion.mockResolvedValue({
+      scripts: [
+        { name: 'Browser journey', protocol: 'browser', actions: [{ type: 'browser_click', name: 'Continue' }] },
+        { name: 'HTTP journey', protocol: 'http', actions: [{ type: 'http', name: 'Request' }] },
+      ], warnings: [], stats: {},
+    })
+    await renderPanel()
+    await clickButton('Preview Conversion')
+    await clickButton('Verify output 2')
+    expect(apiMock.verifyBrowserRecording).toHaveBeenLastCalledWith('brec-1', expect.any(String), expect.objectContaining({ expected_script_count: 2 }), 1)
+    await clickButton('Complete Replay')
+    expect(container.textContent).toContain('Verification passed for this conversion')
+    expect(container.textContent).toContain('Save unverified draft')
+    const input = Array.from(container.querySelectorAll('label')).find(label => label.textContent?.includes('Parameterize inputs'))!.querySelector('input')!
+    await act(async () => input.click())
+    expect(container.textContent).not.toContain('Verification passed for this conversion')
+    expect(container.textContent).not.toContain('Replay verification passed')
+    expect(container.textContent).toContain('Previous recording verification')
+    expect(container.textContent).toContain('Unverified draft')
+  })
+
+  it('restores previous replay access without claiming it verified the current conversion', async () => {
+    sessionStorage.setItem('browser-verification-history:api:http://controller.test:brec-1', JSON.stringify(['older-replay']))
+    apiMock.getBrowserRecording.mockResolvedValue({ session: stoppedSession })
+    await renderPanel()
+    expect(container.textContent).toContain('Replay older-replay')
+    expect(container.textContent).toContain('Historical evidence only')
+    expect(container.textContent).toContain('Save unverified draft')
+  })
+
+  it('does not restore current verification after an old start response arrives', async () => {
+    let finish!: (value: unknown) => void
+    apiMock.getBrowserRecording.mockResolvedValue({ session: stoppedSession })
+    await renderPanel()
+    await clickButton('Preview Conversion')
+    apiMock.verifyBrowserRecording.mockReturnValueOnce(new Promise(resolve => { finish = resolve }))
+    await clickButton('Verify output 1')
+    const checkbox = Array.from(container.querySelectorAll('label')).find(label => label.textContent?.includes('Parameterize inputs'))!.querySelector('input')!
+    await act(async () => checkbox.click())
+    await act(async () => finish({ replay_session_id: 'old-replay' }))
+    expect(container.querySelector('[data-testid="replay-progress"]')).toBeNull()
+    expect(container.textContent).toContain('Save unverified draft')
+    expect(container.textContent).toContain('Replay old-replay')
   })
 
   it('does not dispatch duplicate verification starts on rapid clicks', async () => {
@@ -2141,7 +2189,7 @@ describe('BrowserRecorderControlPanel', () => {
     for (const c of conversionChecks) {
       await act(async () => { c.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
     }
-    await clickButton('Save to Script Library')
+    await clickButton('Save unverified draft')
     await flushPromises()
     expect(apiMock.convertBrowserRecording).toHaveBeenCalledWith('brec-1', expect.objectContaining({
       split_at_transactions: true,
@@ -2158,7 +2206,7 @@ describe('BrowserRecorderControlPanel', () => {
     expect(parameterize).toBeDefined()
     if (!parameterize) return
     await act(async () => { parameterize.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
-    await clickButton('Save to Script Library')
+    await clickButton('Save unverified draft')
     await flushPromises()
     expect(apiMock.convertBrowserRecording).toHaveBeenCalledWith('brec-1', expect.objectContaining({
       parameterize: true,
@@ -2197,7 +2245,7 @@ describe('BrowserRecorderControlPanel', () => {
     })
 
     await renderPanel({ onImported })
-    await clickButton('Save to Script Library')
+    await clickButton('Save unverified draft')
     await flushPromises()
 
     expect(apiMock.convertBrowserRecording).not.toHaveBeenCalled()

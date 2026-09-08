@@ -1,0 +1,119 @@
+.replay-preflight-card {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-primary);
+  padding: 12px;
+  margin-top: 12px;
+}
+
+.replay-preflight-card.ready {
+  border-color: rgba(34, 197, 94, 0.28);
+}
+
+.replay-preflight-card.attention {
+  border-color: rgba(245, 158, 11, 0.38);
+}
+
+.replay-preflight-header,
+.replay-preflight-meta,
+.replay-preflight-alerts {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.replay-preflight-header {
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 10px;
+}
+
+.replay-preflight-header > div:first-child {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.replay-preflight-header strong {
+  color: var(--text-primary);
+  font-size: 14px;
+}
+
+.replay-preflight-meta span,
+.replay-preflight-alerts span {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  padding: 4px 8px;
+  font-size: 11px;
+}
+
+.replay-preflight-alerts {
+  margin-top: 10px;
+}
+
+.replay-preflight-alerts span {
+  border-color: rgba(245, 158, 11, 0.42);
+  color: var(--warning);
+}
+
+.replay-preflight-alerts .btn {
+  margin-left: auto;
+}
+
+.replay-preflight-checks {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.replay-preflight-check {
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+  padding: 9px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.replay-preflight-check.pass {
+  border-color: rgba(34, 197, 94, 0.24);
+}
+
+.replay-preflight-check.warn {
+  border-color: rgba(245, 158, 11, 0.32);
+}
+
+.replay-preflight-check.fail {
+  border-color: rgba(239, 68, 68, 0.32);
+}
+
+.replay-preflight-check span {
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.replay-preflight-check strong,
+.replay-preflight-check small {
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1.35;
+  word-break: break-word;
+}
+
+
+@media (max-width: 900px) { .replay-preflight-checks { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 600px) { .replay-preflight-checks { grid-template-columns: 1fr; } }
+
+.replay-preflight-card .replay-detail-label {
+  color: var(--text-muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+@media (max-width: 600px) { .replay-preflight-header { flex-direction: column; } }

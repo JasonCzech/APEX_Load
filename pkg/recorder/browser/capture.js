@@ -701,7 +701,10 @@
     if (paused || assertMode) return;
     const raw = targetOf(ev);
     if (!raw || isToolbar(raw)) return;
-    scheduleHover(interactiveAncestor(raw));
+    const target = interactiveAncestor(raw);
+    // Root containers describe the whole page, not an intentional hover target.
+    if (!target || /^(HTML|BODY)$/.test(target.tagName)) { cancelPendingHover(); return; }
+    scheduleHover(target);
   }, true);
 
   window.addEventListener('mouseout', (ev) => {

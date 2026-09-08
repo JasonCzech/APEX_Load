@@ -167,6 +167,7 @@ export interface BrowserReplayEvent {
 }
 
 export interface BrowserReplayReport {
+  stopped?: boolean
   replay_session_id?: string
   script_hash?: string
   script_revision?: string

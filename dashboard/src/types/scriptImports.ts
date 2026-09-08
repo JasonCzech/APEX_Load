@@ -417,7 +417,7 @@ export interface TrueClient2CompatReport {
   javascript_review_gate?: string
   frame_window_blockers?: number
   http_conversion_readiness?: string
-  fixture_contract_status?: string
+  fixture_contract_status?: Record<string, string> | string
   findings?: string[]
   next_actions?: string[]
 }

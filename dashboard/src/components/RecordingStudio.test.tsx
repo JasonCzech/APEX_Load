@@ -2761,7 +2761,7 @@ describe("RecordingStudio", () => {
       urlInput.dispatchEvent(new Event("input", { bubbles: true }));
     });
     const recordButton = Array.from(container.querySelectorAll("button")).find(
-      (button) => button.textContent?.includes("Record Browser"),
+      (button) => button.textContent?.includes("Start browser recording"),
     );
     expect(recordButton).toBeDefined();
     await act(async () => {
@@ -2824,7 +2824,7 @@ describe("RecordingStudio", () => {
       urlInput.dispatchEvent(new Event("input", { bubbles: true }));
     });
     const recordButton = Array.from(container.querySelectorAll("button")).find(
-      (button) => button.textContent?.includes("Record Browser"),
+      (button) => button.textContent?.includes("Start browser recording"),
     );
     await act(async () => {
       recordButton!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
@@ -2895,7 +2895,7 @@ describe("RecordingStudio", () => {
       urlInput.dispatchEvent(new Event("input", { bubbles: true }));
     });
     const recordButton = Array.from(container.querySelectorAll("button")).find(
-      (button) => button.textContent?.includes("Record Browser"),
+      (button) => button.textContent?.includes("Start browser recording"),
     );
     act(() => {
       recordButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
@@ -2952,7 +2952,7 @@ describe("RecordingStudio", () => {
       urlInput.dispatchEvent(new Event("input", { bubbles: true }));
     });
     const recordButton = Array.from(container.querySelectorAll("button")).find(
-      (button) => button.textContent?.includes("Record Browser"),
+      (button) => button.textContent?.includes("Start browser recording"),
     );
     await act(async () => {
       recordButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
@@ -3006,7 +3006,7 @@ describe("RecordingStudio", () => {
       urlInput.dispatchEvent(new Event("input", { bubbles: true }));
     });
     const recordButton = Array.from(container.querySelectorAll("button")).find(
-      (button) => button.textContent?.includes("Record Browser"),
+      (button) => button.textContent?.includes("Start browser recording"),
     );
     await act(async () => {
       recordButton!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
@@ -3148,7 +3148,7 @@ describe("RecordingStudio", () => {
     expect(container.textContent).toContain(
       "Local browser recording bridge paired",
     );
-    expect(container.textContent).toContain("Record Browser");
+    expect(container.textContent).toContain("Start browser recording");
   });
 
   it("shows the selected Recording Agent platform and staged SHA-256", async () => {
@@ -3769,7 +3769,7 @@ describe("RecordingStudio", () => {
     );
     expect(
       Array.from(container.querySelectorAll("button")).some((button) =>
-        button.textContent?.includes("Record Browser"),
+        button.textContent?.includes("Start browser recording"),
       ),
     ).toBe(false);
     expect(container.textContent).toContain("Proxy Setup");
@@ -3838,7 +3838,7 @@ describe("RecordingStudio", () => {
       deviceSelect.dispatchEvent(new Event("change", { bubbles: true }));
     });
     const recordButton = Array.from(container.querySelectorAll("button")).find(
-      (b) => b.textContent?.includes("Record Browser"),
+      (b) => b.textContent?.includes("Start browser recording"),
     );
     await act(async () => {
       recordButton!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
@@ -4256,7 +4256,7 @@ describe("RecordingStudio", () => {
     });
 
     expect(container.textContent).toContain("Local browser recording bridge paired");
-    expect(container.textContent).toContain("Record Browser");
+    expect(container.textContent).toContain("Start browser recording");
   });
 
   it("ignores an agent verification result after the recorder API origin changes", async () => {

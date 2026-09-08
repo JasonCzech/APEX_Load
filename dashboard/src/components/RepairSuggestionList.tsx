@@ -48,8 +48,8 @@ export default function RepairSuggestionList({
           <div key={suggestion.id} className={itemClassName}>
             <strong>
               {suggestion.title}
-              {typeof suggestion.confidence === 'number' && (
-                <span className={confidenceClassName}> {Math.round(suggestion.confidence * 100)}%</span>
+              {typeof suggestion.confidence === 'number' && suggestion.confidence > 0 && (
+                <span className={confidenceClassName}> Evidence score: {Math.round(suggestion.confidence * 100)}/100</span>
               )}
             </strong>
             {suggestion.description && <span className={descriptionClassName}>{suggestion.description}</span>}

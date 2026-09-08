@@ -151,9 +151,11 @@ function ScriptsAuthoringContent({
   const openEnterpriseArchiveDraftInEditor = (script: ScriptDefinition, focus?: DraftEditorFocus) => {
     onEditDraft(script, focus, enterpriseArchiveEditReturnTarget)
   }
-  const renderEnterpriseArchiveImportSurface = (hidden = false) => renderCreateOptionsSurface(
-    <EnterpriseArchiveImport initialFiles={importFiles || undefined} projectId={projectId} folderId={destinationFolderValue} onImported={onImported} onEdit={openEnterpriseArchiveDraftInEditor} onClose={onOpenCreateOptions} onOperationBusyChange={setImportOperationBusy} />,
+  const renderEnterpriseArchiveImportSurface = (hidden = false) => createOptionsSurface(
+    <EnterpriseArchiveImport destinationControl={destinationFolderControl} initialFiles={importFiles || undefined} projectId={projectId} folderId={destinationFolderValue} onImported={onImported} onEdit={openEnterpriseArchiveDraftInEditor} onClose={onOpenCreateOptions} onOperationBusyChange={setImportOperationBusy} />,
     hidden,
+    null,
+    destinationOperationBusy,
   )
   const closeCreateEditor = draftReturnTarget ? onReturnToDraftSource : onOpenLibrary
 
@@ -194,8 +196,9 @@ function ScriptsAuthoringContent({
         null,
       )
     case 'recorder':
-      return renderCreateOptionsSurface(
-        <RecordingStudio activeProject={activeProject} folderId={destinationFolderValue} onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} onOperationBusyChange={setImportOperationBusy} />,
+      return createOptionsSurface(
+        <RecordingStudio destinationControl={destinationFolderControl} activeProject={activeProject} folderId={destinationFolderValue} onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} onOperationBusyChange={setImportOperationBusy} />,
+        false, null, destinationOperationBusy,
       )
     case 'sample':
       return renderCreateOptionsSurface(

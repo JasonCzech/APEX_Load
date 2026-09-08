@@ -1071,6 +1071,9 @@ func TestBrowserReplayManagerStopCancelsPausedSession(t *testing.T) {
 			t.Fatal("session not found after stop")
 		}
 		if current.Status == BrowserReplayStopped && current.CompletedAt != nil {
+			if current.FinalReport == nil || !current.FinalReport.Stopped || current.FinalReport.Success || current.FinalReport.Error != "" {
+				t.Fatalf("stopped report: %+v", current.FinalReport)
+			}
 			return
 		}
 		time.Sleep(10 * time.Millisecond)

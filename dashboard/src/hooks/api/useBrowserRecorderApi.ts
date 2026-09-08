@@ -26,6 +26,7 @@ export type BrowserRecorderStep = {
   timestamp: string
   url?: string
   title?: string
+  element?: { aria_label?: string; text?: string; name?: string; placeholder?: string; id?: string }
   frame_selector?: string
   candidates?: { kind: string; value: string; confidence: number; reason?: string }[]
   target_selector?: string
@@ -377,12 +378,12 @@ export function useBrowserRecorderApi() {
   )
 
   const verifyBrowserRecording = useCallback(
-    (id: string, replaySessionId?: string) =>
+    (id: string, replaySessionId?: string, conversion?: BrowserRecorderConvertRequest, scriptIndex = 0) =>
       recorderRequest<{ replay_session_id: string; replay_session: unknown; warnings: string[] }>(
         `/browser-recorder/sessions/${id}/verify`,
         {
           method: 'POST',
-          body: JSON.stringify({ replay_session_id: replaySessionId || undefined }),
+          body: JSON.stringify({ replay_session_id: replaySessionId || undefined, conversion, script_index: scriptIndex }),
         },
       ),
     [recorderRequest],

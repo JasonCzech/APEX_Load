@@ -286,6 +286,7 @@ export default function BrowserReplayProgress({ replaySessionId, projectId, onDi
         {onDismiss && <button type="button" className="rec-inline-action" onClick={onDismiss}>Close</button>}
       </div>
 
+      {report && <details><summary>Verified output and scope</summary><p>{report.group} · {report.protocol}</p><p>Script fingerprint: {report.script_hash || 'Unavailable'}</p><p>{report.completed_at}</p></details>}
       {real.length === 0 && phase === 'running' && (
         <div className="brp-replay-empty">Launching replay…</div>
       )}

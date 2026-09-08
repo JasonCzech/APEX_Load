@@ -48,7 +48,7 @@ test('[U05] OpenAPI validation stays dry-run until the reviewed script is commit
   const validationReview = importControls.getByRole('heading', { level: 3, name: 'Validation Review' })
   await expect(validationReview).toBeVisible({ timeout: 15_000 })
   await expect(importControls.getByText(/dry-run validation; nothing has been saved/i)).toBeVisible()
-  await expect(importControls.getByText('Preflight').locator('..').getByText('Ready', { exact: true })).toBeVisible()
+  await expect(importControls.getByText('Preflight').locator('..').getByText('Ready with notes', { exact: true })).toBeVisible()
   await expect(importControls.getByRole('cell', { name: 'GET /orders' })).toBeVisible()
 
   const conversionResponsePromise = page.waitForResponse(response => (

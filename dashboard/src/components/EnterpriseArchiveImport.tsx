@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, useRef, type CSSProperties } from 'react'
+import { useCallback, useEffect, useMemo, useState, useRef, type ReactNode, type CSSProperties } from 'react'
 import { useApi } from '../hooks/useApi'
 import { ApiError } from '../hooks/apiClient'
 import { isDesktopSurface } from '../desktop/desktopBridge'
@@ -17,6 +17,8 @@ import { buildReplayStartPayload, createReplaySessionId, isDefiniteReplayStartRe
 import { getImportSummary } from './scriptEditorImportModel'
 import { getImportedRuntimeSectionId } from './scriptEditorRuntimeSettingsModel'
 import ScriptImportReview from './ScriptImportReview'
+import ArchiveReviewBoundary from './ArchiveReviewBoundary'
+import { archiveReviewOutcome } from './enterpriseArchiveReviewOutcome'
 import ReplayPreflightCard from './ReplayPreflightCard'
 import { type SecretBindingReviewHandle } from './SecretBindingReview'
 import SourceMappingReview from './SourceMappingReview'
@@ -438,6 +440,7 @@ function enterpriseArchiveImportStatusLabel(status: EnterpriseArchiveImportQueue
   }
 }
 
+
 function enterpriseArchiveImportStatusIsRunning(status: EnterpriseArchiveImportQueueStatus) {
   return status === 'validating' || status === 'converting'
 }
@@ -511,6 +514,7 @@ function buildReviewArtifactDraft(
 }
 
 interface Props {
+  destinationControl?: ReactNode
   initialFiles?: File[] | null
   projectId?: string
   // folderId is the destination folder for scripts saved from this import,
@@ -881,7 +885,7 @@ function findUnsupportedRepairSuggestion(repairSuggestions: ImportRepairSuggesti
 }
 
 const validationReviewTabs = [
-  { id: 'overview', label: 'Conversion Complete' },
+  { id: 'overview', label: 'Review' },
   { id: 'preserved', label: 'Preserved Source Settings' },
   { id: 'dsl', label: 'DSL Preview' },
   { id: 'source', label: 'Source Mapping' },
@@ -892,7 +896,7 @@ type ValidationReviewTab = typeof validationReviewTabs[number]['id']
 const ENTERPRISE_QUEUE_PAGE_SIZE = 50
 const ENTERPRISE_RESULT_PAGE_SIZE = 50
 
-export default function EnterpriseArchiveImport({ initialFiles, projectId, folderId, onImported, onEdit, onClose, onOperationBusyChange }: Props) {
+export default function EnterpriseArchiveImport({ destinationControl, initialFiles, projectId, folderId, onImported, onEdit, onClose, onOperationBusyChange }: Props) {
   const api = useApi()
   const apiRef = useRef(api)
   apiRef.current = api
@@ -1199,20 +1203,20 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
   const importProgressMessage = workingMode === 'validate'
     ? `Validating ${activeImportFileCount} enterprise script archive${activeImportFileCount === 1 ? '' : 's'}. Review will appear when the dry run finishes.`
     : workingMode === 'convert'
-      ? `Converting and saving ${activeImportFileCount} enterprise script archive${activeImportFileCount === 1 ? '' : 's'}. The saved script will open in the editor.`
+      ? `Processing ${activeImportFileCount} reviewed archive${activeImportFileCount === 1 ? '' : 's'}. Saving eligible scripts and retaining drafts that need attention.`
       : ''
   const failedImportMessage = failedFileCount > 0
     ? `${failedFileCount} enterprise script archive${failedFileCount === 1 ? '' : 's'} failed during import review. Failed queue rows show the error details.`
     : ''
   const validateButtonLabel = queuedFileCount > 1 ? `Validate ${queuedFileCount} Scripts` : 'Validate Script(s)'
-  const convertButtonLabel = queuedFileCount > 1 ? `Convert ${queuedFileCount} Loadrunner Script Archives` : 'Convert Loadrunner Script Archive'
+  const convertButtonLabel = queuedFileCount > 1 ? `Process ${queuedFileCount} reviewed archives` : 'Continue reviewed import'
   const conversionGateMessage = workingMode === 'convert'
-    ? 'Conversion is saving validated scripts and will open the saved script in the editor.'
+    ? 'Saving eligible scripts. Archives that need repair, replay, or approval remain in this queue.'
     : queuedFileCount === 0
       ? 'Add an enterprise script archive before validating or converting.'
       : allQueuedArchivesValidated
         ? (allValidatedReviewsMatchOptions
-            ? 'Validation passed. Conversion will save the script and open it in the editor.'
+            ? 'Import checks complete. This action saves eligible scripts; archives needing repair, replay, or approval stay in the queue for the next action shown in their review.'
             : 'Conversion options changed. Validate the queued archive again before conversion.')
         : convertedFileCount === queuedFileCount
           ? 'Conversion complete.'
@@ -1506,7 +1510,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
       ? (combinedJavaVuserApprovalReady ? 'Saving Combined Java Draft...' : 'Saving Review Artifact...')
       : (combinedJavaVuserApprovalReady ? 'Save Combined Java Draft for Approval' : 'Save Review Artifact Instead'))
     : (reviewMode === 'validation'
-      ? (validatedFileCount > 1 ? `Convert ${validatedFileCount} Loadrunner Script Archives` : 'Convert Loadrunner Script Archive')
+      ? (validatedFileCount > 1 ? `Process ${validatedFileCount} reviewed archives` : browserImport ? 'Continue to browser replay' : 'Save and open script')
       : (selectedResultScriptSaved
       ? 'Saved to Script Library'
       : enterprisePrepareSelectedForBatch
@@ -1541,7 +1545,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
                 ? `This preview came from the dry-run validator. Save the combined Java Vuser review artifact and resolve its fidelity blockers before authoring approval.`
                 : `This preview came from the dry-run validator. ${protocolGateName} execution requires ${protocolGateRunnerRequirement || 'an approved external runner'}; save ${combinedJavaVuserApprovalReady ? 'the combined draft' : 'the review artifact'} for approval.`)
               : 'This preview came from the dry-run validator. Save the review artifact before script promotion.')
-              : 'This preview came from the dry-run validator. Convert the validated archive to save the generated script.')))
+              : browserImport ? 'This preview came from the dry-run validator. Continue to conversion and required draft browser replay before saving.' : 'This preview came from the dry-run validator. Convert the validated archive to save the generated script.')))
     : (saveBlockedByMigrationPolicy
         ? 'Review the generated script, preserved metadata, and warnings. Saving is disabled until the migration readiness blockers are resolved or the Migration Block Policy in Conversion Options is relaxed.'
         : (browserReplayInProgress
@@ -3743,7 +3747,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
       <div className="lr-import-header">
         <div>
           <h2>Import Loadrunner Script Archive</h2>
-          <p className="lr-subtitle">Upload a ZIP containing C-based virtual-user scripts, runtime settings, parameter files, and protocol metadata. APEX Load routes executable HTTP, SOAP, browser, database, and network archives while preserving review artifacts for sources that still require evidence or external runners.</p>
+          <p className="lr-subtitle">Upload LoadRunner ZIP archives including source, runtime settings, parameter files, and dependencies. We detect the protocol and show what can be saved, what needs repair, and whether a runner is required. Import checks do not execute your script.</p>
         </div>
         {onClose && <button type="button" className="btn btn-secondary" onClick={() => {
           invalidateOperationScopes()
@@ -3751,19 +3755,25 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
         }}>Back</button>}
       </div>
 
+      <ol className="lr-import-steps" aria-label="Import workflow">
+        <li aria-current={!result ? 'step' : undefined}>1. Upload archives</li>
+        <li aria-current={result && workingMode !== 'convert' ? 'step' : undefined}>2. Review and resolve</li>
+        <li aria-current={workingMode === 'convert' ? 'step' : undefined}>3. Save script or review draft</li>
+        <li>4. Debug one iteration</li>
+      </ol>
       {/* Drop zone */}
       <div ref={dropzoneRef} className={`lr-dropzone ${ingestHostClass} ${dragOver ? 'drag-over' : ''} ${queuedFileCount > 0 ? 'has-file' : ''}`}
         style={desktop ? ({ '--wails-drop-target': 'drop' } as CSSProperties) : undefined}
         onDragOver={e => { e.preventDefault(); if (!sourceMutationLocked) setDragOver(true) }}
         onDragLeave={() => setDragOver(false)}
         onDrop={handleDrop}
-        onClick={sourceMutationLocked ? undefined : handleBrowseArchives}
-        role="button"
-        tabIndex={sourceMutationLocked ? -1 : 0}
+        onClick={sourceMutationLocked || queuedFileCount > 0 ? undefined : handleBrowseArchives}
+        role={queuedFileCount > 0 ? "group" : "button"}
+        tabIndex={sourceMutationLocked || queuedFileCount > 0 ? -1 : 0}
         aria-disabled={sourceMutationLocked}
         aria-label={queuedFileCount > 0 ? `Add enterprise script archives. ${queuedFileCount} currently queued` : 'Choose one or more enterprise script archives'}
         onKeyDown={event => {
-          if (sourceMutationLocked || event.currentTarget !== event.target) return
+          if (sourceMutationLocked || queuedFileCount > 0 || event.currentTarget !== event.target) return
           if (event.key === 'Enter' || event.key === ' ') {
             event.preventDefault()
             handleBrowseArchives()
@@ -3777,7 +3787,8 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
               <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--success)" strokeWidth="2" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
               <div>
                 <span className="lr-filename">{queuedFileCount} ZIP file{queuedFileCount === 1 ? '' : 's'} queued</span>
-                <span className="lr-filesize">Click to add more, or remove individual scripts below.</span>
+                <span className="lr-filesize">Select an archive to review its result.</span>
+                <button type="button" className="btn btn-secondary btn-sm" disabled={sourceMutationLocked} onClick={event => { event.stopPropagation(); handleBrowseArchives() }}>Add archives</button>
               </div>
               <button className="btn btn-sm btn-ghost" disabled={sourceMutationLocked} onClick={e => { e.stopPropagation(); clearQueuedFiles() }}>Clear All</button>
             </div>
@@ -3834,7 +3845,9 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
                         {formatEnterpriseArchiveFileSize(item.file)} ·{' '}
                         <span className={`lr-file-status-pill ${item.status}`}>
                           {enterpriseArchiveImportStatusIsRunning(item.status) && <span className="lr-status-dot" aria-hidden="true" />}
-                          {enterpriseArchiveImportStatusLabel(item.status)}
+                          {item.status === 'validated' || item.status === 'converted'
+                            ? archiveReviewOutcome(item, importOptionsIdentity(options), projectId || '')
+                            : enterpriseArchiveImportStatusLabel(item.status)}
                         </span>
                         {item.harFile ? ` · HAR: ${item.harFile.name}` : ''}
                         {(item.supplementalFiles || []).length > 0 ? ` · Required files: ${(item.supplementalFiles || []).length}` : ''}
@@ -3867,6 +3880,8 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
         )}
       </div>
 
+      {destinationControl}
+
       {/* Options */}
       <div className="lr-conversion-row">
         <div className="lr-options" id="migration-block-policy-options">
@@ -3880,7 +3895,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
           </div>
           <div className="lr-options-grid">
             <label><span>Script Name (optional)</span>
-              <input value={options.name} disabled={sourceMutationLocked} onChange={e => replaceOptionsAndInvalidate({ ...options, name: e.target.value })} placeholder="Auto-detected from .usr file" />
+              <input value={options.name} disabled={sourceMutationLocked || queuedFileCount > 1} onChange={e => replaceOptionsAndInvalidate({ ...options, name: e.target.value })} placeholder="Auto-detected from .usr file" />
             </label>
             <label><span>Base URL Override (optional)</span>
               <input value={options.base_url} disabled={sourceMutationLocked} onChange={e => replaceOptionsAndInvalidate({ ...options, base_url: e.target.value })} placeholder="Auto-detected from first URL" />
@@ -3893,11 +3908,8 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
               <input type="checkbox" checked={options.preserve_transactions} disabled={sourceMutationLocked} onChange={e => replaceOptionsAndInvalidate({ ...options, preserve_transactions: e.target.checked })} />
               <span>Preserve transaction names in generated actions</span>
             </label>
-            <label className="lr-checkbox">
-              <input type="checkbox" checked={options.salesforce_native} disabled={sourceMutationLocked} onChange={e => replaceOptionsAndInvalidate({ ...options, salesforce_native: e.target.checked })} />
-              <span>Build Salesforce native preview</span>
-            </label>
-            <div className="lr-policy-heading">
+
+            <details className="lr-advanced-policy"><summary>Advanced migration policy</summary><div className="lr-policy-heading">
               <strong>Migration Block Policy</strong>
               <span>These settings control which migration-readiness results prevent saving.</span>
             </div>
@@ -3912,10 +3924,10 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
             <label className="lr-checkbox">
               <input type="checkbox" checked={options.block_non_applicable} disabled={sourceMutationLocked} onChange={e => replaceOptionsAndInvalidate({ ...options, block_non_applicable: e.target.checked })} />
               <span>Treat non-applicable runtime settings as blockers</span>
-            </label>
+            </label></details>
           </div>
           {queuedFileCount > 1 && (
-            <p className="lr-subtitle">Script Name override is ignored for batch conversion so each imported script can keep its detected source name.</p>
+            <p className="lr-subtitle">Each archive keeps its detected script name in a batch. Rename individual scripts after import.</p>
           )}
           <p className="lr-subtitle">Selected migration block policy: {formatMigrationBlockPolicySummary(options)}</p>
           {reviewedMigrationPolicy && (
@@ -3943,9 +3955,13 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
           </div>
           <input ref={harFileRef} type="file" accept=".har,.json,application/json" disabled={sourceMutationLocked} onChange={handleHARFileSelect} hidden />
           <input ref={supplementalFileRef} type="file" accept=".java,.zip,.jar,.json,.txt" multiple disabled={sourceMutationLocked} onChange={handleSupplementalFileSelect} hidden />
-          <div className="lr-har-panel">
+          <details className="lr-har-panel" open={Boolean(options.salesforce_native || selectedHARFile || salesforceReview)}><summary>Salesforce-specific options</summary>
+            <label className="lr-checkbox">
+              <input type="checkbox" checked={options.salesforce_native} disabled={sourceMutationLocked} onChange={e => replaceOptionsAndInvalidate({ ...options, salesforce_native: e.target.checked })} />
+              <span>Build Salesforce native preview</span>
+            </label>
             <div>
-              <h4>Salesforce HAR</h4>
+              <h4>Salesforce HAR (optional)</h4>
               <p>{selectedHARFile ? selectedHARFile.name : 'No HAR attached to the selected script'}</p>
             </div>
             <div className="lr-har-actions">
@@ -3958,14 +3974,14 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
                 </button>
               )}
             </div>
-          </div>
+          </details>
           <div className="lr-required-files-panel">
             <div>
               <h4>Required Files</h4>
               <p>
                 {requiredFileCandidates.length > 0
                   ? `${matchedRequiredFileKeys.size}/${requiredFileCandidates.length} detected dependency file${requiredFileCandidates.length === 1 ? '' : 's'} attached.`
-                  : 'No unresolved required files detected in the current review.'}
+                  : (result ? 'No unresolved required files detected in this review.' : 'Validate the archive to check for missing dependencies.')}
               </p>
               {requiredFileReviewIsStale && (
                 <p role="status">Review is stale; re-validate to refresh unresolved required files.</p>
@@ -4179,6 +4195,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
       {displayError && <div className="lr-error" role="alert">{displayError}</div>}
       {displayNotice && <div className="settings-notice">{displayNotice}</div>}
 
+      <ArchiveReviewBoundary key={`${selectedItem?.id}:${selectedItem?.reviewGeneration}`} archiveName={selectedItem?.file.name || 'Selected archive'} retryDisabled={sourceMutationLocked || workingMode !== null} onRetry={() => { if (selectedItem) void runReview('validate', options, undefined, [selectedItem.id]) }}>
       {/* Results */}
       {result && !importedScript && reviewArtifact && (
         <div className="lr-result">
@@ -4370,7 +4387,9 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
               className="lr-validation-review-overview"
               hidden={validationReviewTab !== 'overview'}
             >
+            {saveBlockedByProtocolGate && <div className="lr-warnings" role="status"><strong>Execution blocked</strong><p>{combinedJavaVuserGate ? 'Save the combined draft for approval. A compatible governed Java runner is also required before execution.' : 'Save a reference artifact. This protocol is not available for executable promotion in this import.'}</p></div>}
             {replayPreflight && <ReplayPreflightCard preflight={replayPreflight} />}
+            <p className="lr-subtitle">Import and static checks do not prove successful replay. After saving an executable script, debug one iteration against your intended environment.</p>
             {saveBlockedByProtocolGate && detectedProtocol && (
               <div className="lr-warnings lr-protocol-gate">
                 <div className="lr-review-section">
@@ -4446,7 +4465,15 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
                     <div>
                       <span>Runtime</span>
                       <strong>{formatRuntimeSettingStatusLabel(trueClient2CompatReport.runtime_parity_status || 'unknown')}</strong>
-                      <small>{trueClient2CompatReport.fixture_contract_status || 'fixture status unknown'}</small>
+                      <details>
+                        <summary>Compatibility evidence</summary>
+                        {typeof trueClient2CompatReport.fixture_contract_status === 'string'
+                          ? <p>{formatRuntimeSettingStatusLabel(trueClient2CompatReport.fixture_contract_status)}</p>
+                          : <ul>{Object.entries(trueClient2CompatReport.fixture_contract_status || {}).sort(([a], [b]) => a.localeCompare(b)).map(([name, status]) => (
+                            <li key={name}>{name.replace(/_/g, ' ')}: {formatRuntimeSettingStatusLabel(status)}</li>
+                          ))}</ul>}
+                        {!trueClient2CompatReport.fixture_contract_status && <p>Compatibility evidence not available.</p>}
+                      </details>
                     </div>
                     <div>
                       <span>Replay</span>
@@ -4637,7 +4664,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
             {/* Stats */}
             <div className="lr-stats-grid">
               <div className="lr-stat"><span className="lr-stat-val">{result.stats.logical_actions ?? result.stats.converted_actions}</span><span className="lr-stat-label">Logical Actions</span></div>
-              <div className="lr-stat"><span className="lr-stat-val">{result.stats.raw_request_actions ?? result.stats.converted_actions}</span><span className="lr-stat-label">Raw Requests</span></div>
+              <div className="lr-stat"><span className="lr-stat-val">{result.stats.raw_request_actions ?? result.stats.converted_actions}</span><span className="lr-stat-label">{importedScript.protocol === 'java_vuser' ? 'Lifecycle actions' : 'Raw Requests'}</span></div>
               <div className="lr-stat"><span className="lr-stat-val">{result.stats.collapsed_requests ?? 0}</span><span className="lr-stat-label">Collapsed</span></div>
               <div className="lr-stat"><span className="lr-stat-val">{result.stats.extractors}</span><span className="lr-stat-label">Extractors</span></div>
               <div className="lr-stat"><span className="lr-stat-val">{result.stats.transactions}</span><span className="lr-stat-label">Transactions</span></div>
@@ -5166,6 +5193,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
           </div>
         </div>
       )}
+      </ArchiveReviewBoundary>
     </div>
   )
 }

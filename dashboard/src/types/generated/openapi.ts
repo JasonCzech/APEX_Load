@@ -32801,6 +32801,7 @@ export interface operations {
                 "script_revision"?: string;
                 "snapshots"?: Array<(Record<string, unknown>) | null>;
                 "started_at": string;
+                "stopped"?: boolean;
                 "success": boolean;
                 "truncated_event_evidence_count"?: number;
               }) | null;
@@ -41057,6 +41058,7 @@ export interface operations {
                 "script_revision"?: string;
                 "snapshots"?: Array<(Record<string, unknown>) | null>;
                 "started_at": string;
+                "stopped"?: boolean;
                 "success": boolean;
                 "truncated_event_evidence_count"?: number;
               }) | null;
@@ -41412,6 +41414,7 @@ export interface operations {
                 "script_revision"?: string;
                 "snapshots"?: Array<(Record<string, unknown>) | null>;
                 "started_at": string;
+                "stopped"?: boolean;
                 "success": boolean;
                 "truncated_event_evidence_count"?: number;
               }) | null;
@@ -53360,6 +53363,7 @@ export interface operations {
                 "script_revision"?: string;
                 "snapshots"?: Array<(Record<string, unknown>) | null>;
                 "started_at": string;
+                "stopped"?: boolean;
                 "success": boolean;
                 "truncated_event_evidence_count"?: number;
               }) | null;
@@ -53816,6 +53820,7 @@ export interface operations {
                 "script_revision"?: string;
                 "snapshots"?: Array<(Record<string, unknown>) | null>;
                 "started_at": string;
+                "stopped"?: boolean;
                 "success": boolean;
                 "truncated_event_evidence_count"?: number;
               }) | null;
@@ -54176,6 +54181,7 @@ export interface operations {
                 "script_revision"?: string;
                 "snapshots"?: Array<(Record<string, unknown>) | null>;
                 "started_at": string;
+                "stopped"?: boolean;
                 "success": boolean;
                 "truncated_event_evidence_count"?: number;
               }) | null;
@@ -69305,6 +69311,7 @@ export interface operations {
                 "script_revision"?: string;
                 "snapshots"?: Array<(Record<string, unknown>) | null>;
                 "started_at": string;
+                "stopped"?: boolean;
                 "success": boolean;
                 "truncated_event_evidence_count"?: number;
               }) | null;
@@ -69761,6 +69768,7 @@ export interface operations {
                 "script_revision"?: string;
                 "snapshots"?: Array<(Record<string, unknown>) | null>;
                 "started_at": string;
+                "stopped"?: boolean;
                 "success": boolean;
                 "truncated_event_evidence_count"?: number;
               }) | null;
@@ -70121,6 +70129,7 @@ export interface operations {
                 "script_revision"?: string;
                 "snapshots"?: Array<(Record<string, unknown>) | null>;
                 "started_at": string;
+                "stopped"?: boolean;
                 "success": boolean;
                 "truncated_event_evidence_count"?: number;
               }) | null;
@@ -75164,6 +75173,7 @@ export interface operations {
                 "script_revision"?: string;
                 "snapshots"?: Array<(Record<string, unknown>) | null>;
                 "started_at": string;
+                "stopped"?: boolean;
                 "success": boolean;
                 "truncated_event_evidence_count"?: number;
               }) | null;
@@ -76196,6 +76206,7 @@ export interface operations {
                 "script_revision"?: string;
                 "snapshots"?: Array<(Record<string, unknown>) | null>;
                 "started_at": string;
+                "stopped"?: boolean;
                 "success": boolean;
                 "truncated_event_evidence_count"?: number;
               }) | null;
@@ -77349,6 +77360,7 @@ export interface operations {
                 "script_revision"?: string;
                 "snapshots"?: Array<(Record<string, unknown>) | null>;
                 "started_at": string;
+                "stopped"?: boolean;
                 "success": boolean;
                 "truncated_event_evidence_count"?: number;
               }) | null;
@@ -78449,6 +78461,7 @@ export interface operations {
                 "script_revision"?: string;
                 "snapshots"?: Array<(Record<string, unknown>) | null>;
                 "started_at": string;
+                "stopped"?: boolean;
                 "success": boolean;
                 "truncated_event_evidence_count"?: number;
               }) | null;
@@ -79550,6 +79563,7 @@ export interface operations {
                 "script_revision"?: string;
                 "snapshots"?: Array<(Record<string, unknown>) | null>;
                 "started_at": string;
+                "stopped"?: boolean;
                 "success": boolean;
                 "truncated_event_evidence_count"?: number;
               }) | null;
@@ -80650,6 +80664,7 @@ export interface operations {
                 "script_revision"?: string;
                 "snapshots"?: Array<(Record<string, unknown>) | null>;
                 "started_at": string;
+                "stopped"?: boolean;
                 "success": boolean;
                 "truncated_event_evidence_count"?: number;
               }) | null;
@@ -81133,6 +81148,7 @@ export interface operations {
                 "script_revision"?: string;
                 "snapshots"?: Array<(Record<string, unknown>) | null>;
                 "started_at": string;
+                "stopped"?: boolean;
                 "success": boolean;
                 "truncated_event_evidence_count"?: number;
               }) | null;
@@ -81502,6 +81518,7 @@ export interface operations {
                 "script_revision"?: string;
                 "snapshots"?: Array<(Record<string, unknown>) | null>;
                 "started_at": string;
+                "stopped"?: boolean;
                 "success": boolean;
                 "truncated_event_evidence_count"?: number;
               }) | null;
@@ -81853,6 +81870,7 @@ export interface operations {
                 "script_revision"?: string;
                 "snapshots"?: Array<(Record<string, unknown>) | null>;
                 "started_at": string;
+                "stopped"?: boolean;
                 "success": boolean;
                 "truncated_event_evidence_count"?: number;
               }) | null;
@@ -82304,6 +82322,7 @@ export interface operations {
                 "script_revision"?: string;
                 "snapshots"?: Array<(Record<string, unknown>) | null>;
                 "started_at": string;
+                "stopped"?: boolean;
                 "success": boolean;
                 "truncated_event_evidence_count"?: number;
               }) | null;
@@ -82659,6 +82678,7 @@ export interface operations {
                 "script_revision"?: string;
                 "snapshots"?: Array<(Record<string, unknown>) | null>;
                 "started_at": string;
+                "stopped"?: boolean;
                 "success": boolean;
                 "truncated_event_evidence_count"?: number;
               }) | null;
@@ -92032,6 +92052,7 @@ export interface operations {
                 "script_revision"?: string;
                 "snapshots"?: Array<(Record<string, unknown>) | null>;
                 "started_at": string;
+                "stopped"?: boolean;
                 "success": boolean;
                 "truncated_event_evidence_count"?: number;
               }) | null;
@@ -92401,6 +92422,7 @@ export interface operations {
                 "script_revision"?: string;
                 "snapshots"?: Array<(Record<string, unknown>) | null>;
                 "started_at": string;
+                "stopped"?: boolean;
                 "success": boolean;
                 "truncated_event_evidence_count"?: number;
               }) | null;
@@ -92770,6 +92792,7 @@ export interface operations {
                 "script_revision"?: string;
                 "snapshots"?: Array<(Record<string, unknown>) | null>;
                 "started_at": string;
+                "stopped"?: boolean;
                 "success": boolean;
                 "truncated_event_evidence_count"?: number;
               }) | null;
@@ -93139,6 +93162,7 @@ export interface operations {
                 "script_revision"?: string;
                 "snapshots"?: Array<(Record<string, unknown>) | null>;
                 "started_at": string;
+                "stopped"?: boolean;
                 "success": boolean;
                 "truncated_event_evidence_count"?: number;
               }) | null;
@@ -96482,7 +96506,28 @@ export interface operations {
     requestBody?: {
       content: {
         "application/json": {
+          "conversion"?: {
+            "also_create_http_script"?: boolean;
+            "end_seq"?: number;
+            "expected_script_count"?: number;
+            "folder_id"?: (string) | null;
+            "max_think_time_ms"?: number;
+            "name"?: string;
+            "parameterization_selections"?: Array<{
+              "script_index"?: number;
+              "selected_ids"?: Array<string>;
+            }>;
+            "parameterize"?: boolean;
+            "secret_bindings"?: Array<{
+              "requirement_id"?: string;
+              "script_index"?: number;
+              "secret_name"?: string;
+            }>;
+            "split_at_transactions"?: boolean;
+            "start_seq"?: number;
+          };
           "replay_session_id"?: string;
+          "script_index"?: number;
         };
       };
     };
@@ -96745,6 +96790,7 @@ export interface operations {
                 "script_revision"?: string;
                 "snapshots"?: Array<(Record<string, unknown>) | null>;
                 "started_at": string;
+                "stopped"?: boolean;
                 "success": boolean;
                 "truncated_event_evidence_count"?: number;
               }) | null;

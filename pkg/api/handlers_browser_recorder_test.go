@@ -2832,3 +2832,31 @@ func TestRecorderStatusIncludesBrowserAvailability(t *testing.T) {
 		t.Errorf("active = %+v, want the live recording summary; body=%s", payload.Browser.Active, resp.Body.String())
 	}
 }
+
+func TestVerifyBrowserRecordingUsesSelectedConversion(t *testing.T) {
+	for _, tc := range []struct {
+		name, body string
+		status     int
+	}{
+		{"selected name", `{"conversion":{"name":"Reviewed journey","parameterize":true},"script_index":0}`, http.StatusCreated},
+		{"negative output", `{"script_index":-1}`, http.StatusConflict},
+		{"missing output", `{"script_index":9}`, http.StatusConflict},
+		{"changed output count", `{"conversion":{"expected_script_count":9}}`, http.StatusConflict},
+		{"stale parameter choice", `{"conversion":{"parameterization_selections":[{"script_index":0,"selected_ids":["missing-choice"]}]}}`, http.StatusConflict},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			server := newBrowserRecorderTestServer(t, newFakeBrowserRecorder(recordedBrowserArtifact()))
+			id := startBrowserRecordingViaAPI(t, server)
+			stopBrowserRecordingViaAPI(t, server, id)
+			request := httptest.NewRequest(http.MethodPost, "/api/v1/browser-recorder/sessions/"+id+"/verify", strings.NewReader(tc.body))
+			response := httptest.NewRecorder()
+			server.mux.ServeHTTP(response, request)
+			if response.Code != tc.status {
+				t.Fatalf("status = %d, want %d: %s", response.Code, tc.status, response.Body.String())
+			}
+			if tc.status == http.StatusCreated && !strings.Contains(response.Body.String(), "Reviewed journey") {
+				t.Fatalf("selected conversion name missing: %s", response.Body.String())
+			}
+		})
+	}
+}

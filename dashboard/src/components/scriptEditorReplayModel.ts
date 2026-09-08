@@ -355,3 +355,9 @@ export function upsertReplayActivity(
   updated[index] = next
   return updated
 }
+
+/** Terminal review starts at the failure, even when teardown subsequently passed. */
+export function replayEvidenceIndex(report: BrowserReplayReport): number | null {
+  const failed = report.events.findIndex(event => !event.success)
+  return failed >= 0 ? failed : report.events.length ? report.events.length - 1 : null
+}

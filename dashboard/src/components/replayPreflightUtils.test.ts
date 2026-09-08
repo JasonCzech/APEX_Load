@@ -667,4 +667,9 @@ describe('buildLocalReplayPreflight', () => {
       detail: 'Screenshot capture is disabled; enable per_action or on_failure before using replay as promotion evidence.',
     })
   })
+  it.each(['http', 'java_vuser', 'sap_gui'])('does not claim %s runtime availability from static checks', protocol => {
+    const preflight = buildLocalReplayPreflight({ ...baseScript, protocol, actions: [] })
+    expect(preflight.checks?.find(check => check.id === 'runtime')).toMatchObject({ status: 'warn' })
+  })
+
 })

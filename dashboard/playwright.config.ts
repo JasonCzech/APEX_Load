@@ -3,7 +3,7 @@ import { defineConfig } from '@playwright/test'
 export default defineConfig({
   testDir: './e2e',
   testMatch: process.env.APEXLOAD_E2E_PROFILE === 'local-auth'
-    ? ['**/tier0-local-auth.spec.ts', '**/workflow-local-auth.spec.ts']
+    ? ['**/tier0-local-auth.spec.ts', '**/workflow-local-auth.spec.ts', '**/workflow-loadrunner-review.spec.ts']
     : '**/*.spec.ts',
   testIgnore: process.env.APEXLOAD_E2E_PROFILE === 'local-auth' ? [] : ['**/*local-auth.spec.ts'],
   fullyParallel: false,

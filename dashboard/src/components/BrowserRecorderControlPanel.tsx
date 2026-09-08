@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useLayoutEffect, useMemo, useRef } from 'react'
+import { type ReactNode, useState, useEffect, useCallback, useLayoutEffect, useMemo, useRef } from 'react'
 
 import { useApi } from '../hooks/useApi'
 import { hasDesktopApiCapability } from '../hooks/apiClient'
@@ -25,7 +25,7 @@ import {
   type HttpURLScheme,
 } from '../utils/httpUrlInput'
 import { type ImportedSaveResult } from './useScriptsAuthoringState'
-import BrowserReplayProgress from './BrowserReplayProgress'
+import BrowserReplayProgress, { type BrowserReplayProgressProps } from './BrowserReplayProgress'
 import { withFallbackPersistedScript } from './importSaveUtils'
 import ParameterizationReview from './ParameterizationReview'
 import SecretBindingReview, {
@@ -84,6 +84,8 @@ const STEP_KIND_LABELS: Record<string, string> = {
 
 function stepDetail(step: BrowserRecorderStep): string {
   if (step.masked) return '•••••• (masked)'
+  const target = step.element?.aria_label || step.element?.text || step.element?.name || step.element?.placeholder || step.element?.id || step.candidates?.[0]?.value
+  if (target && step.kind !== 'navigate') return `${target}${step.value ? `: ${step.value}` : ''}`
   if (step.value) return step.value
   if (step.title) return step.title
   if (step.url) return step.url
@@ -146,6 +148,7 @@ export interface BrowserRecorderControlPanelProps {
    * is a popup route with no surrounding folder context, so those saves keep
    * landing at the project root.
    */
+  destinationControl?: ReactNode
   folderId?: string | null
   onImported?: (result: ImportedSaveResult) => void
   onEdit?: (script: ScriptDefinition) => void
@@ -155,10 +158,16 @@ export interface BrowserRecorderControlPanelProps {
   onOperationBusyChange?: (busy: boolean) => void
 }
 
+function HistoricalVerification(props: BrowserReplayProgressProps) {
+  const [open, setOpen] = useState(false)
+  return <details onToggle={event => setOpen(event.currentTarget.open)}><summary>Replay {props.replaySessionId}</summary>{open && <BrowserReplayProgress {...props} />}</details>
+}
+
 export default function BrowserRecorderControlPanel({
   sessionId,
   standalone = false,
   folderId,
+  destinationControl,
   onImported,
   onEdit,
   onDismiss,
@@ -215,7 +224,7 @@ export default function BrowserRecorderControlPanel({
   const [showAllSteps, setShowAllSteps] = useState(false)
   const steps = useMemo(() => session?.steps || [], [session?.steps])
   const stepSearchQuery = stepSearch.trim().toLowerCase()
-  const visibleSteps = useMemo(() => [...steps].reverse().filter(step => {
+  const visibleSteps = useMemo(() => [...steps].sort((a, b) => session?.status === 'stopped' ? a.seq - b.seq : b.seq - a.seq).filter(step => {
     if (!stepSearchQuery) return true
     const detail = stepDetail(step)
     return [
@@ -227,7 +236,7 @@ export default function BrowserRecorderControlPanel({
       step.section,
       step.candidates?.[0]?.value,
     ].filter(Boolean).join(' ').toLowerCase().includes(stepSearchQuery)
-  }), [stepSearchQuery, steps])
+  }), [stepSearchQuery, steps, session?.status])
   const renderedSteps = useMemo(
     () => showAllSteps ? visibleSteps : visibleSteps.slice(0, 25),
     [showAllSteps, visibleSteps],
@@ -244,6 +253,21 @@ export default function BrowserRecorderControlPanel({
   const feedbackTimerRef = useRef<number | null>(null)
   const previewCredentialReviewRef = useRef<SecretBindingReviewHandle | null>(null)
   const salesforceCredentialReviewRef = useRef<SecretBindingReviewHandle | null>(null)
+  const historyKey = `browser-verification-history:${recorderRequestScope}:${sessionId}`
+  const [verificationHistory, setVerificationHistory] = useState<string[]>([])
+  useEffect(() => {
+    try {
+      const ids: unknown = JSON.parse(sessionStorage.getItem(historyKey) || '[]')
+      setVerificationHistory(Array.isArray(ids) ? ids.filter((id): id is string => typeof id === 'string').slice(0, 8) : [])
+    } catch { setVerificationHistory([]) }
+  }, [historyKey])
+  const rememberVerification = (id: string) => {
+    setVerificationHistory(previous => {
+      const next = [id, ...previous.filter(value => value !== id)].slice(0, 8)
+      try { sessionStorage.setItem(historyKey, JSON.stringify(next)) } catch { /* Evidence remains available for this panel. */ }
+      return next
+    })
+  }
   const previewReviewGenerationRef = useRef(0)
   const salesforceReviewGenerationRef = useRef(0)
   const [previewReviewGeneration, setPreviewReviewGeneration] = useState(0)
@@ -254,12 +278,24 @@ export default function BrowserRecorderControlPanel({
   const salesforceCredentialReviewIdentity = `${salesforceReviewGeneration}:${sessionId}`
   const previewProjectSecretsConfiguredForReview = previewConfiguredCredentialReviewIdentity === previewCredentialReviewIdentity
   const salesforceProjectSecretsConfiguredForReview = salesforceConfiguredCredentialReviewIdentity === salesforceCredentialReviewIdentity
+  const verificationRevisionRef = useRef(0)
+  const verificationGenerationRef = useRef(0)
+  const verificationOutputRef = useRef(0)
+  const [outputReports, setOutputReports] = useState<Record<number, BrowserReplayReport>>({})
+  const invalidateVerification = useCallback(() => {
+    verificationRevisionRef.current += 1
+    setFeedback(current => /^(Replay verification|Verifying)/.test(current) ? '' : current)
+    setLastVerifyReport(null)
+    setReplaySessionId(null)
+    setOutputReports({})
+  }, [])
   const advancePreviewReviewGeneration = useCallback(() => {
+    invalidateVerification()
     const next = previewReviewGenerationRef.current + 1
     previewReviewGenerationRef.current = next
     setPreviewReviewGeneration(next)
     return next
-  }, [])
+  }, [invalidateVerification])
   const advanceSalesforceReviewGeneration = useCallback(() => {
     const next = salesforceReviewGenerationRef.current + 1
     salesforceReviewGenerationRef.current = next
@@ -297,6 +333,17 @@ export default function BrowserRecorderControlPanel({
     }, 4000)
   }
 
+  const recordingFingerprintRef = useRef('')
+  const acceptRecordingSession = useCallback((next: BrowserRecorderSession) => {
+    const fingerprint = JSON.stringify([next.id, next.steps, next.markers, next.start_url, next.device_profile])
+    if (recordingFingerprintRef.current && recordingFingerprintRef.current !== fingerprint) {
+      invalidateVerification()
+      previewRequestKeyRef.current = ''
+    }
+    recordingFingerprintRef.current = fingerprint
+    setSession(next)
+  }, [invalidateVerification])
+
   const refresh = useCallback(async () => {
     const inFlight = refreshInFlightRef.current
     if (inFlight?.sessionId === sessionId && inFlight.recorderRequestScope === recorderRequestScope) return inFlight.request
@@ -305,7 +352,7 @@ export default function BrowserRecorderControlPanel({
       try {
         const res = await api.getBrowserRecording(sessionId)
         if (sessionScopeRef.current.sessionId !== scope.sessionId || sessionScopeRef.current.recorderRequestScope !== scope.recorderRequestScope || sessionScopeRef.current.generation !== scope.generation) return
-        setSession(res.session)
+        acceptRecordingSession(res.session)
         setLoadError('')
       } catch (e: any) {
         if (sessionScopeRef.current.sessionId !== scope.sessionId || sessionScopeRef.current.recorderRequestScope !== scope.recorderRequestScope || sessionScopeRef.current.generation !== scope.generation) return
@@ -318,7 +365,7 @@ export default function BrowserRecorderControlPanel({
     } finally {
       if (refreshInFlightRef.current?.request === request) refreshInFlightRef.current = null
     }
-  }, [api, recorderRequestScope, sessionId])
+  }, [api, recorderRequestScope, sessionId, acceptRecordingSession])
 
   const loadStepThumbnails = async () => {
     if (stepThumbnailsLoading || typeof api.getRawBrowserRecording !== 'function') return
@@ -466,7 +513,7 @@ export default function BrowserRecorderControlPanel({
     try {
       const res = await api.stopBrowserRecording(sessionId)
       if (!isCurrentSession()) return
-      setSession(res.session)
+      acceptRecordingSession(res.session)
       if (res.session.status === 'stopping') {
         showFeedback('Stop requested — finalizing browser and HAR capture')
       } else {
@@ -484,7 +531,7 @@ export default function BrowserRecorderControlPanel({
     try {
       const res = await api.forceStopBrowserRecording(sessionId)
       if (!isCurrentSession()) return
-      setSession(res.session)
+      acceptRecordingSession(res.session)
       showFeedback(`Recording force-finished — ${res.session.step_count} captured steps preserved`)
     } catch (e: any) {
       if (isCurrentSession()) showFeedback(e.message, 'error')
@@ -501,7 +548,7 @@ export default function BrowserRecorderControlPanel({
         ? await api.resumeBrowserRecording(sessionId)
         : await api.pauseBrowserRecording(sessionId)
       if (!isCurrentSession()) return
-      setSession(res.session)
+      acceptRecordingSession(res.session)
       showFeedback(res.session.status === 'paused'
         ? 'Recording paused — interactions and think time are not captured'
         : 'Recording resumed')
@@ -538,7 +585,7 @@ export default function BrowserRecorderControlPanel({
     try {
       const res = await api.navigateBrowserRecording(sessionId, url)
       if (!isCurrentSession()) return
-      setSession(res.session)
+      acceptRecordingSession(res.session)
       setNavigateAddress('')
       showFeedback(`Recording browser navigated to ${url}`)
     } catch (e: any) {
@@ -557,7 +604,7 @@ export default function BrowserRecorderControlPanel({
     try {
       const res = await api.startBrowserRecordingTransaction(sessionId, name)
       if (!isCurrentSession()) return
-      setSession(res.session)
+      acceptRecordingSession(res.session)
       setTransactionName('')
       showFeedback(`Transaction "${name}" started`)
     } catch (e: any) {
@@ -569,7 +616,7 @@ export default function BrowserRecorderControlPanel({
     try {
       const res = await api.endBrowserRecordingTransaction(sessionId, name)
       if (!isCurrentSession()) return
-      setSession(res.session)
+      acceptRecordingSession(res.session)
       showFeedback(`Transaction "${res.marker.name || name}" ended`)
     } catch (e: any) {
       if (isCurrentSession()) showFeedback(e.message, 'error')
@@ -585,7 +632,7 @@ export default function BrowserRecorderControlPanel({
     try {
       const res = await api.addBrowserRecordingNote(sessionId, text)
       if (!isCurrentSession()) return
-      setSession(res.session)
+      acceptRecordingSession(res.session)
       setNoteText('')
       showFeedback('Note added — it will attach to the next recorded action')
     } catch (e: any) {
@@ -774,6 +821,7 @@ export default function BrowserRecorderControlPanel({
         ?? requirementsByID.get(binding.requirement_id)?.script_index
         ?? 0,
     }))
+    invalidateVerification()
     previewPreparedScriptsRef.current = importResultScripts(resolved)
   }
 
@@ -1028,7 +1076,7 @@ export default function BrowserRecorderControlPanel({
     try {
       const res = await api.setBrowserRecordingSection(sessionId, section)
       if (!isCurrentSession()) return
-      setSession(res.session)
+      acceptRecordingSession(res.session)
     } catch (e: any) {
       if (isCurrentSession()) showFeedback(e.message, 'error')
     }
@@ -1039,7 +1087,7 @@ export default function BrowserRecorderControlPanel({
     try {
       const res = await api.setBrowserRecordingPickMode(sessionId, !session.picking)
       if (!isCurrentSession()) return
-      setSession(res.session)
+      acceptRecordingSession(res.session)
       showFeedback(res.session.picking
         ? 'Pick mode on — click an element in the recording browser to add a verification'
         : 'Pick mode off')
@@ -1052,7 +1100,7 @@ export default function BrowserRecorderControlPanel({
     try {
       const res = await api.deleteLastBrowserRecordingStep(sessionId)
       if (!isCurrentSession()) return
-      setSession(res.session)
+      acceptRecordingSession(res.session)
       showFeedback('Last step removed')
     } catch (e: any) {
       if (isCurrentSession()) showFeedback(e.message, 'error')
@@ -1063,7 +1111,7 @@ export default function BrowserRecorderControlPanel({
     try {
       const res = await api.updateBrowserRecordingStep(sessionId, seq, { excluded })
       if (!isCurrentSession()) return
-      setSession(res.session)
+      acceptRecordingSession(res.session)
     } catch (e: any) {
       if (isCurrentSession()) showFeedback(e.message, 'error')
     }
@@ -1073,7 +1121,7 @@ export default function BrowserRecorderControlPanel({
     try {
       const res = await api.updateBrowserRecordingStep(sessionId, seq, kind === 'secret' ? { mark_secret: true } : { mark_param: true })
       if (!isCurrentSession()) return
-      setSession(res.session)
+      acceptRecordingSession(res.session)
       showFeedback(`Step #${seq} marked as ${kind === 'secret' ? 'a secret' : 'a data parameter'}`)
     } catch (e: any) {
       if (isCurrentSession()) showFeedback(e.message, 'error')
@@ -1084,7 +1132,7 @@ export default function BrowserRecorderControlPanel({
     try {
       const res = await api.startBrowserRecordingTransaction(sessionId, suggestion.name, suggestion.at_step_seq)
       if (!isCurrentSession()) return
-      setSession(res.session)
+      acceptRecordingSession(res.session)
       setSuggestions(prev => prev.filter(s => s.name !== suggestion.name || s.at_step_seq !== suggestion.at_step_seq))
       showFeedback(`Transaction "${suggestion.name}" started`)
     } catch (e: any) {
@@ -1092,22 +1140,34 @@ export default function BrowserRecorderControlPanel({
     }
   }
 
-  const startVerificationReplay = async (successMessage: string) => {
+  const startVerificationReplay = async (successMessage: string, scriptIndex = 0) => {
     if (verificationStartScopeRef.current === renderedSessionScope) return false
     const verificationScope = renderedSessionScope
     verificationStartScopeRef.current = verificationScope
+    const revision = verificationRevisionRef.current
     const clientReplaySessionId = createReplaySessionId()
+    verificationGenerationRef.current = verificationRevisionRef.current
+    verificationOutputRef.current = scriptIndex
     setLastVerifyReport(null)
     setReplaySessionId(clientReplaySessionId || null)
     try {
-      const res = await api.verifyBrowserRecording(sessionId, clientReplaySessionId || undefined)
+      const res = await api.verifyBrowserRecording(sessionId, clientReplaySessionId || undefined, {
+        ...convertRequest(),
+        secret_bindings: previewSaveBindingsRef.current,
+        parameterization_selections: [...previewParameterizationSelectionsRef.current.entries()].map(([script_index, selected]) => ({ script_index, selected_ids: [...selected].sort() })),
+        expected_script_count: preview ? importResultScripts(preview).length : undefined,
+      }, scriptIndex)
       if (!isCurrentSession()) return false
+      rememberVerification(res.replay_session_id)
+      if (verificationRevisionRef.current !== revision) return false
       setReplaySessionId(res.replay_session_id)
       showFeedback(successMessage)
       return true
     } catch (e: any) {
       if (!isCurrentSession()) return false
       if (clientReplaySessionId && !isDefiniteReplayStartRejection(e)) {
+        rememberVerification(clientReplaySessionId)
+        if (verificationRevisionRef.current !== revision) return false
         showFeedback('The replay start response was interrupted. Confirming the accepted replay session…')
         return true
       }
@@ -1135,8 +1195,11 @@ export default function BrowserRecorderControlPanel({
     if (!isCurrentSession()) return
     if (replaySessionIdRef.current !== sourceReplaySessionId) return
     if (report?.replay_session_id && report.replay_session_id !== sourceReplaySessionId) return
+    if (verificationGenerationRef.current !== verificationRevisionRef.current) return
     setLastVerifyReport(report)
+    if (report) setOutputReports(previous => ({ ...previous, [verificationOutputRef.current]: report }))
     if (!report) {
+      setReplaySessionId(null)
       showFeedback('Replay verification stopped before a final report was available', 'error')
       return
     }
@@ -1164,8 +1227,10 @@ export default function BrowserRecorderControlPanel({
     try {
       const patched = await api.updateBrowserRecordingStep(sessionId, seq, { promote_selector: selector })
       if (!isCurrentSession()) return
-      setSession(patched.session)
-      await startVerificationReplay(`Selector promoted for step #${seq}; verifying again`)
+      acceptRecordingSession(patched.session)
+      invalidateVerification()
+      previewRequestKeyRef.current = ''
+      await startVerificationReplay(`Selector promoted for step #${seq}; verifying again`, verificationOutputRef.current)
     } catch (e: any) {
       if (isCurrentSession()) showFeedback(e.message || 'Failed to apply replay suggestion', 'error')
     } finally {
@@ -1473,9 +1538,10 @@ export default function BrowserRecorderControlPanel({
       new Set(previewSecretRequirements
         .filter(requirement => requirement.destination_value_preserved !== true)
         .map(requirement => requirement.suggested_name)).size
+  const allOutputsVerified = !!preview && importResultScripts(preview).length > 0 && importResultScripts(preview).every((_, index) => outputReports[index]?.success && !outputReports[index]?.stopped)
   const previewSaveLabel = previewDeferredSecretCount > 0
     ? `Save with ${previewDeferredSecretCount} ${previewDeferredSecretCount === 1 ? 'secret' : 'secrets'} to configure`
-    : 'Save to Script Library'
+    : allOutputsVerified ? 'Save verified draft' : 'Save unverified draft'
   const salesforceSecretRequirements = salesforceDraft?.secret_binding_requirements || []
   const previewRequiresCredentialPreservingSave = credentialPreservingImportDraftRequiresSave(
     preview,
@@ -1702,7 +1768,7 @@ export default function BrowserRecorderControlPanel({
       {steps.length > 0 && (
         <div className="rec-live-feed brp-feed">
           <div className="rec-feed-header">
-            <span>{live ? 'Live Steps' : 'Recorded Steps'}</span>
+            <span>{live ? 'Live Steps' : 'Recorded Steps · chronological journey'}</span>
             <span>
               <button
                 type="button"
@@ -1732,6 +1798,7 @@ export default function BrowserRecorderControlPanel({
               {stepSearchQuery && <span>{visibleSteps.length} match{visibleSteps.length === 1 ? '' : 'es'}</span>}
             </div>
           )}
+          <p className="brp-hint">Selector strength is a locator heuristic, not a measured replay success rate.</p>
           <div className="rec-feed-list">
             {renderedSteps.map(step => {
               const quality = selectorQuality(step)
@@ -1742,12 +1809,13 @@ export default function BrowserRecorderControlPanel({
                   <span className="brp-step-seq">#{step.seq}</span>
                   <span className={`brp-step-kind brp-step-kind-${step.kind}`}>{STEP_KIND_LABELS[step.kind] || step.kind}</span>
                   <span className="rec-path" title={stepDetail(step)}>{stepDetail(step)}</span>
+                  <details><summary>Step details</summary><div>Section: {step.section || 'actions'}</div><div>{step.frame_selector ? `Frame: ${step.frame_selector}` : 'Main page'}</div>{step.candidates?.map((candidate, index) => <div key={index}>{candidate.kind}: {candidate.value} — {candidate.reason || 'Captured locator'}</div>)}</details>
                   {step.masked && <span className="brp-masked" title="Value masked at capture">masked</span>}
                   {step.mark_secret && <span className="brp-masked" title="Marked as a runtime secret">secret</span>}
                   {step.mark_param && <span className="brp-masked" title="Marked as a data parameter">param</span>}
                   {quality && (
                     <span className={`brp-quality-badge brp-quality-${quality.tone}`} title={`Selector confidence ${quality.score}/100 (${step.candidates?.[0]?.kind})`}>
-                      {quality.score}
+                      Selector: {quality.tone} ({quality.score}/100)
                     </span>
                   )}
                   {controllable && INTERACTION_KINDS.has(step.kind) && (
@@ -1781,6 +1849,13 @@ export default function BrowserRecorderControlPanel({
         </div>
       )}
 
+      {verificationHistory.some(id => id !== replaySessionId) && (
+        <details className="brp-verification-history">
+          <summary>Previous recording verification</summary>
+          <p>Historical evidence only. Conversion settings or recorded steps may have changed. Verify each current output again before relying on these results.</p>
+          {verificationHistory.filter(id => id !== replaySessionId).map(id => <HistoricalVerification key={id} replaySessionId={id} projectId={session.project_id} bridge={api.browserRecorderBridge} />)}
+        </details>
+      )}
       {(session.annotations?.length ?? 0) > 0 && (
         <div className="brp-warnings" data-testid="recording-annotations">
           <div className="brp-warnings-title">Console & network issues ({session.annotation_count ?? session.annotations!.length})</div>
@@ -1871,6 +1946,38 @@ export default function BrowserRecorderControlPanel({
             <input type="checkbox" checked={parameterizeInputs} disabled={busy} onChange={e => { advancePreviewReviewGeneration(); setParameterizeInputs(e.target.checked) }} />
             <span>Parameterize inputs</span>
           </label>
+          {preview && (
+            <div className="brp-preview-summary">
+              {previewRequestKeyRef.current !== JSON.stringify(convertRequest()) && <p role="status">Conversion changed. Preview Conversion again to review the current outputs.</p>}
+              <div>
+                Conversion review · {importResultScripts(preview).length} outputs
+                {(preview.parameterization?.summary?.total ?? 0) > 0 &&
+                  ` · ${preview.parameterization!.summary.total} parameterization suggestions`}
+              </div>
+              <p>Destination: Script Library · {folderId ? 'selected folder' : 'project root'}. Saves remain drafts; debug and approve each saved script before execution. Recording verification checks the selected conversion with think time skipped.</p>
+              {importResultScripts(preview).map((script, index) => (
+                <section key={index} className="brp-output-review" aria-label={`Output ${index + 1}: ${script.name}`}>
+                  <strong>{script.name} · {script.protocol}</strong>
+                  <p>{script.init?.length || 0} init · {script.actions?.length || 0} main · {script.teardown?.length || 0} teardown actions</p>
+                  <p role="status">{outputReports[index] ? outputReports[index].success ? 'Verification passed for this conversion' : 'Verification incomplete or failed — review evidence' : 'Unverified draft'}</p>
+                  <details><summary>Journey and dependencies</summary>
+                    {(['init', 'actions', 'teardown'] as const).map(phase => <ol key={phase} aria-label={phase}>{script[phase]?.map((action, actionIndex) => <li key={actionIndex}>{action.name || action.type} · {action.type}</li>)}</ol>)}
+                    <p>Data sources: {(script.data_sources || []).map(source => source.name).join(', ') || 'None'}</p>
+                    <p>Parameters: {(script.parameters || []).map(parameter => parameter.name).join(', ') || 'None'}</p>
+                    <p>Secrets to review: {secretBindingRequirementsForScript(preview.secret_binding_requirements || [], index, script).length}</p>
+                  </details>
+                  <button className="btn btn-secondary" disabled={busy || (!!replaySessionId && !lastVerifyReport) || previewParameterizationApplying || previewRequestKeyRef.current !== JSON.stringify(convertRequest())} onClick={() => void startVerificationReplay(`Verifying ${script.name}`, index)}>Verify output {index + 1}</button>
+                </section>
+              ))}
+              {(preview.warnings?.length ?? 0) > 0 && (
+                <div className="brp-warnings">
+                  {preview.warnings.map((warning, idx) => (
+                    <div key={idx} className="brp-warning">{warning}</div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
           {!lastVerifyReport && (
             <div className="brp-hint">Replay verification has not completed for this recording.</div>
           )}
@@ -1882,9 +1989,10 @@ export default function BrowserRecorderControlPanel({
               Salesforce-family traffic was detected in the recorded HAR. Review a native HTTP draft before saving when Aura, Lightning, Mulesoft, or Agentforce calls are part of the flow.
             </div>
           )}
+          {destinationControl}
           <div className="brp-actions">
             {!replaySessionId && (
-              <button className="btn btn-secondary" onClick={handleVerify} disabled={busy} data-testid="verify-recording">Verify Recording</button>
+              <button className="btn btn-secondary" onClick={handleVerify} disabled={busy} data-testid="verify-recording">Verify primary output</button>
             )}
             <button className="btn btn-secondary" onClick={handlePreview} disabled={busy}>Preview Conversion</button>
             {showSalesforceHandoff && (
@@ -1900,22 +2008,6 @@ export default function BrowserRecorderControlPanel({
           {previewImportDraftExpiry && (
             <div className={`rec-feedback ${previewImportDraftExpiry.expired ? 'error' : ''}`} role={previewImportDraftExpiry.expired ? 'alert' : 'status'}>
               {previewImportDraftExpiry.label}
-            </div>
-          )}
-          {preview && (
-            <div className="brp-preview-summary">
-              <div>
-                Preview: {preview.script?.actions?.length || 0} actions
-                {(preview.parameterization?.summary?.total ?? 0) > 0 &&
-                  ` · ${preview.parameterization!.summary.total} parameterization suggestions`}
-              </div>
-              {(preview.warnings?.length ?? 0) > 0 && (
-                <div className="brp-warnings">
-                  {preview.warnings.map((warning, idx) => (
-                    <div key={idx} className="brp-warning">{warning}</div>
-                  ))}
-                </div>
-              )}
             </div>
           )}
           {salesforceDraft && salesforceScript && (

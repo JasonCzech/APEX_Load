@@ -103,6 +103,7 @@ export function deriveDebuggerStatus(
   report: BrowserReplayReport | null,
 ): 'error' | 'success' | 'running' | 'paused' | 'idle' {
   if (replaying) return paused ? 'paused' : 'running'
+  if (report?.stopped) return 'idle'
   if (report) return report.success ? 'success' : 'error'
   return 'idle'
 }

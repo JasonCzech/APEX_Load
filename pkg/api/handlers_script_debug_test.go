@@ -1532,3 +1532,28 @@ func TestHandleStartScriptDebugDraftScriptRejectsMalformedAndMultiJSONBodies(t *
 		})
 	}
 }
+
+func TestStoppedDebugReportIsNotAFailure(t *testing.T) {
+	protocolName := registerReplayAPIProtocol(t, func(action *protocol.Action) (*protocol.Result, error) {
+		t.Error("paused action must not execute")
+		return &protocol.Result{Success: true}, nil
+	})
+	manager := NewScriptDebugManager(nil)
+	_, err := manager.StartChecked("", &dsl.Script{Name: "Stop", Protocol: protocolName, Version: "1.0.0", Actions: []dsl.Action{{Type: "GET", Target: "/"}}}, ScriptDebugStartRequest{ReplaySessionID: "stopped-report", StartPaused: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager.Stop("stopped-report")
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		session, _ := manager.Get("stopped-report")
+		if session.FinalReport != nil {
+			if !session.FinalReport.Stopped || session.FinalReport.Success || session.FinalReport.Error != "" || session.Error != "" {
+				t.Fatalf("stopped result: %+v / %s", session.FinalReport, session.Error)
+			}
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("no final stopped report")
+}

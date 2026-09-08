@@ -471,6 +471,15 @@ func (m *ScriptDebugManager) StartChecked(scriptID string, script *dsl.Script, r
 				messageType = "script_debug_failed"
 				session.appendLogLocked("error", "session", session.Error, "", nil)
 			} else if session.Status == ScriptDebugStopped {
+				if report != nil {
+					report.Stopped = true
+					report.Success = false
+					// A deliberate stop is not an execution error. Keep action
+					// failures in Events for inspection.
+					report.Error = ""
+				}
+				session.Error = ""
+
 				session.rejectCorrelationEvidenceLocked("debugger session was stopped before replay completion")
 				messageType = "script_debug_stopped"
 				session.appendLogLocked("warn", "control", "Debugger session stopped", "", nil)

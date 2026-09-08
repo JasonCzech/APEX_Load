@@ -41,6 +41,7 @@ func (b *Browser) evaluateBrowserAssertions(action *protocol.Action, assertions 
 				return fmt.Errorf("page_title assertion requires value or expected")
 			}
 			if result.PageTitle != expected {
+				recordAssertionMismatch(result, assertion.Type, expected, result.PageTitle)
 				return fmt.Errorf("browser page title = %q, want %q", result.PageTitle, expected)
 			}
 		case "url_contains":
@@ -74,6 +75,7 @@ func (b *Browser) evaluateBrowserAssertions(action *protocol.Action, assertions 
 			text = strings.TrimSpace(text)
 			expected := strings.TrimSpace(fmt.Sprint(assertion.Expected))
 			if text != expected {
+				recordAssertionMismatch(result, assertion.Type, expected, text)
 				return fmt.Errorf("element %q text = %q, want %q", selector, text, expected)
 			}
 		case "element_text_contains":
@@ -87,6 +89,7 @@ func (b *Browser) evaluateBrowserAssertions(action *protocol.Action, assertions 
 			}
 			expected := strings.TrimSpace(fmt.Sprint(assertion.Expected))
 			if !strings.Contains(text, expected) {
+				recordAssertionMismatch(result, assertion.Type, expected, text)
 				return fmt.Errorf("element %q text %q does not contain %q", selector, text, expected)
 			}
 		default:
@@ -116,4 +119,13 @@ func (b *Browser) assertionSelectorText(action *protocol.Action, selector string
 		return "", fmt.Errorf("browser page is not initialized")
 	}
 	return page.TextContent(selector)
+}
+
+// Structured evidence keeps an evaluated assertion distinct from a locator
+// failure encountered while trying to read the element.
+func recordAssertionMismatch(result *protocol.Result, kind, expected, actual string) {
+	if result.ProtocolEvidence == nil {
+		result.ProtocolEvidence = make(map[string]any)
+	}
+	result.ProtocolEvidence["assertion_failure"] = map[string]any{"type": kind, "expected": expected, "actual": actual}
 }

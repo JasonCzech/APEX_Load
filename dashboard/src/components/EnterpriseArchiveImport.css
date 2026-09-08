@@ -15,7 +15,7 @@
 .lr-dropzone:hover, .lr-dropzone.drag-over {
   border-color: var(--accent); background: rgba(99,102,241,0.04);
 }
-.lr-dropzone.has-file { border-style: solid; }
+.lr-dropzone.has-file { border-style: solid; cursor: default; }
 .lr-drop-content { display: flex; flex-direction: column; align-items: center; gap: 10px; }
 .lr-drop-content p { color: var(--text-secondary); font-size: 14px; margin: 0; }
 .lr-drop-hint { color: var(--text-muted); font-size: 12px; }
@@ -880,3 +880,11 @@
 }
 .java-classpath-resolver-row .chip-remove:hover,
 .java-env-classpath-asset-chip .chip-remove:hover { color: var(--danger); }
+
+.lr-import-steps { display: flex; flex-wrap: wrap; gap: 12px; padding: 12px 0; list-style: none; color: var(--text-secondary); }
+.lr-import-steps [aria-current="step"] { color: var(--text-primary); font-weight: 600; }
+.lr-advanced-policy { grid-column: 1 / -1; }
+.lr-advanced-policy summary, .lr-har-panel summary { cursor: pointer; font-weight: 600; padding: 8px 0; }
+.lr-advanced-policy .lr-checkbox { margin-top: 10px; }
+.lr-har-panel { display: block; }
+.lr-result-header, .script-import-review-header { scroll-margin-top: 100px; }

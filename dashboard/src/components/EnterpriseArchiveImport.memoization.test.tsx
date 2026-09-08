@@ -195,9 +195,9 @@ describe('EnterpriseArchiveImport review derivations', () => {
     const validateButton = findButton(container, 'Validate Only') || findButton(container, 'Validate')
     expect(validateButton).toBeDefined()
     await clickButton(validateButton!)
-    await clickButton(findButton(container, 'Convert Loadrunner Script Archive')!)
+    await clickButton(findButton(container, 'Continue reviewed import')!)
 
-    expect(container.textContent).toContain('Conversion Complete')
+    expect(container.textContent).toContain('Review')
     const summaryCallsAfterConversion = derivationCounts.importSummary
     const inlineDataCallsAfterConversion = derivationCounts.inlineData
     expect(summaryCallsAfterConversion).toBeGreaterThan(0)
@@ -211,7 +211,7 @@ describe('EnterpriseArchiveImport review derivations', () => {
     })
     await flushPromises()
 
-    expect(container.textContent).toContain('Conversion Complete')
+    expect(container.textContent).toContain('Review')
     expect(derivationCounts.importSummary).toBe(summaryCallsAfterConversion)
     expect(derivationCounts.inlineData).toBe(inlineDataCallsAfterConversion)
   })

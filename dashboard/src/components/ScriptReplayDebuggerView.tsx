@@ -148,7 +148,8 @@ export interface ScriptReplayDebuggerViewProps {
   replayReport: BrowserReplayReport | null
   replayEditableActionsKey: string | null
   currentEditableActionsKey: string | null
-  replayStatusLabel: 'Running' | 'Success' | 'Failed'
+  previousReplayReport?: BrowserReplayReport | null
+  replayStatusLabel: 'Running' | 'Success' | 'Failed' | 'Stopped'
   replayVariableDiffs: Array<Record<string, { previous?: string; next: string }>>
   replayVariableInspector: Record<string, string> | null
   replayVariableTimeline: ReplayVariableTimelineEntry[]
@@ -217,6 +218,7 @@ export function ScriptReplayDebuggerView({
   replayReport,
   replayEditableActionsKey,
   currentEditableActionsKey,
+  previousReplayReport,
   replayStatusLabel,
   replayVariableDiffs,
   replayVariableInspector,
@@ -406,18 +408,20 @@ export function ScriptReplayDebuggerView({
             )}
 
             <div className="debugger-body">
+              {isBrowserScript && <p className="debugger-evidence-hint">Recording verification checks a conversion draft. Debugging here checks the current saved or edited script; changes require a new debug run.</p>}
+              {previousReplayReport && <details className="debugger-previous-evidence"><summary>Previous replay evidence · {previousReplayReport.stopped ? 'Stopped' : previousReplayReport.success ? 'Passed' : 'Failed'}</summary><p>{previousReplayReport.completed_at} · {previousReplayReport.error}</p><BrowserReplayDebugger report={previousReplayReport} running={false} /></details>}
               {(replaying || replayReport) && (
                 <div className={`debugger-live-strip ${debuggerStatusState}`}>
-                  <span className="replay-live-badge">{replaying ? (isReplayPaused ? 'Paused' : 'Streaming live') : replayReport?.success ? 'Finished' : 'Failed'}</span>
+                  <span className="replay-live-badge">{replaying ? (isReplayPaused ? 'Paused' : 'Streaming live') : replayReport?.stopped ? 'Stopped' : replayReport?.success ? 'Finished' : 'Failed'}</span>
                   <div className="debugger-live-strip-text">
                     <strong>{replayLatestActivity?.title || 'Debugger status available'}</strong>
-                    {replayLatestActivity?.detail && <span>{replayLatestActivity.detail}</span>}
+                    {replayLatestActivity?.detail && !isBrowserScript && !replayReport?.stopped && <span>{replayLatestActivity.detail}</span>}
                   </div>
                   <span className="debugger-live-strip-time">{formatReplayTime(replayLatestActivity?.timestamp || replayReport?.completed_at || replayReport?.started_at)}</span>
                 </div>
               )}
-              {replayReport?.error && <p className="replay-report-error">{replayReport.error}</p>}
-              {replayFailingEvent && (
+              {!replayReport?.stopped && !replayFailingEvent && replayReport?.error && <p className="replay-report-error">{replayReport.error}</p>}
+              {replayFailingEvent && !isBrowserScript && (
                 <div className="replay-failure-pin debugger-failure-pin">
                   <div>
                     <span className="replay-detail-label">First failing action</span>

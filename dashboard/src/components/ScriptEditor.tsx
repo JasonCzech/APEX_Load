@@ -178,6 +178,7 @@ import {
 } from './useScriptJsonAuthoringController'
 import {
   buildBrowserHTTPConversionReview,
+  replayEvidenceIndex,
   debugBreakpointKey,
   formatDebugLeafSuffix,
   humanizeStepSegment,
@@ -1976,7 +1977,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
         success: msg.type === 'script_debug_completed' ? true : msg.type === 'script_debug_failed' ? false : undefined,
       }))
       if (report) {
-        setExpandedReplayEvent(report.events.length ? report.events.length - 1 : null)
+        setExpandedReplayEvent(replayEvidenceIndex(report))
         if (report.events.length > 0) setDebugDetailCollapsed(false)
       }
       setExpandedReplayBrowserArtifacts({})
@@ -2141,7 +2142,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
         timestamp: report.completed_at,
         success: report.success,
       }))
-      setExpandedReplayEvent(report.events.length ? report.events.length - 1 : null)
+      setExpandedReplayEvent(replayEvidenceIndex(report))
       if (report.events.length > 0) setDebugDetailCollapsed(false)
       setExpandedReplayBrowserArtifacts({})
       setActiveReplaySessionId(null)
@@ -2181,7 +2182,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
         success: msg.type === 'browser_replay_completed' ? true : msg.type === 'browser_replay_failed' ? false : undefined,
       }))
       if (report) {
-        setExpandedReplayEvent(report.events.length ? report.events.length - 1 : null)
+        setExpandedReplayEvent(replayEvidenceIndex(report))
         if (report.events.length > 0) setDebugDetailCollapsed(false)
       }
       setExpandedReplayBrowserArtifacts({})
@@ -2784,6 +2785,16 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
     if (openSettings) setDebuggerSettingsOpen(true)
   }, [activateWorkspaceTab, setDebuggerSettingsOpen])
 
+  const latestCompletedReplayRef = useRef<BrowserReplayReport | null>(null)
+  const [previousReplayReport, setPreviousReplayReport] = useState<BrowserReplayReport | null>(null)
+  useEffect(() => {
+    if (replayReport?.completed_at) latestCompletedReplayRef.current = replayReport
+  }, [replayReport])
+  useEffect(() => {
+    latestCompletedReplayRef.current = null
+    setPreviousReplayReport(null)
+  }, [scriptId, projectId, folderId, initialScript])
+
   const handleReplay = useCallback(async (options?: { startPaused?: boolean }) => {
     const replayResourceScope = editorResourceScopeRef.current
     if (replayStartInFlightRef.current === replayResourceScope) return
@@ -2843,6 +2854,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
         log_level: replayOptions.logLevel,
       }
       const replayGroup = payload.group_name || `${currentScript.name || 'script'}-replay`
+      setPreviousReplayReport(latestCompletedReplayRef.current)
       setActiveReplaySessionId(replaySessionId)
       setBrowserReplaySession(null)
       setReplaySeedVariables(variables || {})
@@ -2894,7 +2906,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
             ? prev
             : res.session!.report!)
           if (responseSessionFinalized) {
-            setExpandedReplayEvent(res.session.report.events?.length ? res.session.report.events.length - 1 : null)
+            setExpandedReplayEvent(replayEvidenceIndex(res.session.report))
           }
         }
         if (res.session.status === 'paused') {
@@ -2997,12 +3009,18 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
     }
   }, [api, commitJsonDraft, debugBreakpoints, jsonDirty, openReplayDebugger, projectId, replayOptions.groupName, replayOptions.ignoreThinkTime, replayOptions.logLevel, replayOptions.startPaused, replayOptions.breakOnFailure, replayOptions.variablesText, resolveCurrentScript, scriptId, setActiveReplaySessionId, setBrowserReplaySession, setDebuggerBottomTab, setError, setExpandedReplayBrowserArtifacts, setExpandedReplayEvent, setReplayActivity, setReplayReport, setReplayScreenshotSelection, setReplaySeedVariables, setReplaying, setSuccess, setWarnings])
 
+  useEffect(() => {
+    if (replayReport?.completed_at) {
+      setSuccess(previous => /^(Starting|Stopping|Resuming|Pausing|Stop requested|Debugger started|Browser replay started)/.test(previous) ? '' : previous)
+    }
+  }, [replayReport?.completed_at, success, setSuccess])
+
   const handleStopReplay = useCallback(async () => {
     if (!activeReplaySessionId) return
+    setSuccess('Stopping debugger…')
     try {
       await api.stopScriptDebugSession(activeReplaySessionId)
       setError('')
-      setSuccess('Stopping debugger…')
     } catch (e: unknown) {
       setError(getErrorMessage(e, 'Failed to stop debugger'))
     }
@@ -3186,7 +3204,9 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
 
   const replayStatusLabel = replaying && replayReport && !replayReport.completed_at
     ? 'Running'
-    : replayReport?.success
+    : replayReport?.stopped
+      ? 'Stopped'
+      : replayReport?.success
       ? 'Success'
       : 'Failed'
   const replayLatestActivity = replayActivity[replayActivity.length - 1]
@@ -4647,7 +4667,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
     && currentEditableActionsKey !== null
     && validationEditableActionsKey === currentEditableActionsKey
   const debugEvidenceStatus = replayReport?.completed_at
-    ? (!replayEvidenceMatchesCurrentDraft ? 'stale' : replayReport.success ? 'passed' : 'failed')
+    ? (!replayEvidenceMatchesCurrentDraft ? 'stale' : replayReport.stopped ? 'stopped' : replayReport.success ? 'passed' : 'failed')
     : activeReplaySessionId || browserReplaySession
       ? 'in progress'
       : 'missing'
@@ -4664,7 +4684,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
   const debugWorkspaceStatusLabel = replaying
     ? (isReplayPaused ? 'Paused' : 'Running')
     : replayReport?.completed_at
-      ? (!replayEvidenceMatchesCurrentDraft ? 'Stale' : replayReport.success ? 'Passed' : 'Failed')
+      ? (!replayEvidenceMatchesCurrentDraft ? 'Stale' : replayReport.stopped ? 'Stopped' : replayReport.success ? 'Passed' : 'Failed')
       : activeReplaySessionId || browserReplaySession
         ? 'Active'
         : ''
@@ -4824,20 +4844,20 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
       },
       {
         id: 'step-debug',
-        label: 'Step',
-        compactLabel: 'Step',
+        label: replayReport?.completed_at ? 'Restart in step mode' : 'Step',
+        compactLabel: replayReport?.completed_at ? 'Restart step' : 'Step',
         icon: <DebugTopbarIcon kind="step" />,
         className: 'topbar-debug-action topbar-debug-action-step',
         hidden: workspaceTab !== 'debug',
-        title: 'Step to next action',
+        title: replayReport?.completed_at ? 'Restart in step mode at the first action; previous replay evidence is retained' : 'Step to next action',
         tone: 'secondary',
         disabled: stepReplayDisabled,
         onClick: () => { void topbarActionHandlersRef.current.handleStepReplay('into') },
       },
       {
         id: 'step-over-debug',
-        label: 'Step Over',
-        compactLabel: 'Over',
+        label: replayReport?.completed_at ? 'Restart in step mode (over)' : 'Step Over',
+        compactLabel: replayReport?.completed_at ? 'Restart over' : 'Over',
         icon: <DebugTopbarIcon kind="stepOver" />,
         className: 'topbar-debug-action topbar-debug-action-step-over',
         hidden: workspaceTab !== 'debug',
@@ -5162,7 +5182,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
   const renderReadyToRunCard = ({ showChecklist = false }: { showChecklist?: boolean } = {}) => (
     <div className="utility-card debug-readiness-card">
       <div className="utility-card-header readiness-card-header">
-        <strong>Ready to run?</strong>
+        <strong>Ready for debug?</strong>
         <div className="readiness-header-actions">
           <span>{replayPreflightStatusLabel(replayPreflight)}</span>
           <button
@@ -5388,7 +5408,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
     <div className="script-editor">
       <div className="script-evidence-states" aria-label="Script evidence states">
         <span>Saved: {scriptEditorDirty ? 'unsaved changes' : 'up to date'}</span>
-        <span>Validated: {validationEvidenceMatchesCurrentDraft && validationPassed ? 'passed' : validationEvidence ? 'stale or needs changes' : 'not yet'}</span>
+        <span>Script checks: {validationEvidenceMatchesCurrentDraft && validationPassed ? 'passed' : validationEvidence ? 'stale or needs changes' : 'not yet'}</span>
         <span>Debugged: {debugEvidenceStatus}</span>
         <span>Approval readiness: {approvalReady ? 'ready for review' : 'needs evidence'}</span>
       </div>
@@ -5594,11 +5614,11 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
                   </button>
                   <button type="button" className="debugger-icon-btn" title="Step to next action" onClick={() => void handleStepReplay('into')} disabled={stepReplayDisabled}>
                     <span className="debugger-icon" aria-hidden="true">&#10551;</span>
-                    <span>Step</span>
+                    <span>{replayReport?.completed_at ? 'Restart in step mode' : 'Step'}</span>
                   </button>
                   <button type="button" className="debugger-icon-btn" title="Step over the current block (run the rest of it, pause after)" onClick={() => void handleStepReplay('over')} disabled={stepReplayDisabled}>
                     <span className="debugger-icon" aria-hidden="true">&#10550;</span>
-                    <span>Step Over</span>
+                    <span>{replayReport?.completed_at ? 'Restart in step mode (over)' : 'Step Over'}</span>
                   </button>
                   <button type="button" className="debugger-icon-btn" title="Run to the end of the enclosing loop" onClick={() => void handleStepReplay('loop_end')} disabled={stepReplayDisabled}>
                     <span className="debugger-icon" aria-hidden="true">&#8635;</span>
@@ -5707,6 +5727,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
             replayReport={replayReport}
             replayEditableActionsKey={replayEditableActionsKey}
             currentEditableActionsKey={currentEditableActionsKey}
+            previousReplayReport={previousReplayReport}
             replayStatusLabel={replayStatusLabel}
             replayVariableDiffs={replayVariableDiffs}
             replayVariableInspector={replayVariableInspector}

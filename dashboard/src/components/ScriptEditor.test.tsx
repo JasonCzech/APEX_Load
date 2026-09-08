@@ -244,7 +244,7 @@ function findButtonByTitle(root: ParentNode, title: string) {
 
 function findReadinessCard(root: ParentNode) {
   return Array.from(root.querySelectorAll<HTMLElement>('.debug-readiness-card'))
-    .find(card => card.textContent?.includes('Ready to run?'))
+    .find(card => card.textContent?.includes('Ready for debug?'))
 }
 
 function findWorkspaceTab(root: ParentNode, label: string) {
@@ -5619,7 +5619,7 @@ describe('ScriptEditor', () => {
     const finalReport = {
       replay_session_id: 'debug-session-1', group: 'Checkout Flow-debug', protocol: 'http',
       started_at: '2026-05-14T20:00:00Z', completed_at: '2026-05-14T20:00:02Z',
-      success: false, error: 'replay stopped', events: [],
+      success: false, stopped: true, error: '', events: [],
     }
     await act(async () => {
       socketOptions?.onMessage?.({
@@ -5638,6 +5638,9 @@ describe('ScriptEditor', () => {
 
     expect(findDebuggerRunButton(container)?.disabled).toBe(false)
     expect(container.textContent).toContain('Debugger stopped')
+    expect(container.textContent).toContain('Restart in step mode')
+    expect(container.textContent).not.toContain('Stopping debugger…')
+    expect(container.querySelector('.replay-live-badge')?.textContent).toBe('Stopped')
   })
 
   it('keeps polling an unfinalized stopped session until CompletedAt and the final report are available', async () => {
@@ -5669,7 +5672,7 @@ describe('ScriptEditor', () => {
           report: {
             replay_session_id: 'debug-session-1', group: 'Checkout Flow-debug', protocol: 'http',
             started_at: '2026-05-14T20:00:00Z', completed_at: '2026-05-14T20:00:02Z',
-            success: false, error: 'replay stopped', events: [],
+            success: false, stopped: true, error: '', events: [],
           },
         },
       })
@@ -7793,7 +7796,7 @@ describe('ScriptEditor', () => {
     })
 
     const readinessCard = Array.from(container.querySelectorAll('.utility-card'))
-      .find(card => card.textContent?.includes('Ready to run?'))
+      .find(card => card.textContent?.includes('Ready for debug?'))
     expect(readinessCard?.textContent).toContain('Preflight')
     expect(readinessCard?.textContent).toContain('Missing variable: account_id')
 
@@ -9980,7 +9983,7 @@ describe('ScriptEditor', () => {
     expect(container.querySelector('.imported-parameter-mappings-dialog')?.textContent).toContain('Users.prm: LoginUser')
     expect(container.querySelector('.imported-parameter-mappings-dialog')?.textContent).toContain('column username')
     expect(container.querySelector('.imported-parameter-mappings-dialog')?.textContent).toContain('table users.csv')
-    expect(container.textContent).toContain('Ready to run?')
+    expect(container.textContent).toContain('Ready for debug?')
     expect(container.textContent).not.toContain('Guided History')
     expect(container.textContent).not.toContain('Flow Assembly')
     expect(container.textContent).toContain('Repair Actions')

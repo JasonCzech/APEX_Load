@@ -437,7 +437,9 @@ function buildDataWarnings(script: ScriptDefinition): string[] {
 
 function runtimePrerequisites(script: ScriptDefinition, browserRequired: boolean): string[] {
   if (!browserRequired) {
-    return [`Adapter: ${script.protocol}`]
+    if (script.protocol === 'sap_gui') return ['SAP GUI execution is unavailable: no bundled runtime adapter. Save a reference artifact for review.']
+    if (script.protocol === 'java_vuser') return ['Java runner availability and authoring approval are not verified by static checks. Execution requires an approved draft and a compatible governed JVM runner.']
+    return [`Required protocol: ${script.protocol}`, 'Runner availability and target connectivity are checked when debugging starts.']
   }
   return [
     `Browser engine: ${script.config.browser?.engine || 'chromium'}`,
@@ -520,7 +522,7 @@ export function buildLocalReplayPreflight(script: ScriptDefinition, variables?: 
     {
       id: 'runtime',
       label: 'Runtime prerequisites',
-      status: browserRequired ? 'warn' : 'pass',
+      status: 'warn',
       detail: prerequisites.join('; '),
     },
   ]

@@ -63,12 +63,40 @@ func TestAttachSelfHealSuggestionRequiresPassingActionAndEvidence(t *testing.T) 
 				ProtocolEvidence: map[string]any{"selector_self_heal": map[string]any{"primary_selector": "#old"}},
 			},
 		},
+		{
+			name:  "unchanged healed selector",
+			event: &ReplayActionEvent{Success: true, ProtocolEvidence: map[string]any{"selector_self_heal": map[string]any{"primary_selector": "#same", "healed_selector": "#same"}}},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			attachSelfHealSuggestion(tt.event)
 			if len(tt.event.RepairSuggestions) != 0 {
 				t.Fatalf("repair suggestions = %+v, want none", tt.event.RepairSuggestions)
+			}
+		})
+	}
+}
+
+func TestBrowserFailureDiagnosisUsesFailureEvidence(t *testing.T) {
+	for _, tc := range []struct{ name, message, want string }{
+		{"text contains", `element "#result" text "Hello operator" does not contain "Welcome operator"`, "assertion"},
+		{"text equals", `element "#result" text = "Hello", want "Welcome"`, "assertion"},
+		{"locator", `locator #result not found`, "selector"},
+		{"locator named expected", `locator #expected not found`, "selector"},
+		{"wait", `navigation timed out`, "wait_timing"},
+		{"no misleading selector from page text", `browser page is not initialized`, "runtime_environment"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			event := ReplayActionEvent{ActionType: "browser_wait", Selector: "#element-expected", Body: "element selector expected", ErrorMessage: tc.message}
+			diagnosis := classifyReplayFailure(event)
+			if diagnosis.Category != tc.want {
+				t.Fatalf("got %s, want %s", diagnosis.Category, tc.want)
+			}
+			for _, suggestion := range replayRepairSuggestionsForDiagnosis(event, diagnosis) {
+				if suggestion.DraftPatchType == "update_selector" || suggestion.Confidence != 0 {
+					t.Fatalf("unsupported repair: %+v", suggestion)
+				}
 			}
 		})
 	}
