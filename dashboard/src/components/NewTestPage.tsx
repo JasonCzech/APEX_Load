@@ -1,3 +1,6 @@
+import FormErrorSummary from './ux/FormErrorSummary'
+import FormField from './ux/FormField'
+import DialogLayer from './ux/DialogLayer'
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal, flushSync } from 'react-dom'
 import { Area, AreaChart, CartesianGrid, Line, ReferenceArea, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
@@ -605,6 +608,7 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
   const [scheduledPreflight, setScheduledPreflight] = useState<LaunchPreflightResponse | null>(null)
   const [scheduledPreflightLoading, setScheduledPreflightLoading] = useState(false)
   const [scheduledStartLocal, setScheduledStartLocal] = useState(initialPrefillStartLocal || '')
+  const scheduledStartBaselineRef = useRef(initialPrefillStartLocal || '')
   const [effectiveAuthAccessResources, setEffectiveAuthAccessResources] = useState<DashboardAuthEffectiveAccessResource[]>([])
   const [effectiveAccessLoaded, setEffectiveAccessLoaded] = useState(false)
   const [effectiveAccessError, setEffectiveAccessError] = useState('')
@@ -1625,6 +1629,7 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
     setGroupSaveNotice('')
     setShowAllRuntimeDefaults(false)
     setSelectedTimeslotId('')
+    scheduledStartBaselineRef.current = ''
     setScheduledStartLocal('')
   }, [defaultReleaseId, scenario?.name])
 
@@ -1644,7 +1649,7 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
     || releaseDirty
     || runOverridesCount > 0
     || selectedTimeslotId
-    || scheduledStartLocal
+    || scheduledStartLocal !== scheduledStartBaselineRef.current
     || newReleaseName.trim()
     || pendingDefaultDirty
     || pendingGroupDirty
@@ -3125,7 +3130,7 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
                   </select>
                   {showNewRelease ? (
                     <div className="new-test-release-create-row">
-                      <input className="settings-input" aria-label="New release name" value={newReleaseName} onChange={event => setNewReleaseName(event.target.value)} placeholder="Release name, e.g. PI30" />
+                      <FormField label="Release name" htmlFor="NewTestPage-newReleaseName"><input className="settings-input" aria-label="New release name" value={newReleaseName} onChange={event => setNewReleaseName(event.target.value)} placeholder="Release name, e.g. PI30" id="NewTestPage-newReleaseName" /></FormField>
                       <button className="btn btn-secondary" onClick={createRelease} disabled={!newReleaseName.trim()}>Add</button>
                       <button className="btn btn-ghost btn-sm" onClick={() => { setShowNewRelease(false); setNewReleaseName('') }}>Cancel</button>
                     </div>
@@ -3376,10 +3381,10 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
           </section>
 
           <section className="new-test-launch-card" aria-label="Hold for Manual Start or Schedule Run">
-            {immediatePreflightError && <div className="new-test-launch-feedback warning" role="alert">{immediatePreflightError}</div>}
+            <FormErrorSummary issues={[{ message: immediatePreflightError || '' }, { message: runSetupValidationError || '' }]} />
             <h3>Hold for Manual Start / Schedule Run</h3>
               <div className="new-test-launch-actions">
-                {runSetupValidationError && <div className="new-test-launch-feedback warning" role="alert">{runSetupValidationError}</div>}
+
               {immediatePreflightLoading && !immediatePreflight && (
                 <button className="btn btn-secondary" disabled>Checking Window</button>
               )}
@@ -3436,7 +3441,7 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
       )}
 
       {editingDefaultKey && editingDefaultCard && (
-        <div className="modal-overlay" {...dialogBackdropProps(() => setEditingDefaultKey(null), 'Close run default editor')}>
+        <DialogLayer><div className="modal-overlay" {...dialogBackdropProps(() => setEditingDefaultKey(null), 'Close run default editor')}>
           <div
             ref={runDefaultDialogRef}
             className="modal run-default-modal"
@@ -3462,11 +3467,11 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
               </div>
             </div>
           </div>
-        </div>
+        </div></DialogLayer>
       )}
 
       {editingGroupKey && editingGroup && scenario && createPortal(
-        <div className="modal-overlay" {...dialogBackdropProps(() => setEditingGroupKey(null), 'Close run group editor')}>
+        <DialogLayer><div className="modal-overlay" {...dialogBackdropProps(() => setEditingGroupKey(null), 'Close run group editor')}>
           <div
             ref={runGroupDialogRef}
             className="modal run-default-modal run-group-modal"
@@ -3805,12 +3810,12 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
               </div>
             </div>
           </div>
-        </div>,
+        </div></DialogLayer>,
         document.body,
       )}
 
       {confirmDeleteScheduleId && (
-        <div className="modal-overlay" {...dialogBackdropProps(() => setConfirmDeleteScheduleId(null), 'Close schedule deletion dialog')}>
+        <DialogLayer><div className="modal-overlay" {...dialogBackdropProps(() => setConfirmDeleteScheduleId(null), 'Close schedule deletion dialog')}>
           <div
             ref={deleteScheduleDialogRef}
             className="modal"
@@ -3831,7 +3836,7 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
               </div>
             </div>
           </div>
-        </div>
+        </div></DialogLayer>
       )}
     </div>
   )

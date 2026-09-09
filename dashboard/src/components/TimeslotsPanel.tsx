@@ -1,5 +1,8 @@
+import DialogLayer from './ux/DialogLayer'
+import { settingsHref } from './settingsNavigation'
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
+import { useScriptApi } from '../hooks/api/useScriptApi'
 import { useCapacityApi } from '../hooks/api/useCapacityApi'
 import { useFleetApi } from '../hooks/api/useFleetApi'
 import { ApiError } from '../hooks/apiClient'
@@ -76,6 +79,15 @@ function emptyDraft(): Draft {
 
 export default function TimeslotsPanel({ projectId, canManage = false }: Props) {
   const api = useCapacityApi()
+  const { listScenarios } = useScriptApi()
+  const [scenarios, setScenarios] = useState<{ id: string; name: string }[]>([])
+  const [scenarioError, setScenarioError] = useState('')
+  useEffect(() => {
+    let current = true
+    setScenarios([])
+    if (projectId) listScenarios(projectId).then(result => { if (current) { setScenarios(result.scenarios || []); setScenarioError('') } }).catch(() => { if (current) setScenarioError('Scenario catalog unavailable. You can book capacity without a scenario.') })
+    return () => { current = false }
+  }, [projectId, listScenarios])
   const fleetApi = useFleetApi()
 	const { runGuarded } = useNavigationGuardRunner()
   const [timeslots, setTimeslots] = useState<CapacityTimeslot[]>([])
@@ -352,9 +364,10 @@ export default function TimeslotsPanel({ projectId, canManage = false }: Props) 
 
   return (
     <div className="pp-panel">
+      <nav aria-label="Schedule configuration"><a href={settingsHref('scheduling')}>Schedule defaults</a> · <a href={settingsHref('allocations')}>Capacity commitments and standing allocations</a></nav>
       <div className="pp-toolbar">
         <span className="pp-toolbar-title">
-          {timeslots.length} reservation{timeslots.length === 1 ? '' : 's'} — forward-booked capacity windows with approval.
+          {timeslots.length} reservation{timeslots.length === 1 ? '' : 's'} — scheduled capacity windows with approval. Standing allocations are managed separately in Settings.
         </span>
         <button
           type="button"
@@ -363,7 +376,7 @@ export default function TimeslotsPanel({ projectId, canManage = false }: Props) 
           title={reservationActionTitle}
           onClick={() => { setDraft(emptyDraft()); setAvailability(null); setAvailabilityError(false) }}
         >
-          New Reservation
+          New booking
         </button>
       </div>
 
@@ -389,7 +402,7 @@ export default function TimeslotsPanel({ projectId, canManage = false }: Props) 
                   {slot.timezone ? <span>{slot.timezone}</span> : null}
                   {slot.scenario_id ? <span>scenario: {slot.scenario_id}</span> : null}
                   {slot.requested_capacity?.generators ? <span>{slot.requested_capacity.generators} gen</span> : null}
-                  {slot.requested_capacity?.pool_id ? <span className="pp-pill pp-pill-muted">pool: {poolName(slot.requested_capacity.pool_id)}</span> : null}
+                  {slot.requested_capacity?.pool_id ? <a className="pp-pill pp-pill-muted" href={settingsHref('pools', window.location.hash, slot.requested_capacity.pool_id)}>pool: {poolName(slot.requested_capacity.pool_id)}</a> : null}
                   {slot.conflict_summary ? <span>{slot.conflict_summary}</span> : null}
                 </div>
               </div>
@@ -425,7 +438,7 @@ export default function TimeslotsPanel({ projectId, canManage = false }: Props) 
       )}
 
       {draft && (
-        <div
+        <DialogLayer><div
           className="pp-modal-overlay"
           role="presentation"
           onPointerDown={event => {
@@ -434,7 +447,7 @@ export default function TimeslotsPanel({ projectId, canManage = false }: Props) 
         >
           <div ref={draftDialogRef} className="pp-modal" role="dialog" aria-modal="true" aria-labelledby={reservationTitleId}>
             <div className="pp-modal-header">
-              <h3 id={reservationTitleId}>New Capacity Reservation</h3>
+              <h3 id={reservationTitleId}>New scheduled booking</h3>
 								<button type="button" className="btn btn-ghost btn-sm" onClick={closeDraft} disabled={busy}>Close</button>
             </div>
             <div className="pp-modal-form">
@@ -454,8 +467,8 @@ export default function TimeslotsPanel({ projectId, canManage = false }: Props) 
                   <input value={draft.timezone} onChange={e => setDraft(d => (d ? { ...d, timezone: e.target.value } : d))} placeholder="e.g. UTC" />
                 </label>
                 <label className="pp-field">
-                  <span>Scenario id (optional)</span>
-                  <input value={draft.scenario_id} onChange={e => setDraft(d => (d ? { ...d, scenario_id: e.target.value } : d))} placeholder="optional" />
+                  <span>Scenario (optional)</span>
+                  <select value={draft.scenario_id} onChange={e => setDraft(d => (d ? { ...d, scenario_id: e.target.value } : d))}><option value="">No scenario</option>{scenarios.map(scenario => <option key={scenario.id} value={scenario.id}>{scenario.name}</option>)}</select>{scenarioError && <span role="status">{scenarioError}</span>}
                 </label>
               </div>
               <div className="pp-field-row">
@@ -501,11 +514,11 @@ export default function TimeslotsPanel({ projectId, canManage = false }: Props) 
               </button>
             </div>
           </div>
-        </div>
+        </div></DialogLayer>
       )}
 
       {bindFor && (
-        <div
+        <DialogLayer><div
           className="pp-modal-overlay"
           role="presentation"
           onPointerDown={event => {
@@ -530,7 +543,7 @@ export default function TimeslotsPanel({ projectId, canManage = false }: Props) 
               </button>
             </div>
           </div>
-        </div>
+        </div></DialogLayer>
       )}
 
       {deleteTarget && (

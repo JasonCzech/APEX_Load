@@ -1,3 +1,4 @@
+import DialogLayer from './ux/DialogLayer'
 import { useCallback, useId, useRef } from 'react'
 import { useModalDialog } from '../hooks/useModalDialog'
 
@@ -32,7 +33,7 @@ export default function UnsavedChangesModal({
   })
 
   return (
-    <div
+    <DialogLayer><div
       className="modal-overlay"
       role="presentation"
       onPointerDown={event => {
@@ -54,6 +55,7 @@ export default function UnsavedChangesModal({
               {label} has unsaved changes. Save them before leaving, discard them, or keep editing.
             </p>
           </div>
+          <button type="button" className="btn btn-secondary btn-sm" aria-label="Close unsaved changes dialog" onClick={requestCancel} disabled={saving}>Close</button>
         </div>
 
         {error && <p className="form-error" role="alert">{error}</p>}
@@ -70,6 +72,6 @@ export default function UnsavedChangesModal({
           </button>
         </div>
       </div>
-    </div>
+    </div></DialogLayer>
   )
 }

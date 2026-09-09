@@ -891,7 +891,7 @@ describe('Sidebar', () => {
       }
     })
     const create = Array.from(container.querySelectorAll<HTMLButtonElement>('.project-modal button'))
-      .find(button => button.textContent === 'Save')
+      .find(button => button.textContent === 'Create release')
     await act(async () => {
       create?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })

@@ -177,7 +177,7 @@
   max-width: 520px;
   max-height: 88vh;
   overflow-y: auto;
-  background: var(--bg-card, var(--bg-secondary));
+  background: var(--bg-secondary);
   border: 1px solid var(--border);
   border-radius: 12px;
   box-shadow: var(--shadow-elevated, 0 20px 60px rgba(0, 0, 0, 0.4));
@@ -533,3 +533,8 @@
   min-width: 160px;
   flex: 1 1 160px;
 }
+
+/* A forwards-filled page animation creates a stacking context below the app
+   toolbar. Release that context while a fixed dialog is open. */
+.page:has(.pp-modal-overlay) { animation: none; }
+.pp-modal details > summary { cursor: pointer; margin: 8px 0 12px; font-weight: 600; }

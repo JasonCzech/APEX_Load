@@ -5477,6 +5477,21 @@ describe('ScriptEditor', () => {
     expect(container.textContent).not.toContain('Debugger session expired')
   })
 
+  it.each([true, false])('shows terminal evidence when the start response already completed (success=%s)', async success => {
+    apiMock.startScriptDebugSession.mockResolvedValueOnce(debugSessionResponse({
+      group: 'Checkout Flow-debug', protocol: 'http',
+      started_at: '2026-05-14T20:00:00Z', completed_at: '2026-05-14T20:00:01Z',
+      success, events: [], error: success ? undefined : 'Service unavailable',
+    }))
+    await act(async () => {
+      root.render(<ScriptEditor scriptId="script-1" initialScript={initialScript} projectId="project-1" />)
+    })
+    await act(async () => findDebuggerRunButton(container)!.click())
+    await flushReact()
+    expect(container.textContent).toContain(success ? 'Debugger completed successfully' : 'Debugger completed with failures')
+    expect(findDebuggerRunButton(container)?.disabled).toBe(false)
+  })
+
   it('reconciles and timestamps a terminal polling response when the completion WebSocket event is missed', async () => {
     const terminalReport = {
       group: 'Checkout Flow-debug',

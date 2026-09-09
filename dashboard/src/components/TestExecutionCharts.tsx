@@ -1,3 +1,7 @@
+import TabList from './ux/TabList'
+import DialogLayer from './ux/DialogLayer'
+import { handleTabKey } from './tabKeyboard'
+import { settingsHref } from './settingsNavigation'
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent } from 'react'
 import { createPortal } from 'react-dom'
 import {
@@ -2544,7 +2548,7 @@ export default function TestExecutionCharts({
         </div>
         <div className="charts-toolbar-actions">
           {enableGraphGroupTabs && (
-            <div className="graph-group-tabs" role="tablist" aria-label="Graph groups">
+            <TabList className="graph-group-tabs" role="tablist" aria-label="Graph groups" onKeyDown={handleTabKey}>
               {visibleGraphGroupTabs.map(tab => (
                 <button
                   key={tab.id}
@@ -2552,13 +2556,13 @@ export default function TestExecutionCharts({
                   role="tab"
                   className={`graph-group-tab ${activeGraphGroupTab === tab.id ? 'active' : ''}`}
                   aria-selected={activeGraphGroupTab === tab.id}
-                  onClick={() => updateActiveGraphGroupTab(tab.id)}
+                  onClick={() => updateActiveGraphGroupTab(tab.id)} tabIndex={(activeGraphGroupTab === tab.id) ? 0 : -1}
                 >
                   <span>{tab.label}</span>
                   <small>{graphGroupCounts[tab.id]}</small>
                 </button>
               ))}
-            </div>
+            </TabList>
           )}
           <div className="charts-toolbar-badges">
             <span className="archive-chip">{displayModeCharts.length} graph{displayModeCharts.length === 1 ? '' : 's'}</span>
@@ -2573,14 +2577,16 @@ export default function TestExecutionCharts({
       </div>
 
       {activeGraphGroupTab === 'imported' && importedDashboardTabs.length > 1 && (
-        <div className="graph-group-tabs" role="tablist" aria-label="Imported dashboards">
+        <TabList className="graph-group-tabs" role="tablist" aria-label="Imported dashboards" onKeyDown={handleTabKey}>
           {importedDashboardTabs.map(dashboard => (
-            <button key={dashboard.dashboard_id} type="button" role="tab" className={`graph-group-tab ${activeImportedDashboardId === dashboard.dashboard_id ? 'active' : ''}`} aria-selected={activeImportedDashboardId === dashboard.dashboard_id} onClick={() => setActiveImportedDashboardId(dashboard.dashboard_id)}>
+            <button key={dashboard.dashboard_id} type="button" role="tab" className={`graph-group-tab ${activeImportedDashboardId === dashboard.dashboard_id ? 'active' : ''}`} aria-selected={activeImportedDashboardId === dashboard.dashboard_id} onClick={() => setActiveImportedDashboardId(dashboard.dashboard_id)} tabIndex={(activeImportedDashboardId === dashboard.dashboard_id) ? 0 : -1}>
               <span>{dashboard.dashboard_title || 'Dashboard'}</span><small>{dashboard.panels.length}</small>
             </button>
           ))}
-        </div>
+        </TabList>
       )}
+
+      {activeGraphGroupTab === 'imported' && activeImportedDashboardId && <a href={settingsHref('dashboards', window.location.hash, activeImportedDashboardId)}>Configure this imported dashboard</a>}
 
       {loadImpactError && <p className="scenario-script-status error">{loadImpactError}</p>}
       {prometheusError && <p className="scenario-script-status error">{prometheusError}</p>}
@@ -3274,7 +3280,7 @@ export default function TestExecutionCharts({
         </div>
       )}
       {chartDrawerOpen && (
-        <div className="charts-config-drawer-layer">
+        <DialogLayer><div className="charts-config-drawer-layer">
           <button
             type="button"
             className="charts-config-backdrop"
@@ -3291,7 +3297,7 @@ export default function TestExecutionCharts({
             </div>
             {renderChartConfigurationPanel()}
           </aside>
-        </div>
+        </div></DialogLayer>
       )}
       {contextChart && chartMenu && (
         <div

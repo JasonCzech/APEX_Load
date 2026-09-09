@@ -53,6 +53,25 @@ describe('LibraryFederationPanel', () => {
     confirmMock.mockRestore()
   })
 
+  it('discovers empty remote workspaces without modifying mappings', async () => {
+    const original = fetchMock.getMockImplementation()!
+    fetchMock.mockImplementation(async (input, init) => {
+      if (String(input).includes('/workspaces?')) {
+        const kind = new URL(String(input), 'http://localhost').searchParams.get('kind')
+        return jsonResponse({ items: kind === 'projects' ? [{ id: 'remote-project', name: 'Empty remote project' }] : kind === 'applications' ? [{ id: 'app-remote', name: 'Empty application' }] : [{ id: 'release-remote', name: 'Empty release' }] })
+      }
+      return original(input, init)
+    })
+    await act(async () => root.render(<LibraryFederationPanel projectId="project-1" applicationId="app-local" releaseId="release-local" />))
+    await flushPromises()
+    await act(async () => findButton('Discover remote workspaces')?.click())
+    await flushPromises()
+    expect(Array.from(container.querySelectorAll('datalist option')).map(option => option.getAttribute('value'))).toEqual(['remote-project', 'app-remote', 'release-remote'])
+    expect(fetchMock.mock.calls.filter(([input]) => String(input).includes('/workspaces?'))).toHaveLength(3)
+    expect(findFieldInput('Remote Application')?.value).toBe('app-remote')
+    expect(fetchMock.mock.calls.some(([, init]) => init?.method === 'PUT')).toBe(false)
+  })
+
   it('manages remote connection state without receiving browser-visible API keys', async () => {
     await act(async () => {
       root.render(<LibraryFederationPanel projectId="project-1" applicationId="app-local" applicationName="Storefront" releaseId="release-local" releaseName="Sprint 24" />)
@@ -63,9 +82,9 @@ describe('LibraryFederationPanel', () => {
     expect(container.textContent).toContain('Team AKS')
     expect(container.textContent).toContain('credentials configured')
     expect(container.textContent).not.toContain('secret-token')
-    expect(findFieldInput('Local Application (Storefront)')?.value).toBe('app-local')
+    expect(findFieldSelect('Local Application (Storefront)')?.value).toBe('app-local')
     expect(findFieldInput('Remote Application')?.value).toBe('app-remote')
-    expect(findFieldInput('Local Release (Sprint 24)')?.value).toBe('release-local')
+    expect(findFieldSelect('Local Release (Sprint 24)')?.value).toBe('release-local')
     expect(findFieldInput('Remote Release')?.value).toBe('release-remote')
     const credentialRef = Array.from(container.querySelectorAll('input')).find(input => input.placeholder.includes('APEXLOAD_LIBRARY_REMOTE_TOKEN'))
     expect(credentialRef?.placeholder).toBe('env:APEXLOAD_LIBRARY_REMOTE_TOKEN')
@@ -282,7 +301,7 @@ describe('LibraryFederationPanel', () => {
 
     await act(async () => findButton('Discard changes')?.click())
     await flushPromises()
-    expect(findFieldInput('Local Application (Billing)')?.value).toBe('app-billing')
+    expect(findFieldSelect('Local Application (Billing)')?.value).toBe('app-billing')
     expect(findFieldInput('Remote Application')?.value).toBe('')
   })
 

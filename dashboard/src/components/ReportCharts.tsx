@@ -66,7 +66,7 @@ function ActionBarShape({ payload, x, y, width, height }: BarShapeProps) {
 // Top 8 actions by transaction count, drawn slowest-first, each flagged against
 // the run-wide average response time so the chart can single out the offenders.
 function buildActionBars(report: RunArchiveReport): ActionBar[] {
-  const runAverage = report.overview?.avg_response_ms ?? 0
+  const runAverage = (report.metric_populations ? report.metric_populations.action?.avg_response_ms : report.overview?.avg_response_ms) ?? 0
   const entries = Object.entries((report.metric_populations ? report.by_request : report.by_action) || {})
   entries.sort((a, b) => b[1].transactions - a[1].transactions)
   return entries
@@ -129,7 +129,7 @@ export default function ReportCharts({ report }: Props) {
   const hasTarget = useMemo(() => timeline.some((point) => point.target > 0), [timeline])
 
   const actionBars = useMemo(() => buildActionBars(report), [report])
-  const runAverageMs = round(report.overview?.avg_response_ms ?? 0)
+  const runAverageMs = round((report.metric_populations ? report.metric_populations.action?.avg_response_ms : report.overview?.avg_response_ms) ?? 0)
   const highlightsSlowActions = actionBars.some((bar) => bar.aboveRunAverage)
 
   const hasTimeline = timeline.length >= 2
@@ -140,6 +140,7 @@ export default function ReportCharts({ report }: Props) {
 
   return (
     <div className="report-charts">
+      {hasTimeline && <p className="report-chart-note">{(report.metric_populations?.transaction?.transactions || 0) > 0 ? 'Interval charts show named transaction metrics.' : 'Legacy interval metrics have no identified named transaction population. They are separate from request / action totals.'}</p>}
       {hasTimeline && (
         <>
           <ExportableChart definitionId="report-throughput" title="Throughput (TPS)" description="Actual and configured target transactions per second over the archived run timeline." rows={timeline} columns={timelineColumns}>
@@ -169,7 +170,7 @@ export default function ReportCharts({ report }: Props) {
             </ResponsiveContainer>
           </ExportableChart>
 
-          <ExportableChart definitionId="report-error-rate" title="Error Rate (%)" description="Business-transaction error percentage over the archived run timeline." rows={timeline} columns={timelineColumns}>
+          <ExportableChart definitionId="report-error-rate" title="Error Rate (%)" description="Error percentage reported in archived intervals; population availability is stated above." rows={timeline} columns={timelineColumns}>
             <ResponsiveContainer width="100%" height={220}>
               <LineChart data={timeline} margin={{ top: 8, right: 16, bottom: 4, left: 0 }}>
                 <CartesianGrid stroke={GRID} strokeDasharray="4 4" />

@@ -454,3 +454,28 @@ func TestReportReaderContextUsesNamesWithoutInventingEnvironment(t *testing.T) {
 		t.Fatal("missing name must not become an ID")
 	}
 }
+
+func TestReportPercentPreservesSmallNonzeroErrors(t *testing.T) {
+	format := profileHTMLFuncMap["formatPercent"].(func(float64) string)
+	for _, tc := range []struct {
+		value float64
+		want  string
+	}{{0, "0.00%"}, {0.0001, "<0.01%"}, {0.01, "0.01%"}} {
+		if got := format(tc.value); got != tc.want {
+			t.Fatalf("format(%v)=%q, want %q", tc.value, got, tc.want)
+		}
+	}
+}
+
+func TestDefaultReportNarrativeNamesArchivePopulationAndNonzeroErrors(t *testing.T) {
+	report := &RunArchiveReport{Overview: RunArchiveOverview{Transactions: 1000, Errors: 1, ErrorPct: 0.001}}
+	for _, profile := range []string{"executive", "engineer", "audit"} {
+		annotations := defaultReportAnnotations(report, "run", profile)
+		if strings.Contains(annotations.ExecutiveNarrative, "transaction(s)") {
+			t.Fatalf("%s mislabels archive totals: %s", profile, annotations.ExecutiveNarrative)
+		}
+		if profile != "audit" && !strings.Contains(annotations.ExecutiveNarrative, "<0.01%") {
+			t.Fatalf("%s hides nonzero errors: %s", profile, annotations.ExecutiveNarrative)
+		}
+	}
+}

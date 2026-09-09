@@ -118,6 +118,8 @@ describe('settingsSectionLayout', () => {
       'library',
       'github',
       'prometheus',
+      'opensearch',
+      'grafana',
       'dashboards',
       'powerbi',
       'notifications',

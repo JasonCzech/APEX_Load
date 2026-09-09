@@ -125,7 +125,7 @@ function parseTimeFilter(value: string): string | undefined {
   return parsed.toISOString()
 }
 
-export function useExecutionArchiveModel(test: TestSummary | null): ExecutionArchiveModel {
+export function useExecutionArchiveModel(test: TestSummary | null, includeReleaseTrend = true, comparisonBaselineId?: string): ExecutionArchiveModel {
   const api = useApi()
   const [archiveReport, setArchiveReport] = useState<RunArchiveReport | null>(null)
   const [archiveAnalysis, setArchiveAnalysis] = useState<RunArchiveAnalysisResponse | null>(null)
@@ -151,7 +151,7 @@ export function useExecutionArchiveModel(test: TestSummary | null): ExecutionArc
   const testID = test?.id || ''
   const testStatus = test?.status
   const archiveCompletedAt = test?.archive?.completed_at || ''
-  const archiveAnalysisBaselineID = test?.comparison_baseline?.source_test_id || ''
+  const archiveAnalysisBaselineID = comparisonBaselineId ?? test?.comparison_baseline?.source_test_id ?? ''
   const archiveTransactionQueryParams = useMemo(() => ({
     action: selectedArchiveAction,
     soap_operation: selectedArchiveSOAPOperation || undefined,
@@ -219,11 +219,12 @@ export function useExecutionArchiveModel(test: TestSummary | null): ExecutionArc
     let cancelled = false
 
     const loadArchiveReport = async () => {
+      setArchiveReport(null)
       setExpandedArchiveEvent(null)
       setArchiveLoading(true)
       setArchiveError('')
       try {
-        const report = await api.getTestArchiveReport(testID)
+        const report = await api.getTestArchiveReport(testID, ...(includeReleaseTrend ? [] : [{ includeReleaseTrend: false }]))
         if (cancelled) return
         const actionNames = Object.keys((report.metric_populations ? report.by_request : report.by_action) || {})
         const operationNames = Object.keys(report.by_soap_operation || {})
@@ -247,7 +248,7 @@ export function useExecutionArchiveModel(test: TestSummary | null): ExecutionArc
     return () => {
       cancelled = true
     }
-  }, [api, archiveCompletedAt, hasArchive, testID, testStatus])
+  }, [api, archiveCompletedAt, hasArchive, testID, testStatus, includeReleaseTrend])
 
   useEffect(() => {
     if (!hasArchive || !isTerminalStatus(testStatus) || !selectedArchiveAction) {

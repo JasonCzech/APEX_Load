@@ -316,6 +316,7 @@ export default function GitHubIntegrationPanel({
             placeholder="APEXLOAD_GITHUB_CLIENT_SECRET"
           />
         </label>
+        <details className="project-redaction-rule-field"><summary>GitHub App automation credentials</summary><p>Required for installation-based automation. Interactive OAuth uses the client settings above. Values are provided in the controller environment or mounted key file.</p>
         <label className="project-redaction-rule-field">
           <span>GitHub App ID</span>
           <input
@@ -375,6 +376,7 @@ export default function GitHubIntegrationPanel({
             placeholder="/etc/apexload/github-app.pem"
           />
         </label>
+        </details>
         <label className="project-redaction-rule-field">
           <span>Webhook Secret Env Var</span>
           <input

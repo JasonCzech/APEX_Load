@@ -1,3 +1,4 @@
+import RowActions from './ux/RowActions'
 import { Fragment, lazy, Suspense, useState } from 'react'
 
 import { AuthoringHealthInput, Folder, GitHubScriptStatus, StoredScript, TestSummary } from '../types'
@@ -240,6 +241,7 @@ export default function ScriptsLibraryTable({
   onRetrySecretStatus,
   onValidateScriptDetails,
 }: Props) {
+  const [showDetailColumns, setShowDetailColumns] = useState(false)
   const [issueDialog, setIssueDialog] = useState<{ title: string; issues: IssueDetail[] } | null>(null)
   const openBlockerIssues = async (script: StoredScript) => {
     const blockerInputs = script.authoring_health?.inputs.filter(input => input.status === 'blocker') || []
@@ -329,7 +331,8 @@ export default function ScriptsLibraryTable({
   const isEmpty = localScripts.length === 0 && remoteRows.length === 0
   return (
     <div className="data-table">
-      <table className="scripts-library-table">
+      <table className={`scripts-library-table ${showDetailColumns ? 'show-detail-columns' : ''}`}>
+        <caption className="script-table-column-control"><button className="btn btn-secondary btn-sm" type="button" aria-expanded={showDetailColumns} onClick={() => setShowDetailColumns(value => !value)}>{showDetailColumns ? 'Hide usage & dates' : 'Show usage & dates'}</button></caption>
         <thead>
           <tr>
             {showSelection && (
@@ -543,6 +546,7 @@ export default function ScriptsLibraryTable({
                     ) : canManageScripts ? (
                       <>
                         <button className="btn btn-sm btn-ghost" onClick={(event) => { event.stopPropagation(); onEdit(scriptId) }}>Edit</button>
+                        <RowActions className="library-more-actions">
                         {configureSecretsAvailable && (
                           <button className="btn btn-sm btn-secondary" onClick={(event) => { event.stopPropagation(); onConfigureSecrets?.(script) }}>Configure secrets</button>
                         )}
@@ -570,6 +574,7 @@ export default function ScriptsLibraryTable({
                             )}
                           </>
                         )}
+                        </RowActions>
                       </>
                     ) : (
                       <span className="cell-muted">Read-only</span>

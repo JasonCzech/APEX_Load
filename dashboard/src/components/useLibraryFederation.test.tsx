@@ -22,10 +22,11 @@ vi.mock('../hooks/api/useLibraryApi', () => ({
   useLibraryApi: () => libraryApiMock,
 }))
 
-function FederationHarness({ projectId }: { projectId?: string }) {
-  const federation = useLibraryFederation({ kind: 'script', projectId, requireProjectScope: true })
+function FederationHarness({ projectId, onRefreshLocal }: { projectId?: string; onRefreshLocal?: () => Promise<void> }) {
+  const federation = useLibraryFederation({ kind: 'script', projectId, onRefreshLocal, requireProjectScope: true })
   return (
     <div>
+      <button type="button" onClick={() => void federation.refreshCatalogs()}>Refresh libraries</button>
       <span data-testid="mapping">{federation.projectMapping}</span>
       <span data-testid="effective-project">{federation.effectiveProjectID}</span>
       <span data-testid="local-items">{federation.localItems.map(item => item.name).join(',')}</span>
@@ -63,6 +64,18 @@ describe('useLibraryFederation', () => {
     })
     container.remove()
     vi.clearAllMocks()
+  })
+
+  it('refreshes the visible local library with the federation catalog only on explicit refresh', async () => {
+    const refreshLocal = vi.fn().mockResolvedValue(undefined)
+    await act(async () => root.render(<FederationHarness projectId="project-1" onRefreshLocal={refreshLocal} />))
+    await flushPromises()
+    expect(refreshLocal).not.toHaveBeenCalled()
+    const initialCalls = libraryApiMock.localCatalog.mock.calls.length
+    await act(async () => { Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Refresh libraries')!.click() })
+    await flushPromises()
+    expect(refreshLocal).toHaveBeenCalledTimes(1)
+    expect(libraryApiMock.localCatalog.mock.calls.length).toBe(initialCalls + 1)
   })
 
   it('waits for a project mapping before loading a catalog', async () => {

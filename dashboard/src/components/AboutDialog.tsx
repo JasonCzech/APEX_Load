@@ -1,3 +1,4 @@
+import DialogLayer from './ux/DialogLayer'
 import { useEffect, useRef, useState } from 'react'
 
 import { useSystemApi } from '../hooks/api/useSystemApi'
@@ -49,7 +50,7 @@ export default function AboutDialog({ open, onClose }: AboutDialogProps) {
   }
 
   return (
-    <div className="modal-overlay" {...dialogBackdropProps(onClose, 'Close About dialog')}>
+    <DialogLayer><div className="modal-overlay" {...dialogBackdropProps(onClose, 'Close About dialog')}>
       <div
         ref={dialogRef}
         className="modal-content about-dialog"
@@ -80,6 +81,6 @@ export default function AboutDialog({ open, onClose }: AboutDialogProps) {
         </div>
         <p style={{ color: 'var(--text-muted)', fontSize: 12, marginBottom: 0 }}>© 2026 Project Stormrunner</p>
       </div>
-    </div>
+    </div></DialogLayer>
   )
 }

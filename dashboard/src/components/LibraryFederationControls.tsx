@@ -1,3 +1,4 @@
+import LibraryToolbar from './ux/LibraryToolbar'
 import { type ReactNode } from 'react'
 import { LibraryKind, LibrarySourceFilter } from '../types/library'
 import { libraryStatusTone } from './libraryFederationUtils'
@@ -21,12 +22,15 @@ type LibraryFederationControlsProps = {
   kind: LibraryKind
   federation: UseLibraryFederationResult
   projectName?: string
+  filtersActive?: boolean
+  searchControl?: ReactNode
+  primaryAction?: ReactNode
   filterControls?: ReactNode
   onConfigureRemotes?: () => void
   summaryText?: string
 }
 
-export default function LibraryFederationControls({ kind, federation, projectName, filterControls, onConfigureRemotes, summaryText }: LibraryFederationControlsProps) {
+export default function LibraryFederationControls({ kind, federation, projectName, filtersActive, searchControl, primaryAction, filterControls, onConfigureRemotes, summaryText }: LibraryFederationControlsProps) {
   const {
     remotes,
     selectedRemoteId,
@@ -78,8 +82,7 @@ export default function LibraryFederationControls({ kind, federation, projectNam
         </div>}
       </div>
 
-      <div className="library-source-toolbar">
-        {filterControls}
+      <LibraryToolbar filtersActive={filtersActive} search={searchControl} filters={filterControls} actions={<>{primaryAction}<button className="btn btn-secondary" type="button" onClick={() => void refreshCatalogs()} disabled={loading}>Refresh</button></>}>
         {sourceFilter === 'host' && !selectedRemoteId && <div><span>Not connected</span>{onConfigureRemotes && <button className="btn btn-secondary" type="button" onClick={onConfigureRemotes}>Connect remote workspace</button>}</div>}
         {sourceFilter === 'host' && <label className="project-redaction-rule-field">
           <span>Remote</span>
@@ -112,15 +115,12 @@ export default function LibraryFederationControls({ kind, federation, projectNam
             <span>Include referenced scripts</span>
           </label>
         )}
-        <button className="btn btn-secondary" type="button" onClick={() => void refreshCatalogs()} disabled={loading}>
-          Refresh
-        </button>
-      </div>
+      </LibraryToolbar>
 
       {generalBlockedReason && <p className="settings-notice">{generalBlockedReason}</p>}
-      {actionMessage && <p className="settings-notice">{actionMessage}</p>}
+      {actionMessage && <p className="settings-notice" role="status">{actionMessage}</p>}
       {diffMessage && <p className="settings-notice">{diffMessage}</p>}
-      {actionError && <p className="settings-error-inline">{actionError}</p>}
+      {actionError && <p className="settings-error-inline" role="alert">{actionError}</p>}
     </div>
   )
 }

@@ -1,3 +1,4 @@
+import { formatReportPercent } from './runReport/reportPresentation'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 
 import type {
@@ -233,7 +234,7 @@ export function ReleaseTrendPanel({
     return filtered.map((row, index) => {
       if (!row.transaction || index === 0) return row
       const previous = filtered[index - 1].transaction
-      if (!previous || row.point.metric_population !== filtered[index - 1].point.metric_population) return row
+      if (!previous || previous.transactions === 0 || row.transaction.transactions === 0 || row.point.metric_population !== filtered[index - 1].point.metric_population) return row
       return { ...row, transactionDeltaMs: row.transaction.avg_response_ms - previous.avg_response_ms }
     })
   }, [points, reportsById, scenarioFilter, scenarioIdForRun, scenarioNames, transactionFilter])
@@ -334,7 +335,7 @@ export function ReleaseTrendPanel({
           <h4 className="release-trend-title">Release Trend Analysis</h4>
           <p>Metric population: {points.every(point => point.metric_population === 'transaction') ? 'named transaction attempts' : 'Unknown for legacy records; comparisons require matching populations'}.</p>
           <p className="release-trend-subtitle">
-            {trend.run_count} run{trend.run_count === 1 ? '' : 's'} · avg response {formatSignedPct(trend.summary.avg_response_trend_pct)} · error rate {formatSignedPct(trend.summary.error_pct_trend)} across the series.
+            {trend.run_count} run{trend.run_count === 1 ? '' : 's'} · {points.length > 1 && points[0].transactions > 0 && points[points.length - 1].transactions > 0 && points[0].metric_population === points[points.length - 1].metric_population ? `avg response ${formatSignedPct(trend.summary.avg_response_trend_pct)} · error rate ${trend.summary.error_pct_trend.toFixed(2)} pp across the series.` : 'No comparable samples for a series trend.'}
             {rows.length !== points.length && ` Showing ${rows.length} of ${points.length} runs.`}
           </p>
         </div>
@@ -398,14 +399,14 @@ export function ReleaseTrendPanel({
                     <td><span className="trend-run-name">{point.run_name || point.run_id}</span></td>
                     <td>{row.scenarioLabel}</td>
                     <td>{formatTimestamp(point.completed_at)}</td>
-                    <td className="num">{formatOptional(avgMs)}</td>
+                    <td className="num">{volume > 0 ? formatOptional(avgMs) : 'No samples'}</td>
                     <td className={`num ${typeof deltaMs === 'number' && deltaMs > 0 ? 'text-danger strong' : ''}`}>
-                      {typeof deltaMs === 'number' ? formatSignedMs(deltaMs) : '—'}
+                      {volume > 0 && typeof deltaMs === 'number' ? formatSignedMs(deltaMs) : '—'}
                     </td>
-                    <td className={`num ${errorPct > 0 ? 'text-danger' : ''}`}>{errorPct.toFixed(2)}%</td>
+                    <td className={`num ${errorPct > 0 ? 'text-danger' : ''}`}>{volume > 0 ? formatReportPercent(errorPct) : 'No samples'}</td>
                     <td className="num">{formatCount(volume)}</td>
-                    <td className={`num ${point.sla_breached ? 'text-danger strong' : 'text-success'}`}>
-                      {point.sla_breached ? 'Breached' : 'OK'}
+                    <td className={`num ${point.sla_breached ? 'text-danger strong' : ''}`}>
+                      {reportsById[point.run_id]?.verdict?.status || (point.sla_breached ? 'Breached' : 'Not available')}
                     </td>
                     <td>{regressed ? point.regressions!.join(', ') : '—'}</td>
                   </tr>
@@ -470,7 +471,7 @@ function ReleaseTrendRunDetail({
 
   const { point } = row
   const deltas = point.deltas
-  const overview = report?.overview
+  const overview = report?.metric_populations?.transaction
   const peaks = report?.resource_peaks
 
   return (
@@ -503,16 +504,16 @@ function ReleaseTrendRunDetail({
 
       <div className="release-trend-detail-stats">
         <DetailStat label="Transactions" value={formatCount(point.transactions)} />
-        <DetailStat label="Error %" value={`${point.error_pct.toFixed(2)}%`} tone={point.error_pct > 0 ? 'danger' : 'success'} />
-        <DetailStat label="Avg Response" value={`${formatOptional(point.avg_response_ms)} ms`} />
+        <DetailStat label="Error %" value={point.transactions > 0 ? formatReportPercent(point.error_pct) : 'No samples'} tone={point.error_pct > 0 ? 'danger' : 'neutral'} />
+        <DetailStat label="Avg Response" value={point.transactions > 0 ? `${formatOptional(point.avg_response_ms)} ms` : 'No samples'} />
         <DetailStat label="P95" value={overview?.p95_ms === undefined ? '—' : `${formatOptional(overview.p95_ms)} ms`} />
-        <DetailStat label="Peak TPS" value={formatOptional(point.peak_tps)} />
+        <DetailStat label="Peak TPS" value={point.transactions > 0 ? formatOptional(point.peak_tps) : 'No samples'} />
         <DetailStat label="Peak VUsers" value={formatCount(point.peak_active_vusers)} />
         <DetailStat label="Completeness" value={`${formatOptional(point.completeness_pct, 0)}%`} />
         <DetailStat
           label="SLA"
-          value={point.sla_breached ? 'Breached' : 'OK'}
-          tone={point.sla_breached ? 'danger' : 'success'}
+          value={report?.verdict?.status || (point.sla_breached ? 'Breached' : 'Not available')}
+          tone={point.sla_breached ? 'danger' : 'neutral'}
         />
         {point.telemetry_status && <DetailStat label="Telemetry" value={point.telemetry_status} />}
         {peaks && <DetailStat label="Peak CPU" value={`${formatOptional(peaks.cpu_process_pct)}%`} />}
@@ -593,7 +594,7 @@ function ReleaseTrendRunDetail({
                       <td className="num">{formatCount(stats.transactions)}</td>
                       <td className="num">{formatOptional(stats.avg_response_ms)}</td>
                       <td className="num">{formatOptional(stats.p95_ms)}</td>
-                      <td className={`num ${stats.error_pct > 0 ? 'text-danger' : ''}`}>{stats.error_pct.toFixed(2)}%</td>
+                      <td className={`num ${stats.error_pct > 0 ? 'text-danger' : ''}`}>{formatReportPercent(stats.error_pct)}</td>
                       <td className={sla?.result_kind === 'fail' ? 'text-danger strong' : ''}>{sla?.result || '—'}</td>
                     </tr>
                   ))}

@@ -1,3 +1,6 @@
+import TabList from './ux/TabList'
+import { handleTabKey } from './tabKeyboard'
+import './TestExecution.css'
 import { Fragment, useMemo, useState } from 'react'
 
 import { BrowserDeviceLiveMetrics, BrowserEngineLiveMetrics, BrowserLiveMetrics, BrowserPlatformLiveMetrics, MetricsHistoryPoint, RunArchiveAnalysisEdge, RunArchiveAnalysisNode, RunArchiveAnalysisResponse, RunArchiveAnalysisStats, RunArchiveActionStats, RunArchiveReport, RunArchiveSOAPFaultTimelineBucket, RunArchiveSOAPPayloadTimelineBucket, RunArchiveTransactionDrilldown, TestSummary, TransactionEvent } from '../types'
@@ -56,6 +59,7 @@ type ArchiveView =
   | 'transactions'
 
 interface Props {
+  hideReportExports?: boolean
   view?: ArchiveView
   hasArchive: boolean
   test: TestSummary
@@ -129,6 +133,7 @@ function formatArchiveNumber(value: number | undefined, digits = 1): string {
 }
 
 function formatArchivePercent(value: number | undefined, digits = 2): string {
+  if (value !== undefined && value > 0 && value < 10 ** -digits) return `<${(10 ** -digits).toFixed(digits)}%`
   const formatted = formatArchiveNumber(value, digits)
   return formatted === 'n/a' ? formatted : `${formatted}%`
 }
@@ -700,7 +705,7 @@ function renderBrowserSummary(
 
       {onBreakdownChange && breakdownChartData.length > 0 && (
         <>
-          <div className="results-breakdown-toggle" role="tablist" aria-label="Archive browser breakdown mode">
+          <TabList className="results-breakdown-toggle" role="tablist" aria-label="Archive browser breakdown mode" onKeyDown={handleTabKey}>
             {(['overall', 'platform', 'engine', 'device'] as BrowserBreakdown[]).map(mode => (
               <button
                 key={mode}
@@ -708,12 +713,12 @@ function renderBrowserSummary(
                 role="tab"
                 aria-selected={breakdown === mode}
                 className={`results-breakdown-button${breakdown === mode ? ' active' : ''}`}
-                onClick={() => onBreakdownChange(mode)}
+                onClick={() => onBreakdownChange(mode)} tabIndex={(breakdown === mode) ? 0 : -1}
               >
                 {mode === 'overall' ? 'Overall' : mode === 'platform' ? 'Platform' : mode === 'engine' ? 'Engine' : 'Device'}
               </button>
             ))}
-          </div>
+          </TabList>
           <BrowserBreakdownChart title={chartTitle} copy={chartCopy} data={breakdownChartData} series={breakdownSeries} segmentLabel={segmentLabel} />
         </>
       )}
@@ -792,6 +797,7 @@ function renderBrowserSummary(
 
 export default function TestExecutionArchive({
   view = 'all',
+  hideReportExports = false,
   hasArchive,
   test,
   archiveError,
@@ -899,7 +905,7 @@ export default function TestExecutionArchive({
   const showReportBrowserSummaryView = showFullReportView || view === 'report-browser-summary'
   const showReportBrowserResourcesView = showFullReportView || view === 'report-browser-resources'
   const showReportAssetsView = showFullReportView || view === 'report-assets'
-  const showReportProfilesView = showFullReportView || view === 'report-profiles'
+  const showReportProfilesView = !hideReportExports && (showFullReportView || view === 'report-profiles')
   const showReportSummaryTimelineView = showFullReportView || view === 'report-summary-timeline'
   const showReportAnalysisView = showFullReportView || view === 'report-analysis'
   const showLoadImpactView = showAllViews || view === 'load-impact'
@@ -1267,7 +1273,7 @@ export default function TestExecutionArchive({
                   </button>
                 </div>
               )}
-              <div className="archive-artifact-group">
+              {!hideReportExports && <div className="archive-artifact-group">
                 <span className="archive-artifact-label">Report</span>
                 <DesktopApiResourceLink
                   className="btn btn-secondary btn-sm"
@@ -1301,8 +1307,9 @@ export default function TestExecutionArchive({
                     {profile.label}
                   </DesktopApiResourceLink>
                 ))}
-              </div>
+              </div>}
               <div className="archive-artifact-group">
+                {hideReportExports && <DesktopApiResourceLink className="btn btn-secondary btn-sm" href={buildArchiveReportHref(test.id, undefined, undefined, true)} filename={`${test.id}-report.json`}>Download report data JSON</DesktopApiResourceLink>}
                 <span className="archive-artifact-label">JSONL</span>
                 <button className="btn btn-secondary btn-sm" onClick={() => onDownloadArchiveArtifact(archiveReport.manifest.transactions_file || 'transactions.jsonl')}>
                   Download Transactions JSONL
@@ -1547,7 +1554,7 @@ export default function TestExecutionArchive({
               <div className="archive-section-header">
                 <div>
                   <h3 className="chart-title">Action Summary</h3>
-                  <p className="archive-section-copy">Archived totals by transaction name.</p>
+                  <p className="archive-section-copy">Archived request / action totals.</p>
                 </div>
               </div>
               <table className="tx-table">
@@ -1766,7 +1773,7 @@ export default function TestExecutionArchive({
                 </>
               )}
 
-              {soapPayloadTimelineEntries.length > 0 && (
+              {(soapOperationEntries.length > 0 || soapPayloadTimelineEntries.some(bucket => (bucket.avg_envelope_overhead_kb || 0) > 0)) && soapPayloadTimelineEntries.length > 0 && (
                 <>
                   <div className="archive-section-header archive-subsection-header">
                     <div>

@@ -1,3 +1,5 @@
+import TabList from './ux/TabList'
+import { handleTabKey } from './tabKeyboard'
 import {
   useCallback,
   useEffect,
@@ -446,19 +448,19 @@ export function ScriptJsonCompanionHeader({
   return (
     <div className="script-json-sidebar-header">
       <span className="script-json-sidebar-header-title">{title}</span>
-      <div className="script-json-sidebar-tabs" role="tablist" aria-label="Script JSON companion panel">
-        <button type="button" role="tab" aria-selected={activeTab === 'insights'} className={`script-json-sidebar-tab ${activeTab === 'insights' ? 'active' : ''}`} onClick={() => onChange('insights')}>
+      <TabList className="script-json-sidebar-tabs" role="tablist" aria-label="Script JSON companion panel" onKeyDown={handleTabKey}>
+        <button type="button" role="tab" aria-selected={activeTab === 'insights'} className={`script-json-sidebar-tab ${activeTab === 'insights' ? 'active' : ''}`} onClick={() => onChange('insights')} tabIndex={(activeTab === 'insights') ? 0 : -1}>
           Insights
         </button>
-        <button type="button" role="tab" aria-selected={activeTab === 'auto-params'} className={`script-json-sidebar-tab ${activeTab === 'auto-params' ? 'active' : ''}`} onClick={() => onChange('auto-params')}>
+        <button type="button" role="tab" aria-selected={activeTab === 'auto-params'} className={`script-json-sidebar-tab ${activeTab === 'auto-params' ? 'active' : ''}`} onClick={() => onChange('auto-params')} tabIndex={(activeTab === 'auto-params') ? 0 : -1}>
           Parameters
         </button>
         {hasDetailsTab && (
-          <button type="button" role="tab" aria-selected={activeTab === 'details'} className={`script-json-sidebar-tab ${activeTab === 'details' ? 'active' : ''}`} onClick={() => onChange('details')}>
+          <button type="button" role="tab" aria-selected={activeTab === 'details'} className={`script-json-sidebar-tab ${activeTab === 'details' ? 'active' : ''}`} onClick={() => onChange('details')} tabIndex={(activeTab === 'details') ? 0 : -1}>
             Details
           </button>
         )}
-      </div>
+      </TabList>
     </div>
   )
 }

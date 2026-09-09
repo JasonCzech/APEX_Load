@@ -9397,3 +9397,60 @@ col.results-actions-col {
 .workspace-setup-guide summary { cursor: pointer; padding: .5rem 0; }
 
 .workspace-setup-guide h3 { scroll-margin-top: 110px; }
+
+/* Settings/Monitoring task layouts must fit the content container, including split panes. */
+.run-calendar-top-row { grid-template-columns: repeat(auto-fit, minmax(min(100%, 430px), 1fr)); }
+.run-calendar-primary, .run-calendar-reservations-panel { min-width: 0; }
+.run-calendar-summary { grid-template-columns: repeat(auto-fit, minmax(70px, 1fr)); }
+.run-calendar-nav { max-width: 100%; }
+.run-calendar-period-readout { min-width: 0; }
+.settings-manager-summary .setting-label, .settings-manager-summary .setting-desc { display: block; }
+.settings-manager-summary { align-items: flex-start; gap: 16px; }
+.settings-manager-summary strong { flex-shrink: 0; font-size: 16px; }
+.settings-subgroup-header { grid-column: 1 / -1; }
+.settings-group, .settings-fieldset, .settings-subsection { min-width: 0; }
+.settings-section-footer { border-top: 1px solid var(--border); padding-top: 20px; }
+.settings-task-navigation { display: flex; flex-direction: column; gap: 16px; width: 230px; min-width: 0; }
+.settings-task-navigation h3 { font-size: 12px; margin: 0 0 6px; color: var(--text-secondary); }
+.settings-task-navigation button { display: block; width: 100%; text-align: left; background: transparent; border: 0; color: var(--text-primary); padding: 8px 10px; border-radius: 6px; cursor: pointer; }
+.settings-task-navigation button[aria-current='page'] { background: var(--bg-tertiary); box-shadow: inset 3px 0 var(--accent); font-weight: 600; }
+.settings-navigation-search { display: grid; gap: 6px; }
+.settings-navigation-search input { width: 100%; min-width: 0; }
+.settings-tabbed-layout { display: grid; grid-template-columns: 230px minmax(0, 1fr); gap: 24px; align-items: start; }
+.settings-main { min-width: 0; }
+.settings-task-heading { margin-bottom: 20px; }
+.settings-task-heading p { margin: 6px 0; }
+.settings-workspace .settings-subnav { display: none; }
+.settings-workspace .settings-subsection-layout { display: block; }
+.settings-workspace .settings-grid, .settings-workspace .settings-group { display: block; }
+.settings-workspace .setting-row { margin-bottom: 12px; }
+.settings-resource-editor { padding: 20px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-secondary); }
+@media (max-width: 1100px) { .settings-tabbed-layout { grid-template-columns: minmax(0, 1fr); } .settings-task-navigation { width: 100%; display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); } .settings-navigation-search { grid-column: 1 / -1; } }
+
+.settings-browse-button { display: none; }
+.monitor-context-actions { margin-bottom: 16px; flex-wrap: wrap; }
+.monitor-context-actions > span { flex-basis: 100%; color: var(--text-secondary); }
+@media (max-width: 1100px) { .settings-browse-button { display: block; width: 100%; text-align: left; } .settings-task-navigation:not(.is-open) { display: none; } }
+
+.settings-page [hidden] { display: none !important; }
+.settings-task-navigation { position: sticky; top: 100px; max-height: calc(100vh - 125px); overflow-y: auto; padding-right: 6px; }
+@media (max-width: 1100px) { .settings-task-navigation { position: static; max-height: 55vh; } }
+
+.settings-commitments .access-data-table {
+  min-width: 680px;
+  width: 100%;
+}
+.settings-commitments .settings-inline-actions {
+  justify-content: flex-start;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.settings-commitments .settings-inline-actions > * {
+  width: auto;
+}
+.settings-main .access-data-table pre,
+.monitor-body .access-data-table pre {
+  max-width: 320px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

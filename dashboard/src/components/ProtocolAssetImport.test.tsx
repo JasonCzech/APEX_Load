@@ -1931,7 +1931,7 @@ describe('ProtocolAssetImport', () => {
 	    await act(async () => {
 	      root.render(<ProtocolAssetImport kind="har" projectId="project-1" />)
 	    })
-	
+
 	    expect(container.textContent).toContain('Import HAR')
 
     const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null

@@ -191,7 +191,7 @@ export function formatReadinessDetails(details?: Record<string, unknown>): strin
 
   if (entries.length === 0) return ''
   return entries.map(([key, value]) => {
-    const formattedValue = Array.isArray(value) ? value.join(', ') : String(value)
+    const formattedValue = Array.isArray(value) ? value.map(item => typeof item === 'object' && item !== null ? formatReadinessDetails(item as Record<string, unknown>) : String(item)).join(', ') : typeof value === 'object' ? formatReadinessDetails(value as Record<string, unknown>) : String(value)
     return `${key}: ${formattedValue}`
   }).join(' | ')
 }

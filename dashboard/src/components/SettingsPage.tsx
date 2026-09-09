@@ -1,3 +1,21 @@
+import TabList from './ux/TabList'
+import FormField from './ux/FormField'
+import PanelToggle from "./ux/PanelToggle"
+import DialogLayer from './ux/DialogLayer'
+import { InfrastructureSetupGuide } from './InfrastructureSetupGuide'
+import { CapacityCommitments } from './CapacityCommitments'
+import { changedSettingsFields } from './settingsChangeSummary'
+import { AuditEventTable } from './AuditEventTable'
+import ConnectionDiagnostics from './ConnectionDiagnostics'
+import RedactionPreview from './RedactionPreview'
+import NotificationDiagnostics from './NotificationDiagnostics'
+import { handleTabKey } from './tabKeyboard'
+import { SETTINGS_DESTINATIONS, settingsDestination, settingsOwner } from './settingsNavigation'
+import ComputeInfrastructureCard from './ComputeInfrastructureCard'
+import ClustersCard from './ClustersCard'
+import FleetPoolsCard from './FleetPoolsCard'
+import PoolAllocationCard from './PoolAllocationCard'
+import FleetGeneratorsCard from './FleetGeneratorsCard'
 import WorkspaceSetupGuide from './WorkspaceSetupGuide'
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type Dispatch, type ReactNode, type SetStateAction } from 'react'
 import { type DashboardThemePreference } from '../hooks/useDashboardTheme'
@@ -42,8 +60,6 @@ import ProjectSecretsPanel from './ProjectSecretsPanel'
 import { listAllFleetPools } from './fleetCatalogModel'
 import {
   formatAccessOperation,
-  formatAuditActor,
-  formatAuditTimestamp,
   formatAuthDiagnosticStatus,
   formatAuthDiagnosticsHeadline,
   formatAuthMode,
@@ -102,9 +118,7 @@ import { type DataPoolImportResult } from '../hooks/api/useScriptApi'
 import LibraryFederationPanel from './LibraryFederationPanel'
 import GitHubIntegrationPanel from './GitHubIntegrationPanel'
 import ImportedDashboardsPanel from './ImportedDashboardsPanel'
-import CloudTestParityDashboard from './CloudTestParityDashboard'
 import PowerBIIntegrationPanel from './PowerBIIntegrationPanel'
-import PageViewToggle from './PageViewToggle'
 import DesktopNotificationsToggle from './DesktopNotificationsToggle'
 import { isDesktopSurface } from '../desktop/desktopBridge'
 import { useTopbarContribution } from '../hooks/TopbarContributionProvider'
@@ -116,25 +130,6 @@ import type { FleetPool } from '../types/fleet'
 import { consumeProjectSecretsSettingsProjectId } from './projectSecretsNavigation'
 import { reconcileSettingsProjectSnapshots } from './settingsProjectCatalog'
 import FeatureAccessPanel, { type FeatureAccessController } from './FeatureAccessPanel'
-
-const SETTINGS_SECTION_TOPBAR_LABELS: Record<SettingsSectionId, string> = {
-  general: 'General',
-  thresholds: 'Thresholds',
-  capacity: 'Capacity',
-  domains: 'Domains',
-  'feature-access': 'Feature Access',
-  applications: 'Apps & Releases',
-  projects: 'Projects',
-  'data-pools': 'Data Pools',
-  integrations: 'Integrations',
-}
-
-const SETTINGS_SECTION_TOPBAR_OPTIONS = SETTINGS_SECTIONS.map(section => ({
-  value: section.id,
-  label: SETTINGS_SECTION_TOPBAR_LABELS[section.id],
-  ariaLabel: section.title,
-  title: section.title,
-}))
 
 const NOTIFICATION_FORMAT_OPTIONS = [
   { value: 'slack', label: 'Slack Block Kit' },
@@ -272,7 +267,7 @@ function SettingsConfirmDialog({
   if (!open) return null
 
   return (
-    <div
+    <DialogLayer><div
       className="modal-overlay"
       role="presentation"
       onPointerDown={event => {
@@ -299,16 +294,18 @@ function SettingsConfirmDialog({
           </div>
         </div>
       </div>
-    </div>
+    </div></DialogLayer>
   )
 }
 
 
 interface SettingsPageProps {
+  destinationId?: string
+  onDestinationChange?: (id: string) => void
   theme: DashboardThemePreference
   onThemeChange: (theme: DashboardThemePreference) => void
   authStatus?: DashboardAuthStatus
-  onNavigate?: (page: 'access') => void
+  onNavigate?: (page: 'access' | 'fleet') => void
   domains?: Domain[]
   activeDomain?: Domain | null
   applicationRepository?: ApplicationRepository | null
@@ -326,6 +323,8 @@ type SettingsSubsectionDefinition<SubsectionId extends string> = {
 }
 
 export default function SettingsPage({
+  destinationId,
+  onDestinationChange,
   theme,
   onThemeChange,
   authStatus,
@@ -337,6 +336,12 @@ export default function SettingsPage({
   onDomainsRefresh,
   onProjectUpdate,
 }: SettingsPageProps) {
+  const destination = settingsDestination(destinationId)
+  const resourceId = new URLSearchParams(window.location.hash.split('?')[1] || '').get('resourceId') || ''
+  const requestedReturn = new URLSearchParams(window.location.hash.split('?')[1] || '').get('returnTo') || ''
+  const returnTo = /^#\/(monitoring|fleet|dashboard|schedules|command-center|tests|test\/[^?#]+)(\?|$)/.test(requestedReturn) ? requestedReturn : ''
+  const [navigationSearch, setNavigationSearch] = useState('')
+  const [navigationOpen, setNavigationOpen] = useState(() => window.innerWidth > 1100)
   const desktopSurface = isDesktopSurface()
   const api = useApi()
   const applicationApi = useApplicationApi()
@@ -376,6 +381,12 @@ export default function SettingsPage({
   const [loadedEffectiveAuthAccessScope, setLoadedEffectiveAuthAccessScope] = useState<string | null>(null)
   const [authRoles, setAuthRoles] = useState<DashboardAuthRoleDefinition[]>([])
   const [serviceAccounts, setServiceAccounts] = useState<DashboardServiceAccount[]>([])
+  const [auditOffset, setAuditOffset] = useState(0)
+  const [auditProjectFilter, setAuditProjectFilter] = useState('')
+  const [auditAfter, setAuditAfter] = useState('')
+  const [auditBefore, setAuditBefore] = useState('')
+  const [auditLoadError, setAuditLoadError] = useState('')
+  const [auditLoading, setAuditLoading] = useState(false)
   const [auditEvents, setAuditEvents] = useState<DashboardAuditEvent[]>([])
   const [auditActionMessage, setAuditActionMessage] = useState('')
   const [auditActionError, setAuditActionError] = useState('')
@@ -384,6 +395,8 @@ export default function SettingsPage({
   const [auditStatusFilter, setAuditStatusFilter] = useState('')
   const [loading, setLoading] = useState(true)
   const [settingsMutationBusy, setSettingsMutationBusy] = useState(false)
+  const [policySaving, setPolicySaving] = useState(false)
+  const policySavingRef = useRef(false)
   const [saveMessage, setSaveMessage] = useState('')
   const [requestError, setRequestError] = useState('')
   // Persisted like the subsections below: the whole page subtree is remounted
@@ -794,9 +807,15 @@ export default function SettingsPage({
   useEffect(() => {
     let cancelled = false
     const loadAuditEvents = async () => {
+      setAuditLoading(true)
+      setAuditLoadError('')
       try {
         const response = await api.listAuthAuditEvents({
           limit: 20,
+          offset: auditOffset,
+          project_id: auditProjectFilter || undefined,
+          created_after: auditAfter ? new Date(auditAfter).toISOString() : undefined,
+          created_before: auditBefore ? new Date(auditBefore).toISOString() : undefined,
           action: auditActionFilter.trim() || undefined,
           actor_type: auditActorTypeFilter.trim() || undefined,
           status: auditStatusFilter.trim() || undefined,
@@ -807,15 +826,16 @@ export default function SettingsPage({
       } catch {
         if (!cancelled) {
           setAuditEvents([])
+          setAuditLoadError('Unable to load audit history. Retry or check your access.')
         }
-      }
+      } finally { if (!cancelled) setAuditLoading(false) }
     }
 
     loadAuditEvents()
     return () => {
       cancelled = true
     }
-  }, [api, auditActionFilter, auditActorTypeFilter, auditStatusFilter])
+  }, [api, auditActionFilter, auditActorTypeFilter, auditStatusFilter, auditOffset, auditProjectFilter, auditAfter, auditBefore])
 
   useEffect(() => {
     let cancelled = false
@@ -943,9 +963,14 @@ export default function SettingsPage({
   }, [activeSection, canManageSystem])
   const canSave = validationErrors.length === 0 && !loading && !loadFailed && !settingsMutationBusy && hasUnsavedChanges && canManageSystem
   const formDisabled = loading || loadFailed || settingsMutationBusy || effectiveAuthAccessLoading || !canManageSystem
-  const renderFieldIssues = (field: string) => settingsIssuesForField(validationIssues, field).map(message => (
-    <p key={message} className="settings-error-inline settings-field-error" role="alert">{message}</p>
-  ))
+  const fieldAccessibility = (field: string) => {
+    const invalid = settingsIssuesForField(validationIssues, field).length > 0
+    return { 'aria-invalid': invalid || undefined, 'aria-describedby': invalid ? `settings-issue-${field}` : undefined } as const
+  }
+  const renderFieldIssues = (field: string) => {
+    const issues = settingsIssuesForField(validationIssues, field)
+    return issues.length ? <div id={`settings-issue-${field}`} role="alert">{issues.map(message => <p key={message} className="settings-error-inline settings-field-error">{message}</p>)}</div> : null
+  }
   const selectedDomain = useMemo(
     () => domains.find(domain => domain.id === selectedDomainId) || domains.find(domain => domain.id === activeDomain?.id) || domains[0] || null,
     [activeDomain?.id, domains, selectedDomainId],
@@ -1020,9 +1045,9 @@ export default function SettingsPage({
     },
     [projectDraftGitHubAppInstallation, projectDraftMaxConcurrentTests, projectDraftMaxVUsers, projectDraftMaxVUsersPerTest, projectDraftMaxTestDurationMinutes, projectDraftName, projectDraftRules, selectedProject],
   )
-  const projectHasUnsavedChanges = useMemo(() => {
+  const projectChangedFields = useMemo(() => {
     if (!selectedProject) {
-      return false
+      return []
     }
 
     const current = {
@@ -1043,7 +1068,7 @@ export default function SettingsPage({
 		settings: buildProjectSettingsDraft(projectDraftRules, projectDraftMaxConcurrentTests, projectDraftMaxVUsers, projectDraftMaxVUsersPerTest, projectDraftMaxTestDurationMinutes, buildProjectGitHubDraft(selectedProject?.settings?.github), selectedProject?.settings?.pool_quotas, selectedProject?.settings?.features),
     }
 
-    return JSON.stringify(current) !== JSON.stringify(draft)
+    return changedSettingsFields(current, draft)
   }, [
     buildProjectGitHubDraft,
     projectDraftMaxConcurrentTests,
@@ -1054,6 +1079,7 @@ export default function SettingsPage({
     projectDraftRules,
     selectedProject,
   ])
+  const projectHasUnsavedChanges = projectChangedFields.length > 0
   const customRuleCount = useMemo(
     () => normalizeProjectRedactionRules(projectDraftRules).length,
     [projectDraftRules],
@@ -1082,7 +1108,7 @@ export default function SettingsPage({
   const capacitySubsectionSummaries = useMemo<Record<CapacitySettingsSubsectionId, string>>(() => ({
     availability: `${availabilitySnapshot?.effective_available_generators ?? settings.capacity_planning.availability.configured_available_generators} available`,
     generator: `${settings.capacity_planning.generator.cpu_cores} CPU / ${settings.capacity_planning.generator.memory_mb} MB`,
-    reservations: `${settings.capacity_planning.reservations?.length ?? 0} reserved`,
+    reservations: `${settings.capacity_planning.reservations?.length ?? 0} allocations`,
     retention: settings.archive_retention.enabled ? `${settings.archive_retention.default_retention_days} days` : 'Disabled',
   }), [
     availabilitySnapshot?.effective_available_generators,
@@ -1113,16 +1139,27 @@ export default function SettingsPage({
     library: activeProject?.name || 'Project scoped',
     github: settings.github.enabled ? 'Enabled' : 'Disabled',
     prometheus: settings.prometheus.enabled ? 'Enabled' : 'Disabled',
+    opensearch: settings.opensearch?.enabled ? 'Enabled' : 'Disabled',
+    grafana: settings.grafana?.enabled ? 'Enabled' : 'Disabled',
     dashboards: 'Grafana import',
     powerbi: settings.powerbi?.enabled ? 'Enabled' : 'Disabled',
     notifications: `${notificationWebhookCount} webhook${notificationWebhookCount === 1 ? '' : 's'}`,
-  }), [activeProject?.name, notificationWebhookCount, settings.github.enabled, settings.prometheus.enabled, settings.powerbi?.enabled])
+  }), [activeProject?.name, notificationWebhookCount, settings.github.enabled, settings.prometheus.enabled, settings.powerbi?.enabled, settings.opensearch?.enabled, settings.grafana?.enabled])
 
   useEffect(() => {
     setSectionOrder(prev => mergeSettingsOrder(prev))
   }, [])
 
   useEffect(() => {
+    if (destination) {
+      setActiveSection(destination.section)
+      if (destination.section === 'general') setActiveGeneralSubsection(destination.subsection as GeneralSettingsSubsectionId || 'platform')
+      if (destination.governance) setActiveGovernanceSubsection(destination.governance as GovernanceSettingsSubsectionId)
+      if (destination.section === 'capacity' && destination.subsection) setActiveCapacitySubsection(destination.subsection as CapacitySettingsSubsectionId)
+      if (destination.section === 'projects') setActiveProjectSubsection(destination.subsection as ProjectSettingsSubsectionId || 'catalog')
+      if (destination.section === 'integrations') setActiveIntegrationSubsection(destination.subsection as IntegrationSettingsSubsectionId || 'library')
+      return
+    }
     const targetSection = readStoredString('apexload.settings.focusSection') as SettingsSectionId | ''
     if (!targetSection) return
     removeStoredItem('apexload.settings.focusSection')
@@ -1138,7 +1175,7 @@ export default function SettingsPage({
     window.setTimeout(() => {
       document.getElementById(`settings-section-${targetSection}`)?.scrollIntoView?.({ behavior: 'smooth', block: 'start' })
     }, 150)
-  }, [])
+  }, [destination])
 
   useEffect(() => {
     let cancelled = false
@@ -1722,6 +1759,9 @@ export default function SettingsPage({
     try {
       const blob = await api.downloadAuthAuditEvents({
         limit: 1000,
+        project_id: auditProjectFilter || undefined,
+        created_after: auditAfter ? new Date(auditAfter).toISOString() : undefined,
+        created_before: auditBefore ? new Date(auditBefore).toISOString() : undefined,
         action: auditActionFilter.trim() || undefined,
         actor_type: auditActorTypeFilter.trim() || undefined,
         status: auditStatusFilter.trim() || undefined,
@@ -1729,7 +1769,7 @@ export default function SettingsPage({
       const date = new Date().toISOString().slice(0, 10)
       const outcome = await downloadBlob(blob, `apexload-audit-events-${date}.csv`)
       if (outcome === 'cancelled') return
-      setAuditActionMessage('Audit export downloaded.')
+      setAuditActionMessage('Audit export downloaded (up to 1,000 matching events).')
       setAuditActionError('')
     } catch (error: unknown) {
       setAuditActionError(getErrorMessage(error, 'Unable to export audit events'))
@@ -1979,7 +2019,7 @@ export default function SettingsPage({
     onDomainChange?.(created.domain)
   }
 
-  const saveDomain = async (): Promise<boolean> => {
+  const persistDomain = async (): Promise<boolean> => {
     if (!selectedDomain) return true
     if (!canManageDomains) {
       setDomainActionError('Current session cannot manage domains.')
@@ -2028,6 +2068,13 @@ export default function SettingsPage({
       writeSettingsBreadcrumb('apexload.settings.domainWarning', warning)
     }
     return true
+  }
+
+  const saveDomain = async (): Promise<boolean> => {
+    if (policySavingRef.current) return false
+    policySavingRef.current = true; setPolicySaving(true)
+    try { return await persistDomain() }
+    finally { policySavingRef.current = false; setPolicySaving(false) }
   }
 
   const deleteDomain = async (domain: Domain) => {
@@ -2176,7 +2223,7 @@ export default function SettingsPage({
     setProjectActionMessage('')
   }
 
-	const saveProjectCompliance = async (): Promise<Project | null> => {
+	const persistProjectCompliance = async (): Promise<Project | null> => {
 		if (!selectedProject) return null
     if (!canManageProjects) {
       setProjectActionError('Current session cannot manage this project.')
@@ -2212,6 +2259,13 @@ export default function SettingsPage({
     setDomainActionMessage('')
   }
 
+  const saveProjectCompliance = async (): Promise<Project | null> => {
+    if (policySavingRef.current) return null
+    policySavingRef.current = true; setPolicySaving(true)
+    try { return await persistProjectCompliance() }
+    finally { policySavingRef.current = false; setPolicySaving(false) }
+  }
+
   const discardProjectChanges = () => {
     setProjectDraftName(selectedProject?.name || '')
     setProjectDraftRules(toDraftRedactionRules(selectedProject?.settings?.redaction_rules))
@@ -2245,7 +2299,7 @@ export default function SettingsPage({
     || dataPoolCreateDraftDirty
     || poolQuotaDraftDirty
     || featureAccessDirty
-  const canSaveAllSettingsChanges = hasAnyUnsavedChanges
+  const canSaveAllSettingsChanges = hasAnyUnsavedChanges && !policySaving
     && (!hasUnsavedChanges || canSave)
     && (!domainHasUnsavedChanges || (canManageDomains && !domainDraftValidationError))
     && (!projectHasUnsavedChanges || (canManageProjects && !projectDraftValidationError))
@@ -3029,13 +3083,14 @@ export default function SettingsPage({
     summaries: Record<SubsectionId, string>,
     badges?: Partial<Record<SubsectionId, number>>,
   ) => (
-    <div className="settings-subnav" role="tablist" aria-label={ariaLabel}>
+    <TabList className="settings-subnav" role="tablist" onKeyDown={handleTabKey} aria-label={ariaLabel}>
       {subsections.map(subsection => (
         <button
           key={subsection.id}
           id={`${idPrefix}-tab-${subsection.id}`}
           type="button"
           role="tab"
+          tabIndex={activeSubsection === subsection.id ? 0 : -1}
           aria-selected={activeSubsection === subsection.id}
           aria-controls={`${idPrefix}-panel-${subsection.id}`}
           className={`settings-subnav-item ${activeSubsection === subsection.id ? 'active' : ''}`}
@@ -3050,7 +3105,7 @@ export default function SettingsPage({
           <span className="settings-subnav-meta">{summaries[subsection.id]}</span>
         </button>
       ))}
-    </div>
+    </TabList>
   )
 
   const sectionMessages = useMemo(() => {
@@ -3076,30 +3131,37 @@ export default function SettingsPage({
     return msgs
   }, [saveMessage, requestError, domainActionMessage, domainActionError, applicationActionError, projectActionMessage, projectActionError, dataPoolActionError, activeSection])
 
+  const currentDestination = destination || SETTINGS_DESTINATIONS.find(item => item.section === activeSection && !item.resource && (!item.subsection || item.subsection === ({ general: activeGeneralSubsection, capacity: activeCapacitySubsection, projects: activeProjectSubsection, integrations: activeIntegrationSubsection } as Record<string, string>)[activeSection]) && (!item.governance || item.governance === activeGovernanceSubsection)) || SETTINGS_DESTINATIONS[0]
+  useEffect(() => {
+    if (window.innerWidth <= 1100) setNavigationOpen(false)
+  }, [currentDestination.id])
+  const selectDestination = (id: string) => {
+    if (onDestinationChange) onDestinationChange(id)
+    else {
+      const item = settingsDestination(id)
+      if (!item) return
+      setActiveSection(item.section)
+      if (item.section === 'general') setActiveGeneralSubsection(item.subsection as GeneralSettingsSubsectionId || 'platform')
+      if (item.governance) setActiveGovernanceSubsection(item.governance as GovernanceSettingsSubsectionId)
+      if (item.section === 'capacity') setActiveCapacitySubsection(item.subsection as CapacitySettingsSubsectionId || 'availability')
+      if (item.section === 'projects') setActiveProjectSubsection(item.subsection as ProjectSettingsSubsectionId || 'catalog')
+      if (item.section === 'integrations') setActiveIntegrationSubsection(item.subsection as IntegrationSettingsSubsectionId || 'library')
+    }
+  }
   const activeSectionMessages = sectionMessages[activeSection]
   const settingsTopbarContribution = useMemo(() => ({
     id: 'settings-page',
-    title: 'Settings',
-    controls: (
-      <PageViewToggle
-        value={activeSection}
-        ariaLabel="Settings sections"
-        className="settings-section-toggle settings-topbar-section-toggle new-test-view-toggle"
-        options={SETTINGS_SECTION_TOPBAR_OPTIONS.filter(option => option.value !== 'feature-access' || canManageSystem).map(option => ({
-          ...option,
-          badge: issuesBySection[option.value]?.length || undefined,
-        }))}
-        onChange={setActiveSection}
-      />
-    ),
+    title: settingsOwner(currentDestination.id) === 'access' ? 'Access & Security' : settingsOwner(currentDestination.id) === 'repository' ? 'Test Data' : 'Settings',
+    controls: !hasAnyUnsavedChanges ? <span className="ux-save-status" role="status">No pending changes</span> : undefined,
     primaryActions: [
       {
         id: 'save-settings',
-        label: hasAnyUnsavedChanges ? 'Save Changes' : 'Saved',
-        compactLabel: hasAnyUnsavedChanges ? 'Save' : 'Saved',
+        hidden: !hasAnyUnsavedChanges,
+        label: hasAnyUnsavedChanges ? 'Save pending settings' : 'No pending settings',
+        compactLabel: hasAnyUnsavedChanges ? 'Save pending' : 'No changes',
         onClick: () => { void saveAllSettingsChangesRef.current() },
         disabled: !canSaveAllSettingsChanges,
-        tone: 'primary' as const,
+        tone: hasAnyUnsavedChanges ? 'primary' as const : 'secondary' as const,
         title: canSaveAllSettingsChanges ? 'Save settings changes' : 'Settings are already saved or cannot be saved',
       },
     ],
@@ -3115,13 +3177,13 @@ export default function SettingsPage({
       },
     ],
     priority: 20,
-  }), [activeSection, canManageSystem, canSaveAllSettingsChanges, hasAnyUnsavedChanges, issuesBySection, settingsMutationBusy])
+  }), [currentDestination.id, canSaveAllSettingsChanges, hasAnyUnsavedChanges, settingsMutationBusy])
 
   useTopbarContribution(settingsTopbarContribution)
 
   return (
-    <div className="page settings-page">
-      <WorkspaceSetupGuide storageKey="apexload.workspaceSetup.step" steps={[
+    <div className={`page settings-page ${onDestinationChange ? 'settings-workspace' : ''}`}>
+      {['domains', 'projects', 'applications'].includes(currentDestination.id) && <WorkspaceSetupGuide storageKey="apexload.workspaceSetup.step" steps={[
         {label: 'Domain', description: 'A domain groups teams and their projects.', choices: domains, selectedId: activeDomain?.id, canCreate: canManageDomains,
           select: id => { const domain = domains.find(item => item.id === id); if (domain) onDomainChange?.(domain) },
           create: async name => { const result = await repositoryApi.createDomain({name}); onDomainChange?.(result.domain); void onDomainsRefresh?.(result.domain.id, {preserveDomain:result.domain}).catch(() => undefined); return result.domain }},
@@ -3134,7 +3196,7 @@ export default function SettingsPage({
         {label: 'Release', description: 'A release groups runs for comparison and acceptance review.', choices: releases, selectedId: activeRelease?.id, canCreate: canManageProjects && !!activeApplication,
           select: id => {const release = releases.find(item => item.id === id); if(release) setActiveRelease(release)},
           create: async name => {const release = await createAndSelectRelease(name); if (!release) throw new Error('Choose an application before creating a release.'); return release}},
-      ]} />
+      ]} />}
       <div className="page-header">
         <div>
           <h2>Settings</h2>
@@ -3156,8 +3218,37 @@ export default function SettingsPage({
         )}
       </div>
 
-      <div className="settings-tabbed-layout">
+      <div className={`settings-tabbed-layout ${navigationOpen ? "" : "navigation-collapsed"}`}>
+        <PanelToggle className="settings-browse-button" expanded={navigationOpen} panelName="Settings navigation" controls="settings-task-navigation" onToggle={() => setNavigationOpen(value => !value)} />
+        <nav id="settings-task-navigation" className={`settings-task-navigation ${navigationOpen ? 'is-open' : ''}`} aria-label="Settings sections">
+          <label className="settings-navigation-search">Find settings<input className="settings-input" type="search" value={navigationSearch} onChange={event => setNavigationSearch(event.target.value)} placeholder="Search connections, policies…" /></label>
+          {Array.from(new Set(SETTINGS_DESTINATIONS.map(item => item.group))).map(group => {
+            const entries = SETTINGS_DESTINATIONS.filter(item => item.group === group && (item.id !== 'features' || canManageSystem) && `${item.group} ${item.title}`.toLowerCase().includes(navigationSearch.toLowerCase()))
+            return entries.length ? <div key={group}><h3>{group}</h3>{entries.map(item => <button type="button" key={item.id} aria-current={currentDestination.id === item.id ? 'page' : undefined} onClick={() => selectDestination(item.id)}>{item.title}{issuesBySection[item.section]?.length ? <span aria-label="Validation issues"> •</span> : null}</button>)}</div> : null
+          })}
+          {navigationSearch && !SETTINGS_DESTINATIONS.some(item => `${item.group} ${item.title}`.toLowerCase().includes(navigationSearch.toLowerCase())) && <p role="status">No settings match.</p>}
+          <button type="button" onClick={() => onNavigate?.('access')}>Manage users & service accounts</button>
+        </nav>
         <div className="settings-main">
+          <header className="settings-task-heading"><p>{currentDestination.group}</p><h2>{currentDestination.title}</h2><p>Applies to: {currentDestination.scope === 'browser' ? 'This browser only' : currentDestination.scope === 'deployment' ? 'Entire deployment' : currentDestination.scope === 'domain' ? `Domain: ${activeDomain?.name || 'Select a domain'}` : `Project: ${(currentDestination.section === 'projects' ? selectedProject?.name : activeProject?.name) || 'Select a project'}`}</p><p className="setting-desc">{currentDestination.scope === 'browser' ? 'Preferences apply immediately in this browser.' : currentDestination.resource ? 'Changes are saved by the resource editor below.' : 'Save pending settings commits pending configuration and policy edits listed below. Resource actions have their own Save controls.'}</p>{hasAnyUnsavedChanges && <p role="status">Pending: {[
+        hasUnsavedChanges ? 'deployment configuration' : '',
+        projectHasUnsavedChanges ? `governance for ${selectedProject?.name || 'selected project'}` : '',
+      ].filter(Boolean).join('; ') || 'resource edits — review the editor’s save controls'}</p>}</header>
+          {hasUnsavedChanges && <section aria-label="Pending deployment edits" className="settings-subsection"><h3>Deployment configuration changes</h3><ul>{[...new Set([...changedSettingsFields(savedSettings, settings), ...Object.keys(capacityFieldDrafts).filter(field => capacityFieldDrafts[field] !== settingsDraftFieldValue(savedSettings, field)).map(field => field.replace(/_/g, ' ').replace(/\./g, ' › '))])].map(field => <li key={field}>{field}</li>)}</ul><button className="btn btn-primary" type="button" disabled={!canSave} onClick={() => void saveSettings()}>Save deployment changes</button> <button className="btn btn-secondary" type="button" disabled={settingsMutationBusy} onClick={discardChanges}>Cancel deployment changes</button></section>}
+          {domainHasUnsavedChanges && <section aria-label="Pending domain edits" className="settings-subsection"><h3>Domain: {selectedDomain?.name}</h3><p>Changed fields: {[domainDraftName.trim() !== selectedDomain?.name && 'name', domainDraftDescription.trim() !== (selectedDomain?.description || '') && 'description'].filter(Boolean).join(', ')}</p><button className="btn btn-primary" type="button" disabled={!canManageDomains || !!domainDraftValidationError || settingsMutationBusy || policySaving} onClick={() => void saveDomain()}>Save domain changes</button> <button className="btn btn-secondary" type="button" disabled={settingsMutationBusy || policySaving} onClick={discardDomainChanges}>Cancel domain changes</button></section>}
+          {projectHasUnsavedChanges && <section aria-label="Pending project edits" className="settings-subsection"><h3>Project: {selectedProject?.name}</h3><p>Changed fields: {projectChangedFields.join(', ')}</p><button className="btn btn-primary" type="button" disabled={!canManageProjects || !!projectDraftValidationError || settingsMutationBusy || policySaving} onClick={() => void saveProjectCompliance()}>Save project changes</button> <button className="btn btn-secondary" type="button" disabled={settingsMutationBusy || policySaving} onClick={discardProjectChanges}>Cancel project changes</button></section>}
+          {currentDestination.group === 'Infrastructure' && canManageSystem && <InfrastructureSetupGuide />}
+          {currentDestination.id === 'allocations' && <CapacityCommitments reservations={savedSettings.capacity_planning.reservations || []} projectId={activeProject?.id} projects={projects} pools={fleetPools || []} />}
+          {returnTo && <a className="btn btn-secondary" href={returnTo}>Return to originating workflow</a>}
+          {currentDestination.id === 'preferences' && <section aria-label="Personal preferences"><label>Dashboard Theme<select className="settings-input" value={theme} onChange={event => onThemeChange(event.target.value as DashboardThemePreference)}>{[['system', 'System (Auto)'], ['dark', 'Dark'], ['light', 'Light'], ['solarized-dark', 'Solarized Dark'], ['solarized-light', 'Solarized Light'], ['monokai-dimmed', 'Monokai Dimmed']].map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label><p>Stored locally in this browser and applied immediately.</p>{desktopSurface && <DesktopNotificationsToggle />}</section>}
+          {destination?.resource && <section className="settings-resource-editor">
+<button className="btn btn-secondary" onClick={() => onNavigate?.('fleet')}>Return to Fleet monitoring</button>
+            {destination.resource === 'cloud' && <ComputeInfrastructureCard canManage={canManageSystem} />}
+            {destination.resource === 'clusters' && <ClustersCard resourceId={resourceId} canManage={canManageSystem} />}
+            {destination.resource === 'pools' && <FleetPoolsCard resourceId={resourceId} canManage={canManageSystem} />}
+            {destination.resource === 'allocation' && <PoolAllocationCard resourceId={resourceId} canManage={canManageSystem} />}
+            {destination.resource === 'generators' && <FleetGeneratorsCard canManage={canManageSystem} />}
+          </section>}
           {loading && <p className="settings-notice" role="status" aria-live="polite">Loading settings...</p>}
           {activeSectionMessages.notices.map(msg => (
             <p key={msg} className="settings-notice" role="status" aria-live="polite">{msg}</p>
@@ -3187,7 +3278,7 @@ export default function SettingsPage({
               {SETTINGS_SECTIONS.filter(section => section.id !== activeSection && (issuesBySection[section.id]?.length ?? 0) > 0).map(section => (
                 <p key={section.id} className="settings-inline-actions settings-errors-elsewhere">
                   {issuesBySection[section.id]?.length} issue{issuesBySection[section.id]?.length === 1 ? '' : 's'} in {section.title}
-                  <button className="btn btn-ghost btn-sm" type="button" onClick={() => setActiveSection(section.id)}>
+                  <button className="btn btn-ghost btn-sm" type="button" onClick={() => selectDestination(SETTINGS_DESTINATIONS.find(item => item.section === section.id && !item.resource)?.id || 'platform')}>
                     Review
                   </button>
                 </p>
@@ -3195,7 +3286,7 @@ export default function SettingsPage({
             </div>
           )}
 
-          <div className="settings-grid">
+          <div className="settings-grid" hidden={Boolean(destination?.resource) || currentDestination.id === 'preferences'}>
         <div
           id="settings-section-general"
           className={sectionClass}
@@ -3204,13 +3295,14 @@ export default function SettingsPage({
         >
           <div className="settings-fieldset">
           <div className="settings-subsection-layout">
-            <div className="settings-subnav" role="tablist" aria-label="General settings categories">
+            <TabList className="settings-subnav" role="tablist" onKeyDown={handleTabKey} aria-label="General settings categories">
               {GENERAL_SETTINGS_SUBSECTIONS.map(subsection => (
                 <button
                   key={subsection.id}
                   id={`settings-general-tab-${subsection.id}`}
                   type="button"
                   role="tab"
+                  tabIndex={activeGeneralSubsection === subsection.id ? 0 : -1}
                   aria-selected={activeGeneralSubsection === subsection.id}
                   aria-controls={`settings-general-panel-${subsection.id}`}
                   className={`settings-subnav-item ${activeGeneralSubsection === subsection.id ? 'active' : ''}`}
@@ -3220,7 +3312,7 @@ export default function SettingsPage({
                   <span className="settings-subnav-meta">{generalSubsectionSummaries[subsection.id]}</span>
                 </button>
               ))}
-            </div>
+            </TabList>
 
             <section
               id="settings-general-panel-platform"
@@ -3236,7 +3328,7 @@ export default function SettingsPage({
                 <span className="setting-label">API Endpoint <span className="settings-restart-badge">Restart required</span></span>
                 <span className="setting-desc">Controller API server address. Changes take effect after restarting the controller.</span>
               </div>
-              <input
+              <input aria-label="API Endpoint"
                 className="settings-input cell-mono"
                 value={settings.general.api_endpoint}
                 onChange={(e) => updateGeneral('api_endpoint', e.target.value)}
@@ -3290,31 +3382,11 @@ export default function SettingsPage({
             </div>
             <div className="setting-row">
               <div className="setting-info">
-                <span className="setting-label">Dashboard Theme</span>
-                <span className="setting-desc">Stored locally in this browser and applied immediately</span>
-              </div>
-              <select
-                className="settings-input"
-                aria-label="Dashboard Theme"
-                value={theme}
-                onChange={(e) => onThemeChange(e.target.value as DashboardThemePreference)}
-              >
-                <option value="system">System (Auto)</option>
-                <option value="dark">Dark</option>
-                <option value="light">Light</option>
-                <option value="solarized-dark">Solarized Dark</option>
-                <option value="solarized-light">Solarized Light</option>
-                <option value="monokai-dimmed">Monokai Dimmed</option>
-              </select>
-            </div>
-            {desktopSurface && <DesktopNotificationsToggle />}
-            <div className="setting-row">
-              <div className="setting-info">
                 <span className="setting-label">Desktop Client Promotion</span>
                 <span className="setting-desc">Controls whether the hosted browser UI promotes the optional desktop workspace. Authorized API access is still governed by RBAC.</span>
               </div>
               <label className="settings-checkbox-label">
-                <input
+                <input aria-label="Desktop Client Promotion"
                   type="checkbox"
                   checked={settings.client_app.availability === 'enabled'}
                   onChange={event => updateClientApp(event.target.checked ? 'enabled' : 'disabled')}
@@ -3329,7 +3401,7 @@ export default function SettingsPage({
                 <span className="setting-desc">Controls whether the dashboard offers the “Download client” menu (Recording Agent and desktop app). When disabled, the menu is hidden and the download endpoints are refused.</span>
               </div>
               <label className="settings-checkbox-label">
-                <input
+                <input aria-label="Client Software Downloads"
                   type="checkbox"
                   checked={settings.client_downloads.enabled}
                   onChange={event => updateClientDownloads(event.target.checked)}
@@ -3486,7 +3558,7 @@ export default function SettingsPage({
                   <span className="setting-label">Access Control Mode <span className="settings-restart-badge">Restart required</span></span>
                   <span className="setting-desc">Dev Bypass remains the default. Local Test Login enables four database-backed personas and is rejected in production posture. Changes take effect after restarting the controller.</span>
                 </div>
-                <select
+                <select aria-label="Access Control Mode"
                   className="settings-input"
                   value={settings.auth.mode}
                   onChange={(e) => updateAuth('mode', e.target.value)}
@@ -3556,7 +3628,7 @@ export default function SettingsPage({
                       <span className="setting-label">Provider Label</span>
                       <span className="setting-desc">Optional identity provider or gateway name shown in the dashboard sign-in screen.</span>
                     </div>
-                    <input
+                    <input aria-label="Provider Label"
                       className="settings-input"
                       value={settings.auth.provider_name || ''}
                       onChange={(e) => updateAuth('provider_name', e.target.value)}
@@ -3581,7 +3653,7 @@ export default function SettingsPage({
                       <span className="setting-label">Trusted Proxy CIDRs</span>
                       <span className="setting-desc">Comma-separated proxy IP addresses or CIDRs allowed to supply identity headers.</span>
                     </div>
-                    <input
+                    <input aria-label="Trusted Proxy CIDRs"
                       className="settings-input cell-mono"
                       value={(settings.auth.trusted_proxy_cidrs || []).join(', ')}
                       onChange={(e) => updateAuth('trusted_proxy_cidrs', e.target.value.split(',').map(value => value.trim()).filter(Boolean))}
@@ -3594,7 +3666,7 @@ export default function SettingsPage({
                       <span className="setting-label">Trusted Proxy Secret Environment Variable</span>
                       <span className="setting-desc">Optional environment variable holding the shared secret required from the trusted proxy.</span>
                     </div>
-                    <input
+                    <input aria-label="Trusted Proxy Secret Environment Variable"
                       className="settings-input cell-mono"
                       value={settings.auth.trusted_proxy_secret_env_var || ''}
                       onChange={(e) => updateAuth('trusted_proxy_secret_env_var', e.target.value)}
@@ -3606,7 +3678,7 @@ export default function SettingsPage({
                       <span className="setting-label">Logout URL</span>
                       <span className="setting-desc">Optional upstream sign-out URL or absolute path surfaced for future dashboard navigation.</span>
                     </div>
-                    <input
+                    <input aria-label="Logout URL"
                       className="settings-input cell-mono"
                       value={settings.auth.logout_url || ''}
                       onChange={(e) => updateAuth('logout_url', e.target.value)}
@@ -3618,7 +3690,7 @@ export default function SettingsPage({
                       <span className="setting-label">User Header</span>
                       <span className="setting-desc">Required identity header. Missing values return 401 before the request reaches protected handlers.</span>
                     </div>
-                    <input
+                    <input aria-label="User Header"
                       className="settings-input cell-mono"
                       value={settings.auth.user_header}
                       onChange={(e) => updateAuth('user_header', e.target.value)}
@@ -3630,7 +3702,7 @@ export default function SettingsPage({
                       <span className="setting-label">Display Name Header</span>
                       <span className="setting-desc">Optional friendly name forwarded into the request context for future UI and audit use.</span>
                     </div>
-                    <input
+                    <input aria-label="Display Name Header"
                       className="settings-input cell-mono"
                       value={settings.auth.name_header}
                       onChange={(e) => updateAuth('name_header', e.target.value)}
@@ -3642,7 +3714,7 @@ export default function SettingsPage({
                       <span className="setting-label">Email Header</span>
                       <span className="setting-desc">Optional email address from the upstream identity provider.</span>
                     </div>
-                    <input
+                    <input aria-label="Email Header"
                       className="settings-input cell-mono"
                       value={settings.auth.email_header}
                       onChange={(e) => updateAuth('email_header', e.target.value)}
@@ -3654,7 +3726,7 @@ export default function SettingsPage({
                       <span className="setting-label">Global Roles Header</span>
                       <span className="setting-desc">Comma or pipe-delimited roles such as viewer, editor, project_admin, or system_admin.</span>
                     </div>
-                    <input
+                    <input aria-label="Global Roles Header"
                       className="settings-input cell-mono"
                       value={settings.auth.roles_header}
                       onChange={(e) => updateAuth('roles_header', e.target.value)}
@@ -3666,7 +3738,7 @@ export default function SettingsPage({
                       <span className="setting-label">Project Roles Header</span>
                       <span className="setting-desc">Project-scoped assignments in the form project-id=viewer|editor;other-project=project_admin.</span>
                     </div>
-                    <input
+                    <input aria-label="Project Roles Header"
                       className="settings-input cell-mono"
                       value={settings.auth.project_roles_header}
                       onChange={(e) => updateAuth('project_roles_header', e.target.value)}
@@ -3826,7 +3898,7 @@ export default function SettingsPage({
                       <span className="setting-label">Provider Label</span>
                       <span className="setting-desc">Friendly identity provider name shown in the dashboard sign-in experience.</span>
                     </div>
-                    <input
+                    <input aria-label="Provider Label"
                       className="settings-input"
                       value={settings.auth.provider_name || ''}
                       onChange={(e) => updateAuth('provider_name', e.target.value)}
@@ -3838,7 +3910,7 @@ export default function SettingsPage({
                       <span className="setting-label">Issuer URL</span>
                       <span className="setting-desc">Absolute OIDC issuer URL used for discovery and ID-token verification.</span>
                     </div>
-                    <input
+                    <input aria-label="Issuer URL"
                       className="settings-input cell-mono"
                       value={settings.auth.issuer_url || ''}
                       onChange={(e) => updateAuth('issuer_url', e.target.value)}
@@ -3850,7 +3922,7 @@ export default function SettingsPage({
                       <span className="setting-label">Client ID</span>
                       <span className="setting-desc">OIDC client/application identifier registered for the dashboard.</span>
                     </div>
-                    <input
+                    <input aria-label="Client ID"
                       className="settings-input cell-mono"
                       value={settings.auth.client_id || ''}
                       onChange={(e) => updateAuth('client_id', e.target.value)}
@@ -3862,7 +3934,7 @@ export default function SettingsPage({
                       <span className="setting-label">Client Secret Env Var</span>
                       <span className="setting-desc">Environment variable name read by the controller at runtime for the OIDC client secret.</span>
                     </div>
-                    <input
+                    <input aria-label="Client Secret Env Var"
                       className="settings-input cell-mono"
                       value={settings.auth.client_secret_env_var || ''}
                       onChange={(e) => updateAuth('client_secret_env_var', e.target.value)}
@@ -3874,7 +3946,7 @@ export default function SettingsPage({
                       <span className="setting-label">Redirect URL</span>
                       <span className="setting-desc">Absolute callback URL registered with the identity provider and served by the controller.</span>
                     </div>
-                    <input
+                    <input aria-label="Redirect URL"
                       className="settings-input cell-mono"
                       value={settings.auth.redirect_url || ''}
                       onChange={(e) => updateAuth('redirect_url', e.target.value)}
@@ -3886,7 +3958,7 @@ export default function SettingsPage({
                       <span className="setting-label">Scopes</span>
                       <span className="setting-desc">Comma or space-delimited OIDC scopes requested during sign-in.</span>
                     </div>
-                    <input
+                    <input aria-label="Scopes"
                       className="settings-input cell-mono"
                       value={formatAuthScopes(settings.auth.scopes)}
                       onChange={(e) => updateAuth('scopes', parseAuthScopes(e.target.value))}
@@ -3898,7 +3970,7 @@ export default function SettingsPage({
                       <span className="setting-label">Roles Claim</span>
                       <span className="setting-desc">Token claim used to map global RBAC roles such as viewer, editor, project_admin, or system_admin.</span>
                     </div>
-                    <input
+                    <input aria-label="Roles Claim"
                       className="settings-input cell-mono"
                       value={settings.auth.roles_claim || ''}
                       onChange={(e) => updateAuth('roles_claim', e.target.value)}
@@ -3910,7 +3982,7 @@ export default function SettingsPage({
                       <span className="setting-label">Project Roles Claim</span>
                       <span className="setting-desc">Token claim that carries project-scoped role assignments.</span>
                     </div>
-                    <input
+                    <input aria-label="Project Roles Claim"
                       className="settings-input cell-mono"
                       value={settings.auth.project_roles_claim || ''}
                       onChange={(e) => updateAuth('project_roles_claim', e.target.value)}
@@ -3922,7 +3994,7 @@ export default function SettingsPage({
                       <span className="setting-label">Session Secret Env Var</span>
                       <span className="setting-desc">Environment variable name read by the controller to sign the APEX Load auth session cookie.</span>
                     </div>
-                    <input
+                    <input aria-label="Session Secret Env Var"
                       className="settings-input cell-mono"
                       value={settings.auth.session_secret_env_var || ''}
                       onChange={(e) => updateAuth('session_secret_env_var', e.target.value)}
@@ -3934,7 +4006,7 @@ export default function SettingsPage({
                       <span className="setting-label">Post-Logout Redirect URL</span>
                       <span className="setting-desc">Optional absolute URL or absolute path used after APEX Load clears its local OIDC session.</span>
                     </div>
-                    <input
+                    <input aria-label="Post-Logout Redirect URL"
                       className="settings-input cell-mono"
                       value={settings.auth.logout_url || ''}
                       onChange={(e) => updateAuth('logout_url', e.target.value)}
@@ -4067,7 +4139,7 @@ export default function SettingsPage({
                             <span className="setting-label">Approval Policy</span>
                             <span className="setting-desc">Default review policy used by New Test schedules before each recurring run materializes.</span>
                           </div>
-                          <select
+                          <select aria-label="Approval Policy"
                             className="settings-input"
                             value={settings.schedule_defaults.approval_policy || 'auto'}
                             disabled={formDisabled}
@@ -4086,7 +4158,7 @@ export default function SettingsPage({
                             <span className="setting-label">Missed Run Policy</span>
                             <span className="setting-desc">Default reconciliation behavior when the scheduler starts after one or more cron windows were missed.</span>
                           </div>
-                          <select
+                          <select aria-label="Missed Run Policy"
                             className="settings-input"
                             value={settings.schedule_defaults.missed_run_policy || 'skip'}
                             disabled={formDisabled}
@@ -4104,7 +4176,7 @@ export default function SettingsPage({
                             <span className="setting-desc">Optional default daily no-run range. Schedules apply it in their selected timezone.</span>
                           </div>
                           <div className="inline-create-row">
-                            <input
+                            <input aria-label="Blackout Window"
                               className="settings-input"
                               value={settings.schedule_defaults.blackout_start_time || ''}
                               disabled={formDisabled}
@@ -4126,7 +4198,7 @@ export default function SettingsPage({
                             <span className="setting-desc">Optional default weekday allowed-run range. Leave blank to allow all weekdays.</span>
                           </div>
                           <div className="inline-create-row">
-                            <input
+                            <input aria-label="Availability Window"
                               className="settings-input"
                               value={settings.schedule_defaults.availability_start_time || ''}
                               disabled={formDisabled}
@@ -4191,7 +4263,7 @@ export default function SettingsPage({
                           </span>
                         </div>
                         <label className="settings-checkbox-label">
-                          <input
+                          <input aria-label="Allow source secret migration"
                             type="checkbox"
                             checked={settings.script_imports.allow_source_secret_migration}
                             disabled={formDisabled}
@@ -4331,36 +4403,29 @@ export default function SettingsPage({
                           <span className="setting-desc">Narrow the recent audit feed and CSV export by action, actor type, or status.</span>
                         </div>
                         <div className="settings-inline-actions">
-                          <input className="settings-input cell-mono" value={auditActionFilter} onChange={(e) => setAuditActionFilter(e.target.value)} placeholder="action" />
-                          <input className="settings-input cell-mono" value={auditActorTypeFilter} onChange={(e) => setAuditActorTypeFilter(e.target.value)} placeholder="actor_type" />
-                          <input className="settings-input cell-mono" value={auditStatusFilter} onChange={(e) => setAuditStatusFilter(e.target.value)} placeholder="status" />
+                          <input aria-label="Audit action" className="settings-input cell-mono" value={auditActionFilter} onChange={(e) => { setAuditActionFilter(e.target.value); setAuditOffset(0) }} placeholder="action" />
+                          <input aria-label="Audit actor type" className="settings-input cell-mono" value={auditActorTypeFilter} onChange={(e) => { setAuditActorTypeFilter(e.target.value); setAuditOffset(0) }} placeholder="actor_type" />
+                          <input aria-label="Audit status" className="settings-input cell-mono" value={auditStatusFilter} onChange={(e) => { setAuditStatusFilter(e.target.value); setAuditOffset(0) }} placeholder="status" />
                           <button className="btn btn-secondary" type="button" onClick={exportAuditEvents} disabled={!canViewAudit}>
                             Export CSV
                           </button>
                         </div>
                       </div>
+                      <div className="settings-inline-actions">
+                        <label>Project scope<select className="settings-input" value={auditProjectFilter} onChange={e => { setAuditProjectFilter(e.target.value); setAuditOffset(0) }}><option value="">All authorized projects</option>{projects.map(project => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label>
+                        <label>From (local time)<input type="datetime-local" value={auditAfter} onChange={e => { setAuditAfter(e.target.value); setAuditOffset(0) }} /></label>
+                        <label>Until (local time)<input type="datetime-local" value={auditBefore} onChange={e => { setAuditBefore(e.target.value); setAuditOffset(0) }} /></label>
+                      </div>
+                      {auditLoading && <p role="status">Loading audit history…</p>}
+                      {auditLoadError && <p role="alert">{auditLoadError}</p>}
+                      <p>Showing {auditEvents.length} events, starting at {auditOffset + 1}. Exports include up to 1,000 matching events.</p>
+                      <div className="settings-inline-actions"><button className="btn btn-secondary" disabled={auditLoading || auditOffset === 0} onClick={() => setAuditOffset(Math.max(0, auditOffset - 20))}>Previous audit page</button><button className="btn btn-secondary" disabled={auditLoading || auditEvents.length < 20} onClick={() => setAuditOffset(auditOffset + 20)}>Next audit page</button></div>
                       {(auditActionMessage || auditActionError) && (
                         <div className={`settings-alert ${auditActionError ? 'error' : 'success'}`}>
                           {auditActionError || auditActionMessage}
                         </div>
                       )}
-                      {auditEvents.length > 0 ? auditEvents.map((event) => (
-                        <div className="setting-row" key={event.id}>
-                          <div className="setting-info">
-                            <span className="setting-label">{event.action}</span>
-                            <span className="setting-desc">{formatAuditActor(event)} · {event.actor_type} · {event.status}</span>
-                            <span className="setting-desc">Resource: {event.resource_type}{event.resource_id ? `/${event.resource_id}` : ''}{event.project_id ? ` | Project: ${event.project_id}` : ''}</span>
-                            <span className="setting-desc">Recorded: {formatAuditTimestamp(event.created_at)}</span>
-                          </div>
-                        </div>
-                      )) : (
-                        <div className="setting-row">
-                          <div className="setting-info">
-                            <span className="setting-label">No audit events yet</span>
-                            <span className="setting-desc">Audit history appears here after configuration, project, or execution lifecycle changes.</span>
-                          </div>
-                        </div>
-                      )}
+                      <AuditEventTable events={auditEvents} scopeLabel={event => projects.find(project => project.id === event.project_id)?.name || event.project_id || 'Deployment'} emptyMessage="No audit events yet" />
                     </div>
                   </div>
                 </section>
@@ -4387,7 +4452,7 @@ export default function SettingsPage({
                 <span className="setting-label">Max Error Rate (%)</span>
                 <span className="setting-desc">Optional: a breach auto-stops the run and raises a live alert plus configured notification webhooks</span>
               </div>
-              <input
+              <input {...fieldAccessibility('thresholds.max_error_rate_pct')} aria-label="Max Error Rate (%)"
                 className="settings-input settings-input-number"
                 type="number"
                 min={0}
@@ -4404,7 +4469,7 @@ export default function SettingsPage({
                 <span className="setting-label">Max Response Time (P99 ms)</span>
                 <span className="setting-desc">Optional: a breach raises a live alert and notification webhooks. Alert-only unless a stop sample count is set below.</span>
               </div>
-              <input
+              <input {...fieldAccessibility('thresholds.max_p99_latency_ms')} aria-label="Max Response Time (P99 ms)"
                 className="settings-input settings-input-number"
                 type="number"
                 min={1}
@@ -4420,7 +4485,7 @@ export default function SettingsPage({
                 <span className="setting-label">P99 Stop After Breached Samples</span>
                 <span className="setting-desc">Optional: auto-stop the run after this many consecutive metrics samples above Max Response Time (P99). Samples arrive once per metrics interval on local runs and about once per second on distributed runs. Blank keeps P99 alert-only.</span>
               </div>
-              <input
+              <input {...fieldAccessibility('thresholds.p99_latency_stop_consecutive_samples')} aria-label="P99 Stop After Breached Samples"
                 className="settings-input settings-input-number"
                 type="number"
                 min={0}
@@ -4436,7 +4501,7 @@ export default function SettingsPage({
                 <span className="setting-label">Max Avg Server Processing (ms)</span>
                 <span className="setting-desc">Optional: a breach raises a live alert for the worst transaction — it does not stop the run</span>
               </div>
-              <input
+              <input {...fieldAccessibility('thresholds.max_avg_server_processing_ms')} aria-label="Max Avg Server Processing (ms)"
                 className="settings-input settings-input-number"
                 type="number"
                 min={1}
@@ -4452,7 +4517,7 @@ export default function SettingsPage({
                 <span className="setting-label">Max Avg Transfer Time (ms)</span>
                 <span className="setting-desc">Optional: a breach raises a live alert for the worst transaction — it does not stop the run</span>
               </div>
-              <input
+              <input {...fieldAccessibility('thresholds.max_avg_transfer_ms')} aria-label="Max Avg Transfer Time (ms)"
                 className="settings-input settings-input-number"
                 type="number"
                 min={1}
@@ -4472,7 +4537,7 @@ export default function SettingsPage({
                 <span className="setting-label">Fleet Constrained Free Slots</span>
                 <span className="setting-desc">Optional: warn when a generator has this many or fewer free VUser slots</span>
               </div>
-              <input
+              <input {...fieldAccessibility('thresholds.fleet_constrained_available_slots')} aria-label="Fleet Constrained Free Slots"
                 className="settings-input settings-input-number"
                 type="number"
                 min={0}
@@ -4488,7 +4553,7 @@ export default function SettingsPage({
                 <span className="setting-label">Fleet Saturated Free Slots</span>
                 <span className="setting-desc">Optional: mark danger when a generator has this many or fewer free VUser slots. Must be less than the constrained threshold.</span>
               </div>
-              <input
+              <input {...fieldAccessibility('thresholds.fleet_saturated_available_slots')} aria-label="Fleet Saturated Free Slots"
                 className="settings-input settings-input-number"
                 type="number"
                 min={0}
@@ -4564,7 +4629,7 @@ export default function SettingsPage({
               <div className="settings-status-header">
                 <span className="settings-status-title">Current Availability Snapshot</span>
                 <span className={`settings-status-badge ${availabilitySnapshot ? 'ready' : 'unknown'}`}>
-                  {availabilitySnapshot ? 'Live status' : 'Unavailable'}
+                  {availabilitySnapshot ? (availabilitySnapshot.source === 'configured' ? 'Configured inventory' : 'Capacity snapshot') : 'Unavailable'}
                 </span>
               </div>
               <div className="settings-status-grid">
@@ -4602,7 +4667,7 @@ export default function SettingsPage({
                 <span className="setting-label">Availability Source</span>
                 <span className="setting-desc">Choose whether capacity advice should stop at configured inventory or also honor the latest live generator snapshot</span>
               </div>
-              <select
+              <select aria-label="Availability Source"
                 className="settings-input"
                 value={settings.capacity_planning.availability.source}
                 onChange={(e) => updateAvailability('source', e.target.value)}
@@ -4616,7 +4681,7 @@ export default function SettingsPage({
                 <span className="setting-label">Configured Available Generators</span>
                 <span className="setting-desc">Configured inventory ceiling. When live snapshots are enabled, the effective available count is the lower of this value and the latest runtime snapshot.</span>
               </div>
-              <input
+              <input {...fieldAccessibility('capacity_planning.availability.configured_available_generators')} aria-label="Configured Available Generators"
                 className="settings-input settings-input-number"
                 type="number"
                 min={1}
@@ -4661,7 +4726,7 @@ export default function SettingsPage({
                 <span className="setting-label">Headroom (%)</span>
                 <span className="setting-desc">Reserve spare generator capacity when estimating pod requirements. 0 uses full generator capacity.</span>
               </div>
-              <input
+              <input {...fieldAccessibility('capacity_planning.headroom_pct')} aria-label="Headroom (%)"
                 className="settings-input settings-input-number"
                 type="number"
                 min={0}
@@ -4677,7 +4742,7 @@ export default function SettingsPage({
                 <span className="setting-label">Generator CPU (cores)</span>
                 <span className="setting-desc">Baseline CPU available per load generator pod or machine</span>
               </div>
-              <input
+              <input {...fieldAccessibility('capacity_planning.generator.cpu_cores')} aria-label="Generator CPU (cores)"
                 className="settings-input settings-input-number"
                 type="number"
                 min={0.1}
@@ -4692,7 +4757,7 @@ export default function SettingsPage({
                 <span className="setting-label">Generator Memory (MB)</span>
                 <span className="setting-desc">Baseline memory available per load generator pod or machine</span>
               </div>
-              <input
+              <input {...fieldAccessibility('capacity_planning.generator.memory_mb')} aria-label="Generator Memory (MB)"
                 className="settings-input settings-input-number"
                 type="number"
                 min={1}
@@ -4707,7 +4772,7 @@ export default function SettingsPage({
                 <span className="setting-label">Generator Network (Mbps)</span>
                 <span className="setting-desc">Estimated network throughput budget per load generator</span>
               </div>
-              <input
+              <input {...fieldAccessibility('capacity_planning.generator.network_mbps')} aria-label="Generator Network (Mbps)"
                 className="settings-input settings-input-number"
                 type="number"
                 min={1}
@@ -4722,7 +4787,7 @@ export default function SettingsPage({
                 <span className="setting-label">Generator Max VUsers</span>
                 <span className="setting-desc">Planning ceiling for VUsers one generator should carry before headroom. Used for sizing and admission math; the hard runtime cap is each generator's own APEXLOAD_GENERATOR_MAX_VUSERS.</span>
               </div>
-              <input
+              <input {...fieldAccessibility('capacity_planning.generator.max_vusers')} aria-label="Generator Max VUsers"
                 className="settings-input settings-input-number"
                 type="number"
                 min={1}
@@ -4748,10 +4813,10 @@ export default function SettingsPage({
             <div className="settings-subsection" data-testid="capacity-reservations">
               <div className="settings-manager-summary">
                 <div>
-                  <span className="setting-label">Reserved Capacity Pools</span>
-                  <span className="setting-desc">Reserve generators for a project so other tenants are bounded to the shared pool. Add a time window to make it a timeslot; leave blank for an always-active reservation. Scope a reservation to a fleet pool to draw from that pool's envelope instead of the global inventory.</span>
+                  <span className="setting-label">Standing allocations</span>
+                  <span className="setting-desc">Reserve generators for a project so other tenants are bounded to the shared pool. Optionally limit the allocation to a time window; scheduled bookings are managed separately in Monitoring → Schedules; leave blank for an always-active reservation. Scope a reservation to a fleet pool to draw from that pool's envelope instead of the global inventory.</span>
                 </div>
-                <strong>{(settings.capacity_planning.reservations ?? []).length}</strong>
+                <strong>{(settings.capacity_planning.reservations ?? []).length}{hasUnsavedChanges ? ' draft allocations' : ' saved allocations'}</strong>
               </div>
               <p className={`settings-status-copy ${reservationUsage.overbooked ? 'text-danger' : ''}`} data-testid="reservation-usage-summary">
                 {reservationUsage.reserved} of {reservationUsage.configured} generator{reservationUsage.configured === 1 ? '' : 's'} reserved by always-active global reservations — {reservationUsage.overbooked ? `over by ${reservationUsage.reserved - reservationUsage.configured}` : `${reservationUsage.free} free`}.
@@ -4759,13 +4824,11 @@ export default function SettingsPage({
               {(settings.capacity_planning.reservations ?? []).map((reservation, index) => (
                 <div key={`reservation-${index}`}>
                   <div className="capacity-reservation-row setting-row">
-                    <input
-                      className="settings-input"
-                      placeholder="Project ID"
-                      aria-label="Reservation project"
-                      value={reservation.project_id}
-                      onChange={event => updateReservation(index, { project_id: event.target.value })}
-                    />
+                    <select className="settings-input" aria-label="Reservation project" value={reservation.project_id} onChange={event => updateReservation(index, { project_id: event.target.value })}>
+                      <option value="">Select project</option>
+                      {projects.map(project => <option key={project.id} value={project.id}>{project.name}</option>)}
+                      {reservation.project_id && !projects.some(project => project.id === reservation.project_id) && <option value={reservation.project_id}>Unavailable project ({reservation.project_id})</option>}
+                    </select>
                     <input
                       className="settings-input"
                       inputMode="numeric"
@@ -4813,7 +4876,7 @@ export default function SettingsPage({
                 </div>
               ))}
               {renderFieldIssues('capacity_planning.reservations')}
-              <button className="btn btn-secondary" type="button" onClick={addReservation}>Add Reservation</button>
+              <button className="btn btn-secondary" type="button" onClick={addReservation}>Add standing allocation</button>
             </div>
             </fieldset>
               </div>
@@ -4842,7 +4905,7 @@ export default function SettingsPage({
                   <span className="setting-desc">When enabled, dry-run and apply operations evaluate archived runs against the saved retention policy.</span>
                 </div>
                 <label className="settings-checkbox-label">
-                  <input
+                  <input aria-label="Retention Enabled"
                     type="checkbox"
                     checked={settings.archive_retention.enabled}
                     onChange={event => updateArchiveRetention('enabled', event.target.checked)}
@@ -4855,7 +4918,7 @@ export default function SettingsPage({
                   <span className="setting-label">Default Retention Days</span>
                   <span className="setting-desc">Archives older than this policy window become prune candidates unless a scoped policy matches first.</span>
                 </div>
-                <input
+                <input {...fieldAccessibility('archive_retention.default_retention_days')} aria-label="Default Retention Days"
                   className="settings-input settings-input-number"
                   type="number"
                   min={1}
@@ -4870,7 +4933,7 @@ export default function SettingsPage({
                   <span className="setting-label">HAR Retention Days</span>
                   <span className="setting-desc">Browser HAR artifacts can contain request and response bodies, so they use this shorter retention window.</span>
                 </div>
-                <input
+                <input {...fieldAccessibility('archive_retention.har_retention_days')} aria-label="HAR Retention Days"
                   className="settings-input settings-input-number"
                   type="number"
                   min={1}
@@ -4885,7 +4948,7 @@ export default function SettingsPage({
                   <span className="setting-label">HAR Artifact Directory</span>
                   <span className="setting-desc">Optional runtime directory swept for retained browser HAR artifacts. Leave blank to use the controller default.</span>
                 </div>
-                <input
+                <input aria-label="HAR Artifact Directory"
                   className="settings-input"
                   type="text"
                   value={settings.archive_retention.har_artifact_dir ?? ''}
@@ -4949,6 +5012,7 @@ export default function SettingsPage({
           hidden={activeSection !== 'domains'}
           style={{ order: getSectionOrder('domains') }}
         >
+          <fieldset className="settings-fieldset" disabled={policySaving} aria-label="domains policy controls">
           <div className="settings-group">
             <div className="settings-subsection">
               <div className="settings-manager-summary">
@@ -5043,7 +5107,7 @@ export default function SettingsPage({
               </div>
               {selectedDomain ? (
                 <>
-                  <input
+                  <input aria-label="Selected Domain"
                     className="settings-input"
                     value={domainDraftName}
                     onChange={event => {
@@ -5073,7 +5137,7 @@ export default function SettingsPage({
                       className="btn btn-primary"
                       type="button"
                       onClick={saveDomain}
-                      disabled={!domainHasUnsavedChanges || Boolean(domainDraftValidationError) || !canManageDomains}
+                      disabled={!domainHasUnsavedChanges || policySaving || Boolean(domainDraftValidationError) || !canManageDomains}
                     >
                       Save Domain
                     </button>
@@ -5120,6 +5184,7 @@ export default function SettingsPage({
               )}
             </div>
           </div>
+          </fieldset>
         </div>
 
         <div
@@ -5160,7 +5225,7 @@ export default function SettingsPage({
               )}
               {applicationCreateProjects.length > 0 ? (
                 <div className="inline-create-row">
-                  <input
+                  <FormField label="Application name" htmlFor="SettingsPage-newApplicationName"><input aria-label="Application catalog name"
                     className="settings-input"
                     value={newApplicationName}
                     onChange={event => {
@@ -5173,8 +5238,8 @@ export default function SettingsPage({
                       if (!next.trim() && !applicationProjectPinExplicitRef.current) setNewApplicationProjectId('')
                       setNewApplicationName(next)
                     }}
-                    placeholder="Create application, e.g. ACC"
-                  />
+                    placeholder="Create application, e.g. ACC" id="SettingsPage-newApplicationName"
+                  /></FormField>
                   <select
                     className="settings-input"
                     aria-label="Project for the new application"
@@ -5210,8 +5275,7 @@ export default function SettingsPage({
                       className="btn btn-secondary btn-sm"
                       type="button"
                       onClick={() => {
-                        setActiveProjectSubsection('catalog')
-                        setActiveSection('projects')
+                        selectDestination('projects')
                       }}
                     >
                       Create a project
@@ -5229,7 +5293,7 @@ export default function SettingsPage({
               <div className="settings-inline-actions">
                 {renamingApplicationName !== null ? (
                   <>
-                    <input
+                    <input aria-label="Current Application"
                       type="text"
                       className="input"
                       value={renamingApplicationName}
@@ -5265,7 +5329,7 @@ export default function SettingsPage({
               <div className="settings-manager-summary">
                 <div>
                   <span className="setting-label">Releases</span>
-                  <span className="setting-desc">Release families belong to the project and are joined to every application. Create them from the sidebar or repository.</span>
+                  <span className="setting-desc">Release families belong to the project and are joined to every application. Use Create release in the workspace setup controls above.</span>
                 </div>
                 <strong>{visibleManagedReleases.length}</strong>
               </div>
@@ -5333,6 +5397,7 @@ export default function SettingsPage({
           hidden={activeSection !== 'projects'}
           style={{ order: getSectionOrder('projects') }}
         >
+          <fieldset className="settings-fieldset" disabled={policySaving} aria-label="projects policy controls">
           <div className="settings-subsection-layout">
             {renderSettingsSubnav(
               'Project settings categories',
@@ -5380,7 +5445,7 @@ export default function SettingsPage({
                 <p className="new-test-inline-note">No projects yet. Create one to define project-specific redaction defaults.</p>
               )}
               <div className="inline-create-row">
-                <input
+                <FormField label="Project name" htmlFor="SettingsPage-newProjectName"><input
                   className="settings-input"
                   value={newProjectName}
                   onChange={event => {
@@ -5389,8 +5454,8 @@ export default function SettingsPage({
                     if (!next.trim()) setNewProjectDomainId('')
                     setNewProjectName(next)
                   }}
-                  placeholder="Create project, e.g. Customer Portal"
-                />
+                  placeholder="Create project, e.g. Customer Portal" id="SettingsPage-newProjectName"
+                /></FormField>
                 <button className="btn btn-secondary" type="button" onClick={createProject} disabled={!newProjectName.trim() || !canManageProjects}>
                   Add Project
                 </button>
@@ -5414,7 +5479,7 @@ export default function SettingsPage({
                     <span className="setting-label">Selected Project</span>
                     <span className="setting-desc">Built-in token and PII scrubbing still runs globally. Add regex rules here only for project-specific payload shapes.</span>
                   </div>
-                  <input
+                  <input aria-label="Selected Project"
                     className="settings-input"
                     value={projectDraftName}
                     onChange={event => {
@@ -5440,7 +5505,7 @@ export default function SettingsPage({
                       <span className="setting-label">Project Max Concurrent Tests</span>
                       <span className="setting-desc">Leave blank or set to 0 for no project-level concurrency cap.</span>
                     </div>
-                    <input
+                    <input aria-label="Project Max Concurrent Tests"
                       className="settings-input"
                       inputMode="numeric"
                       value={projectDraftMaxConcurrentTests}
@@ -5458,7 +5523,7 @@ export default function SettingsPage({
                       <span className="setting-label">Project Max VUsers</span>
                       <span className="setting-desc">Leave blank or set to 0 for no project-level VUser cap.</span>
                     </div>
-                    <input
+                    <input aria-label="Project Max VUsers"
                       className="settings-input"
                       inputMode="numeric"
                       value={projectDraftMaxVUsers}
@@ -5476,7 +5541,7 @@ export default function SettingsPage({
                       <span className="setting-label">Project Max VUsers Per Test</span>
                       <span className="setting-desc">Reject any single test requesting more than this many VUsers. Blank or 0 = no per-test cap.</span>
                     </div>
-                    <input
+                    <input aria-label="Project Max VUsers Per Test"
                       className="settings-input"
                       inputMode="numeric"
                       value={projectDraftMaxVUsersPerTest}
@@ -5494,7 +5559,7 @@ export default function SettingsPage({
                       <span className="setting-label">Project Max Test Duration (minutes)</span>
                       <span className="setting-desc">Reject any single test longer than this many minutes. Blank or 0 = no duration cap.</span>
                     </div>
-                    <input
+                    <input aria-label="Project Max Test Duration (minutes)"
                       className="settings-input"
                       inputMode="numeric"
                       value={projectDraftMaxTestDurationMinutes}
@@ -5530,7 +5595,7 @@ export default function SettingsPage({
                   aria-labelledby="settings-projects-tab-github"
                   hidden={activeProjectSubsection !== 'github'}
                 >
-                  <div className="settings-group">
+                  <div className="settings-group"><div className="settings-subsection"><h3>Effective source-control defaults</h3><p>Connection: {settings.github.enabled ? 'Enabled' : 'Disabled'} · Repository: {projectDraftGitHubDefaultRepo || settings.github.default_repo || 'Not configured'} ({projectDraftGitHubDefaultRepo ? 'project override' : 'deployment default'}) · Branch: {projectDraftGitHubDefaultBranch || settings.github.default_branch || 'Not configured'} ({projectDraftGitHubDefaultBranch ? 'project override' : 'deployment default'})</p><button type="button" className="btn btn-secondary" onClick={() => selectDestination('github')}>Manage GitHub connection</button><p>Project allowlists and approval rules apply in addition to these defaults.</p></div>
                 <div className="settings-subsection">
                   <div className="settings-manager-summary" style={{ marginTop: 16 }}>
                     <div>
@@ -5762,6 +5827,7 @@ export default function SettingsPage({
                     <p className="new-test-inline-note">No custom rules yet. Built-in header, token, SSN, MRN, and high-entropy redaction still applies.</p>
                   )}
 
+                  <RedactionPreview key={selectedProject.id} rules={projectDraftRules} />
                   <div className="settings-inline-actions">
                     <button className="btn btn-secondary" type="button" onClick={addProjectRule} disabled={!canManageProjects}>
                       Add Rule
@@ -5796,7 +5862,7 @@ export default function SettingsPage({
                         className="btn btn-primary"
                         type="button"
                         onClick={saveProjectCompliance}
-                        disabled={!projectHasUnsavedChanges || Boolean(projectDraftValidationError) || !canManageProjects}
+                        disabled={!projectHasUnsavedChanges || policySaving || Boolean(projectDraftValidationError) || !canManageProjects}
                       >
                         Save Project Governance
                       </button>
@@ -5812,13 +5878,14 @@ export default function SettingsPage({
                     : 'Select a project to edit its compliance defaults.'}
                 </p>
                 {missingRequestedProjectId && projects.length > 0 && (
-                  <button className="btn btn-secondary" type="button" onClick={() => setActiveProjectSubsection('catalog')}>
+                  <button className="btn btn-secondary" type="button" onClick={() => selectDestination('projects')}>
                     Choose an available project
                   </button>
                 )}
               </div>
             )}
           </div>
+          </fieldset>
         </div>
 
         <div
@@ -5877,8 +5944,7 @@ export default function SettingsPage({
                       className="btn btn-secondary btn-sm"
                       type="button"
                       onClick={() => {
-                        setActiveProjectSubsection('catalog')
-                        setActiveSection('projects')
+                        selectDestination('projects')
                       }}
                     >
                       Create a project
@@ -6129,13 +6195,18 @@ export default function SettingsPage({
               hidden={activeIntegrationSubsection !== 'library'}
             >
               <div className="settings-group">
+            {activeSection === 'integrations' && activeIntegrationSubsection === 'library' && (
             <LibraryFederationPanel
+              projects={projects}
+              applications={applications}
+              releases={releases}
               projectId={activeProject?.id}
               applicationId={activeApplication?.id}
               applicationName={activeApplication?.name}
               releaseId={activeRelease?.id}
               releaseName={activeRelease?.name}
             />
+            )}
               </div>
             </section>
 
@@ -6180,7 +6251,7 @@ export default function SettingsPage({
                       <span className="setting-desc">Shows the Prometheus graph category when the server URL is configured.</span>
                     </div>
                     <label className="settings-checkbox-label">
-                      <input
+                      <input aria-label="Enable Prometheus Graphs"
                         type="checkbox"
                         checked={settings.prometheus.enabled}
                         onChange={event => updatePrometheus({ enabled: event.target.checked })}
@@ -6193,7 +6264,7 @@ export default function SettingsPage({
                       <span className="setting-label">Server URL</span>
                       <span className="setting-desc">Backend-only Prometheus HTTP API base URL.</span>
                     </div>
-                    <input
+                    <input aria-label="Prometheus server URL"
                       className="settings-input cell-mono"
                       value={settings.prometheus.base_url}
                       onChange={event => updatePrometheus({ base_url: event.target.value })}
@@ -6205,7 +6276,7 @@ export default function SettingsPage({
                       <span className="setting-label">Timeout (seconds)</span>
                       <span className="setting-desc">Maximum backend wait for each Prometheus query.</span>
                     </div>
-                    <input
+                    <input aria-label="Prometheus timeout (seconds)"
                       className="settings-input settings-input-number"
                       type="number"
                       min={1}
@@ -6220,7 +6291,7 @@ export default function SettingsPage({
                       <span className="setting-label">Bearer token environment variable</span>
                       <span className="setting-desc">Name of the controller environment variable containing the Prometheus bearer token. The token itself is never stored.</span>
                     </div>
-                    <input
+                    <input aria-label="Prometheus bearer token environment variable"
                       className="settings-input cell-mono"
                       value={settings.prometheus.bearer_token_env_var || ''}
                       onChange={event => updatePrometheus({ bearer_token_env_var: event.target.value })}
@@ -6233,32 +6304,39 @@ export default function SettingsPage({
                       <span className="setting-desc">Opt in to bounded, run-scoped datasource queries that populate variable pick-lists during import.</span>
                     </div>
                     <label className="settings-checkbox-label">
-                      <input type="checkbox" checked={settings.prometheus.allow_label_values} onChange={event => updatePrometheus({ allow_label_values: event.target.checked })} />
+                      <input aria-label="Resolve label_values() options" type="checkbox" checked={settings.prometheus.allow_label_values} onChange={event => updatePrometheus({ allow_label_values: event.target.checked })} />
                       <span>Allowed</span>
                     </label>
                   </div>
+                </div>
+              </div>
+            <ConnectionDiagnostics provider="prometheus" revision={savedSettings.revision} saved={!hasAnyUnsavedChanges && canManageSystem} />
+            </section>
+
+            <section id="settings-integrations-panel-opensearch" className="settings-subpanel" role="tabpanel" aria-labelledby="settings-integrations-tab-opensearch" hidden={activeIntegrationSubsection !== 'opensearch'}><div className="settings-group"><div className="settings-subsection">
                   <div className="settings-manager-summary">
                     <div><span className="setting-label">OpenSearch traffic profiles</span><span className="setting-desc">Run guided, bounded date-histogram queries for production workload profiles.</span></div>
                     <strong>{settings.opensearch?.enabled ? 'Enabled' : 'Disabled'}</strong>
                   </div>
-                  <div className="setting-row"><div className="setting-info"><span className="setting-label">Enable OpenSearch</span></div><label className="settings-checkbox-label"><input type="checkbox" checked={Boolean(settings.opensearch?.enabled)} onChange={event => updateOpenSearch({ enabled: event.target.checked })} /><span>Enabled</span></label></div>
+                  <div className="setting-row"><div className="setting-info"><span className="setting-label">Enable OpenSearch</span></div><label className="settings-checkbox-label"><input aria-label="Enable OpenSearch" type="checkbox" checked={Boolean(settings.opensearch?.enabled)} onChange={event => updateOpenSearch({ enabled: event.target.checked })} /><span>Enabled</span></label></div>
                   <div className="setting-row"><div className="setting-info"><span className="setting-label">OpenSearch server URL</span><span className="setting-desc">HTTPS is required for authenticated production connections.</span></div><input className="settings-input cell-mono" aria-label="OpenSearch server URL" value={settings.opensearch?.base_url || ''} onChange={event => updateOpenSearch({ base_url: event.target.value })} placeholder="https://opensearch.example.com" /></div>
                   <div className="setting-row"><div className="setting-info"><span className="setting-label">Username</span></div><input className="settings-input" aria-label="OpenSearch username" value={settings.opensearch?.username || ''} onChange={event => updateOpenSearch({ username: event.target.value })} /></div>
                   <div className="setting-row"><div className="setting-info"><span className="setting-label">Password environment variable</span><span className="setting-desc">Store only the environment-variable name, never the password.</span></div><input className="settings-input cell-mono" aria-label="OpenSearch password environment variable" value={settings.opensearch?.password_env_var || ''} onChange={event => updateOpenSearch({ password_env_var: event.target.value })} placeholder="APEXLOAD_OPENSEARCH_PASSWORD" /></div>
                   <div className="setting-row"><div className="setting-info"><span className="setting-label">Bearer token environment variable</span><span className="setting-desc">Mutually exclusive with username/password authentication.</span></div><input className="settings-input cell-mono" aria-label="OpenSearch bearer token environment variable" value={settings.opensearch?.bearer_token_env_var || ''} onChange={event => updateOpenSearch({ bearer_token_env_var: event.target.value })} placeholder="APEXLOAD_OPENSEARCH_TOKEN" /></div>
                   <div className="setting-row"><div className="setting-info"><span className="setting-label">OpenSearch timeout (seconds)</span></div><input className="settings-input settings-input-number" aria-label="OpenSearch timeout seconds" type="number" min={1} max={60} value={settings.opensearch?.timeout_seconds || 10} onChange={event => updateOpenSearch({ timeout_seconds: Number(event.target.value) })} /></div>
+</div></div><ConnectionDiagnostics provider="opensearch" revision={savedSettings.revision} saved={!hasAnyUnsavedChanges && canManageSystem} />
+            </section>
+            <section id="settings-integrations-panel-grafana" className="settings-subpanel" role="tabpanel" aria-labelledby="settings-integrations-tab-grafana" hidden={activeIntegrationSubsection !== 'grafana'}><div className="settings-group"><div className="settings-subsection">
                   <div className="settings-manager-summary">
                     <div><span className="setting-label">Grafana datasource proxy</span><span className="setting-desc">Route imported panels through Grafana using their datasource UIDs.</span></div>
                     <strong>{settings.grafana?.enabled ? 'Enabled' : 'Disabled'}</strong>
                   </div>
-                  <div className="setting-row"><div className="setting-info"><span className="setting-label">Enable Grafana proxy</span></div><label className="settings-checkbox-label"><input type="checkbox" checked={Boolean(settings.grafana?.enabled)} onChange={event => updateGrafana({ enabled: event.target.checked })} /><span>Enabled</span></label></div>
+                  <div className="setting-row"><div className="setting-info"><span className="setting-label">Enable Grafana proxy</span></div><label className="settings-checkbox-label"><input aria-label="Enable Grafana proxy" type="checkbox" checked={Boolean(settings.grafana?.enabled)} onChange={event => updateGrafana({ enabled: event.target.checked })} /><span>Enabled</span></label></div>
                   <div className="setting-row"><div className="setting-info"><span className="setting-label">Grafana server URL</span></div><input className="settings-input cell-mono" aria-label="Grafana server URL" value={settings.grafana?.base_url || ''} onChange={event => updateGrafana({ base_url: event.target.value })} placeholder="https://grafana.example.com" /></div>
                   <div className="setting-row"><div className="setting-info"><span className="setting-label">Service-account token environment variable</span></div><input className="settings-input cell-mono" aria-label="Grafana service-account token environment variable" value={settings.grafana?.service_account_token_env_var || ''} onChange={event => updateGrafana({ service_account_token_env_var: event.target.value })} placeholder="APEXLOAD_GRAFANA_TOKEN" /></div>
                   <div className="setting-row"><div className="setting-info"><span className="setting-label">Grafana timeout (seconds)</span></div><input className="settings-input settings-input-number" aria-label="Grafana timeout seconds" type="number" min={1} max={60} step={1} value={settings.grafana?.timeout_seconds || 10} onChange={event => updateGrafana({ timeout_seconds: Number(event.target.value) })} /></div>
-                </div>
-              </div>
+</div></div><ConnectionDiagnostics provider="grafana" revision={savedSettings.revision} saved={!hasAnyUnsavedChanges && canManageSystem} />
             </section>
-
             <section
               id="settings-integrations-panel-dashboards"
               className="settings-subpanel"
@@ -6267,8 +6345,9 @@ export default function SettingsPage({
               hidden={activeIntegrationSubsection !== 'dashboards'}
             >
               <div className="settings-group">
-                <CloudTestParityDashboard />
+                <p>Connect a datasource before importing a dashboard.</p><div className="settings-inline-actions"><button type="button" className="btn btn-secondary" onClick={() => selectDestination('grafana')}>Configure Grafana</button><button type="button" className="btn btn-secondary" onClick={() => selectDestination('prometheus')}>Configure Prometheus</button></div>
                 <ImportedDashboardsPanel
+                  resourceId={resourceId}
                   projects={projects}
                   defaultProjectId={selectedProjectId}
                   prometheusConfigured={(settings.grafana?.enabled && Boolean(settings.grafana.base_url.trim()) && Boolean(settings.grafana.service_account_token_env_var.trim())) || (settings.prometheus.enabled && settings.prometheus.base_url.trim() !== '')}
@@ -6315,11 +6394,11 @@ export default function SettingsPage({
               {settings.notifications.webhooks.length > 0 ? (
                 <div className="settings-notification-webhook-list">
                   {settings.notifications.webhooks.map((webhook, index) => (
-                    <div className="settings-notification-webhook-card" key={`${webhook.url}-${index}`}>
+                    <div className="settings-notification-webhook-card" key={index}>
                       <div className="project-redaction-rule-header">
                         <div>
                           <strong>{webhook.name?.trim() || `Webhook ${index + 1}`}</strong>
-                          <p className="setting-desc">Configure which events this webhook receives. Empty means it receives all events.</p>
+                          <p className="setting-desc">Choose all events or an explicit selection. To pause delivery, disable the route.</p>
                         </div>
                         <button className="btn btn-sm btn-ghost" type="button" onClick={() => removeNotificationWebhook(index)}>
                           Remove
@@ -6408,14 +6487,18 @@ export default function SettingsPage({
                         </div>
                       )}
 
+                      <NotificationDiagnostics format={webhook.format} index={index} revision={savedSettings.revision} saved={!hasAnyUnsavedChanges && webhook.enabled} eventType={webhook.events?.[0]} />
                       <div className="project-redaction-rule-field">
+                        <label>Event selection<select className="settings-select" value={webhook.events?.length ? 'selected' : 'all'} onChange={event => updateNotificationWebhook(index, { events: event.target.value === 'all' ? [] : ['test_failed'] })}><option value="all">All events</option><option value="selected">Selected events</option></select></label>
+                        <p>{webhook.events?.length ? `${webhook.events.length} selected events. Keep at least one event selected, or choose All events.` : 'All current and future event types will be delivered.'}</p>
                         <span>Webhook Event Filters</span>
                         <div className="settings-notification-webhook-events">
                           {NOTIFICATION_EVENT_OPTIONS.map(option => (
                             <label key={`${webhook.url}-${index}-${option.value}`} className="settings-notification-webhook-event">
                               <input
                                 type="checkbox"
-                                checked={ (webhook.events || []).includes(option.value) }
+                                checked={!webhook.events?.length || webhook.events.includes(option.value)}
+                                disabled={!webhook.events?.length || (webhook.events.length === 1 && webhook.events.includes(option.value))}
                                 onChange={event => updateNotificationWebhookEvents(index, option.value, Boolean(event.target.checked))}
                                 data-testid={`notification-webhook-${index}-event-${option.value}`}
                               />
@@ -6431,7 +6514,7 @@ export default function SettingsPage({
                           <span className="setting-desc">Disable the target without removing the stored destination.</span>
                         </div>
                         <label className="settings-toggle">
-                          <input
+                          <input aria-label={`Enable notification route ${index + 1}`}
                             type="checkbox"
                             checked={webhook.enabled}
                             onChange={event => updateNotificationWebhook(index, { enabled: event.target.checked })}
@@ -6459,7 +6542,7 @@ export default function SettingsPage({
         </div>
           </div>
 
-          <div className="settings-section-footer">
+          <div className="settings-section-footer" hidden={currentDestination.id !== 'platform'}>
             <button className="btn btn-danger-outline btn-sm" type="button" onClick={() => setConfirmingResetAll(true)} disabled={!canManageSystem || settingsMutationBusy}>
               Reset All Settings to Defaults
             </button>

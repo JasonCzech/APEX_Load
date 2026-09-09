@@ -1,3 +1,4 @@
+import DialogLayer from './ux/DialogLayer'
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 
 import { useClustersApi } from '../hooks/api/useClustersApi'
@@ -23,6 +24,7 @@ import {
 import './parityPanels.css'
 
 interface Props {
+  resourceId?: string
   canManage?: boolean
 }
 
@@ -53,7 +55,7 @@ function healthPill(status: string | undefined): string {
  * no secret field at all, so an edit form always starts with a blank credential
  * input and an omitted key means "keep the stored one".
  */
-export default function ClustersCard({ canManage = false }: Props) {
+export default function ClustersCard({ canManage = false, resourceId = '' }: Props) {
   const api = useClustersApi()
   const [clusters, setClusters] = useState<ClusterConnection[]>([])
   const [loading, setLoading] = useState(true)
@@ -250,7 +252,8 @@ export default function ClustersCard({ canManage = false }: Props) {
         </div>
       ) : (
         <div className="pp-list">
-          {clusters.map(connection => (
+          {resourceId && <p role="status">Selected resource: {resourceId}. {!clusters.some(item => item.id === resourceId) && 'This resource was not found or is no longer accessible.'} <a href={window.location.hash.replace(/([?&])resourceId=[^&]*&?/, '$1').replace(/[?&]$/, '')}>Show all resources</a></p>}
+          {clusters.filter(item => !resourceId || item.id === resourceId).map(connection => (
             <div className="pp-row" key={connection.id}>
               <div className="pp-row-main">
                 <div className="pp-row-title">
@@ -303,7 +306,7 @@ export default function ClustersCard({ canManage = false }: Props) {
       )}
 
       {draft && (
-        <div className="pp-modal-overlay">
+        <DialogLayer><div className="pp-modal-overlay">
           <div className="pp-modal" role="dialog" aria-modal="true" aria-labelledby={dialogTitleId} ref={dialogRef}>
             <div className="pp-modal-title" id={dialogTitleId}>
               {draftMode === 'create' ? 'Connect Cluster' : `Edit ${draft.name}`}
@@ -556,7 +559,7 @@ export default function ClustersCard({ canManage = false }: Props) {
               </button>
             </div>
           </div>
-        </div>
+        </div></DialogLayer>
       )}
 
       {deleteTarget && (

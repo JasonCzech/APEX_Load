@@ -1,3 +1,6 @@
+import TabList from './ux/TabList'
+import { handleTabKey } from './tabKeyboard'
+import DialogLayer from './ux/DialogLayer'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 
@@ -302,7 +305,7 @@ function BrunoNativeReviewDialog({
   useModalDialog({ dialogRef, initialFocusRef: closeButtonRef, onClose })
 
   return createPortal(
-    <div
+    <DialogLayer><div
       className="modal-overlay bruno-native-review-overlay"
       role="presentation"
       onClick={event => {
@@ -434,7 +437,7 @@ function BrunoNativeReviewDialog({
           <button type="button" className="btn btn-secondary" onClick={onClose}>Close</button>
         </footer>
       </section>
-    </div>,
+    </div></DialogLayer>,
     document.body,
   )
 }
@@ -473,7 +476,7 @@ function BrunoNativeSourceDialog({
   }, [candidate.candidate_id, candidate.source_path, importSessionId, loadSource, projectId])
 
   return createPortal(
-    <div className="modal-overlay bruno-native-review-overlay" role="presentation" onClick={event => {
+    <DialogLayer><div className="modal-overlay bruno-native-review-overlay" role="presentation" onClick={event => {
       if (event.target === event.currentTarget) onClose()
     }}>
       <section ref={dialogRef} className="modal-content bruno-native-review-dialog bruno-native-source-dialog" role="dialog" aria-modal="true" aria-labelledby="bruno-native-source-dialog-title" aria-describedby="bruno-native-source-dialog-source">
@@ -502,7 +505,7 @@ function BrunoNativeSourceDialog({
           <button type="button" className="btn btn-secondary" onClick={onClose}>Close</button>
         </footer>
       </section>
-    </div>,
+    </div></DialogLayer>,
     document.body,
   )
 }
@@ -1779,7 +1782,7 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
         <>
           {outputMode === 'native_requests' ? (
             <>
-              <div className="bruno-tabs" role="tablist" aria-label="Bruno native inspection panels">
+              <TabList className="bruno-tabs" role="tablist" aria-label="Bruno native inspection panels" onKeyDown={handleTabKey}>
                 {BRUNO_INSPECTION_TABS.map((tab, index) => (
                   <button
                     key={tab.id}
@@ -1818,7 +1821,7 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
                     {tab.label}
                   </button>
                 ))}
-              </div>
+              </TabList>
 
               <section
                   className="bruno-tab-panel"

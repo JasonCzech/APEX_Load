@@ -654,7 +654,7 @@ export function useTestApi() {
     [],
   )
 
-  const getTestArchiveReport = useCallback((id: string, options?: ApiCallOptions) => request<RunArchiveReport>(`/tests/${id}/archive/report`, withCallOptions(undefined, options)), [])
+  const getTestArchiveReport = useCallback((id: string, options?: ApiCallOptions & { includeReleaseTrend?: boolean }) => request<RunArchiveReport>(`/tests/${id}/archive/report${options?.includeReleaseTrend === false ? '?include_release_trend=false' : ''}`, withCallOptions(undefined, options)), [])
 
   const getTestArchiveReports = useCallback(
     (ids: string[], projectId: string, options?: ApiCallOptions) =>

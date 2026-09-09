@@ -1,3 +1,4 @@
+import DialogLayer from './ux/DialogLayer'
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 
@@ -177,7 +178,7 @@ export default function GroupParametersDialog({ testId, groupName, onClose, onSa
   // Portaled to <body>: the app layout carries a transform, which would trap
   // the fixed overlay in a lower stacking context than the sidebar.
   return createPortal(
-    <div className="editor-dialog-backdrop group-run-settings-overlay" role="presentation">
+    <DialogLayer><div className="editor-dialog-backdrop group-run-settings-overlay" role="presentation">
       <div
         ref={dialogRef}
         className="editor-dialog group-run-settings-dialog"
@@ -291,7 +292,7 @@ export default function GroupParametersDialog({ testId, groupName, onClose, onSa
           </div>
         </footer>
       </div>
-    </div>,
+    </div></DialogLayer>,
     document.body,
   )
 }

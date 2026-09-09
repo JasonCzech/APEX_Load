@@ -116,6 +116,8 @@ export default function TransactionSlaScoreboard({
     setSortDir(key === 'name' ? 'asc' : 'desc')
   }
 
+  if (rows.length === 0) return <section className="run-report-panel"><h2>Transaction SLA Scoreboard</h2><p>No named transaction samples are available for an SLA scorecard. Request / action evidence remains available below.</p></section>
+
   return (
     <section className="run-report-panel run-report-scoreboard">
       <div className="run-report-section-heading">
@@ -175,7 +177,7 @@ export default function TransactionSlaScoreboard({
         <h3>{selectedAction || 'Select a transaction'}</h3>
         {loadingTransactions ? (
           <p role="status">Loading drill-down...</p>
-        ) : drilldownTransactions.length > 0 ? (
+        ) : selectedAction && drilldownTransactions.length > 0 ? (
           <ul>
             {drilldownTransactions.slice(0, 5).map((event, index) => (
               <li key={`${event.timestamp}-${event.duration_ms}-${index}`}>

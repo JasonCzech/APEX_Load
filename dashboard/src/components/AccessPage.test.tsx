@@ -584,6 +584,18 @@ describe('AccessPage', () => {
     expect(container.textContent).toContain('recent access denial')
   })
 
+  it('keeps an untouched onboarding preset clean when workspace catalogs hydrate', async () => {
+    const renderAccess = (loaded: boolean) => <NavigationGuardProvider><AccessPage projects={loaded ? projects : []} domains={loaded ? domains : []} activeDomain={loaded ? domains[0] : undefined} activeProject={loaded ? projects[0] : undefined} canManageUserLifecycle canManageUserBindings canViewUserActivity canManageServiceAccounts /></NavigationGuardProvider>
+    await act(async () => root.render(renderAccess(false)))
+    await flushPromises()
+    await act(async () => root.render(renderAccess(true)))
+    await flushPromises()
+    await clickButton(container, 'Onboard Users')
+    await clickButton(container, 'Service Accounts', true)
+    expect(container.querySelector('[role="dialog"]')).toBeNull()
+    expect(container.querySelector('section[aria-label="Service accounts access workspace"]')).not.toBeNull()
+  })
+
   it('guards user onboarding and service-account creation drafts across workspace tabs', async () => {
     await act(async () => {
       root.render(
@@ -1023,7 +1035,7 @@ describe('AccessPage', () => {
     expect(rotateButton).toBeDefined()
     if (!rotateButton) return
 
-    act(() => {
+    await act(async () => {
       rotateButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
       rotateButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })

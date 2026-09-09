@@ -1,3 +1,7 @@
+import TabList from './ux/TabList'
+import DialogLayer from './ux/DialogLayer'
+import PanelToggle from "./ux/PanelToggle"
+import { handleTabKey } from './tabKeyboard'
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { useApi } from '../hooks/useApi'
@@ -404,7 +408,7 @@ function CenterTabbedPane({
 
   return (
     <section className={`center-tabbed-pane ${className}`} aria-label={ariaLabel}>
-      <div className="center-tab-strip" role="tablist" aria-label={`${ariaLabel} tabs`}>
+      <TabList className="center-tab-strip" role="tablist" aria-label={`${ariaLabel} tabs`} onKeyDown={handleTabKey}>
         {tabs.map((tab, index) => {
           const selected = tab.id === activeTab.id
           const tabButtonId = `center-tab-${tab.id}`
@@ -440,7 +444,7 @@ function CenterTabbedPane({
             </div>
           )
         })}
-      </div>
+      </TabList>
       <div className="center-tab-panels">
         {tabs.map(tab => {
           const selected = tab.id === activeTab.id
@@ -2918,7 +2922,27 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
         replayStartAttemptRef.current.terminalObserved = true
       }
       setActiveReplaySessionId(previous => responseSessionFinalized || previous === null ? null : responseSessionId)
-      if (responseSessionFinalized) {
+      if (responseSessionFinalized && res.session) {
+        // The start response can itself contain the final result of a fast run.
+        // Publish its completion before retiring the session: neither polling
+        // nor a later WebSocket event is guaranteed to run after this point.
+        const session = res.session
+        const completedAt = session.report?.completed_at || session.completed_at || ''
+        setReplayReport(prev => prev ? {
+          ...prev,
+          completed_at: completedAt,
+          success: session.report?.success ?? session.status === 'completed',
+          error: session.report?.error || session.error || prev.error,
+        } : prev)
+        setReplayActivity(prev => upsertReplayActivity(prev, {
+          id: 'complete',
+          kind: session.status === 'failed' ? 'error' : 'complete',
+          title: session.status === 'completed' ? 'Debugger completed successfully'
+            : session.status === 'stopped' ? 'Debugger stopped' : 'Debugger completed with failures',
+          detail: session.report?.error || session.error,
+          timestamp: completedAt,
+          success: session.status === 'completed' ? true : session.status === 'failed' ? false : undefined,
+        }))
         setReplaying(false)
       }
       setWarnings(replayWarnings)
@@ -5348,14 +5372,14 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
       case 'auto-parameterization': {
         const showParameterDetails = selectedOutlineParameterExists && selectedOutlineParameter && !parameterPaneShowAuto
         const parameterPaneToggle = selectedOutlineParameterExists ? (
-          <div className="parameter-pane-toggle" role="tablist" aria-label="Parameter view">
+          <TabList className="parameter-pane-toggle" role="tablist" aria-label="Parameter view" onKeyDown={handleTabKey}>
             <button
               type="button"
               role="tab"
               aria-selected={!parameterPaneShowAuto}
               className={!parameterPaneShowAuto ? 'active' : ''}
               onClick={() => setParameterPaneShowAuto(false)}
-              title={`Settings for ${selectedOutlineParameterName}`}
+              title={`Settings for ${selectedOutlineParameterName}`} tabIndex={(!parameterPaneShowAuto) ? 0 : -1}
             >
               Parameters
             </button>
@@ -5364,11 +5388,11 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
               role="tab"
               aria-selected={parameterPaneShowAuto}
               className={parameterPaneShowAuto ? 'active' : ''}
-              onClick={() => setParameterPaneShowAuto(true)}
+              onClick={() => setParameterPaneShowAuto(true)} tabIndex={(parameterPaneShowAuto) ? 0 : -1}
             >
               Auto Params
             </button>
-          </div>
+          </TabList>
         ) : null
         if (showParameterDetails) {
           return (
@@ -5587,7 +5611,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
         onOpenMappedDataSource={openImportedDataSourceReview}
       />
       {serverParameterization && (
-        <div className="editor-dialog-backdrop" {...dialogBackdropProps(closeServerParameterizationDialog)}>
+        <DialogLayer><div className="editor-dialog-backdrop" {...dialogBackdropProps(closeServerParameterizationDialog)}>
           <div
             ref={serverParameterizationDialogRef}
             className="editor-dialog server-parameterization-dialog"
@@ -5619,10 +5643,10 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
               />
             </div>
           </div>
-        </div>
+        </div></DialogLayer>
       )}
       {showSaveBlockModal && (
-        <div className="editor-dialog-backdrop" {...dialogBackdropProps(closeSaveBlockDialog)}>
+        <DialogLayer><div className="editor-dialog-backdrop" {...dialogBackdropProps(closeSaveBlockDialog)}>
           <div
             ref={saveBlockDialogRef}
             className="editor-dialog save-block-dialog"
@@ -5668,7 +5692,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
               </div>
             </div>
           </div>
-        </div>
+        </div></DialogLayer>
       )}
       {parameterizeChoice && (
         <ParameterizeDialog
@@ -5706,8 +5730,8 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
             </div>
           </div>
           <div className="script-ide-command-bar" aria-label="Script IDE command bar">
-            <div className="script-ide-tabs" role="tablist" aria-label="Script workspace">
-              <button type="button" role="tab" aria-selected={workspaceTab === 'author'} className={workspaceTab === 'author' ? 'active' : ''} onClick={() => activateWorkspaceTab('author')}>
+            <TabList className="script-ide-tabs" role="tablist" aria-label="Script workspace" onKeyDown={handleTabKey}>
+              <button type="button" role="tab" aria-selected={workspaceTab === 'author'} className={workspaceTab === 'author' ? 'active' : ''} onClick={() => activateWorkspaceTab('author')} tabIndex={(workspaceTab === 'author') ? 0 : -1}>
                 Author
               </button>
               <button
@@ -5716,11 +5740,11 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
                 aria-selected={workspaceTab === 'debug'}
                 className={workspaceTab === 'debug' ? 'active' : ''}
                 data-debug-status={debugWorkspaceStatusLabel || undefined}
-                onClick={() => activateWorkspaceTab('debug')}
+                onClick={() => activateWorkspaceTab('debug')} tabIndex={(workspaceTab === 'debug') ? 0 : -1}
               >
                 Debug
               </button>
-            </div>
+            </TabList>
             <div className="script-ide-quick-actions" role="group" aria-label="Quick actions">
               <button type="button" className="debugger-icon-btn" title={replayRunButtonTitle} onClick={() => void handleReplay()} disabled={replaying || saving || replayBlockedByMissingSecrets || !currentDraftScript.name || (currentDraftScript.actions || []).length === 0}>
                 <span className="debugger-icon" aria-hidden="true">&#9654;</span>
@@ -6069,18 +6093,9 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
                   onDoubleClick={fitAuthorRailToContent}
                 />
               )}
-              <div className={`actions-sidebar ${authorOutlineCollapsed ? 'collapsed' : ''}`} ref={authorRailRef}>
+              <div className={`actions-sidebar ${authorOutlineCollapsed ? 'collapsed' : ''}`} ref={authorRailRef} id="script-outline-panel">
                 {authorOutlineCollapsed ? (
-                  <button
-                    type="button"
-                    className="actions-sidebar-restore"
-                    title="Expand outline side panel"
-                    aria-label="Expand outline side panel"
-                    onClick={() => setAuthorOutlineCollapsed(false)}
-                  >
-                    <span aria-hidden="true">›</span>
-                    <strong>Outline</strong>
-                  </button>
+                  <PanelToggle className="actions-sidebar-restore" expanded={false} panelName="outline side panel" collapsedLabel="Outline" controls="script-outline-panel" onToggle={() => setAuthorOutlineCollapsed(false)} />
                 ) : (
                 <>
                 <div className="editor-outline-nav">
@@ -6100,15 +6115,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
                           <EditorRailActionIcon kind="close" />
                         </button>
                       )}
-                      <button
-                        type="button"
-                        className="debugger-pane-close"
-                        title="Collapse outline side panel"
-                        aria-label="Collapse outline side panel"
-                        onClick={() => setAuthorOutlineCollapsed(true)}
-                      >
-                        ‹
-                      </button>
+                      <PanelToggle className="" expanded={true} panelName="outline side panel" collapsedLabel="Outline" controls="script-outline-panel" onToggle={() => setAuthorOutlineCollapsed(true)} />
                     </div>
                   </div>
                 </div>
@@ -6517,18 +6524,9 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
                   />
                 )), centerTabPanelElements['imported-metadata'])}
 
-              <div className={`editor-utility-sidebar context-${authorRightSidebarContext.kind} ${authorRightSidebarContext.wide ? 'wide' : ''} ${authorRightSidebarCollapsed ? 'collapsed' : ''}`}>
+              <div id="script-details-panel" className={`editor-utility-sidebar context-${authorRightSidebarContext.kind} ${authorRightSidebarContext.wide ? 'wide' : ''} ${authorRightSidebarCollapsed ? 'collapsed' : ''}`}>
                 {authorRightSidebarCollapsed ? (
-                  <button
-                    type="button"
-                    className="utility-sidebar-restore"
-                    title="Expand right sidebar"
-                    aria-label="Expand right sidebar"
-                    onClick={() => setAuthorRightSidebarCollapsed(false)}
-                  >
-                    <span aria-hidden="true">‹</span>
-                    <strong>{authorRightSidebarContext.railLabel}</strong>
-                  </button>
+                  <PanelToggle className="utility-sidebar-restore" expanded={false} panelName="right sidebar" collapsedLabel={authorRightSidebarContext.railLabel} controls="script-details-panel" onToggle={() => setAuthorRightSidebarCollapsed(false)} />
                 ) : (
                 <>
                 <div className="side-pane-header">
@@ -6542,15 +6540,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
                   ) : (
                     <span>{authorRightSidebarContext.title}</span>
                   )}
-                  <button
-                    type="button"
-                    className="debugger-pane-close"
-                    title="Collapse right sidebar"
-                    aria-label="Collapse right sidebar"
-                    onClick={() => setAuthorRightSidebarCollapsed(true)}
-                  >
-                    ›
-                  </button>
+                  <PanelToggle className="" expanded={true} panelName="right sidebar" collapsedLabel={authorRightSidebarContext.railLabel} controls="script-details-panel" onToggle={() => setAuthorRightSidebarCollapsed(true)} />
                 </div>
                 {authorRightSidebarContext.kind !== 'signals' ? renderContextualRightSidebarContent() : (
                 <ScriptJsonInsightsView
@@ -6671,7 +6661,7 @@ interface ReplayScreenshotDialogProps {
 function ReplayScreenshotDialog({ alt, onClose, src }: ReplayScreenshotDialogProps) {
   const dialogRef = useEditorDialogRef(onClose)
   return (
-    <div className="editor-dialog-backdrop" {...dialogBackdropProps(onClose)}>
+    <DialogLayer><div className="editor-dialog-backdrop" {...dialogBackdropProps(onClose)}>
       <div
         ref={dialogRef}
         className="editor-dialog replay-screenshot-dialog"
@@ -6690,7 +6680,7 @@ function ReplayScreenshotDialog({ alt, onClose, src }: ReplayScreenshotDialogPro
           <img className="replay-screenshot-dialog-image" src={src} alt={alt} />
         </div>
       </div>
-    </div>
+    </div></DialogLayer>
   )
 }
 

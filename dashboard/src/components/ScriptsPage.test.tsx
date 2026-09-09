@@ -269,6 +269,18 @@ describe('ScriptsPage', () => {
   let container: HTMLDivElement
   let root: Root
 
+  it('distinguishes a failed catalog load from an empty library', async () => {
+    apiMock.listScripts.mockRejectedValueOnce(new Error('Catalog temporarily unavailable'))
+    await act(async () => root.render(<ScriptsPage />))
+    await flushPromises()
+    expect(container.textContent).toContain('Scripts unavailable. Use Refresh to retry.')
+    expect(container.textContent).not.toContain('No scripts yet.')
+    await act(async () => { Array.from(container.querySelectorAll('button')).find(button => button.textContent?.trim() === 'Refresh')?.click() })
+    await flushPromises()
+    expect(apiMock.listScripts).toHaveBeenCalledTimes(2)
+    expect(container.textContent).not.toContain('Scripts unavailable. Use Refresh to retry.')
+  })
+
   it('orders automatic and retry secret checks through one per-script token', async () => {
     const tokens = new Map<string, number>()
     const automatic = deferred<'stale automatic'>()
@@ -521,7 +533,7 @@ describe('ScriptsPage', () => {
     expect(stillPendingRow?.textContent).toContain('1 secret missing')
   })
 
-  it('preserves cached secret readiness when an unchanged library refresh replaces the scripts array', async () => {
+  it('rechecks secret readiness when a deleted ID reappears in the refreshed catalog', async () => {
     const secretScript = {
       ...scriptRecord('script-cache', 'Cached Secret Script', 'project-1'),
       script: {
@@ -532,7 +544,8 @@ describe('ScriptsPage', () => {
         actions: [{ name: 'Call', type: 'http', target: '/', headers: { Authorization: 'Bearer {{secret.CACHED_TOKEN}}' } }],
       },
     }
-    apiMock.listScripts.mockResolvedValue({ scripts: [secretScript], count: 1 })
+    const refreshed = deferred<{ scripts: typeof secretScript[]; count: number }>()
+    apiMock.listScripts.mockResolvedValueOnce({ scripts: [secretScript], count: 1 }).mockReturnValueOnce(refreshed.promise)
     apiMock.getProjectSecretStatuses.mockResolvedValueOnce({
       project_id: 'project-1',
       secrets: [{ name: 'CACHED_TOKEN', configured: true }],
@@ -551,8 +564,10 @@ describe('ScriptsPage', () => {
     })
     await flushPromises()
 
+    await act(async () => { refreshed.resolve({ scripts: [secretScript], count: 1 }) })
+    await flushPromises()
     expect(apiMock.listScripts).toHaveBeenCalledTimes(2)
-    expect(apiMock.getProjectSecretStatuses).toHaveBeenCalledTimes(1)
+    expect(apiMock.getProjectSecretStatuses).toHaveBeenCalledTimes(2)
     expect(container.textContent).not.toContain('Checking secrets')
     confirmSpy.mockRestore()
   })
@@ -1294,7 +1309,7 @@ describe('ScriptsPage', () => {
     await flushPromises()
 
     expect(container.querySelector('[role="alert"]')?.textContent).toContain('script list unavailable')
-    expect(container.textContent).toContain('No scripts yet.')
+    expect(container.textContent).toContain('Scripts unavailable. Use Refresh to retry.')
   })
 
   it('routes an empty library CTA into the start-new workflow', async () => {

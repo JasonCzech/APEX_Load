@@ -455,6 +455,10 @@ export function useLibraryFederation({ kind, projectId, applicationId, releaseId
     [selectedRemote],
   )
 
+  const refreshVisibleLibraries = useCallback(async () => {
+    await Promise.all([refreshCatalogs(), onRefreshLocal?.()])
+  }, [onRefreshLocal, refreshCatalogs])
+
   return {
     remotes,
     selectedRemoteId,
@@ -477,7 +481,7 @@ export function useLibraryFederation({ kind, projectId, applicationId, releaseId
     actionBlocked,
     actionBlockedReason,
     transferBlockReasonForItem,
-    refreshCatalogs,
+    refreshCatalogs: refreshVisibleLibraries,
     pullRemoteItem,
     pushLocalItem,
     compareItems,

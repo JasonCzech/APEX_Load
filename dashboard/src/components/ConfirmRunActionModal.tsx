@@ -1,3 +1,4 @@
+import DialogLayer from './ux/DialogLayer'
 import { useCallback, useId, useRef } from 'react'
 
 import { useModalDialog } from '../hooks/useModalDialog'
@@ -30,7 +31,7 @@ export default function ConfirmRunActionModal({ action, runName, runRef, onConfi
   useModalDialog({ dialogRef, initialFocusRef: cancelRef, onClose: requestCancel })
 
   return (
-    <div
+    <DialogLayer><div
       className="modal-overlay"
       role="presentation"
       onPointerDown={event => {
@@ -69,6 +70,6 @@ export default function ConfirmRunActionModal({ action, runName, runRef, onConfi
           </button>
         </div>
       </div>
-    </div>
+    </div></DialogLayer>
   )
 }

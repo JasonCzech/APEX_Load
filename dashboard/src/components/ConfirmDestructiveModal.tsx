@@ -1,3 +1,4 @@
+import DialogLayer from './ux/DialogLayer'
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { useModalDialog } from '../hooks/useModalDialog'
 import './ConfirmDestructiveModal.css'
@@ -64,7 +65,7 @@ export default function ConfirmDestructiveModal({
   const canSubmit = useMemo(() => reason.trim().length > 0 && confirmation.trim() === target && !loading, [confirmation, loading, reason, target])
 
   return (
-    <div
+    <DialogLayer><div
       className="modal-overlay"
       role="presentation"
       onPointerDown={event => {
@@ -148,6 +149,6 @@ export default function ConfirmDestructiveModal({
           </div>
         </form>
       </div>
-    </div>
+    </div></DialogLayer>
   )
 }

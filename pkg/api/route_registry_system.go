@@ -47,6 +47,12 @@ var systemObservabilityAPIRouteCatalog = apiRouteCatalog{
 var systemAdministrationAPIRouteCatalog = apiRouteCatalog{
 	Domain: "system-administration",
 	Routes: []apiRouteSpec{
+		newAuthenticatedAPIRoute(http.MethodGet, "/api/v1/system/library/remotes/{id}/workspaces", "handleLibraryRemoteWorkspaces", accessRequirement{GlobalRoles: []string{RoleSystemAdmin}, ServiceAccountScope: "settings:manage"}, func(s *Server) http.Handler { return http.HandlerFunc(s.handleLibraryRemoteWorkspaces) }),
+		newAuthenticatedAPIRoute(http.MethodPost, "/api/v1/system/settings/connections/test", "handleConnectionTest", accessRequirement{GlobalRoles: []string{RoleSystemAdmin}, ServiceAccountScope: "settings:manage", MaxBodyBytes: 4096}, func(s *Server) http.Handler { return http.HandlerFunc(s.handleConnectionTest) }),
+		newAuthenticatedAPIRoute(http.MethodPost, "/api/v1/system/redaction/preview", "handleRedactionPreview", accessRequirement{AuthenticatedOnly: true, ServiceAccountScope: "read", MaxBodyBytes: 65536}, func(s *Server) http.Handler { return http.HandlerFunc(s.handleRedactionPreview) }),
+		newAuthenticatedAPIRoute(http.MethodPost, "/api/v1/system/settings/notifications/preview", "handleNotificationPreview", accessRequirement{GlobalRoles: []string{RoleSystemAdmin}, ServiceAccountScope: "settings:manage", MaxBodyBytes: 4096}, func(s *Server) http.Handler { return http.HandlerFunc(s.handleNotificationPreview) }),
+		newAuthenticatedAPIRoute(http.MethodPost, "/api/v1/system/settings/notifications/test", "handleNotificationTest", accessRequirement{GlobalRoles: []string{RoleSystemAdmin}, ServiceAccountScope: "settings:manage", MaxBodyBytes: 4096}, func(s *Server) http.Handler { return http.HandlerFunc(s.handleNotificationTest) }),
+		newAuthenticatedAPIRoute(http.MethodGet, "/api/v1/system/settings/notifications/deliveries", "handleNotificationDeliveries", accessRequirement{GlobalRoles: []string{RoleSystemAdmin}, ServiceAccountScope: "settings:manage", MaxBodyBytes: 4096}, func(s *Server) http.Handler { return http.HandlerFunc(s.handleNotificationDeliveries) }),
 		newAuthenticatedAPIRoute(http.MethodGet, "/api/v1/system/deployment-lease", "handleGetDeploymentLease", systemAdminAccess(), func(s *Server) http.Handler {
 			return http.HandlerFunc(s.handleGetDeploymentLease)
 		}),

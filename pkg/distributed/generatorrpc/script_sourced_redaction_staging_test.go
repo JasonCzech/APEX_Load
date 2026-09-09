@@ -153,9 +153,9 @@ func TestStagedAssignmentKeepsScriptSourcedCredentialsOutOfPlatformMaterial(t *t
 			"protocol": "http",
 			"config": map[string]any{
 				"base_url": "https://example.test",
-				// The setting is left UNSET, which is the default and reads as
-				// redacting. The script-sourced half is therefore registered.
-				"log": map[string]any{"level": "standard"},
+				// Explicitly enable script-sourced redaction so this test can
+				// verify that its origin stays separate from platform material.
+				"log": map[string]any{"level": "standard", "redact_run_evidence": true},
 			},
 			"metadata": map[string]any{
 				"import": map[string]any{

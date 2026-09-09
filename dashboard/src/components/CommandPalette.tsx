@@ -1,3 +1,4 @@
+import DialogLayer from './ux/DialogLayer'
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { useModalDialog } from '../hooks/useModalDialog'
 import { formatShortcutDisplay, type RegisteredKeyboardShortcut } from '../hooks/KeyboardShortcutProvider'
@@ -58,7 +59,7 @@ export function CommandPalette({ shortcuts, onClose }: CommandPaletteProps) {
   }
 
   return (
-    <div className="command-palette-backdrop" {...dialogBackdropProps(onClose, 'Close command palette')}>
+    <DialogLayer><div className="command-palette-backdrop" {...dialogBackdropProps(onClose, 'Close command palette')}>
       <div
         ref={dialogRef}
         className="command-palette"
@@ -105,6 +106,6 @@ export function CommandPalette({ shortcuts, onClose }: CommandPaletteProps) {
           )}
         </ul>
       </div>
-    </div>
+    </div></DialogLayer>
   )
 }

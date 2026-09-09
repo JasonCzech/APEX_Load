@@ -1,3 +1,5 @@
+import TabList from './ux/TabList'
+import { handleTabKey } from './tabKeyboard'
 import type * as React from 'react'
 import { memo, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
@@ -874,13 +876,13 @@ export function ScriptReplayDebuggerView({
                     aria-valuenow={debuggerVarsWidth}
                   />
                   <div className="debugger-center-tabs">
-                    <div className="debugger-center-tablist" role="tablist">
-                      <button type="button" role="tab" aria-selected={debuggerTab === 'request'} className={debuggerTab === 'request' ? 'active' : ''} onClick={() => setDebuggerTab('request')}>Request / Response</button>
+                    <TabList className="debugger-center-tablist" role="tablist" onKeyDown={handleTabKey}>
+                      <button type="button" role="tab" aria-selected={debuggerTab === 'request'} className={debuggerTab === 'request' ? 'active' : ''} onClick={() => setDebuggerTab('request')} tabIndex={(debuggerTab === 'request') ? 0 : -1}>Request / Response</button>
                       {isBrowserScript && (
-                        <button type="button" role="tab" aria-selected={debuggerTab === 'browser'} className={debuggerTab === 'browser' ? 'active' : ''} onClick={() => setDebuggerTab('browser')}>Browser Evidence</button>
+                        <button type="button" role="tab" aria-selected={debuggerTab === 'browser'} className={debuggerTab === 'browser' ? 'active' : ''} onClick={() => setDebuggerTab('browser')} tabIndex={(debuggerTab === 'browser') ? 0 : -1}>Browser Evidence</button>
                       )}
-                      <button type="button" role="tab" aria-selected={debuggerTab === 'variables'} className={debuggerTab === 'variables' ? 'active' : ''} onClick={() => setDebuggerTab('variables')}>{replaying ? 'Live Variables' : 'Variables'}</button>
-                    </div>
+                      <button type="button" role="tab" aria-selected={debuggerTab === 'variables'} className={debuggerTab === 'variables' ? 'active' : ''} onClick={() => setDebuggerTab('variables')} tabIndex={(debuggerTab === 'variables') ? 0 : -1}>{replaying ? 'Live Variables' : 'Variables'}</button>
+                    </TabList>
                     <button
                       type="button"
                       className="debugger-pane-close"
@@ -1317,12 +1319,12 @@ export function ScriptReplayDebuggerView({
                   />
                   <div className="debugger-bottom-tabs">
                     <button type="button" aria-label={dockCollapsed ? "Expand logs and problems" : "Collapse logs and problems"} onClick={() => setDockCollapsed(value => !value)}>{dockCollapsed ? "Expand" : "Collapse"}</button>
-                    <div role="tablist" aria-label="Debug logs and problems" className="debugger-bottom-tab-list">
-                    <button type="button" role="tab" aria-selected={debuggerBottomTab === 'console'} className={debuggerBottomTab === 'console' ? 'active' : ''} onClick={() => { setDockCollapsed(false); setDebuggerBottomTab('console') }} title="Wire log — raw protocol request/response and engine output">Engine logs</button>
-                    <button type="button" role="tab" aria-selected={debuggerBottomTab === 'timeline'} className={debuggerBottomTab === 'timeline' ? 'active' : ''} onClick={() => { setDockCollapsed(false); setDebuggerBottomTab('timeline') }} title="Flow log — actions, transactions, and variable changes in order">Timeline</button>
-                    <button type="button" role="tab" aria-selected={debuggerBottomTab === 'problems'} className={debuggerBottomTab === 'problems' ? 'active' : ''} onClick={() => { setDockCollapsed(false); setDebuggerBottomTab('problems') }}>Problems{problemCount > 0 ? ` ${problemCount}` : ''}</button>
-                    <button type="button" role="tab" aria-selected={debuggerBottomTab === 'output'} className={debuggerBottomTab === 'output' ? 'active' : ''} onClick={() => { setDockCollapsed(false); setDebuggerBottomTab('output') }}>Output</button>
-                    </div>
+                    <TabList role="tablist" aria-label="Debug logs and problems" className="debugger-bottom-tab-list" onKeyDown={handleTabKey}>
+                    <button type="button" role="tab" aria-selected={debuggerBottomTab === 'console'} className={debuggerBottomTab === 'console' ? 'active' : ''} onClick={() => { setDockCollapsed(false); setDebuggerBottomTab('console') }} title="Wire log — raw protocol request/response and engine output" tabIndex={(debuggerBottomTab === 'console') ? 0 : -1}>Engine logs</button>
+                    <button type="button" role="tab" aria-selected={debuggerBottomTab === 'timeline'} className={debuggerBottomTab === 'timeline' ? 'active' : ''} onClick={() => { setDockCollapsed(false); setDebuggerBottomTab('timeline') }} title="Flow log — actions, transactions, and variable changes in order" tabIndex={(debuggerBottomTab === 'timeline') ? 0 : -1}>Timeline</button>
+                    <button type="button" role="tab" aria-selected={debuggerBottomTab === 'problems'} className={debuggerBottomTab === 'problems' ? 'active' : ''} onClick={() => { setDockCollapsed(false); setDebuggerBottomTab('problems') }} tabIndex={(debuggerBottomTab === 'problems') ? 0 : -1}>Problems{problemCount > 0 ? ` ${problemCount}` : ''}</button>
+                    <button type="button" role="tab" aria-selected={debuggerBottomTab === 'output'} className={debuggerBottomTab === 'output' ? 'active' : ''} onClick={() => { setDockCollapsed(false); setDebuggerBottomTab('output') }} tabIndex={(debuggerBottomTab === 'output') ? 0 : -1}>Output</button>
+                    </TabList>
                   </div>
                   {debuggerBottomTab === 'console' ? (
                     <div className="debug-raw-panel debugger-console">

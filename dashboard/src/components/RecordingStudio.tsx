@@ -1,3 +1,4 @@
+import { confirmAction } from './ux/confirmAction'
 import {
   useState,
   useEffect,
@@ -1542,10 +1543,9 @@ export default function RecordingStudio({
     event?.stopPropagation();
     if (
       typeof window !== "undefined" &&
-      window.confirm &&
-      !window.confirm(
+      !(await confirmAction(
         "Delete this stopped browser recording? This cannot be undone.",
-      )
+      ))
     ) {
       return;
     }
@@ -2314,10 +2314,9 @@ export default function RecordingStudio({
   const handleDelete = async (id: string) => {
     if (
       typeof window !== "undefined" &&
-      window.confirm &&
-      !window.confirm(
+      !(await confirmAction(
         "Delete this stopped recording session? This cannot be undone.",
-      )
+      ))
     ) {
       return;
     }

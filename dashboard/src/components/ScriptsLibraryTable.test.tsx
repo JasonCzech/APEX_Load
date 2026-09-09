@@ -82,6 +82,17 @@ describe('ScriptsLibraryTable federation', () => {
     vi.clearAllMocks()
   })
 
+  it('lets narrow layouts reveal secondary columns without changing selection or actions', async () => {
+    await act(async () => root.render(<ScriptsLibraryTable {...baseProps} />))
+    const toggle = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Show usage & dates')!
+    await act(async () => toggle.click())
+    expect(container.querySelector('table')?.classList.contains('show-detail-columns')).toBe(true)
+    expect(toggle.getAttribute('aria-expanded')).toBe('true')
+    expect(container.textContent).toContain(script.name)
+    await act(async () => toggle.click())
+    expect(container.querySelector('table')?.classList.contains('show-detail-columns')).toBe(false)
+  })
+
   function findButton(label: string) {
     return Array.from(container.querySelectorAll('button')).find(button => button.textContent?.trim() === label) as HTMLButtonElement | undefined
   }

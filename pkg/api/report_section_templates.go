@@ -193,7 +193,7 @@ var reportSectionTemplates = template.Must(template.New("run-archive-report-sect
 {{define "verdict"}}
 <h2>Computed acceptance assessment</h2>
 {{if .Report.MetricPopulations}}<table><thead><tr><th>Population</th><th>Count</th><th>Errors</th><th>p95 (ms)</th><th>Average / second (elapsed run)</th></tr></thead><tbody>
-{{range $kind, $metrics := .Report.MetricPopulations}}<tr><td>{{if eq $kind "action"}}Requests / actions{{else if eq $kind "transaction"}}Named transactions{{else}}Unclassified legacy records{{end}}</td><td>{{$metrics.Transactions}}</td><td>{{$metrics.Errors}}</td><td>{{printf "%.1f" $metrics.P95Ms}}</td><td>{{populationRate $metrics.AverageRate}}</td></tr>{{end}}
+{{range $kind, $metrics := .Report.MetricPopulations}}<tr><td>{{if eq $kind "action"}}Requests / actions{{else if eq $kind "transaction"}}Named transactions{{else}}Unclassified legacy records{{end}}</td><td>{{$metrics.Transactions}}</td><td>{{$metrics.Errors}}</td><td>{{if gt $metrics.Transactions 0}}{{printf "%.1f" $metrics.P95Ms}}{{else}}No samples{{end}}</td><td>{{populationRate $metrics.AverageRate}}</td></tr>{{end}}
 </tbody></table>{{end}}
 <p>Execution: {{executionLabel .Report.Manifest.TerminationReason}}. Planned duration: {{.Report.Manifest.Provenance.Duration}}. Elapsed: {{elapsedDuration .Report.Manifest}}. Planned load: {{.Report.Manifest.Provenance.TotalVUsers}} VUsers; observed peak: {{.Report.Overview.PeakActiveVUsers}}. Archive coverage applies to the captured period, not completion of the planned workload.</p>
 <div class="verdict">

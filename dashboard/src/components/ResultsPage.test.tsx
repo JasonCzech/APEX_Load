@@ -614,9 +614,9 @@ describe('ResultsPage', () => {
       await Promise.resolve()
     })
 
-    const transactionSelect = selectByLabel(container, 'Transaction')
+    const transactionSelect = selectByLabel(container, 'Request / action')
     expect(transactionSelect).toBeTruthy()
-    expect(Array.from(transactionSelect!.options).map(option => option.textContent)).toEqual(['All transactions', 'Checkout'])
+    expect(Array.from(transactionSelect!.options).map(option => option.textContent)).toEqual(['Named transaction population', 'Checkout'])
     const comparisonCard = container.querySelector('.results-compare-card') as HTMLElement
     expect(comparisonCard.textContent).toContain('Search')
     expect(comparisonCard.textContent).toContain('Browse')
@@ -877,9 +877,9 @@ describe('ResultsPage', () => {
     await flushPromises()
 
     expect(container.textContent).toContain('Run 3')
-    expect(Array.from(selectByLabel(container, 'Transaction')!.options).map(option => option.textContent)).toEqual(['All transactions', 'Checkout'])
+    expect(Array.from(selectByLabel(container, 'Request / action')!.options).map(option => option.textContent)).toEqual(['Named transaction population', 'Checkout'])
 
-    await changeSelect(selectByLabel(container, 'Transaction')!, 'Checkout')
+    await changeSelect(selectByLabel(container, 'Request / action')!, 'Checkout')
     await flushPromises()
     expect(apiMock.getTestArchiveSummaries).toHaveBeenCalledWith('run-c', expect.objectContaining({ action: 'Checkout' }))
 
@@ -1130,7 +1130,7 @@ describe('ResultsPage', () => {
     expect(container.textContent).not.toContain('Loading comparison...')
   })
 
-  it('opens selected results on the run dashboard and exposes the run archive action', async () => {
+  it('opens the completed-run workspace from both the row and its single results action', async () => {
     const onSelectTest = vi.fn()
     const onOpenTestArchive = vi.fn()
     const onOpenReport = vi.fn()
@@ -1153,48 +1153,16 @@ describe('ResultsPage', () => {
     const row = Array.from(container.querySelectorAll('tbody tr')).find(candidate => candidate.textContent?.includes('iPhone Checkout'))
     expect(row).toBeDefined()
     const rowButtons = Array.from(row?.querySelectorAll('button') ?? []) as HTMLButtonElement[]
-    const runDashboardButton = rowButtons.find(button => button.textContent?.trim() === 'Run Dashboard')
-    const runArchiveButton = rowButtons.find(button => button.textContent?.trim() === 'Run Archive')
-    const openReportButton = rowButtons.find(button => button.textContent?.trim() === 'Open Report')
-    const rowText = row?.textContent ?? ''
-    expect(runDashboardButton).toBeDefined()
-    expect(runArchiveButton).toBeDefined()
-    expect(openReportButton).toBeDefined()
-    expect(rowButtons.some(button => button.textContent?.trim() === 'Archive')).toBe(false)
-    expect(rowText).not.toContain('Download Archive')
-    expect(rowText).not.toContain('Download Report')
-    expect(rowText).not.toContain('Root Cause')
-    expect(rowText).not.toContain('Command Center')
-
-    await act(async () => {
-      row?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
-
-    expect(onSelectTest).toHaveBeenCalledWith('run-a')
-    expect(onOpenTestArchive).not.toHaveBeenCalled()
-    onSelectTest.mockClear()
-
-    await act(async () => {
-      runDashboardButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
-
-    expect(onSelectTest).toHaveBeenCalledWith('run-a')
-    expect(onOpenTestArchive).not.toHaveBeenCalled()
-    onSelectTest.mockClear()
-
-    await act(async () => {
-      runArchiveButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
-
-    expect(onOpenTestArchive).toHaveBeenCalledWith('run-a')
-    expect(onSelectTest).not.toHaveBeenCalled()
-
-    await act(async () => {
-      openReportButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
-
+    const viewResults = rowButtons.find(button => button.textContent?.trim() === 'View results')
+    expect(viewResults).toBeDefined()
+    expect(rowButtons.some(button => ['Run Dashboard', 'Run Archive', 'Open Report'].includes(button.textContent?.trim() || ''))).toBe(false)
+    await act(async () => row?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    expect(onOpenReport).toHaveBeenCalledWith('run-a')
+    onOpenReport.mockClear()
+    await act(async () => viewResults?.click())
     expect(onOpenReport).toHaveBeenCalledWith('run-a')
     expect(onSelectTest).not.toHaveBeenCalled()
+    expect(onOpenTestArchive).not.toHaveBeenCalled()
   })
 
   it('opens results directly on filters, library sources, and row actions', async () => {
@@ -1258,8 +1226,9 @@ describe('ResultsPage', () => {
     expect(container.textContent).not.toContain('local only')
     expect(container.textContent).not.toContain('Visible Sources')
     expect(container.querySelector('.results-selection-bar')).toBeNull()
-    expect(container.querySelector('.results-table-selection-toolbar')?.textContent).toContain('0 selected')
-    expect(buttonByText(container, 'Run Comparison')?.disabled).toBe(true)
+    expect(container.querySelector('.results-table-selection-toolbar')).toBeNull()
+    expect(buttonByText(container, 'Run Comparison')).toBeUndefined()
+    expect(container.textContent).toContain('Select 2-10 archived local results to compare')
     expect(container.textContent).toContain('Push')
     expect(container.querySelector('.library-source-table thead th:last-child')?.classList.contains('results-actions-column')).toBe(true)
     expect(sourceRowNamed(container, 'iPhone Checkout').querySelector('td:last-child .results-row-actions')).toBeTruthy()
@@ -1435,8 +1404,8 @@ describe('ResultsPage', () => {
     await changeInput(inputByPlaceholder(container, 'Find releases or results...'), 'iPad Checkout')
     await flushPromises()
 
-    expect(buttonByText(container, 'Delete Selected (0)')?.disabled).toBe(true)
-    expect(container.querySelector('.results-table-selection-toolbar')?.textContent).toContain('0 selected')
+    expect(buttonByText(container, 'Delete Selected (0)')).toBeUndefined()
+    expect(container.querySelector('.results-table-selection-toolbar')).toBeNull()
     expect(apiMock.deleteTest).not.toHaveBeenCalled()
   })
 

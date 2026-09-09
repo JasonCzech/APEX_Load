@@ -1,3 +1,9 @@
+import TabList from './ux/TabList'
+import PanelToggle from './ux/PanelToggle'
+import DialogLayer from './ux/DialogLayer'
+import { AuditEventTable } from './AuditEventTable'
+import { handleTabKey } from './tabKeyboard'
+import { settingsHref } from './settingsNavigation'
 import { useState, useEffect, useLayoutEffect, useCallback, useMemo, useRef, type ReactNode } from 'react'
 import { formatDatetimeLocalValue } from './newTestScheduleFormat'
 import { type WebSocketConnectionState } from '../hooks/useWebSocket'
@@ -12,14 +18,8 @@ import { formatTelemetryDiagnosticTime, telemetryDiagnosticSeverityClass } from 
 import { formatThresholdAlertSummary, type ThresholdAlertEntry } from '../thresholdAlerts'
 import ConfirmDestructiveModal, { type DestructiveConfirmation } from './ConfirmDestructiveModal'
 import MonitoringCollectorsCard from './MonitoringCollectorsCard'
-import ClustersCard from './ClustersCard'
-import ComputeInfrastructureCard from './ComputeInfrastructureCard'
-import FleetPoolsCard from './FleetPoolsCard'
-import PoolAllocationCard from './PoolAllocationCard'
-import FleetGeneratorsCard from './FleetGeneratorsCard'
 import TimeslotsPanel from './TimeslotsPanel'
 import { dialogBackdropProps } from './dialogBackdropProps'
-import { interactiveElementProps } from './interactiveElementProps'
 import { frontendBuildMetadata, type FrontendBuildComponentInfo } from '../buildMetadata'
 import './CreateTestModal.css'
 import './StatusBadge.css'
@@ -46,8 +46,9 @@ const MONITOR_CATEGORIES = [
   { id: 'overview', label: 'Overview', cardIds: ['system-health', 'threshold-alerts', 'production-readiness'] },
   // Cloud connections and execution targets are the normalized path; the
   // cluster registry remains available unchanged for Kubernetes deployments.
-  { id: 'fleet', label: 'Fleet', cardIds: ['capacity', 'generators', 'fleet-alerts', 'fleet-audit', 'compute-infrastructure', 'fleet-clusters', 'fleet-pools', 'fleet-allocation', 'generator-metadata'] },
+  { id: 'fleet', label: 'Fleet', cardIds: ['capacity', 'generators', 'fleet-alerts', 'fleet-audit'] },
   { id: 'telemetry', label: 'Telemetry', cardIds: ['telemetry-diagnostics', 'apm-integrations', 'monitor-packs', 'collectors'] },
+  { id: 'alerts', label: 'Alerts', cardIds: ['threshold-alerts', 'fleet-alerts', 'telemetry-diagnostics'] },
   { id: 'schedules', label: 'Schedules', cardIds: ['run-calendar'] },
 ] as const
 
@@ -68,11 +69,6 @@ function isFleetAuditEvent(event: DashboardAuditEvent): boolean {
   return FLEET_AUDIT_ACTION_PREFIXES.some(prefix => action.startsWith(prefix)) || FLEET_AUDIT_RESOURCE_TYPES.has(resourceType)
 }
 
-function formatAuditEventTime(value?: string): string {
-  if (!value) return 'unknown'
-  const parsed = new Date(value)
-  return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString()
-}
 
 type RestartAction = {
   targetType: SystemRestartRequest['target_type']
@@ -533,12 +529,12 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
   const telemetryWarningCount = telemetryDiagnostics.filter(entry => entry.diagnostic.severity === 'warning').length
   const telemetryDangerCount = telemetryDiagnostics.filter(entry => entry.diagnostic.severity === 'danger').length
   const telemetryLatestEntry = telemetryDiagnostics[0] ?? null
-  const telemetryHeaderSeverity = telemetryDangerCount > 0 ? 'danger' : telemetryWarningCount > 0 ? 'warning' : 'healthy'
+  const telemetryHeaderSeverity = telemetryDangerCount > 0 ? 'danger' : telemetryWarningCount > 0 ? 'warning' : telemetryDiagnostics.length ? 'healthy' : 'unknown'
   const telemetryHeaderLabel = telemetryDangerCount > 0
     ? `${telemetryDangerCount} danger`
     : telemetryWarningCount > 0
       ? `${telemetryWarningCount} warning`
-      : 'healthy'
+      : telemetryDiagnostics.length ? 'No degradation reported' : 'No diagnostic samples'
   const generators = inventory?.generators ?? EMPTY_GENERATORS
   const canRestart = canManageSystem && Boolean(restartCapabilities?.enabled)
   const restartDisabledReason = canManageSystem
@@ -650,9 +646,9 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
       .slice(0, 4)
   ), [systemReadiness])
   const apmProfileCount = apmProfiles?.profiles.length ?? 0
-  const apmConfiguredCount = apmProfiles?.profiles.filter(profile => profile.status === 'configured' || profile.status === 'supported').length ?? 0
+  const apmConfiguredCount = apmProfiles?.profiles.filter(profile => profile.status === 'configured').length ?? 0
   const apmHeaderSeverity: MonitorSeverity = !apmProfiles ? 'unknown' : apmConfiguredCount > 0 ? 'healthy' : 'warning'
-  const apmHeaderLabel = !apmProfiles ? 'checking' : `${apmConfiguredCount}/${apmProfileCount} ready`
+  const apmHeaderLabel = !apmProfiles ? 'checking' : `${apmConfiguredCount} configured · ${apmProfileCount} supported profiles`
   const monitorPackCount = monitorPacks?.packs.length ?? 0
   const monitorPackSupportedCount = monitorPacks?.packs.filter(pack => pack.status === 'supported').length ?? 0
   const monitorPackContractCount = monitorPacks?.packs.filter(pack => pack.status === 'integration_contract').length ?? 0
@@ -1072,7 +1068,7 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
             <span className="monitor-value cell-mono">/api/v1/ws</span>
           </div>
           <div className="monitor-row">
-            <span className="monitor-label">Active Tests</span>
+            <span className="monitor-label">Tracked Tests</span>
             <span className="monitor-value">{health?.test_count ?? '-'}</span>
           </div>
           <div className="monitor-row">
@@ -1265,7 +1261,7 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
               <div className="telemetry-summary-details">
                 <div className="telemetry-summary-headline">
                   <span className={`telemetry-diagnostic-badge ${telemetryLatestEntry ? telemetryDiagnosticSeverityClass(telemetryLatestEntry.diagnostic.severity) : 'healthy'}`}>
-                    {telemetryLatestEntry?.diagnostic.severity || 'healthy'}
+                    {telemetryLatestEntry?.diagnostic.severity || 'No diagnostic samples'}
                   </span>
                   <span className="telemetry-diagnostic-time">{telemetryLatestEntry ? formatTelemetryDiagnosticTime(telemetryLatestEntry.timestamp) : 'No issues'}</span>
                 </div>
@@ -1313,9 +1309,7 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
               <div className="monitor-scroll-area">
                 <div className="monitor-warning-list">
                   {apmProfiles.profiles.map(profile => (
-                    <p key={profile.id} className={profile.status === 'available' ? 'telemetry-text-warning' : ''}>
-                      {profile.name}: {profile.status}
-                    </p>
+                    <details key={profile.id}><summary>{profile.name}: {profile.status === 'available' || profile.status === 'supported' ? 'Supported; setup required' : profile.status}</summary><ul>{profile.setup_actions?.map(action => <li key={action}>{action}</li>)}</ul><p>Check datasource and collector freshness to verify live data.</p></details>
                   ))}
                 </div>
               </div>
@@ -1365,9 +1359,7 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
               <div className="monitor-scroll-area">
                 <div className="monitor-warning-list">
                   {monitorPacks.packs.map(pack => (
-                    <p key={pack.id} className={pack.status === 'integration_contract' ? 'telemetry-text-warning' : ''}>
-                      {pack.name}: {pack.signals.slice(0, 2).join(', ')}
-                    </p>
+                    <details key={pack.id}><summary>{pack.name}: {pack.status === 'supported' ? 'Native support' : 'Integration contract'}</summary><p>{pack.signals.join(', ')}</p><ul>{pack.setup_actions?.map(action => <li key={action}>{action}</li>)}</ul></details>
                   ))}
                 </div>
               </div>
@@ -1612,28 +1604,8 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
         <div className="monitor-body">
           {!canManageSystem ? (
             <p className="monitor-hint">System admin access is required to view fleet audit activity.</p>
-          ) : fleetAuditEvents.length === 0 ? (
-            <p className="monitor-hint">No recent fleet audit activity was returned.</p>
-          ) : (
-            <div className="monitor-scroll-area">
-              <div className="monitor-warning-list">
-                {fleetAuditEvents.map(event => (
-                  <div key={event.id} className="monitor-warning-row">
-                    <div>
-                      <p>
-                        {event.action}
-                        <span className="monitor-alert-ack">{event.status}</span>
-                      </p>
-                      <div className="telemetry-diagnostic-summary">
-                        {event.resource_type || 'resource'} {event.resource_id || '-'} by {event.actor_display_name || event.actor_subject || event.actor_type || 'unknown'}
-                      </div>
-                    </div>
-                    <span className="telemetry-diagnostic-time">{formatAuditEventTime(event.created_at)}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
+          ) : <><AuditEventTable events={fleetAuditEvents} emptyMessage="No recent fleet audit activity was returned." /><a href={settingsHref('audit')}>Filter and export audit history</a></>}
+
         </div>
       ),
     },
@@ -1693,66 +1665,7 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
       ),
       content: <MonitoringCollectorsCard projectId={activeProject?.id} canManage={canManageSystem} />,
     },
-    {
-      id: 'compute-infrastructure',
-      title: 'Cloud Connections & Execution Targets',
-      icon: (
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M7 18h10a4 4 0 0 0 .7-7.9A6 6 0 0 0 6.2 8.3 4.5 4.5 0 0 0 7 18Z" />
-          <path d="M9 14h6M12 11v6" />
-        </svg>
-      ),
-      content: <ComputeInfrastructureCard canManage={canManageSystem} />,
-    },
-    {
-      id: 'fleet-clusters',
-      title: 'Kubernetes Cluster Connections',
-      icon: (
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <circle cx="12" cy="12" r="3" />
-          <path d="M12 2v4M12 18v4M2 12h4M18 12h4" />
-          <path d="M5 5l2.5 2.5M16.5 16.5L19 19M19 5l-2.5 2.5M7.5 16.5L5 19" />
-        </svg>
-      ),
-      content: <ClustersCard canManage={canManageSystem} />,
-    },
-    {
-      id: 'fleet-pools',
-      title: 'Generator Pools',
-      icon: (
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <rect x="3" y="3" width="7" height="7" rx="1" />
-          <rect x="14" y="3" width="7" height="7" rx="1" />
-          <rect x="3" y="14" width="7" height="7" rx="1" />
-          <rect x="14" y="14" width="7" height="7" rx="1" />
-        </svg>
-      ),
-      content: <FleetPoolsCard canManage={canManageSystem} />,
-    },
-    {
-      id: 'fleet-allocation',
-      title: 'Host Resource Allocation',
-      icon: (
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <rect x="3" y="4" width="18" height="4" rx="1" />
-          <rect x="3" y="10" width="12" height="4" rx="1" />
-          <rect x="3" y="16" width="7" height="4" rx="1" />
-        </svg>
-      ),
-      content: <PoolAllocationCard canManage={canManageSystem} />,
-    },
-    {
-      id: 'generator-metadata',
-      title: 'Generator Metadata',
-      icon: (
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M4 4h16v6H4z" />
-          <path d="M4 14h16v6H4z" />
-          <path d="M8 7h.01M8 17h.01" />
-        </svg>
-      ),
-      content: <FleetGeneratorsCard canManage={canManageSystem} />,
-    },
+
   ], [activeProject?.id, allConfiguredReadinessChecksPassing, apiHealthSeverity, apmHeaderLabel, apmHeaderSeverity, apmProfiles, backendServices, calendarAnchor, calendarEvents, calendarFilter, calendarHeaderLabel, calendarHeaderSeverity, calendarModel, calendarView, canManageSystem, canRestart, componentBuildRows, controlPlaneHeaderLabel, controlPlaneHeaderSeverity, controllerGeneratorInventoryLabel, fleetAlertActionBusy, fleetAlertActionError, fleetAlertHeaderLabel, fleetAlertHeaderSeverity, fleetAlertList, fleetAlertsUnknown, fleetAuditEvents, fleetAuditHeaderLabel, fleetAuditHeaderSeverity, fleetCapacity, frontendServices, generatorActiveVUsers, generatorAvailableCapacity, generatorConnectedCount, generatorHeaderLabel, generatorHeaderSeverity, generatorIssueCount, generators.length, hasAllRequiredInfrastructureChecks, health, inventory, monitorPackContractCount, monitorPackCount, monitorPackHeaderLabel, monitorPackHeaderSeverity, monitorPackSupportedCount, monitorPacks, onAcknowledgeThresholdAlert, onScheduleForDate, onSelectTest, openControllerRestart, openSelectedTest, provisioner, readinessBlockedCount, readinessDegradedCount, readinessDisplayedCheckCount, readinessFailureChecks, readinessFetchState, readinessReadyCount, readinessServicesHeaderLabel, readinessServicesHeaderSeverity, restartCapabilities?.supports.controller_workload, runCalendar, selectCalendarEvent, selectedCalendarEvent, servicesHeaderLabel, servicesHeaderSeverity, shiftCalendar, systemReadiness, systemServices, telemetryDangerCount, telemetryHeaderLabel, telemetryHeaderSeverity, telemetryLatestEntry, telemetryDiagnostics, telemetryWarningCount, thresholdAlertHeaderLabel, thresholdAlertHeaderSeverity, thresholdAlerts, toggleFleetAlertAck, websocketLabel, websocketValueClass])
 
   useEffect(() => {
@@ -1787,21 +1700,22 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
   }, [controlledCategoryId, onCategoryChange, runGuarded])
 
   const monitorCategoryControls = useMemo(() => (
-    <div className="monitor-tab-row topbar-page-section-toggle" role="tablist" aria-label="Monitor categories">
+    <TabList className="monitor-tab-row topbar-page-section-toggle" role="tablist" onKeyDown={handleTabKey} aria-label="Monitor categories">
       {MONITOR_CATEGORIES.map(category => (
         <button
           key={category.id}
           type="button"
           role="tab"
+          tabIndex={category.id === activeCategoryId ? 0 : -1}
           aria-selected={category.id === activeCategoryId}
           className={`monitor-tab ${category.id === activeCategoryId ? 'active' : ''}`}
           onClick={() => selectCategory(category.id)}
         >
           <span>{category.label}</span>
-          <span className="monitor-tab-count">{category.cardIds.length}/{category.cardIds.length}</span>
+
         </button>
       ))}
-    </div>
+    </TabList>
   ), [activeCategoryId, selectCategory])
 
   const severityEntries = useMemo<{ label: string; severity: string; summary: string }[]>(() => {
@@ -1944,6 +1858,10 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
 
       {!hasTopbarContributionProvider && monitorCategoryControls}
 
+      <div className="monitor-context-actions settings-inline-actions">
+        <span>{activeCategoryId === 'fleet' ? 'Distributed fleet status. Local execution is separate from generator inventory.' : `Project: ${activeProject?.name || 'No project selected'} · Control-plane health is deployment-wide.`}</span>
+        {(activeCategoryId === 'fleet' ? [['pools', 'Configure pools'], ['clusters', 'Connect cluster'], ['cloud', 'Connections & targets'], ['capacity', 'Capacity source'], ['allocations', 'Standing allocations']] : activeCategoryId === 'alerts' ? [['thresholds', 'Alert & stop policies'], ['notifications', 'Notification routes']] : activeCategoryId === 'telemetry' ? [['prometheus', 'Prometheus'], ['grafana', 'Grafana'], ['dashboards', 'Import dashboards']] : activeCategoryId === 'schedules' ? [['scheduling', 'Schedule defaults'], ['allocations', 'Standing allocations']] : [['platform', 'Controller settings'], ['authentication', 'Authentication']]).map(([id, label]) => <a className="btn btn-secondary btn-sm" key={id} href={settingsHref(id)}>{label}</a>)}
+      </div>
       <div className="monitor-tab-panel" role="tabpanel" aria-label={`${activeCategory.label} monitors`}>
         <div className="monitoring-grid" data-active-category={activeCategory.id}>
         {activeVisibleCards.length === 0 ? (
@@ -1985,7 +1903,7 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
       )}
 
       {isTelemetryModalOpen && telemetryDiagnostics.length > 0 && (
-        <div className="modal-overlay" {...dialogBackdropProps(() => setIsTelemetryModalOpen(false), 'Close telemetry diagnostics')}>
+        <DialogLayer><div className="modal-overlay" {...dialogBackdropProps(() => setIsTelemetryModalOpen(false), 'Close telemetry diagnostics')}>
           <div ref={telemetryDialogRef} className="modal modal-wide telemetry-modal" role="dialog" aria-modal="true" aria-labelledby="telemetry-diagnostics-title">
             <div className="modal-header telemetry-modal-header">
               <div>
@@ -2012,11 +1930,11 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
               <TelemetryDiagnosticList telemetryDiagnostics={telemetryDiagnostics} />
             </div>
           </div>
-        </div>
+        </div></DialogLayer>
       )}
 
       {isGeneratorsModalOpen && generators.length > 0 && (
-        <div className="modal-overlay" {...dialogBackdropProps(() => setIsGeneratorsModalOpen(false), 'Close generator inventory')}>
+        <DialogLayer><div className="modal-overlay" {...dialogBackdropProps(() => setIsGeneratorsModalOpen(false), 'Close generator inventory')}>
           <div ref={generatorsDialogRef} className="modal modal-wide telemetry-modal" role="dialog" aria-modal="true" aria-labelledby="generator-inventory-title">
             <div className="modal-header telemetry-modal-header">
               <div>
@@ -2070,7 +1988,7 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
               />
             </div>
           </div>
-        </div>
+        </div></DialogLayer>
       )}
 
       {restartAction && (
@@ -2429,9 +2347,9 @@ function RunCalendarPanel({
           </div>
         </div>
         {capacityReservations && (
-          <aside className="run-calendar-reservations-panel" aria-label="Capacity Reservations">
+          <aside className="run-calendar-reservations-panel" aria-label="Scheduled bookings">
             <div className="run-calendar-reservations-header">
-              <span>Capacity Reservations</span>
+              <span>Scheduled bookings</span>
             </div>
             {capacityReservations}
           </aside>
@@ -2470,16 +2388,10 @@ function RunCalendarPanel({
                     key={day.key}
                     data-calendar-date={day.key}
                     className={`run-calendar-day ${day.isOutsidePeriod ? 'outside' : ''} ${day.isToday ? 'today' : ''} ${scheduleThisDay ? 'schedulable' : ''}`}
-                    {...(scheduleThisDay ? interactiveElementProps<HTMLDivElement>(event => {
-                      // Only the empty cell area schedules; child event buttons
-                      // retain their own mouse and keyboard behavior.
-                      if ((event.target as HTMLElement).closest('button')) return
-                      scheduleThisDay()
-                    }, 'Schedule a run on this day') : {})}
                     title={scheduleThisDay ? 'Schedule a run on this day' : undefined}
                   >
                     <div className="run-calendar-day-header">
-                      <span>{formatCalendarDayNumber(day.date, view)}</span>
+                      <span className="calendar-day-number">{formatCalendarDayNumber(day.date, view)}</span><time className="calendar-agenda-date" dateTime={day.key}>{day.date.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}</time>
                       <span className="run-calendar-day-header-meta">
                         {scheduleThisDay && (
                           <button type="button" className="btn-icon" aria-label={`Schedule a run on ${day.key}`} onClick={event => { event.stopPropagation(); scheduleThisDay() }}>+</button>
@@ -2513,18 +2425,9 @@ function RunCalendarPanel({
         </div>
 
         {selectedEvent && (
-          <aside className={`run-calendar-detail-panel ${detailCollapsed ? 'collapsed' : ''}`} aria-label="Run details">
+          <aside id="calendar-run-details" className={`run-calendar-detail-panel ${detailCollapsed ? 'collapsed' : ''}`} aria-label="Run details">
             {detailCollapsed ? (
-              <button
-                type="button"
-                className="run-calendar-detail-rail"
-                aria-label="Expand run details"
-                aria-expanded="false"
-                onClick={() => setDetailCollapsed(false)}
-              >
-                <span className={`run-calendar-source ${selectedEvent.source}`}>{runCalendarSourceLabel(selectedEvent)}</span>
-                <span>{selectedEvent.title}</span>
-              </button>
+              <PanelToggle expanded={false} panelName="run details" collapsedLabel="Run details" controls="calendar-run-details" onToggle={() => setDetailCollapsed(false)} />
             ) : (
               <div className="run-calendar-detail" role="region" aria-label="Run details">
                 <div className="run-calendar-detail-header">
@@ -2533,17 +2436,7 @@ function RunCalendarPanel({
                     <h3>{selectedEvent.title}</h3>
                   </div>
                   <div className="run-calendar-detail-icon-actions">
-                    <button
-                      type="button"
-                      className="btn-icon"
-                      aria-label="Collapse run details"
-                      aria-expanded="true"
-                      onClick={() => setDetailCollapsed(true)}
-                    >
-                      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="m10 4-4 4 4 4" />
-                      </svg>
-                    </button>
+                    <PanelToggle expanded={true} panelName="run details" collapsedLabel="Run details" controls="calendar-run-details" onToggle={() => setDetailCollapsed(true)} />
                     <button type="button" className="btn-icon" aria-label="Close run details" onClick={onCloseDetails}>
                       <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                         <path d="M4 4l8 8" />

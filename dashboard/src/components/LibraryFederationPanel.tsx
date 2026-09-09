@@ -1,4 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { confirmAction } from './ux/confirmAction'
+import { useApplicationApi } from '../hooks/api/useApplicationApi'
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 
 import { useLibraryApi } from '../hooks/api/useLibraryApi'
 import { useNavigationGuard, useNavigationGuardRunner, type NavigationGuard } from '../hooks/NavigationGuardProvider'
@@ -10,6 +12,9 @@ import {
 } from './libraryFederationUtils'
 
 type LibraryFederationPanelProps = {
+  projects?: { id: string; name: string }[]
+  applications?: { id: string; name: string; project_id?: string }[]
+  releases?: { id: string; name: string; application_id?: string }[]
   projectId?: string
   applicationId?: string
   applicationName?: string
@@ -96,7 +101,11 @@ function remoteConfigFingerprint(remote: LibraryRemote) {
   })
 }
 
-export default function LibraryFederationPanel({ projectId, applicationId, applicationName, releaseId, releaseName }: LibraryFederationPanelProps) {
+const EMPTY_PROJECTS: NonNullable<LibraryFederationPanelProps['projects']> = []
+const EMPTY_APPLICATIONS: NonNullable<LibraryFederationPanelProps['applications']> = []
+const EMPTY_RELEASES: NonNullable<LibraryFederationPanelProps['releases']> = []
+
+export default function LibraryFederationPanel({ projects = EMPTY_PROJECTS, applications = EMPTY_APPLICATIONS, releases = EMPTY_RELEASES, projectId, applicationId, applicationName, releaseId, releaseName }: LibraryFederationPanelProps) {
   const libraryApi = useLibraryApi()
   const { runGuarded } = useNavigationGuardRunner()
   const [remotes, setRemotes] = useState<LibraryRemote[]>([])
@@ -120,6 +129,65 @@ export default function LibraryFederationPanel({ projectId, applicationId, appli
   draftRef.current = draft
   baselineDraftRef.current = baselineDraft
 
+  const { listApplications, listReleases } = useApplicationApi()
+  const hintsId = useId()
+  const [mappingApplications, setMappingApplications] = useState(applications)
+  const [mappingReleases, setMappingReleases] = useState(releases)
+  const [discovered, setDiscovered] = useState<{ remoteId: string; items: { id: string; name: string }[] } | null>(null)
+  const [discoverBusy, setDiscoverBusy] = useState(false)
+  const [discoverError, setDiscoverError] = useState('')
+  const discoveryGeneration = useRef(0)
+  useEffect(() => {
+    discoveryGeneration.current += 1
+    setDiscovered(null); setDiscoverError('')
+  }, [selectedRemoteId, draft.base_url, draft.auth_method, draft.credential_ref, draft.api_key])
+  useEffect(() => {
+    let active = true
+    setMappingApplications(applications.filter(item => item.project_id === draft.local_project_id))
+    if (draft.local_project_id) void listApplications(draft.local_project_id).then(response => { if (active) setMappingApplications(response.applications || []) }).catch(() => {})
+    return () => { active = false }
+  }, [applications, draft.local_project_id, listApplications])
+  useEffect(() => {
+    let active = true
+    setMappingReleases(releases.filter(item => item.application_id === draft.local_application_id))
+    if (draft.local_application_id) void listReleases(draft.local_application_id).then(response => { if (active) setMappingReleases(response.releases || []) }).catch(() => {})
+    return () => { active = false }
+  }, [releases, draft.local_application_id, listReleases])
+  async function discoverMappings() {
+    const remoteId = selectedRemoteId
+    if (!remoteId || discoverBusy) return
+    const generation = discoveryGeneration.current
+    setDiscoverBusy(true); setDiscoverError('')
+    try {
+      const result = await libraryApi.remoteWorkspaces(remoteId, 'projects')
+      if (selectedRemoteIdRef.current === remoteId && generation === discoveryGeneration.current) setDiscovered({ remoteId, items: result.items })
+    } catch { if (selectedRemoteIdRef.current === remoteId && generation === discoveryGeneration.current) setDiscoverError('Could not discover workspaces. Check the saved remote connection and workspace read permissions. Older controllers may not support workspace catalogs.') }
+    finally { setDiscoverBusy(false) }
+  }
+  const [remoteApplications, setRemoteApplications] = useState<{ id: string; name: string }[]>([])
+  const [remoteReleases, setRemoteReleases] = useState<{ id: string; name: string }[]>([])
+  const [remoteWorkspaceStatus, setRemoteWorkspaceStatus] = useState('')
+  useEffect(() => {
+    const controller = new AbortController()
+    setRemoteApplications([]); setRemoteReleases([]); setRemoteWorkspaceStatus('')
+    if (discovered?.remoteId === selectedRemoteId && draft.default_project_id) {
+      setRemoteWorkspaceStatus('Loading remote applications…')
+      void libraryApi.remoteWorkspaces(selectedRemoteId, 'applications', draft.default_project_id, controller.signal).then(result => {
+        if (!controller.signal.aborted) { setRemoteApplications(result.items); setRemoteWorkspaceStatus(`${result.items.length} remote applications available.`) }
+      }).catch(() => { if (!controller.signal.aborted) setRemoteWorkspaceStatus('Unable to load remote applications. Check the project ID and remote read permissions.') })
+    }
+    return () => controller.abort()
+  }, [discovered, selectedRemoteId, draft.default_project_id, libraryApi])
+  useEffect(() => {
+    const controller = new AbortController()
+    setRemoteReleases([])
+    if (discovered?.remoteId === selectedRemoteId && remoteApplications.some(item => item.id === draft.remote_application_id)) {
+      void libraryApi.remoteWorkspaces(selectedRemoteId, 'releases', draft.remote_application_id, controller.signal).then(result => {
+        if (!controller.signal.aborted) { setRemoteReleases(result.items); setRemoteWorkspaceStatus(`${result.items.length} remote releases available.`) }
+      }).catch(() => { if (!controller.signal.aborted) setRemoteWorkspaceStatus('Unable to load remote releases. Check the application ID and remote read permissions.') })
+    }
+    return () => controller.abort()
+  }, [discovered, selectedRemoteId, draft.remote_application_id, remoteApplications, libraryApi])
   const draftDirty = remoteDraftFingerprint(draft) !== remoteDraftFingerprint(baselineDraft)
   draftDirtyRef.current = draftDirty
   const loading = actionLoading || listLoading
@@ -302,7 +370,7 @@ export default function LibraryFederationPanel({ projectId, applicationId, appli
   }
 
   async function deleteRemote(remote: LibraryRemote) {
-    if (!confirm(`Delete Remote Workspace "${remote.name}"? Sync links for this host will also be removed.`)) return
+    if (!(await confirmAction(`Delete Remote Workspace "${remote.name}"? Sync links for this host will also be removed.`))) return
     setActionMessage('')
     setActionError('')
     setActionLoading(true)
@@ -436,6 +504,16 @@ export default function LibraryFederationPanel({ projectId, applicationId, appli
         </div>
       )}
 
+      <div className="settings-subsection">
+        <button className="btn btn-secondary" type="button" disabled={loading || draftDirty || !selectedRemoteId || discoverBusy} onClick={() => void discoverMappings()}>{discoverBusy ? 'Discovering workspaces…' : 'Discover remote workspaces'}</button>
+        <p>Discover authorized projects, including empty workspaces. Choose a remote project to load its applications, then an application to load its releases. Save and probe the connection first.</p>
+        {discoverError && <p role="alert">{discoverError}</p>}
+        {discovered?.remoteId === selectedRemoteId && <p role="status">{discovered.items.length} remote projects available.</p>}
+        <datalist id={`${hintsId}-project`}>{(discovered?.remoteId === selectedRemoteId ? discovered.items : []).map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</datalist>
+        <datalist id={`${hintsId}-application`}>{remoteApplications.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</datalist>
+        <datalist id={`${hintsId}-release`}>{remoteReleases.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</datalist>
+        {remoteWorkspaceStatus && <p role="status">{remoteWorkspaceStatus}</p>}
+      </div>
       <div className="project-redaction-rule-grid">
         <label className="project-redaction-rule-field">
           <span>Remote Name</span>
@@ -447,27 +525,27 @@ export default function LibraryFederationPanel({ projectId, applicationId, appli
         </label>
         <label className="project-redaction-rule-field">
           <span>Local Project</span>
-          <input className="settings-input" value={draft.local_project_id} onChange={event => editDraft(prev => ({ ...prev, local_project_id: event.target.value }))} placeholder="local-project-id" disabled={loading} />
+          <select className="settings-input" value={draft.local_project_id} onChange={event => editDraft(prev => ({ ...prev, local_project_id: event.target.value, default_project_id: prev.project_mappings[event.target.value] || '', local_application_id: '', remote_application_id: '', local_release_id: '', remote_release_id: '' }))} disabled={loading}><option value="">Select project</option>{projects.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}{draft.local_project_id && !projects.some(item => item.id === draft.local_project_id) && <option value={draft.local_project_id}>Unavailable project ({draft.local_project_id})</option>}</select>
         </label>
         <label className="project-redaction-rule-field">
           <span>Remote Project</span>
-          <input className="settings-input" value={draft.default_project_id} onChange={event => editDraft(prev => ({ ...prev, default_project_id: event.target.value }))} placeholder="remote-project-id" disabled={loading} />
+          <input className="settings-input" list={`${hintsId}-project`} value={draft.default_project_id} onChange={event => editDraft(prev => ({ ...prev, default_project_id: event.target.value, remote_application_id: '', remote_release_id: '' }))} placeholder="remote-project-id" disabled={loading} />
         </label>
         <label className="project-redaction-rule-field">
           <span>Local Application{applicationName ? ` (${applicationName})` : ''}</span>
-          <input className="settings-input" value={draft.local_application_id} onChange={event => editDraft(prev => ({ ...prev, local_application_id: event.target.value, remote_application_id: prev.application_mappings[event.target.value.trim()] || '' }))} placeholder="local-application-id" disabled={loading} />
+          <select className="settings-input" value={draft.local_application_id} onChange={event => editDraft(prev => ({ ...prev, local_application_id: event.target.value, remote_application_id: prev.application_mappings[event.target.value.trim()] || '', local_release_id: '', remote_release_id: '' }))} disabled={loading}><option value="">Select application</option>{mappingApplications.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}{draft.local_application_id && !mappingApplications.some(item => item.id === draft.local_application_id) && <option value={draft.local_application_id}>Unavailable application ({draft.local_application_id})</option>}</select>
         </label>
         <label className="project-redaction-rule-field">
           <span>Remote Application</span>
-          <input className="settings-input" value={draft.remote_application_id} onChange={event => editDraft(prev => ({ ...prev, remote_application_id: event.target.value }))} placeholder="remote-application-id" disabled={loading} />
+          <input className="settings-input" list={`${hintsId}-application`} value={draft.remote_application_id} onChange={event => editDraft(prev => ({ ...prev, remote_application_id: event.target.value, remote_release_id: '' }))} placeholder="remote-application-id" disabled={loading} />
         </label>
         <label className="project-redaction-rule-field">
           <span>Local Release{releaseName ? ` (${releaseName})` : ''}</span>
-          <input className="settings-input" value={draft.local_release_id} onChange={event => editDraft(prev => ({ ...prev, local_release_id: event.target.value, remote_release_id: prev.release_mappings[event.target.value.trim()] || '' }))} placeholder="local-release-id" disabled={loading} />
+          <select className="settings-input" value={draft.local_release_id} onChange={event => editDraft(prev => ({ ...prev, local_release_id: event.target.value, remote_release_id: prev.release_mappings[event.target.value.trim()] || '' }))} disabled={loading}><option value="">Select release</option>{mappingReleases.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}{draft.local_release_id && !mappingReleases.some(item => item.id === draft.local_release_id) && <option value={draft.local_release_id}>Unavailable release ({draft.local_release_id})</option>}</select>
         </label>
         <label className="project-redaction-rule-field">
           <span>Remote Release</span>
-          <input className="settings-input" value={draft.remote_release_id} onChange={event => editDraft(prev => ({ ...prev, remote_release_id: event.target.value }))} placeholder="remote-release-id" disabled={loading} />
+          <input className="settings-input" list={`${hintsId}-release`} value={draft.remote_release_id} onChange={event => editDraft(prev => ({ ...prev, remote_release_id: event.target.value }))} placeholder="remote-release-id" disabled={loading} />
         </label>
         <label className="project-redaction-rule-field">
           <span>Auth Method</span>
@@ -481,7 +559,7 @@ export default function LibraryFederationPanel({ projectId, applicationId, appli
           <input className="settings-input" value={draft.credential_ref} onChange={event => editDraft(prev => ({ ...prev, credential_ref: event.target.value }))} placeholder="env:APEXLOAD_LIBRARY_REMOTE_TOKEN" disabled={loading} />
         </label>
         <label className="project-redaction-rule-field">
-          <span>Rotate API Key</span>
+          <span>{selectedRemoteId ? 'Rotate API key' : 'API key'}</span>
           <input className="settings-input" type="password" value={draft.api_key} onChange={event => editDraft(prev => ({ ...prev, api_key: event.target.value }))} placeholder="Paste once; never returned" disabled={loading} />
         </label>
       </div>

@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -142,5 +143,25 @@ func TestReleaseTrendSeparatesMetricPopulations(t *testing.T) {
 	summary := buildRunArchiveReleaseTrendSummary(trend, "typed")
 	if summary.HasBaseline || !strings.Contains(summary.Note, "population") {
 		t.Fatalf("summary: %+v", summary)
+	}
+}
+
+func TestReleaseTrendRequiresSamplesInBothRuns(t *testing.T) {
+	for _, counts := range [][2]int64{{0, 0}, {100, 0}, {0, 100}, {100, 100}} {
+		t.Run(fmt.Sprintf("%d-%d", counts[0], counts[1]), func(t *testing.T) {
+			a := trendRunFixture("a", time.Now(), 0, 20, 100, false)
+			b := trendRunFixture("b", time.Now().Add(time.Hour), 0, 30, 100, false)
+			a.Report.MetricPopulations = map[string]ArchiveMetricPopulation{"transaction": {RunArchiveActionStats: RunArchiveActionStats{Transactions: counts[0], AvgResponseMs: 20}}}
+			b.Report.MetricPopulations = map[string]ArchiveMetricPopulation{"transaction": {RunArchiveActionStats: RunArchiveActionStats{Transactions: counts[1], AvgResponseMs: 30}}}
+			trend := buildReleaseTrend("release", []releaseTrendRun{a, b})
+			summary := buildRunArchiveReleaseTrendSummary(trend, "b")
+			comparable := counts[0] > 0 && counts[1] > 0
+			if summary.HasBaseline != comparable || (trend.Points[1].Deltas != nil) != comparable {
+				t.Fatalf("unexpected comparison: %+v", summary)
+			}
+			if !comparable && (summary.Note == "" || summary.Regressed || len(summary.Regressions) > 0) {
+				t.Fatalf("missing no-samples explanation: %+v", summary)
+			}
+		})
 	}
 }

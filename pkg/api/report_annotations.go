@@ -337,17 +337,17 @@ func defaultReportAnnotations(report *RunArchiveReport, testID, profile string) 
 	switch profileID {
 	case "executive":
 		ann.ExecutiveNarrative = fmt.Sprintf(
-			"This run reached %s active VUsers, peaked at %.1f TPS, recorded %.2f%% errors, and %s.",
-			formatPDFInt(ov.PeakActiveVUsers), ov.PeakTPS, ov.ErrorPct, verdict,
+			"This run reached %s active VUsers, peaked at %.1f TPS, recorded %s archive-record errors, and %s.",
+			formatPDFInt(ov.PeakActiveVUsers), ov.PeakTPS, formatReportPercentage(ov.ErrorPct), verdict,
 		)
 		ann.SectionComments["decision"] = "Not provided"
-		ann.SectionComments["business_impact"] = fmt.Sprintf("Customer-facing risk is driven by %.2f%% errors and %.1f ms average response time.", ov.ErrorPct, ov.AvgResponseMs)
+		ann.SectionComments["business_impact"] = fmt.Sprintf("Archive records show %s errors and %.1f ms average response time.", formatReportPercentage(ov.ErrorPct), ov.AvgResponseMs)
 		ann.SectionComments["sla"] = deriveReportVerdict(report).Explanation
 		ann.SectionComments["risks"] = defaultRiskComment(report)
 		ann.SectionComments["recommendations"] = "Not provided"
 	case "audit":
 		ann.ExecutiveNarrative = fmt.Sprintf(
-			"Audit package for %s. The run archived %s transaction(s), %s resource sample(s), and %s interval summary record(s); evidence completeness is %.0f%% (%s).",
+			"Audit package for %s. The run archived %s archive record(s), %s resource sample(s), and %s interval summary record(s); evidence completeness is %.0f%% (%s).",
 			testName, formatPDFInt(ov.Transactions), formatPDFInt(ov.ResourceSamples), formatPDFInt(ov.IntervalSummaries), report.Completeness.ScorePct, report.Completeness.Status,
 		)
 		ann.SectionComments["audit_scope"] = "Not provided"
@@ -357,10 +357,10 @@ func defaultReportAnnotations(report *RunArchiveReport, testID, profile string) 
 		ann.SectionComments["approvals"] = "Not provided"
 	default:
 		ann.ExecutiveNarrative = fmt.Sprintf(
-			"This run executed %s transaction(s) at a peak of %.1f TPS with %.2f%% errors and a %.1f ms average response time, reaching %s active VUsers. The test %s.",
-			formatPDFInt(ov.Transactions), ov.PeakTPS, ov.ErrorPct, ov.AvgResponseMs, formatPDFInt(ov.PeakActiveVUsers), verdict,
+			"This run captured %s archive record(s) at a peak of %.1f TPS with %s archive-record errors and a %.1f ms average response time, reaching %s active VUsers. The test %s.",
+			formatPDFInt(ov.Transactions), ov.PeakTPS, formatReportPercentage(ov.ErrorPct), ov.AvgResponseMs, formatPDFInt(ov.PeakActiveVUsers), verdict,
 		)
-		ann.SectionComments["overview"] = fmt.Sprintf("%s transaction(s) were recorded with a %.2f%% error rate across the run.", formatPDFInt(ov.Transactions), ov.ErrorPct)
+		ann.SectionComments["overview"] = fmt.Sprintf("%s archive record(s) were captured with a %s error rate across the run.", formatPDFInt(ov.Transactions), formatReportPercentage(ov.ErrorPct))
 		ann.SectionComments["performance"] = fmt.Sprintf("Throughput peaked at %.1f TPS and response time ranged from %.1f ms to %.1f ms (avg %.1f ms).", ov.PeakTPS, ov.MinResponseMs, ov.MaxResponseMs, ov.AvgResponseMs)
 		ann.SectionComments["sla"] = deriveReportVerdict(report).Explanation
 		ann.SectionComments["bottlenecks"] = "Not provided"

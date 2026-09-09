@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   api: {
     getTestReportAnnotations: vi.fn(),
     getTest: vi.fn(),
+    listTests: vi.fn().mockResolvedValue({ tests: [] }),
     getTestArchiveReport: vi.fn(),
     getTestArchiveAnalysis: vi.fn(),
     saveTestReportAnnotations: vi.fn(),
@@ -124,6 +125,7 @@ vi.mock('./runReport/RunReportVerdictBanner', () => ({
     </section>
   ),
 }))
+vi.mock('./RunOutcomeSummary', () => ({ default: () => <section data-testid="outcome" /> }))
 vi.mock('./runReport/RunReportKpiScorecard', () => ({ default: () => <section data-testid="kpis" /> }))
 vi.mock('./runReport/SynchronizedTimeline', () => ({ default: () => <section data-testid="timeline" /> }))
 vi.mock('./runReport/TransactionSlaScoreboard', () => ({ default: () => <section data-testid="scoreboard" /> }))
@@ -292,6 +294,8 @@ describe('RunReportPage', () => {
     expect(mocks.api.pinComparisonBaseline).toHaveBeenCalledWith('baseline-1')
     expect(mocks.api.getTest).toHaveBeenCalledWith('run-1')
     expect(mocks.polling.setTest).toHaveBeenCalledWith(refreshed)
+    await act(async () => buttonByText(container, 'Compare')?.click())
+    expect(container.textContent).toContain('Comparing with Baseline. Open Compare to change or clear the baseline.')
   })
 
   it('returns a successful pin result when the comparison changes before delayed refresh', async () => {
@@ -439,7 +443,7 @@ describe('RunReportPage', () => {
     await flush()
 
     const explanation = container.querySelector<HTMLTextAreaElement>('textarea[aria-label="Verdict explanation"]')
-    expect(explanation?.value).toBe('Automated verdict')
+    expect(explanation?.value).toBe('')
     await changeTextarea(explanation, 'Analyst draft')
     await act(async () => {
       resolveAnnotations?.({
@@ -462,6 +466,7 @@ describe('RunReportPage', () => {
     await flush()
     expect(container.querySelector<HTMLTextAreaElement>('textarea[aria-label="Verdict explanation"]')?.value).toBe('Analyst draft')
 
+    await act(async () => buttonByText(container, 'Export report')?.click())
     await act(async () => {
       buttonByText(container, 'Engineer lens')?.click()
     })
@@ -517,6 +522,7 @@ describe('RunReportPage', () => {
     await act(async () => buttonByText(container, 'Save verdict')?.click())
     await act(async () => root.render(render('engineer')))
     await flush()
+    await act(async () => buttonByText(container, 'Export report')?.click())
     expect(container.querySelector('[data-testid="lens"]')?.textContent).toContain('engineer')
     expect(container.querySelector<HTMLTextAreaElement>('textarea[aria-label="Verdict explanation"]')?.value).toBe('Engineer annotation')
 
@@ -570,6 +576,7 @@ describe('RunReportPage', () => {
     expect(mocks.api.saveTestReportAnnotations).toHaveBeenCalledTimes(1)
     expect(container.querySelector<HTMLTextAreaElement>('textarea[aria-label="Verdict explanation"]')?.disabled).toBe(true)
 
+    await act(async () => buttonByText(container, 'Export report')?.click())
     await act(async () => buttonByText(container, 'Engineer lens')?.click())
     expect(container.textContent).toContain('Unsaved Changes')
     await act(async () => buttonByText(container, 'Save changes')?.click())

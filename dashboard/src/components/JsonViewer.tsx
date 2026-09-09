@@ -62,7 +62,7 @@ function JsonNode({ name, value, path, depth, isLast, defaultExpandedDepth, visi
   const actualValue = parsedStringVal !== undefined ? parsedStringVal : value
   const type = getType(actualValue)
   const isOriginalString = getType(value) === 'string'
-  const canParseJson = isOriginalString && typeof value === 'string' && value.length > 5 && 
+  const canParseJson = isOriginalString && typeof value === 'string' && value.length > 5 &&
     ((value.trim().startsWith('{') && value.trim().endsWith('}')) || (value.trim().startsWith('[') && value.trim().endsWith(']')))
 
   useEffect(() => {
@@ -148,26 +148,26 @@ function JsonNode({ name, value, path, depth, isLast, defaultExpandedDepth, visi
     return (
       <span className="json-viewer-actions">
         {canParseJson && (
-          <button 
-            type="button" 
-            className="json-viewer-action-btn" 
+          <button
+            type="button"
+            className="json-viewer-action-btn"
             onClick={toggleParseJson}
             title={parsedStringVal !== undefined ? 'Show original string' : 'Parse string as JSON'}
           >
             {parsedStringVal !== undefined ? 'Raw String' : 'Parse JSON'}
           </button>
         )}
-        <button 
-          type="button" 
-          className="json-viewer-action-btn" 
+        <button
+          type="button"
+          className="json-viewer-action-btn"
           onClick={(e) => void handleCopyPath(e)}
           title="Copy JSONPath"
         >
           {copied ? 'Copied Path!' : 'Copy Path'}
         </button>
-        <button 
-          type="button" 
-          className="json-viewer-action-btn" 
+        <button
+          type="button"
+          className="json-viewer-action-btn"
           onClick={(e) => void handleCopyValue(e)}
           title="Copy Value"
         >
@@ -195,9 +195,9 @@ function JsonNode({ name, value, path, depth, isLast, defaultExpandedDepth, visi
 
     return (
       <div className="json-viewer-node">
-        <button 
+        <button
           type="button"
-          className="json-viewer-toggle" 
+          className="json-viewer-toggle"
           onClick={() => setExpanded(!expanded)}
           aria-expanded={expanded}
         >
@@ -215,17 +215,17 @@ function JsonNode({ name, value, path, depth, isLast, defaultExpandedDepth, visi
           {!expanded && !isLast && <span className="json-viewer-punctuation">,</span>}
           {renderActions()}
         </div>
-        
+
         {expanded && (
           <div className="json-viewer-children">
-            {isArray 
+            {isArray
               ? (items as unknown[]).map((item, idx) => (
-                  <JsonNode 
-                    key={idx} 
-                    value={item} 
-                    path={`${path}[${idx}]`} 
-                    depth={depth + 1} 
-                    isLast={idx === items.length - 1} 
+                  <JsonNode
+                    key={idx}
+                    value={item}
+                    path={`${path}[${idx}]`}
+                    depth={depth + 1}
+                    isLast={idx === items.length - 1}
                     defaultExpandedDepth={defaultExpandedDepth}
                     visiblePaths={visiblePaths}
                     lowerFilter={lowerFilter}
@@ -235,13 +235,13 @@ function JsonNode({ name, value, path, depth, isLast, defaultExpandedDepth, visi
                   />
                 ))
               : (items as [string, unknown][]).map(([key, val], idx) => (
-                  <JsonNode 
-                    key={key} 
-                    name={key} 
-                    value={val} 
-                    path={`${path}${formatPathKey(key)}`} 
-                    depth={depth + 1} 
-                    isLast={idx === items.length - 1} 
+                  <JsonNode
+                    key={key}
+                    name={key}
+                    value={val}
+                    path={`${path}${formatPathKey(key)}`}
+                    depth={depth + 1}
+                    isLast={idx === items.length - 1}
                     defaultExpandedDepth={defaultExpandedDepth}
                     visiblePaths={visiblePaths}
                     lowerFilter={lowerFilter}
@@ -301,10 +301,10 @@ export default function JsonViewer({ data, defaultExpandedDepth = 2, autoExpandP
   return (
     <div className="json-viewer">
       <div className="json-viewer-toolbar">
-        <input 
-          type="text" 
-          className="form-control input-sm json-viewer-filter" 
-          placeholder="Filter JSON..." 
+        <input
+          type="text"
+          className="form-control input-sm json-viewer-filter"
+          placeholder="Filter JSON..."
           value={filterText}
           onChange={(e) => setFilterText(e.target.value)}
         />
@@ -321,12 +321,12 @@ export default function JsonViewer({ data, defaultExpandedDepth = 2, autoExpandP
         {visiblePaths && visiblePaths.size === 0 ? (
           <div className="text-muted p-2 text-sm">No matches found.</div>
         ) : (
-          <JsonNode 
-            value={data} 
-            path="$" 
-            depth={0} 
-            isLast={true} 
-            defaultExpandedDepth={defaultExpandedDepth} 
+          <JsonNode
+            value={data}
+            path="$"
+            depth={0}
+            isLast={true}
+            defaultExpandedDepth={defaultExpandedDepth}
             visiblePaths={visiblePaths}
             lowerFilter={lowerFilter}
             forceToggleNonce={forceToggleNonce}

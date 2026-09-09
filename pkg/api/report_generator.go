@@ -101,9 +101,7 @@ var profileHTMLFuncMap = template.FuncMap{
 		}
 		return strconv.FormatFloat(*value, 'f', -1, 64)
 	},
-	"formatPercent": func(value float64) string {
-		return fmt.Sprintf("%.2f%%", value)
-	},
+	"formatPercent": formatReportPercentage,
 	"formatScore": func(value float64) string {
 		return fmt.Sprintf("%.3f", value)
 	},
@@ -458,4 +456,11 @@ func reportEnvironment(report *RunArchiveReport) string {
 		return strings.TrimSpace(report.ChangeAttribution.Environment)
 	}
 	return "Not recorded"
+}
+
+func formatReportPercentage(value float64) string {
+	if value > 0 && value < 0.01 {
+		return "<0.01%"
+	}
+	return fmt.Sprintf("%.2f%%", value)
 }

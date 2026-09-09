@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { act } from 'react'
+import { act, type ReactNode } from 'react'
 import { createRoot, Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -16,6 +16,8 @@ const apiMock = vi.hoisted(() => ({
   verifyTestArchive: vi.fn(),
 }))
 
+// Unit tests keep a scoped DOM; real portal layering is exercised in the browser workflow.
+vi.mock('react-dom', async importOriginal => ({ ...await importOriginal<typeof import('react-dom')>(), createPortal: (node: ReactNode) => node }))
 vi.mock('../hooks/useApi', () => ({
   useApi: () => apiMock,
 }))
@@ -120,6 +122,7 @@ describe('ReportComposer test notes source panel', () => {
     expect(composer?.getAttribute('aria-modal')).toBe('true')
     expect(document.activeElement).toBe(closeButton)
 
+    await click(button('Edit commentary'))
     const titleInput = container.querySelector<HTMLInputElement>('[aria-label="Report title"]')
     expect(titleInput).not.toBeNull()
     await act(async () => {
@@ -145,6 +148,7 @@ describe('ReportComposer test notes source panel', () => {
 
   it('inserts selected notes into summary, commentary, and info findings', async () => {
     await renderComposer()
+    await click(button('Edit commentary'))
 
     expect(container.textContent).toContain('Analyst note')
     expect(container.querySelector('.report-note-source-markdown strong')?.textContent).toBe('spike')
@@ -401,8 +405,8 @@ async function flushFocus() {
   })
 }
 
-function setInputValue(input: HTMLInputElement, value: string) {
-  const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+function setInputValue(input: HTMLInputElement | HTMLTextAreaElement, value: string) {
+  const setter = Object.getOwnPropertyDescriptor(input instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype, 'value')?.set
   setter?.call(input, value)
   input.dispatchEvent(new Event('input', { bubbles: true }))
 }

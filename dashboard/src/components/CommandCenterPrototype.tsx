@@ -1,3 +1,5 @@
+import TabList from './ux/TabList'
+import { handleTabKey } from './tabKeyboard'
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { createPortal } from 'react-dom'
 import {
@@ -1258,35 +1260,11 @@ export default function CommandCenterPrototype({
   }
 
   const experienceSwitch = (
-    <div className="command-center-experience-switch" role="group" aria-label="Command Center version and view">
-        <button
-          type="button"
-          className={experienceVersion === 'original' ? 'active' : ''}
-          aria-pressed={experienceVersion === 'original'}
-          onClick={() => setExperienceVersion('original')}
-        >
-          Original
-        </button>
-        <button
-          type="button"
-          className={experienceVersion === 'v2' ? 'active' : ''}
-          aria-pressed={experienceVersion === 'v2'}
-          onClick={() => setExperienceVersion('v2')}
-        >
-          Command Center v2
-        </button>
-        {experienceVersion === 'v2' && (
-          <>
-            <span className="command-center-switch-divider" aria-hidden="true" />
-            <button type="button" className={variant === 'ops' ? 'active' : ''} aria-pressed={variant === 'ops'} onClick={() => setVariant('ops')}>
-              OPS VIEW
-            </button>
-            <button type="button" className={variant === 'grafana' ? 'active' : ''} aria-pressed={variant === 'grafana'} onClick={() => setVariant('grafana')}>
-              GRAPH WALL
-            </button>
-          </>
-        )}
-      </div>
+    <div className="command-center-experience-switch" role="group" aria-label="Command Center tools">
+      {experienceVersion === 'v2' ? <button type="button" onClick={() => { setExperienceVersion('original'); setVariant('ops') }}>Back to operations</button>
+        : <button type="button" onClick={() => { setExperienceVersion('v2'); setVariant('ops') }}>Open analysis</button>}
+      {experienceVersion === 'v2' && <><button type="button" aria-pressed={variant === 'ops'} onClick={() => setVariant('ops')}>OPS VIEW</button><button type="button" aria-pressed={variant === 'grafana'} onClick={() => setVariant('grafana')}>GRAPH WALL</button></>}
+    </div>
   )
   const commandCenterTopbarTarget = typeof document === 'undefined'
     ? null
@@ -1518,7 +1496,7 @@ function CommandCenterEmptyState({
         {hasRuns ? (
           <>
             <p>
-              {liveRuns.length} active runs are in progress. Choose one to open its live command center.
+              {liveRuns.length} runs are running or waiting. Choose one to inspect its status.
             </p>
             <ul className="command-empty-run-list" aria-label="Active runs">
               {liveRuns.map(run => (
@@ -1896,7 +1874,7 @@ function OpsCockpitView({
     )
   }
   return (
-    <section className="command-layout command-layout-ops" aria-label="Ops cockpit mockup">
+    <section className="command-layout command-layout-ops" aria-label="Run operations">
       <div className="command-primary-column">
         <div className="command-load-model-row">
           <GroupLoadTable
@@ -2005,10 +1983,10 @@ function OpsCockpitV2View({
     }
   })
   return (
-    <section className="command-v2" aria-label="Command Center v2 Ops view">
+    <section className="command-v2" aria-label="Command Center analysis Ops view">
       <div className="command-v2-workbench">
         <div className="command-v2-main">
-          <section className="command-v2-load-model" aria-label="Command Center v2 load model">
+          <section className="command-v2-load-model" aria-label="Command Center analysis load model">
             <div className="command-v2-section-header">
               <div>
                 <h3>Load Model</h3>
@@ -2396,7 +2374,7 @@ function CommandRunTables({
 
   return (
     <section className="command-run-tables" aria-label="Command center run tables">
-      <div className="command-table-tabs" role="tablist" aria-label="OPS data tables">
+      <TabList className="command-table-tabs" role="tablist" aria-label="OPS data tables" onKeyDown={handleTabKey}>
         <div className="command-table-tab-buttons">
           {COMMAND_TABLE_TABS.map(tab => (
             <button
@@ -2405,7 +2383,7 @@ function CommandRunTables({
               role="tab"
               className={activeTab === tab.id ? 'active' : ''}
               aria-selected={activeTab === tab.id}
-              onClick={() => onTabChange(tab.id)}
+              onClick={() => onTabChange(tab.id)} tabIndex={(activeTab === tab.id) ? 0 : -1}
             >
               {tab.label}
             </button>
@@ -2421,7 +2399,7 @@ function CommandRunTables({
             onChange={(event) => setFilter(event.target.value)}
           />
         </label>
-      </div>
+      </TabList>
 
       <div className="command-table-surface">
         {activeTab === 'scenario' && (

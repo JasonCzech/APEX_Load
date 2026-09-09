@@ -68,6 +68,7 @@ function meta(overrides: Partial<FleetGeneratorMetadata>): FleetGeneratorMetadat
 
 describe('FleetGeneratorsCard', () => {
   it('shows the empty state and Add Metadata action when permitted', async () => {
+    fleetApiMock.listFleetPools.mockResolvedValue({ fleet_pools: [{ id: 'pool-1', name: 'Pool one' }], count: 1 })
     fleetApiMock.listGeneratorMetadata.mockResolvedValue({ generators: [], count: 0 })
     await act(async () => {
       root.render(<FleetGeneratorsCard canManage />)
@@ -121,13 +122,13 @@ describe('FleetGeneratorsCard', () => {
     await act(async () => add?.click())
     const inputs = Array.from(container.querySelectorAll<HTMLInputElement>('input'))
     const generatorID = inputs.find(input => input.placeholder === 'stable generator identity')
-    const poolID = inputs.find(input => input.placeholder === 'blank = none')
+    const poolID = container.querySelector<HTMLSelectElement>('select')
     act(() => {
       const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
       setter?.call(generatorID, 'gen-new:9090')
       generatorID?.dispatchEvent(new Event('input', { bubbles: true }))
-      setter?.call(poolID, 'pool-1')
-      poolID?.dispatchEvent(new Event('input', { bubbles: true }))
+      Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')?.set?.call(poolID, 'pool-1')
+      poolID?.dispatchEvent(new Event('change', { bubbles: true }))
     })
     const save = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Save')
     await act(async () => save?.click())

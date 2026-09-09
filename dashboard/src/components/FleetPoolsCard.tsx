@@ -1,3 +1,4 @@
+import DialogLayer from './ux/DialogLayer'
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 
 import { useClustersApi } from '../hooks/api/useClustersApi'
@@ -18,6 +19,7 @@ import { listAllFleetPools, listAllGeneratorMetadata, runtimePoolMemberCount } f
 import './parityPanels.css'
 
 interface Props {
+  resourceId?: string
   canManage?: boolean
 }
 
@@ -173,7 +175,7 @@ function snapshotCaughtUp(
     && listedTimestamp > committedTimestamp
 }
 
-export default function FleetPoolsCard({ canManage = false }: Props) {
+export default function FleetPoolsCard({ canManage = false, resourceId = '' }: Props) {
   const api = useFleetApi()
   const clustersApi = useClustersApi()
   const computeApi = useComputeApi()
@@ -628,9 +630,10 @@ export default function FleetPoolsCard({ canManage = false }: Props) {
         <div className="pp-empty">No managed generator pools. Pools group load generators for cloud-backed scaling.</div>
       ) : (
         <div className="pp-list">
-          {pools.map(pool => {
+          {resourceId && <p role="status">Selected resource: {resourceId}. {!pools.some(item => item.id === resourceId) && 'This resource was not found or is no longer accessible.'} <a href={window.location.hash.replace(/([?&])resourceId=[^&]*&?/, '$1').replace(/[?&]$/, '')}>Show all resources</a></p>}
+          {pools.filter(item => !resourceId || item.id === resourceId).map(pool => {
             const memberCount = runtimePoolMemberCount(pool, generatorMetadata)
-            const initialProvisionCount = pool.desired_size || 1
+            const initialProvisionCount = pool.execution_target_id ? (pool.desired_size || 1) : Math.max(1, Math.min(pool.desired_size || 1, memberCount))
             return (
             <div className="pp-row" key={pool.id}>
               <div className="pp-row-main">
@@ -650,7 +653,7 @@ export default function FleetPoolsCard({ canManage = false }: Props) {
               </div>
               {canManage && (
                 <div className="pp-row-actions">
-                  <button type="button" className="btn btn-secondary btn-sm" disabled={busy} onClick={() => setProvisionFor({ pool, count: initialProvisionCount, baselineCount: initialProvisionCount })}>
+                  <button type="button" className="btn btn-secondary btn-sm" disabled={busy || (!pool.execution_target_id && memberCount < initialProvisionCount)} title={!pool.execution_target_id && memberCount < initialProvisionCount ? 'Associate runtime targets before provisioning this pool.' : undefined} onClick={() => setProvisionFor({ pool, count: initialProvisionCount, baselineCount: initialProvisionCount })}>
                     Provision
                   </button>
                   <button
@@ -726,7 +729,7 @@ export default function FleetPoolsCard({ canManage = false }: Props) {
       </div>
 
       {draft && (
-        <div
+        <DialogLayer><div
           className="pp-modal-overlay"
           role="presentation"
           onPointerDown={event => {
@@ -857,6 +860,7 @@ export default function FleetPoolsCard({ canManage = false }: Props) {
                   <input type="number" min={0} step={1} disabled={busy} value={draft.max_size} onChange={e => setDraft(d => (d ? { ...d, max_size: Number(e.target.value) } : d))} />
                 </label>
               </div>
+              <details><summary>Advanced lifecycle & admission policy</summary><p>Defaults inherit the execution target policy. Standing pools keep capacity available; warm and on-demand pools manage capacity around runs.</p>
               <div className="pp-field-row">
                 <label className="pp-field"><span>Capacity lifecycle</span><select value={draft.lifecycle_mode} disabled={busy} onChange={e => setDraft(d => d ? { ...d, lifecycle_mode: e.target.value as PoolDraft['lifecycle_mode'] } : d)}><option value="">Target default</option><option value="standing">Standing</option><option value="warm_burst">Warm floor + burst</option><option value="on_demand">On demand</option></select></label>
                 <label className="pp-field"><span>Warm floor</span><input type="number" min={0} step={1} value={draft.warm_floor} disabled={busy || draft.lifecycle_mode === 'standing'} onChange={e => setDraft(d => d ? { ...d, warm_floor: Number(e.target.value) } : d)} /></label>
@@ -866,6 +870,7 @@ export default function FleetPoolsCard({ canManage = false }: Props) {
                 <label className="pp-field"><span>Readiness timeout (seconds)</span><input type="number" min={1} step={1} value={draft.readiness_timeout_seconds} disabled={busy} onChange={e => setDraft(d => d ? { ...d, readiness_timeout_seconds: Number(e.target.value) } : d)} /></label>
                 <label className="pp-field"><span>Idle grace (seconds)</span><input type="number" min={0} step={1} value={draft.idle_grace_seconds} disabled={busy} onChange={e => setDraft(d => d ? { ...d, idle_grace_seconds: Number(e.target.value) } : d)} /></label>
               </div>
+              </details>
               {sizingError ? <div className="pp-error" role="alert">{sizingError}</div> : null}
             </div>
             <div className="pp-modal-actions">
@@ -875,11 +880,11 @@ export default function FleetPoolsCard({ canManage = false }: Props) {
               </button>
             </div>
           </div>
-        </div>
+        </div></DialogLayer>
       )}
 
       {provisionFor && (
-        <div
+        <DialogLayer><div
           className="pp-modal-overlay"
           role="presentation"
           onPointerDown={event => {
@@ -926,11 +931,11 @@ export default function FleetPoolsCard({ canManage = false }: Props) {
               </button>
             </div>
           </div>
-        </div>
+        </div></DialogLayer>
       )}
 
       {provisionResult && (
-        <div
+        <DialogLayer><div
           className="pp-modal-overlay"
           role="presentation"
           onPointerDown={event => {
@@ -974,7 +979,7 @@ export default function FleetPoolsCard({ canManage = false }: Props) {
               <button ref={resultDoneRef} type="button" className="btn btn-primary" onClick={closeResult} disabled={busy}>Done</button>
             </div>
           </div>
-        </div>
+        </div></DialogLayer>
       )}
 
       {deleteTarget && (

@@ -1,8 +1,8 @@
+import { reportAcceptance, reportPopulationOverview, defaultReportPopulation, formatReportPercent, type MetricPopulation } from './reportPresentation'
 import type {
   MetricsHistoryPoint,
   ReportAnnotations,
   RunArchiveOverview,
-  RunArchiveReleaseTrendSummary,
   RunArchiveReport,
   RunArchiveSLARow,
 } from '../../types'
@@ -54,25 +54,22 @@ export function formatMs(value: number | undefined): string {
 
 export function formatPct(value: number | undefined, digits = 2): string {
   if (!finite(value)) return 'n/a'
-  return `${formatNumber(value, digits)}%`
+  return formatReportPercent(value, digits)
 }
 
 function signedDelta(value: number | undefined, unit: 'ms' | '%' | 'count', lowerIsBetter: boolean): { label?: string; tone?: ReportKpi['deltaTone'] } {
-  if (!finite(value) || value === 0) return {}
+  if (!finite(value)) return {}
+  if (value === 0) return { label: unit === 'ms' ? '0 ms' : unit === '%' ? '0 pp' : '0', tone: 'neutral' }
   const sign = value > 0 ? '+' : ''
   const label = unit === 'ms'
     ? `${sign}${formatMs(value)}`
     : unit === '%'
-      ? `${sign}${formatPct(value)}`
+      ? `${sign}${formatNumber(value, 2)} pp`
       : `${sign}${formatNumber(value, 1)}`
   const improved = lowerIsBetter ? value < 0 : value > 0
   return { label, tone: improved ? 'good' : 'warn' }
 }
 
-function trendDelta(trend: RunArchiveReleaseTrendSummary | undefined, key: string): number | undefined {
-  const deltas = trend?.deltas as Record<string, number | undefined> | undefined
-  return deltas?.[key]
-}
 
 function sparkline(history: MetricsHistoryPoint[], key: keyof MetricsHistoryPoint): number[] {
   return history
@@ -85,7 +82,7 @@ export function buildBaselineOverviewDiff(current?: RunArchiveOverview, baseline
   if (!current || !baseline) return {}
   return {
     avgLatency: buildBaselineDelta(current.avg_response_ms - baseline.avg_response_ms, 'ms', true),
-    p95: buildBaselineDelta((current.p95_ms ?? current.avg_response_ms) - (baseline.p95_ms ?? baseline.avg_response_ms), 'ms', true),
+    p95: buildBaselineDelta((current.p95_ms ?? Number.NaN) - (baseline.p95_ms ?? Number.NaN), 'ms', true),
     errorRate: buildBaselineDelta(current.error_pct - baseline.error_pct, '%', true),
     peakTps: buildBaselineDelta(current.peak_tps - baseline.peak_tps, 'count', false),
     peakVusers: buildBaselineDelta(current.peak_active_vusers - baseline.peak_active_vusers, 'count', false),
@@ -98,13 +95,9 @@ function buildBaselineDelta(value: number, unit: 'ms' | '%' | 'count', lowerIsBe
   return { label: delta.label, value: delta.label, tone: delta.tone }
 }
 
-export function buildReportKpis(report: RunArchiveReport | null, history: MetricsHistoryPoint[], baselineDiff: BaselineOverviewDiff = {}): ReportKpi[] {
-  const overview = report?.overview
+export function buildReportKpis(report: RunArchiveReport | null, history: MetricsHistoryPoint[], baselineDiff: BaselineOverviewDiff = {}, population: MetricPopulation = defaultReportPopulation(report)): ReportKpi[] {
+  const overview = reportPopulationOverview(report, population)
   const completeness = report?.completeness
-  const releaseTrend = report?.release_trend
-  const avgDelta = signedDelta(trendDelta(releaseTrend, 'avg_response_ms_delta'), 'ms', true)
-  const errorDelta = signedDelta(trendDelta(releaseTrend, 'error_pct_delta'), '%', true)
-  const tpsDelta = signedDelta(trendDelta(releaseTrend, 'peak_tps_delta'), 'count', false)
 
   return [
     {
@@ -112,8 +105,8 @@ export function buildReportKpis(report: RunArchiveReport | null, history: Metric
       label: 'Avg latency',
       value: formatMs(overview?.avg_response_ms),
       tone: 'neutral',
-      delta: avgDelta.label || baselineDiff.avgLatency?.label,
-      deltaTone: avgDelta.tone || baselineDiff.avgLatency?.tone,
+      delta: baselineDiff.avgLatency?.label,
+      deltaTone: baselineDiff.avgLatency?.tone,
       sparkline: sparkline(history, 'avgMs'),
     },
     {
@@ -129,24 +122,24 @@ export function buildReportKpis(report: RunArchiveReport | null, history: Metric
       id: 'errorRate',
       label: 'Error rate',
       value: formatPct(overview?.error_pct),
-      tone: overview?.error_pct ? 'danger' : 'good',
-      delta: errorDelta.label || baselineDiff.errorRate?.label,
-      deltaTone: errorDelta.tone || baselineDiff.errorRate?.tone,
+      tone: !overview ? 'neutral' : overview.error_pct ? 'danger' : 'good',
+      delta: baselineDiff.errorRate?.label,
+      deltaTone: baselineDiff.errorRate?.tone,
       sparkline: sparkline(history, 'errorPct'),
     },
     {
       id: 'peakTps',
-      label: 'Peak TPS',
+      label: 'Peak attempts/s',
       value: formatNumber(overview?.peak_tps, 1),
       tone: 'neutral',
-      delta: tpsDelta.label || baselineDiff.peakTps?.label,
-      deltaTone: tpsDelta.tone || baselineDiff.peakTps?.tone,
+      delta: baselineDiff.peakTps?.label,
+      deltaTone: baselineDiff.peakTps?.tone,
       sparkline: sparkline(history, 'tps'),
     },
     {
       id: 'peakVusers',
       label: 'Peak VUsers',
-      value: formatNumber(overview?.peak_active_vusers, 0),
+      value: formatNumber(report?.overview?.peak_active_vusers, 0),
       tone: 'neutral',
       delta: baselineDiff.peakVusers?.label,
       deltaTone: baselineDiff.peakVusers?.tone,
@@ -154,7 +147,7 @@ export function buildReportKpis(report: RunArchiveReport | null, history: Metric
     },
     {
       id: 'completeness',
-      label: 'Completeness',
+      label: 'Evidence coverage',
       value: formatPct(completeness?.score_pct, 0),
       tone: completeness?.status && !['complete', 'ok'].includes(completeness.status.toLowerCase()) ? 'warn' : 'good',
       sparkline: [],
@@ -163,22 +156,9 @@ export function buildReportKpis(report: RunArchiveReport | null, history: Metric
 }
 
 export function effectiveReportVerdict(report: RunArchiveReport | null, annotations?: ReportAnnotations | null) {
-  const override = annotations?.verdict_override?.trim()
-  if (override) {
-    const normalized = override.toLowerCase()
-    return {
-      status: override,
-      failed: normalized.includes('fail'),
-      conditional: normalized.includes('conditional') || normalized.includes('blocked') || normalized.includes('review'),
-      explanation: annotations?.verdict_explanation?.trim() || report?.verdict?.explanation || '',
-    }
-  }
-  return report?.verdict || {
-    status: 'Conditional Pass',
-    failed: false,
-    conditional: true,
-    explanation: 'The archive report has not loaded enough evidence to evaluate this run.',
-  }
+  // Analyst sign-off is displayed separately and never changes acceptance.
+  void annotations
+  return reportAcceptance(report)
 }
 
 export function mergeTimelineHistory(summaryHistory: MetricsHistoryPoint[], resourceHistory: MetricsHistoryPoint[]): MetricsHistoryPoint[] {
@@ -235,9 +215,12 @@ export function alignBaselineTimeline(current: MetricsHistoryPoint[], baseline: 
     .slice()
     .sort((left, right) => left.timestampMs! - right.timestampMs!)
   if (orderedBaseline.length === 0) return current
+  const currentStart = current.find(point => finite(point.timestampMs))?.timestampMs
+  if (currentStart === undefined) return current
   return current.map(point => {
     if (!finite(point.timestampMs)) return point
-    const timestamp = point.timestampMs!
+    const timestamp = orderedBaseline[0].timestampMs! + point.timestampMs! - currentStart
+    if (timestamp > orderedBaseline[orderedBaseline.length - 1].timestampMs!) return point
     let low = 0
     let high = orderedBaseline.length
     while (low < high) {

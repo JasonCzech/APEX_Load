@@ -1,3 +1,4 @@
+import DialogLayer from './ux/DialogLayer'
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 
 import { useGitHubApi } from '../hooks/api/useGitHubApi'
@@ -468,7 +469,7 @@ export default function GitHubSyncModal({ mode, config, script, projectId, onClo
   const title = mode === 'push' ? `Push "${script?.name || 'script'}" to GitHub` : 'Import script from GitHub'
 
   return (
-    <div
+    <DialogLayer><div
       className="modal-overlay"
       role="presentation"
       onPointerDown={event => {
@@ -672,6 +673,6 @@ export default function GitHubSyncModal({ mode, config, script, projectId, onClo
           </div>
         </div>
       </div>
-    </div>
+    </div></DialogLayer>
   )
 }

@@ -423,7 +423,7 @@ func archiveSOAPPayloadBucketTimestamp(value time.Time) time.Time {
 }
 
 func archiveSOAPPayloadTelemetry(tx TransactionEvent) (float64, float64, float64) {
-	if tx.ServerTelemetry == nil {
+	if tx.ServerTelemetry == nil || (archiveSOAPOperation(tx) == "" && tx.ServerTelemetry.EnvelopeOverheadKB == 0 && archiveSOAPFaultCode(tx) == "") {
 		return 0, 0, 0
 	}
 	return tx.ServerTelemetry.RequestPayloadKB, tx.ServerTelemetry.ResponsePayloadKB, tx.ServerTelemetry.EnvelopeOverheadKB

@@ -1,3 +1,4 @@
+import { settingsHref } from './settingsNavigation'
 import RunOutcomeSummary from './RunOutcomeSummary'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
@@ -1076,6 +1077,7 @@ export default function TestExecution({
 
   return (
     <div className="execution">
+      <nav aria-label="Run configuration"><a href={settingsHref('thresholds')}>Alert and stop policies</a> · <a href={settingsHref('notifications')}>Notification routes</a> · <a href={settingsHref('capacity')}>Admission capacity</a>{test.assignment?.pool_id && <> · <a href={settingsHref('pools', window.location.hash, test.assignment.pool_id)}>Configure assigned pool</a></>}</nav>
       <TestExecutionScenarioEditor
         open={showScenarioEditor}
         test={test}

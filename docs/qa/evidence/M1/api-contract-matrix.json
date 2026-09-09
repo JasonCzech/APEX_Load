@@ -5,13 +5,13 @@
     "source": "pkg/api/server.go"
   },
   "totals": {
-    "routes": 564,
+    "routes": 570,
     "public": 22,
-    "protected": 542,
-    "rbac": 540,
+    "protected": 548,
+    "rbac": 546,
     "handler_authenticated": 2,
     "role_metadata_missing": 0,
-    "green": 564,
+    "green": 570,
     "partial": 0,
     "missing": 0
   },
@@ -11502,6 +11502,25 @@
     },
     {
       "method": "GET",
+      "path": "/api/v1/system/library/remotes/{id}/workspaces",
+      "operation_id": "handleLibraryRemoteWorkspaces",
+      "public": false,
+      "authenticated": true,
+      "state": "GREEN",
+      "enforcement": "authentication middleware and access catalog",
+      "access": "Requires authentication; global roles: SystemAdmin; service-account scope: settings:manage",
+      "anonymous_assertion": "HTTP 401 before handler",
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "system_admin"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "settings:manage"
+    },
+    {
+      "method": "GET",
       "path": "/api/v1/system/parity-status",
       "operation_id": "handleGetParityStatus",
       "public": false,
@@ -11534,6 +11553,20 @@
       "anonymous_assertion": "route is registered without HTTP auth middleware",
       "role_assertion": "not applicable to public route",
       "allowed_roles": {}
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/system/redaction/preview",
+      "operation_id": "handleRedactionPreview",
+      "public": false,
+      "authenticated": true,
+      "state": "GREEN",
+      "enforcement": "authentication middleware and access catalog",
+      "access": "Requires authentication; service-account scope: read",
+      "anonymous_assertion": "HTTP 401 before handler",
+      "role_assertion": "any authenticated identity allowed",
+      "allowed_roles": {},
+      "service_account_scope": "read"
     },
     {
       "method": "POST",
@@ -11621,6 +11654,82 @@
       "method": "PUT",
       "path": "/api/v1/system/settings",
       "operation_id": "handleUpdateSystemSettings",
+      "public": false,
+      "authenticated": true,
+      "state": "GREEN",
+      "enforcement": "authentication middleware and access catalog",
+      "access": "Requires authentication; global roles: SystemAdmin; service-account scope: settings:manage",
+      "anonymous_assertion": "HTTP 401 before handler",
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "system_admin"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "settings:manage"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/system/settings/connections/test",
+      "operation_id": "handleConnectionTest",
+      "public": false,
+      "authenticated": true,
+      "state": "GREEN",
+      "enforcement": "authentication middleware and access catalog",
+      "access": "Requires authentication; global roles: SystemAdmin; service-account scope: settings:manage",
+      "anonymous_assertion": "HTTP 401 before handler",
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "system_admin"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "settings:manage"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/system/settings/notifications/deliveries",
+      "operation_id": "handleNotificationDeliveries",
+      "public": false,
+      "authenticated": true,
+      "state": "GREEN",
+      "enforcement": "authentication middleware and access catalog",
+      "access": "Requires authentication; global roles: SystemAdmin; service-account scope: settings:manage",
+      "anonymous_assertion": "HTTP 401 before handler",
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "system_admin"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "settings:manage"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/system/settings/notifications/preview",
+      "operation_id": "handleNotificationPreview",
+      "public": false,
+      "authenticated": true,
+      "state": "GREEN",
+      "enforcement": "authentication middleware and access catalog",
+      "access": "Requires authentication; global roles: SystemAdmin; service-account scope: settings:manage",
+      "anonymous_assertion": "HTTP 401 before handler",
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "system_admin"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "settings:manage"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/system/settings/notifications/test",
+      "operation_id": "handleNotificationTest",
       "public": false,
       "authenticated": true,
       "state": "GREEN",

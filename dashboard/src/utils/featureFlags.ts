@@ -11,7 +11,7 @@ function parseFlag(value: string | undefined): boolean | undefined {
 export function isRunReportEnabled(): boolean {
   const stored = parseFlag(readStoredString('apexload.featureFlags.runReport', ''))
   if (stored !== undefined) return stored
-  return parseFlag(import.meta.env?.VITE_APEXLOAD_RUN_REPORT) ?? false
+  return parseFlag(import.meta.env?.VITE_APEXLOAD_RUN_REPORT) ?? true
 }
 
 // isJavaClasspathUploadEnabled gates the Java Vuser classpath JAR upload UI

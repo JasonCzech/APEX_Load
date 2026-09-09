@@ -1,3 +1,5 @@
+import TabList from './ux/TabList'
+import { handleTabKey } from './tabKeyboard'
 import { useId, useState } from 'react'
 
 import { type RuntimeSettingsOverride, type ScenarioRuntimeSettingsDraft } from '../types'
@@ -697,7 +699,7 @@ export default function RuntimeSettingsGroupEditor({
         </div>
       )}
 
-      <div className="scenario-run-settings-tabs runtime-override-tabs" role="tablist" aria-label={`${title || "Group runtime"} sections`}>
+      <TabList className="scenario-run-settings-tabs runtime-override-tabs" role="tablist" aria-label={`${title || "Group runtime"} sections`} onKeyDown={handleTabKey}>
         {visibleTabs.map(tab => (
           <button
             key={tab.id}
@@ -707,12 +709,12 @@ export default function RuntimeSettingsGroupEditor({
             aria-selected={activeTab === tab.id}
             aria-controls={`${tabPrefix}-runtime-tab-panel-${tab.id}`}
             className={`scenario-run-settings-tab ${activeTab === tab.id ? 'active' : ''}`}
-            onClick={() => setRawActiveTab(tab.id)}
+            onClick={() => setRawActiveTab(tab.id)} tabIndex={(activeTab === tab.id) ? 0 : -1}
           >
             {tab.label}
           </button>
         ))}
-      </div>
+      </TabList>
 
       <div
         className="scenario-run-settings-tab-panel runtime-override-tab-panel"
@@ -1068,7 +1070,7 @@ export default function RuntimeSettingsGroupEditor({
                 {visibleHttpSubTabs.map(st => <option value={st.id} key={st.id}>{st.label}</option>)}
               </select>
             </label>
-            <div className="http-transport-tabs" role="tablist" aria-label="HTTP transport sections">
+            <TabList className="http-transport-tabs" role="tablist" aria-label="HTTP transport sections" onKeyDown={handleTabKey}>
               {visibleHttpSubTabs.map(st => (
                 <button
                   key={st.id}
@@ -1076,7 +1078,7 @@ export default function RuntimeSettingsGroupEditor({
                   role="tab"
                   aria-selected={httpSubTab === st.id}
                   className={`http-transport-tab ${httpSubTab === st.id ? 'active' : ''}`}
-                  onClick={() => setRawHttpSubTab(st.id)}
+                  onClick={() => setRawHttpSubTab(st.id)} tabIndex={(httpSubTab === st.id) ? 0 : -1}
                 >
                   <span>{st.label}</span>
                   {st.id === 'request_defaults' && (
@@ -1093,7 +1095,7 @@ export default function RuntimeSettingsGroupEditor({
                   )}
                 </button>
               ))}
-            </div>
+            </TabList>
 
             <div className="http-transport-tab-panel">
               {httpSubTab === 'request_defaults' && (

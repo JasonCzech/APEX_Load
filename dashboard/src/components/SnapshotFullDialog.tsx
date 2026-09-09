@@ -1,3 +1,4 @@
+import DialogLayer from './ux/DialogLayer'
 import { ReactNode, useEffect, useId, useRef } from 'react'
 import { createPortal } from 'react-dom'
 
@@ -63,7 +64,7 @@ export default function SnapshotFullDialog({
   }
 
   return createPortal(
-    <div
+    <DialogLayer><div
       className="snapshot-full-dialog-backdrop"
       role="presentation"
       onPointerDown={event => {
@@ -106,7 +107,7 @@ export default function SnapshotFullDialog({
           ) : children}
         </div>
       </section>
-    </div>,
+    </div></DialogLayer>,
     document.body,
   )
 }

@@ -1,3 +1,4 @@
+import DialogLayer from './ux/DialogLayer'
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 
 import { useExecutionPlansApi } from '../hooks/api/useExecutionPlansApi'
@@ -387,7 +388,7 @@ export default function ExecutionPlanSchedulesModal({ plan, canManage, canAdmin 
   const draftValid = Boolean(draft && draft.name.trim() && draft.cron_expr.trim())
 
   return (
-    <div
+    <DialogLayer><div
       className="pp-modal-overlay"
       role="presentation"
       onPointerDown={event => {
@@ -646,6 +647,6 @@ export default function ExecutionPlanSchedulesModal({ plan, canManage, canAdmin 
           onConfirm={() => void confirmDelete()}
         />
       )}
-    </div>
+    </div></DialogLayer>
   )
 }

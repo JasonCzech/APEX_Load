@@ -1494,12 +1494,14 @@ func TestDistributedExecutionBackendDistributesGroupsAcrossMultipleGenerators(t 
 		},
 	))
 
+	// Bound archive volume: this tests distribution and merge correctness, not
+	// unpaced localhost throughput or Parquet compression speed.
 	runner.StoreScript(&dsl.Script{
 		ID:       "buyers-script",
 		Name:     "Buyers",
 		Protocol: "http",
 		Version:  "1.0.0",
-		Config:   dsl.ScriptConfig{BaseURL: target.URL, RunLogic: dsl.RunLogicConfig{Iterations: 0}},
+		Config:   dsl.ScriptConfig{BaseURL: target.URL, RunLogic: dsl.RunLogicConfig{Iterations: 0}, Pacing: dsl.PacingConfig{Type: "fixed_delay", DelayMs: 100}},
 		Actions:  []dsl.Action{{Name: "Buyers Home", Type: "GET", Target: "/buyers"}},
 	})
 	runner.StoreScript(&dsl.Script{
@@ -1507,7 +1509,7 @@ func TestDistributedExecutionBackendDistributesGroupsAcrossMultipleGenerators(t 
 		Name:     "Admins",
 		Protocol: "http",
 		Version:  "1.0.0",
-		Config:   dsl.ScriptConfig{BaseURL: target.URL, RunLogic: dsl.RunLogicConfig{Iterations: 0}},
+		Config:   dsl.ScriptConfig{BaseURL: target.URL, RunLogic: dsl.RunLogicConfig{Iterations: 0}, Pacing: dsl.PacingConfig{Type: "fixed_delay", DelayMs: 100}},
 		Actions:  []dsl.Action{{Name: "Admins Home", Type: "GET", Target: "/admins"}},
 	})
 

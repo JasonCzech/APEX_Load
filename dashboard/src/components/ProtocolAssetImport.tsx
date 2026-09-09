@@ -1,3 +1,5 @@
+import TabList from './ux/TabList'
+import { handleTabKey } from './tabKeyboard'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { useAsyncTask } from '../hooks/useAsyncTask'
@@ -2388,7 +2390,7 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
                     </button>
                   </nav>
                 )}
-                <div className="sample-import-script-tabs" role="tablist" aria-label="Generated AsyncAPI scripts">
+                <TabList className="sample-import-script-tabs" role="tablist" aria-label="Generated AsyncAPI scripts" onKeyDown={handleTabKey}>
                   {visibleAsyncAPIScripts.map((script, visibleIndex) => {
                     const index = asyncAPIScriptPageStart + visibleIndex
                     return (
@@ -2411,7 +2413,7 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
                     </button>
                     )
                   })}
-                </div>
+                </TabList>
                 <button
                   className="btn btn-secondary btn-sm"
                   type="button"

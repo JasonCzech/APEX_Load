@@ -569,10 +569,12 @@ func (s *Server) handleGetRunArchiveReport(w http.ResponseWriter, r *http.Reques
 		_, _ = w.Write(document.Bytes())
 		return
 	}
-	// The raw JSON report carries the full model, so attach the release-over-release
-	// trend unconditionally (still a no-op for runs with no release association).
+	// Interactive result summaries can omit the release-wide scan. Full reports
+	// retain the prior-run trend by default.
 	attachReportVerdictAndSLA(report)
-	s.attachReleaseTrend(report)
+	if r.URL.Query().Get("include_release_trend") != "false" {
+		s.attachReleaseTrend(report)
+	}
 	s.attachDashboardPanels(report)
 	if r.URL.Query().Get("profile") == "audit" {
 		report.Integrity = verifyRunArchiveIntegrity(record, report.Manifest)

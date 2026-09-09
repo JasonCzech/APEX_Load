@@ -533,3 +533,31 @@
     padding: 0 0 8px;
   }
 }
+
+.run-report-toolbar > div { min-width: 0; }
+.run-report-toolbar h1 { overflow-wrap: anywhere; }
+.run-report-toolbar { flex-wrap: wrap; }
+.run-report-context { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 24px; }
+.run-report-context label { display: flex; align-items: center; gap: 10px; font-weight: 600; }
+.run-report-context p { flex-basis: 100%; margin: 0; font-size: 12px; color: var(--text-muted); }
+.run-report-page select, .run-report-compare input { max-width: 100%; padding: 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-card); color: var(--text-primary); }
+.run-report-areas { display: flex; gap: 4px; border-bottom: 1px solid var(--border); }
+.run-report-areas button { padding: 12px 18px; background: transparent; color: var(--text-secondary); border: 0; border-bottom: 3px solid transparent; font: inherit; cursor: pointer; }
+.run-report-areas button[aria-selected="true"] { color: var(--accent); border-bottom-color: var(--accent); font-weight: 700; }
+.run-report-area-content { display: flex; flex-direction: column; gap: 18px; min-width: 0; }
+.run-report-area-content > details, .run-report-panel > details { padding: 12px 16px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-card); }
+.run-report-page summary { cursor: pointer; font-weight: 600; padding: 6px 0; }
+.run-report-page details[open] > summary { margin-bottom: 12px; }
+.run-report-compare-controls label { min-width: 0; max-width: 100%; }
+.run-report-compare-controls select { max-width: min(520px, 100%); }
+@media (max-width: 600px) { .run-report-areas button { padding: 12px 8px; flex: 1; font-size: 12px; } .run-report-context label { flex-wrap: wrap; } }
+.run-report-kpi strong { white-space: nowrap; }
+#result-panel-Performance .tx-table td:first-child { min-width: 180px; overflow-wrap: break-word; word-break: normal; }
+.report-toolbar-left, .report-toolbar-right { flex-wrap: wrap; min-width: 0; }
+.report-toolbar-title { overflow-wrap: anywhere; }
+.run-report-page .archive-report-card, .run-report-page .tx-section { min-width: 0; max-width: 100%; }
+.run-report-page .tx-section { overflow-x: auto; }
+.run-report-page .archive-section-header-stack { flex-direction: column; align-items: stretch; }
+.run-report-page .archive-dimension-filter-bar { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); }
+.run-report-page .archive-dimension-filter-bar input, .run-report-page .archive-dimension-filter-bar select { width: 100%; min-width: 0; }
+.run-report-page .archive-action-section .tx-table { table-layout: auto; min-width: 560px; }

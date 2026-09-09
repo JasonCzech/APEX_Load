@@ -1,3 +1,11 @@
+import RowActions from './ux/RowActions'
+import BulkActions from './ux/BulkActions'
+import FormField from './ux/FormField'
+import FormErrorSummary from './ux/FormErrorSummary'
+import TabList from './ux/TabList'
+import { confirmAction } from './ux/confirmAction'
+import { handleTabKey } from './tabKeyboard'
+import DialogLayer from './ux/DialogLayer'
 import ScriptsPage from './ScriptsPage'
 import { scenarioScriptReadiness } from './scenarioScriptReadiness'
 import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
@@ -1910,8 +1918,8 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
   }, [canManageTests, onScenarioViewChange, resetBuilderToBlank])
 
   // Discard the in-progress draft and start a fresh blank scenario (stays in the builder).
-  const startBlankScenario = useCallback(() => {
-    if (!window.confirm('Discard this in-progress scenario draft and start over with a blank builder?')) return
+  const startBlankScenario = useCallback(async () => {
+    if (!(await confirmAction('Discard this in-progress scenario draft and start over with a blank builder?'))) return
     clearScenarioBuilderDraft()
     resetBuilderToBlank()
   }, [resetBuilderToBlank])
@@ -3216,7 +3224,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
 
   const deleteSelectedScenarios = async () => {
     const ids = selectedVisibleScenarioIds.filter(id => !deletingScenarioIds.has(id))
-    if (!canManageTests || ids.length === 0 || !confirm(`Delete ${ids.length} selected scenario${ids.length === 1 ? '' : 's'}? Scenarios with linked results cannot be deleted.`)) return
+    if (!canManageTests || ids.length === 0 || !(await confirmAction(`Delete ${ids.length} selected scenario${ids.length === 1 ? '' : 's'}? Scenarios with linked results cannot be deleted.`))) return
     const scopeProjectId = activeProjectId
     setDeletingScenarioIds(current => new Set([...current, ...ids]))
     setError('')
@@ -4277,7 +4285,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
             <p>Configure VUsers, ramp, duration, mode, goals, stage modeling, browser defaults, and generator assignment.</p>
           </div>
           {renderShapeGuidance()}
-          <div className="scenario-run-settings-tabs" role="tablist" aria-label="Run settings sections">
+          <TabList className="scenario-run-settings-tabs" role="tablist" aria-label="Run settings sections" onKeyDown={handleTabKey}>
             {runSettingsTabs.map(tab => (
               <button
                 key={tab.id}
@@ -4287,12 +4295,12 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
                 role="tab"
                 aria-selected={runSettingsTab === tab.id}
                 aria-controls={`scenario-run-settings-${tab.id}-panel`}
-                onClick={() => setRunSettingsTab(tab.id)}
+                onClick={() => setRunSettingsTab(tab.id)} tabIndex={(runSettingsTab === tab.id) ? 0 : -1}
               >
                 {tab.label}
               </button>
             ))}
-          </div>
+          </TabList>
           <div
             className="scenario-run-settings-tab-panel"
             id={`scenario-run-settings-${runSettingsTab}-panel`}
@@ -4317,7 +4325,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
 										<DurationField className="scenario-field" label="Duration" value={form.duration} required showPresets onChange={value => setForm(previous => ({ ...previous, duration: value, scenario_mode: 'goal_oriented' }))} />
 										<label className="scenario-field"><span>Target TPS for {activeGroupLabel}</span><div className="stepped-ramp-unit-input"><input aria-label={`Target TPS for ${activeGroupLabel}`} className="settings-input" type="number" min={0.01} step="any" value={activeGoalDrivenDefinition.target_tps} onChange={event => updateGoalDriven({ target_tps: Number(event.target.value) })} /><span>TPS</span></div></label>
 									</div>
-									{formGroups.length > 1 && <div className="scenario-group-tabs" role="tablist" aria-label="Goal-driven groups">{formGroups.map((group, index) => <button key={`goal-group-${index}`} type="button" className={`scenario-group-tab ${activeGroupIndex === index ? 'active' : ''}`} role="tab" aria-selected={activeGroupIndex === index} onClick={() => setStageGroupIndex(index)}><strong>{group.name.trim() || `Group ${index + 1}`}</strong><span>{goalDrivenConfig.groups[goalDrivenGroupKey(index)]?.target_tps || 0} TPS</span></button>)}</div>}
+									{formGroups.length > 1 && <TabList className="scenario-group-tabs" role="tablist" aria-label="Goal-driven groups" onKeyDown={handleTabKey}>{formGroups.map((group, index) => <button key={`goal-group-${index}`} type="button" className={`scenario-group-tab ${activeGroupIndex === index ? 'active' : ''}`} role="tab" aria-selected={activeGroupIndex === index} onClick={() => setStageGroupIndex(index)} tabIndex={(activeGroupIndex === index) ? 0 : -1}><strong>{group.name.trim() || `Group ${index + 1}`}</strong><span>{goalDrivenConfig.groups[goalDrivenGroupKey(index)]?.target_tps || 0} TPS</span></button>)}</TabList>}
 									<div className="stepped-ramp-equation" aria-live="polite"><strong>{form.goal_target_average_tps || 0} aggregate TPS</strong><span>Constant requested throughput for {formatModelTimeLabel(parseDurationToSeconds(form.duration))}</span></div>
 								</div>
 							</section>
@@ -4382,7 +4390,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
 										<button type="button" role="radio" aria-checked={closedVUserConfig.scope === 'scenario'} className={closedVUserConfig.scope === 'scenario' ? 'active' : ''} onClick={() => updateClosedVUser(undefined, 'scenario')}><strong>Each group (same profile)</strong><span>Repeat this profile for every group</span></button>
 										<button type="button" role="radio" aria-checked={closedVUserConfig.scope === 'group'} className={closedVUserConfig.scope === 'group' ? 'active' : ''} onClick={() => updateClosedVUser(undefined, 'group')}><strong>Configure each group</strong><span>Set independent peaks and phase lengths</span></button>
 									</div>
-									{closedVUserConfig.scope === 'group' && formGroups.length > 1 && <div className="scenario-group-tabs" role="tablist" aria-label="Closed VUser groups">{formGroups.map((group, index) => <button key={`${group.script_id}-${index}-closed`} type="button" className={`scenario-group-tab ${activeGroupIndex === index ? 'active' : ''}`} role="tab" aria-selected={activeGroupIndex === index} onClick={() => setStageGroupIndex(index)}><strong>{group.name.trim() || `Group ${index + 1}`}</strong><span>{group.vusers} peak VUsers</span></button>)}</div>}
+									{closedVUserConfig.scope === 'group' && formGroups.length > 1 && <TabList className="scenario-group-tabs" role="tablist" aria-label="Closed VUser groups" onKeyDown={handleTabKey}>{formGroups.map((group, index) => <button key={`${group.script_id}-${index}-closed`} type="button" className={`scenario-group-tab ${activeGroupIndex === index ? 'active' : ''}`} role="tab" aria-selected={activeGroupIndex === index} onClick={() => setStageGroupIndex(index)} tabIndex={(activeGroupIndex === index) ? 0 : -1}><strong>{group.name.trim() || `Group ${index + 1}`}</strong><span>{group.vusers} peak VUsers</span></button>)}</TabList>}
 								</div>
 							</section>
 							<section className="stepped-ramp-section" aria-labelledby="closed-phases-title">
@@ -4459,7 +4467,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
 									<button type="button" role="radio" aria-checked={steppedRampConfig.scope === 'scenario'} className={steppedRampConfig.scope === 'scenario' ? 'active' : ''} onClick={() => updateSteppedRamp(undefined, 'scenario')}><strong>Each group (same profile)</strong><span>Apply the same ramp to every group</span></button>
 									<button type="button" role="radio" aria-checked={steppedRampConfig.scope === 'group'} className={steppedRampConfig.scope === 'group' ? 'active' : ''} onClick={() => updateSteppedRamp(undefined, 'group')}><strong>Configure each group</strong><span>Set a different ramp for each group</span></button>
 								</div>
-								{steppedRampConfig.scope === 'group' && formGroups.length > 1 && <div className="scenario-group-tabs" role="tablist" aria-label="Stepped ramp groups">{formGroups.map((group, index) => <button key={`${group.script_id}-${index}-ramp`} type="button" className={`scenario-group-tab ${activeGroupIndex === index ? 'active' : ''}`} role="tab" aria-selected={activeGroupIndex === index} onClick={() => setStageGroupIndex(index)}><strong>{group.name.trim() || `Group ${index + 1}`}</strong><span>{group.vusers} peak VUsers</span></button>)}</div>}
+								{steppedRampConfig.scope === 'group' && formGroups.length > 1 && <TabList className="scenario-group-tabs" role="tablist" aria-label="Stepped ramp groups" onKeyDown={handleTabKey}>{formGroups.map((group, index) => <button key={`${group.script_id}-${index}-ramp`} type="button" className={`scenario-group-tab ${activeGroupIndex === index ? 'active' : ''}`} role="tab" aria-selected={activeGroupIndex === index} onClick={() => setStageGroupIndex(index)} tabIndex={(activeGroupIndex === index) ? 0 : -1}><strong>{group.name.trim() || `Group ${index + 1}`}</strong><span>{group.vusers} peak VUsers</span></button>)}</TabList>}
 							</div>
 						</section>
 						<p className="scenario-assignment-copy secondary">Changes apply immediately. Review the total demand and duration in the preview, then continue.</p>
@@ -4487,7 +4495,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
             </label>
           </div>
           {formGroups.length > 1 && (
-            <div className="scenario-group-tabs" role="tablist" aria-label="Scenario load groups">
+            <TabList className="scenario-group-tabs" role="tablist" aria-label="Scenario load groups" onKeyDown={handleTabKey}>
               {formGroups.map((group, index) => {
                 const script = findScriptById(scripts, group.script_id)
                 const groupLabel = group.name || `Group ${index + 1}`
@@ -4500,14 +4508,14 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
                     role="tab"
                     aria-selected={activeGroupIndex === index}
                     aria-controls="scenario-active-group-panel"
-                    onClick={() => setStageGroupIndex(index)}
+                    onClick={() => setStageGroupIndex(index)} tabIndex={(activeGroupIndex === index) ? 0 : -1}
                   >
                     <strong>{groupLabel}</strong>
                     <span>{script?.name || 'Unassigned script'} · {group.vusers} VUsers</span>
                   </button>
                 )
               })}
-            </div>
+            </TabList>
 		  )}
 		  <ScenarioCompositionTimeline
 			duration={form.duration}
@@ -4887,16 +4895,9 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
             {loadModelValidationLoading ? 'Validating...' : 'Validate Load Model'}
           </button>
         </div>
-        <label className="scenario-field scenario-name-prompt">
-          <span>{form.name.trim() ? 'Scenario Name' : 'Name this scenario to save it'}</span>
-          <input
-            className="settings-input"
-            value={form.name}
-            placeholder="Scenario name"
-            aria-label="Scenario name"
-            onChange={event => setForm({ ...form, name: event.target.value })}
-          />
-        </label>
+        <FormField className="scenario-field scenario-name-prompt" label="Scenario name" htmlFor="scenario-review-name" hint="Save a reusable draft now; validate it before creating a run.">
+          <input className="settings-input" value={form.name} placeholder="Scenario name" aria-label="Scenario name" onChange={event => setForm({ ...form, name: event.target.value })} />
+        </FormField>
         {blockedScriptGroups.length > 0 && <div className="scenario-source-pending" role="status"><strong>Script review required</strong>{blockedScriptGroups.map((group, index) => <p key={index}>{group.name}: {scriptReadiness.get(group.script_id)?.summary} <button className="btn btn-sm btn-secondary" onClick={() => setReviewScriptId(group.script_id)}>Review script</button></p>)}</div>}
         <div className="scenario-review-grid">
 
@@ -5016,8 +5017,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
             </div>
             <div className="scenario-builder-progress">
               <span>{editingId ? (scenarioBuilderDirty ? 'Editing · Unsaved changes' : 'Editing · Saved') : 'New scenario · Unsaved'}</span>
-              <span className={sourceStepComplete ? 'ready' : ''}>{sourceStepComplete ? 'Model configured' : 'Model incomplete'}</span>
-              <span role="status" className={loadModelValidationError || loadModelValidation?.status === 'blocked' ? 'blocked' : loadModelValidation ? 'ready' : ''}>{validationLabel}</span>
+              <details className="ux-builder-readiness"><summary>Readiness</summary><p>{sourceStepComplete ? 'Model configured' : 'Model incomplete'} · {validationLabel}</p></details>
             </div>
           </div>
 
@@ -5096,16 +5096,13 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
 
           {renderSourceScenarioRunsPanel()}
 
-          {blockingStageTimelineMessage && <div className="settings-error-inline">{blockingStageTimelineMessage}</div>}
-					{steppedRampBlockingMessage && <div className="settings-error-inline">{steppedRampBlockingMessage}</div>}
-					{closedVUserBlockingMessage && <div className="settings-error-inline">{closedVUserBlockingMessage}</div>}
-					{goalDrivenBlockingMessage && <div className="settings-error-inline">{goalDrivenBlockingMessage}</div>}
-          {observerEnvelopeError && <div className="settings-error-inline">{observerEnvelopeError}</div>}
-          {aggregateEnvelopeError && <div className="settings-error-inline">{aggregateEnvelopeError}</div>}
-          {assignmentValidationError && <div className="settings-error-inline">{assignmentValidationError}</div>}
-          {scenarioGroupNameError && <div className="settings-error-inline">{scenarioGroupNameError}</div>}
+          <FormErrorSummary issues={[
+            ...[blockingStageTimelineMessage, steppedRampBlockingMessage, closedVUserBlockingMessage, goalDrivenBlockingMessage].map(message => ({ message: message || '', onResolve: () => setWizardStep('source') })),
+            ...[observerEnvelopeError, aggregateEnvelopeError].map(message => ({ message: message || '', onResolve: () => setWizardStep('run') })),
+            ...[assignmentValidationError, scenarioGroupNameError].map(message => ({ message: message || '', onResolve: () => setWizardStep('scripts') })),
+          ]} />
 
-          <div className="scenario-builder-actions" aria-busy={savePending}>
+          <div className="scenario-builder-actions" aria-busy={savePending}><span className="ux-draft-help">Saving keeps this scenario for later; it does not launch a run.</span>
             <button className="btn btn-secondary" onClick={guardedOpenScenarioLibrary}>Cancel</button>
             {builderHasProgress && (
               <button
@@ -5129,7 +5126,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
                 Back
               </button>
             )}
-            <button
+            {wizardStep !== 'review' && <button
               className="btn btn-primary"
               onClick={() => {
                 const nextIndex = Math.min(scenarioWizardSteps.length - 1, currentWizardIndex + 1)
@@ -5138,11 +5135,11 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
               disabled={savePending || currentWizardIndex === scenarioWizardSteps.length - 1 || (wizardStep === 'start' && !scenarioStartChoice) || (wizardStep === 'source' && !sourceStepComplete) || (wizardStep === 'run' && !wizardStepCompletion.run) || (wizardStep === 'scripts' && !wizardStepCompletion.scripts)}
             >
               Next
-            </button>
+            </button>}
             {wizardStep === 'review' && onCreateTestFromScenario && (
               <button className="btn btn-primary" onClick={saveScenarioAndCreateTest} disabled={savePending || sourcePending || loadModelValidationLoading || !!loadModelValidationError || loadModelValidation?.status === 'blocked' || blockedScriptGroups.length > 0 || Boolean(blockingStageTimelineMessage || steppedRampBlockingMessage || closedVUserBlockingMessage || goalDrivenBlockingMessage || observerEnvelopeError || aggregateEnvelopeError || assignmentValidationError || scenarioGroupNameError)}>Save &amp; Create Test Run</button>
             )}
-            <button className="btn btn-secondary" onClick={saveScenario} disabled={savePending || sourcePending || Boolean(blockingStageTimelineMessage || steppedRampBlockingMessage || closedVUserBlockingMessage || goalDrivenBlockingMessage || observerEnvelopeError || aggregateEnvelopeError || assignmentValidationError || scenarioGroupNameError)}>{savePending ? 'Saving…' : 'Save Scenario'}</button>
+            <button className="btn btn-secondary" onClick={saveScenario} disabled={savePending || sourcePending || Boolean(blockingStageTimelineMessage || steppedRampBlockingMessage || closedVUserBlockingMessage || goalDrivenBlockingMessage || observerEnvelopeError || aggregateEnvelopeError || assignmentValidationError || scenarioGroupNameError)}>{savePending ? 'Saving…' : 'Save draft'}</button>
           </div>
 
         </fieldset>
@@ -5153,11 +5150,23 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
       <div className="page-section">
         <LibraryFederationControls
           kind="scenario"
+            filtersActive={scenarioReleaseFilter !== 'all'}
+          primaryAction={canManageTests && <button className="btn btn-primary" onClick={openCreate}>Create scenario</button>}
           federation={scenarioFederation}
           projectName={activeProject?.name}
           onConfigureRemotes={openRemoteSettings}
           summaryText={scenarioQuery.trim() || scenarioReleaseFilter !== 'all' ? `${sorted.length} matching scenario${sorted.length === 1 ? '' : 's'}` : 'Search by scenario, script, data pool, release, host, or browser profile.'}
-          filterControls={(
+          searchControl={(<label className="project-redaction-rule-field">
+                <span>Search scenarios</span>
+                <input
+                  className="settings-input"
+                  type="search"
+                  value={scenarioQuery}
+                  onChange={(event) => setScenarioQuery(event.target.value)}
+                  placeholder="Find releases or scenarios..."
+                />
+              </label>)}
+            filterControls={(
             <>
               <label className="project-redaction-rule-field">
                 <span>Associated Release</span>
@@ -5173,24 +5182,13 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
                   {scenarioReleaseOptions.map(name => <option key={name} value={name}>{name}</option>)}
                 </select>
               </label>
-              <label className="project-redaction-rule-field">
-                <span>Search scenarios</span>
-                <input
-                  className="settings-input"
-                  type="search"
-                  value={scenarioQuery}
-                  onChange={(event) => setScenarioQuery(event.target.value)}
-                  placeholder="Find releases or scenarios..."
-                />
-              </label>
+
             </>
           )}
         />
-        {canManageTests && <button className="btn btn-primary scenario-create-button" onClick={openCreate}>Create scenario</button>}
+
         {canManageTests && selectedVisibleScenarioIds.length > 0 && (
-          <div className="library-bulk-selection-toolbar">
-            <span>{selectedVisibleScenarioIds.length} selected</span>
-            <div className="library-bulk-selection-actions">
+          <BulkActions count={selectedVisibleScenarioIds.length}>
               <button
                 type="button"
                 className="btn btn-ghost"
@@ -5207,8 +5205,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
               >
                 Delete Selected ({selectedVisibleScenarioIds.length})
               </button>
-            </div>
-          </div>
+            </BulkActions>
         )}
         <div className="data-table scenario-library-table">
           <table>
@@ -5298,7 +5295,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
                       {canManageTests ? (
                         <>
                           <button className="btn btn-sm btn-ghost" onClick={(event) => { event.stopPropagation(); openEdit(scenario) }}>Edit</button>
-                          <details className="scenario-more-actions" onClick={event => event.stopPropagation()}><summary>More actions</summary><button className="btn btn-sm btn-ghost" onClick={(event) => { event.stopPropagation(); duplicateScenario(scenario) }}>Duplicate</button>
+                          <RowActions className="scenario-more-actions"><button className="btn btn-sm btn-ghost" onClick={(event) => { event.stopPropagation(); duplicateScenario(scenario) }}>Duplicate</button>
                           <button className="btn btn-sm btn-ghost" onClick={(event) => { event.stopPropagation(); addScenarioToPlan(scenario.id) }} title="Seed a new execution plan with this scenario">Add to plan</button>
                           <button className="btn btn-sm btn-ghost" style={{ color: 'var(--danger)' }} disabled={deletingScenarioIds.has(scenario.id)} onClick={(event) => { event.stopPropagation(); setConfirmDeleteScenarioId(scenario.id) }}>{deletingScenarioIds.has(scenario.id) ? 'Deleting…' : 'Delete'}</button>
                           <button
@@ -5309,7 +5306,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
                           >Push</button>
                           {hostItem?.local_item_id && (
                             <button className="btn btn-sm btn-ghost" onClick={(event) => { event.stopPropagation(); void scenarioFederation.compareItems(scenario.id, hostItem) }}>Compare</button>
-                          )}</details>
+                          )}</RowActions>
                         </>
                       ) : (
                         <span className="cell-muted">Read-only</span>
@@ -5382,7 +5379,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
       )}
 
       {confirmDeleteScenarioId && (
-        <div className="modal-overlay" {...dialogBackdropProps(closeDeleteScenarioDialog, 'Close scenario deletion dialog')}>
+        <DialogLayer><div className="modal-overlay" {...dialogBackdropProps(closeDeleteScenarioDialog, 'Close scenario deletion dialog')}>
           <div
             ref={deleteScenarioDialogRef}
             className="modal"
@@ -5404,7 +5401,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
               </div>
             </div>
           </div>
-        </div>
+        </div></DialogLayer>
       )}
     </div>
   )

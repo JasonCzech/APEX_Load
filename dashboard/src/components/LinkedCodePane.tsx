@@ -199,7 +199,7 @@ export default function LinkedCodePane({
     hasAppliedRangeRef.current = true
     const range = activeStartLine != null ? { startLine: activeStartLine, endLine: activeEndLine ?? activeStartLine } : null
     effects.push(setLinkedRange.of(range))
-    
+
     if (!isInitialRange && range && range.startLine >= 1 && range.startLine <= view.state.doc.lines && isSelectionChange) {
       const line = view.state.doc.line(range.startLine)
       effects.push(EditorView.scrollIntoView(line.from, { y: 'center' }))
@@ -214,7 +214,7 @@ export default function LinkedCodePane({
       const lowerQuery = searchQuery.toLowerCase()
       const builder = new RangeSetBuilder<Decoration>()
       const deco = Decoration.mark({ class: 'apex-search-match' })
-      
+
       let i = 0
       let lastI = -1
       while ((i = lowerText.indexOf(lowerQuery, i)) !== -1) {

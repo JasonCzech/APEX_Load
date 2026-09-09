@@ -1,3 +1,4 @@
+import DialogLayer from './ux/DialogLayer'
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 
@@ -209,7 +210,7 @@ export default function ScriptSecretBindingsDialog({
   }
 
   return createPortal((
-    <div className="modal-overlay script-secret-bindings-overlay" {...dialogBackdropProps(onClose, 'Close secret bindings')}>
+    <DialogLayer><div className="modal-overlay script-secret-bindings-overlay" {...dialogBackdropProps(onClose, 'Close secret bindings')}>
       <div
         ref={dialogRef}
         className="modal modal-wide script-secret-bindings-dialog"
@@ -348,6 +349,6 @@ export default function ScriptSecretBindingsDialog({
           })}
         </div>
       </div>
-    </div>
+    </div></DialogLayer>
   ), document.body)
 }

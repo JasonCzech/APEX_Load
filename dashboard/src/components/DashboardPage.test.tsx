@@ -361,7 +361,7 @@ describe('DashboardPage', () => {
     expect(performancePanelText).not.toContain('Max CPU')
     expect(performancePanelText).not.toContain('Max Memory')
     expect(performancePanelText).not.toContain('Telemetry Breaches')
-    expect(container.textContent).toContain('Breached')
+    expect(container.textContent).toContain('Not available')
     expect(container.textContent).toContain('Export CSV')
     expect(container.textContent).toContain('View Results')
     expect(container.textContent).not.toContain('Test Summary')
@@ -504,13 +504,13 @@ describe('DashboardPage', () => {
     expect(panel).toBeTruthy()
     expect(panel?.hidden).toBe(false)
 
-    clickButtonByText('Collapse')
+    act(() => { container.querySelector<HTMLButtonElement>('[aria-label="Collapse Release snapshot"]')!.click() })
     expect(panel?.hidden).toBe(true)
-    const railButton = getButtonByText('Snapshot')
+    const railButton = getButtonByText('Release snapshot')
     expect(railButton.getAttribute('aria-expanded')).toBe('false')
     expect(container.querySelector('.dash-release-panel.is-collapsed')).toBeTruthy()
 
-    clickButtonByText('Open')
+    clickButtonByText('Release snapshot')
     expect(panel?.hidden).toBe(false)
     expect(getButtonByText('Collapse').getAttribute('aria-expanded')).toBe('true')
   })
@@ -880,20 +880,15 @@ describe('DashboardPage', () => {
     await flushDashboard()
 
     const performanceRow = tableRowContaining('Checkout Archive')
-    expect(performanceRow.textContent).toContain('Run Dashboard')
-    expect(performanceRow.textContent).toContain('Run Archive')
-
-    clickButtonInRow(performanceRow, 'Run Dashboard')
-    expect(onSelectTest).toHaveBeenCalledWith('test-complete-2')
-    expect(onOpenTestArchive).not.toHaveBeenCalled()
-    onSelectTest.mockClear()
-
-    clickButtonInRow(performanceRow, 'Run Archive')
+    expect(performanceRow.textContent).toContain('View results')
+    expect(performanceRow.textContent).not.toContain('Run Archive')
+    clickButtonInRow(performanceRow, 'View results')
     expect(onOpenTestArchive).toHaveBeenCalledWith('test-complete-2')
     expect(onSelectTest).not.toHaveBeenCalled()
-
+    onOpenTestArchive.mockClear()
     clickButtonInRow(performanceRow, 'Checkout Archive')
-    expect(onSelectTest).toHaveBeenCalledWith('test-complete-2')
+    expect(onOpenTestArchive).toHaveBeenCalledWith('test-complete-2')
+
   })
 
   it('renders slim group metrics tables inside active test cards', async () => {

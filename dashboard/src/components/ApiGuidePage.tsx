@@ -1,3 +1,4 @@
+import CloudTestParityDashboard from './CloudTestParityDashboard'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import userGuideMarkdown from '../../../docs/APPLICATION_USER_GUIDE.md?raw'
@@ -192,7 +193,7 @@ export default function ApiGuidePage({
       )}
 
       {activeContentPage === 'admin-guide' && (
-        <GuideMarkdownArticle source={adminGuideMarkdown} />
+        <><GuideMarkdownArticle source={adminGuideMarkdown} /><details><summary>CloudTest compatibility and delivery reference</summary><CloudTestParityDashboard /></details></>
       )}
 
       {activeContentPage === 'mcp' && (

@@ -79,7 +79,7 @@ func buildReleaseTrend(releaseID string, runs []releaseTrendRun) ReleaseTrend {
 		point := trendPointFromRun(run)
 		if i > 0 {
 			prev := points[i-1]
-			if prev.MetricPopulation == point.MetricPopulation {
+			if comparableTrendPoints(prev, point) {
 				point.Deltas = computeTrendDeltas(prev, point)
 				point.Regressions = detectTrendRegressions(prev, point)
 			}
@@ -97,7 +97,7 @@ func buildReleaseTrend(releaseID string, runs []releaseTrendRun) ReleaseTrend {
 		trend.Summary.LatestRegressed = len(latest.Regressions) > 0
 		trend.Summary.LatestRegressions = latest.Regressions
 	}
-	if len(points) >= 2 && points[0].MetricPopulation == points[len(points)-1].MetricPopulation {
+	if len(points) >= 2 && comparableTrendPoints(points[0], points[len(points)-1]) {
 		first := points[0]
 		last := points[len(points)-1]
 		if first.AvgResponseMs > 0 {
@@ -140,6 +140,10 @@ func trendPointFromRun(run releaseTrendRun) ReleaseTrendPoint {
 		point.TelemetryStatus = report.Overview.Telemetry.Status
 	}
 	return point
+}
+
+func comparableTrendPoints(a, b ReleaseTrendPoint) bool {
+	return a.MetricPopulation == b.MetricPopulation && a.Transactions > 0 && b.Transactions > 0
 }
 
 func computeTrendDeltas(prev, cur ReleaseTrendPoint) *ReleaseTrendDeltas {
@@ -239,14 +243,16 @@ func buildRunArchiveReleaseTrendSummary(trend ReleaseTrend, runID string) *RunAr
 		Deltas:      deltas,
 		Trajectory:  trend.Summary,
 	}
-	if index > 0 && trend.Points[index-1].MetricPopulation == current.MetricPopulation {
+	if index > 0 && comparableTrendPoints(trend.Points[index-1], current) {
 		baseline := trend.Points[index-1]
 		baseline.Deltas = nil
 		baseline.Regressions = nil
 		summary.HasBaseline = true
 		summary.Baseline = &baseline
 	} else {
-		if index > 0 {
+		if current.Transactions == 0 || (index > 0 && trend.Points[index-1].Transactions == 0) {
+			summary.Note = "No comparable samples: the current or prior run has no records in this metric population."
+		} else if index > 0 {
 			summary.Note = "Prior run uses a different or unknown metric population; a comparison is unavailable."
 		} else {
 			summary.Note = "First archived run for this release; no prior run to compare against."

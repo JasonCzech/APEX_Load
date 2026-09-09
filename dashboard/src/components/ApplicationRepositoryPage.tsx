@@ -1,3 +1,8 @@
+import LibraryToolbar from './ux/LibraryToolbar'
+import TabList from './ux/TabList'
+import { confirmAction } from './ux/confirmAction'
+import { handleTabKey } from './tabKeyboard'
+import { settingsHref } from './settingsNavigation'
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
 
@@ -869,7 +874,7 @@ export default function ApplicationRepositoryPage({
   const handleBulkDelete = async () => {
     if (bulkBusy || deletableSelectedRows.length === 0) return
     const count = deletableSelectedRows.length
-    if (!window.confirm(`Delete ${plural(count, 'selected item')}? This cannot be undone.`)) return
+    if (!(await confirmAction(`Delete ${plural(count, 'selected item')}? This cannot be undone.`))) return
     setBulkBusy(true)
     setError('')
     setStatus('')
@@ -963,7 +968,7 @@ export default function ApplicationRepositoryPage({
   const handleBulkArchive = async () => {
     if (bulkBusy || archiveableSelectedRows.length === 0) return
     const count = archiveableSelectedRows.length
-    if (!window.confirm(`Archive ${plural(count, 'selected item')}?`)) return
+    if (!(await confirmAction(`Archive ${plural(count, 'selected item')}?`))) return
     setBulkBusy(true)
     setError('')
     setStatus('')
@@ -1050,6 +1055,7 @@ export default function ApplicationRepositoryPage({
 
   return (
     <div className="page repository-page">
+      <nav className="settings-inline-actions" aria-label="Related administration"><a className="btn btn-secondary btn-sm" href={settingsHref('test-data')}>Shared test data</a><a className="btn btn-secondary btn-sm" href={settingsHref('projects')}>Manage workspaces</a></nav>
       <div className="page-header">
         <div>
           <p className="page-kicker">Repository</p>
@@ -1089,22 +1095,15 @@ export default function ApplicationRepositoryPage({
       ))}
 
       <section className="repository-catalog-shell">
-        <div className="repository-catalog-toolbar">
-          <label className="library-search repository-search">
+        <p className="setting-desc">Catalog scope: {activeDomain?.name || "Selected domain"}. Project and Release filters below control this catalog independently of the workspace selection.</p>
+        <LibraryToolbar filtersActive={Boolean(filterActive)} label="Repository controls" search={<label className="library-search repository-search">
             <span>Search repository</span>
             <input
               value={filters.query}
               onChange={event => setFilters(prev => ({ ...prev, query: event.target.value }))}
               placeholder="Find by name, ID, project, release, protocol, status..."
             />
-          </label>
-          <div className="repository-refresh-panel">
-            <span>{catalogLoading ? 'Loading assets...' : catalogLoadedAt ? `Updated ${formatDate(catalogLoadedAt)}` : 'Not loaded yet'}</span>
-            <button type="button" className="repository-row-action" onClick={refreshCatalogAssets} disabled={catalogLoading}>Refresh</button>
-          </div>
-        </div>
-
-        <div className="repository-filter-row" aria-label="Repository filters">
+          </label>} actions={<button className="btn btn-secondary" type="button" onClick={refreshCatalogAssets} disabled={catalogLoading}>Refresh</button>} filters={<><div className="repository-filter-row" aria-label="Repository filters">
           <label>
             <span>Project</span>
             <select value={filters.projectId} onChange={event => setFilters(prev => ({ ...prev, projectId: event.target.value, releaseId: 'all' }))}>
@@ -1181,7 +1180,9 @@ export default function ApplicationRepositoryPage({
           </div>
         )}
 
-        <div className="repository-tab-row" role="tablist" aria-label="Repository asset types">
+        </>} />
+        <p className="setting-desc" role="status">{catalogLoading ? 'Loading assets...' : catalogLoadedAt ? `Updated ${formatDate(catalogLoadedAt)}` : 'Not loaded yet'}</p>
+        <TabList className="repository-tab-row" role="tablist" aria-label="Repository asset types" onKeyDown={handleTabKey}>
           {CATALOG_TABS.map(tab => {
             const count = tab.id === 'all'
               ? catalogRows.length
@@ -1195,14 +1196,14 @@ export default function ApplicationRepositoryPage({
                 role="tab"
                 aria-selected={activeTab === tab.id}
                 className={`repository-tab ${activeTab === tab.id ? 'active' : ''}`}
-                onClick={() => setActiveTab(tab.id)}
+                onClick={() => setActiveTab(tab.id)} tabIndex={(activeTab === tab.id) ? 0 : -1}
               >
                 <span>{tab.label}</span>
                 <strong>{count}</strong>
               </button>
             )
           })}
-        </div>
+        </TabList>
 
         {Object.values(catalogWarnings).length > 0 && (
           <div className="repository-warning-list" role="status">

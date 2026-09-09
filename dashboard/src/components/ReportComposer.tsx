@@ -1,3 +1,6 @@
+import { createPortal } from 'react-dom'
+import RunOutcomeSummary from './RunOutcomeSummary'
+import { reportAcceptance, formatReportPercent } from './runReport/reportPresentation'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import Logo from './Logo'
@@ -48,6 +51,7 @@ export default function ReportComposer({ testId, testName, profile, onClose }: P
   const dialogRef = useRef<HTMLDivElement | null>(null)
   const closeButtonRef = useRef<HTMLButtonElement | null>(null)
 
+  const [editing, setEditing] = useState(false)
   const [report, setReport] = useState<RunArchiveReport | null>(null)
   const [integrity, setIntegrity] = useState<RunArchiveIntegrityReport | null>(null)
   const [sections, setSections] = useState<ReportCommentarySection[]>([])
@@ -197,7 +201,7 @@ export default function ReportComposer({ testId, testName, profile, onClose }: P
   useModalDialog({ dialogRef, initialFocusRef: closeButtonRef, onClose: handleClose })
 
   const handleDownloadHtml = useCallback(async () => {
-    if (!(await persist())) return
+    if (isDirty && !(await persist())) return
     try {
       const blob = await api.downloadTestReport(testId, profile)
       const slug = (testName || testId).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
@@ -205,12 +209,12 @@ export default function ReportComposer({ testId, testName, profile, onClose }: P
     } catch (err: unknown) {
       setStatus(getErrorMessage(err, 'Download failed'))
     }
-  }, [api, persist, testId, testName, profile])
+  }, [api, isDirty, persist, testId, testName, profile])
 
   const handlePrint = useCallback(async () => {
-    if (!(await persist())) return
+    if (isDirty && !(await persist())) return
     window.print()
-  }, [persist])
+  }, [isDirty, persist])
 
   const overview = report?.overview
   const manifest = report?.manifest
@@ -262,10 +266,10 @@ export default function ReportComposer({ testId, testName, profile, onClose }: P
   )
 
   const topActions = useMemo(() => {
-    const entries = Object.entries(report?.by_action || {})
+    const entries = Object.entries((report?.metric_populations ? report.by_request : report?.by_action) || {})
     entries.sort((a, b) => b[1].transactions - a[1].transactions)
     return entries.slice(0, profile === 'executive' ? 5 : 20)
-  }, [report?.by_action, profile])
+  }, [report?.by_action, report?.by_request, report?.metric_populations, profile])
 
   const appendSelectedNoteToSummary = useCallback(() => {
     if (!selectedNote) return
@@ -299,7 +303,7 @@ export default function ReportComposer({ testId, testName, profile, onClose }: P
     setStatus('Inserted finding')
   }, [selectedNote])
 
-  return (
+  return createPortal(
     <div ref={dialogRef} className="report-composer-overlay" role="dialog" aria-modal="true" aria-label="Report composer">
       <div className="report-toolbar">
         <div className="report-toolbar-left">
@@ -308,7 +312,8 @@ export default function ReportComposer({ testId, testName, profile, onClose }: P
         </div>
         <div className="report-toolbar-right">
           {status && <span className="report-save-status">{status}</span>}
-          <button type="button" className="btn btn-secondary" onClick={persist} disabled={saving || loading}>
+          <button type="button" className="btn btn-secondary" onClick={() => setEditing(current => !current)} disabled={saving || loading}>{editing ? 'Preview' : 'Edit commentary'}</button>
+          <button type="button" className="btn btn-secondary" onClick={persist} disabled={!editing || saving || loading}>
             {saving ? 'Saving…' : 'Save'}
           </button>
           <button type="button" className="btn btn-secondary" onClick={handleDownloadHtml} disabled={loading || !report}>
@@ -326,13 +331,15 @@ export default function ReportComposer({ testId, testName, profile, onClose }: P
 
         {!loading && !error && report && (
           <article className="report-paper">
+            <fieldset className="report-edit-fields" disabled={!editing}>
             <header className="report-cover">
               <div className="report-brand">
                 <Logo size={40} />
                 <span className="report-brand-name">APEX Load</span>
               </div>
               <p className="report-eyebrow">{profileLabel} Report</p>
-              <input
+              <textarea
+                rows={2}
                 className="report-title-input"
                 value={title}
                 onChange={(event) => setTitle(event.target.value)}
@@ -355,29 +362,30 @@ export default function ReportComposer({ testId, testName, profile, onClose }: P
               </label>
             </header>
 
+            <RunOutcomeSummary report={report} />
             <section className="report-metrics">
-              <Metric label="SLA" value={slaBreached ? 'Breached' : 'Passed'} tone={slaBreached ? 'danger' : 'ok'} />
-              <Metric label="Transactions" value={formatInt(overview?.transactions)} />
-              <Metric label="Avg Response" value={`${formatNum(overview?.avg_response_ms)} ms`} />
-              <Metric label="Error Rate" value={`${formatNum(overview?.error_pct)}%`} tone={(overview?.error_pct ?? 0) > 0 ? 'warn' : 'ok'} />
-              <Metric label="Peak TPS" value={formatNum(overview?.peak_tps)} />
+              <Metric label="Acceptance" value={reportAcceptance(report).status} tone={reportAcceptance(report).failed ? 'danger' : reportAcceptance(report).conditional ? 'warn' : 'ok'} />
+              <Metric label="Archive records" value={formatInt(overview?.transactions)} />
+              <Metric label="Archive record average" value={`${formatNum(overview?.avg_response_ms)} ms`} />
+              <Metric label="Archive record error rate" value={formatReportPercent(overview?.error_pct)} tone={(overview?.error_pct ?? 0) > 0 ? 'warn' : 'ok'} />
+              <Metric label="Peak successful transaction TPS" value={formatNum(overview?.peak_tps)} />
               <Metric label="Peak VUsers" value={formatInt(overview?.peak_active_vusers)} />
             </section>
 
             <section className="report-section">
-              <h2>Verdict</h2>
+              <h2>Analyst assessment</h2>
+              <p>Computed acceptance: {reportAcceptance(report).status}. {reportAcceptance(report).explanation}</p>
               <p className="report-hint no-print">
-                Leave on “Auto” to use the verdict derived from SLA, telemetry, and completeness signals.
-                Choosing an override (e.g. for a transient, self-recovered breach) replaces it in the report.
+                Optional analyst signoff is recorded separately. It does not change the computed acceptance assessment.
               </p>
               <label className="report-comment">
-                <span>Verdict override</span>
+                <span>Analyst signoff</span>
                 <select
                   className="report-select"
                   value={verdictOverride}
                   onChange={(event) => setVerdictOverride(event.target.value)}
                 >
-                  <option value="">Auto (derived)</option>
+                  <option value="">No analyst assessment</option>
                   <option value="Pass">Pass</option>
                   <option value="Conditional Pass">Conditional Pass</option>
                   <option value="Fail">Fail</option>
@@ -388,7 +396,7 @@ export default function ReportComposer({ testId, testName, profile, onClose }: P
                 <textarea
                   value={verdictExplanation}
                   onChange={(event) => setVerdictExplanation(event.target.value)}
-                  placeholder="Optional — shown in the verdict bar when an override is set."
+                  placeholder="Explain the analyst assessment."
                   rows={2}
                 />
               </label>
@@ -738,10 +746,11 @@ export default function ReportComposer({ testId, testName, profile, onClose }: P
             <footer className="report-footer">
               Generated by APEX Load.{updatedBy ? ` Commentary last edited by ${updatedBy}.` : ''}
             </footer>
+          </fieldset>
           </article>
         )}
       </div>
-    </div>
+    </div>, document.body
   )
 }
 
@@ -758,15 +767,15 @@ function Metric({ label, value, tone }: { label: string; value: string; tone?: '
 // run in the same release. With no baseline (first archived run, or no release
 // association) it degrades to the explanatory note instead of an empty table.
 function ReleaseTrendSummaryView({ trend }: { trend: RunArchiveReleaseTrendSummary }) {
-  if (!trend.has_baseline || !trend.baseline || !trend.deltas) {
-    return <p className="report-hint">{trend.note || 'First archived run for this release; no prior run to compare against.'}</p>
+  if (!trend.has_baseline || !trend.baseline || !trend.deltas || trend.current.transactions === 0 || trend.baseline.transactions === 0) {
+    return <p className="report-hint">{trend.note || 'Comparable samples are unavailable; no regression assessment can be made.'}</p>
   }
   const { baseline, current, deltas } = trend
   const baselineLabel = baseline.run_name || baseline.run_id
   return (
     <>
       <p className="report-hint">
-        This run vs the prior run in release <strong>{trend.release_id}</strong> (baseline {baselineLabel}
+        {current.metric_population === 'transaction' ? 'Named transaction' : 'Legacy archive record'} trend: this run vs the prior run in release <strong>{trend.release_id}</strong> (baseline {baselineLabel}
         {baseline.completed_at ? `, completed ${formatTime(baseline.completed_at)}` : ''}; {trend.run_count} archived run
         {trend.run_count === 1 ? '' : 's'}).
       </p>
@@ -775,7 +784,7 @@ function ReleaseTrendSummaryView({ trend }: { trend: RunArchiveReleaseTrendSumma
           <tr><th>Metric</th><th>Prior run</th><th>This run</th><th>Change</th></tr>
         </thead>
         <tbody>
-          <tr><td>Error rate</td><td>{formatNum(baseline.error_pct)}%</td><td>{formatNum(current.error_pct)}%</td><td>{signedDelta(deltas.error_pct_delta)} pp</td></tr>
+          <tr><td>Error rate</td><td>{formatReportPercent(baseline.error_pct)}</td><td>{formatReportPercent(current.error_pct)}</td><td>{signedDelta(deltas.error_pct_delta)} pp</td></tr>
           <tr><td>Avg response</td><td>{formatNum(baseline.avg_response_ms)} ms</td><td>{formatNum(current.avg_response_ms)} ms</td><td>{signedDelta(deltas.avg_response_ms_delta)} ms ({signedDelta(deltas.avg_response_pct_delta)}%)</td></tr>
           <tr><td>Peak TPS</td><td>{formatNum(baseline.peak_tps)}</td><td>{formatNum(current.peak_tps)}</td><td>{signedDelta(deltas.peak_tps_delta)}</td></tr>
           <tr><td>Completeness</td><td>{formatNum(baseline.completeness_pct)}%</td><td>{formatNum(current.completeness_pct)}%</td><td>{signedDelta(deltas.completeness_delta)} pts</td></tr>
@@ -791,17 +800,17 @@ function ReleaseTrendSummaryView({ trend }: { trend: RunArchiveReleaseTrendSumma
 }
 
 function signedDelta(value: number | undefined): string {
-  if (value === undefined || Number.isNaN(value)) return '+0.0'
+  if (value === undefined || !Number.isFinite(value)) return 'Not available'
   return `${value >= 0 ? '+' : ''}${value.toFixed(1)}`
 }
 
 function formatNum(value: number | undefined): string {
-  if (value === undefined || Number.isNaN(value)) return '0.0'
+  if (value === undefined || !Number.isFinite(value)) return 'Not available'
   return value.toFixed(1)
 }
 
 function formatInt(value: number | undefined): string {
-  if (value === undefined || Number.isNaN(value)) return '0'
+  if (value === undefined || !Number.isFinite(value)) return 'Not available'
   return Math.round(value).toLocaleString()
 }
 

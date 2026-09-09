@@ -1,3 +1,4 @@
+import { confirmAction } from './ux/confirmAction'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
 import type { ImportedDashboard, ImportedDashboardGraphsResponse, ImportedDashboardImportReview, Project } from '../types'
@@ -9,6 +10,7 @@ import PrometheusPanelCard from './PrometheusPanelCard'
 import { listAllImportedDashboards } from './monitoringCatalogModel'
 
 interface Props {
+  resourceId?: string
   projects: Project[]
   defaultProjectId?: string
   prometheusConfigured: boolean
@@ -21,7 +23,7 @@ type PanelMode = 'list' | 'review'
 // required variables, and manage the imported dashboards. It lives next to the
 // Prometheus datasource it depends on — not in the script-import wizard, which produces
 // a very different artifact.
-export default function ImportedDashboardsPanel({ projects, defaultProjectId, prometheusConfigured }: Props) {
+export default function ImportedDashboardsPanel({ projects, defaultProjectId, prometheusConfigured, resourceId = '' }: Props) {
   const { listImportedDashboards, importGrafanaDashboard, importGrafanaDashboardByUID, commitGrafanaDashboardImport, previewGrafanaDashboardImport, resolveGrafanaImportLabelValues, getImportedDashboardPanels, deleteImportedDashboard, patchImportedDashboard } = useSystemApi()
   const { runGuarded } = useNavigationGuardRunner()
 
@@ -271,7 +273,7 @@ export default function ImportedDashboardsPanel({ projects, defaultProjectId, pr
 
   const handleDelete = useCallback(async (dashboard: ImportedDashboard) => {
 		if (operationInFlight.current) return
-		if (!window.confirm(`Delete imported dashboard "${dashboard.name}"? This cannot be undone.`)) return
+		if (!(await confirmAction(`Delete imported dashboard "${dashboard.name}"? This cannot be undone.`))) return
 		operationInFlight.current = true
 		setMutatingDashboardId(dashboard.id)
     setError('')
@@ -409,7 +411,8 @@ export default function ImportedDashboardsPanel({ projects, defaultProjectId, pr
             </div>
             {busy && <div className="settings-inline-notice">Parsing…</div>}
             <ul className="imported-dashboards-list" aria-label="Imported dashboards">
-              {dashboards.map(dashboard => (
+              {resourceId && <p role="status">Selected dashboard: {resourceId}. {!dashboards.some(item => item.id === resourceId) && 'This dashboard is not available in the selected project.'} <a href={window.location.hash.replace(/([?&])resourceId=[^&]*&?/, '$1').replace(/[?&]$/, '')}>Show all dashboards</a></p>}
+              {dashboards.filter(dashboard => !resourceId || dashboard.id === resourceId).map(dashboard => (
                 <li key={dashboard.id} className="imported-dashboards-item">
                   <div className="imported-dashboards-item-main">
                     <strong>{dashboard.name}</strong>

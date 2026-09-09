@@ -1,0 +1,143 @@
+/* Shared interaction surfaces. Colors inherit the active application theme. */
+:root { --ux-dialog-layer: 2000; --ux-control-height: 36px; --ux-space: 16px; }
+.ux-dialog-layer { position: fixed; inset: 0; z-index: var(--ux-dialog-layer); pointer-events: none; }
+.ux-dialog-layer > * { pointer-events: auto; }
+.ux-dialog-layer :is(.modal-overlay, .pp-modal-overlay, .project-modal-backdrop, .access-modal-overlay, .lr-modal-backdrop) {
+  position: fixed; inset: 0; padding: 20px; overflow: auto; display: flex; align-items: center; justify-content: center;
+  background: var(--modal-backdrop); backdrop-filter: blur(8px); z-index: auto;
+}
+.ux-dialog-layer :is(.modal, .modal-content, .pp-modal, .project-modal, .access-modal) {
+  box-sizing: border-box; background: var(--bg-secondary); color: var(--text-primary); border: 1px solid var(--border);
+  border-radius: 12px; max-width: calc(100vw - 40px); max-height: calc(100dvh - 40px); overflow-y: auto;
+}
+.ux-dialog-layer :is(.modal-header, .pp-modal-header, .project-modal-header) { gap: 16px; align-items: flex-start; }
+.ux-dialog-layer :is(.modal-header, .pp-modal-header, .project-modal-header) h3 { margin: 0; font-size: 18px; line-height: 1.4; }
+.ux-dialog-layer :is(.modal-actions, .pp-modal-actions, .project-modal-actions) {
+  display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 8px; margin-top: 20px;
+}
+.ux-dialog-layer button:not(.btn-icon):not(.test-notes-list-item) { min-height: var(--ux-control-height); }
+.ux-dialog-layer :is(.modal-actions, .pp-modal-actions, .project-modal-actions) button { white-space: nowrap; flex: 0 0 auto; }
+.ux-dialog-layer .test-notes-dialog { padding: 20px; overflow: hidden; }
+.ux-dialog-layer .test-notes-grid { overflow: auto; }
+.ux-panel-toggle { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 32px; padding: 4px 10px; border: 1px solid var(--border); border-radius: 6px; color: var(--text-primary); background: var(--bg-secondary); cursor: pointer; }
+.ux-panel-toggle > span:first-child { font-size: 20px; line-height: 1; }
+.ux-panel-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+@media (max-width: 700px) {
+  .ux-dialog-layer :is(.modal-overlay, .pp-modal-overlay, .project-modal-backdrop, .access-modal-overlay, .lr-modal-backdrop) { padding: 12px; }
+  .ux-dialog-layer :is(.modal, .modal-content, .pp-modal, .project-modal, .access-modal) { max-width: calc(100vw - 24px); max-height: calc(100dvh - 24px); }
+  .ux-dialog-layer .test-notes-grid { grid-template-columns: 1fr; }
+  .ux-dialog-layer .test-notes-list-pane { max-height: 170px; overflow: auto; }
+}
+@media (prefers-reduced-motion: reduce) { .ux-dialog-layer, .ux-dialog-layer * { animation: none !important; transition: none !important; } }
+.ux-confirmation { width: 480px; padding: 24px; }
+.ux-confirmation > p { line-height: 1.6; overflow-wrap: anywhere; }
+.settings-tabbed-layout .settings-browse-button { display: inline-flex; grid-column: 1 / -1; width: fit-content; }
+.settings-tabbed-layout.navigation-collapsed { grid-template-columns: minmax(0, 1fr); }
+.settings-tabbed-layout.navigation-collapsed .settings-task-navigation { display: none; }
+.ux-review-queue { margin-bottom: 16px; border: 1px solid var(--border); border-radius: 8px; }
+.ux-review-queue > summary { padding: 12px 16px; cursor: pointer; font-weight: 600; }
+.ux-review-queue[open] > summary { border-bottom: 1px solid var(--border); }
+.ux-review-queue > :not(summary) { margin: 16px; }
+.main-topbar.contextual:has(.topbar-page-section-toggle) { flex-wrap: wrap; }
+.main-topbar.contextual .topbar-contribution-controls:has(.topbar-page-section-toggle) { overflow: visible; min-width: 0; }
+.main-topbar .topbar-page-section-toggle { max-width: 100%; overflow-x: auto; scrollbar-width: thin; }
+.main-topbar .topbar-page-section-toggle button { flex-shrink: 0; }
+.ux-panel-toggle[hidden] { display: none; }
+.actions-sidebar-restore.ux-panel-toggle, .utility-sidebar-restore.ux-panel-toggle { width: 100%; height: auto; min-height: 36px; }
+@media (max-width: 1100px) {
+  .main-topbar.contextual:has(.topbar-page-section-toggle) .main-topbar-actions { flex-wrap: wrap; flex: 1 1 100%; min-width: 0; }
+  .main-topbar.contextual:has(.topbar-page-section-toggle) .topbar-action-group { flex-wrap: wrap; min-width: 0; }
+  .settings-tabbed-layout .settings-task-navigation.is-open { display: grid; }
+}
+@media (max-width: 980px) {
+  .actions-sidebar-restore.ux-panel-toggle, .utility-sidebar-restore.ux-panel-toggle { writing-mode: horizontal-tb; flex-direction: row; justify-content: space-between; padding: 8px 12px; }
+  .run-calendar-grid.month, .run-calendar-grid.week { grid-template-columns: minmax(0, 1fr); }
+  .run-calendar-grid .run-calendar-day.outside { display: none; }
+  .run-calendar-weekdays { display: none; }
+  .run-calendar-grid .run-calendar-day { min-height: 80px; }
+}
+.ux-dialog-layer :is(.editor-dialog-backdrop, .generate-report-backdrop, .runtime-adjustment-backdrop, .snapshot-full-dialog-backdrop, .command-palette-backdrop) { position: fixed; inset: 0; padding: 20px; background: var(--modal-backdrop); backdrop-filter: blur(8px); z-index: auto; }
+.ux-dialog-layer :is(.editor-dialog, .generate-report-modal, .runtime-adjustment-dialog, .snapshot-full-dialog) { max-width: calc(100vw - 40px); max-height: calc(100dvh - 40px); border-radius: 12px; }
+.ux-dialog-layer :is(.editor-dialog-header, .generate-report-header) h3 { font-size: 18px; line-height: 1.4; }
+.main-topbar .topbar-page-section-toggle, .main-topbar .dashboard-section-tabs { border-radius: 8px; }
+.main-topbar .topbar-page-section-toggle button, .main-topbar .dashboard-section-tabs button { border-radius: 6px; }
+.library-source-toolbar { flex-wrap: wrap; gap: 12px; }
+.library-source-toolbar > label:has(input[type="search"]) { order: -1; }
+.repository-filter-row { flex-wrap: wrap; gap: 12px; }
+.library-more-actions, .scenario-more-actions { display: inline-block; position: relative; text-align: left; }
+.library-more-actions > summary, .scenario-more-actions > summary { cursor: pointer; padding: 8px 12px; border: 1px solid var(--border); border-radius: 6px; list-style: none; }
+.library-more-actions[open], .scenario-more-actions[open] { min-width: 120px; }
+.library-more-actions[open] > button, .scenario-more-actions[open] > button { display: block; width: 100%; text-align: left; margin-top: 4px; }
+.library-more-actions > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+@media (max-width: 980px) {
+  .run-calendar-grid .run-calendar-weekday { display: none; }
+  .scripts-library-table th:last-child, .scripts-library-table td:last-child { position: sticky; right: 0; background: var(--bg-secondary); z-index: 1; min-width: 100px; }
+  .scripts-library-table .cell-name { position: sticky; left: 0; background: var(--bg-secondary); z-index: 1; max-width: 210px; overflow-wrap: anywhere; }
+  .repository-filter-row > * { min-width: 0; max-width: 100%; }
+}
+.ux-form-field { display: grid; gap: 8px; margin-top: 16px; }
+.ux-form-field > label { font-size: 12px; font-weight: 600; color: var(--text-secondary); }
+.ux-form-field :is(input, select, textarea) { box-sizing: border-box; width: 100%; min-height: 36px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-primary); color: var(--text-primary); padding: 8px 12px; font: inherit; }
+.ux-form-field :is(input, select, textarea):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.ux-panel-toggle > svg { flex: 0 0 16px; }
+.ux-panel-toggle > span { font-size: 12px; line-height: 1.4; }
+.run-calendar-nav .run-calendar-nav-btn { display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-secondary); color: var(--text-primary); cursor: pointer; }
+.calendar-agenda-date { display: none; }
+@media (max-width: 980px) { .calendar-agenda-date { display: inline; } .calendar-day-number { display: none; } }
+.inline-create-row { align-items: end; flex-wrap: wrap; }
+.inline-create-row .ux-form-field { flex: 1 1 200px; margin-top: 0; }
+.ux-dialog-layer .btn:disabled, .main-topbar .btn:disabled { box-shadow: none; background: var(--bg-secondary); color: var(--text-muted); border: 1px solid var(--border); }
+@media (max-width: 1100px) { .settings-tabbed-layout .settings-task-navigation.is-open { max-height: 340px; overflow-y: auto; } }
+.settings-card .settings-group > .setting-row { border: 0; border-bottom: 1px solid var(--border); border-radius: 0; background: transparent; box-shadow: none; }
+@media (max-width: 980px) {
+  .repository-asset-table td[aria-label="Repository asset"] { position: sticky; left: 0; background: var(--bg-secondary); z-index: 1; max-width: 210px; overflow-wrap: anywhere; }
+  .repository-asset-table tr > :last-child:not([colspan]) { position: sticky; right: 0; background: var(--bg-secondary); z-index: 1; min-width: 88px; }
+}
+.ux-save-status { font-size: 12px; color: var(--text-secondary); }
+@media (max-width: 980px) {
+  /* Keep identity, health and Edit visible; usage and dates remain available in
+     the expanded row instead of squeezing the script name into single letters. */
+  .scripts-library-table tr > :nth-last-child(7):not([colspan]),
+  .scripts-library-table tr > :nth-last-child(n + 2):nth-last-child(-n + 5):not([colspan]) { display: none; }
+  .scripts-library-table .cell-name { min-width: 180px; max-width: none; }
+  .scripts-library-table tr > :nth-last-child(6) { min-width: 130px; }
+}
+.script-table-column-control { display: none; }
+@media (max-width: 980px) {
+  .script-table-column-control { display: table-caption; text-align: left; padding: 8px; }
+  .scripts-library-table.show-detail-columns tr > :nth-last-child(7):not([colspan]),
+  .scripts-library-table.show-detail-columns tr > :nth-last-child(n + 2):nth-last-child(-n + 5):not([colspan]) { display: table-cell; }
+}
+.main-topbar .topbar-page-section-toggle { flex-wrap: wrap; overflow: visible; }
+.main-topbar .monitoring-topbar-controls { flex-wrap: wrap; min-width: 0; }
+.main-topbar .monitoring-topbar-controls > .topbar-page-section-toggle { flex: 1 1 100%; }
+.run-calendar-day-header .btn-icon { min-width: 28px; min-height: 28px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-secondary); color: var(--text-primary); cursor: pointer; }
+.repository-page .repository-filter-row { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }
+.repository-page .repository-reset-filter { align-self: end; min-height: 36px; }
+
+/* Shared application structure: search, filters, actions and form feedback. */
+.ux-library-toolbar { display: flex; flex-direction: column; gap: 12px; margin-block: 12px; }
+.ux-library-toolbar-main { display: flex; align-items: end; flex-wrap: wrap; gap: 12px; }
+.ux-library-toolbar-main > label:first-child { flex: 2 1 260px; }
+.ux-library-toolbar-main > label { flex: 1 1 150px; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.ux-library-toolbar-main input, .ux-library-toolbar-main select { width: 100%; min-width: 0; }
+.ux-library-toolbar-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-left: auto; align-items: center; }
+.ux-library-filters > summary, .ux-builder-readiness > summary { cursor: pointer; color: var(--text-secondary); padding: 6px 0; }
+.ux-library-filter-fields { display: flex; flex-wrap: wrap; align-items: end; gap: 12px; padding: 12px 0; }
+.ux-library-filter-fields > label { flex: 1 1 160px; min-width: 0; }
+.ux-library-filter-fields .repository-filter-row { width: 100%; }
+.ux-form-errors { padding: 12px 16px; border: 1px solid var(--danger); border-radius: 8px; margin-block: 12px; }
+.ux-form-errors ul { margin: 8px 0 0; padding-left: 20px; }
+.ux-form-errors button { white-space: normal; text-align: left; text-decoration: underline; padding: 4px; }
+.scenario-builder-actions { position: sticky !important; bottom: 0; padding: 12px; border-top: 1px solid var(--border); background: var(--bg-primary); }
+.ux-draft-help { flex: 1 1 100%; font-size: 12px; color: var(--text-secondary); }
+.scenario-builder-actions > .btn-primary { order: 2; }
+.ux-builder-readiness { font-size: 12px; color: var(--text-secondary); }
+.ux-builder-readiness p { margin: 6px 0; }
+.library-bulk-selection-toolbar, .results-table-selection-toolbar { border-block: 1px solid var(--border); padding: 12px 0; display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+@media (max-width: 980px) { .ux-library-toolbar-actions { margin-left: 0; } .ux-library-toolbar-main > label:first-child { flex-basis: 100%; } }
+.ux-bulk-actions { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; padding: 12px; border: 1px solid var(--border); border-radius: 8px; margin-block: 12px; }
+.library-source-controls { gap: 8px; }
+.library-source-controls .ux-library-toolbar { margin-block: 4px; gap: 4px; }
+.library-source-controls .library-source-header h3 { margin-bottom: 4px; font-size: 14px; }
+.library-source-controls .library-toolbar-subtitle { margin-bottom: 0; }

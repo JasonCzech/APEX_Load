@@ -113,8 +113,8 @@ func writeReleaseTrendArchiveFixture(t *testing.T, releaseID string, testID stri
 		t.Fatalf("write manifest: %v", err)
 	}
 	writeJSONL(t, filepath.Join(archiveDir, manifest.TransactionsFile),
-		TransactionEvent{Timestamp: startedAt.Add(time.Second), TestID: testID, TestName: testName, ActionName: "search", DurationMs: 120, Success: true},
-		TransactionEvent{Timestamp: startedAt.Add(2 * time.Second), TestID: testID, TestName: testName, ActionName: "checkout", DurationMs: 300, Success: false, ErrorMessage: "boom"},
+		TransactionEvent{Population: "transaction", BusinessTransaction: true, Timestamp: startedAt.Add(time.Second), TestID: testID, TestName: testName, ActionName: "search", DurationMs: 120, Success: true},
+		TransactionEvent{Population: "transaction", BusinessTransaction: true, Timestamp: startedAt.Add(2 * time.Second), TestID: testID, TestName: testName, ActionName: "checkout", DurationMs: 300, Success: false, ErrorMessage: "boom"},
 	)
 	writeJSONL(t, filepath.Join(archiveDir, manifest.ResourceSamplesFile),
 		ResourceSample{Timestamp: startedAt.Add(time.Second), TestID: testID, TestName: testName, ActiveVUsers: 15, CPUProcessPct: 72.5, MemProcessMB: 512},

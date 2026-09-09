@@ -34,8 +34,8 @@ vi.mock('../desktop/desktopFiles', () => ({
   startDesktopBrowserDownload: vi.fn(),
 }))
 
-function ArchiveHarness({ test }: { test: TestSummary | null }) {
-  const model = useExecutionArchiveModel(test)
+function ArchiveHarness({ test, baselineId }: { test: TestSummary | null; baselineId?: string }) {
+  const model = useExecutionArchiveModel(test, true, baselineId)
 
   return (
     <div>
@@ -201,6 +201,21 @@ describe('useExecutionArchiveModel', () => {
     expect(readTestId('analysis-nodes')).toBe('1')
     expect(readTestId('page-start')).toBe('1')
     expect(readTestId('page-end')).toBe('1')
+  })
+
+  it('uses an explicit comparison baseline instead of the pinned baseline, including clearing it', async () => {
+    const test = { ...buildArchivedTest(), comparison_baseline: { source_test_id: 'pinned', source_test_name: 'Pinned' } as TestSummary['comparison_baseline'] }
+    apiMock.getTestArchiveReport.mockResolvedValue({ ...buildEmptyArchiveReport(), by_action: { Login: { transactions: 1, errors: 0, error_pct: 0, avg_response_ms: 10, min_response_ms: 10, max_response_ms: 10 } } })
+    apiMock.getTestArchiveTransactions.mockResolvedValue({ transactions: [], total: 0 })
+    await act(async () => { root.render(<ArchiveHarness test={test} baselineId="chosen" />) })
+    await flushPromises()
+    expect(apiMock.getTestArchiveAnalysis).toHaveBeenLastCalledWith(test.id, expect.objectContaining({ baseline_id: 'chosen' }))
+    await act(async () => { container.querySelector<HTMLButtonElement>('[data-testid="set-group"]')?.click() })
+    await flushPromises()
+    expect(apiMock.getTestArchiveAnalysis).toHaveBeenLastCalledWith(test.id, expect.objectContaining({ baseline_id: 'chosen', group: 'Checkout', action: 'Login' }))
+    await act(async () => { root.render(<ArchiveHarness test={test} baselineId="" />) })
+    await flushPromises()
+    expect(apiMock.getTestArchiveAnalysis).toHaveBeenLastCalledWith(test.id, expect.objectContaining({ baseline_id: undefined }))
   })
 
   it('falls back to current-run archive analysis when a baseline archive cannot be read', async () => {

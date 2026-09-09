@@ -1,3 +1,6 @@
+import TabList from './ux/TabList'
+import { handleTabKey } from './tabKeyboard'
+import DialogLayer from './ux/DialogLayer'
 import { useCallback, useEffect, useMemo, useState, useRef, type ReactNode, type CSSProperties } from 'react'
 import { useApi } from '../hooks/useApi'
 import { ApiError } from '../hooks/apiClient'
@@ -4058,7 +4061,7 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
       )}
 
       {runtimeCoverageOpen && hasRuntimeCoverage && (
-        <div
+        <DialogLayer><div
           className="lr-modal-backdrop"
           role="presentation"
           onPointerDown={event => {
@@ -4118,7 +4121,7 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
               )}
             </div>
           </div>
-        </div>
+        </div></DialogLayer>
       )}
 
       <div className="settings-notice">
@@ -4296,7 +4299,7 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
               </div>
             </div>
           )}
-          <div className="lr-validation-review-tabs" role="tablist" aria-label="Script archive review sections">
+          <TabList className="lr-validation-review-tabs" role="tablist" aria-label="Script archive review sections" onKeyDown={handleTabKey}>
               {validationReviewTabs.map((tab) => (
                 <button
                   key={tab.id}
@@ -4329,7 +4332,7 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
                   {tab.label}
                 </button>
               ))}
-          </div>
+          </TabList>
           <div
             id="lr-validation-review-panel"
             role="tabpanel"

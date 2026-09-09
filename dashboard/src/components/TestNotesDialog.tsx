@@ -1,3 +1,5 @@
+import { confirmAction } from './ux/confirmAction'
+import DialogLayer from './ux/DialogLayer'
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 
 import { useTestApi } from '../hooks/api/useTestApi'
@@ -39,14 +41,14 @@ export default function TestNotesDialog({ testId, testName, onClose }: Props) {
   )
   const isDirty = (mode === 'new' && draftBody.trim() !== '') || (mode === 'edit' && selectedNote != null && draftBody !== selectedNote.body)
 
-  const confirmDiscard = useCallback(() => {
+  const confirmDiscard = useCallback(async () => {
     if (!isDirty) return true
-    return window.confirm('Discard unsaved note?')
+    return (await confirmAction('Discard unsaved note?'))
   }, [isDirty])
 
-  const requestClose = useCallback(() => {
+  const requestClose = useCallback(async () => {
     if (saving) return
-    if (!confirmDiscard()) return
+    if (!(await confirmDiscard())) return
     onClose()
   }, [confirmDiscard, onClose, saving])
 
@@ -89,9 +91,9 @@ export default function TestNotesDialog({ testId, testName, onClose }: Props) {
 
   const canSave = draftBody.trim().length > 0 && !saving
 
-  const selectNote = useCallback((note: TestNote) => {
+  const selectNote = useCallback(async (note: TestNote) => {
     if (note.id === selectedId && mode === 'preview') return
-    if (!confirmDiscard()) return
+    if (!(await confirmDiscard())) return
     setSelectedId(note.id)
     setMode('preview')
     setDraftBody('')
@@ -99,8 +101,8 @@ export default function TestNotesDialog({ testId, testName, onClose }: Props) {
     setStatus('')
   }, [confirmDiscard, mode, selectedId])
 
-  const startNewNote = useCallback(() => {
-    if (!confirmDiscard()) return
+  const startNewNote = useCallback(async () => {
+    if (!(await confirmDiscard())) return
     setSelectedId('')
     setMode('new')
     setDraftBody('')
@@ -151,7 +153,7 @@ export default function TestNotesDialog({ testId, testName, onClose }: Props) {
   }, [api, canSave, draftBody, mode, selectedNote, testId])
 
   const deleteNote = useCallback(async (target: TestNote) => {
-    if (!window.confirm(`Delete test note "${noteDeleteTarget(target)}"?`)) return
+    if (!(await confirmAction(`Delete test note "${noteDeleteTarget(target)}"?`))) return
     setSaving(true)
     setError('')
     setStatus('')
@@ -173,7 +175,7 @@ export default function TestNotesDialog({ testId, testName, onClose }: Props) {
   }, [api, notes, selectedId, testId])
 
   return (
-    <div
+    <DialogLayer><div
       className="modal-overlay test-notes-overlay"
       role="presentation"
       onPointerDown={event => {
@@ -285,7 +287,7 @@ export default function TestNotesDialog({ testId, testName, onClose }: Props) {
           </section>
         </div>
       </div>
-    </div>
+    </div></DialogLayer>
   )
 }
 

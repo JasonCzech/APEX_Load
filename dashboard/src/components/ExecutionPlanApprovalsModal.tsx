@@ -1,3 +1,4 @@
+import DialogLayer from './ux/DialogLayer'
 import { useCallback, useEffect, useId, useRef, useState } from 'react'
 
 import { useExecutionPlansApi } from '../hooks/api/useExecutionPlansApi'
@@ -116,7 +117,7 @@ export default function ExecutionPlanApprovalsModal({ plan, canAdmin = false, on
   const pendingCount = approvals.filter(a => a.status === 'pending').length
 
   return (
-    <div
+    <DialogLayer><div
       className="pp-modal-overlay"
       role="presentation"
       onPointerDown={event => {
@@ -212,6 +213,6 @@ export default function ExecutionPlanApprovalsModal({ plan, canAdmin = false, on
           </button>
         </div>
       </div>
-    </div>
+    </div></DialogLayer>
   )
 }

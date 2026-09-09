@@ -1,3 +1,7 @@
+import TabList from './ux/TabList'
+import PanelToggle from "./ux/PanelToggle"
+import { handleTabKey } from './tabKeyboard'
+import { reportAcceptance, formatReportPercent } from './runReport/reportPresentation'
 import { useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback, type CSSProperties } from 'react'
 import { type WebSocketConnectionState } from '../hooks/useWebSocket'
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
@@ -482,18 +486,7 @@ function ReleaseSnapshotPanel({
 
   return (
     <aside className={`dash-release-panel ${open ? 'is-open' : 'is-collapsed'}`} aria-label="Release snapshot panel">
-      <button
-        type="button"
-        className="release-panel-rail"
-        aria-expanded={open}
-        aria-controls={panelId}
-        onClick={onToggle}
-        hidden={open}
-      >
-        <span className="release-panel-rail-kicker">Snapshot</span>
-        <strong>{releaseName}</strong>
-        <span>Open</span>
-      </button>
+      <PanelToggle className="release-panel-rail" expanded={false} panelName="Release snapshot" controls={panelId} onToggle={onToggle} hidden={open} />
 
       <section id={panelId} className="release-panel-card" hidden={!open}>
         <div className="release-panel-header">
@@ -502,15 +495,7 @@ function ReleaseSnapshotPanel({
             <h3>Release Snapshot</h3>
             <p>{releaseName}</p>
           </div>
-          <button
-            type="button"
-            className="release-panel-toggle"
-            aria-expanded={open}
-            aria-controls={panelId}
-            onClick={onToggle}
-          >
-            Collapse
-          </button>
+          <PanelToggle className="release-panel-toggle" expanded panelName="Release snapshot" controls={panelId} onToggle={onToggle} />
         </div>
 
         <div className="dash-release-selector release-panel-selector" role="group" aria-label="Dashboard release selector">
@@ -1333,7 +1318,7 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
   }), [performanceTrend.length, recentTests.length, stats.active])
   const activeDashboardTabLabel = dashboardTabs.find(tab => tab.id === activeDashboardTab)?.label || 'Dashboard'
   const dashboardTabControls = useMemo(() => (
-    <div className="dash-tab-row topbar-page-section-toggle" role="tablist" aria-label="Dashboard sections">
+    <TabList className="dash-tab-row topbar-page-section-toggle" role="tablist" aria-label="Dashboard sections" onKeyDown={handleTabKey}>
       {dashboardTabs.map(tab => (
         <button
           key={tab.id}
@@ -1341,13 +1326,13 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
           role="tab"
           aria-selected={activeDashboardTab === tab.id}
           className={`dash-tab ${activeDashboardTab === tab.id ? 'active' : ''}`}
-          onClick={() => setActiveDashboardTab(tab.id)}
+          onClick={() => setActiveDashboardTab(tab.id)} tabIndex={(activeDashboardTab === tab.id) ? 0 : -1}
         >
           <span>{tab.label}</span>
           <strong>{dashboardTabCounts[tab.id]}</strong>
         </button>
       ))}
-    </div>
+    </TabList>
   ), [activeDashboardTab, dashboardTabCounts])
   const dashboardTopbarContribution = useMemo(() => ({
     id: 'dashboard-page',
@@ -1502,9 +1487,9 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
                         {renderPerformanceSortHeader('run', 'Run')}
                         {renderPerformanceSortHeader('completed', 'Completed')}
                         {renderPerformanceSortHeader('peak_tps', 'Peak TPS', 'num')}
-                        {renderPerformanceSortHeader('avg_ms', 'Avg ms', 'num')}
-                        {renderPerformanceSortHeader('errors', 'Errors', 'num')}
-                        {renderPerformanceSortHeader('sla', 'SLA', 'num')}
+                        {renderPerformanceSortHeader('avg_ms', 'Archive avg ms', 'num')}
+                        {renderPerformanceSortHeader('errors', 'Archive errors', 'num')}
+                        {renderPerformanceSortHeader('sla', 'Acceptance', 'num')}
                         {renderPerformanceSortHeader('complete', 'Complete', 'num')}
                         {onOpenTestArchive && <th>Actions</th>}
                       </tr>
@@ -1516,7 +1501,7 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
                           onClick={event => {
                             const target = event.target as HTMLElement
                             if (target.closest('.trend-table-checkbox')) return
-                            onSelectTest(test.id)
+                            (onOpenTestArchive ?? onSelectTest)(test.id)
                           }}
                         >
                           <td className="trend-table-checkbox-col">
@@ -1534,8 +1519,8 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
                               type="button"
                               className="dash-source-link"
                               onClick={event => {
-                                event.stopPropagation()
-                                onSelectTest(test.id)
+                                event.stopPropagation();
+                                (onOpenTestArchive ?? onSelectTest)(test.id)
                               }}
                             >
                               {test.name}
@@ -1547,35 +1532,16 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
                           <td className="num strong">{formatNumber(report.overview.peak_tps, 1)}</td>
                           <td className="num">{formatNumber(report.overview.avg_response_ms)}</td>
                           <td className={`num ${report.overview.error_pct > 0 ? 'text-danger strong' : ''}`}>
-                            {formatNumber(report.overview.error_pct, 2)}%
+                            {formatReportPercent(report.overview.error_pct)}
                           </td>
-                          <td className={`num ${report.manifest?.sla_breached ? 'text-danger strong' : 'text-success'}`}>
-                            {report.manifest?.sla_breached ? 'Breached' : 'Passed'}
+                          <td className={`num ${reportAcceptance(report).failed ? 'text-danger strong' : ''}`}>
+                            {reportAcceptance(report).status}
                           </td>
                           <td className="num">{formatOptionalNumber(report.completeness?.score_pct, 0)}%</td>
                           {onOpenTestArchive && (
                             <td aria-label="Trend actions">
                               <div className="trend-row-actions">
-                                <button
-                                  type="button"
-                                  className="btn btn-sm btn-primary"
-                                  onClick={event => {
-                                    event.stopPropagation()
-                                    onSelectTest(test.id)
-                                  }}
-                                >
-                                  Run Dashboard
-                                </button>
-                                <button
-                                  type="button"
-                                  className="btn btn-sm btn-secondary"
-                                  onClick={event => {
-                                    event.stopPropagation()
-                                    onOpenTestArchive(test.id)
-                                  }}
-                                >
-                                  Run Archive
-                                </button>
+                                <button type="button" className="btn btn-sm btn-primary" onClick={event => { event.stopPropagation(); onOpenTestArchive(test.id) }}>View results</button>
                               </div>
                             </td>
                           )}

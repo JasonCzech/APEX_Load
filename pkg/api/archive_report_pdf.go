@@ -113,7 +113,7 @@ func appendReleaseTrendPDFLines(lines *[]string, trend *RunArchiveReleaseTrendSu
 		baseline := trend.Baseline
 		*lines = append(*lines,
 			fmt.Sprintf("Baseline (prior run): %s, completed %s", firstNonEmptyPDFValue(baseline.RunName, baseline.RunID), formatPDFTime(baseline.CompletedAt)),
-			fmt.Sprintf("Error rate: %.2f%% -> %.2f%% (%+.2f pp)", baseline.ErrorPct, trend.Current.ErrorPct, trend.Deltas.ErrorPctDelta),
+			fmt.Sprintf("Error rate: %s -> %s (%+.2f pp)", formatReportPercentage(baseline.ErrorPct), formatReportPercentage(trend.Current.ErrorPct), trend.Deltas.ErrorPctDelta),
 			fmt.Sprintf("Avg response: %.1f ms -> %.1f ms (%+.1f ms / %+.1f%%)", baseline.AvgResponseMs, trend.Current.AvgResponseMs, trend.Deltas.AvgResponseMsDelta, trend.Deltas.AvgResponsePctDelta),
 			fmt.Sprintf("Peak TPS: %.1f -> %.1f (%+.1f)", baseline.PeakTPS, trend.Current.PeakTPS, trend.Deltas.PeakTPSDelta),
 			fmt.Sprintf("Completeness: %.0f%% -> %.0f%% (%+.1f pts)", baseline.CompletenessPct, trend.Current.CompletenessPct, trend.Deltas.CompletenessDelta),
@@ -159,11 +159,11 @@ func appendPDFStatsSection(lines *[]string, title string, stats map[string]RunAr
 	*lines = append(*lines, title)
 	for _, name := range names {
 		stat := stats[name]
-		*lines = append(*lines, fmt.Sprintf("- %s: %s tx, %s errors (%.2f%%), avg %.1f ms, max %.1f ms",
+		*lines = append(*lines, fmt.Sprintf("- %s: %s tx, %s errors (%s), avg %.1f ms, max %.1f ms",
 			name,
 			formatPDFInt(stat.Transactions),
 			formatPDFInt(stat.Errors),
-			stat.ErrorPct,
+			formatReportPercentage(stat.ErrorPct),
 			stat.AvgResponseMs,
 			stat.MaxResponseMs,
 		))

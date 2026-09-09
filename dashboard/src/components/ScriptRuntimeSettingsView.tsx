@@ -1,3 +1,5 @@
+import TabList from './ux/TabList'
+import { handleTabKey } from './tabKeyboard'
 import { type ReactNode } from 'react'
 
 import type { ScriptActionDefinition, ScriptDefinition } from '../types/scripts'
@@ -1203,7 +1205,7 @@ export function ScriptRuntimeSettingsView({
             {visibleHTTPTransportTabs.map(tab => <option value={tab.id} key={tab.id}>{tab.label}</option>)}
           </select>
         </label>
-        <div className="http-transport-tabs" role="tablist" aria-label="HTTP Transport option groups">
+        <TabList className="http-transport-tabs" role="tablist" aria-label="HTTP Transport option groups" onKeyDown={handleTabKey}>
           {visibleHTTPTransportTabs.map(tab => (
             <button
               key={tab.id}
@@ -1213,7 +1215,7 @@ export function ScriptRuntimeSettingsView({
               aria-controls={`http-transport-panel-${tab.id}`}
               aria-selected={effectiveHTTPTransportTab === tab.id}
               className={`http-transport-tab ${effectiveHTTPTransportTab === tab.id ? 'active' : ''}`}
-              onClick={() => setActiveHTTPTransportTab(tab.id)}
+              onClick={() => setActiveHTTPTransportTab(tab.id)} tabIndex={(effectiveHTTPTransportTab === tab.id) ? 0 : -1}
             >
               <span>{tab.label}</span>
               {tab.id === 'request_defaults' && (
@@ -1230,7 +1232,7 @@ export function ScriptRuntimeSettingsView({
               )}
             </button>
           ))}
-        </div>
+        </TabList>
         {effectiveHTTPTransportTab === 'request_defaults' && <div
           id="http-transport-panel-request-defaults"
           className="settings-sub-group http-transport-tab-panel"

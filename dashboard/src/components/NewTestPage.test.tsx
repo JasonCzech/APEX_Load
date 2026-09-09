@@ -438,6 +438,35 @@ describe('NewTestPage', () => {
     expect(container.querySelector('.new-test-scenario-expanded-row')?.textContent).toContain('Order API')
   })
 
+  it('treats the calendar date prefill as navigation context rather than an unsaved edit', async () => {
+    await act(async () => {
+      root.render(
+        <NavigationGuardProvider>
+          <NewTestPage
+            activeApplication={{ id: 'app-1', name: 'ACC', created_at: '', updated_at: '' }}
+            activeRelease={{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }}
+            releases={[{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }]}
+            initialScenarioId="scenario-1"
+            initialPrefillStartLocal="2026-10-01T09:00"
+            onSelectTest={vi.fn()}
+            onCreateRelease={vi.fn().mockResolvedValue(null)}
+          />
+        </NavigationGuardProvider>,
+      )
+    })
+    await flushPromises()
+
+    const schedulesButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent === 'Schedules')
+    expect(schedulesButton).toBeDefined()
+    await act(async () => {
+      schedulesButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(container.textContent).not.toContain('Unsaved Changes')
+    expect(container.textContent).toContain('Scenario Schedule')
+  })
+
   it('prompts before leaving a dirty run setup for schedules', async () => {
     await act(async () => {
       root.render(
@@ -3599,6 +3628,7 @@ describe('NewTestPage', () => {
     await flushDebouncedPreflight()
 
     const queuedButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Create Queued Run')
+    await vi.waitFor(() => expect(queuedButton?.disabled).toBe(false))
     await act(async () => queuedButton?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
     await flushPromises()
 

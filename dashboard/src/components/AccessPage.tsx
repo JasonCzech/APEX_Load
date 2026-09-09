@@ -1,3 +1,10 @@
+import FormField from './ux/FormField'
+import TabList from './ux/TabList'
+import { confirmAction } from './ux/confirmAction'
+import PanelToggle from "./ux/PanelToggle"
+import { handleTabKey } from './tabKeyboard'
+import { AuditEventTable } from './AuditEventTable'
+import { settingsHref } from './settingsNavigation'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { Dispatch, SetStateAction } from 'react'
 import { useApi } from '../hooks/useApi'
@@ -152,10 +159,10 @@ function isValidOptionalEmail(value: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)
 }
 
-function confirmBroadAutomationScope(scopes: string[], subject: string): boolean {
+async function confirmBroadAutomationScope(scopes: string[], subject: string): Promise<boolean> {
   if (!scopes.includes('automation:*')) return true
   if (typeof window === 'undefined') return true
-  return window.confirm(`${subject} includes automation:*, which allows any service-account token scope after RBAC also permits the route. Continue?`)
+  return (await confirmAction(`${subject} includes automation:*, which allows any service-account token scope after RBAC also permits the route. Continue?`))
 }
 
 function additionalScopedRoleEntries(
@@ -220,6 +227,8 @@ export default function AccessPage({
   const [userForm, setUserForm] = useState<UserForm>({ subject: '', email: '', displayName: '' })
   const [editUserForm, setEditUserForm] = useState<UserForm>({ subject: '', email: '', displayName: '' })
   const [onboardBindingDrafts, setOnboardBindingDrafts] = useState<UserBindingForm[]>(() => initialUserBindingDrafts(projects, domains, activeProject, activeDomain, applicationRepository))
+  // Compare against the preset actually shown, not a new preset derived from later catalog hydration.
+  const onboardInitialDraftSignature = useRef(userDraftSignature(userForm, onboardBindingDrafts))
   const [editBindingDrafts, setEditBindingDrafts] = useState<UserBindingForm[]>([])
   const [selectedUserEditMode, setSelectedUserEditMode] = useState(false)
   const [activityFilter, setActivityFilter] = useState<ActivityFilterForm>({
@@ -334,26 +343,26 @@ export default function AccessPage({
 
   const accessTabControls = useMemo(() => (
     accessWorkspaceAvailable ? (
-      <div className="access-tab-row topbar-page-section-toggle" role="tablist" aria-label="Access workspace sections">
+      <TabList className="access-tab-row topbar-page-section-toggle" role="tablist" aria-label="Access workspace sections" onKeyDown={handleTabKey}>
         {canUseUsers && (
-          <button type="button" role="tab" aria-selected={activeTab === 'users'} className={`access-tab ${activeTab === 'users' ? 'active' : ''}`} onClick={() => runGuarded(() => setActiveTab('users'))}>
+          <button type="button" role="tab" aria-selected={activeTab === 'users'} className={`access-tab ${activeTab === 'users' ? 'active' : ''}`} onClick={() => runGuarded(() => setActiveTab('users'))} tabIndex={(activeTab === 'users') ? 0 : -1}>
             Users <strong>{usersTotal > users.length ? `${users.length} of ${usersTotal}` : users.length}</strong>
           </button>
         )}
         {canManageServiceAccounts && (
-          <button type="button" role="tab" aria-selected={activeTab === 'service_accounts'} className={`access-tab ${activeTab === 'service_accounts' ? 'active' : ''}`} onClick={() => runGuarded(() => setActiveTab('service_accounts'))}>
+          <button type="button" role="tab" aria-selected={activeTab === 'service_accounts'} className={`access-tab ${activeTab === 'service_accounts' ? 'active' : ''}`} onClick={() => runGuarded(() => setActiveTab('service_accounts'))} tabIndex={(activeTab === 'service_accounts') ? 0 : -1}>
             Service Accounts <strong>{accounts.length}</strong>
           </button>
         )}
         {canViewUserActivity && (
-          <button type="button" role="tab" aria-selected={activeTab === 'activity'} className={`access-tab ${activeTab === 'activity' ? 'active' : ''}`} onClick={() => runGuarded(() => setActiveTab('activity'))}>
+          <button type="button" role="tab" aria-selected={activeTab === 'activity'} className={`access-tab ${activeTab === 'activity' ? 'active' : ''}`} onClick={() => runGuarded(() => setActiveTab('activity'))} tabIndex={(activeTab === 'activity') ? 0 : -1}>
             Activity <strong>{activityEvents.length}</strong>
             {accessReviewAttention && (
               <span className="access-attention-badge" title={`${accessReviewAttention.total} item(s) need review`}>{accessReviewAttention.total}</span>
             )}
           </button>
         )}
-      </div>
+      </TabList>
     ) : null
   ), [accessReviewAttention, accessWorkspaceAvailable, accounts.length, activeTab, activityEvents.length, canManageServiceAccounts, canUseUsers, canViewUserActivity, runGuarded, users.length, usersTotal])
 
@@ -933,8 +942,7 @@ export default function AccessPage({
         setSelectedUserID(user.id)
         setUserInspectorCollapsed(false)
         setUserSubTab('existing')
-        setUserForm({ subject: '', email: '', displayName: '' })
-        setOnboardBindingDrafts(initialUserBindingDrafts(projects, domains, activeProject, activeDomain, applicationRepository))
+        resetOnboardDrafts()
         setSelectedUserEditMode(false)
         setUserActionMessage(`Onboarded ${user.display_name || user.email || user.subject} with ${initialBindings.length} role ${initialBindings.length === 1 ? 'binding' : 'bindings'}.`)
         setUserActionError('')
@@ -1053,7 +1061,7 @@ export default function AccessPage({
   const setUserActive = async (user: DashboardUser, active: boolean) => {
     if (!canManageUserLifecycle || accessMutationInFlightRef.current) return
     const action = active ? 'restore access for' : 'remove access from'
-    if (typeof window !== 'undefined' && !window.confirm(`Really ${action} ${user.display_name || user.subject}?`)) {
+    if (typeof window !== 'undefined' && !(await confirmAction(`Really ${action} ${user.display_name || user.subject}?`))) {
       return
     }
     await runAccessMutation(async () => {
@@ -1072,7 +1080,7 @@ export default function AccessPage({
 
   const revokeSessions = async (user: DashboardUser) => {
     if (!canManageUserLifecycle || accessMutationInFlightRef.current) return
-    if (typeof window !== 'undefined' && !window.confirm(`Sign out all active sessions for ${user.display_name || user.subject}? Their account stays active but they must sign in again.`)) {
+    if (typeof window !== 'undefined' && !(await confirmAction(`Sign out all active sessions for ${user.display_name || user.subject}? Their account stays active but they must sign in again.`))) {
       return
     }
     await runAccessMutation(async () => {
@@ -1091,7 +1099,7 @@ export default function AccessPage({
 
   const deleteUser = async (user: DashboardUser) => {
     if (!canManageUserLifecycle || accessMutationInFlightRef.current) return
-    if (typeof window !== 'undefined' && !window.confirm(`Permanently delete ${user.display_name || user.subject} and all of their role bindings? This cannot be undone. To preserve the audit trail, use Remove Access instead.`)) {
+    if (typeof window !== 'undefined' && !(await confirmAction(`Permanently delete ${user.display_name || user.subject} and all of their role bindings? This cannot be undone. To preserve the audit trail, use Remove Access instead.`))) {
       return
     }
     await runAccessMutation(async () => {
@@ -1137,7 +1145,7 @@ export default function AccessPage({
       setActionMessage('')
       return false
     }
-    if (!confirmBroadAutomationScope(form.scopes, 'This service account')) {
+    if (!(await confirmBroadAutomationScope(form.scopes, 'This service account'))) {
       return false
     }
 
@@ -1177,7 +1185,7 @@ export default function AccessPage({
 
   const rotateAccount = async (account: DashboardServiceAccount) => {
     if (!canManageServiceAccounts || accessMutationInFlightRef.current) return
-    if (typeof window !== 'undefined' && !window.confirm(`Rotate API key for ${account.name}? Existing automation must be updated with the new key.`)) {
+    if (typeof window !== 'undefined' && !(await confirmAction(`Rotate API key for ${account.name}? Existing automation must be updated with the new key.`))) {
       return
     }
     await runAccessMutation(async () => {
@@ -1200,7 +1208,7 @@ export default function AccessPage({
   const setAccountActive = async (account: DashboardServiceAccount, active: boolean) => {
     if (!canManageServiceAccounts || accessMutationInFlightRef.current) return
     const action = active ? 'enable' : 'disable'
-    if (typeof window !== 'undefined' && !window.confirm(`Really ${action} ${account.name}?`)) {
+    if (typeof window !== 'undefined' && !(await confirmAction(`Really ${action} ${account.name}?`))) {
       return
     }
     await runAccessMutation(async () => {
@@ -1219,7 +1227,7 @@ export default function AccessPage({
 
   const deleteAccount = async (account: DashboardServiceAccount) => {
     if (!canManageServiceAccounts || accessMutationInFlightRef.current) return
-    if (typeof window !== 'undefined' && !window.confirm(`Delete ${account.name}? This cannot be undone.`)) {
+    if (typeof window !== 'undefined' && !(await confirmAction(`Delete ${account.name}? This cannot be undone.`))) {
       return
     }
     await runAccessMutation(async () => {
@@ -1268,7 +1276,7 @@ export default function AccessPage({
       setActionError('Enter a valid contact email before saving the service account.')
       return false
     }
-    if (!confirmBroadAutomationScope(editAccountForm.scopes, account.name)) {
+    if (!(await confirmBroadAutomationScope(editAccountForm.scopes, account.name))) {
       return false
     }
     let succeeded = false
@@ -1395,8 +1403,11 @@ export default function AccessPage({
   }
 
   const resetOnboardDrafts = () => {
-    setUserForm({ subject: '', email: '', displayName: '' })
-    setOnboardBindingDrafts(initialUserBindingDrafts(projects, domains, activeProject, activeDomain, applicationRepository))
+    const emptyForm = { subject: '', email: '', displayName: '' }
+    const bindings = initialUserBindingDrafts(projects, domains, activeProject, activeDomain, applicationRepository)
+    onboardInitialDraftSignature.current = userDraftSignature(emptyForm, bindings)
+    setUserForm(emptyForm)
+    setOnboardBindingDrafts(bindings)
     setUserActionError('')
   }
 
@@ -1446,12 +1457,8 @@ export default function AccessPage({
     setActivityInspectorCollapsed(false)
   }
 
-  const onboardInitialDraftSignature = userDraftSignature(
-    { subject: '', email: '', displayName: '' },
-    initialUserBindingDrafts(projects, domains, activeProject, activeDomain, applicationRepository),
-  )
   const onboardDraftDirty = userSubTab === 'onboard'
-    && userDraftSignature(userForm, onboardBindingDrafts) !== onboardInitialDraftSignature
+    && userDraftSignature(userForm, onboardBindingDrafts) !== onboardInitialDraftSignature.current
   const selectedUserDraftDirty = Boolean(
     selectedUserEditMode
     && selectedUser
@@ -1655,15 +1662,8 @@ export default function AccessPage({
               <span>Subject</span>
               <input value={editUserForm.subject} onChange={event => setEditUserForm(prev => ({ ...prev, subject: event.target.value }))} disabled={!canManageUserLifecycle} />
             </label>
-            <label>
-              <span>Email</span>
-              <input value={editUserForm.email} onChange={event => setEditUserForm(prev => ({ ...prev, email: event.target.value }))} disabled={!canManageUserLifecycle} aria-invalid={editUserEmailInvalid || undefined} />
-              {editUserEmailInvalid && <span className="access-field-error">Enter a valid email address.</span>}
-            </label>
-            <label>
-              <span>Display Name</span>
-              <input value={editUserForm.displayName} onChange={event => setEditUserForm(prev => ({ ...prev, displayName: event.target.value }))} disabled={!canManageUserLifecycle} />
-            </label>
+            <FormField label="Email" htmlFor="edit-user-email" error={editUserEmailInvalid ? 'Enter a valid email address.' : undefined}><input value={editUserForm.email} onChange={event => setEditUserForm(prev => ({ ...prev, email: event.target.value }))} disabled={!canManageUserLifecycle} aria-invalid={editUserEmailInvalid || undefined} /></FormField>
+            <FormField label="Display Name" htmlFor="edit-user-displayName"><input value={editUserForm.displayName} onChange={event => setEditUserForm(prev => ({ ...prev, displayName: event.target.value }))} disabled={!canManageUserLifecycle} /></FormField>
           </div>
           <div className="access-account-actions">
             <button className="btn btn-primary btn-sm" type="button" onClick={updateSelectedUser} disabled={accessMutationBusy || !canManageUserBindings || (canManageUserLifecycle && editUserEmailInvalid)}>Save Changes</button>
@@ -1693,13 +1693,13 @@ export default function AccessPage({
     if (!selectedUser || userInspectorCollapsed) return null
     const selectedUsage = usageForUser(selectedUser, userBuckets)
     return (
-      <aside className="access-inspector access-panel" aria-label="Selected user details">
+      <aside className="access-inspector access-panel" id="access-user-details" aria-label="Selected user details">
         <div className="access-panel-header">
           <div>
             <h3>User Details</h3>
             <p>{selectedUser.display_name || selectedUser.email || selectedUser.subject}</p>
           </div>
-          <button className="btn btn-ghost btn-sm" type="button" onClick={() => setUserInspectorCollapsed(true)}>Hide Details</button>
+          <PanelToggle expanded={true} panelName="user details" controls="access-user-details" onToggle={() => setUserInspectorCollapsed(true)} />
         </div>
         <div className="access-inspector-title">
           <span className={`access-status-badge ${userStatusBadge(selectedUser).tone}`}>{userStatusBadge(selectedUser).label}</span>
@@ -1920,13 +1920,13 @@ export default function AccessPage({
     const roles = accountRoleList(selectedAccount)
     const accessLabels = accountAccessLabels(selectedAccount, projects, domains)
     return (
-      <aside className="access-inspector access-panel" aria-label="Selected service account details">
+      <aside className="access-inspector access-panel" id="access-account-details" aria-label="Selected service account details">
         <div className="access-panel-header">
           <div>
             <h3>Account Details</h3>
             <p>{selectedAccount.name}</p>
           </div>
-          <button className="btn btn-ghost btn-sm" type="button" onClick={() => setAccountInspectorCollapsed(true)}>Hide Details</button>
+          <PanelToggle expanded={true} panelName="service account details" controls="access-account-details" onToggle={() => setAccountInspectorCollapsed(true)} />
         </div>
         <div className="access-badge-row">
           {accountBadges(selectedAccount).map(badge => (
@@ -2082,13 +2082,13 @@ export default function AccessPage({
   const renderActivityInspector = () => {
     if (!selectedActivity || activityInspectorCollapsed) return null
     return (
-      <aside className="access-inspector access-panel" aria-label="Selected activity event details">
+      <aside className="access-inspector access-panel" id="access-activity-details" aria-label="Selected activity event details">
         <div className="access-panel-header">
           <div>
             <h3>Event Details</h3>
             <p>{selectedActivity.action}</p>
           </div>
-          <button className="btn btn-ghost btn-sm" type="button" onClick={() => setActivityInspectorCollapsed(true)}>Hide Details</button>
+          <PanelToggle expanded={true} panelName="activity event details" controls="access-activity-details" onToggle={() => setActivityInspectorCollapsed(true)} />
         </div>
         <span className={`access-status-badge ${selectedActivity.status === 'success' ? 'healthy' : 'warning'}`}>{selectedActivity.status}</span>
         <dl className="access-detail-grid">
@@ -2105,6 +2105,7 @@ export default function AccessPage({
 
   return (
     <div className="page access-page">
+      <nav className="settings-inline-actions" aria-label="Related administration"><a className="btn btn-secondary btn-sm" href={settingsHref('authentication')}>Authentication</a><a className="btn btn-secondary btn-sm" href={settingsHref('features')}>Feature policy</a><a className="btn btn-secondary btn-sm" href={settingsHref('imports')}>Import policy</a><a className="btn btn-secondary btn-sm" href={settingsHref('redaction')}>Redaction</a><a className="btn btn-secondary btn-sm" href={settingsHref('secrets')}>Project secrets</a><a className="btn btn-secondary btn-sm" href={settingsHref('audit')}>Governance audit</a></nav>
       <div className="page-header">
         <div>
           <h2>Access</h2>
@@ -2130,15 +2131,15 @@ export default function AccessPage({
                 <p>{usersLoading ? 'Loading users...' : `${filteredUsers.length} of ${usersTotal} users`}</p>
               </div>
               {selectedUser && userInspectorCollapsed && (
-                <button className="btn btn-secondary btn-sm" type="button" onClick={() => setUserInspectorCollapsed(false)}>Show Details</button>
+                <PanelToggle expanded={false} panelName="user details" controls="access-user-details" onToggle={() => setUserInspectorCollapsed(false)} />
               )}
             </div>
-            <div className="access-subtab-row" role="tablist" aria-label="User workspace views">
-              <button type="button" role="tab" aria-selected={userSubTab === 'existing'} className={`access-subtab ${userSubTab === 'existing' ? 'active' : ''}`} onClick={() => runGuarded(() => setUserSubTab('existing'))}>Existing Users</button>
+            <TabList className="access-subtab-row" role="tablist" aria-label="User workspace views" onKeyDown={handleTabKey}>
+              <button type="button" role="tab" aria-selected={userSubTab === 'existing'} className={`access-subtab ${userSubTab === 'existing' ? 'active' : ''}`} onClick={() => runGuarded(() => setUserSubTab('existing'))} tabIndex={(userSubTab === 'existing') ? 0 : -1}>Existing Users</button>
               {canManageUserLifecycle && (
-                <button type="button" role="tab" aria-selected={userSubTab === 'onboard'} className={`access-subtab ${userSubTab === 'onboard' ? 'active' : ''}`} onClick={() => runGuarded(() => setUserSubTab('onboard'))}>Onboard Users</button>
+                <button type="button" role="tab" aria-selected={userSubTab === 'onboard'} className={`access-subtab ${userSubTab === 'onboard' ? 'active' : ''}`} onClick={() => runGuarded(() => setUserSubTab('onboard'))} tabIndex={(userSubTab === 'onboard') ? 0 : -1}>Onboard Users</button>
               )}
-            </div>
+            </TabList>
 
             {userSubTab === 'existing' && (
               <>
@@ -2281,15 +2282,8 @@ export default function AccessPage({
                     <input value={userForm.subject} onChange={event => setUserForm(prev => ({ ...prev, subject: event.target.value }))} placeholder="oidc-subject-or-upstream-user" aria-describedby="identity-subject-help" />
                     <small id="identity-subject-help">The stable user identifier supplied by your identity provider, not the display name. Ask your identity administrator for this value.</small>
                   </label>
-                  <label>
-                    <span>Email</span>
-                    <input value={userForm.email} onChange={event => setUserForm(prev => ({ ...prev, email: event.target.value }))} placeholder="person@example.com" aria-invalid={onboardEmailInvalid || undefined} />
-                    {onboardEmailInvalid && <span className="access-field-error">Enter a valid email address.</span>}
-                  </label>
-                  <label>
-                    <span>Display Name</span>
-                    <input value={userForm.displayName} onChange={event => setUserForm(prev => ({ ...prev, displayName: event.target.value }))} placeholder="Jordan Lee" />
-                  </label>
+                  <FormField label="Email" htmlFor="new-user-email" error={onboardEmailInvalid ? 'Enter a valid email address.' : undefined}><input value={userForm.email} onChange={event => setUserForm(prev => ({ ...prev, email: event.target.value }))} placeholder="person@example.com" aria-invalid={onboardEmailInvalid || undefined} /></FormField>
+                  <FormField label="Display Name" htmlFor="new-user-displayName"><input value={userForm.displayName} onChange={event => setUserForm(prev => ({ ...prev, displayName: event.target.value }))} placeholder="Jordan Lee" /></FormField>
                 </div>
                 <div className="access-control-section">
                   <h4>Initial Permissions</h4><p>Viewer can inspect results. Editor can author and run tests. Project Admin additionally manages project access and settings.</p>
@@ -2327,7 +2321,7 @@ export default function AccessPage({
                 <p>{loading ? 'Loading service accounts...' : `${filteredAccounts.length} of ${accounts.length} automation principals`}</p>
               </div>
               {selectedAccount && accountInspectorCollapsed && (
-                <button className="btn btn-secondary btn-sm" type="button" onClick={() => setAccountInspectorCollapsed(false)}>Show Details</button>
+                <PanelToggle expanded={false} panelName="service account details" controls="access-account-details" onToggle={() => setAccountInspectorCollapsed(false)} />
               )}
             </div>
             {accessReviewAttention && (accessReviewAttention.accountsFlagged > 0 || accessReviewAttention.denials > 0) && (
@@ -2343,10 +2337,10 @@ export default function AccessPage({
                 )}
               </div>
             )}
-            <div className="access-subtab-row" role="tablist" aria-label="Service account workspace views">
-              <button type="button" role="tab" aria-selected={serviceAccountSubTab === 'existing'} className={`access-subtab ${serviceAccountSubTab === 'existing' ? 'active' : ''}`} onClick={() => runGuarded(() => setServiceAccountSubTab('existing'))}>Existing Accounts</button>
-              <button type="button" role="tab" aria-selected={serviceAccountSubTab === 'generate'} className={`access-subtab ${serviceAccountSubTab === 'generate' ? 'active' : ''}`} onClick={() => runGuarded(() => setServiceAccountSubTab('generate'))}>Generate Key</button>
-            </div>
+            <TabList className="access-subtab-row" role="tablist" aria-label="Service account workspace views" onKeyDown={handleTabKey}>
+              <button type="button" role="tab" aria-selected={serviceAccountSubTab === 'existing'} className={`access-subtab ${serviceAccountSubTab === 'existing' ? 'active' : ''}`} onClick={() => runGuarded(() => setServiceAccountSubTab('existing'))} tabIndex={(serviceAccountSubTab === 'existing') ? 0 : -1}>Existing Accounts</button>
+              <button type="button" role="tab" aria-selected={serviceAccountSubTab === 'generate'} className={`access-subtab ${serviceAccountSubTab === 'generate' ? 'active' : ''}`} onClick={() => runGuarded(() => setServiceAccountSubTab('generate'))} tabIndex={(serviceAccountSubTab === 'generate') ? 0 : -1}>Generate Key</button>
+            </TabList>
 
             {serviceAccountSubTab === 'existing' && (
               <>
@@ -2554,20 +2548,20 @@ export default function AccessPage({
               </div>
               <div className="access-account-actions">
                 {selectedActivity && activityInspectorCollapsed && (
-                  <button className="btn btn-secondary btn-sm" type="button" onClick={() => setActivityInspectorCollapsed(false)}>Show Details</button>
+                  <PanelToggle expanded={false} panelName="activity event details" controls="access-activity-details" onToggle={() => setActivityInspectorCollapsed(false)} />
                 )}
                 <button className="btn btn-secondary btn-sm" type="button" onClick={exportActivity} disabled={!canViewUserActivity || activityExporting}>
                   {activityExporting ? 'Exporting...' : 'Export CSV'}
                 </button>
               </div>
             </div>
-            <div className="access-subtab-row" role="tablist" aria-label="Activity workspace views">
-              <button type="button" role="tab" aria-selected={activitySubTab === 'events'} className={`access-subtab ${activitySubTab === 'events' ? 'active' : ''}`} onClick={() => setActivitySubTab('events')}>Events</button>
-              <button type="button" role="tab" aria-selected={activitySubTab === 'usage'} className={`access-subtab ${activitySubTab === 'usage' ? 'active' : ''}`} onClick={() => setActivitySubTab('usage')}>Usage By User</button>
+            <TabList className="access-subtab-row" role="tablist" aria-label="Activity workspace views" onKeyDown={handleTabKey}>
+              <button type="button" role="tab" aria-selected={activitySubTab === 'events'} className={`access-subtab ${activitySubTab === 'events' ? 'active' : ''}`} onClick={() => setActivitySubTab('events')} tabIndex={(activitySubTab === 'events') ? 0 : -1}>Events</button>
+              <button type="button" role="tab" aria-selected={activitySubTab === 'usage'} className={`access-subtab ${activitySubTab === 'usage' ? 'active' : ''}`} onClick={() => setActivitySubTab('usage')} tabIndex={(activitySubTab === 'usage') ? 0 : -1}>Usage By User</button>
               {canManageUserLifecycle && (
-                <button type="button" role="tab" aria-selected={activitySubTab === 'review'} className={`access-subtab ${activitySubTab === 'review' ? 'active' : ''}`} onClick={() => setActivitySubTab('review')}>Access Review</button>
+                <button type="button" role="tab" aria-selected={activitySubTab === 'review'} className={`access-subtab ${activitySubTab === 'review' ? 'active' : ''}`} onClick={() => setActivitySubTab('review')} tabIndex={(activitySubTab === 'review') ? 0 : -1}>Access Review</button>
               )}
-            </div>
+            </TabList>
 
             {activitySubTab === 'review' && (
               <>
@@ -2640,48 +2634,14 @@ export default function AccessPage({
                   </div>
                 )}
 
-                <div className="access-table-wrap">
-                  <table className="access-data-table">
-                    <thead>
-                      <tr>
+                <AuditEventTable events={filteredActivityEvents} selectedId={activityInspectorCollapsed ? undefined : selectedActivityID} onSelect={selectActivity} scopeLabel={event => eventScopeLabel(event, projects, domains)} header={<>
                         <SortHeader label="Time" field="time" sort={activitySort} onSort={field => setActivitySort(prev => nextSort(prev, field, activitySortDefaults))} />
                         <SortHeader label="Actor" field="actor" sort={activitySort} onSort={field => setActivitySort(prev => nextSort(prev, field, activitySortDefaults))} />
                         <SortHeader label="Action" field="action" sort={activitySort} onSort={field => setActivitySort(prev => nextSort(prev, field, activitySortDefaults))} />
                         <SortHeader label="Resource" field="resource" sort={activitySort} onSort={field => setActivitySort(prev => nextSort(prev, field, activitySortDefaults))} />
                         <SortHeader label="Scope" field="scope" sort={activitySort} onSort={field => setActivitySort(prev => nextSort(prev, field, activitySortDefaults))} />
                         <SortHeader label="Status" field="status" sort={activitySort} onSort={field => setActivitySort(prev => nextSort(prev, field, activitySortDefaults))} />
-                        <SortHeader label="Details" field="details" sort={activitySort} onSort={field => setActivitySort(prev => nextSort(prev, field, activitySortDefaults))} />
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filteredActivityEvents.map(event => {
-                        const selected = selectedActivityID === event.id && !activityInspectorCollapsed
-                        return (
-                          <tr key={event.id} className={selected ? 'selected' : ''} onClick={() => selectActivity(event)}>
-                            <td>{formatTimestamp(event.created_at)}</td>
-                            <td>
-                              <button type="button" className="access-row-primary" onClick={clickEvent => { clickEvent.stopPropagation(); selectActivity(event) }}>
-                                {event.actor_display_name || event.actor_subject || event.actor_type}
-                              </button>
-                              <span className="access-row-meta">{event.actor_type}</span>
-                            </td>
-                            <td>{event.action}</td>
-                            <td>{eventResourceLabel(event)}</td>
-                            <td>{eventScopeLabel(event, projects, domains)}</td>
-                            <td><span className={`access-status-badge ${event.status === 'success' ? 'healthy' : 'warning'}`}>{event.status}</span></td>
-                            <td><span className="access-table-stack">{detailsSummary(event.details)}</span></td>
-                          </tr>
-                        )
-                      })}
-                    </tbody>
-                  </table>
-                  {filteredActivityEvents.length === 0 && (
-                    <div className="access-empty-state">
-                      <strong>No activity found</strong>
-                      <span>Adjust filters or select a broader timeframe.</span>
-                    </div>
-                  )}
-                </div>
+                        <SortHeader label="Details" field="details" sort={activitySort} onSort={field => setActivitySort(prev => nextSort(prev, field, activitySortDefaults))} /></>} />
               </>
             )}
 

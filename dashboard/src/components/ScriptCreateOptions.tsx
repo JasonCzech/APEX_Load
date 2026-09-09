@@ -1,3 +1,5 @@
+import TabList from './ux/TabList'
+import { handleTabKey } from './tabKeyboard'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { type AuthoringComponent, type AuthoringTemplate, type StoredScript } from '../types'
 import { type AuthoringImportSurface } from '../types/scriptImports'
@@ -874,7 +876,7 @@ export default function ScriptCreateOptions({
               <h3>Start New Script</h3>
               <p>Choose a starter template, compose a reusable block, or open a blank protocol editor for a new draft.</p>
             </div>
-            <div className="script-create-category-tabs" role="tablist" aria-label="Start new script categories">
+            <TabList className="script-create-category-tabs" role="tablist" aria-label="Start new script categories" onKeyDown={handleTabKey}>
               {startNewCategoryTabs.map(tab => (
                 <button
                   key={tab.id}
@@ -882,13 +884,13 @@ export default function ScriptCreateOptions({
                   role="tab"
                   aria-selected={startNewCategory === tab.id}
                   className={startNewCategory === tab.id ? 'active' : ''}
-                  onClick={() => setStartNewCategory(tab.id)}
+                  onClick={() => setStartNewCategory(tab.id)} tabIndex={(startNewCategory === tab.id) ? 0 : -1}
                 >
                   <span>{tab.label}</span>
                   <strong>{tab.count}</strong>
                 </button>
               ))}
-            </div>
+            </TabList>
             <div className="script-create-choice-groups">
               {startNewCategory === 'templates' && (
               <div className="script-create-choice-group" role="tabpanel" aria-label="Starter Templates">

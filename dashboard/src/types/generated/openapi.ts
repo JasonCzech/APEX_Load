@@ -12513,6 +12513,57 @@ export interface operations {
       };
     };
   };
+  "handleConnectionTest": {
+    parameters?: never;
+    requestBody: {
+      content: {
+        "application/json": {
+          "expected_revision"?: string;
+          "provider"?: string;
+        };
+      };
+    };
+    responses: {
+      "200": {
+        content: {
+          "application/json": Record<string, string>;
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "502": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
   "handleConvertBrowserRecording": {
     parameters: {
       "path": {
@@ -37858,6 +37909,7 @@ export interface operations {
       "query"?: {
         "download"?: boolean;
         "format"?: string;
+        "include_release_trend"?: string;
         "profile"?: string;
       };
     };
@@ -49433,6 +49485,53 @@ export interface operations {
       };
     };
   };
+  "handleLibraryRemoteWorkspaces": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+      "query"?: {
+        "kind"?: string;
+        "parent_id"?: string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": Record<string, unknown>;
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "502": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
   "handleLibraryResultArchive": {
     parameters: {
       "path": {
@@ -52278,6 +52377,122 @@ export interface operations {
         };
       };
       "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleNotificationDeliveries": {
+    parameters?: never;
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": Record<string, unknown>;
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleNotificationPreview": {
+    parameters?: never;
+    requestBody: {
+      content: {
+        "application/json": {
+          "event_type"?: string;
+          "format"?: string;
+        };
+      };
+    };
+    responses: {
+      "200": {
+        content: {
+          "application/json": Record<string, unknown>;
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleNotificationTest": {
+    parameters?: never;
+    requestBody: {
+      content: {
+        "application/json": {
+          "expected_revision"?: string;
+          "index"?: (number) | null;
+        };
+      };
+    };
+    responses: {
+      "202": {
+        content: {
+          "application/json": Record<string, string>;
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -61163,6 +61378,51 @@ export interface operations {
         };
       };
       "502": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleRedactionPreview": {
+    parameters?: never;
+    requestBody: {
+      content: {
+        "application/json": {
+          "rules"?: Array<{
+            "name"?: string;
+            "pattern"?: string;
+            "replacement"?: string;
+          }>;
+          "sample"?: string;
+        };
+      };
+    };
+    responses: {
+      "200": {
+        content: {
+          "application/json": Record<string, unknown>;
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -98275,11 +98535,17 @@ export interface paths {
   "/api/v1/system/inventory": {
     "get": operations["handleGetSystemInventory"];
   };
+  "/api/v1/system/library/remotes/{id}/workspaces": {
+    "get": operations["handleLibraryRemoteWorkspaces"];
+  };
   "/api/v1/system/parity-status": {
     "get": operations["handleGetParityStatus"];
   };
   "/api/v1/system/readiness": {
     "get": operations["handleSystemReadiness"];
+  };
+  "/api/v1/system/redaction/preview": {
+    "post": operations["handleRedactionPreview"];
   };
   "/api/v1/system/restarts": {
     "post": operations["handleSystemRestart"];
@@ -98293,6 +98559,18 @@ export interface paths {
   "/api/v1/system/settings": {
     "get": operations["handleGetSystemSettings"];
     "put": operations["handleUpdateSystemSettings"];
+  };
+  "/api/v1/system/settings/connections/test": {
+    "post": operations["handleConnectionTest"];
+  };
+  "/api/v1/system/settings/notifications/deliveries": {
+    "get": operations["handleNotificationDeliveries"];
+  };
+  "/api/v1/system/settings/notifications/preview": {
+    "post": operations["handleNotificationPreview"];
+  };
+  "/api/v1/system/settings/notifications/test": {
+    "post": operations["handleNotificationTest"];
   };
   "/api/v1/system/usage": {
     "get": operations["handleGetUsageAccounting"];

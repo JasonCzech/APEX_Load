@@ -47,7 +47,7 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 932, height: 1096
     await expect(page.getByPlaceholder('Scenario name')).toHaveValue('Keyboard draft')
     const review = page.locator('[aria-label="Scenario builder steps"]').getByRole('button', { name: /^Review/ })
     await review.focus(); await page.keyboard.press('Enter')
-    const save = page.getByRole('button', { name: 'Save Scenario', exact: true })
+    const save = page.getByRole('button', { name: 'Save draft', exact: true })
     await save.focus(); await page.keyboard.press('Enter')
     await expect(page.getByRole('alert')).toContainText('selected script')
     await save.scrollIntoViewIfNeeded()

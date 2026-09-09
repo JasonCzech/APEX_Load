@@ -517,7 +517,7 @@ export default function ProjectSecretsPanel({
             ))}
           </div>
         ) : !loading ? (
-          <p className="new-test-inline-note">No managed secrets yet. Scripts can still be saved with secret references and configured here later.</p>
+          <p className="new-test-inline-note">No managed secrets yet. Scripts can reference secrets supplied by the configured provider.</p>
         ) : null}
       </div>
 
@@ -528,7 +528,8 @@ export default function ProjectSecretsPanel({
             <span className="setting-desc">Creating is safe for editors because existing names cannot be overwritten. Rotation remains an administrator action.</span>
           </div>
         </div>
-        <div className="project-secret-create">
+        {!writable && <p className="new-test-inline-note">This provider is read-only. Ask your deployment administrator to supply the secret through the configured environment/provider, or configure a writable project secret provider. Values cannot be created or rotated here.</p>}
+        <div className="project-secret-create" hidden={!writable}>
           <label htmlFor={newNameId}>
             <span>Secret name</span>
             <input

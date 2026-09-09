@@ -1,3 +1,6 @@
+import TabList from './ux/TabList'
+import DialogLayer from './ux/DialogLayer'
+import { handleTabKey } from './tabKeyboard'
 import { forwardRef, lazy, Suspense, type CSSProperties, type MouseEventHandler, useMemo, useRef, useState } from 'react'
 import LazyLoadBoundary from './LazyLoadBoundary'
 
@@ -239,13 +242,13 @@ const LoadImpactHeatmap = forwardRef<HTMLElement, Props>(function LoadImpactHeat
             Configure Map
           </button>
           {!loading && model.rows.length > 0 && model.buckets.length > 0 && (
-            <div className="load-impact-view-toggle" role="tablist" aria-label="Load Impact view mode">
+            <TabList className="load-impact-view-toggle" role="tablist" aria-label="Load Impact view mode" onKeyDown={handleTabKey}>
               <button
                 type="button"
                 role="tab"
                 aria-selected={viewMode === '2d'}
                 className={`btn-chip ${viewMode === '2d' ? 'active' : ''}`}
-                onClick={() => setViewMode('2d')}
+                onClick={() => setViewMode('2d')} tabIndex={(viewMode === '2d') ? 0 : -1}
               >
                 2D
               </button>
@@ -254,11 +257,11 @@ const LoadImpactHeatmap = forwardRef<HTMLElement, Props>(function LoadImpactHeat
                 role="tab"
                 aria-selected={viewMode === '3d'}
                 className={`btn-chip ${viewMode === '3d' ? 'active' : ''}`}
-                onClick={() => setViewMode('3d')}
+                onClick={() => setViewMode('3d')} tabIndex={(viewMode === '3d') ? 0 : -1}
               >
                 3D
               </button>
-            </div>
+            </TabList>
           )}
           <div className="load-impact-badges">
             {loading && <span className="archive-chip">Loading</span>}
@@ -444,7 +447,7 @@ const LoadImpactHeatmap = forwardRef<HTMLElement, Props>(function LoadImpactHeat
       )}
 
       {drawerOpen && (
-        <div className="load-impact-graph-drawer-layer">
+        <DialogLayer><div className="load-impact-graph-drawer-layer">
           <button
             type="button"
             className="load-impact-graph-backdrop"
@@ -487,7 +490,7 @@ const LoadImpactHeatmap = forwardRef<HTMLElement, Props>(function LoadImpactHeat
               )}
             </div>
           </aside>
-        </div>
+        </div></DialogLayer>
       )}
     </section>
   )

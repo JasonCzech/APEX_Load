@@ -3,7 +3,7 @@
   align-items: center;
   justify-content: space-between;
   padding: 12px 32px;
-  background: var(--topbar-bg);
+  background: var(--bg-secondary);
   backdrop-filter: blur(12px);
   border-bottom: 1px solid var(--border);
   position: sticky;

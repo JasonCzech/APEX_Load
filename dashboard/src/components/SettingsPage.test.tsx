@@ -62,6 +62,7 @@ const apiMock = {
 const apiProviderState = vi.hoisted(() => ({ current: undefined as unknown }))
 
 const applicationApiMock = {
+  listApplications: vi.fn(),
   listReleases: vi.fn(),
   updateApplication: vi.fn(),
   deleteApplication: vi.fn(),
@@ -718,6 +719,7 @@ describe('SettingsPage', () => {
       results: [{ test_id: 'run-expired', archive_path: '/tmp/run-expired', status: 'pruned', compliance_class: 'standard', reason: 'expired_by_policy' }],
       summary: { candidate_count: 1, pruned_count: 1, failed_count: 0 },
     })
+    applicationApiMock.listApplications.mockResolvedValue({ applications: [] })
     applicationApiMock.listReleases.mockResolvedValue({ releases: [] })
     repositoryApiMock.listDomains.mockResolvedValue({ domains: [defaultDomain], count: 1 })
     repositoryApiMock.createDomain.mockResolvedValue({ domain: retailDomain, application_repository: { id: 'repo-retail', domain_id: retailDomain.id, name: 'Application Repository', created_at: '', updated_at: '' }, default_category: { id: 'category-retail', domain_id: retailDomain.id, repository_id: 'repo-retail', name: 'Uncategorized', created_at: '', updated_at: '' } })
@@ -791,9 +793,8 @@ describe('SettingsPage', () => {
     if (!generalSection) return
 
     const topbar = container.querySelector('[data-testid="settings-topbar"]')
-    expect(topbar?.textContent).toContain('General')
-    expect(topbar?.textContent).toContain('Thresholds')
-    expect(topbar?.querySelector('button[aria-label="Performance Thresholds"]')).toBeTruthy()
+    expect(topbar?.textContent).not.toContain('Performance Thresholds')
+    expect(container.querySelector('nav[aria-label="Settings sections"]')?.textContent).toContain('Alert & stop policies')
     expect(container.querySelector('.settings-section-switcher')).toBeNull()
 
     const platformButton = findGeneralSubnavButton(generalSection, 'Platform')
@@ -847,7 +848,7 @@ describe('SettingsPage', () => {
     })
 
     expect(findSettingInput(generalSection, 'Max Concurrent Tests')?.value).toBe('12')
-    expect(findButton('Save Changes')?.disabled).toBe(false)
+    expect(findButton('Save pending settings')?.disabled).toBe(false)
   })
 
   it('edits administrator-owned schedule governance and calendar defaults from Settings', async () => {
@@ -897,7 +898,7 @@ describe('SettingsPage', () => {
     await setFieldValue(availabilityInputs[0], '09:00')
     await setFieldValue(availabilityInputs[1], '17:00')
 
-    const saveButton = findButton('Save Changes')
+    const saveButton = findButton('Save pending settings')
     expect(saveButton).toBeDefined()
     if (!saveButton) return
     await act(async () => {
@@ -936,7 +937,7 @@ describe('SettingsPage', () => {
     expect(policyInput?.disabled).toBe(false)
     await act(async () => policyInput?.click())
 
-    const saveButton = findButton('Save Changes')
+    const saveButton = findButton('Save pending settings')
     expect(saveButton?.disabled).toBe(false)
     await act(async () => saveButton?.click())
     await flushPromises()
@@ -1120,7 +1121,7 @@ describe('SettingsPage', () => {
     await setFieldValue(timeoutInput, '12')
 
     await act(async () => {
-      findButton('Save Changes')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      findButton('Save pending settings')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
     await flushPromises()
 
@@ -1254,7 +1255,8 @@ describe('SettingsPage', () => {
       authenticated: true,
       resources: domainAccessResources(true),
     })
-    repositoryApiMock.updateDomain.mockResolvedValue(updatedDomain)
+    let finishSave!: (domain: Domain) => void
+    repositoryApiMock.updateDomain.mockImplementation(() => new Promise<Domain>(resolve => { finishSave = resolve }))
     repositoryApiMock.listDomains.mockResolvedValue({ domains: [defaultDomain, updatedDomain], count: 2 })
 
     await act(async () => {
@@ -1290,6 +1292,11 @@ describe('SettingsPage', () => {
     await act(async () => {
       saveButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
+    expect(nameInput.matches(':disabled')).toBe(true)
+    expect(descriptionInput.matches(':disabled')).toBe(true)
+    expect(findButton('Cancel domain changes')?.disabled).toBe(true)
+    expect(findButton('Save domain changes')?.disabled).toBe(true)
+    await act(async () => finishSave(updatedDomain))
     await flushPromises()
 
     expect(repositoryApiMock.updateDomain).toHaveBeenCalledWith(retailDomain.id, {
@@ -1429,16 +1436,16 @@ describe('SettingsPage', () => {
     const onThemeChange = vi.fn()
 
     await act(async () => {
-      renderWithSettingsTopbar(root, <SettingsPage theme="dark" onThemeChange={onThemeChange} />)
+      renderWithSettingsTopbar(root, <SettingsPage destinationId="preferences" theme="dark" onThemeChange={onThemeChange} />)
     })
 
     await flushPromises()
 
-    const generalSection = container.querySelector('#settings-section-general')
+    const generalSection = container.querySelector('[aria-label="Personal preferences"]')
     expect(generalSection).toBeTruthy()
     if (!generalSection) return
 
-    const themeSelect = findSettingSelect(generalSection, 'Dashboard Theme')
+    const themeSelect = generalSection.querySelector('select')
     expect(Array.from(themeSelect?.options || []).map(option => option.value)).toEqual(['system', 'dark', 'light', 'solarized-dark', 'solarized-light', 'monokai-dimmed'])
 
     if (!themeSelect) return
@@ -1696,7 +1703,7 @@ describe('SettingsPage', () => {
     await setFieldValue(fanoutInput, '275')
     await setFieldValue(browserInput, '325')
 
-    const saveButton = findButton('Save Changes')
+    const saveButton = findButton('Save pending settings')
     expect(saveButton).toBeDefined()
     if (!saveButton) return
     await act(async () => {
@@ -1737,29 +1744,29 @@ describe('SettingsPage', () => {
     if (!configuredGeneratorsInput) return
     await setFieldValue(configuredGeneratorsInput, '6')
 
-    await selectSettingsSubnav(capacitySection, 'Reservations')
+    await selectSettingsSubnav(capacitySection, 'Standing allocations')
 
     const reservationSection = container.querySelector('[data-testid="capacity-reservations"]')
     expect(reservationSection).toBeTruthy()
     if (!reservationSection) return
 
-    const addButton = Array.from(reservationSection.querySelectorAll('button')).find(b => b.textContent?.trim() === 'Add Reservation') as HTMLButtonElement | undefined
+    const addButton = Array.from(reservationSection.querySelectorAll('button')).find(b => b.textContent?.trim() === 'Add standing allocation') as HTMLButtonElement | undefined
     expect(addButton).toBeTruthy()
     if (!addButton) return
     await act(async () => {
       addButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
-    const projectInput = reservationSection.querySelector('input[aria-label="Reservation project"]') as HTMLInputElement | null
+    const projectInput = reservationSection.querySelector('select[aria-label="Reservation project"]') as HTMLSelectElement | null
     const generatorsInput = reservationSection.querySelector('input[aria-label="Reserved generators"]') as HTMLInputElement | null
     expect(projectInput).toBeTruthy()
     expect(generatorsInput).toBeTruthy()
     if (!projectInput || !generatorsInput) return
 
-    await setFieldValue(projectInput, 'payments')
+    await setFieldValue(projectInput, 'project-1')
     await setFieldValue(generatorsInput, '4')
 
-    const saveButton = findButton('Save Changes')
+    const saveButton = findButton('Save pending settings')
     expect(saveButton).toBeDefined()
     if (!saveButton) return
     await act(async () => {
@@ -1770,7 +1777,7 @@ describe('SettingsPage', () => {
     expect(apiMock.updateSystemSettings).toHaveBeenCalledWith(expect.objectContaining({
       capacity_planning: expect.objectContaining({
         reservations: [
-          expect.objectContaining({ project_id: 'payments', reserved_generators: 4 }),
+          expect.objectContaining({ project_id: 'project-1', reserved_generators: 4 }),
         ],
       }),
     }))
@@ -2499,7 +2506,7 @@ describe('SettingsPage', () => {
 		await setFieldValue(governanceInputs[1], '300')
 		await setFieldValue(quotaInput, '250')
 
-		const saveAll = findButton('Save Changes')
+		const saveAll = findButton('Save pending settings')
 		expect(saveAll?.disabled).toBe(false)
 		await act(async () => saveAll?.click())
 		await flushPromises()
@@ -2577,7 +2584,7 @@ describe('SettingsPage', () => {
 
     // Trusted headers without a proxy gate is refused before save, mirroring the
     // controller's production boot check.
-    expect(findButton('Save Changes')?.hasAttribute('disabled')).toBe(true)
+    expect(findButton('Save pending settings')?.hasAttribute('disabled')).toBe(true)
     expect(generalSection.textContent).toContain('requires a trusted proxy CIDR allowlist')
 
     const trustedProxyCIDRs = findSettingInput(generalSection, 'Trusted Proxy CIDRs')
@@ -2585,7 +2592,7 @@ describe('SettingsPage', () => {
     if (!trustedProxyCIDRs) return
     await setFieldValue(trustedProxyCIDRs, '10.0.0.0/8')
 
-    const saveButton = findButton('Save Changes')
+    const saveButton = findButton('Save pending settings')
     expect(saveButton).toBeDefined()
     if (!saveButton) return
     await act(async () => {
@@ -2659,7 +2666,7 @@ describe('SettingsPage', () => {
     expect(generalSection.textContent).toContain('Draft: Local Test Login')
     expect(generalSection.querySelector('[data-testid="auth-mode-restart-pending"]')).toBeNull()
 
-    const saveButton = findButton('Save Changes')
+    const saveButton = findButton('Save pending settings')
     expect(saveButton).toBeDefined()
     if (!saveButton) return
     await act(async () => {
@@ -2729,7 +2736,7 @@ describe('SettingsPage', () => {
     if (!apiEndpointInput) return
     await setFieldValue(apiEndpointInput, ':9090')
 
-    const saveButton = findButton('Save Changes')
+    const saveButton = findButton('Save pending settings')
     const resetButton = findButton('Reset All Settings to Defaults')
     expect(saveButton?.disabled).toBe(true)
     expect(resetButton?.disabled).toBe(true)
@@ -2848,7 +2855,7 @@ describe('SettingsPage', () => {
     await setFieldValue(clientIDInput, 'apexload-dashboard')
     await setFieldValue(redirectURLInput, 'https://apexload.example.test/api/v1/auth/callback')
 
-    const saveButton = findButton('Save Changes')
+    const saveButton = findButton('Save pending settings')
     expect(saveButton).toBeDefined()
     if (!saveButton) return
 
@@ -3079,14 +3086,14 @@ describe('SettingsPage', () => {
       status: 'success',
     }))
     expect(downloadBlobMock).toHaveBeenCalledWith(expect.any(Blob), expect.stringMatching(/^apexload-audit-events-\d{4}-\d{2}-\d{2}\.csv$/))
-    expect(generalSection.textContent).not.toContain('Audit export downloaded.')
+    expect(generalSection.textContent).not.toContain('Audit export downloaded (up to 1,000 matching events).')
 
     downloadBlobMock.mockResolvedValueOnce('saved')
     await act(async () => {
       exportAuditButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
     await flushPromises()
-    expect(generalSection.textContent).toContain('Audit export downloaded.')
+    expect(generalSection.textContent).toContain('Audit export downloaded (up to 1,000 matching events).')
   })
 
   it('shows the current authenticated identity and effective roles when trusted-header auth is enabled', async () => {
@@ -3324,7 +3331,7 @@ describe('SettingsPage', () => {
     await setFieldValue(urlInput, 'https://hooks.slack.test/services/T000/B000/abc123')
     await setFieldValue(formatSelect, 'slack')
 
-    const saveButton = findButton('Save Changes')
+    const saveButton = findButton('Save pending settings')
     expect(saveButton).toBeDefined()
     if (!saveButton) return
 
@@ -3404,7 +3411,7 @@ describe('SettingsPage', () => {
     await setFieldValue(nameInput, 'Slack Alerts Updated')
     expect(nameInput.value).toBe('Slack Alerts Updated')
 
-    const saveButton = findButton('Save Changes')
+    const saveButton = findButton('Save pending settings')
     expect(saveButton).toBeDefined()
     if (!saveButton) return
 
@@ -3495,7 +3502,7 @@ describe('SettingsPage', () => {
     await setFieldValue(entityInput, 'type(SERVICE),entityName.equals(CheckoutService)')
     await flushPromises()
 
-    const saveButton = findButton('Save Changes')
+    const saveButton = findButton('Save pending settings')
     expect(saveButton).toBeDefined()
     if (!saveButton) return
     await act(async () => {
@@ -3557,7 +3564,7 @@ describe('SettingsPage', () => {
     expect(tokenInput.value).toBe('')
 
     await setFieldValue(nameInput, 'Renamed Dynatrace')
-    const saveButton = findButton('Save Changes')
+    const saveButton = findButton('Save pending settings')
     expect(saveButton).toBeDefined()
     if (!saveButton) return
     await act(async () => {
@@ -3608,7 +3615,7 @@ describe('SettingsPage', () => {
     await setFieldValue(authInputs[1], '')
 
     expect(container.textContent).toContain('Trusted header auth requires a roles header or project roles header.')
-    const saveButton = findButton('Save Changes')
+    const saveButton = findButton('Save pending settings')
     expect(saveButton?.disabled).toBe(true)
   })
 
@@ -3666,9 +3673,8 @@ describe('SettingsPage', () => {
     const topbar = document.querySelector('[data-testid="settings-topbar"]')
     // With a badge showing, the chip's aria-label folds in the issue count so
     // assistive tech announces it.
-    const thresholdsChip = Array.from(topbar?.querySelectorAll('button') ?? []).find(button => button.getAttribute('aria-label')?.startsWith('Performance Thresholds'))
-    expect(thresholdsChip?.getAttribute('aria-label')).toBe('Performance Thresholds (1 issue)')
-    expect(thresholdsChip?.querySelector('.mode-chip-badge')?.textContent).toBe('1')
+    expect(topbar).toBeTruthy()
+    expect(container.querySelector('nav[aria-label="Settings sections"] [aria-label="Validation issues"]')).toBeTruthy()
   })
 
   it('summarizes validation errors from other sections with a jump control', async () => {
@@ -3735,10 +3741,10 @@ describe('SettingsPage', () => {
     expect(configuredInput.value).toBe('')
     expect(capacitySection.textContent).toContain('Configured available generators is required.')
 
-    const saveButton = findButton('Save Changes')
+    const saveButton = findButton('Save pending settings')
     expect(saveButton?.disabled).toBe(true)
     expect(findButton('Discard Changes')).toBeTruthy()
-    expect(findButton('Saved')).toBeFalsy()
+    expect(findButton('No pending settings')).toBeFalsy()
   })
 
   it('registers a blank capacity draft as dirty until it is discarded', async () => {
@@ -3771,7 +3777,7 @@ describe('SettingsPage', () => {
     const latest = registered.filter(entry => entry.guard.id === 'system-settings').pop()
     expect(latest?.dirty).toBe(true)
     expect(latest?.guard.isDirty()).toBe(true)
-    expect(findButton('Save Changes')?.disabled).toBe(true)
+    expect(findButton('Save pending settings')?.disabled).toBe(true)
     expect(findButton('Discard Changes')).toBeTruthy()
 
     await act(async () => {
@@ -3885,7 +3891,7 @@ describe('SettingsPage', () => {
     expect(errorRateInput?.closest('fieldset')?.disabled).toBe(false)
     if (!errorRateInput) return
     await setFieldValue(errorRateInput, '5')
-    expect(findButton('Save Changes')?.disabled).toBe(false)
+    expect(findButton('Save pending settings')?.disabled).toBe(false)
     expect(findButton('Reset All Settings to Defaults')?.disabled).toBe(false)
 
     await act(async () => {
@@ -3896,7 +3902,7 @@ describe('SettingsPage', () => {
 
     errorRateInput = findSettingInput(container, 'Max Error Rate (%)')
     expect(errorRateInput?.closest('fieldset')?.disabled).toBe(true)
-    expect(findButton('Save Changes')?.disabled).toBe(true)
+    expect(findButton('Save pending settings')?.disabled).toBe(true)
     expect(findButton('Reset All Settings to Defaults')?.disabled).toBe(true)
     expect(apiMock.updateSystemSettings).not.toHaveBeenCalled()
 
@@ -5337,7 +5343,7 @@ describe('SettingsPage', () => {
 
     await setFieldValue(sampleAgeInput, '')
     expect(thresholdsSection.textContent).toContain('Max telemetry sample age is always enforced.')
-    const saveButton = findButton('Save Changes') || findButton('Saved')
+    const saveButton = findButton('Save pending settings') || findButton('No pending settings')
     expect(saveButton?.disabled).toBe(true)
 
     await setFieldValue(sampleAgeInput, '0')
@@ -6492,19 +6498,19 @@ describe('SettingsPage', () => {
     await selectTopLevelSettingsTab('Capacity Planning')
     const capacitySection = container.querySelector('#settings-section-capacity')
     if (!capacitySection) return
-    await selectSettingsSubnav(capacitySection, 'Reservations')
+    await selectSettingsSubnav(capacitySection, 'Standing allocations')
 
     const reservationSection = container.querySelector('[data-testid="capacity-reservations"]')
     if (!reservationSection) return
-    const addButton = Array.from(reservationSection.querySelectorAll('button')).find(b => b.textContent?.trim() === 'Add Reservation')
+    const addButton = Array.from(reservationSection.querySelectorAll('button')).find(b => b.textContent?.trim() === 'Add standing allocation')
     if (!addButton) return
     await act(async () => {
       addButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
-    const projectInput = reservationSection.querySelector('input[aria-label="Reservation project"]') as HTMLInputElement | null
+    const projectInput = reservationSection.querySelector('select[aria-label="Reservation project"]') as HTMLSelectElement | null
     if (!projectInput) return
-    await setFieldValue(projectInput, 'payments')
+    await setFieldValue(projectInput, 'project-1')
 
     const summary = container.querySelector('[data-testid="reservation-usage-summary"]')
     expect(summary?.textContent).toContain('1 of 1 generator reserved')
@@ -6528,24 +6534,24 @@ describe('SettingsPage', () => {
     await selectTopLevelSettingsTab('Capacity Planning')
     const capacitySection = container.querySelector('#settings-section-capacity')
     if (!capacitySection) return
-    await selectSettingsSubnav(capacitySection, 'Reservations')
+    await selectSettingsSubnav(capacitySection, 'Standing allocations')
 
     const reservationSection = container.querySelector('[data-testid="capacity-reservations"]')
     if (!reservationSection) return
-    const addButton = Array.from(reservationSection.querySelectorAll('button')).find(b => b.textContent?.trim() === 'Add Reservation')
+    const addButton = Array.from(reservationSection.querySelectorAll('button')).find(b => b.textContent?.trim() === 'Add standing allocation')
     if (!addButton) return
     await act(async () => {
       addButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
-    const projectInput = reservationSection.querySelector('input[aria-label="Reservation project"]') as HTMLInputElement | null
+    const projectInput = reservationSection.querySelector('select[aria-label="Reservation project"]') as HTMLSelectElement | null
     const generatorsInput = reservationSection.querySelector('input[aria-label="Reserved generators"]') as HTMLInputElement | null
     if (!projectInput || !generatorsInput) return
-    await setFieldValue(projectInput, 'payments')
+    await setFieldValue(projectInput, 'project-1')
     await setFieldValue(generatorsInput, '4')
 
     expect(capacitySection.textContent).toContain('Always-active global reservations (4) exceed configured available generators (1).')
-    const saveButton = findButton('Save Changes') || findButton('Saved')
+    const saveButton = findButton('Save pending settings') || findButton('No pending settings')
     expect(saveButton?.disabled).toBe(true)
   })
 
@@ -6581,7 +6587,7 @@ describe('SettingsPage', () => {
     const dialog = container.querySelector('[role="dialog"]')
     const resetConfirm = Array.from(dialog?.querySelectorAll('button') || [])
       .find(button => button.textContent === 'Reset All Settings')
-    const saveButton = findButton('Save Changes')
+    const saveButton = findButton('Save pending settings')
     expect(resetConfirm).toBeTruthy()
     expect(saveButton).toBeTruthy()
     if (!resetConfirm || !saveButton) return
@@ -6626,7 +6632,7 @@ describe('SettingsPage', () => {
     if (!maxConcurrentInput) return
     await setFieldValue(maxConcurrentInput, '12')
 
-    const saveButton = findButton('Save Changes')
+    const saveButton = findButton('Save pending settings')
     expect(saveButton).toBeTruthy()
     if (!saveButton) return
     await act(async () => {
@@ -6653,7 +6659,7 @@ describe('SettingsPage', () => {
     if (!maxConcurrentInput) return
     await setFieldValue(maxConcurrentInput, '12')
 
-    const saveButton = findButton('Save Changes')
+    const saveButton = findButton('Save pending settings')
     if (!saveButton) return
     await act(async () => {
       saveButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -6772,7 +6778,8 @@ function findGeneralSubnavButton(root: Element, label: string) {
 }
 
 async function selectTopLevelSettingsTab(label: string) {
-  const button = findButton(label)
+  const destinationLabels: Record<string, string> = { General: 'Controller & runtime', 'Performance Thresholds': 'Alert & stop policies', 'Capacity Planning': 'Capacity source', Domains: 'Domains & placement defaults', 'Projects & Compliance': 'Projects', 'Applications & Releases': 'Applications & releases', 'Data Pools': 'Shared data pools', Integrations: 'Library federation', 'Feature Access': 'Domain feature policy' }
+  const button = findButton(destinationLabels[label] || label)
   expect(button).toBeTruthy()
   if (!button) return
   await act(async () => {

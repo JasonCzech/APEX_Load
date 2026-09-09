@@ -1,3 +1,4 @@
+import DialogLayer from './ux/DialogLayer'
 import { useId, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 
@@ -164,7 +165,7 @@ export default function RuntimeAdjustmentDialog({ test, onClose, onApplied }: Pr
   }
 
   return createPortal(
-    <div className="runtime-adjustment-backdrop" role="presentation">
+    <DialogLayer><div className="runtime-adjustment-backdrop" role="presentation">
       <div ref={dialogRef} className="runtime-adjustment-dialog" role="dialog" aria-modal="true" aria-labelledby={titleId}>
         <header>
           <div><h2 id={titleId}>Change duration</h2><p>Adjust this running scenario without changing its saved definition.</p></div>
@@ -225,6 +226,6 @@ export default function RuntimeAdjustmentDialog({ test, onClose, onApplied }: Pr
           <button type="button" className="btn btn-sm btn-primary" onClick={() => void apply()} disabled={loading || preview?.decision !== 'allowed'}>Apply changes</button>
         </footer>
       </div>
-    </div>, document.body,
+    </div></DialogLayer>, document.body,
   )
 }

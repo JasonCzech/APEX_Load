@@ -1,3 +1,9 @@
+import BulkActions from './ux/BulkActions'
+import RowActions from './ux/RowActions'
+import TabList from './ux/TabList'
+import { confirmAction } from './ux/confirmAction'
+import { handleTabKey } from './tabKeyboard'
+import ResultHeadline from './ResultHeadline'
 import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
@@ -384,6 +390,7 @@ function comparisonTableMetricLabel(metric: ComparisonChartMetric) {
 }
 
 function comparisonTableMetricValue(stats: RunArchiveActionStats | undefined, summaries: IntervalSummaryRecord[], metric: ComparisonChartMetric, actionFiltered: boolean) {
+  if (!stats || stats.transactions === 0) return undefined
   switch (metric) {
     case 'art':
       return finiteComparisonValue(stats?.avg_response_ms)
@@ -425,7 +432,7 @@ function comparisonTableDeltaClass(delta: number | undefined, metric: Comparison
   return delta > 0 ? 'text-danger' : 'text-success'
 }
 
-function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onOpenTestArchive, onOpenReport, onNavigate, activeApplication, activeRelease, activeProjectName }: Props) {
+function ResultsPage({ testStatuses, onSelectTest, onOpenTestArchive, onOpenReport, onNavigate, activeApplication, activeRelease, activeProjectName }: Props) {
   const api = useApi()
   const [releaseFilter, setReleaseFilter] = useState(() => activeRelease?.id || 'all')
   const testListParams = useMemo(() => activeApplication?.id ? {
@@ -1029,10 +1036,12 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onOpenTe
     }
   }, [api, comparisonSummaryAction, comparisonTestIdKey, comparisonTestIds.length, comparisonTests, loadComparisonSummaries])
 
+  const [comparisonBaselineId, setComparisonBaselineId] = useState('')
   const comparisonCards = useMemo(() => {
     if (comparisonTests.length < 2 || comparisonTests.length > MAX_COMPARISON_RUNS) return []
-    return comparisonTests.map(test => ({ test, report: comparisonReports[test.id] }))
-  }, [comparisonReports, comparisonTests])
+    const ordered = [...comparisonTests].sort((a, b) => Number(b.id === comparisonBaselineId) - Number(a.id === comparisonBaselineId))
+    return ordered.map(test => ({ test, report: comparisonReports[test.id] }))
+  }, [comparisonReports, comparisonTests, comparisonBaselineId])
 
   const comparisonActionOptions = useMemo(() => {
     if (comparisonCards.length < 2 || !comparisonCards.every(item => item.report)) return []
@@ -1239,7 +1248,8 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onOpenTe
 
   const deleteResult = async (id: string) => {
     if (deletingResultIdsRef.current.has(id)) return
-    if (!confirm('Delete this scenario result?')) return
+    if (!(await confirmAction('Delete this scenario result?'))) return
+    if (deletingResultIdsRef.current.has(id)) return
     const requestScopeKey = resultCatalogScopeKey
     deletingResultIdsRef.current.add(id)
     setDeletingResultIds(new Set(deletingResultIdsRef.current))
@@ -1273,7 +1283,7 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onOpenTe
 
   const deleteSelected = async () => {
     const ids = visibleSelectedIds.filter(id => !deletingResultIdsRef.current.has(id))
-    if (ids.length === 0 || !confirm(`Delete ${ids.length} selected results?`)) return
+    if (ids.length === 0 || !(await confirmAction(`Delete ${ids.length} selected results?`))) return
     const requestScopeKey = resultCatalogScopeKey
     ids.forEach(id => deletingResultIdsRef.current.add(id))
     setDeletingResultIds(new Set(deletingResultIdsRef.current))
@@ -1370,7 +1380,7 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onOpenTe
         ref={measureElement}
         data-index={dataIndex}
         className={`${test ? 'clickable-row' : 'no-hover'} ${test && selectedIds.has(test.id) ? 'selected' : ''}`}
-        onClick={test ? () => onSelectTest(test.id) : undefined}
+        onClick={test ? () => (onOpenReport ?? onOpenTestArchive ?? onSelectTest)(test.id) : undefined}
       >
         <td className="results-compare-select-cell">
           {test ? (
@@ -1390,6 +1400,8 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onOpenTe
         </td>
         <td className="cell-name">
           <div>{row.name}</div>
+          <div className="results-compact-status" aria-hidden="true">{test ? <StatusBadge status={row.status} stoppedByOperator={Boolean(test.stopped_by_subject)} /> : <span className={`script-health-token ${resultSourceStatusTone(row.status)}`}>{row.status}</span>}</div>
+          {test?.archive && <ResultHeadline testId={test.id} />}
           <div className="script-table-meta">
             {test?.ref_key ? (
               <ReferenceKeyBadge value={test.ref_key} />
@@ -1430,21 +1442,12 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onOpenTe
           <div className="results-row-actions">
             {test ? (
               <>
+                <button className="btn btn-sm btn-primary" onClick={event => { event.stopPropagation(); (onOpenReport ?? onOpenTestArchive ?? onSelectTest)(test.id) }}>
+                  View results
+                </button>
+                <RowActions className="results-management">
                 <button className="btn btn-sm btn-ghost" onClick={event => toggleBaselinePin(test, event)}>
                   {test.baseline_pinned ? 'Unpin Baseline' : 'Pin Baseline'}
-                </button>
-                {test.archive && onOpenTestArchive && (
-                  <button className="btn btn-sm btn-secondary" onClick={event => { event.stopPropagation(); onOpenTestArchive(test.id) }}>
-                    Run Archive
-                  </button>
-                )}
-                {test.archive && onOpenReport && (
-                  <button className="btn btn-sm btn-secondary" onClick={event => { event.stopPropagation(); onOpenReport(test.id) }}>
-                    Open Report
-                  </button>
-                )}
-                <button className="btn btn-sm btn-primary" onClick={event => { event.stopPropagation(); (onOpenCommandCenter ?? onSelectTest)(test.id) }}>
-                  Run Dashboard
                 </button>
                 <button className="btn btn-sm btn-ghost" style={{ color: 'var(--danger)' }} onClick={event => handleDelete(test.id, event)} disabled={deletingResultIds.has(test.id)}>
                   {deletingResultIds.has(test.id) ? 'Deleting…' : 'Delete'}
@@ -1463,6 +1466,7 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onOpenTe
                     Compare
                   </button>
                 )}
+                </RowActions>
               </>
             ) : externalImport && item ? (
               <>
@@ -1558,25 +1562,26 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onOpenTe
             <div className="results-compare-header">
               <div>
                 <h3 className="section-title">Run Comparison</h3>
-                <p className="page-subtitle">Compare 2-{MAX_COMPARISON_RUNS} archived runs. The oldest run is the baseline.</p>
+                <p className="page-subtitle">Compare 2-{MAX_COMPARISON_RUNS} archived runs. Select the baseline below; the oldest selected run is the initial reference.</p>
               </div>
               {comparisonCards.length >= 2 && comparisonCards.every(item => item.report) && (
                 <div className="results-compare-controls">
+                  <label className="results-compare-filter"><span>Baseline run</span><select className="settings-input" value={comparisonCards[0].test.id} onChange={event => setComparisonBaselineId(event.target.value)}>{comparisonTests.map(run => <option key={run.id} value={run.id}>{formatComparisonRunLabel(run)}</option>)}</select></label>
                   <label className="results-compare-filter">
-                    <span>Transaction</span>
+                    <span>Request / action</span>
                     <select
                       className="settings-input library-source-select"
                       value={comparisonActionFilter}
                       onChange={event => setComparisonActionFilter(event.target.value)}
                     >
-                      <option value={ALL_COMPARISON_ACTIONS}>All transactions</option>
+                      <option value={ALL_COMPARISON_ACTIONS}>Named transaction population</option>
                       {comparisonActionOptions.map(action => (
                         <option key={action} value={action}>{action}</option>
                       ))}
                     </select>
                   </label>
                   {comparisonHasBrowserBreakdowns && (
-                    <div className="results-breakdown-toggle" role="tablist" aria-label="Comparison breakdown mode">
+                    <TabList className="results-breakdown-toggle" role="tablist" aria-label="Comparison breakdown mode" onKeyDown={handleTabKey}>
                       {(['overall', 'platform', 'engine', 'device'] as ComparisonBreakdown[]).map(mode => (
                         <button
                           key={mode}
@@ -1584,12 +1589,12 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onOpenTe
                           role="tab"
                           aria-selected={comparisonBreakdown === mode}
                           className={`results-breakdown-button${comparisonBreakdown === mode ? ' active' : ''}`}
-                          onClick={() => setComparisonBreakdown(mode)}
+                          onClick={() => setComparisonBreakdown(mode)} tabIndex={(comparisonBreakdown === mode) ? 0 : -1}
                         >
                           {mode === 'overall' ? 'Overall' : mode === 'platform' ? 'Platform' : mode === 'engine' ? 'Engine' : 'Device'}
                         </button>
                       ))}
-                    </div>
+                    </TabList>
                   )}
                   <button type="button" className="btn btn-secondary" onClick={exportComparison}>
                     Export CSV
@@ -1612,10 +1617,11 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onOpenTe
                         const engineEntries = getBrowserEngineEntries(report)
                         const browserRuntimeSummary = formatBrowserRuntimeSummary(report?.manifest.provenance?.runtime_settings?.browser)
                         const actionStats = comparisonActionFiltered ? (report?.metric_populations ? report.by_request : report?.by_action)?.[comparisonActionFilter] : undefined
-                        const namedPopulation = report?.metric_populations?.transaction
+                        const population = report?.metric_populations?.transaction
+                        const namedPopulation = population?.transactions ? population : undefined
                         const cardTransactions = comparisonActionFiltered ? actionStats?.transactions ?? 0 : namedPopulation?.transactions
-                        const cardAvgResponseMs = comparisonActionFiltered ? actionStats?.avg_response_ms ?? 0 : namedPopulation?.avg_response_ms
-                        const cardErrorPct = comparisonActionFiltered ? actionStats?.error_pct ?? 0 : namedPopulation?.error_pct
+                        const cardAvgResponseMs = comparisonActionFiltered ? actionStats?.avg_response_ms : namedPopulation?.avg_response_ms
+                        const cardErrorPct = comparisonActionFiltered ? actionStats?.error_pct : namedPopulation?.error_pct
                         const cardPeakTPS = comparisonActionFiltered ? actionStats?.peak_tps : namedPopulation?.peak_tps
 
                         return (
@@ -1642,7 +1648,7 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onOpenTe
                             <div className="results-compare-metrics">
                               <div className="results-compare-metric">
                                 <span className="results-compare-label">{comparisonActionFiltered ? 'Requests / actions' : 'Named transactions'}</span>
-                                <span className="results-compare-value">{cardTransactions ?? 'Unknown'}</span>
+                                <span className="results-compare-value">{cardTransactions ?? (population ? 0 : 'Unknown')}</span>
                               </div>
                               <div className="results-compare-metric">
                                 <span className="results-compare-label">Avg Latency</span>
@@ -1775,7 +1781,7 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onOpenTe
                             Showing {comparisonChartMetricConfig.description}; color identifies the run. Curves use up to {ARCHIVE_CHART_MAX_SAMPLES.toLocaleString()} representative samples per run.
                           </p>
                         </div>
-                        <div className="results-compare-metric-tabs" role="tablist" aria-label="Comparison metric">
+                        <TabList className="results-compare-metric-tabs" role="tablist" aria-label="Comparison metric" onKeyDown={handleTabKey}>
                           {COMPARISON_CHART_METRICS.map(metric => (
                             <button
                               key={metric.id}
@@ -1783,12 +1789,12 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onOpenTe
                               role="tab"
                               aria-selected={comparisonChartMetric === metric.id}
                               className={`results-compare-metric-tab${comparisonChartMetric === metric.id ? ' active' : ''}`}
-                              onClick={() => setComparisonChartMetric(metric.id)}
+                              onClick={() => setComparisonChartMetric(metric.id)} tabIndex={(comparisonChartMetric === metric.id) ? 0 : -1}
                             >
                               {metric.label}
                             </button>
                           ))}
-                        </div>
+                        </TabList>
                       </div>
                       <ResponsiveContainer width="100%" height={260}>
                         <LineChart data={comparisonChartData} margin={{ top: 10, right: 16, bottom: 12, left: 24 }}>
@@ -1875,9 +1881,20 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onOpenTe
         <div className="library-source-panel results-library-panel">
           <LibraryFederationControls
             kind="result"
+            filtersActive={releaseFilter !== 'all' || statusFilter !== 'all' || archiveFilter !== 'all'}
             federation={federation}
             projectName={activeProjectName}
             onConfigureRemotes={openRemoteSettings}
+            searchControl={(<label className="project-redaction-rule-field">
+                  <span>Search results</span>
+                  <input
+                    className="settings-input"
+                    type="search"
+                    value={search}
+                    onChange={event => setSearch(event.target.value)}
+                    placeholder="Find releases or results..."
+                  />
+                </label>)}
             filterControls={(
               <>
                 <label className="project-redaction-rule-field">
@@ -1896,16 +1913,7 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onOpenTe
                     ))}
                   </select>
                 </label>
-                <label className="project-redaction-rule-field">
-                  <span>Search results</span>
-                  <input
-                    className="settings-input"
-                    type="search"
-                    value={search}
-                    onChange={event => setSearch(event.target.value)}
-                    placeholder="Find releases or results..."
-                  />
-                </label>
+
                 <label className="project-redaction-rule-field">
                   <span>Status</span>
                   <select className="settings-input library-source-select" value={statusFilter} onChange={event => setStatusFilter(event.target.value as StatusFilter)}>
@@ -1934,12 +1942,7 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onOpenTe
               Loaded {tests.length.toLocaleString()} of {resultListTotal.toLocaleString()} local results. Older results continue loading in the background.
             </p>
           )}
-          <div className="results-table-selection-toolbar">
-            <div className="results-table-selection-summary">
-              <span>{visibleSelectedIds.length} selected</span>
-              <strong>{selectionState || `Select 2-${MAX_COMPARISON_RUNS} archived local results to compare`}</strong>
-            </div>
-            <div className="results-table-selection-actions">
+          {visibleSelectedIds.length === 0 && <p className="setting-desc">Select 2-{MAX_COMPARISON_RUNS} archived local results to compare.</p>}<BulkActions count={visibleSelectedIds.length} className="results-table-selection-toolbar"><strong>{selectionState}</strong>
               <button className="btn btn-secondary" onClick={runSelectedComparison} disabled={!canCompareSelected}>
                 Run Comparison
               </button>
@@ -1949,8 +1952,7 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onOpenTe
               <button className="btn btn-danger" onClick={deleteSelected} disabled={visibleSelectedIds.length === 0 || selectedDeletePending}>
                 Delete Selected ({visibleSelectedIds.length})
               </button>
-            </div>
-          </div>
+            </BulkActions>
           {resultsSourcesLoading ? (
             <div className="empty-card results-loading-card" role="status" aria-live="polite" aria-busy="true">
               <span className="results-loading-spinner" aria-hidden="true" />

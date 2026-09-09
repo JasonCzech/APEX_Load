@@ -44,11 +44,12 @@ test('[U01] sign in, build workspace, import, edit, launch, stop and retrieve th
   await page.getByPlaceholder('Find releases or results...').fill(runName)
   const row = page.locator('tbody tr').filter({ hasText: runName })
   await expect(row).toBeVisible()
-  await row.getByRole('button', { name: 'Open Report' }).click()
+  await row.getByRole('button', { name: 'View results' }).click()
   await expect(page).toHaveURL(new RegExp(`#/report/${id}`))
   await expect(page.getByText(runName, { exact: false }).first()).toBeVisible()
   // Follow the report's evidence link, preserving the same run identity.
-  await page.getByRole('button', { name: 'Legacy archive' }).first().click()
+  await page.getByRole('tab', { name: 'Evidence', exact: true }).click()
+  await page.getByText('Raw evidence downloads', { exact: true }).click()
   const download = page.waitForEvent('download')
   await page.getByRole('button', { name: 'Download Transactions JSONL' }).first().click()
   const downloaded = await download

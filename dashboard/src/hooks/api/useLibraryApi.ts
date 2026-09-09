@@ -92,6 +92,12 @@ export function useLibraryApi() {
     [],
   )
 
+  const remoteWorkspaces = useCallback(
+    (remoteId: string, kind: 'projects' | 'applications' | 'releases', parentId = '', signal?: AbortSignal) =>
+      request<{ items: { id: string; name: string }[] }>(`/system/library/remotes/${encodeURIComponent(remoteId)}/workspaces?${new URLSearchParams({ kind, parent_id: parentId })}`, { signal }),
+    [],
+  )
+
   const remoteCatalog = useCallback(
     (remoteId: string, kind: LibraryKind, projectId?: string, page?: LibraryCatalogPageOptions) =>
       request<LibraryRemoteCatalogResponse>(remoteCatalogPath(remoteId, kind, projectId, page), { signal: page?.signal }),
@@ -133,6 +139,7 @@ export function useLibraryApi() {
       probeRemote,
       localCatalog,
       remoteCatalog,
+      remoteWorkspaces,
       pullRemoteItem,
       pushLocalItem,
       compareItems,
@@ -146,6 +153,7 @@ export function useLibraryApi() {
       probeRemote,
       localCatalog,
       remoteCatalog,
+      remoteWorkspaces,
       pullRemoteItem,
       pushLocalItem,
       compareItems,

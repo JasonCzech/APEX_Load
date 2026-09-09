@@ -105,7 +105,7 @@ test('[U09] the six-step scenario builder preserves the draft and reviews the sa
   await expect(reviewRow.getByRole('cell', { name: '17', exact: true })).toBeVisible()
 
   const createResponsePromise = page.waitForResponse(isScenarioCreate)
-  await page.getByRole('button', { name: 'Save Scenario' }).click()
+  await page.getByRole('button', { name: 'Save draft' }).click()
   const createResponse = await createResponsePromise
   expect(createResponse.ok(), await createResponse.text()).toBeTruthy()
 
@@ -159,7 +159,7 @@ test('[U09] source switching, runtime scope and save recovery keep the scenario 
   await steps.getByRole('button', { name: /^Shape/ }).click()
   await page.getByLabel('Workload source', { exact: true }).selectOption('csv_driven')
   await expect(page.locator('.scenario-builder-preview')).toHaveCount(0)
-  await expect(page.getByRole('button', { name: 'Save Scenario', exact: true })).toBeDisabled()
+  await expect(page.getByRole('button', { name: 'Save draft', exact: true })).toBeDisabled()
   await expect(steps.getByRole('button', { name: /^Shape/ })).not.toHaveClass(/complete/)
   await page.getByLabel('Workload source', { exact: true }).selectOption('shape')
   await page.getByRole('button', { name: 'Use Closed VUser', exact: true }).click()
@@ -182,7 +182,7 @@ test('[U09] source switching, runtime scope and save recovery keep the scenario 
   await expect(page.getByRole('alert')).not.toContainText('Scenario was saved')
   await expect(page.getByRole('textbox', { name: 'Scenario name', exact: true })).toHaveValue('Scenario audit regression')
   await page.unroute('**/api/v1/scenarios')
-  await page.getByRole('button', { name: 'Save Scenario', exact: true }).click()
+  await page.getByRole('button', { name: 'Save draft', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Scenario Library', level: 1 })).toBeVisible()
   await expect(page.locator('.scenario-save-notice')).toContainText('Saved Scenario audit regression')
   const row = page.getByRole('row').filter({ hasText: 'Scenario audit regression' })
@@ -191,7 +191,7 @@ test('[U09] source switching, runtime scope and save recovery keep the scenario 
   await expect(page.getByLabel('Peak VUsers', { exact: true })).toHaveValue('5')
   await expect(page.getByLabel('Sustained load', { exact: true })).toHaveValue('3')
   await page.setViewportSize({ width: 600, height: 900 })
-  const save = page.getByRole('button', { name: 'Save Scenario', exact: true })
+  const save = page.getByRole('button', { name: 'Save draft', exact: true })
   await save.scrollIntoViewIfNeeded()
   const bounds = await save.boundingBox()
   expect(bounds).not.toBeNull()

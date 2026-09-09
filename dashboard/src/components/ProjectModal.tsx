@@ -1,10 +1,13 @@
-import { useEffect, useRef, useState } from 'react'
+import FormField from './ux/FormField'
+import DialogLayer from './ux/DialogLayer'
+import { useEffect, useId, useRef, useState } from 'react'
 import { useModalDialog } from '../hooks/useModalDialog'
 import { dialogBackdropProps } from './dialogBackdropProps'
 import './ProjectModal.css'
 
 interface Props {
   title?: string
+  returnFocusSelector?: string
   initialName?: string
   namePlaceholder?: string
   onClose: () => void
@@ -16,7 +19,8 @@ interface Props {
 // trapped behind the modal by a black-holed request.
 const SLOW_SAVE_MS = 15_000
 
-export default function ProjectModal({ title = 'New Project', initialName = '', namePlaceholder = 'Application or service name', onClose, onSubmit }: Props) {
+export default function ProjectModal({ returnFocusSelector, title = 'New Project', initialName = '', namePlaceholder = 'Application or service name', onClose, onSubmit }: Props) {
+  const titleId = useId()
   const [name, setName] = useState(initialName)
   const [saving, setSaving] = useState(false)
   const [slowSave, setSlowSave] = useState(false)
@@ -60,7 +64,7 @@ export default function ProjectModal({ title = 'New Project', initialName = '', 
     onClose()
   }
 
-  useModalDialog({ dialogRef, initialFocusRef: nameInputRef, onClose: dismissLocked ? undefined : requestClose })
+  useModalDialog({ returnFocusSelector, dialogRef, initialFocusRef: nameInputRef, onClose: dismissLocked ? undefined : requestClose })
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault()
@@ -83,16 +87,15 @@ export default function ProjectModal({ title = 'New Project', initialName = '', 
   }
 
   return (
-    <div className="project-modal-backdrop" {...dialogBackdropProps(requestClose, `Close ${title}`)}>
+    <DialogLayer><div className="project-modal-backdrop" {...dialogBackdropProps(requestClose, `Close ${title}`)}>
       <form ref={dialogRef} className="project-modal" role="dialog" aria-modal="true" aria-label={title} onSubmit={submit}>
         <div className="project-modal-header">
           <h3>{title}</h3>
           <button type="button" className="project-modal-close" aria-label={`Close ${title}`} onClick={requestClose} disabled={dismissLocked}>×</button>
         </div>
-        <label className="project-modal-field">
-          <span>Name</span>
-          <input ref={nameInputRef} value={name} onChange={(event) => setName(event.target.value)} placeholder={namePlaceholder} />
-        </label>
+        <FormField className="project-modal-field" label="Name" htmlFor={`${titleId}-name`}>
+          <input id={`${titleId}-name`} ref={nameInputRef} value={name} onChange={(event) => setName(event.target.value)} placeholder={namePlaceholder} />
+        </FormField>
         {error && <p className="project-modal-error" role="alert">{error}</p>}
         {saving && slowSave && (
           <p className="project-modal-error" role="status">
@@ -102,10 +105,10 @@ export default function ProjectModal({ title = 'New Project', initialName = '', 
         <div className="project-modal-actions">
           <button type="button" className="btn btn-secondary" onClick={requestClose} disabled={dismissLocked}>Cancel</button>
           <button type="submit" className="btn btn-primary" disabled={!name.trim() || saving}>
-            {saving ? 'Saving...' : 'Save'}
+            {saving ? 'Saving...' : title.startsWith('New ') ? `Create ${title.slice(4).toLowerCase()}` : 'Save changes'}
           </button>
         </div>
       </form>
-    </div>
+    </div></DialogLayer>
   )
 }

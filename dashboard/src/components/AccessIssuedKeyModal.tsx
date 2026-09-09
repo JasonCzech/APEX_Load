@@ -1,3 +1,4 @@
+import DialogLayer from './ux/DialogLayer'
 import { useEffect, useRef } from 'react'
 import type { IssuedKeyState } from './accessTypes'
 
@@ -52,7 +53,7 @@ export function AccessIssuedKeyModal({
   }, [onClose])
 
   return (
-    <div className="access-modal-overlay" role="presentation">
+    <DialogLayer><div className="access-modal-overlay" role="presentation">
       <div className="access-issued-modal" role="dialog" aria-modal="true" aria-label="Issued API key" ref={dialogRef}>
         <div className="access-modal-header">
           <div>
@@ -78,6 +79,6 @@ export function AccessIssuedKeyModal({
           </div>
         </div>
       </div>
-    </div>
+    </div></DialogLayer>
   )
 }

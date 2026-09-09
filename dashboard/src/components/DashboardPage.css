@@ -845,8 +845,8 @@
   .dash-dashboard-layout.snapshot-collapsed {
     grid-template-columns: minmax(0, 1fr);
     grid-template-areas:
-      "snapshot"
-      "content";
+      "content"
+      "snapshot";
   }
 
   .dash-main-column {

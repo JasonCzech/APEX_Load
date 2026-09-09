@@ -1,3 +1,4 @@
+import DialogLayer from './ux/DialogLayer'
 import { useEffect, useId, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 
@@ -40,7 +41,7 @@ export default function IssueDetailsDialog({ title, issues, onClose }: Props) {
   const visibleIssues = issues.slice(pageStart, pageStart + ISSUE_PAGE_SIZE)
 
   return createPortal((
-    <div className="modal-overlay issue-details-overlay" {...dialogBackdropProps(onClose, `Close ${title}`)}>
+    <DialogLayer><div className="modal-overlay issue-details-overlay" {...dialogBackdropProps(onClose, `Close ${title}`)}>
       <div
         ref={dialogRef}
         className="modal issue-details-dialog"
@@ -124,6 +125,6 @@ export default function IssueDetailsDialog({ title, issues, onClose }: Props) {
           )}
         </nav>
       </div>
-    </div>
+    </div></DialogLayer>
   ), document.body)
 }

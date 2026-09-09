@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 
+import type { TestSummary } from '../../types'
 import type { BaselineOverviewDiff } from './runReportModel'
 
 interface Props {
+  options?: TestSummary[]
   compareId: string
   suggestedCompareId?: string
   baselineName?: string
@@ -17,12 +19,13 @@ function DeltaCell({ label, value }: { label: string; value?: { label: string; t
   return (
     <div className={`run-report-compare-delta run-report-delta-${value?.tone || 'neutral'}`}>
       <span>{label}</span>
-      <strong>{value?.label || 'n/a'}</strong>
+      <strong>{value?.label || 'Not available'}</strong>
     </div>
   )
 }
 
 export default function RunReportCompareBar({
+  options = [],
   compareId,
   suggestedCompareId,
   baselineName,
@@ -76,13 +79,14 @@ export default function RunReportCompareBar({
         </div>
       </div>
       <div className="run-report-compare-controls">
-        <label>
+        <label><span>Completed baseline run</span><select aria-label="Completed baseline run" value={options.some(run => run.id === compareId) ? compareId : ""} onChange={event => onCompareChange(event.target.value)}><option value="">Select a baseline</option>{options.map(run => <option key={run.id} value={run.id}>{run.name || run.id} · {run.ref_key || run.id}</option>)}</select></label>
+        <details><summary>Enter a run ID</summary><label>
           <span>Baseline run id</span>
           <input value={draft} onChange={event => setDraft(event.currentTarget.value)} placeholder={suggestedCompareId || 'run id'} />
         </label>
         <button className="btn btn-sm btn-secondary" type="button" onClick={() => onCompareChange(draft.trim())}>
           Apply
-        </button>
+        </button></details>
         {suggestedCompareId && !compareId && (
           <button className="btn btn-sm btn-ghost" type="button" onClick={() => onCompareChange(suggestedCompareId)}>
             Use pinned
@@ -99,7 +103,7 @@ export default function RunReportCompareBar({
         <DeltaCell label="Avg latency" value={deltas.avgLatency} />
         <DeltaCell label="P95" value={deltas.p95} />
         <DeltaCell label="Error rate" value={deltas.errorRate} />
-        <DeltaCell label="Peak TPS" value={deltas.peakTps} />
+        <DeltaCell label="Peak attempts/s" value={deltas.peakTps} />
         <DeltaCell label="Peak VUsers" value={deltas.peakVusers} />
       </div>
     </section>

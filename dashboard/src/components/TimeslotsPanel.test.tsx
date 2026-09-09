@@ -145,7 +145,7 @@ describe('TimeslotsPanel', () => {
     expect(container.textContent).toContain('Select a project')
   })
 
-  it('shows the empty state and New Reservation action for an active project', async () => {
+  it('shows the empty state and New booking action for an active project', async () => {
     capacityApiMock.listTimeslots.mockResolvedValue({ timeslots: [], count: 0 })
     await act(async () => {
       root.render(<TimeslotsPanel projectId="proj-a" canManage />)
@@ -153,7 +153,7 @@ describe('TimeslotsPanel', () => {
     await flush()
     expect(capacityApiMock.listTimeslots).toHaveBeenCalledWith({ project_id: 'proj-a', limit: 100, offset: 0 })
     expect(container.textContent).toContain('No capacity reservations')
-    expect(container.textContent).toContain('New Reservation')
+    expect(container.textContent).toContain('New booking')
   })
 
   it('renders a pending timeslot with approve/reject actions', async () => {
@@ -224,7 +224,7 @@ describe('TimeslotsPanel', () => {
       root.render(<TimeslotsPanel projectId="proj-a" canManage />)
     })
     await flush()
-    const newButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(b => b.textContent === 'New Reservation')
+    const newButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(b => b.textContent === 'New booking')
     await act(async () => {
       newButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
@@ -240,7 +240,7 @@ describe('TimeslotsPanel', () => {
       setInput(dt[1], '2026-07-01T12:00')
     })
     await flush()
-    const poolSelect = container.querySelector<HTMLSelectElement>('select')
+    const poolSelect = Array.from(container.querySelectorAll<HTMLSelectElement>('select')).find(select => select.textContent?.includes('East Pool'))
     expect(poolSelect?.textContent).toContain('East Pool')
     await act(async () => {
       const setter = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value')?.set
@@ -265,7 +265,7 @@ describe('TimeslotsPanel', () => {
     })
     await flush()
 
-    const trigger = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(b => b.textContent === 'New Reservation')
+    const trigger = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(b => b.textContent === 'New booking')
     trigger?.focus()
     await act(async () => {
       trigger?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -275,7 +275,7 @@ describe('TimeslotsPanel', () => {
     const dialog = container.querySelector<HTMLElement>('[role="dialog"]')
     const start = container.querySelector<HTMLInputElement>('input[type="datetime-local"]')
     expect(dialog?.getAttribute('aria-modal')).toBe('true')
-    expect(document.getElementById(dialog?.getAttribute('aria-labelledby') || '')?.textContent).toBe('New Capacity Reservation')
+    expect(document.getElementById(dialog?.getAttribute('aria-labelledby') || '')?.textContent).toBe('New scheduled booking')
     expect(document.activeElement).toBe(start)
 
     await act(async () => {
@@ -301,7 +301,7 @@ describe('TimeslotsPanel', () => {
       root.render(<TimeslotsPanel projectId="proj-a" canManage />)
     })
     await flush()
-    const trigger = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(b => b.textContent === 'New Reservation')
+    const trigger = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(b => b.textContent === 'New booking')
     await act(async () => {
       trigger?.click()
     })
@@ -328,7 +328,7 @@ describe('TimeslotsPanel', () => {
       root.render(<TimeslotsPanel projectId="proj-a" canManage={false} />)
     })
     await flush()
-    const newButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(b => b.textContent === 'New Reservation')
+    const newButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(b => b.textContent === 'New booking')
     expect(newButton).toBeTruthy()
     expect(newButton?.disabled).toBe(true)
     expect(container.textContent).not.toContain('Approve')
@@ -359,7 +359,7 @@ describe('TimeslotsPanel', () => {
     await act(async () => { root.render(<TimeslotsPanel projectId="proj-a" canManage />) })
     await flush()
     await act(async () => {
-      Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'New Reservation')?.click()
+      Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'New booking')?.click()
     })
     const dateFields = container.querySelectorAll<HTMLInputElement>('input[type="datetime-local"]')
     await act(async () => setNativeInput(dateFields[0], '2026-07-01T10:00'))
@@ -368,7 +368,7 @@ describe('TimeslotsPanel', () => {
     await flush()
     expect(container.querySelector('[role="dialog"]')).toBeNull()
     await act(async () => {
-      Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'New Reservation')?.click()
+      Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'New booking')?.click()
     })
     expect(container.querySelector<HTMLInputElement>('input[type="datetime-local"]')?.value).toBe('')
   })
@@ -437,7 +437,7 @@ describe('TimeslotsPanel', () => {
 		})
 		await flush()
 		await act(async () => {
-			Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'New Reservation')?.click()
+			Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'New booking')?.click()
 		})
 		const start = container.querySelector<HTMLInputElement>('input[type="datetime-local"]')
 		await act(async () => setNativeInput(start, '2026-07-01T10:00'))

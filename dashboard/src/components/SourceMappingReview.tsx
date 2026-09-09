@@ -751,8 +751,8 @@ export default function SourceMappingReview({
                       </span>
                     )}
                     {isNeedsReview(mapping) && (
-                      <button 
-                        type="button" 
+                      <button
+                        type="button"
                         className="btn btn-sm btn-ghost source-map-approve-button"
                         onClick={(e) => { e.stopPropagation(); toggleApprove(mapping.id); }}
                       >

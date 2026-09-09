@@ -644,8 +644,8 @@ select option:checked {
 
 /* Shared button styles */
 .btn {
-  padding: 8px 20px;
-  border-radius: 999px;
+  padding: 8px 16px;
+  border-radius: 6px;
   font-size: 14px;
   font-weight: 500;
   border: none;

@@ -86,6 +86,8 @@ type NotificationEvent struct {
 }
 
 type notificationDispatcher struct {
+	historyMu        sync.Mutex
+	history          []NotificationDelivery
 	client           *http.Client
 	deliverySlots    chan struct{}
 	destinationSlots []chan struct{}
@@ -471,6 +473,8 @@ func fallbackNotificationValue(value string) string {
 }
 
 func (d *notificationDispatcher) postJSON(webhook NotificationWebhookSettings, payload any, dedupeKey string) {
+	status := "failed"
+	defer func() { d.recordDelivery(webhook, status) }()
 	if err := validateCredentialTransportURL("notification webhook URL", webhook.URL, notificationsAllowInsecureHTTPEnv); err != nil {
 		slog.Warn("notification delivery rejected", "format", webhook.Format, "url", redactURL(webhook.URL), "err", err)
 		notificationDeliveryFailuresTotal.Add(1)
@@ -502,7 +506,8 @@ func (d *notificationDispatcher) postJSON(webhook NotificationWebhookSettings, p
 			req.Header.Set("Authorization", "Api-Token "+strings.TrimSpace(webhook.APIToken))
 		}
 		resp, err := d.client.Do(req)
-		if err == nil && resp != nil && resp.StatusCode < http.StatusBadRequest {
+		if err == nil && resp != nil && resp.StatusCode >= 200 && resp.StatusCode < 300 {
+			status = "delivered"
 			_ = resp.Body.Close()
 			return
 		}

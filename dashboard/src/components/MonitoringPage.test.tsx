@@ -366,7 +366,7 @@ describe('MonitoringPage', () => {
     expect(controlPlaneCard!.textContent).toContain('WebSocket')
     expect(controlPlaneCard!.textContent).toContain('Connected')
     expect(controlPlaneCard!.textContent).toContain('/api/v1/ws')
-    expect(controlPlaneCard!.textContent).toContain('Active Tests')
+    expect(controlPlaneCard!.textContent).toContain('Tracked Tests')
     expect(controlPlaneCard!.textContent).toContain('WS Clients')
     expect(controlPlaneCard!.textContent).toContain('Generator Inventory')
     expect(controlPlaneCard!.textContent).toContain('0/0 connected')
@@ -679,7 +679,7 @@ describe('MonitoringPage', () => {
 
     // Normalized cloud identities and execution targets precede the legacy
     // cluster registry, pools, and host allocation workflow.
-    expect(visibleMonitorCardIds()).toEqual(['capacity', 'generators', 'fleet-alerts', 'fleet-audit', 'compute-infrastructure', 'fleet-clusters', 'fleet-pools', 'fleet-allocation', 'generator-metadata'])
+    expect(visibleMonitorCardIds()).toEqual(['capacity', 'generators', 'fleet-alerts', 'fleet-audit'])
     expect(container.textContent).toContain('Generators')
     expect(container.textContent).toContain('Fleet Alerts')
     expect(container.textContent).toContain('No generator inventory was returned by the controller.')
@@ -1562,13 +1562,13 @@ describe('MonitoringPage', () => {
     await clickMonitorTab('Telemetry')
 
     expect(container.textContent).toContain('APM Profiles')
-    expect(container.textContent).toContain('1/2 ready')
-    expect(container.textContent).toContain('OpenTelemetry: supported')
-    expect(container.textContent).toContain('Dynatrace: available')
+    expect(container.textContent).toContain('0 configured · 2 supported profiles')
+    expect(container.textContent).toContain('OpenTelemetry: Supported; setup required')
+    expect(container.textContent).toContain('Dynatrace: Supported; setup required')
     expect(container.textContent).toContain('Monitor Packs')
     expect(container.textContent).toContain('1/2 native')
-    expect(container.textContent).toContain('Kubernetes: pod saturation, active slots')
-    expect(container.textContent).toContain('JVM: heap used, gc pause')
+    expect(container.textContent).toContain('Kubernetes: Native support')
+    expect(container.textContent).toContain('JVM: Integration contract')
   })
 
   it('renders JMS broker diagnostics with lag and throughput details', async () => {
@@ -1908,7 +1908,8 @@ describe('MonitoringPage', () => {
     expect(apiMock.listAuthAuditEvents).toHaveBeenCalledWith({ limit: 20 })
     expect(container.textContent).toContain('Fleet Audit')
     expect(container.textContent).toContain('generator.drain_state.update')
-    expect(container.textContent).toContain('apexload-generator-0 by Platform Admin')
+    expect(container.textContent).toContain('generator/apexload-generator-0')
+    expect(container.textContent).toContain('Platform Admin')
     expect(container.textContent).not.toContain('auth.user.login')
   })
 
@@ -1979,7 +1980,7 @@ describe('MonitoringPage', () => {
     expect(container.querySelector('.monitor-schedule-health-card')).toBeNull()
     expect(container.querySelector('[data-card-id="schedule-health"]')).toBeNull()
     expect(visibleMonitorCardIds()).toEqual(['run-calendar'])
-    expect(container.textContent).toContain('Schedules1/1')
+    expect(container.textContent).toContain('Schedules')
     expect(container.textContent).not.toContain('Advisory Panel')
     expect(container.textContent).not.toContain('Enabled Schedules')
     expect(apiMock.getScheduleHealth).toHaveBeenCalled()
@@ -2138,7 +2139,7 @@ describe('MonitoringPage', () => {
     const reservationsPanel = container.querySelector('.run-calendar-reservations-panel')
     expect(reservationsPanel).toBeTruthy()
     expect(container.querySelector('.run-calendar-top-row')?.contains(reservationsPanel)).toBe(true)
-    expect(reservationsPanel?.textContent).toContain('Capacity Reservations')
+    expect(reservationsPanel?.textContent).toContain('Scheduled bookings')
     expect(capacityApiMock.listTimeslots).toHaveBeenCalledWith({ project_id: 'project-1', limit: 100, offset: 0 })
     const periodLabel = container.querySelector('.run-calendar-period-label')
     expect(periodLabel?.textContent).toBe(new Date().toLocaleDateString([], { month: 'long', year: 'numeric' }))
@@ -2162,10 +2163,10 @@ describe('MonitoringPage', () => {
     expect(continuationDay?.querySelector('[aria-label="1 continuing"]')).not.toBeNull()
 
     const schedulableDay = container.querySelector<HTMLElement>('.run-calendar-day.schedulable')
-    expect(schedulableDay?.getAttribute('role')).toBe('button')
-    expect(schedulableDay?.tabIndex).toBe(0)
+    expect(schedulableDay?.getAttribute('role')).toBeNull()
+    expect(schedulableDay?.querySelector('button[aria-label^="Schedule a run on"]')).not.toBeNull()
     await act(async () => {
-      schedulableDay?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+      schedulableDay?.querySelector<HTMLButtonElement>('button[aria-label^="Schedule a run on"]')?.click()
     })
     expect(onScheduleForDate).toHaveBeenCalledTimes(1)
 

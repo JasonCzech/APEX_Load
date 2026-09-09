@@ -491,7 +491,7 @@ describe('CommandCenterPrototype', () => {
 
     // Multiple live runs => no guessing; a picker is shown.
     expect(container.textContent).toContain('Select an active run')
-    expect(container.textContent).toContain('2 active runs are in progress')
+    expect(container.textContent).toContain('2 runs are running or waiting')
     expect(container.textContent).toContain('Checkout Soak')
     expect(container.textContent).toContain('Search Spike')
     expect(container.querySelector('[aria-label="No active command center run"]')).not.toBeNull()
@@ -830,15 +830,15 @@ describe('CommandCenterPrototype', () => {
     })).toBe(true)
   })
 
-  it('keeps the original Command Center and v2 available from the same dashboard route', async () => {
+  it('defaults to operations and returns from analysis without changing the selected run', async () => {
     await renderPrototype()
 
-    expect(container.querySelector('[aria-label="Ops cockpit mockup"]')).not.toBeNull()
-    expect(container.querySelector('[aria-label="Command Center v2 Ops view"]')).toBeNull()
+    expect(container.querySelector('[aria-label="Run operations"]')).not.toBeNull()
+    expect(container.querySelector('[aria-label="Command Center analysis Ops view"]')).toBeNull()
 
-    await click(buttonNamed('Command Center v2'))
+    await click(buttonNamed('Open analysis'))
 
-    expect(container.querySelector('[aria-label="Command Center v2 Ops view"]')).not.toBeNull()
+    expect(container.querySelector('[aria-label="Command Center analysis Ops view"]')).not.toBeNull()
     expect(container.textContent).toContain('Target Transition')
     expect(buttonNamed('OPS VIEW').getAttribute('aria-pressed')).toBe('true')
 
@@ -847,11 +847,11 @@ describe('CommandCenterPrototype', () => {
     expect(container.querySelector('[aria-label="Grafana wall mockup"]')).not.toBeNull()
     expect(buttonNamed('GRAPH WALL').getAttribute('aria-pressed')).toBe('true')
 
-    await click(buttonNamed('Original'))
+    await click(buttonNamed('Back to operations'))
     await click(buttonNamed('OPS View'))
 
-    expect(container.querySelector('[aria-label="Ops cockpit mockup"]')).not.toBeNull()
-    expect(container.querySelector('[aria-label="Command Center v2 Ops view"]')).toBeNull()
+    expect(container.querySelector('[aria-label="Run operations"]')).not.toBeNull()
+    expect(container.querySelector('[aria-label="Command Center analysis Ops view"]')).toBeNull()
   })
 
   it('switches between the OPS View and Graph Wall variants from the sidebar', async () => {
@@ -859,7 +859,7 @@ describe('CommandCenterPrototype', () => {
 
     expect(container.textContent).toContain('OPS View')
     expect(container.textContent).toContain('Graph Wall')
-    expect(container.querySelector('[aria-label="Ops cockpit mockup"]')).not.toBeNull()
+    expect(container.querySelector('[aria-label="Run operations"]')).not.toBeNull()
     expect(container.textContent).not.toContain('Triage Console')
     expect(container.querySelector('.command-center-intro')).toBeNull()
     expect(container.querySelector('[aria-label="Command center run controls"]')?.classList.contains('command-top-banner')).toBe(false)

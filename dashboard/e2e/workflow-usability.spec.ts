@@ -62,7 +62,7 @@ test('missing-script detour preserves the scenario draft on cancellation',async(
 
 test('guided setup creates the full hierarchy across scope changes', async({page,request})=>{
   const workspace=await createWorkspace(request)
-  await page.goto(`/#/settings?${scopeQuery(workspace)}`)
+  await page.goto(`/#/settings?setting=domains&${scopeQuery(workspace)}`)
   await page.getByText('Guided workspace setup',{exact:true}).click()
   await page.getByLabel('New domain name',{exact:true}).fill(`Guided domain ${Date.now()}`)
   await page.getByRole('button',{name:'Create domain and continue'}).click()
@@ -162,10 +162,11 @@ test('first-use screens meet automated WCAG AA checks in dark and light themes',
  const workspace=await createWorkspace(request)
  for(const theme of ['dark','light']) {
   await page.emulateMedia({reducedMotion:'reduce'})
+  await page.goto(`/#/settings?setting=preferences&${scopeQuery(workspace)}`)
+  await page.getByRole('combobox',{name:'Dashboard Theme',exact:true}).selectOption(theme)
   for(const [route,title] of [['dashboard','Dashboard'],['settings','Settings']]) {
    await page.goto(`/#/${route}?${scopeQuery(workspace)}`)
    await expect(page.getByRole('heading',{name:title,level:1,exact:true})).toBeVisible()
-   await page.getByRole('combobox',{name:'Dashboard color theme'}).selectOption(theme)
    await page.addStyleTag({content:'* {animation:none!important;transition:none!important}'})
    const violations=await page.evaluate(async()=>{
     const scanner=(window as unknown as {axe:typeof import('axe-core')}).axe
@@ -175,4 +176,33 @@ test('first-use screens meet automated WCAG AA checks in dark and light themes',
    expect(violations,`${route} in ${theme}`).toEqual([])
   }
  }
+})
+
+test('shared dialogs stay above app chrome and preserve nested discard decisions', async ({ page, request, trackRun }) => {
+  const workspace = await createWorkspace(request)
+  const scriptId = await seedScript(request, workspace)
+  const run = await json(await request.post('/api/v1/tests', { data: { project_id: workspace.projectId, application_id: workspace.applicationId, release_id: workspace.releaseId, name: 'Dialog UX verification', duration: '1m', groups: [{ name: 'orders', script_id: scriptId, vusers: 1 }] } }))
+  const id = idOf(run); trackRun(id)
+  await page.setViewportSize({ width: 923, height: 987 })
+  await page.goto(`/#/command-center/${id}?${scopeQuery(workspace)}`)
+  const opener = page.getByRole('button', { name: 'Test Notes', exact: true })
+  await opener.click()
+  const notes = page.getByRole('dialog', { name: 'Test Notes', exact: true })
+  await expect(notes).toBeVisible()
+  const bounds = await notes.boundingBox()
+  expect(bounds!.x).toBeGreaterThanOrEqual(12)
+  expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(923 - 12)
+  await expect(page.locator('#root')).toHaveAttribute('inert', '')
+  await notes.getByRole('textbox').fill('Unsaved operator observation')
+  await page.keyboard.press('Escape')
+  const confirmation = page.getByRole('alertdialog')
+  await expect(confirmation).toContainText('Discard unsaved note?')
+  await expect(confirmation.getByRole('button', { name: 'Cancel', exact: true })).toBeFocused()
+  await confirmation.getByRole('button', { name: 'Cancel', exact: true }).click()
+  await expect(notes.getByRole('textbox')).toHaveValue('Unsaved operator observation')
+  await page.keyboard.press('Escape')
+  await confirmation.getByRole('button', { name: 'Discard', exact: true }).click()
+  await expect(notes).not.toBeVisible()
+  await expect(opener).toBeFocused()
+  await expect(page.locator('#root')).not.toHaveAttribute('inert')
 })

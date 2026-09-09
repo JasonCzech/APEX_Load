@@ -41,7 +41,7 @@ const GOVERNANCE_SETTINGS_SUBSECTION_IDS = GOVERNANCE_SETTINGS_SUBSECTIONS.map(s
 export const CAPACITY_SETTINGS_SUBSECTIONS = [
   { id: 'availability', title: 'Availability' },
   { id: 'generator', title: 'Generator Profile' },
-  { id: 'reservations', title: 'Reservations' },
+  { id: 'reservations', title: 'Standing allocations' },
   { id: 'retention', title: 'Retention' },
 ] as const
 
@@ -65,6 +65,8 @@ export const INTEGRATION_SETTINGS_SUBSECTIONS = [
   { id: 'library', title: 'Library Federation' },
   { id: 'github', title: 'GitHub' },
   { id: 'prometheus', title: 'Prometheus' },
+  { id: 'opensearch', title: 'OpenSearch' },
+  { id: 'grafana', title: 'Grafana' },
   { id: 'dashboards', title: 'Dashboards' },
   { id: 'powerbi', title: 'Power BI' },
   { id: 'notifications', title: 'Notifications' },

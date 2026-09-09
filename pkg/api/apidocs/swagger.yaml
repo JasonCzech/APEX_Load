@@ -188945,6 +188945,73 @@ paths:
       tags:
         - System
       x-handler: handleGetSystemInventory
+  /api/v1/system/library/remotes/{id}/workspaces:
+    get:
+      summary: Library Remote Workspaces
+      description: '**Access Control:** Requires authentication; global roles: SystemAdmin; service-account scope: settings:manage'
+      operationId: handleLibraryRemoteWorkspaces
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "404":
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "502":
+          description: Bad Gateway
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: SystemAdmin; service-account scope: settings:manage'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: kind
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+        - name: parent_id
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+      tags:
+        - System
+      x-handler: handleLibraryRemoteWorkspaces
   /api/v1/system/parity-status:
     get:
       summary: Get Parity Status
@@ -189238,6 +189305,69 @@ paths:
       tags:
         - System
       x-handler: handleSystemReadiness
+  /api/v1/system/redaction/preview:
+    post:
+      summary: Redaction Preview
+      description: '**Access Control:** Requires authentication; service-account scope: read'
+      operationId: handleRedactionPreview
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                rules:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      name:
+                        type: string
+                      pattern:
+                        type: string
+                      replacement:
+                        type: string
+                sample:
+                  type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; service-account scope: read'
+      tags:
+        - System
+      x-handler: handleRedactionPreview
   /api/v1/system/restarts:
     post:
       summary: System Restart
@@ -190893,6 +191023,227 @@ paths:
       tags:
         - System
       x-handler: handleUpdateSystemSettings
+  /api/v1/system/settings/connections/test:
+    post:
+      summary: Connection Test
+      description: '**Access Control:** Requires authentication; global roles: SystemAdmin; service-account scope: settings:manage'
+      operationId: handleConnectionTest
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                expected_revision:
+                  type: string
+                provider:
+                  type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties:
+                  type: string
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "409":
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "502":
+          description: Bad Gateway
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: SystemAdmin; service-account scope: settings:manage'
+      tags:
+        - System
+      x-handler: handleConnectionTest
+  /api/v1/system/settings/notifications/deliveries:
+    get:
+      summary: Notification Deliveries
+      description: '**Access Control:** Requires authentication; global roles: SystemAdmin; service-account scope: settings:manage'
+      operationId: handleNotificationDeliveries
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: SystemAdmin; service-account scope: settings:manage'
+      tags:
+        - System
+      x-handler: handleNotificationDeliveries
+  /api/v1/system/settings/notifications/preview:
+    post:
+      summary: Notification Preview
+      description: '**Access Control:** Requires authentication; global roles: SystemAdmin; service-account scope: settings:manage'
+      operationId: handleNotificationPreview
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                event_type:
+                  type: string
+                format:
+                  type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: SystemAdmin; service-account scope: settings:manage'
+      tags:
+        - System
+      x-handler: handleNotificationPreview
+  /api/v1/system/settings/notifications/test:
+    post:
+      summary: Notification Test
+      description: '**Access Control:** Requires authentication; global roles: SystemAdmin; service-account scope: settings:manage'
+      operationId: handleNotificationTest
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                expected_revision:
+                  type: string
+                index:
+                  type: integer
+                  format: int64
+                  nullable: true
+      responses:
+        "202":
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties:
+                  type: string
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "409":
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "503":
+          description: Service Unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: SystemAdmin; service-account scope: settings:manage'
+      tags:
+        - System
+      x-handler: handleNotificationTest
   /api/v1/system/usage:
     get:
       summary: Get Usage Accounting
@@ -212659,6 +213010,12 @@ paths:
           schema:
             type: boolean
         - name: format
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+        - name: include_release_trend
           in: query
           description: Handler-defined query parameter.
           required: false

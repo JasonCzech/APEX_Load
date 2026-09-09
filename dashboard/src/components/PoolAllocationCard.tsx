@@ -1,7 +1,9 @@
+import { settingsHref } from './settingsNavigation'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { useClustersApi } from '../hooks/api/useClustersApi'
 import { useFleetApi } from '../hooks/api/useFleetApi'
+import { useNavigationGuard, useNavigationGuardRunner, type NavigationGuard } from '../hooks/NavigationGuardProvider'
 import { ApiError } from '../hooks/apiClient'
 import { FleetPool } from '../types'
 import { ClusterCapacityResponse, ClusterConnection } from '../types/cluster'
@@ -24,6 +26,7 @@ import {
 import { headroomTone } from './resourceHeadroomModel'
 
 interface Props {
+  resourceId?: string
   canManage?: boolean
 }
 
@@ -37,13 +40,14 @@ const nextRowId = () => `alloc-row-${(rowIdCounter += 1)}`
  * plus node placement, with the namespace quota projection shown BEFORE saving
  * so an operator sees a breach while they can still change it.
  */
-export default function PoolAllocationCard({ canManage = false }: Props) {
+export default function PoolAllocationCard({ canManage = false, resourceId = '' }: Props) {
+  const { runGuarded } = useNavigationGuardRunner()
   const clustersApi = useClustersApi()
   const fleetApi = useFleetApi()
 
   const [pools, setPools] = useState<FleetPool[]>([])
   const [clusters, setClusters] = useState<ClusterConnection[]>([])
-  const [selectedPoolId, setSelectedPoolId] = useState('')
+  const [selectedPoolId, setSelectedPoolId] = useState(resourceId)
   const [capacity, setCapacity] = useState<ClusterCapacityResponse | null>(null)
   const [draft, setDraft] = useState<AllocationDraft | null>(null)
   const [baseline, setBaseline] = useState('')
@@ -53,6 +57,7 @@ export default function PoolAllocationCard({ canManage = false }: Props) {
   const [loadError, setLoadError] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
 
+  const busyRef = useRef(false)
   const loadRequestRef = useRef(0)
 
   const load = useCallback(async () => {
@@ -96,6 +101,7 @@ export default function PoolAllocationCard({ canManage = false }: Props) {
     setDraft(next)
     setBaseline(allocationBaseline(next))
     setNotice(null)
+    setCapacity(null)
 
     const clusterId = selectedPool.cluster_id
     if (!clusterId) {
@@ -121,9 +127,10 @@ export default function PoolAllocationCard({ canManage = false }: Props) {
   const dirty = draft ? allocationBaseline(draft) !== baseline : false
 
   const updateDraft = useCallback((patch: Partial<AllocationDraft>) => {
+    if (busyRef.current || !canManage) return
     setDraft(current => (current ? { ...current, ...patch } : current))
     setNotice(null)
-  }, [])
+  }, [canManage])
 
   const workload = capacity?.generator_workload
   const replicas = workload?.replicas ?? 0
@@ -151,8 +158,10 @@ export default function PoolAllocationCard({ canManage = false }: Props) {
     [capacity],
   )
 
-  const save = useCallback(async () => {
-    if (!draft || !selectedPool || draftError) return
+  const save = useCallback(async (): Promise<boolean> => {
+    if (!dirty) return true
+    if (!canManage || !draft || !selectedPool || draftError || loadError || busyRef.current) return false
+    busyRef.current = true
     setBusy(true)
     try {
       const response = await clustersApi.updatePoolAllocation(selectedPool.id, {
@@ -169,12 +178,35 @@ export default function PoolAllocationCard({ canManage = false }: Props) {
           : `Allocation applied to container “${response.container ?? 'generator'}”.`,
       )
       await load()
+      return true
     } catch (err) {
       setError(getErrorMessage(err, 'Failed to apply the allocation.'))
+      return false
     } finally {
+      busyRef.current = false
       setBusy(false)
     }
-  }, [clustersApi, draft, draftError, load, selectedPool])
+  }, [canManage, clustersApi, dirty, draft, draftError, load, loadError, selectedPool])
+
+  const discard = useCallback(() => {
+    if (busyRef.current || !selectedPool) return
+    const next = allocationFromTransport(selectedPool.allocation, selectedPool.cluster_id ?? '', nextRowId)
+    setDraft(next)
+    setBaseline(allocationBaseline(next))
+    if (!loadError) setError(null)
+    setNotice(null)
+  }, [loadError, selectedPool])
+  const guardState = useRef({ dirty, save, discard })
+  guardState.current = { dirty, save, discard }
+  const guard = useMemo<NavigationGuard>(() => ({
+    id: 'host-resource-allocation',
+    label: 'Host resource allocation',
+    isDirty: () => guardState.current.dirty,
+    save: () => guardState.current.save(),
+    discard: () => guardState.current.discard(),
+  }), [])
+  useNavigationGuard(guard, dirty)
+
 
   return (
     <div className="monitor-body pp-panel">
@@ -191,7 +223,7 @@ export default function PoolAllocationCard({ canManage = false }: Props) {
         <div>
           <div className="pp-error" role="alert">{error}</div>
           {loadError && (
-            <button type="button" className="btn btn-secondary btn-sm" disabled={loading || busy} onClick={() => { void load() }}>
+            <button type="button" className="btn btn-secondary btn-sm" disabled={loading || busy} onClick={() => runGuarded(() => { void load() })}>
               Retry allocation data
             </button>
           )}
@@ -207,7 +239,10 @@ export default function PoolAllocationCard({ canManage = false }: Props) {
         <>
           <label className="pp-field">
             <span>Fleet pool</span>
-            <select value={selectedPoolId} onChange={e => setSelectedPoolId(e.target.value)}>
+            <select value={selectedPoolId} disabled={busy} onChange={e => {
+              const nextPoolId = e.target.value
+              runGuarded(() => setSelectedPoolId(nextPoolId))
+            }}>
               <option value="">Select a pool…</option>
               {pools.map(pool => (
                 <option key={pool.id} value={pool.id}>{pool.name}</option>
@@ -217,12 +252,12 @@ export default function PoolAllocationCard({ canManage = false }: Props) {
 
           {selectedPool && !selectedPool.cluster_id && (
             <div className="pp-empty">
-              This pool is not bound to a cluster connection. Bind it to a registered cluster before allocating host resources.
+              This pool is not bound to a cluster connection. <a href={settingsHref('pools', window.location.hash, selectedPoolId)}>Edit its pool assignment</a> or <a href={settingsHref('clusters')}>connect a cluster</a> before allocating host resources.
             </div>
           )}
 
           {draft && selectedPool?.cluster_id && (
-            <>
+            <fieldset className="settings-fieldset" disabled={busy || !canManage} aria-label="Host allocation controls">
               {capacity?.node_capacity.available === false && (
                 <div className="pp-muted">
                   Node capacity is unavailable ({capacity.node_capacity.unavailable_reason}); node pool and zone suggestions
@@ -452,14 +487,15 @@ export default function PoolAllocationCard({ canManage = false }: Props) {
                   <button
                     type="button"
                     className="btn btn-primary btn-sm"
-                    disabled={!!draftError || busy || !dirty}
+                    disabled={!!draftError || busy || loadError || !dirty}
                     onClick={() => { void save() }}
                   >
                     {busy ? 'Applying…' : 'Apply allocation'}
                   </button>
+                  <button type="button" className="btn btn-secondary btn-sm" disabled={busy || !dirty} onClick={discard}>Cancel allocation changes</button>
                 </div>
               )}
-            </>
+            </fieldset>
           )}
         </>
       )}

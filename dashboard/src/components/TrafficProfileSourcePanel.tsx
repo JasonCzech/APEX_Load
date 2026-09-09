@@ -1,3 +1,4 @@
+import { confirmAction } from './ux/confirmAction'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { CartesianGrid, ComposedChart, Legend, Line, ReferenceArea, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 
@@ -306,7 +307,7 @@ export default function TrafficProfileSourcePanel({ projectId, groupNames, scena
     if (new Set(selectedMappings.map(item => item.group_name)).size !== selectedMappings.length) { setError('Each scenario group can be mapped from only one series.'); return }
     const mappedGroups = new Set(selectedMappings.map(item => item.group_name))
     const conflicts = scenarioDraft.groups.filter((group, position) => mappedGroups.has(group.name || groupNames[position] || '') && ((group.stages?.length || 0) > 0 || Boolean(group.start_offset) || Boolean(group.ramp_up) || Boolean(group.ramp_down)))
-    if (conflicts.length && !window.confirm('Applying this profile will clear manual stages, simple ramps, and start offsets for mapped groups. Continue?')) return
+    if (conflicts.length && !(await confirmAction('Applying this profile will clear manual stages, simple ramps, and start offsets for mapped groups. Continue?'))) return
     const draft: ScenarioUpsertPayload = structuredClone(scenarioDraft)
     draft.groups.forEach((group, position) => {
       if (!group.name) group.name = groupNames[position]
@@ -464,14 +465,14 @@ export default function TrafficProfileSourcePanel({ projectId, groupNames, scena
       durationMilliseconds(derived.traffic_profile.target_duration) / 1000,
     )
   }, [derived])
-  const applyCandidate = () => {
+  const applyCandidate = async () => {
     if (!derived) return
     const sizing = derived.traffic_profile.sizing
     if (sizing?.complete) {
       const currentMin = scenarioDraft.goal_config?.min_vusers
       const currentMax = scenarioDraft.goal_config?.max_vusers
       const message = `Apply this profile and replace goal guardrails${currentMin !== undefined || currentMax !== undefined ? ` (${currentMin ?? 'unset'}-${currentMax ?? 'unset'})` : ''} with the ART-based recommendation ${sizing.suggested_min_vusers}-${sizing.suggested_max_vusers} VUsers?`
-      if (!window.confirm(message)) return
+      if (!(await confirmAction(message))) return
     }
     onApply(derived)
   }

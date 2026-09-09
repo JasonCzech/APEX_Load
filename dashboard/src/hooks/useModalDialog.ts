@@ -5,14 +5,36 @@ interface ModalDialogOptions {
   enabled?: boolean
   initialFocusRef?: RefObject<HTMLElement | null>
   onClose?: () => void
+  returnFocusSelector?: string
 }
 
 interface DialogStackEntry {
   id: number
+  dialog: HTMLElement
 }
 
 const dialogStack: DialogStackEntry[] = []
 let nextDialogId = 1
+const inertBefore = new Map<HTMLElement, boolean>()
+let bodyOverflow = ''
+
+function updateModalIsolation() {
+  for (const [element, wasInert] of inertBefore) {
+    if (!wasInert) element.removeAttribute('inert')
+  }
+  inertBefore.clear()
+  const top = dialogStack[dialogStack.length - 1]?.dialog
+  if (!top) return
+  // Isolate each sibling branch, including earlier body-level dialog portals.
+  for (let branch: HTMLElement | null = top; branch?.parentElement; branch = branch.parentElement) {
+    for (const sibling of Array.from(branch.parentElement.children)) {
+      if (sibling === branch || !(sibling instanceof HTMLElement)) continue
+      inertBefore.set(sibling, sibling.hasAttribute('inert'))
+      sibling.setAttribute('inert', '')
+    }
+    if (branch.parentElement === document.body) break
+  }
+}
 
 const FOCUSABLE_SELECTOR = [
   'a[href]',
@@ -34,8 +56,12 @@ export function focusableElements(container: HTMLElement): HTMLElement[] {
 }
 
 function isVisible(element: HTMLElement) {
-  const style = window.getComputedStyle(element)
-  return style.display !== 'none' && style.visibility !== 'hidden'
+  if (element.closest('[hidden], [inert]')) return false
+  for (let node: HTMLElement | null = element; node; node = node.parentElement) {
+    const style = window.getComputedStyle(node)
+    if (style.display === 'none' || style.visibility === 'hidden') return false
+  }
+  return true
 }
 
 function isTopDialog(id: number) {
@@ -79,6 +105,7 @@ export function useModalDialog({
   enabled = true,
   initialFocusRef,
   onClose,
+  returnFocusSelector,
 }: ModalDialogOptions) {
   const idRef = useRef<number>(0)
   const onCloseRef = useRef(onClose)
@@ -96,9 +123,14 @@ export function useModalDialog({
     const id = nextDialogId++
     idRef.current = id
     const previouslyFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null
-    dialogStack.push({ id })
+    if (!dialogStack.length) {
+      bodyOverflow = document.body.style.overflow
+      document.body.style.overflow = 'hidden'
+    }
+    dialogStack.push({ id, dialog })
+    updateModalIsolation()
 
-    window.setTimeout(() => {
+    const focusTimer = window.setTimeout(() => {
       if (!isTopDialog(id)) return
       const firstFocusTarget = initialFocusRef?.current || focusableElements(dialog)[0] || dialog
       firstFocusTarget.focus()
@@ -117,13 +149,25 @@ export function useModalDialog({
       }
     }
 
-    document.addEventListener('keydown', handleKeyDown, true)
-    return () => {
-      document.removeEventListener('keydown', handleKeyDown, true)
-      removeDialog(id)
-      if (previouslyFocused?.isConnected) {
-        previouslyFocused.focus()
+    const handleFocus = (event: FocusEvent) => {
+      if (isTopDialog(id) && event.target instanceof Node && !dialog.contains(event.target)) {
+        (focusableElements(dialog)[0] || dialog).focus()
       }
     }
-  }, [dialogRef, enabled, initialFocusRef])
+    document.addEventListener('focusin', handleFocus)
+    document.addEventListener('keydown', handleKeyDown, true)
+    return () => {
+      window.clearTimeout(focusTimer)
+      document.removeEventListener('keydown', handleKeyDown, true)
+      document.removeEventListener('focusin', handleFocus)
+      removeDialog(id)
+      updateModalIsolation()
+      if (!dialogStack.length) document.body.style.overflow = bodyOverflow
+      if (previouslyFocused?.isConnected && previouslyFocused !== document.body && isVisible(previouslyFocused)) {
+        previouslyFocused.focus()
+      } else if (returnFocusSelector) {
+        document.querySelector<HTMLElement>(returnFocusSelector)?.focus()
+      }
+    }
+  }, [dialogRef, enabled, initialFocusRef, returnFocusSelector])
 }

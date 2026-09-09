@@ -1,3 +1,4 @@
+import DialogLayer from './ux/DialogLayer'
 import { useMemo, useState } from 'react'
 import CodeMirror from '@uiw/react-codemirror'
 import { json } from '@codemirror/lang-json'
@@ -112,7 +113,7 @@ export function DraftJSONReview({
 function MetadataJsonDialog({ metadata, onClose }: { metadata: ScriptImportMetadata; onClose: () => void }) {
   const dialogRef = useEditorDialogRef(onClose)
   return (
-    <div className="editor-dialog-backdrop" {...dialogBackdropProps(onClose)}>
+    <DialogLayer><div className="editor-dialog-backdrop" {...dialogBackdropProps(onClose)}>
       <div
         ref={dialogRef}
         className="editor-dialog metadata-json-dialog"
@@ -133,7 +134,7 @@ function MetadataJsonDialog({ metadata, onClose }: { metadata: ScriptImportMetad
           <MetadataJsonViewer metadata={metadata} />
         </div>
       </div>
-    </div>
+    </div></DialogLayer>
   )
 }
 
@@ -147,7 +148,7 @@ function ImportedParameterMappingsDialog({
   const dialogRef = useEditorDialogRef(() => controller.setShowImportedParameterMappingsDialog(false))
   const close = () => controller.setShowImportedParameterMappingsDialog(false)
   return (
-    <div className="editor-dialog-backdrop" {...dialogBackdropProps(close)}>
+    <DialogLayer><div className="editor-dialog-backdrop" {...dialogBackdropProps(close)}>
       <div
         ref={dialogRef}
         className="editor-dialog imported-parameter-mappings-dialog"
@@ -191,7 +192,7 @@ function ImportedParameterMappingsDialog({
           </div>
         </div>
       </div>
-    </div>
+    </div></DialogLayer>
   )
 }
 

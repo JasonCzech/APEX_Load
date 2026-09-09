@@ -1,3 +1,5 @@
+import PageHeader from './components/ux/PageHeader'
+import { settingsOwner } from "./components/settingsNavigation";
 import {
   Suspense,
   lazy,
@@ -113,7 +115,6 @@ import {
   toggleRecentPin,
   type RecentItem,
 } from "./desktop/desktopRecents";
-import ThemeToggle from "./components/ThemeToggle";
 import DeploymentBanner from "./components/DeploymentBanner";
 import ClientDownloadsMenu from "./components/ClientDownloadsMenu";
 import {
@@ -330,16 +331,15 @@ export function ScopedAppContextProviders({
 function monitorCategoryForView(view: AppView): MonitorCategoryId {
   if (view.page === "fleet") return "fleet";
   if (view.page === "schedules") return "schedules";
-  if (view.page === "monitoring" && view.category === "telemetry")
-    return "telemetry";
+  if (view.page === "monitoring" && view.category) return view.category;
   return "overview";
 }
 
 function viewForMonitorCategory(categoryId: MonitorCategoryId): AppView {
   if (categoryId === "fleet") return { page: "fleet" };
   if (categoryId === "schedules") return { page: "schedules" };
-  if (categoryId === "telemetry")
-    return { page: "monitoring", category: "telemetry" };
+  if (categoryId === "telemetry" || categoryId === "alerts")
+    return { page: "monitoring", category: categoryId };
   return { page: "monitoring" };
 }
 
@@ -2108,6 +2108,19 @@ function AppShell({
   const openCompletedRun = runReportEnabled
     ? navigateToRunReport
     : navigateToTestArchive;
+  const openRunRequestRef = useRef(0);
+  const openRun = useCallback((id: string, projectID = activeProject?.id) => {
+    const request = ++openRunRequestRef.current;
+    const sourceView = viewRef.current;
+    void testApi.getTest(id).then(test => {
+      if (request !== openRunRequestRef.current || sourceView !== viewRef.current) return;
+      const status = testStatusesRef.current[id] || test.status;
+      if (["COMPLETE", "FAILED", "ABORTED"].includes(status)) openCompletedRun(id, projectID);
+      else navigateToTest(id, undefined, projectID);
+    }).catch(() => {
+      if (request === openRunRequestRef.current && sourceView === viewRef.current) navigateToTest(id, undefined, projectID);
+    });
+  }, [activeProject?.id, navigateToTest, openCompletedRun, testApi]);
   const activePage = navPageForAppView(view);
 
   const navigateToScriptEdit = (scriptId: string, projectID = activeProject?.id) => {
@@ -2898,7 +2911,7 @@ function AppShell({
   useEffect(() => {
     if (
       effectiveAccessLoaded &&
-      view.page === "access" &&
+      view.page === "access" && !view.setting &&
       !canUseAccessWorkspace
     ) {
       setView((current) =>
@@ -2908,7 +2921,7 @@ function AppShell({
         ),
       );
     }
-  }, [canUseAccessWorkspace, effectiveAccessLoaded, view.page]);
+  }, [canUseAccessWorkspace, effectiveAccessLoaded, view]);
 
   useEffect(() => {
     let cancelled = false;
@@ -3115,15 +3128,8 @@ function AppShell({
           >
             {effectiveTopbarTitle}
           </span>
-          <div
-            className={`main-topbar${activeTopbarContribution ? " contextual" : ""}`}
-            aria-label="Dashboard controls"
-          >
-            <div className="main-topbar-page">
-              <h1 id="app-page-title" className="topbar-page-title">
-                {effectiveTopbarTitle}
-              </h1>
-            </div>
+          <PageHeader title={effectiveTopbarTitle} contextual={Boolean(activeTopbarContribution)}>
+
             {topbarMeta.length > 0 && (
               <div className="topbar-meta-strip" aria-label="Current context">
                 {topbarMeta.map(renderTopbarMetaChip)}
@@ -3244,9 +3250,9 @@ function AppShell({
               )}
               {showTopbarClientDownloads && <ClientDownloadsMenu />}
               <DeploymentBanner />
-              {activeTopbarContribution?.id !== "script-editor" && <ThemeToggle theme={theme} onThemeChange={setTheme} />}
+
             </div>
-          </div>
+          </PageHeader>
           {activeTopbarContribution?.feedback && (
             <div className="main-topbar-feedback">
               {activeTopbarContribution.feedback}
@@ -3343,7 +3349,7 @@ function AppShell({
                   testStatuses={testStatuses}
                   metricsHistory={metricsHistory}
                   connectionState={connectionState}
-                  onSelectTest={navigateToTest}
+                  onSelectTest={openRun}
                   onOpenTestArchive={openCompletedRun}
                   onOpenCommandCenter={navigateToCommandCenter}
                   onNavigate={handleNavigate}
@@ -3372,7 +3378,7 @@ function AppShell({
                   applicationRepository={applicationRepository}
                   initialView={view.scenarioView}
                   testStatuses={testStatuses}
-                  onSelectTest={navigateToTest}
+                  onSelectTest={openRun}
                   onOpenCommandCenter={navigateToCommandCenter}
                   onCreateTestFromScenario={navigateToNewTestForScenario}
                   onNavigate={handleNavigate}
@@ -3393,7 +3399,7 @@ function AppShell({
                       ? view.prefillStartLocal
                       : undefined
                   }
-                  onSelectTest={navigateToTest}
+                  onSelectTest={openRun}
                   onOpenCommandCenter={navigateToCommandCenter}
                   onCreateRelease={createAndSelectRelease}
                   onOpenScenarioBuilder={navigateToScenarioBuilder}
@@ -3407,7 +3413,7 @@ function AppShell({
                   onBack={navigateBackFromTest}
                   onEditScript={navigateToScriptEdit}
                   onWorkspaceTabChange={handleTestWorkspaceTabChange}
-                  onSelectTest={navigateToTest}
+                  onSelectTest={openRun}
                   onOpenCommandCenter={navigateToCommandCenter}
                 />
               )}
@@ -3448,7 +3454,7 @@ function AppShell({
               {view.page === "results" && !routeAssetScopeBlocked && (
                 <ResultsPage
                   testStatuses={testStatuses}
-                  onSelectTest={navigateToTest}
+                  onSelectTest={openRun}
                   onOpenCommandCenter={navigateToCommandCenter}
                   onOpenTestArchive={navigateToTestArchive}
                   onOpenReport={runReportEnabled ? navigateToRunReport : undefined}
@@ -3467,7 +3473,7 @@ function AppShell({
                   telemetryDiagnostics={telemetryDiagnostics}
                   thresholdAlerts={thresholdAlerts}
                   onAcknowledgeThresholdAlert={acknowledgeThresholdAlertByKey}
-                  onSelectTest={navigateToTest}
+                  onSelectTest={openRun}
                   canManageSystem={canManageSystem}
                   onScheduleForDate={navigateToScheduleForDate}
                   activeCategoryId={monitorCategoryForView(view)}
@@ -3494,7 +3500,7 @@ function AppShell({
               {view.page === "repository-guide" && !routeAssetScopeBlocked && (
                 <RepositoryGuidePage effectiveAccessResources={effectiveAccessResources} />
               )}
-              {view.page === "repository" && !routeAssetScopeBlocked && (
+              {view.page === "repository" && !view.setting && !routeAssetScopeBlocked && (
                 <ApplicationRepositoryPage
                   domains={domains}
                   activeDomain={activeDomain}
@@ -3521,7 +3527,7 @@ function AppShell({
                   onCreateTestFromScenario={navigateToNewTestForScenario}
                 />
               )}
-              {view.page === "access" && !routeAssetScopeBlocked && (
+              {view.page === "access" && !view.setting && !routeAssetScopeBlocked && (
                 <AccessPage
                   projects={projects}
                   domains={domains}
@@ -3535,8 +3541,10 @@ function AppShell({
                   accessReviewRefreshSignal={accessReviewSignal}
                 />
               )}
-              {view.page === "settings" && !routeAssetScopeBlocked && (
+              {(view.page === "settings" || ((view.page === "access" || view.page === "repository") && view.setting)) && !routeAssetScopeBlocked && (
                 <SettingsPage
+                  destinationId={view.setting}
+                  onDestinationChange={setting => setGuardedView({ page: settingsOwner(setting), setting, returnTo: "returnTo" in view ? view.returnTo : undefined })}
                   theme={theme}
                   onThemeChange={setTheme}
                   authStatus={authStatus}

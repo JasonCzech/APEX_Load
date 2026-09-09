@@ -735,6 +735,7 @@ export default function Sidebar({
       {showProjectModal && (
         <ProjectModal
           title="New Project"
+          returnFocusSelector='[aria-controls="sidebar-project-options"]'
           onClose={() => setShowProjectModal(false)}
           onSubmit={handleNewProject}
         />
@@ -742,6 +743,7 @@ export default function Sidebar({
       {showApplicationModal && (
         <ProjectModal
           title="New Application"
+          returnFocusSelector='[aria-controls="sidebar-application-options"]'
           onClose={() => setShowApplicationModal(false)}
           onSubmit={handleNewApplication}
         />
@@ -749,6 +751,7 @@ export default function Sidebar({
       {showReleaseModal && (
         <ProjectModal
           title="New Release"
+          returnFocusSelector='[aria-controls="sidebar-release-options"]'
           namePlaceholder="Release name"
           onClose={() => setShowReleaseModal(false)}
           onSubmit={handleNewRelease}

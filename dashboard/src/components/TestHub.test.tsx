@@ -931,7 +931,7 @@ describe('TestHub', () => {
       setInputValue(durationInput, '5')
     })
 
-    const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save Scenario'))
+    const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save draft'))
     expect(saveButton).toBeDefined()
     if (!saveButton) return
 
@@ -1082,7 +1082,7 @@ describe('TestHub', () => {
 
     expect(container.querySelector('.scenario-script-group-card')?.textContent).toContain('Payments Flow')
 
-    const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save Scenario'))
+    const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save draft'))
     expect(saveButton).toBeDefined()
     if (!saveButton) return
     await act(async () => {
@@ -1345,7 +1345,7 @@ describe('TestHub', () => {
     await act(async () => {
       setSelectValue(modeSelect, 'goal_oriented')
     })
-    await clickButton('Save Scenario')
+    await clickButton('Save draft')
     await flushPromises()
 
     expect(apiMock.createScenario).not.toHaveBeenCalled()
@@ -1416,7 +1416,7 @@ describe('TestHub', () => {
     expect(getDurationFieldByLabel(container, 'Ramp-down')?.input.value).toBe('3')
     expect(container.textContent).toContain('10m total')
 
-    await clickButton('Save Scenario')
+    await clickButton('Save draft')
     await flushPromises()
     const payload = apiMock.createScenario.mock.calls[apiMock.createScenario.mock.calls.length - 1]?.[0]
     expect(payload).toMatchObject({
@@ -1477,7 +1477,7 @@ describe('TestHub', () => {
     expect(stageRows.length).toBe(6)
     expect(container.textContent).toContain('20m each')
 
-    await clickButton('Save Scenario')
+    await clickButton('Save draft')
     await flushPromises()
 
     const payload = apiMock.createScenario.mock.calls[apiMock.createScenario.mock.calls.length - 1]?.[0]
@@ -1754,7 +1754,7 @@ describe('TestHub', () => {
     if (!logLevelSelect) return
     await act(async () => { setSelectValue(logLevelSelect, 'extended') })
 
-    await clickButton('Save Scenario')
+    await clickButton('Save draft')
     await flushPromises()
 
     expect(apiMock.createScenario).toHaveBeenCalledWith(expect.objectContaining({
@@ -1876,7 +1876,7 @@ describe('TestHub', () => {
       setInputValue(iterationsInput, '5')
     })
 
-    await clickButton('Save Scenario')
+    await clickButton('Save draft')
     await flushPromises()
 
     expect(apiMock.updateScenario).toHaveBeenCalledWith('scenario-compact-iterations', expect.any(Object))
@@ -2068,7 +2068,7 @@ describe('TestHub', () => {
     await act(async () => setInputValue(nameInput, 'Project B Scenario'))
     await chooseLibraryScriptForGroup()
     await clickWizardStep('Review')
-    await clickButton('Save Scenario')
+    await clickButton('Save draft')
     await flushPromises()
 
     expect(apiMock.createScenario).toHaveBeenCalledTimes(1)
@@ -2377,7 +2377,7 @@ describe('TestHub', () => {
     expect(container.textContent).not.toContain('Choose Scenario To Model')
     expect(container.textContent).toContain('Existing Scripts Library')
 
-    await clickButton('Save Scenario')
+    await clickButton('Save draft')
     await flushPromises()
 
     expect(apiMock.createScenario).toHaveBeenCalledWith(expect.objectContaining({
@@ -2473,7 +2473,7 @@ describe('TestHub', () => {
       setInputValue(secondGroupVUsers, '15')
     })
 
-    const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save Scenario'))
+    const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save draft'))
     expect(saveButton).toBeDefined()
     if (!saveButton) return
 
@@ -2589,7 +2589,7 @@ describe('TestHub', () => {
       editButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
     await flushPromises()
-    await clickButton('Save Scenario')
+    await clickButton('Save draft')
     await flushPromises()
 
     const fidelityPayload = expect.objectContaining({
@@ -2669,7 +2669,7 @@ describe('TestHub', () => {
       setInputValue(eastWeight, '85')
       tolerateLoss.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
-    await clickButton('Save Scenario')
+    await clickButton('Save draft')
     await flushPromises()
     expect(apiMock.updateScenario).toHaveBeenLastCalledWith('scenario-fidelity', expect.objectContaining({
       assignment: {
@@ -2696,7 +2696,7 @@ describe('TestHub', () => {
     await act(async () => {
       autoRadio?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
-    await clickButton('Save Scenario')
+    await clickButton('Save draft')
     await flushPromises()
     expect(apiMock.updateScenario).toHaveBeenLastCalledWith('scenario-fidelity', expect.objectContaining({
       assignment: { mode: 'auto' },
@@ -2712,7 +2712,7 @@ describe('TestHub', () => {
     await act(async () => {
       duplicateButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
-    await clickButton('Save Scenario')
+    await clickButton('Save draft')
     await flushPromises()
 
     expect(apiMock.createScenario).toHaveBeenCalledWith(expect.objectContaining({
@@ -2798,7 +2798,7 @@ describe('TestHub', () => {
       setSelectValue(poolSelect, '')
     })
 
-    await clickButton('Save Scenario')
+    await clickButton('Save draft')
     await flushPromises()
 
     const payload = apiMock.updateScenario.mock.calls.find(call => call[0] === 'scenario-multi-pool')?.[1]
@@ -2867,7 +2867,7 @@ describe('TestHub', () => {
       setSelectValue(headlessSelect, 'false')
     })
 
-    const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save Scenario'))
+    const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save draft'))
     expect(saveButton).toBeDefined()
     if (!saveButton) return
 
@@ -3035,7 +3035,7 @@ describe('TestHub', () => {
     expect(container.textContent).toContain('Snapshot on error')
     expect(container.textContent).toContain('Goal Controller')
 
-    await clickButton('Save Scenario')
+    await clickButton('Save draft')
     await flushPromises()
 
     expect(apiMock.createScenario).toHaveBeenCalledWith(expect.objectContaining({
@@ -3257,7 +3257,7 @@ describe('TestHub', () => {
     expect(container.textContent).toContain('Group names must be unique. Rename duplicate groups before continuing.')
     expect(addGroupButton?.disabled).toBe(true)
     const saveButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => button.textContent?.includes('Save Scenario'))
+      .find(button => button.textContent?.includes('Save draft'))
     expect(saveButton?.disabled).toBe(true)
   })
 
@@ -3275,7 +3275,7 @@ describe('TestHub', () => {
     expect(container.textContent).not.toContain('Scenario was saved')
     expect(handoff).not.toHaveBeenCalled()
     expect(container.querySelector('.scenario-builder')).not.toBeNull()
-    await clickButton('Save Scenario')
+    await clickButton('Save draft')
     expect(apiMock.createScenario).toHaveBeenCalledTimes(2)
     expect(container.querySelector('[role="status"]')?.textContent).toContain('Saved Failure recovery')
   })
@@ -3287,7 +3287,7 @@ describe('TestHub', () => {
     await flushPromises()
     await chooseLibraryScriptForGroup()
     await act(async () => setInputValue(container.querySelector<HTMLInputElement>('input[placeholder="Scenario name"]')!, 'Single save'))
-    const save = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Save Scenario')!
+    const save = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Save draft')!
     await act(async () => { save.click(); save.click() })
     expect(apiMock.createScenario).toHaveBeenCalledTimes(1)
     expect(container.querySelector('fieldset')?.disabled).toBe(true)
@@ -3301,7 +3301,7 @@ describe('TestHub', () => {
     await flushPromises()
     await chooseLibraryScriptForGroup()
     await act(async () => setInputValue(container.querySelector<HTMLInputElement>('input[placeholder="Scenario name"]')!, 'Incomplete response'))
-    await clickButton('Save Scenario')
+    await clickButton('Save draft')
     expect(container.querySelector('[role="alert"]')?.textContent).toContain('Check the scenario library before retrying')
     expect(container.querySelector('.scenario-builder')).not.toBeNull()
   })
@@ -3318,7 +3318,7 @@ describe('TestHub', () => {
     expect(wizardStepComplete('Shape')).toBe(false)
     expect(wizardStepComplete('Run Settings')).toBe(false)
     expect(container.textContent).toContain('Choose and apply a workload source')
-    expect(Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Save Scenario')?.disabled).toBe(true)
+    expect(Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Save draft')?.disabled).toBe(true)
     await act(async () => setSelectValue(select, 'shape'))
     await selectManualShapeByName('Closed VUser')
     expect(container.querySelector('.scenario-builder-preview')).not.toBeNull()
@@ -3408,7 +3408,7 @@ describe('TestHub', () => {
     })
 
     expect(container.textContent).toContain('Peak staged VUsers: 10')
-    const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save Scenario'))
+    const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save draft'))
     expect(saveButton).toBeDefined()
     if (!saveButton) return
 
@@ -3474,7 +3474,7 @@ describe('TestHub', () => {
     })
 
     expect(container.textContent).toContain('longer than')
-    const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save Scenario')) as HTMLButtonElement | undefined
+    const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save draft')) as HTMLButtonElement | undefined
     expect(saveButton?.disabled).toBe(true)
   })
 
@@ -3503,7 +3503,7 @@ describe('TestHub', () => {
     expect(initializationSelect.value).toBe('at_once')
 
     await chooseLibraryScriptForGroup()
-    const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save Scenario'))
+    const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save draft'))
     expect(saveButton).toBeDefined()
     if (!saveButton) return
 
@@ -3603,7 +3603,7 @@ describe('TestHub', () => {
     await clickWizardStep('Scripts')
     await chooseLibraryScriptForGroup()
 
-    const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Save Scenario')
+    const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Save draft')
     expect(saveButton).toBeDefined()
     if (!saveButton) return
 
@@ -3624,7 +3624,7 @@ describe('TestHub', () => {
       setInputValue(promptInput, 'Late Named Scenario')
     })
 
-    const saveButtonAfter = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Save Scenario')
+    const saveButtonAfter = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Save draft')
     await act(async () => {
       saveButtonAfter?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })

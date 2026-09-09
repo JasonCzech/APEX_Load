@@ -1,3 +1,4 @@
+import DialogLayer from './ux/DialogLayer'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 import {
@@ -649,7 +650,7 @@ export function BrowserReplayScreenshotDialog({ onClose, src }: BrowserReplayScr
   useModalDialog({ dialogRef, initialFocusRef: closeButtonRef, onClose })
 
   return (
-    <div
+    <DialogLayer><div
       className="editor-dialog-backdrop"
       role="presentation"
       onPointerDown={event => {
@@ -674,6 +675,6 @@ export function BrowserReplayScreenshotDialog({ onClose, src }: BrowserReplayScr
           <img className="replay-screenshot-dialog-image" src={src} alt="Browser replay viewport" />
         </div>
       </div>
-    </div>
+    </div></DialogLayer>
   )
 }

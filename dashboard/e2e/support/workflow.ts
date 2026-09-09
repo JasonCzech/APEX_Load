@@ -34,8 +34,8 @@ export async function createWorkspaceUI(page: Page, request: APIRequestContext, 
   const releaseName = `${label} 1.0`
 
   await page.goto('/#/settings')
-  await page.getByRole('group', { name: 'Settings sections' })
-    .getByRole('button', { name: 'Domains' })
+  await page.getByRole('navigation', { name: 'Settings sections' })
+    .getByRole('button', { name: 'Domains & placement defaults' })
     .click()
 
   await page.getByPlaceholder('Create domain, e.g. Retail').fill(domainName)
@@ -52,8 +52,8 @@ export async function createWorkspaceUI(page: Page, request: APIRequestContext, 
   await expect(page.getByText(`Domain "${domainName}" created.`)).toBeVisible({ timeout: 15_000 })
   await expect(page.locator('button.settings-app-card').filter({ hasText: domainName })).toBeVisible()
 
-  const settingsSections = page.getByRole('group', { name: 'Settings sections' })
-  await settingsSections.getByRole('button', { name: 'Projects & Compliance' }).click()
+  const settingsSections = page.getByRole('navigation', { name: 'Settings sections' })
+  await settingsSections.getByRole('button', { name: 'Projects', exact: true }).click()
   const projectNameInput = page.getByPlaceholder('Create project, e.g. Customer Portal')
 
   const createProject = async (name: string) => {
@@ -77,7 +77,7 @@ export async function createWorkspaceUI(page: Page, request: APIRequestContext, 
   // Keep the decoy as the active workspace project, then explicitly target the
   // owner in the application picker. This is the wrong-project regression:
   // the picker must move real workspace scope, not only its local form cursor.
-  await settingsSections.getByRole('button', { name: 'Applications & Releases' }).click()
+  await settingsSections.getByRole('button', { name: 'Applications & releases' }).click()
   await page.getByPlaceholder('Create application, e.g. ACC').fill(applicationName)
   const applicationProject = page.getByRole('combobox', { name: 'Project for the new application' })
   await applicationProject.selectOption(ownerProjectId)
@@ -112,7 +112,7 @@ export async function createWorkspaceUI(page: Page, request: APIRequestContext, 
     response.request().method() === 'POST'
     && new URL(response.url()).pathname === `/api/v1/projects/${ownerProjectId}/releases`
   ))
-  await releaseDialog.getByRole('button', { name: 'Save' }).click()
+  await releaseDialog.getByRole('button', { name: 'Create release' }).click()
   const releasePayload = await (await releaseResponsePromise).json()
   const release = record(releasePayload, 'release')
   const releaseId = typeof release.application_release_id === 'string'

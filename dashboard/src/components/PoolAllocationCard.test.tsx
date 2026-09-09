@@ -5,6 +5,7 @@ import { createRoot, Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import PoolAllocationCard from './PoolAllocationCard'
+import { NavigationGuardProvider } from '../hooks/NavigationGuardRoot'
 import { FleetPool } from '../types'
 import type { ClusterCapacityResponse } from '../types/cluster'
 
@@ -131,6 +132,65 @@ async function renderAndSelectPool(canManage = true) {
 }
 
 describe('PoolAllocationCard', () => {
+  it('guards pool changes and preserves the draft until explicitly discarded', async () => {
+    fleetApiMock.listFleetPools.mockResolvedValue({ fleet_pools: [pool(), pool({ id: 'pool-2', name: 'second' })], count: 2 })
+    await act(async () => root.render(<NavigationGuardProvider><PoolAllocationCard canManage /></NavigationGuardProvider>))
+    await flush()
+    const select = container.querySelector('select')!
+    await act(async () => setSelectValue(select, 'pool-1'))
+    await act(async () => setInputValue(fieldByLabel('CPU request')!, '750m'))
+    await act(async () => setSelectValue(select, 'pool-2'))
+    expect(container.querySelector('[role="dialog"]')).not.toBeNull()
+    expect(select.value).toBe('pool-1')
+    await act(async () => buttonByText('Keep editing')!.click())
+    expect(fieldByLabel('CPU request')!.value).toBe('750m')
+    await act(async () => setSelectValue(select, 'pool-2'))
+    await act(async () => buttonByText('Discard changes')!.click())
+    expect(select.value).toBe('pool-2')
+    expect(fieldByLabel('CPU request')!.value).not.toBe('750m')
+  })
+
+  it('keeps the allocation draft and selected pool when save before leaving fails', async () => {
+    clustersApiMock.updatePoolAllocation.mockRejectedValueOnce(new Error('Allocation conflict'))
+    fleetApiMock.listFleetPools.mockResolvedValue({ fleet_pools: [pool(), pool({ id: 'pool-2', name: 'second' })], count: 2 })
+    await act(async () => root.render(<NavigationGuardProvider><PoolAllocationCard canManage /></NavigationGuardProvider>))
+    await flush()
+    const select = container.querySelector('select')!
+    await act(async () => setSelectValue(select, 'pool-1'))
+    await act(async () => setInputValue(fieldByLabel('CPU request')!, '750m'))
+    await act(async () => setSelectValue(select, 'pool-2'))
+    await act(async () => buttonByText('Save changes')!.click())
+    expect(select.value).toBe('pool-1')
+    expect(fieldByLabel('CPU request')!.value).toBe('750m')
+    expect(container.textContent).toContain('Allocation conflict')
+    expect(container.querySelector('[role="dialog"]')).not.toBeNull()
+  })
+
+  it('locks the selected pool and draft while an allocation is being applied', async () => {
+    let finish!: (value: unknown) => void
+    clustersApiMock.updatePoolAllocation.mockReturnValueOnce(new Promise(resolve => { finish = resolve }))
+    await renderAndSelectPool()
+    await act(async () => setInputValue(fieldByLabel('CPU request')!, '750m'))
+    await act(async () => buttonByText('Apply allocation')!.click())
+    expect(container.querySelector('select')!.disabled).toBe(true)
+    expect(fieldByLabel('CPU request')!.matches(':disabled')).toBe(true)
+    expect(buttonByText('Cancel allocation changes')!.matches(':disabled')).toBe(true)
+    await act(async () => finish({ applied: true }))
+    expect(container.querySelector('select')!.disabled).toBe(false)
+  })
+
+  it('clears the previous cluster quota while the next capacity request is pending', async () => {
+    fleetApiMock.listFleetPools.mockResolvedValue({ fleet_pools: [pool(), pool({ id: 'pool-2', name: 'second', cluster_id: 'cluster-2' })], count: 2 })
+    await renderAndSelectPool()
+    expect(container.textContent).toContain('Namespace quota')
+    let finish!: (value: ClusterCapacityResponse) => void
+    clustersApiMock.getClusterCapacity.mockReturnValueOnce(new Promise(resolve => { finish = resolve }))
+    await act(async () => setSelectValue(container.querySelector('select')!, 'pool-2'))
+    expect(container.textContent).not.toContain('Namespace quota')
+    await act(async () => finish({ ...capacity, cluster_id: 'cluster-2' }))
+    expect(container.textContent).toContain('Namespace quota')
+  })
+
   it('renders quota headroom with a projection of the pending change', async () => {
     await renderAndSelectPool()
     // Current + "after this change" rows for CPU, memory, and pods.

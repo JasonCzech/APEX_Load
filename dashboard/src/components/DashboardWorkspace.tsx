@@ -1,3 +1,6 @@
+import TabList from './ux/TabList'
+import { handleTabKey } from './tabKeyboard'
+import { settingsHref } from './settingsNavigation'
 import { useEffect, useMemo, useRef, useState, type DragEvent, type KeyboardEvent, type MouseEvent } from 'react'
 import {
   CARD_WIDTH_SEQUENCE,
@@ -647,6 +650,7 @@ export default function DashboardWorkspace({
   return (
     <section className={`dashboard-workspace ${customizing ? 'is-customizing' : 'is-reading'}`} aria-label={ariaLabel}>
       <button type="button" className="btn btn-secondary btn-sm" aria-pressed={customizing} onClick={() => setCustomizing(value => !value)}>{customizing ? 'Done customizing' : 'Customize view'}</button>
+      <nav aria-label="Dashboard connections"><a href={settingsHref('prometheus')}>Prometheus connection</a> · <a href={settingsHref('dashboards')}>Imported dashboards</a></nav>
       <div className="dashboard-workspace-toolbar">
         <label>
           <span>Layout</span>
@@ -729,7 +733,7 @@ export default function DashboardWorkspace({
       </div>
 
       <div className="dashboard-workspace-tab-tools">
-        <div className="dashboard-workspace-tabs" role="tablist" aria-label={`${ariaLabel} tabs`}>
+        <TabList className="dashboard-workspace-tabs" role="tablist" aria-label={`${ariaLabel} tabs`} onKeyDown={handleTabKey}>
           {selectedProfile.tabs.map(tab => (
             <div
               key={tab.id}
@@ -751,14 +755,14 @@ export default function DashboardWorkspace({
                 aria-controls={tabContextMenu?.tabId === tab.id ? `dashboard-workspace-tab-menu-${tab.id}` : undefined}
                 onClick={() => selectTab(tab.id)}
                 onKeyDown={event => handleTabKeyDown(event, tab.id)}
-                title="Drag to reorder. Use Shift+Arrow to reorder with the keyboard. Press Shift+F10 for tab actions."
+                title="Drag to reorder. Use Shift+Arrow to reorder with the keyboard. Press Shift+F10 for tab actions." tabIndex={(activeTab.id === tab.id) ? 0 : -1}
               >
                 <span>{tab.label}</span>
                 <small>{tab.cardIds.length}</small>
               </button>
             </div>
           ))}
-        </div>
+        </TabList>
         <div className="dashboard-workspace-add-tab">
           <input
             aria-label={`${ariaLabel} new tab name`}

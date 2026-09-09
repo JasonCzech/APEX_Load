@@ -1,3 +1,5 @@
+import DialogLayer from './ux/DialogLayer'
+import MetricPackPicker from './MetricPackPicker'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
 import { useMonitoringCollectorsApi } from '../hooks/api/useMonitoringCollectorsApi'
@@ -388,7 +390,7 @@ export default function MonitoringCollectorsCard({ projectId, canManage = false 
 
       {/* Register modal */}
       {showCreate && (
-        <div className="pp-modal-overlay" {...dialogBackdropProps(closeCreate, 'Close collector editor')}>
+        <DialogLayer><div className="pp-modal-overlay" {...dialogBackdropProps(closeCreate, 'Close collector editor')}>
           <div ref={createDialogRef} className="pp-modal" role="dialog" aria-modal="true" aria-labelledby="collector-create-dialog-title">
             <div className="pp-modal-header">
               <h3 id="collector-create-dialog-title">Register Monitoring Collector</h3>
@@ -413,14 +415,7 @@ export default function MonitoringCollectorsCard({ projectId, canManage = false 
                   placeholder="Optional"
                 />
               </label>
-              <label className="pp-field">
-                <span>Allowed metric packs (comma-separated)</span>
-                <input
-                  value={createForm.packs}
-                  onChange={e => setCreateForm(f => ({ ...f, packs: e.target.value }))}
-                  placeholder="oracle-db, host-cpu"
-                />
-              </label>
+              <MetricPackPicker value={createForm.packs} onChange={packs => setCreateForm(form => ({ ...form, packs }))} />
             </div>
             <div className="pp-modal-actions">
 								<button type="button" className="btn btn-secondary" onClick={closeCreate} disabled={busy}>
@@ -431,12 +426,12 @@ export default function MonitoringCollectorsCard({ projectId, canManage = false 
               </button>
             </div>
           </div>
-        </div>
+        </div></DialogLayer>
       )}
 
       {/* Edit modal */}
       {edit && (
-        <div className="pp-modal-overlay" {...dialogBackdropProps(closeEdit, 'Close collector editor')}>
+        <DialogLayer><div className="pp-modal-overlay" {...dialogBackdropProps(closeEdit, 'Close collector editor')}>
           <div ref={editDialogRef} className="pp-modal" role="dialog" aria-modal="true" aria-labelledby="collector-edit-dialog-title">
             <div className="pp-modal-header">
               <h3 id="collector-edit-dialog-title">Edit Collector</h3>
@@ -462,10 +457,7 @@ export default function MonitoringCollectorsCard({ projectId, canManage = false 
                     <option value="unreachable">unreachable</option>
                   </select>
                 </label>
-                <label className="pp-field">
-                  <span>Metric packs</span>
-                  <input value={edit.packs} onChange={e => setEdit(s => (s ? { ...s, packs: e.target.value } : s))} placeholder="oracle-db, host-cpu" />
-                </label>
+                <MetricPackPicker value={edit.packs} onChange={packs => setEdit(form => form ? { ...form, packs } : form)} />
               </div>
             </div>
             <div className="pp-modal-actions">
@@ -477,12 +469,12 @@ export default function MonitoringCollectorsCard({ projectId, canManage = false 
               </button>
             </div>
           </div>
-        </div>
+        </div></DialogLayer>
       )}
 
       {/* One-time token reveal */}
       {oneTimeToken && (
-        <div className="pp-modal-overlay" {...dialogBackdropProps(closeToken, 'Close collector token dialog')}>
+        <DialogLayer><div className="pp-modal-overlay" {...dialogBackdropProps(closeToken, 'Close collector token dialog')}>
           <div ref={tokenDialogRef} className="pp-modal" role="dialog" aria-modal="true" aria-labelledby="collector-token-dialog-title">
             <div className="pp-modal-header">
               <h3 id="collector-token-dialog-title">Collector token for “{oneTimeToken.name}”</h3>
@@ -506,12 +498,12 @@ export default function MonitoringCollectorsCard({ projectId, canManage = false 
               </button>
             </div>
           </div>
-        </div>
+        </div></DialogLayer>
       )}
 
       {/* Latest ingested metrics snapshot */}
       {metrics && (
-        <div className="pp-modal-overlay" {...dialogBackdropProps(closeMetrics, 'Close collector metrics dialog')}>
+        <DialogLayer><div className="pp-modal-overlay" {...dialogBackdropProps(closeMetrics, 'Close collector metrics dialog')}>
           <div ref={metricsDialogRef} className="pp-modal" role="dialog" aria-modal="true" aria-labelledby="collector-metrics-dialog-title">
             <div className="pp-modal-header">
               <h3 id="collector-metrics-dialog-title">
@@ -557,7 +549,7 @@ export default function MonitoringCollectorsCard({ projectId, canManage = false 
               </button>
             </div>
           </div>
-        </div>
+        </div></DialogLayer>
       )}
 
       {deleteTarget && (

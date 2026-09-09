@@ -8,7 +8,8 @@ export type AppWorkspaceScope = {
 }
 
 export type AppView = AppWorkspaceScope & (
-  | { page: Exclude<NavPage, 'command-center' | 'new-test' | 'scripts' | 'tests' | 'docs' | 'monitoring'> }
+  | { page: Exclude<NavPage, 'command-center' | 'new-test' | 'scripts' | 'tests' | 'docs' | 'monitoring' | 'settings' | 'access' | 'repository'> }
+  | { page: 'settings' | 'access' | 'repository'; setting?: string; returnTo?: string; resourceId?: string }
   | { page: 'monitoring'; category?: MonitoringCategoryID }
   | { page: 'docs'; guidePage?: ApiGuideContentPageID }
   | { page: 'command-center'; testId?: string }
@@ -41,7 +42,7 @@ const NAV_PAGES: NavPage[] = [
 const SCRIPT_MODES = ['list', 'create', 'edit', 'import'] as const
 const SCENARIO_VIEWS = ['library', 'builder', 'plans'] as const
 const TEST_WORKSPACE_TABS = ['overview', 'control', 'graphs', 'diagnostics', 'archive', 'action-summary', 'load-impact', 'transaction-drilldown'] as const
-const MONITORING_CATEGORIES = ['overview', 'telemetry'] as const
+const MONITORING_CATEGORIES = ['overview', 'telemetry', 'alerts'] as const
 export const REPORT_LENSES = ['executive', 'engineer', 'audit'] as const
 
 export type TestWorkspaceTabID = typeof TEST_WORKSPACE_TABS[number]
@@ -209,6 +210,13 @@ export function parseAppViewFromHash(hash: string): AppView {
     }
   }
 
+  if (page === 'settings' || page === 'access' || page === 'repository') {
+    const setting = params.get('setting') || undefined
+    const returnTo = params.get('returnTo') || ''
+    const resourceId = params.get('resourceId') || ''
+    return { page, ...(resourceId ? { resourceId } : {}), ...(setting ? { setting } : {}), ...(/^#\/(monitoring|fleet|dashboard|schedules|command-center|tests|test\/[^?#]+)(\?|$)/.test(returnTo) ? { returnTo } : {}), ...workspaceScope }
+  }
+
   if (page === 'monitoring') {
     const category = params.get('category')
     return {
@@ -296,6 +304,15 @@ export function parseDesktopDeepLink(raw: string): AppView | null {
 }
 
 export function viewToLocationHash(view: AppView): string {
+  if (view.page === 'settings' || view.page === 'access' || view.page === 'repository') {
+    const params = new URLSearchParams()
+    if (view.setting) params.set('setting', view.setting)
+    if (view.resourceId) params.set('resourceId', view.resourceId)
+    if (view.returnTo && /^#\/(monitoring|fleet|dashboard|schedules|command-center|tests|test\/[^?#]+)(\?|$)/.test(view.returnTo)) params.set('returnTo', view.returnTo)
+    appendWorkspaceScope(params, view)
+    return params.size ? `#/${view.page}?${params}` : `#/${view.page}`
+  }
+
   if (view.page === 'test') {
     const params = new URLSearchParams()
     if (view.tab) params.set('tab', view.tab)

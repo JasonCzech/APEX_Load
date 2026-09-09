@@ -1,3 +1,4 @@
+import DialogLayer from './ux/DialogLayer'
 import { useCallback, useEffect, useId, useMemo, useReducer, useRef, useState } from 'react'
 import { useApi } from '../hooks/useApi'
 import { useModalDialog } from '../hooks/useModalDialog'
@@ -139,14 +140,14 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
         } else if (loadSecond < durSec + gRampDown) {
           v = gRampDown > 0 ? (1 - (loadSecond - durSec) / gRampDown) * gVUsers : 0
         }
-        
+
         const roundedV = Math.round(v)
         point[`group${idx}`] = roundedV
         point.total += roundedV
       })
       points.push(point)
     }
-    
+
     // Ensure last point
     if (points[points.length - 1].time < totalSec) {
         const last: LoadProfilePoint = { time: totalSec, total: 0 }
@@ -309,7 +310,7 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
   }
 
   return (
-    <div
+    <DialogLayer><div
       className="modal-overlay"
       role="presentation"
       onPointerDown={event => {
@@ -390,7 +391,7 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
                 </div>
               </label>
             </div>
-            
+
             <CreateTestCapacityPreview
               chartData={chartData}
               groups={groups}
@@ -503,6 +504,6 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
           </div>
         </form>
       </div>
-    </div>
+    </div></DialogLayer>
   )
 }

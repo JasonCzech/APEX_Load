@@ -232,8 +232,8 @@ func pdfSLALines(lines *[]string, rows []SLAComplianceRow) {
 		if row.HasSLA {
 			sla = fmt.Sprintf("%.0f ms", row.SLAMs)
 		}
-		*lines = append(*lines, fmt.Sprintf("- %s: %s tx, p95 %.0f ms, SLA %s, %.2f%% errors - %s",
-			row.Name, formatPDFInt(row.Volume), row.P95Ms, sla, row.ErrorPct, row.Result))
+		*lines = append(*lines, fmt.Sprintf("- %s: %s tx, p95 %.0f ms, SLA %s, %s errors - %s",
+			row.Name, formatPDFInt(row.Volume), row.P95Ms, sla, formatReportPercentage(row.ErrorPct), row.Result))
 	}
 }
 
@@ -315,7 +315,7 @@ func buildReportSectionRegistry() map[string]reportSectionRenderer {
 			}
 			*lines = append(*lines,
 				fmt.Sprintf("Archive records: %s", formatPDFInt(report.Overview.Transactions)),
-				fmt.Sprintf("Archive record errors: %s (%.2f%%)", formatPDFInt(report.Overview.Errors), report.Overview.ErrorPct),
+				fmt.Sprintf("Archive record errors: %s (%s)", formatPDFInt(report.Overview.Errors), formatReportPercentage(report.Overview.ErrorPct)),
 				fmt.Sprintf("Archive record average: %.1f ms (min %.1f ms / max %.1f ms)", report.Overview.AvgResponseMs, report.Overview.MinResponseMs, report.Overview.MaxResponseMs),
 				fmt.Sprintf("Peak successful transaction TPS: %.1f", report.Overview.PeakTPS),
 				fmt.Sprintf("Peak active VUsers: %s", formatPDFInt(report.Overview.PeakActiveVUsers)),
@@ -609,8 +609,8 @@ func buildReportSectionRegistry() map[string]reportSectionRenderer {
 				if point.HasP95() {
 					p95 = fmt.Sprintf("%.1f ms", point.P95Ms)
 				}
-				*lines = append(*lines, fmt.Sprintf("- %s: %s VUsers, %.1f TPS, p95 %s, %.2f%% errors",
-					formatPDFTime(point.Timestamp), formatPDFInt(point.ActiveVUsers), point.TPS, p95, point.ErrorPct))
+				*lines = append(*lines, fmt.Sprintf("- %s: %s VUsers, %.1f TPS, p95 %s, %s errors",
+					formatPDFTime(point.Timestamp), formatPDFInt(point.ActiveVUsers), point.TPS, p95, formatReportPercentage(point.ErrorPct)))
 			}
 			if len(d.Report.SummaryTimeline) > limit {
 				*lines = append(*lines, fmt.Sprintf("... %d additional interval(s) omitted from the PDF profile.", len(d.Report.SummaryTimeline)-limit))

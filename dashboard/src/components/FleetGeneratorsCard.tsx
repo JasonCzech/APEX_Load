@@ -1,3 +1,4 @@
+import DialogLayer from './ux/DialogLayer'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { useFleetApi, GeneratorMetadataPatch } from '../hooks/api/useFleetApi'
@@ -5,8 +6,8 @@ import { ApiError } from '../hooks/apiClient'
 import { useNavigationGuard, useNavigationGuardRunner, type NavigationGuard } from '../hooks/NavigationGuardProvider'
 import { useModalDialog } from '../hooks/useModalDialog'
 import { dialogBackdropProps } from './dialogBackdropProps'
-import { FleetGeneratorMetadata } from '../types'
-import { listAllGeneratorMetadata } from './fleetCatalogModel'
+import { FleetGeneratorMetadata, FleetPool } from '../types'
+import { listAllGeneratorMetadata, listAllFleetPools } from './fleetCatalogModel'
 import './parityPanels.css'
 
 interface Props {
@@ -116,6 +117,13 @@ function snapshotCaughtUp(
 
 export default function FleetGeneratorsCard({ canManage = false }: Props) {
   const api = useFleetApi()
+  const [pools, setPools] = useState<FleetPool[]>([])
+  const [poolError, setPoolError] = useState('')
+  useEffect(() => {
+    let current = true
+    listAllFleetPools(api.listFleetPools).then(rows => { if (current) { setPools(rows); setPoolError('') } }).catch(() => { if (current) setPoolError('Pool catalog unavailable. Existing assignments are preserved.') })
+    return () => { current = false }
+  }, [api.listFleetPools])
   const { runGuarded } = useNavigationGuardRunner()
   const [generators, setGenerators] = useState<FleetGeneratorMetadata[]>([])
   const generatorsRef = useRef(generators)
@@ -357,7 +365,7 @@ export default function FleetGeneratorsCard({ canManage = false }: Props) {
       )}
 
       {draft && (
-        <div className="pp-modal-overlay" {...dialogBackdropProps(closeDraft, 'Close generator editor')}>
+        <DialogLayer><div className="pp-modal-overlay" {...dialogBackdropProps(closeDraft, 'Close generator editor')}>
           <div
             ref={dialogRef}
             className="pp-modal"
@@ -390,8 +398,9 @@ export default function FleetGeneratorsCard({ canManage = false }: Props) {
                   <input value={draft.region} disabled={busy} onChange={e => setDraft(d => (d ? { ...d, region: e.target.value } : d))} placeholder="optional" />
                 </label>
                 <label className="pp-field">
-                  <span>Fleet pool id</span>
-                  <input value={draft.fleet_pool_id} disabled={busy} onChange={e => setDraft(d => (d ? { ...d, fleet_pool_id: e.target.value } : d))} placeholder="blank = none" />
+                  <span>Fleet pool</span>
+                  <select value={draft.fleet_pool_id} disabled={busy} onChange={e => setDraft(d => (d ? { ...d, fleet_pool_id: e.target.value } : d))}><option value="">No pool</option>{pools.map(pool => <option key={pool.id} value={pool.id}>{pool.name}</option>)}{draft.fleet_pool_id && !pools.some(pool => pool.id === draft.fleet_pool_id) && <option value={draft.fleet_pool_id}>Unavailable pool ({draft.fleet_pool_id})</option>}</select>
+                  {poolError && <span role="status">{poolError}</span>}
                 </label>
               </div>
               <div className="pp-field-row">
@@ -427,7 +436,7 @@ export default function FleetGeneratorsCard({ canManage = false }: Props) {
               </button>
             </div>
           </div>
-        </div>
+        </div></DialogLayer>
       )}
     </div>
   )

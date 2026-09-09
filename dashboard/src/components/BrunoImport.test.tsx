@@ -1700,6 +1700,7 @@ describe('BrunoImport', () => {
     })
 
     expect(container.querySelector('.bruno-native-table details')).toBeNull()
+    await act(async () => { container.querySelector<HTMLButtonElement>('#bruno-inspection-tab-source_apis')?.click() })
     const reviewButtons = Array.from(container.querySelectorAll<HTMLButtonElement>('.bruno-native-review-button'))
     expect(reviewButtons).toHaveLength(2)
     const inspectButtons = Array.from(container.querySelectorAll<HTMLButtonElement>('.bruno-native-inspect-button'))

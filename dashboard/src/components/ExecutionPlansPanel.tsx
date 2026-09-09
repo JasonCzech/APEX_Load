@@ -1,3 +1,4 @@
+import DialogLayer from './ux/DialogLayer'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
 import { useExecutionPlansApi } from '../hooks/api/useExecutionPlansApi'
@@ -489,7 +490,7 @@ export default function ExecutionPlansPanel({ projectId, canManage = false, canA
 
       {/* Create / edit modal */}
       {draft && (
-        <div className="pp-modal-overlay" {...dialogBackdropProps(closeDraft, 'Close execution plan editor')}>
+        <DialogLayer><div className="pp-modal-overlay" {...dialogBackdropProps(closeDraft, 'Close execution plan editor')}>
           <div ref={draftDialogRef} className="pp-modal" role="dialog" aria-modal="true" aria-labelledby="execution-plan-editor-title">
             <div className="pp-modal-header">
               <h3 id="execution-plan-editor-title">{draft.id ? 'Edit Execution Plan' : 'New Execution Plan'}</h3>
@@ -604,12 +605,12 @@ export default function ExecutionPlansPanel({ projectId, canManage = false, canA
               </button>
             </div>
           </div>
-        </div>
+        </div></DialogLayer>
       )}
 
       {/* Run result modal */}
       {runResult && (
-        <div className="pp-modal-overlay" {...dialogBackdropProps(closeRunResult, 'Close execution plan result')}>
+        <DialogLayer><div className="pp-modal-overlay" {...dialogBackdropProps(closeRunResult, 'Close execution plan result')}>
           <div ref={resultDialogRef} className="pp-modal" role="dialog" aria-modal="true" aria-labelledby="execution-plan-result-title">
             <div className="pp-modal-header">
               <h3 id="execution-plan-result-title">Run “{runResult.plan}”</h3>
@@ -650,12 +651,12 @@ export default function ExecutionPlansPanel({ projectId, canManage = false, canA
               </button>
             </div>
           </div>
-        </div>
+        </div></DialogLayer>
       )}
 
       {/* Sequential plan-run progress modal (dependency-gated, polled live) */}
       {planRun && (
-        <div className="pp-modal-overlay" {...dialogBackdropProps(closePlanRun, 'Close execution plan progress')}>
+        <DialogLayer><div className="pp-modal-overlay" {...dialogBackdropProps(closePlanRun, 'Close execution plan progress')}>
           <div ref={progressDialogRef} className="pp-modal" role="dialog" aria-modal="true" aria-labelledby="execution-plan-progress-title">
             <div className="pp-modal-header">
               <h3 id="execution-plan-progress-title">
@@ -700,7 +701,7 @@ export default function ExecutionPlansPanel({ projectId, canManage = false, canA
               </button>
             </div>
           </div>
-        </div>
+        </div></DialogLayer>
       )}
 
       {schedulesTarget && (

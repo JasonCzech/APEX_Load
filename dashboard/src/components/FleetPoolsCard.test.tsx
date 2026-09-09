@@ -267,9 +267,8 @@ describe('FleetPoolsCard', () => {
     const provision = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Provision')
     await act(async () => provision?.click())
 
-    expect(container.querySelector('[role="alert"]')?.textContent).toContain('0 associated runtime targets')
-    const request = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Request provisioning')
-    expect(request?.disabled).toBe(true)
+    expect(provision?.disabled).toBe(true)
+    expect(provision?.title).toContain('Associate runtime targets')
     expect(fleetApiMock.createProvisionRequest).not.toHaveBeenCalled()
   })
 
@@ -691,3 +690,11 @@ async function flushFocus() {
     await new Promise(resolve => window.setTimeout(resolve, 0))
   })
 }
+
+it('opens an exact pool context and exposes missing resources without substituting another pool', async () => {
+  fleetApiMock.listFleetPools.mockResolvedValue({ fleet_pools: [pool({}), pool({ id: 'pool-2', name: 'west-http' })], count: 2 })
+  await act(async () => root.render(<FleetPoolsCard resourceId="pool-1" />)); await flush()
+  expect(container.textContent).toContain('east-http'); expect(container.textContent).not.toContain('west-http')
+  await act(async () => root.render(<FleetPoolsCard resourceId="deleted" />))
+  expect(container.textContent).toContain('no longer accessible'); expect(container.textContent).not.toContain('east-http')
+})

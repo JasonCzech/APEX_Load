@@ -18,7 +18,7 @@ function sparklinePath(values: number[]): string {
 
 function Sparkline({ values }: { values: number[] }) {
   const path = sparklinePath(values)
-  if (!path) return <div className="run-report-sparkline-empty" aria-hidden="true" />
+  if (!path) return null
   return (
     <svg className="run-report-sparkline" viewBox="0 0 96 32" role="img" aria-label="Recent trend">
       <path d={path} fill="none" stroke="currentColor" strokeWidth="2" vectorEffect="non-scaling-stroke" />

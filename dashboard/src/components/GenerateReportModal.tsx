@@ -1,3 +1,4 @@
+import DialogLayer from './ux/DialogLayer'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useModalDialog } from '../hooks/useModalDialog'
 import type { RunArchiveReportProfile } from '../types'
@@ -29,7 +30,7 @@ export default function GenerateReportModal({ profiles, onClose, onGenerate }: P
   }, [reportTypes, selected])
 
   return (
-    <div className="generate-report-backdrop" {...dialogBackdropProps(onClose, 'Close report generator')}>
+    <DialogLayer><div className="generate-report-backdrop" {...dialogBackdropProps(onClose, 'Close report generator')}>
       <div ref={dialogRef} className="generate-report-modal" role="dialog" aria-modal="true" aria-label="Generate report">
         <div className="generate-report-header">
           <h3>Generate Report</h3>
@@ -56,6 +57,6 @@ export default function GenerateReportModal({ profiles, onClose, onGenerate }: P
           <button type="button" className="btn btn-primary" onClick={() => onGenerate(selected)}>Open Report</button>
         </div>
       </div>
-    </div>
+    </div></DialogLayer>
   )
 }

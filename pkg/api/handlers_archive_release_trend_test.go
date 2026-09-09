@@ -208,3 +208,24 @@ func TestReleaseTrendRepairsInvalidCompactProjectionAndLiveCache(t *testing.T) {
 		})
 	}
 }
+
+func TestArchiveReportCanOmitReleaseTrendForInteractiveSummary(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	start := time.Date(2026, time.May, 18, 12, 0, 0, 0, time.UTC)
+	registerReleaseTrendRun(t, server, "release", "run-summary", "Summary", start, start.Add(time.Minute), false)
+	rr := httptest.NewRecorder()
+	server.mux.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/api/v1/tests/run-summary/archive/report?include_release_trend=false", nil))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d: %s", rr.Code, rr.Body.String())
+	}
+	var report RunArchiveReport
+	if err := json.Unmarshal(rr.Body.Bytes(), &report); err != nil {
+		t.Fatal(err)
+	}
+	if report.ReleaseTrend != nil {
+		t.Fatal("interactive report should omit release trend")
+	}
+	if report.Verdict == nil || report.Verdict.Status == "" {
+		t.Fatal("interactive report must preserve computed acceptance")
+	}
+}

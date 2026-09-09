@@ -9,6 +9,8 @@ describe('featureFlags', () => {
     window.localStorage.clear()
   })
 
+  it('enables the unified results workspace by default', () => { expect(isRunReportEnabled()).toBe(true) })
+
   it('reads the run report flag from browser storage', () => {
     window.localStorage.setItem('apexload.featureFlags.runReport', 'true')
     expect(isRunReportEnabled()).toBe(true)

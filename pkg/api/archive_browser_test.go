@@ -728,3 +728,22 @@ func TestBuildRunArchiveReportAggregatesSOAPPayloadTimeline(t *testing.T) {
 		t.Fatalf("unexpected second SOAP payload timeline bucket %#v", secondBucket)
 	}
 }
+
+func TestSOAPPayloadTelemetryDoesNotClassifyHTTPPayloadsAsSOAP(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		tx   TransactionEvent
+		want float64
+	}{
+		{"http", TransactionEvent{ServerTelemetry: &protocol.ServerTelemetry{RequestPayloadKB: 10}}, 0},
+		{"soap operation", TransactionEvent{Extractions: map[string]string{"soap_operation": "Checkout"}, ServerTelemetry: &protocol.ServerTelemetry{RequestPayloadKB: 10}}, 10},
+		{"soap envelope", TransactionEvent{ServerTelemetry: &protocol.ServerTelemetry{RequestPayloadKB: 10, EnvelopeOverheadKB: 1}}, 10},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, _, _ := archiveSOAPPayloadTelemetry(tc.tx)
+			if got != tc.want {
+				t.Fatalf("payload = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}

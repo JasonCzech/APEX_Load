@@ -4957,6 +4957,16 @@
     },
     {
       "method": "GET",
+      "path": "/api/v1/system/library/remotes/{id}/workspaces",
+      "operationId": "handleLibraryRemoteWorkspaces",
+      "summary": "Library Remote Workspaces",
+      "category": "System \u0026 Distribution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: SystemAdmin; service-account scope: settings:manage"
+    },
+    {
+      "method": "GET",
       "path": "/api/v1/system/parity-status",
       "operationId": "handleGetParityStatus",
       "summary": "Get Parity Status",
@@ -4974,6 +4984,16 @@
       "public": true,
       "authenticated": false,
       "access": "Public (no authentication required)"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/system/redaction/preview",
+      "operationId": "handleRedactionPreview",
+      "summary": "Redaction Preview",
+      "category": "System \u0026 Distribution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; service-account scope: read"
     },
     {
       "method": "POST",
@@ -5020,6 +5040,46 @@
       "path": "/api/v1/system/settings",
       "operationId": "handleUpdateSystemSettings",
       "summary": "Update System Settings",
+      "category": "System \u0026 Distribution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: SystemAdmin; service-account scope: settings:manage"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/system/settings/connections/test",
+      "operationId": "handleConnectionTest",
+      "summary": "Connection Test",
+      "category": "System \u0026 Distribution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: SystemAdmin; service-account scope: settings:manage"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/system/settings/notifications/deliveries",
+      "operationId": "handleNotificationDeliveries",
+      "summary": "Notification Deliveries",
+      "category": "System \u0026 Distribution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: SystemAdmin; service-account scope: settings:manage"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/system/settings/notifications/preview",
+      "operationId": "handleNotificationPreview",
+      "summary": "Notification Preview",
+      "category": "System \u0026 Distribution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: SystemAdmin; service-account scope: settings:manage"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/system/settings/notifications/test",
+      "operationId": "handleNotificationTest",
+      "summary": "Notification Test",
       "category": "System \u0026 Distribution",
       "public": false,
       "authenticated": true,

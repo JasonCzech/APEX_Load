@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   formatBytes,
+  formatReadinessDetails,
   formatDurationSeconds,
   formatAuthMode,
   formatReadinessStatus,
@@ -83,4 +84,8 @@ describe('settingsPageFormatters', () => {
     expect(sorted.map(p => p.name)).toEqual(['alpha', 'Beta'])
     expect(input.map(p => p.name)).toEqual(['Beta', 'alpha'])
   })
+})
+
+it('formats nested readiness objects and arrays without object coercion', () => {
+  expect(formatReadinessDetails({ integration: { enabled: false, checks: [{ status: 'not_configured' }] } })).toBe('integration: checks: status: not_configured | enabled: false')
 })

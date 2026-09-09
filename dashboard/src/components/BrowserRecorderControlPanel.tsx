@@ -1,3 +1,4 @@
+import { confirmAction } from './ux/confirmAction'
 import { type ReactNode, useState, useEffect, useCallback, useLayoutEffect, useMemo, useRef } from 'react'
 
 import { useApi } from '../hooks/useApi'
@@ -682,13 +683,13 @@ export default function BrowserRecorderControlPanel({
     }
   }
 
-  const confirmReplaySaveRisk = () => {
+  const confirmReplaySaveRisk = async () => {
     if (!stopped) return true
     if (!lastVerifyReport) {
       return true
     }
     if (!lastVerifyReport.success) {
-      return window.confirm('The latest replay verification found issues. Save this script anyway?') !== false
+      return (await confirmAction('The latest replay verification found issues. Save this script anyway?')) !== false
     }
     return true
   }
@@ -973,7 +974,7 @@ export default function BrowserRecorderControlPanel({
   }
 
   const handleSave = async () => {
-    if (!confirmReplaySaveRisk()) return
+    if (!(await confirmReplaySaveRisk())) return
     const requestKey = JSON.stringify(convertRequest())
     const hadCurrentPreview = preview !== null && previewRequestKeyRef.current === requestKey
     if (hadCurrentPreview && importDraftHasExpired(preview)) {

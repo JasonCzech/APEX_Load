@@ -17,7 +17,7 @@ interface Props {
 
 function verdictTone(verdict: ReturnType<typeof effectiveReportVerdict>) {
   if (verdict.failed) return 'fail'
-  if (verdict.conditional) return 'conditional'
+  if (verdict.status !== 'Pass') return 'conditional'
   return 'pass'
 }
 
@@ -53,20 +53,21 @@ export default function RunReportVerdictBanner({
     <section className={`run-report-verdict run-report-verdict-${verdictTone(verdict)}`}>
       <div className="run-report-verdict-main">
         <div>
-          <p className="run-report-kicker">Run verdict</p>
+          <p className="run-report-kicker">Computed acceptance</p>
           <h1>{verdict.status}</h1>
           <p>{verdict.explanation}</p>
         </div>
         <div className="run-report-verdict-badge" aria-label={`Verdict ${verdict.status}`}>
-          {verdict.failed ? 'Fail' : verdict.conditional ? 'Review' : 'Pass'}
+          {verdict.status}
         </div>
       </div>
       <details className="run-report-override">
-        <summary>Analyst override</summary>
+        <summary>Analyst assessment — separate from computed acceptance</summary>
         <div className="run-report-override-grid">
           <label>
             <span>Status</span>
             <select value={status} onChange={event => onStatusChange(event.currentTarget.value)} disabled={controlsDisabled}>
+              <option value="">No analyst assessment</option>
               <option value="Pass">Pass</option>
               <option value="Conditional Pass">Conditional Pass</option>
               <option value="Fail">Fail</option>

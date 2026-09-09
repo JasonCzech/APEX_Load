@@ -1,3 +1,5 @@
+import BulkActions from './ux/BulkActions'
+import { confirmAction } from './ux/confirmAction'
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { ApplicationRepository, AuthoringCorrelationPreviewRequest, AuthoringCorrelationPreviewResponse, AuthoringSession, DashboardAuthEffectiveAccessResource, Folder, GitHubConfigResponse, GitHubPushResponse, GitHubScriptStatus, StoredScript } from '../types'
 import { useApi } from '../hooks/useApi'
@@ -151,6 +153,8 @@ export default function ScriptsPage({ onScriptSaved, initialCreateWorkflow, appl
   const activeProjectId = activeProject?.id
   const hasTopbarContributionProvider = useHasTopbarContributionProvider()
   const [scripts, setScripts] = useState<StoredScript[]>([])
+  const [scriptsLoading, setScriptsLoading] = useState(true)
+  const [scriptsLoadFailed, setScriptsLoadFailed] = useState(false)
   const [scriptFolders, setScriptFolders] = useState<Folder[]>([])
   const [authoringSessions, setAuthoringSessions] = useState<AuthoringSession[]>([])
   const [correlationPreviews, setCorrelationPreviews] = useState<Record<string, AuthoringCorrelationPreviewResponse>>({})
@@ -358,15 +362,21 @@ export default function ScriptsPage({ onScriptSaved, initialCreateWorkflow, appl
     const requestGeneration = ++scriptsRequestGenerationRef.current
     if (!projectId) {
       setScripts([])
+      setScriptsLoading(false)
       return
     }
+    setScriptsLoading(true)
+    setScriptsLoadFailed(false)
     try {
       const res = await api.listScripts(projectId)
       if (!isProjectScopeCurrent(scope) || scriptsRequestGenerationRef.current !== requestGeneration) return
       setScripts(res.scripts || [])
     } catch (error) {
       if (!isProjectScopeCurrent(scope) || scriptsRequestGenerationRef.current !== requestGeneration) return
+      setScriptsLoadFailed(true)
       appendLibraryNotice(getErrorMessage(error, 'Unable to load scripts.'))
+    } finally {
+      if (isProjectScopeCurrent(scope) && scriptsRequestGenerationRef.current === requestGeneration) setScriptsLoading(false)
     }
   }, [activeProjectId, api, appendLibraryNotice, isProjectScopeCurrent])
 
@@ -794,12 +804,13 @@ export default function ScriptsPage({ onScriptSaved, initialCreateWorkflow, appl
 
   const handleDelete = async (id: string) => {
     if (!canManageScripts) return
-    if (!confirm('Delete this script?')) return
+    if (!(await confirmAction('Delete this script?'))) return
     const scope = { ...projectScopeRef.current }
     setDeletingScriptIds(current => new Set(current).add(id))
     try {
       await api.deleteScript(id)
       if (!isProjectScopeCurrent(scope)) return
+      secretStatusSignatureByScriptRef.current.delete(id)
       setScripts(current => current.filter(script => script.id !== id))
       setSelectedScriptIds(current => {
         const next = new Set(current)
@@ -840,7 +851,7 @@ export default function ScriptsPage({ onScriptSaved, initialCreateWorkflow, appl
 
   const deleteSelectedScripts = async () => {
     const ids = selectedVisibleScriptIds.filter(id => !deletingScriptIds.has(id))
-    if (!canManageScripts || ids.length === 0 || !confirm(`Delete ${ids.length} selected script${ids.length === 1 ? '' : 's'}?`)) return
+    if (!canManageScripts || ids.length === 0 || !(await confirmAction(`Delete ${ids.length} selected script${ids.length === 1 ? '' : 's'}?`))) return
     const scope = { ...projectScopeRef.current }
     setDeletingScriptIds(current => new Set([...current, ...ids]))
     const outcomes = await boundedAllSettled(ids, id => api.deleteScript(id))
@@ -1082,8 +1093,8 @@ export default function ScriptsPage({ onScriptSaved, initialCreateWorkflow, appl
         )}
 
         <div className="page-section">
-          {canManageScripts && (
-            <AuthoringSessionsPanel
+          {canManageScripts && authoringSessions.length > 0 && (
+            <details className="ux-review-queue"><summary>Authoring review · {authoringSessions.length} session{authoringSessions.length === 1 ? "" : "s"}</summary><AuthoringSessionsPanel
               sessions={authoringSessions}
               onResume={handleResumeAuthoringSession}
               onApprove={(session) => { void handleApproveAuthoringSession(session) }}
@@ -1092,14 +1103,26 @@ export default function ScriptsPage({ onScriptSaved, initialCreateWorkflow, appl
               correlationErrors={correlationErrors}
               onPreviewCorrelation={(session, payload) => { void handlePreviewAuthoringCorrelation(session, payload) }}
               onApplyCorrelation={(session, payload) => { void handleApplyAuthoringCorrelation(session, payload) }}
-            />
+            /></details>
           )}
           <LibraryFederationControls
             kind="script"
+            filtersActive={releaseFilter !== 'all' || folderFilter !== 'all'}
+            primaryAction={canManageScripts && <button className="btn btn-primary" type="button" onClick={openCreateOptions}>Create script</button>}
             federation={federation}
             projectName={activeProject?.name}
             onConfigureRemotes={openRemoteSettings}
             summaryText={libraryQuery.trim() || releaseFilter !== 'all' || folderFilter !== 'all' ? `${sortedScripts.length} matching script${sortedScripts.length === 1 ? '' : 's'}` : 'Search by script, protocol, health, release, or folder.'}
+            searchControl={(<label className="project-redaction-rule-field">
+                  <span>Search scripts</span>
+                  <input
+                    className="settings-input"
+                    type="search"
+                    value={libraryQuery}
+                    onChange={(event) => setLibraryQuery(event.target.value)}
+                    placeholder="Find scripts by name, protocol, or release..."
+                  />
+                </label>)}
             filterControls={(
               <>
                 <label className="project-redaction-rule-field">
@@ -1131,16 +1154,7 @@ export default function ScriptsPage({ onScriptSaved, initialCreateWorkflow, appl
                     {folderOptions.map(folder => <option key={folder.id} value={folder.id}>{folder.name}</option>)}
                   </select>
                 </label>
-                <label className="project-redaction-rule-field">
-                  <span>Search scripts</span>
-                  <input
-                    className="settings-input"
-                    type="search"
-                    value={libraryQuery}
-                    onChange={(event) => setLibraryQuery(event.target.value)}
-                    placeholder="Find scripts by name, protocol, or release..."
-                  />
-                </label>
+
               </>
             )}
           />
@@ -1158,9 +1172,7 @@ export default function ScriptsPage({ onScriptSaved, initialCreateWorkflow, appl
             ))}
           </div>
           {canManageScripts && (
-            <div className="library-bulk-selection-toolbar">
-              <span>{selectedVisibleScriptIds.length} selected</span>
-              <div className="library-bulk-selection-actions">
+            <BulkActions count={selectedVisibleScriptIds.length}>
                 <button
                   type="button"
                   className="btn btn-ghost"
@@ -1177,8 +1189,7 @@ export default function ScriptsPage({ onScriptSaved, initialCreateWorkflow, appl
                 >
                   Delete Selected ({selectedVisibleScriptIds.length})
                 </button>
-              </div>
-            </div>
+              </BulkActions>
           )}
           <ScriptsLibraryTable
             scripts={sortedScripts}
@@ -1203,8 +1214,8 @@ export default function ScriptsPage({ onScriptSaved, initialCreateWorkflow, appl
             onToggleAllVisibleScripts={toggleAllVisibleScripts}
             deletingScriptIds={deletingScriptIds}
             canManageScripts={canManageScripts}
-            emptyMessage={libraryQuery.trim() || healthFilter !== 'all' || releaseFilter !== 'all' || folderFilter !== 'all' ? 'No scripts match these filters.' : 'No scripts yet.'}
-            onCreate={scripts.length === 0 && !libraryQuery.trim() && healthFilter === 'all' && releaseFilter === 'all' && folderFilter === 'all' ? openCreateOptions : undefined}
+            emptyMessage={scriptsLoading ? 'Loading scripts…' : scriptsLoadFailed ? 'Scripts unavailable. Use Refresh to retry.' : libraryQuery.trim() || healthFilter !== 'all' || releaseFilter !== 'all' || folderFilter !== 'all' ? 'No scripts match these filters.' : 'No scripts yet.'}
+            onCreate={!scriptsLoading && !scriptsLoadFailed && scripts.length === 0 && !libraryQuery.trim() && healthFilter === 'all' && releaseFilter === 'all' && folderFilter === 'all' ? openCreateOptions : undefined}
             folders={scriptFolders}
             federation={scriptFederation}
             github={canManageScripts && githubReady ? { enabled: true, onPush: setGithubPushScript, statusByScript: githubStatusByScript } : undefined}

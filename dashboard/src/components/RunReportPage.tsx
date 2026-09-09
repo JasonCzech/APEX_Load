@@ -1,8 +1,13 @@
+import TabList from './ux/TabList'
+import TestExecutionArchive from './TestExecutionArchive'
+import RunOutcomeSummary, { RunMetricPopulations } from './RunOutcomeSummary'
+import ReportComposer from './ReportComposer'
+import { defaultReportPopulation, reportPopulationOverview, populationLabels, type MetricPopulation } from './runReport/reportPresentation'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { isReportLens, type ReportLens } from '../appRouting'
 import { useApi } from '../hooks/useApi'
-import type { ReportAnnotations, RunArchiveAnalysisResponse, RunArchiveReport, TestSummary } from '../types'
+import type { ReportAnnotations, RunArchiveReport, TestSummary } from '../types'
 import { getErrorMessage } from '../utils/errorUtils'
 import { isCompletedTestStatus, resolveTestStatus } from '../utils/testStatusUtils'
 import { useExecutionArchiveModel } from './useExecutionArchiveModel'
@@ -20,12 +25,10 @@ import RunReportVerdictBanner from './runReport/RunReportVerdictBanner'
 import SynchronizedTimeline from './runReport/SynchronizedTimeline'
 import ImportedDashboardPanels from './runReport/ImportedDashboardPanels'
 import TransactionSlaScoreboard from './runReport/TransactionSlaScoreboard'
-import { reportSectionLens } from './runReport/reportSectionLens'
 import {
   alignBaselineTimeline,
   buildBaselineOverviewDiff,
   buildReportKpis,
-  effectiveReportVerdict,
   mergeTimelineHistory,
   slaRowsForReport,
 } from './runReport/runReportModel'
@@ -49,8 +52,8 @@ function archiveReadyTest(test: TestSummary | null, status: string): TestSummary
 type VerdictDraft = { status: string; explanation: string }
 
 function verdictDraftFrom(report: RunArchiveReport | null, annotations: ReportAnnotations | null): VerdictDraft {
-  const verdict = effectiveReportVerdict(report, annotations)
-  return { status: verdict.status, explanation: verdict.explanation }
+  void report
+  return { status: annotations?.verdict_override || '', explanation: annotations?.verdict_explanation || '' }
 }
 
 function httpStatus(error: unknown): number | undefined {
@@ -71,12 +74,19 @@ export default function RunReportPage({
   const api = useApi()
   const { runGuarded } = useNavigationGuardRunner()
   const [activeLens, setActiveLens] = useState<ReportLens>(initialLens || 'executive')
+  const [area, setArea] = useState<'Summary' | 'Performance' | 'Diagnostics' | 'Evidence'>('Summary')
+  const [showExport, setShowExport] = useState(false)
+  const [showCompare, setShowCompare] = useState(Boolean(initialCompare))
+  const [showComposer, setShowComposer] = useState(false)
+  const [populationChoice, setPopulationChoice] = useState<MetricPopulation | null>(null)
+  const [baselineOptions, setBaselineOptions] = useState<TestSummary[]>([])
+  const [baselineOptionsError, setBaselineOptionsError] = useState('')
   const [compareId, setCompareId] = useState(initialCompare || '')
   const { test, setTest, error: testError } = useExecutionTestPolling(testId, { stopOnTerminal: true })
   const resolvedStatus = test ? resolveTestStatus(test, statusOverride ? { [test.id]: statusOverride } : {}) : ''
   const completed = isCompletedTestStatus(resolvedStatus)
   const archivedTest = useMemo(() => archiveReadyTest(test, resolvedStatus), [resolvedStatus, test])
-  const archiveModel = useExecutionArchiveModel(archivedTest)
+  const archiveModel = useExecutionArchiveModel(archivedTest, false, compareId)
   const { archiveSummaryHistory, archiveSummaryError, archiveSummariesLoading } = useExecutionArchiveSummaryHistory(archivedTest)
   const { archiveResourceHistory, archiveResourceError, archiveResourcesLoading } = useExecutionArchiveResourceHistory(archivedTest)
 
@@ -110,12 +120,19 @@ export default function RunReportPage({
   const [baselineReport, setBaselineReport] = useState<RunArchiveReport | null>(null)
   const [baselineError, setBaselineError] = useState('')
   const [baselineLoading, setBaselineLoading] = useState(false)
-  const [compareAnalysis, setCompareAnalysis] = useState<RunArchiveAnalysisResponse | null>(null)
-  const [compareAnalysisError, setCompareAnalysisError] = useState('')
-  const [compareAnalysisLoading, setCompareAnalysisLoading] = useState(false)
 
   const suggestedCompareId = test?.comparison_baseline?.source_test_id || ''
-  const effectiveCompareId = compareId || suggestedCompareId
+  const population = populationChoice || defaultReportPopulation(archiveModel.archiveReport)
+  useEffect(() => {
+    if (!showCompare || !test) return
+    let cancelled = false
+    setBaselineOptionsError('')
+    api.listTests({ project_id: test.project_id, application_id: test.application_id, release_id: test.release_id, summary: true, limit: 100 }).then(result => {
+      if (!cancelled) setBaselineOptions(result.tests.filter(run => run.id !== testId && isCompletedTestStatus(run.status) && Boolean(run.archive)))
+    }).catch(error => { if (!cancelled) setBaselineOptionsError(getErrorMessage(error, 'Unable to load baseline runs')) })
+    return () => { cancelled = true }
+  }, [api, showCompare, test, testId])
+  const effectiveCompareId = compareId
   effectiveCompareIDRef.current = effectiveCompareId
   const baselineReadyTest = useMemo(() => baselineTest && isCompletedTestStatus(baselineTest.status) ? baselineTest : null, [baselineTest])
   const { archiveSummaryHistory: baselineSummaryHistory, archiveSummariesLoading: baselineSummaryLoading } = useExecutionArchiveSummaryHistory(baselineReadyTest)
@@ -142,7 +159,9 @@ export default function RunReportPage({
 
   useEffect(() => {
     setCompareId(initialCompare || '')
-  }, [initialCompare])
+    if (initialCompare) setShowCompare(true)
+  }, [initialCompare, testId])
+  useEffect(() => { setArea('Summary'); setPopulationChoice(null); setShowComposer(false) }, [testId])
   useEffect(() => {
     pinCompareStamp.current += 1
   }, [effectiveCompareId])
@@ -187,16 +206,18 @@ export default function RunReportPage({
     if (!effectiveCompareId || effectiveCompareId === testId) {
       setBaselineTest(null)
       setBaselineReport(null)
-      setBaselineError('')
+      setBaselineError(effectiveCompareId === testId ? 'Choose a different run as the baseline.' : '')
       setBaselineLoading(false)
       return
     }
     let cancelled = false
     setBaselineLoading(true)
+    setBaselineReport(null)
+    setBaselineTest(null)
     setBaselineError('')
     Promise.all([
       api.getTest(effectiveCompareId),
-      api.getTestArchiveReport(effectiveCompareId),
+      api.getTestArchiveReport(effectiveCompareId, { includeReleaseTrend: false }),
     ]).then(([baseline, report]) => {
       if (cancelled) return
       setBaselineTest(baseline)
@@ -214,49 +235,20 @@ export default function RunReportPage({
     }
   }, [api, effectiveCompareId, testId])
 
-  useEffect(() => {
-    if (!effectiveCompareId || effectiveCompareId === testId || !completed) {
-      setCompareAnalysis(null)
-      setCompareAnalysisError('')
-      setCompareAnalysisLoading(false)
-      return
-    }
-    let cancelled = false
-    setCompareAnalysisLoading(true)
-    setCompareAnalysisError('')
-    api.getTestArchiveAnalysis(testId, { baseline_id: effectiveCompareId, limit: 10 })
-      .then(response => {
-        if (!cancelled) setCompareAnalysis(response)
-      })
-      .catch(error => {
-        if (!cancelled) {
-          setCompareAnalysis(null)
-          setCompareAnalysisError(getErrorMessage(error, 'Unable to load baseline analysis'))
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setCompareAnalysisLoading(false)
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [api, completed, effectiveCompareId, testId])
-
   const timelineHistory = useMemo(() => {
     const merged = mergeTimelineHistory(archiveSummaryHistory, archiveResourceHistory)
-    return alignBaselineTimeline(merged, baselineSummaryHistory)
-  }, [archiveResourceHistory, archiveSummaryHistory, baselineSummaryHistory])
+    return (archiveModel.archiveReport?.metric_populations?.transaction?.transactions || 0) > 0 && (baselineReport?.metric_populations?.transaction?.transactions || 0) > 0 ? alignBaselineTimeline(merged, baselineSummaryHistory) : merged
+  }, [archiveResourceHistory, archiveSummaryHistory, baselineSummaryHistory, archiveModel.archiveReport, baselineReport])
 
   const baselineDiff = useMemo(
-    () => buildBaselineOverviewDiff(archiveModel.archiveReport?.overview, baselineReport?.overview),
-    [archiveModel.archiveReport?.overview, baselineReport?.overview],
+    () => buildBaselineOverviewDiff(reportPopulationOverview(archiveModel.archiveReport, population), reportPopulationOverview(baselineReport, population)),
+    [archiveModel.archiveReport, baselineReport, population],
   )
   const kpis = useMemo(
-    () => buildReportKpis(archiveModel.archiveReport, timelineHistory, baselineDiff),
-    [archiveModel.archiveReport, baselineDiff, timelineHistory],
+    () => buildReportKpis(archiveModel.archiveReport, population === 'transaction' && reportPopulationOverview(archiveModel.archiveReport, population) ? timelineHistory : [], baselineDiff, population),
+    [archiveModel.archiveReport, baselineDiff, timelineHistory, population],
   )
   const slaRows = useMemo(() => slaRowsForReport(archiveModel.archiveReport), [archiveModel.archiveReport])
-  const lensSections = useMemo(() => reportSectionLens(archiveModel.archiveReport, activeLens), [activeLens, archiveModel.archiveReport])
   const goalConfig = archiveModel.archiveReport?.manifest?.provenance?.goal_config
 
   const setLens = (lens: ReportLens) => {
@@ -270,6 +262,7 @@ export default function RunReportPage({
   const setCompare = (id: string) => {
     const normalized = id.trim()
     if (normalized === compareId) return
+    if (normalized === testId) { setBaselineError('Choose a different run as the baseline.'); return }
     runGuarded(() => {
       setCompareId(normalized)
       onNavigateReport({ lens: activeLens, compare: normalized || undefined })
@@ -411,94 +404,85 @@ export default function RunReportPage({
         <section className="run-report-panel">
           <h1>No archive available</h1>
           <p>This run is complete, but no archive was recorded for report rendering.</p>
-          <button className="btn btn-secondary" type="button" onClick={() => onOpenLegacyArchive(testId)}>Open legacy execution view</button>
+          <button className="btn btn-secondary" type="button" onClick={() => onOpenLegacyArchive(testId)}>View execution snapshot</button>
         </section>
       </div>
     )
   }
 
+  const report = archiveModel.archiveReport
+  const comparisonContextDiffers = baselineTest && (baselineTest.scenario_id !== test.scenario_id || baselineTest.total_vusers !== test.total_vusers || baselineTest.duration !== test.duration || baselineTest.project_id !== test.project_id || baselineTest.application_id !== test.application_id)
+  const renderEvidence = (view: React.ComponentProps<typeof TestExecutionArchive>['view']) => <TestExecutionArchive
+    {...archiveModel} test={test} view={view} hideReportExports
+    loadImpactData={timelineHistory} loadImpactLoading={archiveSummariesLoading || archiveResourcesLoading}
+    loadImpactError={archiveSummaryError || archiveResourceError}
+  />
+  const areas = ['Summary', 'Performance', 'Diagnostics', 'Evidence'] as const
   return (
     <div className="page run-report-page">
       <div className="run-report-toolbar">
-        <div>
-          <p className="run-report-kicker">Completed run report</p>
-          <h1>{test.name || test.id}</h1>
-        </div>
+        <div><p className="run-report-kicker">Completed run results · {test.ref_key || test.id}</p><h1>{test.name || test.id}</h1><p>{resolvedStatus} · Planned {test.total_vusers} VUsers · {test.duration}</p></div>
         <div className="run-report-toolbar-actions">
-          <RunReportLensSwitcher activeLens={activeLens} onLensChange={setLens} />
-          <button className="btn btn-sm btn-secondary" type="button" onClick={() => onOpenLegacyArchive(testId)}>Legacy archive</button>
+          <button className="btn btn-secondary" type="button" aria-expanded={showCompare} onClick={() => setShowCompare(v => !v)}>Compare</button>
+          <button className="btn btn-primary" type="button" aria-expanded={showExport} onClick={() => setShowExport(v => !v)}>Export report</button>
+          <button className="btn btn-ghost" type="button" onClick={() => onOpenCommandCenter(testId)}>Execution snapshot</button>
         </div>
       </div>
-      {annotationsError && <p className="run-report-error" role="alert">{annotationsError}</p>}
-      {lensSections.sectionSet.has('verdict') && (
-        <RunReportVerdictBanner
-          report={archiveModel.archiveReport}
-          annotations={annotations}
-          status={verdictDraft.status}
-          explanation={verdictDraft.explanation}
-          saving={savingAnnotations || annotationsLoading}
-          disabled={!annotations}
-          onStatusChange={updateVerdictStatus}
-          onExplanationChange={updateVerdictExplanation}
-          onSaveOverride={saveOverride}
-        />
-      )}
-      {lensSections.sectionSet.has('kpis') && <RunReportKpiScorecard kpis={kpis} />}
-      {lensSections.sectionSet.has('timeline') && (
-        <SynchronizedTimeline
-          data={timelineHistory}
-          goalConfig={goalConfig}
-          loading={archiveSummariesLoading || archiveResourcesLoading || baselineSummaryLoading}
-          error={archiveSummaryError || archiveResourceError}
-          showBaseline={Boolean(effectiveCompareId && baselineSummaryHistory.length)}
-        />
-      )}
-      {lensSections.sectionSet.has('imported_dashboards') && <ImportedDashboardPanels test={test} baselineTest={baselineReadyTest} />}
-      {lensSections.sectionSet.has('sla') && (
-        <TransactionSlaScoreboard
-          rows={slaRows}
-          selectedAction={archiveModel.selectedArchiveAction}
-          drilldownTransactions={archiveModel.archiveTransactions}
-          loadingTransactions={archiveModel.archiveTransactionsLoading}
-          onSelectAction={archiveModel.onSelectedArchiveActionChange}
-        />
-      )}
-      {lensSections.sectionSet.has('diagnostics') && (
-        <RunReportDiagnostics
-          report={archiveModel.archiveReport}
-          analysis={compareAnalysis || archiveModel.archiveAnalysis}
-          loading={archiveModel.archiveLoading || archiveModel.archiveAnalysisLoading || compareAnalysisLoading}
-          error={archiveModel.archiveError || archiveModel.archiveAnalysisError || compareAnalysisError}
-        />
-      )}
-      {lensSections.sectionSet.has('compare') && (
-        <RunReportCompareBar
-          compareId={compareId}
-          suggestedCompareId={suggestedCompareId}
-          baselineName={baselineTest?.name || test.comparison_baseline?.source_test_name}
-          deltas={baselineDiff}
-          loading={baselineLoading}
-          error={baselineError}
-          onCompareChange={setCompare}
-          onPinBaseline={pinBaseline}
-        />
-      )}
-      {lensSections.sectionSet.has('exports') && (
-        <RunReportExportActions
-          testId={testId}
-          lens={activeLens}
-          testName={test.name}
-          downloadHTML={api.downloadTestReport}
-          downloadFormat={api.downloadTestReportFormat}
-        />
-      )}
-      {lensSections.sectionSet.has('exports') && (
-        <RunReportPowerBIPublish
-          testId={testId}
-          publish={api.publishTestToPowerBI}
-          getStatus={api.getPowerBIPublishStatus}
-        />
-      )}
+      {showExport && <section className="run-report-panel" aria-label="Report export options">
+        <h2>Export report</h2><p>Choose an audience. Outputs cover the whole run, independent of the population selector below. Any release trend in an output uses the prior release run and names that reference.</p>
+        <RunReportLensSwitcher activeLens={activeLens} onLensChange={setLens} />
+        <button className="btn btn-secondary" type="button" onClick={() => setShowComposer(true)}>Preview / edit commentary</button>
+        <RunReportExportActions testId={testId} lens={activeLens} testName={test.name} downloadHTML={api.downloadTestReport} downloadFormat={api.downloadTestReportFormat} />
+        <details><summary>Publish to Power BI</summary><RunReportPowerBIPublish testId={testId} publish={api.publishTestToPowerBI} getStatus={api.getPowerBIPublishStatus} /></details>
+      </section>}
+      <section className="run-report-context" aria-label="Analysis context">
+        <label>Metric population <select value={population} onChange={e => setPopulationChoice(e.target.value as MetricPopulation)}>{Object.entries(populationLabels).map(([key,label]) => <option key={key} value={key}>{label}</option>)}</select></label>
+        <p>{populationLabels[population]} · {report?.metric_populations?.[population]?.transactions ?? 'Unknown'} samples · Whole captured run. {(report?.metric_populations?.transaction?.transactions || 0) > 0 ? 'Interval graphs show named transaction metrics.' : 'Legacy interval graphs have no identified named transaction population; their values are separate from these KPIs.'} Resource curves show the load generators.</p>
+      </section>
+      {showCompare && <RunReportCompareBar compareId={effectiveCompareId} suggestedCompareId={suggestedCompareId} baselineName={baselineTest?.name} options={baselineOptions}
+        deltas={baselineDiff} loading={baselineLoading} error={baselineError || baselineOptionsError || (effectiveCompareId && report && baselineReport && (!reportPopulationOverview(report, population) || !reportPopulationOverview(baselineReport, population)) ? 'No comparable samples for the selected population.' : '')}
+        onCompareChange={setCompare} onPinBaseline={pinBaseline} />}
+      {effectiveCompareId && !showCompare && <p className="run-report-muted">Comparing with {baselineTest?.name || effectiveCompareId}. Open Compare to change or clear the baseline.{baselineError ? ` ${baselineError}` : ''}</p>}
+      {comparisonContextDiffers && <p className="run-report-muted">Baseline scenario, scope, or planned load differs from this run. Interpret metric deltas in that context; curves align by elapsed time.</p>}
+      <TabList className="run-report-areas" role="tablist" aria-label="Result sections">{areas.map((name,index) => <button key={name} type="button" role="tab" id={`result-tab-${name}`} aria-controls={`result-panel-${name}`} aria-selected={area === name} tabIndex={area === name ? 0 : -1}
+        onClick={() => setArea(name)} onKeyDown={e => { const next = e.key === 'ArrowRight' ? (index+1)%4 : e.key === 'ArrowLeft' ? (index+3)%4 : e.key === 'Home' ? 0 : e.key === 'End' ? 3 : -1; if(next >= 0){e.preventDefault();setArea(areas[next]);document.getElementById(`result-tab-${areas[next]}`)?.focus()} }}>{name}</button>)}</TabList>
+      <section role="tabpanel" id={`result-panel-${area}`} aria-labelledby={`result-tab-${area}`} className="run-report-area-content">
+        {archiveModel.archiveLoading && <p role="status">Loading archived results...</p>}
+        {archiveModel.archiveError && <p role="alert" className="run-report-error">{archiveModel.archiveError}</p>}
+        {area === 'Summary' && <>
+          {report && <RunOutcomeSummary report={report} showPopulations={false} />}
+          <RunReportKpiScorecard kpis={kpis} />
+          <section className="run-report-panel"><h2>Findings and next steps</h2>
+            {report?.error_patterns?.length ? <><p>{report.error_patterns.length} error patterns were captured.</p><button className="btn btn-secondary" onClick={() => setArea('Diagnostics')}>Investigate errors</button></> : <p>{report ? 'No recurring error patterns were captured.' : 'Findings will appear when the report loads.'}</p>}
+            {report?.completeness && report.completeness.score_pct < 100 && <p>Evidence coverage is {report.completeness.score_pct}%. <button className="btn btn-ghost" onClick={() => setArea('Evidence')}>Review evidence gaps</button></p>}
+          </section>
+          {annotationsError && <p className="run-report-error" role="alert">{annotationsError}</p>}
+          <details><summary>Analyst assessment ({activeLens} output)</summary><RunReportVerdictBanner report={report} annotations={annotations} status={verdictDraft.status} explanation={verdictDraft.explanation} saving={savingAnnotations || annotationsLoading} disabled={!annotations} onStatusChange={updateVerdictStatus} onExplanationChange={updateVerdictExplanation} onSaveOverride={saveOverride} /></details>
+        </>}
+        {area === 'Performance' && <>
+          <RunReportKpiScorecard kpis={kpis} />
+          <SynchronizedTimeline data={timelineHistory} goalConfig={goalConfig} loading={archiveSummariesLoading || archiveResourcesLoading || baselineSummaryLoading} error={archiveSummaryError || archiveResourceError} showBaseline={Boolean(effectiveCompareId && timelineHistory.some(point => point.baselineTps !== undefined))} />
+          <ImportedDashboardPanels test={test} baselineTest={baselineReadyTest} />
+          <TransactionSlaScoreboard rows={slaRows} selectedAction={slaRows.some(row => row.name === archiveModel.selectedArchiveAction) ? archiveModel.selectedArchiveAction : ''} drilldownTransactions={archiveModel.archiveTransactions} loadingTransactions={archiveModel.archiveTransactionsLoading} onSelectAction={archiveModel.onSelectedArchiveActionChange} />
+          {renderEvidence('action-summary')}
+          <details><summary>Load impact</summary>{renderEvidence('load-impact')}</details>
+        </>}
+        {area === 'Diagnostics' && <>
+          <RunReportDiagnostics report={report} loading={archiveModel.archiveAnalysisLoading} error={archiveModel.archiveAnalysisError} />
+          {renderEvidence('report-error-patterns')}
+          {renderEvidence('transactions')}
+          <details><summary>Browser evidence</summary>{renderEvidence('report-browser-summary')}{renderEvidence('report-browser-resources')}</details>
+          <details><summary>Execution path analysis</summary>{renderEvidence('report-analysis')}</details>
+        </>}
+        {area === 'Evidence' && <>
+          {renderEvidence('report-completeness')}
+          {report && <section className="run-outcome-summary"><h2>Metric populations</h2><RunMetricPopulations report={report} /></section>}
+          {renderEvidence('report-metadata')}
+          <details><summary>Raw evidence downloads</summary><button className="btn btn-secondary" onClick={() => void archiveModel.onDownloadArchive()}>Download evidence bundle</button>{renderEvidence('report-assets')}</details>
+          <details><summary>Archived intervals</summary>{renderEvidence('report-summary-timeline')}</details>
+        </>}
+      </section>
+      {showComposer && <ReportComposer testId={testId} testName={test.name} profile={activeLens} onClose={() => setShowComposer(false)} />}
     </div>
   )
 }

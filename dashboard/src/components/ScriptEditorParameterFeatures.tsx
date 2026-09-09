@@ -1,3 +1,6 @@
+import TabList from './ux/TabList'
+import DialogLayer from './ux/DialogLayer'
+import { handleTabKey } from './tabKeyboard'
 import { Fragment, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
 import { useModalDialog } from '../hooks/useModalDialog'
 import type {
@@ -302,11 +305,11 @@ export function ParameterDataDialog({
   if (variant === 'document') return dialog
 
   return (
-    <div className="editor-dialog-backdrop" {...(onClose ? dialogBackdropProps(onClose) : {})}>
+    <DialogLayer><div className="editor-dialog-backdrop" {...(onClose ? dialogBackdropProps(onClose) : {})}>
       <div>
         {dialog}
       </div>
-    </div>
+    </div></DialogLayer>
   )
 }
 
@@ -464,13 +467,13 @@ function ParameterDataDetail({
   return (
     <div className="parameter-detail-panel">
       {isDataBacked && (
-        <div className="parameter-detail-tabs" role="tablist" aria-label="Parameter detail tabs">
+        <TabList className="parameter-detail-tabs" role="tablist" aria-label="Parameter detail tabs" onKeyDown={handleTabKey}>
           <button
             type="button"
             role="tab"
             aria-selected={activeTab === 'info'}
             className={activeTab === 'info' ? 'active' : ''}
-            onClick={() => setDetailTab('info')}
+            onClick={() => setDetailTab('info')} tabIndex={(activeTab === 'info') ? 0 : -1}
           >
             Settings
           </button>
@@ -479,11 +482,11 @@ function ParameterDataDetail({
             role="tab"
             aria-selected={activeTab === 'data'}
             className={activeTab === 'data' ? 'active' : ''}
-            onClick={() => setDetailTab('data')}
+            onClick={() => setDetailTab('data')} tabIndex={(activeTab === 'data') ? 0 : -1}
           >
             Data
           </button>
-        </div>
+        </TabList>
       )}
       <section className="parameter-detail-info" role="tabpanel" hidden={activeTab !== 'info'}>
         <ParameterInfoPanel
@@ -2097,7 +2100,7 @@ export function ExistingParameterDialog({
   }), [normalizedQuery, parameters])
 
   return (
-    <div className="editor-dialog-backdrop parameter-choice-backdrop" {...dialogBackdropProps(onClose)}>
+    <DialogLayer><div className="editor-dialog-backdrop parameter-choice-backdrop" {...dialogBackdropProps(onClose)}>
       <div
         ref={dialogRef}
         className="editor-dialog parameter-choice-dialog parameter-existing-dialog"
@@ -2148,7 +2151,7 @@ export function ExistingParameterDialog({
           )}
         </div>
       </div>
-    </div>
+    </div></DialogLayer>
   )
 }
 
@@ -2200,7 +2203,7 @@ export function JsonOccurrenceReviewDialog({
   }
 
   return (
-    <div className="editor-dialog-backdrop parameter-choice-backdrop" {...dialogBackdropProps(onClose)}>
+    <DialogLayer><div className="editor-dialog-backdrop parameter-choice-backdrop" {...dialogBackdropProps(onClose)}>
       <div
         ref={dialogRef}
         className="editor-dialog parameter-choice-dialog parameter-occurrence-dialog"
@@ -2267,7 +2270,7 @@ export function JsonOccurrenceReviewDialog({
           </div>
         </div>
       </div>
-    </div>
+    </div></DialogLayer>
   )
 }
 
@@ -2300,7 +2303,7 @@ export function ParameterizeDialog({ draft, onClose, onChooseFile, onConfirmBuil
   }
 
   return (
-    <div className="editor-dialog-backdrop parameter-choice-backdrop" {...dialogBackdropProps(onClose)}>
+    <DialogLayer><div className="editor-dialog-backdrop parameter-choice-backdrop" {...dialogBackdropProps(onClose)}>
       <div
         ref={dialogRef}
         className="editor-dialog parameter-choice-dialog parameterize-dialog"
@@ -2362,7 +2365,7 @@ export function ParameterizeDialog({ draft, onClose, onChooseFile, onConfirmBuil
           )}
         </div>
       </div>
-    </div>
+    </div></DialogLayer>
   )
 }
 
@@ -2381,7 +2384,7 @@ function ParameterChoiceDialog({
 }: ParameterChoiceDialogProps) {
   const dialogRef = useEditorDialogRef(onClose)
   return (
-    <div className="editor-dialog-backdrop parameter-choice-backdrop" {...dialogBackdropProps(onClose)}>
+    <DialogLayer><div className="editor-dialog-backdrop parameter-choice-backdrop" {...dialogBackdropProps(onClose)}>
       <div
         ref={dialogRef}
         className="editor-dialog parameter-choice-dialog"
@@ -2417,7 +2420,7 @@ function ParameterChoiceDialog({
           })}
         </div>
       </div>
-    </div>
+    </div></DialogLayer>
   )
 }
 
@@ -2629,7 +2632,7 @@ function ParameterSettingsDialog({
   const hasOutputSettings = parameterType === 'counter' || parameterType === 'current_iteration' || parameterType === 'random_number' || parameter.seed !== undefined
 
   return (
-    <div className="editor-dialog-backdrop parameter-choice-backdrop" {...dialogBackdropProps(onClose)}>
+    <DialogLayer><div className="editor-dialog-backdrop parameter-choice-backdrop" {...dialogBackdropProps(onClose)}>
       <div
         ref={dialogRef}
         className="editor-dialog parameter-choice-dialog parameter-settings-dialog"
@@ -2812,7 +2815,7 @@ function ParameterSettingsDialog({
           </details>
         </div>
       </div>
-    </div>
+    </div></DialogLayer>
   )
 }
 
@@ -2846,7 +2849,7 @@ function ParameterSelectionSettingsDialog({
   }
 
   return (
-    <div className="editor-dialog-backdrop parameter-choice-backdrop" {...dialogBackdropProps(onClose)}>
+    <DialogLayer><div className="editor-dialog-backdrop parameter-choice-backdrop" {...dialogBackdropProps(onClose)}>
       <div
         ref={dialogRef}
         className="editor-dialog parameter-choice-dialog parameter-selection-settings-dialog"
@@ -2898,7 +2901,7 @@ function ParameterSelectionSettingsDialog({
           </section>
         </div>
       </div>
-    </div>
+    </div></DialogLayer>
   )
 }
 

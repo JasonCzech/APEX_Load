@@ -1,3 +1,4 @@
+import DialogLayer from './ux/DialogLayer'
 import { useEffect, useState, type ReactNode } from 'react'
 
 import { isDesktopSurface } from '../desktop/desktopBridge'
@@ -122,7 +123,7 @@ export default function DesktopApiResourceLink({
       </button>
       {error && !onError && <span className="scenario-script-status error" role="alert">{error}</span>}
       {openResource && (
-        <div className="modal-overlay" role="presentation">
+        <DialogLayer><div className="modal-overlay" role="presentation">
           <section className="modal-content desktop-api-resource-viewer" role="dialog" aria-modal="true" aria-label={`Preview ${openResource.filename}`}>
             <div className="modal-header">
               <h3>{openResource.filename}</h3>
@@ -133,7 +134,7 @@ export default function DesktopApiResourceLink({
             </div>
             <iframe title={openResource.filename} src={openResource.objectURL} sandbox="allow-scripts" />
           </section>
-        </div>
+        </div></DialogLayer>
       )}
     </span>
   )
