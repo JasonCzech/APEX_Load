@@ -15,7 +15,7 @@ describe('app keyboard shortcuts', () => {
     })
 
     expect(shortcuts.find(shortcut => shortcut.id === 'navigation.access')?.hidden).toBe(true)
-    expect(shortcuts.find(shortcut => shortcut.id === 'navigation.settings')?.hidden).toBe(true)
+    expect(shortcuts.find(shortcut => shortcut.id === 'navigation.settings')?.hidden).toBe(false)
 
     shortcuts.find(shortcut => shortcut.id === 'navigation.scripts')?.onTrigger()
     expect(onNavigate).toHaveBeenCalledWith('scripts')

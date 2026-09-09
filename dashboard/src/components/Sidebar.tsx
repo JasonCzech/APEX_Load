@@ -214,9 +214,6 @@ export default function Sidebar({
     if (item.requiresAccess && !showAccess) {
       return false
     }
-    if (isDevUserPreview && item.id === 'settings') {
-      return false
-    }
     return true
   })
   const connectionClass = connectionState === 'connected' ? 'connected' : connectionState === 'connecting' ? 'connecting' : 'disconnected'

@@ -54,6 +54,7 @@ describe('TablePaginationManager', () => {
   let root: Root
 
   beforeEach(() => {
+    localStorage.clear()
     container = document.createElement('div')
     document.body.appendChild(container)
     root = createRoot(container)
@@ -62,6 +63,19 @@ describe('TablePaginationManager', () => {
   afterEach(() => {
     act(() => root.unmount())
     document.body.innerHTML = ''
+    localStorage.clear()
+  })
+
+  it('uses the saved personal default while allowing a table override', async () => {
+    localStorage.setItem('apexload.personal-preferences', JSON.stringify({ tableRows: 25 }))
+    const { table } = buildTable(30)
+    act(() => root.render(<TablePaginationManager />))
+    await flushTableScan()
+    expect(visibleRowTexts(table)).toHaveLength(25)
+    const select = document.querySelector('select')!
+    act(() => { select.value = '10'; select.dispatchEvent(new Event('change', { bubbles: true })) })
+    expect(visibleRowTexts(table)).toHaveLength(10)
+    expect(JSON.parse(localStorage.getItem('apexload.personal-preferences')!).tableRows).toBe(25)
   })
 
   it('shows 10 rows by default, pages forward and backward, and supports 25 and all', async () => {

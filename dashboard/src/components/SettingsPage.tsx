@@ -119,7 +119,7 @@ import LibraryFederationPanel from './LibraryFederationPanel'
 import GitHubIntegrationPanel from './GitHubIntegrationPanel'
 import ImportedDashboardsPanel from './ImportedDashboardsPanel'
 import PowerBIIntegrationPanel from './PowerBIIntegrationPanel'
-import DesktopNotificationsToggle from './DesktopNotificationsToggle'
+import PersonalSettings from './PersonalSettings'
 import { isDesktopSurface } from '../desktop/desktopBridge'
 import { useTopbarContribution } from '../hooks/TopbarContributionProvider'
 import { useModalDialog } from '../hooks/useModalDialog'
@@ -3240,7 +3240,7 @@ export default function SettingsPage({
           {currentDestination.group === 'Infrastructure' && canManageSystem && <InfrastructureSetupGuide />}
           {currentDestination.id === 'allocations' && <CapacityCommitments reservations={savedSettings.capacity_planning.reservations || []} projectId={activeProject?.id} projects={projects} pools={fleetPools || []} />}
           {returnTo && <a className="btn btn-secondary" href={returnTo}>Return to originating workflow</a>}
-          {currentDestination.id === 'preferences' && <section aria-label="Personal preferences"><label>Dashboard Theme<select className="settings-input" value={theme} onChange={event => onThemeChange(event.target.value as DashboardThemePreference)}>{[['system', 'System (Auto)'], ['dark', 'Dark'], ['light', 'Light'], ['solarized-dark', 'Solarized Dark'], ['solarized-light', 'Solarized Light'], ['monokai-dimmed', 'Monokai Dimmed']].map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label><p>Stored locally in this browser and applied immediately.</p>{desktopSurface && <DesktopNotificationsToggle />}</section>}
+          {currentDestination.id === 'preferences' && <section aria-label="Personal preferences"><PersonalSettings theme={theme} onThemeChange={onThemeChange} authStatus={authStatus} /></section>}
           {destination?.resource && <section className="settings-resource-editor">
 <button className="btn btn-secondary" onClick={() => onNavigate?.('fleet')}>Return to Fleet monitoring</button>
             {destination.resource === 'cloud' && <ComputeInfrastructureCard canManage={canManageSystem} />}

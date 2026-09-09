@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { usePersonalPreferences } from '../hooks/usePersonalPreferences'
 
 type TablePageLimit = 10 | 25 | 'all'
 type TablePageState = {
@@ -17,7 +18,6 @@ type ManagedTable = {
 type PortalEntry = Pick<ManagedTable, 'id' | 'container' | 'totalRows'>
 
 const DEFAULT_TABLE_PAGE_LIMIT = 10
-const DEFAULT_TABLE_PAGE_STATE: TablePageState = { limit: DEFAULT_TABLE_PAGE_LIMIT, pageIndex: 0 }
 
 function getTableRows(table: HTMLTableElement): HTMLTableRowElement[] {
   if (table.tBodies.length === 0) return []
@@ -54,8 +54,8 @@ function maxPageIndex(totalRows: number, limit: TablePageLimit) {
   return Math.max(0, Math.ceil(totalRows / limit) - 1)
 }
 
-function normalizePageState(state: TablePageState | undefined, totalRows: number): TablePageState {
-  const current = state || DEFAULT_TABLE_PAGE_STATE
+function normalizePageState(state: TablePageState | undefined, totalRows: number, defaultLimit: 10 | 25 = 10): TablePageState {
+  const current = state || { limit: defaultLimit, pageIndex: 0 }
   const pageIndex = Math.min(Math.max(0, current.pageIndex), maxPageIndex(totalRows, current.limit))
   return { ...current, pageIndex }
 }
@@ -82,6 +82,9 @@ function applyTablePageState(table: HTMLTableElement, state: TablePageState) {
 }
 
 export default function TablePaginationManager() {
+  const [preferences] = usePersonalPreferences()
+  const defaultLimit = useRef(preferences.tableRows)
+  defaultLimit.current = preferences.tableRows
   const nextIdRef = useRef(1)
   const managedTablesRef = useRef(new Map<number, ManagedTable>())
   const tableIdsRef = useRef(new WeakMap<HTMLTableElement, number>())
@@ -141,7 +144,7 @@ export default function TablePaginationManager() {
         managed.totalRows = getTableRows(table).length
       }
 
-      applyTablePageState(table, normalizePageState(pageStatesRef.current[id], managed.totalRows))
+      applyTablePageState(table, normalizePageState(pageStatesRef.current[id], managed.totalRows, defaultLimit.current))
     })
 
     Array.from(managedTablesRef.current.keys()).forEach(id => {
@@ -197,9 +200,9 @@ export default function TablePaginationManager() {
   useEffect(() => {
     pageStatesRef.current = pageStates
     managedTablesRef.current.forEach(managed => {
-      applyTablePageState(managed.table, normalizePageState(pageStates[managed.id], managed.totalRows))
+      applyTablePageState(managed.table, normalizePageState(pageStates[managed.id], managed.totalRows, preferences.tableRows))
     })
-  }, [pageStates])
+  }, [pageStates, preferences.tableRows])
 
   useEffect(() => {
     scanTables()
@@ -232,7 +235,7 @@ export default function TablePaginationManager() {
   return (
     <>
       {portals.map(({ id, container, totalRows }) => {
-        const state = normalizePageState(pageStates[id], totalRows)
+        const state = normalizePageState(pageStates[id], totalRows, preferences.tableRows)
         const { startIndex, endIndex } = pageBounds(totalRows, state)
         const canGoPrevious = state.limit !== 'all' && state.pageIndex > 0
         const canGoNext = state.limit !== 'all' && state.pageIndex < maxPageIndex(totalRows, state.limit)
@@ -264,7 +267,7 @@ export default function TablePaginationManager() {
                 disabled={!canGoPrevious}
                 onClick={() => {
                   setPageStates(current => {
-                    const currentState = normalizePageState(current[id], totalRows)
+                    const currentState = normalizePageState(current[id], totalRows, preferences.tableRows)
                     return { ...current, [id]: { ...currentState, pageIndex: Math.max(0, currentState.pageIndex - 1) } }
                   })
                 }}
@@ -277,7 +280,7 @@ export default function TablePaginationManager() {
                 disabled={!canGoNext}
                 onClick={() => {
                   setPageStates(current => {
-                    const currentState = normalizePageState(current[id], totalRows)
+                    const currentState = normalizePageState(current[id], totalRows, preferences.tableRows)
                     return { ...current, [id]: { ...currentState, pageIndex: Math.min(maxPageIndex(totalRows, currentState.limit), currentState.pageIndex + 1) } }
                   })
                 }}

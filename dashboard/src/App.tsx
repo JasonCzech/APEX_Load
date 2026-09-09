@@ -10,6 +10,8 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { usePersonalAppearance } from "./hooks/usePersonalPreferences";
+import "./components/PersonalSettings.css";
 import { useDashboardTheme } from "./hooks/useDashboardTheme";
 import { useDashboardZoomShortcuts } from "./hooks/useDashboardZoomShortcuts";
 import { useAsyncTask } from "./hooks/useAsyncTask";
@@ -192,6 +194,7 @@ const ApplicationRepositoryPage = lazy(
   () => import("./components/ApplicationRepositoryPage"),
 );
 const AccessPage = lazy(() => import("./components/AccessPage"));
+const UserSettingsPage = lazy(() => import("./components/UserSettingsPage"));
 const SettingsPage = lazy(() => import("./components/SettingsPage"));
 const BrowserRecorderControlPanel = lazy(
   () => import("./components/BrowserRecorderControlPanel"),
@@ -389,6 +392,7 @@ function AppShell({
     {},
   );
   const { theme, setTheme } = useDashboardTheme();
+  usePersonalAppearance();
   const { mode: devViewMode } = useDevView();
   const { getAuthEffectiveAccess } = useSystemApi();
   const libraryApi = useLibraryApi();
@@ -2893,20 +2897,6 @@ function AppShell({
     getAuthEffectiveAccess,
   ]);
 
-  useEffect(() => {
-    if (!isDevUserPreview) {
-      return;
-    }
-    setView((current) => {
-      if (current.page === "settings") {
-        return scopeAppViewToWorkspace(
-          { page: "dashboard" },
-          workspaceScopeForAppView(current),
-        );
-      }
-      return current;
-    });
-  }, [isDevUserPreview]);
 
   useEffect(() => {
     if (
@@ -3542,7 +3532,8 @@ function AppShell({
                 />
               )}
               {(view.page === "settings" || ((view.page === "access" || view.page === "repository") && view.setting)) && !routeAssetScopeBlocked && (
-                <SettingsPage
+                (!isDevUserPreview && effectiveAccessLoaded && !effectiveAccessError &&
+                  (["manage_system", "manage_domains", "manage_projects"] as const).some(operation => isEffectiveOperationAllowed(effectiveAccessResources, operation, false)) && !view.setting?.startsWith("personal-")) ? <SettingsPage
                   destinationId={view.setting}
                   onDestinationChange={setting => setGuardedView({ page: settingsOwner(setting), setting, returnTo: "returnTo" in view ? view.returnTo : undefined })}
                   theme={theme}
@@ -3555,7 +3546,7 @@ function AppShell({
                   onDomainChange={handleSidebarDomainChange}
                   onDomainsRefresh={refreshDomains}
                   onProjectUpdate={updateOuterProject}
-                />
+                /> : <UserSettingsPage destinationId={view.setting} onDestinationChange={setting => setGuardedView({ page: "settings", setting })} theme={theme} onThemeChange={setTheme} authStatus={authStatus} />
               )}
             </Suspense>
           </LazyLoadBoundary>

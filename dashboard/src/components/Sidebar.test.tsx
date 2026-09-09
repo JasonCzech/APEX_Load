@@ -685,7 +685,7 @@ describe('Sidebar', () => {
     expect(container.textContent).toContain('Editor preview')
     expect(container.textContent).toContain('New Test')
     expect(container.textContent).toContain('API Guide')
-    expect(container.textContent).not.toContain('Settings')
+    expect(container.textContent).toContain('Settings')
     expect(Array.from(container.querySelectorAll<HTMLButtonElement>('button')).some(button => button.textContent?.trim() === 'Sign out')).toBe(true)
   })
 

@@ -1,0 +1,12 @@
+.personal-settings-content { display: grid; gap: 20px; }
+.personal-settings-content .settings-section { padding: 20px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg-secondary); min-width: 0; }
+.personal-settings-content .settings-section > h3 { margin: 0 0 20px; font-size: 16px; }
+.personal-settings-content .ux-form-field { margin-block: 16px; max-width: 620px; }
+.personal-settings-content .settings-input { width: 100%; }
+.personal-account-details { margin: 0; display: grid; gap: 16px; }
+.personal-account-details > div { display: grid; grid-template-columns: minmax(100px, 140px) 1fr; gap: 16px; }
+.personal-account-details dt { color: var(--text-secondary); }
+.personal-account-details dd { margin: 0; overflow-wrap: anywhere; }
+:root[data-motion="reduce"] *, :root[data-motion="reduce"] *::before, :root[data-motion="reduce"] *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; scroll-behavior: auto !important; }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; scroll-behavior: auto !important; } }
+@media (max-width: 700px) { .personal-account-details > div { grid-template-columns: 1fr; gap: 4px; } }
